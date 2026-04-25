@@ -3,6 +3,11 @@
 .env.*
 !.env.example
 
+# graphify output — ignore everything except the report and graph
+graphify-out/
+!graphify-out/GRAPH_REPORT.md
+!graphify-out/graph.json
+
 # Logs
 *.log
 
