@@ -556,10 +556,7 @@ export const NewsPage: React.FC = () => {
     }
   };
 
-  // Determine Article Source: Interactive Models OR Mock Episodes
-  // Interactive Models are deprecated/disabled for now
-  const staticArticle = null; // INTERACTIVE_MODELS[id || ''] || null;
-  const mockEpisode = null;
+  
 
   // Enrich tickers with real stock data
   useEffect(() => {
@@ -578,24 +575,6 @@ export const NewsPage: React.FC = () => {
           });
         });
       }
-    } else if (mockEpisode) {
-      // Extract stock symbols from highlights
-      const stocks: InteractiveEntity[] = [];
-      mockEpisode.summary.forEach(point => {
-        if (point.highlights) {
-          point.highlights.forEach(h => {
-            if (h.type === 'stock' && h.symbol) {
-              stocks.push({
-                symbol: h.symbol,
-                price: '0.00', // Placeholder
-                change: '0.0%',
-                isPositive: true
-              });
-            }
-          });
-        }
-      });
-      tickersToEnrich = stocks;
     }
 
     const enrichTickers = async () => {
@@ -655,7 +634,7 @@ export const NewsPage: React.FC = () => {
     };
 
     enrichTickers();
-  }, [apiEpisode, mockEpisode]);
+  }, [apiEpisode]);
 
 
 
@@ -717,41 +696,6 @@ export const NewsPage: React.FC = () => {
       sentencesContent: sentencesMarkdown
     };
 
-  } else if (mockEpisode) {
-    // Generate Markdown Content for Mock Episode
-    // Convert structured summary to markdown text with ticker links
-    const summaryMarkdown = mockEpisode.summary.map(point => {
-      let text = point.text;
-      if (point.highlights) {
-        // Sort highlights by length desc to avoid partial replacements of substrings
-        const sortedHighlights = [...point.highlights].sort((a, b) => b.text.length - a.text.length);
-
-        sortedHighlights.forEach(h => {
-          if (h.type === 'stock' && h.symbol) {
-            // Replace text with markdown link: [Text](#ticker:SYMBOL)
-            // Escape special regex chars in text if needed
-            const escapedText = h.text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            text = text.replace(new RegExp(escapedText, 'g'), `[${h.text}](#ticker:${h.symbol})`);
-          }
-        });
-      }
-      return `* ${text}`;
-    }).join('\n\n');
-
-    article = {
-      id: mockEpisode.id,
-      title: mockEpisode.title,
-      source: mockEpisode.showName,
-      date: mockEpisode.timeAgo,
-      category: mockEpisode.tags[0] || 'Podcast',
-      tags: mockEpisode.tags || [],
-      summary: '詳細內容請見下方摘要',
-      graphTypeLabel: '關聯圖譜',
-      GraphComponent: ForceGraph, // Use a default graph for episodes
-      tickers: enrichedTickers, // Populated from highlights
-      indices: [],
-      content: summaryMarkdown // Use the generated markdown string
-    };
   }
 
   // Generate Structured Data (must be called on every render to keep hook order stable)
@@ -831,8 +775,7 @@ export const NewsPage: React.FC = () => {
   }, [apiEpisode]);
 
   // Extract Spotify URI from episode data if available
-  // Priority: apiEpisode.spotify_url/spotify_id > mockEpisode.spotifyUri > default example URI
-  const hasEpisode = !!(apiEpisode || mockEpisode);
+  const hasEpisode = !!apiEpisode;
 
   // Helper function to convert Spotify URL to URI format
   const getSpotifyUri = (): string | null => {
@@ -856,12 +799,6 @@ export const NewsPage: React.FC = () => {
       }
     }
 
-    // Try mock episode
-    if ((mockEpisode as any)?.spotifyUri) {
-      return (mockEpisode as any).spotifyUri;
-    }
-
-    // Fallback to example
     return 'spotify:episode:7makk4oTQel546B0PZlDM5';
   };
 
@@ -975,7 +912,7 @@ export const NewsPage: React.FC = () => {
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
-              if (article && (apiEpisode || mockEpisode)) {
+              if (article && apiEpisode) {
                 // Always use playEpisode with seekTo - this ensures consistent behavior
                 // The SpotifyEmbed handles the play-then-seek internally
                 const episodeData = {

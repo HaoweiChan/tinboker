@@ -422,12 +422,10 @@ export const StockDashboard: React.FC = () => {
     }
   }, [symbol]);
 
-  const name = stockData?.name || symbol;
-
   const structuredData = {
     '@context': 'https://schema.org',
     '@type': 'Organization',
-    'name': name,
+    'name': symbol,
     'tickerSymbol': symbol,
     'url': window.location.href
   };
@@ -435,8 +433,8 @@ export const StockDashboard: React.FC = () => {
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-transparent">
       <SEO
-        title={`${name} (${symbol}) - 股價表現與相關 Podcast | TinBoker`}
-        description={`查看 ${name} (${symbol}) 的即時股價走勢，以及最新提到此標的的 Podcast 節目與分析。`}
+        title={`${symbol} - 股價表現與相關 Podcast | TinBoker`}
+        description={`查看 ${symbol} 的即時股價走勢，以及最新提到此標的的 Podcast 節目與分析。`}
         structuredData={structuredData}
         url={window.location.href}
       />
@@ -476,7 +474,7 @@ export const StockDashboard: React.FC = () => {
                   相關 Podcast 集數
                 </h2>
                 <p className="text-sm text-slate-500 dark:text-slate-400">
-                  提及 {name} 的節目與分析
+                  提及 {symbol} 的節目與分析
                 </p>
               </div>
               <span className="text-sm text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-full font-medium">
