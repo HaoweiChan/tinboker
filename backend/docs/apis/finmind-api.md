@@ -1,6 +1,6 @@
 # FinMind API Usage for Stock Price Tracking
 
-This document tracks all FinMind API endpoints and datasets used in the Graphfolio Backend for stock price tracking and related financial data.
+This document tracks all FinMind API endpoints and datasets used in the TinBoker Backend for stock price tracking and related financial data.
 
 ## Overview
 

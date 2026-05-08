@@ -1235,7 +1235,7 @@ class PodcastService:
         
         if not bucket_name:
             # Fallback: try to get from environment or use a default
-            bucket_name = os.getenv("GCS_BUCKET", "graphfolio-podcast-data")
+            bucket_name = os.getenv("GCS_BUCKET", "tinboker-podcast-data")
         
         # Upload to GCS at {podcast_name}/modified_summary/{episode_id}_summary.md
         blob_path = f"{podcast_name}/modified_summary/{episode_id}_summary.md"

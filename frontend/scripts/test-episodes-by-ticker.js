@@ -4,7 +4,7 @@
  * Example: node scripts/test-episodes-by-ticker.js blk
  */
 
-const BASE_URL = process.env.API_BASE_URL || 'https://graphfolio-backend-staging.onrender.com';
+const BASE_URL = process.env.API_BASE_URL || 'https://staging-api.tinboker.com';
 const ticker = (process.argv[2] || 'blk').toLowerCase();
 
 async function testEpisodesByTicker() {

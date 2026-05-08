@@ -1,4 +1,4 @@
-# Agent Instructions for Graphfolio-WebUI
+# Agent Instructions for tinboker-platform/frontend
 
 These instructions are for AI assistants working on the frontend codebase.
 
@@ -36,7 +36,7 @@ When working on feature branches:
 Frontend is deployed via Cloudflare Pages:
 - `develop` branch → `dev.tinboker.com`
 - `main` branch → `tinboker.com`
-- Preview deployments → `*.graphfolio-webui.pages.dev`
+- Preview deployments → `*.tinboker-platform.pages.dev`
 
 Each environment uses its corresponding backend API:
 - `dev.tinboker.com` → `dev-api.tinboker.com`

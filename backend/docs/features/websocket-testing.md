@@ -15,7 +15,7 @@ This guide explains how to test the WebSocket implementation for real-time stock
 
 ```bash
 # Start FastAPI server
-cd /home/lewis/Graphfolio-Backend
+cd /home/lewis/tinboker-platform/backend
 uvicorn src.main:app --host 0.0.0.0 --port 3000 --reload
 ```
 

@@ -13,7 +13,7 @@
 1. Navigate to **APIs & Services** > **OAuth consent screen**
 2. Select **User Type**: **External** (for public apps)
 3. Fill in:
-   - **App name**: `Graphfolio` (or your app name)
+   - **App name**: `TinBoker` (or your app name)
    - **User support email**: Your email
    - **Developer contact**: Your email
 4. Click **Save and Continue**
@@ -25,7 +25,7 @@
 1. Navigate to **APIs & Services** > **Credentials**
 2. Click **+ CREATE CREDENTIALS** > **OAuth client ID**
 3. Select **Application type**: **Web application**
-4. Enter **Name**: `Graphfolio Web Client`
+4. Enter **Name**: `TinBoker Web Client`
 5. **Authorized JavaScript origins** (add these):
    ```
    http://localhost:5173
@@ -63,7 +63,7 @@
 
 1. Navigate to the frontend project directory:
    ```bash
-   cd Graphfolio-WebUI
+   cd tinboker-platform/frontend
    ```
 
 2. Create a file named `.env.local` in the root directory:
@@ -99,7 +99,7 @@ VITE_API_URL=http://localhost:3000/api
 ### 2.4 Important Notes
 
 - **File name**: Must be `.env.local` (not `.env`)
-- **Location**: Must be in the root of `Graphfolio-WebUI/` directory
+- **Location**: Must be in the root of `tinboker-platform/frontend/` directory
 - **Git**: `.env.local` should already be in `.gitignore` (don't commit it)
 - **Restart**: After creating/updating `.env.local`, you **must restart** the dev server
 
@@ -142,7 +142,7 @@ When deploying to production (e.g., Vercel):
 
 **Solutions:**
 1. Check file name is exactly `.env.local` (not `.env` or `.env.local.txt`)
-2. Check file is in the root of `Graphfolio-WebUI/` directory
+2. Check file is in the root of `tinboker-platform/frontend/` directory
 3. Restart the dev server after creating/updating the file
 4. Check for typos in variable name (must be `VITE_GOOGLE_CLIENT_ID`)
 
@@ -167,7 +167,7 @@ When deploying to production (e.g., Vercel):
 - Google Cloud Console → APIs & Services → Credentials → OAuth 2.0 Client IDs
 
 **Where to set it:**
-- `Graphfolio-WebUI/.env.local` file
+- `tinboker-platform/frontend/.env.local` file
 
 **Format:**
 ```env

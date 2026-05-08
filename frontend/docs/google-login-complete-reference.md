@@ -1,6 +1,6 @@
 # Google Login Complete Reference
 
-This document provides a comprehensive reference for all Google login related code, setup, and environment variables in the Graphfolio WebUI project.
+This document provides a comprehensive reference for all Google login related code, setup, and environment variables in the TinBoker WebUI project.
 
 ## Table of Contents
 
@@ -38,7 +38,7 @@ VITE_GOOGLE_CLIENT_ID=123456789-abcdefghijklmnop.apps.googleusercontent.com
 - **Type**: String
 - **Required**: No (has default fallback)
 - **Description**: Base URL for the backend API
-- **Default**: `https://graphfolio-backend.onrender.com`
+- **Default**: `https://api.tinboker.com`
 - **Location**: Same as `VITE_GOOGLE_CLIENT_ID`
 - **Usage**: Used by `src/services/api/client.ts` to configure API requests
 
@@ -48,7 +48,7 @@ VITE_GOOGLE_CLIENT_ID=123456789-abcdefghijklmnop.apps.googleusercontent.com
 VITE_API_BASE_URL=http://localhost:8000
 
 # Production
-VITE_API_BASE_URL=https://graphfolio-backend.onrender.com
+VITE_API_BASE_URL=https://api.tinboker.com
 ```
 
 ### Environment Variable Files
@@ -122,7 +122,7 @@ if (!GOOGLE_CLIENT_ID) {
     '5. Go to Deployments tab and click "Redeploy" on the latest deployment\n' +
     '6. Wait for deployment to complete'
     : '⚠️ VITE_GOOGLE_CLIENT_ID is not set in .env.local!\n' +
-    'Create .env.local file in Graphfolio-WebUI/ with:\n' +
+    'Create .env.local file in tinboker-platform/frontend/ with:\n' +
     'VITE_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com';
 
   console.error(errorMsg);
@@ -394,7 +394,7 @@ interface User {
 **Persistence:**
 ```565:577:src/store/useAppStore.ts
     {
-      name: 'graphfolio-storage', // localStorage key
+      name: 'tinboker-storage', // localStorage key
       partialize: (state) => ({
         theme: state.theme,
         token: state.token,
@@ -431,11 +431,11 @@ const getBaseURL = (): string => {
 
   // Log warning in production if falling back to default
   if (import.meta.env.PROD) {
-    console.warn('VITE_API_BASE_URL not set in production. Using default: https://graphfolio-backend.onrender.com');
+    console.warn('VITE_API_BASE_URL not set in production. Using default: https://api.tinboker.com');
   }
 
   // Always use production URL, avoiding local/staging unless specified
-  return 'https://graphfolio-backend.onrender.com';
+  return 'https://api.tinboker.com';
 };
 ```
 
@@ -453,12 +453,12 @@ const getBaseURL = (): string => {
 
 1. **Go to Google Cloud Console**: [https://console.cloud.google.com/](https://console.cloud.google.com/)
 
-2. **Create a New Project** (e.g., "Graphfolio-Dev")
+2. **Create a New Project** (e.g., "TinBoker-Dev")
 
 3. **Configure OAuth Consent Screen**:
    - Navigate to **APIs & Services > OAuth consent screen**
    - Select **External** (for testing) or **Internal** (if organization-only)
-   - Fill in app name ("Graphfolio"), support email, etc.
+   - Fill in app name ("TinBoker"), support email, etc.
    - **Scopes**: Add `userinfo.email` and `userinfo.profile`
    - **Test Users**: Add your own email for testing
 

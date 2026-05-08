@@ -1,7 +1,7 @@
 # Google Login Implementation Guide
 
 **Date:** 2025-12-22  
-**Project:** Graphfolio (Backend + Frontend)  
+**Project:** TinBoker (Backend + Frontend)  
 **Purpose:** Complete guide for implementing Google OAuth authentication
 
 ---
@@ -22,7 +22,7 @@
 
 ## Overview
 
-This guide provides step-by-step instructions for implementing Google OAuth login in the Graphfolio application. The implementation uses:
+This guide provides step-by-step instructions for implementing Google OAuth login in the TinBoker application. The implementation uses:
 
 - **Backend**: FastAPI with Firebase Admin SDK for token verification
 - **Frontend**: React with `@react-oauth/google` library
@@ -99,14 +99,14 @@ You'll need:
    - Click "Create Credentials" > "OAuth client ID"
    - If prompted, configure OAuth consent screen first:
      - User Type: External (for public apps) or Internal (for organization)
-     - App name: "Graphfolio"
+     - App name: "TinBoker"
      - User support email: Your email
      - Developer contact: Your email
      - Save and continue through scopes and test users
    
 4. **Configure OAuth Client**
    - Application type: **Web application**
-   - Name: "Graphfolio Web Client"
+   - Name: "TinBoker Web Client"
    - **Authorized JavaScript origins:**
      ```
      http://localhost:5173
@@ -816,7 +816,7 @@ async def get_current_user(authorization: Optional[str] = Header(None)) -> UserR
 
 ### Step 1: Update Environment Variables
 
-Create or update `.env.local` in `Graphfolio-WebUI`:
+Create or update `.env.local` in `tinboker-platform/frontend`:
 
 ```env
 VITE_GOOGLE_CLIENT_ID=your-client-id-from-oauth-credentials.apps.googleusercontent.com
@@ -1384,5 +1384,5 @@ After implementing Google login, consider:
 ---
 
 **Last Updated:** 2025-12-22  
-**Author:** Graphfolio Development Team
+**Author:** TinBoker Development Team
 

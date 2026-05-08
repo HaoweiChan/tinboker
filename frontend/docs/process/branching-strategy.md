@@ -1,6 +1,6 @@
 # Frontend-Backend Branching & Synchronization Strategy
 
-This document outlines the branching strategy and workflow for maintaining synchronization between the **Graphfolio-WebUI** (Frontend) and **Graphfolio-Backend** (Backend) repositories.
+This document outlines the branching strategy and workflow for maintaining synchronization between the **tinboker-platform/frontend** (Frontend) and **tinboker-platform/backend** (Backend) repositories.
 
 ## 1. Core Branches
 
@@ -123,9 +123,9 @@ Before merging `develop` to `main`:
 When deploying to platforms like Vercel, Netlify, or Render, use the platform's Environment Variable settings or GitHub Secrets.
 
 *   **Production Environment (`main` branch):**
-    *   Set `VITE_API_BASE_URL` = `https://api.graphfolio.com` (Production API)
+    *   Set `VITE_API_BASE_URL` = `https://api.tinboker.com` (Production API)
 *   **Preview/Staging Environment (`develop` branch):**
-    *   Set `VITE_API_BASE_URL` = `https://api-dev.graphfolio.com` (Staging API)
+    *   Set `VITE_API_BASE_URL` = `https://dev-api.tinboker.com` (Staging API)
 
 **GitHub Secrets Example:**
 If using GitHub Actions for build/deploy:
@@ -140,7 +140,7 @@ If using GitHub Actions for build/deploy:
     ```### B. Local Development (Manual)
 Developers' local machines cannot access GitHub Secrets. To prevent confusion and ensure everyone uses the same Staging API by default:1.  **Commit `.env.development` to Git:**
     *   Create a `.env.development` file in the repository root.
-    *   Set `VITE_API_BASE_URL=https://api-dev.graphfolio.com` (or whatever the shared staging URL is).
+    *   Set `VITE_API_BASE_URL=https://dev-api.tinboker.com` (or whatever the shared staging URL is).
     *   **Do NOT** include sensitive keys in this file. Only public configuration.
     *   This ensures `npm run dev` automatically picks up the shared Staging API.2.  **Local Overrides (`.env.local`):**
     *   If a developer needs to point to their *local* backend (e.g., `http://localhost:8000`), they should create `.env.local` (which is git-ignored).

@@ -114,7 +114,7 @@ src/
 ```bash
 # Clone the repository
 git clone <repository-url>
-cd Graphfolio-WebUI
+cd tinboker-platform/frontend
 
 # Install dependencies
 npm install

@@ -1,5 +1,5 @@
 """
-SQLAlchemy ORM models for the Graphfolio database.
+SQLAlchemy ORM models for the TinBoker database.
 """
 
 from datetime import datetime

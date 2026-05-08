@@ -1,7 +1,7 @@
 services:
   # Main FastAPI application
   - type: web
-    name: graphfolio-backend
+    name: tinboker-backend
     env: python
     buildCommand: pip install -r requirements.txt && python -m src.database.migrate
     startCommand: uvicorn src.main:app --host 0.0.0.0 --port $PORT
@@ -15,12 +15,12 @@ services:
         value: true
       - key: DATABASE_URL
         fromDatabase:
-          name: graphfolio-db
+          name: tinboker-db
           property: connectionString
       - key: REDIS_URL
         fromService:
           type: redis
-          name: graphfolio-redis
+          name: tinboker-redis
           property: connectionString
       - key: USE_FINMIND
         value: true
@@ -30,12 +30,12 @@ services:
       - key: MASSIVE_API_KEY
         sync: false
       - key: CORS_ORIGINS
-        value: https://graphfolio.com,https://graphfolio-web-q33ggo2hs-graphfolio.vercel.app
+        value: https://tinboker.com,https://tinboker-web-q33ggo2hs-tinboker.vercel.app
         sync: false
 
   # Background worker for stock price updates
   - type: worker
-    name: graphfolio-worker
+    name: tinboker-worker
     env: python
     buildCommand: pip install -r requirements.txt
     startCommand: python -m src.workers.stock_price_updater
@@ -48,24 +48,24 @@ services:
         value: true
       - key: DATABASE_URL
         fromDatabase:
-          name: graphfolio-db
+          name: tinboker-db
           property: connectionString
       - key: REDIS_URL
         fromService:
           type: redis
-          name: graphfolio-redis
+          name: tinboker-redis
           property: connectionString
       - key: MASSIVE_API_KEY
         sync: false
 
   # Redis for caching and pub/sub
   - type: redis
-    name: graphfolio-redis
+    name: tinboker-redis
     plan: free
     ipAllowList: []  # Allow all connections
 
 databases:
-  - name: graphfolio-db
-    databaseName: graphfolio
-    user: graphfolio_user
+  - name: tinboker-db
+    databaseName: tinboker
+    user: tinboker_user
     plan: free

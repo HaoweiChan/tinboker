@@ -4,7 +4,7 @@
  */
 export const initializeTheme = () => {
   try {
-    const stored = localStorage.getItem('graphfolio-storage');
+    const stored = localStorage.getItem('tinboker-storage');
     if (stored) {
       const { state } = JSON.parse(stored);
       const theme = state?.theme || 'dark';

@@ -1,7 +1,7 @@
 # User Management and Google Login Features Guide
 
 **Date:** 2025-12-22  
-**Project:** Graphfolio (Backend + Frontend)  
+**Project:** TinBoker (Backend + Frontend)  
 **Purpose:** Guide for managing user data and extending Google login functionality
 
 ---
@@ -22,8 +22,8 @@
 
 **Connect to the database:**
 ```bash
-cd Graphfolio-Backend
-sqlite3 data/graphfolio.db
+cd tinboker-platform/backend
+sqlite3 data/tinboker.db
 ```
 
 **View all users:**

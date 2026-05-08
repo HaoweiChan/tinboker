@@ -1,6 +1,6 @@
 # Production Container Reliability
 
-Implementation report for ensuring Graphfolio backend containers are highly available and automatically recover from failures.
+Implementation report for ensuring TinBoker backend containers are highly available and automatically recover from failures.
 
 ## Implementation Date
 
@@ -8,7 +8,7 @@ Implementation report for ensuring Graphfolio backend containers are highly avai
 
 ## Problem Statement
 
-On 2026-02-02, the production API (`api.tinboker.com`) was down because the `graphfolio-backend-prod` container was not running. Only staging and dev containers were active, causing:
+On 2026-02-02, the production API (`api.tinboker.com`) was down because the `tinboker-backend-prod` container was not running. Only staging and dev containers were active, causing:
 - 502 errors from Cloudflare/Caddy
 - Website falling back to mock data
 - No automatic recovery mechanism
@@ -20,9 +20,9 @@ On 2026-02-02, the production API (`api.tinboker.com`) was down because the `gra
 Systemd service files ensure all containers start automatically when the VPS boots or restarts.
 
 **Files Created:**
-- `deploy/systemd/graphfolio-prod.service`
-- `deploy/systemd/graphfolio-staging.service`
-- `deploy/systemd/graphfolio-dev.service`
+- `deploy/systemd/tinboker-prod.service`
+- `deploy/systemd/tinboker-staging.service`
+- `deploy/systemd/tinboker-dev.service`
 - `deploy/setup-systemd.sh`
 
 **Installation:**
@@ -33,9 +33,9 @@ cd /app
 
 **Service Status:**
 ```bash
-systemctl status graphfolio-prod
-systemctl status graphfolio-staging
-systemctl status graphfolio-dev
+systemctl status tinboker-prod
+systemctl status tinboker-staging
+systemctl status tinboker-dev
 ```
 
 **Benefits:**
@@ -78,19 +78,19 @@ External monitoring service provides alerts and uptime tracking.
 │                            ▼                                │
 │   ┌──────────────────────────────────────────────────────┐ │
 │   │              Systemd Services                        │ │
-│   │  graphfolio-prod.service                             │ │
-│   │  graphfolio-staging.service                          │ │
-│   │  graphfolio-dev.service                              │ │
+│   │  tinboker-prod.service                             │ │
+│   │  tinboker-staging.service                          │ │
+│   │  tinboker-dev.service                              │ │
 │   └──────────────────────────────────────────────────────┘ │
 │                            │                                │
 │                            ▼                                │
 │   ┌──────────────────────────────────────────────────────┐ │
 │   │          Docker Containers Running                   │ │
-│   │  • graphfolio-backend-prod (port 8000)               │ │
-│   │  • graphfolio-backend-staging (port 8002)            │ │
-│   │  • graphfolio-backend-dev (port 8001)                │ │
-│   │  • graphfolio-redis                                  │ │
-│   │  • graphfolio-netdata                                │ │
+│   │  • tinboker-backend-prod (port 8000)               │ │
+│   │  • tinboker-backend-staging (port 8002)            │ │
+│   │  • tinboker-backend-dev (port 8001)                │ │
+│   │  • tinboker-redis                                  │ │
+│   │  • tinboker-netdata                                │ │
 │   └──────────────────────────────────────────────────────┘ │
 │                            ▲                                │
 │                            │                                │
@@ -122,14 +122,14 @@ If manual intervention is needed:
 ssh root@152.53.136.182
 
 # Check container status
-docker ps -a | grep graphfolio
+docker ps -a | grep tinboker
 
 # Start production stack
 cd /app
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 
 # Check logs
-docker logs graphfolio-backend-prod --tail=50
+docker logs tinboker-backend-prod --tail=50
 
 # Verify health
 curl http://localhost:8000/health
@@ -139,9 +139,9 @@ curl http://localhost:8000/health
 
 | File | Purpose |
 |------|---------|
-| `deploy/systemd/graphfolio-prod.service` | Production systemd service |
-| `deploy/systemd/graphfolio-staging.service` | Staging systemd service |
-| `deploy/systemd/graphfolio-dev.service` | Development systemd service |
+| `deploy/systemd/tinboker-prod.service` | Production systemd service |
+| `deploy/systemd/tinboker-staging.service` | Staging systemd service |
+| `deploy/systemd/tinboker-dev.service` | Development systemd service |
 | `deploy/setup-systemd.sh` | Service installation script |
 | `.github/workflows/health-check.yml` | Automated health check workflow |
 

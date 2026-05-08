@@ -11,10 +11,10 @@ import type { AxiosInstance, AxiosError, AxiosRequestConfig } from 'axios';
 
 
 // Extract branch name from Cloudflare Pages preview URL
-// Format: {branch-name}.graphfolio-webui.pages.dev or {commit-hash}.graphfolio-webui.pages.dev
+// Format: {branch-name}.tinboker-platform.pages.dev or {commit-hash}.tinboker-platform.pages.dev
 const extractBranchFromPagesUrl = (hostname: string): string | null => {
-  // Match Cloudflare Pages preview URLs: something.graphfolio-webui.pages.dev
-  const match = hostname.match(/^([^.]+)\.graphfolio-webui\.pages\.dev$/);
+  // Match Cloudflare Pages preview URLs: something.tinboker-platform.pages.dev
+  const match = hostname.match(/^([^.]+)\.tinboker-platform\.pages\.dev$/);
   if (match) {
     const prefix = match[1];
     // Skip if it looks like a commit hash (8+ hex chars only)

@@ -16,7 +16,7 @@ This error occurs when `VITE_GOOGLE_CLIENT_ID` is not set in Vercel's environmen
 ### Step 2: Add Environment Variable in Vercel
 
 1. Go to your [Vercel Dashboard](https://vercel.com/dashboard)
-2. Select your project (Graphfolio-WebUI)
+2. Select your project (tinboker-platform/frontend)
 3. Go to **Settings** > **Environment Variables**
 4. Click **Add New** or **Add Environment Variable**
 5. Add the following:
@@ -48,7 +48,7 @@ VITE_API_URL
 
 **Value:**
 ```
-https://graphfolio-backend.onrender.com/api
+https://api.tinboker.com/api
 ```
 (or your backend URL)
 
@@ -74,7 +74,7 @@ After redeployment, check:
 | Variable Name | Description | Example |
 |--------------|-------------|---------|
 | `VITE_GOOGLE_CLIENT_ID` | Google OAuth Client ID | `123456789-abc...xyz.apps.googleusercontent.com` |
-| `VITE_API_URL` | Backend API URL | `https://graphfolio-backend.onrender.com/api` |
+| `VITE_API_URL` | Backend API URL | `https://api.tinboker.com/api` |
 
 ## Troubleshooting
 

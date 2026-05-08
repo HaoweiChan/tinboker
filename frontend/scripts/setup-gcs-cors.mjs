@@ -16,7 +16,7 @@
  *   node scripts/setup-gcs-cors.mjs [bucket-name]
  * 
  * Example:
- *   node scripts/setup-gcs-cors.mjs graphfolio-articles
+ *   node scripts/setup-gcs-cors.mjs tinboker-articles
  */
 
 import { execSync } from 'child_process';
@@ -28,7 +28,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // Get bucket name from command line argument or use default
-const bucketName = process.argv[2] || 'graphfolio-articles';
+const bucketName = process.argv[2] || 'tinboker-articles';
 const corsConfigPath = join(__dirname, 'cors.json');
 
 console.log('🚀 Setting up CORS configuration for GCS bucket...\n');

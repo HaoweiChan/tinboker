@@ -625,7 +625,7 @@ export const useAppStore = create<AppState>()(
         })),
     }),
     {
-      name: 'graphfolio-storage', // localStorage key
+      name: 'tinboker-storage', // localStorage key
       partialize: (state) => ({
         theme: state.theme,
         token: state.token,

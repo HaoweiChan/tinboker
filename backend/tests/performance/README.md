@@ -1,6 +1,6 @@
 # Performance Tests
 
-This directory contains performance and load testing scripts for the Graphfolio backend.
+This directory contains performance and load testing scripts for the TinBoker backend.
 
 ## Running Performance Tests
 

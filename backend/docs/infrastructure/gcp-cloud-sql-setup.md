@@ -1,6 +1,6 @@
 # GCP Cloud SQL PostgreSQL Setup Guide
 
-This guide walks you through setting up Google Cloud SQL PostgreSQL for the Graphfolio backend.
+This guide walks you through setting up Google Cloud SQL PostgreSQL for the TinBoker backend.
 
 ## Prerequisites
 
@@ -23,7 +23,7 @@ gcloud services enable sqladmin.googleapis.com
 
 ```bash
 # Create PostgreSQL instance
-gcloud sql instances create graphfolio-db \
+gcloud sql instances create tinboker-db \
   --database-version=POSTGRES_15 \
   --tier=db-f1-micro \
   --region=us-central1 \
@@ -46,12 +46,12 @@ gcloud sql instances create graphfolio-db \
 
 ```bash
 # Create the database
-gcloud sql databases create graphfolio \
-  --instance=graphfolio-db
+gcloud sql databases create podcast_db \
+  --instance=tinboker-db
 
 # Create a user for the application
-gcloud sql users create graphfolio_user \
-  --instance=graphfolio-db \
+gcloud sql users create podcast_user \
+  --instance=tinboker-db \
   --password=CHOOSE_USER_PASSWORD
 
 # Note: Save this password! You'll need it in .env
@@ -63,7 +63,7 @@ gcloud sql users create graphfolio_user \
 
 ```bash
 # Add your Netcup VPS IP to authorized networks
-gcloud sql instances patch graphfolio-db \
+gcloud sql instances patch tinboker-db \
   --authorized-networks=YOUR_NETCUP_VPS_IP
 
 # To get your Netcup VPS public IP:
@@ -78,21 +78,21 @@ curl -o cloud-sql-proxy https://storage.googleapis.com/cloud-sql-connectors/clou
 chmod +x cloud-sql-proxy
 
 # Get your instance connection name
-gcloud sql instances describe graphfolio-db --format='value(connectionName)'
-# Output example: your-project-id:us-central1:graphfolio-db
+gcloud sql instances describe tinboker-db --format='value(connectionName)'
+# Output example: your-project-id:us-central1:tinboker-db
 
 # Run proxy (in a separate terminal)
-./cloud-sql-proxy your-project-id:us-central1:graphfolio-db
+./cloud-sql-proxy your-project-id:us-central1:tinboker-db
 ```
 
 ## Step 5: Get Connection Details
 
 ```bash
 # Get instance IP address
-gcloud sql instances describe graphfolio-db --format='value(ipAddresses[0].ipAddress)'
+gcloud sql instances describe tinboker-db --format='value(ipAddresses[0].ipAddress)'
 
 # Get connection name (for Cloud SQL Proxy)
-gcloud sql instances describe graphfolio-db --format='value(connectionName)'
+gcloud sql instances describe tinboker-db --format='value(connectionName)'
 ```
 
 ## Step 6: Update Environment Variables
@@ -106,12 +106,12 @@ USE_POSTGRES=true
 # Cloud SQL connection details
 POSTGRES_HOST=<IP_ADDRESS_FROM_STEP_5>
 POSTGRES_PORT=5432
-POSTGRES_DB=graphfolio
-POSTGRES_USER=graphfolio_user
+POSTGRES_DB=podcast_db
+POSTGRES_USER=podcast_user
 POSTGRES_PASSWORD=<PASSWORD_FROM_STEP_3>
 
 # Or use connection URL directly
-# DATABASE_URL=postgresql://graphfolio_user:PASSWORD@IP_ADDRESS:5432/graphfolio
+# DATABASE_URL=postgresql://podcast_user:PASSWORD@IP_ADDRESS:5432/podcast_db
 ```
 
 ## Step 7: Test Connection
@@ -121,17 +121,17 @@ POSTGRES_PASSWORD=<PASSWORD_FROM_STEP_3>
 sudo apt-get install postgresql-client
 
 # Test connection
-psql -h <POSTGRES_HOST> -U graphfolio_user -d graphfolio
+psql -h <POSTGRES_HOST> -U podcast_user -d podcast_db
 
 # If successful, you should see:
-# graphfolio=>
+# podcast_db=>
 ```
 
 ## Step 8: Run Database Migrations
 
 ```bash
 # From your backend directory
-cd Graphfolio-Backend
+cd tinboker-platform/backend
 
 # Install dependencies
 pip install -r requirements.txt
@@ -148,7 +148,7 @@ When deploying with Docker on Netcup VPS, update your `.env` file:
 # Production environment
 ENVIRONMENT=production
 USE_POSTGRES=true
-DATABASE_URL=postgresql://graphfolio_user:PASSWORD@<CLOUD_SQL_IP>:5432/graphfolio
+DATABASE_URL=postgresql://podcast_user:PASSWORD@<CLOUD_SQL_IP>:5432/podcast_db
 ```
 
 ## Security Best Practices
@@ -161,13 +161,13 @@ DATABASE_URL=postgresql://graphfolio_user:PASSWORD@<CLOUD_SQL_IP>:5432/graphfoli
    ```bash
    # Download SSL certificates
    gcloud sql ssl-certs create client-cert client-key.pem \
-     --instance=graphfolio-db
+     --instance=tinboker-db
    
    gcloud sql ssl-certs describe client-cert \
-     --instance=graphfolio-db \
+     --instance=tinboker-db \
      --format='value(cert)' > client-cert.pem
    
-   gcloud sql instances describe graphfolio-db \
+   gcloud sql instances describe tinboker-db \
      --format='value(serverCaCert.cert)' > server-ca.pem
    ```
 
@@ -179,16 +179,16 @@ DATABASE_URL=postgresql://graphfolio_user:PASSWORD@<CLOUD_SQL_IP>:5432/graphfoli
 
 ```bash
 # View instance status
-gcloud sql instances describe graphfolio-db
+gcloud sql instances describe tinboker-db
 
 # View recent operations
-gcloud sql operations list --instance=graphfolio-db
+gcloud sql operations list --instance=tinboker-db
 
 # View database size
-psql -h <POSTGRES_HOST> -U graphfolio_user -d graphfolio -c "SELECT pg_size_pretty(pg_database_size('graphfolio'));"
+psql -h <POSTGRES_HOST> -U podcast_user -d podcast_db -c "SELECT pg_size_pretty(pg_database_size('podcast_db'));"
 
 # Create manual backup
-gcloud sql backups create --instance=graphfolio-db
+gcloud sql backups create --instance=tinboker-db
 ```
 
 ## Troubleshooting
@@ -199,17 +199,17 @@ gcloud sql backups create --instance=graphfolio-db
 
 ### Authentication Failed
 - Double-check username and password
-- Ensure user has permissions: `GRANT ALL PRIVILEGES ON DATABASE graphfolio TO graphfolio_user;`
+- Ensure user has permissions: `GRANT ALL PRIVILEGES ON DATABASE podcast_db TO podcast_user;`
 
 ### Database Not Found
-- Verify database was created: `gcloud sql databases list --instance=graphfolio-db`
+- Verify database was created: `gcloud sql databases list --instance=tinboker-db`
 
 ## Cost Optimization
 
 - **Auto-scaling storage**: Enabled by default, only pay for what you use
 - **Backup retention**: Default 7 days (adjust if needed)
 - **Instance class**: Start with db-f1-micro, upgrade if needed
-- **Delete unused instances**: `gcloud sql instances delete graphfolio-db`
+- **Delete unused instances**: `gcloud sql instances delete tinboker-db`
 
 ## Migration from SQLite to PostgreSQL
 

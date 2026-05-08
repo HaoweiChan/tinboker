@@ -571,8 +571,8 @@ Podcast:
 ## Notes
 
 1. **Base URL:** Frontend uses `VITE_API_BASE_URL` env variable or defaults to:
-   - Development: `https://graphfolio-backend-staging.onrender.com`
-   - Production: `https://graphfolio-backend.onrender.com`
+   - Development: `https://staging-api.tinboker.com`
+   - Production: `https://api.tinboker.com`
 
 2. **Error Handling:** Frontend uses `fetchWithFallback()` pattern - tries API first, falls back to mock data on error/timeout
 

@@ -1,4 +1,4 @@
-# Graphfolio Database Build Plan
+# TinBoker Database Build Plan
 
 > **Purpose**: Translate the current WebUI contract and mock data into a scalable database strategy that prevents the "hairball problem" by powering intent-driven subgraphs while keeping heavy fundamentals/query workloads fast.
 

@@ -37,12 +37,12 @@ openapi: 3.0.3
 ### 2. `info` - API Metadata
 ```yaml
 info:
-  title: Graphfolio API
+  title: TinBoker API
   description: |
-    API for Graphfolio - Stock relationship visualization platform.
+    API for TinBoker - Stock relationship visualization platform.
   version: 1.0.0
   contact:
-    name: Graphfolio Team
+    name: TinBoker Team
 ```
 - **title**: Name of your API
 - **description**: What your API does (supports multi-line with `|`)

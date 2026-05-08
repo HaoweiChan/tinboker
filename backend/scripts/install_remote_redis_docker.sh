@@ -3,7 +3,7 @@ set -u
 
 # --- Configuration ---
 REDIS_PORT=6380
-CONTAINER_NAME="graphfolio-redis"
+CONTAINER_NAME="tinboker-redis"
 IMAGE="redis:7-alpine"
 # Generate a random password or use existing one if you prefer (here we generate new for security)
 REDIS_PASSWORD=$(openssl rand -hex 16)

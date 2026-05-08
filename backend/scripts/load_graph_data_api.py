@@ -5,7 +5,7 @@ This script loads the three concept graphs (robotics, ai, energy) with their
 nodes and edges into the production database via API.
 
 Usage:
-    python scripts/load_graph_data_api.py [--url https://graphfolio-backend.onrender.com]
+    python scripts/load_graph_data_api.py [--url https://api.tinboker.com]
 """
 import sys
 import os
@@ -377,7 +377,7 @@ def load_graph_via_api(base_url: str, graph_data: Dict[str, Any]) -> tuple[bool,
         return False, f"Unexpected error: {str(e)}"
 
 
-def load_graphs(base_url: str = "https://graphfolio-backend.onrender.com", force: bool = False):
+def load_graphs(base_url: str = "https://api.tinboker.com", force: bool = False):
     """Load all graph data into the database via API"""
     print(f"Loading graph data to: {base_url}")
     print("=" * 50)
@@ -438,8 +438,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Load graph data to production API")
     parser.add_argument(
         "--url",
-        default="https://graphfolio-backend.onrender.com",
-        help="Base URL of the API (default: https://graphfolio-backend.onrender.com)"
+        default="https://api.tinboker.com",
+        help="Base URL of the API (default: https://api.tinboker.com)"
     )
     parser.add_argument(
         "--force",

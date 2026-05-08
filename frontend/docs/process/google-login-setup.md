@@ -1,6 +1,6 @@
 # Google Login Setup Guide
 
-This guide details how to configure and enable Google Authentication for the TrendBrief (Graphfolio) WebUI.
+This guide details how to configure and enable Google Authentication for the TrendBrief (TinBoker) WebUI.
 
 ## 1. Google Cloud Console Configuration
 

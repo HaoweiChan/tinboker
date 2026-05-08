@@ -1,6 +1,6 @@
 # News Content Generation Guidelines
 
-This document outlines the specifications for generating Markdown content for the News/Podcast pages in Graphfolio. The backend (or content generation service) should adhere to these guidelines to ensure correct rendering of interactive elements (stock buttons, tags) and optimal SEO performance.
+This document outlines the specifications for generating Markdown content for the News/Podcast pages in TinBoker. The backend (or content generation service) should adhere to these guidelines to ensure correct rendering of interactive elements (stock buttons, tags) and optimal SEO performance.
 
 ## Content Focus & Language
 

@@ -3,7 +3,7 @@
 Goal: expose your GCS-hosted supply-chain content (Markdown + SVG) through the FastAPI backend so the frontend can render it without touching local repo files.
 
 ## 1) Prerequisites
-- Bucket: `graphfolio-articles` (private; no `allUsers` bindings).
+- Bucket: `tinboker-articles` (private; no `allUsers` bindings).
 - Python deps: FastAPI stack plus `google-cloud-storage`.
 - Credentials: a service account with `roles/storage.objectViewer` on the bucket (or higher). Use Workload Identity on GCP if available; otherwise a JSON key via env.
 
@@ -16,7 +16,7 @@ Add it to your requirements file if needed.
 ## 3) Environment variables
 Add to `.env` (or your deployment env):
 ```
-CONTENT_BUCKET=graphfolio-articles
+CONTENT_BUCKET=tinboker-articles
 CONTENT_PREFIX=content       # optional; leave empty if objects live at bucket root
 CONTENT_URL_TTL=3600         # seconds for signed URLs (1h typical)
 

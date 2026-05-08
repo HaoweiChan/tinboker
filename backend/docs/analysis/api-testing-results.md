@@ -84,7 +84,7 @@ curl -X GET "http://localhost:3000/api/news"
 curl -X GET "http://localhost:3000/health"
 
 # Check Redis stats
-docker exec graphfolio-redis redis-cli info stats
+docker exec tinboker-redis redis-cli info stats
 ```
 
 ## Conclusion

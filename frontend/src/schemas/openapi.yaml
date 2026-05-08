@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
-  title: Graphfolio Backend API
-  description: Backend API for Graphfolio - Company network visualization
+  title: TinBoker Backend API
+  description: Backend API for TinBoker - Financial podcast insights platform
   version: 1.0.0
 servers:
 - url: https://api.tinboker.com

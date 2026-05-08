@@ -1,6 +1,6 @@
 # Redis Service Setup & Caching Strategy Guide
 
-This comprehensive guide covers Redis setup, caching strategies, and best practices for the Graphfolio Backend API.
+This comprehensive guide covers Redis setup, caching strategies, and best practices for the TinBoker Backend API.
 
 ---
 
@@ -62,7 +62,7 @@ redis-cli info server
 
 ### Basic Configuration (`redis.conf`)
 
-For **cache-only** usage (recommended for Graphfolio):
+For **cache-only** usage (recommended for TinBoker):
 
 ```conf
 # Network
@@ -275,7 +275,7 @@ redis_client = redis.Redis(connection_pool=redis_pool)
 
 ## 4. Cache Key Naming Convention
 
-Design a clear, hierarchical key structure for Graphfolio:
+Design a clear, hierarchical key structure for TinBoker:
 
 ### Stock Data Keys
 
@@ -346,7 +346,7 @@ TTL automatically expires and deletes keys after a specified time:
 - **Memory efficiency**: Prevents unbounded cache growth
 - **Fresh data**: Ensures cached data doesn't become stale
 
-### TTL Configuration for Graphfolio
+### TTL Configuration for TinBoker
 
 Define TTL values based on data freshness requirements:
 
@@ -635,7 +635,7 @@ async def invalidate_stock_cache(ticker: str):
 
 ---
 
-## 8. Implementation Examples for Graphfolio
+## 8. Implementation Examples for TinBoker
 
 ### Example 1: Stock Service with Caching
 
@@ -896,7 +896,7 @@ Your `render.yaml` already includes Redis:
 ```yaml
 services:
   - type: redis
-    name: graphfolio-redis
+    name: tinboker-redis
     plan: starter
 ```
 
@@ -951,7 +951,7 @@ The `REDIS_URL` environment variable is automatically provided.
 
 ## 13. Backup & Persistence Strategy
 
-### For Cache-Only (Recommended for Graphfolio)
+### For Cache-Only (Recommended for TinBoker)
 
 Since cache can be regenerated, persistence is optional:
 
@@ -1182,7 +1182,7 @@ async def test_cache_expiration():
 
 ## Summary
 
-This guide provides a complete Redis setup and caching strategy for Graphfolio Backend:
+This guide provides a complete Redis setup and caching strategy for TinBoker Backend:
 
 ✅ **Installation** - Local, Docker, and production options  
 ✅ **Configuration** - Optimized settings for caching  

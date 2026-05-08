@@ -73,7 +73,7 @@ All API responses are transformed using `src/services/api/transformers.ts`:
 
 ## Environment Variables
 
-- `VITE_API_BASE_URL` - Backend API base URL (defaults: localhost:3000 dev, graphfolio-backend.onrender.com prod)
+- `VITE_API_BASE_URL` - Backend API base URL (defaults: localhost:3000 dev, api.tinboker.com prod)
 - `VITE_USE_MOCKS` - Force mock mode (set to 'true' to disable API calls)
 
 ## Validation

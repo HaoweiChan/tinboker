@@ -3,13 +3,13 @@ set -e
 
 # Default Remote Host
 REMOTE_HOST="willy@100.114.150.46"
-CONTAINER_NAME="graphfolio-redis"
+CONTAINER_NAME="tinboker-redis"
 
 # Export Redis Timeouts (Increased for remote connections)
 export REDIS_CONNECT_TIMEOUT=30
 export REDIS_SOCKET_TIMEOUT=30
 
-echo "=== Graphfolio Dev: Remote Redis Mode ==="
+echo "=== TinBoker Dev: Remote Redis Mode ==="
 echo "    Configured Timeouts: Connect=${REDIS_CONNECT_TIMEOUT}s, Socket=${REDIS_SOCKET_TIMEOUT}s"
 
 # Ensure CORS_ORIGINS includes the current frontend port (5174/5173)

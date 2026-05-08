@@ -1,7 +1,7 @@
 # No Emoji Icons Rule
 
 ## Rule
-**NEVER use emoji icons in the Graphfolio WebUI codebase.** All icons must be SVG files or React components using SVG.
+**NEVER use emoji icons in the TinBoker WebUI codebase.** All icons must be SVG files or React components using SVG.
 
 ## Rationale
 - Emoji icons are inconsistent across platforms and browsers

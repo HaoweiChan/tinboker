@@ -1,4 +1,4 @@
 """
-Background workers for Graphfolio Backend
+Background workers for TinBoker Backend
 """
 

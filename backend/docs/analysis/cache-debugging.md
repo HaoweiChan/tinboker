@@ -94,7 +94,7 @@ Possible reasons:
 ## Verification Steps
 
 1. ✅ Redis is running: `docker ps | grep redis` → Container exists
-2. ✅ Redis is accessible: `docker exec graphfolio-redis redis-cli ping` → PONG
+2. ✅ Redis is accessible: `docker exec tinboker-redis redis-cli ping` → PONG
 3. ✅ Cache can be set: Direct Python test works
 4. ✅ Cache key exists: `visual:supply-chain` in Redis
 5. ❌ Server has Redis: Health endpoint shows no Redis info

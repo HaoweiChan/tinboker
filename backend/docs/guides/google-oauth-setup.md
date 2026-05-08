@@ -1,7 +1,7 @@
 # Google Login Setup Guide
 
 **Date:** 2025-12-22  
-**Project:** Graphfolio (Backend + Frontend)  
+**Project:** TinBoker (Backend + Frontend)  
 **Purpose:** Step-by-step setup instructions for Google OAuth authentication
 
 ---
@@ -24,7 +24,7 @@
 2. Click on the project dropdown at the top
 3. Either:
    - **Select existing project**: Choose your project
-   - **Create new project**: Click "New Project" → Enter name (e.g., "Graphfolio") → Click "Create"
+   - **Create new project**: Click "New Project" → Enter name (e.g., "TinBoker") → Click "Create"
 
 ### Step 2: Configure OAuth Consent Screen
 
@@ -34,7 +34,7 @@
    - **Internal** (only for Google Workspace organizations)
 3. Click **Create**
 4. Fill in **App information**:
-   - **App name**: `Graphfolio` (or your app name)
+   - **App name**: `TinBoker` (or your app name)
    - **User support email**: Your email address
    - **App logo**: (Optional) Upload your app logo
    - **App domain**: (Optional) Your domain
@@ -60,7 +60,7 @@
 2. Click **+ CREATE CREDENTIALS** > **OAuth client ID**
 3. If prompted, complete OAuth consent screen setup first (see Step 2)
 4. Select **Application type**: **Web application**
-5. Enter **Name**: `Graphfolio Web Client`
+5. Enter **Name**: `TinBoker Web Client`
 6. **Authorized JavaScript origins**:
    ```
    http://localhost:5173
@@ -105,7 +105,7 @@
 
 1. Go to [Firebase Console](https://console.firebase.google.com/)
 2. Click **Add project** (or select existing project)
-3. Enter **Project name**: `Graphfolio` (or match your Google Cloud project)
+3. Enter **Project name**: `TinBoker` (or match your Google Cloud project)
 4. Click **Continue**
 5. **Google Analytics** (Optional):
    - Enable or disable Google Analytics
@@ -121,7 +121,7 @@
 3. Click **Generate new private key**
 4. A warning dialog will appear:
    - Click **Generate key**
-   - A JSON file will be downloaded (e.g., `graphfolio-firebase-adminsdk-xxxxx.json`)
+   - A JSON file will be downloaded (e.g., `tinboker-firebase-adminsdk-xxxxx.json`)
 5. **IMPORTANT**: 
    - Save this file securely
    - **Never commit this file to git**
@@ -131,7 +131,7 @@
 
 1. In Firebase Console, go to **Project settings** (gear icon)
 2. Under **General** tab, find **Project ID**
-3. Copy the Project ID (e.g., `graphfolio-12345`)
+3. Copy the Project ID (e.g., `tinboker-12345`)
 4. You'll need this for backend configuration
 
 ---
@@ -140,7 +140,7 @@
 
 ### Step 1: Create/Update `.env` File
 
-Create or update `.env` file in `Graphfolio-Backend/` directory:
+Create or update `.env` file in `tinboker-platform/backend/` directory:
 
 ```env
 # ============================================
@@ -184,7 +184,7 @@ ENVIRONMENT=development
 CORS_ORIGINS=http://localhost:5173,http://localhost:5175,https://your-production-domain.com
 
 # Database (keep existing)
-DATABASE_PATH=data/graphfolio.db
+DATABASE_PATH=data/tinboker.db
 USE_POSTGRES=false
 
 # Redis (keep existing if you have it)
@@ -209,12 +209,12 @@ Copy the output and paste it as `JWT_SECRET_KEY` in your `.env` file.
    ```bash
    # Example: Save to credentials folder
    mkdir -p credentials
-   cp ~/Downloads/graphfolio-firebase-adminsdk-xxxxx.json credentials/firebase-service-account.json
+   cp ~/Downloads/tinboker-firebase-adminsdk-xxxxx.json credentials/firebase-service-account.json
    ```
 
 2. Update `.env` with absolute path:
    ```env
-   GCP_CREDENTIALS_PATH=/home/lewis/1project/Graphfolio-Backend/credentials/firebase-service-account.json
+   GCP_CREDENTIALS_PATH=/home/lewis/1project/tinboker-platform/backend/credentials/firebase-service-account.json
    ```
 
 **For Production (Render.com, etc.):**
@@ -238,7 +238,7 @@ Copy the output and paste it as `JWT_SECRET_KEY` in your `.env` file.
 Check that all required variables are set:
 
 ```bash
-# In Graphfolio-Backend directory
+# In tinboker-platform/backend directory
 python -c "
 import os
 from dotenv import load_dotenv
@@ -282,7 +282,7 @@ else:
 
 ### Step 1: Create/Update `.env.local` File
 
-Create or update `.env.local` file in `Graphfolio-WebUI/` directory:
+Create or update `.env.local` file in `tinboker-platform/frontend/` directory:
 
 ```env
 # ============================================
@@ -311,7 +311,7 @@ VITE_API_URL=http://localhost:3000/api
 Check that the environment variable is loaded:
 
 ```bash
-# In Graphfolio-WebUI directory
+# In tinboker-platform/frontend directory
 # Check if .env.local exists
 if [ -f .env.local ]; then
     echo "✅ .env.local file exists"
@@ -440,7 +440,7 @@ Use this checklist to verify your setup is complete:
 |----------|----------|-------------|---------|
 | `GOOGLE_CLIENT_ID` | ✅ Yes | OAuth Client ID from Google Cloud | `123456.apps.googleusercontent.com` |
 | `GOOGLE_CLIENT_SECRET` | ⚠️ Optional | OAuth Client Secret | `GOCSPX-xxxxx` |
-| `FIREBASE_PROJECT_ID` | ✅ Yes | Firebase project ID | `graphfolio-12345` |
+| `FIREBASE_PROJECT_ID` | ✅ Yes | Firebase project ID | `tinboker-12345` |
 | `GCP_CREDENTIALS_PATH` | ✅* | Path to service account JSON | `/path/to/key.json` |
 | `GCP_CREDENTIALS_JSON` | ✅* | Service account JSON as env var | `{"type":"service_account",...}` |
 | `JWT_SECRET_KEY` | ✅ Yes | Secret for JWT tokens | `random-32-char-string` |

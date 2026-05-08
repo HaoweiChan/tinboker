@@ -41,7 +41,7 @@ export type PlayerBroadcastListener = (message: PlayerBroadcastMessage) => void;
 class PlayerBroadcastService {
   private channel: BroadcastChannel | null = null;
   private listeners: Set<PlayerBroadcastListener> = new Set();
-  private readonly channelName = 'graphfolio-player';
+  private readonly channelName = 'tinboker-player';
 
   constructor() {
     if (typeof BroadcastChannel !== 'undefined') {

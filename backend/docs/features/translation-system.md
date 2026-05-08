@@ -50,7 +50,7 @@ Frontend (WebUI)                Backend (FastAPI)                  Database (Clo
 ### File Structure
 
 ```
-Graphfolio-Backend/
+tinboker-platform/backend/
 ├── src/
 │   ├── database/
 │   │   ├── postgres.py              [NEW] PostgreSQL connection & session
@@ -127,7 +127,7 @@ Simple password-based auth using JWT:
 ### File Structure
 
 ```
-Graphfolio-WebUI/
+tinboker-platform/frontend/
 ├── src/
 │   ├── pages/
 │   │   ├── AdminTranslationsPage.tsx    [NEW] Admin UI for translations
@@ -238,8 +238,8 @@ Add to `.env`:
 USE_POSTGRES=true
 POSTGRES_HOST=<CLOUD_SQL_IP>
 POSTGRES_PORT=5432
-POSTGRES_DB=graphfolio
-POSTGRES_USER=graphfolio_user
+POSTGRES_DB=podcast_db
+POSTGRES_USER=podcast_user
 POSTGRES_PASSWORD=<password>
 
 # Admin authentication
@@ -280,7 +280,7 @@ Follow `docs/GCP_CLOUD_SQL_SETUP.md`
 
 ```bash
 # On Netcup VPS
-cd /path/to/graphfolio
+cd /path/to/tinboker-platform
 nano .env  # Add PostgreSQL settings
 ```
 
@@ -308,7 +308,7 @@ python scripts/seed_translations.py
 docker-compose up -d --build
 
 # If using systemd
-systemctl restart graphfolio-backend
+systemctl restart tinboker-backend
 ```
 
 ### 6. Access Admin UI
@@ -365,10 +365,10 @@ curl https://api.tinboker.com/api/admin/translations/missing?market=US
 
 ```bash
 # Backup translations table
-pg_dump -h <CLOUD_SQL_IP> -U graphfolio_user -t stock_translations graphfolio > translations_backup.sql
+pg_dump -h <CLOUD_SQL_IP> -U podcast_user -t stock_translations podcast_db > translations_backup.sql
 
 # Restore
-psql -h <CLOUD_SQL_IP> -U graphfolio_user graphfolio < translations_backup.sql
+psql -h <CLOUD_SQL_IP> -U podcast_user podcast_db < translations_backup.sql
 ```
 
 ## Performance Considerations

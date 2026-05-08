@@ -1,6 +1,6 @@
 # WebSocket Implementation with Redis Pub/Sub
 
-This document provides a comprehensive guide for implementing WebSocket functionality using Redis Pub/Sub pattern in the Graphfolio Backend project.
+This document provides a comprehensive guide for implementing WebSocket functionality using Redis Pub/Sub pattern in the TinBoker Backend project.
 
 ## Table of Contents
 
@@ -734,7 +734,7 @@ services:
   
   # Stock price publisher worker
   - type: worker
-    name: graphfolio-stock-publisher
+    name: tinboker-stock-publisher
     env: python
     buildCommand: pip install -r requirements.txt
     startCommand: python -m src.workers.stock_price_publisher
@@ -744,7 +744,7 @@ services:
       - key: REDIS_URL
         fromService:
           type: redis
-          name: graphfolio-redis
+          name: tinboker-redis
           property: connectionString
       - key: MONITORED_TICKERS
         value: AAPL,GOOGL,MSFT,NVDA,TSLA

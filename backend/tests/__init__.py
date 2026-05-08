@@ -1,4 +1,4 @@
 """
-Tests package for Graphfolio Backend
+Tests package for TinBoker Backend
 """
 

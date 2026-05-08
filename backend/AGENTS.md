@@ -1,4 +1,4 @@
-# AGENTS.md - Graphfolio Backend
+# AGENTS.md - TinBoker Backend
 
 This file contains guidelines for AI coding agents working on this codebase.
 
@@ -313,7 +313,7 @@ All code changes must follow the Git workflow:
 
 ### Allowed Server Commands:
 - Health checks: `curl https://api.tinboker.com/health`
-- Log inspection: `ssh root@... "docker logs graphfolio-backend --tail=50"`
+- Log inspection: `ssh root@... "docker logs tinboker-backend-prod --tail=50"`
 - Status checks: `ssh root@... "docker ps"`
 - Environment setup: Initial `.env` configuration, service account key deployment
 - **Emergency debugging only**: Manual deployment acceptable during critical issues, but must be followed by proper Git commits
@@ -329,12 +329,12 @@ All code changes must follow the Git workflow:
 **On Pull Request:**
 - Runs tests (`pytest`) and linter (`ruff`)
 - Builds Docker image tagged as `pr-{number}`
-- Pushes to `ghcr.io/graphfolio/graphfolio-backend:pr-{number}`
+- Pushes to `ghcr.io/haoweichan/tinboker-backend:pr-{number}`
 - Comments on PR with test instructions
 
 **On Merge to `develop` or `main`:**
 1. Builds Docker image tagged with branch name
-2. Pushes to `ghcr.io/graphfolio/graphfolio-backend:{branch}`
+2. Pushes to `ghcr.io/haoweichan/tinboker-backend:{branch}`
 3. SSHs to VPS, pulls new image, restarts container
 4. Runs health check
 
@@ -352,13 +352,13 @@ All code changes must follow the Git workflow:
 
 1. **Create Backend PR first** (if backend changes needed)
    - Branch: `feat/your-feature` from `develop`
-   - CI builds image as `ghcr.io/graphfolio/graphfolio-backend:pr-{N}`
+   - CI builds image as `ghcr.io/haoweichan/tinboker-backend:pr-{N}`
    
 2. **Deploy PR image to staging for testing:**
    ```bash
    ssh root@152.53.136.182 "
      cd /app && 
-     docker pull ghcr.io/graphfolio/graphfolio-backend:pr-{N} && 
+     docker pull ghcr.io/haoweichan/tinboker-backend:pr-{N} && 
      IMAGE_TAG=pr-{N} docker compose -f docker-compose.staging.yml up -d backend
    "
    ```
@@ -368,7 +368,7 @@ All code changes must follow the Git workflow:
    - Preview URL uses staging backend (api.tinboker.com)
    
 4. **Test using Cloudflare preview URL**
-   - Access: `https://{branch}.graphfolio-webui.pages.dev`
+   - Access: `https://{branch}.tinboker-platform.pages.dev`
    - This connects to staging backend running your PR image
 
 5. **Merge Backend PR** to `develop`

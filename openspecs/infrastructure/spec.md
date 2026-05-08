@@ -100,7 +100,7 @@ Cloudflare SHALL provide DNS, SSL termination, and edge caching.
   - A record: `api` → VPS IP (proxied)
   - A record: `dev` → VPS IP (proxied)
   - A record: `dev-api` → VPS IP (proxied)
-  - CNAME: `@` (root) → `graphfolio-webui.pages.dev` (proxied)
+  - CNAME: `@` (root) → `tinboker-platform.pages.dev` (proxied)
 
 #### Scenario: SSL Mode
 - **GIVEN** Cloudflare SSL/TLS settings
@@ -118,7 +118,7 @@ The system SHALL support PR preview deployments via Cloudflare Pages.
 #### Scenario: PR Preview Deployment
 - **GIVEN** a pull request is opened on the WebUI repository
 - **WHEN** Cloudflare Pages detects the PR
-- **THEN** it SHALL build and deploy a preview at `pr-{N}.graphfolio-webui.pages.dev`
+- **THEN** it SHALL build and deploy a preview at `pr-{N}.tinboker-platform.pages.dev`
 
 #### Scenario: Production Frontend via Pages
 - **GIVEN** the main branch is updated
@@ -170,9 +170,9 @@ The VPS deployment SHALL support running production, staging, and development en
 **Given** the VPS has Docker and the app_default network configured  
 **When** the operator runs `docker compose -f docker-compose.multi.yml up -d`  
 **Then** three backend containers MUST start:
-  - `graphfolio-backend-prod` on port 8000
-  - `graphfolio-backend-dev` on port 8001
-  - `graphfolio-backend-staging` on port 8002
+  - `tinboker-backend-prod` on port 8000
+  - `tinboker-backend-dev` on port 8001
+  - `tinboker-backend-staging` on port 8002
 
 #### Scenario: Restarting Single Environment
 
@@ -212,6 +212,6 @@ Shared services (redis, netdata) SHALL be managed centrally and MUST NOT be dupl
 
 **Given** the multi-environment compose file is used  
 **When** containers are started  
-**Then** exactly one redis container SHALL run (`graphfolio-redis`)  
+**Then** exactly one redis container SHALL run (`tinboker-redis`)  
 **And** all three backend services MUST connect to the same redis instance
 

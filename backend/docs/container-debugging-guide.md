@@ -9,12 +9,12 @@ A quick reference for diagnosing container crashes on the VPS.
 docker ps -a
 
 # Check logs from crashed containers
-docker logs graphfolio-prod --tail 100
-docker logs graphfolio-staging --tail 100
-docker logs graphfolio-dev --tail 100
+docker logs tinboker-prod --tail 100
+docker logs tinboker-staging --tail 100
+docker logs tinboker-dev --tail 100
 
 # Check why container exited
-docker inspect graphfolio-prod --format='{{.State.ExitCode}} {{.State.Error}}'
+docker inspect tinboker-prod --format='{{.State.ExitCode}} {{.State.Error}}'
 ```
 
 ## 2. System Resources
@@ -46,7 +46,7 @@ docker events --since 1h --until now | grep -E "die|kill|oom"
 ## 4. Systemd Service Logs
 
 ```bash
-journalctl -u graphfolio-prod --since "1 hour ago"
+journalctl -u tinboker-prod --since "1 hour ago"
 journalctl -u docker --since "1 hour ago"
 ```
 

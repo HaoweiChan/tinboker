@@ -1,4 +1,4 @@
-# Graphfolio Backend
+# TinBoker Backend
 
 A FastAPI-based backend service for managing stock portfolios with graph-based visualization. Features include stock data management, graph relationships between companies, news/events tracking, and real-time WebSocket updates.
 
@@ -38,7 +38,7 @@ You can use either **pip** (standard) or **uv** (faster, recommended) to manage 
 
 ```bash
 git clone <repository-url>
-cd Graphfolio-Backend
+cd TinBoker-Backend
 ```
 
 2. **Create a virtual environment & Install Dependencies**
@@ -74,7 +74,7 @@ MASSIVE_API_KEY=your_massive_api_key_here
 FINMIND_API_KEY=your_finmind_api_key_here
 
 # Database (SQLite by default)
-DATABASE_PATH=data/graphfolio.db
+DATABASE_PATH=data/tinboker.db
 USE_POSTGRES=false
 
 # For production with PostgreSQL
@@ -121,7 +121,7 @@ docker compose up -d redis
 ./scripts/start-redis.sh
 
 # Verify Redis is running
-docker exec graphfolio-redis redis-cli ping
+docker exec tinboker-redis redis-cli ping
 # Should return: PONG
 ```
 
@@ -173,7 +173,7 @@ Note: When using uvicorn directly, the `--port` flag overrides the `.env` settin
 
 ```bash
 # Using docker exec
-docker exec graphfolio-redis redis-cli flushall
+docker exec tinboker-redis redis-cli flushall
 
 # Or if Redis is running locally
 redis-cli flushall
@@ -183,7 +183,7 @@ redis-cli flushall
 
 ```bash
 # Connect to Redis CLI
-docker exec -it graphfolio-redis redis-cli
+docker exec -it tinboker-redis redis-cli
 
 # Delete specific key
 DEL podcast:Gooaye 股癌:episode:Gooaye_988e8c33a6e3934f
@@ -263,17 +263,17 @@ docker compose up -d redis
 ```bash
 docker compose down redis
 # or
-docker stop graphfolio-redis
+docker stop tinboker-redis
 ```
 
 **View Redis logs:**
 ```bash
-docker logs graphfolio-redis
+docker logs tinboker-redis
 ```
 
 **Connect to Redis CLI:**
 ```bash
-docker exec -it graphfolio-redis redis-cli
+docker exec -it tinboker-redis redis-cli
 ```
 
 **Test Redis connection:**
@@ -1013,7 +1013,7 @@ curl -X GET "http://localhost:3000/"
 
 ```json
 {
-  "message": "Graphfolio Backend API",
+  "message": "TinBoker Backend API",
   "version": "1.0.0",
   "environment": "development",
   "docs": "/docs"
@@ -1113,7 +1113,7 @@ The project includes:
 ## Project Structure
 
 ```
-Graphfolio-Backend/
+TinBoker-Backend/
 ├── src/
 │   ├── database/          # Database layer
 │   │   ├── db.py          # Database initialization

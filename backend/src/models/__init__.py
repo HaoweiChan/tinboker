@@ -1,5 +1,5 @@
 """
-Pydantic models for Graphfolio Backend
+Pydantic models for TinBoker Backend
 """
 from .stock import ChartDataPoint, StockStats, CompanyDetail, TopMover
 from .graph import (

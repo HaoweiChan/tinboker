@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document outlines the requirements for implementing dynamic, real-time stock price updates with timeframe selection (1D, 1W, 1M, 1Y, etc.) in the Graphfolio WebUI Stock Dashboard, similar to platforms like Yahoo Finance and Google Finance.
+This document outlines the requirements for implementing dynamic, real-time stock price updates with timeframe selection (1D, 1W, 1M, 1Y, etc.) in the TinBoker WebUI Stock Dashboard, similar to platforms like Yahoo Finance and Google Finance.
 
 ## Table of Contents
 
