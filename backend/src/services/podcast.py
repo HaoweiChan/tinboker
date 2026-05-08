@@ -52,21 +52,24 @@ class PodcastService:
                 name = ep.get('podcast_name')
                 if not name:
                     continue
-                entry = podcast_dict.setdefault(name, {'episodes': [], 'created_at': None, 'updated_at': None})
+                entry = podcast_dict.setdefault(name, {'episodes': [], 'created_at': None, 'updated_at': None, 'image_url': None})
                 ts = self.transformer.datetime_to_timestamp_ms(ep.get('created_time', datetime.now()))
                 if entry['created_at'] is None or ts < entry['created_at']:
                     entry['created_at'] = ts
                 if entry['updated_at'] is None or ts > entry['updated_at']:
                     entry['updated_at'] = ts
                     entry['latest_episode'] = ep
+                imgs = ep.get('spotify_images', [])
+                if imgs and isinstance(imgs, list) and len(imgs) > 0 and entry['image_url'] is None:
+                    entry['image_url'] = imgs[0]
                 entry['episodes'].append(ep)
 
             podcasts = []
             for name, data in podcast_dict.items():
-                image_url = None
-                images = data.get('latest_episode', {}).get('spotify_images', [])
-                if images and isinstance(images, list) and len(images) > 0:
-                    image_url = images[0]
+                image_url = data.get('image_url')
+                latest_imgs = data.get('latest_episode', {}).get('spotify_images', [])
+                if latest_imgs and isinstance(latest_imgs, list) and len(latest_imgs) > 0:
+                    image_url = latest_imgs[0]
                 podcasts.append(Podcast(
                     id=name, name=name, episode_count=len(data['episodes']),
                     created_at=data['created_at'], updated_at=data['updated_at'],
@@ -109,19 +112,24 @@ class PodcastService:
 
             created_at = updated_at = None
             latest_image_url = None
+            fallback_image_url = None
             for ep in episodes:
                 ts = self.transformer.datetime_to_timestamp_ms(ep.get('created_time', datetime.now()))
                 if created_at is None or ts < created_at:
                     created_at = ts
                 if updated_at is None or ts > updated_at:
                     updated_at = ts
-                    images = ep.get('spotify_images', [])
-                    if images and isinstance(images, list) and len(images) > 0:
+                images = ep.get('spotify_images', [])
+                if images and isinstance(images, list) and len(images) > 0:
+                    if ts == updated_at:
                         latest_image_url = images[0]
+                    elif fallback_image_url is None:
+                        fallback_image_url = images[0]
 
             podcast = Podcast(
                 id=podcast_name, name=podcast_name, episode_count=len(episodes),
-                created_at=created_at, updated_at=updated_at, image_url=latest_image_url,
+                created_at=created_at, updated_at=updated_at,
+                image_url=latest_image_url or fallback_image_url,
             )
             try:
                 await cache_set(cache_key, json.dumps(podcast.dict(), default=str), CACHE_TTL["podcast_item"])

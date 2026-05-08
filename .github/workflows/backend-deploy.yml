@@ -157,11 +157,13 @@ jobs:
           VPS_USER=$(gcloud secrets versions access latest --secret=VPS_USER --project=${{ env.GCP_PROJECT_ID }})
           VPS_SSH_KEY=$(gcloud secrets versions access latest --secret=VPS_SSH_KEY --project=${{ env.GCP_PROJECT_ID }})
           GHCR_TOKEN=$(gcloud secrets versions access latest --secret=GHCR_TOKEN --project=${{ env.GCP_PROJECT_ID }})
+          GCP_CREDS_JSON=$(gcloud secrets versions access latest --secret=GCP_CREDENTIALS_JSON --project=${{ env.GCP_PROJECT_ID }})
           
           echo "::add-mask::$VPS_HOST"
           echo "::add-mask::$VPS_USER"
           echo "::add-mask::$VPS_SSH_KEY"
           echo "::add-mask::$GHCR_TOKEN"
+          echo "::add-mask::$GCP_CREDS_JSON"
           
           echo "VPS_HOST=$VPS_HOST" >> $GITHUB_ENV
           echo "VPS_USER=$VPS_USER" >> $GITHUB_ENV
@@ -170,6 +172,10 @@ jobs:
           echo "VPS_SSH_KEY<<EOFKEY" >> $GITHUB_ENV
           echo "$VPS_SSH_KEY" >> $GITHUB_ENV
           echo "EOFKEY" >> $GITHUB_ENV
+          
+          echo "GCP_CREDS_JSON<<EOFGCP" >> $GITHUB_ENV
+          echo "$GCP_CREDS_JSON" >> $GITHUB_ENV
+          echo "EOFGCP" >> $GITHUB_ENV
 
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v1.0.3
@@ -177,7 +183,7 @@ jobs:
           host: ${{ env.VPS_HOST }}
           username: ${{ env.VPS_USER }}
           key: ${{ env.VPS_SSH_KEY }}
-          envs: GHCR_TOKEN
+          envs: GHCR_TOKEN,GCP_CREDS_JSON
           script: |
             cd /app
             git fetch origin
@@ -185,6 +191,11 @@ jobs:
             git clean -fd
 
             cd /app/backend
+
+            # Restore GCP service account key (wiped by git clean)
+            rm -rf gcp-service-account.json
+            echo "$GCP_CREDS_JSON" > gcp-service-account.json
+            chmod 600 gcp-service-account.json
 
             echo "$GHCR_TOKEN" | docker login ghcr.io -u haoweichan --password-stdin
 
