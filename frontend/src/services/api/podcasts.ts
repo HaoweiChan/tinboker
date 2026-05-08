@@ -1,0 +1,303 @@
+import { apiClient } from './client';
+import type { TickerRecommendation, TickerBuzz } from '../types';
+
+
+export interface Podcast {
+  id: string;
+  name: string;
+  episode_count: number;
+  created_at?: number | null;
+  updated_at?: number | null;
+  image_url?: string | null;
+}
+
+export interface Episode {
+  id: string;
+  podcast_name: string;
+  episode_title?: string | null;
+  episode_number?: number | null;
+  transcript: string;
+  summary_content: string;
+  summary_image: string;
+  related_tickers: string[];
+  tags?: string[];
+  created_time: number;
+  number_click?: number;
+  num_likes?: number;
+  raw_mp3?: string | null;
+  spotify_url?: string | null;
+  spotify_id?: string | null;
+  spotify_embed_url?: string | null;
+  spotify_release_date?: string | number | null;
+  spotify_images?: string[] | null;
+  spotify_description?: string | null;
+  events_markdown_content?: string | null;
+  sentences_markdown_content?: string | null;
+  events_markdown_url?: string | null;
+  sentences_markdown_url?: string | null;
+  events_markdown_public_url?: string | null;
+  sentences_markdown_public_url?: string | null;
+  marp_markdown_content?: string | null;
+  ticker_marp_markdown_content?: string | null;
+  ticker_recommendations_content?: string | null;
+  ticker_recommendations_public_url?: string | null;
+  key_insights?: string[] | null;
+  modified_summary_url?: string | null;
+  modified_summary_content?: string | null;
+  modified_by?: string | null;
+  modified_at?: number | null;
+}
+
+export interface Tag {
+  id: string;
+  name: string;
+  episode_count: number;
+}
+
+export interface TagsResponse {
+  tags: Tag[];
+}
+
+export interface EpisodesByTagResponse {
+  tag: string;
+  episodes: Episode[];
+  total: number;
+}
+
+export interface MarketIndex {
+  id: string;
+  name: string;
+  ticker: string;
+  value: string;
+  change: string;
+  isPositive: boolean;
+}
+
+export interface TopMover {
+  ticker: string;
+  name: string;
+  price: number;
+  change: number;
+  changePercent: number;
+  icon_url?: string;
+  sparkline?: number[];
+}
+
+export async function getSortedPodcasts(options?: {
+  sortBy?: string;
+  order?: 'asc' | 'desc';
+  limit?: number;
+  offset?: number;
+}): Promise<Podcast[]> {
+  const params: Record<string, any> = {};
+  if (options?.sortBy) params.sort_by = options.sortBy;
+  if (options?.order) params.order = options.order;
+  if (options?.limit) params.limit = options.limit;
+  if (options?.offset) params.offset = options.offset;
+  const response = await apiClient.get('/api/podcast', { params });
+  return Array.isArray(response.data) ? response.data : [];
+}
+
+export async function getPodcastByName(podcastName: string): Promise<Podcast> {
+  const response = await apiClient.get(`/api/podcast/${encodeURIComponent(podcastName)}`);
+  return response.data;
+}
+
+export async function getPodcastEpisodes(
+  podcastName: string,
+  options?: {
+    sortBy?: string;
+    order?: 'asc' | 'desc';
+    limit?: number;
+    offset?: number;
+    includeContent?: boolean;
+  }
+): Promise<Episode[]> {
+  const params: Record<string, any> = {};
+  if (options?.sortBy) params.sort_by = options.sortBy;
+  if (options?.order) params.order = options.order;
+  if (options?.limit) params.limit = options.limit;
+  if (options?.offset) params.offset = options.offset;
+  if (options?.includeContent !== undefined) params.include_content = options.includeContent;
+  const response = await apiClient.get(
+    `/api/podcast/${encodeURIComponent(podcastName)}/episodes`,
+    { params }
+  );
+  return Array.isArray(response.data) ? response.data : [];
+}
+
+export async function getEpisodeById(podcastName: string, episodeId: string): Promise<Episode> {
+  const response = await apiClient.get(
+    `/api/podcast/${encodeURIComponent(podcastName)}/episodes/${episodeId}`
+  );
+  return response.data;
+}
+
+export async function regenerateEpisodeSummary(
+  podcastName: string,
+  episodeId: string
+): Promise<{ status: string; message: string }> {
+  const response = await apiClient.post(
+    `/api/podcast/${encodeURIComponent(podcastName)}/episodes/${episodeId}/regenerate`
+  );
+  return response.data;
+}
+
+export async function getEpisodesByTicker(
+  ticker: string,
+  options?: { limit?: number; offset?: number; sortBy?: string; order?: 'asc' | 'desc'; includeContent?: boolean }
+): Promise<Episode[]> {
+  const params: Record<string, any> = {};
+  if (options?.limit) params.limit = options.limit;
+  if (options?.offset) params.offset = options.offset;
+  if (options?.sortBy) params.sort_by = options.sortBy;
+  if (options?.order) params.order = options.order;
+  if (options?.includeContent !== undefined) params.include_content = options.includeContent;
+  const normalizedTicker = ticker.toLowerCase();
+  const response = await apiClient.get(`/api/episodes/by-ticker/${normalizedTicker}`, { params });
+  if (Array.isArray(response.data)) return response.data;
+  if (response.data && typeof response.data === 'object' && Array.isArray(response.data.episodes)) {
+    return response.data.episodes;
+  }
+  return [];
+}
+
+export async function getRecommendationsByTicker(
+  ticker: string,
+  params?: { start_date?: string; end_date?: string }
+): Promise<TickerRecommendation[]> {
+  const q: Record<string, string> = {};
+  if (params?.start_date) q.start_date = params.start_date;
+  if (params?.end_date) q.end_date = params.end_date;
+  const response = await apiClient.get(`/api/recommendations/by-ticker/${encodeURIComponent(ticker)}`, {
+    params: Object.keys(q).length ? q : undefined,
+  });
+  return Array.isArray(response.data) ? response.data : [];
+}
+
+export async function getRecommendationsByPodcaster(
+  podcasterName: string,
+  params?: { start_date?: string; end_date?: string; podcast_slug?: string }
+): Promise<TickerRecommendation[]> {
+  const q: Record<string, string> = {};
+  if (params?.start_date) q.start_date = params.start_date;
+  if (params?.end_date) q.end_date = params.end_date;
+  if (params?.podcast_slug) q.podcast_slug = params.podcast_slug;
+  const response = await apiClient.get(
+    `/api/recommendations/by-podcaster/${encodeURIComponent(podcasterName)}`,
+    { params: Object.keys(q).length ? q : undefined }
+  );
+  return Array.isArray(response.data) ? response.data : [];
+}
+
+export async function getMostDiscussedTickers(
+  params?: { days?: number; limit?: number }
+): Promise<TickerBuzz[]> {
+  const q: Record<string, number> = {};
+  if (params?.days != null) q.days = params.days;
+  if (params?.limit != null) q.limit = params.limit;
+  const response = await apiClient.get('/api/recommendations/buzz', {
+    params: Object.keys(q).length ? q : undefined,
+  });
+  return Array.isArray(response.data) ? response.data : [];
+}
+
+export async function getTags(): Promise<TagsResponse> {
+  const response = await apiClient.get('/api/tags');
+  if (response.data?.tags && Array.isArray(response.data.tags)) {
+    return response.data as TagsResponse;
+  }
+  if (Array.isArray(response.data)) {
+    return { tags: response.data };
+  }
+  return { tags: [] };
+}
+
+export async function getEpisodesByTag(
+  tag: string,
+  limit: number = 50,
+  offset: number = 0,
+  includeContent?: boolean
+): Promise<any> {
+  const params: Record<string, any> = { limit, offset };
+  if (includeContent !== undefined) params.include_content = includeContent;
+  const response = await apiClient.get(`/api/episodes/by-tag/${encodeURIComponent(tag)}`, { params });
+  return response.data;
+}
+
+export async function getRecentEpisodes(options?: {
+  limit?: number;
+  offset?: number;
+  podcastName?: string;
+  sortBy?: string;
+  order?: 'asc' | 'desc';
+  includeContent?: boolean;
+}): Promise<Episode[]> {
+  const params: Record<string, any> = {};
+  if (options?.limit) params.limit = options.limit;
+  if (options?.offset) params.offset = options.offset;
+  if (options?.podcastName) params.podcast_name = options.podcastName;
+  if (options?.sortBy) params.sort_by = options.sortBy;
+  if (options?.order) params.order = options.order;
+  if (options?.includeContent !== undefined) params.include_content = options.includeContent;
+  const response = await apiClient.get('/api/episodes/recent', { params });
+  if (Array.isArray(response.data)) return response.data;
+  if (response.data && typeof response.data === 'object' && Array.isArray(response.data.episodes)) {
+    return response.data.episodes;
+  }
+  if (response.data && typeof response.data === 'object' && Array.isArray(response.data.data)) {
+    return response.data.data;
+  }
+  if (response.data && typeof response.data === 'object') {
+    console.warn('[API] getRecentEpisodes - Unexpected response format:', response.data);
+  }
+  return [];
+}
+
+/** @deprecated Use getRecentEpisodes() instead. */
+export async function getAllRecentEpisodes(limit: number = 20): Promise<Episode[]> {
+  try {
+    const podcasts = await getSortedPodcasts({ limit: 50 });
+    const episodePromises = podcasts.map(podcast =>
+      getPodcastEpisodes(podcast.name, {
+        sortBy: 'spotify_release_date', order: 'desc', limit: 10,
+      }).catch(() => [] as Episode[])
+    );
+    const allEpisodeArrays = await Promise.all(episodePromises);
+    return allEpisodeArrays
+      .flat()
+      .sort((a, b) => {
+        const dateA = a.spotify_release_date || a.created_time;
+        const dateB = b.spotify_release_date || b.created_time;
+        const timeA = typeof dateA === 'string' ? new Date(dateA).getTime() : dateA;
+        const timeB = typeof dateB === 'string' ? new Date(dateB).getTime() : dateB;
+        return timeB - timeA;
+      })
+      .slice(0, limit);
+  } catch (error) {
+    console.error('[API] Failed to fetch recent episodes:', error);
+    return [];
+  }
+}
+
+export async function updateEpisodeSummary(
+  podcastName: string,
+  episodeId: string,
+  content: string,
+  modifiedBy?: string
+): Promise<Episode> {
+  const response = await apiClient.put(
+    `/api/podcast/${podcastName}/episodes/${episodeId}/summary`,
+    { content, modified_by: modifiedBy }
+  );
+  return response.data;
+}
+
+export async function deleteEpisodeSummary(
+  podcastName: string,
+  episodeId: string
+): Promise<void> {
+  await apiClient.delete(
+    `/api/podcast/${podcastName}/episodes/${episodeId}/summary`
+  );
+}
