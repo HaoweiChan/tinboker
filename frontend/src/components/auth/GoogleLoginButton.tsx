@@ -15,7 +15,6 @@ export const GoogleLoginButton: React.FC<GoogleLoginButtonProps> = ({ className,
 
   // Dev mode: Bypass Google OAuth with dummy user
   const devLogin = () => {
-    console.log('[DEV] Using dummy login for local development');
     const dummyUser = {
       id: 'dev-user-123',
       name: 'Dev User',
@@ -35,7 +34,6 @@ export const GoogleLoginButton: React.FC<GoogleLoginButtonProps> = ({ className,
     });
 
     toast.success('開發模式登入成功');
-    console.log('[DEV] Dummy login successful:', dummyUser);
   };
 
   const googleLogin = useGoogleLogin({
@@ -73,7 +71,6 @@ export const GoogleLoginButton: React.FC<GoogleLoginButtonProps> = ({ className,
         });
 
         toast.success(`歡迎回來，${backendUser.name}！`);
-        console.log('Login successful');
       } catch (error) {
         console.error('Login failed:', error);
         toast.error('登入失敗，請稍後再試');

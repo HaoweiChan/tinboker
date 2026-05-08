@@ -104,8 +104,6 @@ export const SpotifyEmbed = forwardRef<SpotifyEmbedRef, SpotifyEmbedProps>(({ ur
           // Always use play-then-seek strategy for reliability
           // The Spotify API is unreliable when seeking on an already-playing embed
           // Calling play() first ensures the player is in a known state
-          console.log(`[SpotifyEmbed] seekTo(${seconds}) - using play-then-seek strategy`);
-
           // Start playback first (this is idempotent if already playing)
           if (typeof controller.play === 'function') {
             controller.play();
@@ -118,7 +116,6 @@ export const SpotifyEmbed = forwardRef<SpotifyEmbedRef, SpotifyEmbedProps>(({ ur
             if (embedControllerRef.current && typeof embedControllerRef.current.seek === 'function') {
               try {
                 embedControllerRef.current.seek(seconds);
-                console.log(`[SpotifyEmbed] Seeked to ${seconds}s`);
               } catch (seekError) {
                 console.warn('[SpotifyEmbed] First seek attempt failed, retrying:', seekError);
                 // Retry after a longer delay
@@ -126,7 +123,6 @@ export const SpotifyEmbed = forwardRef<SpotifyEmbedRef, SpotifyEmbedProps>(({ ur
                   if (embedControllerRef.current && typeof embedControllerRef.current.seek === 'function') {
                     try {
                       embedControllerRef.current.seek(seconds);
-                      console.log(`[SpotifyEmbed] Retry seek to ${seconds}s succeeded`);
                     } catch (retryError) {
                       console.error('[SpotifyEmbed] Retry seek failed:', retryError);
                     }
@@ -145,7 +141,6 @@ export const SpotifyEmbed = forwardRef<SpotifyEmbedRef, SpotifyEmbedProps>(({ ur
           if (embedControllerRef.current && typeof embedControllerRef.current.seek === 'function') {
             try {
               embedControllerRef.current.seek(seconds);
-              console.log(`[SpotifyEmbed] Deferred seek to ${seconds}s succeeded`);
             } catch (retryError) {
               console.error('[SpotifyEmbed] Deferred seek failed:', retryError);
             }
@@ -189,7 +184,6 @@ export const SpotifyEmbed = forwardRef<SpotifyEmbedRef, SpotifyEmbedProps>(({ ur
 
     const callback = (EmbedController: any) => {
       embedControllerRef.current = EmbedController;
-      console.log('Spotify embed initialized:', uri);
 
       // Auto-play when embed is ready (if supported by Spotify API and user has interacted)
       if (EmbedController && typeof EmbedController.play === 'function') {
@@ -198,7 +192,6 @@ export const SpotifyEmbed = forwardRef<SpotifyEmbedRef, SpotifyEmbedProps>(({ ur
           setTimeout(() => {
             if (embedControllerRef.current && typeof embedControllerRef.current.play === 'function') {
               embedControllerRef.current.play();
-              console.log('Spotify auto-play triggered');
             }
           }, 100);
         } catch (error) {

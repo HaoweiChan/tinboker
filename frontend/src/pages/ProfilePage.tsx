@@ -181,8 +181,6 @@ export const ProfilePage: React.FC = () => {
         ? (userInfo.watchlist || [])
         : (apiWatchlist.length > 0 || token ? apiWatchlist : watchlist);
       
-      console.log('[ProfilePage] Fetching watchlist stocks, watchlistToUse:', watchlistToUse);
-      
       if (watchlistToUse.length === 0) {
         setSavedStocks([]);
         setStocksLoading(false);
@@ -198,8 +196,6 @@ export const ProfilePage: React.FC = () => {
           'getSortedStocks'
         );
         
-        console.log('[ProfilePage] Fetched stocks:', allStocks.length, 'stocks');
-        
         // Normalize watchlist symbols (remove .TW, .US, etc. suffixes for matching)
         const normalizedWatchlist = watchlistToUse.map(symbol => symbol.toUpperCase().split('.')[0]);
         
@@ -213,14 +209,8 @@ export const ProfilePage: React.FC = () => {
             ticker === wlSymbol || tickerBase === wlSymbol || ticker.startsWith(wlSymbol + '.')
           );
           
-          if (matches) {
-            console.log('[ProfilePage] Matched stock:', ticker, 'with watchlist symbol');
-          }
-          
           return matches;
         });
-        
-        console.log('[ProfilePage] Filtered watchlist stocks:', watchlistStocks.length);
         
         // Find which watchlist symbols weren't found in the bulk list
         const foundSymbols = new Set(
@@ -229,8 +219,6 @@ export const ProfilePage: React.FC = () => {
           )
         );
         const missingSymbols = normalizedWatchlist.filter(symbol => !foundSymbols.has(symbol));
-        
-        console.log('[ProfilePage] Missing symbols from bulk list:', missingSymbols);
         
         // Fetch missing stocks individually
         const missingStocks = await Promise.all(
@@ -254,8 +242,6 @@ export const ProfilePage: React.FC = () => {
           ...watchlistStocks,
           ...missingStocks.filter((stock): stock is any => stock !== null)
         ];
-        
-        console.log('[ProfilePage] Total stocks found:', allFoundStocks.length);
         
         // Transform to expected format
         const transformed = allFoundStocks.map((stock: any) => ({

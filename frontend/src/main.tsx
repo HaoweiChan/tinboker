@@ -14,16 +14,6 @@ initializeTheme()
 // If missing, use a placeholder to prevent app crash, though login will fail
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || 'mock_client_id_to_prevent_crash'
 
-// Debug: Log environment variable status (only in production for debugging)
-if (import.meta.env.PROD) {
-  console.log('[DEBUG] Environment check:', {
-    hasClientId: !!GOOGLE_CLIENT_ID,
-    clientIdLength: GOOGLE_CLIENT_ID.length,
-    clientIdPreview: GOOGLE_CLIENT_ID ? `${GOOGLE_CLIENT_ID.substring(0, 20)}...` : 'EMPTY',
-    allEnvVars: Object.keys(import.meta.env).filter(key => key.startsWith('VITE_'))
-  });
-}
-
 // Warn if Google Client ID is missing
 if (!GOOGLE_CLIENT_ID) {
   const errorMsg = import.meta.env.PROD

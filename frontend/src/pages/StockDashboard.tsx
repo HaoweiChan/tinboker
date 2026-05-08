@@ -44,18 +44,12 @@ const StockHeaderCard: React.FC<{ symbol: string }> = ({ symbol }) => {
     try {
       // Ensure ticker is uppercase for stock API (episodes API uses lowercase)
       const stockTicker = ticker.toUpperCase();
-      console.log('[StockHeaderCard] Fetching stock data for:', stockTicker, 'Timeframe:', tf);
       const data = await fetchWithFallback(
         () => getStockByTicker(stockTicker, tf),
         mockCompanyDetails[ticker] || null,
         `GET /api/stocks/${stockTicker}?timeframe=${tf}`
       );
 
-      if (data && data.chartData) {
-        console.log('[StockHeaderCard] Received chart data length:', data.chartData.length);
-      } else {
-        console.warn('[StockHeaderCard] No chart data received');
-      }
       setStockData(data);
     } catch (error) {
       console.error('[StockHeaderCard] Failed to fetch stock data:', error);
@@ -78,13 +72,9 @@ const StockHeaderCard: React.FC<{ symbol: string }> = ({ symbol }) => {
     setIsLoadingMore(true);
     try {
       const stockTicker = symbol.toUpperCase();
-      console.log('[StockHeaderCard] Loading more data before:', new Date(beforeTimestamp).toISOString());
-
       const moreData = await getStockByTicker(stockTicker, timeframe, { before: beforeTimestamp });
 
       if (moreData?.chartData && moreData.chartData.length > 0) {
-        console.log('[StockHeaderCard] Loaded', moreData.chartData.length, 'more data points');
-
         // Merge with existing data
         setStockData(prev => {
           if (!prev) return moreData;
@@ -133,15 +123,11 @@ const StockHeaderCard: React.FC<{ symbol: string }> = ({ symbol }) => {
             return (a.timestamp as number) - (b.timestamp as number);
           });
 
-          console.log('[StockHeaderCard] Merged data length:', mergedData.length);
-
           return {
             ...prev,
             chartData: mergedData,
           };
         });
-      } else {
-        console.log('[StockHeaderCard] No more historical data available');
       }
     } catch (error) {
       console.error('[StockHeaderCard] Failed to load more data:', error);

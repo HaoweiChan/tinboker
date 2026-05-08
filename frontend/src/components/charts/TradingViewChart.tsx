@@ -542,7 +542,6 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
                 else if (op.date) oldestTimestamp = new Date(op.date).getTime();
 
 
-                console.log('[TradingViewChart] Loading more data before:', new Date(oldestTimestamp).toISOString());
                 isLoadingRef.current = true;
                 onLoadMore(oldestTimestamp);
 

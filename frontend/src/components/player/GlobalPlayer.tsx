@@ -37,15 +37,13 @@ export const GlobalPlayer: React.FC = () => {
     React.useEffect(() => {
         if (player.seekRequest !== null && spotifyEmbedRef.current) {
             const seekTarget = player.seekRequest;
-            console.log('[GlobalPlayer] Processing seek request:', seekTarget);
-            
+
             // Clear the request first to prevent duplicate processing
             clearSeekRequest();
             
             // Then execute the seek (with a tiny delay to ensure state is settled)
             setTimeout(() => {
                 if (spotifyEmbedRef.current) {
-                    console.log('[GlobalPlayer] Executing seek to:', seekTarget);
                     spotifyEmbedRef.current.seekTo(seekTarget);
                 }
             }, 50);

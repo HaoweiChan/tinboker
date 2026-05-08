@@ -130,7 +130,6 @@ export const StockNode: React.FC<StockNodeProps> = (props) => {
     isLongPressRef.current = false;
     longPressTimerRef.current = window.setTimeout(() => {
       isLongPressRef.current = true;
-      console.log('StockNode long press detected:', data.ticker);
       setSelectedCompany(null);
       if (!overlayOpen) {
         setSelectedStocksForOverlay([data.ticker]);

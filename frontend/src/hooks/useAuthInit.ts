@@ -59,7 +59,6 @@ export function useAuthInit() {
           alerts: user.alerts || [],
         });
 
-        console.log('[useAuthInit] Token validated, user synced:', user.email);
       } catch (error) {
         // Token is invalid or expired - clear auth state
         console.warn('[useAuthInit] Token validation failed, logging out:', error);
