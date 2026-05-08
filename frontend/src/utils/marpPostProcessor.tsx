@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { StockHoverCard } from '@/components/stock/StockHoverCard';
 import { useNavigate } from 'react-router-dom';
-import { useAppStore } from '@/store/useAppStore';
+import { usePlayerStore } from '@/store/usePlayerStore';
 import { Play } from 'lucide-react';
 
 interface PostProcessedSlideProps {
@@ -32,7 +32,7 @@ export const PostProcessedSlide: React.FC<PostProcessedSlideProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const rootsRef = useRef<Map<Element, Root>>(new Map());
   const navigate = useNavigate();
-  const { playEpisode, requestSeek } = useAppStore();
+  const { playEpisode, requestSeek } = usePlayerStore();
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -122,7 +122,7 @@ export const PostProcessedSlide: React.FC<PostProcessedSlideProps> = ({
           <button
             onClick={() => {
               if (episodeId) {
-                const isCurrentEpisode = useAppStore.getState().player.currentEpisodeId === episodeId;
+                const isCurrentEpisode = usePlayerStore.getState().player.currentEpisodeId === episodeId;
                 
                 if (isCurrentEpisode) {
                   requestSeek(seconds);

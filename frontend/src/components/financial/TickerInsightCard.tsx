@@ -3,7 +3,7 @@ import { ChevronDown, ChevronUp, Play, TrendingUp, TrendingDown, Minus, Calendar
 import { Button, Card, CardContent, CardHeader, Badge } from '@/components/ui';
 import type { TickerRecommendation } from '@/services/types';
 import { cn } from '@/lib/utils';
-import { useAppStore } from '@/store/useAppStore';
+import { usePlayerStore } from '@/store/usePlayerStore';
 import type { Episode as MockEpisode } from '@/data/mockData';
 
 interface TickerInsightCardProps {
@@ -14,7 +14,7 @@ interface TickerInsightCardProps {
 
 export const TickerInsightCard: React.FC<TickerInsightCardProps> = ({ recommendation, episodes = [] }) => {
     const [expanded, setExpanded] = useState(false);
-    const playEpisode = useAppStore((s) => s.playEpisode);
+    const playEpisode = usePlayerStore((s) => s.playEpisode);
 
     // Format sentiment
     const getSentimentConfig = (score: number | string, label: string) => {

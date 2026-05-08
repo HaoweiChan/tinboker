@@ -1,11 +1,11 @@
 import React from 'react';
-import { useAppStore } from '@/store/useAppStore';
+import { usePlayerStore } from '@/store/usePlayerStore';
 import { SpotifyEmbed } from '@/components/podcast/SpotifyEmbed';
 import { X, ChevronDown, ChevronUp, Play, Pause, Clock, RotateCcw, RotateCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export const GlobalPlayer: React.FC = () => {
-    const { player, closePlayer, clearSeekRequest } = useAppStore();
+    const { player, closePlayer, clearSeekRequest } = usePlayerStore();
     const [isExpanded, setIsExpanded] = React.useState(false);
     const spotifyEmbedRef = React.useRef<any>(null);
     const [, setIsEmbedReady] = React.useState(false);

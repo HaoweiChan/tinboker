@@ -5,7 +5,7 @@ import { Card, Button, Badge } from '@/components/ui';
 import { recommendationService } from '@/services/recommendationService';
 import type { TickerRecommendation } from '@/services/types';
 import { cn } from '@/lib/utils';
-import { useAppStore } from '@/store/useAppStore';
+import { usePlayerStore } from '@/store/usePlayerStore';
 import type { Episode as MockEpisode } from '@/data/mockData';
 
 interface PodcasterPicksListProps {
@@ -20,7 +20,7 @@ export const PodcasterPicksList: React.FC<PodcasterPicksListProps> = ({ podcaste
     const [picks, setPicks] = useState<TickerRecommendation[]>([]);
     const [expandedItems, setExpandedItems] = useState<Set<number>>(new Set());
     const navigate = useNavigate();
-    const playEpisode = useAppStore((s) => s.playEpisode);
+    const playEpisode = usePlayerStore((s) => s.playEpisode);
 
     useEffect(() => {
         let cancelled = false;

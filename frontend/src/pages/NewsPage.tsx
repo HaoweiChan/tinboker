@@ -4,6 +4,7 @@ import { ArrowLeft, Clock, Share2, Bookmark, TrendingUp, Activity, Play, Externa
 import { Header } from '@/components/layout/Header';
 import { Footer } from '@/components/layout/Footer';
 import { useAppStore } from '@/store/useAppStore';
+import { usePlayerStore } from '@/store/usePlayerStore';
 import { userApi } from '@/services/api/user';
 import { INTERACTIVE_MODELS } from '@/data/interactiveModels';
 import type { InteractiveEntity } from '@/data/interactiveModels';
@@ -14,7 +15,6 @@ import { fetchWithFallback, getStockByTicker, getEpisodeById, getRecentEpisodes,
 import { getTranslation } from '@/services/api/translations';
 import { regenerateEpisodeSummary } from '@/services/api';
 import type { Episode as ApiEpisode } from '@/services/api';
-import { MOCK_EPISODES } from '@/data/mockData';
 import ForceGraph from '@/components/graph/visuals/ForceGraph';
 import ReactMarkdown from 'react-markdown';
 import { StockHoverCard } from '@/components/stock/StockHoverCard';
@@ -250,7 +250,8 @@ interface ContentAssetState {
 */
 
 export const NewsPage: React.FC = () => {
-  const { theme, token, toggleEpisodeBookmark, playEpisode } = useAppStore();
+  const { theme, token, toggleEpisodeBookmark } = useAppStore();
+  const { playEpisode } = usePlayerStore();
   const isDark = theme === 'dark';
   const { id } = useParams();
   const [searchParams] = useSearchParams();
@@ -558,7 +559,7 @@ export const NewsPage: React.FC = () => {
   // Determine Article Source: Interactive Models OR Mock Episodes
   // Interactive Models are deprecated/disabled for now
   const staticArticle = null; // INTERACTIVE_MODELS[id || ''] || null;
-  const mockEpisode = !staticArticle ? MOCK_EPISODES.find(e => e.id === id) : null;
+  const mockEpisode = null;
 
   // Enrich tickers with real stock data
   useEffect(() => {

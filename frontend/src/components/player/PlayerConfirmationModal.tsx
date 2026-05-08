@@ -1,10 +1,10 @@
 import React from 'react';
-import { useAppStore } from '@/store/useAppStore';
+import { usePlayerStore } from '@/store/usePlayerStore';
 import { Modal } from '@/components/ui/Modal';
 import { AlertCircle } from 'lucide-react';
 
 export const PlayerConfirmationModal: React.FC = () => {
-    const { player, confirmPlay, cancelPlay } = useAppStore();
+    const { player, confirmPlay, cancelPlay } = usePlayerStore();
 
     if (!player.showPlayerConfirmation || !player.pendingEpisode || !player.currentEpisodeData) {
         return null;

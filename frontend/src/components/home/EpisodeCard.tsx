@@ -7,6 +7,7 @@ import { StockHoverCard } from '@/components/stock/StockHoverCard';
 import { cn } from '@/lib/utils';
 import ReactMarkdown from 'react-markdown';
 import { useAppStore } from '@/store/useAppStore';
+import { usePlayerStore } from '@/store/usePlayerStore';
 import { userApi } from '@/services/api/user';
 import { extractSections } from '@/utils/markdownParser';
 import { parseTimestampedSections } from '@/utils/parseTimestampedSections';
@@ -35,7 +36,8 @@ const EpisodeCard: React.FC<EpisodeCardProps> = ({
   variant = 'full'
 }) => {
   const navigate = useNavigate();
-  const { token, toggleEpisodeBookmark, playEpisode, player } = useAppStore();
+  const { token, toggleEpisodeBookmark } = useAppStore();
+  const { playEpisode, player } = usePlayerStore();
   const [isBookmarked, setIsBookmarked] = useState(isBookmarkedProp ?? false);
   const [bookmarkLoading, setBookmarkLoading] = useState(false);
 
