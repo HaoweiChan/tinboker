@@ -6,7 +6,6 @@ import { Footer } from '@/components/layout/Footer';
 import { Card, CardContent, Button } from '@/components/ui';
 import EpisodeCard from '@/components/home/EpisodeCard';
 import { useAppStore } from '@/store/useAppStore';
-import { MOCK_STOCKS } from '@/data/mockData';
 import { SEO } from '@/components/common/SEO';
 import type { Episode as MockEpisode } from '@/data/mockData';
 import { getStockByTicker, getEpisodesByTicker } from '@/services/api';
@@ -437,9 +436,7 @@ export const StockDashboard: React.FC = () => {
     }
   }, [symbol]);
 
-  // Find name from mock if available for SEO
-  const mockStock = MOCK_STOCKS.find(s => s.symbol.includes(symbol.split('.')[0]));
-  const name = mockStock?.name || symbol;
+  const name = stockData?.name || symbol;
 
   const structuredData = {
     '@context': 'https://schema.org',

@@ -12,7 +12,6 @@ import { SEO } from '@/components/common/SEO';
 import type { Episode as MockEpisode } from '@/data/mockData';
 import { getRecentEpisodes } from '@/services/api';
 import { fetchWithFallback } from '@/services/api/migration';
-import { MOCK_EPISODES } from '@/data/mockData'; // Keep for fallback only
 import { userApi } from '@/services/api/user';
 import { transformApiEpisodeToMock } from '@/services/api/transformers';
 
@@ -49,15 +48,12 @@ export const Landing: React.FC = () => {
 
 
 
-        // Check if we got valid episodes
         if (!apiEpisodes || !Array.isArray(apiEpisodes) || apiEpisodes.length === 0) {
-          console.warn('[Landing] No episodes received from API, using mock data');
-          setEpisodes(MOCK_EPISODES);
+          setEpisodes([]);
           setLoading(false);
           return;
         }
 
-        // Transform API episodes to mock format, filtering out those without summary content
         const transformedEpisodes = apiEpisodes
           .map(transformApiEpisodeToMock)
           .filter((ep): ep is MockEpisode => ep !== null);
@@ -65,8 +61,7 @@ export const Landing: React.FC = () => {
         setEpisodes(transformedEpisodes);
       } catch (error) {
         console.error('[Landing] Failed to fetch episodes:', error);
-        // Fallback to mock data
-        setEpisodes(MOCK_EPISODES);
+        setEpisodes([]);
       } finally {
         setLoading(false);
       }

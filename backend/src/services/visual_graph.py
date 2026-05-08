@@ -1,19 +1,105 @@
-"""
-Visual graph service for visualization endpoints
-Enriches mock graph structures with real financial data from StockService
-"""
-from typing import Dict, Optional, Any
-from datetime import datetime
+"""Visual graph service: enriches graph structures with real financial data from StockService"""
 import json
-from src.services.mock_data import (
-    get_supply_chain_structure,
-    get_ownership_structure,
-    get_cluster_structure,
-    get_interactive_models_structure,
-)
+import random
+from typing import Dict, List, Optional, Any
+from datetime import datetime
 from src.services.stock import StockService
 from src.cache.redis_client import cache_get, cache_set
 from src.cache.cache_config import CACHE_TTL
+
+
+# ── Static graph structures ─────────────────────────────────────
+
+_SUPPLY_CHAIN_ENTITIES = [
+    {"id": "qs", "label": "QuantumScape", "ticker": "QS", "status": "Active", "layerLabel": "Tier 2: Battery"},
+    {"id": "rivn", "label": "Rivian", "ticker": "RIVN", "status": "Active", "layerLabel": "Tier 2: Battery"},
+    {"id": "enph", "label": "Enphase Energy", "ticker": "ENPH", "status": "Active", "layerLabel": "Tier 2: Battery"},
+    {"id": "tesla", "label": "Tesla", "ticker": "TSLA", "status": "Active", "layerLabel": "OEM"},
+    {"id": "ford", "label": "Ford", "ticker": "F", "status": "Stable", "layerLabel": "OEM"},
+    {"id": "gm", "label": "GM", "ticker": "GM", "status": "Stable", "layerLabel": "OEM"},
+]
+_SUPPLY_CHAIN_EDGES = [
+    {"id": "e1", "source": "qs", "target": "tesla", "animated": True},
+    {"id": "e2", "source": "rivn", "target": "tesla", "animated": True},
+    {"id": "e3", "source": "enph", "target": "gm", "animated": True},
+    {"id": "e4", "source": "enph", "target": "ford", "animated": True},
+]
+
+_OWNERSHIP_ENTITIES = [
+    {"id": "root", "label": "General Electric", "ticker": "GE", "isRoot": True, "ownership": None},
+    {"id": "sub1", "label": "GE Vernova", "ticker": "GEV", "isRoot": False, "ownership": "Spin-off"},
+    {"id": "sub2", "label": "GE HealthCare", "ticker": "GEHC", "isRoot": False, "ownership": "75%"},
+    {"id": "child1", "label": "Varian", "ticker": None, "isRoot": False, "ownership": "100%"},
+]
+_OWNERSHIP_EDGES = [
+    {"id": "e1", "source": "root", "target": "sub1", "label": "Spin-off"},
+    {"id": "e2", "source": "root", "target": "sub2", "label": "75%"},
+    {"id": "e3", "source": "sub2", "target": "child1", "label": "100%"},
+]
+
+_CLUSTER_ENTITIES = [
+    {"id": "center", "label": "Tesla", "ticker": "TSLA", "group": "market_leader"},
+    {"id": "c1", "label": "General Motors", "ticker": "GM", "group": "competitor"},
+    {"id": "c2", "label": "Rivian", "ticker": "RIVN", "group": "competitor"},
+    {"id": "c3", "label": "Lucid", "ticker": "LCID", "group": "competitor"},
+    {"id": "s1", "label": "Enphase Energy", "ticker": "ENPH", "group": "partner"},
+]
+_CLUSTER_EDGES = [
+    {"id": "e1", "source": "center", "target": "c1", "type": "default", "data": {"category": "automation"}},
+    {"id": "e2", "source": "center", "target": "c2", "type": "default", "data": {"category": "automation"}},
+    {"id": "e3", "source": "center", "target": "c3", "type": "default", "data": {"category": "automation"}},
+    {"id": "e4", "source": "center", "target": "s1", "type": "default", "data": {"category": "automation"}},
+]
+
+_INTERACTIVE_MODELS = [
+    {
+        "id": "supply-chain", "title": "EV Supply Chain Shakeup", "source": "Bloomberg",
+        "date": "September 24, 2025 \u2022 2 hours ago", "category": "Supply Chain",
+        "summary": "Major shifts in electric vehicle supply chain relationships",
+        "graphTypeLabel": "Supply Chain Graph", "graphType": "layered",
+        "tickers": ["TSLA", "F", "GM"], "indices": [],
+    },
+    {
+        "id": "ownership", "title": "Corporate Ownership Restructuring", "source": "Reuters",
+        "date": "September 23, 2025 \u2022 5 hours ago", "category": "Ownership",
+        "summary": "Recent corporate spin-offs and ownership changes",
+        "graphTypeLabel": "Ownership Tree", "graphType": "tree",
+        "tickers": ["GE", "GEV", "GEHC"], "indices": [],
+    },
+    {
+        "id": "competition", "title": "EV Market Competition Analysis", "source": "Financial Times",
+        "date": "September 22, 2025 \u2022 1 day ago", "category": "Market Analysis",
+        "summary": "Competitive landscape in electric vehicle market",
+        "graphTypeLabel": "Cluster Graph", "graphType": "force",
+        "tickers": ["TSLA", "RIVN", "LCID"], "indices": [],
+    },
+]
+
+
+def _build_nodes(entities: List[dict]) -> List[dict]:
+    """Convert entity dicts into graph node dicts with default positions"""
+    nodes = []
+    for i, entity in enumerate(entities):
+        data = {k: v for k, v in entity.items() if k != "id" and v is not None}
+        nodes.append({"id": entity["id"], "type": "company", "data": data, "position": {"x": 0, "y": 0}})
+    return nodes
+
+
+def _get_supply_chain_structure() -> dict:
+    return {"nodes": _build_nodes(_SUPPLY_CHAIN_ENTITIES), "edges": _SUPPLY_CHAIN_EDGES}
+
+
+def _get_ownership_structure() -> dict:
+    return {"nodes": _build_nodes(_OWNERSHIP_ENTITIES), "edges": _OWNERSHIP_EDGES}
+
+
+def _get_cluster_structure() -> dict:
+    nodes = []
+    for i, entity in enumerate(_CLUSTER_ENTITIES):
+        pos = {"x": 250, "y": 250} if i == 0 else {"x": random.random() * 500, "y": random.random() * 500}
+        data = {k: v for k, v in entity.items() if k != "id"}
+        nodes.append({"id": entity["id"], "type": "company", "data": data, "position": pos})
+    return {"nodes": nodes, "edges": _CLUSTER_EDGES}
 
 
 class VisualGraphService:
@@ -134,7 +220,7 @@ class VisualGraphService:
                 pass  # If deserialization fails, generate fresh data
         
         # Cache miss - generate visualization
-        graph_structure = get_supply_chain_structure()
+        graph_structure = _get_supply_chain_structure()
         
         # Enrich nodes with real financial data (use async cached stock service)
         enriched_nodes = []
@@ -189,7 +275,7 @@ class VisualGraphService:
                 pass  # If deserialization fails, generate fresh data
         
         # Cache miss - generate visualization
-        graph_structure = get_ownership_structure()
+        graph_structure = _get_ownership_structure()
         
         # Enrich nodes with real financial data
         enriched_nodes = []
@@ -244,7 +330,7 @@ class VisualGraphService:
                 pass  # If deserialization fails, generate fresh data
         
         # Cache miss - generate visualization
-        graph_structure = get_cluster_structure()
+        graph_structure = _get_cluster_structure()
         
         # Enrich nodes with real financial data
         enriched_nodes = []
@@ -299,7 +385,7 @@ class VisualGraphService:
                 pass  # If deserialization fails, generate fresh data
         
         # Cache miss - generate data
-        models = get_interactive_models_structure()
+        models = list(_INTERACTIVE_MODELS)
         
         # Enrich each model with real ticker data (use async cached stock service)
         enriched_models = []

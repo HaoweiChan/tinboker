@@ -1,39 +1,24 @@
-"""
-Data collection service with fallback to mock data.
-
-This module orchestrates data collection from Massive API with graceful
-fallback to mock data when API is unavailable or permission denied.
-"""
-
+"""Data collection service for stock data from Massive and FinMind APIs."""
 import logging
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta
 from src.services.massive_service import MassiveAPIService, MassiveAPIError
 from src.services.finmind_service import FinMindAPIService, FinMindAPIError
-from src.services.company_service import MockCompanyDataService
 from src.models.schemas import Stock, StockMetadata, StockPriceRecord, StockPriceHistory, CompanyStats
 
 logger = logging.getLogger(__name__)
 
 
 class DataCollectionService:
-    """Service for collecting stock data with fallback to mock data."""
-    
+    """Service for collecting stock data from external APIs."""
+
     def __init__(
-        self, 
+        self,
         massive_service: Optional[MassiveAPIService] = None,
         finmind_service: Optional[FinMindAPIService] = None
     ):
-        """
-        Initialize data collection service.
-        
-        Args:
-            massive_service: Massive API service instance. If None, creates new instance.
-            finmind_service: FinMind API service instance. If None, creates new instance.
-        """
         self.massive_service = massive_service or MassiveAPIService()
         self.finmind_service = finmind_service or FinMindAPIService()
-        self.mock_service = MockCompanyDataService()
     
     def _is_taiwan_stock(self, ticker: str) -> bool:
         """
@@ -91,18 +76,8 @@ class DataCollectionService:
             except Exception as e:
                 logger.error(f"Unexpected error collecting data for {ticker}: {e}")
         
-        # Fallback to mock data
         if use_mock_fallback:
-            logger.info(f"Falling back to mock data for {ticker}")
-            try:
-                stock = self.mock_service.get_company_detail(ticker)
-                if stock:
-                    logger.info(f"Successfully retrieved mock data for {ticker}")
-                    return stock
-            except Exception as e:
-                logger.error(f"Error retrieving mock data for {ticker}: {e}")
-        
-        logger.error(f"Failed to collect data for {ticker} from both API and mock data")
+            logger.warning(f"No data available for {ticker} from any API source")
         return None
     
     def _collect_from_finmind(self, ticker: str, timeframe: Optional[str] = None, before: Optional[int] = None) -> Optional[Stock]:

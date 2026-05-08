@@ -15,7 +15,7 @@ from src.routers.visual_graph import router as visual_graph_router
 from src.routers.websocket_prices import router as websocket_prices_router
 from src.routers.podcast import router as podcast_router
 from src.routers.episodes import router as episodes_router
-from src.routers.mock_data import router as mock_data_router
+from src.routers.tags import router as tags_router
 from src.routers.auth import router as auth_router
 from src.routers.user import router as user_router
 from src.routers.search import router as search_router
@@ -125,7 +125,7 @@ app.include_router(news_router)
 app.include_router(visual_graph_router)
 app.include_router(podcast_router)
 app.include_router(episodes_router)
-app.include_router(mock_data_router)
+app.include_router(tags_router)
 app.include_router(auth_router)
 app.include_router(user_router)
 app.include_router(search_router)

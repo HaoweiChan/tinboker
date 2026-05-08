@@ -1,10 +1,9 @@
-from abc import ABC, abstractmethod
-from typing import List, Dict, Optional
 import os
 import requests
 import pandas as pd
+from abc import ABC, abstractmethod
+from typing import List, Dict, Optional
 from datetime import datetime, timedelta
-from src.services.mock_data import get_mock_company_list, get_mock_company_detail, get_mock_top_movers
 from src.models.schemas import StockMetadataCollection, Stock, StockMetadata, StockPriceHistory, StockPriceRecord
 
 
@@ -25,31 +24,6 @@ class CompanyDataService(ABC):
     def get_top_movers(self) -> List[Dict]:
         """Retrieve top moving stocks"""
         pass
-
-
-class MockCompanyDataService(CompanyDataService):
-    """Mock implementation of CompanyDataService using hardcoded data"""
-    
-    def get_company_list(self) -> StockMetadataCollection:
-        """Retrieve mock company list as StockMetadataCollection"""
-        return get_mock_company_list()
-    
-    def get_company_detail(self, stock_id: str) -> Optional[Stock]:
-        """Retrieve mock company detail as Stock object"""
-        collection = self.get_company_list()
-        stock_ids = collection.get_all_stock_ids()
-        
-        # Also check for companies that might be in graphs but not in list
-        all_stock_ids = stock_ids + ["IBM", "RIG"]
-        
-        if stock_id.upper() not in [sid.upper() for sid in all_stock_ids]:
-            return None
-        
-        return get_mock_company_detail(stock_id.upper())
-    
-    def get_top_movers(self) -> List[Dict]:
-        """Retrieve mock top movers"""
-        return get_mock_top_movers()
 
 
 class FinMindCompanyDataService(CompanyDataService):
