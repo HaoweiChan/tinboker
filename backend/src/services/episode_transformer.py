@@ -1,0 +1,140 @@
+"""Episode data transformation: Firestore dicts -> Episode models with GCS enrichment"""
+import re
+import asyncio
+import logging
+from typing import Optional
+from datetime import datetime
+from src.models.podcast import Episode
+from src.services.gcs_content import GCSContentService
+
+
+logger = logging.getLogger(__name__)
+
+# Content fields that can be fetched from GCS
+_GCS_CONTENT_FIELDS = [
+    ('summary_content', 'summary_url', 'gcs'),
+    ('transcript', 'transcript_url', 'gcs'),
+    ('summary_image', 'summary_image_url', 'gcs'),
+    ('events_markdown_content', 'events_markdown_url', 'gcs'),
+    ('sentences_markdown_content', 'sentences_markdown_url', 'gcs'),
+    ('marp_markdown_content', 'marp_markdown_url', 'gcs'),
+    ('modified_summary_content', 'modified_summary_url', 'gcs'),
+    ('ticker_marp_markdown_content', 'ticker_marp_markdown_url', 'any'),
+    ('ticker_recommendations_content', 'ticker_recommendations_public_url', 'any'),
+]
+
+
+class EpisodeTransformer:
+    """Converts raw Firestore dicts to Episode models, optionally enriching with GCS content"""
+
+    def __init__(self, gcs_service: Optional[GCSContentService] = None):
+        self.gcs = gcs_service or GCSContentService()
+
+    async def enrich_with_content(self, episode_dict: dict) -> dict:
+        """Fetch missing content fields from GCS/HTTP URLs in parallel"""
+        fetch_tasks = []
+        for content_field, url_field, fetch_type in _GCS_CONTENT_FIELDS:
+            if not episode_dict.get(content_field) and episode_dict.get(url_field):
+                url = episode_dict[url_field]
+                fetcher = self.gcs.fetch_gcs_content if fetch_type == 'gcs' else self.gcs.fetch_url_content
+                fetch_tasks.append((content_field, fetcher(url)))
+
+        if fetch_tasks:
+            try:
+                results = await asyncio.wait_for(
+                    asyncio.gather(*[t for _, t in fetch_tasks], return_exceptions=True),
+                    timeout=30.0,
+                )
+                for (field_name, _), result in zip(fetch_tasks, results):
+                    if not isinstance(result, Exception):
+                        episode_dict[field_name] = result
+            except (asyncio.TimeoutError, Exception):
+                pass
+        return episode_dict
+
+    @staticmethod
+    def datetime_to_timestamp_ms(dt) -> int:
+        """Convert datetime (or ISO string) to Unix timestamp in milliseconds"""
+        if isinstance(dt, str):
+            dt = datetime.fromisoformat(dt.replace('Z', '+00:00'))
+        if isinstance(dt, datetime):
+            return int(dt.timestamp() * 1000)
+        return int(datetime.now().timestamp() * 1000)
+
+    @staticmethod
+    def extract_tags_from_text(text: str) -> set:
+        """Extract tag IDs from markdown links like [Name](#tag:ID)"""
+        if not text:
+            return set()
+        try:
+            return set(re.findall(r"\[.*?\]\(#tag:(.*?)\)", text))
+        except Exception:
+            return set()
+
+    async def to_episode(self, episode_dict: dict, enrich_content: bool = True) -> Episode:
+        """Convert a Firestore episode dict to an Episode model"""
+        if enrich_content:
+            episode_dict = await self.enrich_with_content(episode_dict)
+
+        # Merge extracted + existing tags
+        extracted = set()
+        for field in ('summary_content', 'events_markdown_content', 'sentences_markdown_content'):
+            extracted.update(self.extract_tags_from_text(episode_dict.get(field, '')))
+        existing = set(episode_dict.get('tags', []) or [])
+        all_tags = [t for t in existing.union(extracted) if t]
+
+        created_time = episode_dict.get('created_time')
+        if isinstance(created_time, str):
+            created_time = datetime.fromisoformat(created_time.replace('Z', '+00:00'))
+        elif not isinstance(created_time, datetime):
+            created_time = datetime.now()
+
+        return Episode(
+            id=episode_dict.get('id') or episode_dict.get('episode_id', ''),
+            podcast_name=episode_dict.get('podcast_name', ''),
+            episode_title=episode_dict.get('episode_title'),
+            episode_number=episode_dict.get('episode_number'),
+            transcript=episode_dict.get('transcript', ''),
+            summary_content=episode_dict.get('summary_content', ''),
+            summary_image=episode_dict.get('summary_image', ''),
+            related_tickers=episode_dict.get('related_tickers', []),
+            tags=all_tags,
+            created_time=self.datetime_to_timestamp_ms(created_time),
+            number_click=episode_dict.get('number_click', 0),
+            num_likes=episode_dict.get('num_likes', 0),
+            key_insights=episode_dict.get('key_insights', []) or [],
+            raw_mp3=episode_dict.get('raw_mp3'),
+            mp3_url=episode_dict.get('mp3_url'),
+            transcript_url=episode_dict.get('transcript_url'),
+            summary_url=episode_dict.get('summary_url'),
+            summary_image_url=episode_dict.get('summary_image_url'),
+            events_markdown_url=episode_dict.get('events_markdown_url'),
+            sentences_markdown_url=episode_dict.get('sentences_markdown_url'),
+            marp_markdown_url=episode_dict.get('marp_markdown_url'),
+            mp3_public_url=episode_dict.get('mp3_public_url'),
+            transcript_public_url=episode_dict.get('transcript_public_url'),
+            summary_public_url=episode_dict.get('summary_public_url'),
+            summary_image_public_url=episode_dict.get('summary_image_public_url'),
+            events_markdown_public_url=episode_dict.get('events_markdown_public_url'),
+            sentences_markdown_public_url=episode_dict.get('sentences_markdown_public_url'),
+            marp_markdown_public_url=episode_dict.get('marp_markdown_public_url'),
+            events_markdown_content=episode_dict.get('events_markdown_content'),
+            sentences_markdown_content=episode_dict.get('sentences_markdown_content'),
+            marp_markdown_content=episode_dict.get('marp_markdown_content'),
+            spotify_embed_url=episode_dict.get('spotify_embed_url'),
+            spotify_id=episode_dict.get('spotify_id'),
+            spotify_url=episode_dict.get('spotify_url'),
+            spotify_release_date=episode_dict.get('spotify_release_date'),
+            spotify_description=episode_dict.get('spotify_description'),
+            spotify_duration_ms=episode_dict.get('spotify_duration_ms'),
+            spotify_images=episode_dict.get('spotify_images', []),
+            modified_summary_url=episode_dict.get('modified_summary_url'),
+            modified_summary_content=episode_dict.get('modified_summary_content'),
+            modified_by=episode_dict.get('modified_by'),
+            modified_at=episode_dict.get('modified_at'),
+            ticker_marp_markdown_url=episode_dict.get('ticker_marp_markdown_url'),
+            ticker_marp_markdown_public_url=episode_dict.get('ticker_marp_markdown_public_url'),
+            ticker_marp_markdown_content=episode_dict.get('ticker_marp_markdown_content'),
+            ticker_recommendations_public_url=episode_dict.get('ticker_recommendations_public_url'),
+            ticker_recommendations_content=episode_dict.get('ticker_recommendations_content'),
+        )
