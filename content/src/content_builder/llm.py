@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from functools import lru_cache
 from pathlib import Path
@@ -45,3 +46,15 @@ def get_model(role: str) -> ChatGoogleGenerativeAI:
         temperature=temperature,
         google_api_key=os.getenv("GOOGLE_API_KEY"),
     )
+
+
+def invoke_json(role: str, messages: list[dict], schema: dict | None = None) -> dict:
+    """Invoke the LLM and parse the response as JSON.
+
+    Uses Gemini's native JSON mode (response_mime_type) for reliable
+    structured output.
+    """
+    model = get_model(role)
+    response = model.invoke(messages, response_mime_type="application/json")
+    result = json.loads(response.content)
+    return result

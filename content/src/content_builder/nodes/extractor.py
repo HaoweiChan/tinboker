@@ -3,28 +3,8 @@
 import json
 from typing import Any
 
-from content_builder.llm import get_model, load_prompt
+from content_builder.llm import invoke_json, load_prompt
 from content_builder.state import PipelineState
-
-
-_RESPONSE_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "events": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "start_index": {"type": "integer"},
-                    "end_index": {"type": "integer"},
-                    "section_topic": {"type": "string"},
-                },
-                "required": ["start_index", "end_index", "section_topic"],
-            },
-        }
-    },
-    "required": ["events"],
-}
 
 
 def extract_events(state: PipelineState) -> dict[str, Any]:
@@ -38,14 +18,11 @@ def extract_events(state: PipelineState) -> dict[str, Any]:
         sentences=sentences_json,
     )
 
-    model = get_model("extractor")
-    response = model.invoke(
-        [
-            {"role": "system", "content": prompts["system"]},
-            {"role": "user", "content": user_msg},
-        ],
-        response_format={"type": "json_object", "schema": _RESPONSE_SCHEMA},
-    )
+    result = invoke_json("extractor", [
+        {"role": "system", "content": prompts["system"]},
+        {"role": "user", "content": user_msg},
+    ])
 
-    result = json.loads(response.content)
+    if isinstance(result, list):
+        return {"events": result}
     return {"events": result.get("events", [])}

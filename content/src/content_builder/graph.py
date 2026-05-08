@@ -45,7 +45,7 @@ from content_builder.state import PipelineState
 
 def _write_ticker_marp(state: PipelineState) -> dict[str, Any]:
     """Generate Marp slides specifically for ticker recommendations."""
-    from content_builder.llm import get_model, load_prompt
+    from content_builder.llm import invoke_json, load_prompt
 
     prompts = load_prompt("marp_writer")
     ticker_data = state.get("ticker_recommendations", {})
@@ -57,16 +57,11 @@ def _write_ticker_marp(state: PipelineState) -> dict[str, Any]:
         episode_title=state.get("episode_title", "Episode"),
     )
 
-    model = get_model("marp_writer")
-    response = model.invoke(
-        [
-            {"role": "system", "content": prompts["system"]},
-            {"role": "user", "content": user_msg},
-        ],
-        response_format={"type": "json_object"},
-    )
+    result = invoke_json("marp_writer", [
+        {"role": "system", "content": prompts["system"]},
+        {"role": "user", "content": user_msg},
+    ])
 
-    result = json.loads(response.content)
     return {"ticker_marp_slides": result}
 
 
