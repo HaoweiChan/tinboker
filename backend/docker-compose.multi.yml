@@ -9,7 +9,7 @@
 services:
   # Production Backend - Port 8000
   backend-prod:
-    image: ghcr.io/graphfolio/graphfolio-backend:${PROD_IMAGE_TAG:-main}
+    image: ghcr.io/haoweichan/tinboker-backend:${PROD_IMAGE_TAG:-main}
     container_name: graphfolio-backend-prod
     ports:
       - "8000:8000"
@@ -44,7 +44,7 @@ services:
 
   # Development Backend - Port 8001
   backend-dev:
-    image: ghcr.io/graphfolio/graphfolio-backend:${DEV_IMAGE_TAG:-develop}
+    image: ghcr.io/haoweichan/tinboker-backend:${DEV_IMAGE_TAG:-develop}
     container_name: graphfolio-backend-dev
     ports:
       - "8001:8000"
@@ -79,7 +79,7 @@ services:
 
   # Staging Backend - Port 8002
   backend-staging:
-    image: ghcr.io/graphfolio/graphfolio-backend:${STAGING_IMAGE_TAG:-develop}
+    image: ghcr.io/haoweichan/tinboker-backend:${STAGING_IMAGE_TAG:-develop}
     container_name: graphfolio-backend-staging
     ports:
       - "8002:8000"

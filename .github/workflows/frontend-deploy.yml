@@ -1,9 +1,10 @@
 # Deploy to Cloudflare Pages with secrets from Google Secret Manager
-name: Deploy to Cloudflare Pages
+name: Frontend Deploy to Cloudflare Pages
 
 on:
   push:
     branches: [main, develop]
+    paths: ['frontend/**']
   workflow_dispatch:
 
 env:

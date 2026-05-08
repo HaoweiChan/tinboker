@@ -6,7 +6,7 @@ After=docker.service
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-WorkingDirectory=/app
+WorkingDirectory=/app/backend
 ExecStart=/usr/bin/docker compose -f docker-compose.yml -f docker-compose.staging.yml up -d
 ExecStop=/usr/bin/docker compose -f docker-compose.yml -f docker-compose.staging.yml down
 ExecReload=/usr/bin/docker compose -f docker-compose.yml -f docker-compose.staging.yml up -d --force-recreate

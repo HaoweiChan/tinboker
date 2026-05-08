@@ -1,10 +1,6 @@
 # Admin Dashboard Deployment Workflow
-# - Manual trigger only (workflow_dispatch)
-# - Deploys admin dashboard with Netdata monitoring
-# - Isolated from regular feature deployments
-# - Updates Caddy proxy configuration for /netdata/* routes
 
-name: Deploy Admin Dashboard
+name: Backend Deploy Admin Dashboard
 
 on:
   workflow_dispatch:

@@ -1,7 +1,7 @@
 # Production Health Check and Auto-Recovery
 # Checks API health every 10 minutes and restarts if unhealthy
 
-name: Health Check
+name: Backend Health Check
 
 on:
   schedule:

@@ -4,13 +4,15 @@
 # - Push to main: Deploy to production (port 8000)
 # - Manual trigger: Build and/or deploy to staging (port 8002)
 
-name: Build & Deploy
+name: Backend Build & Deploy
 
 on:
   pull_request:
     branches: [develop, main]
+    paths: ['backend/**']
   push:
     branches: [develop, main]
+    paths: ['backend/**']
   workflow_dispatch:
     inputs:
       image_tag:

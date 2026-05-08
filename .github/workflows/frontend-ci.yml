@@ -1,21 +1,20 @@
-# Deploy to Cloudflare Pages with secrets from Google Secret Manager
-name: Deploy to Cloudflare Pages
+# CI workflow - Build check for pull requests
+name: Frontend CI
 
 on:
-  push:
+  pull_request:
     branches: [main, develop]
-  workflow_dispatch:
+    paths: ['frontend/**']
 
 env:
   GCP_PROJECT_ID: gen-lang-client-0901363254
 
 jobs:
-  build-and-deploy:
+  build:
     runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
-      deployments: write
 
     steps:
       - name: Checkout
@@ -47,37 +46,19 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      - name: Type check
+        working-directory: frontend
+        run: npx tsc --noEmit
+
       - name: Build
         working-directory: frontend
         run: npm run build
         env:
           VITE_GOOGLE_CLIENT_ID: ${{ env.VITE_GOOGLE_CLIENT_ID }}
 
-      - name: Determine environment
-        id: env
+      - name: Build Summary
         run: |
-          if [ "${{ github.ref_name }}" = "main" ]; then
-            echo "branch=main" >> $GITHUB_OUTPUT
-            echo "environment=production" >> $GITHUB_OUTPUT
-          else
-            echo "branch=${{ github.ref_name }}" >> $GITHUB_OUTPUT
-            echo "environment=preview" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Deploy to Cloudflare Pages
-        uses: cloudflare/pages-action@v1
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          projectName: tinboker-platform
-          directory: frontend/dist
-          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
-          branch: ${{ steps.env.outputs.branch }}
-
-      - name: Deployment Summary
-        run: |
-          echo "## Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "## Build Successful ✅" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Branch:** ${{ steps.env.outputs.branch }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Environment:** ${{ steps.env.outputs.environment }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Google OAuth:** Configured" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch:** ${{ github.head_ref }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Target:** ${{ github.base_ref }}" >> $GITHUB_STEP_SUMMARY
