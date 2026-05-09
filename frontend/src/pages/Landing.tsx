@@ -38,8 +38,7 @@ export const Landing: React.FC = () => {
             limit: 50,
             sortBy: 'spotify_release_date',
             order: 'desc',
-            // Don't include heavy content for initial page load - use spotify_description fallback
-            // This reduces API response time from 12+ seconds to ~0.5 seconds
+            // Skip heavy content (GCS fetch) for initial page load — cards show title/image only
             includeContent: false
           }),
           [],
@@ -150,31 +149,33 @@ export const Landing: React.FC = () => {
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
 
             {/* Hero Section - Full Width */}
-            <div className="lg:col-span-12 pt-4 pb-8 sm:py-12 lg:py-16 mb-6 text-center px-4 relative">
-              {/* Main Heading */}
-              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black tracking-tight leading-tight mb-3">
+            <div className="lg:col-span-12 pt-6 pb-8 sm:py-14 lg:py-20 mb-4 text-center px-4 relative overflow-hidden">
+              {/* Decorative gradient orb */}
+              <div className="absolute -top-20 left-1/2 -translate-x-1/2 w-[600px] h-[300px] bg-gradient-to-br from-emerald-400/15 via-amber-400/10 to-transparent rounded-full blur-3xl pointer-events-none dark:from-emerald-400/8 dark:via-amber-400/5" />
+
+              <h1 className="relative text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tighter leading-[1.1] mb-4">
                 <span className="text-slate-900 dark:text-slate-50 block sm:inline">最新財經 Podcast</span>
-                <span className="block sm:inline sm:ml-3 bg-gradient-to-r from-emerald-600 via-emerald-500 to-amber-500 dark:from-emerald-400 dark:via-emerald-400 dark:to-amber-400 bg-clip-text text-transparent">
+                <span className="block sm:inline sm:ml-3 bg-gradient-to-r from-emerald-600 via-teal-500 to-amber-500 dark:from-emerald-400 dark:via-teal-400 dark:to-amber-400 bg-clip-text text-transparent">
                   精華摘要
                 </span>
               </h1>
 
-              {/* Slogan / Sub-headline */}
-              <p className="max-w-2xl mx-auto text-sm sm:text-base text-slate-500 dark:text-slate-400 font-medium">
-                AI 自動分析財經 Podcast，萃取關鍵洞察與投資建議， 讓您用最短時間掌握最重要的市場資訊。
+              <p className="relative max-w-xl mx-auto text-sm sm:text-base text-slate-500 dark:text-slate-400 font-medium leading-relaxed">
+                AI 自動分析財經 Podcast，萃取關鍵洞察與投資建議，
+                <br className="hidden sm:block" />
+                讓您用最短時間掌握最重要的市場資訊。
               </p>
 
-              {/* Scroll Trigger Button */}
-              <div className="mt-8 flex justify-center animate-in fade-in slide-in-from-bottom-4 duration-700 delay-200">
+              <div className="relative mt-10 flex justify-center animate-in fade-in slide-in-from-bottom-4 duration-700 delay-200">
                 <button
                   onClick={scrollToNewsletter}
-                  className="group relative inline-flex p-[2px] rounded-full bg-gradient-to-r from-emerald-400 via-amber-400 to-emerald-400 bg-[length:200%_auto] animate-gradient shadow-lg shadow-emerald-500/20 hover:shadow-emerald-500/40 transition-all duration-300 hover:scale-105"
+                  className="group relative inline-flex p-[1.5px] rounded-full bg-gradient-to-r from-emerald-500 via-amber-400 to-emerald-500 bg-[length:200%_auto] animate-gradient shadow-lg shadow-emerald-500/15 hover:shadow-emerald-500/30 transition-all duration-300 hover:scale-105 active:scale-[0.98]"
                 >
-                  <span className="relative inline-flex items-center gap-2 px-6 py-3 rounded-full bg-white dark:bg-slate-900 transition-all duration-300 group-hover:bg-opacity-[0.97] dark:group-hover:bg-opacity-[0.97]">
+                  <span className="relative inline-flex items-center gap-2.5 px-7 py-3 rounded-full bg-white dark:bg-slate-900 transition-all duration-300">
                     <span className="text-sm font-bold bg-gradient-to-r from-slate-700 to-slate-900 dark:from-slate-100 dark:to-slate-300 bg-clip-text text-transparent group-hover:from-emerald-600 group-hover:to-amber-600 dark:group-hover:from-emerald-400 dark:group-hover:to-amber-400 transition-all">
                       想要更聰明地掌握財經資訊？
                     </span>
-                    <ArrowDown className="text-slate-400 group-hover:text-emerald-500 transition-colors animate-bounce" size={18} />
+                    <ArrowDown className="text-slate-400 group-hover:text-emerald-500 transition-colors animate-bounce" size={16} />
                   </span>
                 </button>
               </div>
@@ -232,7 +233,7 @@ export const Landing: React.FC = () => {
                     ))}
                   </div>
                 ) : (
-                  <div className="space-y-6 pb-6">
+                  <div className="space-y-6 pb-6 stagger-in">
                     {visibleEpisodes.length > 0 ? (
                       <>
                         {visibleEpisodes.map((episode) => {
@@ -254,7 +255,7 @@ export const Landing: React.FC = () => {
                             <Button
                               variant="outline"
                               onClick={handleLoadMore}
-                              className="gap-2 rounded-full px-8 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white transition-colors"
+                              className="gap-2 rounded-full px-8 py-2.5 bg-white dark:bg-slate-900/80 border-slate-200/80 dark:border-slate-700/50 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white hover:border-slate-300 dark:hover:border-slate-600 transition-all duration-200 hover:shadow-sm active:scale-[0.97]"
                             >
                               載入更多 <ChevronDown size={16} />
                             </Button>

@@ -279,17 +279,13 @@ export function hydrateNodeWithStockData(
  * Transform API episode to mock episode format for EpisodeCard compatibility
  */
 export function transformApiEpisodeToMock(apiEpisode: ApiEpisode): MockEpisode | null {
-  // Use summary_content only - don't fallback to spotify_description (raw show description)
-  // Episodes without summary_content AND without key_insights should be filtered out
-  const summaryText = apiEpisode.summary_content || '';
-  const hasContent = !!summaryText || (apiEpisode.key_insights && apiEpisode.key_insights.length > 0);
-  if (!hasContent) return null;
+  if (!apiEpisode.id || !apiEpisode.podcast_name) return null;
 
-  // Return full content as a single summary point to preserve markdown structure and timestamps
-  // EpisodeCard will parse this using extractSections()
+  const summaryText = apiEpisode.summary_content || '';
+
   const summary: MockEpisode['summary'] = [{
     text: summaryText,
-    highlights: [], // Could implement highlight parsing here if needed
+    highlights: [],
   }];
 
   // Calculate time ago

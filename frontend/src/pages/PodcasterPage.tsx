@@ -52,7 +52,7 @@ export const PodcasterPage: React.FC = () => {
 
         // Fetch episodes
         const apiEpisodes = await fetchWithFallback(
-          () => getPodcastEpisodes(podcasterName, { limit: 100, sortBy: 'spotify_release_date', order: 'desc', includeContent: false }),
+          () => getPodcastEpisodes(podcasterName, { limit: 20, sortBy: 'spotify_release_date', order: 'desc', includeContent: true }),
           [],
           `getPodcastEpisodes(${podcasterName})`
         );
@@ -126,7 +126,7 @@ export const PodcasterPage: React.FC = () => {
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950">
       <SEO
-        title={`${podcasterName} - Podcast 頻道 | TinBoker`}
+        title={`${podcasterName} - Podcast 頻道`}
         description={`追蹤 ${podcasterName} 的最新 Podcast 節目摘要與相關股票分析。`}
         structuredData={structuredData}
         url={window.location.href}
