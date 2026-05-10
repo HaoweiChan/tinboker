@@ -208,14 +208,14 @@ const StockHeaderCard: React.FC<{ symbol: string }> = ({ symbol }) => {
     return generateMockPriceSeries(100, displayPrice || 100);
   }, [stockData?.chartData, displayPrice]);
 
-  // Mock key statistics (replace with real data when available)
+  const latestCandle = chartData.length > 0 ? chartData[chartData.length - 1] : null;
   const keyStats = {
-    open: displayPrice * 0.98,
-    high: displayPrice * 1.02,
-    low: displayPrice * 0.96,
+    open: latestCandle?.open ?? displayPrice,
+    high: latestCandle?.high ?? displayPrice,
+    low: latestCandle?.low ?? displayPrice,
     marketCap: stockData?.marketCap || 0,
-    peRatio: 15.4,
-    volume: stockData?.stats?.volume || 0,
+    peRatio: stockData?.pe ?? 0,
+    volume: stockData?.stats?.volume || latestCandle?.volume || 0,
   };
 
   return (
@@ -314,33 +314,22 @@ const StockHeaderCard: React.FC<{ symbol: string }> = ({ symbol }) => {
 
         {/* Right Column: Key Statistics Sidebar (Span 1) */}
         <div className="lg:col-span-1">
-          <div className="glass-card rounded-lg p-4 h-full flex flex-col justify-between">
-            <h3 className="text-lg font-bold text-slate-900 dark:text-slate-50 mb-4">關鍵數據</h3>
-            <div className="space-y-4 flex-1 flex flex-col justify-center">
-              <div className="flex justify-between items-center pb-3 border-b border-slate-200 dark:border-slate-800">
-                <span className="text-sm text-slate-500 dark:text-slate-400">開盤</span>
-                <span className="text-lg font-medium font-financial text-slate-900 dark:text-slate-50">{keyStats.open.toLocaleString()}</span>
-              </div>
-              <div className="flex justify-between items-center pb-3 border-b border-slate-200 dark:border-slate-800">
-                <span className="text-sm text-slate-500 dark:text-slate-400">最高</span>
-                <span className="text-lg font-medium font-financial text-slate-900 dark:text-slate-50">{keyStats.high.toLocaleString()}</span>
-              </div>
-              <div className="flex justify-between items-center pb-3 border-b border-slate-200 dark:border-slate-800">
-                <span className="text-sm text-slate-500 dark:text-slate-400">最低</span>
-                <span className="text-lg font-medium font-financial text-slate-900 dark:text-slate-50">{keyStats.low.toLocaleString()}</span>
-              </div>
-              <div className="flex justify-between items-center pb-3 border-b border-slate-200 dark:border-slate-800">
-                <span className="text-sm text-slate-500 dark:text-slate-400">成交量</span>
-                <span className="text-lg font-medium font-financial text-slate-900 dark:text-slate-50">{(keyStats.volume / 1000).toFixed(1)}K</span>
-              </div>
-              <div className="flex justify-between items-center pb-3 border-b border-slate-200 dark:border-slate-800">
-                <span className="text-sm text-slate-500 dark:text-slate-400">市值</span>
-                <span className="text-lg font-medium font-financial text-slate-900 dark:text-slate-50">{(keyStats.marketCap / 1000000000).toFixed(2)}B</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-slate-500 dark:text-slate-400">本益比</span>
-                <span className="text-lg font-medium font-financial text-slate-900 dark:text-slate-50">{keyStats.peRatio}</span>
-              </div>
+          <div className="glass-card rounded-xl p-5 h-full flex flex-col">
+            <h3 className="text-base font-bold text-slate-900 dark:text-slate-50 mb-5 tracking-tight">關鍵數據</h3>
+            <div className="space-y-0 flex-1 flex flex-col justify-center divide-y divide-slate-100 dark:divide-slate-800/60">
+              {[
+                { label: '開盤', value: keyStats.open.toLocaleString() },
+                { label: '最高', value: keyStats.high.toLocaleString() },
+                { label: '最低', value: keyStats.low.toLocaleString() },
+                { label: '成交量', value: `${(keyStats.volume / 1000).toFixed(1)}K` },
+                { label: '市值', value: `${(keyStats.marketCap / 1000000000).toFixed(2)}B` },
+                { label: '本益比', value: keyStats.peRatio ? keyStats.peRatio.toFixed(1) : 'N/A' },
+              ].map(({ label, value }) => (
+                <div key={label} className="flex justify-between items-center py-3">
+                  <span className="text-xs font-medium uppercase tracking-wider text-slate-400 dark:text-slate-500">{label}</span>
+                  <span className="text-sm font-semibold font-financial text-slate-900 dark:text-slate-50">{value}</span>
+                </div>
+              ))}
             </div>
           </div>
         </div>
@@ -433,7 +422,7 @@ export const StockDashboard: React.FC = () => {
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-transparent">
       <SEO
-        title={`${symbol} - 股價表現與相關 Podcast | TinBoker`}
+        title={`${symbol} - 股價表現與相關 Podcast`}
         description={`查看 ${symbol} 的即時股價走勢，以及最新提到此標的的 Podcast 節目與分析。`}
         structuredData={structuredData}
         url={window.location.href}

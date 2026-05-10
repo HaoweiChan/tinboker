@@ -142,59 +142,34 @@ class DataCollectionService:
             pe = latest_ratio.get("pe_ratio")
             dividend_yield = latest_ratio.get("dividend_yield")
         
-        # Calculate current price and change
+        # Calculate current price and change from snapshot, falling back to chart data
         current_price = None
         change = None
         change_percent = None
+        snapshot_volume = 0
         if snapshot:
             current_price = snapshot.get("price") or snapshot.get("close")
-            if price_history.day:
-                # Check timestamps/dates to find the correct "previous close"
-                # If the last record in history is today (or very recent), it might be the current open candle
-                # We need the confirmed close of the *previous* session
-                
-                # Get last record
-                last_record = price_history.day[-1]
-                
-                # Determine if last record is "today"
-                # If we have a snapshot (current_price), and last_record.close == current_price, or dates match
-                # It's safer to look for a record with a different date than "today" if we are in intraday
-                # But simplify:
-                # If history has > 1 record, take [-2], else take [-1] if unlikely to be today, else fallback
-                
-                previous_close = 0.0
-                if len(price_history.day) > 1:
-                     # Check if last record looks like "today" (incomplete) or just take [-1] if we assume history excludes today?
-                     # FinMind daily/minute logic puts *past* data. 
-                     # However data collection often appends "today" so far.
-                     
-                     # Let's try to take the last record as previous close.
-                     # BUT if change is 0.0, maybe current_price == last_record.close.
-                     
-                     prev_rec = price_history.day[-1]
-                     # If prev_rec price equals current price exactly, it's suspicious.
-                     if abs(prev_rec.close - current_price) < 0.0001 and len(price_history.day) > 1:
-                         # Likely "last record" is actually "current state", so take [-2]
-                         previous_close = price_history.day[-2].close
-                     else:
-                         previous_close = prev_rec.close
-                elif len(price_history.day) == 1:
-                    previous_close = price_history.day[0].close
-                    
-                if previous_close > 0 and current_price:
-                    change = current_price - previous_close
-                    change_percent = (change / previous_close * 100)
-        
-        # Get stats (volume from snapshot)
-        stats = None
-        if snapshot:
-            volume = snapshot.get("volume", 0)
-            stats = CompanyStats(
-                volume=volume,
-                beta=0.0,  # Not available from FinMind API
-                volatility=0.0  # Not available from FinMind API
-            )
-        
+            snapshot_volume = snapshot.get("volume", 0)
+        # Fallback: derive price/change/volume from the most recent chart data entries
+        if not current_price and price_history.day:
+            last_rec = price_history.day[-1]
+            current_price = last_rec.close
+            snapshot_volume = last_rec.Trading_Volume or 0
+            logger.info(f"Snapshot empty for {ticker}, using last chart entry: price={current_price}, date={last_rec.date}")
+        if current_price and price_history.day and len(price_history.day) >= 2:
+            last_rec = price_history.day[-1]
+            if abs(last_rec.close - current_price) < 0.0001:
+                previous_close = price_history.day[-2].close
+            else:
+                previous_close = last_rec.close
+            if previous_close > 0:
+                change = current_price - previous_close
+                change_percent = (change / previous_close * 100)
+        stats = CompanyStats(
+            volume=snapshot_volume,
+            beta=0.0,
+            volatility=0.0,
+        )
         # Create Stock object
         market_cap = details.get("market_cap")
         if market_cap is not None:
@@ -407,56 +382,34 @@ class DataCollectionService:
             pe = latest_ratio.get("pe_ratio")
             dividend_yield = latest_ratio.get("dividend_yield")
         
-        # Calculate current price and change
+        # Calculate current price and change from snapshot, falling back to chart data
         current_price = None
         change = None
         change_percent = None
+        snapshot_volume = 0
         if snapshot:
             current_price = snapshot.get("price") or snapshot.get("close")
-            if price_history.day:
-                # Similar logic as FinMind - ensure we don't compare current with current
-                previous_close = 0.0
-                
-                if len(price_history.day) > 1:
-                     # Check if last record looks like "today" (incomplete) or just take [-1] if we assume history excludes today?
-                     # FinMind daily/minute logic puts *past* data. 
-                     # However data collection often appends "today" so far.
-                     
-                     # Let's try to take the last record as previous close.
-                     # BUT if change is 0.0, maybe current_price == last_record.close.
-                     
-                     prev_rec = price_history.day[-1]
-                     # If prev_rec price equals current price exactly, it's suspicious.
-                     logger.info(f"DEBUG PRICE CALC: Ticker={ticker} Current={current_price} LastClose={prev_rec.close} HistoryLen={len(price_history.day)}")
-                     
-                     if abs(prev_rec.close - current_price) < 0.0001 and len(price_history.day) > 1:
-                         # Likely "last record" is actually "current state", so take [-2]
-                         previous_close = price_history.day[-2].close
-                         logger.info(f"DEBUG PRICE CALC: Using [-2] as prev_close: {previous_close}")
-                     else:
-                         previous_close = prev_rec.close
-                         logger.info(f"DEBUG PRICE CALC: Using [-1] as prev_close: {previous_close}")
-                elif len(price_history.day) == 1:
-                     # Only one record. If it equals current, we have no prev.
-                     if abs(price_history.day[0].close - current_price) > 0.0001:
-                        previous_close = price_history.day[0].close
-                     else:
-                        previous_close = current_price # Fallback (change=0)
-
-                if previous_close > 0 and current_price:
-                    change = current_price - previous_close
-                    change_percent = (change / previous_close * 100)
-        
-        # Get stats (volume from snapshot)
-        stats = None
-        if snapshot:
-            volume = snapshot.get("volume", 0)
-            stats = CompanyStats(
-                volume=volume,
-                beta=0.0,  # Not available from Massive API snapshot
-                volatility=0.0  # Not available from Massive API snapshot
-            )
-        
+            snapshot_volume = snapshot.get("volume", 0)
+        # Fallback: derive price/change/volume from the most recent chart data entries
+        if not current_price and price_history.day:
+            last_rec = price_history.day[-1]
+            current_price = last_rec.close
+            snapshot_volume = last_rec.Trading_Volume or 0
+            logger.info(f"Snapshot empty for {ticker}, using last chart entry: price={current_price}, date={last_rec.date}")
+        if current_price and price_history.day and len(price_history.day) >= 2:
+            last_rec = price_history.day[-1]
+            if abs(last_rec.close - current_price) < 0.0001:
+                previous_close = price_history.day[-2].close
+            else:
+                previous_close = last_rec.close
+            if previous_close > 0:
+                change = current_price - previous_close
+                change_percent = (change / previous_close * 100)
+        stats = CompanyStats(
+            volume=snapshot_volume,
+            beta=0.0,
+            volatility=0.0,
+        )
         # Create Stock object
         market_cap = details.get("market_cap")
         if market_cap is not None:

@@ -29,41 +29,24 @@ export async function getStockByTicker(
     config.headers = { 'X-Silent-Error': 'true' };
   }
   const response = await apiClient.get(`/api/stocks/${ticker}`, config);
-  if (import.meta.env.DEV) {
-    console.log('[API] getStockByTicker raw response:', {
-      ticker,
-      rawData: response.data,
-      price: response.data?.price,
-      priceType: typeof response.data?.price,
-      hasPrice: 'price' in (response.data || {}),
-      dataKeys: response.data ? Object.keys(response.data) : [],
-      currentPrice: response.data?.current_price,
-      lastPrice: response.data?.last_price,
-      closePrice: response.data?.close_price,
-      latestPrice: response.data?.latest_price,
-      chartDataLastPrice: response.data?.chartData && Array.isArray(response.data.chartData) && response.data.chartData.length > 0
-        ? response.data.chartData[response.data.chartData.length - 1]?.price
-        : undefined,
-      fullResponse: JSON.stringify(response.data, null, 2)
-    });
-  }
   let validated = parseResponse(CompanyDetailSchema, response.data);
-  // Backend returns price: 0 sometimes; use last chartData entry's price instead
-  if (validated.price === 0 && validated.chartData && validated.chartData.length > 0) {
-    const lastDataPoint = validated.chartData[validated.chartData.length - 1];
-    if (lastDataPoint?.price && lastDataPoint.price > 0) {
-      if (import.meta.env.DEV) {
-        console.warn('[API] getStockByTicker: Root price is 0, using price from chartData:', {
-          ticker, rootPrice: validated.price, chartDataPrice: lastDataPoint.price,
-        });
-      }
-      validated = { ...validated, price: lastDataPoint.price };
+  // When backend returns zeros (snapshot unavailable), derive from chartData
+  if (validated.chartData && validated.chartData.length > 0) {
+    const last = validated.chartData[validated.chartData.length - 1];
+    if (validated.price === 0 && last.price > 0) {
+      validated = { ...validated, price: last.price };
     }
-  }
-  if (import.meta.env.DEV) {
-    console.log('[API] getStockByTicker validated:', {
-      ticker, price: validated.price, priceType: typeof validated.price,
-    });
+    if (validated.change === 0 && validated.changePercent === 0 && validated.chartData.length >= 2) {
+      const prev = validated.chartData[validated.chartData.length - 2];
+      if (prev.price > 0 && last.price > 0) {
+        const change = last.price - prev.price;
+        validated = {
+          ...validated,
+          change,
+          changePercent: (change / prev.price) * 100,
+        };
+      }
+    }
   }
   return validated;
 }
