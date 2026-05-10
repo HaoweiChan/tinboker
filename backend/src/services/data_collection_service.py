@@ -149,12 +149,12 @@ class DataCollectionService:
         snapshot_volume = 0
         if snapshot:
             current_price = snapshot.get("price") or snapshot.get("close")
-            snapshot_volume = snapshot.get("volume", 0)
+            snapshot_volume = int(snapshot.get("volume", 0))
         # Fallback: derive price/change/volume from the most recent chart data entries
         if not current_price and price_history.day:
             last_rec = price_history.day[-1]
             current_price = last_rec.close
-            snapshot_volume = last_rec.Trading_Volume or 0
+            snapshot_volume = int(last_rec.Trading_Volume or 0)
             logger.info(f"Snapshot empty for {ticker}, using last chart entry: price={current_price}, date={last_rec.date}")
         if current_price and price_history.day and len(price_history.day) >= 2:
             last_rec = price_history.day[-1]
@@ -173,9 +173,7 @@ class DataCollectionService:
         # Create Stock object
         market_cap = details.get("market_cap")
         if market_cap is not None:
-            # Convert float to int if needed
             market_cap = int(market_cap) if isinstance(market_cap, float) else market_cap
-        
         stock = Stock(
             stock_id=ticker,
             metadata=metadata,
@@ -190,7 +188,6 @@ class DataCollectionService:
             about=details.get("description", ""),
             stats=stats
         )
-        
         return stock
     
     def _fetch_finmind_daily_aggregates(
@@ -240,11 +237,12 @@ class DataCollectionService:
             except:
                 agg_date = datetime.now().strftime("%Y-%m-%d")
             
+            vol = int(bar.get("volume", 0))
             record = StockPriceRecord(
                 date=agg_date,
                 timestamp=bar["timestamp"],
-                Trading_Volume=bar.get("volume", 0),
-                Trading_money=bar.get("volume", 0) * bar.get("close", 0),
+                Trading_Volume=vol,
+                Trading_money=vol * bar.get("close", 0),
                 open=bar.get("open", 0),
                 max=bar.get("high", 0),
                 min=bar.get("low", 0),
@@ -253,7 +251,7 @@ class DataCollectionService:
                 Trading_turnover=0.0
             )
             price_history.add_record(record)
-    
+
     def _fetch_finmind_minute_aggregates(self, ticker: str, timeframe: str, price_history: StockPriceHistory) -> None:
         """
         Fetch minute-level aggregates from FinMind for 1H/1D timeframes.
@@ -296,11 +294,12 @@ class DataCollectionService:
                     except:
                         agg_date = datetime.now().strftime("%Y-%m-%d")
                     
+                    vol = int(bar.get("volume", 0))
                     record = StockPriceRecord(
                         date=agg_date,
                         timestamp=bar["timestamp"],
-                        Trading_Volume=bar.get("volume", 0),
-                        Trading_money=bar.get("volume", 0) * bar.get("close", 0),
+                        Trading_Volume=vol,
+                        Trading_money=vol * bar.get("close", 0),
                         open=bar.get("open", 0),
                         max=bar.get("high", 0),
                         min=bar.get("low", 0),
@@ -389,12 +388,12 @@ class DataCollectionService:
         snapshot_volume = 0
         if snapshot:
             current_price = snapshot.get("price") or snapshot.get("close")
-            snapshot_volume = snapshot.get("volume", 0)
+            snapshot_volume = int(snapshot.get("volume", 0))
         # Fallback: derive price/change/volume from the most recent chart data entries
         if not current_price and price_history.day:
             last_rec = price_history.day[-1]
             current_price = last_rec.close
-            snapshot_volume = last_rec.Trading_Volume or 0
+            snapshot_volume = int(last_rec.Trading_Volume or 0)
             logger.info(f"Snapshot empty for {ticker}, using last chart entry: price={current_price}, date={last_rec.date}")
         if current_price and price_history.day and len(price_history.day) >= 2:
             last_rec = price_history.day[-1]
@@ -413,9 +412,7 @@ class DataCollectionService:
         # Create Stock object
         market_cap = details.get("market_cap")
         if market_cap is not None:
-            # Convert float to int if needed
             market_cap = int(market_cap) if isinstance(market_cap, float) else market_cap
-        
         stock = Stock(
             stock_id=ticker,
             metadata=metadata,
@@ -430,9 +427,8 @@ class DataCollectionService:
             about=details.get("description", ""),
             stats=stats
         )
-        
         return stock
-    
+
     def _fetch_aggregates(self, ticker: str, price_history: StockPriceHistory, timeframe: Optional[str] = None, before: Optional[int] = None) -> None:
         """Fetch aggregates for specified timeframe.
         
@@ -495,11 +491,12 @@ class DataCollectionService:
             except:
                 agg_date = datetime.now().strftime("%Y-%m-%d")
             
+            vol = int(getattr(agg, 'volume', 0))
             record = StockPriceRecord(
                 date=agg_date,
                 timestamp=agg.timestamp,
-                Trading_Volume=getattr(agg, 'volume', 0),
-                Trading_money=getattr(agg, 'volume', 0) * agg.close,
+                Trading_Volume=vol,
+                Trading_money=vol * agg.close,
                 open=agg.open,
                 max=agg.high,
                 min=agg.low,
@@ -508,7 +505,7 @@ class DataCollectionService:
                 Trading_turnover=0.0
             )
             price_history.add_record(record)
-    
+
     def _fetch_minute_aggregates(self, ticker: str, timeframe: str, price_history: StockPriceHistory) -> None:
         """
         Fetch minute-level aggregates for 1H/1D timeframes.
@@ -558,11 +555,12 @@ class DataCollectionService:
                 except:
                     agg_date = datetime.now().strftime("%Y-%m-%d")
                 
+                vol = int(getattr(agg, 'volume', 0))
                 record = StockPriceRecord(
                     date=agg_date,
                     timestamp=agg.timestamp,
-                    Trading_Volume=getattr(agg, 'volume', 0),
-                    Trading_money=getattr(agg, 'volume', 0) * agg.close,
+                    Trading_Volume=vol,
+                    Trading_money=vol * agg.close,
                     open=agg.open,
                     max=agg.high,
                     min=agg.low,
