@@ -7,7 +7,8 @@ import { ContactPage } from '@/pages/ContactPage';
 import { GraphGallery } from '@/pages/GraphGallery';
 import { StockDashboard } from '@/pages/StockDashboard';
 import { IndustryAnalysis } from '@/pages/IndustryAnalysis';
-import { NewsPage } from '@/pages/NewsPage';
+import { EpisodeDetail } from '@/pages/EpisodeDetail';
+import { NewsRedirect } from '@/pages/NewsRedirect';
 import { PodcasterPage } from '@/pages/PodcasterPage';
 import { TagPage } from '@/pages/TagPage';
 import { ProfilePage } from '@/pages/ProfilePage';
@@ -64,7 +65,8 @@ function App() {
           <Route path="/podcaster/:id" element={<PodcasterPage />} />
           <Route path="/topics/:tag" element={<TagPage />} />
           <Route path="/tag/:tag" element={<TagPage />} />
-          <Route path="/news/:id" element={<NewsPage />} />
+          <Route path="/episode/:id" element={<EpisodeDetail />} />
+          <Route path="/news/:id" element={<NewsRedirect />} />
 
           {/* Retired from primary nav, kept live */}
           <Route path="/story" element={<GraphGallery />} />

@@ -46,6 +46,6 @@ export function apiEpisodeToCardV2(ep: ApiEpisode): EpisodeCardV2Props {
     tickers: Array.isArray(ep.related_tickers) ? ep.related_tickers.slice(0, 4).map((symbol) => ({ symbol })) : undefined,
     tags: ep.tags ?? [],
     isNew: isRecent,
-    href: `/news/${ep.id}?podcast=${encodeURIComponent(ep.podcast_name)}`,
+    href: `/episode/${encodeURIComponent(ep.id)}?podcast=${encodeURIComponent(ep.podcast_name)}`,
   };
 }
