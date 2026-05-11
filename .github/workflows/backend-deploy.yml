@@ -187,13 +187,11 @@ jobs:
           script: |
             cd /app
             git fetch origin
-            git reset --hard origin/${{ github.ref_name }}
-            git clean -fd
+            git checkout -f origin/${{ github.ref_name }}
 
             cd /app/backend
 
-            # Restore GCP service account key (wiped by git clean)
-            rm -rf gcp-service-account.json
+            # Ensure GCP service account key is present
             echo "$GCP_CREDS_JSON" > gcp-service-account.json
             chmod 600 gcp-service-account.json
 

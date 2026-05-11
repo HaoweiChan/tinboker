@@ -1,4 +1,5 @@
 from datetime import datetime
+from contextlib import asynccontextmanager
 from src.config import settings
 from src.database.db import init_db
 from fastapi.responses import JSONResponse
@@ -18,7 +19,7 @@ from src.routers.episodes import router as episodes_router
 from src.routers.tags import router as tags_router
 from src.routers.auth import router as auth_router
 from src.routers.user import router as user_router
-from src.routers.search import router as search_router
+from src.routers.search import router as search_router, init_search_index
 from src.routers.analytics import router as analytics_router
 from src.routers.recommendations import router as recommendations_router
 from src.routers.translations import router as translations_router
@@ -29,36 +30,16 @@ from src.routers.notifications import router as notifications_router
 from src.middleware.cloudflare import CloudflareMiddleware
 
 
-app = FastAPI(
-    title=settings.api_title,
-    description="Backend API for TinBoker - Financial podcast insights platform",
-    version=settings.api_version,
-    servers=[
-        {
-            "url": f"http://localhost:{settings.port}",
-            "description": "Development server"
-        },
-        {
-            "url": "https://api.tinboker.com",
-            "description": "Production server"
-        }
-    ]
-)
-
-
-@app.on_event("startup")
-async def startup_event():
-    """Initialize database and Redis on startup"""
-    # Initialize SQLite if not using PostgreSQL
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Startup and shutdown lifecycle."""
+    # --- Startup ---
     if not settings.use_postgres:
         init_db()
-        # Also init SQLAlchemy engine and create ORM tables (e.g. stock_translations)
-        # so translations and other ORM-backed features work with the same SQLite DB
         from src.database.postgres import init_engine, create_all_tables
         init_engine()
         create_all_tables()
     else:
-        # Initialize PostgreSQL connection with SQLAlchemy
         from src.database.postgres import init_engine
         try:
             init_engine()
@@ -71,31 +52,47 @@ async def startup_event():
             init_orm_engine()
             create_all_tables()
 
-    # Recommendation/podcast_db PostgreSQL (data prepared elsewhere; backend only reads)
     rec_conn_str = settings.recommendation_postgres_connection_string
     if rec_conn_str:
         try:
             from src.database import recommendation_db
             recommendation_db.init_pool()
-            print(f"Recommendation Postgres pool initialized (host extracted from connection string).")
+            print("Recommendation Postgres pool initialized.")
         except Exception as e:
             print(f"Warning: Could not initialize recommendation Postgres: {e}")
     else:
-        print("Info: Recommendation Postgres not configured (POSTGRES_PASSWORD not set). 市場焦點 will be empty.")
+        print("Info: Recommendation Postgres not configured.")
 
-    # Initialize Redis (optional - app continues if unavailable)
     await RedisClient.initialize()
+    await init_search_index()
 
+    yield
 
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Cleanup on shutdown"""
+    # --- Shutdown ---
+    await RedisClient.close_all()
     try:
         from src.database import recommendation_db
         recommendation_db.close_pool()
     except Exception:
         pass
-    await RedisClient.close_all()
+
+
+app = FastAPI(
+    title=settings.api_title,
+    description="Backend API for TinBoker - Financial podcast insights platform",
+    version=settings.api_version,
+    lifespan=lifespan,
+    servers=[
+        {
+            "url": f"http://localhost:{settings.port}",
+            "description": "Development server"
+        },
+        {
+            "url": "https://api.tinboker.com",
+            "description": "Production server"
+        }
+    ]
+)
 
 
 # CORS Configuration
@@ -229,8 +226,6 @@ async def health_check():
             "available": redis_available,
             "status": "connected" if redis_available else "disconnected",
             "configured": redis_url_configured,
-            "env_var_set": redis_url_from_env,
-            "connection_string": redis_url_display
         }
     }
     

@@ -339,7 +339,7 @@ All code changes must follow the Git workflow:
 4. Runs health check
 
 **Required GitHub Secrets:**
-- `VPS_HOST`: VPS IP address (152.53.136.182)
+- `VPS_HOST`: VPS IP address (stored in GitHub Secrets)
 - `VPS_USER`: SSH username (root)
 - `VPS_SSH_KEY`: SSH private key for VPS access
 - `GITHUB_TOKEN`: Auto-provided for GHCR access
@@ -356,7 +356,7 @@ All code changes must follow the Git workflow:
    
 2. **Deploy PR image to staging for testing:**
    ```bash
-   ssh root@152.53.136.182 "
+   ssh root@$VPS_HOST "
      cd /app && 
      docker pull ghcr.io/haoweichan/tinboker-backend:pr-{N} && 
      IMAGE_TAG=pr-{N} docker compose -f docker-compose.staging.yml up -d backend

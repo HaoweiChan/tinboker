@@ -71,27 +71,13 @@ def verify_google_token(id_token_str: str) -> Dict[str, Any]:
             error_msg = str(e)
             # Check if it's a clock skew error (token used too early)
             if "too early" in error_msg.lower() or ("clock" in error_msg.lower() and "set correctly" in error_msg.lower()):
-                # For clock skew errors, try a simple retry after a brief delay
-                # The token might be 1-2 seconds ahead of server time
-                import time
-                time.sleep(2)  # Wait 2 seconds
-                
-                # Retry verification
-                try:
-                    decoded_token = id_token.verify_oauth2_token(
-                        id_token_str,
-                        request_obj,
-                        client_id
-                    )
-                except ValueError:
-                    # If retry still fails, provide helpful error message
-                    raise ValueError(
-                        f"Token timing error: {error_msg}. "
-                        "This usually indicates a clock synchronization issue. "
-                        "Please ensure your server's clock is synchronized with NTP. "
-                        "You can sync time with: sudo ntpdate -s time.nist.gov (Linux) "
-                        "or wait a moment and try logging in again."
-                    )
+                # Retry with clock_skew tolerance instead of blocking sleep
+                decoded_token = id_token.verify_oauth2_token(
+                    id_token_str,
+                    request_obj,
+                    client_id,
+                    clock_skew_in_seconds=10,
+                )
             else:
                 # Re-raise other ValueError exceptions
                 raise

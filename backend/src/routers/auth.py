@@ -64,9 +64,11 @@ async def google_login(request: dict):
             detail=f"Authentication failed: {str(e)}"
         )
     except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"Auth endpoint internal error: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Internal server error: {str(e)}"
+            detail="An internal error occurred during authentication. Please try again later."
         )
 
 

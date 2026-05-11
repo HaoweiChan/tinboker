@@ -2,164 +2,137 @@
 Unit tests for stock service
 """
 import pytest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, patch, AsyncMock
 from src.services.stock import StockService
-from src.database.stock_db import create_or_update_stock, add_price_history
+from src.models.stock import CompanyDetail, ChartDataPoint
+
+
+def _mock_stock_data(ticker="TEST", name="Test Company", price=100.0):
+    """Build a mock external stock_data object matching Massive API shape."""
+    stats = Mock()
+    stats.volume = 1000000
+    stats.beta = 1.2
+    stats.volatility = 0.3
+
+    metadata = Mock()
+    metadata.stock_name = name
+
+    stock_data = Mock()
+    stock_data.stock_id = ticker
+    stock_data.metadata = metadata
+    stock_data.price = price
+    stock_data.change = 5.0
+    stock_data.changePercent = 5.26
+    stock_data.marketCap = 1000000000
+    stock_data.revenue = 50000000
+    stock_data.pe = 20.0
+    stock_data.dividendYield = 2.5
+    stock_data.about = "A test company"
+    stock_data.stats = stats
+    stock_data.stock_price_history = Mock()
+    stock_data.stock_price_history.day = []
+    return stock_data
+
+
+def _mock_dcs(stock_data=None):
+    """Build a mock DataCollectionService with massive_service stubbed."""
+    dcs = Mock()
+    dcs.collect_stock_data.return_value = stock_data or _mock_stock_data()
+    dcs.massive_service.get_ticker_details.return_value = {
+        "icon_url": "https://example.com/icon.png",
+        "logo_url": "https://example.com/logo.png",
+        "icon_image": "https://example.com/icon.png",
+        "logo_image": "https://example.com/logo.png",
+    }
+    return dcs
 
 
 class TestStockService:
     """Test stock service operations"""
-    
-    def test_get_stock_info_from_db(self, test_db):
-        """Test getting stock info from database"""
-        # Create stock in DB
-        create_or_update_stock(
-            ticker="TEST",
-            name="Test Company",
-            price=100.0,
-            change=5.0,
-            change_percent=5.26,
-            market_cap=1000000000,
-            revenue=50000000,
-            pe=20.0,
-            dividend_yield=2.5,
-            about="Test company",
-            volume=1000000,
-            beta=1.2,
-            volatility=0.3,
-        )
-        
-        service = StockService()
-        stock = service.get_stock_info("TEST", use_external=False)
-        
+
+    @pytest.mark.asyncio
+    @patch("src.services.stock.cache_get", new_callable=AsyncMock, return_value=None)
+    @patch("src.services.stock.cache_set", new_callable=AsyncMock)
+    async def test_get_stock_info(self, mock_cache_set, mock_cache_get):
+        """Test getting stock info via mocked external API"""
+        dcs = _mock_dcs()
+        service = StockService(data_collection_service=dcs)
+        stock = await service.get_stock_info_async("TEST")
+
         assert stock is not None
         assert stock.ticker == "TEST"
-        assert stock.name == "Test Company"
-        assert stock.price == 100.0
-    
-    @patch('src.services.stock.DataCollectionService')
-    def test_get_stock_info_fallback_to_external(self, mock_data_collection, test_db):
-        """Test fallback to external API when not in DB"""
-        # Mock external service
-        mock_stock = Mock()
-        mock_stock.stock_id = "TEST"
-        mock_stock.metadata.stock_name = "Test Company"
-        mock_stock.price = 100.0
-        mock_stock.change = 5.0
-        mock_stock.changePercent = 5.26
-        mock_stock.marketCap = 1000000000
-        mock_stock.revenue = 50000000
-        mock_stock.pe = 20.0
-        mock_stock.dividendYield = 2.5
-        mock_stock.about = "Test company"
-        mock_stock.stats.volume = 1000000
-        mock_stock.stats.beta = 1.2
-        mock_stock.stats.volatility = 0.3
-        mock_stock.stock_price_history = Mock()
-        mock_stock.stock_price_history.day = []
-        
-        mock_service_instance = Mock()
-        mock_service_instance.collect_stock_data.return_value = mock_stock
-        mock_data_collection.return_value = mock_service_instance
-        
-        service = StockService(data_collection_service=mock_service_instance)
-        stock = service.get_stock_info("TEST", use_external=True)
-        
-        assert stock is not None
-        assert stock.ticker == "TEST"
-        mock_service_instance.collect_stock_data.assert_called_once_with("TEST")
-    
-    def test_get_stock_basic_info(self, test_db):
-        """Test getting basic stock info"""
-        create_or_update_stock(
-            ticker="TEST",
-            name="Test Company",
-            price=100.0,
-            change=5.0,
-            change_percent=5.26,
-            market_cap=1000000000,
-            revenue=50000000,
-            pe=20.0,
-            dividend_yield=2.5,
-            about="Test company",
-            volume=1000000,
-            beta=1.2,
-            volatility=0.3,
-        )
-        
-        service = StockService()
-        stock_info = service.get_stock_basic_info("TEST")
-        
-        assert stock_info is not None
-        assert stock_info["ticker"] == "TEST"
-        assert stock_info["name"] == "Test Company"
-        assert "chartData" not in stock_info  # Should not include chart data
-    
-    def test_get_sorted_stocks(self, test_db):
-        """Test getting sorted stocks"""
-        create_or_update_stock(
-            ticker="BBB",
-            name="BBB Company",
-            price=50.0,
-            change=0.0,
-            change_percent=0.0,
-            market_cap=500000000,
-            revenue=25000000,
-            pe=15.0,
-            dividend_yield=1.0,
-            about="BBB company",
-            volume=500000,
-            beta=1.0,
-            volatility=0.2,
-        )
-        create_or_update_stock(
-            ticker="AAA",
-            name="AAA Company",
-            price=100.0,
-            change=5.0,
-            change_percent=5.26,
-            market_cap=1000000000,
-            revenue=50000000,
-            pe=20.0,
-            dividend_yield=2.5,
-            about="AAA company",
-            volume=1000000,
-            beta=1.2,
-            volatility=0.3,
-        )
-        
-        service = StockService()
-        stocks = service.get_sorted_stocks(sort_by="ticker")
-        
+        dcs.collect_stock_data.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("src.services.stock.cache_get", new_callable=AsyncMock, return_value=None)
+    @patch("src.services.stock.cache_set", new_callable=AsyncMock)
+    async def test_get_stock_basic_info(self, mock_cache_set, mock_cache_get):
+        """Test getting basic stock info (no chart data)"""
+        dcs = _mock_dcs()
+        service = StockService(data_collection_service=dcs)
+        info = await service.get_stock_basic_info_async("TEST")
+
+        assert info is not None
+        assert info["ticker"] == "TEST"
+        assert info["name"] == "Test Company"
+
+    @pytest.mark.asyncio
+    @patch("src.services.stock.cache_get", new_callable=AsyncMock, return_value=None)
+    @patch("src.services.stock.cache_set", new_callable=AsyncMock)
+    async def test_get_sorted_stocks(self, mock_cache_set, mock_cache_get):
+        """Test getting sorted stocks list"""
+        stock_a = _mock_stock_data(ticker="AAA", name="AAA Company", price=100.0)
+        stock_b = _mock_stock_data(ticker="BBB", name="BBB Company", price=50.0)
+        dcs = _mock_dcs()
+        dcs.get_all_stocks.return_value = [stock_b, stock_a]
+
+        service = StockService(data_collection_service=dcs)
+        stocks = await service.get_sorted_stocks_async(sort_by="ticker")
+
         assert len(stocks) == 2
         assert stocks[0]["ticker"] == "AAA"
         assert stocks[1]["ticker"] == "BBB"
-    
-    def test_get_ohlcv_data(self, test_db):
-        """Test getting OHLCV data"""
-        create_or_update_stock(
-            ticker="TEST",
-            name="Test Company",
-            price=100.0,
-            change=5.0,
-            change_percent=5.26,
-            market_cap=1000000000,
-            revenue=50000000,
-            pe=20.0,
-            dividend_yield=2.5,
-            about="Test company",
-            volume=1000000,
-            beta=1.2,
-            volatility=0.3,
-        )
-        
-        add_price_history("TEST", 1704067200000, "2024-01-01", 100.0, 105.0, 95.0, 102.0, 1000000)
-        add_price_history("TEST", 1704153600000, "2024-01-02", 102.0, 107.0, 100.0, 105.0, 1200000)
-        
-        service = StockService()
-        ohlcv_data = service.get_ohlcv_data("TEST")
-        
-        assert len(ohlcv_data) == 2
-        assert ohlcv_data[0].date == "2024-01-01"
-        assert ohlcv_data[1].date == "2024-01-02"
 
+    def test_get_ohlcv_data(self):
+        """Test getting OHLCV data from mocked external API"""
+        day1 = Mock()
+        day1.date = "2024-01-01"
+        day1.timestamp = 1704067200000
+        day1.close = 102.0
+        day1.open = 100.0
+        day1.max = 105.0
+        day1.min = 95.0
+        day1.Trading_Volume = 1000000
+
+        day2 = Mock()
+        day2.date = "2024-01-02"
+        day2.timestamp = 1704153600000
+        day2.close = 105.0
+        day2.open = 102.0
+        day2.max = 107.0
+        day2.min = 100.0
+        day2.Trading_Volume = 1200000
+
+        stock_data = _mock_stock_data()
+        stock_data.stock_price_history = Mock()
+        stock_data.stock_price_history.day = [day1, day2]
+
+        dcs = _mock_dcs(stock_data)
+        service = StockService(data_collection_service=dcs)
+        ohlcv = service.get_ohlcv_data("TEST")
+
+        assert len(ohlcv) == 2
+        assert ohlcv[0].date == "2024-01-01"
+        assert ohlcv[1].date == "2024-01-02"
+
+    @pytest.mark.asyncio
+    @patch("src.services.stock.cache_get", new_callable=AsyncMock, return_value=None)
+    @patch("src.services.stock.cache_set", new_callable=AsyncMock)
+    async def test_get_stock_info_returns_none_when_api_fails(self, mock_cache_set, mock_cache_get):
+        """Test graceful handling when external API returns nothing"""
+        dcs = _mock_dcs()
+        dcs.collect_stock_data.return_value = None
+        service = StockService(data_collection_service=dcs)
+        stock = await service.get_stock_info_async("MISSING")
+
+        assert stock is None

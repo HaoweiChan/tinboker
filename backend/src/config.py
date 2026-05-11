@@ -102,14 +102,16 @@ class Settings(BaseSettings):
     # Or as JSON array: '["http://localhost:5173","https://tinboker.com"]'
     # Note: Vercel preview URLs (https://*.vercel.app) are automatically allowed via regex pattern
     cors_origins: list[str] = [
-        "http://localhost:5173",  # Development frontend (default port)
-        "http://localhost:5174",  # Development frontend (vite default port)
-        "http://localhost:5175",  # Development frontend (alternative port)
-        "http://127.0.0.1:5173",  # Development frontend (127.0.0.1, default port)
-        "http://127.0.0.1:5174",  # Development frontend (127.0.0.1, vite default)
-        "http://127.0.0.1:5175",  # Development frontend (127.0.0.1, alternative port)
-        "https://trendbrief.xyz",  # Production frontend
-        "https://www.trendbrief.xyz"  # Production frontend (www)
+        "http://localhost:5173",
+        "http://localhost:5174",
+        "http://localhost:5175",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:5174",
+        "http://127.0.0.1:5175",
+        "https://tinboker.com",
+        "https://www.tinboker.com",
+        "https://dev.tinboker.com",
+        "https://staging.tinboker.com",
     ]
     
     @field_validator("cors_origins", mode="before")

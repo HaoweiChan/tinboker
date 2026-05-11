@@ -71,17 +71,14 @@ async def suggest(
     
     from src.services.suggestion_index import SuggestionIndex
     index = SuggestionIndex()
-    
-    # If index is empty (first run), trigger a background build
-    # In production, this should be done on startup
+
+    # Fall back to full search if index hasn't been built yet
     if not index.is_initialized:
-        # We return empty or fallback to search for now, 
-        # but trigger build for next time
         asyncio.create_task(build_search_index())
-    
+        return await search(q=q, limit=limit)
+
     suggestions = index.suggest(q.strip(), limit=limit)
-    
-    # Group by type for the response
+
     return SearchResponse(
         stocks=[s for s in suggestions if s.type == "stock"],
         podcasts=[s for s in suggestions if s.type == "podcast"],
@@ -89,9 +86,8 @@ async def suggest(
         tags=[s for s in suggestions if s.type == "tag"]
     )
 
-@router.on_event("startup")
-async def startup_event():
-    """Initialize search index on app startup"""
+async def init_search_index():
+    """Initialize search index — called from main.py startup."""
     asyncio.create_task(build_search_index())
 
 async def build_search_index():
