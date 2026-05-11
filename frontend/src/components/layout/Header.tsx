@@ -7,9 +7,14 @@ import { NotificationDropdown } from '@/components/ui/NotificationDropdown';
 import { SearchDropdown } from '@/components/ui/SearchDropdown';
 import { useUser } from '@/store/useAppStore';
 import { LoginButton } from '@/components/auth/LoginButton';
+import { useWithinAppLayout } from './LayoutContext';
 
 export const Header: React.FC = () => {
   const user = useUser();
+  // Transitional: <AppLayout> renders its own header. Unmigrated pages still call
+  // <Header/> but it no-ops inside the new shell. Deleted with the old Header in Phase 5.
+  const insideAppLayout = useWithinAppLayout();
+  if (insideAppLayout) return null;
 
   return (
     <header className="sticky top-0 z-50 w-full backdrop-blur-xl bg-white/85 dark:bg-slate-950/70 border-b border-slate-200/60 dark:border-white/[0.06] transition-all duration-300 flex flex-col shadow-[0_1px_3px_rgba(0,0,0,0.04)] dark:shadow-[0_1px_3px_rgba(0,0,0,0.3)]">

@@ -1,85 +1,53 @@
 import React from 'react';
 import { cn } from '@/lib/utils';
-import IconLight from '../../assets/icon-light.svg';
-import IconDark from '../../assets/icon-dark.svg';
 
 interface AppLogoProps {
-    size?: number;
-    className?: string;
-    showSeparator?: boolean;
-    textClassName?: string;
-    mobileCompact?: boolean;
-    saturation?: number;
-    iconScale?: number;
-    textScale?: number;
+  /** Height of the bracket mark in px (the wordmark scales with it). */
+  size?: number;
+  className?: string;
+  /** Extra classes applied to the wordmark text. */
+  textClassName?: string;
+  /** Hide the "聽播客 ｜ TinBoker" wordmark below the `sm` breakpoint (mark only). */
+  mobileCompact?: boolean;
+  /** Render the bracket mark only, no wordmark. */
+  markOnly?: boolean;
 }
 
-export const AppLogo: React.FC<AppLogoProps> = ({
-    size = 28,
-    className = '',
-    textClassName = '',
-    mobileCompact = false,
-    saturation = 1,
-    iconScale = 1.1,
-    textScale = 0.85,
-}) => {
-    // Calculate proportional sizes for visual balance
-    const iconSize = size * iconScale;
-    const chineseSize = size * textScale;
-    const englishSize = size * textScale;
+/** The yellow accent on the closing bracket — the one warm tone in the system. */
+const ACCENT = '#ffd23f';
 
-    return (
-        <div className={cn('flex items-center gap-3 select-none', className)}>
-            {/* Audio Wave Icon - Using SVG Assets with Theme Switching */}
-            <div
-                className="relative"
-                style={{ width: iconSize, height: iconSize, filter: `saturate(${saturation})` }}
-            >
-                <img
-                    src={IconLight}
-                    alt="TinBoker Logo"
-                    className="absolute inset-0 w-full h-full object-contain block dark:hidden"
-                />
-                <img
-                    src={IconDark}
-                    alt="TinBoker Logo"
-                    className="absolute inset-0 w-full h-full object-contain hidden dark:block"
-                />
-            </div>
+/** TinBoker 「」 bracket mark. L bracket follows the theme via `currentColor`; R bracket is the yellow accent. */
+export const BracketMark: React.FC<{ size?: number; className?: string }> = ({ size = 26, className }) => (
+  <svg viewBox="0 0 42 42" width={size} height={size} fill="none" className={className} aria-hidden="true">
+    <path d="M9 9 H21 V13 H13 V21 H9 Z" fill="currentColor" />
+    <path d="M33 33 H21 V29 H29 V21 H33 Z" fill={ACCENT} />
+    <circle cx="18" cy="24" r="1.5" fill="currentColor" />
+    <circle cx="22" cy="20" r="1.5" fill="currentColor" opacity="0.7" />
+    <circle cx="26" cy="16" r="1.5" fill={ACCENT} opacity="0.85" />
+  </svg>
+);
 
-            {/* Text Group */}
-            <div className="flex items-baseline gap-2">
-                {/* Chinese Text: 聽播客 */}
-                <span
-                    className={cn(
-                        'font-bold tracking-wide transition-colors leading-none',
-                        'text-[#1F2937] dark:text-[#E2E8F0]',
-                        textClassName
-                    )}
-                    style={{
-                        fontSize: chineseSize,
-                        fontFamily: "'Noto Sans TC', system-ui, sans-serif",
-                    }}
-                >
-                    聽播客
-                </span>
-
-                {/* English Text: TINBOKER */}
-                <span
-                    className={cn(
-                        'font-extrabold uppercase tracking-wide transition-colors leading-none',
-                        'text-[#1F2937] dark:text-[#E2E8F0]',
-                        mobileCompact && 'hidden md:inline'
-                    )}
-                    style={{
-                        fontSize: englishSize,
-                        fontFamily: "'Outfit', sans-serif",
-                        letterSpacing: '0.05em',
-                    }}
-                >
-                    Tinboker
-                </span>
-            </div>
-        </div>
-    );
+export const AppLogo: React.FC<AppLogoProps> = ({ size = 26, className, textClassName, mobileCompact = false, markOnly = false }) => {
+  const wordSize = Math.round(size * 0.66);
+  return (
+    <div className={cn('flex items-center gap-2.5 select-none text-foreground', className)}>
+      <span className="grid place-items-center shrink-0" style={{ width: size, height: size }}>
+        <BracketMark size={size} />
+      </span>
+      {!markOnly && (
+        <span
+          className={cn('items-baseline gap-2 leading-none', mobileCompact ? 'hidden sm:flex' : 'flex', textClassName)}
+          style={{ fontSize: wordSize }}
+        >
+          <span className="font-bold tracking-[0.01em]" style={{ fontFamily: "'Noto Sans TC', system-ui, sans-serif" }}>
+            聽播客
+          </span>
+          <span className="self-stretch w-px bg-border" aria-hidden="true" style={{ marginInline: 2 }} />
+          <span className="font-bold tracking-[-0.01em]" style={{ fontFamily: "'Inter', system-ui, sans-serif" }}>
+            TinBoker
+          </span>
+        </span>
+      )}
+    </div>
+  );
 };

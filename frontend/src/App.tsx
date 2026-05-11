@@ -13,10 +13,12 @@ import { TagPage } from '@/pages/TagPage';
 import { ProfilePage } from '@/pages/ProfilePage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { DisclaimerPage } from '@/pages/DisclaimerPage';
+import { ComingSoon } from '@/pages/ComingSoon';
 import { AdminPage } from '@/pages/AdminPage';
 import { AdminDashboardPage } from '@/pages/AdminDashboardPage';
 import { TranslationsSection } from '@/pages/TranslationsSection';
 import { AdminAnalyticsPage } from '@/pages/AdminAnalyticsPage';
+import { AppLayout } from '@/components/layout/AppLayout';
 import { GlobalPlayer } from '@/components/player/GlobalPlayer';
 import { PlayerConfirmationModal } from '@/components/player/PlayerConfirmationModal';
 import { useAuthInit } from '@/hooks/useAuthInit';
@@ -40,33 +42,46 @@ function App() {
         duration={4000}
       />
       <Routes>
-        <Route path="/" element={<Landing />} />
-        <Route path="/story" element={<GraphGallery />} />
+        {/* Redirects (no chrome needed) */}
         <Route path="/gallery" element={<Navigate to="/story" replace />} />
         <Route path="/graph/*" element={<Navigate to="/story" replace />} />
-        <Route path="/about" element={<About />} />
-        <Route path="/contact" element={<ContactPage />} />
-        <Route path="/disclaimer" element={<DisclaimerPage />} />
 
-        {/* Stock & Content Routes */}
-        <Route path="/stock/:ticker" element={<StockDashboard />} />
-        <Route path="/podcaster/:id" element={<PodcasterPage />} />
-        <Route path="/tag/:tag" element={<TagPage />} />
-        <Route path="/industry" element={<IndustryAnalysis />} />
-        <Route path="/news/:id" element={<NewsPage />} />
+        {/* Consumer app — wrapped in the sidebar + header shell */}
+        <Route element={<AppLayout />}>
+          <Route path="/" element={<Landing />} />
 
-        {/* User Routes */}
-        <Route path="/profile" element={<ProfilePage />} />
-        <Route path="/settings" element={<SettingsPage />} />
+          {/* New redesign nav targets (Phase 4 fills these in) */}
+          <Route path="/podcaster" element={<ComingSoon title="節目" note="所有節目的列表頁正在重新設計。" />} />
+          <Route path="/stock" element={<ComingSoon title="個股" note="所有個股的列表頁正在重新設計。" />} />
+          <Route path="/topics" element={<ComingSoon title="話題雲" note="話題雲正在重新設計。" />} />
+          <Route path="/watchlist" element={<ComingSoon title="自選" note="自選清單正在重新設計。" />} />
 
-        {/* Admin Routes - nested under AdminPage layout */}
+          {/* Single-instance / content pages */}
+          <Route path="/stock/:ticker" element={<StockDashboard />} />
+          <Route path="/podcaster/:id" element={<PodcasterPage />} />
+          <Route path="/tag/:tag" element={<TagPage />} />
+          <Route path="/news/:id" element={<NewsPage />} />
+
+          {/* Retired from primary nav, kept live */}
+          <Route path="/story" element={<GraphGallery />} />
+          <Route path="/industry" element={<IndustryAnalysis />} />
+          <Route path="/about" element={<About />} />
+          <Route path="/contact" element={<ContactPage />} />
+          <Route path="/disclaimer" element={<DisclaimerPage />} />
+
+          {/* User */}
+          <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+        </Route>
+
+        {/* Admin — keeps its own layout, outside the consumer shell */}
         <Route path="/admin" element={<AdminPage />}>
           <Route index element={<AdminDashboardPage />} />
           <Route path="translations" element={<TranslationsSection />} />
           <Route path="analytics" element={<AdminAnalyticsPage />} />
         </Route>
 
-        {/* Dev-only design preview */}
+        {/* Dev-only design preview (standalone, no shell) */}
         {DesignPreview && (
           <Route
             path="/__design"
@@ -78,7 +93,7 @@ function App() {
           />
         )}
 
-        {/* Catch-all Route - Redirect to Home */}
+        {/* Catch-all */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <GlobalPlayer />

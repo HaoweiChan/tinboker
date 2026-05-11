@@ -2,8 +2,11 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { AppLogo } from '@/components/logo/AppLogo';
 import { Mail, MessageCircle, AtSign } from 'lucide-react';
+import { useWithinAppLayout } from './LayoutContext';
 
 export const Footer: React.FC = () => {
+  // Transitional: the new shell (<AppLayout>) has no footer. Deleted in Phase 5.
+  if (useWithinAppLayout()) return null;
   return (
     <footer className="bg-slate-50/80 dark:bg-slate-950/80 border-t border-slate-200/60 dark:border-slate-800/40 mt-auto py-10 md:py-14">
       <div className="container mx-auto px-4 flex flex-col items-center text-center">
