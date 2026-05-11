@@ -1,58 +1,49 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Star, Bell, ArrowUpRight, ArrowDownRight } from 'lucide-react';
-import { Header } from '@/components/layout/Header';
-import { Footer } from '@/components/layout/Footer';
-import { Card, CardContent, Button } from '@/components/ui';
-import EpisodeCard from '@/components/home/EpisodeCard';
-import { useAppStore } from '@/store/useAppStore';
+import { Star, Plus } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
-import type { Episode as MockEpisode } from '@/data/mockData';
-import { getStockByTicker, getEpisodesByTicker } from '@/services/api';
+import { PageContent } from '@/components/layout/PageContent';
+import { Change, StatGroup, SentBar, SentimentChip, EpisodeCardV2, type StatItem } from '@/components/redesign';
+import { apiEpisodeToCardV2 } from '@/components/redesign/episodeAdapter';
+import { TickerInsightCard } from '@/components/financial/TickerInsightCard';
+import { cn } from '@/lib/utils';
+import { useAppStore } from '@/store/useAppStore';
+import { useStockTrendColor } from '@/hooks/useStockTrendColor';
+import { aggregateSentiment, dominantSentiment, type Sentiment } from '@/lib/sentiment';
+import { getStockByTicker, getEpisodesByTicker, type Episode as ApiEpisode } from '@/services/api';
 import { fetchWithFallback } from '@/services/api/migration';
 import { mockCompanyDetails, generateMockPriceSeries } from '@/services/mocks';
 import type { CompanyDetail, RealTimePriceUpdate, TimeframeOption } from '@/services/types';
 import { priceWebSocketClient } from '@/services/websocket/priceWebSocket';
 import TradingViewChart from '@/components/charts/TradingViewChart';
 import { ChartControls } from '@/components/charts/ChartControls';
-import { transformApiEpisodeToMock } from '@/services/api/transformers';
 import { recommendationService } from '@/services/recommendationService';
-import { TickerInsightCard } from '@/components/financial/TickerInsightCard';
+import { transformApiEpisodeToMock } from '@/services/api/transformers';
 import type { TickerRecommendation } from '@/services/types';
 
+function isTW(t: string): boolean {
+  return /\.TW[OW]?$/i.test(t);
+}
 
-
-
-const StockHeaderCard: React.FC<{ symbol: string }> = ({ symbol }) => {
+const StockHeaderCard: React.FC<{ symbol: string; episodeCount: number }> = ({ symbol, episodeCount }) => {
   const [stockData, setStockData] = useState<CompanyDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const { watchlist, alerts, toggleWatchlist, toggleAlert, theme } = useAppStore();
-
-  // Chart Configuration
+  const { watchlist, toggleWatchlist, theme } = useAppStore();
   const [timeframe, setTimeframe] = useState<TimeframeOption>('1D');
   const [activeIndicators, setActiveIndicators] = useState<string[]>(['MA5', 'MA20', 'MA60']);
   const [subChart, setSubChart] = useState<string>('Volume');
 
-
   const isWatchlisted = watchlist.includes(symbol);
-  const isAlertSet = alerts.includes(symbol);
+  const tw = isTW(symbol);
 
-  // Fetch stock data
   const fetchStockData = useCallback(async (ticker: string, tf: TimeframeOption) => {
     setIsLoading(true);
     try {
-      // Ensure ticker is uppercase for stock API (episodes API uses lowercase)
-      const stockTicker = ticker.toUpperCase();
-      const data = await fetchWithFallback(
-        () => getStockByTicker(stockTicker, tf),
-        mockCompanyDetails[ticker] || null,
-        `GET /api/stocks/${stockTicker}?timeframe=${tf}`
-      );
-
+      const data = await fetchWithFallback(() => getStockByTicker(ticker.toUpperCase(), tf), mockCompanyDetails[ticker] || null, `GET /api/stocks/${ticker.toUpperCase()}?timeframe=${tf}`);
       setStockData(data);
-    } catch (error) {
-      console.error('[StockHeaderCard] Failed to fetch stock data:', error);
+    } catch (e) {
+      console.error('[StockHeaderCard] Failed to fetch stock data:', e);
       setStockData(mockCompanyDetails[ticker] || null);
     } finally {
       setIsLoading(false);
@@ -60,440 +51,304 @@ const StockHeaderCard: React.FC<{ symbol: string }> = ({ symbol }) => {
   }, []);
 
   useEffect(() => {
-    if (symbol) {
-      fetchStockData(symbol, timeframe);
-    }
+    if (symbol) fetchStockData(symbol, timeframe);
   }, [symbol, timeframe, fetchStockData]);
 
-  // Handle infinite scroll - load more historical data
-  const handleLoadMore = useCallback(async (beforeTimestamp: number) => {
-    if (isLoadingMore) return;
-
-    setIsLoadingMore(true);
-    try {
-      const stockTicker = symbol.toUpperCase();
-      const moreData = await getStockByTicker(stockTicker, timeframe, { before: beforeTimestamp });
-
-      if (moreData?.chartData && moreData.chartData.length > 0) {
-        // Merge with existing data
-        setStockData(prev => {
-          if (!prev) return moreData;
-
-          // Combine old (new fetch) and existing data
-          const existingData = prev.chartData || [];
-          const newData = moreData.chartData || [];
-
-          // Create a map to deduplicate by timestamp
-          const dataMap = new Map<number, typeof existingData[0]>();
-
-          // Helper to safely get timestamp
-          const getSafeTimestamp = (p: any): number | null => {
-            if (typeof p.timestamp === 'number' && !isNaN(p.timestamp)) {
-              return p.timestamp;
-            }
-            if (p.date) {
-              const t = new Date(p.date).getTime();
-              if (!isNaN(t)) return t;
-            }
-            return null;
-          };
-
-          // Add new (older) data first
-          for (const point of newData) {
-            const ts = getSafeTimestamp(point);
-            if (ts !== null) {
-              // Ensure timestamp is set on the object we store
-              dataMap.set(ts, { ...point, timestamp: ts });
-            }
-          }
-
-          // Add existing data (will not overwrite if timestamp already exists)
-          for (const point of existingData) {
-            const ts = getSafeTimestamp(point);
-            if (ts !== null) {
-              if (!dataMap.has(ts)) {
-                dataMap.set(ts, { ...point, timestamp: ts });
+  const handleLoadMore = useCallback(
+    async (beforeTimestamp: number) => {
+      if (isLoadingMore) return;
+      setIsLoadingMore(true);
+      try {
+        const moreData = await getStockByTicker(symbol.toUpperCase(), timeframe, { before: beforeTimestamp });
+        if (moreData?.chartData && moreData.chartData.length > 0) {
+          setStockData((prev) => {
+            if (!prev) return moreData;
+            const getTs = (p: { timestamp?: number; date?: string }): number | null => {
+              if (typeof p.timestamp === 'number' && !Number.isNaN(p.timestamp)) return p.timestamp;
+              if (p.date) {
+                const t = new Date(p.date).getTime();
+                if (!Number.isNaN(t)) return t;
               }
+              return null;
+            };
+            const map = new Map<number, (typeof prev.chartData)[number]>();
+            for (const pt of moreData.chartData || []) {
+              const ts = getTs(pt);
+              if (ts != null) map.set(ts, { ...pt, timestamp: ts });
             }
-          }
-
-          // Convert back to array and sort by time
-          const mergedData = Array.from(dataMap.values()).sort((a, b) => {
-            // We know timestamp is valid here due to the check above
-            return (a.timestamp as number) - (b.timestamp as number);
+            for (const pt of prev.chartData || []) {
+              const ts = getTs(pt);
+              if (ts != null && !map.has(ts)) map.set(ts, { ...pt, timestamp: ts });
+            }
+            return { ...prev, chartData: Array.from(map.values()).sort((a, b) => (a.timestamp as number) - (b.timestamp as number)) };
           });
-
-          return {
-            ...prev,
-            chartData: mergedData,
-          };
-        });
+        }
+      } catch (e) {
+        console.error('[StockHeaderCard] Failed to load more data:', e);
+      } finally {
+        setIsLoadingMore(false);
       }
-    } catch (error) {
-      console.error('[StockHeaderCard] Failed to load more data:', error);
-    } finally {
-      setIsLoadingMore(false);
-    }
-  }, [symbol, timeframe, isLoadingMore]);
+    },
+    [symbol, timeframe, isLoadingMore],
+  );
 
-  // WebSocket integration
   useEffect(() => {
     if (!symbol) return;
-
-    const unsubscribeConnection = priceWebSocketClient.onConnectionChange(() => {
-      // Connection status changed
+    const offConn = priceWebSocketClient.onConnectionChange(() => {});
+    const offPrice = priceWebSocketClient.onPriceUpdate((u: RealTimePriceUpdate) => {
+      if (u.ticker === symbol) setStockData((prev) => (prev ? { ...prev, price: u.price, change: u.change, changePercent: u.changePercent } : prev));
     });
-
-    const unsubscribePrice = priceWebSocketClient.onPriceUpdate((update: RealTimePriceUpdate) => {
-      if (update.ticker === symbol) {
-        setStockData(prev => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            price: update.price,
-            change: update.change,
-            changePercent: update.changePercent,
-          };
-        });
-      }
-    });
-
     priceWebSocketClient.connect();
     priceWebSocketClient.subscribe([symbol]);
-
     return () => {
       priceWebSocketClient.unsubscribe([symbol]);
-      unsubscribeConnection();
-      unsubscribePrice();
+      offConn();
+      offPrice();
     };
   }, [symbol]);
 
-  // Use stock data from API (fallback to symbol if not available)
   const displayName = stockData?.name ?? symbol;
-  const displaySymbol = `${symbol}.TW`;
   const displayPrice = stockData?.price ?? 0;
   const displayChange = stockData?.change ?? 0;
   const displayChangePercent = stockData?.changePercent ?? 0;
-  const isPositive = displayChange >= 0;
+  const trend = useStockTrendColor(displayChange);
 
+  const rawChart = stockData?.chartData;
   const chartData = useMemo(() => {
-    // If we have API chart data, use it
-    if (stockData?.chartData && stockData.chartData.length > 0) {
-      // Helper to safely get timestamp (same logic as above)
-      const getSafeTimestamp = (p: any): number | null => {
-        if (typeof p.timestamp === 'number' && !isNaN(p.timestamp)) {
-          return p.timestamp;
-        }
+    if (rawChart && rawChart.length > 0) {
+      const getTs = (p: { timestamp?: number; date?: string }): number | null => {
+        if (typeof p.timestamp === 'number' && !Number.isNaN(p.timestamp)) return p.timestamp;
         if (p.date) {
           const t = new Date(p.date).getTime();
-          if (!isNaN(t)) return t;
+          if (!Number.isNaN(t)) return t;
         }
         return null;
       };
-
-      // Filter and map to ensure valid timestamps
-      const validData = stockData.chartData
-        .reduce((acc: any[], point) => {
-          const ts = getSafeTimestamp(point);
-          if (ts !== null) {
-            acc.push({ ...point, timestamp: ts });
-          }
+      return rawChart
+        .reduce<Array<(typeof rawChart)[number]>>((acc, pt) => {
+          const ts = getTs(pt);
+          if (ts != null) acc.push({ ...pt, timestamp: ts });
           return acc;
         }, [])
-        .sort((a: any, b: any) => a.timestamp - b.timestamp);
-
-      return validData;
+        .sort((a, b) => (a.timestamp as number) - (b.timestamp as number));
     }
-    // Fallback to mock data
     return generateMockPriceSeries(100, displayPrice || 100);
-  }, [stockData?.chartData, displayPrice]);
+  }, [rawChart, displayPrice]);
 
-  const latestCandle = chartData.length > 0 ? chartData[chartData.length - 1] : null;
-  const keyStats = {
-    open: latestCandle?.open ?? displayPrice,
-    high: latestCandle?.high ?? displayPrice,
-    low: latestCandle?.low ?? displayPrice,
-    marketCap: stockData?.marketCap || 0,
-    peRatio: stockData?.pe ?? 0,
-    volume: stockData?.stats?.volume || latestCandle?.volume || 0,
-  };
+  const latest = (chartData.length > 0 ? chartData[chartData.length - 1] : null) as { open?: number; high?: number; low?: number; volume?: number } | null;
+  const keyStats: { label: string; value: string }[] = [
+    { label: '開盤', value: (latest?.open ?? displayPrice).toLocaleString() },
+    { label: '最高', value: (latest?.high ?? displayPrice).toLocaleString() },
+    { label: '最低', value: (latest?.low ?? displayPrice).toLocaleString() },
+    { label: '成交量', value: latest?.volume || stockData?.stats?.volume ? `${(((latest?.volume ?? stockData?.stats?.volume) || 0) / 1000).toFixed(1)}K` : '—' },
+    { label: '市值', value: stockData?.marketCap ? `${(stockData.marketCap / 1e9).toFixed(2)}B` : '—' },
+    { label: '本益比', value: stockData?.pe ? stockData.pe.toFixed(1) : '—' },
+  ];
 
   return (
-    <div className="mx-4 sm:mx-8 mt-8">
-      {/* Header Section - Full Width */}
-      <div className="mb-6">
-        {/* Top Row: Name/Symbol + Action Buttons */}
-        <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-4 mb-6">
-          <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-slate-50">{displayName}</h1>
-            <span className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-3 py-1 rounded font-financial text-sm">
-              {displaySymbol}
-            </span>
+    <>
+      {/* Hero */}
+      <div className="flex items-start gap-5 bg-card border border-border rounded-md p-5 sm:p-6 mb-[18px]">
+        <div className="font-mono grid place-items-center bg-muted text-foreground text-[18px] rounded-md shrink-0 px-3" style={{ minWidth: 86, height: 72 }}>
+          {symbol}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-3 flex-wrap mb-1.5">
+            <h1 className="text-[22px] font-semibold tracking-[-0.02em]">{displayName}</h1>
+            <span className={cn('text-[12px] px-3 py-1 rounded-full', tw ? 'bg-sentiment-bull-soft text-sentiment-bull' : 'bg-accent-info-soft text-accent-info')}>{tw ? '台股 上市' : '美股'}</span>
           </div>
-
-          {/* Action Buttons - Secondary Style */}
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              onClick={async () => {
-                await toggleWatchlist(symbol);
-              }}
-              className={`gap-2 px-4 py-2 text-sm border-slate-300 dark:border-slate-700 ${isWatchlisted
-                ? 'text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-500/10'
-                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-                }`}
-            >
-              <Star size={16} className={isWatchlisted ? "fill-current" : ""} />
-              {isWatchlisted ? "已加入" : "加入自選"}
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => toggleAlert(symbol)}
-              className={`gap-2 px-4 py-2 text-sm border-slate-300 dark:border-slate-700 ${isAlertSet
-                ? 'text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/10'
-                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-                }`}
-            >
-              <Bell size={16} className={isAlertSet ? "fill-current" : ""} />
-              {isAlertSet ? "已開啟" : "設定警示"}
-            </Button>
+          <div className="flex items-baseline gap-3.5 flex-wrap">
+            <span className={cn('font-mono tabular-nums text-[32px] font-semibold tracking-[-0.02em]', trend.text)}>{isLoading ? '…' : displayPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+            <Change value={displayChangePercent} big />
+            <span className="text-[12px] text-muted-foreground">即時行情 · 延遲 15 分鐘</span>
           </div>
         </div>
-
-        {/* Price Section - HUGE */}
-        <div className="mb-2">
-          <span className={`text-5xl sm:text-6xl font-bold font-financial ${isPositive ? 'text-red-500 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
-            {isLoading ? '...' : displayPrice.toLocaleString()}
-          </span>
-        </div>
-
-        {/* Change Badge */}
-        <div className="flex items-center gap-3">
-          <span className={`inline-flex items-center gap-1 text-base font-bold px-3 py-1.5 rounded-md ${isPositive
-            ? 'bg-red-100 dark:bg-red-500/20 text-red-600 dark:text-red-400'
-            : 'bg-green-100 dark:bg-green-500/20 text-green-600 dark:text-green-400'
-            }`}>
-            {isPositive ? <ArrowUpRight size={18} /> : <ArrowDownRight size={18} />}
-            {isPositive ? '+' : ''}{displayChange.toLocaleString()} ({displayChangePercent.toFixed(2)}%)
-          </span>
-          <span className="text-slate-500 dark:text-slate-400 text-sm">即時行情 • 延遲 15 分鐘</span>
-        </div>
+        <button
+          type="button"
+          onClick={() => toggleWatchlist(symbol)}
+          className={cn(
+            'inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-[13px] font-medium transition-colors shrink-0',
+            isWatchlisted ? 'bg-card border border-border text-foreground hover:bg-muted' : 'bg-foreground text-background hover:opacity-90',
+          )}
+        >
+          {isWatchlisted ? <Star size={14} className="fill-current" /> : <Plus size={14} />}
+          {isWatchlisted ? '已加入' : '加入自選'}
+        </button>
       </div>
 
-      {/* Split Grid: Chart + Stats Sidebar */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-        {/* Left Column: Chart (Span 2) */}
-        <div className="lg:col-span-2">
+      {/* Chart + key stats */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-[18px]">
+        <div className="lg:col-span-2 bg-card border border-border rounded-md p-4">
           <ChartControls
             timeframe={timeframe}
             onTimeframeChange={setTimeframe}
             subChart={subChart}
             onSubChartChange={setSubChart}
             activeIndicators={activeIndicators}
-            onToggleIndicator={(ind, active) => {
-              setActiveIndicators(prev => active ? [...prev, ind] : prev.filter(i => i !== ind));
-            }}
+            onToggleIndicator={(ind, active) => setActiveIndicators((prev) => (active ? [...prev, ind] : prev.filter((i) => i !== ind)))}
           />
-          <div className="h-[400px] w-full">
+          <div className="h-[380px] w-full mt-3">
             <TradingViewChart
               data={chartData}
               theme={theme === 'dark' ? 'dark' : 'light'}
-              lineColor={isPositive ? '#22c55e' : '#ef4444'}
-              topColor={isPositive ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}
+              lineColor={trend.lineColor}
+              topColor={trend.topColor}
               bottomColor="transparent"
-              height={400}
+              height={380}
               className="w-full"
               activeIndicators={activeIndicators}
               activeSubChart={subChart}
               onLoadMore={handleLoadMore}
               isLoadingMore={isLoadingMore}
-
             />
           </div>
         </div>
-
-        {/* Right Column: Key Statistics Sidebar (Span 1) */}
-        <div className="lg:col-span-1">
-          <div className="glass-card rounded-xl p-5 h-full flex flex-col">
-            <h3 className="text-base font-bold text-slate-900 dark:text-slate-50 mb-5 tracking-tight">關鍵數據</h3>
-            <div className="space-y-0 flex-1 flex flex-col justify-center divide-y divide-slate-100 dark:divide-slate-800/60">
-              {[
-                { label: '開盤', value: keyStats.open.toLocaleString() },
-                { label: '最高', value: keyStats.high.toLocaleString() },
-                { label: '最低', value: keyStats.low.toLocaleString() },
-                { label: '成交量', value: `${(keyStats.volume / 1000).toFixed(1)}K` },
-                { label: '市值', value: `${(keyStats.marketCap / 1000000000).toFixed(2)}B` },
-                { label: '本益比', value: keyStats.peRatio ? keyStats.peRatio.toFixed(1) : 'N/A' },
-              ].map(({ label, value }) => (
-                <div key={label} className="flex justify-between items-center py-3">
-                  <span className="text-xs font-medium uppercase tracking-wider text-slate-400 dark:text-slate-500">{label}</span>
-                  <span className="text-sm font-semibold font-financial text-slate-900 dark:text-slate-50">{value}</span>
-                </div>
-              ))}
-            </div>
+        <div className="bg-card border border-border rounded-md p-5">
+          <h3 className="text-[12px] font-semibold uppercase tracking-[0.08em] text-muted-foreground mb-3.5">關鍵數據</h3>
+          <div className="divide-y divide-border">
+            {keyStats.map((s) => (
+              <div key={s.label} className="flex justify-between items-center py-2.5">
+                <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{s.label}</span>
+                <span className="text-[13px] font-mono tabular-nums font-semibold">{s.value}</span>
+              </div>
+            ))}
           </div>
+          <p className="mt-3 text-[11px] text-muted-foreground">{episodeCount} 集 podcast 提到此標的</p>
         </div>
       </div>
-    </div>
+    </>
   );
 };
 
 export const StockDashboard: React.FC = () => {
   const { ticker } = useParams();
-  const symbol = (ticker ?? '3017').toUpperCase();
-  const [relatedEpisodes, setRelatedEpisodes] = useState<MockEpisode[]>([]);
+  const symbol = (ticker ?? '2330.TW').toUpperCase();
+  const [episodes, setEpisodes] = useState<ApiEpisode[]>([]);
   const [recommendations, setRecommendations] = useState<TickerRecommendation[]>([]);
   const [episodesLoading, setEpisodesLoading] = useState(true);
 
-  // Fetch recommendations from API
   useEffect(() => {
     if (!symbol) return;
     let cancelled = false;
-    (async () => {
-      try {
-        const recs = await recommendationService.getRecommendationsByTicker(symbol);
-        if (!cancelled) setRecommendations(recs);
-      } catch (e) {
+    recommendationService
+      .getRecommendationsByTicker(symbol)
+      .then((recs) => {
+        if (!cancelled) setRecommendations(Array.isArray(recs) ? recs : []);
+      })
+      .catch(() => {
         if (!cancelled) setRecommendations([]);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [symbol]);
-
-  // Fetch related episodes from API
-  useEffect(() => {
-    const fetchEpisodes = async () => {
-      setEpisodesLoading(true);
-      try {
-        const apiEpisodes = await fetchWithFallback(
-          () => getEpisodesByTicker(symbol, { limit: 50, sortBy: 'spotify_release_date', order: 'desc', includeContent: false }),
-          [],
-          `getEpisodesByTicker(${symbol})`
-        );
-
-        // Transform API episodes to mock format, filtering out those without summary
-        const transformedEpisodes = apiEpisodes
-          .map(transformApiEpisodeToMock)
-          .filter((ep): ep is MockEpisode => ep !== null);
-
-        // Sort by spotify_release_date (descending - newest first)
-        // Since API might not sort correctly, we sort client-side as well
-        transformedEpisodes.sort((a, b) => {
-          // Find original API episodes to get release dates
-          const apiA = apiEpisodes.find(ep => ep.id === a.id);
-          const apiB = apiEpisodes.find(ep => ep.id === b.id);
-
-          if (!apiA || !apiB) return 0;
-
-          // Get release dates (prefer spotify_release_date, fallback to created_time)
-          const dateA = apiA.spotify_release_date || apiA.created_time;
-          const dateB = apiB.spotify_release_date || apiB.created_time;
-
-          // Convert to timestamps for comparison
-          const timeA = typeof dateA === 'string' ? new Date(dateA).getTime() : dateA;
-          const timeB = typeof dateB === 'string' ? new Date(dateB).getTime() : dateB;
-
-          // Descending order (newest first)
-          return timeB - timeA;
-        });
-
-        setRelatedEpisodes(transformedEpisodes);
-      } catch (error) {
-        console.error('[StockDashboard] Failed to fetch episodes:', error);
-        setRelatedEpisodes([]);
-      } finally {
-        setEpisodesLoading(false);
-      }
+      });
+    return () => {
+      cancelled = true;
     };
-
-    if (symbol) {
-      fetchEpisodes();
-    }
   }, [symbol]);
 
-  const structuredData = {
-    '@context': 'https://schema.org',
-    '@type': 'Organization',
-    'name': symbol,
-    'tickerSymbol': symbol,
-    'url': window.location.href
-  };
+  useEffect(() => {
+    if (!symbol) return;
+    let alive = true;
+    setEpisodesLoading(true);
+    (async () => {
+      const eps = await fetchWithFallback<ApiEpisode[]>(
+        () => getEpisodesByTicker(symbol, { limit: 50, sortBy: 'spotify_release_date', order: 'desc', includeContent: false }),
+        [],
+        `getEpisodesByTicker:${symbol}`,
+      ).catch(() => [] as ApiEpisode[]);
+      if (!alive) return;
+      const list = (Array.isArray(eps) ? eps : []).slice().sort((a, b) => {
+        const da = typeof a.spotify_release_date === 'string' ? Date.parse(a.spotify_release_date) : (a.spotify_release_date ?? a.created_time);
+        const db = typeof b.spotify_release_date === 'string' ? Date.parse(b.spotify_release_date) : (b.spotify_release_date ?? b.created_time);
+        return (db as number) - (da as number);
+      });
+      setEpisodes(list);
+      setEpisodesLoading(false);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [symbol]);
+
+  const breakdown = useMemo(() => aggregateSentiment(recommendations.map((r) => ({ sentiment: r.sentiment as Sentiment, sentiment_score: r.sentiment_score }))), [recommendations]);
+  const relatedTags = useMemo(() => {
+    const set = new Set<string>();
+    for (const e of episodes) for (const t of e.tags ?? []) set.add(t);
+    return [...set];
+  }, [episodes]);
+  const newestEp = episodes[0];
+
+  const stats: StatItem[] = [
+    {
+      label: '提及集數',
+      value: <>{episodes.length}<span className="text-[14px] text-muted-foreground ml-1">集</span></>,
+    },
+    {
+      label: '情緒比例',
+      textValue: true,
+      value: breakdown.total > 0 ? <SentBar bull={breakdown.bull} neutral={breakdown.neutral} bear={breakdown.bear} width={88} /> : <span className="text-muted-foreground text-[14px]">—</span>,
+      sub:
+        breakdown.total > 0 ? (
+          <span>
+            <span className="text-sentiment-bull">多 {breakdown.bull}</span> · <span className="text-muted-foreground">中 {breakdown.neutral}</span> · <span className="text-sentiment-bear">空 {breakdown.bear}</span>
+          </span>
+        ) : (
+          '尚無分析'
+        ),
+    },
+    {
+      label: '整體情緒',
+      textValue: true,
+      value: breakdown.total > 0 ? <SentimentChip sentiment={dominantSentiment(breakdown)} /> : <span className="text-muted-foreground text-[14px]">—</span>,
+      sub: newestEp ? `最新：${newestEp.podcast_name}${newestEp.episode_number != null ? ` EP ${newestEp.episode_number}` : ''}` : '無資料',
+    },
+    {
+      label: '相關話題',
+      value: relatedTags.length,
+      sub: relatedTags.length ? relatedTags.slice(0, 3).map((t) => `#${t}`).join(' ') + (relatedTags.length > 3 ? ` +${relatedTags.length - 3}` : '') : '—',
+    },
+  ];
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-transparent">
+    <>
       <SEO
-        title={`${symbol} - 股價表現與相關 Podcast`}
-        description={`查看 ${symbol} 的即時股價走勢，以及最新提到此標的的 Podcast 節目與分析。`}
-        structuredData={structuredData}
-        url={window.location.href}
+        title={`${symbol} · 股價與相關 Podcast`}
+        description={`查看 ${symbol} 的即時股價走勢，以及最新提到此標的的 Podcast 摘要與分析。`}
+        url={typeof window !== 'undefined' ? window.location.href : undefined}
       />
-      <Header />
+      <PageContent>
+        <StockHeaderCard symbol={symbol} episodeCount={episodes.length} />
 
-      <main className="flex-1 overflow-y-auto pb-12">
-        <div className="max-w-7xl mx-auto">
-          {/* Stock Header Card */}
-          <StockHeaderCard symbol={symbol} />
-
-
-
-          {/* Analyst Insights Section */}
-          <section className="px-4 sm:px-8 py-8 border-t border-slate-200 dark:border-slate-800" aria-label="Analyst Insights">
-            <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-50 mb-6">
-              分析師觀點 & 投資摘要
-            </h2>
-
-            {recommendations.length > 0 ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {recommendations.map(rec => (
-                  <TickerInsightCard key={rec.id} recommendation={rec} episodes={relatedEpisodes} />
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-8 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-dashed border-slate-200 dark:border-slate-800">
-                <p className="text-slate-500">此標的暫無詳細分析觀點。</p>
-              </div>
-            )}
-          </section>
-
-          {/* Related Episodes Section */}
-          <section className="px-4 sm:px-8 py-8 border-t border-slate-200 dark:border-slate-800" aria-label="Related Episodes">
-            <div className="flex items-center justify-between mb-6 pt-4">
-              <div>
-                <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-50 mb-1">
-                  相關 Podcast 集數
-                </h2>
-                <p className="text-sm text-slate-500 dark:text-slate-400">
-                  提及 {symbol} 的節目與分析
-                </p>
-              </div>
-              <span className="text-sm text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-full font-medium">
-                {relatedEpisodes.length} 集
-              </span>
-            </div>
-
-            {episodesLoading ? (
-              <div className="flex items-center justify-center py-12">
-                <p className="text-slate-500 dark:text-slate-400">載入中...</p>
-              </div>
-            ) : relatedEpisodes.length > 0 ? (
-              <div className="space-y-6">
-                {relatedEpisodes.map(episode => (
-                  <EpisodeCard key={episode.id} episode={episode} />
-                ))}
-              </div>
-            ) : (
-              <Card className="border-slate-200 dark:border-slate-800 glass-card text-center py-12">
-                <CardContent>
-                  <p className="text-slate-500">目前沒有 Podcast 提到此標的。</p>
-                </CardContent>
-              </Card>
-            )}
-          </section>
+        <div className="mb-[18px]">
+          <StatGroup items={stats} />
         </div>
-      </main>
 
-      <Footer />
-    </div>
+        {recommendations.length > 0 && (
+          <section className="mb-[18px]">
+            <h2 className="text-[13px] font-semibold text-muted-foreground mb-3">分析師觀點 & 投資摘要</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {recommendations.map((rec) => (
+                <TickerInsightCard key={rec.id} recommendation={rec} episodes={episodes.map(transformApiEpisodeToMock).filter((e): e is NonNullable<typeof e> => e != null)} />
+              ))}
+            </div>
+          </section>
+        )}
+
+        <h2 className="text-[13px] font-semibold text-muted-foreground mb-3">這檔被哪些集數聊到</h2>
+        {episodesLoading ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="bg-card border border-border rounded-md h-[180px] animate-pulse" />
+            ))}
+          </div>
+        ) : episodes.length === 0 ? (
+          <div className="bg-card border border-border rounded-md p-10 text-center text-[13px] text-muted-foreground">目前沒有 Podcast 提到此標的。</div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {episodes.map((ep) => (
+              <EpisodeCardV2 key={ep.id} {...apiEpisodeToCardV2(ep)} />
+            ))}
+          </div>
+        )}
+      </PageContent>
+    </>
   );
 };
 
