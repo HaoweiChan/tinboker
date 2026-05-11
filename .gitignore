@@ -35,3 +35,6 @@ out/
 # IDE
 .vscode/
 .idea/
+
+# oh-my-claudecode local state (per-machine; not shared)
+.omc/
