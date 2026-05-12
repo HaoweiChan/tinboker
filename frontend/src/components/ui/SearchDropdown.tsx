@@ -7,7 +7,7 @@ import { StockLogo } from '@/components/common/StockLogo';
 import { PodcastAvatar } from '@/components/common/PodcastAvatar';
 import { useSearchHistory } from '@/hooks/useSearchHistory';
 import { useAdaptiveDebounce } from '@/hooks/useAdaptiveDebounce';
-import { getSuggestions, getPopularSearches, type SearchResponse } from '@/services/api/search';
+import { getSuggestions, getPopularSearches, type SearchResponse, type SearchResultItem } from '@/services/api/search';
 
 interface SearchUIResult {
   id: string;
@@ -148,7 +148,7 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = () => {
     setIsOpen(false);
   };
 
-  const handlePopularItemClick = (item: any) => {
+  const handlePopularItemClick = (item: SearchResultItem) => {
     // Analytics
     if (item.type === 'stock' || item.type === 'podcast') {
       // Extract ID properly (item.id usually follows same convention "stock-xxx")
