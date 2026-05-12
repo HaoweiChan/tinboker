@@ -53,7 +53,7 @@ export const ContactPage: React.FC = () => {
               </p>
               
               <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400 mb-12 bg-slate-50 dark:bg-slate-800/50 p-4 rounded-lg w-fit">
-                <Clock size={18} className="text-amber-500" />
+                <Clock size={18} className="text-accent-info" />
                 <span className="text-sm font-medium">客服回覆時間：週一至週五 11:00-17:00（國定及例假日除外）</span>
               </div>
 
@@ -63,12 +63,12 @@ export const ContactPage: React.FC = () => {
                   icon={<Mail size={24} />}
                   title="電子郵件"
                   content={
-                    <a href="mailto:contact@trendbrief.com" className="text-amber-600 dark:text-amber-500 hover:underline">
+                    <a href="mailto:contact@trendbrief.com" className="text-accent-info dark:text-accent-info hover:underline">
                       contact@trendbrief.com
                     </a>
                   }
-                  iconBgColor="bg-amber-100 dark:bg-amber-900/30"
-                  iconColor="text-amber-600 dark:text-amber-500"
+                  iconBgColor="bg-accent-info-soft dark:bg-accent-info/30"
+                  iconColor="text-accent-info dark:text-accent-info"
                 />
 
                 {/* Line */}
@@ -76,7 +76,7 @@ export const ContactPage: React.FC = () => {
                   icon={<MessageCircle size={24} />}
                   title="官方 Line 帳號"
                   content={
-                    <a href="#" className="text-amber-600 dark:text-amber-500 hover:underline">
+                    <a href="#" className="text-accent-info dark:text-accent-info hover:underline">
                       @trendbrief
                     </a>
                   }
@@ -89,7 +89,7 @@ export const ContactPage: React.FC = () => {
                   icon={<AtSign size={24} />}
                   title="官方 Threads 帳號"
                   content={
-                    <a href="https://www.threads.net/@trendbrief" target="_blank" rel="noopener noreferrer" className="text-amber-600 dark:text-amber-500 hover:underline">
+                    <a href="https://www.threads.net/@trendbrief" target="_blank" rel="noopener noreferrer" className="text-accent-info dark:text-accent-info hover:underline">
                       @trendbrief
                     </a>
                   }

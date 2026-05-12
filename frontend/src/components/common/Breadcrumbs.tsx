@@ -40,7 +40,7 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({ items, className = '' 
           <li className="flex items-center flex-shrink-0 !m-0 !p-0">
             <Link
               to="/"
-              className="hover:text-amber-600 dark:hover:text-amber-500 transition-colors flex items-center gap-1"
+              className="hover:text-accent-info dark:hover:text-accent-info transition-colors flex items-center gap-1"
               aria-label="Home"
             >
               <Home size={14} />
@@ -57,7 +57,7 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({ items, className = '' 
                 {item.href && !isLast ? (
                   <Link
                     to={item.href}
-                    className="hover:text-amber-600 dark:hover:text-amber-500 transition-colors font-medium"
+                    className="hover:text-accent-info dark:hover:text-accent-info transition-colors font-medium"
                   >
                     {item.label}
                   </Link>

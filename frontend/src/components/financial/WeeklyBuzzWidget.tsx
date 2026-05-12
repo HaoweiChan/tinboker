@@ -45,7 +45,7 @@ export const WeeklyBuzzWidget: React.FC<WeeklyBuzzWidgetProps> = ({ className, i
         <Card className={cn("border-slate-200 dark:border-slate-800", className)}>
             <CardHeader className="pb-3 border-b border-slate-100 dark:border-slate-800">
                 <CardTitle className="flex items-center gap-2 text-lg">
-                    <MessageCircle className="text-amber-500" size={20} />
+                    <MessageCircle className="text-accent-info" size={20} />
                     <span>本週市場焦點</span>
                     <span className="text-xs font-normal text-slate-400 ml-auto bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-full">
                         Top 10 (30d)
@@ -83,7 +83,7 @@ export const WeeklyBuzzWidget: React.FC<WeeklyBuzzWidgetProps> = ({ className, i
                                     </div>
                                 </div>
 
-                                <Button size="icon" variant="ghost" className="h-8 w-8 text-slate-400 hover:text-amber-500">
+                                <Button size="icon" variant="ghost" className="h-8 w-8 text-slate-400 hover:text-accent-info">
                                     <ArrowRight size={16} />
                                 </Button>
                             </div>

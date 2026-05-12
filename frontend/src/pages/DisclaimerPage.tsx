@@ -9,8 +9,8 @@ export const DisclaimerPage: React.FC = () => {
       <main className="flex-1 py-12 md:py-20 relative z-0">
         <div className="container mx-auto max-w-3xl px-4">
           <div className="text-center mb-8">
-            <div className="w-16 h-16 bg-amber-100 dark:bg-amber-900/20 rounded-full flex items-center justify-center mx-auto mb-6">
-              <ShieldAlert size={32} className="text-amber-600 dark:text-amber-500" />
+            <div className="w-16 h-16 bg-accent-info-soft dark:bg-accent-info/20 rounded-full flex items-center justify-center mx-auto mb-6">
+              <ShieldAlert size={32} className="text-accent-info dark:text-accent-info" />
             </div>
             <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-50 mb-2">免責聲明</h1>
             <p className="text-slate-500 dark:text-slate-400">
@@ -29,7 +29,7 @@ export const DisclaimerPage: React.FC = () => {
               <div className="space-y-6">
                 <section>
                   <h3 className="text-xl font-bold text-slate-900 dark:text-slate-50 mb-3 flex items-center gap-2">
-                    <span className="w-1.5 h-6 bg-amber-500 rounded-full"></span>
+                    <span className="w-1.5 h-6 bg-accent-info rounded-full"></span>
                     資訊來源與準確性
                   </h3>
                   <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
@@ -39,7 +39,7 @@ export const DisclaimerPage: React.FC = () => {
 
                 <section>
                   <h3 className="text-xl font-bold text-slate-900 dark:text-slate-50 mb-3 flex items-center gap-2">
-                    <span className="w-1.5 h-6 bg-amber-500 rounded-full"></span>
+                    <span className="w-1.5 h-6 bg-accent-info rounded-full"></span>
                     投資風險告知
                   </h3>
                   <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
@@ -49,7 +49,7 @@ export const DisclaimerPage: React.FC = () => {
 
                 <section>
                   <h3 className="text-xl font-bold text-slate-900 dark:text-slate-50 mb-3 flex items-center gap-2">
-                    <span className="w-1.5 h-6 bg-amber-500 rounded-full"></span>
+                    <span className="w-1.5 h-6 bg-accent-info rounded-full"></span>
                     責任限制
                   </h3>
                   <p className="text-slate-600 dark:text-slate-400 leading-relaxed">

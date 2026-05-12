@@ -134,15 +134,15 @@ export const GlobalPlayer: React.FC = () => {
                                                 className={cn(
                                                     "w-full flex items-start gap-3 px-3 py-2.5 rounded-lg text-left transition-all cursor-pointer group",
                                                     isActive
-                                                        ? "bg-amber-100 dark:bg-amber-900/30 shadow-sm"
+                                                        ? "bg-accent-info-soft dark:bg-accent-info/30 shadow-sm"
                                                         : "hover:bg-slate-100 dark:hover:bg-slate-800"
                                                 )}
                                             >
                                                 <span className={cn(
                                                     "flex-shrink-0 px-2.5 py-1 rounded text-xs font-mono tabular-nums font-medium",
                                                     isActive
-                                                        ? "bg-amber-500 text-white shadow-sm"
-                                                        : "bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400 group-hover:bg-amber-200 dark:group-hover:bg-amber-900/50"
+                                                        ? "bg-accent-info text-white shadow-sm"
+                                                        : "bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400 group-hover:bg-accent-info-soft dark:group-hover:bg-accent-info/50"
                                                 )}>
                                                     {section.formattedTime}
                                                 </span>
@@ -150,14 +150,14 @@ export const GlobalPlayer: React.FC = () => {
                                                     <span className={cn(
                                                         "block text-sm leading-relaxed",
                                                         isActive
-                                                            ? "text-amber-700 dark:text-amber-300 font-semibold"
+                                                            ? "text-accent-info dark:text-accent-info font-semibold"
                                                             : "text-slate-700 dark:text-slate-300"
                                                     )}>
                                                         {section.title}
                                                     </span>
                                                 </div>
                                                 {isActive && (
-                                                    <span className="flex-shrink-0 w-2 h-2 mt-1.5 rounded-full bg-amber-500 animate-pulse" />
+                                                    <span className="flex-shrink-0 w-2 h-2 mt-1.5 rounded-full bg-accent-info animate-pulse" />
                                                 )}
                                             </button>
                                         );
@@ -189,7 +189,7 @@ export const GlobalPlayer: React.FC = () => {
                                 {/* Play/Pause Button */}
                                 <button
                                     onClick={handlePlayPause}
-                                    className="flex-shrink-0 w-10 h-10 rounded-full bg-amber-500 hover:bg-amber-600 text-white flex items-center justify-center transition-colors cursor-pointer"
+                                    className="flex-shrink-0 w-10 h-10 rounded-full bg-accent-info hover:bg-accent-info text-white flex items-center justify-center transition-colors cursor-pointer"
                                     title={playbackState.isPaused ? "播放" : "暫停"}
                                 >
                                     {playbackState.isPaused ? <Play size={20} fill="currentColor" /> : <Pause size={20} fill="currentColor" />}
@@ -217,7 +217,7 @@ export const GlobalPlayer: React.FC = () => {
                                             • {player.currentEpisodeData.showName}
                                         </span>
                                         {currentSection && (
-                                            <span className="text-xs truncate hidden md:inline-flex items-center gap-1 text-amber-600 dark:text-amber-400">
+                                            <span className="text-xs truncate hidden md:inline-flex items-center gap-1 text-accent-info dark:text-accent-info">
                                                 <span className="w-1 h-1 rounded-full bg-slate-200 dark:bg-slate-600" />
                                                 ▶ {currentSection.title}
                                             </span>
@@ -232,7 +232,7 @@ export const GlobalPlayer: React.FC = () => {
                                                 className={cn(
                                                     "p-1.5 rounded-full transition-colors cursor-pointer",
                                                     isExpanded
-                                                        ? "bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400"
+                                                        ? "bg-accent-info-soft dark:bg-accent-info/30 text-accent-info dark:text-accent-info"
                                                         : "hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400"
                                                 )}
                                                 title={isExpanded ? "收起章節" : "展開章節"}
@@ -264,7 +264,7 @@ export const GlobalPlayer: React.FC = () => {
                                     >
                                         {/* Progress Fill */}
                                         <div
-                                            className="h-full bg-amber-500 rounded-full transition-all relative z-10"
+                                            className="h-full bg-accent-info rounded-full transition-all relative z-10"
                                             style={{ width: `${progress}%` }}
                                         />
 
@@ -278,8 +278,8 @@ export const GlobalPlayer: React.FC = () => {
                                                     className={cn(
                                                         "absolute top-1/2 -translate-y-1/2 z-20 transition-all cursor-pointer",
                                                         isCurrentSection
-                                                            ? "w-1 h-4 bg-amber-600 dark:bg-amber-400 rounded-sm shadow-md"
-                                                            : "w-[3px] h-3 bg-slate-400/90 dark:bg-slate-500/90 hover:bg-amber-500 hover:h-4 hover:w-1 hover:shadow-lg"
+                                                            ? "w-1 h-4 bg-accent-info dark:bg-accent-info rounded-sm shadow-md"
+                                                            : "w-[3px] h-3 bg-slate-400/90 dark:bg-slate-500/90 hover:bg-accent-info hover:h-4 hover:w-1 hover:shadow-lg"
                                                     )}
                                                     style={{ left: `${markerPosition}%`, marginLeft: '-2px' }}
                                                     onMouseEnter={() => setHoveredSection(index)}
@@ -299,7 +299,7 @@ export const GlobalPlayer: React.FC = () => {
                                         })}
 
                                         {/* Hover overlay */}
-                                        <div className="absolute inset-0 bg-amber-400/20 opacity-0 group-hover:opacity-100 transition-opacity rounded-full" />
+                                        <div className="absolute inset-0 bg-accent-info/20 opacity-0 group-hover:opacity-100 transition-opacity rounded-full" />
                                     </div>
                                     <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400 tabular-nums w-8">
                                         {formatTime(playbackState.duration)}

@@ -95,7 +95,7 @@ const getStatusToken = (status?: string) => {
     return {
       label: '待定',
       className:
-        'bg-amber-100 text-amber-600 border border-amber-200 dark:bg-amber-500/20 dark:text-amber-200 dark:border-amber-500/40',
+        'bg-accent-info-soft text-accent-info border border-accent-info-soft dark:bg-accent-info/20 dark:text-accent-info-soft dark:border-accent-info/40',
     };
   }
   if (normalized.includes('stable')) {

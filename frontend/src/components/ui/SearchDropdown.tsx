@@ -107,7 +107,7 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = () => {
             subtitle: item.subtitle,
             icon: item.icon_url ?
               <img src={item.icon_url} alt="" className="w-4 h-4 rounded-sm object-cover" /> :
-              <Mic size={16} className="text-amber-400" />,
+              <Mic size={16} className="text-accent-info" />,
             link: item.link
           });
         });
@@ -349,7 +349,7 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = () => {
       {/* 1. DESKTOP INPUT: Visible on Desktop, Standard Behavior */}
       <div className="relative w-full group hidden md:block">
         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-          <Search className="h-5 w-5 text-slate-400 group-focus-within:text-amber-500 transition-colors" />
+          <Search className="h-5 w-5 text-slate-400 group-focus-within:text-accent-info transition-colors" />
         </div>
         <Input
           type="text"
@@ -358,7 +358,7 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = () => {
           onFocus={handleInputFocus}
           onKeyDown={handleKeyDown}
           placeholder="搜尋節目、代號 (2330)..."
-          className="w-full pl-10 pr-10 py-5 rounded-full bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-200 placeholder:text-slate-500 focus:bg-white dark:focus:bg-slate-800 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all text-base"
+          className="w-full pl-10 pr-10 py-5 rounded-full bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-200 placeholder:text-slate-500 focus:bg-white dark:focus:bg-slate-800 focus:border-accent-info focus:ring-1 focus:ring-accent-info transition-all text-base"
         />
         {searchQuery && (
           <button
@@ -366,7 +366,7 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = () => {
               setSearchQuery('');
               setIsOpen(false);
             }}
-            className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-amber-500 transition-colors z-10"
+            className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-accent-info transition-colors z-10"
             aria-label="清除搜尋"
           >
             <X className="h-5 w-5" />
@@ -425,12 +425,12 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = () => {
                 onChange={handleInputChange}
                 onKeyDown={handleKeyDown}
                 placeholder="搜尋節目、代號 (2330)..."
-                className="w-full pl-10 pr-10 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 border-none text-slate-900 dark:text-slate-200 focus:ring-2 focus:ring-amber-500 text-base"
+                className="w-full pl-10 pr-10 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 border-none text-slate-900 dark:text-slate-200 focus:ring-2 focus:ring-accent-info text-base"
               />
               {searchQuery && (
                 <button
                   onClick={() => setSearchQuery('')}
-                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 active:text-amber-500"
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 active:text-accent-info"
                 >
                   <X className="h-5 w-5" />
                 </button>
