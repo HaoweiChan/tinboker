@@ -1,8 +1,8 @@
 # tinboker-agents
 
 The **content / infrastructure backend** for **TinBoker「聽播客」** (a financial-podcast-summary
-product): it ingests podcast episodes (Spotify) and financial news (Tavily), derives structured
-content (transcripts, summaries, ticker sentiment, an entity/topic/supply-chain knowledge graph,
+product): it ingests podcast episodes (Spotify), derives structured
+content (transcripts, summaries, ticker sentiment, an entity/topic knowledge graph,
 slides, infographics), and serves it over HTTP (`/api/podcast/*`, `/api/wiki/*` on port 8003) and
 a Postgres store.
 
@@ -24,9 +24,6 @@ uv sync
 
 # Run podcast pipeline
 cd services/podcast && python main.py --config podcasts_to_download.json
-
-# Run knowledge-graph pipeline
-cd services/knowledge_graph && python -m apps.cli.main search-agent --ticker TSLA
 ```
 
 ## Repository Structure
@@ -69,17 +66,12 @@ tinboker-agents/
 │   │   │   ├── summarize/            # summary generation
 │   │   │   └── models/               # data models
 │   │   └── tests/
-│   └── knowledge_graph/              # news → entity extraction → graph
-│       ├── pyproject.toml
-│       ├── Dockerfile
-│       ├── apps/cli/                 # typer CLI
-│       ├── pipelines/                # agentic + content gen pipelines
-│       ├── services/                 # graph, extraction, ingestion services
-│       ├── extract/                  # rule-based + LLM extraction
-│       ├── graph/                    # JSON-backed graph store (wiki-graph/kg_store.json)
-│       ├── mcp/                      # MCP server tools
-│       └── tests/
 ```
+
+> A `services/knowledge_graph/` module (Tavily news → entity/relation extraction → JSON graph
+> store + SVG infographics, deployed to Cloud Run) used to live here. It was retired in May 2026 —
+> the Cloud Run service was unused and its output was never wired into `/api/wiki`. The last
+> in-progress state is parked on the `archive/knowledge-graph-refactor` branch.
 
 Wiki content (episodes / entities / topics / supply-chain pages) is **not** in this repo — it
 lives in Postgres on the VPS, written via `shared.wiki_builder` and the `/api/wiki` routes.
@@ -89,21 +81,21 @@ lives in Postgres on the VPS, written via `shared.wiki_builder` and the `/api/wi
 ### Data Flow
 
 ```
-       ┌─────────────┐                 ┌─────────────┐
-       │  Spotify RSS │                 │ Tavily News │
-       └──────┬──────┘                  └──────┬──────┘
-              │                                │
-       ┌──────▼──────┐                  ┌──────▼──────────┐
-       │   podcast/  │                  │ knowledge_graph/ │
-       │ download →  │                  │  extract → graph │
-       │ transcribe →│                  │  → visualize     │
-       │ summarize → │                  └──────┬──────────┘
-       │   upload    │                         │ kg_store.json (+ TODO: /api/wiki)
-       └──────┬──────┘                         ▼
-              │ ingest_episode()        ┌──────────────┐
-              ▼                         │  GCS (SVGs)  │
-   ┌─────────────────────┐              └──────────────┘
-   │ Postgres on the VPS │  ◀── /api/wiki (read/write) ── future UI / external readers
+       ┌─────────────┐
+       │  Spotify RSS │
+       └──────┬──────┘
+              │
+       ┌──────▼──────┐
+       │   podcast/  │
+       │ download →  │
+       │ transcribe →│
+       │ summarize → │ ─────────────────▶ GCS (mp3, transcripts, summaries, slides, SVGs)
+       │   upload    │
+       └──────┬──────┘
+              │ ingest_episode()
+              ▼
+   ┌─────────────────────┐
+   │ Postgres on the VPS │  ◀── /api/wiki (read/write) ── webui / external readers
    │  wiki_pages / links │
    └─────────────────────┘
 ```
@@ -122,7 +114,6 @@ lives in Postgres on the VPS, written via `shared.wiki_builder` and the `/api/wi
 | Service | Platform | Details |
 |---------|----------|---------|
 | podcast/ | Netcup VPS | systemd unit, port 8003; also runs Postgres for the wiki |
-| knowledge_graph/ | Google Cloud Run | Docker, triggered by GH Actions |
 | Wiki content | Postgres on the VPS | `WIKI_DATABASE_URL`; `scripts/wiki_migrate.sh` creates the schema |
 | marp_service/ | Docker (co-deployed with podcast) | Flask, port 5004 |
 
