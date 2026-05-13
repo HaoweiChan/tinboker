@@ -1,64 +1,124 @@
-# CI workflow - Build check for pull requests
+# CI workflow — type-check, build, and lint changed files for every PR to main/develop.
+# Uses a ci-gate aggregation job so branch protection always gets a result even when
+# no frontend files changed (docs-only PRs pass immediately).
 name: Frontend CI
 
 on:
   pull_request:
     branches: [main, develop]
-    paths: ['frontend/**']
 
 env:
   GCP_PROJECT_ID: gen-lang-client-0901363254
 
 jobs:
+  # ── 1. Detect which paths changed ────────────────────────────────────────────
+  changed:
+    runs-on: ubuntu-latest
+    outputs:
+      frontend: ${{ steps.filter.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            frontend:
+              - 'frontend/**'
+
+  # ── 2. Build + lint (only when frontend files changed) ───────────────────────
   build:
+    needs: changed
+    if: needs.changed.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # required for git diff in the lint step
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
+      # GCP auth is best-effort; fall back to a CI placeholder if the secret
+      # isn't available (e.g. external fork PRs or missing secret).
       - name: Authenticate to Google Cloud
+        id: gcp-auth
         uses: google-github-actions/auth@v2
+        continue-on-error: true
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
 
       - name: Set up Cloud SDK
+        if: steps.gcp-auth.outcome == 'success'
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Fetch secrets from Google Secret Manager
-        id: secrets
+      - name: Fetch VITE_GOOGLE_CLIENT_ID from Secret Manager
+        if: steps.gcp-auth.outcome == 'success'
         run: |
-          GOOGLE_CLIENT_ID=$(gcloud secrets versions access latest --secret=GOOGLE_CLIENT_ID --project=$GCP_PROJECT_ID)
+          GOOGLE_CLIENT_ID=$(gcloud secrets versions access latest \
+            --secret=GOOGLE_CLIENT_ID --project=$GCP_PROJECT_ID)
           echo "::add-mask::$GOOGLE_CLIENT_ID"
           echo "VITE_GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID" >> $GITHUB_ENV
+
+      - name: Use CI placeholder (GCP unavailable)
+        if: steps.gcp-auth.outcome != 'success'
+        run: echo "VITE_GOOGLE_CLIENT_ID=ci-placeholder" >> $GITHUB_ENV
 
       - name: Install dependencies
         working-directory: frontend
         run: npm ci
 
-      - name: Type check
-        working-directory: frontend
-        run: npx tsc --noEmit
-
-      - name: Build
+      # `npm run build` = `tsc -b && vite build` — catches all TypeScript errors
+      # and verifies the production bundle compiles.
+      - name: Build (tsc + vite)
         working-directory: frontend
         run: npm run build
         env:
           VITE_GOOGLE_CLIENT_ID: ${{ env.VITE_GOOGLE_CLIENT_ID }}
 
-      - name: Build Summary
+      # Lint only the .ts/.tsx files that were changed in this PR so pre-existing
+      # lint debt doesn't block unrelated work. New code must be lint-clean.
+      - name: Lint changed TypeScript files
+        working-directory: frontend
         run: |
-          echo "## Build Successful ✅" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Branch:** ${{ github.head_ref }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Target:** ${{ github.base_ref }}" >> $GITHUB_STEP_SUMMARY
+          CHANGED=$(git diff --name-only --diff-filter=ACMR \
+            "origin/${{ github.base_ref }}...HEAD" \
+            -- 'frontend/src/**/*.ts' 'frontend/src/**/*.tsx' \
+            | sed 's|^frontend/||')
+          if [ -z "$CHANGED" ]; then
+            echo "No TypeScript source files changed — lint skipped."
+            exit 0
+          fi
+          COUNT=$(echo "$CHANGED" | wc -l | tr -d ' ')
+          echo "Linting $COUNT changed file(s):"
+          echo "$CHANGED"
+          npx eslint $CHANGED
+
+      - name: Build summary
+        if: success()
+        run: |
+          echo "## Frontend CI ✅" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch:** \`${{ github.head_ref }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Target:** \`${{ github.base_ref }}\`" >> $GITHUB_STEP_SUMMARY
+
+  # ── 3. Gate — always runs; the required status check branch protection targets ─
+  ci-gate:
+    needs: [build]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Evaluate CI results
+        run: |
+          BUILD="${{ needs.build.result }}"
+          echo "build=$BUILD"
+          if [[ "$BUILD" == "failure" || "$BUILD" == "cancelled" ]]; then
+            echo "❌ Frontend CI failed (build=$BUILD)"
+            exit 1
+          fi
+          echo "✅ Frontend CI passed (build=$BUILD)"
