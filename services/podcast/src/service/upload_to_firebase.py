@@ -5,12 +5,13 @@ Firebase/Firestore Upload Service
 This module handles uploading podcast episode data to Google Cloud Firestore.
 """
 
-import os
-import json
-import re
 import hashlib
+import json
+import os
+import re
 from pathlib import Path
-from typing import Optional, List, Dict
+from typing import Dict, List, Optional
+
 from src.secrets_bootstrap import bootstrap
 
 # Load secrets from GSM (idempotent — safe if already bootstrapped at entry point).
@@ -25,7 +26,8 @@ except ImportError:
         "Install it with: pip install firebase-admin"
     )
 
-from src.models.podcast_models import PodcastEpisode, PodcastCollection
+from src.models.podcast_models import PodcastEpisode  # noqa: E402
+
 
 # Lazy import for GCS (only when needed)
 def get_gcs_storage_service():
@@ -184,7 +186,7 @@ class FirebaseService:
             
             # Upload files to GCS if GCS service is provided and episode doesn't already have URLs
             if gcs_service and not episode.mp3_url:
-                print(f"  ☁️  Uploading files to GCS...")
+                print("  ☁️  Uploading files to GCS...")
                 gcs_urls = gcs_service.upload_episode_files(
                     episode_id=episode_id,
                     podcast_name=podcast_name,
@@ -212,7 +214,7 @@ class FirebaseService:
                 episode.marp_markdown_url = gcs_urls.get('marp_markdown_url')
                 episode.marp_markdown_public_url = gcs_urls.get('marp_markdown_public_url')
                 
-                print(f"  ✓ Files uploaded to GCS")
+                print("  ✓ Files uploaded to GCS")
             
             # Get reference to the episode document
             episodes_collection = self.db.collection("episodes")
@@ -265,7 +267,7 @@ class FirebaseService:
                             with open(creds_path, 'r') as f:
                                 creds_data = json.load(f)
                                 project_id = creds_data.get('project_id', 'your-project')
-                    except:
+                    except Exception:
                         project_id = 'your-project'
                 
                 raise Exception(
@@ -296,7 +298,7 @@ class FirebaseService:
             if not tag_doc.exists:
                 # Create empty document (parent document can be empty)
                 tag_ref.set({})
-        except Exception as e:
+        except Exception:
             # If creation fails, it's okay - parent doc will be created implicitly
             pass
     
@@ -315,7 +317,7 @@ class FirebaseService:
             if not ticker_doc.exists:
                 # Create empty document (parent document can be empty)
                 ticker_ref.set({})
-        except Exception as e:
+        except Exception:
             # If creation fails, it's okay - parent doc will be created implicitly
             pass
     
@@ -755,12 +757,58 @@ class FirebaseService:
                 doc_id = docs[0].id if docs else "N/A"
                 print(f"  🔍 Found existing episode (ID: {doc_id})")
             else:
-                print(f"  🔍 Episode not found in Firestore")
+                print("  🔍 Episode not found in Firestore")
             return exists
             
         except Exception as e:
             raise Exception(f"Failed to check if episode exists in Firestore: {e}") from e
     
+    def upsert_podcast_show(self, podcast_name: str, metadata: Dict) -> None:
+        """
+        Create or update a podcast show document in the `podcasts` collection.
+
+        Args:
+            podcast_name: Canonical podcast name (used as document ID after sanitizing)
+            metadata: Show-level metadata dict (thumbnail_url, description, etc.)
+        """
+        doc_id = re.sub(r'[/]', '_', podcast_name)
+        doc_ref = self.db.collection("podcasts").document(doc_id)
+        metadata["podcast_name"] = podcast_name
+        doc_ref.set(metadata, merge=True)
+
+    def get_podcast_show(self, podcast_name: str) -> Optional[Dict]:
+        """
+        Get podcast show-level metadata from the `podcasts` collection.
+
+        Args:
+            podcast_name: Canonical podcast name
+
+        Returns:
+            Show metadata dict or None if not found
+        """
+        doc_id = re.sub(r'[/]', '_', podcast_name)
+        doc_ref = self.db.collection("podcasts").document(doc_id)
+        doc = doc_ref.get()
+        if doc.exists:
+            data = doc.to_dict()
+            data["id"] = doc.id
+            return data
+        return None
+
+    def get_all_podcast_shows(self) -> List[Dict]:
+        """
+        Get all podcast show documents from the `podcasts` collection.
+
+        Returns:
+            List of show metadata dicts
+        """
+        results = []
+        for doc in self.db.collection("podcasts").stream():
+            data = doc.to_dict()
+            data["id"] = doc.id
+            results.append(data)
+        return results
+
     def episode_exists_in_tag(self, tag_name: str, episode_id: str) -> bool:
         """
         Check if an episode exists in a tag's episodes subcollection.
@@ -777,7 +825,7 @@ class FirebaseService:
             episode_ref = tag_ref.collection("episodes").document(episode_id)
             doc = episode_ref.get()
             return doc.exists
-        except Exception as e:
+        except Exception:
             # If collection doesn't exist or other error, return False
             return False
     
@@ -797,7 +845,7 @@ class FirebaseService:
             episode_ref = ticker_ref.collection("episodes").document(episode_id)
             doc = episode_ref.get()
             return doc.exists
-        except Exception as e:
+        except Exception:
             # If collection doesn't exist or other error, return False
             return False
     

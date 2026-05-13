@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 # Pull secrets from Google Secret Manager into os.environ before any
 # router/service module that calls os.getenv() at import time.
 from src.secrets_bootstrap import bootstrap
+
 bootstrap()
 
 from src.routers import episode, podcast, wiki  # noqa: E402  — must follow bootstrap()

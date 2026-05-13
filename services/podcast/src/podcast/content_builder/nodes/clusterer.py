@@ -1,10 +1,8 @@
 """Sentence clustering node: filters financial events and attaches sentence data."""
 
-import json
 from typing import Any
 
 from ..state import PipelineState
-
 
 _FINANCIAL_KEYWORDS = [
     "台積電", "TSMC", "股價", "股票", "投資", "市場", "財經", "營收", "獲利",

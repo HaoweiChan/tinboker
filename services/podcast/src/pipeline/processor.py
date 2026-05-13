@@ -7,18 +7,20 @@ This module contains the EpisodeProcessor class that orchestrates all processing
 from typing import Dict
 
 from .config import PipelineConfig
-from .service_container import ServiceContainer
 from .episode_data import EpisodeData
-from .utils import determine_language
+from .service_container import ServiceContainer
 from .steps import (
     download_episode,
-    transcribe_episode,
     generate_summary,
-    upload_to_gcs,
+    ingest_into_wiki,
+    initialize_stt_service,
+    mirror_episode_to_postgres,
+    transcribe_episode,
     upload_to_firestore,
+    upload_to_gcs,
     validate_episode,
-    initialize_stt_service
 )
+from .utils import determine_language
 
 
 class EpisodeProcessor:
@@ -116,6 +118,12 @@ class EpisodeProcessor:
             # Step 5: Upload to Firestore
             upload_to_firestore(self.config, self.services, episode_data)
             
+            # Step 5b: Ingest into knowledge wiki (best-effort)
+            ingest_into_wiki(self.config, self.services, episode_data)
+
+            # Step 5c: Mirror episode into Postgres (best-effort; no-op w/o EPISODE_DATABASE_URL)
+            mirror_episode_to_postgres(self.config, self.services, episode_data)
+
             # Step 6: Validate
             validate_episode(self.config, self.services, episode_data)
             

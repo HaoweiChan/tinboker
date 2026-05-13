@@ -5,11 +5,10 @@ This module handles uploading episode files to Google Cloud Storage.
 """
 
 import json
-from typing import Optional
 
 from ..config import PipelineConfig
-from ..service_container import ServiceContainer
 from ..episode_data import EpisodeData
+from ..service_container import ServiceContainer
 from ..utils import generate_episode_id
 
 
@@ -184,7 +183,7 @@ def upload_to_gcs(
                 gcs_urls['summary_image_url'] = svg_url
                 blob_path = svg_url.replace(f"gs://{services.gcs_service.bucket_name}/", "")
                 gcs_urls['summary_image_public_url'] = services.gcs_service.generate_public_url(blob_path)
-                print(f"  ✓ Re-uploaded SVG to GCS")
+                print("  ✓ Re-uploaded SVG to GCS")
         
         if pptx_base64:
             success, pptx_url = services.gcs_service.upload_file_from_base64(
@@ -194,7 +193,7 @@ def upload_to_gcs(
                 gcs_urls['pptx_url'] = pptx_url
                 blob_path = pptx_url.replace(f"gs://{services.gcs_service.bucket_name}/", "")
                 gcs_urls['pptx_public_url'] = services.gcs_service.generate_public_url(blob_path)
-                print(f"  ✓ Re-uploaded PPTX to GCS")
+                print("  ✓ Re-uploaded PPTX to GCS")
         
         if marp_markdown:
             success, marp_url = services.gcs_service.upload_file_from_string(
@@ -216,7 +215,7 @@ def upload_to_gcs(
                 gcs_urls['ticker_recommendations_url'] = ticker_recommendations_url
                 blob_path = ticker_recommendations_url.replace(f"gs://{services.gcs_service.bucket_name}/", "")
                 gcs_urls['ticker_recommendations_public_url'] = services.gcs_service.generate_public_url(blob_path)
-                print(f"  ✓ Re-uploaded ticker recommendations to GCS")
+                print("  ✓ Re-uploaded ticker recommendations to GCS")
         
         ticker_marp_markdown = episode_data.summary_result.get('ticker_marp_markdown') if episode_data.summary_result else None
         if ticker_marp_markdown:
@@ -384,4 +383,4 @@ def upload_to_gcs(
     else:
         episode_data.gcs_urls = gcs_urls
     
-    print(f"  ✓ Files uploaded to GCS")
+    print("  ✓ Files uploaded to GCS")

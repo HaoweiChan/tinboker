@@ -1,13 +1,14 @@
 """Router for episode processing endpoints."""
 
-import subprocess
 import asyncio
 from pathlib import Path
-from typing import Optional, Dict
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Security, Query
+from typing import Dict, Optional
+
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Security
 from pydantic import BaseModel
+
 from src.auth import verify_api_key
-from src.job_tracker import create_job, update_job, get_job, get_all_jobs
+from src.job_tracker import create_job, get_all_jobs, get_job, update_job
 
 router = APIRouter(prefix="/api/episodes", tags=["episodes"])
 
@@ -41,7 +42,7 @@ async def run_episode_rerun(episode_id: str, project_root: Path):
         project_root: Root directory of the project
     """
     # Create job entry
-    job = create_job(episode_id)
+    create_job(episode_id)
     
     try:
         # Build the command - use python3 from venv

@@ -6,15 +6,14 @@ import argparse
 import json
 import os
 import sys
-from typing import Optional
 
 from src.secrets_bootstrap import bootstrap
 
 # Load secrets from GSM (idempotent — safe if already bootstrapped at entry point).
 bootstrap()
 
-from .parser import SpotifyPodcastParser
-from .auth import get_access_token
+from .auth import get_access_token  # noqa: E402
+from .parser import SpotifyPodcastParser  # noqa: E402
 
 
 def get_credentials():
@@ -143,7 +142,7 @@ Examples:
     try:
         if args.all:
             episodes = podcast_parser.get_all_episodes(show_id)
-            print(f"Fetching all episodes...")
+            print("Fetching all episodes...")
         else:
             result = podcast_parser.get_episodes(show_id, limit=args.limit, offset=0)
             episodes = result.get("items", []) if result else []

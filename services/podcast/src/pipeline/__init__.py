@@ -5,9 +5,9 @@ This module provides a step-based pipeline architecture for processing podcast e
 """
 
 from .config import PipelineConfig
-from .service_container import ServiceContainer
 from .episode_data import EpisodeData
 from .processor import EpisodeProcessor
+from .service_container import ServiceContainer
 
 __all__ = [
     "PipelineConfig",

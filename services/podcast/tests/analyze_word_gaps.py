@@ -10,11 +10,11 @@ This script:
 """
 
 import json
-import numpy as np
-import matplotlib.pyplot as plt
 from pathlib import Path
 from typing import Dict, List, Tuple
-import statistics
+
+import matplotlib.pyplot as plt
+import numpy as np
 
 
 def load_transcript(transcript_path: Path) -> Dict:
@@ -429,7 +429,7 @@ def plot_word_sequence(
             word_colors.append('steelblue')  # Normal
     
     # Plot word durations
-    bars = ax1.bar(word_indices, word_durations, color=word_colors, alpha=0.7, edgecolor='black', linewidth=0.5)
+    ax1.bar(word_indices, word_durations, color=word_colors, alpha=0.7, edgecolor='black', linewidth=0.5)
     ax1.set_ylabel('Word Duration (ms)', fontsize=12, fontweight='bold')
     ax1.set_title('Word Duration Sequence with Moving Average', fontsize=14, fontweight='bold')
     ax1.grid(True, alpha=0.3, axis='y')
@@ -706,7 +706,7 @@ def analyze_transcript(transcript_path: Path, output_dir: Path = None):
     non_zero_gaps = [g for g in gaps if g > 0]
     zero_count = len(gaps) - len(non_zero_gaps)
     
-    print(f"\n=== Gap Distribution ===")
+    print("\n=== Gap Distribution ===")
     print(f"  Zero gaps: {zero_count} ({zero_count/len(gaps)*100:.1f}%)")
     print(f"  Non-zero gaps: {len(non_zero_gaps)} ({len(non_zero_gaps)/len(gaps)*100:.1f}%)")
     
@@ -807,10 +807,10 @@ def analyze_transcript(transcript_path: Path, output_dir: Path = None):
         stats_for_threshold = gap_stats
         print("  (Using all gap statistics)")
     
-    p95 = stats_for_threshold['percentiles']['p95']
+    stats_for_threshold['percentiles']['p95']
     p99 = stats_for_threshold['percentiles']['p99']
     mean = stats_for_threshold['mean']
-    median = stats_for_threshold['median']
+    stats_for_threshold['median']
     std = stats_for_threshold['std']
     
     # Conservative threshold (catches most sentence boundaries)
@@ -1331,8 +1331,8 @@ def generate_sentences_from_transcript(
 
 
 if __name__ == "__main__":
-    import sys
     import argparse
+    import sys
     
     parser = argparse.ArgumentParser(
         description="Analyze word gaps and generate sentences from transcript",
@@ -1429,7 +1429,7 @@ Examples:
     
     if not transcript_path.exists():
         print(f"Error: Transcript file not found: {transcript_path}")
-        print(f"\nUsage: python analyze_word_gaps.py [transcript_path] [options]")
+        print("\nUsage: python analyze_word_gaps.py [transcript_path] [options]")
         print(f"Default: {default_transcript}")
         parser.print_help()
         sys.exit(1)
@@ -1495,7 +1495,7 @@ Examples:
                 print("\n" + "=" * 60)
                 print("Sentence generation completed successfully!")
                 print("=" * 60)
-                print(f"\nFirst 3 sentences preview:")
+                print("\nFirst 3 sentences preview:")
                 for i, sentence in enumerate(sentences[:3], 1):
                     print(f"\n  Sentence {i}:")
                     print(f"    Text: {sentence['text'][:100]}...")
@@ -1519,7 +1519,7 @@ Examples:
             print("\n" + "=" * 60)
             print("Analysis completed successfully!")
             print("=" * 60)
-            print(f"\nTo generate sentences, run:")
+            print("\nTo generate sentences, run:")
             print(f"  python analyze_word_gaps.py {transcript_path} --generate-sentences")
         except Exception as e:
             print(f"\nError during analysis: {e}")

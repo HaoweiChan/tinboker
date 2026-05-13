@@ -4,7 +4,6 @@ Step 0: Initialize Services
 This module initializes all required services for the pipeline.
 """
 
-from typing import Optional
 
 from ..config import PipelineConfig
 from ..service_container import ServiceContainer
@@ -20,7 +19,7 @@ def initialize_stt_service(config: PipelineConfig) -> object:
     Returns:
         Initialized STT service instance
     """
-    from src.service.speech_to_text import WhisperService, GroqService
+    from src.service.speech_to_text import GroqService, WhisperService
     service_name_lower = config.stt_service_name.lower()
     if service_name_lower in ["whisper", "openai"]:
         return WhisperService()

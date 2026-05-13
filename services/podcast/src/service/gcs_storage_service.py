@@ -6,11 +6,12 @@ This module provides a centralized service for uploading podcast episode files
 to Google Cloud Storage and generating URLs for Firestore storage.
 """
 
-import os
-import json
 import hashlib
+import json
+import os
 from pathlib import Path
-from typing import Optional, Dict, Tuple, Any, List
+from typing import Any, Dict, Optional, Tuple
+
 from src.secrets_bootstrap import bootstrap
 
 # Load secrets from GSM (idempotent — safe if already bootstrapped at entry point).

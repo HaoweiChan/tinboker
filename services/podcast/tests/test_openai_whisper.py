@@ -12,6 +12,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 from typing import Optional, Union
+
 from dotenv import load_dotenv
 
 # Load environment variables from project root
@@ -98,7 +99,7 @@ def extract_audio_segment(
             segment = segment.speedup(playback_speed=speed_multiplier)
             print(f"  Original duration: {len(segment) / 1000 / speed_multiplier:.2f}s")
             print(f"  New duration: {len(segment) / 1000:.2f}s")
-            print(f"  Warning: Speed adjustment may affect transcription quality!")
+            print("  Warning: Speed adjustment may affect transcription quality!")
         
         # Export the segment
         print(f"Exporting segment to: {output_path}")
@@ -136,7 +137,7 @@ def extract_audio_segment(
             print(f"Extracting first {duration_minutes} minutes using ffmpeg...")
         if speed_multiplier != 1.0:
             print(f"Adjusting speed to {speed_multiplier}x...")
-            print(f"  Warning: Speed adjustment may affect transcription quality!")
+            print("  Warning: Speed adjustment may affect transcription quality!")
         print(f"Exporting segment to: {output_path}")
         
         # Build ffmpeg command
@@ -429,27 +430,27 @@ def test_openai_whisper_transcription(
             
             # Quality impact warnings based on research
             if speed_multiplier <= 1.2:
-                print(f"  Quality impact: Minimal (~1-2% WER increase expected)")
+                print("  Quality impact: Minimal (~1-2% WER increase expected)")
             elif speed_multiplier <= 1.5:
-                print(f"  Quality impact: Low (~2-3% WER increase expected)")
+                print("  Quality impact: Low (~2-3% WER increase expected)")
             else:
-                print(f"  Quality impact: SIGNIFICANT - Quality may degrade substantially!")
-                print(f"  Recommendation: Use 1.2x-1.5x for best balance of cost and quality")
+                print("  Quality impact: SIGNIFICANT - Quality may degrade substantially!")
+                print("  Recommendation: Use 1.2x-1.5x for best balance of cost and quality")
         else:
             print(f"Processed audio duration: {duration_minutes:.2f} minutes")
         print(f"Whisper API pricing: ${WHISPER_COST_PER_MINUTE} per minute")
         print(f"Estimated cost for this request: ${estimated_cost:.4f} USD")
-        print(f"\nNote: Actual usage and billing are tracked by OpenAI.")
-        print(f"      Check your OpenAI dashboard for detailed usage statistics.")
+        print("\nNote: Actual usage and billing are tracked by OpenAI.")
+        print("      Check your OpenAI dashboard for detailed usage statistics.")
         
         if usage_info:
-            print(f"\nResponse metadata found:")
+            print("\nResponse metadata found:")
             for key, value in usage_info.items():
                 print(f"  {key}: {value}")
         
         if response_headers and not usage_info:
             # Show all headers if no usage-specific ones found
-            print(f"\nResponse headers (showing rate-limit related):")
+            print("\nResponse headers (showing rate-limit related):")
             relevant_headers = {
                 k: v for k, v in response_headers.items()
                 if any(keyword in k.lower() for keyword in ['x-', 'rate', 'limit', 'request'])
@@ -510,7 +511,7 @@ def test_openai_whisper_transcription(
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(transcription_text)
         
-        print(f"Transcription saved successfully!")
+        print("Transcription saved successfully!")
         print(f"Output file size: {output_path.stat().st_size} bytes")
         
         # Display preview of transcription
@@ -567,12 +568,12 @@ def compare_transcriptions(
     speed_text = extract_text_from_srt(speed_transcription)
     
     # Basic statistics
-    print(f"\nNormal Speed Transcription:")
+    print("\nNormal Speed Transcription:")
     print(f"  File: {normal_output_path.name}")
     print(f"  Length: {len(normal_text)} characters")
     print(f"  Words (approx): {len(normal_text.split())}")
     
-    print(f"\n2x Speed Transcription:")
+    print("\n2x Speed Transcription:")
     print(f"  File: {speed_output_path.name}")
     print(f"  Length: {len(speed_text)} characters")
     print(f"  Words (approx): {len(speed_text.split())}")
@@ -590,9 +591,9 @@ def compare_transcriptions(
     print(f"\n{'='*60}")
     print("Sample Comparison (first 200 characters):")
     print(f"{'='*60}")
-    print(f"\nNormal Speed:")
+    print("\nNormal Speed:")
     print(f"  {normal_text[:200]}...")
-    print(f"\n2x Speed:")
+    print("\n2x Speed:")
     print(f"  {speed_text[:200]}...")
     
     # Save comparison report

@@ -4,13 +4,15 @@ Pipeline processing steps.
 This module contains all step functions for the podcast processing pipeline.
 """
 
-from .initialize import initialize_services, initialize_stt_service
 from .download import download_episode
-from .transcribe import transcribe_episode
-from .summarize import generate_summary
-from .gcs_upload import upload_to_gcs
 from .firestore import upload_to_firestore
+from .gcs_upload import upload_to_gcs
+from .initialize import initialize_services, initialize_stt_service
+from .postgres_episode import mirror_episode_to_postgres
+from .summarize import generate_summary
+from .transcribe import transcribe_episode
 from .validate import validate_episode
+from .wiki_ingest import ingest_into_wiki
 
 __all__ = [
     "initialize_services",
@@ -21,6 +23,8 @@ __all__ = [
     "upload_to_gcs",
     "upload_to_firestore",
     "validate_episode",
+    "ingest_into_wiki",
+    "mirror_episode_to_postgres",
 ]
 
 

@@ -1,0 +1,14 @@
+# Marp markdown → PPTX converter (Flask, port 5004). Built from the Dockerfile in this directory.
+#
+#   docker compose up -d --build      # from this directory
+#
+# On the Netcup VPS this is wrapped by the `marp-flask.service` systemd unit
+# (ExecStart = `docker compose up -d`, WorkingDirectory = this dir) — see docs/MIGRATION.md.
+services:
+  marp:
+    build: .
+    image: marp-flask-service:latest
+    container_name: marp-flask-service
+    ports:
+      - "5004:5004"
+    restart: unless-stopped

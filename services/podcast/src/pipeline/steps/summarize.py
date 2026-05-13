@@ -4,11 +4,10 @@ Step 3: Generate Summary
 This module handles generating summaries, SVG, and tickers from transcripts.
 """
 
-from typing import Optional
 
 from ..config import PipelineConfig
-from ..service_container import ServiceContainer
 from ..episode_data import EpisodeData
+from ..service_container import ServiceContainer
 from ..utils import extract_tags_and_tickers
 
 

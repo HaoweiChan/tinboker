@@ -2,12 +2,9 @@
 Integration tests for --episode mode.
 """
 
-from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
-
-from src.pipeline import PipelineConfig, PipelineContext
 
 
 @pytest.mark.integration
@@ -136,7 +133,7 @@ class TestEpisodeMode:
         episode1 = sample_firestore_episodes[0]
         transcript1 = unique_transcript_data()
         summary1 = unique_summary_data()
-        urls1 = unique_gcs_urls()
+        unique_gcs_urls()
         
         base_context.episode_id = episode1['id']
         base_context.gcs_urls = {
@@ -153,7 +150,7 @@ class TestEpisodeMode:
         episode2 = sample_firestore_episodes[1]
         transcript2 = unique_transcript_data()
         summary2 = unique_summary_data()
-        urls2 = unique_gcs_urls()
+        unique_gcs_urls()
         
         # Simulate context clearing (processor._clear_episode_context is called)
         processor._clear_episode_context()

@@ -1,7 +1,8 @@
 """Authentication module for FastAPI API key authentication."""
 
 import os
-from fastapi import Security, HTTPException, status
+
+from fastapi import HTTPException, Security, status
 from fastapi.security import APIKeyHeader
 
 # API Key header name

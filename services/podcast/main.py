@@ -2,6 +2,7 @@
 """Entry point shim -- delegates to podcast.cli.main()."""
 
 from src.secrets_bootstrap import bootstrap
+
 bootstrap()
 
 from src.podcast.cli import main  # noqa: E402

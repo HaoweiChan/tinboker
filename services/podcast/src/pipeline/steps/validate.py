@@ -4,10 +4,9 @@ Step 6: Validate
 This module handles validating that episodes were processed correctly.
 """
 
-import re
 from ..config import PipelineConfig
-from ..service_container import ServiceContainer
 from ..episode_data import EpisodeData
+from ..service_container import ServiceContainer
 from ..utils import extract_tickers_from_markdown
 
 
@@ -230,7 +229,7 @@ def validate_episode(
                     episode_data.validation_results['firestore_episode_id_matches'] = episode_id_match
                     
                     if not url_matches:
-                        print(f"    ⚠ Firestore URLs don't match GCS URLs")
+                        print("    ⚠ Firestore URLs don't match GCS URLs")
                     if not episode_id_match:
                         print(f"    ⚠ Firestore episode ID mismatch: stored={firestore_episode.get('id')}, expected={episode_data.episode_id}")
                 else:
@@ -241,7 +240,7 @@ def validate_episode(
                 episode_data.validation_results['firestore_urls_match'] = False
                 episode_data.validation_results['firestore_episode_id_matches'] = False
         else:
-            print(f"    ⚠ Warning: Episode not found in Firestore after upload")
+            print("    ⚠ Warning: Episode not found in Firestore after upload")
             episode_data.validation_results['firestore_urls_match'] = False
             episode_data.validation_results['firestore_episode_id_matches'] = False
     else:
@@ -315,7 +314,7 @@ def validate_episode(
     )
     
     if not critical_passed:
-        print(f"  ⚠ Validation issues found:")
+        print("  ⚠ Validation issues found:")
         for check in critical_checks:
             passed = episode_data.validation_results.get(check)
             if passed is False:
@@ -327,8 +326,8 @@ def validate_episode(
             if check not in critical_checks and not passed:
                 print(f"    - {check}: FAILED (non-critical)")
     else:
-        print(f"  ✓ All critical validations passed")
+        print("  ✓ All critical validations passed")
         if not all_passed:
-            print(f"  ⚠ Some non-critical validations failed (see details above)")
+            print("  ⚠ Some non-critical validations failed (see details above)")
     
     return critical_passed

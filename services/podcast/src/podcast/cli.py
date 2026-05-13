@@ -1,7 +1,7 @@
 """CLI entry point for the podcast processing pipeline."""
 
-import sys
 import argparse
+import sys
 from pathlib import Path
 
 

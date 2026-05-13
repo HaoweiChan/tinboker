@@ -29,6 +29,7 @@ dependencies = [
     "langgraph>=0.2.0",
     "langchain-core>=0.3.0",
     "langchain-google-genai>=2.0.0",
+    "langchain-openai>=0.2.0",  # OpenRouter (OpenAI-compatible) provider for content_builder
     "langsmith>=0.2.0",
     "pydantic>=2.0.0",
     # marp_service (Marp markdown -> PPTX Flask app, port 5004)

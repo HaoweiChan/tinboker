@@ -9,7 +9,8 @@ The algorithm detects words that are significantly longer than expected compared
 their neighbors, which likely contain pauses indicating sentence boundaries.
 """
 
-from typing import List, Dict, Set, Optional
+from typing import Dict, List, Set
+
 import numpy as np
 
 

@@ -6,8 +6,7 @@ import json
 import shutil
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, Mock
-from typing import Dict, List, Optional
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -15,9 +14,9 @@ import pytest
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.pipeline import PipelineConfig, ServiceContainer as PipelineContext
 from src.models.podcast_models import Sentence
-
+from src.pipeline import PipelineConfig
+from src.pipeline import ServiceContainer as PipelineContext
 
 # Load test fixtures
 FIXTURES_DIR = Path(__file__).parent / "fixtures"

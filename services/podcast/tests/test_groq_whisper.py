@@ -6,13 +6,14 @@ This script tests Groq's Whisper transcription API with audio samples.
 It extracts audio segments from files and transcribes them to various formats.
 """
 
-import os
 import json
+import os
 import re
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Optional, Union, List
+from typing import List, Optional, Union
+
 from dotenv import load_dotenv
 
 # Load environment variables from project root
@@ -112,7 +113,7 @@ def extract_audio_segment(
             segment = segment.speedup(playback_speed=speed_multiplier)
             print(f"  Original duration: {len(segment) / 1000 / speed_multiplier:.2f}s")
             print(f"  New duration: {len(segment) / 1000:.2f}s")
-            print(f"  Warning: Speed adjustment may affect transcription quality!")
+            print("  Warning: Speed adjustment may affect transcription quality!")
         
         # Export the segment
         print(f"Exporting segment to: {output_path}")
@@ -154,7 +155,7 @@ def extract_audio_segment(
             print(f"Extracting first {duration_minutes} minutes using ffmpeg...")
         if speed_multiplier != 1.0:
             print(f"Adjusting speed to {speed_multiplier}x...")
-            print(f"  Warning: Speed adjustment may affect transcription quality!")
+            print("  Warning: Speed adjustment may affect transcription quality!")
         print(f"Exporting segment to: {output_path}")
         
         # Build ffmpeg command
@@ -512,7 +513,7 @@ def test_groq_whisper_transcription(
         elif file_size_mb > max_size_mb * 0.9:  # Warn if > 90% of limit
             print(f"⚠️  Warning: File size is {file_size_mb:.2f} MB, close to the {max_size_mb} MB limit!")
             if not use_mp3:
-                print(f"💡 Tip: Consider using MP3 format (use_mp3=True) to reduce file size")
+                print("💡 Tip: Consider using MP3 format (use_mp3=True) to reduce file size")
         
         # Initialize Groq client
         print(f"\n{'='*60}")
@@ -571,7 +572,7 @@ def test_groq_whisper_transcription(
             print(f"Processed audio duration: {duration_minutes:.2f} minutes")
         print(f"Uploaded file size: {file_size_mb:.2f} MB ({file_size_bytes:,} bytes)")
         print(f"File size limit: {max_size_mb} MB (Groq free tier)")
-        print(f"\nNote: Check your Groq dashboard for usage and billing information.")
+        print("\nNote: Check your Groq dashboard for usage and billing information.")
         
         # Get the transcription content
         transcription_dict = None  # Store dict for verbose_json format
@@ -627,8 +628,8 @@ def test_groq_whisper_transcription(
                 transcription_text = convert_to_traditional_chinese(transcription_text)
             print("Conversion to Traditional Chinese completed.")
         else:
-            print(f"\n⚠️  Warning: zhconv not available. Skipping Chinese conversion.")
-            print(f"   Install it with: pip install zhconv")
+            print("\n⚠️  Warning: zhconv not available. Skipping Chinese conversion.")
+            print("   Install it with: pip install zhconv")
         
         # Save output to file
         if output_path is None:
@@ -660,7 +661,7 @@ def test_groq_whisper_transcription(
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(transcription_text)
         
-        print(f"Transcription saved successfully!")
+        print("Transcription saved successfully!")
         print(f"Output file size: {output_path.stat().st_size} bytes")
         
         # Display preview of transcription
@@ -726,7 +727,7 @@ def main():
         if isinstance(transcription, str):
             try:
                 transcription_dict = json.loads(transcription)
-            except:
+            except (ValueError, json.JSONDecodeError):
                 transcription_dict = {}
         else:
             transcription_dict = transcription

@@ -6,13 +6,13 @@ This script provides a highly customizable function to test AssemblyAI's transcr
 API with various configuration options based on the official API specification.
 """
 
-import os
-import json
-import time
 import inspect
+import json
+import os
 import re
 from pathlib import Path
-from typing import Optional, List, Dict, Any, Union
+from typing import Any, Dict, List, Optional, Union
+
 from dotenv import load_dotenv
 
 # Load environment variables from project root
@@ -447,7 +447,7 @@ def test_assemblyai_transcription(
         filtered_out = set(config_params.keys()) - set(filtered_config_params.keys())
         if filtered_out:
             print(f"Warning: The following parameters are not supported by the Python SDK and will be ignored: {sorted(filtered_out)}")
-            print(f"Note: The API specification includes these parameters, but the Python SDK may not support them yet.")
+            print("Note: The API specification includes these parameters, but the Python SDK may not support them yet.")
         
         config_params = filtered_config_params
     except Exception as e:
@@ -506,7 +506,7 @@ def test_assemblyai_transcription(
     if status_value_lower != "completed":
         print(f"Warning: Transcript status is '{status_value}', expected 'completed'")
     
-    print(f"✓ Transcription completed successfully!")
+    print("✓ Transcription completed successfully!")
     
     # Convert transcript to dict by extracting all attributes directly
     # Don't use Pydantic methods, just extract all values as-is
@@ -532,7 +532,7 @@ def test_assemblyai_transcription(
             value = getattr(transcript, attr_name)
             # Convert to JSON-serializable format
             transcript_dict[attr_name] = _convert_to_json_serializable(value)
-        except Exception as e:
+        except Exception:
             # If we can't get the value, skip it
             pass
     

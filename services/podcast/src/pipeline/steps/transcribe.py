@@ -5,11 +5,10 @@ This module handles transcribing episode audio to text.
 """
 
 from pathlib import Path
-from typing import Optional
 
 from ..config import PipelineConfig
-from ..service_container import ServiceContainer
 from ..episode_data import EpisodeData
+from ..service_container import ServiceContainer
 
 
 def transcribe_episode(
@@ -73,7 +72,7 @@ def transcribe_episode(
                             Sentence(**s) if isinstance(s, dict) else s
                             for s in sentences_data
                         ]
-                    print(f"  ♻ Reusing transcript from GCS")
+                    print("  ♻ Reusing transcript from GCS")
                     if episode_data.transcript_sentences:
                         print(f"  ♻ Sentence-level timing available ({len(episode_data.transcript_sentences)} sentences)")
                     if episode_data.transcript_words:

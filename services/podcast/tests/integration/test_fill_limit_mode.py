@@ -3,11 +3,10 @@ Integration tests for --fill-limit mode.
 """
 
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
-
-from src.pipeline import PipelineConfig, PipelineContext, EpisodeProcessor
+from src.pipeline import EpisodeProcessor
 
 
 @pytest.mark.integration
@@ -208,7 +207,7 @@ class TestFillLimitMode:
              patch('src.pipeline.steps.transcribe.transcribe_episode', side_effect=transcribe_side_effect1), \
              patch('src.pipeline.steps.summarize.generate_summary', side_effect=summarize_side_effect1), \
              patch('src.pipeline.steps.gcs_upload.upload_to_gcs') as mock_upload, \
-             patch('src.pipeline.steps.firestore.upload_to_firestore') as mock_firestore, \
+             patch('src.pipeline.steps.firestore.upload_to_firestore'), \
              patch('src.pipeline.steps.validate.validate_episode') as mock_validate:
             
             mock_download.return_value = mp3_1
@@ -243,7 +242,7 @@ class TestFillLimitMode:
              patch('src.pipeline.steps.transcribe.transcribe_episode', side_effect=transcribe_side_effect2), \
              patch('src.pipeline.steps.summarize.generate_summary', side_effect=summarize_side_effect2), \
              patch('src.pipeline.steps.gcs_upload.upload_to_gcs') as mock_upload, \
-             patch('src.pipeline.steps.firestore.upload_to_firestore') as mock_firestore, \
+             patch('src.pipeline.steps.firestore.upload_to_firestore'), \
              patch('src.pipeline.steps.validate.validate_episode') as mock_validate:
             
             mock_download.return_value = mp3_2

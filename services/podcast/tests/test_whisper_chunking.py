@@ -10,11 +10,10 @@ This script tests the chunking feature by:
 5. Comparing results for correctness
 """
 
-import os
 import subprocess
-import tempfile
 from pathlib import Path
 from typing import Dict, List, Optional
+
 from dotenv import load_dotenv
 
 # Load environment variables from project root
@@ -24,6 +23,7 @@ load_dotenv(dotenv_path=env_file)
 
 # Add project root to Python path
 import sys
+
 sys.path.insert(0, str(project_root))
 
 # Import OpenAI
@@ -35,7 +35,7 @@ except ImportError:
     )
 
 # Import WhisperService
-from src.service.speech_to_text import WhisperService, parse_srt_to_sentences
+from src.service.speech_to_text import WhisperService
 
 
 def transcribe_with_chunking(
@@ -68,7 +68,7 @@ def transcribe_with_chunking(
     
     result = service.transcribe(audio_path, language=language)
     
-    print(f"\nChunking transcription results:")
+    print("\nChunking transcription results:")
     print(f"  Total sentences: {len(result.get('sentences', []))}")
     print(f"  Total text length: {len(result.get('text', ''))} characters")
     
@@ -101,7 +101,7 @@ def transcribe_direct(
     
     result = service.transcribe(audio_path, language=language)
     
-    print(f"\nDirect transcription results:")
+    print("\nDirect transcription results:")
     print(f"  Total sentences: {len(result.get('sentences', []))}")
     print(f"  Total text length: {len(result.get('text', ''))} characters")
     
@@ -134,12 +134,12 @@ def compare_transcriptions(
     direct_text = direct_result.get('text', '')
     
     # Basic statistics
-    print(f"\nSentence Count:")
+    print("\nSentence Count:")
     print(f"  Chunked: {len(chunked_sentences)}")
     print(f"  Direct:  {len(direct_sentences)}")
     print(f"  Difference: {abs(len(chunked_sentences) - len(direct_sentences))}")
     
-    print(f"\nText Length:")
+    print("\nText Length:")
     print(f"  Chunked: {len(chunked_text)} characters")
     print(f"  Direct:  {len(direct_text)} characters")
     print(f"  Difference: {abs(len(chunked_text) - len(direct_text))} characters")
@@ -167,11 +167,11 @@ def compare_transcriptions(
         chunked_last_end = chunked_sentences[-1].get('end', 0)
         direct_last_end = direct_sentences[-1].get('end', 0)
         
-        print(f"\nTimestamp Alignment:")
-        print(f"  First sentence start:")
+        print("\nTimestamp Alignment:")
+        print("  First sentence start:")
         print(f"    Chunked: {chunked_first_start} ms")
         print(f"    Direct:  {direct_first_start} ms")
-        print(f"  Last sentence end:")
+        print("  Last sentence end:")
         print(f"    Chunked: {chunked_last_end} ms")
         print(f"    Direct:  {direct_last_end} ms")
         print(f"  Total duration difference: {abs(chunked_last_end - direct_last_end)} ms")
@@ -180,15 +180,14 @@ def compare_transcriptions(
     print(f"\n{'='*60}")
     print("Sample Comparison (first 200 characters):")
     print(f"{'='*60}")
-    print(f"\nChunked:")
+    print("\nChunked:")
     print(f"  {chunked_text_from_sentences[:200]}...")
-    print(f"\nDirect:")
+    print("\nDirect:")
     print(f"  {direct_text_from_sentences[:200]}...")
     
     # Save SRT files if paths provided
     if chunked_srt_path:
         # Convert sentences back to SRT format
-        from src.service.speech_to_text import parse_srt_to_sentences
         
         def sentences_to_srt(sentences: List[Dict]) -> str:
             """Convert sentences back to SRT format."""

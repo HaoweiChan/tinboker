@@ -3,11 +3,10 @@ Integration tests for context clearing between episodes.
 """
 
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
-
-from src.pipeline import PipelineConfig, PipelineContext, EpisodeProcessor
+from src.pipeline import EpisodeProcessor
 
 
 @pytest.mark.integration
@@ -53,7 +52,7 @@ class TestContextClearing:
         mp3_2.write_bytes(b'fake mp3 content 2')
         
         # Process Episode 1
-        episode1_data = unique_episode_data()
+        unique_episode_data()
         transcript1 = unique_transcript_data()
         transcript1_text = transcript1['text']
         
@@ -72,7 +71,7 @@ class TestContextClearing:
         episode1_transcript = base_context.transcript_text
         
         # Process Episode 2 - context should be cleared first
-        episode2_data = unique_episode_data()
+        unique_episode_data()
         transcript2 = unique_transcript_data()
         transcript2_text = transcript2['text']
         
@@ -103,7 +102,7 @@ class TestContextClearing:
         processor = EpisodeProcessor(base_config, base_context)
         
         # Process Episode 1
-        episode1_data = unique_episode_data()
+        unique_episode_data()
         summary1 = unique_summary_data()
         summary1_text = summary1['summary_text']
         
@@ -112,7 +111,7 @@ class TestContextClearing:
         episode1_summary = base_context.summary_result
         
         # Process Episode 2 - context should be cleared first
-        episode2_data = unique_episode_data()
+        unique_episode_data()
         summary2 = unique_summary_data()
         summary2_text = summary2['summary_text']
         
@@ -128,8 +127,8 @@ class TestContextClearing:
         
         # Verify summaries are different
         assert summary1_text != summary2_text, f"Original summaries should be different. Episode 1: '{summary1_text}', Episode 2: '{summary2_text}'"
-        assert episode1_summary == summary1, f"Episode 1 summary should match"
-        assert episode2_summary == summary2, f"Episode 2 summary should match"
+        assert episode1_summary == summary1, "Episode 1 summary should match"
+        assert episode2_summary == summary2, "Episode 2 summary should match"
         assert episode1_summary != episode2_summary, "Summaries should be different for each episode"
         assert episode1_summary['summary_text'] != episode2_summary['summary_text']
     
@@ -140,7 +139,7 @@ class TestContextClearing:
         processor = EpisodeProcessor(base_config, base_context)
         
         # Process Episode 1
-        episode1_data = unique_episode_data()
+        unique_episode_data()
         urls1 = unique_gcs_urls()
         
         # Set GCS URLs to simulate what upload step would do
@@ -148,7 +147,7 @@ class TestContextClearing:
         episode1_urls = base_context.gcs_urls
         
         # Process Episode 2 - context should be cleared first
-        episode2_data = unique_episode_data()
+        unique_episode_data()
         urls2 = unique_gcs_urls()
         
         # Clear context (simulating what happens at start of process_episode)
@@ -183,7 +182,7 @@ class TestContextClearing:
         
         # Process 3 episodes
         for i in range(3):
-            episode_data = unique_episode_data()
+            unique_episode_data()
             transcript = unique_transcript_data()
             summary = unique_summary_data()
             urls = unique_gcs_urls()
@@ -219,7 +218,7 @@ class TestContextClearing:
         processor = EpisodeProcessor(base_config, base_context)
         
         # Process Episode 1
-        episode1_data = unique_episode_data()
+        unique_episode_data()
         transcript1 = unique_transcript_data()
         summary1 = unique_summary_data()
         transcript1_text = transcript1['text']
@@ -233,7 +232,7 @@ class TestContextClearing:
         episode1_summary = base_context.summary_result
         
         # Process Episode 2 - context should be cleared first
-        episode2_data = unique_episode_data()
+        unique_episode_data()
         transcript2 = unique_transcript_data()
         summary2 = unique_summary_data()
         transcript2_text = transcript2['text']

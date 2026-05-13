@@ -5,8 +5,8 @@ This module handles uploading episode data to Firestore.
 """
 
 from ..config import PipelineConfig
-from ..service_container import ServiceContainer
 from ..episode_data import EpisodeData
+from ..service_container import ServiceContainer
 from ..utils import create_episode_object
 
 
@@ -61,5 +61,5 @@ def upload_to_firestore(
     )
     
     episode_data.episode = episode
-    print(f"  ✓ Uploaded to Firestore")
+    print("  ✓ Uploaded to Firestore")
 

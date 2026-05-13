@@ -5,8 +5,7 @@ Generates placeholder content when external summarization is not available.
 """
 
 import random
-from typing import List, Dict
-
+from typing import Dict, List
 
 # Placeholder ticker symbols
 PLACEHOLDER_TICKERS = [

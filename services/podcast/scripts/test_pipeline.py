@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Quick integration test for the LangGraph content pipeline."""
 
-import json
 import os
 import sys
 import time
@@ -9,6 +8,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.secrets_bootstrap import bootstrap
+
 bootstrap()
 
 from src.podcast.content_builder import run_pipeline
@@ -60,7 +60,7 @@ print(f"\n[events_markdown] ({len(em)} chars)")
 print(em[:500])
 
 tr = result.get("ticker_recommendations")
-print(f"\n[ticker_recommendations]")
+print("\n[ticker_recommendations]")
 if tr and isinstance(tr, dict):
     recs = tr.get("ticker_recommendations", [])
     print(f"  {len(recs)} tickers:")

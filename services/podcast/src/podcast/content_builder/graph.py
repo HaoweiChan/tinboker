@@ -35,9 +35,9 @@ from langgraph.graph import END, StateGraph
 from .nodes.clusterer import cluster_sentences
 from .nodes.events_markdown import build_events_markdown
 from .nodes.extractor import extract_events
+from .nodes.markdown_transform import transform_to_markdown
 from .nodes.marp_converter import convert_marp, convert_marp_ticker
 from .nodes.marp_writer import write_marp_slides
-from .nodes.markdown_transform import transform_to_markdown
 from .nodes.ticker_extractor import extract_tickers
 from .nodes.writer import write_article
 from .state import PipelineState

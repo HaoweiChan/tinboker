@@ -3,11 +3,10 @@ Integration tests for --rerun-from modes.
 """
 
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
-
-from src.pipeline import PipelineConfig, PipelineContext, EpisodeProcessor
+from src.pipeline import EpisodeProcessor
 
 
 @pytest.mark.integration
@@ -73,7 +72,7 @@ class TestRerunModes:
              patch('src.pipeline.steps.transcribe.transcribe_episode') as mock_transcribe, \
              patch('src.pipeline.steps.summarize.generate_summary') as mock_summarize, \
              patch('src.pipeline.steps.gcs_upload.upload_to_gcs') as mock_upload, \
-             patch('src.pipeline.steps.firestore.upload_to_firestore') as mock_firestore, \
+             patch('src.pipeline.steps.firestore.upload_to_firestore'), \
              patch('src.pipeline.steps.validate.validate_episode') as mock_validate:
             
             mock_download.return_value = mp3_path
@@ -108,7 +107,7 @@ class TestRerunModes:
              patch('src.pipeline.steps.transcribe.transcribe_episode') as mock_transcribe, \
              patch('src.pipeline.steps.summarize.generate_summary') as mock_summarize, \
              patch('src.pipeline.steps.gcs_upload.upload_to_gcs') as mock_upload, \
-             patch('src.pipeline.steps.firestore.upload_to_firestore') as mock_firestore, \
+             patch('src.pipeline.steps.firestore.upload_to_firestore'), \
              patch('src.pipeline.steps.validate.validate_episode') as mock_validate:
             
             mock_download.return_value = mp3_1
@@ -131,7 +130,7 @@ class TestRerunModes:
              patch('src.pipeline.steps.transcribe.transcribe_episode') as mock_transcribe, \
              patch('src.pipeline.steps.summarize.generate_summary') as mock_summarize, \
              patch('src.pipeline.steps.gcs_upload.upload_to_gcs') as mock_upload, \
-             patch('src.pipeline.steps.firestore.upload_to_firestore') as mock_firestore, \
+             patch('src.pipeline.steps.firestore.upload_to_firestore'), \
              patch('src.pipeline.steps.validate.validate_episode') as mock_validate:
             
             mock_download.return_value = mp3_2
@@ -168,7 +167,7 @@ class TestRerunModes:
              patch('src.pipeline.steps.transcribe.transcribe_episode') as mock_transcribe, \
              patch('src.pipeline.steps.summarize.generate_summary') as mock_summarize, \
              patch('src.pipeline.steps.gcs_upload.upload_to_gcs') as mock_upload, \
-             patch('src.pipeline.steps.firestore.upload_to_firestore') as mock_firestore, \
+             patch('src.pipeline.steps.firestore.upload_to_firestore'), \
              patch('src.pipeline.steps.validate.validate_episode') as mock_validate:
             
             mock_download.return_value = mp3_path
@@ -245,7 +244,7 @@ class TestRerunModes:
              patch('src.pipeline.steps.transcribe.transcribe_episode', side_effect=transcribe_side_effect1), \
              patch('src.pipeline.steps.summarize.generate_summary') as mock_summarize, \
              patch('src.pipeline.steps.gcs_upload.upload_to_gcs') as mock_upload, \
-             patch('src.pipeline.steps.firestore.upload_to_firestore') as mock_firestore, \
+             patch('src.pipeline.steps.firestore.upload_to_firestore'), \
              patch('src.pipeline.steps.validate.validate_episode') as mock_validate:
             
             mock_download.return_value = mp3_1
@@ -274,7 +273,7 @@ class TestRerunModes:
              patch('src.pipeline.steps.transcribe.transcribe_episode', side_effect=transcribe_side_effect2), \
              patch('src.pipeline.steps.summarize.generate_summary') as mock_summarize, \
              patch('src.pipeline.steps.gcs_upload.upload_to_gcs') as mock_upload, \
-             patch('src.pipeline.steps.firestore.upload_to_firestore') as mock_firestore, \
+             patch('src.pipeline.steps.firestore.upload_to_firestore'), \
              patch('src.pipeline.steps.validate.validate_episode') as mock_validate:
             
             mock_download.return_value = mp3_2
@@ -340,7 +339,7 @@ class TestRerunModes:
              patch('src.pipeline.steps.transcribe.transcribe_episode') as mock_transcribe, \
              patch('src.pipeline.steps.summarize.generate_summary') as mock_summarize, \
              patch('src.pipeline.steps.gcs_upload.upload_to_gcs') as mock_upload, \
-             patch('src.pipeline.steps.firestore.upload_to_firestore') as mock_firestore, \
+             patch('src.pipeline.steps.firestore.upload_to_firestore'), \
              patch('src.pipeline.steps.validate.validate_episode') as mock_validate:
             
             mock_summarize.return_value = {'summary_text': 'Test summary'}
@@ -385,7 +384,7 @@ class TestRerunModes:
         
         with patch('src.pipeline.steps.summarize.generate_summary', side_effect=summarize_side_effect1), \
              patch('src.pipeline.steps.gcs_upload.upload_to_gcs') as mock_upload, \
-             patch('src.pipeline.steps.firestore.upload_to_firestore') as mock_firestore, \
+             patch('src.pipeline.steps.firestore.upload_to_firestore'), \
              patch('src.pipeline.steps.validate.validate_episode') as mock_validate:
             
             mock_upload.return_value = {'mp3_url': 'gs://test/test.mp3'}
@@ -418,7 +417,7 @@ class TestRerunModes:
         
         with patch('src.pipeline.steps.summarize.generate_summary', side_effect=summarize_side_effect2), \
              patch('src.pipeline.steps.gcs_upload.upload_to_gcs') as mock_upload, \
-             patch('src.pipeline.steps.firestore.upload_to_firestore') as mock_firestore, \
+             patch('src.pipeline.steps.firestore.upload_to_firestore'), \
              patch('src.pipeline.steps.validate.validate_episode') as mock_validate:
             
             mock_upload.return_value = {'mp3_url': 'gs://test/test.mp3'}
@@ -455,7 +454,7 @@ class TestRerunModes:
              patch('src.pipeline.steps.transcribe.transcribe_episode') as mock_transcribe, \
              patch('src.pipeline.steps.summarize.generate_summary') as mock_summarize, \
              patch('src.pipeline.steps.gcs_upload.upload_to_gcs') as mock_upload, \
-             patch('src.pipeline.steps.firestore.upload_to_firestore') as mock_firestore, \
+             patch('src.pipeline.steps.firestore.upload_to_firestore'), \
              patch('src.pipeline.steps.validate.validate_episode') as mock_validate:
             
             mock_upload.return_value = base_context.gcs_urls
@@ -495,7 +494,7 @@ class TestRerunModes:
             return urls1
         
         with patch('src.pipeline.steps.gcs_upload.upload_to_gcs', side_effect=upload_side_effect1), \
-             patch('src.pipeline.steps.firestore.upload_to_firestore') as mock_firestore, \
+             patch('src.pipeline.steps.firestore.upload_to_firestore'), \
              patch('src.pipeline.steps.validate.validate_episode') as mock_validate:
             
             mock_validate.return_value = True
@@ -522,7 +521,7 @@ class TestRerunModes:
             return urls2
         
         with patch('src.pipeline.steps.gcs_upload.upload_to_gcs', side_effect=upload_side_effect2), \
-             patch('src.pipeline.steps.firestore.upload_to_firestore') as mock_firestore, \
+             patch('src.pipeline.steps.firestore.upload_to_firestore'), \
              patch('src.pipeline.steps.validate.validate_episode') as mock_validate:
             
             mock_validate.return_value = True
@@ -557,7 +556,7 @@ class TestRerunModes:
              patch('src.pipeline.steps.transcribe.transcribe_episode') as mock_transcribe, \
              patch('src.pipeline.steps.summarize.generate_summary') as mock_summarize, \
              patch('src.pipeline.steps.gcs_upload.upload_to_gcs') as mock_upload, \
-             patch('src.pipeline.steps.firestore.upload_to_firestore') as mock_firestore, \
+             patch('src.pipeline.steps.firestore.upload_to_firestore'), \
              patch('src.pipeline.steps.validate.validate_episode') as mock_validate:
             
             mock_validate.return_value = True

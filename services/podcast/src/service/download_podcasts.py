@@ -6,15 +6,14 @@ This script reads a JSON file with podcast information and downloads all episode
 """
 
 import json
-import os
-import sys
-import time
-import tempfile
-import requests
-from pathlib import Path
-from urllib.parse import urlparse
 import re
-from typing import List, Dict, Optional
+import sys
+import tempfile
+import time
+from pathlib import Path
+from typing import Dict, List, Optional
+
+import requests
 
 
 def extract_podcast_id(url: str) -> str:
@@ -192,7 +191,7 @@ def download_file_to_temp(url: str, episode_title: str, temp_dir: Optional[Path]
             if temp_path.exists():
                 temp_path.unlink()
             return None
-    except Exception as e:
+    except Exception:
         # Clean up on error
         if temp_path.exists():
             temp_path.unlink()

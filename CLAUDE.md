@@ -5,9 +5,9 @@
 `tinboker-agents` is the **content / infrastructure backend** for **TinBoker「聽播客」** —
 a financial-podcast-summary product. It does three things:
 
-1. **Ingest** — pull podcast episodes (Spotify RSS) and financial news (Tavily).
+1. **Ingest** — pull podcast episodes (Spotify RSS).
 2. **Derive structured content** — transcribe, summarize, extract tickers + sentiment, build
-   the entity / topic / supply-chain knowledge graph, generate slides + infographics.
+   the entity / topic knowledge graph, generate slides + infographics.
 3. **Serve it** — expose that content (and content-derived aggregates) over HTTP
    (`/api/podcast/*`, `/api/wiki/*` on the podcast service, port 8003) and a Postgres store, so
    the **TinBoker webui** can render it.
@@ -21,10 +21,16 @@ Keep this repo functional/infra-only and content-agnostic.
 
 ## Repo overview
 
-This monorepo uses **uv workspaces** to manage three Python packages:
+This monorepo uses **uv workspaces** to manage two Python packages:
 - `services/podcast/` — podcast processing pipeline + the HTTP API (`/api/podcast`, `/api/wiki`)
-- `services/knowledge_graph/` — news ingestion + entity/relation extraction + graph + infographics
 - `libs/shared/` — shared utilities (secrets, GCS, config, `wiki_builder`)
+
+> A third package, `services/knowledge_graph/` (Tavily news → entity/relation extraction → JSON
+> graph store → SVG infographics, deployed to Cloud Run), was **retired in May 2026** — the Cloud
+> Run service was unused and its output was never wired into `/api/wiki`. The last in-progress
+> state is parked on the `archive/knowledge-graph-refactor` branch. The wiki's entity/topic pages
+> still exist — they come from the podcast pipeline's ticker/tag extraction (`ingest_episode`),
+> not from the (now removed) news pipeline.
 
 **Wiki content lives in a Postgres database on the VPS, not in this repo.** The `wiki_builder`
 library (`libs/shared`) and the `/api/wiki` routes on the podcast service are content-agnostic
@@ -36,7 +42,6 @@ one-time migration source; it is gitignored and never committed.
 | Path | Purpose | Entry point | Key files |
 |------|---------|-------------|-----------|
 | [services/podcast/](services/podcast/) | Download → transcribe → summarize → Firestore; serves `/api/wiki` | [main.py](services/podcast/main.py) | [podcasts_to_download.json](services/podcast/podcasts_to_download.json) |
-| [services/knowledge_graph/](services/knowledge_graph/) | News → entity extraction → graph + SVG | [apps/cli/main.py](services/knowledge_graph/apps/cli/main.py) | [pipelines/](services/knowledge_graph/pipelines/) |
 | [libs/shared/](libs/shared/) | Secrets, GCS, config, wiki_builder (Postgres-backed) | N/A (library) | [src/shared/](libs/shared/src/shared/) |
 | Wiki content | Postgres DB on the VPS (`WIKI_DATABASE_URL`) | `/api/wiki` (podcast service) | [docs/wiki-schema.md](docs/wiki-schema.md) |
 
@@ -47,11 +52,6 @@ one-time migration source; it is gitignored and never committed.
 
 **Tweaking summary/extraction prompts:**
 - Content prompts: [services/podcast/src/podcast/content_builder/prompts/](services/podcast/src/podcast/content_builder/prompts/)
-- KG prompts: [services/knowledge_graph/extract/llm/](services/knowledge_graph/extract/llm/)
-
-**Adding entity extraction rules:**
-- [services/knowledge_graph/extract/rules/](services/knowledge_graph/extract/rules/)
-- [services/knowledge_graph/extract/llm/](services/knowledge_graph/extract/llm/)
 
 **Working on the wiki (content store):**
 - Schema + API: [docs/wiki-schema.md](docs/wiki-schema.md)
@@ -61,8 +61,8 @@ one-time migration source; it is gitignored and never committed.
 
 **Deploying to production:**
 - See [docs/MIGRATION.md](docs/MIGRATION.md)
-- podcast/ runs on Netcup VPS via systemd
-- knowledge_graph/ runs on Google Cloud Run
+- podcast/ runs on Netcup VPS via systemd (also hosts the wiki Postgres)
+- Plan to consolidate Firestore + GCS onto the VPS: [docs/data-consolidation-plan.md](docs/data-consolidation-plan.md)
 
 ## Conventions
 
@@ -75,7 +75,7 @@ one-time migration source; it is gitignored and never committed.
 **Testing:**
 - Add tests in each module's `tests/` directory
 - Run `pytest` from within the module directory, or use `uv run`
-- Use mocks for external APIs (Spotify, Tavily, Gemini, Firestore, GCS)
+- Use mocks for external APIs (Spotify, Gemini, Firestore, GCS, AssemblyAI/Groq)
 
 **Commits:**
 - Keep module changes atomic; PR per feature or fix
@@ -85,7 +85,6 @@ one-time migration source; it is gitignored and never committed.
 - Podcast pipeline: `services/podcast/src/podcast/` — cli, orchestrator, firestore_reprocessor
 - Podcast internals: `services/podcast/src/pipeline/`, `src/service/`, `src/summarize/`
 - Content builder: `services/podcast/src/podcast/content_builder/` — LangGraph pipeline
-- Knowledge graph: `services/knowledge_graph/` — apps/, pipelines/, services/, extract/, graph/
 - Shared: `libs/shared/src/shared/` — secrets, gcs, config, wiki_builder
 
 ## Don't
@@ -105,14 +104,6 @@ Spotify RSS → services/podcast/download → transcribe → summarize
   → content_builder.run_pipeline() → markdown + slides
   → wiki_builder.ingest_episode() → Postgres (via WikiRepository)
   → Upload MP3, transcript, summary → GCS + Firestore
-```
-
-### Knowledge-graph pipeline
-```
-Tavily news → services/knowledge_graph/agentic_pipeline → Gemini extraction
-  → extract/llm or /rules → graph_service.upsert()
-  → WikiStore (JSON: wiki-graph/kg_store.json)   [TODO: push entities to /api/wiki]
-  → Generate SVG infographics → GCS
 ```
 
 ## Related docs

@@ -39,6 +39,9 @@ services/wiki/
 # Knowledge-graph JSON store (generated at runtime)
 wiki-graph/
 
+# Local scratch / pipeline eval outputs (never committed)
+tmp/
+
 # Stray infographic outputs at any depth
 infographic_*.png
 infographic_*.svg
@@ -48,8 +51,10 @@ infographic_*.txt
 gcp-service-account.json
 *.gcp.json
 
+# Claude Code local memory (never committed)
+.claude/
+
 # Logs
 *.log
 
-# uv
-uv.lock
+# uv.lock IS committed for reproducibility — do not ignore it

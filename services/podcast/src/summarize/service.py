@@ -5,13 +5,10 @@ Main service class for generating summaries from transcripts.
 """
 
 import os
-from typing import Dict, Optional
 from pathlib import Path
+from typing import Dict, Optional
 
-from .content_builder import (
-    is_workflow_api_available,
-    analyze_transcript_with_workflow_api
-)
+from .content_builder import analyze_transcript_with_workflow_api, is_workflow_api_available
 from .placeholders import generate_placeholder_result
 
 
@@ -118,7 +115,7 @@ class SummarizeService:
                     ticker_marp_markdown = None
                 
                 # SVG and tickers remain as placeholders (Workflow API doesn't provide them)
-                from .placeholders import generate_placeholder_svg, extract_placeholder_tickers
+                from .placeholders import extract_placeholder_tickers, generate_placeholder_svg
                 svg_content = generate_placeholder_svg()
                 related_tickers = extract_placeholder_tickers()
                 
@@ -151,7 +148,7 @@ class SummarizeService:
                         ticker_count = len(ticker_recommendations.get('ticker_recommendations', []))
                         print(f"  ✓ Also received ticker_recommendations ({ticker_count} tickers)")
                     else:
-                        print(f"  ✓ Also received ticker_recommendations")
+                        print("  ✓ Also received ticker_recommendations")
                 
                 # Add ticker_marp_markdown if available
                 if ticker_marp_markdown:
@@ -160,12 +157,14 @@ class SummarizeService:
                 
                 return result
             except ValueError as e:
-                # Missing API key or configuration issue
-                print(f"⚠ Workflow API configuration error: {e}")
+                err_str = str(e)
+                if "unparseable" in err_str or "JSON" in err_str:
+                    print(f"⚠ LLM output parse error: {e}")
+                else:
+                    print(f"⚠ Pipeline configuration error: {e}")
                 print("  Falling back to placeholder summarizer...")
             except Exception as e:
-                # API connection or other errors
-                print(f"⚠ Workflow API unavailable: {e}")
+                print(f"⚠ Pipeline error: {e}")
                 print("  Falling back to placeholder summarizer...")
         
         # Final fallback to placeholder

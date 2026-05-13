@@ -4,7 +4,7 @@ Podcast data models for Firestore integration.
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import List, Dict, Optional
+from typing import Dict, List, Optional
 
 
 @dataclass

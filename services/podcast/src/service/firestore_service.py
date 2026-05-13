@@ -1,10 +1,11 @@
 """
 Generic Firestore service for data access
 """
-import os
 import json
+import os
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Any, Dict, List, Optional
+
 from src.secrets_bootstrap import bootstrap
 
 # Load secrets from GSM (idempotent — safe if already bootstrapped at entry point).

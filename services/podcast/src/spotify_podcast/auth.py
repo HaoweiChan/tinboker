@@ -2,8 +2,9 @@
 Authentication utilities for Spotify API.
 """
 
-import requests
 from typing import Optional
+
+import requests
 
 
 def get_access_token(client_id: str, client_secret: str) -> Optional[str]:

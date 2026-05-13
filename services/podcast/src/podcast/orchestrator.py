@@ -76,7 +76,7 @@ def run_pipeline(
         service_container = initialize_services(base_config)
         print("All services initialized successfully\n")
     except Exception as e:
-        print(f"\nFatal error: Service initialization failed")
+        print("\nFatal error: Service initialization failed")
         print(f"  {e}")
         print("\nPipeline terminated. Please fix the errors above and try again.")
         sys.exit(1)
@@ -189,7 +189,7 @@ def _process_all_firestore_episodes(service_container, common_kwargs: dict) -> N
             traceback.print_exc()
 
     print(f"\n{'='*60}")
-    print(f"Processing Summary")
+    print("Processing Summary")
     print(f"{'='*60}")
     print(f"Total episodes: {len(all_episodes)}")
     print(f"Successful: {success_count}")

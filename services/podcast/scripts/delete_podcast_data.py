@@ -19,17 +19,17 @@ Safety Features:
 - Lists all files that will be deleted
 """
 
-import sys
 import argparse
-from pathlib import Path
-from typing import List, Dict, Optional
 import hashlib
+import sys
+from pathlib import Path
+from typing import Dict, List, Optional
 
 # Add parent directory to path to import modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.service.upload_to_firebase import FirebaseService
 from src.service.gcs_storage_service import GCSStorageService
+from src.service.upload_to_firebase import FirebaseService
 
 
 def parse_gcs_url(gcs_url: str) -> Optional[str]:
@@ -115,7 +115,7 @@ def delete_episode_files_from_gcs(
     Returns:
         Dictionary with deletion status for each file type
     """
-    episode_id = episode.get('id', 'unknown')
+    episode.get('id', 'unknown')
     results = {
         'mp3': False,
         'transcript': False,
@@ -230,7 +230,7 @@ def delete_podcast_data(
             except Exception as index_error:
                 if "index" in str(index_error).lower() or "400" in str(index_error):
                     # Index missing - use FirestoreService to query without ordering
-                    print(f"  ⚠ Index missing, querying without ordering...")
+                    print("  ⚠ Index missing, querying without ordering...")
                     from src.service.firestore_service import FirestoreService
                     firestore_service = FirestoreService()
                     episodes = firestore_service.query_collection(
@@ -262,7 +262,7 @@ def delete_podcast_data(
         
         # List GCS files
         try:
-            print(f"\nScanning GCS for files...")
+            print("\nScanning GCS for files...")
             gcs_files = list_all_gcs_files_for_podcast(gcs_service, podcast_name)
             
             podcast_file_count = sum(len(files) for files in gcs_files.values())
@@ -350,7 +350,7 @@ def delete_podcast_data(
                 print(f"      ID: {episode_id}")
                 
                 # Delete GCS files referenced in Firestore
-                print(f"      Deleting GCS files from Firestore references...")
+                print("      Deleting GCS files from Firestore references...")
                 file_results = delete_episode_files_from_gcs(
                     gcs_service,
                     episode,
@@ -415,9 +415,9 @@ def delete_podcast_data(
             if orphaned_count > 0:
                 print(f"  ✓ Deleted {orphaned_count} additional GCS files")
             else:
-                print(f"  ✓ All GCS files already deleted")
+                print("  ✓ All GCS files already deleted")
         else:
-            print(f"  ✓ No GCS files found")
+            print("  ✓ No GCS files found")
     
     # Final summary
     print(f"\n{'='*80}")

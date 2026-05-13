@@ -2,8 +2,9 @@
 Core parser for Spotify podcast shows and episodes.
 """
 
+from typing import Dict, List, Optional
+
 import requests
-from typing import List, Dict, Optional
 
 
 class SpotifyPodcastParser:

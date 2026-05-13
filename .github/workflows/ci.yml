@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Run ruff
+        run: uvx ruff check .
+
+  test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Install dependencies
+        run: uv sync --all-packages --all-extras
+
+      - name: Run unit tests
+        env:
+          # Dummy values so secrets_bootstrap skips Google Secret Manager
+          PODCAST_API_KEY: ci-dummy
+          GROQ_API_KEY: ci-dummy
+          GOOGLE_API_KEY: ci-dummy
+          FIRESTORE_DATABASE_ID: ci-dummy
+          GCP_CREDENTIALS_JSON: "{}"
+          SPOTIFY_ID: ci-dummy
+          SPOTIFY_SECRET: ci-dummy
+          LANGSMITH_API_KEY: ci-dummy
+          WIKI_DATABASE_URL: postgresql://ci-dummy/dummy
+          EPISODE_DATABASE_URL: postgresql://ci-dummy/dummy
+          OPENROUTER_API_KEY: ci-dummy
+        run: |
+          uv run pytest \
+            services/podcast/tests/unit \
+            libs/shared/tests \
+            --ignore=services/podcast/tests/integration \
+            --ignore=libs/shared/tests/test_wiki_postgres.py \
+            -v --tb=short

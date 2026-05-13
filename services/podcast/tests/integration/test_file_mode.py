@@ -2,12 +2,10 @@
 Integration tests for --file-mode option.
 """
 
-from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
-
-from src.pipeline import PipelineConfig, PipelineContext, EpisodeProcessor
+from src.pipeline import EpisodeProcessor
 
 
 @pytest.mark.integration
@@ -25,7 +23,7 @@ class TestFileMode:
         base_config.images_dir = tmp_path / "images"
         base_config.temp_dir = None  # Explicitly set to None for file mode
         
-        processor = EpisodeProcessor(base_config, base_context)
+        EpisodeProcessor(base_config, base_context)
         
         # Verify directories are set
         assert base_config.downloads_dir == tmp_path / "downloads"
@@ -54,7 +52,7 @@ class TestFileMode:
              patch('src.pipeline.steps.transcribe.transcribe_episode') as mock_transcribe, \
              patch('src.pipeline.steps.summarize.generate_summary') as mock_summarize, \
              patch('src.pipeline.steps.gcs_upload.upload_to_gcs') as mock_upload, \
-             patch('src.pipeline.steps.firestore.upload_to_firestore') as mock_firestore, \
+             patch('src.pipeline.steps.firestore.upload_to_firestore'), \
              patch('src.pipeline.steps.validate.validate_episode') as mock_validate:
             
             mock_download.return_value = expected_path
@@ -114,7 +112,7 @@ class TestFileMode:
         base_context.mp3_path = tmp_path / "test.mp3"
         base_context.mp3_path.write_bytes(b'fake mp3')
         
-        processor = EpisodeProcessor(base_config, base_context)
+        EpisodeProcessor(base_config, base_context)
         
         with patch('src.service.speech_to_text.transcribe_audio_file') as mock_transcribe:
             transcript_path = base_config.transcripts_dir / base_context.podcast_name / "test.json"
@@ -132,7 +130,7 @@ class TestFileMode:
         base_config.transcripts_dir = tmp_path / "transcripts"
         base_context.podcast_name = "Test Podcast"
         
-        processor = EpisodeProcessor(base_config, base_context)
+        EpisodeProcessor(base_config, base_context)
         
         # Simulate directory creation (would happen in download step)
         downloads_dir = base_config.downloads_dir / base_context.podcast_name
@@ -148,7 +146,7 @@ class TestFileMode:
         base_config.use_file_mode = True
         base_config.temp_dir = None
         
-        processor = EpisodeProcessor(base_config, base_context)
+        EpisodeProcessor(base_config, base_context)
         
         assert base_config.temp_dir is None, "File mode should not use temp_dir"
     

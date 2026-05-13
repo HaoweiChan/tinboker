@@ -7,8 +7,8 @@ The registry data lives in ``shared/data/tickers.json``. This module loads it on
 - :func:`lookup_ticker` — return :class:`TickerInfo` for a symbol/alias, or ``None`` if not in the
   registry.
 
-Consumers: ``shared.wiki_builder.ingest_episode`` (to set real names + market on entity pages);
-``services/knowledge_graph`` ticker seeding (TODO). Extend ``tickers.json`` freely.
+Consumer: ``shared.wiki_builder.ingest_episode`` (to set real names + market on entity pages).
+Extend ``tickers.json`` freely.
 """
 
 from __future__ import annotations

@@ -11,12 +11,11 @@ This script:
 4. Deletes the others from both Firestore and GCS
 """
 
-import sys
 import hashlib
-from pathlib import Path
-from typing import Dict, List, Tuple, Optional
+import sys
 from collections import defaultdict
-from urllib.parse import urlparse
+from pathlib import Path
+from typing import Dict, List, Optional
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
@@ -129,7 +128,7 @@ def find_duplicates(episodes: List[Dict], gcs_service: GCSStorageService) -> Dic
                     summary_hash = get_content_hash(summary_text)
                     if summary_hash:
                         by_summary_hash[summary_hash].append(episode)
-            except Exception as e:
+            except Exception:
                 # Skip episodes without summaries or download errors
                 continue
     
@@ -206,7 +205,7 @@ def delete_episode_files(gcs_service: GCSStorageService, episode: Dict) -> bool:
     """
     episode_id = episode.get('id')
     if not episode_id:
-        print(f"  ⚠ Warning: No episode ID, cannot delete files")
+        print("  ⚠ Warning: No episode ID, cannot delete files")
         return False
     
     urls_to_delete = [

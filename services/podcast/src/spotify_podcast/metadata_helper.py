@@ -3,16 +3,16 @@ Helper functions for fetching Spotify podcast metadata.
 """
 
 import os
-from typing import Optional, Dict
 from datetime import datetime
+from typing import Dict, Optional
 
 from src.secrets_bootstrap import bootstrap
 
 # Load secrets from GSM (idempotent — safe if already bootstrapped at entry point).
 bootstrap()
 
-from .parser import SpotifyPodcastParser
-from .auth import get_access_token
+from .auth import get_access_token  # noqa: E402
+from .parser import SpotifyPodcastParser  # noqa: E402
 
 
 def get_spotify_metadata(spotify_show_link: str, episode_title: str, limit: int = 100) -> Optional[Dict]:
@@ -44,14 +44,14 @@ def get_spotify_metadata(spotify_show_link: str, episode_title: str, limit: int 
     )
     
     if not client_id or not client_secret:
-        print(f"  ⚠ Warning: Spotify credentials not found, skipping metadata fetch")
+        print("  ⚠ Warning: Spotify credentials not found, skipping metadata fetch")
         return None
     
     try:
         # Get access token
         access_token = get_access_token(client_id, client_secret)
         if not access_token:
-            print(f"  ⚠ Warning: Failed to get Spotify access token, skipping metadata fetch")
+            print("  ⚠ Warning: Failed to get Spotify access token, skipping metadata fetch")
             return None
         
         # Initialize parser

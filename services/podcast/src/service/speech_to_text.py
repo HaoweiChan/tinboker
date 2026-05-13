@@ -6,13 +6,14 @@ This module provides an abstract interface for speech-to-text services
 and implementation for OpenAI Whisper API.
 """
 
-import os
 import json
+import os
 import re
 import subprocess
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Optional, Union, Dict, Any, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
+
 from src.secrets_bootstrap import bootstrap
 
 # Load secrets from GSM (idempotent — safe if already bootstrapped at entry point).
@@ -134,7 +135,7 @@ def parse_srt_to_sentences(srt_content: str) -> List[Dict[str, Any]]:
                                     "end": end_ms
                                 })
                                 sentence_index += 1
-                        except (ValueError, IndexError) as e:
+                        except (ValueError, IndexError):
                             # Skip malformed entries
                             i += 1
                             continue
@@ -486,7 +487,6 @@ class WhisperService(SpeechToTextService):
         import tempfile
         
         chunk_dir = None
-        chunk_files = []
         
         try:
             # Create temporary directory for chunks
@@ -558,7 +558,7 @@ class WhisperService(SpeechToTextService):
                 import shutil
                 try:
                     shutil.rmtree(chunk_dir)
-                    print(f"  🧹 Cleaned up temporary chunk files")
+                    print("  🧹 Cleaned up temporary chunk files")
                 except Exception as e:
                     print(f"  ⚠ Warning: Could not clean up chunk directory: {e}")
     
@@ -646,7 +646,7 @@ def convert_to_traditional_chinese(text: str) -> str:
     try:
         # Convert simplified Chinese (zh-cn) to traditional Chinese (zh-tw)
         return zhconv.convert(text, 'zh-tw')
-    except Exception as e:
+    except Exception:
         # Return original text on error
         return text
 
@@ -1098,11 +1098,10 @@ class GroqService(SpeechToTextService):
     
     def _transcribe_file_chunked(self, audio_path: Path, language: Optional[str]) -> Dict[str, Any]:
         """Transcribe a large file by chunking it."""
-        import tempfile
         import shutil
+        import tempfile
         
         chunk_dir = None
-        chunk_files = []
         
         try:
             # Create temporary directory for chunks
@@ -1194,7 +1193,7 @@ class GroqService(SpeechToTextService):
             if chunk_dir and chunk_dir.exists():
                 try:
                     shutil.rmtree(chunk_dir)
-                    print(f"  🧹 Cleaned up temporary chunk files")
+                    print("  🧹 Cleaned up temporary chunk files")
                 except Exception as e:
                     print(f"  ⚠ Warning: Could not clean up chunk directory: {e}")
     

@@ -79,6 +79,7 @@ def bootstrap(
         "LANGSMITH_API_KEY",
         "TAVILY_API_KEY",
         "WIKI_DATABASE_URL",
+        "OPENROUTER_API_KEY",
     ),
     yaml_path: Optional[Path] = None,
     env_path: Optional[Path] = None,

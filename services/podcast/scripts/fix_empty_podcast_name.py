@@ -18,7 +18,7 @@ Options:
 
 import sys
 from pathlib import Path
-from typing import Optional, Dict, List
+from typing import Dict, List, Optional
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
@@ -147,7 +147,7 @@ def fix_episode_podcast_name(
         # Update the episode document using set_document with merge=True
         # This will update only the podcast_name field without overwriting other fields
         firestore_service.set_document('episodes', episode_id, {'podcast_name': podcast_name}, merge=True)
-        print(f"  ✓ Updated podcast_name")
+        print("  ✓ Updated podcast_name")
         return True
     except Exception as e:
         print(f"  ✗ Error updating: {e}")
@@ -214,19 +214,19 @@ def main():
         if not podcast_name:
             if interactive:
                 print(f"\n{'='*80}")
-                print(f"⚠ Could not automatically identify podcast for episode:")
+                print("⚠ Could not automatically identify podcast for episode:")
                 print(f"  ID: {episode_id}")
                 print(f"  Title: {episode_title}")
                 print(f"  Episode #: {episode_number}")
-                print(f"\nOptions:")
+                print("\nOptions:")
                 if known_podcasts:
-                    print(f"  Known podcasts:")
+                    print("  Known podcasts:")
                     for i, name in enumerate(known_podcasts, 1):
                         print(f"    {i}. {name}")
-                print(f"  Enter podcast name manually, or 'skip' to skip this episode")
+                print("  Enter podcast name manually, or 'skip' to skip this episode")
                 
                 while True:
-                    user_input = input(f"\n  Podcast name (or 'skip'): ").strip()
+                    user_input = input("\n  Podcast name (or 'skip'): ").strip()
                     
                     if user_input.lower() == 'skip':
                         print(f"  ⏭ Skipping episode {episode_id}")
@@ -238,12 +238,12 @@ def main():
                         print(f"  ✓ Using podcast name: {podcast_name}")
                         break
                     else:
-                        print(f"  ⚠ Please enter a podcast name or 'skip'")
+                        print("  ⚠ Please enter a podcast name or 'skip'")
             else:
                 print(f"\n⚠ Could not identify podcast for episode: {episode_id}")
                 print(f"  Title: {episode_title}")
                 print(f"  Episode #: {episode_number}")
-                print(f"  Run with --interactive to manually set podcast_name")
+                print("  Run with --interactive to manually set podcast_name")
                 failed_count += 1
                 continue
         
@@ -257,7 +257,7 @@ def main():
             continue
     
     print(f"\n{'='*80}")
-    print(f"Summary:")
+    print("Summary:")
     print(f"  Fixed: {fixed_count}")
     print(f"  Failed/Unknown: {failed_count}")
     if skipped_count > 0:
@@ -265,11 +265,11 @@ def main():
     print(f"  Total: {len(empty_episodes)}")
     
     if dry_run:
-        print(f"\n🔍 This was a DRY RUN - no changes were made")
-        print(f"   Run without --dry-run to apply changes")
+        print("\n🔍 This was a DRY RUN - no changes were made")
+        print("   Run without --dry-run to apply changes")
     
     if interactive:
-        print(f"\n🔧 Interactive mode completed")
+        print("\n🔧 Interactive mode completed")
 
 
 if __name__ == "__main__":

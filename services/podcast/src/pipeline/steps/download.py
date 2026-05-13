@@ -5,11 +5,10 @@ This module handles downloading episode MP3 files and fetching Spotify metadata.
 """
 
 from pathlib import Path
-from typing import Optional
 
 from ..config import PipelineConfig
-from ..service_container import ServiceContainer
 from ..episode_data import EpisodeData
+from ..service_container import ServiceContainer
 
 
 def download_episode(
@@ -129,7 +128,7 @@ def download_episode(
     
     # Check if Spotify metadata already exists (loaded from Firestore)
     if episode_data.spotify_metadata:
-        print(f"  🎵 Spotify metadata: Already available (from Firestore)")
+        print("  🎵 Spotify metadata: Already available (from Firestore)")
         spotify_id = episode_data.spotify_metadata.get('spotify_id')
         spotify_url = episode_data.spotify_metadata.get('spotify_url')
         release_date = episode_data.spotify_metadata.get('release_date')
@@ -160,7 +159,7 @@ def download_episode(
                 release_date = metadata.get('release_date')
                 duration_ms = metadata.get('duration_ms')
                 
-                print(f"  ✓ Spotify metadata fetched successfully")
+                print("  ✓ Spotify metadata fetched successfully")
                 if spotify_id:
                     print(f"    ✓ Spotify ID: {spotify_id}")
                 if spotify_url:
@@ -180,7 +179,7 @@ def download_episode(
             # Continue without metadata - it's optional
     else:
         # No Spotify link configured
-        print(f"  🎵 Spotify: Not configured (no spotify_show_link in config)")
+        print("  🎵 Spotify: Not configured (no spotify_show_link in config)")
 
 
 

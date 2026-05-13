@@ -71,7 +71,13 @@ pip install -r requirements.txt
 
 ---
 
-## Part 3 — `knowledge-graph/` — Google Cloud Run
+## Part 3 — `knowledge-graph/` — Google Cloud Run  *(RETIRED May 2026)*
+
+> **This whole section is historical.** The `knowledge_graph` module, the `graph-agent` Cloud Run
+> service, its container images, and the `scheduled-graph-update.yaml` workflow were removed in
+> May 2026 — the service was unused and its output was never wired into `/api/wiki`. The last
+> in-progress code is parked on the `archive/knowledge-graph-refactor` branch. Kept below for
+> reference / in case it's revived.
 
 ### 3.1 What it does
 

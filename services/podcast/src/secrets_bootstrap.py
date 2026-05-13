@@ -31,6 +31,12 @@ _GSM_OPTIONAL: tuple[str, ...] = (
     # Postgres connection string for the knowledge wiki (lives on the VPS).
     # Optional: if absent, wiki ingest is a no-op (best-effort step).
     "WIKI_DATABASE_URL",
+    # Postgres connection string for the episode catalog mirror (podcast_db on the VPS).
+    # Optional: if absent, the Postgres-episode step is a no-op (best-effort).
+    "EPISODE_DATABASE_URL",
+    # OpenRouter API key — used by content_builder when a role's *_MODEL is prefixed
+    # "openrouter:" (otherwise unused). Get one at https://openrouter.ai/keys.
+    "OPENROUTER_API_KEY",
 )
 
 _YAML_PATH = Path(__file__).resolve().parent.parent / "configs" / "default.yaml"
@@ -57,12 +63,14 @@ def _load_yaml_constants() -> None:
 
 def _load_gsm_secrets(names: Iterable[str], *, required: bool = True) -> None:
     """Fetch each secret's latest version and push into os.environ."""
+    missing = [n for n in names if not os.environ.get(n)]
+    if not missing:
+        return
+
     from google.cloud import secretmanager
 
     client = secretmanager.SecretManagerServiceClient()
-    for name in names:
-        if os.environ.get(name):
-            continue
+    for name in missing:
         path = f"projects/{_PROJECT_ID}/secrets/{name}/versions/latest"
         try:
             response = client.access_secret_version(name=path)

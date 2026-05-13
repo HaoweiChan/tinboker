@@ -17,10 +17,11 @@ from pathlib import Path
 # Add parent directory to path to import modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.service.upload_to_firebase import FirebaseService
-from src.service.gcs_storage_service import GCSStorageService
 import json
-from typing import List, Dict, Optional
+from typing import Dict, List
+
+from src.service.gcs_storage_service import GCSStorageService
+from src.service.upload_to_firebase import FirebaseService
 
 
 def get_podcast_episodes(podcast_name: str) -> List[Dict]:
@@ -122,7 +123,7 @@ def download_episode_files(
                 episode['mp3_url'], mp3_file
             )
             results['mp3'] = True
-            print(f"    ✓ MP3 audio")
+            print("    ✓ MP3 audio")
         except Exception as e:
             print(f"    ✗ MP3 failed: {e}")
     
@@ -136,7 +137,7 @@ def print_episode_summary(episode: Dict):
     print(f"  Episode #: {episode.get('episode_number', 'N/A')}")
     print(f"  Created: {episode.get('created_time', 'Unknown')}")
     print(f"  Tickers: {', '.join(episode.get('related_tickers', [])) or 'None'}")
-    print(f"  URLs:")
+    print("  URLs:")
     if episode.get('mp3_url'):
         print(f"    MP3: {episode['mp3_url']}")
     if episode.get('transcript_url'):
@@ -156,7 +157,7 @@ def main():
     # Initialize services
     print("\nInitializing services...")
     try:
-        firebase_service = FirebaseService()
+        FirebaseService()
         gcs_service = GCSStorageService()
         print("✓ Services initialized")
     except Exception as e:
@@ -180,11 +181,11 @@ def main():
             
             if not episodes:
                 print(f"  No episodes found for '{podcast_name}'")
-                print(f"  Make sure the podcast_name in Firestore matches exactly")
+                print("  Make sure the podcast_name in Firestore matches exactly")
                 continue
             
             # Display first 5 episodes
-            print(f"\nFirst 5 episodes:")
+            print("\nFirst 5 episodes:")
             for i, episode in enumerate(episodes[:5], 1):
                 print(f"\n  [{i}] {episode.get('episode_title', 'Unknown')}")
                 print(f"      Created: {episode.get('created_time', 'Unknown')}")
@@ -200,7 +201,7 @@ def main():
             print(f"\n✓ Saved metadata to: {metadata_file}")
             
             # Download files for first 3 episodes (as example)
-            print(f"\nDownloading files for first 3 episodes (example)...")
+            print("\nDownloading files for first 3 episodes (example)...")
             for i, episode in enumerate(episodes[:3], 1):
                 print(f"\n  Episode {i}: {episode.get('episode_title', 'Unknown')}")
                 download_episode_files(
