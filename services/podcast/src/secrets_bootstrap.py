@@ -34,6 +34,9 @@ _GSM_OPTIONAL: tuple[str, ...] = (
     # Postgres connection string for the episode catalog mirror (podcast_db on the VPS).
     # Optional: if absent, the Postgres-episode step is a no-op (best-effort).
     "EPISODE_DATABASE_URL",
+    # OpenRouter API key — used by content_builder when a role's *_MODEL is prefixed
+    # "openrouter:" (otherwise unused). Get one at https://openrouter.ai/keys.
+    "OPENROUTER_API_KEY",
 )
 
 _YAML_PATH = Path(__file__).resolve().parent.parent / "configs" / "default.yaml"
