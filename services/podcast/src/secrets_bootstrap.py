@@ -63,12 +63,14 @@ def _load_yaml_constants() -> None:
 
 def _load_gsm_secrets(names: Iterable[str], *, required: bool = True) -> None:
     """Fetch each secret's latest version and push into os.environ."""
+    missing = [n for n in names if not os.environ.get(n)]
+    if not missing:
+        return
+
     from google.cloud import secretmanager
 
     client = secretmanager.SecretManagerServiceClient()
-    for name in names:
-        if os.environ.get(name):
-            continue
+    for name in missing:
         path = f"projects/{_PROJECT_ID}/secrets/{name}/versions/latest"
         try:
             response = client.access_secret_version(name=path)
