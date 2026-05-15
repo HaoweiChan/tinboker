@@ -12,7 +12,9 @@ real users to break, no SLA, no dual-write phase needed.
 - ✅ Cross-team data contract published to `contract/firestore-schema` on the wiki Postgres 2026-05-14 — will be deprecated by `contract/data-api` once HTTP API lands
 - ✅ Phase A complete (2026-05-15): 20-show `podcasts_to_download.json`, legacy cron disabled, new nightly cron live. Fixed `[Errno 28] ENOSPC` bug — temp MP3s now cleaned up via `finally` block in `processor.py` after each episode; without this fix /tmp (3.9 GB tmpfs) filled up across 20-show runs. VPS validation gate pending one successful nightly run.
 - ✅ Phase B complete (2026-05-15): `libs/shared/src/shared/db/` module added — 5 tables (`podcasts`, `episodes`, `tickers`, `ticker_insights`, `trending_tickers`), ABC+InMemory+Null+Postgres repositories, 20 unit tests. Migration applied to VPS `tinboker_wiki` DB; `list_recent(limit=5)` returns `[]`. No users table (platform repo owns users — Q4). Q5 NOTE: the 8 "bare slugs" (009150, 3548, 6324, 8035, elon, kem, openai, spcx) have 89 wiki_links referencing them — they are real entities, NOT noise. They need tickers.json enrichment, not deletion.
-- ⏳ Phases C–F below — **not started**
+- ✅ Phase C complete (2026-05-15): `backfill_mirror_to_content_store.py` backfilled 901 episodes, 20 podcasts, 63+ tickers, 2,596 ticker_insight rows, 824 trending_ticker rows into `tinboker_wiki`. 69 episodes had no GCS ticker JSON (never fully processed — expected). Auto-registers unknown tickers (e.g. `MS`) that appear in insights but are missing from `tickers.json`.
+- ✅ Phase D complete (2026-05-15): 11 new HTTP routes under `/api/podcast`, `/api/episodes`, `/api/ticker-insights`, `/api/tags` backed by Postgres. `services/podcast/src/routers/content.py` added; `list_all_tags()` added to repository layer. All routes smoke-tested on VPS; response times 5–56ms (p95 well under 200ms gate). Note: content tables are in `tinboker_wiki` (WIKI_DATABASE_URL), not `podcast_db`.
+- ⏳ Phases E–F below — **not started**
 
 **Owner for the next session:** read this doc top to bottom, then start at the
 first incomplete phase. CLAUDE.md and `docs/spec-from-platform.md` are
@@ -46,8 +48,8 @@ depends on them.
 
 | Q | Question | Blocks | Notes |
 |---|----------|--------|-------|
-| Q1 | Does the live webui read GCS directly (`https://storage.googleapis.com/podcast-data-web/...`) or via the platform backend? | Phase E | If direct, URL scheme changes at cutover and the platform repo must update in lockstep. |
-| Q2 | VPS disk + bandwidth headroom. Netcup plan + monthly egress allowance? | Phase E | 34 GB of MP3s to serve. Run `df -h /` and check Netcup dashboard. |
+| Q1 | Does the live webui read GCS directly (`https://storage.googleapis.com/podcast-data-web/...`) or via the platform backend? | Phase E | **ANSWERED 2026-05-15:** Platform backend proxies all media. Frontend only sees hydrated JSON from api.tinboker.com. GCS URLs are backend-internal. Audio plays via Spotify embed, not mp3_url. Cutover is backend-only — no frontend lockstep required. |
+| Q2 | VPS disk + bandwidth headroom. Netcup plan + monthly egress allowance? | Phase E | **ANSWERED 2026-05-15:** VPS 1000 G12 has unlimited monthly traffic (throttle only if 24h avg > 2TB — irrelevant at our scale). 205 GB free on root partition. No blocker. |
 | Q3 | Backup target — Backblaze B2, Hetzner Storage Box, or keep one GCS bucket as restic target? | Phase F | Whatever's chosen, the backup must be tested with an actual restore. |
 | Q4 | Move `users` collection (5 docs) to VPS Postgres as interim, or hand it to the platform repo immediately? | Phase C | Trivial either way. CLAUDE.md says users belong to the platform — natural to push it there. |
 | Q5 | Are the 8 bare entity slugs (`009150, 3548, 6324, 8035, elon, kem, openai, spcx`) real tickers we should enrich, or noise to drop? | Phase B (cleanup) | These appeared in the wiki without `tickers.json` entries. Inspect and decide. |

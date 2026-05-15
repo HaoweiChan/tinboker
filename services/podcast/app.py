@@ -10,6 +10,12 @@ from src.secrets_bootstrap import bootstrap
 bootstrap()
 
 from src.routers import episode, podcast, wiki  # noqa: E402  — must follow bootstrap()
+from src.routers.content import (  # noqa: E402
+    episode_router as content_episode_router,
+    insights_router,
+    podcast_router as content_podcast_router,
+    tags_router,
+)
 
 app = FastAPI(
     title="Podcast Downloader API",
@@ -30,6 +36,11 @@ app.add_middleware(
 app.include_router(episode.router)
 app.include_router(podcast.router)
 app.include_router(wiki.router)
+# Postgres-backed content API (Phase D)
+app.include_router(content_podcast_router)
+app.include_router(content_episode_router)
+app.include_router(insights_router)
+app.include_router(tags_router)
 
 
 @app.get("/")

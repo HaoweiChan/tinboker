@@ -47,6 +47,11 @@ class EpisodeRepository(ABC):
     @abstractmethod
     def count(self) -> int: ...
 
+    @abstractmethod
+    def list_all_tags(self) -> list[tuple[str, int]]:
+        """Return (tag, count) pairs ordered by count descending."""
+        ...
+
 
 class InMemoryEpisodeRepository(EpisodeRepository):
     def __init__(self) -> None:
@@ -91,6 +96,13 @@ class InMemoryEpisodeRepository(EpisodeRepository):
     def count(self) -> int:
         return len(self._store)
 
+    def list_all_tags(self) -> list[tuple[str, int]]:
+        from collections import Counter
+        counter: Counter[str] = Counter()
+        for ep in self._store.values():
+            counter.update(ep.tags)
+        return sorted(counter.items(), key=lambda x: -x[1])
+
 
 class NullEpisodeRepository(EpisodeRepository):
     _warned = False
@@ -126,6 +138,9 @@ class NullEpisodeRepository(EpisodeRepository):
 
     def count(self) -> int:
         return 0
+
+    def list_all_tags(self) -> list[tuple[str, int]]:
+        return []
 
 
 # ---------------------------------------------------------------------------

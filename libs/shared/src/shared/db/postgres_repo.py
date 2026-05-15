@@ -408,6 +408,17 @@ class PostgresEpisodeRepository(EpisodeRepository):
         with self._engine.connect() as conn:
             return conn.execute(sa.select(sa.func.count()).select_from(episodes_table)).scalar() or 0
 
+    def list_all_tags(self) -> list[tuple[str, int]]:
+        stmt = sa.text(
+            "SELECT tag, COUNT(*) AS cnt"
+            " FROM episodes, UNNEST(tags) AS tag"
+            " WHERE tag IS NOT NULL AND tag <> ''"
+            " GROUP BY tag ORDER BY cnt DESC"
+        )
+        with self._engine.connect() as conn:
+            rows = conn.execute(stmt).fetchall()
+        return [(r[0], r[1]) for r in rows]
+
 
 class PostgresPodcastRepository(PodcastRepository):
     def __init__(self, engine: sa.Engine) -> None:
