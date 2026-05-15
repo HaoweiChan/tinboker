@@ -14,7 +14,7 @@ function pageTitle(pathname: string): [string, string] {
   const hasId = seg.length > 1;
   switch (root) {
     case '/':
-      return ['首頁', '今天聽什麼'];
+      return ['首頁', ''];
     case '/podcaster':
       return hasId ? ['節目', '節目訂閱與分析'] : ['節目', '所有財經 Podcast'];
     case '/stock':

@@ -42,7 +42,6 @@ export const AppLogo: React.FC<AppLogoProps> = ({ size = 26, className, textClas
           <span className="font-bold tracking-[0.01em]" style={{ fontFamily: "'Noto Sans TC', system-ui, sans-serif" }}>
             聽播客
           </span>
-          <span className="self-stretch w-px bg-border" aria-hidden="true" style={{ marginInline: 2 }} />
           <span className="font-bold tracking-[-0.01em]" style={{ fontFamily: "'Inter', system-ui, sans-serif" }}>
             TinBoker
           </span>
