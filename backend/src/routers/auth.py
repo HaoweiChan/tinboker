@@ -120,6 +120,32 @@ async def get_current_user(authorization: Optional[str] = Header(None)):
     return user
 
 
+@router.get("/is-admin")
+async def check_is_admin(authorization: Optional[str] = Header(None)):
+    """
+    Check if the current JWT user is in the ADMIN_EMAILS list.
+    Used by non-production environments to gate access.
+    Returns { "is_admin": bool } — never raises 4xx so the frontend can handle the result gracefully.
+    """
+    if not authorization:
+        return {"is_admin": False}
+    try:
+        scheme, token = authorization.split()
+        if scheme.lower() != "bearer":
+            return {"is_admin": False}
+    except ValueError:
+        return {"is_admin": False}
+
+    payload = verify_jwt_token(token)
+    if not payload:
+        return {"is_admin": False}
+
+    from src.config import settings
+    email = (payload.get("email") or "").lower()
+    admin_set = {e.lower() for e in settings.admin_emails}
+    return {"is_admin": email in admin_set}
+
+
 @router.post("/logout")
 async def logout():
     """

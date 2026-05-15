@@ -62,6 +62,17 @@ export const authApi = {
     }
   },
 
+  isAdmin: async (token: string): Promise<boolean> => {
+    try {
+      const response = await apiClient.get<{ is_admin: boolean }>('/api/auth/is-admin', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      return response.data.is_admin;
+    } catch {
+      return false;
+    }
+  },
+
   logout: async (): Promise<void> => {
     try {
       await apiClient.post('/api/auth/logout');

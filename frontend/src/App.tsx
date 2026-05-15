@@ -27,6 +27,7 @@ import { GlobalPlayer } from '@/components/player/GlobalPlayer';
 import { PlayerConfirmationModal } from '@/components/player/PlayerConfirmationModal';
 import { useAuthInit } from '@/hooks/useAuthInit';
 import { useAppStore } from '@/store/useAppStore';
+import { EnvGate } from '@/components/auth/EnvGate';
 
 // Dev-only redesign QA surface; not registered in production builds.
 const DesignPreview = import.meta.env.DEV ? lazy(() => import('@/pages/DesignPreview')) : null;
@@ -45,6 +46,7 @@ function App() {
         closeButton
         duration={4000}
       />
+      <EnvGate>
       <Routes>
         {/* Redirects (no chrome needed) */}
         <Route path="/gallery" element={<Navigate to="/story" replace />} />
@@ -104,6 +106,7 @@ function App() {
       </Routes>
       <GlobalPlayer />
       <PlayerConfirmationModal />
+      </EnvGate>
     </BrowserRouter>
   );
 }

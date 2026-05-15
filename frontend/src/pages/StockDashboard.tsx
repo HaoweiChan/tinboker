@@ -9,7 +9,7 @@ import { TickerInsightCard } from '@/components/financial/TickerInsightCard';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/store/useAppStore';
 import { useStockTrendColor } from '@/hooks/useStockTrendColor';
-import { aggregateSentiment, dominantSentiment, type Sentiment } from '@/lib/sentiment';
+import { aggregateSentiment, dominantSentiment } from '@/lib/sentiment';
 import { getStockByTicker, getEpisodesByTicker, type Episode as ApiEpisode } from '@/services/api';
 import { fetchWithFallback } from '@/services/api/migration';
 import { mockCompanyDetails, generateMockPriceSeries } from '@/services/mocks';
@@ -17,9 +17,9 @@ import type { CompanyDetail, RealTimePriceUpdate, TimeframeOption } from '@/serv
 import { priceWebSocketClient } from '@/services/websocket/priceWebSocket';
 import TradingViewChart from '@/components/charts/TradingViewChart';
 import { ChartControls } from '@/components/charts/ChartControls';
-import { recommendationService } from '@/services/recommendationService';
+import { getInsightsByTicker } from '@/services/api/podcasts';
 import { transformApiEpisodeToMock } from '@/services/api/transformers';
-import type { TickerRecommendation } from '@/services/types';
+import type { TickerInsight } from '@/services/types';
 
 function isTW(t: string): boolean {
   return /\.TW[OW]?$/i.test(t);
@@ -224,19 +224,18 @@ export const StockDashboard: React.FC = () => {
   const { ticker } = useParams();
   const symbol = (ticker ?? '2330.TW').toUpperCase();
   const [episodes, setEpisodes] = useState<ApiEpisode[]>([]);
-  const [recommendations, setRecommendations] = useState<TickerRecommendation[]>([]);
+  const [insights, setInsights] = useState<TickerInsight[]>([]);
   const [episodesLoading, setEpisodesLoading] = useState(true);
 
   useEffect(() => {
     if (!symbol) return;
     let cancelled = false;
-    recommendationService
-      .getRecommendationsByTicker(symbol)
+    getInsightsByTicker(symbol)
       .then((recs) => {
-        if (!cancelled) setRecommendations(Array.isArray(recs) ? recs : []);
+        if (!cancelled) setInsights(Array.isArray(recs) ? recs : []);
       })
       .catch(() => {
-        if (!cancelled) setRecommendations([]);
+        if (!cancelled) setInsights([]);
       });
     return () => {
       cancelled = true;
@@ -267,7 +266,10 @@ export const StockDashboard: React.FC = () => {
     };
   }, [symbol]);
 
-  const breakdown = useMemo(() => aggregateSentiment(recommendations.map((r) => ({ sentiment: r.sentiment as Sentiment, sentiment_score: r.sentiment_score }))), [recommendations]);
+  const breakdown = useMemo(
+    () => aggregateSentiment(insights.map((r) => ({ sentiment_label: r.sentiment_label }))),
+    [insights],
+  );
   const relatedTags = useMemo(() => {
     const set = new Set<string>();
     for (const e of episodes) for (const t of e.tags ?? []) set.add(t);
@@ -320,12 +322,16 @@ export const StockDashboard: React.FC = () => {
           <StatGroup items={stats} />
         </div>
 
-        {recommendations.length > 0 && (
+        {insights.length > 0 && (
           <section className="mb-[18px]">
             <h2 className="text-[13px] font-semibold text-muted-foreground mb-3">分析師觀點 & 投資摘要</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {recommendations.map((rec) => (
-                <TickerInsightCard key={rec.id} recommendation={rec} episodes={episodes.map(transformApiEpisodeToMock).filter((e): e is NonNullable<typeof e> => e != null)} />
+              {insights.map((rec) => (
+                <TickerInsightCard
+                  key={`${rec.episode_id}-${rec.ticker}`}
+                  insight={rec}
+                  episodes={episodes.map(transformApiEpisodeToMock).filter((e): e is NonNullable<typeof e> => e != null)}
+                />
               ))}
             </div>
           </section>
