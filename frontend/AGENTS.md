@@ -29,16 +29,21 @@ When working on feature branches:
 - Feature branches: `feat/<feature-name>` from `develop`
 - Bug fixes: `fix/<bug-name>` from `develop`
 - Hotfixes: `hotfix/<issue>` from `main`
+- No `staging` branch — staging is the HEAD of `main`
 - PRs require Cloudflare build check to pass before merge
 
 ## Deployment
 
-Frontend is deployed via Cloudflare Pages:
-- `develop` branch → `dev.tinboker.com`
-- `main` branch → `tinboker.com`
-- Preview deployments → `*.tinboker-platform.pages.dev`
+Frontend is deployed via Cloudflare Pages (single `tinboker-platform` project):
 
-Each environment uses its corresponding backend API:
-- `dev.tinboker.com` → `dev-api.tinboker.com`
-- `staging.tinboker.com` → `staging-api.tinboker.com`
-- `tinboker.com` → `api.tinboker.com`
+| Trigger | Cloudflare branch label | URL |
+|---|---|---|
+| Merge to `develop` | `develop` | dev.tinboker.com |
+| Merge to `main` | `staging` | staging.tinboker.com |
+| Push tag `v*` on `main` | `main` (production) | tinboker.com |
+
+- PR builds → `{branch}.tinboker-platform.pages.dev` (preview, auto-commented on PR)
+- Each environment uses its corresponding backend API:
+  - `dev.tinboker.com` → `dev-api.tinboker.com`
+  - `staging.tinboker.com` → `staging-api.tinboker.com`
+  - `tinboker.com` → `api.tinboker.com`

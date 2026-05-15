@@ -320,8 +320,9 @@ All code changes must follow the Git workflow:
 
 ### Git Workflow
 - Feature branches: `feat/<feature-name>` from `develop`
-- Bug fixes: `fix/<bug-name>` from `develop`  
+- Bug fixes: `fix/<bug-name>` from `develop`
 - Hotfixes: `hotfix/<issue>` from `main`
+- No `staging` branch — staging is the HEAD of `main`
 - PRs require CI checks to pass before merge
 
 ### CI/CD Pipeline (GitHub Actions)
@@ -330,53 +331,51 @@ All code changes must follow the Git workflow:
 - Runs tests (`pytest`) and linter (`ruff`)
 - Builds Docker image tagged as `pr-{number}`
 - Pushes to `ghcr.io/haoweichan/tinboker-backend:pr-{number}`
-- Comments on PR with test instructions
+- Comments on PR with image tag for manual staging test
 
-**On Merge to `develop` or `main`:**
-1. Builds Docker image tagged with branch name
-2. Pushes to `ghcr.io/haoweichan/tinboker-backend:{branch}`
-3. SSHs to VPS, pulls new image, restarts container
-4. Runs health check
+**On Merge to `develop`:** → dev environment (port 8001, dev-api.tinboker.com)
+1. Builds image tagged `develop`
+2. Deploys to VPS `backend-dev` container
 
-**Required GitHub Secrets:**
-- `VPS_HOST`: VPS IP address (stored in GitHub Secrets)
-- `VPS_USER`: SSH username (root)
-- `VPS_SSH_KEY`: SSH private key for VPS access
-- `GITHUB_TOKEN`: Auto-provided for GHCR access
+**On Merge to `main`:** → staging environment (port 8002, staging-api.tinboker.com)
+1. Builds image tagged `main`
+2. Deploys to VPS `backend-staging` container
+
+**On Tag `v*` pushed to `main`:** → production (port 8000, api.tinboker.com)
+1. Builds image tagged with the version (e.g. `v1.2.0`)
+2. Deploys to VPS `backend-prod` container
+
+**Required secrets (all in GCP Secret Manager):**
+- `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY` — VPS access
+- `GHCR_TOKEN` — GitHub Container Registry push
+- `GCP_CREDENTIALS_JSON` — GCP service account for runtime
 
 ### PR and Deploy Workflow
 
-**IMPORTANT: Backend changes must be PR'd and tested BEFORE frontend changes.**
-
 #### Step-by-Step Process:
 
-1. **Create Backend PR first** (if backend changes needed)
-   - Branch: `feat/your-feature` from `develop`
+1. **Create feature branch** from `develop`: `feat/your-feature`
    - CI builds image as `ghcr.io/haoweichan/tinboker-backend:pr-{N}`
-   
-2. **Deploy PR image to staging for testing:**
+   - Cloudflare Pages auto-creates frontend preview URL
+
+2. **Test on staging manually** (optional, before merging):
    ```bash
-   ssh root@$VPS_HOST "
-     cd /app && 
-     docker pull ghcr.io/haoweichan/tinboker-backend:pr-{N} && 
-     IMAGE_TAG=pr-{N} docker compose -f docker-compose.staging.yml up -d backend
-   "
+   # Via GitHub Actions: Actions → Backend Build & Deploy → Run workflow → enter pr-{N}
+   # Or directly:
+   ssh root@$VPS_HOST "cd /app/backend && STAGING_IMAGE_TAG=pr-{N} docker compose -f docker-compose.multi.yml up -d --no-deps backend-staging"
    ```
 
-3. **Create Frontend PR** (if frontend changes needed)
-   - Cloudflare Pages auto-creates preview URL
-   - Preview URL uses staging backend (api.tinboker.com)
-   
-4. **Test using Cloudflare preview URL**
-   - Access: `https://{branch}.tinboker-platform.pages.dev`
-   - This connects to staging backend running your PR image
+3. **Merge PR to `develop`**
+   - Backend auto-deploys to dev-api.tinboker.com (port 8001)
+   - Frontend auto-deploys to dev.tinboker.com
 
-5. **Merge Backend PR** to `develop`
-   - CI auto-deploys to staging (api.tinboker.com)
-   
-6. **Merge Frontend PR** to `develop`
-   - Cloudflare auto-deploys to staging
+4. **Open PR `develop` → `main`** when dev is stable
+   - Merge → backend auto-deploys to staging-api.tinboker.com (port 8002)
+   - Merge → frontend auto-deploys to staging.tinboker.com
 
-7. **Promote to Production** (when ready)
-   - Merge `develop` to `main` for both repos
-   - CI auto-deploys to production
+5. **Cut a release** after verifying on staging:
+   ```bash
+   git tag v1.x.0 && git push --tags
+   ```
+   - Tag push → backend auto-deploys to api.tinboker.com (port 8000)
+   - Tag push → frontend auto-deploys to tinboker.com

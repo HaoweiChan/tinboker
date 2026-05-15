@@ -11,7 +11,7 @@ TinBoker is a Taiwanese stock & podcast intelligence platform.
 
 - **Frontend:** React 19 + TypeScript + Vite → Cloudflare Pages (`tinboker.com`)
 - **Backend:** FastAPI (Python 3.12) → Docker on Netcup VPS (`api.tinboker.com`)
-- **Database:** SQLite (dev) / Cloud SQL PostgreSQL (staging + prod)
+- **Database:** SQLite (dev) / Cloud SQL PostgreSQL (main + prod)
 - **Cache:** Redis 7-alpine on VPS
 - **Auth:** Google OAuth → JWT
 - **External APIs:** Massive API (US stocks), FinMind (TW stocks), GCP Firestore (podcasts)
@@ -61,12 +61,12 @@ npm run lint                    # ESLint
 
 ## Environments & Endpoints
 
-| Env | Frontend | Backend API | Backend Port |
-|-----|----------|-------------|--------------|
-| Local | localhost:5173 | localhost:5174 | 5174 |
-| Dev | dev.tinboker.com | dev-api.tinboker.com | 8001 |
-| Staging | `{branch}.tinboker-platform.pages.dev` | staging-api.tinboker.com | 8002 |
-| Production | tinboker.com | api.tinboker.com | 8000 |
+| Env | Frontend | Backend API | Backend Port | Trigger |
+|-----|----------|-------------|--------------|---------|
+| Local | localhost:5173 | localhost:5174 | 5174 | manual |
+| Dev | dev.tinboker.com | dev-api.tinboker.com | 8001 | merge to `develop` |
+| Staging | staging.tinboker.com | staging-api.tinboker.com | 8002 | merge to `main` |
+| Production | tinboker.com | api.tinboker.com | 8000 | git tag `v*` on `main` |
 
 VPS: `152.53.136.182` (Netcup RS 1000 G11, Debian 13)
 Reverse proxy: Caddy (auto-HTTPS)
@@ -84,17 +84,24 @@ All changes must go through Git → PR → CI/CD.
 - Features: `feat/<name>` from `develop`
 - Bug fixes: `fix/<name>` from `develop`
 - Hotfixes: `hotfix/<name>` from `main`
-- `develop` → dev + staging environments
-- `main` → production
+- No `staging` branch — staging is the HEAD of `main`
+
+### Release Pipeline
+
+| Branch / Ref | Deploys to | URL |
+|---|---|---|
+| `develop` (any merge) | Dev environment | dev.tinboker.com |
+| `main` (any merge) | Staging environment | staging.tinboker.com |
+| `v*` tag on `main` | Production | tinboker.com |
 
 ### Deploy Flow
 
-1. Backend PR → CI builds `ghcr.io/haoweichan/tinboker-backend:pr-{N}`
-2. Manually deploy PR image to staging to test
-3. Frontend PR → Cloudflare preview URL auto-created
-4. Merge backend PR to `develop` → auto-deploys to dev/staging
-5. Merge frontend PR to `develop` → Cloudflare auto-deploys to dev
-6. Merge `develop` → `main` to promote both to production
+1. Create `feat/<name>` from `develop`; open PR → CI builds image + Cloudflare preview URL
+2. Merge PR to `develop` → auto-deploys to dev.tinboker.com + dev-api.tinboker.com
+3. When dev is stable, open PR `develop` → `main`
+4. Merge to `main` → auto-deploys to staging.tinboker.com + staging-api.tinboker.com
+5. Verify on staging, then cut a release: `git tag v1.x.0 && git push --tags`
+6. Tag push → auto-deploys to tinboker.com + api.tinboker.com (production)
 
 ### Allowed Server Commands (read-only / inspection only)
 
@@ -160,7 +167,7 @@ JWT_SECRET_KEY=...
 GCP_PROJECT_ID=gen-lang-client-0901363254
 FIRESTORE_DATABASE_ID=graphfolio-db
 POSTGRES_HOST=34.14.119.47
-CORS_ORIGINS=http://localhost:5173,https://tinboker.com,https://dev.tinboker.com
+CORS_ORIGINS=http://localhost:5173,https://tinboker.com,https://dev.tinboker.com,https://staging.tinboker.com
 ```
 
 ### Frontend (`.env.*` per environment)

@@ -1,8 +1,9 @@
 # Multi-environment deployment workflow
 # - PR to develop/main: Build image, comment on PR
-# - Push to develop: Deploy to dev environment (port 8001)
-# - Push to main: Deploy to production (port 8000)
-# - Manual trigger: Build and/or deploy to staging (port 8002)
+# - Push to develop: Deploy to dev environment (port 8001, dev-api.tinboker.com)
+# - Push to main: Deploy to staging environment (port 8002, staging-api.tinboker.com)
+# - Push tag v*: Deploy to production (port 8000, api.tinboker.com)
+# - Manual trigger: Build and/or deploy to staging
 
 name: Backend Build & Deploy
 
@@ -12,6 +13,7 @@ on:
     paths: ['backend/**']
   push:
     branches: [develop, main]
+    tags: ['v*']
     paths: ['backend/**']
   workflow_dispatch:
     inputs:
@@ -96,13 +98,12 @@ jobs:
               '',
               '**Image:** `' + imageName + '`',
               '',
-              '### Deploy to staging for testing:',
-              'Go to Actions > Build & Deploy > Run workflow',
-              'Select your branch and enter image tag: `' + imageTag + '`',
+              '### Test on staging manually:',
+              'Go to Actions → Backend Build & Deploy → Run workflow, enter image tag: `' + imageTag + '`',
               '',
-              '### Or manually deploy:',
+              '### Or deploy directly:',
               '```bash',
-              'ssh root@VPS "cd /app/backend && IMAGE_TAG=' + imageTag + ' docker compose -f docker-compose.yml -f docker-compose.staging.yml up -d"',
+              'ssh root@VPS "cd /app/backend && STAGING_IMAGE_TAG=' + imageTag + ' docker compose -f docker-compose.multi.yml up -d --no-deps backend-staging"',
               '```'
             ].join('\n');
             github.rest.issues.createComment({
@@ -137,12 +138,18 @@ jobs:
             echo "port=8002" >> $GITHUB_OUTPUT
             echo "image_tag=${{ github.event.inputs.image_tag }}" >> $GITHUB_OUTPUT
             echo "image_var=STAGING_IMAGE_TAG" >> $GITHUB_OUTPUT
-          elif [ "${{ github.ref_name }}" == "main" ]; then
+          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
             echo "environment=production" >> $GITHUB_OUTPUT
             echo "service=backend-prod" >> $GITHUB_OUTPUT
             echo "port=8000" >> $GITHUB_OUTPUT
-            echo "image_tag=main" >> $GITHUB_OUTPUT
+            echo "image_tag=${{ github.ref_name }}" >> $GITHUB_OUTPUT
             echo "image_var=PROD_IMAGE_TAG" >> $GITHUB_OUTPUT
+          elif [ "${{ github.ref_name }}" == "main" ]; then
+            echo "environment=staging" >> $GITHUB_OUTPUT
+            echo "service=backend-staging" >> $GITHUB_OUTPUT
+            echo "port=8002" >> $GITHUB_OUTPUT
+            echo "image_tag=main" >> $GITHUB_OUTPUT
+            echo "image_var=STAGING_IMAGE_TAG" >> $GITHUB_OUTPUT
           else
             echo "environment=development" >> $GITHUB_OUTPUT
             echo "service=backend-dev" >> $GITHUB_OUTPUT
@@ -186,8 +193,12 @@ jobs:
           envs: GHCR_TOKEN,GCP_CREDS_JSON
           script: |
             cd /app
-            git fetch origin
-            git checkout -f origin/${{ github.ref_name }}
+            git fetch origin --tags
+            if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+              git checkout -f "${{ github.ref_name }}"
+            else
+              git checkout -f "origin/${{ github.ref_name }}"
+            fi
 
             cd /app/backend
 

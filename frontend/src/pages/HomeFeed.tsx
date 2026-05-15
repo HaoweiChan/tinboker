@@ -67,7 +67,7 @@ export const HomeFeed: React.FC = () => {
 
   return (
     <>
-      <SEO title="今天聽什麼" description="TinBoker — 最新的財經 Podcast 摘要、情緒與相關個股。" />
+      <SEO description="聽播客 TinBoker — 最新的財經 Podcast 摘要、情緒與相關個股。" />
       <PageContent rail={<HomeRail episodeCount={episodes.length} />}>
         <h1 className="text-[22px] font-semibold tracking-[-0.02em] mb-3.5">今天聽什麼</h1>
         <FilterPills items={FILTERS} value={filter} onChange={setFilter} meta={loading ? null : <span>整理了 <span className="font-mono tabular-nums">{filtered.length}</span> 集</span>} />
