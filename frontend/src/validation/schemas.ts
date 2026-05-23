@@ -45,7 +45,7 @@ export const PositionSchema = z.object({
 export const GraphNodeDataSchema = z.object({
   label: z.string(),
   ticker: z.string().optional(),
-  marketCapTier: z.enum(['large', 'medium', 'small']).optional(),
+  marketCapTier: z.enum(['large', 'medium', 'small']).optional().catch(undefined),
 });
 
 export const GraphNodeSchema = z.object({
@@ -56,7 +56,7 @@ export const GraphNodeSchema = z.object({
 });
 
 export const GraphEdgeDataSchema = z.object({
-  category: z.enum(['aiChips', 'automation', 'components']).optional(),
+  category: z.enum(['aiChips', 'automation', 'components']).optional().catch(undefined),
 });
 
 export const GraphEdgeSchema = z.object({
@@ -161,22 +161,22 @@ export const ChartDataPointSchema = z.object({
 });
 
 export const CompanyStatsSchema = z.object({
-  volume: z.number().int(),
-  beta: z.number(),
-  volatility: z.number(),
+  volume: z.number().int().catch(0),
+  beta: z.number().catch(0),
+  volatility: z.number().catch(0),
 });
 
 export const CompanyDetailSchema = z.object({
   ticker: z.string(),
   name: z.string(),
-  price: z.number(),
-  change: z.number(),
-  changePercent: z.number(),
-  marketCap: z.number().int(),
+  price: z.number().catch(0),
+  change: z.number().catch(0),
+  changePercent: z.number().catch(0),
+  marketCap: z.number().int().catch(0),
   revenue: z.number().int().optional(),
   pe: z.number().optional(),
   dividendYield: z.number().optional(),
-  about: z.string(),
+  about: z.string().catch(''),
   stats: CompanyStatsSchema,
   chartData: z.array(ChartDataPointSchema),
 });
@@ -337,7 +337,7 @@ export const InteractiveModelDataSchema = z.object({
   category: z.string(),
   summary: z.string(),
   graphTypeLabel: z.string(),
-  graphType: z.enum(['layered', 'force', 'sankey', 'tree']),
+  graphType: z.enum(['layered', 'force', 'sankey', 'tree']).catch('force'),
   tickers: z.array(InteractiveEntitySchema),
   indices: z.array(InteractiveEntitySchema),
 });
