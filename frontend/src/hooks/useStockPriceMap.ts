@@ -4,11 +4,7 @@ import { apiClient } from '@/services/api/client';
 const tickerCache = new Map<string, { value: number; ts: number }>();
 const TTL = 60_000;
 
-/**
- * Returns a map of ticker → changePercent for the given tickers.
- * Fetches prices per-ticker via /api/stocks/{ticker}/basic, using a 1-minute
- * module-level cache so all page mounts share one fetch per ticker.
- */
+// Module-level cache — all page mounts share one fetch per ticker within the TTL.
 export function useStockPriceMap(tickers: string[]): Map<string, number> {
   const tickerKey = [...new Set(tickers.map((t) => t.toUpperCase()))].sort().join(',');
   const [map, setMap] = useState<Map<string, number>>(new Map());
