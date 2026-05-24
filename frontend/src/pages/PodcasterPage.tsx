@@ -54,6 +54,11 @@ export const PodcasterPage: React.FC = () => {
 
   const episodeCount = podcast?.episode_count ?? episodes.length;
   const imageUrl = podcast?.image_url || undefined;
+  const podcastImageMap = useMemo(() => {
+    const map = new Map<string, string>();
+    if (name && imageUrl) map.set(name, imageUrl);
+    return map;
+  }, [name, imageUrl]);
 
   return (
     <>
@@ -102,7 +107,7 @@ export const PodcasterPage: React.FC = () => {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {episodes.map((ep) => (
-              <EpisodeCardV2 key={ep.id} {...apiEpisodeToCardV2(ep, priceMap)} />
+              <EpisodeCardV2 key={ep.id} {...apiEpisodeToCardV2(ep, priceMap, podcastImageMap)} />
             ))}
           </div>
         )}

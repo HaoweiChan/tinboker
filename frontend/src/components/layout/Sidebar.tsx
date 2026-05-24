@@ -1,10 +1,12 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Home, Mic, LineChart, Hash, Star, Info } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { AppLogo } from '@/components/logo/AppLogo';
 import { useSubscriptions, useUser } from '@/store/useAppStore';
 import { PodMark } from '@/components/redesign';
+import { getSortedPodcasts } from '@/services/api/podcasts';
+import { fetchWithFallback } from '@/services/api/migration';
 
 interface NavItem {
   to: string;
@@ -32,6 +34,23 @@ export const Sidebar: React.FC = () => {
   const { pathname } = useLocation();
   const subscriptions = useSubscriptions();
   const user = useUser();
+  const [imageMap, setImageMap] = useState<Map<string, string>>(new Map());
+
+  useEffect(() => {
+    if (subscriptions.length === 0) return;
+    let alive = true;
+    fetchWithFallback(() => getSortedPodcasts({ sortBy: 'updated_at', order: 'desc', limit: 200 }), [], 'getSortedPodcasts')
+      .then((podcasts) => {
+        if (!alive) return;
+        const map = new Map<string, string>();
+        for (const p of Array.isArray(podcasts) ? podcasts : []) {
+          if (p.name && p.image_url) map.set(p.name, p.image_url);
+        }
+        setImageMap(map);
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [subscriptions.length]);
 
   return (
     <aside className="hidden lg:flex flex-col sticky top-0 h-screen w-[220px] shrink-0 border-r border-border bg-card px-3.5 py-4.5 z-30">
@@ -70,7 +89,11 @@ export const Sidebar: React.FC = () => {
                 to={`/podcaster/${encodeURIComponent(name)}`}
                 className="flex items-center gap-3 px-2.5 py-1.5 rounded-lg text-[13px] text-foreground hover:bg-muted transition-colors"
               >
-                <PodMark label={name.charAt(0)} kind="mute" size={18} />
+                {imageMap.get(name) ? (
+                  <img src={imageMap.get(name)} alt="" className="w-[18px] h-[18px] rounded-[4px] object-cover shrink-0" />
+                ) : (
+                  <PodMark label={name.charAt(0)} kind="mute" size={18} />
+                )}
                 <span className="truncate">{name}</span>
               </Link>
             ))}
