@@ -79,7 +79,11 @@ function TopPodcasters({ podcasts }: { podcasts: Podcast[] }) {
             to={`/podcaster/${encodeURIComponent(p.name)}`}
             className="grid grid-cols-[28px_1fr_auto] gap-2.5 items-center py-2 border-t border-border first:border-t-0 hover:opacity-80 transition-opacity"
           >
-            <PodMark label={(p.name || '?').charAt(0)} kind="mute" size={28} />
+            {p.image_url ? (
+              <img src={p.image_url} alt="" className="w-7 h-7 rounded-[6px] object-cover shrink-0" />
+            ) : (
+              <PodMark label={(p.name || '?').charAt(0)} kind="mute" size={28} />
+            )}
             <span className="text-[13px] font-medium truncate">{p.name}</span>
             <span className="text-[11px] text-muted-foreground font-mono tabular-nums">{p.episode_count} 集</span>
           </Link>

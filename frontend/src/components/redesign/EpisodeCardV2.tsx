@@ -7,6 +7,7 @@ import { TickerRow, type TickerRowData } from './TickerRow';
 export interface EpisodeCardV2Props {
   podcasterName: string;
   podcasterInitial: string;
+  podcasterImageUrl?: string | null;
   podcasterKind?: PodMarkKind;
   episodeNumber?: string; // "EP 451"
   timeAgo: string; // "3 小時前"
@@ -30,6 +31,7 @@ export interface EpisodeCardV2Props {
 export const EpisodeCardV2: React.FC<EpisodeCardV2Props> = ({
   podcasterName,
   podcasterInitial,
+  podcasterImageUrl,
   podcasterKind = 'mute',
   episodeNumber,
   timeAgo,
@@ -51,7 +53,11 @@ export const EpisodeCardV2: React.FC<EpisodeCardV2Props> = ({
   >
     {/* Podcaster header */}
     <div className="flex items-center gap-2.5 mb-3">
-      <PodMark label={podcasterInitial} kind={highlight ? 'solid' : podcasterKind} size={28} />
+      {podcasterImageUrl ? (
+        <img src={podcasterImageUrl} alt="" className="w-7 h-7 rounded-[6px] object-cover shrink-0" />
+      ) : (
+        <PodMark label={podcasterInitial} kind={highlight ? 'solid' : podcasterKind} size={28} />
+      )}
       <div className="min-w-0 flex-1 text-[13px] truncate">
         <span className="font-semibold text-foreground">{podcasterName}</span>
         <span className="text-muted-foreground ml-1.5">

@@ -37,6 +37,7 @@ export function apiEpisodeToCardV2(ep: ApiEpisode, priceMap?: Map<string, number
   return {
     podcasterName: ep.podcast_name,
     podcasterInitial: (ep.podcast_name || 'P').charAt(0),
+    podcasterImageUrl: ep.spotify_images?.[0] ?? null,
     podcasterKind: 'mute',
     episodeNumber: ep.episode_number != null ? `EP ${ep.episode_number}` : undefined,
     timeAgo: timeAgo(ep.spotify_release_date, ep.created_time),
