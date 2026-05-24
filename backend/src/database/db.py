@@ -139,6 +139,25 @@ def init_db():
             )
         """)
         
+        # Create comments table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS comments (
+                id TEXT PRIMARY KEY,
+                podcast_name TEXT NOT NULL,
+                episode_id TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                user_name TEXT NOT NULL,
+                user_avatar TEXT,
+                content TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_comments_episode
+            ON comments(podcast_name, episode_id, created_at DESC)
+        """)
+
         conn.commit()
         print(f"Database initialized successfully at {get_db_path()}")
     except Exception as e:
