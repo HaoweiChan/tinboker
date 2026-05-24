@@ -36,8 +36,11 @@ from src.middleware.cloudflare import CloudflareMiddleware
 async def lifespan(app: FastAPI):
     """Startup and shutdown lifecycle."""
     # --- Startup ---
+    # Always initialise raw SQLite tables (stocks, news, graphs, comments, etc.)
+    # regardless of whether PostgreSQL is used for ORM models.
+    init_db()
+
     if not settings.use_postgres:
-        init_db()
         from src.database.postgres import init_engine, create_all_tables
         init_engine()
         create_all_tables()
@@ -49,7 +52,6 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             print(f"Warning: Could not initialize PostgreSQL: {e}")
             print("Falling back to SQLite...")
-            init_db()
             from src.database.postgres import init_engine as init_orm_engine, create_all_tables
             init_orm_engine()
             create_all_tables()
