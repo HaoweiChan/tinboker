@@ -418,14 +418,14 @@ export const CommentSchema = z.object({
   user_avatar: z.string().nullable().optional(),
   content: z.string(),
   created_at: z.string(),
+  parent_comment_id: z.string().nullable().optional(),
+  depth: z.number().default(0),
 });
 export type Comment = z.infer<typeof CommentSchema>;
 
 export const CommentListSchema = z.object({
   comments: z.array(CommentSchema),
   total: z.number(),
-  limit: z.number(),
-  offset: z.number(),
 });
 export type CommentList = z.infer<typeof CommentListSchema>;
 
