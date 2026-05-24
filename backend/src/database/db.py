@@ -149,14 +149,26 @@ def init_db():
                 user_name TEXT NOT NULL,
                 user_avatar TEXT,
                 content TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                parent_comment_id TEXT REFERENCES comments(id) ON DELETE SET NULL,
+                depth INTEGER NOT NULL DEFAULT 0
             )
         """)
 
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_comments_episode
-            ON comments(podcast_name, episode_id, created_at DESC)
+            ON comments(podcast_name, episode_id, created_at ASC)
         """)
+
+        # Migrate existing DBs: add threading columns if they don't exist.
+        # NOTE: SQLite ALTER TABLE ADD COLUMN cannot reliably add a column with a
+        # FOREIGN KEY (REFERENCES) clause — we skip it on the migration path. Fresh
+        # DBs still get the FK via the CREATE TABLE above.
+        existing_cols = {row[1] for row in cursor.execute("PRAGMA table_info(comments)").fetchall()}
+        if "parent_comment_id" not in existing_cols:
+            cursor.execute("ALTER TABLE comments ADD COLUMN parent_comment_id TEXT")
+        if "depth" not in existing_cols:
+            cursor.execute("ALTER TABLE comments ADD COLUMN depth INTEGER NOT NULL DEFAULT 0")
 
         conn.commit()
         print(f"Database initialized successfully at {get_db_path()}")

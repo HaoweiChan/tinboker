@@ -2,7 +2,8 @@
 Comment endpoints for podcast episodes.
 """
 import logging
-from fastapi import APIRouter, HTTPException, Depends, Query
+from typing import Optional
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, field_validator
 from src.utils.dependencies import get_current_user
 from src.models.user import UserResponse
@@ -10,11 +11,14 @@ from src.database.comment_db import create_comment, get_comments, get_comment_by
 
 logger = logging.getLogger(__name__)
 
+MAX_DEPTH = 5
+
 router = APIRouter(prefix="/api/episodes", tags=["comments"])
 
 
 class CommentCreate(BaseModel):
     content: str
+    parent_comment_id: Optional[str] = None
 
     @field_validator("content")
     @classmethod
@@ -28,16 +32,11 @@ class CommentCreate(BaseModel):
 
 
 @router.get("/{podcast_name}/{episode_id}/comments")
-async def list_comments(
-    podcast_name: str,
-    episode_id: str,
-    limit: int = Query(default=20, ge=1, le=100),
-    offset: int = Query(default=0, ge=0),
-):
-    """List comments for an episode (public)."""
+async def list_comments(podcast_name: str, episode_id: str):
+    """List all comments for an episode as a flat list (public)."""
     try:
-        comments, total = get_comments(podcast_name, episode_id, limit=limit, offset=offset)
-        return {"comments": comments, "total": total, "limit": limit, "offset": offset}
+        comments = get_comments(podcast_name, episode_id)
+        return {"comments": comments, "total": len(comments)}
     except Exception as e:
         logger.error(f"Failed to fetch comments for {podcast_name}/{episode_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch comments")
@@ -50,7 +49,16 @@ async def post_comment(
     body: CommentCreate,
     user: UserResponse = Depends(get_current_user),
 ):
-    """Post a comment on an episode (requires authentication)."""
+    """Post a comment or reply on an episode (requires authentication)."""
+    depth = 0
+    if body.parent_comment_id:
+        parent = get_comment_by_id(body.parent_comment_id)
+        if not parent:
+            raise HTTPException(status_code=404, detail="Parent comment not found")
+        if parent["depth"] >= MAX_DEPTH:
+            raise HTTPException(status_code=400, detail="Maximum reply depth reached")
+        depth = parent["depth"] + 1
+
     try:
         comment = create_comment(
             podcast_name=podcast_name,
@@ -59,6 +67,8 @@ async def post_comment(
             user_name=user.name,
             user_avatar=user.avatar,
             content=body.content,
+            parent_comment_id=body.parent_comment_id,
+            depth=depth,
         )
         return comment
     except Exception as e:

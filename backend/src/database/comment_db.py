@@ -14,6 +14,8 @@ def create_comment(
     user_name: str,
     user_avatar: Optional[str],
     content: str,
+    parent_comment_id: Optional[str] = None,
+    depth: int = 0,
 ) -> dict:
     conn = get_connection()
     try:
@@ -21,10 +23,13 @@ def create_comment(
         created_at = datetime.now(timezone.utc).isoformat()
         conn.execute(
             """
-            INSERT INTO comments (id, podcast_name, episode_id, user_id, user_name, user_avatar, content, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO comments
+              (id, podcast_name, episode_id, user_id, user_name, user_avatar,
+               content, created_at, parent_comment_id, depth)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (comment_id, podcast_name, episode_id, user_id, user_name, user_avatar, content, created_at),
+            (comment_id, podcast_name, episode_id, user_id, user_name, user_avatar,
+             content, created_at, parent_comment_id, depth),
         )
         conn.commit()
         return {
@@ -36,37 +41,28 @@ def create_comment(
             "user_avatar": user_avatar,
             "content": content,
             "created_at": created_at,
+            "parent_comment_id": parent_comment_id,
+            "depth": depth,
         }
     finally:
         conn.close()
 
 
-def get_comments(
-    podcast_name: str,
-    episode_id: str,
-    limit: int = 20,
-    offset: int = 0,
-) -> tuple[list[dict], int]:
+def get_comments(podcast_name: str, episode_id: str) -> list[dict]:
+    """Return all comments for an episode (flat, oldest-first) for client-side tree building."""
     conn = get_connection()
     try:
-        total = conn.execute(
-            "SELECT COUNT(*) FROM comments WHERE podcast_name = ? AND episode_id = ?",
-            (podcast_name, episode_id),
-        ).fetchone()[0]
-
         rows = conn.execute(
             """
-            SELECT id, podcast_name, episode_id, user_id, user_name, user_avatar, content, created_at
+            SELECT id, podcast_name, episode_id, user_id, user_name, user_avatar,
+                   content, created_at, parent_comment_id, depth
             FROM comments
             WHERE podcast_name = ? AND episode_id = ?
-            ORDER BY created_at DESC
-            LIMIT ? OFFSET ?
+            ORDER BY created_at ASC
             """,
-            (podcast_name, episode_id, limit, offset),
+            (podcast_name, episode_id),
         ).fetchall()
-
-        comments = [dict(row) for row in rows]
-        return comments, total
+        return [dict(row) for row in rows]
     finally:
         conn.close()
 
@@ -75,7 +71,11 @@ def get_comment_by_id(comment_id: str) -> Optional[dict]:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT id, podcast_name, episode_id, user_id, user_name, user_avatar, content, created_at FROM comments WHERE id = ?",
+            """
+            SELECT id, podcast_name, episode_id, user_id, user_name, user_avatar,
+                   content, created_at, parent_comment_id, depth
+            FROM comments WHERE id = ?
+            """,
             (comment_id,),
         ).fetchone()
         return dict(row) if row else None
