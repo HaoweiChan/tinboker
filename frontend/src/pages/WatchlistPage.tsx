@@ -7,6 +7,8 @@ import { apiEpisodeToCardV2 } from '@/components/redesign/episodeAdapter';
 import { getPodcastEpisodes, type Episode as ApiEpisode } from '@/services/api/podcasts';
 import { useSubscriptions, useWatchlist } from '@/store/useAppStore';
 import { useStockPriceMap } from '@/hooks/useStockPriceMap';
+import { useStockSummaries } from '@/hooks/useStockSummaries';
+import { getStockLabel } from '@/utils/stockDisplay';
 import { Link } from 'react-router-dom';
 
 type Tab = 'podcasters' | 'tickers';
@@ -48,6 +50,7 @@ export const WatchlistPage: React.FC = () => {
   }, [tab, subscriptions]);
 
   const sortedWatchlist = useMemo(() => [...watchlist], [watchlist]);
+  const summaries = useStockSummaries(sortedWatchlist);
 
   return (
     <>
@@ -84,9 +87,23 @@ export const WatchlistPage: React.FC = () => {
           </div>
         ) : (
           <div className="space-y-1.5">
-            {sortedWatchlist.map((sym) => (
-              <ListRow key={sym} title={<span className="font-mono">{sym}</span>} href={`/stock/${encodeURIComponent(sym)}`} trailing={<ChevronRight size={14} />} />
-            ))}
+            {sortedWatchlist.map((sym) => {
+              const summary = summaries[sym];
+              const { primary, secondary } = getStockLabel({
+                ticker: sym,
+                name: summary?.name,
+                market: summary?.market,
+              });
+              return (
+                <ListRow
+                  key={sym}
+                  title={<span>{primary}</span>}
+                  subtitle={secondary ? <span className="font-mono">{secondary}</span> : undefined}
+                  href={`/stock/${encodeURIComponent(sym)}`}
+                  trailing={<ChevronRight size={14} />}
+                />
+              );
+            })}
           </div>
         )}
       </PageContent>

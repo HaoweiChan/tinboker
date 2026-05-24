@@ -9,6 +9,8 @@ import { getSortedStocks } from '@/services/api/stocks';
 import type { SentimentLabel, TickerTrending } from '@/services/types';
 import { fetchWithFallback } from '@/services/api/migration';
 import type { Sentiment } from '@/lib/sentiment';
+import { getStockLabel } from '@/utils/stockDisplay';
+import { useStockSummaries } from '@/hooks/useStockSummaries';
 
 type Market = 'all' | 'TW' | 'US';
 type Sort = 'mentions' | 'sentiment';
@@ -97,6 +99,9 @@ export const StockIndex: React.FC = () => {
     return arr;
   }, [rows, q, market, sort]);
 
+  const visibleTickers = useMemo(() => list.slice(0, 100).map((r) => r.ticker), [list]);
+  const summaries = useStockSummaries(visibleTickers);
+
   return (
     <>
       <SEO title="所有個股" description="最近被 TinBoker 追蹤的 Podcast 提及的所有個股，依提及次數排序。" />
@@ -117,9 +122,8 @@ export const StockIndex: React.FC = () => {
         </div>
 
         <div className="bg-card border border-border rounded-md overflow-hidden">
-          <div className="grid grid-cols-[120px_1fr_80px_72px_28px] gap-3.5 items-center px-4 py-2.5 text-[11px] font-medium text-muted-foreground uppercase tracking-[0.04em] border-b border-border font-mono">
-            <span>代號</span>
-            <span>名稱</span>
+          <div className="grid grid-cols-[1fr_80px_72px_28px] gap-3.5 items-center px-4 py-2.5 text-[11px] font-medium text-muted-foreground uppercase tracking-[0.04em] border-b border-border font-mono">
+            <span>個股</span>
             <span className="text-right">提及</span>
             <span className="text-right">情緒</span>
             <span />
@@ -129,24 +133,36 @@ export const StockIndex: React.FC = () => {
           ) : list.length === 0 ? (
             <div className="px-4 py-12 text-center text-[13px] text-muted-foreground">{q ? `找不到符合「${q}」的個股` : '目前沒有個股資料。'}</div>
           ) : (
-            list.map((r) => (
-              <Link
-                key={r.ticker}
-                to={`/stock/${encodeURIComponent(r.ticker)}`}
-                className="grid grid-cols-[120px_1fr_80px_72px_28px] gap-3.5 items-center px-4 py-3 border-b border-border last:border-b-0 hover:bg-muted transition-colors"
-              >
-                <span className="flex items-center gap-1.5">
-                  <span className="font-mono text-[13px] font-semibold">{r.ticker}</span>
-                  <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-semibold ${isTW(r.ticker) ? 'bg-sentiment-bull-soft text-sentiment-bull' : 'bg-accent-info-soft text-accent-info'}`}>{isTW(r.ticker) ? 'TW' : 'US'}</span>
-                </span>
-                <span className="text-[13.5px] font-medium truncate">{r.name}</span>
-                <span className="font-mono text-[13px] tabular-nums text-right">{r.count}</span>
-                <span className="text-right">
-                  <SentimentChip sentiment={labelToSentiment(r.sentimentLabel)} bare />
-                </span>
-                <ChevronRight size={14} className="text-muted-foreground" />
-              </Link>
-            ))
+            list.map((r) => {
+              const summary = summaries[r.ticker];
+              const { primary, secondary } = getStockLabel({
+                ticker: r.ticker,
+                name: summary?.name ?? r.name,
+                market: summary?.market,
+              });
+              return (
+                <Link
+                  key={r.ticker}
+                  to={`/stock/${encodeURIComponent(r.ticker)}`}
+                  className="grid grid-cols-[1fr_80px_72px_28px] gap-3.5 items-center px-4 py-3 border-b border-border last:border-b-0 hover:bg-muted transition-colors"
+                >
+                  <span className="min-w-0">
+                    <span className="flex items-center gap-1.5">
+                      <span className="text-[13.5px] font-medium truncate">{primary}</span>
+                      <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-semibold ${isTW(r.ticker) ? 'bg-sentiment-bull-soft text-sentiment-bull' : 'bg-accent-info-soft text-accent-info'}`}>{isTW(r.ticker) ? 'TW' : 'US'}</span>
+                    </span>
+                    {secondary && (
+                      <span className="block text-[11px] text-muted-foreground font-mono truncate">{secondary}</span>
+                    )}
+                  </span>
+                  <span className="font-mono text-[13px] tabular-nums text-right">{r.count}</span>
+                  <span className="text-right">
+                    <SentimentChip sentiment={labelToSentiment(r.sentimentLabel)} bare />
+                  </span>
+                  <ChevronRight size={14} className="text-muted-foreground" />
+                </Link>
+              );
+            })
           )}
         </div>
       </PageContent>

@@ -21,6 +21,7 @@ import { getInsightsByTicker } from '@/services/api/podcasts';
 import { transformApiEpisodeToMock } from '@/services/api/transformers';
 import type { TickerInsight } from '@/services/types';
 import { useStockPriceMap } from '@/hooks/useStockPriceMap';
+import { getStockLabel, inferStockMarket } from '@/utils/stockDisplay';
 
 function isTW(t: string): boolean {
   return /\.TW[OW]?$/i.test(t);
@@ -146,18 +147,24 @@ const StockHeaderCard: React.FC<{ symbol: string; episodeCount: number }> = ({ s
     { label: '本益比', value: stockData?.pe ? stockData.pe.toFixed(1) : '—' },
   ];
 
+  const { primary: primaryLabel, secondary: secondaryLabel } = getStockLabel({
+    ticker: symbol,
+    name: stockData?.name,
+    market: inferStockMarket(symbol),
+  });
+
   return (
     <>
       {/* Hero */}
       <div className="flex items-start gap-5 bg-card border border-border rounded-md p-5 sm:p-6 mb-[18px]">
-        <div className="font-mono grid place-items-center bg-muted text-foreground text-[18px] rounded-md shrink-0 px-3" style={{ minWidth: 86, height: 72 }}>
-          {symbol}
-        </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-3 flex-wrap mb-1.5">
-            <h1 className="text-[22px] font-semibold tracking-[-0.02em]">{displayName}</h1>
+            <h1 className="text-[22px] font-semibold tracking-[-0.02em]">{isLoading ? displayName : primaryLabel}</h1>
             <span className={cn('text-[12px] px-3 py-1 rounded-full', tw ? 'bg-sentiment-bull-soft text-sentiment-bull' : 'bg-accent-info-soft text-accent-info')}>{tw ? '台股 上市' : '美股'}</span>
           </div>
+          {secondaryLabel && (
+            <p className="text-[13px] text-muted-foreground font-mono mb-1.5">{secondaryLabel}</p>
+          )}
           <div className="flex items-baseline gap-3.5 flex-wrap">
             <span className={cn('font-mono tabular-nums text-[32px] font-semibold tracking-[-0.02em]', trend.text)}>{isLoading ? '…' : displayPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
             <Change value={displayChangePercent} big />

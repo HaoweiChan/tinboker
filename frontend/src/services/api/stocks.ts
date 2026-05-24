@@ -56,6 +56,20 @@ export async function getStockBasicInfo(ticker: string): Promise<any> {
   return response.data;
 }
 
+export interface StockSummary {
+  ticker: string;
+  name: string;
+  market: 'TW' | 'US';
+}
+
+export async function getBatchStockSummary(tickers: string[]): Promise<StockSummary[]> {
+  if (tickers.length === 0) return [];
+  const response = await apiClient.get('/api/stocks/batch-summary', {
+    params: { tickers: tickers.join(',') },
+  });
+  return Array.isArray(response.data) ? response.data : [];
+}
+
 export async function getStockHistory(
   ticker: string,
   timeframe?: TimeframeOption

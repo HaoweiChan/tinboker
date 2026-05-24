@@ -3,11 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import { Search, X, TrendingUp, Mic, Hash, Clock, Tag } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { useAppStore } from '@/store/useAppStore';
-import { StockLogo } from '@/components/common/StockLogo';
 import { PodcastAvatar } from '@/components/common/PodcastAvatar';
 import { useSearchHistory } from '@/hooks/useSearchHistory';
 import { useAdaptiveDebounce } from '@/hooks/useAdaptiveDebounce';
 import { getSuggestions, getPopularSearches, type SearchResponse, type SearchResultItem } from '@/services/api/search';
+import { getStockLabel } from '@/utils/stockDisplay';
 
 interface SearchUIResult {
   id: string;
@@ -79,14 +79,19 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = () => {
         const data = await getSuggestions(debouncedQuery.toLowerCase().trim());
         const flatResults: SearchUIResult[] = [];
 
-        // Stocks
+        // Stocks (no icon — labels only)
         data.stocks.forEach(item => {
+          const { primary, secondary } = getStockLabel({
+            ticker: item.title,
+            name: item.subtitle,
+            market: item.market,
+          });
           flatResults.push({
             id: item.id,
             type: 'stock',
-            title: item.title,
-            subtitle: item.subtitle,
-            icon: <StockLogo symbol={item.title} logoUrl={item.icon_url} size="sm" className="w-full h-full rounded-md" />,
+            title: primary,
+            subtitle: secondary,
+            icon: null,
             link: item.link
           });
         });
@@ -210,9 +215,11 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = () => {
           onClick={() => handleResultClick(result)}
           className="w-full px-3 py-2 flex items-center gap-2.5 hover:bg-muted/60 rounded-lg transition-colors text-left"
         >
-          <div className="w-8 h-8 flex items-center justify-center rounded-md bg-muted text-muted-foreground overflow-hidden shrink-0">
-            {result.icon}
-          </div>
+          {result.icon && (
+            <div className="w-8 h-8 flex items-center justify-center rounded-md bg-muted text-muted-foreground overflow-hidden shrink-0">
+              {result.icon}
+            </div>
+          )}
           <div className="flex-1 min-w-0">
             <p className="font-medium text-foreground text-[13px] truncate">{result.title}</p>
             {result.subtitle && (
@@ -282,17 +289,23 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = () => {
                     <TrendingUp size={14} /> 熱門標的
                   </h3>
                   <div className="grid grid-cols-1 gap-1">
-                    {popularData.stocks.map((item) => (
-                      <button key={item.id} onClick={() => handlePopularItemClick(item)} className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-muted/60 transition-colors text-left">
-                        <div className="w-7 h-7 rounded-md overflow-hidden shrink-0">
-                          <StockLogo symbol={item.subtitle || item.title} logoUrl={item.icon_url} size="sm" className="w-full h-full" />
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-[13px] font-medium text-foreground truncate">{item.title}</p>
-                          <p className="text-[11px] text-muted-foreground truncate">{item.subtitle}</p>
-                        </div>
-                      </button>
-                    ))}
+                    {popularData.stocks.map((item) => {
+                      const { primary, secondary } = getStockLabel({
+                        ticker: item.title,
+                        name: item.subtitle,
+                        market: item.market,
+                      });
+                      return (
+                        <button key={item.id} onClick={() => handlePopularItemClick(item)} className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-muted/60 transition-colors text-left">
+                          <div className="min-w-0">
+                            <p className="text-[13px] font-medium text-foreground truncate">{primary}</p>
+                            {secondary && (
+                              <p className="text-[11px] text-muted-foreground truncate">{secondary}</p>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               )}

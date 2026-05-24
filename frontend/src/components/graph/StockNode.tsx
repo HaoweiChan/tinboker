@@ -7,7 +7,8 @@ import { calculateCircleRadius, formatLargeNumber } from '@/utils/nodeSize';
 import { getIndustryColor, getIndustryFromTicker } from '@/utils/industryColors';
 import TradingViewChart from '@/components/charts/TradingViewChart';
 import { generateMockPriceSeries } from '@/services/mocks';
-import { Building2, AlertTriangle, ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import { ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import { getStockLabel } from '@/utils/stockDisplay';
 
 type Theme = 'dark' | 'light';
 
@@ -202,18 +203,20 @@ export const StockNode: React.FC<StockNodeProps> = (props) => {
         <Handle type="source" position={Position.Bottom} isConnectable={isConnectable} className="!bg-slate-400 !opacity-0" />
 
         <div className="flex justify-between items-start mb-2">
-          <div className="flex items-center gap-2">
-            <div className={`p-1.5 rounded-md ${isRisk ? 'bg-red-100 text-red-600' : 'bg-indigo-100 text-indigo-600'}`}>
-              {isRisk ? <AlertTriangle size={16} /> : <Building2 size={16} />}
-            </div>
-            <div>
-              <h3 className={`text-sm font-bold leading-tight ${textColor}`}>{data.name || data.label || data.ticker}</h3>
-              <span className={`text-xs font-mono ${subTextColor}`}>{data.ticker}</span>
-            </div>
+          <div>
+            {(() => {
+              const { primary, secondary } = getStockLabel({
+                ticker: data.ticker,
+                name: data.name || data.label,
+              });
+              return (
+                <>
+                  <h3 className={`text-sm font-bold leading-tight ${textColor}`}>{primary}</h3>
+                  {secondary && <span className={`text-xs font-mono ${subTextColor}`}>{secondary}</span>}
+                </>
+              );
+            })()}
           </div>
-          {isRisk && (
-            <span className="text-[10px] font-bold text-red-500 bg-red-100 px-1.5 py-0.5 rounded uppercase tracking-wide">Risk</span>
-          )}
         </div>
 
         <div className="flex justify-between items-end">
@@ -301,7 +304,7 @@ export const StockNode: React.FC<StockNodeProps> = (props) => {
       <Handle type="target" position={Position.Left} className="!opacity-0" />
       <Handle type="source" position={Position.Right} className="!opacity-0" />
       
-      <span className="text-xs font-bold text-center leading-tight px-2 mb-1 truncate w-full">{data.name || data.ticker}</span>
+      <span className="text-xs font-bold text-center leading-tight px-2 mb-1 truncate w-full">{getStockLabel({ ticker: data.ticker, name: data.name }).primary}</span>
       <span className="text-sm font-mono font-bold">
         {typeof value === 'string' ? value : formatLargeNumber(numericValue || 0)}
       </span>
