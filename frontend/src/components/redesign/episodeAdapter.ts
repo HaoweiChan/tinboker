@@ -29,15 +29,16 @@ function timeAgo(release: string | number | null | undefined, created: number): 
 }
 
 /** Map a backend Episode to props for the redesigned EpisodeCardV2.
- *  Pass `priceMap` (ticker → changePercent) to hydrate live price cells. */
-export function apiEpisodeToCardV2(ep: ApiEpisode, priceMap?: Map<string, number>): EpisodeCardV2Props {
+ *  Pass `priceMap` (ticker → changePercent) to hydrate live price cells.
+ *  Pass `podcastImageMap` (podcast_name → image_url) to show cover art. */
+export function apiEpisodeToCardV2(ep: ApiEpisode, priceMap?: Map<string, number>, podcastImageMap?: Map<string, string>): EpisodeCardV2Props {
   const released = ep.spotify_release_date ?? ep.created_time;
   const releaseTime = typeof released === 'string' ? Date.parse(released) : (released ?? ep.created_time);
   const isRecent = Number.isFinite(releaseTime) && Date.now() - (releaseTime as number) < 7 * 24 * 3_600_000;
   return {
     podcasterName: ep.podcast_name,
     podcasterInitial: (ep.podcast_name || 'P').charAt(0),
-    podcasterImageUrl: ep.spotify_images?.[0] ?? null,
+    podcasterImageUrl: podcastImageMap?.get(ep.podcast_name) ?? ep.spotify_images?.[0] ?? null,
     podcasterKind: 'mute',
     episodeNumber: ep.episode_number != null ? `EP ${ep.episode_number}` : undefined,
     timeAgo: timeAgo(ep.spotify_release_date, ep.created_time),

@@ -4,7 +4,7 @@ import { PageContent } from '@/components/layout/PageContent';
 import { EpisodeCardV2, FilterPills } from '@/components/redesign';
 import { apiEpisodeToCardV2 } from '@/components/redesign/episodeAdapter';
 import { HomeRail } from '@/components/redesign/HomeRail';
-import { getRecentEpisodes, type Episode as ApiEpisode } from '@/services/api/podcasts';
+import { getRecentEpisodes, getSortedPodcasts, type Episode as ApiEpisode } from '@/services/api/podcasts';
 import { fetchWithFallback } from '@/services/api/migration';
 import { useSubscriptions } from '@/store/useAppStore';
 import { useStockPriceMap } from '@/hooks/useStockPriceMap';
@@ -31,6 +31,7 @@ export const HomeFeed: React.FC = () => {
   const [episodes, setEpisodes] = useState<ApiEpisode[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<Filter>('最新');
+  const [podcastImageMap, setPodcastImageMap] = useState<Map<string, string>>(new Map());
   const subscriptions = useSubscriptions();
   const episodeTickers = useMemo(() => episodes.flatMap((ep) => ep.related_tickers ?? []), [episodes]);
   const priceMap = useStockPriceMap(episodeTickers);
@@ -39,13 +40,21 @@ export const HomeFeed: React.FC = () => {
     let alive = true;
     (async () => {
       setLoading(true);
-      const data = await fetchWithFallback<ApiEpisode[]>(
-        () => getRecentEpisodes({ limit: 60, sortBy: 'spotify_release_date', order: 'desc', includeContent: false }),
-        [],
-        'getRecentEpisodes',
-      ).catch(() => [] as ApiEpisode[]);
+      const [data, podcasts] = await Promise.all([
+        fetchWithFallback<ApiEpisode[]>(
+          () => getRecentEpisodes({ limit: 60, sortBy: 'spotify_release_date', order: 'desc', includeContent: false }),
+          [],
+          'getRecentEpisodes',
+        ).catch(() => [] as ApiEpisode[]),
+        fetchWithFallback(() => getSortedPodcasts({ limit: 200 }), [], 'getSortedPodcasts:feed').catch(() => []),
+      ]);
       if (!alive) return;
       setEpisodes(Array.isArray(data) ? data : []);
+      const map = new Map<string, string>();
+      for (const p of Array.isArray(podcasts) ? podcasts : []) {
+        if (p.name && p.image_url) map.set(p.name, p.image_url);
+      }
+      setPodcastImageMap(map);
       setLoading(false);
     })();
     return () => {
@@ -85,7 +94,7 @@ export const HomeFeed: React.FC = () => {
           <>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {filtered.map((ep) => (
-                <EpisodeCardV2 key={ep.id} {...apiEpisodeToCardV2(ep, priceMap)} />
+                <EpisodeCardV2 key={ep.id} {...apiEpisodeToCardV2(ep, priceMap, podcastImageMap)} />
               ))}
             </div>
             <div className="mt-6 py-3 text-center text-[12px] text-muted-foreground">— 到這邊 —</div>

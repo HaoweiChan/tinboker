@@ -19,10 +19,11 @@ export async function postComment(
   episodeId: string,
   content: string,
   token: string,
+  parentCommentId?: string,
 ): Promise<Comment> {
   const res = await apiClient.post(
     `/api/episodes/${encodeURIComponent(podcastName)}/${encodeURIComponent(episodeId)}/comments`,
-    { content },
+    { content, parent_comment_id: parentCommentId ?? null },
     { headers: { Authorization: `Bearer ${token}` } },
   );
   return CommentSchema.parse(res.data);

@@ -3,11 +3,28 @@ import { toast } from 'sonner';
 import { useUser, useAppStore } from '@/store/useAppStore';
 import { LoginButton } from '@/components/auth/LoginButton';
 import { CommentForm } from './CommentForm';
-import { CommentList } from './CommentList';
+import { CommentList, type CommentWithReplies } from './CommentList';
 import { getEpisodeComments, postComment, deleteComment } from '@/services/api/comments';
 import type { Comment } from '@/validation/schemas';
 
-const LIMIT = 20;
+function buildTree(flat: Comment[]): CommentWithReplies[] {
+  const map = new Map<string, CommentWithReplies>();
+  const roots: CommentWithReplies[] = [];
+
+  // Build map with empty replies arrays
+  flat.forEach((c) => map.set(c.id, { ...c, replies: [] }));
+
+  // Wire parent → child
+  map.forEach((node) => {
+    if (node.parent_comment_id && map.has(node.parent_comment_id)) {
+      map.get(node.parent_comment_id)!.replies!.push(node);
+    } else {
+      roots.push(node);
+    }
+  });
+
+  return roots;
+}
 
 interface CommentSectionProps {
   podcastName: string;
@@ -18,18 +35,17 @@ export const CommentSection: React.FC<CommentSectionProps> = ({ podcastName, epi
   const user = useUser();
   const token = useAppStore((s) => s.token);
 
-  const [comments, setComments] = useState<Comment[]>([]);
-  const [total, setTotal] = useState(0);
-  const [offset, setOffset] = useState(0);
+  const [flatComments, setFlatComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<string | null>(null);
 
-  const fetchComments = useCallback(async (currentOffset: number, replace: boolean) => {
+  const tree = buildTree(flatComments);
+  const total = flatComments.length;
+
+  const fetchComments = useCallback(async () => {
     try {
-      const result = await getEpisodeComments(podcastName, episodeId, currentOffset, LIMIT);
-      setTotal(result.total);
-      setComments((prev) => replace ? result.comments : [...prev, ...result.comments]);
-      setOffset(currentOffset + result.comments.length);
+      const result = await getEpisodeComments(podcastName, episodeId);
+      setFlatComments(result.comments);
     } catch {
       if (import.meta.env.DEV) console.warn('Failed to fetch comments');
     }
@@ -37,34 +53,32 @@ export const CommentSection: React.FC<CommentSectionProps> = ({ podcastName, epi
 
   useEffect(() => {
     setLoading(true);
-    setOffset(0);
-    fetchComments(0, true).finally(() => setLoading(false));
+    fetchComments().finally(() => setLoading(false));
   }, [fetchComments]);
 
   const handleSubmit = async (content: string) => {
     if (!token) return;
     const newComment = await postComment(podcastName, episodeId, content, token);
-    setComments((prev) => [newComment, ...prev]);
-    setTotal((t) => t + 1);
+    // Append to flat list — tree rebuilds automatically
+    setFlatComments((prev) => [...prev, newComment]);
+  };
+
+  const handleSubmitReply = async (content: string, parentId: string) => {
+    if (!token) return;
+    const newComment = await postComment(podcastName, episodeId, content, token, parentId);
+    setFlatComments((prev) => [...prev, newComment]);
+    setReplyingTo(null);
   };
 
   const handleDelete = async (commentId: string) => {
     if (!token) return;
     try {
       await deleteComment(commentId, token);
-      setComments((prev) => prev.filter((c) => c.id !== commentId));
-      setTotal((t) => t - 1);
+      setFlatComments((prev) => prev.filter((c) => c.id !== commentId));
     } catch {
       toast.error('刪除失敗，請稍後再試。');
     }
   };
-
-  const handleLoadMore = async () => {
-    setLoadingMore(true);
-    await fetchComments(offset, false).finally(() => setLoadingMore(false));
-  };
-
-  const hasMore = comments.length < total;
 
   return (
     <section className="bg-card border border-border rounded-md p-5 sm:p-6">
@@ -80,33 +94,26 @@ export const CommentSection: React.FC<CommentSectionProps> = ({ podcastName, epi
         </div>
       )}
 
-      {/* Comment form (logged in only) */}
+      {/* Top-level comment form */}
       {user && token && (
         <div className="mb-5 pb-5 border-b border-border">
           <CommentForm onSubmit={handleSubmit} />
         </div>
       )}
 
-      {/* Comment list */}
+      {/* Comment tree */}
       {loading ? (
         <p className="text-[13px] text-muted-foreground">載入留言中…</p>
       ) : (
-        <>
-          <CommentList
-            comments={comments}
-            currentUserId={user?.id}
-            onDelete={handleDelete}
-          />
-          {hasMore && (
-            <button
-              onClick={handleLoadMore}
-              disabled={loadingMore}
-              className="mt-4 text-[12px] text-primary hover:underline disabled:opacity-50"
-            >
-              {loadingMore ? '載入中…' : `載入更多留言（還有 ${total - comments.length} 則）`}
-            </button>
-          )}
-        </>
+        <CommentList
+          comments={tree}
+          currentUserId={user?.id}
+          onDelete={handleDelete}
+          onReply={(parentId) => setReplyingTo(replyingTo === parentId ? null : parentId)}
+          onCancelReply={() => setReplyingTo(null)}
+          onSubmitReply={handleSubmitReply}
+          replyingTo={replyingTo}
+        />
       )}
     </section>
   );
