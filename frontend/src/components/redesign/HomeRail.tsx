@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { getTrendingTickers, getSortedPodcasts, type Podcast } from '@/services/api/podcasts';
+import { getTrendingTickers, type Podcast } from '@/services/api/podcasts';
 import type { TickerTrending } from '@/services/types';
 import { fetchWithFallback } from '@/services/api/migration';
 import { RailCard } from './RailCard';
@@ -93,24 +93,17 @@ function TopPodcasters({ podcasts }: { podcasts: Podcast[] }) {
   );
 }
 
-/** Home page right rail: 今天的市場 / 這幾天大家在聊 / 本週更新最勤. Falls back to mock data when the API is unavailable. */
-export const HomeRail: React.FC<{ episodeCount: number }> = ({ episodeCount }) => {
+/** Home page right rail: 今天的市場 / 這幾天大家在聊 / 本週更新最勤. */
+export const HomeRail: React.FC<{ episodeCount: number; podcasts?: Podcast[] }> = ({ episodeCount, podcasts = [] }) => {
   const [buzz, setBuzz] = useState<TickerTrending[]>([]);
-  const [podcasts, setPodcasts] = useState<Podcast[]>([]);
 
   useEffect(() => {
     let alive = true;
-    (async () => {
-      // 7-day window isn't returned by the trending aggregate (only 30/90/all
-      // per spec § 5.2); use 30d as the closest "lately" proxy.
-      const [b, p] = await Promise.all([
-        fetchWithFallback<TickerTrending[]>(() => getTrendingTickers({ days: 30, limit: 10 }), [], 'getTrendingTickers:rail').catch(() => [] as TickerTrending[]),
-        fetchWithFallback<Podcast[]>(() => getSortedPodcasts({ sortBy: 'updated_at', order: 'desc', limit: 8 }), [], 'getSortedPodcasts').catch(() => [] as Podcast[]),
-      ]);
-      if (!alive) return;
-      setBuzz(Array.isArray(b) ? b : []);
-      setPodcasts(Array.isArray(p) ? p : []);
-    })();
+    fetchWithFallback<TickerTrending[]>(() => getTrendingTickers({ days: 30, limit: 10 }), [], 'getTrendingTickers:rail')
+      .catch(() => [] as TickerTrending[])
+      .then((b) => {
+        if (alive) setBuzz(Array.isArray(b) ? b : []);
+      });
     return () => {
       alive = false;
     };

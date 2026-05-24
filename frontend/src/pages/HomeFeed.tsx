@@ -4,7 +4,7 @@ import { PageContent } from '@/components/layout/PageContent';
 import { EpisodeCardV2, FilterPills } from '@/components/redesign';
 import { apiEpisodeToCardV2 } from '@/components/redesign/episodeAdapter';
 import { HomeRail } from '@/components/redesign/HomeRail';
-import { getRecentEpisodes, getSortedPodcasts, type Episode as ApiEpisode } from '@/services/api/podcasts';
+import { getRecentEpisodes, getSortedPodcasts, type Episode as ApiEpisode, type Podcast } from '@/services/api/podcasts';
 import { fetchWithFallback } from '@/services/api/migration';
 import { useSubscriptions } from '@/store/useAppStore';
 import { useStockPriceMap } from '@/hooks/useStockPriceMap';
@@ -29,32 +29,39 @@ function CardSkeleton() {
 
 export const HomeFeed: React.FC = () => {
   const [episodes, setEpisodes] = useState<ApiEpisode[]>([]);
+  const [podcasts, setPodcasts] = useState<Podcast[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<Filter>('最新');
-  const [podcastImageMap, setPodcastImageMap] = useState<Map<string, string>>(new Map());
   const subscriptions = useSubscriptions();
   const episodeTickers = useMemo(() => episodes.flatMap((ep) => ep.related_tickers ?? []), [episodes]);
   const priceMap = useStockPriceMap(episodeTickers);
+  const podcastImageMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const p of podcasts) {
+      if (p.name && p.image_url) map.set(p.name, p.image_url);
+    }
+    return map;
+  }, [podcasts]);
 
   useEffect(() => {
     let alive = true;
     (async () => {
       setLoading(true);
-      const [data, podcasts] = await Promise.all([
+      const [data, podcastList] = await Promise.all([
         fetchWithFallback<ApiEpisode[]>(
           () => getRecentEpisodes({ limit: 60, sortBy: 'spotify_release_date', order: 'desc', includeContent: false }),
           [],
           'getRecentEpisodes',
         ).catch(() => [] as ApiEpisode[]),
-        fetchWithFallback(() => getSortedPodcasts({ limit: 200 }), [], 'getSortedPodcasts:feed').catch(() => []),
+        fetchWithFallback<Podcast[]>(
+          () => getSortedPodcasts({ sortBy: 'updated_at', order: 'desc', limit: 200 }),
+          [],
+          'getSortedPodcasts',
+        ).catch(() => [] as Podcast[]),
       ]);
       if (!alive) return;
       setEpisodes(Array.isArray(data) ? data : []);
-      const map = new Map<string, string>();
-      for (const p of Array.isArray(podcasts) ? podcasts : []) {
-        if (p.name && p.image_url) map.set(p.name, p.image_url);
-      }
-      setPodcastImageMap(map);
+      setPodcasts(Array.isArray(podcastList) ? podcastList : []);
       setLoading(false);
     })();
     return () => {
@@ -76,7 +83,7 @@ export const HomeFeed: React.FC = () => {
   return (
     <>
       <SEO description="聽播客 TinBoker — 最新的財經 Podcast 摘要、情緒與相關個股。" />
-      <PageContent rail={<HomeRail episodeCount={episodes.length} />}>
+      <PageContent rail={<HomeRail episodeCount={episodes.length} podcasts={podcasts} />}>
         <h1 className="text-[22px] font-semibold tracking-[-0.02em] mb-3.5">今天聽什麼</h1>
         <FilterPills items={FILTERS} value={filter} onChange={setFilter} meta={loading ? null : <span>整理了 <span className="font-mono tabular-nums">{filtered.length}</span> 集</span>} />
 
