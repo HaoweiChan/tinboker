@@ -63,7 +63,7 @@ class StockService:
         # For 1H, we fetch minute data, so differentiate in cache key
         timeframe_key = timeframe or 'ALL'
         granularity = 'minute' if timeframe in ['1H'] else 'daily'
-        cache_key = f"stock:{ticker.upper()}:info:{timeframe_key}:{granularity}"
+        cache_key = f"stock:{ticker.upper()}:info:{timeframe_key}:{granularity}:v3"
         
         # Skip cache if 'before' is provided (pagination request for older data)
         if not before:
@@ -90,7 +90,7 @@ class StockService:
         if stock_data:
             # Convert to CompanyDetail format
             result = self._convert_stock_to_company_detail(stock_data)
-            
+
             # Apply timeframe filtering if provided (for non-standard timeframes that need date filtering)
             # 1H is handled by minute fetch
             # 1D, 1W, 1M are handled by aggregate fetch with specific lookbacks
@@ -500,45 +500,39 @@ class StockService:
     async def search_stocks(self, query: str, limit: int = 5) -> List[SearchResultItem]:
         """
         Search stocks by ticker or name
-        
+
         Args:
             query: Search query
             limit: Maximum number of results
-            
+
         Returns:
             List of SearchResultItem objects
         """
         # Get all stocks (using a large limit to cache mostly everything)
         # We use 1000 as a reasonable upper bound for "all interesting stocks"
         all_stocks = await self.get_sorted_stocks_async(limit=1000)
-        
+
         query_lower = query.lower()
         results = []
-        
         for stock in all_stocks:
             ticker = stock.get("ticker", "")
             name = stock.get("name", "")
-            
-            if query_lower in ticker.lower() or query_lower in name.lower():
-                # Format price change for display if available
-                change_percent = stock.get("change_percent")
-                subtitle = name
-                
-                results.append(SearchResultItem(
-                    id=f"stock-{ticker}",
-                    type="stock",
-                    title=ticker,
-                    subtitle=subtitle,
-                    link=f"/stock/{ticker}",
-                    # No icon_url here as it's not in the list view, would need extra fetch
-                    metadata={
-                        "price": stock.get("price"), 
-                        "change_percent": change_percent
-                    }
-                ))
-                
-                if len(results) >= limit:
-                    break
-        
+            if query_lower not in ticker.lower() and query_lower not in name.lower():
+                continue
+            market = "TW" if ticker.split(".")[0].isdigit() else "US"
+            results.append(SearchResultItem(
+                id=f"stock-{ticker}",
+                type="stock",
+                title=ticker,
+                subtitle=name,
+                link=f"/stock/{ticker}",
+                market=market,
+                metadata={
+                    "price": stock.get("price"),
+                    "change_percent": stock.get("change_percent")
+                }
+            ))
+            if len(results) >= limit:
+                break
         return results
 

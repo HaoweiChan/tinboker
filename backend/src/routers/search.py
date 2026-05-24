@@ -94,22 +94,27 @@ async def build_search_index():
     """Build the in-memory suggestion index from all sources."""
     from src.services.suggestion_index import SuggestionIndex
     from src.schemas.search import SearchResultItem
-    
+
     logger = logging.getLogger(__name__)
     logger.info("Building search index...")
     index = SuggestionIndex()
-    
+
     try:
         # 1. Fetch all stocks (cached version is fast)
         stocks = await stock_service.get_sorted_stocks_async(limit=2000)
+
         for stock in stocks:
+            ticker = stock.get("ticker")
+            if not ticker:
+                continue
+            market = "TW" if ticker.split(".")[0].isdigit() else "US"
             item = SearchResultItem(
-                id=f"stock-{stock.get('ticker')}",
+                id=f"stock-{ticker}",
                 type="stock",
-                title=stock.get("ticker"),
+                title=ticker,
                 subtitle=stock.get("name"),
-                link=f"/stock/{stock.get('ticker')}",
-                icon_url=None, # Frontend handles stock icons
+                link=f"/stock/{ticker}",
+                market=market,
                 metadata={"price": stock.get("price"), "change_percent": stock.get("change_percent")}
             )
             # Index by Ticker, Full Name, and Short Name (in parentheses)

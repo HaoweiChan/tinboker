@@ -8,6 +8,7 @@ class SearchResultItem(BaseModel):
     subtitle: Optional[str] = None
     icon_url: Optional[str] = None
     link: str
+    market: Optional[str] = None  # 'TW' | 'US' | None — stocks only
     metadata: Optional[dict] = None
 
 class SearchResponse(BaseModel):

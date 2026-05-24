@@ -66,6 +66,37 @@ async def get_batch_prices(
     }
 
 
+@router.get("/batch-summary")
+async def get_batch_summary(
+    tickers: str = Query(description="Comma-separated ticker symbols (max 100)"),
+):
+    """
+    Return display metadata (name + market) for a set of tickers.
+    Used by watchlist / index rows to render Chinese-name labels without N round-trips.
+    Returns a list of {ticker, name, market}; entries missing in upstream data
+    still appear with name=ticker so callers can render.
+    """
+    ticker_list = [t.strip().upper() for t in tickers.split(',') if t.strip()][:100]
+    if not ticker_list:
+        return []
+
+    basic_results = await asyncio.gather(
+        *[stock_service.get_stock_basic_info_async(t) for t in ticker_list],
+        return_exceptions=True,
+    )
+
+    out = []
+    for ticker, info in zip(ticker_list, basic_results):
+        market = "TW" if ticker.split(".")[0].isdigit() else "US"
+        name = info.get("name") if isinstance(info, dict) else None
+        out.append({
+            "ticker": ticker,
+            "name": name or ticker,
+            "market": market,
+        })
+    return out
+
+
 @router.get("/{ticker}", response_model=CompanyDetail)
 async def get_stock_by_ticker(
     ticker: str,
