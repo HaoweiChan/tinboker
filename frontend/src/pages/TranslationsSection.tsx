@@ -52,8 +52,14 @@ export const TranslationsSection: React.FC = () => {
             if (market) params.market = market;
             if (status) params.status = status as TranslationStatus;
             const response = await listTranslations(params);
-            setTranslations(response.items);
-            setTotal(response.total);
+            const normalizedItems = Array.isArray(response.items)
+                ? response.items
+                : Array.isArray((response as unknown as { translations?: Translation[] }).translations)
+                    ? (response as unknown as { translations: Translation[] }).translations
+                    : [];
+            const normalizedTotal = typeof response.total === 'number' ? response.total : normalizedItems.length;
+            setTranslations(normalizedItems);
+            setTotal(normalizedTotal);
         } catch (error: any) {
             console.error('Failed to fetch translations:', error);
         } finally {
@@ -113,10 +119,10 @@ export const TranslationsSection: React.FC = () => {
             <div className="mb-6 flex items-center justify-between">
                 <div>
                     <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-                        Stock Translations
+                        股票代號翻譯管理
                     </h1>
                     <p className="text-sm text-gray-500 dark:text-gray-400">
-                        {total} translations
+                        共 {total} 筆
                     </p>
                 </div>
                 <div className="flex items-center gap-3">
@@ -125,14 +131,14 @@ export const TranslationsSection: React.FC = () => {
                         className="flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
                     >
                         <RefreshCw className="h-4 w-4" />
-                        Refresh
+                        重新整理
                     </button>
                     <button
                         onClick={() => setShowBulkImport(true)}
                         className="flex items-center gap-2 rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700"
                     >
                         <Upload className="h-4 w-4" />
-                        Bulk Import
+                        批次匯入
                     </button>
                 </div>
             </div>
@@ -161,7 +167,7 @@ export const TranslationsSection: React.FC = () => {
             {totalPages > 1 && (
                 <div className="mt-6 flex items-center justify-between">
                     <div className="text-sm text-gray-500 dark:text-gray-400">
-                        Page {page} of {totalPages}
+                        第 {page} / {totalPages} 頁
                     </div>
                     <div className="flex items-center gap-2">
                         <button

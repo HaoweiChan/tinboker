@@ -21,15 +21,15 @@ interface EditingCell {
 
 const STATUS_BADGES: Record<TranslationStatus, { label: string; className: string }> = {
   pending: {
-    label: 'Pending',
+    label: '待處理',
     className: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
   },
   approved: {
-    label: 'Approved',
+    label: '已核准',
     className: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
   },
   auto: {
-    label: 'Auto',
+    label: '自動',
     className: 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300',
   },
 };
@@ -81,7 +81,7 @@ export const TranslationTable: React.FC<TranslationTableProps> = ({
   };
 
   const handleDelete = async (id: number) => {
-    if (!confirm('Are you sure you want to delete this translation?')) return;
+    if (!confirm('確定要刪除這筆翻譯嗎？')) return;
     setDeleting(id);
     try {
       await onDelete(id);
@@ -101,7 +101,7 @@ export const TranslationTable: React.FC<TranslationTableProps> = ({
   if (translations.length === 0) {
     return (
       <div className="flex h-64 items-center justify-center text-gray-500 dark:text-gray-400">
-        No translations found
+        查無翻譯資料
       </div>
     );
   }
@@ -112,22 +112,22 @@ export const TranslationTable: React.FC<TranslationTableProps> = ({
         <thead className="bg-gray-50 dark:bg-gray-800">
           <tr>
             <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
-              Ticker
+              代號
             </th>
             <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
-              Market
+              市場
             </th>
             <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
-              English Name
+              英文名稱
             </th>
             <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
-              Chinese Name
+              中文名稱
             </th>
             <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
-              Status
+              狀態
             </th>
             <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
-              Actions
+              操作
             </th>
           </tr>
         </thead>
@@ -174,7 +174,7 @@ export const TranslationTable: React.FC<TranslationTableProps> = ({
                       {isSaving && editingCell?.field === 'name_en' ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
                       ) : (
-                        translation.name_en || 'Click to edit...'
+                        translation.name_en || '點擊即可編輯...'
                       )}
                     </div>
                   )}
@@ -205,7 +205,7 @@ export const TranslationTable: React.FC<TranslationTableProps> = ({
                       {isSaving && editingCell?.field === 'name_zh_tw' ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
                       ) : (
-                        translation.name_zh_tw || 'Click to edit...'
+                        translation.name_zh_tw || '點擊即可編輯...'
                       )}
                     </div>
                   )}

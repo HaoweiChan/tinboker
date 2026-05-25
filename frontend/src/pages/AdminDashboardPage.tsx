@@ -23,7 +23,7 @@ export const AdminDashboardPage: React.FC = () => {
             setStatus(data);
             setLastUpdated(new Date());
         } catch (err: any) {
-            setError(err.message || 'Failed to fetch system status');
+            setError(err.message || '無法取得系統狀態');
         } finally {
             setLoading(false);
         }
@@ -57,12 +57,12 @@ export const AdminDashboardPage: React.FC = () => {
             <div className="mb-6 flex items-center justify-between">
                 <div>
                     <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-                        System Status
+                        系統狀態
                     </h1>
                     <p className="text-sm text-gray-500 dark:text-gray-400">
                         {lastUpdated
-                            ? `Last updated: ${lastUpdated.toLocaleTimeString()}`
-                            : 'Loading...'}
+                            ? `更新時間：${lastUpdated.toLocaleTimeString()}`
+                            : '載入中...'}
                     </p>
                 </div>
                 <button
@@ -71,7 +71,7 @@ export const AdminDashboardPage: React.FC = () => {
                     className="flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
                 >
                     <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-                    Refresh
+                    重新整理
                 </button>
             </div>
 
@@ -86,11 +86,11 @@ export const AdminDashboardPage: React.FC = () => {
             {/* Status cards */}
             <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <StatusCard
-                    title="Backend"
+                    title="後端服務"
                     icon={<Server className="h-5 w-5" />}
                     status={status?.backend.status || 'unknown'}
                     value={status ? formatUptime(status.backend.uptime_seconds) : '--'}
-                    subtitle={status ? `v${status.backend.version}` : 'Loading...'}
+                    subtitle={status ? `版本 v${status.backend.version}` : '載入中...'}
                     color={status ? getStatusColor(status.backend.status) : 'yellow'}
                     loading={loading && !status}
                 />
@@ -101,9 +101,9 @@ export const AdminDashboardPage: React.FC = () => {
                     value={
                         status?.redis.connected
                             ? `${status.redis.memory_mb?.toFixed(1) || '?'} MB`
-                            : 'Disconnected'
+                            : '未連線'
                     }
-                    subtitle={status?.redis.message || (status?.redis.connected ? 'Connected' : 'Checking...')}
+                    subtitle={status?.redis.message || (status?.redis.connected ? '已連線' : '檢查中...')}
                     color={status ? getStatusColor(status.redis.status) : 'yellow'}
                     loading={loading && !status}
                 />
@@ -115,27 +115,27 @@ export const AdminDashboardPage: React.FC = () => {
                         status?.postgres.pool_size !== undefined
                             ? `${status.postgres.active_connections}/${status.postgres.pool_size}`
                             : status?.postgres.connected
-                                ? 'Connected'
-                                : 'Disconnected'
+                                ? '已連線'
+                                : '未連線'
                     }
                     subtitle={
                         status?.postgres.message ||
                         (status?.postgres.idle_connections !== undefined
-                            ? `${status.postgres.idle_connections} idle`
-                            : 'Checking...')
+                            ? `閒置連線 ${status.postgres.idle_connections}`
+                            : '檢查中...')
                     }
                     color={status ? getStatusColor(status.postgres.status) : 'yellow'}
                     loading={loading && !status}
                 />
                 <StatusCard
-                    title="System"
+                    title="主機資源"
                     icon={<Cpu className="h-5 w-5" />}
                     status={status?.system ? 'healthy' : 'unknown'}
-                    value={status?.system ? `${status.system.cpu_percent.toFixed(0)}% CPU` : 'N/A'}
+                    value={status?.system ? `CPU ${status.system.cpu_percent.toFixed(0)}%` : 'N/A'}
                     subtitle={
                         status?.system
-                            ? `RAM: ${status.system.memory_percent.toFixed(0)}% | Disk: ${status.system.disk_percent.toFixed(0)}%`
-                            : 'psutil not installed'
+                            ? `記憶體 ${status.system.memory_percent.toFixed(0)}% ｜ 磁碟 ${status.system.disk_percent.toFixed(0)}%`
+                            : '未安裝 psutil'
                     }
                     color={
                         status?.system
@@ -155,7 +155,7 @@ export const AdminDashboardPage: React.FC = () => {
                 <div className="mb-4 flex items-center gap-2">
                     <Activity className="h-5 w-5 text-gray-500 dark:text-gray-400" />
                     <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-                        Netdata Monitoring
+                        Netdata 即時監控
                     </h2>
                 </div>
                 <NetdataEmbed />

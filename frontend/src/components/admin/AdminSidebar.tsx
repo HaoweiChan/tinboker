@@ -59,10 +59,10 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
                 {!collapsed && (
                     <div>
                         <h1 className="text-lg font-bold text-gray-900 dark:text-white">
-                            Admin
+                            開發者管理
                         </h1>
                         <p className="text-xs text-gray-500 dark:text-gray-400">
-                            TinBoker Dashboard
+                            聽播客維運後台
                         </p>
                     </div>
                 )}
@@ -84,20 +84,20 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
                 <NavItem
                     to="/admin"
                     icon={<LayoutDashboard className="h-5 w-5" />}
-                    label="Dashboard"
+                    label="系統儀表板"
                     collapsed={collapsed}
                     end
                 />
                 <NavItem
                     to="/admin/translations"
                     icon={<Languages className="h-5 w-5" />}
-                    label="Translations"
+                    label="股票翻譯表"
                     collapsed={collapsed}
                 />
                 <NavItem
                     to="/admin/analytics"
                     icon={<BarChart3 className="h-5 w-5" />}
-                    label="Analytics"
+                    label="流量分析"
                     collapsed={collapsed}
                 />
                 {/* Future sections */}
@@ -118,7 +118,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
                     title={collapsed ? 'Logout' : undefined}
                 >
                     <LogOut className="h-5 w-5" />
-                    {!collapsed && <span>Logout</span>}
+                    {!collapsed && <span>登出</span>}
                 </button>
             </div>
         </aside>
