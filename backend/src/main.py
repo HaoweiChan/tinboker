@@ -59,8 +59,8 @@ async def lifespan(app: FastAPI):
     rec_conn_str = settings.recommendation_postgres_connection_string
     if rec_conn_str:
         try:
-            from src.database import recommendation_db
-            recommendation_db.init_pool()
+            from src.database import insight_db
+            insight_db.init_pool()
             print("Recommendation Postgres pool initialized.")
         except Exception as e:
             print(f"Warning: Could not initialize recommendation Postgres: {e}")
@@ -75,8 +75,8 @@ async def lifespan(app: FastAPI):
     # --- Shutdown ---
     await RedisClient.close_all()
     try:
-        from src.database import recommendation_db
-        recommendation_db.close_pool()
+        from src.database import insight_db
+        insight_db.close_pool()
     except Exception:
         pass
 
@@ -206,10 +206,10 @@ async def health_check():
             db_status["status"] = "error"
             db_status["error"] = str(e)
     
-    # Check recommendation DB (podcast_db) connectivity
+    # Check insight DB (podcast_db) connectivity
     rec_db_status = {"status": "unknown"}
     try:
-        from src.database.recommendation_db import is_available as rec_is_available
+        from src.database.insight_db import is_available as rec_is_available
         if rec_is_available():
             rec_db_status["status"] = "connected"
         else:

@@ -10,7 +10,7 @@ from datetime import date, datetime
 from typing import List, Optional, Any
 
 import psycopg2.extras
-from src.database.recommendation_db import get_connection, is_available
+from src.database.insight_db import get_connection, is_available
 
 logger = logging.getLogger(__name__)
 
