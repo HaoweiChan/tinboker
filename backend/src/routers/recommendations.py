@@ -96,7 +96,7 @@ async def get_buzz(
     DEPRECATED — use GET /api/ticker-insights/trending.
 
     Returns ticker, count, sentiment_score (avg), last_mentioned from the
-    Postgres `ticker_recommendations` table. Soft-deprecated per spec § 4.4:
+    Postgres `ticker_insights` table. Soft-deprecated per spec § 4.4:
     response carries `Deprecation: true` and a successor-version `Link`
     header; this path will be removed one release after the new endpoint
     soaks (Phase B6).

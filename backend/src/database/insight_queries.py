@@ -1,6 +1,6 @@
 """
-Read-only DB queries for ticker recommendations (podcast_db).
-Assumes table ticker_recommendations exists and is populated elsewhere.
+Read-only DB queries for ticker insights (podcast_db).
+Assumes table ticker_insights exists and is populated elsewhere (tinboker-agents).
 Schema: id, episode_id, podcast_launch_time, ticker, bluf_thesis, time_horizon,
         sentiment_score, sentiment, reasons (JSONB), risks (JSONB), created_at.
         Optional: podcaster (or filter by episode_id).
@@ -14,7 +14,7 @@ from src.database.insight_db import get_connection, is_available
 
 logger = logging.getLogger(__name__)
 
-TABLE = "ticker_recommendations"
+TABLE = "ticker_insights"
 
 
 def _row_to_recommendation(row: Any) -> dict:
@@ -67,7 +67,7 @@ def get_by_ticker(
                     """
                     SELECT id, episode_id, podcaster, podcast_launch_time, ticker, bluf_thesis,
                            time_horizon, sentiment_score, sentiment, reasons, risks, created_at
-                    FROM ticker_recommendations
+                    FROM ticker_insights
                     WHERE (UPPER(REPLACE(ticker, '.TW', '')) = %s OR ticker = %s)
                     AND (%s::date IS NULL OR podcast_launch_time::date >= %s)
                     AND (%s::date IS NULL OR podcast_launch_time::date <= %s)
@@ -108,7 +108,7 @@ def get_by_podcaster(
                         """
                         SELECT id, episode_id, podcaster, podcast_launch_time, ticker, bluf_thesis,
                                time_horizon, sentiment_score, sentiment, reasons, risks, created_at
-                        FROM ticker_recommendations
+                        FROM ticker_insights
                         WHERE (podcaster ILIKE %s OR episode_id ILIKE %s)
                         AND (%s::date IS NULL OR podcast_launch_time::date >= %s)
                         AND (%s::date IS NULL OR podcast_launch_time::date <= %s)
@@ -121,7 +121,7 @@ def get_by_podcaster(
                         """
                         SELECT id, episode_id, podcaster, podcast_launch_time, ticker, bluf_thesis,
                                time_horizon, sentiment_score, sentiment, reasons, risks, created_at
-                        FROM ticker_recommendations
+                        FROM ticker_insights
                         WHERE episode_id ILIKE %s
                         AND (%s::date IS NULL OR podcast_launch_time::date >= %s)
                         AND (%s::date IS NULL OR podcast_launch_time::date <= %s)
@@ -134,7 +134,7 @@ def get_by_podcaster(
                         """
                         SELECT id, episode_id, podcaster, podcast_launch_time, ticker, bluf_thesis,
                                time_horizon, sentiment_score, sentiment, reasons, risks, created_at
-                        FROM ticker_recommendations
+                        FROM ticker_insights
                         WHERE podcaster ILIKE %s
                         AND (%s::date IS NULL OR podcast_launch_time::date >= %s)
                         AND (%s::date IS NULL OR podcast_launch_time::date <= %s)
@@ -169,7 +169,7 @@ def get_most_discussed(
                            COUNT(*) AS count,
                            AVG(CAST(sentiment_score AS DOUBLE PRECISION)) AS sentiment_score,
                            MAX(podcast_launch_time) AS last_mentioned
-                    FROM ticker_recommendations
+                    FROM ticker_insights
                     WHERE (%s::date IS NULL OR podcast_launch_time::date >= %s)
                     AND (%s::date IS NULL OR podcast_launch_time::date <= %s)
                     GROUP BY ticker
