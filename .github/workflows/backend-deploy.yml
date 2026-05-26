@@ -165,21 +165,24 @@ jobs:
           VPS_SSH_KEY=$(gcloud secrets versions access latest --secret=VPS_SSH_KEY --project=${{ env.GCP_PROJECT_ID }})
           GHCR_TOKEN=$(gcloud secrets versions access latest --secret=GHCR_TOKEN --project=${{ env.GCP_PROJECT_ID }})
           GCP_CREDS_JSON=$(gcloud secrets versions access latest --secret=GCP_CREDENTIALS_JSON --project=${{ env.GCP_PROJECT_ID }})
-          
+          POSTGRES_PASSWORD=$(gcloud secrets versions access latest --secret=POSTGRES_PASSWORD --project=${{ env.GCP_PROJECT_ID }})
+
           echo "::add-mask::$VPS_HOST"
           echo "::add-mask::$VPS_USER"
           echo "::add-mask::$VPS_SSH_KEY"
           echo "::add-mask::$GHCR_TOKEN"
           echo "::add-mask::$GCP_CREDS_JSON"
-          
+          echo "::add-mask::$POSTGRES_PASSWORD"
+
           echo "VPS_HOST=$VPS_HOST" >> $GITHUB_ENV
           echo "VPS_USER=$VPS_USER" >> $GITHUB_ENV
           echo "GHCR_TOKEN=$GHCR_TOKEN" >> $GITHUB_ENV
-          
+          echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD" >> $GITHUB_ENV
+
           echo "VPS_SSH_KEY<<EOFKEY" >> $GITHUB_ENV
           echo "$VPS_SSH_KEY" >> $GITHUB_ENV
           echo "EOFKEY" >> $GITHUB_ENV
-          
+
           echo "GCP_CREDS_JSON<<EOFGCP" >> $GITHUB_ENV
           echo "$GCP_CREDS_JSON" >> $GITHUB_ENV
           echo "EOFGCP" >> $GITHUB_ENV
@@ -190,7 +193,7 @@ jobs:
           host: ${{ env.VPS_HOST }}
           username: ${{ env.VPS_USER }}
           key: ${{ env.VPS_SSH_KEY }}
-          envs: GHCR_TOKEN,GCP_CREDS_JSON
+          envs: GHCR_TOKEN,GCP_CREDS_JSON,POSTGRES_PASSWORD
           script: |
             cd /app
             git fetch origin --tags
@@ -210,7 +213,7 @@ jobs:
 
             ${{ steps.env.outputs.image_var }}=${{ steps.env.outputs.image_tag }} docker compose -f docker-compose.multi.yml pull ${{ steps.env.outputs.service }}
 
-            docker compose -f docker-compose.multi.yml up -d redis netdata
+            docker compose -f docker-compose.multi.yml up -d postgres redis netdata
             sleep 5
 
             ${{ steps.env.outputs.image_var }}=${{ steps.env.outputs.image_tag }} docker compose -f docker-compose.multi.yml up -d --no-deps ${{ steps.env.outputs.service }}
