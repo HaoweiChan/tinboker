@@ -22,6 +22,8 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
     volumes:
       - ./gcp-service-account.json:/app/gcp-service-account.json:ro
     environment:
@@ -33,12 +35,33 @@ services:
       GOOGLE_APPLICATION_CREDENTIALS: /app/gcp-service-account.json
       GCP_CREDENTIALS_PATH: /app/gcp-service-account.json
       FIRESTORE_DATABASE_ID: graphfolio-db
-      # PostgreSQL (VPS) - common across all environments
-      POSTGRES_HOST: docker-db_postgres-1
+      # PostgreSQL (VPS) - shared across all environments via the `postgres` service.
+      # POSTGRES_PASSWORD is intentionally not set here so it can be loaded from
+      # GCP Secret Manager via config_loader.py (Settings field: postgres_password).
+      POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
       POSTGRES_DB: podcast_db
       POSTGRES_USER: podcast_user
-      POSTGRES_PASSWORD: buxwLXrmK4a20fKCSvPTdpySs
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: tinboker-postgres
+    ports:
+      - "127.0.0.1:5432:5432"
+    environment:
+      POSTGRES_USER: podcast_user
+      POSTGRES_DB: podcast_db
+      # Read from host .env (see .env.example). Must match POSTGRES_PASSWORD in GSM.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in backend/.env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U podcast_user -d podcast_db" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   redis:
     image: redis:7-alpine
@@ -96,6 +119,7 @@ services:
 
 volumes:
   redis-data:
+  postgres-data:
   netdataconfig:
   netdatalib:
   netdatacache:

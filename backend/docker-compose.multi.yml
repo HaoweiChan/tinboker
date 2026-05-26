@@ -22,17 +22,18 @@ services:
       GCP_PROJECT_ID: gen-lang-client-0901363254
       GOOGLE_APPLICATION_CREDENTIALS: /app/gcp-service-account.json
       GCP_CREDENTIALS_PATH: /app/gcp-service-account.json
-      POSTGRES_HOST: docker-db_postgres-1
+      POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
       POSTGRES_DB: podcast_db
       POSTGRES_USER: podcast_user
-      POSTGRES_PASSWORD: buxwLXrmK4a20fKCSvPTdpySs
       FIRESTORE_DATABASE_ID: graphfolio-db
       CORS_ORIGINS: '["https://tinboker.com","https://www.tinboker.com"]'
     volumes:
       - ./gcp-service-account.json:/app/gcp-service-account.json:ro
     depends_on:
       redis:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
@@ -57,17 +58,18 @@ services:
       GCP_PROJECT_ID: gen-lang-client-0901363254
       GOOGLE_APPLICATION_CREDENTIALS: /app/gcp-service-account.json
       GCP_CREDENTIALS_PATH: /app/gcp-service-account.json
-      POSTGRES_HOST: docker-db_postgres-1
+      POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
       POSTGRES_DB: podcast_db
       POSTGRES_USER: podcast_user
-      POSTGRES_PASSWORD: buxwLXrmK4a20fKCSvPTdpySs
       FIRESTORE_DATABASE_ID: graphfolio-db
       CORS_ORIGINS: '["https://dev.tinboker.com","http://localhost:5173","http://localhost:3000"]'
     volumes:
       - ./gcp-service-account.json:/app/gcp-service-account.json:ro
     depends_on:
       redis:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
@@ -92,17 +94,18 @@ services:
       GCP_PROJECT_ID: gen-lang-client-0901363254
       GOOGLE_APPLICATION_CREDENTIALS: /app/gcp-service-account.json
       GCP_CREDENTIALS_PATH: /app/gcp-service-account.json
-      POSTGRES_HOST: docker-db_postgres-1
+      POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
       POSTGRES_DB: podcast_db
       POSTGRES_USER: podcast_user
-      POSTGRES_PASSWORD: buxwLXrmK4a20fKCSvPTdpySs
       FIRESTORE_DATABASE_ID: graphfolio-db
       CORS_ORIGINS: '["https://tinboker.com","https://dev.tinboker.com","https://staging.tinboker.com","http://localhost:5173","http://localhost:3000"]'
     volumes:
       - ./gcp-service-account.json:/app/gcp-service-account.json:ro
     depends_on:
       redis:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
@@ -111,6 +114,26 @@ services:
       timeout: 10s
       start_period: 30s
       retries: 5
+
+  # Shared Postgres
+  postgres:
+    image: postgres:16-alpine
+    container_name: tinboker-postgres
+    ports:
+      - "127.0.0.1:5432:5432"
+    environment:
+      POSTGRES_USER: podcast_user
+      POSTGRES_DB: podcast_db
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in backend/.env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U podcast_user -d podcast_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   # Shared Redis
   redis:
@@ -168,6 +191,7 @@ services:
 
 volumes:
   redis-data:
+  postgres-data:
   netdataconfig:
   netdatalib:
   netdatacache:
