@@ -104,6 +104,7 @@ class TestFinMindRealtimePrice:
         with patch('requests.get') as mock_get:
             # Setup mock response
             mock_response = Mock()
+            mock_response.status_code = 200
             mock_response.json.return_value = mock_api_response_success
             mock_get.return_value = mock_response
             
@@ -135,6 +136,7 @@ class TestFinMindRealtimePrice:
         with patch('requests.get') as mock_get:
             # Setup mock error response
             mock_response = Mock()
+            mock_response.status_code = 400
             mock_response.json.return_value = mock_api_response_error
             mock_get.return_value = mock_response
             
@@ -150,6 +152,7 @@ class TestFinMindRealtimePrice:
         with patch('requests.get') as mock_get:
             # Setup mock response
             mock_response = Mock()
+            mock_response.status_code = 200
             mock_response.json.return_value = mock_api_response_success
             mock_get.return_value = mock_response
             
@@ -172,6 +175,7 @@ class TestFinMindRealtimePrice:
         with patch('requests.get') as mock_get:
             # Setup mock response with empty data
             mock_response = Mock()
+            mock_response.status_code = 200
             mock_response.json.return_value = mock_api_response_empty
             mock_get.return_value = mock_response
             
@@ -286,6 +290,7 @@ class TestFinMindRealtimePrice:
         """Test that returned DataFrame has expected columns"""
         with patch('requests.get') as mock_get:
             mock_response = Mock()
+            mock_response.status_code = 200
             mock_response.json.return_value = mock_api_response_success
             mock_get.return_value = mock_response
             
@@ -300,6 +305,7 @@ class TestFinMindRealtimePrice:
         """Test that function handles multiple tick data correctly"""
         with patch('requests.get') as mock_get:
             mock_response = Mock()
+            mock_response.status_code = 200
             mock_response.json.return_value = mock_api_response_success
             mock_get.return_value = mock_response
             

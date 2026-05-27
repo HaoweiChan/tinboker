@@ -3,11 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import { Search, X, TrendingUp, Mic, Hash, Clock, Tag } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { useAppStore } from '@/store/useAppStore';
-import { StockLogo } from '@/components/common/StockLogo';
 import { PodcastAvatar } from '@/components/common/PodcastAvatar';
 import { useSearchHistory } from '@/hooks/useSearchHistory';
 import { useAdaptiveDebounce } from '@/hooks/useAdaptiveDebounce';
-import { getSuggestions, getPopularSearches, type SearchResponse } from '@/services/api/search';
+import { getSuggestions, getPopularSearches, type SearchResponse, type SearchResultItem } from '@/services/api/search';
+import { getStockLabel } from '@/utils/stockDisplay';
 
 interface SearchUIResult {
   id: string;
@@ -23,6 +23,11 @@ interface SearchDropdownProps {
 }
 
 import { trackClick } from '@/services/api/analytics';
+
+const SEARCH_PLACEHOLDER = '搜尋節目、代號…';
+
+const searchInputClass =
+  'w-full h-9 pl-9 pr-9 rounded-full bg-muted/50 border border-border text-[13px] text-foreground placeholder:text-muted-foreground focus:bg-background focus:border-foreground/20 focus-visible:ring-1 focus-visible:ring-foreground/10 focus-visible:ring-offset-0 transition-colors';
 
 export const SearchDropdown: React.FC<SearchDropdownProps> = () => {
   const searchQuery = useAppStore((state) => state.searchQuery);
@@ -74,14 +79,19 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = () => {
         const data = await getSuggestions(debouncedQuery.toLowerCase().trim());
         const flatResults: SearchUIResult[] = [];
 
-        // Stocks
+        // Stocks (no icon — labels only)
         data.stocks.forEach(item => {
+          const { primary, secondary } = getStockLabel({
+            ticker: item.title,
+            name: item.subtitle,
+            market: item.market,
+          });
           flatResults.push({
             id: item.id,
             type: 'stock',
-            title: item.title,
-            subtitle: item.subtitle,
-            icon: <StockLogo symbol={item.title} logoUrl={item.icon_url} size="sm" className="w-full h-full rounded-md" />,
+            title: primary,
+            subtitle: secondary,
+            icon: null,
             link: item.link
           });
         });
@@ -107,7 +117,7 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = () => {
             subtitle: item.subtitle,
             icon: item.icon_url ?
               <img src={item.icon_url} alt="" className="w-4 h-4 rounded-sm object-cover" /> :
-              <Mic size={16} className="text-amber-400" />,
+              <Mic size={16} className="text-accent-info" />,
             link: item.link
           });
         });
@@ -148,7 +158,7 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = () => {
     setIsOpen(false);
   };
 
-  const handlePopularItemClick = (item: any) => {
+  const handlePopularItemClick = (item: SearchResultItem) => {
     // Analytics
     if (item.type === 'stock' || item.type === 'podcast') {
       // Extract ID properly (item.id usually follows same convention "stock-xxx")
@@ -198,23 +208,25 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = () => {
   /*                            RENDER HELPER: RESULTS LIST                     */
   /* -------------------------------------------------------------------------- */
   const renderResultsList = (items: SearchUIResult[]) => (
-    <div className="space-y-1">
+    <div className="space-y-0.5">
       {items.map((result) => (
         <button
           key={result.id}
           onClick={() => handleResultClick(result)}
-          className="w-full p-4 flex items-center gap-4 hover:bg-slate-50 dark:hover:bg-slate-800/50 rounded-xl transition-colors text-left"
+          className="w-full px-3 py-2 flex items-center gap-2.5 hover:bg-muted/60 rounded-lg transition-colors text-left"
         >
-          <div className="w-10 h-10 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 overflow-hidden shrink-0">
-            {result.icon}
-          </div>
+          {result.icon && (
+            <div className="w-8 h-8 flex items-center justify-center rounded-md bg-muted text-muted-foreground overflow-hidden shrink-0">
+              {result.icon}
+            </div>
+          )}
           <div className="flex-1 min-w-0">
-            <p className="font-medium text-slate-900 dark:text-slate-50 text-base truncate">{result.title}</p>
+            <p className="font-medium text-foreground text-[13px] truncate">{result.title}</p>
             {result.subtitle && (
-              <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">{result.subtitle}</p>
+              <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{result.subtitle}</p>
             )}
           </div>
-          <span className="text-xs text-slate-500 px-2.5 py-1 rounded-md bg-slate-100 dark:bg-slate-800">
+          <span className="text-[10px] text-muted-foreground px-2 py-0.5 rounded-md bg-muted shrink-0">
             {result.type === 'stock' ? '股票' :
               result.type === 'podcast' ? '頻道' :
                 result.type === 'episode' ? '集數' : '標籤'}
@@ -230,40 +242,37 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = () => {
   /* -------------------------------------------------------------------------- */
   // Modified to take a prop so we don't enforce scrollbar on desktop
   const renderOverlayContent = (isMobileView: boolean = false) => (
-    <div className={isMobileView ? "mt-4 overflow-y-auto flex-1 pb-20" : "space-y-8 px-1"}>
-      {/* SHOW RESULTS */}
+    <div className={isMobileView ? "py-2 overflow-y-auto flex-1" : "space-y-5 px-1"}>
       {searchQuery.trim() ? (
         results.length === 0 ? (
-          <div className="p-8 text-center text-slate-500">
-            <Search size={32} className="mx-auto mb-3 opacity-50" />
-            <p>找不到「{searchQuery}」的相關結果</p>
+          <div className="py-6 text-center text-muted-foreground">
+            <Search size={24} className="mx-auto mb-2 opacity-50" />
+            <p className="text-[13px]">找不到「{searchQuery}」的相關結果</p>
           </div>
         ) : (
           renderResultsList(results)
         )
       ) : (
-        /* SHOW RECENT & POPULAR CATEGORIES */
-        <div className={isMobileView ? "space-y-8 px-1" : "space-y-6"}>
-          {/* Recent Searches */}
+        <div className={isMobileView ? "space-y-5" : "space-y-5"}>
           {recentSearches.length > 0 && (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between text-sm">
-                <h3 className="text-slate-500 dark:text-slate-400 font-medium flex items-center gap-1.5">
-                  <Clock size={16} /> 最近搜尋
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <h3 className="text-[11px] font-semibold tracking-[0.06em] uppercase text-muted-foreground flex items-center gap-1.5">
+                  <Clock size={14} /> 最近搜尋
                 </h3>
                 <button
                   onClick={clearRecentSearches}
-                  className="text-slate-400 hover:text-red-500 text-xs transition-colors"
+                  className="text-muted-foreground hover:text-destructive text-[11px] transition-colors"
                 >
                   清除
                 </button>
               </div>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-1.5">
                 {recentSearches.map((query, idx) => (
                   <button
                     key={idx}
                     onClick={() => handleRecentClick(query)}
-                    className="px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg text-sm text-slate-700 dark:text-slate-300 transition-colors"
+                    className="px-2.5 py-1 bg-muted hover:bg-muted/80 rounded-full text-[12px] text-foreground transition-colors"
                   >
                     {query}
                   </button>
@@ -272,46 +281,49 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = () => {
             </div>
           )}
 
-          {/* Popular Categories */}
           {popularData && (
             <>
-              {/* Stocks */}
               {popularData.stocks.length > 0 && (
-                <div className="space-y-3">
-                  <h3 className="text-slate-500 dark:text-slate-400 font-medium flex items-center gap-1.5 text-sm">
-                    <TrendingUp size={16} /> 熱門標的
+                <div className="space-y-2">
+                  <h3 className="text-[11px] font-semibold tracking-[0.06em] uppercase text-muted-foreground flex items-center gap-1.5">
+                    <TrendingUp size={14} /> 熱門標的
                   </h3>
-                  <div className="grid grid-cols-1 gap-2">
-                    {popularData.stocks.map((item) => (
-                      <button key={item.id} onClick={() => handlePopularItemClick(item)} className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800/30 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-left">
-                        <div className="w-8 h-8 rounded-lg overflow-hidden shrink-0">
-                          <StockLogo symbol={item.subtitle || item.title} logoUrl={item.icon_url} size="sm" className="w-full h-full" />
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium text-slate-900 dark:text-slate-50">{item.title}</p>
-                          <p className="text-xs text-slate-500">{item.subtitle}</p>
-                        </div>
-                      </button>
-                    ))}
+                  <div className="grid grid-cols-1 gap-1">
+                    {popularData.stocks.map((item) => {
+                      const { primary, secondary } = getStockLabel({
+                        ticker: item.title,
+                        name: item.subtitle,
+                        market: item.market,
+                      });
+                      return (
+                        <button key={item.id} onClick={() => handlePopularItemClick(item)} className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-muted/60 transition-colors text-left">
+                          <div className="min-w-0">
+                            <p className="text-[13px] font-medium text-foreground truncate">{primary}</p>
+                            {secondary && (
+                              <p className="text-[11px] text-muted-foreground truncate">{secondary}</p>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               )}
 
-              {/* Podcasts */}
               {popularData.podcasts.length > 0 && (
-                <div className="space-y-3">
-                  <h3 className="text-slate-500 dark:text-slate-400 font-medium flex items-center gap-1.5 text-sm">
-                    <Mic size={16} /> 熱門頻道
+                <div className="space-y-2">
+                  <h3 className="text-[11px] font-semibold tracking-[0.06em] uppercase text-muted-foreground flex items-center gap-1.5">
+                    <Mic size={14} /> 熱門頻道
                   </h3>
-                  <div className="grid grid-cols-1 gap-2">
+                  <div className="grid grid-cols-1 gap-1">
                     {popularData.podcasts.map((item) => (
-                      <button key={item.id} onClick={() => handlePopularItemClick(item)} className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800/30 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-left">
-                        <div className="w-8 h-8 rounded-lg overflow-hidden shrink-0">
+                      <button key={item.id} onClick={() => handlePopularItemClick(item)} className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-muted/60 transition-colors text-left">
+                        <div className="w-7 h-7 rounded-md overflow-hidden shrink-0">
                           <PodcastAvatar name={item.title} src={item.icon_url} size="sm" className="w-full h-full" />
                         </div>
-                        <div>
-                          <p className="text-sm font-medium text-slate-900 dark:text-slate-50">{item.title}</p>
-                          <p className="text-xs text-slate-500">{item.subtitle}</p>
+                        <div className="min-w-0">
+                          <p className="text-[13px] font-medium text-foreground truncate">{item.title}</p>
+                          <p className="text-[11px] text-muted-foreground truncate">{item.subtitle}</p>
                         </div>
                       </button>
                     ))}
@@ -319,15 +331,14 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = () => {
                 </div>
               )}
 
-              {/* Tags */}
               {popularData.tags.length > 0 && (
-                <div className="space-y-3">
-                  <h3 className="text-slate-500 dark:text-slate-400 font-medium flex items-center gap-1.5 text-sm">
-                    <Tag size={16} /> 熱門標籤
+                <div className="space-y-2">
+                  <h3 className="text-[11px] font-semibold tracking-[0.06em] uppercase text-muted-foreground flex items-center gap-1.5">
+                    <Tag size={14} /> 熱門標籤
                   </h3>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-wrap gap-1.5">
                     {popularData.tags.map((item) => (
-                      <button key={item.id} onClick={() => handlePopularItemClick(item)} className="px-3 py-1.5 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 rounded-lg text-sm font-medium hover:bg-indigo-100 dark:hover:bg-indigo-900/30 transition-colors">
+                      <button key={item.id} onClick={() => handlePopularItemClick(item)} className="px-2.5 py-1 bg-accent-info-soft text-accent-info rounded-full text-[12px] font-medium hover:opacity-80 transition-opacity">
                         #{item.title}
                       </button>
                     ))}
@@ -336,7 +347,6 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = () => {
               )}
             </>
           )}
-
         </div>
       )}
     </div>
@@ -346,10 +356,10 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = () => {
   return (
     <div className="relative w-full" ref={dropdownRef}>
 
-      {/* 1. DESKTOP INPUT: Visible on Desktop, Standard Behavior */}
+      {/* 1. DESKTOP INPUT */}
       <div className="relative w-full group hidden md:block">
         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-          <Search className="h-5 w-5 text-slate-400 group-focus-within:text-amber-500 transition-colors" />
+          <Search className="h-4 w-4 text-muted-foreground group-focus-within:text-foreground transition-colors" />
         </div>
         <Input
           type="text"
@@ -357,8 +367,8 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = () => {
           onChange={handleInputChange}
           onFocus={handleInputFocus}
           onKeyDown={handleKeyDown}
-          placeholder="搜尋節目、代號 (2330)..."
-          className="w-full pl-10 pr-10 py-5 rounded-full bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-200 placeholder:text-slate-500 focus:bg-white dark:focus:bg-slate-800 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all text-base"
+          placeholder={SEARCH_PLACEHOLDER}
+          className={searchInputClass}
         />
         {searchQuery && (
           <button
@@ -366,30 +376,28 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = () => {
               setSearchQuery('');
               setIsOpen(false);
             }}
-            className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-amber-500 transition-colors z-10"
+            className="absolute inset-y-0 right-0 pr-3 flex items-center text-muted-foreground hover:text-foreground transition-colors z-10"
             aria-label="清除搜尋"
           >
-            <X className="h-5 w-5" />
+            <X className="h-4 w-4" />
           </button>
         )}
 
-        {/* Desktop Dropdown */}
         {isOpen && (
-          <div className="absolute top-full left-0 right-0 mt-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl overflow-hidden z-50 max-h-96 overflow-y-auto">
+          <div className="absolute top-full left-0 right-0 mt-1.5 bg-card border border-border rounded-lg shadow-lg overflow-hidden z-50 max-h-80 overflow-y-auto">
             {searchQuery.trim() ? (
               results.length === 0 ? (
-                <div className="p-6 text-center text-slate-500">
-                  <Search size={24} className="mx-auto mb-2 opacity-50" />
-                  <p>找不到「{searchQuery}」的相關結果</p>
+                <div className="py-6 text-center text-muted-foreground">
+                  <Search size={20} className="mx-auto mb-2 opacity-50" />
+                  <p className="text-[13px]">找不到「{searchQuery}」的相關結果</p>
                 </div>
               ) : (
-                <div className="max-h-96 overflow-y-auto">
+                <div className="p-1.5 max-h-80 overflow-y-auto">
                   {renderResultsList(results)}
                 </div>
               )
             ) : (
-              <div className="p-4">
-                {/* Desktop: Pass false to avoid internal scroller */}
+              <div className="p-3">
                 {renderOverlayContent(false)}
               </div>
             )}
@@ -398,55 +406,67 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = () => {
       </div>
 
 
-      {/* 2. MOBILE FAKE INPUT: Visible on Mobile, Triggers Overlay */}
+      {/* 2. MOBILE TRIGGER */}
       <div className="md:hidden w-full">
         <button
           onClick={() => setIsOpen(true)}
-          className="w-full flex items-center gap-3 px-2 py-2.5 bg-slate-100 dark:bg-slate-800 rounded-full text-slate-500 dark:text-slate-400"
+          className="w-full flex items-center gap-2 px-3 h-9 bg-muted/50 border border-border rounded-full text-muted-foreground"
         >
-          <Search className="h-5 w-5 flex-shrink-0" />
-          <span className="text-sm truncate">搜尋節目、代號...</span>
+          <Search className="h-4 w-4 shrink-0" />
+          <span className="text-[13px] truncate">{SEARCH_PLACEHOLDER}</span>
         </button>
       </div>
 
 
-      {/* 3. MOBILE OVERLAY: Fixed Full Screen with safe area support */}
+      {/* 3. MOBILE PANEL — slide-down below header, not full-screen */}
       {isOpen && (
-        <div className="fixed inset-0 z-[100] bg-white dark:bg-slate-900 animate-in fade-in slide-in-from-top-5 duration-200 flex flex-col md:hidden" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
-          <div className="flex items-center gap-3 flex-shrink-0 px-4 pt-4 pb-2">
-            <div className="relative flex-1">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Search className="h-5 w-5 text-slate-400" />
+        <div className="fixed inset-0 z-[100] md:hidden">
+          <button
+            type="button"
+            aria-label="關閉搜尋"
+            className="absolute inset-0 bg-background/70 backdrop-blur-[2px]"
+            onClick={() => setIsOpen(false)}
+          />
+          <div
+            className="relative bg-background border-b border-border shadow-lg animate-in fade-in slide-in-from-top-2 duration-150"
+            style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
+          >
+            <div className="flex items-center gap-2 px-4 py-2.5">
+              <div className="relative flex-1 min-w-0">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Search className="h-4 w-4 text-muted-foreground" />
+                </div>
+                <Input
+                  autoFocus
+                  type="text"
+                  value={searchQuery}
+                  onChange={handleInputChange}
+                  onKeyDown={handleKeyDown}
+                  placeholder={SEARCH_PLACEHOLDER}
+                  className={searchInputClass}
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-muted-foreground active:text-foreground"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
               </div>
-              <Input
-                autoFocus
-                type="text"
-                value={searchQuery}
-                onChange={handleInputChange}
-                onKeyDown={handleKeyDown}
-                placeholder="搜尋節目、代號 (2330)..."
-                className="w-full pl-10 pr-10 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 border-none text-slate-900 dark:text-slate-200 focus:ring-2 focus:ring-amber-500 text-base"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery('')}
-                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 active:text-amber-500"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              )}
+              <button
+                onClick={() => setIsOpen(false)}
+                className="text-[13px] text-muted-foreground hover:text-foreground px-1 shrink-0 transition-colors"
+              >
+                取消
+              </button>
             </div>
-            <button
-              onClick={() => setIsOpen(false)}
-              className="text-slate-500 font-medium px-2 shrink-0"
+            <div
+              className="max-h-[min(60vh,480px)] overflow-y-auto overscroll-contain px-4 pb-4 border-t border-border/60"
+              style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 16px), 16px)' }}
             >
-              取消
-            </button>
-          </div>
-
-          {/* Mobile scrollable content area with safe bottom padding */}
-          <div className="flex-1 overflow-y-auto overscroll-contain px-4" style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 20px), 20px)' }}>
-            {renderOverlayContent(false)}
+              {renderOverlayContent(true)}
+            </div>
           </div>
         </div>
       )}

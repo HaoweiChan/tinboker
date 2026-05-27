@@ -17,11 +17,6 @@ services:
       GCP_PROJECT_ID: gen-lang-client-0901363254
       GOOGLE_APPLICATION_CREDENTIALS: /app/gcp-service-account.json
       GCP_CREDENTIALS_PATH: /app/gcp-service-account.json
-      POSTGRES_HOST: docker-db_postgres-1
-      POSTGRES_PORT: "5432"
-      POSTGRES_DB: podcast_db
-      POSTGRES_USER: podcast_user
-      POSTGRES_PASSWORD: buxwLXrmK4a20fKCSvPTdpySs
       FIRESTORE_DATABASE_ID: graphfolio-db
       # Production CORS - only production frontend
       CORS_ORIGINS: '["https://tinboker.com","https://www.tinboker.com"]'

@@ -8,7 +8,11 @@ export async function getSortedNews(sortBy: string = 'date'): Promise<StockEvent
     params: { sort_by: sortBy },
   });
   if (Array.isArray(response.data)) {
-    return response.data.map((item: any) => parseResponse(StockEventSchema, item));
+    return response.data.reduce((acc: StockEvent[], item: any) => {
+      const result = StockEventSchema.safeParse(item);
+      if (result.success) acc.push(result.data);
+      return acc;
+    }, []);
   }
   const validated = parseResponse(EventsResponseSchema, response.data);
   return validated.data;

@@ -10,7 +10,7 @@ from typing import List, Optional
 
 from src.cache.redis_client import cache_get, cache_set
 from src.cache.cache_config import CACHE_TTL
-from src.database.recommendation_queries import (
+from src.database.insight_queries import (
     get_by_ticker,
     get_by_podcaster,
     get_most_discussed,

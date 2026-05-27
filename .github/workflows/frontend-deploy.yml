@@ -4,6 +4,7 @@ name: Frontend Deploy to Cloudflare Pages
 on:
   push:
     branches: [main, develop]
+    tags: ['v*']
     paths: ['frontend/**']
   workflow_dispatch:
 
@@ -57,12 +58,18 @@ jobs:
       - name: Determine environment
         id: env
         run: |
-          if [ "${{ github.ref_name }}" = "main" ]; then
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
             echo "branch=main" >> $GITHUB_OUTPUT
             echo "environment=production" >> $GITHUB_OUTPUT
+            echo "url=https://tinboker.com" >> $GITHUB_OUTPUT
+          elif [ "${{ github.ref_name }}" = "main" ]; then
+            echo "branch=staging" >> $GITHUB_OUTPUT
+            echo "environment=staging" >> $GITHUB_OUTPUT
+            echo "url=https://staging.tinboker.com" >> $GITHUB_OUTPUT
           else
             echo "branch=${{ github.ref_name }}" >> $GITHUB_OUTPUT
-            echo "environment=preview" >> $GITHUB_OUTPUT
+            echo "environment=dev" >> $GITHUB_OUTPUT
+            echo "url=https://dev.tinboker.com" >> $GITHUB_OUTPUT
           fi
 
       - name: Deploy to Cloudflare Pages
@@ -79,6 +86,6 @@ jobs:
         run: |
           echo "## Deployment Complete" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Branch:** ${{ steps.env.outputs.branch }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Environment:** ${{ steps.env.outputs.environment }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Google OAuth:** Configured" >> $GITHUB_STEP_SUMMARY
+          echo "- **URL:** ${{ steps.env.outputs.url }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Cloudflare branch:** ${{ steps.env.outputs.branch }}" >> $GITHUB_STEP_SUMMARY

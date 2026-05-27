@@ -111,15 +111,18 @@ jobs:
           VPS_USER=$(gcloud secrets versions access latest --secret=VPS_USER --project=${{ env.GCP_PROJECT_ID }})
           VPS_SSH_KEY=$(gcloud secrets versions access latest --secret=VPS_SSH_KEY --project=${{ env.GCP_PROJECT_ID }})
           GHCR_TOKEN=$(gcloud secrets versions access latest --secret=GHCR_TOKEN --project=${{ env.GCP_PROJECT_ID }})
-          
+          POSTGRES_PASSWORD=$(gcloud secrets versions access latest --secret=POSTGRES_PASSWORD --project=${{ env.GCP_PROJECT_ID }})
+
           echo "::add-mask::$VPS_HOST"
           echo "::add-mask::$VPS_USER"
           echo "::add-mask::$VPS_SSH_KEY"
           echo "::add-mask::$GHCR_TOKEN"
-          
+          echo "::add-mask::$POSTGRES_PASSWORD"
+
           echo "VPS_HOST=$VPS_HOST" >> $GITHUB_ENV
           echo "VPS_USER=$VPS_USER" >> $GITHUB_ENV
           echo "GHCR_TOKEN=$GHCR_TOKEN" >> $GITHUB_ENV
+          echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD" >> $GITHUB_ENV
           
           echo "VPS_SSH_KEY<<EOFKEY" >> $GITHUB_ENV
           echo "$VPS_SSH_KEY" >> $GITHUB_ENV
@@ -131,7 +134,7 @@ jobs:
           host: ${{ env.VPS_HOST }}
           username: ${{ env.VPS_USER }}
           key: ${{ env.VPS_SSH_KEY }}
-          envs: GHCR_TOKEN
+          envs: GHCR_TOKEN,POSTGRES_PASSWORD
           script: |
             cd /app
             git pull || true
@@ -141,7 +144,7 @@ jobs:
             echo "$GHCR_TOKEN" | docker login ghcr.io -u haoweichan --password-stdin
             docker pull ghcr.io/haoweichan/tinboker-backend:${{ github.event.inputs.image_tag }}
 
-            IMAGE_TAG=${{ github.event.inputs.image_tag }} docker compose -f ${{ steps.config.outputs.compose_file }} up -d backend redis --force-recreate
+            IMAGE_TAG=${{ github.event.inputs.image_tag }} docker compose -f ${{ steps.config.outputs.compose_file }} up -d backend postgres redis --force-recreate
 
             if [ "${{ steps.config.outputs.include_netdata }}" == "true" ]; then
               docker compose -f ${{ steps.config.outputs.compose_file }} up -d netdata --force-recreate

@@ -2,8 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Target, ArrowUpRight, TrendingUp, TrendingDown, Minus, Play, ChevronDown, ChevronUp } from 'lucide-react';
 import { Card, Button, Badge } from '@/components/ui';
-import { recommendationService } from '@/services/recommendationService';
-import type { TickerRecommendation } from '@/services/types';
+import { getInsightsByPodcaster } from '@/services/api/podcasts';
+import type { SentimentLabel, TickerInsight } from '@/services/types';
+import { normalizeSentiment } from '@/lib/sentiment';
 import { cn } from '@/lib/utils';
 import { usePlayerStore } from '@/store/usePlayerStore';
 import type { Episode as MockEpisode } from '@/data/mockData';
@@ -12,13 +13,15 @@ interface PodcasterPicksListProps {
     podcasterName: string;
     /** Episodes for this podcaster (from PodcasterPage). Used to launch podcast at reason/risk timestamp. */
     episodes?: MockEpisode[];
-    /** Optional podcast slug/id; passed to recommendations API for episode_id matching when available. */
-    podcastSlug?: string;
 }
 
-export const PodcasterPicksList: React.FC<PodcasterPicksListProps> = ({ podcasterName, episodes = [], podcastSlug }) => {
-    const [picks, setPicks] = useState<TickerRecommendation[]>([]);
-    const [expandedItems, setExpandedItems] = useState<Set<number>>(new Set());
+// Composite identity for new ticker_insights/{episode_id}/tickers/{ticker} docs;
+// replaces the auto-increment Postgres id used under the legacy path.
+const insightKey = (i: TickerInsight): string => `${i.episode_id}-${i.ticker}`;
+
+export const PodcasterPicksList: React.FC<PodcasterPicksListProps> = ({ podcasterName, episodes = [] }) => {
+    const [picks, setPicks] = useState<TickerInsight[]>([]);
+    const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
     const navigate = useNavigate();
     const playEpisode = usePlayerStore((s) => s.playEpisode);
 
@@ -26,22 +29,20 @@ export const PodcasterPicksList: React.FC<PodcasterPicksListProps> = ({ podcaste
         let cancelled = false;
         (async () => {
             try {
-                const data = await recommendationService.getRecommendationsByPodcaster(podcasterName, {
-                    ...(podcastSlug && { podcast_slug: podcastSlug }),
-                });
+                const data = await getInsightsByPodcaster(podcasterName);
                 if (!cancelled) setPicks(data);
             } catch {
                 if (!cancelled) setPicks([]);
             }
         })();
         return () => { cancelled = true; };
-    }, [podcasterName, podcastSlug]);
+    }, [podcasterName]);
 
     const handleTickerClick = (ticker: string) => {
         navigate(`/stock/${ticker}`);
     };
 
-    const toggleExpand = (e: React.MouseEvent, id: number) => {
+    const toggleExpand = (e: React.MouseEvent, id: string) => {
         e.stopPropagation();
         setExpandedItems(prev => {
             const next = new Set(prev);
@@ -76,17 +77,17 @@ export const PodcasterPicksList: React.FC<PodcasterPicksListProps> = ({ podcaste
         );
     };
 
-    const getSentimentStyle = (label: string, score: number | string) => {
-        const numScore = Number(score);
-        if (label === 'POSITIVE' || numScore > 0.6) return 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20';
-        if (label === 'NEGATIVE' || numScore < 0.4) return 'text-red-500 bg-red-500/10 border-red-500/20';
+    const getSentimentStyle = (label: SentimentLabel) => {
+        const kind = normalizeSentiment(label);
+        if (kind === 'BULLISH') return 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20';
+        if (kind === 'BEARISH') return 'text-red-500 bg-red-500/10 border-red-500/20';
         return 'text-slate-500 bg-slate-500/10 border-slate-500/20';
     };
 
-    const getSentimentIcon = (label: string, score: number | string) => {
-        const numScore = Number(score);
-        if (label === 'POSITIVE' || numScore > 0.6) return <TrendingUp size={14} className="mr-1" />;
-        if (label === 'NEGATIVE' || numScore < 0.4) return <TrendingDown size={14} className="mr-1" />;
+    const getSentimentIcon = (label: SentimentLabel) => {
+        const kind = normalizeSentiment(label);
+        if (kind === 'BULLISH') return <TrendingUp size={14} className="mr-1" />;
+        if (kind === 'BEARISH') return <TrendingDown size={14} className="mr-1" />;
         return <Minus size={14} className="mr-1" />;
     };
 
@@ -107,10 +108,11 @@ export const PodcasterPicksList: React.FC<PodcasterPicksListProps> = ({ podcaste
 
             <div className="grid grid-cols-1 gap-3">
                 {picks.map((pick) => {
-                    const isExpanded = expandedItems.has(pick.id);
+                    const key = insightKey(pick);
+                    const isExpanded = expandedItems.has(key);
                     return (
                         <Card
-                            key={pick.id}
+                            key={key}
                             className={cn(
                                 "p-4 transition-all border-l-4 border-l-transparent hover:border-l-emerald-500 group",
                                 isExpanded ? "ring-1 ring-emerald-500/20" : "hover:shadow-md"
@@ -127,9 +129,9 @@ export const PodcasterPicksList: React.FC<PodcasterPicksListProps> = ({ podcaste
                                             <span className="font-bold text-lg text-slate-900 dark:text-slate-50 group-hover:text-emerald-600 transition-colors">
                                                 {pick.ticker}
                                             </span>
-                                            <Badge variant="outline" className={cn("font-normal border", getSentimentStyle(pick.sentiment, pick.sentiment_score))}>
-                                                {getSentimentIcon(pick.sentiment, pick.sentiment_score)}
-                                                {pick.sentiment || 'NEUTRAL'}
+                                            <Badge variant="outline" className={cn("font-normal border", getSentimentStyle(pick.sentiment_label))}>
+                                                {getSentimentIcon(pick.sentiment_label)}
+                                                {pick.sentiment_label}
                                             </Badge>
                                         </div>
                                         <p className="text-xs text-slate-500 mb-2">
@@ -155,7 +157,7 @@ export const PodcasterPicksList: React.FC<PodcasterPicksListProps> = ({ podcaste
                                             size="icon"
                                             variant="ghost"
                                             className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
-                                            onClick={(e) => toggleExpand(e, pick.id)}
+                                            onClick={(e) => toggleExpand(e, key)}
                                         >
                                             {isExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
                                         </Button>

@@ -1,0 +1,18 @@
+---
+description: Search, suggestions, trending widgets, tags, topic clouds. Auto-attached when editing search/discovery code.
+globs:
+  - backend/src/routers/search.py
+  - backend/src/routers/trending.py
+  - backend/src/routers/tags.py
+  - backend/src/routers/analytics.py
+  - backend/src/services/suggestion_index.py
+  - backend/src/services/trending.py
+  - frontend/src/pages/TagPage.tsx
+  - frontend/src/pages/TopicsCloud.tsx
+  - frontend/src/components/landing/**
+  - frontend/src/services/api/search.ts
+  - frontend/src/services/api/analytics.ts
+alwaysApply: false
+---
+
+Read `docs/agents/search-discovery.md` for full context before making changes in these files. Note BUG-1 (suggestion index startup hook) — see `docs/qa-report-2026-05-09.md`.

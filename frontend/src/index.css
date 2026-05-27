@@ -1,6 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@700;800&display=swap');
+/* Fonts (Inter / Noto Sans TC / JetBrains Mono) are loaded via the <link> in index.html */
 @import "tailwindcss";
 
 /* Enable dark mode variant using class strategy */
@@ -25,43 +23,53 @@
     --popover: 0 0% 100%;
     --popover-foreground: 222.2 47.4% 11.2%;
 
-    /* Primary: Amber 500 #f59e0b -> HSL 38 92% 50% */
-    --primary: 38 92% 50%;
-    --primary-foreground: 222.2 47.4% 11.2%;
+    /* Primary is now near-black ink (not amber) — primary CTAs, active pills, logo. */
+    --primary: 222 47% 11%;
+    --primary-foreground: 0 0% 100%;
 
-    /* Secondary: Slate 100 */
+    /* Secondary / Muted / Accent: subtle slate surfaces */
     --secondary: 210 40% 96.1%;
     --secondary-foreground: 222.2 47.4% 11.2%;
 
-    /* Muted: Slate 100 */
-    --muted: 210 40% 96.1%;
-    /* Muted Foreground: Slate 500 */
-    --muted-foreground: 215.4 16.3% 46.9%;
+    --muted: 220 14% 96%;
+    --muted-foreground: 215 16% 47%;
 
-    /* Accent: Slate 100 */
-    --accent: 210 40% 96.1%;
+    --accent: 220 14% 96%;
     --accent-foreground: 222.2 47.4% 11.2%;
 
     /* Destructive: Red 500 */
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
 
-    /* Border: Slate 200 */
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
+    /* Border / input: light hairline (rendered at 0.5–1px) */
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
 
-    /* Ring: Amber 500 */
-    --ring: 38 92% 50%;
+    /* Ring: the chrome blue */
+    --ring: 221 83% 53%;
 
-    --radius: 0.75rem;
+    --radius: 0.625rem;
 
-    /* Charts */
-    --chart-1: 38 92% 50%;
-    /* Amber */
-    --chart-2: 173 58% 39%;
-    --chart-3: 197 37% 24%;
-    --chart-4: 43 74% 66%;
-    --chart-5: 27 87% 67%;
+    /* Charts — chart-1 ink, chart-2 blue, chart-3 bull, chart-4 bear, chart-5 neutral */
+    --chart-1: 222 47% 11%;
+    --chart-2: 221 83% 53%;
+    --chart-3: 152 86% 29%;
+    --chart-4: 0 67% 54%;
+    --chart-5: 215 16% 47%;
+
+    /* === Redesign: the ONE chrome accent (info blue) — links, focus, active-filter pill === */
+    --accent-info: 221 83% 53%;            /* #2563eb */
+    --accent-info-foreground: 0 0% 100%;
+    --accent-info-soft: 219 100% 93%;      /* ~#dde8ff */
+
+    /* === Redesign: LLM-derived sentiment (SEMANTIC — always green=bull / red=bear) === */
+    /* Independent of the TW/US price-change flip in useStockTrendColor. */
+    --sentiment-bull: 152 86% 29%;         /* ~#0a8a4a */
+    --sentiment-bull-soft: 146 51% 92%;    /* ~#e2f5ea */
+    --sentiment-bear: 0 67% 54%;           /* ~#d83b3b */
+    --sentiment-bear-soft: 0 67% 95%;      /* ~#fbe7e7 */
+    --sentiment-neutral: 215 14% 40%;      /* slate-ish */
+    --sentiment-neutral-soft: 210 40% 96%;
 
     /* Legacy token aliases */
     --bg-base: hsl(var(--background));
@@ -72,65 +80,69 @@
     --text-muted: hsl(var(--muted-foreground));
     --border-default: hsl(var(--border));
     --border-brand: hsl(var(--primary));
-    --shadow-lg: 0 20px 45px rgba(15, 23, 42, 0.2);
-    --shadow-xl: 0 30px 60px rgba(15, 23, 42, 0.25);
+    /* Flat aesthetic — keep these light; the design uses hairline borders, not heavy drop shadows. */
+    --shadow-lg: 0 6px 18px -8px rgba(14, 16, 20, 0.12);
+    --shadow-xl: 0 12px 32px -10px rgba(14, 16, 20, 0.16);
   }
 
   .dark {
-    /* MarketNote Dark Mode */
+    /* Dark surfaces — deep slate-ink (#0f1117-ish), cards lift one notch (#161922-ish) */
+    --background: 222 22% 7%;
+    --foreground: 220 16% 92%;
 
-    /* Background: Slate 950 #020617 -> HSL 229 84% 5% */
-    --background: 229 84% 5%;
-    /* Foreground: Slate 50 */
-    --foreground: 210 40% 98%;
+    --card: 222 21% 11%;
+    --card-foreground: 220 16% 92%;
 
-    /* Card: Slate 900 #0f172a -> HSL 222.2 47.4% 11.2% */
-    --card: 222.2 47.4% 11.2%;
-    --card-foreground: 210 40% 98%;
+    --popover: 222 21% 11%;
+    --popover-foreground: 220 16% 92%;
 
-    --popover: 222.2 47.4% 11.2%;
-    --popover-foreground: 210 40% 98%;
+    /* Primary is near-white ink in dark mode */
+    --primary: 210 40% 98%;
+    --primary-foreground: 222 47% 11%;
 
-    /* Primary: Amber 500 */
-    --primary: 38 92% 50%;
-    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 222 22% 16%;
+    --secondary-foreground: 220 16% 92%;
 
-    /* Secondary: Slate 800 #1e293b -> HSL 215.3 32.4% 17.5% */
-    --secondary: 215.3 32.4% 17.5%;
-    --secondary-foreground: 210 40% 98%;
+    --muted: 222 22% 16%;
+    --muted-foreground: 218 12% 62%;
 
-    /* Muted: Slate 800 */
-    --muted: 215.3 32.4% 17.5%;
-    /* Muted Foreground: Slate 400 #94a3b8 -> HSL 215 20.2% 65.1% */
-    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 222 22% 16%;
+    --accent-foreground: 220 16% 92%;
 
-    /* Accent: Slate 800 */
-    --accent: 215.3 32.4% 17.5%;
-    --accent-foreground: 210 40% 98%;
-
-    /* Destructive: Red 900 (or darker red) */
-    --destructive: 0 62.8% 30.6%;
+    --destructive: 0 63% 50%;
     --destructive-foreground: 210 40% 98%;
 
-    /* Border: Slate 800 */
-    --border: 215.3 32.4% 17.5%;
-    --input: 215.3 32.4% 17.5%;
+    --border: 222 18% 18%;
+    --input: 222 18% 18%;
 
-    /* Ring: Amber 500 */
-    --ring: 38 92% 50%;
+    /* Ring: the chrome blue (brighter in dark) */
+    --ring: 222 100% 68%;
 
-    --chart-1: 38 92% 50%;
-    --chart-2: 160 60% 45%;
-    --chart-3: 30 80% 55%;
-    --chart-4: 280 65% 60%;
-    --chart-5: 340 75% 55%;
+    --chart-1: 210 40% 98%;
+    --chart-2: 222 100% 68%;
+    --chart-3: 152 56% 49%;
+    --chart-4: 0 80% 65%;
+    --chart-5: 218 12% 62%;
+
+    /* === Redesign: accent + sentiment (dark) === */
+    --accent-info: 222 100% 68%;           /* ~#5b8dff */
+    --accent-info-foreground: 222 47% 11%;
+    --accent-info-soft: 222 55% 22%;
+
+    --sentiment-bull: 152 56% 49%;         /* ~#34c476 */
+    --sentiment-bull-soft: 152 50% 14%;
+    --sentiment-bear: 0 80% 65%;           /* ~#ef5a5a */
+    --sentiment-bear-soft: 0 45% 18%;
+    --sentiment-neutral: 215 18% 62%;
+    --sentiment-neutral-soft: 215 28% 18%;
   }
 }
 
 @theme {
-  --font-sans: 'Noto Sans TC', system-ui, sans-serif;
-  --font-mono: 'Roboto Mono', monospace;
-  --font-logo: 'Roboto', sans-serif;
+  /* Inter for Latin/numbers, Noto Sans TC for Chinese — order matters (Inter wins Latin glyphs). */
+  --font-sans: 'Inter', 'Noto Sans TC', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-logo: 'Inter', 'Noto Sans TC', sans-serif;
 
   --color-background: hsl(var(--background));
   --color-foreground: hsl(var(--foreground));
@@ -165,6 +177,17 @@
   --color-chart-3: hsl(var(--chart-3));
   --color-chart-4: hsl(var(--chart-4));
   --color-chart-5: hsl(var(--chart-5));
+
+  /* Redesign: chrome accent + semantic sentiment */
+  --color-accent-info: hsl(var(--accent-info));
+  --color-accent-info-foreground: hsl(var(--accent-info-foreground));
+  --color-accent-info-soft: hsl(var(--accent-info-soft));
+  --color-sentiment-bull: hsl(var(--sentiment-bull));
+  --color-sentiment-bull-soft: hsl(var(--sentiment-bull-soft));
+  --color-sentiment-bear: hsl(var(--sentiment-bear));
+  --color-sentiment-bear-soft: hsl(var(--sentiment-bear-soft));
+  --color-sentiment-neutral: hsl(var(--sentiment-neutral));
+  --color-sentiment-neutral-soft: hsl(var(--sentiment-neutral-soft));
 
   --color-overlay-bg: hsl(var(--background) / 0.92);
   --color-overlay-border: hsl(var(--border));
@@ -230,29 +253,17 @@
 
   body {
     @apply bg-background text-foreground;
-    font-family: 'Noto Sans TC', 'Inter', system-ui, sans-serif;
+    /* Inter first so Latin/digits grab it; Noto Sans TC falls in for Chinese. tnum aligns numerals globally. */
+    font-family: 'Inter', 'Noto Sans TC', system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    font-feature-settings: 'rlig' 1, 'calt' 1, 'tnum' 1;
+    letter-spacing: -0.005em;
   }
 
-  h1,
-  h2 {
+  h1, h2, h3 {
     @apply tracking-tight;
-  }
-
-  /* Enhanced Dark Mode Background */
-  .dark body {
-    background-color: hsl(var(--background));
-    background-image:
-      /* Subtle Noise Texture */
-      url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.03'/%3E%3C/svg%3E"),
-      /* Top-Left Deep Blue/Indigo Glow */
-      radial-gradient(circle at 0% 0%, rgba(49, 46, 129, 0.15) 0%, transparent 50%),
-      /* Top-Right/Center Amber Glow */
-      radial-gradient(circle at 80% 10%, rgba(180, 83, 9, 0.08) 0%, transparent 50%);
-    background-attachment: fixed;
-    background-repeat: repeat, no-repeat, no-repeat;
-    background-position: 0 0, 0 0, 0 0;
+    font-family: 'Inter', 'Noto Sans TC', system-ui, sans-serif;
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -264,24 +275,97 @@
 
 @layer components {
 
-  /* Modern Glass Card Aesthetic - Pro Max */
-  .glass-card {
-    @apply bg-white border border-slate-200 shadow-sm transition-all duration-300 dark:bg-slate-900/60 dark:backdrop-blur-md dark:border-white/5;
-  }
-
-  .dark .glass-card {
-    box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
-    background-image: linear-gradient(to bottom right, rgba(255, 255, 255, 0.02), transparent);
-  }
-
-  /* Variant for panels/sidebars */
+  /* Flat surfaces — `.glass-card` / `.glass-panel` kept as aliases so legacy callers stay valid,
+     but they're now plain hairline-bordered cards (no blur / gradients / heavy shadows). */
+  .glass-card,
   .glass-panel {
-    @apply bg-white border border-slate-200 dark:bg-slate-900/80 dark:backdrop-blur-xl dark:border-white/5;
+    @apply bg-card border border-border;
+  }
+  .glass-card:hover {
+    @apply border-foreground/20;
   }
 
-  .dark .glass-panel {
-    box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.03);
+  /* Stagger animation for lists */
+  .stagger-in > * {
+    opacity: 0;
+    transform: translateY(12px);
+    animation: stagger-fade-in 0.4s ease-out forwards;
   }
+  .stagger-in > *:nth-child(1) { animation-delay: 0.05s; }
+  .stagger-in > *:nth-child(2) { animation-delay: 0.10s; }
+  .stagger-in > *:nth-child(3) { animation-delay: 0.15s; }
+  .stagger-in > *:nth-child(4) { animation-delay: 0.20s; }
+  .stagger-in > *:nth-child(5) { animation-delay: 0.25s; }
+  .stagger-in > *:nth-child(6) { animation-delay: 0.30s; }
+  .stagger-in > *:nth-child(n+7) { animation-delay: 0.35s; }
+
+  @keyframes stagger-fade-in {
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* ============================================================
+     Redesign component utilities (Polymarket-honest aesthetic)
+     ============================================================ */
+
+  /* Sentiment chip — LLM-derived bullish/bearish/neutral label.
+     SEMANTIC colors: always green=bull / red=bear (NOT the price-change flip). */
+  .sentiment-chip {
+    @apply inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium uppercase tracking-wide;
+  }
+  .sentiment-chip-bull {
+    background-color: hsl(var(--sentiment-bull-soft));
+    color: hsl(var(--sentiment-bull));
+  }
+  .sentiment-chip-bear {
+    background-color: hsl(var(--sentiment-bear-soft));
+    color: hsl(var(--sentiment-bear));
+  }
+  .sentiment-chip-neutral {
+    background-color: hsl(var(--sentiment-neutral-soft));
+    color: hsl(var(--sentiment-neutral));
+  }
+
+  /* Filter pill — the toolbar pills above feeds. */
+  .filter-pill {
+    @apply inline-flex items-center px-3.5 py-1.5 rounded-full text-[13px] font-medium transition-colors cursor-pointer whitespace-nowrap;
+    background-color: hsl(var(--muted));
+    color: hsl(var(--foreground));
+    border: 0.5px solid transparent;
+  }
+  .filter-pill:hover {
+    border-color: hsl(var(--border));
+  }
+  .filter-pill[data-active="true"] {
+    background-color: hsl(var(--foreground));
+    color: hsl(var(--background));
+    border-color: hsl(var(--foreground));
+  }
+
+  /* Ticker row — inset row inside episode cards / detail pages.
+     Background one notch below the card; mono font for the symbol. */
+  .ticker-row {
+    @apply grid items-center gap-2.5 px-2.5 py-2 rounded-md;
+    grid-template-columns: 78px 1fr auto;
+    background-color: hsl(var(--muted) / 0.6);
+  }
+  .ticker-row-symbol {
+    font-family: var(--font-mono);
+    font-weight: 500;
+    font-size: 12px;
+  }
+
+  /* Sentiment microbar — bull|neutral|bear proportions. */
+  .sent-bar {
+    @apply inline-flex h-1 rounded-full overflow-hidden;
+    background-color: hsl(var(--muted));
+  }
+  .sent-bar > span { @apply block h-full; }
+  .sent-bar-bull { background-color: hsl(var(--sentiment-bull)); }
+  .sent-bar-neutral { background-color: hsl(var(--sentiment-neutral) / 0.5); }
+  .sent-bar-bear { background-color: hsl(var(--sentiment-bear)); }
 }
 
 @layer utilities {
@@ -300,26 +384,13 @@
     }
   }
 
-  .hero-aurora {
-    background-image:
-      radial-gradient(circle at 20% 20%, rgba(236, 122, 60, 0.35), transparent 55%),
-      radial-gradient(circle at 80% 0%, rgba(245, 197, 99, 0.3), transparent 50%),
-      radial-gradient(circle at 50% 100%, rgba(224, 79, 63, 0.25), transparent 50%);
-    background-size: 200% 200%;
-    animation: gradient-shift 18s ease-in-out infinite;
-    opacity: 0.85;
-    mix-blend-mode: screen;
-  }
-
-  .hero-smoke-gradient {
-    background: linear-gradient(-45deg, #04030f, #0b1830, #1b2352, #2d2e73, #46318f);
-    background-size: 400% 400%;
-    animation: gradient-shift 20s ease infinite;
-  }
-
+  /* (Legacy hero/gradient utilities removed for the flat aesthetic — `.hero-aurora`,
+     `.hero-smoke-gradient`, `.animate-gradient` are now no-ops; any element using them just renders plain.) */
+  .hero-aurora,
+  .hero-smoke-gradient,
   .animate-gradient {
-    background-size: 200% 200%;
-    animation: gradient-shift 3s ease infinite;
+    background-image: none;
+    animation: none;
   }
 
   /* Chart Overlay Styles */
@@ -482,41 +553,27 @@
     display: none !important;
   }
 
+  /* `.hero-gradient` was a text-clip gradient — flatten to solid foreground so text stays visible. */
   .hero-gradient {
-    background: linear-gradient(90deg, #000000 0%, #9da7c4 55%, #8da3c8 100%);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
+    background: none;
+    -webkit-background-clip: border-box;
+    background-clip: border-box;
+    -webkit-text-fill-color: currentColor;
+    color: hsl(var(--foreground));
   }
 
-  .dark .hero-gradient {
-    background: linear-gradient(90deg, #ffffff 0%, #e4e7f0 60%, #8da3c8 100%);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-  }
-
+  /* `.search-shell` / `.search-inner` were the old glassy search wrapper — flatten to a plain pill. */
   .search-shell {
-    padding: 2px;
+    padding: 0;
     border-radius: 9999px;
-    background: linear-gradient(90deg, #000000 0%, #9da7c4 55%, #8da3c8 100%);
+    background: transparent;
   }
-
-  .dark .search-shell {
-    background: linear-gradient(90deg, #ffffff 0%, #e4e7f0 60%, #8da3c8 100%);
-  }
-
   .search-inner {
     border-radius: 9999px;
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.2) 0%, rgba(20, 24, 31, 0.55) 100%);
-    box-shadow:
-      inset 0 1px 2px rgba(255, 255, 255, 0.25),
-      inset 0 -6px 18px rgba(0, 0, 0, 0.35);
-    backdrop-filter: blur(16px);
-  }
-
-  .dark .search-inner {
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, rgba(5, 6, 10, 0.65) 100%);
+    background: hsl(var(--card));
+    border: 1px solid hsl(var(--border));
+    box-shadow: none;
+    backdrop-filter: none;
   }
 
   /* Custom Scrollbar Styles */

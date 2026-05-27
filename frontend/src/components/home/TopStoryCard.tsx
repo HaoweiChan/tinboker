@@ -24,7 +24,7 @@ const TopStoryCard: React.FC<TopStoryCardProps> = ({
     onClick={onClick}
     className={`rounded-xl overflow-hidden transition-all duration-300 group h-[450px] flex flex-col cursor-pointer 
       ${isDark 
-        ? 'border-t border-white/15 border-b border-black/20 border-x border-white/5 bg-gradient-to-br from-slate-800/60 to-slate-900/60 backdrop-blur-md hover:border-white/20 hover:bg-slate-800/80 hover:shadow-lg hover:shadow-amber-900/10' 
+        ? 'border-t border-white/15 border-b border-black/20 border-x border-white/5 bg-gradient-to-br from-slate-800/60 to-slate-900/60 backdrop-blur-md hover:border-white/20 hover:bg-slate-800/80 hover:shadow-lg hover:shadow-accent-info/10' 
         : 'bg-white border-slate-200 shadow-sm hover:shadow-lg'}`}
   >
     {/* Header */}

@@ -50,6 +50,9 @@ class Settings(BaseSettings):
     admin_jwt_secret: Optional[str] = None  # JWT signing key for admin tokens
     admin_emails: list[str] = []  # Comma-separated list of admin email addresses
 
+    # Dev bypass token for automated browser testing (e.g. Cursor browser MCP)
+    dev_bypass_token: Optional[str] = None
+
     @field_validator("admin_emails", mode="before")
     @classmethod
     def parse_admin_emails(cls, v: Union[str, list, None]) -> list[str]:
@@ -102,14 +105,16 @@ class Settings(BaseSettings):
     # Or as JSON array: '["http://localhost:5173","https://tinboker.com"]'
     # Note: Vercel preview URLs (https://*.vercel.app) are automatically allowed via regex pattern
     cors_origins: list[str] = [
-        "http://localhost:5173",  # Development frontend (default port)
-        "http://localhost:5174",  # Development frontend (vite default port)
-        "http://localhost:5175",  # Development frontend (alternative port)
-        "http://127.0.0.1:5173",  # Development frontend (127.0.0.1, default port)
-        "http://127.0.0.1:5174",  # Development frontend (127.0.0.1, vite default)
-        "http://127.0.0.1:5175",  # Development frontend (127.0.0.1, alternative port)
-        "https://trendbrief.xyz",  # Production frontend
-        "https://www.trendbrief.xyz"  # Production frontend (www)
+        "http://localhost:5173",
+        "http://localhost:5174",
+        "http://localhost:5175",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:5174",
+        "http://127.0.0.1:5175",
+        "https://tinboker.com",
+        "https://www.tinboker.com",
+        "https://dev.tinboker.com",
+        "https://staging.tinboker.com",
     ]
     
     @field_validator("cors_origins", mode="before")
@@ -149,49 +154,20 @@ class Settings(BaseSettings):
     def postgres_connection_string(self) -> Optional[str]:
         """Get PostgreSQL connection string from DATABASE_URL or individual settings."""
         import os
+        from urllib.parse import quote
         # Render provides DATABASE_URL automatically
         if "DATABASE_URL" in os.environ:
             return os.environ["DATABASE_URL"]
-        
+
         if self.postgres_url:
             return self.postgres_url
-        
-        # Build from individual settings
+
+        # Build from individual settings; URL-encode the password so special chars
+        # like '#' and '@' don't corrupt the connection URL.
         if self.postgres_password:
-            return f"postgresql://{self.postgres_user}:{self.postgres_password}@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
-        
-        return None
+            pw = quote(self.postgres_password, safe='')
+            return f"postgresql://{self.postgres_user}:{pw}@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
 
-    # Recommendation / podcast_db PostgreSQL (data prepared elsewhere; backend only reads)
-    # Reads from POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD in .env (e.g. lines 48-55)
-    recommendation_postgres_host: str = "localhost"
-    recommendation_postgres_port: int = 5432
-    recommendation_postgres_db: str = "podcast_db"
-    recommendation_postgres_user: str = "podcast_user"
-    recommendation_postgres_password: Optional[str] = None
-
-    @property
-    def recommendation_postgres_connection_string(self) -> Optional[str]:
-        """PostgreSQL URL for recommendation/podcast_db. Uses POSTGRES_* when set; host/port can come from POSTGRES_PUBLIC_URL."""
-        import os
-        from urllib.parse import urlparse
-        host = os.environ.get("POSTGRES_HOST") or self.recommendation_postgres_host
-        port = os.environ.get("POSTGRES_PORT", str(self.recommendation_postgres_port))
-        public_url = os.environ.get("POSTGRES_PUBLIC_URL")
-        if public_url:
-            try:
-                u = urlparse(public_url)
-                if u.hostname:
-                    host = u.hostname
-                if u.port is not None:
-                    port = str(u.port)
-            except Exception:
-                pass
-        db = os.environ.get("POSTGRES_DB") or self.recommendation_postgres_db
-        user = os.environ.get("POSTGRES_USER") or self.recommendation_postgres_user
-        password = os.environ.get("POSTGRES_PASSWORD") or self.recommendation_postgres_password
-        if password:
-            return f"postgresql://{user}:{password}@{host}:{port}/{db}"
         return None
 
     # Redis configuration

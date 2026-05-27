@@ -19,6 +19,7 @@ class StockTranslation(Base):
     market = Column(String(10), nullable=False, index=True)
     name_en = Column(Text, nullable=True)
     name_zh_tw = Column(Text, nullable=True)
+    brand_color = Column(String(7), nullable=True)  # Hex color e.g. '#1A2B3C'
     translation_status = Column(
         String(20),
         nullable=False,

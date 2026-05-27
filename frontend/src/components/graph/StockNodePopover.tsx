@@ -5,6 +5,7 @@ import { useViewport } from 'reactflow';
 import type { Node } from 'reactflow';
 import type { StockNodeData } from '@/services/types';
 import { useAppStore } from '@/store/useAppStore';
+import { getStockLabel } from '@/utils/stockDisplay';
 
 type PopoverVariant = 'standard' | 'compact';
 
@@ -95,7 +96,7 @@ const getStatusToken = (status?: string) => {
     return {
       label: '待定',
       className:
-        'bg-amber-100 text-amber-600 border border-amber-200 dark:bg-amber-500/20 dark:text-amber-200 dark:border-amber-500/40',
+        'bg-accent-info-soft text-accent-info border border-accent-info-soft dark:bg-accent-info/20 dark:text-accent-info-soft dark:border-accent-info/40',
     };
   }
   if (normalized.includes('stable')) {
@@ -319,8 +320,20 @@ export const StockNodePopover: React.FC<StockNodePopoverProps> = ({
           <p className="text-[11px] font-semibold uppercase tracking-[0.35em] text-slate-400 dark:text-slate-500">
             {popoverData.subtitle ? `${popoverData.subtitle} 概覽` : '股票概覽'}
           </p>
-          <p className="mt-1 text-lg font-semibold leading-tight">{popoverData.title}</p>
-          <p className="text-sm font-mono text-slate-500 dark:text-slate-400">{popoverData.ticker}</p>
+          {(() => {
+            const { primary, secondary } = getStockLabel({
+              ticker: popoverData.ticker,
+              name: popoverData.title !== popoverData.ticker ? popoverData.title : undefined,
+            });
+            return (
+              <>
+                <p className="mt-1 text-lg font-semibold leading-tight">{primary}</p>
+                {secondary && (
+                  <p className="text-sm font-mono text-slate-500 dark:text-slate-400">{secondary}</p>
+                )}
+              </>
+            );
+          })()}
         </div>
         <span className={`px-2 py-0.5 text-[11px] font-semibold rounded-full ${statusToken.className}`}>
           {statusToken.label}

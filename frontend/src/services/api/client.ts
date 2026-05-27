@@ -176,7 +176,7 @@ export const initializeApiUrl = async (): Promise<string> => {
 const createApiClient = (): AxiosInstance => {
   const client = axios.create({
     baseURL: getBaseURL(),
-    timeout: 150000, // 150 seconds default timeout (increased for visual endpoints that may take longer)
+    timeout: 30000, // 30 seconds default timeout
     headers: {
       'Content-Type': 'application/json',
     },
@@ -247,61 +247,23 @@ const createApiClient = (): AxiosInstance => {
         });
       }
 
-      // Handle timeout errors
-      if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
-        console.warn('[API] Request timeout - falling back to mock data');
-      }
-
       // Handle network errors (CORS, connection refused, etc.)
-      if (!error.response) {
-        console.warn('[API] Network error - backend may be unavailable or CORS issue');
-        console.warn('[API] Error details:', {
-          message: error.message,
-          code: error.code,
-          requestStatus: error.request?.status,
-          requestResponse: error.request?.response,
-          requestResponseText: error.request?.responseText,
-        });
-        
-        // Check if we have any data in the request object (sometimes responses fail but data exists)
-        if (error.request) {
-          // Try responseText first (for text responses)
-          if (error.request.responseText) {
-            try {
-              const responseData = JSON.parse(error.request.responseText);
-              console.warn('[API] Found response data in error.request.responseText:', responseData);
-              // Return a fake response object so the caller can access the data
-              return {
-                ...error.request,
-                data: responseData,
-                status: error.request.status || 200,
-                statusText: error.request.statusText || 'OK',
-                headers: error.request.getAllResponseHeaders ? error.request.getAllResponseHeaders() : {},
-                config: error.config || {},
-              } as any;
-            } catch (e) {
-              console.warn('[API] Failed to parse responseText as JSON:', e);
-            }
-          }
-          
-          // Try response property
-          if (error.request.response) {
-            try {
-              const responseData = typeof error.request.response === 'string' 
-                ? JSON.parse(error.request.response) 
-                : error.request.response;
-              console.warn('[API] Found response data in error.request.response:', responseData);
-              return {
-                ...error.request,
-                data: responseData,
-                status: error.request.status || 200,
-                statusText: error.request.statusText || 'OK',
-                headers: error.request.getAllResponseHeaders ? error.request.getAllResponseHeaders() : {},
-                config: error.config || {},
-              } as any;
-            } catch (e) {
-              console.warn('[API] Failed to parse response as JSON:', e);
-            }
+      if (!error.response && error.request) {
+        // Try to recover data from the request object
+        const raw = error.request.responseText || error.request.response;
+        if (raw) {
+          try {
+            const responseData = typeof raw === 'string' ? JSON.parse(raw) : raw;
+            return {
+              ...error.request,
+              data: responseData,
+              status: error.request.status || 200,
+              statusText: error.request.statusText || 'OK',
+              headers: error.request.getAllResponseHeaders ? error.request.getAllResponseHeaders() : {},
+              config: error.config || {},
+            } as any;
+          } catch {
+            // Data is not parseable — fall through to rejection
           }
         }
       }

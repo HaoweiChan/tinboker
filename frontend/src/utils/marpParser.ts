@@ -1,5 +1,3 @@
-import { Marp } from '@marp-team/marp-core';
-
 export interface MarpMetadata {
   size?: string;
   theme?: string;
@@ -75,9 +73,11 @@ export function parseMarpSize(size?: string): { width: number; height: number } 
 }
 
 /**
- * Render Marp markdown to HTML
+ * Render Marp markdown to HTML (lazy-loads @marp-team/marp-core to
+ * avoid Node.js module externalization warnings on every page load)
  */
-export function renderMarpToHTML(markdown: string): { html: string; css: string } {
+export async function renderMarpToHTML(markdown: string): Promise<{ html: string; css: string }> {
+  const { Marp } = await import('@marp-team/marp-core');
   const marp = new Marp();
   const { html, css } = marp.render(markdown);
   return { html, css };

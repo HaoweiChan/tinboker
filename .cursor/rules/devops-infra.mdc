@@ -1,0 +1,14 @@
+---
+description: VPS, Docker, Caddy, Cloudflare, CI/CD workflows, Redis, monitoring, env routing, secrets. Auto-attached when editing infrastructure code.
+globs:
+  - .github/workflows/**
+  - backend/Dockerfile
+  - backend/docker-compose*.yml
+  - backend/src/config.py
+  - backend/src/config_loader.py
+  - docs/infra-runbook.md
+  - docs/qa-report-2026-05-09.md
+alwaysApply: false
+---
+
+Read `docs/agents/devops-infra.md` for full context before making changes in these files. Deploy procedure: `docs/workflows/deploy-flow.md`. Cardinal rule: never deploy via SSH/rsync — all changes go Git → PR → CI/CD. Notes BUG-4 (`continue-on-error` regression), BUG-9 (stale CORS), BUG-11 (Redis URL leak) — see `docs/qa-report-2026-05-09.md`.

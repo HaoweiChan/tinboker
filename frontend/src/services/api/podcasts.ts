@@ -1,5 +1,5 @@
 import { apiClient } from './client';
-import type { TickerRecommendation, TickerBuzz } from '../types';
+import type { TickerRecommendation, TickerBuzz, TickerTrending, TickerInsight } from '../types';
 
 
 export interface Podcast {
@@ -162,6 +162,11 @@ export async function getEpisodesByTicker(
   return [];
 }
 
+/**
+ * @deprecated Use {@link getInsightsByTicker} (calls /api/ticker-insights/by-ticker).
+ * Backend marks the underlying /api/recommendations/by-ticker path as deprecated
+ * (spec § 4.4); will be removed in Phase B6.
+ */
 export async function getRecommendationsByTicker(
   ticker: string,
   params?: { start_date?: string; end_date?: string }
@@ -175,6 +180,11 @@ export async function getRecommendationsByTicker(
   return Array.isArray(response.data) ? response.data : [];
 }
 
+/**
+ * @deprecated Use {@link getInsightsByPodcaster}. Backend marks the underlying
+ * /api/recommendations/by-podcaster path as deprecated (spec § 4.4); will be
+ * removed in Phase B6.
+ */
 export async function getRecommendationsByPodcaster(
   podcasterName: string,
   params?: { start_date?: string; end_date?: string; podcast_slug?: string }
@@ -190,6 +200,39 @@ export async function getRecommendationsByPodcaster(
   return Array.isArray(response.data) ? response.data : [];
 }
 
+// Phase B replacement, reading Firestore ticker_insights/*. Contract: spec § 4.
+export async function getInsightsByTicker(
+  ticker: string,
+  params?: { start_date?: string; end_date?: string }
+): Promise<TickerInsight[]> {
+  const q: Record<string, string> = {};
+  if (params?.start_date) q.start_date = params.start_date;
+  if (params?.end_date) q.end_date = params.end_date;
+  const response = await apiClient.get(`/api/ticker-insights/by-ticker/${encodeURIComponent(ticker)}`, {
+    params: Object.keys(q).length ? q : undefined,
+  });
+  return Array.isArray(response.data) ? response.data : [];
+}
+
+export async function getInsightsByPodcaster(
+  podcasterName: string,
+  params?: { start_date?: string; end_date?: string }
+): Promise<TickerInsight[]> {
+  const q: Record<string, string> = {};
+  if (params?.start_date) q.start_date = params.start_date;
+  if (params?.end_date) q.end_date = params.end_date;
+  const response = await apiClient.get(
+    `/api/ticker-insights/by-podcaster/${encodeURIComponent(podcasterName)}`,
+    { params: Object.keys(q).length ? q : undefined }
+  );
+  return Array.isArray(response.data) ? response.data : [];
+}
+
+/**
+ * @deprecated Use {@link getTrendingTickers} (calls /api/ticker-insights/trending).
+ * Backend marks the underlying /api/recommendations/buzz path as deprecated and
+ * will remove it one release after Phase B soaks (spec § 4.4, § 7 Phase B6).
+ */
 export async function getMostDiscussedTickers(
   params?: { days?: number; limit?: number }
 ): Promise<TickerBuzz[]> {
@@ -197,6 +240,20 @@ export async function getMostDiscussedTickers(
   if (params?.days != null) q.days = params.days;
   if (params?.limit != null) q.limit = params.limit;
   const response = await apiClient.get('/api/recommendations/buzz', {
+    params: Object.keys(q).length ? q : undefined,
+  });
+  return Array.isArray(response.data) ? response.data : [];
+}
+
+// Phase A replacement for /api/recommendations/buzz, reading Firestore trending_tickers/*.
+// Contract: docs/firestore-contract.md § 5.
+export async function getTrendingTickers(
+  params?: { days?: number; limit?: number }
+): Promise<TickerTrending[]> {
+  const q: Record<string, number> = {};
+  if (params?.days != null) q.days = params.days;
+  if (params?.limit != null) q.limit = params.limit;
+  const response = await apiClient.get('/api/ticker-insights/trending', {
     params: Object.keys(q).length ? q : undefined,
   });
   return Array.isArray(response.data) ? response.data : [];

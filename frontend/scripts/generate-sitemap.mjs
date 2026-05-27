@@ -12,15 +12,19 @@ const MOCK_DATA = {
   stocks: ['2330', '2317', '2454', 'NVDA', 'AAPL']
 };
 
-const BASE_URL = 'https://trendbrief.ai';
+const BASE_URL = 'https://tinboker.com';
 
 const STATIC_ROUTES = [
   '/',
-  '/about',
+  '/podcaster',
+  '/stock',
+  '/topics',
+  '/watchlist',
   '/story',
+  '/industry',
+  '/about',
   '/contact',
   '/disclaimer',
-  '/industry'
 ];
 
 function generateSitemap() {
@@ -43,10 +47,10 @@ function generateSitemap() {
 
   // Add Dynamic Routes (Mock)
   
-  // News/Episodes
+  // Episodes (the legacy /news/:id route redirects to /episode/:id)
   MOCK_DATA.episodes.forEach(ep => {
     sitemap += `  <url>
-    <loc>${BASE_URL}/news/${ep.id}</loc>
+    <loc>${BASE_URL}/episode/${ep.id}</loc>
     <lastmod>${currentDate}</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>

@@ -47,10 +47,8 @@ export const StockHoverCard: React.FC<StockHoverCardProps> = ({ symbol, children
             `GET /api/stocks/${symbol}`,
             (error) => {
               // Silently handle 404s for stocks that might not exist in backend yet
-              if (import.meta.env.DEV && error && typeof error === 'object' && 'response' in error && (error as any).response?.status === 404) {
-                 console.debug(`[StockHoverCard] Stock ${symbol} not found in backend`);
-              } else {
-                 console.warn(`[StockHoverCard] Failed to fetch data for ${symbol}`, error);
+              if (import.meta.env.DEV) {
+                 console.debug(`[StockHoverCard] Failed to fetch data for ${symbol}`, error);
               }
             }
           );

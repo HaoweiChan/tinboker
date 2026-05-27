@@ -42,7 +42,7 @@ export const EventIconsOverlay: React.FC<EventIconsOverlayProps> = ({
   const getEventColor = (type: string): string => {
     switch (type) {
       case 'earnings':
-        return 'bg-amber-500';
+        return 'bg-accent-info';
       case 'conference':
         return 'bg-purple-500';
       case 'news':

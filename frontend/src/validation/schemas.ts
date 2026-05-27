@@ -44,19 +44,19 @@ export const PositionSchema = z.object({
 
 export const GraphNodeDataSchema = z.object({
   label: z.string(),
-  ticker: z.string(),
-  marketCapTier: z.enum(['large', 'medium', 'small']),
+  ticker: z.string().optional(),
+  marketCapTier: z.enum(['large', 'medium', 'small']).optional().catch(undefined),
 });
 
 export const GraphNodeSchema = z.object({
   id: z.string(),
-  type: z.enum(['company', 'stock', 'cluster']),
+  type: z.string(),
   data: GraphNodeDataSchema,
-  position: PositionSchema,
+  position: PositionSchema.optional(),
 });
 
 export const GraphEdgeDataSchema = z.object({
-  category: z.enum(['aiChips', 'automation', 'components']).optional(),
+  category: z.enum(['aiChips', 'automation', 'components']).optional().catch(undefined),
 });
 
 export const GraphEdgeSchema = z.object({
@@ -161,22 +161,22 @@ export const ChartDataPointSchema = z.object({
 });
 
 export const CompanyStatsSchema = z.object({
-  volume: z.number().int(),
-  beta: z.number(),
-  volatility: z.number(),
+  volume: z.number().int().catch(0),
+  beta: z.number().catch(0),
+  volatility: z.number().catch(0),
 });
 
 export const CompanyDetailSchema = z.object({
   ticker: z.string(),
   name: z.string(),
-  price: z.number(),
-  change: z.number(),
-  changePercent: z.number(),
-  marketCap: z.number().int(),
+  price: z.number().catch(0),
+  change: z.number().catch(0),
+  changePercent: z.number().catch(0),
+  marketCap: z.number().int().catch(0),
   revenue: z.number().int().optional(),
   pe: z.number().optional(),
   dividendYield: z.number().optional(),
-  about: z.string(),
+  about: z.string().catch(''),
   stats: CompanyStatsSchema,
   chartData: z.array(ChartDataPointSchema),
 });
@@ -337,7 +337,7 @@ export const InteractiveModelDataSchema = z.object({
   category: z.string(),
   summary: z.string(),
   graphTypeLabel: z.string(),
-  graphType: z.enum(['layered', 'force', 'sankey', 'tree']),
+  graphType: z.enum(['layered', 'force', 'sankey', 'tree']).catch('force'),
   tickers: z.array(InteractiveEntitySchema),
   indices: z.array(InteractiveEntitySchema),
 });
@@ -406,6 +406,28 @@ export function safeParseResponse<T>(
     };
   }
 }
+
+// ── Comments ─────────────────────────────────────────────────────────────────
+
+export const CommentSchema = z.object({
+  id: z.string(),
+  podcast_name: z.string(),
+  episode_id: z.string(),
+  user_id: z.string(),
+  user_name: z.string(),
+  user_avatar: z.string().nullable().optional(),
+  content: z.string(),
+  created_at: z.string(),
+  parent_comment_id: z.string().nullable().optional(),
+  depth: z.number().default(0),
+});
+export type Comment = z.infer<typeof CommentSchema>;
+
+export const CommentListSchema = z.object({
+  comments: z.array(CommentSchema),
+  total: z.number(),
+});
+export type CommentList = z.infer<typeof CommentListSchema>;
 
 /**
  * Parse API response with Zod schema

@@ -18,7 +18,7 @@ export const SEO: React.FC<SEOProps> = ({
   type = 'article',
   structuredData
 }) => {
-  const siteTitle = 'TinBoker';
+  const siteTitle = '聽播客 TinBoker';
   const fullTitle = title ? `${title} | ${siteTitle}` : siteTitle;
   
   // Try to get default description from DOM (index.html), fallback to hardcoded if not found (SSR safety)

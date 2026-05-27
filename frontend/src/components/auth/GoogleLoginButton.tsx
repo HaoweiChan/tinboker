@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useGoogleLogin } from '@react-oauth/google';
 import { toast } from 'sonner';
 import { useAppStore } from '@/store/useAppStore';
@@ -10,10 +10,19 @@ interface GoogleLoginButtonProps {
   type?: 'icon' | 'standard';
 }
 
+const POPUP_TIMEOUT_MS = 5000;
+
 export const GoogleLoginButton: React.FC<GoogleLoginButtonProps> = ({ className, children }) => {
   const login = useAppStore((state) => state.login);
+  const [isLoading, setIsLoading] = useState(false);
+  const popupTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Dev mode: Bypass Google OAuth with dummy user
+  useEffect(() => {
+    return () => {
+      if (popupTimer.current) clearTimeout(popupTimer.current);
+    };
+  }, []);
+
   const devLogin = () => {
     const dummyUser = {
       id: 'dev-user-123',
@@ -25,25 +34,22 @@ export const GoogleLoginButton: React.FC<GoogleLoginButtonProps> = ({ className,
     const dummyToken = 'dev-token-' + Date.now();
 
     login(dummyUser, dummyToken);
-
-    // Set some dummy preferences
     useAppStore.setState({
+      isAuthReady: true,
       watchlist: [],
       subscriptions: [],
-      alerts: []
+      alerts: [],
     });
-
     toast.success('開發模式登入成功');
   };
 
   const googleLogin = useGoogleLogin({
     onSuccess: async (tokenResponse) => {
+      if (popupTimer.current) clearTimeout(popupTimer.current);
       try {
-        // Exchange access token for app session
         const authResponse = await authApi.verifyGoogleToken({
-          accessToken: tokenResponse.access_token
+          accessToken: tokenResponse.access_token,
         });
-
         const { user: backendUser, token: appToken } = authResponse;
 
         login(
@@ -59,37 +65,51 @@ export const GoogleLoginButton: React.FC<GoogleLoginButtonProps> = ({ className,
               .toUpperCase()
               .slice(0, 2),
           },
-          appToken
+          appToken,
         );
 
-        // Sync user preferences to store
         useAppStore.setState({
           watchlist: backendUser.watchlist || [],
           subscriptions: backendUser.podcast_subscriptions || [],
           tagSubscriptions: backendUser.tag_subscriptions || [],
-          alerts: backendUser.alerts || []
+          alerts: backendUser.alerts || [],
         });
-
         toast.success(`歡迎回來，${backendUser.name}！`);
       } catch (error) {
         console.error('Login failed:', error);
         toast.error('登入失敗，請稍後再試');
+      } finally {
+        setIsLoading(false);
       }
     },
     onError: () => {
+      if (popupTimer.current) clearTimeout(popupTimer.current);
+      setIsLoading(false);
       console.error('Google login error');
       toast.error('Google 登入失敗');
     },
-    flow: 'implicit', // Get access token
+    flow: 'implicit',
   });
 
   const handleClick = () => {
-    // In dev mode, use dummy login
+    if (isLoading) return;
+
     if (import.meta.env.DEV) {
       devLogin();
-    } else {
-      googleLogin();
+      return;
     }
+
+    setIsLoading(true);
+    googleLogin();
+
+    // If popup is blocked, the onSuccess/onError never fires.
+    // Reset loading state and show a helpful toast after a timeout.
+    popupTimer.current = setTimeout(() => {
+      if (isLoading) {
+        setIsLoading(false);
+        toast.error('無法開啟登入視窗，請檢查瀏覽器是否封鎖了彈出式視窗', { duration: 6000 });
+      }
+    }, POPUP_TIMEOUT_MS);
   };
 
   return (
@@ -97,8 +117,19 @@ export const GoogleLoginButton: React.FC<GoogleLoginButtonProps> = ({ className,
       onClick={handleClick}
       className={className}
       type="button"
+      disabled={isLoading}
     >
-      {children || '登入'}
+      {isLoading ? (
+        <span className="flex items-center gap-2">
+          <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+          登入中...
+        </span>
+      ) : (
+        children || '登入'
+      )}
     </button>
   );
 };

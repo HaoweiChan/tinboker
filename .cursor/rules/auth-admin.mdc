@@ -1,0 +1,32 @@
+---
+description: Auth (Google OAuth, JWT, dev bypass), user profile/watchlist/settings, admin dashboard, dev portal. Auto-attached when editing auth or admin code.
+globs:
+  - backend/src/routers/auth.py
+  - backend/src/routers/user.py
+  - backend/src/routers/admin_analytics.py
+  - backend/src/routers/admin_translations.py
+  - backend/src/routers/admin_system.py
+  - backend/src/routers/notifications.py
+  - backend/src/services/notification_service.py
+  - backend/src/services/system_service.py
+  - backend/src/utils/auth.py
+  - backend/src/database/user_db.py
+  - frontend/src/pages/ProfilePage.tsx
+  - frontend/src/pages/WatchlistPage.tsx
+  - frontend/src/pages/SettingsPage.tsx
+  - frontend/src/pages/AdminPage.tsx
+  - frontend/src/pages/AdminDashboardPage.tsx
+  - frontend/src/pages/AdminAnalyticsPage.tsx
+  - frontend/src/pages/AdminTranslationsPage.tsx
+  - frontend/src/pages/DevPortalPage.tsx
+  - frontend/src/pages/DevGrafanaPage.tsx
+  - frontend/src/pages/DevTranslationsPage.tsx
+  - frontend/src/pages/DevPodcasterListPage.tsx
+  - frontend/src/pages/DevBypass.tsx
+  - frontend/src/components/auth/**
+  - frontend/src/components/admin/**
+  - frontend/src/store/useAppStore.ts
+alwaysApply: false
+---
+
+Read `docs/agents/auth-admin.md` for full context before making changes in these files. Dev bypass token + browser-MCP flow are documented in `CLAUDE.md` and `docs/workflows/qa-flow.md`. User/notification contract: `docs/firestore-contract.md` §6.

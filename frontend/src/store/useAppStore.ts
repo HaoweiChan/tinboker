@@ -20,6 +20,7 @@ interface AppState {
   // Auth
   user: User | null;
   token: string | null;
+  isAuthReady: boolean;
 
   // Graph visualization
   selectedConcept: string | null;
@@ -56,6 +57,7 @@ interface AppState {
   // Auth actions
   login: (user: User, token: string) => void;
   logout: () => void;
+  setAuthReady: (ready: boolean) => void;
 
   // User preference actions
   toggleWatchlist: (ticker: string) => Promise<void>;
@@ -102,6 +104,7 @@ export const useAppStore = create<AppState>()(
       heroSearchInView: false,
       user: null,
       token: null,
+      isAuthReady: false,
       selectedConcept: null,
       selectedCompany: null,
       nodeDisplayMode: 'default',
@@ -142,6 +145,7 @@ export const useAppStore = create<AppState>()(
 
       login: (user, token) => set(() => ({ user, token })),
       logout: () => set(() => ({ user: null, token: null })),
+      setAuthReady: (ready) => set(() => ({ isAuthReady: ready })),
 
       toggleWatchlist: async (ticker) => {
         const token = useAppStore.getState().token;

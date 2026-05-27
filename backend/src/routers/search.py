@@ -71,17 +71,14 @@ async def suggest(
     
     from src.services.suggestion_index import SuggestionIndex
     index = SuggestionIndex()
-    
-    # If index is empty (first run), trigger a background build
-    # In production, this should be done on startup
+
+    # Fall back to full search if index hasn't been built yet
     if not index.is_initialized:
-        # We return empty or fallback to search for now, 
-        # but trigger build for next time
         asyncio.create_task(build_search_index())
-    
+        return await search(q=q, limit=limit)
+
     suggestions = index.suggest(q.strip(), limit=limit)
-    
-    # Group by type for the response
+
     return SearchResponse(
         stocks=[s for s in suggestions if s.type == "stock"],
         podcasts=[s for s in suggestions if s.type == "podcast"],
@@ -89,31 +86,35 @@ async def suggest(
         tags=[s for s in suggestions if s.type == "tag"]
     )
 
-@router.on_event("startup")
-async def startup_event():
-    """Initialize search index on app startup"""
+async def init_search_index():
+    """Initialize search index — called from main.py startup."""
     asyncio.create_task(build_search_index())
 
 async def build_search_index():
     """Build the in-memory suggestion index from all sources."""
     from src.services.suggestion_index import SuggestionIndex
     from src.schemas.search import SearchResultItem
-    
+
     logger = logging.getLogger(__name__)
     logger.info("Building search index...")
     index = SuggestionIndex()
-    
+
     try:
         # 1. Fetch all stocks (cached version is fast)
         stocks = await stock_service.get_sorted_stocks_async(limit=2000)
+
         for stock in stocks:
+            ticker = stock.get("ticker")
+            if not ticker:
+                continue
+            market = "TW" if ticker.split(".")[0].isdigit() else "US"
             item = SearchResultItem(
-                id=f"stock-{stock.get('ticker')}",
+                id=f"stock-{ticker}",
                 type="stock",
-                title=stock.get("ticker"),
+                title=ticker,
                 subtitle=stock.get("name"),
-                link=f"/stock/{stock.get('ticker')}",
-                icon_url=None, # Frontend handles stock icons
+                link=f"/stock/{ticker}",
+                market=market,
                 metadata={"price": stock.get("price"), "change_percent": stock.get("change_percent")}
             )
             # Index by Ticker, Full Name, and Short Name (in parentheses)

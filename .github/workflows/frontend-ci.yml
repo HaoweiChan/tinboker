@@ -1,64 +1,197 @@
-# CI workflow - Build check for pull requests
+# CI workflow — type-check, build, lint changed files, and deploy a Cloudflare Pages
+# preview for every PR to main/develop.
+# Uses a ci-gate aggregation job so branch protection always gets a result even when
+# no frontend files changed (docs-only PRs pass immediately).
 name: Frontend CI
 
 on:
   pull_request:
     branches: [main, develop]
-    paths: ['frontend/**']
 
 env:
   GCP_PROJECT_ID: gen-lang-client-0901363254
 
 jobs:
+  # ── 1. Detect which paths changed ────────────────────────────────────────────
+  changed:
+    runs-on: ubuntu-latest
+    outputs:
+      frontend: ${{ steps.filter.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            frontend:
+              - 'frontend/**'
+
+  # ── 2. Build + lint (only when frontend files changed) ───────────────────────
   build:
+    needs: changed
+    if: needs.changed.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # required for the git-diff lint step
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
       - name: Authenticate to Google Cloud
+        id: gcp-auth
         uses: google-github-actions/auth@v2
+        continue-on-error: true
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
 
       - name: Set up Cloud SDK
+        if: steps.gcp-auth.outcome == 'success'
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Fetch secrets from Google Secret Manager
-        id: secrets
+      - name: Fetch VITE_GOOGLE_CLIENT_ID from Secret Manager
+        if: steps.gcp-auth.outcome == 'success'
         run: |
-          GOOGLE_CLIENT_ID=$(gcloud secrets versions access latest --secret=GOOGLE_CLIENT_ID --project=$GCP_PROJECT_ID)
+          GOOGLE_CLIENT_ID=$(gcloud secrets versions access latest \
+            --secret=GOOGLE_CLIENT_ID --project=$GCP_PROJECT_ID)
           echo "::add-mask::$GOOGLE_CLIENT_ID"
           echo "VITE_GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID" >> $GITHUB_ENV
+
+      - name: Use CI placeholder (GCP unavailable)
+        if: steps.gcp-auth.outcome != 'success'
+        run: echo "VITE_GOOGLE_CLIENT_ID=ci-placeholder" >> $GITHUB_ENV
 
       - name: Install dependencies
         working-directory: frontend
         run: npm ci
 
-      - name: Type check
-        working-directory: frontend
-        run: npx tsc --noEmit
-
-      - name: Build
+      # `npm run build` = `tsc -b && vite build` — all TypeScript errors surfaced here.
+      - name: Build (tsc + vite)
         working-directory: frontend
         run: npm run build
         env:
           VITE_GOOGLE_CLIENT_ID: ${{ env.VITE_GOOGLE_CLIENT_ID }}
 
-      - name: Build Summary
+      # Lint only the .ts/.tsx files touched in this PR — new code must be clean.
+      - name: Lint changed TypeScript files
+        working-directory: frontend
         run: |
-          echo "## Build Successful ✅" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Branch:** ${{ github.head_ref }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Target:** ${{ github.base_ref }}" >> $GITHUB_STEP_SUMMARY
+          CHANGED=$(git diff --name-only --diff-filter=ACMR \
+            "origin/${{ github.base_ref }}...HEAD" \
+            -- 'frontend/src/**/*.ts' 'frontend/src/**/*.tsx' \
+            | sed 's|^frontend/||')
+          if [ -z "$CHANGED" ]; then
+            echo "No TypeScript source files changed — lint skipped."
+            exit 0
+          fi
+          COUNT=$(echo "$CHANGED" | wc -l | tr -d ' ')
+          echo "Linting $COUNT changed file(s):"
+          echo "$CHANGED"
+          npx eslint $CHANGED
+
+      # Upload the dist folder so the preview job can deploy it without rebuilding.
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist-${{ github.run_id }}
+          path: frontend/dist
+          retention-days: 1
+
+  # ── 3. Deploy Cloudflare Pages preview ───────────────────────────────────────
+  preview:
+    needs: [changed, build]
+    # Only run when frontend changed and the build passed.
+    if: needs.changed.outputs.frontend == 'true' && needs.build.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist-${{ github.run_id }}
+          path: frontend/dist
+
+      - name: Deploy to Cloudflare Pages (preview)
+        id: deploy
+        uses: cloudflare/pages-action@v1
+        continue-on-error: true   # Cloudflare hiccup ≠ broken PR
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          projectName: tinboker-platform
+          directory: frontend/dist
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          branch: ${{ github.head_ref }}
+
+      # Upsert a single comment per PR — update on re-runs instead of spamming.
+      - name: Post or update preview URL comment
+        if: steps.deploy.outcome == 'success'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const previewUrl = '${{ steps.deploy.outputs.alias }}' ||
+                               '${{ steps.deploy.outputs.url }}';
+            const marker = '<!-- cf-preview-comment -->';
+            const body = [
+              marker,
+              '## 🚀 Cloudflare Pages Preview',
+              '',
+              `**Preview URL:** ${previewUrl}`,
+              `**Branch:** \`${{ github.head_ref }}\``,
+              '',
+              '_Updates automatically on each push to this PR._'
+            ].join('\n');
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number
+            });
+            const existing = comments.find(c => c.body.includes(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body
+              });
+            }
+
+  # ── 4. Gate — always runs; the required status check branch protection targets ─
+  # preview is intentionally excluded — a Cloudflare blip shouldn't block merging.
+  ci-gate:
+    needs: [build]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Evaluate CI results
+        run: |
+          BUILD="${{ needs.build.result }}"
+          echo "build=$BUILD"
+          if [[ "$BUILD" == "failure" || "$BUILD" == "cancelled" ]]; then
+            echo "❌ Frontend CI failed (build=$BUILD)"
+            exit 1
+          fi
+          echo "✅ Frontend CI passed (build=$BUILD)"

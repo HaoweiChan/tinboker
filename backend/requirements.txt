@@ -1,6 +1,6 @@
 massive>=0.1.0
 python-dotenv>=1.0.0
-pytest>=7.4.0
+pytest==7.4.3
 pytest-asyncio>=0.21.0
 
 FinMind
@@ -13,7 +13,6 @@ firebase-admin>=6.0.0
 pydantic==2.5.0
 pydantic-settings>=2.1.0
 python-multipart==0.0.6
-pytest==7.4.3
 httpx==0.25.2
 requests>=2.31.0
 pandas>=2.0.0

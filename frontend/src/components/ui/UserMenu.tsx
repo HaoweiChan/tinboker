@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { User, Settings, LogOut } from 'lucide-react';
-import { useUser, useLogout } from '@/store/useAppStore';
+import { useAppStore, useUser, useLogout } from '@/store/useAppStore';
 import { LoginButton } from '@/components/auth/LoginButton';
 import { authApi } from '@/services/api/auth';
 
@@ -11,6 +11,7 @@ export const UserMenu: React.FC = () => {
   const navigate = useNavigate();
   const user = useUser();
   const logout = useLogout();
+  const isAuthReady = useAppStore((state) => state.isAuthReady);
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -41,6 +42,13 @@ export const UserMenu: React.FC = () => {
     }
   };
 
+  // Show a placeholder while auth is being validated to prevent flicker
+  if (!isAuthReady) {
+    return (
+      <div className="w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-700 animate-pulse" />
+    );
+  }
+
   if (!user) {
     return (
       <LoginButton className="text-sm font-bold text-slate-600 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-300 dark:hover:text-white px-4 py-2 rounded-lg dark:hover:bg-slate-800 transition">
@@ -54,7 +62,7 @@ export const UserMenu: React.FC = () => {
       {/* Avatar Button */}
       <button 
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center justify-center w-10 h-10 rounded-full bg-gradient-to-tr from-amber-500 to-purple-600 border-2 border-slate-200 dark:border-slate-700 hover:opacity-90 transition shadow-lg overflow-hidden"
+        className="flex items-center justify-center w-10 h-10 rounded-full bg-gradient-to-tr from-accent-info to-purple-600 border-2 border-slate-200 dark:border-slate-700 hover:opacity-90 transition shadow-lg overflow-hidden"
         aria-label="User Menu"
       >
         {user.avatar ? (

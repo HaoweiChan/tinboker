@@ -64,9 +64,11 @@ async def google_login(request: dict):
             detail=f"Authentication failed: {str(e)}"
         )
     except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"Auth endpoint internal error: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Internal server error: {str(e)}"
+            detail="An internal error occurred during authentication. Please try again later."
         )
 
 
@@ -116,6 +118,61 @@ async def get_current_user(authorization: Optional[str] = Header(None)):
         )
     
     return user
+
+
+@router.get("/is-admin")
+async def check_is_admin(authorization: Optional[str] = Header(None)):
+    """
+    Check if the current JWT user is in the ADMIN_EMAILS list.
+    Used by non-production environments to gate access.
+    Returns { "is_admin": bool } — never raises 4xx so the frontend can handle the result gracefully.
+    """
+    if not authorization:
+        return {"is_admin": False}
+    try:
+        scheme, token = authorization.split()
+        if scheme.lower() != "bearer":
+            return {"is_admin": False}
+    except ValueError:
+        return {"is_admin": False}
+
+    payload = verify_jwt_token(token)
+    if not payload:
+        return {"is_admin": False}
+
+    from src.config import settings
+    email = (payload.get("email") or "").lower()
+    admin_set = {e.lower() for e in settings.admin_emails}
+    return {"is_admin": email in admin_set}
+
+
+@router.post("/dev-token", response_model=AuthResponse)
+async def dev_token_login(request: dict):
+    """
+    Bypass Google OAuth for automated browser testing (Cursor browser MCP).
+    Only available when ENVIRONMENT != production and DEV_BYPASS_TOKEN is set.
+    """
+    from src.config import settings
+
+    if settings.environment == "production":
+        raise HTTPException(status_code=404, detail="Not found")
+    if not settings.dev_bypass_token:
+        raise HTTPException(status_code=403, detail="Dev bypass not configured")
+
+    token = request.get("token")
+    if not token or token != settings.dev_bypass_token:
+        raise HTTPException(status_code=401, detail="Invalid bypass token")
+
+    email = settings.admin_emails[0] if settings.admin_emails else "dev@tinboker.com"
+    user = get_or_create_user(
+        google_id="dev-bypass-user",
+        email=email,
+        name="Dev Browser",
+        avatar=None,
+        email_verified=True,
+    )
+    jwt_token = create_jwt_token(user.id, user.email)
+    return AuthResponse(user=user, token=jwt_token)
 
 
 @router.post("/logout")

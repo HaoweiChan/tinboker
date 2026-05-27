@@ -17,17 +17,19 @@ export interface Company {
 export type NodeDisplayMode = 'default' | 'marketCap' | 'revenue';
 
 // React Flow node structure
+// `type` is intentionally a free string: the backend emits node kinds beyond the
+// canonical set (e.g. 'person', 'Investor'), so validation/schemas.ts keeps it loose.
 export interface GraphNode {
   id: string;
-  type: 'company' | 'stock' | 'cluster';
+  type: string;
   data: ({
     label: string;
-    ticker: string;
-    marketCapTier: 'large' | 'medium' | 'small';
+    ticker?: string;
+    marketCapTier?: 'large' | 'medium' | 'small';
     marketCap?: number;
     revenue?: number;
   } & Partial<StockNodeData>);
-  position: { x: number; y: number };
+  position?: { x: number; y: number };
 }
 
 // Stock node data for new circular design with sparklines
@@ -441,9 +443,13 @@ export interface Reason {
   end_index: number;
 }
 
+// Spec § 4.3 — was a free string under the legacy Postgres path; tightened to
+// the enum the agents pipeline emits.
+export type Severity = 'HIGH' | 'MEDIUM' | 'LOW';
+
 export interface Risk {
   title: string;
-  severity?: string;
+  severity?: Severity;
   description: string;
   start_time: number;
   end_time: number;
@@ -471,4 +477,36 @@ export interface TickerBuzz {
   count: number;
   sentiment_score: number;
   last_mentioned: string;
+}
+
+// New shape, per docs/firestore-contract.md § 4.2 / § 5.3.
+// Replaces TickerBuzz on Stock Index once Phase A is flipped in prod.
+export type SentimentLabel =
+  | 'STRONG_BULLISH'
+  | 'BULLISH'
+  | 'NEUTRAL'
+  | 'BEARISH'
+  | 'STRONG_BEARISH';
+
+export interface TickerTrending {
+  ticker: string;
+  count: number;
+  sentiment_label: SentimentLabel;
+  last_mentioned: string;
+}
+
+// Spec § 4.3 — replaces TickerRecommendation. No `id` (composite path
+// {episode_id}/tickers/{ticker} is the identity); no `sentiment_score`
+// (kept internal to Firestore per § 4.2, never returned by the API).
+export interface TickerInsight {
+  episode_id: string;
+  podcaster?: string;
+  podcast_launch_time: string;
+  ticker: string;
+  bluf_thesis: string;
+  time_horizon: string;
+  sentiment_label: SentimentLabel;
+  reasons: Reason[];
+  risks: Risk[];
+  created_at: string;
 }

@@ -270,6 +270,65 @@ class FirestoreService:
         except Exception as e:
             raise Exception(f"Failed to delete document from Firestore: {e}") from e
     
+    def query_collection_group(
+        self,
+        collection_id: str,
+        filters: Optional[List[tuple]] = None,
+        order_by: Optional[str] = None,
+        direction: Optional[str] = "DESCENDING",
+        limit: Optional[int] = None,
+    ) -> List[Dict]:
+        """
+        Query a collection group: matches every subcollection (and root collection)
+        with the given collection_id, regardless of parent path.
+
+        Used by ticker_insights reads where docs live at
+        `ticker_insights/{episode_id}/tickers/{ticker}` — the subcollection name
+        is "tickers", same as the existing root `tickers/*` inverted index.
+        Callers MUST filter results (e.g. on `schema_version == 2`) to
+        disambiguate from the inverted-index docs.
+        """
+        if self._disabled or not self.db:
+            return []
+
+        try:
+            query = self.db.collection_group(collection_id)
+
+            if filters:
+                for field, operator, value in filters:
+                    query = query.where(field, operator, value)
+
+            if order_by:
+                direction_enum = (
+                    firestore.Query.DESCENDING
+                    if direction == "DESCENDING"
+                    else firestore.Query.ASCENDING
+                )
+                query = query.order_by(order_by, direction=direction_enum)
+
+            if limit:
+                query = query.limit(limit)
+
+            results: List[Dict] = []
+            for doc in query.stream():
+                data = doc.to_dict()
+                data["id"] = doc.id
+                # Capture the parent doc id (e.g. episode_id for
+                # ticker_insights/{episode_id}/tickers/{ticker}) so callers can
+                # reconstruct paths without a second round-trip.
+                try:
+                    parent_doc_ref = doc.reference.parent.parent
+                    if parent_doc_ref is not None:
+                        data["_parent_id"] = parent_doc_ref.id
+                except Exception:
+                    pass
+                results.append(data)
+            return results
+        except Exception as e:
+            raise Exception(
+                f"Failed to query collection group in Firestore: {e}"
+            ) from e
+
     def get_subcollection_documents(
         self,
         collection: str,

@@ -13,6 +13,7 @@ class TranslationBase(BaseModel):
     market: str = Field(..., max_length=10, description="Market code (US, TW, JP)")
     name_en: Optional[str] = Field(None, description="English name")
     name_zh_tw: Optional[str] = Field(None, description="Chinese Traditional name")
+    brand_color: Optional[str] = Field(None, max_length=7, description="Brand hex color e.g. '#1A2B3C'")
 
 
 class TranslationCreate(TranslationBase):
@@ -25,6 +26,7 @@ class TranslationUpdate(BaseModel):
     name_en: Optional[str] = None
     name_zh_tw: Optional[str] = None
     translation_status: Optional[Literal["pending", "approved", "auto"]] = None
+    brand_color: Optional[str] = Field(None, max_length=7)
 
 
 class TranslationResponse(TranslationBase):
@@ -45,6 +47,7 @@ class TranslationPublicResponse(BaseModel):
     market: str
     name_en: Optional[str] = None
     name_zh_tw: Optional[str] = None
+    brand_color: Optional[str] = None
 
     class Config:
         from_attributes = True

@@ -1,5 +1,5 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://trendbrief.ai/sitemap.xml
+Sitemap: https://tinboker.com/sitemap.xml
 

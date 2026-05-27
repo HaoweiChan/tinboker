@@ -157,7 +157,7 @@ export const NotificationDropdown: React.FC = () => {
   const getIcon = (type: DisplayNotification['type']) => {
     switch (type) {
       case 'new_episode':
-        return <Mic size={16} className="text-amber-400" />;
+        return <Mic size={16} className="text-accent-info" />;
       case 'stock_mention':
         return <TrendingUp size={16} className="text-blue-400" />;
       case 'price_alert':
@@ -194,7 +194,7 @@ export const NotificationDropdown: React.FC = () => {
             {unreadCount > 0 && (
               <button
                 onClick={markAllAsRead}
-                className="text-xs text-amber-600 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300 transition"
+                className="text-xs text-accent-info hover:text-accent-info dark:text-accent-info dark:hover:text-accent-info transition"
               >
                 全部標為已讀
               </button>
@@ -240,7 +240,7 @@ export const NotificationDropdown: React.FC = () => {
                     <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">{notification.time}</p>
                   </div>
                   {!notification.isRead && (
-                    <div className="w-2 h-2 rounded-full bg-amber-500 dark:bg-amber-400 shrink-0 mt-2"></div>
+                    <div className="w-2 h-2 rounded-full bg-accent-info dark:bg-accent-info shrink-0 mt-2"></div>
                   )}
                 </button>
               ))
@@ -254,7 +254,7 @@ export const NotificationDropdown: React.FC = () => {
                   setIsOpen(false);
                   navigate('/settings');
                 }}
-                className="w-full text-center text-sm text-slate-500 hover:text-amber-600 dark:text-slate-400 dark:hover:text-amber-400 transition"
+                className="w-full text-center text-sm text-slate-500 hover:text-accent-info dark:text-slate-400 dark:hover:text-accent-info transition"
               >
                 通知設定
               </button>

@@ -1,80 +1,104 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>https://trendbrief.ai/</loc>
-    <lastmod>2025-12-13</lastmod>
+    <loc>https://tinboker.com/</loc>
+    <lastmod>2026-05-12</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
   </url>
   <url>
-    <loc>https://trendbrief.ai/about</loc>
-    <lastmod>2025-12-13</lastmod>
+    <loc>https://tinboker.com/podcaster</loc>
+    <lastmod>2026-05-12</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://trendbrief.ai/story</loc>
-    <lastmod>2025-12-13</lastmod>
+    <loc>https://tinboker.com/stock</loc>
+    <lastmod>2026-05-12</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://trendbrief.ai/contact</loc>
-    <lastmod>2025-12-13</lastmod>
+    <loc>https://tinboker.com/topics</loc>
+    <lastmod>2026-05-12</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://trendbrief.ai/disclaimer</loc>
-    <lastmod>2025-12-13</lastmod>
+    <loc>https://tinboker.com/watchlist</loc>
+    <lastmod>2026-05-12</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://trendbrief.ai/industry</loc>
-    <lastmod>2025-12-13</lastmod>
+    <loc>https://tinboker.com/story</loc>
+    <lastmod>2026-05-12</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://trendbrief.ai/news/EP156</loc>
-    <lastmod>2025-12-13</lastmod>
+    <loc>https://tinboker.com/industry</loc>
+    <lastmod>2026-05-12</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://tinboker.com/about</loc>
+    <lastmod>2026-05-12</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://tinboker.com/contact</loc>
+    <lastmod>2026-05-12</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://tinboker.com/disclaimer</loc>
+    <lastmod>2026-05-12</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://tinboker.com/episode/EP156</loc>
+    <lastmod>2026-05-12</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://trendbrief.ai/news/EP155</loc>
-    <lastmod>2025-12-13</lastmod>
+    <loc>https://tinboker.com/episode/EP155</loc>
+    <lastmod>2026-05-12</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://trendbrief.ai/stock/2330</loc>
-    <lastmod>2025-12-13</lastmod>
+    <loc>https://tinboker.com/stock/2330</loc>
+    <lastmod>2026-05-12</lastmod>
     <changefreq>daily</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://trendbrief.ai/stock/2317</loc>
-    <lastmod>2025-12-13</lastmod>
+    <loc>https://tinboker.com/stock/2317</loc>
+    <lastmod>2026-05-12</lastmod>
     <changefreq>daily</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://trendbrief.ai/stock/2454</loc>
-    <lastmod>2025-12-13</lastmod>
+    <loc>https://tinboker.com/stock/2454</loc>
+    <lastmod>2026-05-12</lastmod>
     <changefreq>daily</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://trendbrief.ai/stock/NVDA</loc>
-    <lastmod>2025-12-13</lastmod>
+    <loc>https://tinboker.com/stock/NVDA</loc>
+    <lastmod>2026-05-12</lastmod>
     <changefreq>daily</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://trendbrief.ai/stock/AAPL</loc>
-    <lastmod>2025-12-13</lastmod>
+    <loc>https://tinboker.com/stock/AAPL</loc>
+    <lastmod>2026-05-12</lastmod>
     <changefreq>daily</changefreq>
     <priority>0.6</priority>
   </url>

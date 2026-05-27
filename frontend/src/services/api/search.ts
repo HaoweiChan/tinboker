@@ -7,6 +7,7 @@ export interface SearchResultItem {
     subtitle?: string;
     icon_url?: string;
     link: string;
+    market?: 'TW' | 'US' | null;
     metadata?: Record<string, any>;
 }
 

@@ -6,7 +6,10 @@ import {
 import type { TickerRecommendation, TickerBuzz } from './types';
 
 export const recommendationService = {
-  /** Get recommendations for a ticker (default: last 7 days). */
+  /**
+   * @deprecated Use `getInsightsByTicker` from `@/services/api/podcasts`.
+   * Wraps a soft-deprecated backend path (spec § 4.4); removed in Phase B6.
+   */
   async getRecommendationsByTicker(
     ticker: string,
     params?: { start_date?: string; end_date?: string }
@@ -14,7 +17,10 @@ export const recommendationService = {
     return apiByTicker(ticker, params);
   },
 
-  /** Get recommendations from a podcaster (default: last 7 days). Pass podcast_slug when available. */
+  /**
+   * @deprecated Use `getInsightsByPodcaster` from `@/services/api/podcasts`.
+   * Wraps a soft-deprecated backend path (spec § 4.4); removed in Phase B6.
+   */
   async getRecommendationsByPodcaster(
     podcasterName: string,
     params?: { start_date?: string; end_date?: string; podcast_slug?: string }
@@ -22,7 +28,11 @@ export const recommendationService = {
     return apiByPodcaster(podcasterName, params);
   },
 
-  /** Get most-discussed tickers in the last N days (default: 30 days, limit 10). */
+  /**
+   * @deprecated Use `getTrendingTickers` from `@/services/api/podcasts` (calls
+   * /api/ticker-insights/trending). Wraps a soft-deprecated backend path per
+   * spec § 4.4; will be removed in Phase B6.
+   */
   async getMostDiscussedTickers(
     days: number = 30,
     limit: number = 10

@@ -28,9 +28,9 @@ export function PWAUpdatePrompt() {
 
   return (
     <div className="fixed bottom-4 left-4 right-4 z-50 mx-auto max-w-md animate-slide-up">
-      <div className="flex items-center gap-3 rounded-lg border border-amber-500/30 bg-slate-900/95 px-4 py-3 shadow-lg backdrop-blur-sm">
-        <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-amber-500/20">
-          <RefreshCw className="h-5 w-5 text-amber-500" />
+      <div className="flex items-center gap-3 rounded-lg border border-accent-info/30 bg-slate-900/95 px-4 py-3 shadow-lg backdrop-blur-sm">
+        <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-accent-info/20">
+          <RefreshCw className="h-5 w-5 text-accent-info" />
         </div>
         <div className="flex-1">
           <p className="text-sm font-medium text-slate-100">有新版本可用</p>
@@ -39,7 +39,7 @@ export function PWAUpdatePrompt() {
         <div className="flex items-center gap-2">
           <button
             onClick={handleUpdate}
-            className="rounded-md bg-amber-500 px-3 py-1.5 text-sm font-medium text-slate-900 transition-colors hover:bg-amber-400"
+            className="rounded-md bg-accent-info px-3 py-1.5 text-sm font-medium text-slate-900 transition-colors hover:bg-accent-info"
           >
             更新
           </button>

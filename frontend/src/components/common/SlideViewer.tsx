@@ -80,19 +80,27 @@ export const SlideViewer: React.FC<SlideViewerProps> = ({
         return splitMarpSlides(content);
     }, [content]);
 
-    // Render slides to HTML using Marp
-    const renderedSlides = useMemo(() => {
-        return slides.map((slide, index) => {
-            // For each slide, we need to include the frontmatter for proper rendering
-            // Reconstruct the full markdown with frontmatter for this slide
+    // Render slides to HTML using Marp (async lazy-loaded)
+    const [renderedSlides, setRenderedSlides] = useState<{ html: string; css: string; index: number }[]>([]);
+
+    useEffect(() => {
+        let cancelled = false;
+        const renderAll = async () => {
             const frontmatter = content.match(/^---\n([\s\S]*?)\n---\n/)?.[0] || '';
-            const fullSlideContent = frontmatter + '\n\n' + slide;
-            const { html, css } = renderMarpToHTML(fullSlideContent);
-            return { html, css, index };
-        });
+            const results = await Promise.all(
+                slides.map(async (slide, index) => {
+                    const fullSlideContent = frontmatter + '\n\n' + slide;
+                    const { html, css } = await renderMarpToHTML(fullSlideContent);
+                    return { html, css, index };
+                }),
+            );
+            if (!cancelled) setRenderedSlides(results);
+        };
+        if (slides.length > 0) renderAll();
+        return () => { cancelled = true; };
     }, [slides, content]);
 
-    if (slides.length === 0) return null;
+    if (slides.length === 0 || renderedSlides.length === 0) return null;
 
     // Lightbox Navigation
     const nextSlide = (e?: React.MouseEvent) => {

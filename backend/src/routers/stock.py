@@ -1,11 +1,14 @@
 """
 Stock API router
 """
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException, Query
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException, Query, Depends
 from typing import Optional, List
+from sqlalchemy.orm import Session
 from src.services.stock import StockService
 from src.models.stock import CompanyDetail
 from src.services.websocket_subscriber import WebSocketSubscriber
+from src.database.postgres import get_session
+from src.database.models import StockTranslation
 import asyncio
 import logging
 
@@ -42,6 +45,69 @@ async def get_sorted_stocks(
         ]
     
     return stocks
+
+
+@router.get("/batch-prices")
+async def get_batch_prices(
+    tickers: str = Query(description="Comma-separated ticker symbols (max 100)"),
+):
+    """
+    Get changePercent for multiple tickers in one request.
+    Uses the same per-ticker Redis cache as /{ticker}/basic.
+    Returns {TICKER: changePercent} — null if not found.
+    """
+    ticker_list = [t.strip().upper() for t in tickers.split(',') if t.strip()][:100]
+    if not ticker_list:
+        return {}
+    results = await asyncio.gather(
+        *[stock_service.get_stock_basic_info_async(t) for t in ticker_list],
+        return_exceptions=True,
+    )
+    return {
+        ticker: (info.get('changePercent') if isinstance(info, dict) else None)
+        for ticker, info in zip(ticker_list, results)
+    }
+
+
+@router.get("/batch-summary")
+async def get_batch_summary(
+    tickers: str = Query(description="Comma-separated ticker symbols (max 100)"),
+    db: Session = Depends(get_session),
+):
+    """
+    Return display metadata (name + market + brand_color) for a set of tickers.
+    Used by watchlist / index rows to render Chinese-name labels without N round-trips.
+    Returns a list of {ticker, name, market, brand_color}; entries missing in upstream
+    data still appear with name=ticker so callers can render.
+    """
+    ticker_list = [t.strip().upper() for t in tickers.split(',') if t.strip()][:100]
+    if not ticker_list:
+        return []
+
+    # Fetch brand colors from translations table (one query)
+    translations = db.query(StockTranslation).filter(
+        StockTranslation.ticker.in_(ticker_list)
+    ).all()
+    brand_colors: dict[str, str] = {
+        t.ticker: t.brand_color for t in translations if t.brand_color
+    }
+
+    basic_results = await asyncio.gather(
+        *[stock_service.get_stock_basic_info_async(t) for t in ticker_list],
+        return_exceptions=True,
+    )
+
+    out = []
+    for ticker, info in zip(ticker_list, basic_results):
+        market = "TW" if ticker.split(".")[0].isdigit() else "US"
+        name = info.get("name") if isinstance(info, dict) else None
+        out.append({
+            "ticker": ticker,
+            "name": name or ticker,
+            "market": market,
+            "brand_color": brand_colors.get(ticker),
+        })
+    return out
 
 
 @router.get("/{ticker}", response_model=CompanyDetail)

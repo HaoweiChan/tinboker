@@ -1,14 +1,32 @@
+# CI workflow — test and lint backend for every PR to main/develop.
+# Uses a ci-gate aggregation job so branch protection always gets a result even when
+# no backend files changed (docs-only or frontend-only PRs pass immediately).
 name: Backend CI
 
 on:
   pull_request:
     branches: [develop, main]
-    paths: ['backend/**']
 
 jobs:
-  test:
+  # ── 1. Detect which paths changed ────────────────────────────────────────────
+  changed:
     runs-on: ubuntu-latest
-    continue-on-error: true
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+
+  # ── 2. Run tests (only when backend files changed) ───────────────────────────
+  test:
+    needs: changed
+    if: needs.changed.outputs.backend == 'true'
+    runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: backend
@@ -25,8 +43,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
@@ -42,10 +59,12 @@ jobs:
         env:
           REDIS_URL: redis://localhost:6379/0
           ENVIRONMENT: test
-        run: |
-          pytest tests/ -v --tb=short || echo "::warning::Some tests failed - pre-existing issues"
+        run: pytest tests/ -v --tb=short
 
+  # ── 3. Lint (only when backend files changed) ─────────────────────────────────
   lint:
+    needs: changed
+    if: needs.changed.outputs.backend == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -53,13 +72,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Install linters
+      - name: Install ruff
         run: pip install ruff
 
       - name: Run linter
         run: ruff check src/ --ignore E501,E722,E701,E402,F841
+
+  # ── 4. Gate — always runs; the required status check branch protection targets ─
+  ci-gate:
+    needs: [test, lint]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Evaluate CI results
+        run: |
+          TEST="${{ needs.test.result }}"
+          LINT="${{ needs.lint.result }}"
+          echo "test=$TEST  lint=$LINT"
+          if [[ "$TEST" == "failure" || "$TEST" == "cancelled" || \
+                "$LINT" == "failure" || "$LINT" == "cancelled" ]]; then
+            echo "❌ Backend CI failed (test=$TEST, lint=$LINT)"
+            exit 1
+          fi
+          echo "✅ Backend CI passed (test=$TEST, lint=$LINT)"

@@ -1,0 +1,21 @@
+---
+description: Knowledge graph, visual graph, design system, episode-card visuals, PWA visuals. Auto-attached when editing graph or design-system code.
+globs:
+  - backend/src/routers/graph.py
+  - backend/src/routers/visual_graph.py
+  - backend/src/services/graph.py
+  - backend/src/services/visual_graph.py
+  - frontend/src/pages/GraphGallery.tsx
+  - frontend/src/pages/TopicsCloud.tsx
+  - frontend/src/pages/DesignPreview.tsx
+  - frontend/src/components/graph/**
+  - frontend/src/components/ui/**
+  - frontend/src/components/redesign/**
+  - frontend/src/components/layout/**
+  - frontend/src/components/sidebar/**
+  - frontend/src/components/icons/**
+  - frontend/src/validation/schemas.ts
+alwaysApply: false
+---
+
+Read `docs/agents/graph-visuals.md` for full context before making changes in these files. Notes BUG-2 (sector heatmap stub) and BUG-5 (Zod marketCapTier) — see `docs/qa-report-2026-05-09.md`. Code style: `frontend/AGENTS.md` (no emoji; use SVG icons from `Icons.tsx`).

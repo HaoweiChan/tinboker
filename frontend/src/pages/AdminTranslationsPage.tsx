@@ -85,11 +85,12 @@ export const AdminTranslationsPage: React.FC = () => {
   };
 
   // Handle update - supports updating name_zh_tw, name_en, or both
-  const handleUpdate = async (id: number, nameZhTw?: string, nameEn?: string, newStatus?: TranslationStatus) => {
-    const updateData: { name_zh_tw?: string; name_en?: string; translation_status?: TranslationStatus } = {};
+  const handleUpdate = async (id: number, nameZhTw?: string, nameEn?: string, newStatus?: TranslationStatus, brandColor?: string | null) => {
+    const updateData: { name_zh_tw?: string; name_en?: string; translation_status?: TranslationStatus; brand_color?: string | null } = {};
     if (nameZhTw !== undefined) updateData.name_zh_tw = nameZhTw;
     if (nameEn !== undefined) updateData.name_en = nameEn;
     if (newStatus !== undefined) updateData.translation_status = newStatus;
+    if (brandColor !== undefined) updateData.brand_color = brandColor;
     await updateTranslation(id, updateData);
     // Update local state
     setTranslations((prev) =>
@@ -100,6 +101,7 @@ export const AdminTranslationsPage: React.FC = () => {
               name_zh_tw: nameZhTw !== undefined ? nameZhTw : t.name_zh_tw,
               name_en: nameEn !== undefined ? nameEn : t.name_en,
               translation_status: newStatus !== undefined ? newStatus : t.translation_status,
+              brand_color: brandColor !== undefined ? brandColor : t.brand_color,
             }
           : t
       )

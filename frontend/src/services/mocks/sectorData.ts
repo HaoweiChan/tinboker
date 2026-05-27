@@ -63,11 +63,111 @@ export const getSectorPerformanceStats = (): { day: SectorStat[]; week: SectorSt
 };
 
 /**
- * Get tree map data for market cap visualization
- * Placeholder - to be populated with actual data
+ * Get tree map data for S&P 500 market cap visualization.
+ * Simplified representation with major sector constituents.
  */
-export const getTreeMapData = (): TreeMapItem[] => {
-  // Placeholder - can be expanded with actual tree map data
-  return [];
-};
+export const getTreeMapData = (): TreeMapItem[] => [
+  {
+    id: 'tech', name: 'Technology', value: 12000, change: 1.2,
+    children: [
+      { id: 'AAPL', name: 'Apple', ticker: 'AAPL', value: 3400, change: 0.8, price: '189.84' },
+      { id: 'MSFT', name: 'Microsoft', ticker: 'MSFT', value: 3100, change: 1.5, price: '420.21' },
+      { id: 'NVDA', name: 'NVIDIA', ticker: 'NVDA', value: 2600, change: 3.2, price: '131.29' },
+      { id: 'AVGO', name: 'Broadcom', ticker: 'AVGO', value: 800, change: 2.1, price: '172.33' },
+      { id: 'ORCL', name: 'Oracle', ticker: 'ORCL', value: 400, change: -0.4, price: '164.87' },
+      { id: 'CRM', name: 'Salesforce', ticker: 'CRM', value: 300, change: -1.2, price: '272.44' },
+      { id: 'AMD', name: 'AMD', ticker: 'AMD', value: 280, change: 2.8, price: '160.55' },
+      { id: 'INTC', name: 'Intel', ticker: 'INTC', value: 140, change: -2.5, price: '30.18' },
+    ],
+  },
+  {
+    id: 'comm', name: 'Communication Services', value: 4500, change: 0.6,
+    children: [
+      { id: 'GOOGL', name: 'Alphabet', ticker: 'GOOGL', value: 2200, change: 0.9, price: '176.43' },
+      { id: 'META', name: 'Meta', ticker: 'META', value: 1500, change: 1.1, price: '510.92' },
+      { id: 'NFLX', name: 'Netflix', ticker: 'NFLX', value: 300, change: -0.3, price: '628.15' },
+      { id: 'DIS', name: 'Disney', ticker: 'DIS', value: 200, change: -1.8, price: '112.46' },
+    ],
+  },
+  {
+    id: 'fin', name: 'Financials', value: 3200, change: -0.3,
+    children: [
+      { id: 'BRK.B', name: 'Berkshire', ticker: 'BRK.B', value: 900, change: 0.2, price: '441.50' },
+      { id: 'JPM', name: 'JPMorgan', ticker: 'JPM', value: 700, change: -0.5, price: '205.13' },
+      { id: 'V', name: 'Visa', ticker: 'V', value: 550, change: 0.4, price: '281.37' },
+      { id: 'MA', name: 'Mastercard', ticker: 'MA', value: 450, change: 0.3, price: '467.28' },
+      { id: 'BAC', name: 'BofA', ticker: 'BAC', value: 320, change: -1.1, price: '38.92' },
+      { id: 'GS', name: 'Goldman', ticker: 'GS', value: 180, change: -0.8, price: '462.91' },
+    ],
+  },
+  {
+    id: 'health', name: 'Healthcare', value: 3000, change: 0.4,
+    children: [
+      { id: 'LLY', name: 'Eli Lilly', ticker: 'LLY', value: 800, change: 1.4, price: '790.55' },
+      { id: 'UNH', name: 'UnitedHealth', ticker: 'UNH', value: 550, change: -0.6, price: '522.18' },
+      { id: 'JNJ', name: 'J&J', ticker: 'JNJ', value: 400, change: 0.2, price: '155.40' },
+      { id: 'ABBV', name: 'AbbVie', ticker: 'ABBV', value: 350, change: 0.8, price: '176.93' },
+      { id: 'MRK', name: 'Merck', ticker: 'MRK', value: 320, change: -0.4, price: '127.88' },
+      { id: 'PFE', name: 'Pfizer', ticker: 'PFE', value: 160, change: -1.9, price: '28.12' },
+    ],
+  },
+  {
+    id: 'cons-disc', name: 'Consumer Discretionary', value: 2800, change: -0.8,
+    children: [
+      { id: 'AMZN', name: 'Amazon', ticker: 'AMZN', value: 1900, change: -0.5, price: '186.49' },
+      { id: 'TSLA', name: 'Tesla', ticker: 'TSLA', value: 600, change: -2.7, price: '177.58' },
+      { id: 'HD', name: 'Home Depot', ticker: 'HD', value: 380, change: 0.3, price: '345.12' },
+    ],
+  },
+  {
+    id: 'industrials', name: 'Industrials', value: 1800, change: -0.2,
+    children: [
+      { id: 'GE', name: 'GE Aerospace', ticker: 'GE', value: 500, change: 0.6, price: '167.33' },
+      { id: 'CAT', name: 'Caterpillar', ticker: 'CAT', value: 400, change: -0.9, price: '341.88' },
+      { id: 'RTX', name: 'RTX Corp', ticker: 'RTX', value: 350, change: 0.1, price: '108.54' },
+      { id: 'UNP', name: 'Union Pacific', ticker: 'UNP', value: 300, change: -0.3, price: '244.76' },
+    ],
+  },
+  {
+    id: 'cons-stap', name: 'Consumer Staples', value: 1500, change: 0.1,
+    children: [
+      { id: 'WMT', name: 'Walmart', ticker: 'WMT', value: 500, change: 0.5, price: '67.12' },
+      { id: 'PG', name: 'P&G', ticker: 'PG', value: 400, change: 0.2, price: '165.30' },
+      { id: 'KO', name: 'Coca-Cola', ticker: 'KO', value: 300, change: -0.1, price: '63.44' },
+      { id: 'PEP', name: 'PepsiCo', ticker: 'PEP', value: 280, change: -0.4, price: '174.28' },
+    ],
+  },
+  {
+    id: 'energy', name: 'Energy', value: 1200, change: 1.5,
+    children: [
+      { id: 'XOM', name: 'Exxon', ticker: 'XOM', value: 500, change: 1.8, price: '117.55' },
+      { id: 'CVX', name: 'Chevron', ticker: 'CVX', value: 350, change: 1.2, price: '161.30' },
+      { id: 'COP', name: 'ConocoPhillips', ticker: 'COP', value: 200, change: 1.5, price: '114.62' },
+    ],
+  },
+  {
+    id: 'utilities', name: 'Utilities', value: 600, change: -0.5,
+    children: [
+      { id: 'NEE', name: 'NextEra', ticker: 'NEE', value: 250, change: -0.3, price: '76.88' },
+      { id: 'SO', name: 'Southern Co', ticker: 'SO', value: 200, change: -0.7, price: '82.15' },
+      { id: 'DUK', name: 'Duke Energy', ticker: 'DUK', value: 150, change: -0.4, price: '104.32' },
+    ],
+  },
+  {
+    id: 'materials', name: 'Materials', value: 500, change: 0.3,
+    children: [
+      { id: 'LIN', name: 'Linde', ticker: 'LIN', value: 220, change: 0.5, price: '462.71' },
+      { id: 'APD', name: 'Air Products', ticker: 'APD', value: 150, change: 0.1, price: '293.44' },
+      { id: 'SHW', name: 'Sherwin-Williams', ticker: 'SHW', value: 130, change: 0.2, price: '338.92' },
+    ],
+  },
+  {
+    id: 'realestate', name: 'Real Estate', value: 400, change: -1.0,
+    children: [
+      { id: 'PLD', name: 'Prologis', ticker: 'PLD', value: 180, change: -1.2, price: '126.88' },
+      { id: 'AMT', name: 'American Tower', ticker: 'AMT', value: 120, change: -0.8, price: '210.54' },
+      { id: 'EQIX', name: 'Equinix', ticker: 'EQIX', value: 100, change: -0.9, price: '832.17' },
+    ],
+  },
+];
 

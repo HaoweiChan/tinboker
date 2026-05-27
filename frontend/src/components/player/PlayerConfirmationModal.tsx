@@ -19,7 +19,7 @@ export const PlayerConfirmationModal: React.FC = () => {
         >
             <div className="p-4 space-y-4">
                 <div className="flex items-start gap-4">
-                    <div className="p-2 bg-amber-100 dark:bg-amber-900/30 rounded-full text-amber-600 dark:text-amber-400 shrink-0">
+                    <div className="p-2 bg-accent-info-soft dark:bg-accent-info/30 rounded-full text-accent-info dark:text-accent-info shrink-0">
                         <AlertCircle size={24} />
                     </div>
                     <div className="space-y-2">
@@ -49,7 +49,7 @@ export const PlayerConfirmationModal: React.FC = () => {
                     </button>
                     <button
                         onClick={confirmPlay}
-                        className="px-4 py-2 text-sm font-medium text-white bg-amber-500 hover:bg-amber-600 rounded-lg transition-colors"
+                        className="px-4 py-2 text-sm font-medium text-white bg-accent-info hover:bg-accent-info rounded-lg transition-colors"
                     >
                         切換播放
                     </button>

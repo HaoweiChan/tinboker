@@ -10,14 +10,14 @@ const PersonNode = ({ data }: NodeProps<CompanyData>) => {
   return (
     <div className={`relative flex items-center gap-2 px-3 py-2 rounded-full border-2 shadow-sm transition-all hover:shadow-md ${
       isInvestor 
-        ? 'bg-amber-50 border-amber-300 text-amber-800' 
+        ? 'bg-accent-info-soft border-accent-info text-accent-info' 
         : 'bg-indigo-50 border-indigo-300 text-indigo-800'
     }`}>
       {/* Handles for Force Graph connectivity */}
       <Handle type="target" position={Position.Top} className="!opacity-0" />
       <Handle type="source" position={Position.Bottom} className="!opacity-0" />
 
-      <div className={`p-1 rounded-full ${isInvestor ? 'bg-amber-200' : 'bg-indigo-200'}`}>
+      <div className={`p-1 rounded-full ${isInvestor ? 'bg-accent-info-soft' : 'bg-indigo-200'}`}>
         {isInvestor ? <Landmark size={14} /> : <User size={14} />}
       </div>
       

@@ -19,6 +19,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY src/ ./src/
+COPY scripts/ ./scripts/
 
 # Create data directory for SQLite (if needed)
 # Note: GCP service account key is mounted at runtime via docker-compose

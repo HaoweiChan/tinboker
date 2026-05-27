@@ -15,6 +15,10 @@ from src.schemas.search import SearchResultItem
 from src.database.postgres import SessionLocal, init_engine
 from src.database.models import StockTranslation
 
+
+def _infer_market(ticker: str) -> str:
+    return "TW" if ticker.split(".")[0].isdigit() else "US"
+
 logger = logging.getLogger(__name__)
 
 # Cache TTL: 1 hour for trending data as it doesn't change second-by-second
@@ -84,7 +88,7 @@ class TrendingService:
         Returns:
             List of SearchResultItem objects
         """
-        cache_key = f"trending:stocks:{days}:{limit}:v2"
+        cache_key = f"trending:stocks:{days}:{limit}:v4"
         cached = await cache_get(cache_key)
         if cached:
             try:
@@ -146,6 +150,7 @@ class TrendingService:
                 # Get Chinese name from translations, fallback to API name
                 chinese_name = translations.get(ticker, "")
                 display_name = chinese_name if chinese_name else (basic_info.get("name", ticker) if basic_info else ticker)
+                market = _infer_market(ticker)
                 if basic_info:
                     return SearchResultItem(
                         id=f"stock-{ticker}",
@@ -153,7 +158,7 @@ class TrendingService:
                         title=ticker,
                         subtitle=display_name,
                         link=f"/stock/{ticker}",
-                        icon_url=None,  # Don't send icon_url, let frontend use fallback avatars
+                        market=market,
                         metadata={
                             "price": basic_info.get("price", 0),
                             "change": basic_info.get("change", 0),
@@ -170,6 +175,7 @@ class TrendingService:
                         title=ticker,
                         subtitle=display_name,
                         link=f"/stock/{ticker}",
+                        market=market,
                         metadata={
                             "mentions": ticker_counts[ticker],
                             "sparkline": [],

@@ -1,4 +1,5 @@
 from datetime import datetime
+from contextlib import asynccontextmanager
 from src.config import settings
 from src.database.db import init_db
 from fastapi.responses import JSONResponse
@@ -18,21 +19,73 @@ from src.routers.episodes import router as episodes_router
 from src.routers.tags import router as tags_router
 from src.routers.auth import router as auth_router
 from src.routers.user import router as user_router
-from src.routers.search import router as search_router
+from src.routers.search import router as search_router, init_search_index
 from src.routers.analytics import router as analytics_router
 from src.routers.recommendations import router as recommendations_router
+from src.routers.ticker_insights import router as ticker_insights_router
 from src.routers.translations import router as translations_router
 from src.routers.admin_translations import router as admin_translations_router
 from src.routers.admin_system import router as admin_system_router
 from src.routers.admin_analytics import router as admin_analytics_router
 from src.routers.notifications import router as notifications_router
+from src.routers.comments import router as comments_router, comments_router as comments_delete_router
 from src.middleware.cloudflare import CloudflareMiddleware
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Startup and shutdown lifecycle."""
+    # --- Startup ---
+    # Always initialise raw SQLite tables (stocks, news, graphs, comments, etc.)
+    # regardless of whether PostgreSQL is used for ORM models.
+    init_db()
+
+    if not settings.use_postgres:
+        from src.database.postgres import init_engine, create_all_tables
+        init_engine()
+        create_all_tables()
+    else:
+        from src.database.postgres import init_engine
+        try:
+            init_engine()
+            print("PostgreSQL connection initialized")
+        except Exception as e:
+            print(f"Warning: Could not initialize PostgreSQL: {e}")
+            print("Falling back to SQLite...")
+            from src.database.postgres import init_engine as init_orm_engine, create_all_tables
+            init_orm_engine()
+            create_all_tables()
+
+    rec_conn_str = settings.postgres_connection_string
+    if rec_conn_str:
+        try:
+            from src.database import insight_db
+            insight_db.init_pool()
+            print("Insight Postgres pool initialized.")
+        except Exception as e:
+            print(f"Warning: Could not initialize insight Postgres: {e}")
+    else:
+        print("Info: Insight Postgres not configured.")
+
+    await RedisClient.initialize()
+    await init_search_index()
+
+    yield
+
+    # --- Shutdown ---
+    await RedisClient.close_all()
+    try:
+        from src.database import insight_db
+        insight_db.close_pool()
+    except Exception:
+        pass
 
 
 app = FastAPI(
     title=settings.api_title,
     description="Backend API for TinBoker - Financial podcast insights platform",
     version=settings.api_version,
+    lifespan=lifespan,
     servers=[
         {
             "url": f"http://localhost:{settings.port}",
@@ -44,58 +97,6 @@ app = FastAPI(
         }
     ]
 )
-
-
-@app.on_event("startup")
-async def startup_event():
-    """Initialize database and Redis on startup"""
-    # Initialize SQLite if not using PostgreSQL
-    if not settings.use_postgres:
-        init_db()
-        # Also init SQLAlchemy engine and create ORM tables (e.g. stock_translations)
-        # so translations and other ORM-backed features work with the same SQLite DB
-        from src.database.postgres import init_engine, create_all_tables
-        init_engine()
-        create_all_tables()
-    else:
-        # Initialize PostgreSQL connection with SQLAlchemy
-        from src.database.postgres import init_engine
-        try:
-            init_engine()
-            print("PostgreSQL connection initialized")
-        except Exception as e:
-            print(f"Warning: Could not initialize PostgreSQL: {e}")
-            print("Falling back to SQLite...")
-            init_db()
-            from src.database.postgres import init_engine as init_orm_engine, create_all_tables
-            init_orm_engine()
-            create_all_tables()
-
-    # Recommendation/podcast_db PostgreSQL (data prepared elsewhere; backend only reads)
-    rec_conn_str = settings.recommendation_postgres_connection_string
-    if rec_conn_str:
-        try:
-            from src.database import recommendation_db
-            recommendation_db.init_pool()
-            print(f"Recommendation Postgres pool initialized (host extracted from connection string).")
-        except Exception as e:
-            print(f"Warning: Could not initialize recommendation Postgres: {e}")
-    else:
-        print("Info: Recommendation Postgres not configured (POSTGRES_PASSWORD not set). 市場焦點 will be empty.")
-
-    # Initialize Redis (optional - app continues if unavailable)
-    await RedisClient.initialize()
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Cleanup on shutdown"""
-    try:
-        from src.database import recommendation_db
-        recommendation_db.close_pool()
-    except Exception:
-        pass
-    await RedisClient.close_all()
 
 
 # CORS Configuration
@@ -130,12 +131,15 @@ app.include_router(auth_router)
 app.include_router(user_router)
 app.include_router(search_router)
 app.include_router(recommendations_router)
+app.include_router(ticker_insights_router)
 app.include_router(analytics_router, prefix="/api/analytics", tags=["analytics"])
 app.include_router(translations_router)
 app.include_router(admin_translations_router)
 app.include_router(admin_system_router)
 app.include_router(admin_analytics_router)
 app.include_router(notifications_router)
+app.include_router(comments_router)
+app.include_router(comments_delete_router)
 
 
 # Global exception handler
@@ -202,14 +206,14 @@ async def health_check():
             db_status["status"] = "error"
             db_status["error"] = str(e)
     
-    # Check recommendation DB (podcast_db) connectivity
+    # Check insight DB (podcast_db) connectivity
     rec_db_status = {"status": "unknown"}
     try:
-        from src.database.recommendation_db import is_available as rec_is_available
+        from src.database.insight_db import is_available as rec_is_available
         if rec_is_available():
             rec_db_status["status"] = "connected"
         else:
-            rec_conn_str = settings.recommendation_postgres_connection_string
+            rec_conn_str = settings.postgres_connection_string
             rec_db_status["status"] = "not_configured" if not rec_conn_str else "pool_not_initialized"
     except Exception as e:
         rec_db_status["status"] = "error"
@@ -229,8 +233,6 @@ async def health_check():
             "available": redis_available,
             "status": "connected" if redis_available else "disconnected",
             "configured": redis_url_configured,
-            "env_var_set": redis_url_from_env,
-            "connection_string": redis_url_display
         }
     }
     
