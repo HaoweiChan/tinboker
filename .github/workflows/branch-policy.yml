@@ -1,0 +1,19 @@
+name: Branch Policy
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  source-branch-check:
+    name: Source branch check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify source is develop
+        run: |
+          if [ "${{ github.head_ref }}" != "develop" ]; then
+            echo "PRs to main must come from the develop branch."
+            echo "Source branch: ${{ github.head_ref }}"
+            exit 1
+          fi
+          echo "Source branch is develop — OK."
