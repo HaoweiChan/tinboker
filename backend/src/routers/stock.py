@@ -1,11 +1,14 @@
 """
 Stock API router
 """
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException, Query
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException, Query, Depends
 from typing import Optional, List
+from sqlalchemy.orm import Session
 from src.services.stock import StockService
 from src.models.stock import CompanyDetail
 from src.services.websocket_subscriber import WebSocketSubscriber
+from src.database.postgres import get_session
+from src.database.models import StockTranslation
 import asyncio
 import logging
 
@@ -69,16 +72,25 @@ async def get_batch_prices(
 @router.get("/batch-summary")
 async def get_batch_summary(
     tickers: str = Query(description="Comma-separated ticker symbols (max 100)"),
+    db: Session = Depends(get_session),
 ):
     """
-    Return display metadata (name + market) for a set of tickers.
+    Return display metadata (name + market + brand_color) for a set of tickers.
     Used by watchlist / index rows to render Chinese-name labels without N round-trips.
-    Returns a list of {ticker, name, market}; entries missing in upstream data
-    still appear with name=ticker so callers can render.
+    Returns a list of {ticker, name, market, brand_color}; entries missing in upstream
+    data still appear with name=ticker so callers can render.
     """
     ticker_list = [t.strip().upper() for t in tickers.split(',') if t.strip()][:100]
     if not ticker_list:
         return []
+
+    # Fetch brand colors from translations table (one query)
+    translations = db.query(StockTranslation).filter(
+        StockTranslation.ticker.in_(ticker_list)
+    ).all()
+    brand_colors: dict[str, str] = {
+        t.ticker: t.brand_color for t in translations if t.brand_color
+    }
 
     basic_results = await asyncio.gather(
         *[stock_service.get_stock_basic_info_async(t) for t in ticker_list],
@@ -93,6 +105,7 @@ async def get_batch_summary(
             "ticker": ticker,
             "name": name or ticker,
             "market": market,
+            "brand_color": brand_colors.get(ticker),
         })
     return out
 

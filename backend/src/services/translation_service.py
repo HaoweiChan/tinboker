@@ -80,6 +80,7 @@ class TranslationService:
             market=data.market.upper(),
             name_en=data.name_en,
             name_zh_tw=data.name_zh_tw,
+            brand_color=getattr(data, 'brand_color', None),
             translation_status=data.translation_status,
             last_updated_by=updated_by
         )

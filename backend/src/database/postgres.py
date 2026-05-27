@@ -4,7 +4,7 @@ PostgreSQL database connection and session management using SQLAlchemy.
 
 import logging
 from typing import Generator
-from sqlalchemy import create_engine, event, Engine
+from sqlalchemy import create_engine, event, Engine, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from src.config import settings
@@ -114,6 +114,13 @@ def create_all_tables():
     
     logger.info("Creating all database tables...")
     Base.metadata.create_all(bind=engine)
+    # Add columns that may not exist on pre-existing tables (idempotent)
+    with engine.connect() as conn:
+        conn.execute(text(
+            "ALTER TABLE IF EXISTS stock_translations "
+            "ADD COLUMN IF NOT EXISTS brand_color VARCHAR(7)"
+        ))
+        conn.commit()
     logger.info("Database tables created successfully")
 
 

@@ -11,6 +11,7 @@ import { fetchWithFallback } from '@/services/api/migration';
 import type { Sentiment } from '@/lib/sentiment';
 import { getStockLabel } from '@/utils/stockDisplay';
 import { useStockSummaries } from '@/hooks/useStockSummaries';
+import { TickerAvatar } from '@/components/common/TickerAvatar';
 
 type Market = 'all' | 'TW' | 'US';
 type Sort = 'mentions' | 'sentiment';
@@ -146,14 +147,17 @@ export const StockIndex: React.FC = () => {
                   to={`/stock/${encodeURIComponent(r.ticker)}`}
                   className="grid grid-cols-[1fr_80px_72px_28px] gap-3.5 items-center px-4 py-3 border-b border-border last:border-b-0 hover:bg-muted transition-colors"
                 >
-                  <span className="min-w-0">
-                    <span className="flex items-center gap-1.5">
-                      <span className="text-[13.5px] font-medium truncate">{primary}</span>
-                      <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-semibold ${isTW(r.ticker) ? 'bg-sentiment-bull-soft text-sentiment-bull' : 'bg-accent-info-soft text-accent-info'}`}>{isTW(r.ticker) ? 'TW' : 'US'}</span>
+                  <span className="min-w-0 flex items-center gap-2.5">
+                    <TickerAvatar ticker={r.ticker} brandColor={summary?.brand_color} />
+                    <span className="min-w-0">
+                      <span className="flex items-center gap-1.5">
+                        <span className="text-[13.5px] font-medium truncate">{primary}</span>
+                        <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-semibold ${isTW(r.ticker) ? 'bg-sentiment-bull-soft text-sentiment-bull' : 'bg-accent-info-soft text-accent-info'}`}>{isTW(r.ticker) ? 'TW' : 'US'}</span>
+                      </span>
+                      {secondary && (
+                        <span className="block text-[11px] text-muted-foreground font-mono truncate">{secondary}</span>
+                      )}
                     </span>
-                    {secondary && (
-                      <span className="block text-[11px] text-muted-foreground font-mono truncate">{secondary}</span>
-                    )}
                   </span>
                   <span className="font-mono text-[13px] tabular-nums text-right">{r.count}</span>
                   <span className="text-right">

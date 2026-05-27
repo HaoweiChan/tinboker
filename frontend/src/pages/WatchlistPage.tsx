@@ -10,6 +10,7 @@ import { useStockPriceMap } from '@/hooks/useStockPriceMap';
 import { useStockSummaries } from '@/hooks/useStockSummaries';
 import { getStockLabel } from '@/utils/stockDisplay';
 import { Link } from 'react-router-dom';
+import { TickerAvatar } from '@/components/common/TickerAvatar';
 
 type Tab = 'podcasters' | 'tickers';
 
@@ -97,6 +98,7 @@ export const WatchlistPage: React.FC = () => {
               return (
                 <ListRow
                   key={sym}
+                  lead={<TickerAvatar ticker={sym} brandColor={summary?.brand_color} />}
                   title={<span>{primary}</span>}
                   subtitle={secondary ? <span className="font-mono">{secondary}</span> : undefined}
                   href={`/stock/${encodeURIComponent(sym)}`}

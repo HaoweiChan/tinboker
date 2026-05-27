@@ -38,7 +38,8 @@ async def get_translation(
             ticker=translation.ticker,
             market=translation.market,
             name_en=translation.name_en,
-            name_zh_tw=translation.name_zh_tw
+            name_zh_tw=translation.name_zh_tw,
+            brand_color=translation.brand_color,
         )
     # Not found - auto-create pending entry if enabled
     if auto_create:

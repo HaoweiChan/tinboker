@@ -27,10 +27,10 @@ export const PodcastAvatar: React.FC<PodcastAvatarProps> = ({ name, src, size = 
             <div
                 className={cn(
                     'rounded-lg flex items-center justify-center flex-shrink-0 font-bold text-white',
-                    avatarColor,
                     sizeClasses[size],
                     className
                 )}
+                style={{ backgroundColor: avatarColor }}
             >
                 {initial}
             </div>

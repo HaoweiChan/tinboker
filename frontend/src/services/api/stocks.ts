@@ -60,6 +60,7 @@ export interface StockSummary {
   ticker: string;
   name: string;
   market: 'TW' | 'US';
+  brand_color?: string | null;
 }
 
 export async function getBatchStockSummary(tickers: string[]): Promise<StockSummary[]> {

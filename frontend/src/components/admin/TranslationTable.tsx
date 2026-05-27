@@ -9,7 +9,7 @@ import type { Translation, TranslationStatus } from '@/types/translation';
 interface TranslationTableProps {
   translations: Translation[];
   loading: boolean;
-  onUpdate: (id: number, nameZhTw?: string, nameEn?: string, status?: TranslationStatus) => Promise<void>;
+  onUpdate: (id: number, nameZhTw?: string, nameEn?: string, status?: TranslationStatus, brandColor?: string | null) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
 }
 
@@ -124,6 +124,9 @@ export const TranslationTable: React.FC<TranslationTableProps> = ({
               Chinese Name
             </th>
             <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+              Color
+            </th>
+            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
               Status
             </th>
             <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
@@ -209,6 +212,27 @@ export const TranslationTable: React.FC<TranslationTableProps> = ({
                       )}
                     </div>
                   )}
+                </td>
+                <td className="whitespace-nowrap px-4 py-3">
+                  <label
+                    className="relative flex h-6 w-6 cursor-pointer items-center justify-center rounded"
+                    title={translation.brand_color ?? 'No brand color set'}
+                    style={{ backgroundColor: translation.brand_color ?? '#e5e7eb' }}
+                  >
+                    <input
+                      type="color"
+                      className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                      value={translation.brand_color ?? '#000000'}
+                      onChange={async (e) => {
+                        setSaving(translation.id);
+                        try {
+                          await onUpdate(translation.id, undefined, undefined, undefined, e.target.value);
+                        } finally {
+                          setSaving(null);
+                        }
+                      }}
+                    />
+                  </label>
                 </td>
                 <td className="whitespace-nowrap px-4 py-3">
                   <span
