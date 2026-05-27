@@ -154,17 +154,20 @@ class Settings(BaseSettings):
     def postgres_connection_string(self) -> Optional[str]:
         """Get PostgreSQL connection string from DATABASE_URL or individual settings."""
         import os
+        from urllib.parse import quote
         # Render provides DATABASE_URL automatically
         if "DATABASE_URL" in os.environ:
             return os.environ["DATABASE_URL"]
-        
+
         if self.postgres_url:
             return self.postgres_url
-        
-        # Build from individual settings
+
+        # Build from individual settings; URL-encode the password so special chars
+        # like '#' and '@' don't corrupt the connection URL.
         if self.postgres_password:
-            return f"postgresql://{self.postgres_user}:{self.postgres_password}@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
-        
+            pw = quote(self.postgres_password, safe='')
+            return f"postgresql://{self.postgres_user}:{pw}@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+
         return None
 
     # Redis configuration
