@@ -26,6 +26,9 @@ ACCESS_TOKEN_EXPIRE_HOURS = 24
 # HTTP Bearer scheme for token extraction
 security = HTTPBearer()
 
+# Cached fallback secret for dev (generated once per process, not per call)
+_fallback_jwt_secret: Optional[str] = None
+
 
 class AdminTokenData(BaseModel):
     """Data stored in admin JWT token."""
@@ -48,17 +51,21 @@ class LoginResponse(BaseModel):
 def _get_jwt_secret() -> str:
     """
     Get JWT secret from settings (which loads from GSM).
-    Falls back to generating a random secret in development.
+    Falls back to a per-process random secret in development — cached so
+    tokens issued and verified in the same process lifetime remain valid.
     """
+    global _fallback_jwt_secret
     if settings.admin_jwt_secret:
         return settings.admin_jwt_secret
-    # Fallback for development
     if settings.is_development:
-        logger.warning(
-            "ADMIN_JWT_SECRET not configured, generating random secret. "
-            "This is only acceptable for development."
-        )
-        return secrets.token_hex(32)
+        if _fallback_jwt_secret is None:
+            _fallback_jwt_secret = secrets.token_hex(32)
+            logger.warning(
+                "ADMIN_JWT_SECRET not configured, generated a per-process secret. "
+                "Tokens will be invalidated on every container restart. "
+                "Set ADMIN_JWT_SECRET in Google Secret Manager for dev."
+            )
+        return _fallback_jwt_secret
     raise ValueError(
         "ADMIN_JWT_SECRET must be configured in production. "
         "Add it to Google Secret Manager."
