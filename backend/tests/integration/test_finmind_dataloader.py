@@ -120,9 +120,13 @@ class TestFinMindDataLoader:
             for col in expected_columns:
                 assert col in df.columns, f"Column {col} not found in DataFrame"
             
-            # Check data types (as per schema)
-            assert df['date'].dtype == 'object' or pd.api.types.is_datetime64_any_dtype(df['date'])
-            assert df['stock_id'].dtype == 'object'
+            # Check data types (as per schema).
+            # pandas 2.x returns StringDtype for inferred string columns; older builds returned object.
+            def _is_string_like(s: pd.Series) -> bool:
+                return s.dtype == 'object' or pd.api.types.is_string_dtype(s)
+
+            assert _is_string_like(df['date']) or pd.api.types.is_datetime64_any_dtype(df['date'])
+            assert _is_string_like(df['stock_id'])
             assert pd.api.types.is_integer_dtype(df['Trading_Volume'])
             assert pd.api.types.is_integer_dtype(df['Trading_money'])
             assert pd.api.types.is_float_dtype(df['open'])
