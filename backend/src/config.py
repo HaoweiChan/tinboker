@@ -45,9 +45,7 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_expiration_hours: Optional[int] = 24
 
-    # Admin Authentication (from GSM: ADMIN_PASSWORD, ADMIN_JWT_SECRET, ADMIN_EMAILS)
-    admin_password: Optional[str] = None  # Password for admin UI login
-    admin_jwt_secret: Optional[str] = None  # JWT signing key for admin tokens
+    # Admin Authentication (from GSM: ADMIN_EMAILS)
     admin_emails: list[str] = []  # Comma-separated list of admin email addresses
 
     # Dev bypass token for automated browser testing (e.g. Cursor browser MCP)

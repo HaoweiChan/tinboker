@@ -22,10 +22,6 @@ from src.schemas.translation import (
 )
 from src.auth.admin_auth import (
     get_admin_access,
-    verify_admin_password,
-    create_admin_token,
-    LoginRequest,
-    LoginResponse,
     AdminAccess,
 )
 
@@ -35,39 +31,10 @@ router = APIRouter(
 )
 
 
-# ==================== Authentication ====================
-
-@router.post("/auth/login", response_model=LoginResponse)
-async def admin_login(request: LoginRequest):
-    """
-    Authenticate admin user with password.
-    Returns JWT token on success.
-    """
-    if not verify_admin_password(request.password):
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid password"
-        )
-    return create_admin_token()
-
-
 @router.get("/auth/check")
 async def check_admin_access(admin: AdminAccess = Depends(get_admin_access)):
-    """
-    Check if the current user has admin access.
-    Returns access method (admin token or whitelisted user).
-
-    This endpoint accepts:
-    1. Admin JWT token (from password login)
-    2. Regular user JWT token if user's email is whitelisted in ADMIN_EMAILS
-
-    Whitelisted users can access admin features without needing the admin password.
-    """
-    return {
-        "has_access": True,
-        "access_method": "admin_token" if admin.is_admin_token else "whitelisted_user",
-        "email": admin.email
-    }
+    """Check if the current Google-authenticated user has admin access."""
+    return {"has_access": True, "email": admin.email}
 
 
 # ==================== Reports & Stats (must be before parameterized routes) ====================

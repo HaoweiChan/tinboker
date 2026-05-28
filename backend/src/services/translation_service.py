@@ -126,7 +126,8 @@ class TranslationService:
         name_en: Optional[str] = None,
         name_zh_tw: Optional[str] = None,
         status: str = "auto",
-        updated_by: Optional[str] = None
+        updated_by: Optional[str] = None,
+        brand_color: Optional[str] = None,
     ) -> Tuple[StockTranslation, bool]:
         """
         Create or update a translation.
@@ -134,24 +135,25 @@ class TranslationService:
         """
         existing = self.get_by_ticker_market(ticker, market)
         if existing:
-            # Update existing
             if name_en is not None:
                 existing.name_en = name_en
             if name_zh_tw is not None:
                 existing.name_zh_tw = name_zh_tw
+            if brand_color is not None:
+                existing.brand_color = brand_color
             existing.translation_status = status
             existing.last_updated_by = updated_by
             self.db.commit()
             self.db.refresh(existing)
             return existing, False
         else:
-            # Create new
             data = TranslationCreate(
                 ticker=ticker,
                 market=market,
                 name_en=name_en,
                 name_zh_tw=name_zh_tw,
-                translation_status=status
+                translation_status=status,
+                brand_color=brand_color,
             )
             return self.create(data, updated_by), True
 
