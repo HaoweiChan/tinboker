@@ -5,8 +5,9 @@ import { SentimentChip } from './SentimentChip';
 import { Change } from './Change';
 
 export interface TickerRowData {
-  symbol: string; // e.g. 2330.TW, NVDA
-  sentiment?: Sentiment; // LLM-derived; chip color is always green=bull/red=bear
+  symbol: string;            // e.g. 2330.TW, NVDA
+  name?: string;             // resolved display_name from translation table (optional)
+  sentiment?: Sentiment;     // LLM-derived; chip color is always green=bull/red=bear
   changePercent?: number | null; // price change %; color follows the TW/US convention
 }
 
@@ -16,7 +17,14 @@ interface TickerRowProps {
   className?: string;
 }
 
-/** Inset row: [symbol | sentiment chip | price change %]. */
+/** Strip the exchange suffix so "2330.TW" shows as "2330". */
+function bareSymbol(symbol: string): string {
+  return symbol.replace(/\.[A-Z]+$/i, '');
+}
+
+/** Inset row: [name/symbol | sentiment chip | price change %].
+ *  When `name` is provided the first cell stacks the localized name (primary)
+ *  over the raw ticker symbol (secondary, muted mono). */
 export const TickerRow: React.FC<TickerRowProps> = ({ ticker, onClick, className }) => {
   const interactive = typeof onClick === 'function';
   const Tag = interactive ? 'button' : 'div';
@@ -25,7 +33,14 @@ export const TickerRow: React.FC<TickerRowProps> = ({ ticker, onClick, className
       {...(interactive ? { type: 'button' as const, onClick } : {})}
       className={cn('ticker-row w-full text-left', interactive && 'hover:bg-muted transition-colors', className)}
     >
-      <span className="ticker-row-symbol">{ticker.symbol}</span>
+      {ticker.name ? (
+        <span className="ticker-row-label">
+          <span className="ticker-row-name">{ticker.name}</span>
+          <span className="ticker-row-symbol">{bareSymbol(ticker.symbol)}</span>
+        </span>
+      ) : (
+        <span className="ticker-row-symbol ticker-row-symbol--solo">{bareSymbol(ticker.symbol)}</span>
+      )}
       {ticker.sentiment ? <SentimentChip sentiment={ticker.sentiment} /> : <span />}
       <Change value={ticker.changePercent} />
     </Tag>
