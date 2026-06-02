@@ -36,6 +36,11 @@ from mcp.server.fastmcp import FastMCP
 API_BASE_URL = os.environ.get("TINBOKER_API_BASE_URL", "https://api.tinboker.com").rstrip("/")
 API_TIMEOUT = float(os.environ.get("TINBOKER_API_TIMEOUT", "10"))
 
+# Optional admin bearer JWT. When set, the privileged backfill tools
+# (list_pending_translations, propose_translations) are registered. Leave unset
+# for the read-only deployment used by the summary-writing agent / frontend.
+ADMIN_TOKEN = os.environ.get("TINBOKER_ADMIN_TOKEN")
+
 mcp = FastMCP("stock-translations")
 
 
@@ -135,6 +140,77 @@ async def get_stocks_batch(
     found = {i["ticker"] for i in items}
     missing = [t.strip().upper() for t in tickers if t.strip() and t.strip().upper() not in found]
     return {"items": items, "missing": missing, "total": len(items)}
+
+
+async def _admin_request(
+    method: str, path: str, *, params: dict[str, Any] | None = None, json: Any = None
+) -> dict[str, Any]:
+    """Authenticated request to an admin endpoint, or an {'error': ...} dict."""
+    url = f"{API_BASE_URL}{path}"
+    clean = {k: v for k, v in (params or {}).items() if v is not None}
+    headers = {"Authorization": f"Bearer {ADMIN_TOKEN}"}
+    try:
+        async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
+            resp = await client.request(method, url, params=clean, json=json, headers=headers)
+            resp.raise_for_status()
+            return resp.json()
+    except httpx.HTTPStatusError as e:
+        hint = " (check TINBOKER_ADMIN_TOKEN is a valid, unexpired admin JWT)" if e.response.status_code in (401, 403) else ""
+        return {"error": f"HTTP {e.response.status_code} from {url}{hint}"}
+    except httpx.HTTPError as e:
+        return {"error": f"request failed: {e}"}
+
+
+# --- Privileged backfill tools (only when an admin token is configured) -----------
+if ADMIN_TOKEN:
+
+    @mcp.tool()
+    async def list_pending_translations(limit: int = 50, market: Optional[str] = None) -> dict[str, Any]:
+        """List PENDING translation stubs awaiting resolution (the backfill work queue).
+
+        These are tickers discovered in episodes that have no names/color yet. Resolve
+        each with search_stocks (dedupe) + your own research, then submit via
+        propose_translations. Requires TINBOKER_ADMIN_TOKEN.
+        """
+        return await _admin_request(
+            "GET",
+            "/api/admin/translations",
+            params={"status": "pending", "limit": max(1, min(limit, 100)), "market": market},
+        )
+
+    @mcp.tool()
+    async def propose_translations(items: list[dict[str, Any]]) -> dict[str, Any]:
+        """Write resolved translations back to the table (status defaults to 'auto').
+
+        Requires TINBOKER_ADMIN_TOKEN. Rendered immediately on cards; a human later
+        promotes 'auto' → 'approved' in the admin portal.
+
+        Each item: {ticker, market?, name_en?, name_zh_tw?, brand_color?, translation_status?}
+        - market is inferred from the ticker when omitted (numeric → TW, else US).
+        - Set name_zh_tw to null for English-preferred stocks (do NOT copy the English
+          name into the zh field).
+        - brand_color is a hex string like "#76B900".
+        """
+        payload: list[dict[str, Any]] = []
+        for it in items:
+            ticker = str(it.get("ticker", "")).strip().upper()
+            if not ticker:
+                continue
+            bare = ticker.split(".")[0]
+            market = str(it.get("market") or ("TW" if bare.isdigit() else "US")).upper()
+            payload.append(
+                {
+                    "ticker": bare,
+                    "market": market,
+                    "name_en": it.get("name_en"),
+                    "name_zh_tw": it.get("name_zh_tw"),
+                    "brand_color": it.get("brand_color"),
+                    "translation_status": it.get("translation_status", "auto"),
+                }
+            )
+        if not payload:
+            return {"error": "no valid items (each needs at least a ticker)"}
+        return await _admin_request("POST", "/api/admin/translations/bulk-json", json=payload)
 
 
 def main() -> None:

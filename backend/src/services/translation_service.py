@@ -85,6 +85,48 @@ class TranslationService:
             query = query.filter(StockTranslation.market == market.upper())
         return query.order_by(StockTranslation.ticker).all()
 
+    def ensure_pending_stubs(self, symbols: List[str]) -> int:
+        """Insert PENDING stub rows for symbols not yet in the table (any market).
+
+        Used by on-ingest discovery so newly-mentioned tickers surface in the admin
+        queue (`status=pending`) and become work items for the backfill agent.
+        Idempotent. Stores the bare symbol (exchange suffix stripped) with an inferred
+        market (numeric → TW, else US). Returns the number of rows inserted.
+        """
+        # Collect distinct bare symbols with an inferred market.
+        cleaned: dict[str, str] = {}
+        for s in symbols:
+            if not s or not s.strip():
+                continue
+            bare = s.strip().upper().split(".")[0]
+            if not bare:
+                continue
+            cleaned.setdefault(bare, "TW" if bare.isdigit() else "US")
+        if not cleaned:
+            return 0
+
+        existing = {r.ticker for r in self.get_by_tickers(list(cleaned.keys()))}
+        inserted = 0
+        for ticker, market in cleaned.items():
+            if ticker in existing:
+                continue
+            try:
+                self.create(
+                    TranslationCreate(
+                        ticker=ticker,
+                        market=market,
+                        name_en=None,
+                        name_zh_tw=None,
+                        translation_status="pending",
+                    ),
+                    updated_by="ingest_discovery",
+                )
+                inserted += 1
+            except Exception as e:
+                logger.warning("ensure_pending_stubs: skip %s/%s: %s", ticker, market, e)
+                self.db.rollback()
+        return inserted
+
     def create(
         self,
         data: TranslationCreate,

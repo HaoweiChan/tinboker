@@ -4,6 +4,7 @@ Episodes API router for cross-podcast episode queries
 from fastapi import APIRouter, HTTPException, Path, Query
 from typing import Optional
 from src.services.podcast import PodcastService
+from src.services.translation_discovery import schedule_ticker_discovery
 from src.cache.cdn_cache import cdn_cache_podcast
 
 router = APIRouter(prefix="/api/episodes", tags=["episodes"])
@@ -37,7 +38,11 @@ async def get_recent_episodes(
             podcast_name=podcast_name,
             enrich_content=include_content
         )
-        
+
+        # On-ingest discovery: ensure any newly-mentioned ticker gets a pending
+        # stub row (non-blocking, throttled — see translation_discovery).
+        schedule_ticker_discovery(episodes)
+
         # Calculate total and hasMore (we'd need total count for accurate hasMore)
         # For now, hasMore is true if we got exactly the limit
         has_more = len(episodes) == limit

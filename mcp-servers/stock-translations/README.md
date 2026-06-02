@@ -10,11 +10,24 @@ the platform backend remains the single source of truth.
 
 ## Tools
 
+**Read-only (always available):**
+
 | Tool | Use it when… |
 |------|--------------|
 | `search_stocks(query, market?, limit?)` | You have a company **name** or partial ticker ("Nvidia", "輝達", "台積電") and need the canonical symbol + names + color. |
 | `get_stock(ticker, market?)` | You know the exact **symbol** and want one row. |
 | `get_stocks_batch(tickers, market?)` | You have a symbol-only list (e.g. an episode's `related_tickers`) to localize in one call. |
+
+**Privileged (registered only when `TINBOKER_ADMIN_TOKEN` is set):**
+
+| Tool | Use it when… |
+|------|--------------|
+| `list_pending_translations(limit?, market?)` | Pull the backfill work queue — tickers discovered in episodes with no names yet. |
+| `propose_translations(items)` | Write resolved translations back (status defaults to `auto`). |
+
+The privileged tools power the **translation backfill agent** — see
+[BACKFILL_AGENT.md](./BACKFILL_AGENT.md). Deploy the server **without** the token for
+the read-only summary-writer / frontend; **with** the token for the backfill agent.
 
 Every result row carries:
 
@@ -31,6 +44,7 @@ Every result row carries:
 |---------|---------|-------|
 | `TINBOKER_API_BASE_URL` | `https://api.tinboker.com` | Use `https://dev-api.tinboker.com` against dev. |
 | `TINBOKER_API_TIMEOUT` | `10` | Per-request timeout (seconds). |
+| `TINBOKER_ADMIN_TOKEN` | _(unset)_ | Admin bearer JWT. When set, registers the privileged backfill tools. See [BACKFILL_AGENT.md](./BACKFILL_AGENT.md). |
 
 ## Running
 
