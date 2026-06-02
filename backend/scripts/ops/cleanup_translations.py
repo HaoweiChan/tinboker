@@ -23,8 +23,8 @@ import logging
 from pathlib import Path
 from typing import List, Tuple
 
-# Add project root to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Add backend root to path for imports (scripts/ops/ -> backend/)
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.database.postgres import get_session, init_engine, create_all_tables
 from src.database import models  # noqa: F401 - Import to register models

@@ -66,7 +66,7 @@ def get_endpoint_details(schema, endpoint):
     }
 
 def main():
-    base_dir = Path(__file__).parent.parent
+    base_dir = Path(__file__).parent.parent.parent
     
     old_file = base_dir / 'src/schemas/old_yamls/251214-willy.yaml'
     new_file = base_dir / 'src/schemas/openapi_current.yaml'

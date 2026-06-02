@@ -61,6 +61,34 @@ class TranslationListResponse(BaseModel):
     items: List[TranslationResponse]
 
 
+class TranslationSearchItem(BaseModel):
+    """A single read-only search/batch result, with a resolved display label.
+
+    `has_zh_name` is computed (true only when `name_zh_tw` holds real CJK text, not an
+    English fallback), and `display_name` already encodes the en-vs-zh choice so callers
+    (e.g. the MCP server / summary agent) don't have to.
+    """
+    ticker: str
+    market: str
+    name_en: Optional[str] = None
+    name_zh_tw: Optional[str] = None
+    brand_color: Optional[str] = None
+    translation_status: str
+    has_zh_name: bool = Field(
+        ..., description="True when name_zh_tw is a real Chinese (CJK) name, not an English fallback"
+    )
+    display_name: str = Field(
+        ..., description="Label to render: name_zh_tw when has_zh_name else name_en or ticker"
+    )
+
+
+class TranslationSearchResponse(BaseModel):
+    """Read-only search/batch response."""
+    query: Optional[str] = None
+    total: int
+    items: List[TranslationSearchItem]
+
+
 class BulkImportItem(TranslationBase):
     """Schema for a single item in bulk import."""
     translation_status: Literal["pending", "approved", "auto"] = "auto"

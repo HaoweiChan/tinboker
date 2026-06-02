@@ -10,8 +10,8 @@ Usage:
 import sys
 import os
 
-# Add parent directory to path to import src modules
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+# Add backend root to path to import src modules (scripts/seed/ -> backend/)
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
 from src.database.db import init_db, get_connection
 from src.database.graph_db import create_graph
