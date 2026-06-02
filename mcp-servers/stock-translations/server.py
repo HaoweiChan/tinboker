@@ -1,0 +1,145 @@
+"""TinBoker stock-translations MCP server.
+
+A thin, read-only MCP wrapper over the platform's public translation API
+(`/api/stocks/translations/*`). It lets an agent — e.g. the tinboker-agents
+summary writer, or Claude Code — look up a stock's English name, Traditional
+Chinese (zh-TW) name, and brand color by ticker or by name.
+
+Design notes
+------------
+* **Read-only.** Every tool is a GET against the HTTP API. The server holds no
+  database credentials; the platform stays the single source of truth.
+* **zh-TW is not enforced.** Many US stocks have no Chinese name (e.g. Palantir,
+  Arm). Each result carries `has_zh_name` (true only for a real CJK name, never
+  an English value parked in the zh column) and a pre-resolved `display_name`
+  that already picks zh-TW vs. English — so callers don't re-implement that rule.
+
+Config (env)
+------------
+* ``TINBOKER_API_BASE_URL`` — API root. Default ``https://api.tinboker.com``.
+  Use ``https://dev-api.tinboker.com`` for dev.
+* ``TINBOKER_API_TIMEOUT`` — per-request timeout in seconds. Default ``10``.
+
+Run
+---
+    uvx --from . tinboker-stock-translations-mcp     # stdio transport
+"""
+
+from __future__ import annotations
+
+import os
+from typing import Any, Optional
+
+import httpx
+from mcp.server.fastmcp import FastMCP
+
+API_BASE_URL = os.environ.get("TINBOKER_API_BASE_URL", "https://api.tinboker.com").rstrip("/")
+API_TIMEOUT = float(os.environ.get("TINBOKER_API_TIMEOUT", "10"))
+
+mcp = FastMCP("stock-translations")
+
+
+async def _get(path: str, params: dict[str, Any]) -> dict[str, Any]:
+    """GET a translation endpoint and return parsed JSON, or an {'error': ...} dict."""
+    url = f"{API_BASE_URL}{path}"
+    clean = {k: v for k, v in params.items() if v is not None}
+    try:
+        async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
+            resp = await client.get(url, params=clean)
+            resp.raise_for_status()
+            return resp.json()
+    except httpx.HTTPStatusError as e:
+        return {"error": f"HTTP {e.response.status_code} from {url}"}
+    except httpx.HTTPError as e:
+        return {"error": f"request failed: {e}"}
+
+
+@mcp.tool()
+async def search_stocks(
+    query: str,
+    market: Optional[str] = None,
+    limit: int = 10,
+) -> dict[str, Any]:
+    """Search stock translations by ticker, English name, or zh-TW name.
+
+    Use this when you have a company *name* (e.g. "Nvidia", "輝達", "台積電") or a
+    partial ticker and need its canonical symbol, localized names, and brand color.
+
+    Args:
+        query: Free text — matches ticker, name_en, or name_zh_tw (case-insensitive).
+        market: Optional market filter: "US", "TW", or "JP".
+        limit: Max results (1–100, default 10).
+
+    Returns a dict with `items`, each containing:
+        ticker, market, name_en, name_zh_tw, brand_color, translation_status,
+        has_zh_name (bool — a real Chinese name exists), and
+        display_name (zh-TW if has_zh_name else English/ticker).
+    """
+    data = await _get(
+        "/api/stocks/translations/search",
+        {"q": query, "market": market, "limit": max(1, min(limit, 100))},
+    )
+    return data
+
+
+@mcp.tool()
+async def get_stock(ticker: str, market: Optional[str] = None) -> dict[str, Any]:
+    """Resolve a single ticker to its localized names and brand color.
+
+    Prefer this when you already know the exact symbol. If `market` is omitted and
+    the symbol exists in more than one market, the best match is returned and the
+    rest are listed under `alternatives`.
+
+    A result with `has_zh_name=false` means the stock is English-preferred (no
+    Chinese name); render `display_name` (its English/Latin name) as-is.
+    """
+    data = await _get(
+        "/api/stocks/translations/batch",
+        {"tickers": ticker, "market": market},
+    )
+    if "error" in data:
+        return data
+    items = data.get("items", [])
+    if not items:
+        return {"found": False, "ticker": ticker.upper(), "market": market}
+    # Prefer an exact market match, then a row that has a real Chinese name.
+    items.sort(key=lambda i: (market and i["market"] != market.upper(), not i["has_zh_name"]))
+    best = items[0]
+    return {"found": True, **best, "alternatives": items[1:]}
+
+
+@mcp.tool()
+async def get_stocks_batch(
+    tickers: list[str],
+    market: Optional[str] = None,
+) -> dict[str, Any]:
+    """Resolve many tickers at once — built for localizing a symbol-only list.
+
+    Pass an episode's `related_tickers` (mixed TW/US is fine) to get a localized
+    `display_name` and brand color for each. Symbols with no translation row are
+    reported in `missing`.
+
+    Args:
+        tickers: List of symbols, e.g. ["NVDA", "2330", "AAPL"].
+        market: Optional market filter applied to all.
+    """
+    if not tickers:
+        return {"items": [], "missing": [], "total": 0}
+    data = await _get(
+        "/api/stocks/translations/batch",
+        {"tickers": ",".join(tickers), "market": market},
+    )
+    if "error" in data:
+        return data
+    items = data.get("items", [])
+    found = {i["ticker"] for i in items}
+    missing = [t.strip().upper() for t in tickers if t.strip() and t.strip().upper() not in found]
+    return {"items": items, "missing": missing, "total": len(items)}
+
+
+def main() -> None:
+    mcp.run()
+
+
+if __name__ == "__main__":
+    main()

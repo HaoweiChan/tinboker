@@ -66,9 +66,12 @@ tinboker-platform/backend/
 │   │   └── translation.py           [NEW] Pydantic models
 │   └── auth/
 │       └── admin_auth.py            [NEW] Simple password auth
+├── data/
+│   ├── seed_data.py                 TRANSLATIONS (curated TW + core)
+│   ├── us_stocks.py                 US_STOCK_TRANSLATIONS
+│   └── brand_colors.py              BRAND_COLORS
 ├── scripts/
-│   ├── migrate_ticker_json.py       [NEW] Migrate JSON to database
-│   └── seed_translations.py         [NEW] Seed common translations
+│   └── ops/cleanup_translations.py  Data-quality maintenance sweep
 └── docs/
     ├── GCP_CLOUD_SQL_SETUP.md       [CREATED] Cloud SQL setup guide
     └── TRANSLATION_SYSTEM.md         [THIS FILE]
@@ -195,39 +198,27 @@ name: stock.name_zh_tw
   : `${stock.ticker.split('.')[0]} ${stock.name}`,
 ```
 
-## Data Migration
+## Seeding & Data Maintenance
 
-### Step 1: Migrate Existing JSON
+Seeding is **automatic** — there is no seed script to run. On every startup the app
+reconciles `stock_translations` from the data modules (`src/main.py` lifespan →
+`TranslationService.backfill_translations`):
 
-Script: `scripts/migrate_ticker_json.py`
+- `src/data/seed_data.py` — `TRANSLATIONS` (curated TW + core stocks)
+- `src/data/us_stocks.py` — `US_STOCK_TRANSLATIONS`
+- `src/data/brand_colors.py` — `BRAND_COLORS`
 
-```python
-# Reads Graph-Builder-Agent/data/seeds/ticker_map_us.json
-# Creates translations with:
-# - market = "US"
-# - translation_status = "auto"
-# - last_updated_by = "system"
-```
+The reconciler is **insert / fill-stub only**: it adds missing rows and fills empty
+auto-created stubs, but **never overwrites an `approved` row**. The maintenance model:
 
-### Step 2: Add Common Translations
+1. **Bulk / new tickers** → add to the data module above; they land on next boot.
+2. **Edits & promotions** (`auto`/`pending` → `approved`, fixing a zh-TW name) → admin
+   portal (`/admin/translations`) or `POST /api/admin/translations/bulk-json`. These own
+   existing rows — editing the data module will not overwrite them.
+3. **Data-quality sweeps** → `python scripts/ops/cleanup_translations.py --dry-run`.
 
-Script: `scripts/seed_translations.py`
-
-Seeds high-quality manual translations for:
-- Top 100 US stocks (NVDA, AAPL, TSLA, etc.)
-- Common Taiwan stocks (2330, 2317, etc.)
-
-Sources:
-- Yahoo Finance Taiwan
-- Wikipedia Chinese pages
-- Chinese financial news sites
-
-### Step 3: Remove JSON File
-
-After successful migration:
-```bash
-rm Graph-Builder-Agent/data/seeds/ticker_map_us.json
-```
+> The old one-off scripts (`migrate_ticker_json.py`, `seed_translations.py`,
+> `enrich_us_stocks.py`) were removed once the startup reconciler subsumed them.
 
 ## Environment Variables
 
@@ -296,9 +287,9 @@ pip install -r requirements.txt
 # Create tables
 python -m src.database.migrations.init_postgres
 
-# Migrate data
-python scripts/migrate_ticker_json.py
-python scripts/seed_translations.py
+# Translations seed automatically on app startup (see "Seeding & Data Maintenance").
+# Optionally run a data-quality pass afterwards:
+python scripts/ops/cleanup_translations.py --dry-run
 ```
 
 ### 5. Deploy

@@ -18,12 +18,12 @@ export CORS_ORIGINS='["http://localhost:5173","http://localhost:5174","http://12
 
 # 1. Stop Local Docker Redis
 echo "[1] Stopping local Docker services..."
-# Check if docker-compose.yml exists in parent or current dir
+# Check if docker-compose.yml exists in backend root (current dir) or via scripts/ops/
 if [ -f "docker-compose.yml" ]; then
     docker compose stop redis 2>/dev/null || true
     echo "    Local Redis stopped."
-elif [ -f "../docker-compose.yml" ]; then
-    (cd .. && docker compose stop redis 2>/dev/null || true)
+elif [ -f "../../docker-compose.yml" ]; then
+    (cd ../.. && docker compose stop redis 2>/dev/null || true)
     echo "    Local Redis stopped."
 else
     echo "    ⚠️  docker-compose.yml not found, assuming local redis is handled elsewhere."
@@ -56,15 +56,15 @@ if lsof -ti :8000 > /dev/null; then
     lsof -ti :8000 | xargs kill -9
 fi
 
-# Assuming we are in the project root or scripts folder
+# Assuming we are in the backend root or scripts/ops folder
 if [ -f "src/main.py" ]; then
-    # We are in root
+    # We are in backend root
     uvicorn src.main:app --reload --host 0.0.0.0 --port 8000 --loop asyncio
-elif [ -d "../src" ]; then
-    # We are in scripts/, move up
-    cd ..
+elif [ -d "../../src" ]; then
+    # We are in scripts/ops/, move up to backend root
+    cd ../..
     uvicorn src.main:app --reload --host 0.0.0.0 --port 8000 --loop asyncio
 else
-    echo "❌ Could not find src/main.py. Please run this from the project root."
+    echo "❌ Could not find src/main.py. Please run this from the backend root."
     exit 1
 fi

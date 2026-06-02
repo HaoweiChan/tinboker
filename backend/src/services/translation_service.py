@@ -69,6 +69,22 @@ class TranslationService:
         items = query.order_by(StockTranslation.ticker).offset(offset).limit(limit).all()
         return items, total
 
+    def get_by_tickers(
+        self, tickers: List[str], market: Optional[str] = None
+    ) -> List[StockTranslation]:
+        """Resolve many tickers at once (symbol-only, mixed markets OK).
+
+        Used by the public batch endpoint to localize a list like `related_tickers`.
+        A ticker present in more than one market yields multiple rows.
+        """
+        norm = sorted({t.strip().upper() for t in tickers if t and t.strip()})
+        if not norm:
+            return []
+        query = self.db.query(StockTranslation).filter(StockTranslation.ticker.in_(norm))
+        if market:
+            query = query.filter(StockTranslation.market == market.upper())
+        return query.order_by(StockTranslation.ticker).all()
+
     def create(
         self,
         data: TranslationCreate,
