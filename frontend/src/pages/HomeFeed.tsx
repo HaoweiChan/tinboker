@@ -8,6 +8,7 @@ import { getRecentEpisodes, getSortedPodcasts, type Episode as ApiEpisode, type 
 import { fetchWithFallback } from '@/services/api/migration';
 import { useSubscriptions } from '@/store/useAppStore';
 import { useStockPriceMap } from '@/hooks/useStockPriceMap';
+import { useTranslationMap } from '@/hooks/useTranslationMap';
 
 const FILTERS = ['最新', '我追的', '熱門'] as const;
 type Filter = (typeof FILTERS)[number];
@@ -35,6 +36,13 @@ export const HomeFeed: React.FC = () => {
   const subscriptions = useSubscriptions();
   const episodeTickers = useMemo(() => episodes.flatMap((ep) => ep.related_tickers ?? []), [episodes]);
   const priceMap = useStockPriceMap(episodeTickers);
+  const rawTranslationMap = useTranslationMap(episodeTickers);
+  // Flatten to ticker → displayName for the adapter (keeps episodeAdapter dependency-free)
+  const translationMap = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const [k, v] of rawTranslationMap) m.set(k, v.displayName);
+    return m;
+  }, [rawTranslationMap]);
   const podcastImageMap = useMemo(() => {
     const map = new Map<string, string>();
     for (const p of podcasts) {
@@ -101,7 +109,7 @@ export const HomeFeed: React.FC = () => {
           <>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {filtered.map((ep) => (
-                <EpisodeCardV2 key={ep.id} {...apiEpisodeToCardV2(ep, priceMap, podcastImageMap)} />
+                <EpisodeCardV2 key={ep.id} {...apiEpisodeToCardV2(ep, priceMap, podcastImageMap, translationMap)} />
               ))}
             </div>
             <div className="mt-6 py-3 text-center text-[12px] text-muted-foreground">— 到這邊 —</div>
