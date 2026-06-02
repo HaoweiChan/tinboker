@@ -22,6 +22,7 @@ from src.schemas.translation import (
 )
 from src.auth.admin_auth import (
     get_admin_access,
+    get_translation_access,
     AdminAccess,
 )
 
@@ -82,10 +83,11 @@ async def list_translations(
     page: int = Query(1, ge=1, description="Page number"),
     limit: int = Query(50, ge=1, le=100, description="Items per page"),
     db: Session = Depends(get_session),
-    admin: AdminAccess = Depends(get_admin_access)
+    admin: AdminAccess = Depends(get_translation_access)
 ):
     """
     List translations with optional filters and pagination.
+    Accepts an admin JWT or the TRANSLATION_WRITE_TOKEN (backfill agent work queue).
     """
     service = TranslationService(db)
     items, total = service.list_translations(
@@ -219,9 +221,10 @@ async def bulk_import_translations(
 async def bulk_import_json(
     items: List[BulkImportItem],
     db: Session = Depends(get_session),
-    admin: AdminAccess = Depends(get_admin_access)
+    admin: AdminAccess = Depends(get_translation_access)
 ):
-    """Bulk import translations from JSON array."""
+    """Bulk import translations from JSON array.
+    Accepts an admin JWT or the TRANSLATION_WRITE_TOKEN (backfill agent writes)."""
     if not items:
         raise HTTPException(status_code=400, detail="No items provided")
     service = TranslationService(db)

@@ -4,6 +4,7 @@ Access is granted to any signed-in user whose email appears in ADMIN_EMAILS (GSM
 """
 
 import logging
+import secrets
 from typing import Optional
 from pydantic import BaseModel
 from fastapi import Depends, HTTPException, status
@@ -46,5 +47,39 @@ async def get_admin_access(
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
         detail="Admin access required. Sign in with a whitelisted Google account.",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+async def get_translation_access(
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+) -> AdminAccess:
+    """
+    Dependency for the translation list + bulk-write endpoints.
+
+    Accepts EITHER a whitelisted admin JWT (the admin UI) OR the non-expiring
+    TRANSLATION_WRITE_TOKEN service token (the headless backfill agent). The
+    service token is scoped to these translation endpoints only — it does not
+    unlock other admin routes.
+    """
+    token = credentials.credentials
+
+    # 1. Admin JWT path (same as get_admin_access).
+    try:
+        from src.utils.auth import verify_jwt_token
+        user_data = verify_jwt_token(token)
+        if user_data and "email" in user_data and is_admin_email(user_data["email"]):
+            return AdminAccess(email=user_data["email"], user_id=user_data.get("user_id"))
+    except Exception as e:
+        logger.debug(f"Token verification failed: {e}")
+
+    # 2. Service-token path (constant-time compare; only if configured).
+    service_token = settings.translation_write_token
+    if service_token and secrets.compare_digest(token, service_token):
+        return AdminAccess(email="translation-writer@service", user_id="service")
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Admin or translation-writer access required.",
         headers={"WWW-Authenticate": "Bearer"},
     )

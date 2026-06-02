@@ -26,7 +26,7 @@ cards render display_name + brand chip (auto rows show immediately)
 Discovery is automatic and read-freeze-safe: it reuses episodes already fetched and
 inserts stubs in a throttled background task. The agent never has to crawl episodes.
 
-## Tools used (require `TINBOKER_ADMIN_TOKEN`)
+## Tools used (require `TINBOKER_WRITE_TOKEN`)
 
 - `list_pending_translations(limit, market?)` — the work queue (status=pending stubs).
 - `search_stocks(query, market?)` — dedupe / find an existing variant before researching.
@@ -34,16 +34,18 @@ inserts stubs in a throttled background task. The agent never has to crawl episo
 
 ## Setup
 
-`TINBOKER_ADMIN_TOKEN` must be a **valid, unexpired bearer JWT for a Google account in
-`ADMIN_EMAILS`** (admin access = OAuth JWT + allowlist; there is no static admin token).
+The backfill agent authenticates with a **non-expiring service token**, not a JWT. It's
+scoped to the translation list + bulk-write endpoints only — it does **not** unlock other
+admin routes.
 
-- **Dev/staging:** mint one via the dev-bypass flow
-  (`POST /api/auth/dev-token` with `DEV_BYPASS_TOKEN`) for an admin-allowlisted account.
-- **Production:** copy a fresh JWT from an authenticated admin session.
+1. **Generate** the token: `openssl rand -hex 32`.
+2. **Backend:** set it as `TRANSLATION_WRITE_TOKEN` (env / GSM secret) on the API. Unset =
+   the token path is disabled (admin-JWT-only).
+3. **Agent:** set the same value as `TINBOKER_WRITE_TOKEN` in the MCP env. When present,
+   the privileged tools are registered and sent as `Authorization: Bearer <token>`.
 
-JWTs expire — for a scheduled/long-running pipeline, refresh the token each run. (If
-this becomes painful, the documented upgrade is a dedicated, bounded
-`TRANSLATION_WRITE_TOKEN` auth path on the bulk-json endpoint — not built yet.)
+The admin UI continues to use Google-OAuth JWTs (the endpoints accept either). Rotate the
+token by regenerating and updating both sides.
 
 ```jsonc
 // .mcp.json — read-write deployment for the backfill agent
@@ -54,7 +56,7 @@ this becomes painful, the documented upgrade is a dedicated, bounded
       "args": ["--from", "/abs/path/to/mcp-servers/stock-translations", "tinboker-stock-translations-mcp"],
       "env": {
         "TINBOKER_API_BASE_URL": "https://dev-api.tinboker.com",
-        "TINBOKER_ADMIN_TOKEN": "<admin-jwt>"
+        "TINBOKER_WRITE_TOKEN": "<same value as backend TRANSLATION_WRITE_TOKEN>"
       }
     }
   }

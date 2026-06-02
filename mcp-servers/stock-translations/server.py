@@ -36,10 +36,10 @@ from mcp.server.fastmcp import FastMCP
 API_BASE_URL = os.environ.get("TINBOKER_API_BASE_URL", "https://api.tinboker.com").rstrip("/")
 API_TIMEOUT = float(os.environ.get("TINBOKER_API_TIMEOUT", "10"))
 
-# Optional admin bearer JWT. When set, the privileged backfill tools
+# Non-expiring TRANSLATION_WRITE_TOKEN service token. When set, the privileged backfill tools
 # (list_pending_translations, propose_translations) are registered. Leave unset
 # for the read-only deployment used by the summary-writing agent / frontend.
-ADMIN_TOKEN = os.environ.get("TINBOKER_ADMIN_TOKEN")
+WRITE_TOKEN = os.environ.get("TINBOKER_WRITE_TOKEN")
 
 mcp = FastMCP("stock-translations")
 
@@ -148,21 +148,21 @@ async def _admin_request(
     """Authenticated request to an admin endpoint, or an {'error': ...} dict."""
     url = f"{API_BASE_URL}{path}"
     clean = {k: v for k, v in (params or {}).items() if v is not None}
-    headers = {"Authorization": f"Bearer {ADMIN_TOKEN}"}
+    headers = {"Authorization": f"Bearer {WRITE_TOKEN}"}
     try:
         async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
             resp = await client.request(method, url, params=clean, json=json, headers=headers)
             resp.raise_for_status()
             return resp.json()
     except httpx.HTTPStatusError as e:
-        hint = " (check TINBOKER_ADMIN_TOKEN is a valid, unexpired admin JWT)" if e.response.status_code in (401, 403) else ""
+        hint = " (check TINBOKER_WRITE_TOKEN matches the backend TRANSLATION_WRITE_TOKEN)" if e.response.status_code in (401, 403) else ""
         return {"error": f"HTTP {e.response.status_code} from {url}{hint}"}
     except httpx.HTTPError as e:
         return {"error": f"request failed: {e}"}
 
 
-# --- Privileged backfill tools (only when an admin token is configured) -----------
-if ADMIN_TOKEN:
+# --- Privileged backfill tools (only when a write token is configured) -----------
+if WRITE_TOKEN:
 
     @mcp.tool()
     async def list_pending_translations(limit: int = 50, market: Optional[str] = None) -> dict[str, Any]:
@@ -170,7 +170,7 @@ if ADMIN_TOKEN:
 
         These are tickers discovered in episodes that have no names/color yet. Resolve
         each with search_stocks (dedupe) + your own research, then submit via
-        propose_translations. Requires TINBOKER_ADMIN_TOKEN.
+        propose_translations. Requires TINBOKER_WRITE_TOKEN.
         """
         return await _admin_request(
             "GET",
@@ -182,7 +182,7 @@ if ADMIN_TOKEN:
     async def propose_translations(items: list[dict[str, Any]]) -> dict[str, Any]:
         """Write resolved translations back to the table (status defaults to 'auto').
 
-        Requires TINBOKER_ADMIN_TOKEN. Rendered immediately on cards; a human later
+        Requires TINBOKER_WRITE_TOKEN. Rendered immediately on cards; a human later
         promotes 'auto' → 'approved' in the admin portal.
 
         Each item: {ticker, market?, name_en?, name_zh_tw?, brand_color?, translation_status?}
