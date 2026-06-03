@@ -14,6 +14,7 @@ import { useStockPriceMap } from '@/hooks/useStockPriceMap';
 import { useTranslationMap } from '@/hooks/useTranslationMap';
 import { useEpisodeSentimentMap } from '@/hooks/useEpisodeSentimentMap';
 import { EpisodeInsightCard, type EpisodeInsight } from '@/components/episode/EpisodeInsightCard';
+import type { Sentiment } from '@/lib/sentiment';
 
 /** Render plain text with inline `[label](#ticker:SYMBOL)` markers as clickable
  *  localized labels (the agents pipeline emits these in summaries/insights). */
@@ -110,6 +111,20 @@ function episodeInsightFrom(ep: ApiEpisode | null, fallbackTitle: string): Episo
   };
 }
 
+function tickerLookupKeys(symbol: string): string[] {
+  const upper = symbol.toUpperCase();
+  const bare = upper.replace(/\.[A-Z]+$/i, '');
+  return [...new Set([upper, bare, `${bare}.TW`, `${bare}.KS`])];
+}
+
+function firstMapValue<T>(map: Map<string, T>, keys: string[]): T | undefined {
+  for (const key of keys) {
+    const value = map.get(key);
+    if (value !== undefined) return value;
+  }
+  return undefined;
+}
+
 export const EpisodeDetail: React.FC = () => {
   const { id } = useParams();
   const [searchParams] = useSearchParams();
@@ -147,12 +162,12 @@ export const EpisodeDetail: React.FC = () => {
   const tickers = useMemo(() => {
     const sent = episode ? episodeSentiments.get(episode.id) : undefined;
     return tickerSymbols.map((s) => {
-      const u = s.toUpperCase();
+      const keys = tickerLookupKeys(s);
       return {
         symbol: s,
-        name: rawTranslationMap.get(u)?.displayName,
-        sentiment: sent?.get(u),
-        changePercent: priceMap.get(s) ?? priceMap.get(u),
+        name: firstMapValue(rawTranslationMap, keys)?.displayName,
+        sentiment: sent ? firstMapValue<Sentiment>(sent, keys) : undefined,
+        changePercent: firstMapValue(priceMap, keys),
       };
     });
   }, [tickerSymbols, rawTranslationMap, episodeSentiments, priceMap, episode]);
