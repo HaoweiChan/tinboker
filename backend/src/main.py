@@ -25,6 +25,8 @@ from src.routers.recommendations import router as recommendations_router
 from src.routers.ticker_insights import router as ticker_insights_router
 from src.routers.translations import router as translations_router
 from src.routers.admin_translations import router as admin_translations_router
+from src.routers.sources import router as sources_router
+from src.routers.admin_sources import router as admin_sources_router
 from src.routers.admin_system import router as admin_system_router
 from src.routers.admin_analytics import router as admin_analytics_router
 from src.routers.notifications import router as notifications_router
@@ -92,6 +94,19 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"Warning: translation seed/backfill skipped: {e}")
 
+    # Seed followed content sources (podcasts + news feeds) from config (insert-only).
+    try:
+        from src.data.content_sources_seed import ALL_SOURCES
+        from src.database.postgres import get_session
+        from src.services.content_source_service import ContentSourceService
+        for session in get_session():
+            inserted = ContentSourceService(session).seed_from_config(ALL_SOURCES)
+            if inserted:
+                print(f"Seeded {inserted} new content source(s).")
+            break
+    except Exception as e:
+        print(f"Warning: content source seed skipped: {e}")
+
     yield
 
     # --- Shutdown ---
@@ -157,6 +172,8 @@ app.include_router(ticker_insights_router)
 app.include_router(analytics_router, prefix="/api/analytics", tags=["analytics"])
 app.include_router(translations_router)
 app.include_router(admin_translations_router)
+app.include_router(sources_router)
+app.include_router(admin_sources_router)
 app.include_router(admin_system_router)
 app.include_router(admin_analytics_router)
 app.include_router(notifications_router)

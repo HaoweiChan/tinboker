@@ -7,6 +7,7 @@ import { NavLink } from 'react-router-dom';
 import {
     LayoutDashboard,
     Languages,
+    Rss,
     BarChart3,
     ChevronLeft,
     ChevronRight,
@@ -92,6 +93,12 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
                     to="/admin/translations"
                     icon={<Languages className="h-5 w-5" />}
                     label="Translations"
+                    collapsed={collapsed}
+                />
+                <NavItem
+                    to="/admin/sources"
+                    icon={<Rss className="h-5 w-5" />}
+                    label="Sources"
                     collapsed={collapsed}
                 />
                 <NavItem
