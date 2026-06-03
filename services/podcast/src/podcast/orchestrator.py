@@ -4,6 +4,7 @@ import json
 import sys
 import tempfile
 import traceback
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -32,6 +33,44 @@ def _load_podcasts_from_db() -> List[Dict] | None:
         return [s.to_pipeline_config() for s in shows]
     except Exception as e:
         print(f"Warning: Could not load shows from DB, falling back to config file: {e}")
+        return None
+
+
+def _source_to_podcast(source: Dict) -> Dict:
+    """Map a platform ContentSourcePublic record to the pipeline's podcast dict shape."""
+    transcript_service = source.get("transcript_service")
+    transcript_option = (
+        {"transcript_service": transcript_service, "model": source.get("transcript_model")}
+        if transcript_service
+        else {}
+    )
+    return {
+        "name": source.get("name"),
+        "link": source.get("feed_url"),
+        "spotify_show_link": source.get("spotify_url"),
+        "transcript_option": transcript_option,
+        "lookback_days": source.get("lookback_days"),
+        "max_episodes": source.get("max_episodes"),
+        # Legacy count field; the recency window is the real filter when lookback_days is set.
+        "limit": source.get("max_episodes"),
+    }
+
+
+def _load_podcasts_from_platform() -> List[Dict] | None:
+    """Load active podcast shows from the platform /api/sources.
+
+    Returns None when the platform pull is disabled (TINBOKER_PLATFORM_API_URL unset)
+    or unavailable, so the caller falls back to the Postgres registry / JSON config.
+    """
+    try:
+        from shared.platform_client import fetch_sources
+        items = fetch_sources("podcast")
+        if not items:
+            return None
+        print(f"Loaded {len(items)} active podcast(s) from platform /api/sources")
+        return [_source_to_podcast(s) for s in items]
+    except Exception as e:
+        print(f"Warning: Could not load podcasts from platform, falling back: {e}")
         return None
 
 
@@ -104,7 +143,9 @@ def run_pipeline(
 
     podcast_config_mapping = create_podcast_config_mapping(config_file)
 
-    podcasts = _load_podcasts_from_db()
+    podcasts = _load_podcasts_from_platform()
+    if podcasts is None:
+        podcasts = _load_podcasts_from_db()
     if podcasts is None:
         try:
             podcasts = load_podcasts_config(config_file)
@@ -309,6 +350,8 @@ def _process_single_podcast(
     name = podcast.get("name")
     link = podcast.get("link")
     limit = podcast.get("limit", 2)
+    lookback_days = podcast.get("lookback_days")
+    max_episodes = podcast.get("max_episodes")
     spotify_show_link = podcast.get("spotify_show_link")
     transcript_option = podcast.get("transcript_option", {})
 
@@ -322,7 +365,11 @@ def _process_single_podcast(
     print(f"\n{'='*60}")
     print(f"Processing: {name}")
     print(f"URL: {link}")
-    print(f"Limit: {limit} episodes")
+    if lookback_days:
+        cap_note = f", max {max_episodes}" if max_episodes else ""
+        print(f"Window: last {lookback_days} day(s){cap_note}")
+    else:
+        print(f"Limit: {limit} episodes")
     print(f"{'='*60}")
 
     try:
@@ -341,7 +388,17 @@ def _process_single_podcast(
         print(f"Found {len(episodes)} episodes from API")
 
         if fill_limit:
-            episodes = _filter_unprocessed_episodes(episodes, name, limit, service_container)
+            episodes = _filter_unprocessed_episodes(
+                episodes, name, max_episodes or limit, service_container
+            )
+        elif lookback_days or max_episodes:
+            episodes = _select_recent_episodes(
+                episodes,
+                lookback_days=lookback_days,
+                max_episodes=max_episodes,
+                legacy_limit=limit,
+            )
+            print(f"Selected {len(episodes)} episode(s) to process")
         elif limit and limit > 0:
             episodes = episodes[:limit]
             print(f"Limited to latest {len(episodes)} episodes")
@@ -351,7 +408,7 @@ def _process_single_podcast(
             podcast_name=name,
             podcast_link=link,
             spotify_show_link=spotify_show_link,
-            episode_limit=limit,
+            episode_limit=max_episodes or limit,
             stt_service_name=podcast_transcript_service,
             stt_model=podcast_transcript_model,
             rerun_from=rerun_from,
@@ -384,6 +441,61 @@ def _process_single_podcast(
     except Exception as e:
         print(f"Error processing podcast {name}: {e}")
         traceback.print_exc()
+
+
+def _parse_episode_date(value) -> Optional[datetime]:
+    """Parse an episode ``datePublished`` (ISO 8601, e.g. ``2026-06-03T07:34:50.000Z``).
+
+    Returns a timezone-aware UTC datetime, or None when the value is missing/unparseable.
+    """
+    if not value:
+        return None
+    text = str(value).strip()
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def _select_recent_episodes(
+    episodes: List[Dict],
+    *,
+    lookback_days: Optional[int],
+    max_episodes: Optional[int],
+    legacy_limit: Optional[int],
+) -> List[Dict]:
+    """Select episodes by recency window, then cap.
+
+    The source API returns episodes newest-first. When ``lookback_days`` is set we keep
+    only episodes whose ``datePublished`` falls within the window; if NONE of the
+    episodes carry a parseable date we fall back to the count cap so a feed/API change
+    can't silently stall ingestion. ``max_episodes`` (else ``legacy_limit``) caps the
+    result to the most-recent N.
+    """
+    cap = max_episodes or legacy_limit
+    if lookback_days and lookback_days > 0:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=lookback_days)
+        dated = [(ep, _parse_episode_date(ep.get("datePublished"))) for ep in episodes]
+        if not any(dt is not None for _, dt in dated):
+            print(
+                f"Warning: no parseable datePublished on {len(episodes)} episode(s); "
+                f"falling back to count cap ({cap})"
+            )
+            return episodes[:cap] if cap else episodes
+        kept = [ep for ep, dt in dated if dt is not None and dt >= cutoff]
+        print(f"Recency window {lookback_days}d: kept {len(kept)} of {len(episodes)} episode(s)")
+        if cap and cap > 0 and len(kept) > cap:
+            kept = kept[:cap]
+            print(f"Capped to {cap} most-recent episode(s)")
+        return kept
+    if cap and cap > 0:
+        return episodes[:cap]
+    return episodes
 
 
 def _filter_unprocessed_episodes(episodes, name, limit, service_container) -> list:

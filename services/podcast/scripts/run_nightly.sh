@@ -35,4 +35,9 @@ export EXTRACTOR_MODEL TICKER_EXTRACTOR_MODEL
 PY="$REPO_ROOT/.venv/bin/python"
 [ -x "$PY" ] || PY="$(command -v python3)"
 
-exec "$PY" main.py --config podcasts_tw.json --fill-limit "$@"
+# Step 1: podcast pipeline (download → transcribe → summarize → upload → wiki → Postgres mirror)
+"$PY" main.py --config podcasts_tw.json --fill-limit "$@"
+
+# Step 2: recompute trending_tickers/{ticker} aggregate from ticker_insights
+echo "--- refresh_trending_tickers ---"
+"$PY" scripts/refresh_trending_tickers.py

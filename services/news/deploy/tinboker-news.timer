@@ -1,0 +1,10 @@
+[Unit]
+Description=Run the TinBoker news ingest every 6 hours
+
+[Timer]
+OnBootSec=15min
+OnUnitActiveSec=6h
+Persistent=true
+
+[Install]
+WantedBy=timers.target
