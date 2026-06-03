@@ -20,6 +20,7 @@ class StockTranslation(Base):
     name_en = Column(Text, nullable=True)
     name_zh_tw = Column(Text, nullable=True)
     brand_color = Column(String(7), nullable=True)  # Hex color e.g. '#1A2B3C'
+    aliases = Column(JSON, nullable=True)  # list[str]: alt names/symbols that resolve to this ticker
     translation_status = Column(
         String(20),
         nullable=False,

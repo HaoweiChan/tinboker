@@ -13,6 +13,7 @@ export interface Translation {
   name_en: string | null;
   name_zh_tw: string | null;
   brand_color: string | null;
+  aliases: string[] | null;
   translation_status: TranslationStatus;
   last_updated_by: string | null;
   last_updated_at: string | null;
@@ -26,6 +27,7 @@ export interface TranslationPublic {
   name_en: string | null;
   name_zh_tw: string | null;
   brand_color: string | null;
+  aliases: string[] | null;
 }
 
 // Create translation request
@@ -43,6 +45,7 @@ export interface TranslationUpdate {
   name_zh_tw?: string;
   translation_status?: TranslationStatus;
   brand_color?: string | null;
+  aliases?: string[] | null;
 }
 
 // Paginated list response

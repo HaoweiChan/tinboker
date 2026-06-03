@@ -4,18 +4,20 @@
 
 import React, { useState } from 'react';
 import { Loader2, Trash2 } from 'lucide-react';
-import type { Translation, TranslationStatus } from '@/types/translation';
+import type { Translation, TranslationStatus, TranslationUpdate } from '@/types/translation';
 
 interface TranslationTableProps {
   translations: Translation[];
   loading: boolean;
-  onUpdate: (id: number, nameZhTw?: string, nameEn?: string, status?: TranslationStatus, brandColor?: string | null) => Promise<void>;
+  onUpdate: (id: number, data: TranslationUpdate) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
 }
 
+type EditableField = 'name_zh_tw' | 'name_en' | 'aliases';
+
 interface EditingCell {
   id: number;
-  field: 'name_zh_tw' | 'name_en';
+  field: EditableField;
   value: string;
 }
 
@@ -34,6 +36,11 @@ const STATUS_BADGES: Record<TranslationStatus, { label: string; className: strin
   },
 };
 
+const inputCls =
+  'w-full rounded border border-blue-500 bg-white px-2 py-1 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white';
+const thCls =
+  'px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400';
+
 export const TranslationTable: React.FC<TranslationTableProps> = ({
   translations,
   loading,
@@ -44,25 +51,34 @@ export const TranslationTable: React.FC<TranslationTableProps> = ({
   const [saving, setSaving] = useState<number | null>(null);
   const [deleting, setDeleting] = useState<number | null>(null);
 
-  const handleCellClick = (id: number, field: 'name_zh_tw' | 'name_en', currentValue: string | null) => {
-    setEditingCell({ id, field, value: currentValue || '' });
+  const currentValueFor = (t: Translation, field: EditableField): string => {
+    if (field === 'name_zh_tw') return t.name_zh_tw || '';
+    if (field === 'name_en') return t.name_en || '';
+    return (t.aliases || []).join(', ');
+  };
+
+  const handleCellClick = (t: Translation, field: EditableField) => {
+    setEditingCell({ id: t.id, field, value: currentValueFor(t, field) });
   };
 
   const handleCellBlur = async () => {
     if (!editingCell) return;
     const translation = translations.find((t) => t.id === editingCell.id);
-    if (!translation) return;
-    const currentFieldValue = editingCell.field === 'name_zh_tw' ? translation.name_zh_tw : translation.name_en;
-    // Only save if value changed
-    if (editingCell.value !== (currentFieldValue || '')) {
+    if (!translation) {
+      setEditingCell(null);
+      return;
+    }
+    if (editingCell.value !== currentValueFor(translation, editingCell.field)) {
       setSaving(editingCell.id);
       try {
         if (editingCell.field === 'name_zh_tw') {
-          // Editing Chinese name: pass the new value, keep English as undefined
-          await onUpdate(editingCell.id, editingCell.value, undefined, 'approved');
+          // Editing the Chinese name marks the row approved.
+          await onUpdate(editingCell.id, { name_zh_tw: editingCell.value, translation_status: 'approved' });
+        } else if (editingCell.field === 'name_en') {
+          await onUpdate(editingCell.id, { name_en: editingCell.value });
         } else {
-          // Editing English name: keep Chinese as undefined, pass the new English value
-          await onUpdate(editingCell.id, undefined, editingCell.value, undefined);
+          const aliases = editingCell.value.split(',').map((s) => s.trim()).filter(Boolean);
+          await onUpdate(editingCell.id, { aliases });
         }
       } finally {
         setSaving(null);
@@ -106,109 +122,102 @@ export const TranslationTable: React.FC<TranslationTableProps> = ({
     );
   }
 
+  const renderTextCell = (t: Translation, field: 'name_en' | 'name_zh_tw') => {
+    const isEditing = editingCell?.id === t.id && editingCell.field === field;
+    const isSaving = saving === t.id && editingCell?.field === field;
+    const value = field === 'name_en' ? t.name_en : t.name_zh_tw;
+    const emptyCls = field === 'name_en' ? 'max-w-xs truncate' : '';
+    const filledCls = field === 'name_en' ? 'text-gray-600 dark:text-gray-300' : 'text-gray-900 dark:text-white';
+    if (isEditing) {
+      return (
+        <input
+          type="text"
+          value={editingCell!.value}
+          onChange={(e) => setEditingCell({ ...editingCell!, value: e.target.value })}
+          onBlur={handleCellBlur}
+          onKeyDown={handleKeyDown}
+          className={inputCls}
+          autoFocus
+        />
+      );
+    }
+    return (
+      <div
+        onClick={() => handleCellClick(t, field)}
+        className={`${emptyCls} cursor-pointer rounded px-2 py-1 text-sm ${value ? filledCls : 'italic text-gray-400'} hover:bg-gray-100 dark:hover:bg-gray-700`}
+      >
+        {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : value || 'Click to edit...'}
+      </div>
+    );
+  };
+
   return (
     <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
       <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
         <thead className="bg-gray-50 dark:bg-gray-800">
           <tr>
-            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
-              Ticker
+            <th className={thCls}>Ticker</th>
+            <th className={thCls}>Market</th>
+            <th className={thCls}>English Name</th>
+            <th className={thCls}>Chinese Name</th>
+            <th className={thCls} title="Alternate names/symbols that resolve to this ticker in search">
+              Aliases
             </th>
-            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
-              Market
-            </th>
-            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
-              English Name
-            </th>
-            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
-              Chinese Name
-            </th>
-            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
-              Color
-            </th>
-            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
-              Status
-            </th>
-            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
-              Actions
-            </th>
+            <th className={thCls}>Color</th>
+            <th className={thCls}>Status</th>
+            <th className={thCls}>Actions</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-200 bg-white dark:divide-gray-700 dark:bg-gray-900">
           {translations.map((translation) => {
-            const isEditing = editingCell?.id === translation.id;
-            const isSaving = saving === translation.id;
             const isDeleting = deleting === translation.id;
-            const statusBadge = STATUS_BADGES[translation.translation_status as TranslationStatus] || STATUS_BADGES.pending;
+            const statusBadge =
+              STATUS_BADGES[translation.translation_status as TranslationStatus] || STATUS_BADGES.pending;
+            const editingAliases =
+              editingCell?.id === translation.id && editingCell.field === 'aliases';
+            const aliases = translation.aliases || [];
             return (
-              <tr
-                key={translation.id}
-                className="hover:bg-gray-50 dark:hover:bg-gray-800"
-              >
+              <tr key={translation.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
                 <td className="whitespace-nowrap px-4 py-3 font-mono text-sm font-medium text-gray-900 dark:text-white">
                   {translation.ticker}
                 </td>
                 <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600 dark:text-gray-300">
                   {translation.market}
                 </td>
+                <td className="px-4 py-3">{renderTextCell(translation, 'name_en')}</td>
+                <td className="px-4 py-3">{renderTextCell(translation, 'name_zh_tw')}</td>
+                {/* Aliases — comma-separated inline edit, rendered as chips */}
                 <td className="px-4 py-3">
-                  {isEditing && editingCell?.field === 'name_en' ? (
+                  {editingAliases ? (
                     <input
                       type="text"
-                      value={editingCell.value}
-                      onChange={(e) =>
-                        setEditingCell({ ...editingCell, value: e.target.value })
-                      }
+                      value={editingCell!.value}
+                      onChange={(e) => setEditingCell({ ...editingCell!, value: e.target.value })}
                       onBlur={handleCellBlur}
                       onKeyDown={handleKeyDown}
-                      className="w-full rounded border border-blue-500 bg-white px-2 py-1 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white"
+                      className={`${inputCls} min-w-[12rem]`}
+                      placeholder="alias one, alias two"
                       autoFocus
                     />
                   ) : (
                     <div
-                      onClick={() =>
-                        handleCellClick(translation.id, 'name_en', translation.name_en)
-                      }
-                      className={`max-w-xs cursor-pointer truncate rounded px-2 py-1 text-sm ${translation.name_en
-                          ? 'text-gray-600 dark:text-gray-300'
-                          : 'italic text-gray-400'
-                        } hover:bg-gray-100 dark:hover:bg-gray-700`}
+                      onClick={() => handleCellClick(translation, 'aliases')}
+                      className="flex max-w-xs cursor-pointer flex-wrap gap-1 rounded px-2 py-1 hover:bg-gray-100 dark:hover:bg-gray-700"
+                      title="Click to edit (comma-separated)"
                     >
-                      {isSaving && editingCell?.field === 'name_en' ? (
+                      {saving === translation.id && editingCell?.field === 'aliases' ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : aliases.length > 0 ? (
+                        aliases.map((a, i) => (
+                          <span
+                            key={`${a}-${i}`}
+                            className="rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-700 dark:bg-gray-700 dark:text-gray-200"
+                          >
+                            {a}
+                          </span>
+                        ))
                       ) : (
-                        translation.name_en || 'Click to edit...'
-                      )}
-                    </div>
-                  )}
-                </td>
-                <td className="px-4 py-3">
-                  {isEditing && editingCell?.field === 'name_zh_tw' ? (
-                    <input
-                      type="text"
-                      value={editingCell.value}
-                      onChange={(e) =>
-                        setEditingCell({ ...editingCell, value: e.target.value })
-                      }
-                      onBlur={handleCellBlur}
-                      onKeyDown={handleKeyDown}
-                      className="w-full rounded border border-blue-500 bg-white px-2 py-1 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white"
-                      autoFocus
-                    />
-                  ) : (
-                    <div
-                      onClick={() =>
-                        handleCellClick(translation.id, 'name_zh_tw', translation.name_zh_tw)
-                      }
-                      className={`cursor-pointer rounded px-2 py-1 text-sm ${translation.name_zh_tw
-                          ? 'text-gray-900 dark:text-white'
-                          : 'italic text-gray-400'
-                        } hover:bg-gray-100 dark:hover:bg-gray-700`}
-                    >
-                      {isSaving && editingCell?.field === 'name_zh_tw' ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        translation.name_zh_tw || 'Click to edit...'
+                        <span className="text-sm italic text-gray-400">Click to edit...</span>
                       )}
                     </div>
                   )}
@@ -224,9 +233,10 @@ export const TranslationTable: React.FC<TranslationTableProps> = ({
                       className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
                       value={translation.brand_color ?? '#000000'}
                       onChange={async (e) => {
+                        const color = e.target.value;
                         setSaving(translation.id);
                         try {
-                          await onUpdate(translation.id, undefined, undefined, undefined, e.target.value);
+                          await onUpdate(translation.id, { brand_color: color });
                         } finally {
                           setSaving(null);
                         }
@@ -235,9 +245,7 @@ export const TranslationTable: React.FC<TranslationTableProps> = ({
                   </label>
                 </td>
                 <td className="whitespace-nowrap px-4 py-3">
-                  <span
-                    className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${statusBadge.className}`}
-                  >
+                  <span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${statusBadge.className}`}>
                     {statusBadge.label}
                   </span>
                 </td>
@@ -247,11 +255,7 @@ export const TranslationTable: React.FC<TranslationTableProps> = ({
                     disabled={isDeleting}
                     className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-50 dark:hover:bg-red-900/20"
                   >
-                    {isDeleting ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Trash2 className="h-4 w-4" />
-                    )}
+                    {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
                   </button>
                 </td>
               </tr>

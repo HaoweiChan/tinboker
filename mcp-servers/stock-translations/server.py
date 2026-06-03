@@ -66,18 +66,18 @@ async def search_stocks(
     market: Optional[str] = None,
     limit: int = 10,
 ) -> dict[str, Any]:
-    """Search stock translations by ticker, English name, or zh-TW name.
+    """Search stock translations by ticker, English name, zh-TW name, or curated alias.
 
     Use this when you have a company *name* (e.g. "Nvidia", "輝達", "台積電") or a
     partial ticker and need its canonical symbol, localized names, and brand color.
 
     Args:
-        query: Free text — matches ticker, name_en, or name_zh_tw (case-insensitive).
+        query: Free text — matches ticker, name_en, name_zh_tw, or a curated alias (case-insensitive).
         market: Optional market filter: "US", "TW", or "JP".
         limit: Max results (1–100, default 10).
 
     Returns a dict with `items`, each containing:
-        ticker, market, name_en, name_zh_tw, brand_color, translation_status,
+        ticker, market, name_en, name_zh_tw, brand_color, aliases, translation_status,
         has_zh_name (bool — a real Chinese name exists), and
         display_name (zh-TW if has_zh_name else English/ticker).
     """

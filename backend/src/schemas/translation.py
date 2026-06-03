@@ -14,6 +14,7 @@ class TranslationBase(BaseModel):
     name_en: Optional[str] = Field(None, description="English name")
     name_zh_tw: Optional[str] = Field(None, description="Chinese Traditional name")
     brand_color: Optional[str] = Field(None, max_length=7, description="Brand hex color e.g. '#1A2B3C'")
+    aliases: Optional[List[str]] = Field(None, description="Alt names/symbols that resolve to this ticker")
 
 
 class TranslationCreate(TranslationBase):
@@ -27,6 +28,7 @@ class TranslationUpdate(BaseModel):
     name_zh_tw: Optional[str] = None
     translation_status: Optional[Literal["pending", "approved", "auto"]] = None
     brand_color: Optional[str] = Field(None, max_length=7)
+    aliases: Optional[List[str]] = None
 
 
 class TranslationResponse(TranslationBase):
@@ -48,6 +50,7 @@ class TranslationPublicResponse(BaseModel):
     name_en: Optional[str] = None
     name_zh_tw: Optional[str] = None
     brand_color: Optional[str] = None
+    aliases: Optional[List[str]] = None
 
     class Config:
         from_attributes = True
@@ -73,6 +76,7 @@ class TranslationSearchItem(BaseModel):
     name_en: Optional[str] = None
     name_zh_tw: Optional[str] = None
     brand_color: Optional[str] = None
+    aliases: Optional[List[str]] = None
     translation_status: str
     has_zh_name: bool = Field(
         ..., description="True when name_zh_tw is a real Chinese (CJK) name, not an English fallback"

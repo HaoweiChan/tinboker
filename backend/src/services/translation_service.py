@@ -4,7 +4,7 @@ Service for managing stock translations.
 
 import logging
 from typing import Optional, List, Tuple
-from sqlalchemy import func
+from sqlalchemy import func, cast, Text
 from sqlalchemy.orm import Session
 from src.database.models import StockTranslation
 from src.schemas.translation import (
@@ -14,6 +14,18 @@ from src.schemas.translation import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_aliases(aliases: Optional[List[str]]) -> Optional[List[str]]:
+    """Strip/dedupe alias strings, preserving order. None stays None; [] clears the list."""
+    if aliases is None:
+        return None
+    cleaned: List[str] = []
+    for a in aliases:
+        s = (a or "").strip()
+        if s and s not in cleaned:
+            cleaned.append(s)
+    return cleaned
 
 
 class TranslationService:
@@ -60,7 +72,8 @@ class TranslationService:
             query = query.filter(
                 (StockTranslation.ticker.ilike(search_pattern)) |
                 (StockTranslation.name_en.ilike(search_pattern)) |
-                (StockTranslation.name_zh_tw.ilike(search_pattern))
+                (StockTranslation.name_zh_tw.ilike(search_pattern)) |
+                (cast(StockTranslation.aliases, Text).ilike(search_pattern))
             )
         # Get total count
         total = query.count()
@@ -139,6 +152,7 @@ class TranslationService:
             name_en=data.name_en,
             name_zh_tw=data.name_zh_tw,
             brand_color=getattr(data, 'brand_color', None),
+            aliases=_normalize_aliases(getattr(data, 'aliases', None)),
             translation_status=data.translation_status,
             last_updated_by=updated_by
         )
@@ -159,6 +173,8 @@ class TranslationService:
         if not translation:
             return None
         update_data = data.model_dump(exclude_unset=True)
+        if "aliases" in update_data:
+            update_data["aliases"] = _normalize_aliases(update_data["aliases"])
         for field, value in update_data.items():
             setattr(translation, field, value)
         translation.last_updated_by = updated_by
