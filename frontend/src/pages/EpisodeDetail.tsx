@@ -10,6 +10,32 @@ import { fetchWithFallback } from '@/services/api/migration';
 import { parseTimestampedSections, type TimestampedSection } from '@/utils/parseTimestampedSections';
 import { usePlayerStore } from '@/store/usePlayerStore';
 import { CommentSection } from '@/components/episode/CommentSection';
+import { useStockPriceMap } from '@/hooks/useStockPriceMap';
+import { useTranslationMap } from '@/hooks/useTranslationMap';
+import { useEpisodeSentimentMap } from '@/hooks/useEpisodeSentimentMap';
+
+/** Render plain text with inline `[label](#ticker:SYMBOL)` markers as clickable
+ *  localized labels (the agents pipeline emits these in summaries/insights). */
+const TICKER_MARKER = /\[([^\]]+)\]\(#ticker:([^)]+)\)/g;
+const MentionText: React.FC<{ text: string }> = ({ text }) => {
+  const parts: React.ReactNode[] = [];
+  const re = new RegExp(TICKER_MARKER);
+  let last = 0;
+  let key = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) parts.push(text.slice(last, m.index));
+    const symbol = m[2].trim().toUpperCase();
+    parts.push(
+      <Link key={key++} to={`/stock/${encodeURIComponent(symbol)}`} className="text-accent-info hover:underline font-medium">
+        {m[1]}
+      </Link>,
+    );
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return <>{parts}</>;
+};
 
 function timeAgo(release: string | number | null | undefined, created: number): string {
   const ms = typeof release === 'string' ? Date.parse(release) : (release ?? created);
@@ -74,7 +100,23 @@ export const EpisodeDetail: React.FC = () => {
   const bullets = useMemo(() => bulletsFrom(episode), [episode]);
   const chapters = useMemo<TimestampedSection[]>(() => (episode?.events_markdown_content ? parseTimestampedSections(episode.events_markdown_content) : []), [episode]);
   const clips = useMemo<TimestampedSection[]>(() => (episode?.sentences_markdown_content ? parseTimestampedSections(episode.sentences_markdown_content).slice(0, 8) : []), [episode]);
-  const tickers = useMemo(() => (Array.isArray(episode?.related_tickers) ? episode!.related_tickers.slice(0, 8).map((s) => ({ symbol: s })) : []), [episode]);
+  const tickerSymbols = useMemo(() => (Array.isArray(episode?.related_tickers) ? episode!.related_tickers.slice(0, 8) : []), [episode]);
+  const priceMap = useStockPriceMap(tickerSymbols);
+  const rawTranslationMap = useTranslationMap(tickerSymbols);
+  const episodeIds = useMemo(() => (episode ? [episode.id] : []), [episode]);
+  const episodeSentiments = useEpisodeSentimentMap(episodeIds);
+  const tickers = useMemo(() => {
+    const sent = episode ? episodeSentiments.get(episode.id) : undefined;
+    return tickerSymbols.map((s) => {
+      const u = s.toUpperCase();
+      return {
+        symbol: s,
+        name: rawTranslationMap.get(u)?.displayName,
+        sentiment: sent?.get(u),
+        changePercent: priceMap.get(s) ?? priceMap.get(u),
+      };
+    });
+  }, [tickerSymbols, rawTranslationMap, episodeSentiments, priceMap, episode]);
   const spotifyUri = useMemo(() => spotifyUriFrom(episode), [episode]);
 
   const title = episode?.episode_title || (episode?.episode_number != null ? `EP ${episode.episode_number}` : '集數摘要');
@@ -163,7 +205,7 @@ export const EpisodeDetail: React.FC = () => {
                   {bullets.map((b, i) => (
                     <li key={i} className="grid grid-cols-[14px_1fr] gap-2 text-[14px] leading-[1.55]">
                       <span className="mt-[9px] w-1.5 h-1.5 rounded-full bg-foreground" />
-                      <span>{b}</span>
+                      <span><MentionText text={b} /></span>
                     </li>
                   ))}
                 </ul>
