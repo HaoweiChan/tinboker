@@ -369,14 +369,18 @@ class GCSStorageService:
 
         bucket_name, blob_path = parts
 
-        # Ensure we're using the configured bucket
-        if bucket_name != self.bucket_name:
-            raise ValueError(
-                f"GCS URL bucket '{bucket_name}' does not match configured bucket '{self.bucket_name}'"
-            )
+        # Reads are safe cross-bucket: legacy episodes keep their transcript/media in
+        # ``podcast-data-web`` while new ones live in the configured bucket
+        # (``graphfolio-articles``). Use the configured bucket when it matches
+        # (cached handle), else read directly from the URL's bucket. These are
+        # read-only downloads, so no write-safety guard is needed.
+        if bucket_name == self.bucket_name:
+            source_bucket = self.bucket
+        else:
+            source_bucket = self.client.bucket(bucket_name)
 
         try:
-            blob = self.bucket.blob(blob_path)
+            blob = source_bucket.blob(blob_path)
             content_bytes = blob.download_as_bytes()
             return content_bytes.decode(encoding)
         except Exception as e:
@@ -414,14 +418,18 @@ class GCSStorageService:
 
         bucket_name, blob_path = parts
 
-        # Ensure we're using the configured bucket
-        if bucket_name != self.bucket_name:
-            raise ValueError(
-                f"GCS URL bucket '{bucket_name}' does not match configured bucket '{self.bucket_name}'"
-            )
+        # Reads are safe cross-bucket: legacy episodes keep their transcript/media in
+        # ``podcast-data-web`` while new ones live in the configured bucket
+        # (``graphfolio-articles``). Use the configured bucket when it matches
+        # (cached handle), else read directly from the URL's bucket. These are
+        # read-only downloads, so no write-safety guard is needed.
+        if bucket_name == self.bucket_name:
+            source_bucket = self.bucket
+        else:
+            source_bucket = self.client.bucket(bucket_name)
 
         try:
-            blob = self.bucket.blob(blob_path)
+            blob = source_bucket.blob(blob_path)
             content_bytes = blob.download_as_bytes()
             content = content_bytes.decode(encoding)
             
