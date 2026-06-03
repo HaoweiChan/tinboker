@@ -18,7 +18,9 @@ export interface Episode {
   episode_number?: number | null;
   transcript: string;
   summary_content: string;
-  summary_image: string;
+  summary_image?: string | null;
+  summary_image_url?: string | null;
+  summary_image_public_url?: string | null;
   related_tickers: string[];
   tags?: string[];
   created_time: number;
