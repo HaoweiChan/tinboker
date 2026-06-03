@@ -62,12 +62,11 @@ function spotifyUriFrom(ep: ApiEpisode | null): string | undefined {
 }
 
 function summaryImageSrcFrom(ep: ApiEpisode | null): string | undefined {
-  const publicUrl = ep?.summary_image_public_url?.trim();
   const raw = ep?.summary_image?.trim();
+  if (raw?.includes('<svg')) return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(raw)}`;
+  if (raw && /^(https?:|data:image\/|blob:)/i.test(raw)) return raw;
+  const publicUrl = ep?.summary_image_public_url?.trim();
   if (publicUrl) return publicUrl;
-  if (!raw) return undefined;
-  if (/^(https?:|data:image\/|blob:)/i.test(raw)) return raw;
-  if (raw.includes('<svg')) return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(raw)}`;
   return undefined;
 }
 
