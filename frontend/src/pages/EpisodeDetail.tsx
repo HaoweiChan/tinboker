@@ -2,10 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { useParams, useSearchParams, Link, useNavigate } from 'react-router-dom';
 import { ChevronLeft, Play, ExternalLink } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
+import { PodcastAvatar } from '@/components/common/PodcastAvatar';
 import { PageContent } from '@/components/layout/PageContent';
-import { PodMark, TickerRow } from '@/components/redesign';
+import { TickerRow } from '@/components/redesign';
 import { cn } from '@/lib/utils';
-import { getEpisodeById, type Episode as ApiEpisode } from '@/services';
+import { getEpisodeById, getPodcastByName, type Episode as ApiEpisode } from '@/services';
 import { fetchWithFallback } from '@/services/api/migration';
 import { parseTimestampedSections, type TimestampedSection } from '@/utils/parseTimestampedSections';
 import { usePlayerStore } from '@/store/usePlayerStore';
@@ -133,6 +134,7 @@ export const EpisodeDetail: React.FC = () => {
   const { playEpisode, requestSeek } = usePlayerStore();
 
   const [episode, setEpisode] = useState<ApiEpisode | null>(null);
+  const [podcastImageUrl, setPodcastImageUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -140,10 +142,15 @@ export const EpisodeDetail: React.FC = () => {
     if (!id) return;
     let alive = true;
     setLoading(true);
+    setPodcastImageUrl(null);
     (async () => {
-      const ep = await fetchWithFallback<ApiEpisode | null>(() => getEpisodeById(podcastName, id), null, `getEpisodeById:${podcastName}/${id}`).catch(() => null);
+      const [ep, podcast] = await Promise.all([
+        fetchWithFallback<ApiEpisode | null>(() => getEpisodeById(podcastName, id), null, `getEpisodeById:${podcastName}/${id}`).catch(() => null),
+        podcastName ? fetchWithFallback(() => getPodcastByName(podcastName), null, `getPodcastByName:${podcastName}`).catch(() => null) : Promise.resolve(null),
+      ]);
       if (!alive) return;
       setEpisode(ep);
+      setPodcastImageUrl(podcast?.image_url || null);
       setLoading(false);
     })();
     return () => {
@@ -176,6 +183,7 @@ export const EpisodeDetail: React.FC = () => {
   const title = episode?.episode_title || (episode?.episode_number != null ? `EP ${episode.episode_number}` : '集數摘要');
   const name = episode?.podcast_name || podcastName || '節目';
   const episodeInsight = useMemo(() => episodeInsightFrom(episode, title), [episode, title]);
+  const podcasterImageUrl = podcastImageUrl || episode?.spotify_images?.[0] || null;
 
   const onPlay = () => {
     if (!episode) return;
@@ -237,7 +245,7 @@ export const EpisodeDetail: React.FC = () => {
             {/* Hero */}
             <div className="bg-card border border-border rounded-md p-5 sm:p-6 mb-[18px]">
               <div className="flex items-center gap-3.5 mb-3.5">
-                {episode.spotify_images?.[0] ? <img src={episode.spotify_images[0]} alt="" className="w-10 h-10 rounded-[9px] object-cover shrink-0" /> : <PodMark label={name.charAt(0)} kind="mute" size={40} />}
+                <PodcastAvatar name={name} src={podcasterImageUrl} size="md" className="rounded-[9px]" />
                 <div className="min-w-0 flex-1">
                   <Link to={`/podcaster/${encodeURIComponent(name)}`} className="text-[14px] font-medium hover:underline">{name}</Link>
                   <div className="text-[12px] text-muted-foreground">
