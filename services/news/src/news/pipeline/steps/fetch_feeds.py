@@ -5,10 +5,21 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
 from ..article import FeedEntry
+
+
+def _cutoff_date(lookback_days: Any) -> str | None:
+    """YYYY-MM-DD cutoff (today − lookback_days) for the recency window, or None to disable."""
+    try:
+        days = int(lookback_days)
+    except (TypeError, ValueError):
+        return None
+    if days <= 0:
+        return None
+    return (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
 
 
 def _parse_date(entry: Any) -> str:
@@ -56,14 +67,23 @@ def fetch_feeds(
         url = str(feed.get("url") or "")
         if not url:
             continue
+        cutoff = _cutoff_date(feed.get("lookback_days"))
+        cap = feed.get("max_episodes") or max_per_feed
         try:
             parsed = parse(url)
         except Exception as exc:  # noqa: BLE001 — one bad feed must not abort the run
             print(f"  ⚠ feed fetch failed ({name}): {exc}")
             continue
-        for entry in list(getattr(parsed, "entries", []) or [])[:max_per_feed]:
+        kept = 0
+        for entry in getattr(parsed, "entries", []) or []:
+            if kept >= cap:
+                break
             link = str(entry.get("link") or "").strip()
             if not link or link in seen:
+                continue
+            published = _parse_date(entry)
+            # Skip entries older than the recency window; undated entries are kept.
+            if cutoff and published and published < cutoff:
                 continue
             seen.add(link)
             entries.append(
@@ -71,9 +91,10 @@ def fetch_feeds(
                     url=link,
                     title=str(entry.get("title") or "").strip(),
                     source=name,
-                    published=_parse_date(entry),
+                    published=published,
                     rss_summary=str(entry.get("summary") or "").strip(),
                     rss_content=_entry_content(entry),
                 )
             )
+            kept += 1
     return entries
