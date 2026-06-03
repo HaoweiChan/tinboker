@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tinboker-news"
+version = "0.1.0"
+description = "Financial-news ingest pipeline — RSS feeds into the shared Postgres wiki"
+requires-python = ">=3.11"
+
+dependencies = [
+    "tinboker-shared",
+    "feedparser>=6.0",
+    "trafilatura>=1.8",
+    "openai>=1.0.0",
+    "requests>=2.31.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-mock>=3.10.0",
+]
+
+[project.scripts]
+tinboker-news = "news.cli:main"
+
+[tool.uv.sources]
+tinboker-shared = { workspace = true }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
