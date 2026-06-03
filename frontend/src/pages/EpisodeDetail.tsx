@@ -61,6 +61,16 @@ function spotifyUriFrom(ep: ApiEpisode | null): string | undefined {
   return undefined;
 }
 
+function summaryImageSrcFrom(ep: ApiEpisode | null): string | undefined {
+  const publicUrl = ep?.summary_image_public_url?.trim();
+  const raw = ep?.summary_image?.trim();
+  if (publicUrl) return publicUrl;
+  if (!raw) return undefined;
+  if (/^(https?:|data:image\/|blob:)/i.test(raw)) return raw;
+  if (raw.includes('<svg')) return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(raw)}`;
+  return undefined;
+}
+
 function bulletsFrom(ep: ApiEpisode | null): string[] {
   if (!ep) return [];
   if (Array.isArray(ep.key_insights) && ep.key_insights.length > 0) return ep.key_insights.filter((s) => s && s.trim()).slice(0, 8);
@@ -118,6 +128,7 @@ export const EpisodeDetail: React.FC = () => {
     });
   }, [tickerSymbols, rawTranslationMap, episodeSentiments, priceMap, episode]);
   const spotifyUri = useMemo(() => spotifyUriFrom(episode), [episode]);
+  const summaryImageSrc = useMemo(() => summaryImageSrcFrom(episode), [episode]);
 
   const title = episode?.episode_title || (episode?.episode_number != null ? `EP ${episode.episode_number}` : '集數摘要');
   const name = episode?.podcast_name || podcastName || '節目';
@@ -196,6 +207,13 @@ export const EpisodeDetail: React.FC = () => {
                 </div>
               )}
             </div>
+
+            {/* 關鍵洞察 */}
+            {summaryImageSrc && (
+              <section className="mb-3.5" aria-label="關鍵洞察">
+                <img src={summaryImageSrc} alt={`${title} 關鍵洞察`} className="w-full rounded-md border border-border bg-card object-contain" loading="lazy" />
+              </section>
+            )}
 
             {/* 本集重點 */}
             {bullets.length > 0 && (
