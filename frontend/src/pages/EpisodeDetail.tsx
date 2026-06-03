@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useParams, useSearchParams, Link } from 'react-router-dom';
+import { useParams, useSearchParams, Link, useNavigate } from 'react-router-dom';
 import { ChevronLeft, Play, ExternalLink } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
@@ -13,6 +13,7 @@ import { CommentSection } from '@/components/episode/CommentSection';
 import { useStockPriceMap } from '@/hooks/useStockPriceMap';
 import { useTranslationMap } from '@/hooks/useTranslationMap';
 import { useEpisodeSentimentMap } from '@/hooks/useEpisodeSentimentMap';
+import { EpisodeInsightCard, type EpisodeInsight } from '@/components/episode/EpisodeInsightCard';
 
 /** Render plain text with inline `[label](#ticker:SYMBOL)` markers as clickable
  *  localized labels (the agents pipeline emits these in summaries/insights). */
@@ -61,15 +62,6 @@ function spotifyUriFrom(ep: ApiEpisode | null): string | undefined {
   return undefined;
 }
 
-function summaryImageSrcFrom(ep: ApiEpisode | null): string | undefined {
-  const raw = ep?.summary_image?.trim();
-  if (raw?.includes('<svg')) return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(raw)}`;
-  if (raw && /^(https?:|data:image\/|blob:)/i.test(raw)) return raw;
-  const publicUrl = ep?.summary_image_public_url?.trim();
-  if (publicUrl) return publicUrl;
-  return undefined;
-}
-
 function bulletsFrom(ep: ApiEpisode | null): string[] {
   if (!ep) return [];
   if (Array.isArray(ep.key_insights) && ep.key_insights.length > 0) return ep.key_insights.filter((s) => s && s.trim()).slice(0, 8);
@@ -81,14 +73,55 @@ function bulletsFrom(ep: ApiEpisode | null): string[] {
     .slice(0, 8);
 }
 
+function cleanSummaryLine(line: string): string {
+  return line
+    .replace(/^(?:#{1,6}\s*)+/, '')
+    .replace(/\s*\(#time:\s*\d+\)/g, '')
+    .replace(/^[-*\s]+/, '')
+    .replace(/\[([^\]]+)\]\((?!#ticker:)[^)]+\)/g, '$1')
+    .replace(/[*_`>~]/g, '')
+    .trim();
+}
+
+function truncateText(text: string, max: number): string {
+  return text.length > max ? `${text.slice(0, max).trimEnd()}...` : text;
+}
+
+function episodeInsightFrom(ep: ApiEpisode | null, fallbackTitle: string): EpisodeInsight | null {
+  if (!ep) return null;
+  const src = ep.modified_summary_content || ep.summary_content || '';
+  const lines = src.split('\n').map((line) => line.trim()).filter(Boolean);
+  const headline = truncateText(cleanSummaryLine(lines.find((line) => line.startsWith('#')) || lines[0] || fallbackTitle), 58);
+  const thesis = truncateText(cleanSummaryLine(lines.find((line) => !line.startsWith('#') && line.length > 12) || ''), 96);
+  const keyHighlights = Array.isArray(ep.key_insights) ? ep.key_insights.map((line) => truncateText(cleanSummaryLine(line), 34)).filter(Boolean) : [];
+  const sectionHighlights = lines
+    .filter((line) => /^#{2,}/.test(line))
+    .map(cleanSummaryLine)
+    .filter((line) => line && line !== headline)
+    .map((line) => truncateText(line, 34))
+    .slice(0, 3);
+  const highlights = (keyHighlights.length > 0 ? keyHighlights : sectionHighlights).slice(0, 3);
+
+  if (!headline && !thesis && highlights.length === 0) return null;
+  return {
+    headline: headline || fallbackTitle,
+    thesis: thesis || undefined,
+    highlights,
+  };
+}
+
+type RailTab = 'stocks' | 'chapters';
+
 export const EpisodeDetail: React.FC = () => {
   const { id } = useParams();
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const podcastName = searchParams.get('podcast') || '';
   const { playEpisode, requestSeek } = usePlayerStore();
 
   const [episode, setEpisode] = useState<ApiEpisode | null>(null);
   const [loading, setLoading] = useState(true);
+  const [railTab, setRailTab] = useState<RailTab>('stocks');
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -127,10 +160,16 @@ export const EpisodeDetail: React.FC = () => {
     });
   }, [tickerSymbols, rawTranslationMap, episodeSentiments, priceMap, episode]);
   const spotifyUri = useMemo(() => spotifyUriFrom(episode), [episode]);
-  const summaryImageSrc = useMemo(() => summaryImageSrcFrom(episode), [episode]);
 
   const title = episode?.episode_title || (episode?.episode_number != null ? `EP ${episode.episode_number}` : '集數摘要');
   const name = episode?.podcast_name || podcastName || '節目';
+  const episodeInsight = useMemo(() => episodeInsightFrom(episode, title), [episode, title]);
+
+  useEffect(() => {
+    if (railTab === 'stocks' && tickers.length === 0 && chapters.length > 0) {
+      setRailTab('chapters');
+    }
+  }, [chapters.length, railTab, tickers.length]);
 
   const onPlay = () => {
     if (!episode) return;
@@ -149,17 +188,44 @@ export const EpisodeDetail: React.FC = () => {
       <SEO title={title} description={`${name} · ${title} — 結構化重點與關鍵片段。`} />
       <PageContent
         rail={
-          chapters.length > 0 ? (
-            <nav className="bg-card border border-border rounded-md p-3">
-              <h4 className="text-[11px] font-semibold tracking-[0.08em] uppercase text-muted-foreground px-2 mb-2">章節</h4>
-              <div className="flex flex-col gap-0.5">
-                {chapters.map((c, i) => (
-                  <button key={i} type="button" onClick={() => requestSeek(c.timestampSeconds)} className="flex items-center gap-2.5 px-2 py-1.5 rounded text-left text-[13px] text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
-                    <span className="font-mono text-[11px] text-muted-foreground shrink-0">{c.formattedTime}</span>
-                    <span className="truncate">{c.title}</span>
-                  </button>
-                ))}
+          tickers.length > 0 || chapters.length > 0 ? (
+            <nav className="bg-card border border-border rounded-md p-3" aria-label="集數導覽">
+              <div className="grid grid-cols-2 gap-1 rounded-md bg-muted/60 p-1 mb-3">
+                <button
+                  type="button"
+                  onClick={() => setRailTab('stocks')}
+                  className={cn('h-8 rounded text-[12px] font-medium transition-colors', railTab === 'stocks' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground')}
+                >
+                  股票
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRailTab('chapters')}
+                  className={cn('h-8 rounded text-[12px] font-medium transition-colors', railTab === 'chapters' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground')}
+                >
+                  章節
+                </button>
               </div>
+              {railTab === 'stocks' ? (
+                tickers.length > 0 ? (
+                  <div className="flex flex-col gap-1.5">
+                    {tickers.map((t) => (
+                      <TickerRow key={t.symbol} ticker={t} onClick={() => navigate(`/stock/${encodeURIComponent(t.symbol)}`)} />
+                    ))}
+                  </div>
+                ) : (
+                  <p className="px-2 py-4 text-[13px] text-muted-foreground">本集沒有提及股票。</p>
+                )
+              ) : (
+                <div className="flex flex-col gap-0.5">
+                  {chapters.map((c, i) => (
+                    <button key={i} type="button" onClick={() => requestSeek(c.timestampSeconds)} className="flex items-center gap-2.5 px-2 py-1.5 rounded text-left text-[13px] text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
+                      <span className="font-mono text-[11px] text-muted-foreground shrink-0">{c.formattedTime}</span>
+                      <span className="truncate">{c.title}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </nav>
           ) : undefined
         }
@@ -207,12 +273,7 @@ export const EpisodeDetail: React.FC = () => {
               )}
             </div>
 
-            {/* 關鍵洞察 */}
-            {summaryImageSrc && (
-              <section className="mb-3.5" aria-label="關鍵洞察">
-                <img src={summaryImageSrc} alt={`${title} 關鍵洞察`} className="w-full rounded-md border border-border bg-card object-contain" loading="lazy" />
-              </section>
-            )}
+            {episodeInsight && <EpisodeInsightCard insight={episodeInsight} />}
 
             {/* 本集重點 */}
             {bullets.length > 0 && (
@@ -229,13 +290,13 @@ export const EpisodeDetail: React.FC = () => {
               </section>
             )}
 
-            {/* 提及股票 */}
+            {/* 提及股票 — mobile fallback; desktop uses the right rail. */}
             {tickers.length > 0 && (
-              <section className="bg-card border border-border rounded-md p-5 sm:p-6 mb-3.5">
+              <section className="xl:hidden bg-card border border-border rounded-md p-5 sm:p-6 mb-3.5">
                 <h3 className="text-[12px] font-semibold uppercase tracking-[0.08em] text-muted-foreground mb-3.5">提及股票</h3>
                 <div className="flex flex-col gap-1.5">
                   {tickers.map((t) => (
-                    <TickerRow key={t.symbol} ticker={t} onClick={() => (window.location.href = `/stock/${encodeURIComponent(t.symbol)}`)} />
+                    <TickerRow key={t.symbol} ticker={t} onClick={() => navigate(`/stock/${encodeURIComponent(t.symbol)}`)} />
                   ))}
                 </div>
               </section>
