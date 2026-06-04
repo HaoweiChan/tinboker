@@ -5,6 +5,10 @@
 // Translation status values
 export type TranslationStatus = 'pending' | 'approved' | 'auto';
 
+// Display preference: 'auto' shows the zh name when present; 'en' forces English
+// even when a zh name exists; 'zh_tw' prefers the zh name.
+export type NamePreference = 'auto' | 'zh_tw' | 'en';
+
 // Base translation interface
 export interface Translation {
   id: number;
@@ -14,6 +18,7 @@ export interface Translation {
   name_zh_tw: string | null;
   brand_color: string | null;
   aliases: string[] | null;
+  name_preference: NamePreference;
   translation_status: TranslationStatus;
   last_updated_by: string | null;
   last_updated_at: string | null;
@@ -46,6 +51,7 @@ export interface TranslationUpdate {
   translation_status?: TranslationStatus;
   brand_color?: string | null;
   aliases?: string[] | null;
+  name_preference?: NamePreference;
 }
 
 // Paginated list response

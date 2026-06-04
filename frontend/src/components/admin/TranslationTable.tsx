@@ -4,7 +4,13 @@
 
 import React, { useState } from 'react';
 import { Loader2, Trash2 } from 'lucide-react';
-import type { Translation, TranslationStatus, TranslationUpdate } from '@/types/translation';
+import type { NamePreference, Translation, TranslationStatus, TranslationUpdate } from '@/types/translation';
+
+const PREFERENCE_OPTIONS: { value: NamePreference; label: string }[] = [
+  { value: 'auto', label: 'Auto' },
+  { value: 'zh_tw', label: '中文' },
+  { value: 'en', label: 'English' },
+];
 
 interface TranslationTableProps {
   translations: Translation[];
@@ -164,6 +170,9 @@ export const TranslationTable: React.FC<TranslationTableProps> = ({
               Aliases
             </th>
             <th className={thCls}>Color</th>
+            <th className={thCls} title="Display preference: Auto shows the Chinese name when present; English forces the English name even if a Chinese name exists">
+              Preference
+            </th>
             <th className={thCls}>Status</th>
             <th className={thCls}>Actions</th>
           </tr>
@@ -243,6 +252,29 @@ export const TranslationTable: React.FC<TranslationTableProps> = ({
                       }}
                     />
                   </label>
+                </td>
+                <td className="whitespace-nowrap px-4 py-3">
+                  <select
+                    value={translation.name_preference ?? 'auto'}
+                    onChange={async (e) => {
+                      const pref = e.target.value as NamePreference;
+                      setSaving(translation.id);
+                      try {
+                        await onUpdate(translation.id, { name_preference: pref });
+                      } finally {
+                        setSaving(null);
+                      }
+                    }}
+                    disabled={saving === translation.id}
+                    title="Auto: show the Chinese name when present. English: force the English name even if a Chinese name exists."
+                    className="rounded border border-gray-300 bg-white px-2 py-1 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200"
+                  >
+                    {PREFERENCE_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
                 </td>
                 <td className="whitespace-nowrap px-4 py-3">
                   <span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${statusBadge.className}`}>
