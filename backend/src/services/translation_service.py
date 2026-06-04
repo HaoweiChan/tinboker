@@ -104,7 +104,14 @@ class TranslationService:
         Used by on-ingest discovery so newly-mentioned tickers surface in the admin
         queue (`status=pending`) and become work items for the backfill agent.
         Idempotent. Stores the bare symbol (exchange suffix stripped) with an inferred
-        market (numeric → TW, else US). Returns the number of rows inserted.
+        market. Returns the number of rows inserted.
+
+        Market inference is a best-effort default for a TW-focused app:
+        - digits, optionally with a single class letter (e.g. 00738U, 00632R) → TW
+          (TW stock/ETF/futures codes; the bare `.isdigit()` check alone mislabeled these)
+        - otherwise alphabetic → US
+        Foreign 6-digit codes (KR/CN/HK) are ambiguous by format and fall to the TW
+        default; the backfill agent corrects the market when it resolves the name.
         """
         # Collect distinct bare symbols with an inferred market.
         cleaned: dict[str, str] = {}
@@ -114,7 +121,9 @@ class TranslationService:
             bare = s.strip().upper().split(".")[0]
             if not bare:
                 continue
-            cleaned.setdefault(bare, "TW" if bare.isdigit() else "US")
+            # Treat "digits + optional trailing class letter" as a TW numeric code.
+            core = bare[:-1] if (len(bare) > 1 and bare[-1].isalpha() and bare[:-1].isdigit()) else bare
+            cleaned.setdefault(bare, "TW" if core.isdigit() else "US")
         if not cleaned:
             return 0
 
