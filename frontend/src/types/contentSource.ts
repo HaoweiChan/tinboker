@@ -73,3 +73,10 @@ export interface ContentSourceStats {
   active: number;
   by_type: Record<string, number>;
 }
+
+// Per-source ingest status (last episode ingested), derived from Firestore. Podcasts only in v1.
+export interface SourceRunStatus {
+  name: string;
+  last_ingested_at: string | null;
+  episode_count: number;
+}

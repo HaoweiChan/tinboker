@@ -4,7 +4,19 @@
 
 import React, { useState } from 'react';
 import { Loader2, Trash2, Pencil, ExternalLink } from 'lucide-react';
-import type { ContentSource, ContentSourceUpdate } from '@/types/contentSource';
+import type { ContentSource, ContentSourceUpdate, SourceRunStatus } from '@/types/contentSource';
+
+function timeAgo(iso: string | null): string {
+  if (!iso) return '—';
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return '—';
+  const days = Math.floor((Date.now() - then) / 86_400_000);
+  if (days <= 0) return 'today';
+  if (days === 1) return 'yesterday';
+  if (days < 30) return `${days}d ago`;
+  if (days < 365) return `${Math.floor(days / 30)}mo ago`;
+  return `${Math.floor(days / 365)}y ago`;
+}
 
 interface SourceTableProps {
   sources: ContentSource[];
@@ -12,6 +24,7 @@ interface SourceTableProps {
   onUpdate: (id: number, data: ContentSourceUpdate) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
   onEdit: (source: ContentSource) => void;
+  runStatus?: Map<string, SourceRunStatus>;
 }
 
 interface EditingCell {
@@ -26,6 +39,7 @@ export const SourceTable: React.FC<SourceTableProps> = ({
   onUpdate,
   onDelete,
   onEdit,
+  runStatus,
 }) => {
   const [editingCell, setEditingCell] = useState<EditingCell | null>(null);
   const [saving, setSaving] = useState<number | null>(null);
@@ -122,6 +136,9 @@ export const SourceTable: React.FC<SourceTableProps> = ({
             <th className={thCls} title="Only ingest items published within this many days (optional ≤ cap)">
               Window
             </th>
+            <th className={thCls} title="Most recent episode ingested (Firestore-derived; podcasts only)">
+              Last ingested
+            </th>
             <th className={thCls}>Active</th>
             <th className={thCls}>Actions</th>
           </tr>
@@ -133,6 +150,7 @@ export const SourceTable: React.FC<SourceTableProps> = ({
             const editingName = editingCell?.id === source.id && editingCell.field === 'name';
             const editingWindow = editingCell?.id === source.id && editingCell.field === 'lookback_days';
             const locale = source.source_type === 'news' ? source.region : source.language;
+            const rs = runStatus?.get(source.name);
             return (
               <tr key={source.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
                 {/* Name */}
@@ -209,6 +227,20 @@ export const SourceTable: React.FC<SourceTableProps> = ({
                         <span className="text-xs text-gray-400">≤{source.max_episodes}</span>
                       )}
                     </div>
+                  )}
+                </td>
+                {/* Last episode ingested (Firestore-derived; podcasts only) */}
+                <td className="whitespace-nowrap px-4 py-3 text-sm">
+                  {rs && rs.last_ingested_at ? (
+                    <span
+                      className="text-gray-600 dark:text-gray-300"
+                      title={`${rs.episode_count} episode(s) · ${new Date(rs.last_ingested_at).toLocaleString()}`}
+                    >
+                      {timeAgo(rs.last_ingested_at)}
+                      <span className="ml-1 text-xs text-gray-400">· {rs.episode_count}</span>
+                    </span>
+                  ) : (
+                    <span className="italic text-gray-400">—</span>
                   )}
                 </td>
                 {/* Active toggle */}

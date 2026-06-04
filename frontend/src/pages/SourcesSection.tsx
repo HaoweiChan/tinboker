@@ -9,12 +9,13 @@ import { ChevronLeft, ChevronRight, Plus, RefreshCw } from 'lucide-react';
 import { SourceFilters } from '@/components/admin/SourceFilters';
 import { SourceTable } from '@/components/admin/SourceTable';
 import { SourceFormDialog, type SourceFormValues } from '@/components/admin/SourceFormDialog';
-import { listSources, createSource, updateSource, deleteSource } from '@/services/api/sources';
+import { listSources, createSource, updateSource, deleteSource, getSourcesRunStatus } from '@/services/api/sources';
 import type {
   ContentSource,
   ContentSourceCreate,
   ContentSourceUpdate,
   ContentSourceListParams,
+  SourceRunStatus,
   SourceType,
 } from '@/types/contentSource';
 
@@ -36,6 +37,8 @@ export const SourcesSection: React.FC = () => {
   // Dialog
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<ContentSource | null>(null);
+  // Firestore-derived ingest status, keyed by source name (podcasts only in v1).
+  const [runStatus, setRunStatus] = useState<Map<string, SourceRunStatus>>(new Map());
 
   // Debounce search
   useEffect(() => {
@@ -73,6 +76,19 @@ export const SourcesSection: React.FC = () => {
   useEffect(() => {
     fetchSources();
   }, [fetchSources]);
+
+  const fetchRunStatus = useCallback(async () => {
+    try {
+      const items = await getSourcesRunStatus();
+      setRunStatus(new Map(items.map((i) => [i.name, i])));
+    } catch (error) {
+      console.error('Failed to fetch run status:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchRunStatus();
+  }, [fetchRunStatus]);
 
   const handleSourceTypeChange = (value: SourceType) => {
     setSourceType(value);
@@ -140,7 +156,10 @@ export const SourcesSection: React.FC = () => {
         </div>
         <div className="flex items-center gap-3">
           <button
-            onClick={fetchSources}
+            onClick={() => {
+              fetchSources();
+              fetchRunStatus();
+            }}
             className="flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
           >
             <RefreshCw className="h-4 w-4" />
@@ -183,6 +202,7 @@ export const SourcesSection: React.FC = () => {
         onUpdate={handleUpdate}
         onDelete={handleDelete}
         onEdit={openEdit}
+        runStatus={runStatus}
       />
 
       {/* Pagination */}

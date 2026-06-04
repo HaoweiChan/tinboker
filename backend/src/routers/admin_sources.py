@@ -7,16 +7,24 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from src.database.postgres import get_session
+from datetime import datetime, timezone
+
 from src.services.content_source_service import ContentSourceService
+from src.services.podcast import PodcastService
 from src.schemas.content_source import (
     ContentSourceCreate,
     ContentSourceUpdate,
     ContentSourceResponse,
     ContentSourceListResponse,
+    SourceRunStatus,
+    SourceRunStatusResponse,
 )
 from src.auth.admin_auth import get_admin_access, AdminAccess
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
+
+# Reused for the Firestore-derived run-status (cached podcast aggregation).
+podcast_service = PodcastService()
 
 
 # ==================== Stats (before parameterized routes) ====================
@@ -28,6 +36,30 @@ async def get_source_stats(
 ):
     """Get content-source statistics (counts by type + active)."""
     return ContentSourceService(db).get_stats()
+
+
+@router.get("/sources/run-status", response_model=SourceRunStatusResponse)
+async def get_sources_run_status(
+    admin: AdminAccess = Depends(get_admin_access),
+):
+    """Per-podcast last-ingested status, derived from the (cached) Firestore episode
+    aggregation. v1 covers podcasts only; news sources have no entry. Registered before
+    /sources/{source_id} so "run-status" isn't captured as a source id.
+    """
+    podcasts = await podcast_service.get_all_podcasts(limit=100000)
+    items = [
+        SourceRunStatus(
+            name=p.name,
+            last_ingested_at=(
+                datetime.fromtimestamp(p.updated_at / 1000, tz=timezone.utc).isoformat()
+                if p.updated_at
+                else None
+            ),
+            episode_count=p.episode_count,
+        )
+        for p in podcasts
+    ]
+    return SourceRunStatusResponse(items=items)
 
 
 # ==================== Content sources CRUD ====================

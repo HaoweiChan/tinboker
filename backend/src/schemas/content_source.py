@@ -91,3 +91,15 @@ class ContentSourcePublicListResponse(BaseModel):
     """Read-only follow-list response for the pipeline pull."""
     total: int
     items: List[ContentSourcePublic]
+
+
+class SourceRunStatus(BaseModel):
+    """Per-source ingest status derived from Firestore episodes (podcasts only in v1)."""
+    name: str
+    last_ingested_at: Optional[str] = None  # ISO 8601 UTC of the most recent episode
+    episode_count: int = 0
+
+
+class SourceRunStatusResponse(BaseModel):
+    """Run-status keyed by source name; news sources have no entry in v1."""
+    items: List[SourceRunStatus]

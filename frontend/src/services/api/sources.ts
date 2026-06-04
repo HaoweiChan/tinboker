@@ -11,6 +11,7 @@ import type {
   ContentSourceListResponse,
   ContentSourceListParams,
   ContentSourceStats,
+  SourceRunStatus,
 } from '@/types/contentSource';
 
 function adminAuthConfig() {
@@ -77,4 +78,16 @@ export async function getSourceStats(): Promise<ContentSourceStats> {
     adminAuthConfig()
   );
   return response.data;
+}
+
+/**
+ * Get per-source ingest run-status (last episode ingested), derived from Firestore.
+ * Podcasts only in v1; news sources are absent from the result.
+ */
+export async function getSourcesRunStatus(): Promise<SourceRunStatus[]> {
+  const response = await apiClient.get<{ items: SourceRunStatus[] }>(
+    '/api/admin/sources/run-status',
+    adminAuthConfig()
+  );
+  return response.data.items;
 }
