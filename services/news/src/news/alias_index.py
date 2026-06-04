@@ -1,11 +1,12 @@
 """In-memory ``alias → canonical entity`` index.
 
-Built once per ingest run from two sources (the design plan's "alias resolution
-location: both"):
+Built once per ingest run from three sources:
 
-1. the curated **ticker registry** seed (``shared/data/tickers.json``), and
+1. the curated **ticker registry** seed (``shared/data/tickers.json``),
 2. the live **entity-page ``frontmatter.aliases``** store — a one-time scan of
-   the wiki's entity pages.
+   the wiki's entity pages, and
+3. **operator-curated aliases** from the platform admin (opt-in pull; no-op when
+   ``TINBOKER_PLATFORM_API_URL`` is unset).
 
 This is the only place "TSMC = 台積電 = 2330" is reconciled. It is the cheap
 deterministic dictionary the dict-prepass and L1 resolution consult before any
@@ -18,6 +19,7 @@ import re
 import unicodedata
 from dataclasses import dataclass, field
 
+from shared.platform_client import fetch_translation_aliases
 from shared.tickers import all_ticker_infos
 from shared.wiki_builder.repository import WikiRepository
 from shared.wiki_builder.slugify import ticker_slug
@@ -108,7 +110,7 @@ class AliasIndex:
 
 
 def build_alias_index(repo: WikiRepository) -> AliasIndex:
-    """Build the alias index from the ticker registry + entity-page alias store."""
+    """Build the alias index from the ticker registry, entity-page store, and platform aliases."""
     index = AliasIndex()
 
     for info in all_ticker_infos():
@@ -137,5 +139,22 @@ def build_alias_index(repo: WikiRepository) -> AliasIndex:
         )
         aliases = [entity.name, *tickers, *(str(a) for a in (fm.get("aliases") or []))]
         index.add(entity, [a for a in aliases if a])
+
+    # 3. Operator-curated aliases from the platform admin (opt-in; no-op when disabled).
+    for row in fetch_translation_aliases() or []:
+        symbol = str(row.get("ticker") or "").strip()
+        row_aliases = [str(a) for a in (row.get("aliases") or []) if a]
+        if not symbol or not row_aliases:
+            continue
+        slug = ticker_slug(symbol)
+        entity = index.entity(slug) or ResolvedEntity(
+            slug=slug,
+            name=str(row.get("name_zh_tw") or row.get("name_en") or symbol),
+            type="company",
+            symbol=symbol,
+            market=row.get("market"),
+        )
+        names = [str(row[k]) for k in ("name_en", "name_zh_tw") if row.get(k)]
+        index.add(entity, [symbol, *row_aliases, *names])
 
     return index

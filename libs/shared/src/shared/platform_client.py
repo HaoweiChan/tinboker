@@ -1,15 +1,13 @@
-"""HTTP client for the TinBoker platform config API (the followed-source registry).
+"""HTTP client for the TinBoker platform config API.
 
-The platform (tinboker-platform) owns the operator-maintained follow-list of podcast
-shows and news feeds; this pulls the active rows at pipeline start so the agents no
-longer depend on the local ``podcasts_*.json`` / ``feeds.json`` (kept as an offline
-fallback).
+The platform (tinboker-platform) owns operator-maintained config — the followed-source
+registry (podcast shows + news feeds) and curated ticker aliases. This pulls them at
+pipeline start so the agents don't depend on local files alone.
 
 Opt-in by design: a network call happens ONLY when ``TINBOKER_PLATFORM_API_URL`` is
 set. When it is unset (tests, local dev, or a deploy that hasn't been switched over)
-every function returns ``None`` immediately, so callers transparently fall back to the
-committed local config. Read-only, short-timeout, stdlib-only — no new dependency on
-``shared``.
+every function returns ``None`` immediately, so callers fall back to the committed local
+config. Read-only, short-timeout, stdlib-only — no new dependency on ``shared``.
 """
 
 from __future__ import annotations
@@ -28,18 +26,16 @@ def platform_base_url() -> str | None:
     return base.rstrip("/") if base else None
 
 
-def fetch_sources(source_type: str, *, timeout: float = 10.0) -> list[dict[str, Any]] | None:
-    """Return active sources of ``source_type`` (``"podcast"`` | ``"news"``).
+def _get_items(path: str, *, timeout: float = 10.0, what: str = "data") -> list[dict[str, Any]] | None:
+    """GET ``{base}{path}`` and return the response's ``items`` list, or ``None``.
 
-    ``GET {base}/api/sources?type=<source_type>&active=true`` → the response's ``items``
-    list. Returns ``None`` (never raises) when the pull is disabled or any error occurs,
-    so the caller can fall back to local config.
+    Returns ``None`` (never raises) when the pull is disabled (no base URL) or on any
+    network/parse error, so callers can fall back to local config.
     """
     base = platform_base_url()
     if not base:
         return None
-    query = urllib.parse.urlencode({"type": source_type, "active": "true"})
-    url = f"{base}/api/sources?{query}"
+    url = f"{base}{path}"
     try:
         req = urllib.request.Request(url, headers={"Accept": "application/json"})
         with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -47,12 +43,27 @@ def fetch_sources(source_type: str, *, timeout: float = 10.0) -> list[dict[str, 
                 return None
             payload = json.loads(resp.read().decode("utf-8"))
     except (urllib.error.URLError, TimeoutError, ValueError, OSError) as exc:
-        print(
-            f"Warning: platform /api/sources?type={source_type} unavailable "
-            f"({exc}); falling back to local config"
-        )
+        print(f"Warning: platform {what} unavailable ({exc}); falling back to local config")
         return None
     items = payload.get("items") if isinstance(payload, dict) else None
-    if not isinstance(items, list):
-        return None
-    return items
+    return items if isinstance(items, list) else None
+
+
+def fetch_sources(source_type: str, *, timeout: float = 10.0) -> list[dict[str, Any]] | None:
+    """Active sources of ``source_type`` (``"podcast"`` | ``"news"``) from the platform.
+
+    ``GET {base}/api/sources?type=<source_type>&active=true`` → the ``items`` list.
+    """
+    query = urllib.parse.urlencode({"type": source_type, "active": "true"})
+    return _get_items(f"/api/sources?{query}", timeout=timeout, what=f"/api/sources?type={source_type}")
+
+
+def fetch_translation_aliases(*, timeout: float = 10.0) -> list[dict[str, Any]] | None:
+    """Translations that carry curated aliases, for the news alias index.
+
+    ``GET {base}/api/stocks/translations/aliases`` → the ``items`` list, each with
+    ``ticker``, ``market``, ``name_en``, ``name_zh_tw`` and ``aliases``.
+    """
+    return _get_items(
+        "/api/stocks/translations/aliases", timeout=timeout, what="/api/stocks/translations/aliases"
+    )
