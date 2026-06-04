@@ -15,6 +15,10 @@ class TranslationBase(BaseModel):
     name_zh_tw: Optional[str] = Field(None, description="Chinese Traditional name")
     brand_color: Optional[str] = Field(None, max_length=7, description="Brand hex color e.g. '#1A2B3C'")
     aliases: Optional[List[str]] = Field(None, description="Alt names/symbols that resolve to this ticker")
+    name_preference: Optional[Literal["auto", "zh_tw", "en"]] = Field(
+        None, description="Display preference. 'en' forces English even when a zh name exists; "
+                          "null leaves it unchanged (defaults to 'auto')."
+    )
 
 
 class TranslationCreate(TranslationBase):
@@ -29,6 +33,7 @@ class TranslationUpdate(BaseModel):
     translation_status: Optional[Literal["pending", "approved", "auto"]] = None
     brand_color: Optional[str] = Field(None, max_length=7)
     aliases: Optional[List[str]] = None
+    name_preference: Optional[Literal["auto", "zh_tw", "en"]] = None
 
 
 class TranslationResponse(TranslationBase):
@@ -51,6 +56,7 @@ class TranslationPublicResponse(BaseModel):
     name_zh_tw: Optional[str] = None
     brand_color: Optional[str] = None
     aliases: Optional[List[str]] = None
+    name_preference: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -78,8 +84,11 @@ class TranslationSearchItem(BaseModel):
     brand_color: Optional[str] = None
     aliases: Optional[List[str]] = None
     translation_status: str
+    name_preference: str = Field(
+        "auto", description="Display preference: 'auto' | 'zh_tw' | 'en'"
+    )
     has_zh_name: bool = Field(
-        ..., description="True when name_zh_tw is a real Chinese (CJK) name, not an English fallback"
+        ..., description="True when a real Chinese name is shown (CJK present and preference != 'en')"
     )
     display_name: str = Field(
         ..., description="Label to render: name_zh_tw when has_zh_name else name_en or ticker"

@@ -76,6 +76,9 @@ token by regenerating and updating both sides.
 >    - `name_zh_tw`: the common Traditional-Chinese name used in Taiwan, **or `null`**
 >      if the company is universally referred to by its English/Latin name (e.g.
 >      Palantir, Arm, Roku). Never copy the English name into this field.
+>    - `name_preference`: leave unset (defaults to `auto` = show zh when present). Only
+>      set `"en"` when a Chinese name *does* exist but TW investors still use the English
+>      name — that forces English without you having to drop a legitimate zh name.
 >    - `brand_color`: the company's primary brand hex color (e.g. NVIDIA `#76B900`).
 > 4. Submit a batch with `propose_translations` (status defaults to `auto`).
 > 5. Report what you wrote and which you skipped, and flag any low-confidence guesses

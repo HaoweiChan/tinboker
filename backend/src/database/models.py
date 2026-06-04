@@ -21,6 +21,9 @@ class StockTranslation(Base):
     name_zh_tw = Column(Text, nullable=True)
     brand_color = Column(String(7), nullable=True)  # Hex color e.g. '#1A2B3C'
     aliases = Column(JSON, nullable=True)  # list[str]: alt names/symbols that resolve to this ticker
+    name_preference = Column(
+        String(10), nullable=False, default="auto"
+    )  # "auto" | "zh_tw" | "en" — display preference; "en" forces English even when a zh name exists
     translation_status = Column(
         String(20),
         nullable=False,
