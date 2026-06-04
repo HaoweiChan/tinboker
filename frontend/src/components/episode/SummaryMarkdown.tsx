@@ -75,10 +75,12 @@ export const SummaryMarkdown: React.FC<SummaryMarkdownProps> = ({ content, onSee
             }
             if (h.startsWith('#tag:')) {
               const id = h.slice('#tag:'.length).trim();
+              // Inline glossary-style link — reads as part of the prose (dotted underline),
+              // visually distinct from the bold ticker links above.
               return (
                 <Link
                   to={`/topics/${encodeURIComponent(id)}`}
-                  className="inline-flex items-center align-middle px-2 py-0.5 mx-0.5 rounded-full bg-muted text-[12px] text-muted-foreground hover:bg-accent-info-soft hover:text-accent-info transition-colors"
+                  className="text-foreground/90 underline decoration-dotted decoration-muted-foreground/50 underline-offset-[3px] hover:text-accent-info hover:decoration-accent-info transition-colors"
                 >
                   {children}
                 </Link>
