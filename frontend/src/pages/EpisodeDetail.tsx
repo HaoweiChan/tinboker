@@ -15,30 +15,8 @@ import { useStockPriceMap } from '@/hooks/useStockPriceMap';
 import { useTranslationMap } from '@/hooks/useTranslationMap';
 import { useEpisodeSentimentMap } from '@/hooks/useEpisodeSentimentMap';
 import { EpisodeInsightCard, type EpisodeInsight } from '@/components/episode/EpisodeInsightCard';
+import { MentionText } from '@/components/episode/InlineMarkers';
 import type { Sentiment } from '@/lib/sentiment';
-
-/** Render plain text with inline `[label](#ticker:SYMBOL)` markers as clickable
- *  localized labels (the agents pipeline emits these in summaries/insights). */
-const TICKER_MARKER = /\[([^\]]+)\]\(#ticker:([^)]+)\)/g;
-const MentionText: React.FC<{ text: string }> = ({ text }) => {
-  const parts: React.ReactNode[] = [];
-  const re = new RegExp(TICKER_MARKER);
-  let last = 0;
-  let key = 0;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text)) !== null) {
-    if (m.index > last) parts.push(text.slice(last, m.index));
-    const symbol = m[2].trim().toUpperCase();
-    parts.push(
-      <Link key={key++} to={`/stock/${encodeURIComponent(symbol)}`} className="text-accent-info hover:underline font-medium">
-        {m[1]}
-      </Link>,
-    );
-    last = m.index + m[0].length;
-  }
-  if (last < text.length) parts.push(text.slice(last));
-  return <>{parts}</>;
-};
 
 function timeAgo(release: string | number | null | undefined, created: number): string {
   const ms = typeof release === 'string' ? Date.parse(release) : (release ?? created);

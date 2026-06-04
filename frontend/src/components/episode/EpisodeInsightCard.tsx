@@ -1,31 +1,7 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
 import { Lightbulb } from 'lucide-react';
 import { cn } from '@/lib/utils';
-
-const TICKER_MARKER = /\[([^\]]+)\]\(#ticker:([^)]+)\)/g;
-
-const InsightText: React.FC<{ text: string }> = ({ text }) => {
-  const parts: React.ReactNode[] = [];
-  const re = new RegExp(TICKER_MARKER);
-  let last = 0;
-  let key = 0;
-  let match: RegExpExecArray | null;
-
-  while ((match = re.exec(text)) !== null) {
-    if (match.index > last) parts.push(text.slice(last, match.index));
-    const symbol = match[2].trim().toUpperCase();
-    parts.push(
-      <Link key={key++} to={`/stock/${encodeURIComponent(symbol)}`} className="text-accent-info hover:underline font-medium">
-        {match[1]}
-      </Link>,
-    );
-    last = match.index + match[0].length;
-  }
-
-  if (last < text.length) parts.push(text.slice(last));
-  return <>{parts}</>;
-};
+import { MentionText } from '@/components/episode/InlineMarkers';
 
 export interface EpisodeInsight {
   headline: string;
@@ -49,11 +25,11 @@ export const EpisodeInsightCard: React.FC<EpisodeInsightCardProps> = ({ insight,
       <span>關鍵洞察</span>
     </div>
     <h2 className="text-[16px] sm:text-[17px] font-semibold leading-[1.35] tracking-[-0.005em] mb-1.5">
-      <InsightText text={insight.headline} />
+      <MentionText text={insight.headline} />
     </h2>
     {insight.thesis && (
       <p className="text-[13px] leading-[1.5] text-muted-foreground">
-        <InsightText text={insight.thesis} />
+        <MentionText text={insight.thesis} />
       </p>
     )}
     {insight.highlights && insight.highlights.length > 0 && (
@@ -62,7 +38,7 @@ export const EpisodeInsightCard: React.FC<EpisodeInsightCardProps> = ({ insight,
           <li key={index} className="grid grid-cols-[10px_1fr] gap-2">
             <span className="mt-[7px] h-1.5 w-1.5 rounded-full bg-emerald-500/90" />
             <span>
-              <InsightText text={item} />
+              <MentionText text={item} />
             </span>
           </li>
         ))}
