@@ -5,7 +5,6 @@ import { SEO } from '@/components/common/SEO';
 import { PodcastAvatar } from '@/components/common/PodcastAvatar';
 import { PageContent } from '@/components/layout/PageContent';
 import { TickerRow } from '@/components/redesign';
-import { cn } from '@/lib/utils';
 import { getEpisodeById, getEpisodeByIdOnly, getPodcastByName, type Episode as ApiEpisode } from '@/services';
 import { fetchWithFallback } from '@/services/api/migration';
 import { parseTimestampedSections, type TimestampedSection } from '@/utils/parseTimestampedSections';
@@ -177,34 +176,19 @@ export const EpisodeDetail: React.FC = () => {
 
   return (
     <>
-      <SEO title={title} description={`${name} · ${title} — 結構化重點與關鍵片段。`} />
+      <SEO title={title} description={`${name} · ${title} — 結構化摘要與重點。`} />
       <PageContent
         rail={
-          tickers.length > 0 || chapters.length > 0 ? (
+          tickers.length > 0 ? (
             <nav className="bg-card border border-border rounded-md p-3 max-h-[calc(100vh-96px)] overflow-hidden" aria-label="集數導覽">
-              {tickers.length > 0 && (
-                <section aria-labelledby="episode-rail-tickers">
-                  <h4 id="episode-rail-tickers" className="text-[11px] font-semibold tracking-[0.08em] uppercase text-muted-foreground px-2 mb-2">提及股票</h4>
-                  <div className="flex flex-col gap-1.5">
-                    {tickers.map((t) => (
-                      <TickerRow key={t.symbol} ticker={t} onClick={() => navigate(`/stock/${encodeURIComponent(t.symbol)}`)} />
-                    ))}
-                  </div>
-                </section>
-              )}
-              {chapters.length > 0 && (
-                <section aria-labelledby="episode-rail-chapters" className={cn(tickers.length > 0 && 'mt-4 pt-4 border-t border-border')}>
-                  <h4 id="episode-rail-chapters" className="text-[11px] font-semibold tracking-[0.08em] uppercase text-muted-foreground px-2 mb-2">章節</h4>
-                  <div className="flex flex-col gap-0.5 max-h-[44vh] overflow-y-auto pr-1">
-                  {chapters.map((c, i) => (
-                    <button key={i} type="button" onClick={() => requestSeek(c.timestampSeconds)} className="flex items-center gap-2.5 px-2 py-1.5 rounded text-left text-[13px] text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
-                      <span className="font-mono text-[11px] text-muted-foreground shrink-0">{c.formattedTime}</span>
-                      <span className="truncate">{c.title}</span>
-                    </button>
+              <section aria-labelledby="episode-rail-tickers">
+                <h4 id="episode-rail-tickers" className="text-[11px] font-semibold tracking-[0.08em] uppercase text-muted-foreground px-2 mb-2">提及股票</h4>
+                <div className="flex flex-col gap-1.5">
+                  {tickers.map((t) => (
+                    <TickerRow key={t.symbol} ticker={t} onClick={() => navigate(`/stock/${encodeURIComponent(t.symbol)}`)} />
                   ))}
-                  </div>
-                </section>
-              )}
+                </div>
+              </section>
             </nav>
           ) : undefined
         }
@@ -269,21 +253,6 @@ export const EpisodeDetail: React.FC = () => {
                 <div className="flex flex-col gap-1.5">
                   {tickers.map((t) => (
                     <TickerRow key={t.symbol} ticker={t} onClick={() => navigate(`/stock/${encodeURIComponent(t.symbol)}`)} />
-                  ))}
-                </div>
-              </section>
-            )}
-
-            {/* 關鍵片段 */}
-            {clips.length > 0 && (
-              <section className="bg-card border border-border rounded-md p-5 sm:p-6 mb-3.5">
-                <h3 className="text-[12px] font-semibold uppercase tracking-[0.08em] text-muted-foreground mb-3.5">關鍵片段</h3>
-                <div className="flex flex-col gap-2">
-                  {clips.map((c, i) => (
-                    <button key={i} type="button" onClick={() => requestSeek(c.timestampSeconds)} className={cn('grid grid-cols-[56px_1fr] gap-3.5 px-3.5 py-3 rounded-md bg-muted/60 border-l-2 border-muted-foreground/40 text-left hover:bg-muted transition-colors')}>
-                      <span className="font-mono text-[12px] font-medium text-muted-foreground">{c.formattedTime}</span>
-                      <span className="text-[14px] leading-[1.55]">「{c.title}」</span>
-                    </button>
                   ))}
                 </div>
               </section>
