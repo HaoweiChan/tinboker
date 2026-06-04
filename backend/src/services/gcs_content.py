@@ -119,12 +119,20 @@ class GCSContentService:
             return ""
 
         def _fetch_sync():
-            try:
-                blob = client.bucket(bucket_name).blob(blob_path)
-                return blob.download_as_text() if blob.exists() else ""
-            except Exception as e:
-                logger.warning(f"Error fetching GCS content from {gs_url}: {e}")
-                return ""
+            # Retry transient errors (network blips, exists()/download hiccups) once.
+            # A blob that genuinely does not exist returns "" immediately — no retry,
+            # since that is not a transient condition.
+            last_err = None
+            for _attempt in range(2):
+                try:
+                    blob = client.bucket(bucket_name).blob(blob_path)
+                    if not blob.exists():
+                        return ""
+                    return blob.download_as_text()
+                except Exception as e:
+                    last_err = e
+            logger.warning(f"Error fetching GCS content from {gs_url} after retry: {last_err}")
+            return ""
 
         try:
             async with self._semaphore:

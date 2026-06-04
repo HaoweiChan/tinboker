@@ -31,7 +31,13 @@ class EpisodeTransformer:
         self.gcs = gcs_service or GCSContentService()
 
     async def enrich_with_content(self, episode_dict: dict) -> dict:
-        """Fetch missing content fields from GCS/HTTP URLs in parallel"""
+        """Fetch missing content fields from GCS/HTTP URLs in parallel.
+
+        Only non-empty fetch results overwrite a field. An empty result means the
+        fetch failed (the fetchers swallow all errors into ""), so we leave the field
+        untouched rather than persisting a blank — see is_content_incomplete, which the
+        caller uses to avoid caching a half-hydrated episode.
+        """
         fetch_tasks = []
         for content_field, url_field, fetch_type in _GCS_CONTENT_FIELDS:
             if not episode_dict.get(content_field) and episode_dict.get(url_field):
@@ -46,11 +52,26 @@ class EpisodeTransformer:
                     timeout=30.0,
                 )
                 for (field_name, _), result in zip(fetch_tasks, results):
-                    if not isinstance(result, Exception):
+                    # Skip Exceptions and empty strings: both signal a failed/transient
+                    # fetch. Overwriting with "" is what poisoned cached episodes before.
+                    if not isinstance(result, Exception) and result:
                         episode_dict[field_name] = result
             except (asyncio.TimeoutError, Exception):
                 pass
         return episode_dict
+
+    @staticmethod
+    def is_content_incomplete(episode_dict: dict) -> bool:
+        """True if any GCS-backed field is still empty while its source URL is set.
+
+        Signals a failed/partial hydration: the URL promises content but we have none.
+        Callers use this to skip caching so the next request re-attempts the GCS read
+        instead of pinning a blank result for the full TTL.
+        """
+        return any(
+            episode_dict.get(url_field) and not episode_dict.get(content_field)
+            for content_field, url_field, _ in _GCS_CONTENT_FIELDS
+        )
 
     @staticmethod
     def datetime_to_timestamp_ms(dt) -> int:
