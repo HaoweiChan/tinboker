@@ -135,6 +135,15 @@ export async function getEpisodeById(podcastName: string, episodeId: string): Pr
   return response.data;
 }
 
+// Fetch an episode by id alone, without the podcast name. Used for deep links /
+// refreshes of /episode/{id} where the show name isn't available client-side.
+export async function getEpisodeByIdOnly(episodeId: string): Promise<Episode> {
+  const response = await apiClient.get(
+    `/api/episodes/${encodeURIComponent(episodeId)}`
+  );
+  return response.data;
+}
+
 export async function regenerateEpisodeSummary(
   podcastName: string,
   episodeId: string

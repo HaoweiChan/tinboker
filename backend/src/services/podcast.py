@@ -201,6 +201,47 @@ class PodcastService:
         except Exception as e:
             raise Exception(f"Failed to get episode: {e}") from e
 
+    async def get_episode_by_id_only(self, episode_id: str) -> Optional[Episode]:
+        """Get an episode by id without requiring the podcast name.
+
+        Episode docs are keyed by id in Firestore; get_episode_by_id only uses
+        podcast_name for a redundant equality check, so it is not needed to look an
+        episode up. Used when the client opens /episode/{id} cold (deep link / refresh /
+        shared URL) and has no ?podcast= to supply the show name.
+        """
+        cache_key = f"episode:{episode_id}"
+        cached = await cache_get(cache_key)
+        if cached:
+            try:
+                return Episode(**json.loads(cached))
+            except Exception:
+                pass
+
+        try:
+            episode_dict = self.firestore_service.get_document("episodes", episode_id)
+            if not episode_dict:
+                return None
+            episode = await self.transformer.to_episode(episode_dict)
+            # Don't pin a half-hydrated episode (content URL present but content empty,
+            # e.g. a transient GCS read failure) — leave it uncached so the next request
+            # re-attempts the fetch instead of serving a blank for the full TTL.
+            content_incomplete = any(
+                episode_dict.get(url_field) and not episode_dict.get(content_field)
+                for content_field, url_field in (
+                    ('summary_content', 'summary_url'),
+                    ('transcript', 'transcript_url'),
+                    ('summary_image', 'summary_image_url'),
+                )
+            )
+            if not content_incomplete:
+                try:
+                    await cache_set(cache_key, json.dumps(episode.dict(), default=str), CACHE_TTL["podcast_episode"])
+                except Exception:
+                    pass
+            return episode
+        except Exception as e:
+            raise Exception(f"Failed to get episode: {e}") from e
+
     async def get_recent_episodes(
         self, limit: int = 20, offset: int = 0,
         podcast_name: Optional[str] = None, enrich_content: bool = False,

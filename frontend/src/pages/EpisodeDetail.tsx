@@ -6,7 +6,7 @@ import { PodcastAvatar } from '@/components/common/PodcastAvatar';
 import { PageContent } from '@/components/layout/PageContent';
 import { TickerRow } from '@/components/redesign';
 import { cn } from '@/lib/utils';
-import { getEpisodeById, getPodcastByName, type Episode as ApiEpisode } from '@/services';
+import { getEpisodeById, getEpisodeByIdOnly, getPodcastByName, type Episode as ApiEpisode } from '@/services';
 import { fetchWithFallback } from '@/services/api/migration';
 import { parseTimestampedSections, type TimestampedSection } from '@/utils/parseTimestampedSections';
 import { usePlayerStore } from '@/store/usePlayerStore';
@@ -144,12 +144,21 @@ export const EpisodeDetail: React.FC = () => {
     setLoading(true);
     setPodcastImageUrl(null);
     (async () => {
-      const [ep, podcast] = await Promise.all([
-        fetchWithFallback<ApiEpisode | null>(() => getEpisodeById(podcastName, id), null, `getEpisodeById:${podcastName}/${id}`).catch(() => null),
-        podcastName ? fetchWithFallback(() => getPodcastByName(podcastName), null, `getPodcastByName:${podcastName}`).catch(() => null) : Promise.resolve(null),
-      ]);
+      // On a cold load (deep link / refresh / shared URL) there is no ?podcast= to
+      // supply the show name, so fall back to the by-id endpoint, then resolve the
+      // show name from the response for the podcast-image fetch.
+      const ep = await fetchWithFallback<ApiEpisode | null>(
+        () => (podcastName ? getEpisodeById(podcastName, id) : getEpisodeByIdOnly(id)),
+        null,
+        `getEpisodeById:${podcastName || '-'}/${id}`,
+      ).catch(() => null);
       if (!alive) return;
       setEpisode(ep);
+      const resolvedName = ep?.podcast_name || podcastName;
+      const podcast = resolvedName
+        ? await fetchWithFallback(() => getPodcastByName(resolvedName), null, `getPodcastByName:${resolvedName}`).catch(() => null)
+        : null;
+      if (!alive) return;
       setPodcastImageUrl(podcast?.image_url || null);
       setLoading(false);
     })();

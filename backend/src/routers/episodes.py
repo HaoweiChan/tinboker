@@ -115,3 +115,30 @@ async def get_episodes_by_ticker(
         raise HTTPException(status_code=500, detail=f"Error fetching episodes by ticker: {str(e)}")
 
 
+# NOTE: keep this LAST — a single-segment dynamic path must be registered after the
+# static routes (/recent, /by-ticker/..., /ticker-sentiments) so they match first.
+@router.get("/{episode_id}")
+@cdn_cache_podcast
+async def get_episode_by_id(
+    episode_id: str = Path(..., description="Episode ID"),
+):
+    """
+    Get a single episode by ID alone, without the podcast name.
+
+    Supports deep links / refreshes of /episode/{id} where the show name is not
+    known client-side. Returns the same full Episode payload as
+    GET /api/podcast/{podcast_name}/episodes/{episode_id}.
+
+    CDN Cache: 30 minutes
+    """
+    try:
+        episode = await podcast_service.get_episode_by_id_only(episode_id)
+        if not episode:
+            raise HTTPException(status_code=404, detail=f"Episode '{episode_id}' not found")
+        return episode
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching episode: {str(e)}")
+
+
