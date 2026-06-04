@@ -125,6 +125,10 @@ def create_all_tables():
                 "ALTER TABLE IF EXISTS stock_translations "
                 "ADD COLUMN IF NOT EXISTS aliases JSON"
             ))
+            conn.execute(text(
+                "ALTER TABLE IF EXISTS stock_translations "
+                "ADD COLUMN IF NOT EXISTS name_preference VARCHAR(10) DEFAULT 'auto'"
+            ))
             conn.commit()
     elif engine.dialect.name == "sqlite":
         # SQLite has no "ADD COLUMN IF NOT EXISTS" — check PRAGMA first.
@@ -132,6 +136,9 @@ def create_all_tables():
             cols = {row[1] for row in conn.execute(text("PRAGMA table_info(stock_translations)"))}
             if cols and "aliases" not in cols:
                 conn.execute(text("ALTER TABLE stock_translations ADD COLUMN aliases JSON"))
+                conn.commit()
+            if cols and "name_preference" not in cols:
+                conn.execute(text("ALTER TABLE stock_translations ADD COLUMN name_preference VARCHAR(10) DEFAULT 'auto'"))
                 conn.commit()
     logger.info("Database tables created successfully")
 

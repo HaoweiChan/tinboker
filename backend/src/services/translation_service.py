@@ -162,6 +162,7 @@ class TranslationService:
             name_zh_tw=data.name_zh_tw,
             brand_color=getattr(data, 'brand_color', None),
             aliases=_normalize_aliases(getattr(data, 'aliases', None)),
+            name_preference=(getattr(data, 'name_preference', None) or "auto"),
             translation_status=data.translation_status,
             last_updated_by=updated_by
         )
@@ -211,9 +212,12 @@ class TranslationService:
         status: str = "auto",
         updated_by: Optional[str] = None,
         brand_color: Optional[str] = None,
+        aliases: Optional[List[str]] = None,
+        name_preference: Optional[str] = None,
     ) -> Tuple[StockTranslation, bool]:
         """
-        Create or update a translation.
+        Create or update a translation. Only provided (non-None) fields are applied,
+        so callers never clobber existing values they didn't intend to touch.
         Returns tuple of (translation, is_new).
         """
         existing = self.get_by_ticker_market(ticker, market)
@@ -224,6 +228,10 @@ class TranslationService:
                 existing.name_zh_tw = name_zh_tw
             if brand_color is not None:
                 existing.brand_color = brand_color
+            if aliases is not None:
+                existing.aliases = _normalize_aliases(aliases)
+            if name_preference is not None:
+                existing.name_preference = name_preference
             existing.translation_status = status
             existing.last_updated_by = updated_by
             self.db.commit()
@@ -237,6 +245,8 @@ class TranslationService:
                 name_zh_tw=name_zh_tw,
                 translation_status=status,
                 brand_color=brand_color,
+                aliases=aliases,
+                name_preference=name_preference,
             )
             return self.create(data, updated_by), True
 
@@ -260,7 +270,10 @@ class TranslationService:
                     name_en=item.name_en,
                     name_zh_tw=item.name_zh_tw,
                     status=item.translation_status,
-                    updated_by=updated_by
+                    updated_by=updated_by,
+                    brand_color=item.brand_color,
+                    aliases=item.aliases,
+                    name_preference=item.name_preference,
                 )
                 if is_new:
                     imported += 1

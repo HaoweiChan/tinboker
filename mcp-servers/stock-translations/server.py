@@ -186,12 +186,16 @@ if WRITE_TOKEN:
         Requires TINBOKER_WRITE_TOKEN. Rendered immediately on cards; a human later
         promotes 'auto' → 'approved' in the admin portal.
 
-        Each item: {ticker, market?, name_en?, name_zh_tw?, brand_color?, translation_status?}
+        Each item: {ticker, market?, name_en?, name_zh_tw?, brand_color?, name_preference?, translation_status?}
         - market is inferred from the ticker when omitted (numeric → TW, else US).
         - Set name_zh_tw to null for English-preferred stocks (do NOT copy the English
           name into the zh field).
+        - name_preference: "auto" (default — show zh when it exists), "zh_tw", or "en"
+          (force English even if a zh name exists). Omit unless you specifically want to
+          override; omitting leaves an existing preference untouched.
         - brand_color is a hex string like "#76B900".
         """
+        valid_pref = {"auto", "zh_tw", "en"}
         payload: list[dict[str, Any]] = []
         for it in items:
             ticker = str(it.get("ticker", "")).strip().upper()
@@ -199,6 +203,8 @@ if WRITE_TOKEN:
                 continue
             bare = ticker.split(".")[0]
             market = str(it.get("market") or ("TW" if bare.isdigit() else "US")).upper()
+            pref = it.get("name_preference")
+            pref = pref.lower() if isinstance(pref, str) and pref.lower() in valid_pref else None
             payload.append(
                 {
                     "ticker": bare,
@@ -206,6 +212,7 @@ if WRITE_TOKEN:
                     "name_en": it.get("name_en"),
                     "name_zh_tw": it.get("name_zh_tw"),
                     "brand_color": it.get("brand_color"),
+                    "name_preference": pref,
                     "translation_status": it.get("translation_status", "auto"),
                 }
             )

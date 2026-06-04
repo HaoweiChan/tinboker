@@ -42,7 +42,9 @@ def _has_cjk(text: Optional[str]) -> bool:
 
 
 def _to_search_item(t: StockTranslation) -> TranslationSearchItem:
-    has_zh = _has_cjk(t.name_zh_tw)
+    pref = getattr(t, "name_preference", None) or "auto"
+    # Show the zh-TW name when it's a real CJK name AND the row isn't forced to English.
+    show_zh = _has_cjk(t.name_zh_tw) and pref != "en"
     return TranslationSearchItem(
         ticker=t.ticker,
         market=t.market,
@@ -51,8 +53,9 @@ def _to_search_item(t: StockTranslation) -> TranslationSearchItem:
         brand_color=t.brand_color,
         aliases=t.aliases,
         translation_status=t.translation_status,
-        has_zh_name=has_zh,
-        display_name=(t.name_zh_tw if has_zh else (t.name_en or t.ticker)),
+        name_preference=pref,
+        has_zh_name=show_zh,
+        display_name=(t.name_zh_tw if show_zh else (t.name_en or t.ticker)),
     )
 
 
@@ -140,6 +143,7 @@ async def get_translation(
             name_zh_tw=translation.name_zh_tw,
             brand_color=translation.brand_color,
             aliases=translation.aliases,
+            name_preference=getattr(translation, "name_preference", None) or "auto",
         )
     # Not found - auto-create pending entry if enabled
     if auto_create:
