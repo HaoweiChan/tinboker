@@ -97,6 +97,25 @@ async def batch_translations(
     )
 
 
+@router.get("/aliases", response_model=TranslationSearchResponse)
+async def list_alias_rows(
+    response: Response,
+    limit: int = Query(5000, ge=1, le=20000),
+    db: Session = Depends(get_session),
+):
+    """All translations that carry curated aliases (read-only).
+
+    Built for the tinboker-agents news alias index to pull operator-curated aliases.
+    Registered before /{ticker} so "aliases" isn't captured as a ticker path param.
+    """
+    response.headers["Cache-Control"] = "public, max-age=300"
+    service = TranslationService(db)
+    rows = service.get_rows_with_aliases(limit=limit)
+    return TranslationSearchResponse(
+        query=None, total=len(rows), items=[_to_search_item(t) for t in rows]
+    )
+
+
 @router.get("/{ticker}", response_model=TranslationPublicResponse)
 async def get_translation(
     ticker: str,

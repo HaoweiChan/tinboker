@@ -262,6 +262,18 @@ class TranslationService:
                 logger.error(f"Bulk import error for {item.ticker}: {e}")
         return imported, updated, errors
 
+    def get_rows_with_aliases(self, limit: int = 5000) -> List[StockTranslation]:
+        """All rows that carry at least one curated alias (for the agents' alias-index pull)."""
+        rows = (
+            self.db.query(StockTranslation)
+            .filter(StockTranslation.aliases.isnot(None))
+            .order_by(StockTranslation.ticker)
+            .limit(limit)
+            .all()
+        )
+        # JSON column may hold an empty list; keep only rows with real aliases.
+        return [r for r in rows if r.aliases]
+
     def get_missing_translations(
         self,
         market: Optional[str] = None,
