@@ -62,3 +62,39 @@ def test_fetch_sources_returns_none_on_error(monkeypatch):
 
     monkeypatch.setattr(platform_client.urllib.request, "urlopen", _boom)
     assert platform_client.fetch_sources("podcast") is None
+
+
+def test_fetch_translation_aliases_returns_none_when_disabled(monkeypatch):
+    monkeypatch.delenv("TINBOKER_PLATFORM_API_URL", raising=False)
+
+    def _boom(*a, **k):  # pragma: no cover — must not be called
+        raise AssertionError("network attempted while disabled")
+
+    monkeypatch.setattr(platform_client.urllib.request, "urlopen", _boom)
+    assert platform_client.fetch_translation_aliases() is None
+
+
+def test_fetch_translation_aliases_parses_items(monkeypatch):
+    monkeypatch.setenv("TINBOKER_PLATFORM_API_URL", "https://api.example.com")
+    captured: dict = {}
+
+    class _Resp:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return json.dumps({"items": [{"ticker": "2330", "aliases": ["TSMC"]}]}).encode()
+
+    def _fake_urlopen(req, timeout=None):
+        captured["url"] = req.full_url
+        return _Resp()
+
+    monkeypatch.setattr(platform_client.urllib.request, "urlopen", _fake_urlopen)
+    out = platform_client.fetch_translation_aliases()
+    assert out == [{"ticker": "2330", "aliases": ["TSMC"]}]
+    assert captured["url"].endswith("/api/stocks/translations/aliases")
