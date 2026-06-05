@@ -1,7 +1,10 @@
 """FastAPI application for Podcast Downloader API."""
 
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from shared.config import load_yaml_config
 
 # Pull secrets from Google Secret Manager into os.environ before any
 # router/service module that calls os.getenv() at import time.
@@ -67,3 +70,14 @@ async def root():
 async def health():
     """Global health check endpoint."""
     return {"status": "healthy"}
+
+
+@app.get("/api/config")
+async def get_config():
+    """Read-only: the effective podcast pipeline configuration (configs/default.yaml).
+
+    Non-secret deployment constants only — secrets come from GSM, never this file.
+    Consumed by the platform admin Pipeline Settings page.
+    """
+    cfg = load_yaml_config(Path(__file__).parent / "configs" / "default.yaml")
+    return {"source": "services/podcast/configs/default.yaml", "settings": cfg}
