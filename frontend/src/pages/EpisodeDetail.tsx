@@ -17,6 +17,9 @@ import { EpisodeInsightCard, type EpisodeInsight } from '@/components/episode/Ep
 import { SummaryMarkdown } from '@/components/episode/SummaryMarkdown';
 import type { Sentiment } from '@/lib/sentiment';
 
+// Episodes can carry dozens of tags; show only a handful so the row stays meaningful.
+const MAX_HERO_TAGS = 6;
+
 function timeAgo(release: string | number | null | undefined, created: number): string {
   const ms = typeof release === 'string' ? Date.parse(release) : (release ?? created);
   const t = Number.isFinite(ms) ? (ms as number) : created;
@@ -46,30 +49,26 @@ function cleanSummaryLine(line: string): string {
     .replace(/^(?:#{1,6}\s*)+/, '')
     .replace(/\s*\(#time:\s*\d+\)/g, '')
     .replace(/^[-*\s]+/, '')
-    // Strip ALL inline markers ([label](#ticker:..|#tag:..|url)) down to their label.
-    // The insight teaser is plain text that gets length-truncated, so leaving any
-    // marker risks truncateText slicing through it and printing raw markdown.
+    // Strip ALL inline markers ([label](#ticker:..|#tag:..|url)) down to their label
+    // so the insight reads as plain text, never raw markdown.
     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
     .replace(/[*_`>~]/g, '')
     .trim();
-}
-
-function truncateText(text: string, max: number): string {
-  return text.length > max ? `${text.slice(0, max).trimEnd()}...` : text;
 }
 
 function episodeInsightFrom(ep: ApiEpisode | null, fallbackTitle: string): EpisodeInsight | null {
   if (!ep) return null;
   const src = ep.modified_summary_content || ep.summary_content || '';
   const lines = src.split('\n').map((line) => line.trim()).filter(Boolean);
-  const headline = truncateText(cleanSummaryLine(lines.find((line) => line.startsWith('#')) || lines[0] || fallbackTitle), 58);
-  const thesis = truncateText(cleanSummaryLine(lines.find((line) => !line.startsWith('#') && line.length > 12) || ''), 96);
-  const keyHighlights = Array.isArray(ep.key_insights) ? ep.key_insights.map((line) => truncateText(cleanSummaryLine(line), 34)).filter(Boolean) : [];
+  // No truncation: the insight is the concise essence of the article and is shown
+  // in full (no "…"). The headline / thesis / section headings are already short.
+  const headline = cleanSummaryLine(lines.find((line) => line.startsWith('#')) || lines[0] || fallbackTitle);
+  const thesis = cleanSummaryLine(lines.find((line) => !line.startsWith('#') && line.length > 12) || '');
+  const keyHighlights = Array.isArray(ep.key_insights) ? ep.key_insights.map((line) => cleanSummaryLine(line)).filter(Boolean) : [];
   const sectionHighlights = lines
     .filter((line) => /^#{2,}/.test(line))
     .map(cleanSummaryLine)
     .filter((line) => line && line !== headline)
-    .map((line) => truncateText(line, 34))
     .slice(0, 3);
   const highlights = (keyHighlights.length > 0 ? keyHighlights : sectionHighlights).slice(0, 3);
 
@@ -229,7 +228,7 @@ export const EpisodeDetail: React.FC = () => {
               <h1 className="text-[24px] sm:text-[26px] font-semibold tracking-[-0.015em] leading-[1.3]">{title}</h1>
               {episode.tags && episode.tags.length > 0 && (
                 <div className="flex gap-1.5 flex-wrap mt-3">
-                  {episode.tags.map((t) => (
+                  {episode.tags.slice(0, MAX_HERO_TAGS).map((t) => (
                     <Link key={t} to={`/topics/${encodeURIComponent(t)}`} className="text-[12px] px-2.5 py-0.5 rounded-full bg-amber-400/20 text-amber-700 dark:text-amber-300 font-medium hover:bg-amber-400/35 transition-colors">#{t}</Link>
                   ))}
                 </div>
