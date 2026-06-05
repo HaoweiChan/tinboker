@@ -48,9 +48,14 @@ async def lifespan(app: FastAPI):
         init_engine()
         create_all_tables()
     else:
-        from src.database.postgres import init_engine
+        from src.database.postgres import init_engine, create_all_tables
         try:
             init_engine()
+            # Idempotent: creates any missing tables and ALTERs in missing columns
+            # (e.g. stock_translations.aliases / name_preference) so the ORM schema
+            # stays in sync. Previously only run on the SQLite path, which left
+            # Postgres tables missing newly-added columns -> translation queries 500'd.
+            create_all_tables()
             print("PostgreSQL connection initialized")
         except Exception as e:
             print(f"Warning: Could not initialize PostgreSQL: {e}")

@@ -75,12 +75,13 @@ export const SummaryMarkdown: React.FC<SummaryMarkdownProps> = ({ content, onSee
             }
             if (h.startsWith('#tag:')) {
               const id = h.slice('#tag:'.length).trim();
-              // Inline glossary-style link — reads as part of the prose (dotted underline),
-              // visually distinct from the bold ticker links above.
+              // Soft amber highlight — clearly marks a topic term and stays distinct
+              // from the blue ticker links. box-decoration-clone keeps the highlight
+              // intact when the term wraps across lines.
               return (
                 <Link
                   to={`/topics/${encodeURIComponent(id)}`}
-                  className="text-foreground/90 underline decoration-dotted decoration-muted-foreground/50 underline-offset-[3px] hover:text-accent-info hover:decoration-accent-info transition-colors"
+                  className="box-decoration-clone rounded px-1 py-0.5 bg-amber-400/20 text-amber-700 dark:text-amber-300 font-medium hover:bg-amber-400/35 transition-colors"
                 >
                   {children}
                 </Link>
