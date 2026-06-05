@@ -296,6 +296,24 @@ class TranslationService:
         # JSON column may hold an empty list; keep only rows with real aliases.
         return [r for r in rows if r.aliases]
 
+    def get_translatable_rows(self, limit: int = 20000) -> List[StockTranslation]:
+        """All rows that carry a usable name (zh-TW or English), for the suggestion index.
+
+        Powers TW-stock autocomplete: the Massive universe is US-only and English, so
+        Chinese names / numeric TW tickers (e.g. 2330 → 台積電) live only here. Excludes
+        bare PENDING stubs that have neither name (nothing to index for them).
+        """
+        return (
+            self.db.query(StockTranslation)
+            .filter(
+                (StockTranslation.name_zh_tw.isnot(None) & (StockTranslation.name_zh_tw != "")) |
+                (StockTranslation.name_en.isnot(None) & (StockTranslation.name_en != ""))
+            )
+            .order_by(StockTranslation.ticker)
+            .limit(limit)
+            .all()
+        )
+
     def get_missing_translations(
         self,
         market: Optional[str] = None,

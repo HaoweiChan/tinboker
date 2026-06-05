@@ -12,7 +12,6 @@ import { useStockTrendColor } from '@/hooks/useStockTrendColor';
 import { aggregateSentiment, dominantSentiment } from '@/lib/sentiment';
 import { getStockByTicker, getEpisodesByTicker, type Episode as ApiEpisode } from '@/services/api';
 import { fetchWithFallback } from '@/services/api/migration';
-import { mockCompanyDetails, generateMockPriceSeries } from '@/services/mocks';
 import type { CompanyDetail, RealTimePriceUpdate, TimeframeOption } from '@/services/types';
 import { priceWebSocketClient } from '@/services/websocket/priceWebSocket';
 import TradingViewChart from '@/components/charts/TradingViewChart';
@@ -42,11 +41,13 @@ const StockHeaderCard: React.FC<{ symbol: string; episodeCount: number }> = ({ s
   const fetchStockData = useCallback(async (ticker: string, tf: TimeframeOption) => {
     setIsLoading(true);
     try {
-      const data = await fetchWithFallback(() => getStockByTicker(ticker.toUpperCase(), tf), mockCompanyDetails[ticker] || null, `GET /api/stocks/${ticker.toUpperCase()}?timeframe=${tf}`);
+      // Real-or-empty: never fall back to fabricated company data (BUG-7). On
+      // failure stockData is null and key stats render as '—'.
+      const data = await fetchWithFallback(() => getStockByTicker(ticker.toUpperCase(), tf), null, `GET /api/stocks/${ticker.toUpperCase()}?timeframe=${tf}`);
       setStockData(data);
     } catch (e) {
       console.error('[StockHeaderCard] Failed to fetch stock data:', e);
-      setStockData(mockCompanyDetails[ticker] || null);
+      setStockData(null);
     } finally {
       setIsLoading(false);
     }
@@ -134,8 +135,9 @@ const StockHeaderCard: React.FC<{ symbol: string; episodeCount: number }> = ({ s
         }, [])
         .sort((a, b) => (a.timestamp as number) - (b.timestamp as number));
     }
-    return generateMockPriceSeries(100, displayPrice || 100);
-  }, [rawChart, displayPrice]);
+    // No fabricated price series (BUG-7): render an empty chart when there's no real data.
+    return [];
+  }, [rawChart]);
 
   const latest = (chartData.length > 0 ? chartData[chartData.length - 1] : null) as { open?: number; high?: number; low?: number; volume?: number } | null;
   const keyStats: { label: string; value: string }[] = [

@@ -6,7 +6,6 @@ import { About } from '@/pages/About';
 import { ContactPage } from '@/pages/ContactPage';
 import { GraphGallery } from '@/pages/GraphGallery';
 import { StockDashboard } from '@/pages/StockDashboard';
-import { IndustryAnalysis } from '@/pages/IndustryAnalysis';
 import { EpisodeDetail } from '@/pages/EpisodeDetail';
 import { NewsRedirect } from '@/pages/NewsRedirect';
 import { PodcasterPage } from '@/pages/PodcasterPage';
@@ -87,7 +86,9 @@ function App() {
 
           {/* Retired from primary nav, kept live */}
           <Route path="/story" element={<GraphGallery />} />
-          <Route path="/industry" element={<IndustryAnalysis />} />
+          {/* /industry hidden for launch — rendered fabricated sector data
+              (mocks/sectorData.ts). Falls through to the catch-all redirect.
+              Page + components retained for future real-data wiring. */}
           <Route path="/about" element={<About />} />
           <Route path="/contact" element={<ContactPage />} />
           <Route path="/disclaimer" element={<DisclaimerPage />} />

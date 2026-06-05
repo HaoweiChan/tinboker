@@ -89,4 +89,76 @@ async def test_suggestion_index_scoring():
     # Query "Apple"
     results = index.suggest("Apple")
     assert results[0].id == "AAPL"
+
+
+@pytest.mark.asyncio
+async def test_suggestion_index_tw_cjk_and_numeric_ticker():
+    """TW stocks must be reachable by single-char CJK prefix and numeric ticker.
+
+    Regression for the launch bug where 台積電 / 台 / 2330 returned empty stocks
+    because the index was US-English-only.
+    """
+    index = SuggestionIndex()
+    await index.clear()
+
+    tsmc = SearchResultItem(
+        id="stock-2330",
+        type="stock",
+        title="2330",
+        subtitle="台積電",
+        link="/stock/2330",
+        market="TW",
+    )
+    await index.add_item(tsmc, keywords=["2330", "台積電", "Taiwan Semiconductor Manufacturing"])
+
+    # Single CJK char prefix
+    results = index.suggest("台")
+    assert any(r.id == "stock-2330" for r in results)
+
+    # Two-char CJK prefix
+    results = index.suggest("台積")
+    assert any(r.id == "stock-2330" for r in results)
+
+    # Full CJK name
+    results = index.suggest("台積電")
+    assert any(r.id == "stock-2330" for r in results)
+
+    # Numeric ticker (full and prefix)
+    assert any(r.id == "stock-2330" for r in index.suggest("2330"))
+    assert any(r.id == "stock-2330" for r in index.suggest("23"))
+
+
+@pytest.mark.asyncio
+async def test_suggestion_index_add_keywords_enriches_existing_item():
+    """add_keywords() makes an already-indexed (US/English) item reachable by zh-TW
+    name without creating a duplicate — the enrichment path used for US tickers like
+    TSM that also have a Chinese name."""
+    index = SuggestionIndex()
+    await index.clear()
+
+    tsm = SearchResultItem(
+        id="stock-TSM",
+        type="stock",
+        title="TSM",
+        subtitle="Taiwan Semiconductor Manufacturing",
+        link="/stock/TSM",
+        market="US",
+    )
+    await index.add_item(tsm, keywords=["TSM", "Taiwan Semiconductor Manufacturing"])
+
+    # Not reachable by Chinese name yet.
+    assert not any(r.id == "stock-TSM" for r in index.suggest("台積"))
+
+    # Enrich with zh-TW name + alias.
+    await index.add_keywords("stock-TSM", ["台積電", "TSMC"])
+
+    assert any(r.id == "stock-TSM" for r in index.suggest("台積"))
+    assert any(r.id == "stock-TSM" for r in index.suggest("tsmc"))
+    # English path still works and there is exactly one TSM item (no duplicate).
+    tsm_hits = [r for r in index.suggest("TSM") if r.id == "stock-TSM"]
+    assert len(tsm_hits) == 1
+
+    # Unknown item id is a safe no-op.
+    await index.add_keywords("stock-DOES-NOT-EXIST", ["whatever"])
+    assert not any(r.id == "stock-DOES-NOT-EXIST" for r in index.suggest("whatever"))
     
