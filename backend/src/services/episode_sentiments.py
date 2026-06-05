@@ -19,6 +19,9 @@ from src.services.gcs_content import GCSContentService
 logger = logging.getLogger(__name__)
 
 _SENTIMENT_TTL = 7 * 24 * 3600  # 7 days — recommendations don't change once published
+_EMPTY_TTL = 600  # 10 min — an empty result may be a transient miss (GCS hiccup, data
+                  # not yet written); cache it briefly so it self-heals instead of
+                  # sticking empty for a week.
 _MAX_IDS = 80
 _FETCH_CONCURRENCY = 8
 
@@ -96,7 +99,7 @@ class EpisodeSentimentService:
                 except Exception as e:
                     logger.warning("sentiment warm failed for %s: %s", eid, e)
                     mapping = {}
-                await cache_set(f"epsent:{eid}", json.dumps(mapping), _SENTIMENT_TTL)
+                await cache_set(f"epsent:{eid}", json.dumps(mapping), _SENTIMENT_TTL if mapping else _EMPTY_TTL)
                 result[eid] = mapping
 
             await asyncio.gather(*[warm(e) for e in misses], return_exceptions=True)
