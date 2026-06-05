@@ -62,20 +62,32 @@ class PodcastEpisode:
     spotify_duration_ms: Optional[int] = None  # Episode duration in milliseconds
     spotify_images: List[str] = field(default_factory=list)  # List of image URLs from Spotify
 
-    # Spec § 2.3 #1: Unix ms timestamp derived from spotify_release_date (preferred) or
-    # created_time. Frontends should prefer this over the timezone-fragile string + ms
-    # parsing the spec replaced.
+    # Spec § 2.3 #1: Unix ms timestamp for the episode's true publish time.
+    # Frontends should prefer this over the timezone-fragile string + ms parsing
+    # the spec replaced.
     released_at_ms: Optional[int] = None
-    
+
+    # Feed ``datePublished`` (the podcasttomp3 API value) already converted to
+    # Unix ms. This is the *reliable* publish time and the primary source for
+    # ``released_at_ms``. It is an input only — never persisted as its own field
+    # (see ``to_firestore_dict``); it feeds ``released_at_ms``.
+    feed_date_published_ms: Optional[int] = None
+
     def _compute_released_at_ms(self) -> Optional[int]:
         """Resolve the spec § 2.3 #1 ``released_at_ms`` value.
 
-        Preference order: an explicitly-set ``released_at_ms`` wins (lets a
-        caller override); else parse ``spotify_release_date`` (YYYY-MM-DD UTC
-        midnight); else fall to ``created_time`` if it's a datetime.
+        Preference order (most → least reliable):
+          1. an explicitly-set ``released_at_ms`` (lets a caller override),
+          2. the feed ``datePublished`` (``feed_date_published_ms``) — the true
+             publish time carried from the source API,
+          3. ``spotify_release_date`` (YYYY-MM-DD, UTC midnight),
+          4. ``created_time`` (ingestion time — last resort; clusters on the
+             backfill run, so only used when nothing better exists).
         """
         if self.released_at_ms is not None:
             return self.released_at_ms
+        if self.feed_date_published_ms is not None:
+            return self.feed_date_published_ms
         if self.spotify_release_date:
             try:
                 dt = datetime.strptime(str(self.spotify_release_date), "%Y-%m-%d")

@@ -5,7 +5,7 @@ Helper functions used across pipeline steps.
 """
 
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 from src.models.podcast_models import PodcastEpisode, Sentence
@@ -168,6 +168,24 @@ def extract_tags_and_tickers(summary_result: Dict) -> Dict[str, List[str]]:
     }
 
 
+def _date_published_to_ms(api_data: Dict) -> Optional[int]:
+    """Parse the feed ``datePublished`` (ISO-8601) into Unix milliseconds.
+
+    Reuses the orchestrator's ``_parse_episode_date`` (the single parser for the
+    podcasttomp3 ``datePublished`` shape, e.g. ``2026-06-03T07:34:50.000Z``).
+    Imported lazily to avoid a circular import: ``orchestrator`` imports the
+    ``src.pipeline`` package, which imports this module.
+    """
+    if not isinstance(api_data, dict):
+        return None
+    from src.podcast.orchestrator import _parse_episode_date
+
+    dt = _parse_episode_date(api_data.get('datePublished'))
+    if dt is None:
+        return None
+    return int(dt.timestamp() * 1000)
+
+
 def create_episode_object(
     episode_data,  # EpisodeData object
     gcs_urls: Dict,
@@ -175,14 +193,26 @@ def create_episode_object(
     summary_result: Optional[Dict]
 ) -> PodcastEpisode:
     """Create PodcastEpisode object from processed data."""
-    # Determine created_time
+    # The feed publish date (datePublished) is the only reliable publish time —
+    # spotify_release_date is null for ~all zh-TW episodes and created_time is the
+    # ingestion/backfill time. It is the PRIMARY source for released_at_ms.
+    feed_date_published_ms = _date_published_to_ms(episode_data.api_data)
+
+    # Determine created_time. NEVER overwrite an existing stored created_time:
+    # mutating it re-fires `new_episode` notifications (handoff spec §6.3). Only
+    # when there is no stored value AND no Spotify match do we fall back to the
+    # feed publish date, then to now() as a last resort.
     created_time = episode_data.created_time
     if not created_time:
         if spotify_metadata and spotify_metadata.get('release_datetime'):
             created_time = spotify_metadata['release_datetime']
+        elif feed_date_published_ms is not None:
+            created_time = datetime.fromtimestamp(
+                feed_date_published_ms / 1000, tz=timezone.utc
+            )
         else:
             created_time = datetime.now()
-    
+
     # Use episode_data.tickers (extracted from markdown + merged with structured) 
     # instead of summary_result.get('related_tickers') to ensure consistency
     # Always prefer episode_data.tickers if it exists (even if empty list) since it's been validated
@@ -216,6 +246,7 @@ def create_episode_object(
         ticker_marp_markdown_public_url=gcs_urls.get('ticker_marp_markdown_public_url'),
         related_tickers=related_tickers,
         created_time=created_time,
+        feed_date_published_ms=feed_date_published_ms,
         number_click=0,
         num_likes=0,
         episode_title=episode_data.api_data.get('title', ''),
