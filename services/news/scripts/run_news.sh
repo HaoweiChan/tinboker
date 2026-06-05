@@ -24,6 +24,11 @@ if [ -z "${GOOGLE_APPLICATION_CREDENTIALS:-}" ] && [ -f "$SA_FILE" ]; then
   export GOOGLE_APPLICATION_CREDENTIALS="$SA_FILE"
 fi
 
+# Pull the followed-feeds list + curated ticker aliases from the platform admin
+# (config plane). Override-friendly; unset it to fall back to the local feeds.json.
+: "${TINBOKER_PLATFORM_API_URL:=https://api.tinboker.com}"
+export TINBOKER_PLATFORM_API_URL
+
 # Use the uv-managed workspace venv directly (systemd has a minimal PATH and no uv).
 PY="$REPO_ROOT/.venv/bin/python"
 [ -x "$PY" ] || PY="$(command -v python3)"
