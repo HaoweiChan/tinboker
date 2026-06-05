@@ -117,6 +117,9 @@ class TrendingService:
         top = counts.most_common(limit)
         top_tickers = [t for t, _ in top]
 
+        # zh-TW display names (台積電, 輝達, …) for the rail.
+        translations = await self._get_translations_batch(top_tickers)
+
         # Aggregate a dominant sentiment per top ticker from the episodes that mention it,
         # using the per-episode sentiment maps (chunked to respect the service's id cap).
         sent_maps: Dict[str, dict] = {}
@@ -139,6 +142,7 @@ class TrendingService:
             dominant = s_counts.most_common(1)[0][0] if s_counts else "NEUTRAL"
             items.append({
                 "ticker": ticker,
+                "name": translations.get(ticker) or None,
                 "count": count,
                 "sentiment_label": dominant,
                 "last_mentioned": last_mentioned.get(ticker),

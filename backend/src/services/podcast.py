@@ -530,39 +530,50 @@ class PodcastService:
     # ── Tag queries ──────────────────────────────────────────────────
 
     async def get_all_tags(self) -> List[dict]:
-        """Get all tags with episode counts from Firestore"""
-        try:
-            allowed = await self._allowed_podcast_names()
-            cutoff = self._recency_cutoff_ms()
-            episodes_dict = await asyncio.to_thread(
-                self.firestore_service.query_collection,
-                collection="episodes", filters=None, order_by=None, direction=None, limit=None,
-            )
-            unique_tags = set()
-            for ep in episodes_dict:
-                # Only surface tags that appear on in-scope episodes. (Counts below
-                # come from the tag subcollection and may still include hidden
-                # episodes — acceptable for launch.)
-                if allowed is not None and ep.get('podcast_name') not in allowed:
-                    continue
-                if cutoff is not None and self._dict_release_ms(ep) < cutoff:
-                    continue
-                tags = ep.get('tags', [])
-                if tags:
-                    unique_tags.update(tag.lower() for tag in tags)
+        """Get all tags with episode counts from the agents-maintained `tags` index.
 
-            result = []
-            for tag_id in unique_tags:
-                try:
-                    count = await asyncio.to_thread(
-                        self.firestore_service.count_subcollection_documents,
-                        collection="tags", parent_doc_id=tag_id, subcollection="episodes",
-                    )
-                    if count > 0:
-                        result.append({"id": tag_id, "name": tag_id, "episode_count": count})
-                except Exception:
-                    continue
+        Enumerates the top-level `tags` collection directly rather than deriving the
+        tag list from each episode's `tags` field — that field is empty on recent
+        episodes (tags live in the summary markdown / this subcollection index), so
+        deriving from it (especially under the recency filter) yields nothing.
+        Counts are all-time per tag (not recency/zh-TW-scoped); cached.
+        """
+        cache_key = "tags:all:v2"
+        cached = await cache_get(cache_key)
+        if cached:
+            try:
+                return json.loads(cached)
+            except Exception:
+                pass
+        try:
+            tag_docs = await asyncio.to_thread(self.firestore_service.get_all_documents, "tags")
+            tag_ids = []
+            for doc in tag_docs:
+                tid = doc.get('id') or doc.get('name')
+                if tid:
+                    tag_ids.append((tid, doc.get('episode_count')))
+
+            async def _count(tid: str, precomputed) -> Optional[dict]:
+                count = precomputed if isinstance(precomputed, int) else None
+                if count is None:
+                    try:
+                        count = await asyncio.to_thread(
+                            self.firestore_service.count_subcollection_documents,
+                            collection="tags", parent_doc_id=tid, subcollection="episodes",
+                        )
+                    except Exception:
+                        return None
+                if count and count > 0:
+                    return {"id": tid, "name": tid, "episode_count": count}
+                return None
+
+            counted = await asyncio.gather(*[_count(tid, pc) for tid, pc in tag_ids])
+            result = [r for r in counted if r]
             result.sort(key=lambda x: x["episode_count"], reverse=True)
+            try:
+                await cache_set(cache_key, json.dumps(result), 3600)
+            except Exception:
+                pass
             return result
         except Exception as e:
             raise Exception(f"Failed to get all tags: {e}") from e

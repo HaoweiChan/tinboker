@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Flame, Hash, Layers3, TrendingUp } from 'lucide-react';
+import { Flame, Layers3 } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
 import { RailCard } from '@/components/redesign';
@@ -9,17 +9,6 @@ import type { Tag } from '@/services/api/podcasts';
 import { fetchWithFallback } from '@/services/api/migration';
 
 const TOPIC_LIMIT = 48;
-
-const topicTone = [
-  { color: '#22f4e6', shadow: 'rgba(34, 244, 230, 0.34)' },
-  { color: '#ff8a1f', shadow: 'rgba(255, 138, 31, 0.34)' },
-  { color: '#ffe138', shadow: 'rgba(255, 225, 56, 0.32)' },
-  { color: '#ff3d83', shadow: 'rgba(255, 61, 131, 0.3)' },
-  { color: '#8fb0d8', shadow: 'rgba(143, 176, 216, 0.22)' },
-  { color: '#f4f7fb', shadow: 'rgba(244, 247, 251, 0.2)' },
-];
-
-const topicAngles = [-2, 1, 0, -1, 2, -3, 1.5, -1.5, 0.5, -2.5, 2.5, -0.5];
 
 const topicLabels: Record<string, string> = {
   ai: 'AI',
@@ -71,20 +60,6 @@ const getTopicLabel = (name: string) => {
   return topicLabels[key] ?? name.replace(/^#/, '').replace(/[_-]/g, ' ');
 };
 
-const getTodayLabel = () => {
-  const parts = new Intl.DateTimeFormat('zh-TW', {
-    timeZone: 'Asia/Taipei',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(new Date());
-
-  const year = parts.find((part) => part.type === 'year')?.value ?? '';
-  const month = parts.find((part) => part.type === 'month')?.value ?? '';
-  const day = parts.find((part) => part.type === 'day')?.value ?? '';
-  return [year, month, day].filter(Boolean).join(' / ');
-};
-
 export const TopicsCloud: React.FC = () => {
   const [tags, setTags] = useState<Tag[]>([]);
   const [loading, setLoading] = useState(true);
@@ -110,22 +85,23 @@ export const TopicsCloud: React.FC = () => {
 
   const totalMentions = useMemo(() => sorted.reduce((sum, tag) => sum + (tag.episode_count || 0), 0), [sorted]);
   const posterTags = sorted.slice(0, TOPIC_LIMIT);
-  const todayLabel = useMemo(() => getTodayLabel(), []);
 
   return (
     <>
       <SEO title="熱門話題雲" description="最近熱門的財經話題 — 大小依被提及的集數數量。" />
       <PageContent>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between mb-4">
-          <div>
-            <div className="text-[11px] uppercase font-mono tracking-[0.24em] text-accent-info mb-1">TinBoker Topics</div>
-            <h1 className="text-[24px] sm:text-[28px] font-semibold tracking-[-0.02em]">熱門話題雲</h1>
-          </div>
-          <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
-            <TrendingUp size={14} className="text-accent-info" />
-            <span>依本月被提及集數放大顯示</span>
-          </div>
+        {/* Page header — matches PodcasterIndex / HomeFeed pattern */}
+        <div className="flex items-baseline justify-between mb-1">
+          <h1 className="text-[22px] font-semibold tracking-[-0.02em]">熱門話題雲</h1>
+          {!loading && (
+            <div className="text-[12px] text-muted-foreground font-mono tabular-nums">
+              {totalMentions.toLocaleString('zh-TW')} 次提及
+            </div>
+          )}
         </div>
+        <p className="text-[13px] text-muted-foreground max-w-[60ch] mb-4">
+          字體大小依集數提及數量放大；點擊任一話題可瀏覽相關集數。
+        </p>
 
         {loading ? (
           <div className="bg-card border border-border rounded-md p-10 h-[420px] animate-pulse" />
@@ -133,76 +109,48 @@ export const TopicsCloud: React.FC = () => {
           <div className="bg-card border border-border rounded-md p-10 text-center text-[13px] text-muted-foreground">目前沒有話題資料。</div>
         ) : (
           <>
-            <section className="relative overflow-hidden rounded-md border border-cyan-300/15 bg-[#060b16] px-4 py-5 shadow-[0_22px_70px_-48px_rgba(34,244,230,0.72)] sm:px-7 sm:py-6">
-              <div
-                aria-hidden="true"
-                className="pointer-events-none absolute inset-0 opacity-80"
-                style={{
-                  background:
-                    'radial-gradient(circle at 22% 18%, rgba(34,244,230,0.16), transparent 26%), radial-gradient(circle at 78% 72%, rgba(255,138,31,0.13), transparent 30%), linear-gradient(180deg, rgba(8,13,28,0.38), rgba(1,4,12,0.96))',
-                }}
-              />
-              <div aria-hidden="true" className="pointer-events-none absolute inset-4 rounded-md border border-cyan-200/10 shadow-[inset_0_0_44px_rgba(34,244,230,0.1)]" />
-
-              <div className="relative z-10 mb-6 flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <div className="flex items-center gap-2 text-[11px] font-mono uppercase tracking-[0.24em] text-cyan-300">
-                    <Hash size={13} />
-                    <span>Hot Hashtag Board</span>
-                  </div>
-                  <h2 className="mt-2 text-[20px] font-semibold tracking-[0.1em] text-white sm:text-[25px]">Podcast 財經熱門字雲</h2>
-                </div>
-                <div className="text-right font-mono text-[12px] tracking-[0.18em] text-slate-400">
-                  <div>{todayLabel}</div>
-                  <div className="mt-1 text-[10px] tracking-[0.16em] text-cyan-200/60">{totalMentions.toLocaleString('zh-TW')} 次提及</div>
-                </div>
-              </div>
-
-              <div className="relative z-10 flex min-h-[360px] flex-wrap content-center items-center justify-center gap-x-3 gap-y-1.5 rounded-md bg-black/16 px-2 py-5 ring-1 ring-white/5 sm:min-h-[460px] sm:gap-x-5 sm:gap-y-2 sm:px-5">
+            {/* Word cloud */}
+            <section className="bg-card border border-border rounded-md px-5 py-6 sm:px-7 sm:py-8">
+              <div className="flex flex-wrap content-center items-center justify-center gap-x-4 gap-y-2 min-h-[320px] sm:min-h-[420px]">
                 {posterTags.map((t, index) => {
                   const count = t.episode_count || 1;
-                  const weight = Math.sqrt(count / maxCount);
-                  const tone = topicTone[index % topicTone.length];
-                  const rankBoost = index < 3 ? 1.14 : index < 8 ? 1.06 : 1;
-                  const fontSize = Math.round((16 + weight * 54) * rankBoost);
+                  // Perceptually gentle power scale: top word ~36px, tail ~13px
+                  const ratio = count / maxCount;
+                  const fontSize = Math.round(13 + Math.pow(ratio, 0.45) * 23);
                   const label = getTopicLabel(t.name);
-                  const angle = topicAngles[index % topicAngles.length];
+                  // Accent the top 3; mute the long tail slightly
+                  const isTop = index < 3;
+                  const opacity = 0.45 + ratio * 0.55;
 
                   return (
                     <Link
                       key={t.id || t.name}
                       to={`/topics/${encodeURIComponent(t.name)}`}
                       aria-label={`${label}，${count} 集提及`}
-                      className="group relative inline-flex max-w-full shrink-0 items-baseline rounded-[3px] px-1.5 py-0.5 font-black leading-none tracking-[0] text-white outline-none transition duration-200 hover:z-20 hover:-translate-y-0.5 focus-visible:ring-2 focus-visible:ring-cyan-200 sm:px-2"
-                      style={{
-                        color: tone.color,
-                        fontSize,
-                        opacity: 0.58 + weight * 0.42,
-                        transform: `rotate(${angle}deg)`,
-                        textShadow: `0 0 ${index < 8 ? 18 : 10}px ${tone.shadow}`,
-                      }}
+                      className={`group relative inline-flex items-baseline gap-1 rounded px-1 py-0.5 font-semibold leading-snug outline-none transition-opacity duration-150 hover:opacity-100 focus-visible:ring-2 focus-visible:ring-accent-info ${isTop ? 'text-accent-info' : 'text-foreground'}`}
+                      style={{ fontSize, opacity }}
                     >
-                      <span className="min-w-0 break-words">{label}</span>
-                      {index < 14 && (
-                        <span className="ml-1.5 rounded-full bg-white/8 px-1.5 py-0.5 font-mono text-[10px] font-semibold leading-none text-slate-200 opacity-0 transition group-hover:opacity-100 group-focus-visible:opacity-100">
-                          {count}
-                        </span>
-                      )}
+                      <span>{label}</span>
+                      {/* Count badge — visible on hover */}
+                      <span className="font-mono text-[10px] text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+                        {count}
+                      </span>
                     </Link>
                   );
                 })}
               </div>
 
-              <div className="relative z-10 mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-white/8 pt-4 text-[11px] text-slate-400">
-                <div className="flex items-center gap-2">
-                  <Layers3 size={14} className="text-cyan-300" />
-                  <span>顏色與大小用來強調相對熱度，點擊任一詞可瀏覽相關集數。</span>
+              <div className="mt-5 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-4 text-[11px] text-muted-foreground">
+                <div className="flex items-center gap-1.5">
+                  <Layers3 size={13} />
+                  <span>大小依集數提及數量；點擊話題詞可進入相關集數。</span>
                 </div>
-                <span className="font-mono tracking-[0.14em]">TOP {posterTags.length}</span>
+                <span className="font-mono tabular-nums">TOP {posterTags.length}</span>
               </div>
             </section>
 
-            <div className="mt-[18px] grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_360px]">
+            <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_360px]">
+              {/* Top-10 ranked list */}
               <RailCard
                 title={
                   <span className="inline-flex items-center gap-2">
@@ -239,6 +187,7 @@ export const TopicsCloud: React.FC = () => {
                 </div>
               </RailCard>
 
+              {/* Summary stats */}
               <RailCard title="本月摘要" sub={`${sorted.length} 個話題`} className="p-4 sm:p-5">
                 <div className="grid grid-cols-3 gap-2">
                   <div className="rounded-md bg-muted/70 p-3">

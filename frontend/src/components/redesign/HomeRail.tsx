@@ -58,7 +58,10 @@ function TopTickers({ buzz }: { buzz: RecentBuzz }) {
             className="grid grid-cols-[18px_1fr_auto] gap-2.5 items-center py-2 border-t border-border first:border-t-0 hover:opacity-80 transition-opacity"
           >
             <span className="font-mono text-[11px] text-muted-foreground text-right">{String(i + 1).padStart(2, '0')}</span>
-            <span className="font-mono text-[12px] font-medium truncate">{b.ticker}</span>
+            <span className="min-w-0 flex items-baseline gap-1.5">
+              <span className="text-[13px] font-medium truncate">{b.name || b.ticker}</span>
+              {b.name && <span className="font-mono text-[10px] text-muted-foreground shrink-0">{b.ticker}</span>}
+            </span>
             <span className="flex items-center gap-2">
               <span className="text-[11px] text-muted-foreground font-mono tabular-nums">{b.count} 集</span>
               <SentimentChip sentiment={normalizeSentiment(b.sentiment_label)} bare />

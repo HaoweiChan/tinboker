@@ -490,6 +490,8 @@ export type SentimentLabel =
 
 export interface TickerTrending {
   ticker: string;
+  /** zh-TW display name (台積電, 輝達, …) when available — buzz endpoint only. */
+  name?: string | null;
   count: number;
   sentiment_label: SentimentLabel;
   last_mentioned: string;
