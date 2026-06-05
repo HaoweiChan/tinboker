@@ -52,6 +52,9 @@ export function apiEpisodeToCardV2(
     episodeNumber: ep.episode_number != null ? `EP ${ep.episode_number}` : undefined,
     timeAgo: timeAgo(ep.spotify_release_date, ep.created_time),
     title: ep.episode_title || (ep.episode_number != null ? `EP ${ep.episode_number}` : '本集摘要'),
+    // Precomputed essence (agents-populated, no GCS hydration needed). Falls back to
+    // the plain teaser when absent — see firestore-contract.md (key_insights).
+    keyInsights: Array.isArray(ep.key_insights) && ep.key_insights.length > 0 ? ep.key_insights : undefined,
     summary: plainTeaser(ep.modified_summary_content || ep.summary_content),
     tickers: Array.isArray(ep.related_tickers)
       ? ep.related_tickers.slice(0, 4).map((symbol) => ({

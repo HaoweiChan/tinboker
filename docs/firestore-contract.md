@@ -94,7 +94,7 @@ Legend for **Fulfilled by agents**:
 | `transcript` | string \| null | sometimes | Raw transcript text. Large field — agents may omit from list responses and only populate on detail fetches via the GCS URL. |
 | `summary_content` | string \| null | always | Markdown summary. Primary teaser text for HomeFeed/EpisodeDetail. |
 | `summary_image` | string \| null | sometimes | SVG markup. |
-| `key_insights` | string[] | usually | 3–8 plain-text bullet takeaways. Rendered as a list on EpisodeDetail. No markdown. |
+| `key_insights` | string[] | **required** (see warning) | 3–8 plain-text bullet takeaways, no markdown — the episode's precomputed "essence". Rendered on EpisodeDetail **and** as the primary content of `EpisodeCardV2` across all browsing pages (HomeFeed / Podcaster / Tag / Stock / Watchlist / Profile). Those list views deliberately do **not** hydrate `summary_content` (perf — transcripts are large), so `key_insights` is the only insight source available to cards. ⚠️ **Currently ~0% populated by the agents pipeline** (0/40 recent episodes, 2026-06); cards fall back to the plain teaser until this is backfilled. **Action: agents must populate `key_insights` on every episode.** |
 | `raw_mp3` | string \| null | never (local-dev only) | Present in the Pydantic model as a local filesystem path used during agent processing; **not stored in Firestore** in production. Listed here only to match the model contract; agents must omit when writing to Firestore. |
 
 #### Metadata
@@ -165,7 +165,7 @@ This table maps every UI surface to the subset of episode fields it actually rea
 
 | Surface | File | Required fields |
 |---|---|---|
-| HomeFeed | [frontend/src/pages/HomeFeed.tsx](../frontend/src/pages/HomeFeed.tsx) | `id`, `podcast_name`, `episode_title`, `episode_number`, `created_time`, `spotify_release_date`, `summary_content` ∥ `modified_summary_content`, `related_tickers`, `tags`, `num_likes`, `number_click`, `spotify_images` |
+| HomeFeed (+ all `EpisodeCardV2` lists) | [frontend/src/pages/HomeFeed.tsx](../frontend/src/pages/HomeFeed.tsx), [frontend/src/components/redesign/EpisodeCardV2.tsx](../frontend/src/components/redesign/EpisodeCardV2.tsx) | `id`, `podcast_name`, `episode_title`, `episode_number`, `created_time`, `spotify_release_date`, `key_insights` (card essence; falls back to `summary_content` ∥ `modified_summary_content`), `related_tickers`, `tags`, `num_likes`, `number_click`, `spotify_images` |
 | EpisodeDetail | [frontend/src/pages/EpisodeDetail.tsx](../frontend/src/pages/EpisodeDetail.tsx) | HomeFeed + `key_insights`, `events_markdown_content`, `sentences_markdown_content`, `spotify_id`, `spotify_url`, `spotify_embed_url` |
 | StockDashboard ("Mentioned in episodes") | [frontend/src/pages/StockDashboard.tsx](../frontend/src/pages/StockDashboard.tsx) | HomeFeed subset, filtered by `related_tickers` |
 | TagPage | [frontend/src/pages/TagPage.tsx](../frontend/src/pages/TagPage.tsx) | HomeFeed subset, filtered by `tags` |
