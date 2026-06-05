@@ -58,7 +58,7 @@ export const HomeFeed: React.FC = () => {
       setLoading(true);
       const [data, podcastList] = await Promise.all([
         fetchWithFallback<ApiEpisode[]>(
-          () => getRecentEpisodes({ limit: 60, sortBy: 'spotify_release_date', order: 'desc', includeContent: false }),
+          () => getRecentEpisodes({ limit: 60, sortBy: 'released_at_ms', order: 'desc', includeContent: false }),
           [],
           'getRecentEpisodes',
         ).catch(() => [] as ApiEpisode[]),

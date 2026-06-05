@@ -424,7 +424,11 @@ class PodcastService:
                 *[self.transformer.to_episode(d, enrich_content=enrich_content) for d in episodes_dict]
             )
             episodes = self._scope_episodes(list(episodes), allowed, cutoff)
-            episodes = sorted(episodes, key=lambda x: x.created_time or 0, reverse=True)
+            # Sort the cross-podcast feed by true publish time (released_at_ms,
+            # falling back to created_time), NOT ingestion time — so a chronological
+            # newest-first feed interleaves shows instead of clustering each
+            # podcaster's ingestion batch together.
+            episodes = sorted(episodes, key=self._episode_release_ms, reverse=True)
             paginated = list(episodes)[offset:offset + limit]
             try:
                 await cache_set(cache_key, json.dumps([e.dict() for e in paginated], default=str), CACHE_TTL["podcast_episodes"])
