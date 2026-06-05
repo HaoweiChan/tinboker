@@ -24,6 +24,9 @@ export interface Episode {
   related_tickers: string[];
   tags?: string[];
   created_time: number;
+  /** True publish time (Unix ms), agents-written from the feed. Prefer over
+   *  created_time (ingestion time) and spotify_release_date for display. */
+  released_at_ms?: number | null;
   number_click?: number;
   num_likes?: number;
   raw_mp3?: string | null;

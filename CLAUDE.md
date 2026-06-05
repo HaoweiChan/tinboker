@@ -202,6 +202,9 @@ GCP_PROJECT_ID=gen-lang-client-0901363254
 FIRESTORE_DATABASE_ID=graphfolio-db
 POSTGRES_HOST=34.14.119.47
 CORS_ORIGINS=http://localhost:5173,https://tinboker.com,https://dev.tinboker.com,https://staging.tinboker.com
+# Release scoping (launch subset) — empty value disables a filter
+RELEASE_PODCAST_LANGUAGES=zh-TW    # only show content_sources podcasts in these languages ("" = all)
+RELEASE_EPISODE_MAX_AGE_DAYS=0     # hide episodes older than N days (0=off; flip to 30 after the released_at_ms backfill — see docs/handoffs/released-at-ms-publish-date.md)
 ```
 
 ### Frontend (`.env.*` per environment)

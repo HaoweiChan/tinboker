@@ -41,7 +41,7 @@ export function apiEpisodeToCardV2(
   translationMap?: Map<string, string>,
   sentimentMap?: Map<string, Sentiment>,
 ): EpisodeCardV2Props {
-  const released = ep.spotify_release_date ?? ep.created_time;
+  const released = ep.released_at_ms ?? ep.spotify_release_date ?? ep.created_time;
   const releaseTime = typeof released === 'string' ? Date.parse(released) : (released ?? ep.created_time);
   const isRecent = Number.isFinite(releaseTime) && Date.now() - (releaseTime as number) < 7 * 24 * 3_600_000;
   return {
@@ -50,7 +50,7 @@ export function apiEpisodeToCardV2(
     podcasterImageUrl: podcastImageMap?.get(ep.podcast_name) ?? ep.spotify_images?.[0] ?? null,
     podcasterKind: 'mute',
     episodeNumber: ep.episode_number != null ? `EP ${ep.episode_number}` : undefined,
-    timeAgo: timeAgo(ep.spotify_release_date, ep.created_time),
+    timeAgo: timeAgo(ep.released_at_ms ?? ep.spotify_release_date, ep.created_time),
     title: ep.episode_title || (ep.episode_number != null ? `EP ${ep.episode_number}` : '本集摘要'),
     // Precomputed essence (agents-populated, no GCS hydration needed). Falls back to
     // the plain teaser when absent — see firestore-contract.md (key_insights).

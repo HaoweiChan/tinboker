@@ -143,7 +143,35 @@ class Settings(BaseSettings):
     
     # Environment
     environment: str = "development"  # development, staging, production
-    
+
+    # ==================== Release scoping ====================
+    # Restrict the public podcast catalog to a launch subset. Each value is a
+    # content_sources.language code (e.g. "zh-TW"). Empty list = no language
+    # restriction (show every followed show). Default: zh-TW-only launch.
+    # Override via env RELEASE_PODCAST_LANGUAGES="zh-TW,en" or "" to disable.
+    release_podcast_languages: list[str] = ["zh-TW"]
+    # Hide episodes whose publish time (released_at_ms) is older than this many
+    # days. 0 = no recency cap. Keep 0 until the agents pipeline backfills a
+    # reliable released_at_ms (created_time is ingestion time, not publish time);
+    # then flip RELEASE_EPISODE_MAX_AGE_DAYS=30 to enable the 1-month window.
+    release_episode_max_age_days: int = 0
+
+    @field_validator("release_podcast_languages", mode="before")
+    @classmethod
+    def parse_release_podcast_languages(cls, v: Union[str, list, None]) -> list[str]:
+        """Parse release language allowlist from comma-separated string or list."""
+        if v is None:
+            return []
+        if isinstance(v, str):
+            s = v.strip()
+            if s == "":
+                return []
+            if s.startswith("["):
+                import json
+                return json.loads(s)
+            return [lang.strip() for lang in s.split(",") if lang.strip()]
+        return list(v)
+
     # Database configuration
     database_path: str = "data/tinboker.db"  # SQLite database file path
     use_postgres: bool = False  # Toggle between SQLite and PostgreSQL

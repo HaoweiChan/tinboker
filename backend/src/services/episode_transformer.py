@@ -62,6 +62,34 @@ class EpisodeTransformer:
         return int(datetime.now().timestamp() * 1000)
 
     @staticmethod
+    def _normalize_released_at_ms(value) -> Optional[int]:
+        """Normalize a raw released_at_ms value to Unix milliseconds, or None.
+
+        Unlike created_time, this never falls back to now(): a missing publish
+        time stays None so callers can decide how to treat unknown-date episodes.
+        Accepts int/float ms, a datetime, or an ISO-8601 string.
+        """
+        if value is None:
+            return None
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, (int, float)):
+            return int(value)
+        if isinstance(value, datetime):
+            return int(value.timestamp() * 1000)
+        if isinstance(value, str):
+            s = value.strip()
+            if not s:
+                return None
+            if s.isdigit():
+                return int(s)
+            try:
+                return int(datetime.fromisoformat(s.replace('Z', '+00:00')).timestamp() * 1000)
+            except ValueError:
+                return None
+        return None
+
+    @staticmethod
     def extract_tags_from_text(text: str) -> set:
         """Extract tag IDs from markdown links like [Name](#tag:ID)"""
         if not text:
@@ -89,6 +117,8 @@ class EpisodeTransformer:
         elif not isinstance(created_time, datetime):
             created_time = datetime.now()
 
+        released_at_ms = self._normalize_released_at_ms(episode_dict.get('released_at_ms'))
+
         return Episode(
             id=episode_dict.get('id') or episode_dict.get('episode_id', ''),
             podcast_name=episode_dict.get('podcast_name', ''),
@@ -100,6 +130,7 @@ class EpisodeTransformer:
             related_tickers=episode_dict.get('related_tickers', []),
             tags=all_tags,
             created_time=self.datetime_to_timestamp_ms(created_time),
+            released_at_ms=released_at_ms,
             number_click=episode_dict.get('number_click', 0),
             num_likes=episode_dict.get('num_likes', 0),
             key_insights=episode_dict.get('key_insights', []) or [],
