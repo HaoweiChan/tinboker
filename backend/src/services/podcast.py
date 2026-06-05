@@ -529,16 +529,32 @@ class PodcastService:
 
     # ── Tag queries ──────────────────────────────────────────────────
 
-    async def get_all_tags(self) -> List[dict]:
-        """Get all tags with episode counts from the agents-maintained `tags` index.
+    # Curated financial topic tags for the topics cloud. The `tags` Firestore
+    # collection has ~7k entries (mostly ticker codes / long-tail junk like "0dte")
+    # with no precomputed counts, and the per-episode `tags` field is ~always empty
+    # (tags live in the summary markdown). Counting all 7k subcollections hangs the
+    # backend, so we count only this meaningful, bounded set. Keep in sync with the
+    # frontend topicLabels map in TopicsCloud.tsx.
+    _TOPIC_TAGS = [
+        "ai", "ai_chip", "advanced_packaging", "bitcoin", "capital_expenditure",
+        "centralbanks", "cryptocurrency", "datacenters", "demographics", "digitalassets",
+        "earningsreport", "electric_vehicles", "electricvehicles", "etf", "ev",
+        "federalreserve", "financialregulation", "fiscalpolicy", "fixedincome",
+        "interestrates", "interestratepolicy", "japanmarket", "labormarket",
+        "low_earth_orbit_satellite", "marketnarratives", "media_industry",
+        "mergers_and_acquisitions", "monetarypolicy", "powersupply", "privatemarkets",
+        "semiconductor", "streaming_services", "supply_chain", "taiwaneconomy",
+        "trade_war", "us_stocks", "useconomy", "usstockmarket", "ustreasuries", "valuation",
+    ]
 
-        Enumerates the top-level `tags` collection directly rather than deriving the
-        tag list from each episode's `tags` field — that field is empty on recent
-        episodes (tags live in the summary markdown / this subcollection index), so
-        deriving from it (especially under the recency filter) yields nothing.
-        Counts are all-time per tag (not recency/zh-TW-scoped); cached.
+    async def get_all_tags(self) -> List[dict]:
+        """Episode counts for the curated topic tags (bounded + cached).
+
+        Counts each topic's `tags/{tag}/episodes` subcollection. All-time counts
+        (not recency/zh-TW-scoped — the per-episode `tags` field is empty so a
+        scoped count isn't available cheaply).
         """
-        cache_key = "tags:all:v2"
+        cache_key = "tags:topics:v3"
         cached = await cache_get(cache_key)
         if cached:
             try:
@@ -546,16 +562,10 @@ class PodcastService:
             except Exception:
                 pass
         try:
-            tag_docs = await asyncio.to_thread(self.firestore_service.get_all_documents, "tags")
-            tag_ids = []
-            for doc in tag_docs:
-                tid = doc.get('id') or doc.get('name')
-                if tid:
-                    tag_ids.append((tid, doc.get('episode_count')))
+            sem = asyncio.Semaphore(12)
 
-            async def _count(tid: str, precomputed) -> Optional[dict]:
-                count = precomputed if isinstance(precomputed, int) else None
-                if count is None:
+            async def _count(tid: str) -> Optional[dict]:
+                async with sem:
                     try:
                         count = await asyncio.to_thread(
                             self.firestore_service.count_subcollection_documents,
@@ -563,13 +573,10 @@ class PodcastService:
                         )
                     except Exception:
                         return None
-                if count and count > 0:
-                    return {"id": tid, "name": tid, "episode_count": count}
-                return None
+                return {"id": tid, "name": tid, "episode_count": count} if count and count > 0 else None
 
-            counted = await asyncio.gather(*[_count(tid, pc) for tid, pc in tag_ids])
-            result = [r for r in counted if r]
-            result.sort(key=lambda x: x["episode_count"], reverse=True)
+            counted = await asyncio.gather(*[_count(t) for t in self._TOPIC_TAGS])
+            result = sorted([r for r in counted if r], key=lambda x: x["episode_count"], reverse=True)
             try:
                 await cache_set(cache_key, json.dumps(result), 3600)
             except Exception:
