@@ -9,7 +9,11 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'prompt',
+      // autoUpdate: a new deploy activates immediately (skipWaiting + clientsClaim)
+      // and the page reloads via the controllerchange listener in PWAUpdatePrompt,
+      // so users never get stuck on a stale bundle. The old 'prompt' flow left the
+      // new SW waiting and didn't reliably activate it, so deploys never reached users.
+      registerType: 'autoUpdate',
       includeAssets: ['favicon.png', 'robots.txt', 'sitemap.xml'],
       manifest: {
         name: 'TinBoker - 聽播客',
@@ -38,6 +42,9 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        skipWaiting: true,
+        clientsClaim: true,
+        cleanupOutdatedCaches: true,
         maximumFileSizeToCacheInBytes: 6 * 1024 * 1024, // 6 MB to handle large bundles
         runtimeCaching: [
           {
