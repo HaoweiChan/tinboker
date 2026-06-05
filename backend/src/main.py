@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime
 from contextlib import asynccontextmanager
 from src.config import settings
@@ -112,6 +113,26 @@ async def lifespan(app: FastAPI):
             break
     except Exception as e:
         print(f"Warning: content source seed skipped: {e}")
+
+    # Backfill podcast cover art (Spotify oEmbed) in the background — best-effort,
+    # must NOT block startup/health (external HTTP).
+    async def _backfill_covers_bg():
+        def _run() -> int:
+            from src.database.postgres import get_session
+            from src.services.content_source_service import ContentSourceService
+            result = 0
+            for session in get_session():
+                result = ContentSourceService(session).backfill_missing_covers()
+                break
+            return result
+        try:
+            covered = await asyncio.to_thread(_run)
+            if covered:
+                print(f"Backfilled {covered} podcast cover image(s).")
+        except Exception as e:
+            print(f"Warning: cover backfill skipped: {e}")
+
+    asyncio.create_task(_backfill_covers_bg())
 
     yield
 

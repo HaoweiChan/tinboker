@@ -186,6 +186,42 @@ class ContentSourceService:
                 self.db.rollback()
         return inserted
 
+    def backfill_missing_covers(self, timeout: float = 8.0) -> int:
+        """Populate cover_image_url for podcast sources that have a spotify_url but no
+        cover yet, using Spotify's public oEmbed (no auth). Best-effort, idempotent.
+        Returns the number of rows updated.
+        """
+        import json as _json
+        import urllib.request
+        import urllib.parse
+
+        rows = (
+            self.db.query(ContentSource)
+            .filter(
+                ContentSource.source_type == "podcast",
+                ContentSource.spotify_url.isnot(None),
+                (ContentSource.cover_image_url.is_(None)) | (ContentSource.cover_image_url == ""),
+            )
+            .all()
+        )
+        updated = 0
+        for src in rows:
+            try:
+                oembed = "https://open.spotify.com/oembed?url=" + urllib.parse.quote(src.spotify_url, safe="")
+                with urllib.request.urlopen(oembed, timeout=timeout) as resp:
+                    data = _json.load(resp)
+                thumb = data.get("thumbnail_url")
+                if thumb:
+                    src.cover_image_url = thumb
+                    updated += 1
+            except Exception as e:
+                logger.warning("cover backfill: %s failed: %s", src.name, e)
+                continue
+        if updated:
+            self.db.commit()
+            logger.info("Backfilled cover_image_url for %d podcast source(s)", updated)
+        return updated
+
     def get_stats(self) -> dict:
         """Counts by type and active flag, for the admin header."""
         total = self.db.query(func.count(ContentSource.id)).scalar()

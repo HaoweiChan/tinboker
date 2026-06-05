@@ -89,6 +89,45 @@ class PodcastService:
             logger.error("Failed to load release allowlist from content_sources: %s", e)
             return []
 
+    async def _podcast_cover_map(self) -> dict:
+        """name -> show cover image_url from content_sources (Spotify oEmbed art).
+
+        Fills the podcast avatar for shows whose episodes carry no spotify_images.
+        Cached in Redis.
+        """
+        cache_key = "podcast:covers"
+        cached = await cache_get(cache_key)
+        if cached is not None:
+            try:
+                return json.loads(cached)
+            except Exception:
+                pass
+        covers = await asyncio.to_thread(self._query_podcast_covers)
+        if covers:
+            try:
+                await cache_set(cache_key, json.dumps(covers), CACHE_TTL["podcast_list"])
+            except Exception:
+                pass
+        return covers
+
+    @staticmethod
+    def _query_podcast_covers() -> dict:
+        """Query content_sources for {podcast name: cover_image_url}."""
+        from src.database import postgres
+        from src.services.content_source_service import ContentSourceService
+        try:
+            if postgres.SessionLocal is None:
+                postgres.init_engine()
+            db = postgres.SessionLocal()
+            try:
+                items, _ = ContentSourceService(db).list_sources(source_type="podcast", limit=1000)
+                return {s.name: s.cover_image_url for s in items if getattr(s, "cover_image_url", None)}
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error("Failed to load podcast covers from content_sources: %s", e)
+            return {}
+
     @staticmethod
     def _recency_cutoff_ms() -> Optional[int]:
         """Unix-ms cutoff for the 1-month window, or None when disabled."""
@@ -161,6 +200,7 @@ class PodcastService:
         try:
             allowed = await self._allowed_podcast_names()
             cutoff = self._recency_cutoff_ms()
+            covers = await self._podcast_cover_map()
             all_episodes = await asyncio.to_thread(
                 self.firestore_service.get_all_documents, "episodes",
             )
@@ -194,7 +234,7 @@ class PodcastService:
                 podcasts.append(Podcast(
                     id=name, name=name, episode_count=len(data['episodes']),
                     created_at=data['created_at'], updated_at=data['updated_at'],
-                    image_url=image_url,
+                    image_url=image_url or covers.get(name),
                 ))
 
             reverse = order.lower() == "desc"
@@ -220,6 +260,7 @@ class PodcastService:
         if allowed is not None and podcast_name not in allowed:
             return None
         cutoff = self._recency_cutoff_ms()
+        covers = await self._podcast_cover_map()
         cache_key = f"podcast:{podcast_name}:{self._scope_tag()}"
         cached = await cache_get(cache_key)
         if cached:
@@ -256,7 +297,7 @@ class PodcastService:
             podcast = Podcast(
                 id=podcast_name, name=podcast_name, episode_count=len(episodes),
                 created_at=created_at, updated_at=updated_at,
-                image_url=latest_image_url or fallback_image_url,
+                image_url=latest_image_url or fallback_image_url or covers.get(podcast_name),
             )
             try:
                 await cache_set(cache_key, json.dumps(podcast.dict(), default=str), CACHE_TTL["podcast_item"])

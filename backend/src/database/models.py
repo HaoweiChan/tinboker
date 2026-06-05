@@ -68,6 +68,7 @@ class ContentSource(Base):
     region = Column(String(10), nullable=True, index=True)  # news region: "US" | "TW" | ...
     language = Column(String(10), nullable=True)  # podcast content language: "zh-TW" | "en"
     spotify_url = Column(Text, nullable=True)  # podcast only
+    cover_image_url = Column(Text, nullable=True)  # podcast cover art (Spotify show thumbnail, via oEmbed)
     lookback_days = Column(Integer, nullable=True, default=30)  # ingest window: only items newer than N days
     max_episodes = Column(Integer, nullable=True)  # optional safety cap: at most N most-recent items per run
     transcript_service = Column(String(20), nullable=True)  # podcast only: groq|whisper|openai

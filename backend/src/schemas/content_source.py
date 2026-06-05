@@ -17,6 +17,7 @@ class ContentSourceBase(BaseModel):
     region: Optional[str] = Field(None, max_length=10, description="News region: US, TW, ...")
     language: Optional[str] = Field(None, max_length=10, description="Podcast content language: zh-TW, en")
     spotify_url: Optional[str] = Field(None, description="Podcast Spotify show URL")
+    cover_image_url: Optional[str] = Field(None, description="Podcast cover art URL (Spotify show thumbnail)")
     lookback_days: Optional[int] = Field(None, ge=1, description="Ingest window: only items newer than N days")
     max_episodes: Optional[int] = Field(None, ge=1, description="Optional cap: at most N most-recent items per run")
     transcript_service: Optional[str] = Field(None, max_length=20, description="groq | whisper | openai")
@@ -37,6 +38,7 @@ class ContentSourceUpdate(BaseModel):
     region: Optional[str] = Field(None, max_length=10)
     language: Optional[str] = Field(None, max_length=10)
     spotify_url: Optional[str] = None
+    cover_image_url: Optional[str] = None
     lookback_days: Optional[int] = Field(None, ge=1)
     max_episodes: Optional[int] = Field(None, ge=1)
     transcript_service: Optional[str] = Field(None, max_length=20)

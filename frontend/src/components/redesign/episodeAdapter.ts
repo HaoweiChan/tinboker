@@ -43,7 +43,10 @@ export function apiEpisodeToCardV2(
 ): EpisodeCardV2Props {
   const released = ep.released_at_ms ?? ep.spotify_release_date ?? ep.created_time;
   const releaseTime = typeof released === 'string' ? Date.parse(released) : (released ?? ep.created_time);
-  const isRecent = Number.isFinite(releaseTime) && Date.now() - (releaseTime as number) < 7 * 24 * 3_600_000;
+  // "NEW" = published within the last day. The feed is already scoped to ~30 days
+  // of frequently-published shows, so a 7-day window flagged every card; 24h keeps
+  // the badge meaningful (≈ today's drops only).
+  const isRecent = Number.isFinite(releaseTime) && Date.now() - (releaseTime as number) < 24 * 3_600_000;
   return {
     podcasterName: ep.podcast_name,
     podcasterInitial: (ep.podcast_name || 'P').charAt(0),
