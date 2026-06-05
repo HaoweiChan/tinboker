@@ -138,24 +138,28 @@ jobs:
             echo "port=8002" >> $GITHUB_OUTPUT
             echo "image_tag=${{ github.event.inputs.image_tag }}" >> $GITHUB_OUTPUT
             echo "image_var=STAGING_IMAGE_TAG" >> $GITHUB_OUTPUT
+            echo "api_host=staging-api.tinboker.com" >> $GITHUB_OUTPUT
           elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
             echo "environment=production" >> $GITHUB_OUTPUT
             echo "service=backend-prod" >> $GITHUB_OUTPUT
             echo "port=8000" >> $GITHUB_OUTPUT
             echo "image_tag=${{ github.ref_name }}" >> $GITHUB_OUTPUT
             echo "image_var=PROD_IMAGE_TAG" >> $GITHUB_OUTPUT
+            echo "api_host=api.tinboker.com" >> $GITHUB_OUTPUT
           elif [ "${{ github.ref_name }}" == "main" ]; then
             echo "environment=staging" >> $GITHUB_OUTPUT
             echo "service=backend-staging" >> $GITHUB_OUTPUT
             echo "port=8002" >> $GITHUB_OUTPUT
             echo "image_tag=main" >> $GITHUB_OUTPUT
             echo "image_var=STAGING_IMAGE_TAG" >> $GITHUB_OUTPUT
+            echo "api_host=staging-api.tinboker.com" >> $GITHUB_OUTPUT
           else
             echo "environment=development" >> $GITHUB_OUTPUT
             echo "service=backend-dev" >> $GITHUB_OUTPUT
             echo "port=8001" >> $GITHUB_OUTPUT
             echo "image_tag=develop" >> $GITHUB_OUTPUT
             echo "image_var=DEV_IMAGE_TAG" >> $GITHUB_OUTPUT
+            echo "api_host=dev-api.tinboker.com" >> $GITHUB_OUTPUT
           fi
 
       - name: Fetch secrets from GSM
@@ -166,6 +170,9 @@ jobs:
           GHCR_TOKEN=$(gcloud secrets versions access latest --secret=GHCR_TOKEN --project=${{ env.GCP_PROJECT_ID }})
           GCP_CREDS_JSON=$(gcloud secrets versions access latest --secret=GCP_CREDENTIALS_JSON --project=${{ env.GCP_PROJECT_ID }})
           POSTGRES_PASSWORD=$(gcloud secrets versions access latest --secret=POSTGRES_PASSWORD --project=${{ env.GCP_PROJECT_ID }})
+          # Optional — used for the post-deploy Cloudflare edge cache purge.
+          CLOUDFLARE_API_TOKEN=$(gcloud secrets versions access latest --secret=CLOUDFLARE_API_TOKEN --project=${{ env.GCP_PROJECT_ID }} 2>/dev/null || echo "")
+          CLOUDFLARE_ZONE_TAG=$(gcloud secrets versions access latest --secret=CLOUDFLARE_ZONE_TAG --project=${{ env.GCP_PROJECT_ID }} 2>/dev/null || echo "")
 
           echo "::add-mask::$VPS_HOST"
           echo "::add-mask::$VPS_USER"
@@ -173,11 +180,15 @@ jobs:
           echo "::add-mask::$GHCR_TOKEN"
           echo "::add-mask::$GCP_CREDS_JSON"
           echo "::add-mask::$POSTGRES_PASSWORD"
+          echo "::add-mask::$CLOUDFLARE_API_TOKEN"
+          echo "::add-mask::$CLOUDFLARE_ZONE_TAG"
 
           echo "VPS_HOST=$VPS_HOST" >> $GITHUB_ENV
           echo "VPS_USER=$VPS_USER" >> $GITHUB_ENV
           echo "GHCR_TOKEN=$GHCR_TOKEN" >> $GITHUB_ENV
           echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD" >> $GITHUB_ENV
+          echo "CLOUDFLARE_API_TOKEN=$CLOUDFLARE_API_TOKEN" >> $GITHUB_ENV
+          echo "CLOUDFLARE_ZONE_TAG=$CLOUDFLARE_ZONE_TAG" >> $GITHUB_ENV
 
           echo "VPS_SSH_KEY<<EOFKEY" >> $GITHUB_ENV
           echo "$VPS_SSH_KEY" >> $GITHUB_ENV
@@ -222,8 +233,48 @@ jobs:
             sleep 15
             curl -f http://localhost:${{ steps.env.outputs.port }}/health || exit 1
 
+      # Drop the Cloudflare edge cache only AFTER the new container is healthy, so the
+      # edge re-fetches fresh /api/* instead of serving pre-deploy copies until TTL
+      # (s-maxage up to 1h, plus a /api/* cache rule that over-caches). Best-effort:
+      # a purge failure logs a warning but never fails an otherwise-good deploy.
+      - name: Purge Cloudflare CDN cache
+        if: success()
+        env:
+          CF_API_TOKEN: ${{ env.CLOUDFLARE_API_TOKEN }}
+          CF_ZONE_TAG: ${{ env.CLOUDFLARE_ZONE_TAG }}
+          API_HOST: ${{ steps.env.outputs.api_host }}
+        run: |
+          if [ -z "$CF_API_TOKEN" ] || [ -z "$CF_ZONE_TAG" ]; then
+            echo "::warning::Cloudflare credentials missing (CLOUDFLARE_API_TOKEN / CLOUDFLARE_ZONE_TAG in GSM); skipping CDN purge."
+            exit 0
+          fi
+          API_URL="https://api.cloudflare.com/client/v4/zones/${CF_ZONE_TAG}/purge_cache"
+          echo "Purging Cloudflare edge cache for host ${API_HOST} ..."
+          # Host-scoped purge (matches the manual recipe documented in CLAUDE.md).
+          # Purge by host requires an Enterprise plan; on other plans Cloudflare
+          # returns success:false and we fall back to purging the whole zone.
+          RESP=$(curl -sS -X POST "$API_URL" \
+            -H "Authorization: Bearer ${CF_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data "{\"hosts\":[\"${API_HOST}\"]}" || true)
+          if echo "$RESP" | grep -Eq '"success":[[:space:]]*true'; then
+            echo "✅ Edge cache purged for host ${API_HOST}"
+            exit 0
+          fi
+          echo "::warning::Host-scoped purge unavailable (likely non-Enterprise plan); falling back to purge_everything. Response: ${RESP:-<none>}"
+          RESP2=$(curl -sS -X POST "$API_URL" \
+            -H "Authorization: Bearer ${CF_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data '{"purge_everything":true}' || true)
+          if echo "$RESP2" | grep -Eq '"success":[[:space:]]*true'; then
+            echo "✅ Purged entire zone cache."
+          else
+            echo "::warning::Cloudflare cache purge failed; edge may serve stale /api/* until TTL. Response: ${RESP2:-<none>}"
+          fi
+
       - name: Deployment summary
         run: |
           echo "### Deployed to ${{ steps.env.outputs.environment }}!" >> $GITHUB_STEP_SUMMARY
           echo "**Image:** ghcr.io/${{ env.IMAGE_NAME }}:${{ steps.env.outputs.image_tag }}" >> $GITHUB_STEP_SUMMARY
           echo "**Port:** ${{ steps.env.outputs.port }}" >> $GITHUB_STEP_SUMMARY
+          echo "**CDN purge:** attempted for host ${{ steps.env.outputs.api_host }} (see 'Purge Cloudflare CDN cache' step)" >> $GITHUB_STEP_SUMMARY

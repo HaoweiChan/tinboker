@@ -98,10 +98,12 @@ jobs:
             echo "compose_file=docker-compose.prod.yml" >> $GITHUB_OUTPUT
             echo "port=8000" >> $GITHUB_OUTPUT
             echo "netdata_port=19999" >> $GITHUB_OUTPUT
+            echo "api_host=api.tinboker.com" >> $GITHUB_OUTPUT
           else
             echo "compose_file=docker-compose.staging.yml" >> $GITHUB_OUTPUT
             echo "port=8002" >> $GITHUB_OUTPUT
             echo "netdata_port=19998" >> $GITHUB_OUTPUT
+            echo "api_host=staging-api.tinboker.com" >> $GITHUB_OUTPUT
           fi
           echo "include_netdata=${{ github.event.inputs.include_netdata }}" >> $GITHUB_OUTPUT
 
@@ -112,17 +114,24 @@ jobs:
           VPS_SSH_KEY=$(gcloud secrets versions access latest --secret=VPS_SSH_KEY --project=${{ env.GCP_PROJECT_ID }})
           GHCR_TOKEN=$(gcloud secrets versions access latest --secret=GHCR_TOKEN --project=${{ env.GCP_PROJECT_ID }})
           POSTGRES_PASSWORD=$(gcloud secrets versions access latest --secret=POSTGRES_PASSWORD --project=${{ env.GCP_PROJECT_ID }})
+          # Optional — used for the post-deploy Cloudflare edge cache purge.
+          CLOUDFLARE_API_TOKEN=$(gcloud secrets versions access latest --secret=CLOUDFLARE_API_TOKEN --project=${{ env.GCP_PROJECT_ID }} 2>/dev/null || echo "")
+          CLOUDFLARE_ZONE_TAG=$(gcloud secrets versions access latest --secret=CLOUDFLARE_ZONE_TAG --project=${{ env.GCP_PROJECT_ID }} 2>/dev/null || echo "")
 
           echo "::add-mask::$VPS_HOST"
           echo "::add-mask::$VPS_USER"
           echo "::add-mask::$VPS_SSH_KEY"
           echo "::add-mask::$GHCR_TOKEN"
           echo "::add-mask::$POSTGRES_PASSWORD"
+          echo "::add-mask::$CLOUDFLARE_API_TOKEN"
+          echo "::add-mask::$CLOUDFLARE_ZONE_TAG"
 
           echo "VPS_HOST=$VPS_HOST" >> $GITHUB_ENV
           echo "VPS_USER=$VPS_USER" >> $GITHUB_ENV
           echo "GHCR_TOKEN=$GHCR_TOKEN" >> $GITHUB_ENV
           echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD" >> $GITHUB_ENV
+          echo "CLOUDFLARE_API_TOKEN=$CLOUDFLARE_API_TOKEN" >> $GITHUB_ENV
+          echo "CLOUDFLARE_ZONE_TAG=$CLOUDFLARE_ZONE_TAG" >> $GITHUB_ENV
           
           echo "VPS_SSH_KEY<<EOFKEY" >> $GITHUB_ENV
           echo "$VPS_SSH_KEY" >> $GITHUB_ENV
@@ -160,6 +169,44 @@ jobs:
             if [ "${{ steps.config.outputs.include_netdata }}" == "true" ]; then
               curl -f http://localhost:${{ steps.config.outputs.netdata_port }}/api/v1/info || echo "Netdata health check skipped"
             fi
+
+      # Drop the Cloudflare edge cache once the new container is healthy so the edge
+      # re-fetches fresh /api/* instead of serving pre-deploy copies until TTL.
+      # Best-effort: a purge failure logs a warning but never fails the deploy.
+      - name: Purge Cloudflare CDN cache
+        if: success()
+        env:
+          CF_API_TOKEN: ${{ env.CLOUDFLARE_API_TOKEN }}
+          CF_ZONE_TAG: ${{ env.CLOUDFLARE_ZONE_TAG }}
+          API_HOST: ${{ steps.config.outputs.api_host }}
+        run: |
+          if [ -z "$CF_API_TOKEN" ] || [ -z "$CF_ZONE_TAG" ]; then
+            echo "::warning::Cloudflare credentials missing (CLOUDFLARE_API_TOKEN / CLOUDFLARE_ZONE_TAG in GSM); skipping CDN purge."
+            exit 0
+          fi
+          API_URL="https://api.cloudflare.com/client/v4/zones/${CF_ZONE_TAG}/purge_cache"
+          echo "Purging Cloudflare edge cache for host ${API_HOST} ..."
+          # Host-scoped purge (matches the manual recipe documented in CLAUDE.md).
+          # Purge by host requires an Enterprise plan; on other plans Cloudflare
+          # returns success:false and we fall back to purging the whole zone.
+          RESP=$(curl -sS -X POST "$API_URL" \
+            -H "Authorization: Bearer ${CF_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data "{\"hosts\":[\"${API_HOST}\"]}" || true)
+          if echo "$RESP" | grep -Eq '"success":[[:space:]]*true'; then
+            echo "✅ Edge cache purged for host ${API_HOST}"
+            exit 0
+          fi
+          echo "::warning::Host-scoped purge unavailable (likely non-Enterprise plan); falling back to purge_everything. Response: ${RESP:-<none>}"
+          RESP2=$(curl -sS -X POST "$API_URL" \
+            -H "Authorization: Bearer ${CF_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data '{"purge_everything":true}' || true)
+          if echo "$RESP2" | grep -Eq '"success":[[:space:]]*true'; then
+            echo "✅ Purged entire zone cache."
+          else
+            echo "::warning::Cloudflare cache purge failed; edge may serve stale /api/* until TTL. Response: ${RESP2:-<none>}"
+          fi
 
       - name: Deployment summary
         run: |

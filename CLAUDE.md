@@ -147,10 +147,15 @@ ssh root@VPS "docker logs tinboker-backend-prod --tail=50"    # logs
 
 ### Post-deploy: purge Cloudflare CDN cache (do this WITHOUT asking)
 
-Deploys do **not** auto-purge the CDN yet, so after any deploy the edge serves
-stale API responses until TTL (`/api/podcast` ~1h; `/api/search/suggest` up to
-24h). **After every deploy, purge the cache via the Cloudflare API.** The token +
-zone ID are in GCP Secret Manager — fetch them yourself, never ask the user:
+**Backend** deploys now auto-purge the deployed env's API host — the
+`Purge Cloudflare CDN cache` step in [`backend-deploy.yml`](.github/workflows/backend-deploy.yml) /
+[`backend-deploy-admin.yml`](.github/workflows/backend-deploy-admin.yml) runs after the health
+check, so you do **not** need to manually purge `*-api.tinboker.com` after a backend deploy.
+
+Still manual: **frontend (Cloudflare Pages) deploys** (the `*.tinboker.com` frontend hosts are
+purged by nothing automated) and **ad-hoc content/data changes**. In those cases purge via the
+Cloudflare API — the token + zone ID are in GCP Secret Manager, fetch them yourself, never ask
+the user:
 
 ```bash
 PROJ=gen-lang-client-0901363254
@@ -166,8 +171,8 @@ curl -s -X POST "https://api.cloudflare.com/client/v4/zones/$ZONE/purge_cache" \
 Hosts by env: dev = `dev-api.tinboker.com` / `dev.tinboker.com`; staging =
 `staging-api.tinboker.com` / `staging.tinboker.com`; prod = `api.tinboker.com` /
 `tinboker.com` / `www.tinboker.com`. Never print the token. Verify success with
-`cf-cache-status: MISS` on a clean (non-cache-busted) URL afterward. (Automating
-this in the deploy pipeline is a tracked follow-up.)
+`cf-cache-status: MISS` on a clean (non-cache-busted) URL afterward. (The backend
+deploy pipeline already automates the API-host purge; frontend-host purge is still manual.)
 
 ---
 
