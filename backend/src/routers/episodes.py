@@ -7,13 +7,15 @@ from typing import Optional
 from src.services.podcast import PodcastService
 from src.services.translation_discovery import schedule_ticker_discovery
 from src.services.episode_sentiments import EpisodeSentimentService
-from src.cache.cdn_cache import cdn_cache_podcast
+from src.services.trending import TrendingService
+from src.cache.cdn_cache import cdn_cache_podcast, cdn_cache_trending
 
 router = APIRouter(prefix="/api/episodes", tags=["episodes"])
 
 # Initialize services
 podcast_service = PodcastService()
 sentiment_service = EpisodeSentimentService()
+trending_service = TrendingService(podcast_service=podcast_service)
 
 
 class TickerSentimentsRequest(BaseModel):
@@ -76,6 +78,24 @@ async def get_ticker_sentiments(body: TickerSentimentsRequest):
         return await sentiment_service.get_sentiments(body.episode_ids)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching ticker sentiments: {str(e)}")
+
+
+@router.get("/buzz")
+@cdn_cache_trending
+async def get_recent_buzz(
+    days: int = Query(default=30, ge=1, le=90, description="Rolling window in days"),
+    limit: int = Query(default=10, ge=1, le=50, description="Max tickers to return"),
+):
+    """Genuine 'what people are discussing lately' from the recent launch feed.
+
+    Returns {tickers: [{ticker, count, sentiment_label, last_mentioned}], distinct_count,
+    episode_count} computed from the recent (zh-TW-scoped, recency-filtered) episodes —
+    NOT the all-time agents-precomputed trending_tickers. Powers the homepage right rail.
+    """
+    try:
+        return await trending_service.get_recent_buzz(days=days, limit=limit)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching recent buzz: {str(e)}")
 
 
 @router.get("/by-ticker/{ticker}")

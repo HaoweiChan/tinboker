@@ -273,6 +273,32 @@ export async function getTrendingTickers(
   return Array.isArray(response.data) ? response.data : [];
 }
 
+export interface RecentBuzz {
+  tickers: TickerTrending[];
+  distinct_count: number;
+  episode_count: number;
+}
+
+/** Genuine "what people are discussing lately" from the recent (zh-TW launch) feed:
+ *  real mention counts + aggregated sentiment from recent episodes — NOT the all-time
+ *  agents-precomputed trending_tickers (/api/ticker-insights/trending). */
+export async function getRecentBuzz(
+  params?: { days?: number; limit?: number }
+): Promise<RecentBuzz> {
+  const q: Record<string, number> = {};
+  if (params?.days != null) q.days = params.days;
+  if (params?.limit != null) q.limit = params.limit;
+  const response = await apiClient.get('/api/episodes/buzz', {
+    params: Object.keys(q).length ? q : undefined,
+  });
+  const d = response.data ?? {};
+  return {
+    tickers: Array.isArray(d.tickers) ? d.tickers : [],
+    distinct_count: typeof d.distinct_count === 'number' ? d.distinct_count : 0,
+    episode_count: typeof d.episode_count === 'number' ? d.episode_count : 0,
+  };
+}
+
 export async function getTags(): Promise<TagsResponse> {
   const response = await apiClient.get('/api/tags');
   if (response.data?.tags && Array.isArray(response.data.tags)) {

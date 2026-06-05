@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { getTrendingTickers, type Podcast } from '@/services/api/podcasts';
-import type { TickerTrending } from '@/services/types';
+import { getRecentBuzz, type Podcast, type RecentBuzz } from '@/services/api/podcasts';
 import { fetchWithFallback } from '@/services/api/migration';
 import { RailCard } from './RailCard';
 import { SentBar } from './SentBar';
@@ -9,11 +8,13 @@ import { SentimentChip } from './SentimentChip';
 import { PodMark } from './PodMark';
 import { normalizeSentiment, type Sentiment } from '@/lib/sentiment';
 
-function TodayPulse({ episodeCount, buzz }: { episodeCount: number; buzz: TickerTrending[] }) {
+const EMPTY_BUZZ: RecentBuzz = { tickers: [], distinct_count: 0, episode_count: 0 };
+
+function TodayPulse({ buzz, fallbackEpisodes }: { buzz: RecentBuzz; fallbackEpisodes: number }) {
   let bull = 0;
   let bear = 0;
   let neutral = 0;
-  for (const b of buzz) {
+  for (const b of buzz.tickers) {
     const s = normalizeSentiment(b.sentiment_label);
     if (s === 'BULLISH') bull++;
     else if (s === 'BEARISH') bear++;
@@ -21,16 +22,17 @@ function TodayPulse({ episodeCount, buzz }: { episodeCount: number; buzz: Ticker
   }
   const total = bull + bear + neutral;
   const dominant: Sentiment = total === 0 ? null : bull >= bear && bull >= neutral ? 'BULLISH' : bear >= neutral ? 'BEARISH' : 'NEUTRAL';
+  const episodes = buzz.episode_count || fallbackEpisodes;
   return (
-    <RailCard title="今天的市場" sub="近 7 天">
+    <RailCard title="今天的市場" sub="近 30 天">
       <div className="flex flex-col gap-3 text-[13px]">
         <div className="flex justify-between">
-          <span className="text-muted-foreground">最近 {episodeCount} 集摘要</span>
-          <span className="font-mono font-semibold tabular-nums">{episodeCount}</span>
+          <span className="text-muted-foreground">最近 {episodes} 集摘要</span>
+          <span className="font-mono font-semibold tabular-nums">{episodes}</span>
         </div>
         <div className="flex justify-between">
-          <span className="text-muted-foreground">提到 {buzz.length} 檔個股</span>
-          <span className="font-mono font-semibold tabular-nums">{buzz.length}</span>
+          <span className="text-muted-foreground">提到 {buzz.distinct_count} 檔個股</span>
+          <span className="font-mono font-semibold tabular-nums">{buzz.distinct_count}</span>
         </div>
         {dominant && (
           <div className="flex justify-between items-center">
@@ -44,12 +46,12 @@ function TodayPulse({ episodeCount, buzz }: { episodeCount: number; buzz: Ticker
   );
 }
 
-function TopTickers({ buzz }: { buzz: TickerTrending[] }) {
-  if (buzz.length === 0) return null;
+function TopTickers({ buzz }: { buzz: RecentBuzz }) {
+  if (buzz.tickers.length === 0) return null;
   return (
-    <RailCard title="這幾天大家在聊" sub="近 7 天提及">
+    <RailCard title="這幾天大家在聊" sub="近 30 天提及">
       <div className="flex flex-col">
-        {buzz.slice(0, 6).map((b, i) => (
+        {buzz.tickers.slice(0, 6).map((b, i) => (
           <Link
             key={b.ticker}
             to={`/stock/${encodeURIComponent(b.ticker)}`}
@@ -71,7 +73,7 @@ function TopTickers({ buzz }: { buzz: TickerTrending[] }) {
 function TopPodcasters({ podcasts }: { podcasts: Podcast[] }) {
   if (podcasts.length === 0) return null;
   return (
-    <RailCard title="本週更新最勤" sub="最近更新">
+    <RailCard title="最近更新" sub="近 30 天集數">
       <div className="flex flex-col">
         {podcasts.slice(0, 5).map((p) => (
           <Link
@@ -93,16 +95,18 @@ function TopPodcasters({ podcasts }: { podcasts: Podcast[] }) {
   );
 }
 
-/** Home page right rail: 今天的市場 / 這幾天大家在聊 / 本週更新最勤. */
+/** Home page right rail: 今天的市場 / 這幾天大家在聊 / 最近更新.
+ *  All three reflect the recent (zh-TW launch) feed — genuine mention counts +
+ *  sentiment from /api/episodes/buzz, not the all-time precomputed trending. */
 export const HomeRail: React.FC<{ episodeCount: number; podcasts?: Podcast[] }> = ({ episodeCount, podcasts = [] }) => {
-  const [buzz, setBuzz] = useState<TickerTrending[]>([]);
+  const [buzz, setBuzz] = useState<RecentBuzz>(EMPTY_BUZZ);
 
   useEffect(() => {
     let alive = true;
-    fetchWithFallback<TickerTrending[]>(() => getTrendingTickers({ days: 30, limit: 10 }), [], 'getTrendingTickers:rail')
-      .catch(() => [] as TickerTrending[])
+    fetchWithFallback<RecentBuzz>(() => getRecentBuzz({ days: 30, limit: 10 }), EMPTY_BUZZ, 'getRecentBuzz:rail')
+      .catch(() => EMPTY_BUZZ)
       .then((b) => {
-        if (alive) setBuzz(Array.isArray(b) ? b : []);
+        if (alive) setBuzz(b && Array.isArray(b.tickers) ? b : EMPTY_BUZZ);
       });
     return () => {
       alive = false;
@@ -111,7 +115,7 @@ export const HomeRail: React.FC<{ episodeCount: number; podcasts?: Podcast[] }> 
 
   return (
     <>
-      <TodayPulse episodeCount={episodeCount} buzz={buzz} />
+      <TodayPulse buzz={buzz} fallbackEpisodes={episodeCount} />
       <TopTickers buzz={buzz} />
       <TopPodcasters podcasts={podcasts} />
     </>
