@@ -27,6 +27,121 @@ class PodcastService:
         self.gcs = GCSContentService()
         self.transformer = EpisodeTransformer(self.gcs)
 
+    # ── Release scoping ──────────────────────────────────────────────
+    # The public catalog is restricted to a launch subset: only podcasts whose
+    # content_sources row is active and tagged with an allowed language
+    # (settings.release_podcast_languages, default ["zh-TW"]), and — once a
+    # reliable released_at_ms is backfilled — only episodes published within
+    # settings.release_episode_max_age_days. Both are applied at this single
+    # read chokepoint so every surface (feed, channel, ticker, tag, search,
+    # trending) inherits them.
+
+    async def _allowed_podcast_names(self) -> Optional[frozenset]:
+        """Podcast names permitted by the current release language scope.
+
+        Sourced from the content_sources registry (Postgres): active podcasts
+        whose language is in settings.release_podcast_languages. Cached in Redis.
+        Returns None when no language restriction is configured (filter off).
+        An empty/unavailable registry yields an empty set (fail closed — never
+        leak out-of-scope shows), and is not cached so it retries next call.
+        """
+        langs = settings.release_podcast_languages
+        if not langs:
+            return None
+        cache_key = f"release:allowed_podcasts:{','.join(sorted(langs))}"
+        cached = await cache_get(cache_key)
+        if cached is not None:
+            try:
+                return frozenset(json.loads(cached))
+            except Exception:
+                pass
+        names = await asyncio.to_thread(self._query_allowed_podcast_names, langs)
+        if names:
+            try:
+                await cache_set(cache_key, json.dumps(sorted(names)), CACHE_TTL["podcast_list"])
+            except Exception:
+                pass
+        else:
+            logger.error(
+                "Release allowlist resolved to 0 podcasts for languages %s — "
+                "content_sources empty or DB unavailable; serving no episodes.", langs,
+            )
+        return frozenset(names)
+
+    @staticmethod
+    def _query_allowed_podcast_names(langs: List[str]) -> List[str]:
+        """Query content_sources for active podcast names in the given languages."""
+        from src.database import postgres
+        from src.services.content_source_service import ContentSourceService
+        try:
+            if postgres.SessionLocal is None:
+                postgres.init_engine()
+            db = postgres.SessionLocal()
+            try:
+                items, _ = ContentSourceService(db).list_sources(
+                    source_type="podcast", active=True, limit=1000,
+                )
+                langset = set(langs)
+                return [s.name for s in items if (s.language or "") in langset]
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error("Failed to load release allowlist from content_sources: %s", e)
+            return []
+
+    @staticmethod
+    def _recency_cutoff_ms() -> Optional[int]:
+        """Unix-ms cutoff for the 1-month window, or None when disabled."""
+        days = settings.release_episode_max_age_days
+        if not days or days <= 0:
+            return None
+        return int((datetime.now().timestamp() - days * 86400) * 1000)
+
+    @staticmethod
+    def _scope_tag() -> str:
+        """Stable signature of the active release scope, for cache-key isolation."""
+        langs = settings.release_podcast_languages
+        lang_part = ",".join(sorted(langs)) if langs else "all"
+        return f"{lang_part}:{settings.release_episode_max_age_days}"
+
+    @staticmethod
+    def _episode_release_ms(episode: Episode) -> int:
+        """Publish time for recency checks: released_at_ms, else created_time."""
+        return episode.released_at_ms if episode.released_at_ms is not None else (episode.created_time or 0)
+
+    def _dict_release_ms(self, ep: dict) -> int:
+        """Publish time (Unix ms) for a raw Firestore episode dict."""
+        r = self.transformer._normalize_released_at_ms(ep.get('released_at_ms'))
+        if r is not None:
+            return r
+        return self.transformer.datetime_to_timestamp_ms(ep.get('created_time', datetime.now()))
+
+    @staticmethod
+    def _scope_episodes(
+        episodes: List[Episode], allowed: Optional[frozenset], cutoff: Optional[int],
+    ) -> List[Episode]:
+        """Drop episodes outside the release language allowlist / recency window."""
+        if allowed is None and cutoff is None:
+            return episodes
+        out = []
+        for ep in episodes:
+            if allowed is not None and ep.podcast_name not in allowed:
+                continue
+            if cutoff is not None and PodcastService._episode_release_ms(ep) < cutoff:
+                continue
+            out.append(ep)
+        return out
+
+    async def _episode_in_scope(self, episode: Episode) -> bool:
+        """Whether a single episode is visible under the current release scope."""
+        allowed = await self._allowed_podcast_names()
+        if allowed is not None and episode.podcast_name not in allowed:
+            return False
+        cutoff = self._recency_cutoff_ms()
+        if cutoff is not None and self._episode_release_ms(episode) < cutoff:
+            return False
+        return True
+
     # ── Podcast queries ──────────────────────────────────────────────
 
     async def get_all_podcasts(
@@ -34,7 +149,7 @@ class PodcastService:
         limit: int = 50, offset: int = 0,
     ) -> List[Podcast]:
         """Get all podcasts (aggregated from episodes) with caching"""
-        cache_key = f"podcast:list:{sort_by}:{order}"
+        cache_key = f"podcast:list:{sort_by}:{order}:{self._scope_tag()}"
         cached = await cache_get(cache_key)
         if cached:
             try:
@@ -44,6 +159,8 @@ class PodcastService:
                 pass
 
         try:
+            allowed = await self._allowed_podcast_names()
+            cutoff = self._recency_cutoff_ms()
             all_episodes = await asyncio.to_thread(
                 self.firestore_service.get_all_documents, "episodes",
             )
@@ -51,6 +168,10 @@ class PodcastService:
             for ep in all_episodes:
                 name = ep.get('podcast_name')
                 if not name:
+                    continue
+                if allowed is not None and name not in allowed:
+                    continue
+                if cutoff is not None and self._dict_release_ms(ep) < cutoff:
                     continue
                 entry = podcast_dict.setdefault(name, {'episodes': [], 'created_at': None, 'updated_at': None, 'image_url': None})
                 ts = self.transformer.datetime_to_timestamp_ms(ep.get('created_time', datetime.now()))
@@ -95,7 +216,11 @@ class PodcastService:
 
     async def get_podcast_by_name(self, podcast_name: str) -> Optional[Podcast]:
         """Get podcast by name with caching"""
-        cache_key = f"podcast:{podcast_name}"
+        allowed = await self._allowed_podcast_names()
+        if allowed is not None and podcast_name not in allowed:
+            return None
+        cutoff = self._recency_cutoff_ms()
+        cache_key = f"podcast:{podcast_name}:{self._scope_tag()}"
         cached = await cache_get(cache_key)
         if cached:
             try:
@@ -107,6 +232,8 @@ class PodcastService:
             episodes = self.firestore_service.query_collection(
                 collection="episodes", filters=[("podcast_name", "==", podcast_name)],
             )
+            if cutoff is not None:
+                episodes = [ep for ep in episodes if self._dict_release_ms(ep) >= cutoff]
             if not episodes:
                 return None
 
@@ -147,7 +274,11 @@ class PodcastService:
         enrich_content: bool = False,
     ) -> List[Episode]:
         """Get episodes for a podcast with caching"""
-        cache_key = f"podcast:{podcast_name}:episodes:{sort_by}:{order}:{enrich_content}"
+        allowed = await self._allowed_podcast_names()
+        if allowed is not None and podcast_name not in allowed:
+            return []
+        cutoff = self._recency_cutoff_ms()
+        cache_key = f"podcast:{podcast_name}:episodes:{sort_by}:{order}:{enrich_content}:{self._scope_tag()}"
         cached = await cache_get(cache_key)
         if cached:
             try:
@@ -163,6 +294,7 @@ class PodcastService:
             episodes = await asyncio.gather(
                 *[self.transformer.to_episode(d, enrich_content=enrich_content) for d in episodes_dict]
             )
+            episodes = self._scope_episodes(list(episodes), allowed, cutoff)
             reverse = order.lower() == "desc"
             sort_keys = {
                 "created_time": lambda x: x.created_time or 0,
@@ -178,13 +310,22 @@ class PodcastService:
         except Exception as e:
             raise Exception(f"Failed to get episodes: {e}") from e
 
-    async def get_episode_by_id(self, podcast_name: str, episode_id: str) -> Optional[Episode]:
-        """Get episode by ID with caching"""
+    async def get_episode_by_id(
+        self, podcast_name: str, episode_id: str, apply_scope: bool = True,
+    ) -> Optional[Episode]:
+        """Get episode by ID with caching.
+
+        apply_scope=False bypasses the release language/recency filter — used by
+        admin mutations that need the episode back regardless of public scope.
+        """
         cache_key = f"podcast:{podcast_name}:episode:{episode_id}"
         cached = await cache_get(cache_key)
         if cached:
             try:
-                return Episode(**json.loads(cached))
+                episode = Episode(**json.loads(cached))
+                if apply_scope and not await self._episode_in_scope(episode):
+                    return None
+                return episode
             except Exception:
                 pass
 
@@ -197,6 +338,8 @@ class PodcastService:
                 await cache_set(cache_key, json.dumps(episode.dict(), default=str), CACHE_TTL["podcast_episode"])
             except Exception:
                 pass
+            if apply_scope and not await self._episode_in_scope(episode):
+                return None
             return episode
         except Exception as e:
             raise Exception(f"Failed to get episode: {e}") from e
@@ -213,7 +356,10 @@ class PodcastService:
         cached = await cache_get(cache_key)
         if cached:
             try:
-                return Episode(**json.loads(cached))
+                episode = Episode(**json.loads(cached))
+                if not await self._episode_in_scope(episode):
+                    return None
+                return episode
             except Exception:
                 pass
 
@@ -222,6 +368,8 @@ class PodcastService:
             if not episode_dict:
                 return None
             episode = await self.transformer.to_episode(episode_dict)
+            if not await self._episode_in_scope(episode):
+                return None
             # Don't pin a half-hydrated episode (content URL present but content empty,
             # e.g. a transient GCS read failure) — leave it uncached so the next request
             # re-attempts the fetch instead of serving a blank for the full TTL.
@@ -247,7 +395,10 @@ class PodcastService:
         podcast_name: Optional[str] = None, enrich_content: bool = False,
     ) -> List[Episode]:
         """Get recent episodes across all podcasts, sorted by created_time descending"""
-        cache_key = f"episodes:recent:{podcast_name or 'all'}:{limit}:{offset}:{enrich_content}"
+        allowed = await self._allowed_podcast_names()
+        cutoff = self._recency_cutoff_ms()
+        scoping_active = allowed is not None or cutoff is not None
+        cache_key = f"episodes:recent:{podcast_name or 'all'}:{limit}:{offset}:{enrich_content}:{self._scope_tag()}"
         cached = await cache_get(cache_key)
         if cached:
             try:
@@ -259,7 +410,10 @@ class PodcastService:
             filters = [("podcast_name", "==", podcast_name)] if podcast_name else None
             order_by = "created_time" if not podcast_name else None
             direction = "DESCENDING" if not podcast_name else None
-            query_limit = limit if not podcast_name else None
+            # When scoping is active we must fetch the full sorted set, not just the
+            # newest `limit`, or a window dominated by out-of-scope shows could
+            # filter down to fewer than `limit` in-scope episodes.
+            query_limit = None if (podcast_name or scoping_active) else limit
 
             episodes_dict = await asyncio.to_thread(
                 self.firestore_service.query_collection,
@@ -269,6 +423,7 @@ class PodcastService:
             episodes = await asyncio.gather(
                 *[self.transformer.to_episode(d, enrich_content=enrich_content) for d in episodes_dict]
             )
+            episodes = self._scope_episodes(list(episodes), allowed, cutoff)
             episodes = sorted(episodes, key=lambda x: x.created_time or 0, reverse=True)
             paginated = list(episodes)[offset:offset + limit]
             try:
@@ -285,7 +440,10 @@ class PodcastService:
     ) -> List[Episode]:
         """Get episodes that mention a specific ticker"""
         ticker_upper = ticker.upper()
-        cache_key = f"episodes:ticker:{ticker_upper}:{limit}:{offset}:{enrich_content}"
+        allowed = await self._allowed_podcast_names()
+        cutoff = self._recency_cutoff_ms()
+        scoping_active = allowed is not None or cutoff is not None
+        cache_key = f"episodes:ticker:{ticker_upper}:{limit}:{offset}:{enrich_content}:{self._scope_tag()}"
         cached = await cache_get(cache_key)
         if cached:
             try:
@@ -294,11 +452,14 @@ class PodcastService:
                 pass
 
         try:
+            # Over-fetch refs when scoping so out-of-scope/old episodes filtered out
+            # below don't starve the requested page.
+            fetch_limit = max((limit + offset) * 5, 100) if scoping_active else (limit + offset)
             episode_refs = self.firestore_service.get_subcollection_documents(
                 collection="tickers", parent_doc_id=ticker_upper,
                 subcollection="episodes", order_by="created_time",
-                direction="DESCENDING", limit=limit + offset,
-            )[offset:offset + limit]
+                direction="DESCENDING", limit=fetch_limit,
+            )
 
             dicts = []
             for ref in episode_refs:
@@ -311,11 +472,13 @@ class PodcastService:
             episodes = await asyncio.gather(
                 *[self.transformer.to_episode(d, enrich_content=enrich_content) for d in dicts]
             )
+            episodes = self._scope_episodes(list(episodes), allowed, cutoff)
+            paginated = episodes[offset:offset + limit]
             try:
-                await cache_set(cache_key, json.dumps([e.dict() for e in episodes], default=str), CACHE_TTL["podcast_episodes"])
+                await cache_set(cache_key, json.dumps([e.dict() for e in paginated], default=str), CACHE_TTL["podcast_episodes"])
             except Exception:
                 pass
-            return list(episodes)
+            return paginated
         except Exception as e:
             raise Exception(f"Failed to get episodes by ticker: {e}") from e
 
@@ -324,12 +487,21 @@ class PodcastService:
     async def get_all_tags(self) -> List[dict]:
         """Get all tags with episode counts from Firestore"""
         try:
+            allowed = await self._allowed_podcast_names()
+            cutoff = self._recency_cutoff_ms()
             episodes_dict = await asyncio.to_thread(
                 self.firestore_service.query_collection,
                 collection="episodes", filters=None, order_by=None, direction=None, limit=None,
             )
             unique_tags = set()
             for ep in episodes_dict:
+                # Only surface tags that appear on in-scope episodes. (Counts below
+                # come from the tag subcollection and may still include hidden
+                # episodes — acceptable for launch.)
+                if allowed is not None and ep.get('podcast_name') not in allowed:
+                    continue
+                if cutoff is not None and self._dict_release_ms(ep) < cutoff:
+                    continue
                 tags = ep.get('tags', [])
                 if tags:
                     unique_tags.update(tag.lower() for tag in tags)
@@ -356,11 +528,15 @@ class PodcastService:
     ) -> List[Episode]:
         """Get episodes for a specific tag"""
         try:
+            allowed = await self._allowed_podcast_names()
+            cutoff = self._recency_cutoff_ms()
+            scoping_active = allowed is not None or cutoff is not None
+            fetch_limit = max((limit + offset) * 5, 100) if scoping_active else (limit + offset)
             episode_refs = self.firestore_service.get_subcollection_documents(
                 collection="tags", parent_doc_id=tag.lower(),
                 subcollection="episodes", order_by="created_time",
-                direction="DESCENDING", limit=limit + offset,
-            )[offset:offset + limit]
+                direction="DESCENDING", limit=fetch_limit,
+            )
 
             dicts = []
             for ref in episode_refs:
@@ -370,9 +546,11 @@ class PodcastService:
                     if doc:
                         dicts.append(doc)
 
-            return list(await asyncio.gather(
+            episodes = await asyncio.gather(
                 *[self.transformer.to_episode(d, enrich_content=enrich_content) for d in dicts]
-            ))
+            )
+            episodes = self._scope_episodes(list(episodes), allowed, cutoff)
+            return episodes[offset:offset + limit]
         except Exception as e:
             raise Exception(f"Failed to get episodes by tag: {e}") from e
 
@@ -493,7 +671,7 @@ class PodcastService:
                 self.firestore_service.set_document, "episodes", episode_id, update_data, True,
             )
             await self._invalidate_episode_cache(podcast_name, episode_id)
-            return await self.get_episode_by_id(podcast_name, episode_id)
+            return await self.get_episode_by_id(podcast_name, episode_id, apply_scope=False)
         except Exception as e:
             logger.error(f"Failed to save modified summary: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to save modified summary: {str(e)}")

@@ -211,7 +211,7 @@ export const EpisodeDetail: React.FC = () => {
                   <Link to={`/podcaster/${encodeURIComponent(name)}`} className="text-[14px] font-medium hover:underline">{name}</Link>
                   <div className="text-[12px] text-muted-foreground">
                     {episode.episode_number != null ? `EP ${episode.episode_number} · ` : ''}
-                    {timeAgo(episode.spotify_release_date, episode.created_time)}
+                    {timeAgo(episode.released_at_ms ?? episode.spotify_release_date, episode.created_time)}
                   </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
