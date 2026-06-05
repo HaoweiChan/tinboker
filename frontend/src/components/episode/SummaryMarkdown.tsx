@@ -75,13 +75,12 @@ export const SummaryMarkdown: React.FC<SummaryMarkdownProps> = ({ content, onSee
             }
             if (h.startsWith('#tag:')) {
               const id = h.slice('#tag:'.length).trim();
-              // Soft amber highlight — clearly marks a topic term and stays distinct
-              // from the blue ticker links. box-decoration-clone keeps the highlight
-              // intact when the term wraps across lines.
+              // Reads as normal prose text; clickable, with a subtle hover that
+              // reveals it links to the topic.
               return (
                 <Link
                   to={`/topics/${encodeURIComponent(id)}`}
-                  className="box-decoration-clone rounded px-1 py-0.5 bg-amber-400/20 text-amber-700 dark:text-amber-300 font-medium hover:bg-amber-400/35 transition-colors"
+                  className="hover:text-accent-info hover:underline transition-colors"
                 >
                   {children}
                 </Link>

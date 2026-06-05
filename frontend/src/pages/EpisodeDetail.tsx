@@ -230,7 +230,7 @@ export const EpisodeDetail: React.FC = () => {
               {episode.tags && episode.tags.length > 0 && (
                 <div className="flex gap-1.5 flex-wrap mt-3">
                   {episode.tags.map((t) => (
-                    <Link key={t} to={`/topics/${encodeURIComponent(t)}`} className="text-[11px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground hover:bg-accent-info-soft hover:text-accent-info transition-colors">#{t}</Link>
+                    <Link key={t} to={`/topics/${encodeURIComponent(t)}`} className="text-[12px] px-2.5 py-0.5 rounded-full bg-amber-400/20 text-amber-700 dark:text-amber-300 font-medium hover:bg-amber-400/35 transition-colors">#{t}</Link>
                   ))}
                 </div>
               )}
