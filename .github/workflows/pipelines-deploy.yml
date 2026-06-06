@@ -145,3 +145,7 @@ jobs:
             
             curl -s http://localhost:8003/api/wiki/health || true
             echo ""
+
+            # 6. Cleanup legacy directories
+            echo "→ Removing stale /root/tinboker-agents..."
+            rm -rf /root/tinboker-agents
