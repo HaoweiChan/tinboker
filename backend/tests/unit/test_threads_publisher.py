@@ -124,3 +124,107 @@ async def test_publish_recent_skips_already_posted_and_old(temp_db, monkeypatch)
     assert reasons["EP501"] == "outside_recency_window"
     assert reasons["EP502"] == "no_postable_content"
     assert result["posted"] == []
+
+
+# ── thread (carousel + reply chain) ──────────────────────────────────
+
+def _cards():
+    return [
+        {"kind": "cover", "title": "股癌", "bullets": ["要點"], "image_url": "https://c/0.png"},
+        {"kind": "theme", "title": "主題A", "bullets": ["重點1 [01:07]", "重點2"], "image_url": "https://c/1.png"},
+        {"kind": "theme", "title": "主題B", "bullets": ["重點3 [02:00]"], "image_url": "https://c/2.png"},
+    ]
+
+
+def _ep_cards(ep_id, cards, **kw) -> Episode:
+    return Episode(
+        id=ep_id, podcast_name="股癌", episode_title="本集重點",
+        key_insights=["洞見"], social_cards=cards,
+        created_time=_now_ms(), released_at_ms=kw.get("released_ms", _now_ms()),
+    )
+
+
+class _FakeThreads:
+    def __init__(self):
+        self.is_configured = True
+        self.calls = []
+        self._n = 0
+
+    def _id(self, prefix):
+        self._n += 1
+        return f"{prefix}{self._n}"
+
+    async def publish_carousel(self, image_urls, text, **k):
+        self.calls.append(("carousel", tuple(image_urls)))
+        return self._id("root")
+
+    async def publish(self, text, image_url=None, **k):
+        self.calls.append(("single", image_url))
+        return self._id("root")
+
+    async def publish_reply(self, text, reply_to_id, **k):
+        self.calls.append(("reply", reply_to_id, text))
+        return self._id("reply")
+
+
+def test_compose_thread_carousel_images_and_replies():
+    draft = threads_publisher.compose_thread(_ep_cards("EP600", _cards()))
+    assert draft["image_urls"] == ["https://c/0.png", "https://c/1.png", "https://c/2.png"]
+    assert "2 個重點整理" in draft["main_text"]
+    assert "tinboker.com/episode/EP600" in draft["main_text"]
+    assert [r["text"].splitlines()[0] for r in draft["replies"]] == ["【主題A】", "【主題B】"]
+    assert "重點1 [01:07]" in draft["replies"][0]["text"]
+    assert all(len(r["text"]) <= THREADS_MAX_CHARS for r in draft["replies"])
+
+
+def test_compose_reply_clamps_and_keeps_whole_bullets():
+    long = ["超長重點" * 60, "第二點 [09:99]"]
+    text = threads_publisher._compose_reply("標題", long)
+    assert len(text) <= THREADS_MAX_CHARS
+    assert text.startswith("【標題】")
+
+
+@pytest.mark.asyncio
+async def test_publish_thread_carousel_then_reply_chain():
+    fake = _FakeThreads()
+    draft = threads_publisher.compose_thread(_ep_cards("EP601", _cards()))
+    res = await threads_publisher.publish_thread(fake, draft)
+
+    assert res["root_media_id"] == "root1"
+    assert res["reply_count"] == 2 and res["image_count"] == 3
+    # carousel first, then replies threaded to the previous post id.
+    assert fake.calls[0] == ("carousel", ("https://c/0.png", "https://c/1.png", "https://c/2.png"))
+    assert fake.calls[1][:2] == ("reply", "root1")     # reply 1 → carousel root
+    assert fake.calls[2][:2] == ("reply", "reply2")    # reply 2 → reply 1
+
+
+@pytest.mark.asyncio
+async def test_publish_thread_single_image_when_cover_only():
+    fake = _FakeThreads()
+    draft = threads_publisher.compose_thread(_ep_cards("EP602", [_cards()[0]]))  # cover only
+    res = await threads_publisher.publish_thread(fake, draft)
+    assert fake.calls[0][0] == "single"   # 1 image → not a carousel
+    assert res["reply_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_publish_recent_thread_path_records_root_and_replies(temp_db, monkeypatch):
+    fake = _FakeThreads()
+    monkeypatch.setattr(threads_publisher, "ThreadsService", lambda *a, **k: fake)
+    monkeypatch.setattr(settings, "threads_access_token", "tok")
+    monkeypatch.setattr(settings, "threads_user_id", "123")
+    eps = [_ep_cards("EP700", _cards())]
+    monkeypatch.setattr(threads_publisher.podcast_service, "get_recent_episodes", await _fake_recent(eps))
+
+    result = await threads_publisher.publish_recent(limit=5, dry_run=False)
+    assert result["posted_count"] == 1
+    assert result["posted"][0]["root_media_id"] == "root1"
+    assert result["posted"][0]["reply_count"] == 2
+    row = threads_publisher.list_posted()[0]
+    assert row["episode_id"] == "EP700" and row["media_id"] == "root1"
+    assert row["reply_ids"] == ["reply2", "reply3"]
+
+    # Idempotent: a second run skips the already-posted episode.
+    again = await threads_publisher.publish_recent(limit=5, dry_run=False)
+    assert again["posted_count"] == 0
+    assert again["skipped"][0]["reason"] == "already_posted"

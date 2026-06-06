@@ -21,6 +21,7 @@ class Episode(BaseModel):
     number_click: int = Field(default=0, description="Number of clicks")
     num_likes: int = Field(default=0, description="Number of likes")
     key_insights: List[str] = Field(default_factory=list, description="Key insights for the episode")
+    social_cards: List[dict] = Field(default_factory=list, description="AlphaMemo-style cards (cover + per theme) with image_url, for the Threads thread + episode SEO")
     raw_mp3: Optional[str] = Field(None, description="Raw MP3 file path (local, not in Firebase)")
     
     # GCS URLs for episode files

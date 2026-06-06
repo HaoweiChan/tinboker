@@ -155,6 +155,7 @@ class EpisodeTransformer:
             number_click=episode_dict.get('number_click', 0),
             num_likes=episode_dict.get('num_likes', 0),
             key_insights=episode_dict.get('key_insights', []) or [],
+            social_cards=episode_dict.get('social_cards', []) or [],
             raw_mp3=episode_dict.get('raw_mp3'),
             mp3_url=episode_dict.get('mp3_url'),
             transcript_url=episode_dict.get('transcript_url'),

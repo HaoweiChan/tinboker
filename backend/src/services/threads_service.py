@@ -72,6 +72,78 @@ class ThreadsService:
                 await asyncio.sleep(image_publish_delay)
             return await self._publish_container(client, container_id)
 
+    async def publish_carousel(
+        self,
+        image_urls: list[str],
+        text: str,
+        *,
+        item_delay: float = 2.0,
+        parent_delay: float = 5.0,
+    ) -> str:
+        """Publish a carousel post (2–20 images) with a caption. Returns root media id.
+
+        Each child image container is created first (Meta needs a moment to fetch each
+        image), then the CAROUSEL parent referencing them, then publish.
+        """
+        if not self.is_configured:
+            raise ThreadsError("Threads API not configured (missing access token or user id)")
+        if not (2 <= len(image_urls) <= 20):
+            raise ThreadsError(f"Carousel needs 2–20 items, got {len(image_urls)}")
+
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            child_ids: list[str] = []
+            for url in image_urls:
+                child_ids.append(await self._create_carousel_item(client, url))
+                await asyncio.sleep(item_delay)
+            await asyncio.sleep(parent_delay)
+            parent_id = await self._create_carousel_parent(client, child_ids, text)
+            return await self._publish_container(client, parent_id)
+
+    async def publish_reply(self, text: str, reply_to_id: str, *, delay: float = 2.0) -> str:
+        """Publish a text reply to ``reply_to_id``. Returns the reply's media id."""
+        if not self.is_configured:
+            raise ThreadsError("Threads API not configured (missing access token or user id)")
+        if not text or not text.strip():
+            raise ThreadsError("Refusing to publish an empty reply")
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            params = {
+                "media_type": "TEXT", "text": text,
+                "reply_to_id": reply_to_id, "access_token": self._token,
+            }
+            resp = await client.post(f"{self._base}/{self._user_id}/threads", data=params)
+            data = self._parse(resp, "create reply")
+            container_id = data.get("id")
+            if not container_id:
+                raise ThreadsError(f"Threads create-reply returned no id: {data}")
+            await asyncio.sleep(delay)
+            return await self._publish_container(client, container_id)
+
+    async def _create_carousel_item(self, client: httpx.AsyncClient, image_url: str) -> str:
+        params = {
+            "media_type": "IMAGE", "is_carousel_item": "true",
+            "image_url": image_url, "access_token": self._token,
+        }
+        resp = await client.post(f"{self._base}/{self._user_id}/threads", data=params)
+        data = self._parse(resp, "create carousel item")
+        container_id = data.get("id")
+        if not container_id:
+            raise ThreadsError(f"Threads carousel-item returned no id: {data}")
+        return container_id
+
+    async def _create_carousel_parent(
+        self, client: httpx.AsyncClient, children: list[str], text: str
+    ) -> str:
+        params = {
+            "media_type": "CAROUSEL", "children": ",".join(children),
+            "text": text, "access_token": self._token,
+        }
+        resp = await client.post(f"{self._base}/{self._user_id}/threads", data=params)
+        data = self._parse(resp, "create carousel")
+        container_id = data.get("id")
+        if not container_id:
+            raise ThreadsError(f"Threads carousel-parent returned no id: {data}")
+        return container_id
+
     async def _create_container(
         self, client: httpx.AsyncClient, text: str, image_url: Optional[str]
     ) -> str:
