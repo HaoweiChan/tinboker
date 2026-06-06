@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { User, Settings, LogOut } from 'lucide-react';
+import { User, Settings, LogOut, MessageSquareText, Info } from 'lucide-react';
 import { useAppStore, useUser, useLogout } from '@/store/useAppStore';
 import { LoginButton } from '@/components/auth/LoginButton';
 import { authApi } from '@/services/api/auth';
@@ -96,6 +96,26 @@ export const UserMenu: React.FC = () => {
             >
               <Settings size={18} />
               <span>帳號設定</span>
+            </button>
+          </div>
+
+          {/* Support — surfaces sidebar's 支援 group for mobile (where the
+              desktop sidebar isn't visible). Same items show on desktop too;
+              the small redundancy with the sidebar makes them more findable. */}
+          <div className="border-t border-slate-200 dark:border-slate-700 py-2">
+            <button
+              onClick={() => handleNavigation('/report')}
+              className="w-full flex items-center gap-3 px-4 py-3 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-white transition-colors"
+            >
+              <MessageSquareText size={18} />
+              <span>意見回饋</span>
+            </button>
+            <button
+              onClick={() => handleNavigation('/about')}
+              className="w-full flex items-center gap-3 px-4 py-3 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-white transition-colors"
+            >
+              <Info size={18} />
+              <span>關於</span>
             </button>
           </div>
 
