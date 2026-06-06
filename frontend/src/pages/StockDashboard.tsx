@@ -20,6 +20,7 @@ import { getInsightsByTicker } from '@/services/api/podcasts';
 import { transformApiEpisodeToMock } from '@/services/api/transformers';
 import type { TickerInsight } from '@/services/types';
 import { useStockPriceMap } from '@/hooks/useStockPriceMap';
+import { useEpisodeSentimentMap } from '@/hooks/useEpisodeSentimentMap';
 import { getStockLabel, inferStockMarket } from '@/utils/stockDisplay';
 
 const StockHeaderCard: React.FC<{ symbol: string; episodeCount: number }> = ({ symbol, episodeCount }) => {
@@ -33,7 +34,13 @@ const StockHeaderCard: React.FC<{ symbol: string; episodeCount: number }> = ({ s
 
   const isWatchlisted = watchlist.includes(symbol);
   // Tickers are bare codes (e.g. "2330"), not ".TW"-suffixed — infer from the code shape.
-  const tw = inferStockMarket(symbol) === 'TW';
+  const market = inferStockMarket(symbol);
+  const marketBadge =
+    market === 'TW'
+      ? { label: '台股 上市', cls: 'bg-sentiment-bull-soft text-sentiment-bull' }
+      : market === 'KR'
+        ? { label: '韓股', cls: 'bg-muted text-muted-foreground' }
+        : { label: '美股', cls: 'bg-accent-info-soft text-accent-info' };
 
   const fetchStockData = useCallback(async (ticker: string, tf: TimeframeOption) => {
     setIsLoading(true);
@@ -159,7 +166,7 @@ const StockHeaderCard: React.FC<{ symbol: string; episodeCount: number }> = ({ s
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-3 flex-wrap mb-1.5">
             <h1 className="text-[22px] font-semibold tracking-[-0.02em]">{isLoading ? displayName : primaryLabel}</h1>
-            <span className={cn('text-[12px] px-3 py-1 rounded-full', tw ? 'bg-sentiment-bull-soft text-sentiment-bull' : 'bg-accent-info-soft text-accent-info')}>{tw ? '台股 上市' : '美股'}</span>
+            <span className={cn('text-[12px] px-3 py-1 rounded-full', marketBadge.cls)}>{marketBadge.label}</span>
           </div>
           {secondaryLabel && (
             <p className="text-[13px] text-muted-foreground font-mono mb-1.5">{secondaryLabel}</p>
@@ -233,6 +240,11 @@ export const StockDashboard: React.FC = () => {
   const [episodes, setEpisodes] = useState<ApiEpisode[]>([]);
   const episodeTickers = useMemo(() => episodes.flatMap((ep) => ep.related_tickers ?? []), [episodes]);
   const priceMap = useStockPriceMap(episodeTickers);
+  // Per-(episode, ticker) sentiment for the chips on each related-episode card —
+  // sourced from the working /api/episodes/ticker-sentiments endpoint (same as HomeFeed),
+  // not the ticker-insights query that powers the 情緒比例/整體情緒 widgets.
+  const episodeIds = useMemo(() => episodes.map((e) => e.id), [episodes]);
+  const sentimentMap = useEpisodeSentimentMap(episodeIds);
   const [insights, setInsights] = useState<TickerInsight[]>([]);
   const [episodesLoading, setEpisodesLoading] = useState(true);
 
@@ -358,7 +370,7 @@ export const StockDashboard: React.FC = () => {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {episodes.map((ep) => (
-              <EpisodeCardV2 key={ep.id} {...apiEpisodeToCardV2(ep, priceMap)} />
+              <EpisodeCardV2 key={ep.id} {...apiEpisodeToCardV2(ep, priceMap, undefined, undefined, sentimentMap.get(ep.id))} />
             ))}
           </div>
         )}
