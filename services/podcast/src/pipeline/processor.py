@@ -16,6 +16,7 @@ from .steps import (
     ingest_into_wiki,
     initialize_stt_service,
     mirror_episode_to_postgres,
+    render_social_cards,
     transcribe_episode,
     upload_to_firestore,
     upload_to_gcs,
@@ -125,6 +126,10 @@ class EpisodeProcessor:
 
             # Step 4: Upload to GCS
             upload_to_gcs(self.config, self.services, episode_data)
+
+            # Step 4b: Render + upload social cards (best-effort); enriches social_cards
+            # with image_urls before they're persisted to Firestore below.
+            render_social_cards(self.config, self.services, episode_data)
 
             # Step 5: Upload to Firestore
             upload_to_firestore(self.config, self.services, episode_data)
