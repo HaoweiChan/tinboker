@@ -1,6 +1,6 @@
 # Frontend-Backend Branching & Synchronization Strategy
 
-This document outlines the branching strategy and workflow for maintaining synchronization between the **tinboker-platform/frontend** (Frontend) and **tinboker-platform/backend** (Backend) repositories.
+This document outlines the branching strategy and workflow for maintaining synchronization between the **tinboker/frontend** (Frontend) and **tinboker/backend** (Backend) repositories.
 
 ## 1. Core Branches
 

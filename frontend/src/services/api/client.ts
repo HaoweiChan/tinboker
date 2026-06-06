@@ -12,6 +12,9 @@ import type { AxiosInstance, AxiosError, AxiosRequestConfig } from 'axios';
 
 // Extract branch name from Cloudflare Pages preview URL
 // Format: {branch-name}.tinboker-platform.pages.dev or {commit-hash}.tinboker-platform.pages.dev
+// NOTE: the CF Pages project is named "tinboker-platform" (immutable; predates the
+// repo rename to "tinboker"), so this subdomain intentionally differs from the repo name.
+// Do not "fix" it to tinboker.pages.dev unless the CF Pages project is actually migrated.
 const extractBranchFromPagesUrl = (hostname: string): string | null => {
   // Match Cloudflare Pages preview URLs: something.tinboker-platform.pages.dev
   const match = hostname.match(/^([^.]+)\.tinboker-platform\.pages\.dev$/);

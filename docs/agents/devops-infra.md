@@ -38,7 +38,7 @@ Users → Cloudflare Edge (cache + DDoS) → Netcup VPS (152.53.136.182)
                                    GCP Secret Manager
 ```
 
-- Frontend served by **Cloudflare Pages** project `tinboker-platform` at `tinboker.com` and `dev.tinboker.com`.
+- Frontend served by **Cloudflare Pages** project `tinboker` at `tinboker.com` and `dev.tinboker.com`.
 - Backend runs as **3 Docker containers** on the same VPS, one per environment, behind Caddy:
   - `tinboker-backend-prod` :8000 → `api.tinboker.com`
   - `tinboker-backend-dev` :8001 → `dev-api.tinboker.com`
