@@ -1,0 +1,148 @@
+name: Pipelines Deploy
+
+on:
+  push:
+    branches: [develop, main]
+    paths: ['pipelines/**']
+  workflow_dispatch:
+
+env:
+  GCP_PROJECT_ID: gen-lang-client-0901363254
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Fetch secrets from GSM
+        run: |
+          VPS_HOST=$(gcloud secrets versions access latest --secret=VPS_HOST --project=${{ env.GCP_PROJECT_ID }})
+          VPS_USER=$(gcloud secrets versions access latest --secret=VPS_USER --project=${{ env.GCP_PROJECT_ID }})
+          VPS_SSH_KEY=$(gcloud secrets versions access latest --secret=VPS_SSH_KEY --project=${{ env.GCP_PROJECT_ID }})
+
+          echo "::add-mask::$VPS_HOST"
+          echo "::add-mask::$VPS_USER"
+          echo "::add-mask::$VPS_SSH_KEY"
+
+          echo "VPS_HOST=$VPS_HOST" >> $GITHUB_ENV
+          echo "VPS_USER=$VPS_USER" >> $GITHUB_ENV
+
+          echo "VPS_SSH_KEY<<EOFKEY" >> $GITHUB_ENV
+          echo "$VPS_SSH_KEY" >> $GITHUB_ENV
+          echo "EOFKEY" >> $GITHUB_ENV
+
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ env.VPS_HOST }}
+          username: ${{ env.VPS_USER }}
+          key: ${{ env.VPS_SSH_KEY }}
+          script: |
+            set -e
+            MONOREPO_DIR="/root/tinboker"
+            REPO_DIR="$MONOREPO_DIR/pipelines"
+            PODCAST_DIR="$REPO_DIR/services/podcast"
+            SA_FILE="$PODCAST_DIR/gcp-service-account.json"
+            
+            # 1. Clone or pull the monorepo
+            if [ -d "$MONOREPO_DIR/.git" ]; then
+                echo "→ Pulling latest changes..."
+                cd "$MONOREPO_DIR"
+                git fetch origin --tags
+                if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+                  git checkout -f "${{ github.ref_name }}"
+                else
+                  git checkout -f "origin/${{ github.ref_name }}"
+                fi
+            else
+                echo "→ Cloning repository..."
+                git clone https://github.com/HaoweiChan/tinboker.git "$MONOREPO_DIR"
+                cd "$MONOREPO_DIR"
+                if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+                  git checkout -f "${{ github.ref_name }}"
+                else
+                  git checkout -f "origin/${{ github.ref_name }}"
+                fi
+            fi
+            
+            # 2. uv sync
+            cd "$REPO_DIR"
+            if ! command -v uv >/dev/null 2>&1; then
+                echo "→ Installing uv..."
+                curl -LsSf https://astral.sh/uv/install.sh | sh
+                export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+            fi
+            echo "→ Syncing dependencies..."
+            uv sync --package tinboker-podcast
+            uv sync --package tinboker-news
+            
+            # 3. Service Account Credentials
+            if [ ! -f "$SA_FILE" ]; then
+                if [ -f "/root/gcp-sa-backup.json" ]; then
+                    cp /root/gcp-sa-backup.json "$SA_FILE"
+                    chmod 600 "$SA_FILE"
+                    echo "→ Copied GCP service account from backup"
+                else
+                    echo "ERROR: No GCP service account found at $SA_FILE or /root/gcp-sa-backup.json"
+                    exit 1
+                fi
+            fi
+
+            # 4. Write/refresh the systemd units
+            echo "→ Installing systemd service for podcast-api..."
+            cat > /etc/systemd/system/podcast-api.service << 'EOF'
+            [Unit]
+            Description=Tinboker Podcast API (LangGraph Pipeline + Wiki API)
+            After=network.target postgresql.service
+
+            [Service]
+            Type=simple
+            WorkingDirectory=/root/tinboker/pipelines/services/podcast
+            ExecStart=/root/tinboker/pipelines/.venv/bin/uvicorn app:app --host 0.0.0.0 --port 8003
+            Restart=always
+            RestartSec=5
+            Environment=PORT=8003
+            Environment=GOOGLE_APPLICATION_CREDENTIALS=/root/tinboker/pipelines/services/podcast/gcp-service-account.json
+
+            [Install]
+            WantedBy=multi-user.target
+            EOF
+            
+            echo "→ Installing systemd services for tinboker-news..."
+            chmod +x "$REPO_DIR/services/news/scripts/run_news.sh"
+            cp "$REPO_DIR/services/news/deploy/tinboker-news.service" /etc/systemd/system/tinboker-news.service
+            cp "$REPO_DIR/services/news/deploy/tinboker-news.timer" /etc/systemd/system/tinboker-news.timer
+            
+            systemctl daemon-reload
+            
+            echo "→ Restarting podcast-api..."
+            systemctl enable podcast-api
+            systemctl restart podcast-api
+            
+            echo "→ Restarting tinboker-news.timer..."
+            systemctl enable --now tinboker-news.timer
+            
+            echo "→ Waiting for service to start..."
+            sleep 5
+            
+            # 5. Health checks
+            if curl -sf http://localhost:8003/health > /dev/null 2>&1; then
+                echo "✓ Podcast API is healthy on port 8003"
+            else
+                echo "✗ Health check failed. Check: journalctl -u podcast-api -n 50"
+                systemctl status podcast-api --no-pager
+                exit 1
+            fi
+            
+            curl -s http://localhost:8003/api/wiki/health || true
+            echo ""

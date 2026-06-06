@@ -5,19 +5,20 @@
 
 set -e
 
-REPO_DIR="/root/tinboker-agents"
+MONOREPO_DIR="/root/tinboker"
+REPO_DIR="$MONOREPO_DIR/pipelines"
 PODCAST_DIR="$REPO_DIR/services/podcast"
 SA_FILE="$PODCAST_DIR/gcp-service-account.json"
 
 echo "=== Podcast API VPS Deployment ==="
 
 # 1. Clone or pull the monorepo
-if [ -d "$REPO_DIR/.git" ]; then
+if [ -d "$MONOREPO_DIR/.git" ]; then
     echo "→ Pulling latest changes..."
-    cd "$REPO_DIR" && git pull --ff-only
+    cd "$MONOREPO_DIR" && git pull --ff-only
 else
     echo "→ Cloning repository..."
-    git clone https://github.com/HaoweiChan/tinboker-agents.git "$REPO_DIR"
+    git clone https://github.com/HaoweiChan/tinboker.git "$MONOREPO_DIR"
 fi
 cd "$REPO_DIR"
 
@@ -77,12 +78,12 @@ After=network.target postgresql.service
 
 [Service]
 Type=simple
-WorkingDirectory=/root/tinboker-agents/services/podcast
-ExecStart=/root/tinboker-agents/.venv/bin/uvicorn app:app --host 0.0.0.0 --port 8003
+WorkingDirectory=/root/tinboker/pipelines/services/podcast
+ExecStart=/root/tinboker/pipelines/.venv/bin/uvicorn app:app --host 0.0.0.0 --port 8003
 Restart=always
 RestartSec=5
 Environment=PORT=8003
-Environment=GOOGLE_APPLICATION_CREDENTIALS=/root/tinboker-agents/services/podcast/gcp-service-account.json
+Environment=GOOGLE_APPLICATION_CREDENTIALS=/root/tinboker/pipelines/services/podcast/gcp-service-account.json
 
 [Install]
 WantedBy=multi-user.target

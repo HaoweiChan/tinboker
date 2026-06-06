@@ -1,10 +1,10 @@
 """One-off audit: inspect episode Firestore docs + summary markdown format compliance.
 
 Run on the VPS:
-  cd /root/tinboker-agents/services/podcast
+  cd /root/tinboker/pipelines/services/podcast
   GOOGLE_APPLICATION_CREDENTIALS=$PWD/gcp-service-account.json \
   FIRESTORE_DATABASE_ID=graphfolio-db \
-  /root/tinboker-agents/.venv/bin/python scripts/_audit_episodes.py
+  /root/tinboker/pipelines/.venv/bin/python scripts/_audit_episodes.py
 """
 from __future__ import annotations
 

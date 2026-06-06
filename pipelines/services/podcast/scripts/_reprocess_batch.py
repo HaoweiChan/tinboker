@@ -5,9 +5,9 @@ detects the placeholder-fallback signature in each run's output, and retries onc
 Writes a JSONL progress log so an external monitor can tail it.
 
 Usage (on the VPS):
-  cd /root/tinboker-agents/services/podcast
+  cd /root/tinboker/pipelines/services/podcast
   GOOGLE_APPLICATION_CREDENTIALS=$PWD/gcp-service-account.json \
-  nohup /root/tinboker-agents/.venv/bin/python -u scripts/_reprocess_batch.py \
+  nohup /root/tinboker/pipelines/.venv/bin/python -u scripts/_reprocess_batch.py \
       > /root/reprocess-batch.out 2>&1 &
 """
 from __future__ import annotations
@@ -19,7 +19,7 @@ import time
 from pathlib import Path
 
 SERVICE_ROOT = Path(__file__).resolve().parents[1]
-PYTHON = "/root/tinboker-agents/.venv/bin/python"
+PYTHON = "/root/tinboker/pipelines/.venv/bin/python"
 PROGRESS = Path("/root/reprocess-progress.jsonl")
 
 IDS = [
