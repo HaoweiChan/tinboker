@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Home, Mic, LineChart, Hash, Info, MessageSquareText, Newspaper, Bookmark } from 'lucide-react';
+import { Home, Mic, LineChart, Hash, Info, MessageSquareText, Bookmark } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { AppLogo } from '@/components/logo/AppLogo';
 import { useUser } from '@/store/useAppStore';
@@ -31,7 +31,8 @@ const SECTIONS: readonly NavSection[] = [
       { to: '/podcaster', label: '節目', icon: Mic, prefix: true },
       { to: '/stock', label: '個股', icon: LineChart, prefix: true },
       { to: '/topics', label: '話題', icon: Hash, prefix: true },
-      { to: '/articles', label: '文章', icon: Newspaper, prefix: true },
+      // 文章 (articles) hidden from nav until at least one article is published —
+      // the /articles route still works, it just isn't surfaced while empty.
     ],
   },
   {

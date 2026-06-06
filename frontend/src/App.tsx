@@ -4,7 +4,6 @@ import { Toaster } from 'sonner';
 import { HomeFeed } from '@/pages/HomeFeed';
 import { About } from '@/pages/About';
 import { ContactPage } from '@/pages/ContactPage';
-import { GraphGallery } from '@/pages/GraphGallery';
 import { StockDashboard } from '@/pages/StockDashboard';
 import { EpisodeDetail } from '@/pages/EpisodeDetail';
 import { NewsRedirect } from '@/pages/NewsRedirect';
@@ -66,9 +65,12 @@ function App() {
       </Routes>
       <EnvGate>
       <Routes>
-        {/* Redirects (no chrome needed) */}
-        <Route path="/gallery" element={<Navigate to="/story" replace />} />
-        <Route path="/graph/*" element={<Navigate to="/story" replace />} />
+        {/* Retired /story (knowledge-graph gallery) rendered fabricated demo
+            content, so it and its aliases are pulled from the public build.
+            Page + redirect targets fall through to the catch-all → home. */}
+        <Route path="/gallery" element={<Navigate to="/" replace />} />
+        <Route path="/graph/*" element={<Navigate to="/" replace />} />
+        <Route path="/story" element={<Navigate to="/" replace />} />
 
         {/* Consumer app — wrapped in the sidebar + header shell */}
         <Route element={<AppLayout />}>
@@ -90,8 +92,6 @@ function App() {
           <Route path="/articles" element={<ArticleList />} />
           <Route path="/article/:slug" element={<ArticleDetail />} />
 
-          {/* Retired from primary nav, kept live */}
-          <Route path="/story" element={<GraphGallery />} />
           {/* /industry hidden for launch — rendered fabricated sector data
               (mocks/sectorData.ts). Falls through to the catch-all redirect.
               Page + components retained for future real-data wiring. */}

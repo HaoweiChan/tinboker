@@ -22,10 +22,6 @@ import type { TickerInsight } from '@/services/types';
 import { useStockPriceMap } from '@/hooks/useStockPriceMap';
 import { getStockLabel, inferStockMarket } from '@/utils/stockDisplay';
 
-function isTW(t: string): boolean {
-  return /\.TW[OW]?$/i.test(t);
-}
-
 const StockHeaderCard: React.FC<{ symbol: string; episodeCount: number }> = ({ symbol, episodeCount }) => {
   const [stockData, setStockData] = useState<CompanyDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -36,7 +32,8 @@ const StockHeaderCard: React.FC<{ symbol: string; episodeCount: number }> = ({ s
   const [subChart, setSubChart] = useState<string>('Volume');
 
   const isWatchlisted = watchlist.includes(symbol);
-  const tw = isTW(symbol);
+  // Tickers are bare codes (e.g. "2330"), not ".TW"-suffixed — infer from the code shape.
+  const tw = inferStockMarket(symbol) === 'TW';
 
   const fetchStockData = useCallback(async (ticker: string, tf: TimeframeOption) => {
     setIsLoading(true);
