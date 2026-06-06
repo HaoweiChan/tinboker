@@ -144,7 +144,7 @@ export const EpisodeDetail: React.FC = () => {
   const episodeSentiments = useEpisodeSentimentMap(episodeIds);
   const tickers = useMemo(() => {
     const sent = episode ? episodeSentiments.get(episode.id) : undefined;
-    return tickerSymbols.map((s) => {
+    const all = tickerSymbols.map((s) => {
       const keys = tickerLookupKeys(s);
       return {
         symbol: s,
@@ -153,6 +153,12 @@ export const EpisodeDetail: React.FC = () => {
         changePercent: firstMapValue(priceMap, keys),
       };
     });
+    // Drop tickers the hosts only mentioned in passing — no sentiment means no
+    // expressed view (e.g. a bank cited for a report, or a non-ticker like
+    // SpaceX/"X"). If the episode has no per-ticker sentiment at all, keep every
+    // mention so the panel isn't empty.
+    const scored = all.filter((t) => t.sentiment);
+    return scored.length > 0 ? scored : all;
   }, [tickerSymbols, rawTranslationMap, episodeSentiments, priceMap, episode]);
   const spotifyUri = useMemo(() => spotifyUriFrom(episode), [episode]);
 
