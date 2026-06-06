@@ -9,7 +9,7 @@ import { getSortedStocks } from '@/services/api/stocks';
 import type { SentimentLabel } from '@/services/types';
 import { fetchWithFallback } from '@/services/api/migration';
 import type { Sentiment } from '@/lib/sentiment';
-import { getStockLabel } from '@/utils/stockDisplay';
+import { getStockLabel, inferStockMarket } from '@/utils/stockDisplay';
 import { useStockSummaries } from '@/hooks/useStockSummaries';
 import { TickerAvatar } from '@/components/common/TickerAvatar';
 
@@ -26,8 +26,12 @@ const LABEL_RANK: Record<SentimentLabel, number> = {
   STRONG_BEARISH: 1,
 };
 
+// Use the canonical market inference (all-numeric ticker → TW), consistent with
+// getStockLabel and the row badge. The recent-buzz feed returns TW tickers as
+// bare codes ("2330", "2454"), which a ".TW"-suffix-only test misses — that left
+// the 台股 tab empty.
 function isTW(ticker: string): boolean {
-  return /\.TW[OW]?$/i.test(ticker);
+  return inferStockMarket(ticker) === 'TW';
 }
 function labelToSentiment(label: SentimentLabel): Sentiment {
   if (label === 'STRONG_BULLISH' || label === 'BULLISH') return 'BULLISH';
