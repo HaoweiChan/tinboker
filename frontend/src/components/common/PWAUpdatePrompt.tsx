@@ -1,10 +1,15 @@
-import { useEffect } from 'react'
+import { useCallback, useEffect } from 'react'
 import { useRegisterSW } from 'virtual:pwa-register/react'
 import { ArrowUpCircle, X } from 'lucide-react'
 
 // Guard against reload loops: reload at most once per page life when the new
 // service worker takes control.
 let reloading = false
+function hardReload() {
+  if (reloading) return
+  reloading = true
+  window.location.reload()
+}
 
 /**
  * PWA update prompt (registerType: 'prompt').
@@ -38,14 +43,36 @@ export function PWAUpdatePrompt() {
 
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return
-    const onControllerChange = () => {
-      if (reloading) return
-      reloading = true
-      window.location.reload()
-    }
-    navigator.serviceWorker.addEventListener('controllerchange', onControllerChange)
-    return () => navigator.serviceWorker.removeEventListener('controllerchange', onControllerChange)
+    navigator.serviceWorker.addEventListener('controllerchange', hardReload)
+    return () => navigator.serviceWorker.removeEventListener('controllerchange', hardReload)
   }, [])
+
+  // Tapping 更新 must ALWAYS land the new bundle. The library path
+  // (updateServiceWorker → SKIP_WAITING → controllerchange) only fires once the
+  // new worker claims this page, so we belt-and-suspenders it: post SKIP_WAITING
+  // directly, reload the moment the worker reports `activated`, and keep a timeout
+  // fallback (a fresh navigation is served by the now-active worker either way).
+  const handleUpdate = useCallback(async () => {
+    try { updateServiceWorker(true) } catch { /* fall through to the manual path */ }
+
+    if (!('serviceWorker' in navigator)) { hardReload(); return }
+    try {
+      const reg = await navigator.serviceWorker.getRegistration()
+      if (reg) {
+        if (!reg.waiting) await reg.update().catch(() => {})
+        const waiting = reg.waiting
+        if (waiting) {
+          waiting.addEventListener('statechange', () => {
+            if (waiting.state === 'activated') hardReload()
+          })
+          waiting.postMessage({ type: 'SKIP_WAITING' })
+        }
+      }
+    } catch { /* ignore — the timeout below still reloads */ }
+
+    // Backstop: if no SW signal arrives, reload anyway so the button is never a no-op.
+    setTimeout(hardReload, 2500)
+  }, [updateServiceWorker])
 
   if (!needRefresh) return null
 
@@ -67,7 +94,7 @@ export function PWAUpdatePrompt() {
           <div className="mt-2.5 flex items-center gap-2">
             <button
               type="button"
-              onClick={() => updateServiceWorker(true)}
+              onClick={handleUpdate}
               className="inline-flex items-center justify-center rounded-md bg-accent-info px-3 py-1.5 text-[12px] font-semibold text-accent-info-foreground hover:opacity-90 transition-opacity"
             >
               立即更新
