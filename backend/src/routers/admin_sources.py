@@ -3,12 +3,15 @@ Admin API endpoints for managing followed content sources (podcast shows + news 
 Gated by Google OAuth + ADMIN_EMAILS whitelist (same as admin translations).
 """
 
+import logging
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from src.database.postgres import get_session
 from datetime import datetime, timezone
 
+from src.config import settings
+from src.cache import cache_delete_pattern, purge_cdn_cache
 from src.services.content_source_service import ContentSourceService
 from src.services.podcast import PodcastService
 from src.schemas.content_source import (
@@ -21,10 +24,54 @@ from src.schemas.content_source import (
 )
 from src.auth.admin_auth import get_admin_access, AdminAccess
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 # Reused for the Firestore-derived run-status (cached podcast aggregation).
 podcast_service = PodcastService()
+
+# Each environment's public API host, for scoping the post-edit Cloudflare purge.
+_API_HOST_BY_ENV = {
+    "production": "api.tinboker.com",
+    "staging": "staging-api.tinboker.com",
+    "development": "dev-api.tinboker.com",
+}
+
+
+async def _invalidate_source_caches() -> None:
+    """Bust the caches a content-source change affects so an admin edit (e.g. toggling a
+    source active/inactive) shows up on the public site promptly, instead of waiting out
+    the Redis (origin) and Cloudflare (edge) TTLs.
+
+    Best-effort: every failure is logged, never raised — the admin write has already
+    committed, so a cache hiccup must not turn a successful edit into a 500.
+    """
+    # Redis (origin). The release allowlist and the podcast/episode/news lists are all
+    # derived from content_sources, so clear them and let the next request recompute.
+    for pattern in (
+        "release:allowed_podcasts:*",
+        "podcast:*",
+        "episode:*",
+        "episodes:*",
+        "news:*",
+    ):
+        try:
+            await cache_delete_pattern(pattern)
+        except Exception as e:
+            logger.warning("source cache: Redis invalidation failed for %s: %s", pattern, e)
+
+    # Cloudflare (edge). Purge only THIS environment's API host, so a dev/staging edit
+    # never clears another env's cache. Host purge is confirmed working on the tinboker
+    # zone; if it ever stops (e.g. a plan change), the call just no-ops (logged) and the
+    # edge self-heals within s-maxage (≤1h). We never purge_everything here — that would
+    # wipe the whole shared zone, including production.
+    host = _API_HOST_BY_ENV.get((settings.environment or "").lower())
+    if host:
+        try:
+            await purge_cdn_cache(hosts=[host])
+        except Exception as e:
+            logger.warning("source cache: CDN purge failed for host %s: %s", host, e)
 
 
 # ==================== Stats (before parameterized routes) ====================
@@ -116,6 +163,7 @@ async def create_source(
 ):
     """Create a new content source."""
     source = ContentSourceService(db).create(data, updated_by=admin.email)
+    await _invalidate_source_caches()
     return ContentSourceResponse.model_validate(source)
 
 
@@ -130,6 +178,7 @@ async def update_source(
     source = ContentSourceService(db).update(source_id, data, updated_by=admin.email)
     if not source:
         raise HTTPException(status_code=404, detail="Content source not found")
+    await _invalidate_source_caches()
     return ContentSourceResponse.model_validate(source)
 
 
@@ -142,4 +191,5 @@ async def delete_source(
     """Delete a content source."""
     if not ContentSourceService(db).delete(source_id):
         raise HTTPException(status_code=404, detail="Content source not found")
+    await _invalidate_source_caches()
     return {"success": True}

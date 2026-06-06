@@ -87,6 +87,7 @@ Two distinct auth surfaces plus a shared "logged-in user" experience:
 - **Don't bypass the admin email allowlist.** The Google-login flow checks `ADMIN_EMAILS` before granting admin UI access. Skipping that check is a security regression.
 - **Dev bypass token in URL.** It's a secret; never log full URLs (with query string) in production. Production must reject the endpoint entirely.
 - **JWT secret in dev fallback.** If Secret Manager isn't configured locally, the app falls back to env var or generates a random secret with a warning. Don't ship code that silently bypasses this — log the fallback.
+- **Admin content-source edits must bust caches.** `/admin/sources` toggles (`PUT/POST/DELETE /api/admin/sources*`) write to the `content_sources` table, but the public catalog is Redis- and Cloudflare-cached. The router's `_invalidate_source_caches()` ([`backend/src/routers/admin_sources.py`](../../backend/src/routers/admin_sources.py)) clears the Redis allowlist/list keys and purges the current env's CDN host after each write — best-effort (logged, never raised). If you add another source-mutating endpoint, call it too, or edits won't show up until the TTLs expire (edge ≤1h, browser per the `/api/*` rule). The public site still also browser-caches; see [`../infra-runbook.md`](../infra-runbook.md) §1.4.
 
 ## External integrations
 
