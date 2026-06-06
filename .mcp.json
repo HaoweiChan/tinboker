@@ -1,0 +1,29 @@
+{
+  "mcpServers": {
+    "stock_translations": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "--from",
+        "./mcp-servers/stock-translations",
+        "tinboker-stock-translations-mcp"
+      ],
+      "env": {
+        "TINBOKER_API_BASE_URL": "https://dev-api.tinboker.com"
+      }
+    },
+    "article_authoring": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "--from",
+        "./mcp-servers/article-authoring",
+        "tinboker-article-authoring-mcp"
+      ],
+      "env": {
+        "TINBOKER_API_BASE_URL": "https://dev-api.tinboker.com",
+        "TINBOKER_WEB_BASE_URL": "https://dev.tinboker.com"
+      }
+    }
+  }
+}

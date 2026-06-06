@@ -106,7 +106,7 @@ async def get_article_author_access(
 
     service_token = settings.tinboker_article_token
     if service_token and secrets.compare_digest(token, service_token):
-        return AdminAccess(email="article-author@service", user_id="service")
+        return AdminAccess(email="article-author@service", user_id="article-service")
 
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,

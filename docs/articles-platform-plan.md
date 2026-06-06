@@ -1,6 +1,6 @@
 # Articles platform plan — TinBoker as a blogging surface
 
-Status: **Phase 1 implemented** · Owner: @hwchan42 · Created 2026-06-05 · Updated 2026-06-06
+Status: **Phase 1 implemented; MCP authoring implemented; image upload deferred** · Owner: @hwchan42 · Created 2026-06-05 · Updated 2026-06-06
 
 Plan for turning TinBoker into a publishing platform: rich, embed-enriched articles
 authored first by the admin (you), eventually by any registered user, with the
@@ -142,6 +142,9 @@ Extend the **service-token pattern**, do not invent a new one.
   an admin JWT **or** the bearer service token (constant-time `secrets.compare_digest`),
   scoped to article endpoints only. Do **not** reuse the dev-bypass token (non-prod only) or
   widen `get_admin_access`.
+- **MCP byline:** service-token writes can use `TINBOKER_ARTICLE_AUTHOR_ID`,
+  `TINBOKER_ARTICLE_AUTHOR_NAME`, and `TINBOKER_ARTICLE_AUTHOR_AVATAR` so drafts created by
+  an agent still publish under the admin author's byline.
 - **Phase 1 (admin-only):** you are the sole allowlisted `ADMIN_EMAILS` author. No role table yet.
 - **Phase 4 (multi-author):** add `role: reader | author | admin` to Firestore `users/{id}`
   ([`models/user.py`](../backend/src/models/user.py)), an `articles.status` moderation flow, and
@@ -255,13 +258,17 @@ Everything needed for *you* to publish embed-rich articles, by hand and via an a
   [`articleService.ts`](../frontend/src/services/articleService.ts).
 
 **MCP**
-- [ ] `mcp-servers/article-authoring/` — **deferred**. The admin editor is fully functional for
-  hand-authoring. MCP server ships as a follow-up once the admin flow is validated in dev/staging.
+- [x] `mcp-servers/article-authoring/` — FastMCP stdio wrapper over the HTTP API. Tools cover
+  ticker/tag snippets, external-image markdown, draft create/update/list/read, and publish.
+  Registered in [`.mcp.json`](../.mcp.json). Write tools require `TINBOKER_ARTICLE_TOKEN`.
+- [ ] `upload_image` — **deferred** with the backend upload endpoint (blocked on Phase 0 CDN/GCS
+  wiring). Current MCP exposes `image_markdown()` for existing public image URLs.
 
 **Acceptance:** (1) ~~you write an article in the admin editor with a ticker citation, a tag, and an
 uploaded image~~ **Partially met:** admin editor creates articles with ticker citations and tags
 that render correctly at `/article/{slug}` with clickable links. Image upload deferred (external
-image URLs work via standard markdown `![alt](url)` syntax). (2) MCP acceptance deferred.
+image URLs work via standard markdown `![alt](url)` syntax). (2) MCP can create/update/publish
+drafts when configured with the article token.
 
 ### Phase 2 — Discoverability
 

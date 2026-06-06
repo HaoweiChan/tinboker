@@ -7,12 +7,24 @@ from fastapi import APIRouter, HTTPException, Path, Query, Depends
 from sqlalchemy.orm import Session
 from src.database.postgres import get_session
 from src.auth.admin_auth import AdminAccess, get_article_author_access
+from src.config import settings
 from src.services.article_service import ArticleService, invalidate_article_cache
 from src.models.article import ArticleCreate, ArticleUpdate, ArticleResponse, ArticleListItem
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/admin/articles", tags=["admin-articles"])
+
+
+def _resolve_author(admin: AdminAccess) -> tuple[str, str, str | None]:
+    """Resolve the byline for admin UI writes and article-token MCP writes."""
+    if admin.user_id != "article-service":
+        return admin.user_id or admin.email, admin.email.split("@")[0], None
+
+    fallback_email = settings.admin_emails[0] if settings.admin_emails else admin.email
+    author_id = settings.tinboker_article_author_id or fallback_email
+    author_name = settings.tinboker_article_author_name or fallback_email.split("@")[0]
+    return author_id, author_name, settings.tinboker_article_author_avatar
 
 
 @router.get("", response_model=list[ArticleListItem])
@@ -49,11 +61,12 @@ async def create_article(
 ):
     """Create a new article draft."""
     svc = ArticleService(db)
+    author_id, author_name, author_avatar = _resolve_author(admin)
     article = svc.create_article(
         data=data,
-        author_id=admin.user_id or admin.email,
-        author_name=admin.email.split("@")[0],
-        author_avatar=None,
+        author_id=author_id,
+        author_name=author_name,
+        author_avatar=author_avatar,
     )
     await invalidate_article_cache()
     return article
