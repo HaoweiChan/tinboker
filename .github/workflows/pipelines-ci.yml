@@ -1,0 +1,98 @@
+# CI workflow — lint and unit-test the content pipelines (pipelines/) on every PR.
+# Mirrors the backend-ci.yml structure: a ci-gate aggregation job so branch protection
+# always gets a result even when no pipelines files changed (passes immediately).
+# The pipelines/ tree is a uv workspace (libs/shared, services/podcast, services/news),
+# so this uses uv rather than the pip flow the backend uses.
+name: Pipelines CI
+
+on:
+  pull_request:
+    branches: [develop, main]
+
+jobs:
+  # ── 1. Detect which paths changed ────────────────────────────────────────────
+  changed:
+    runs-on: ubuntu-latest
+    outputs:
+      pipelines: ${{ steps.filter.outputs.pipelines }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            pipelines:
+              - 'pipelines/**'
+
+  # ── 2. Lint (only when pipelines files changed) ──────────────────────────────
+  lint:
+    needs: changed
+    if: needs.changed.outputs.pipelines == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: pipelines
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+      - name: Run ruff
+        run: uvx ruff check .
+
+  # ── 3. Unit tests (only when pipelines files changed) ────────────────────────
+  test:
+    needs: changed
+    if: needs.changed.outputs.pipelines == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: pipelines
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Install dependencies
+        run: uv sync --all-packages --all-extras
+
+      - name: Run unit tests
+        env:
+          # Dummy values so secrets_bootstrap skips Google Secret Manager.
+          PODCAST_API_KEY: ci-dummy
+          GROQ_API_KEY: ci-dummy
+          GOOGLE_API_KEY: ci-dummy
+          FIRESTORE_DATABASE_ID: ci-dummy
+          GCP_CREDENTIALS_JSON: "{}"
+          SPOTIFY_ID: ci-dummy
+          SPOTIFY_SECRET: ci-dummy
+          LANGSMITH_API_KEY: ci-dummy
+          WIKI_DATABASE_URL: postgresql://ci-dummy/dummy
+          EPISODE_DATABASE_URL: postgresql://ci-dummy/dummy
+          OPENROUTER_API_KEY: ci-dummy
+        run: |
+          uv run pytest \
+            services/podcast/tests/unit \
+            libs/shared/tests \
+            --ignore=services/podcast/tests/integration \
+            --ignore=libs/shared/tests/test_wiki_postgres.py \
+            -v --tb=short
+
+  # ── 4. Gate — always runs; the required status check branch protection targets ─
+  ci-gate:
+    needs: [lint, test]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Evaluate CI results
+        run: |
+          LINT="${{ needs.lint.result }}"
+          TEST="${{ needs.test.result }}"
+          echo "lint=$LINT  test=$TEST"
+          if [[ "$LINT" == "failure" || "$LINT" == "cancelled" || \
+                "$TEST" == "failure" || "$TEST" == "cancelled" ]]; then
+            echo "❌ Pipelines CI failed (lint=$LINT, test=$TEST)"
+            exit 1
+          fi
+          echo "✅ Pipelines CI passed (lint=$LINT, test=$TEST)"
