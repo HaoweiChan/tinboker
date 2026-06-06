@@ -99,6 +99,58 @@ def convert_to_pptx():
         }), 500
 
 
+@app.route('/render-png', methods=['POST'])
+def render_to_png():
+    """Render Marp markdown to per-slide PNGs; return them base64-encoded in slide order.
+
+    Body: {"markdown": str, "theme_css": str (optional)}. When theme_css is given it is
+    loaded via --theme-set (required for custom @size, e.g. the 1080x1080 card theme).
+    Returns {"success": true, "images": [base64, ...], "count": N} in slide order.
+    """
+    import glob
+
+    try:
+        data = request.get_json()
+        if not data or 'markdown' not in data:
+            return jsonify({'success': False, 'error': 'Missing markdown field in request body'}), 400
+
+        with tempfile.TemporaryDirectory() as workdir:
+            md_path = os.path.join(workdir, 'deck.md')
+            with open(md_path, 'w', encoding='utf-8') as f:
+                f.write(data['markdown'])
+
+            cmd = ['marp', md_path, '--images', 'png', '--allow-local-files',
+                   '-o', os.path.join(workdir, 'slide.png')]
+            if data.get('theme_css'):
+                theme_path = os.path.join(workdir, 'theme.css')
+                with open(theme_path, 'w', encoding='utf-8') as f:
+                    f.write(data['theme_css'])
+                cmd[1:1] = ['--theme-set', theme_path]
+
+            logger.info("Rendering Marp deck to PNGs")
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            if result.returncode != 0:
+                logger.error(f"Marp PNG render failed: {result.stderr}")
+                return jsonify({'success': False, 'error': f'Marp render failed: {result.stderr}'}), 500
+
+            # Marp emits slide.001.png, slide.002.png, … — collect in numeric order.
+            pngs = sorted(glob.glob(os.path.join(workdir, 'slide.*.png')))
+            images = []
+            for path in pngs:
+                with open(path, 'rb') as img:
+                    images.append(base64.b64encode(img.read()).decode('utf-8'))
+
+            logger.info(f"Rendered {len(images)} card PNG(s)")
+            return jsonify({'success': True, 'images': images, 'count': len(images)})
+
+    except subprocess.TimeoutExpired:
+        logger.error("Marp PNG render timeout")
+        return jsonify({'success': False, 'error': 'Render timeout (120s)'}), 500
+    except Exception as e:
+        logger.error(f"Render error: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
