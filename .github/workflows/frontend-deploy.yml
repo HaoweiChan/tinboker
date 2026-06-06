@@ -54,6 +54,11 @@ jobs:
         run: npm run build
         env:
           VITE_GOOGLE_CLIENT_ID: ${{ env.VITE_GOOGLE_CLIENT_ID }}
+          # EnvGate (auth wall) and dev-portal routing key off VITE_STAGE at BUILD
+          # time. Without this, every env built with VITE_STAGE undefined → all
+          # gated + labeled "開發環境", incl. prod. tag → PRODUCTION (public, ungated),
+          # main → STAGING (測試環境), anything else → DEV.
+          VITE_STAGE: ${{ startsWith(github.ref, 'refs/tags/v') && 'PRODUCTION' || github.ref_name == 'main' && 'STAGING' || 'DEV' }}
 
       - name: Determine environment
         id: env
