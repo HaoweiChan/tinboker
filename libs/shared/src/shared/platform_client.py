@@ -67,3 +67,35 @@ def fetch_translation_aliases(*, timeout: float = 10.0) -> list[dict[str, Any]] 
     return _get_items(
         "/api/stocks/translations/aliases", timeout=timeout, what="/api/stocks/translations/aliases"
     )
+
+
+def trigger_threads_publish(
+    *, limit: int = 5, dry_run: bool = False, timeout: float = 20.0
+) -> dict[str, Any] | None:
+    """Ask the platform to post recent episodes to Threads (post-ingest trigger).
+
+    ``POST {base}/api/admin/threads/publish?dry_run=<bool>&limit=<n>`` with the
+    ``TINBOKER_SOCIAL_TOKEN`` bearer token. Opt-in: fires only when BOTH
+    ``TINBOKER_PLATFORM_API_URL`` and ``TINBOKER_SOCIAL_TOKEN`` are set. Returns the
+    platform's JSON response, or ``None`` when disabled / on any error — never raises,
+    so it cannot break ingestion. Idempotency + the recency window live on the platform
+    side, so repeated/batched triggers are safe.
+    """
+    base = platform_base_url()
+    token = os.environ.get("TINBOKER_SOCIAL_TOKEN")
+    if not base or not token:
+        return None
+    query = urllib.parse.urlencode({"dry_run": str(bool(dry_run)).lower(), "limit": int(limit)})
+    url = f"{base}/api/admin/threads/publish?{query}"
+    try:
+        req = urllib.request.Request(
+            url, data=b"", method="POST",
+            headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            if getattr(resp, "status", 200) >= 400:
+                return None
+            return json.loads(resp.read().decode("utf-8"))
+    except (urllib.error.URLError, TimeoutError, ValueError, OSError) as exc:
+        print(f"Warning: Threads publish trigger failed ({exc})")
+        return None

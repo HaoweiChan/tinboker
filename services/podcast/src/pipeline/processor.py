@@ -18,6 +18,7 @@ from .steps import (
     mirror_episode_to_postgres,
     render_social_cards,
     transcribe_episode,
+    trigger_social_publish,
     upload_to_firestore,
     upload_to_gcs,
     validate_episode,
@@ -142,6 +143,9 @@ class EpisodeProcessor:
 
             # Step 5d: Export ticker insights to Firestore subcollection per platform contract
             export_ticker_insights(self.config, self.services, episode_data)
+
+            # Step 5e: Trigger the platform to fan the new episode out to Threads (best-effort)
+            trigger_social_publish(self.config, self.services, episode_data)
 
             # Step 6: Validate
             validate_episode(self.config, self.services, episode_data)
