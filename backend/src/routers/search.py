@@ -6,6 +6,7 @@ from src.schemas.search import SearchResponse, SearchResultItem
 from src.services.stock import StockService
 from src.services.podcast import PodcastService
 from src.cache.cdn_cache import cdn_cache_trending
+from src.utils.market import infer_market
 import asyncio
 import logging
 import re
@@ -144,7 +145,7 @@ async def build_search_index():
             if not ticker:
                 continue
             seen_tickers.add(ticker.upper())
-            market = "TW" if ticker.split(".")[0].isdigit() else "US"
+            market = infer_market(ticker)
             item = SearchResultItem(
                 id=f"stock-{ticker}",
                 type="stock",
@@ -189,9 +190,7 @@ async def build_search_index():
                 # Already indexed from Massive — just add the extra (zh-TW/alias) keywords.
                 await index.add_keywords(f"stock-{ticker}", keywords)
             else:
-                market = (tr.get("market") or "").upper() or (
-                    "TW" if ticker.split(".")[0].isdigit() else "US"
-                )
+                market = (tr.get("market") or "").upper() or infer_market(ticker)
                 item = SearchResultItem(
                     id=f"stock-{ticker}",
                     type="stock",

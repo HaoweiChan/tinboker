@@ -26,13 +26,14 @@ const LABEL_RANK: Record<SentimentLabel, number> = {
   STRONG_BEARISH: 1,
 };
 
-// Use the canonical market inference (all-numeric ticker → TW), consistent with
-// getStockLabel and the row badge. The recent-buzz feed returns TW tickers as
-// bare codes ("2330", "2454"), which a ".TW"-suffix-only test misses — that left
-// the 台股 tab empty.
-function isTW(ticker: string): boolean {
-  return inferStockMarket(ticker) === 'TW';
-}
+// Short market badge per row, keyed by the canonical market inference. KR uses a
+// neutral chip; 6-digit codes (005930 Samsung, 000660 SK Hynix) were previously
+// mislabeled TW by the all-numeric heuristic.
+const MARKET_BADGE: Record<ReturnType<typeof inferStockMarket>, { label: string; cls: string }> = {
+  TW: { label: 'TW', cls: 'bg-sentiment-bull-soft text-sentiment-bull' },
+  US: { label: 'US', cls: 'bg-accent-info-soft text-accent-info' },
+  KR: { label: 'KR', cls: 'bg-muted text-muted-foreground' },
+};
 function labelToSentiment(label: SentimentLabel): Sentiment {
   if (label === 'STRONG_BULLISH' || label === 'BULLISH') return 'BULLISH';
   if (label === 'STRONG_BEARISH' || label === 'BEARISH') return 'BEARISH';
@@ -92,8 +93,7 @@ export const StockIndex: React.FC = () => {
 
   const list = useMemo(() => {
     let arr = rows.filter((r) => {
-      if (market === 'TW' && !isTW(r.ticker)) return false;
-      if (market === 'US' && isTW(r.ticker)) return false;
+      if (market !== 'all' && inferStockMarket(r.ticker) !== market) return false;
       if (q) {
         const s = q.toLowerCase();
         return r.ticker.toLowerCase().includes(s) || r.name.toLowerCase().includes(s);
@@ -144,10 +144,12 @@ export const StockIndex: React.FC = () => {
           ) : (
             list.map((r) => {
               const summary = summaries[r.ticker];
+              const mkt = inferStockMarket(r.ticker);
+              const badge = MARKET_BADGE[mkt];
               const { primary, secondary } = getStockLabel({
                 ticker: r.ticker,
                 name: summary?.name ?? r.name,
-                market: summary?.market,
+                market: summary?.market ?? mkt,
               });
               return (
                 <Link
@@ -160,7 +162,7 @@ export const StockIndex: React.FC = () => {
                     <span className="min-w-0">
                       <span className="flex items-center gap-1.5">
                         <span className="text-[13.5px] font-medium truncate">{primary}</span>
-                        <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-semibold ${isTW(r.ticker) ? 'bg-sentiment-bull-soft text-sentiment-bull' : 'bg-accent-info-soft text-accent-info'}`}>{isTW(r.ticker) ? 'TW' : 'US'}</span>
+                        <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-semibold ${badge.cls}`}>{badge.label}</span>
                       </span>
                       {secondary && (
                         <span className="block text-[11px] text-muted-foreground font-mono truncate">{secondary}</span>
