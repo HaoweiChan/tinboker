@@ -1,0 +1,110 @@
+# Podcast Analysis Agents - Default Configuration
+
+# Preprocessor settings
+preprocessor:
+  max_line_length: 150          # Split lines longer than this
+  min_lines_warning: 10         # Warn if fewer lines
+  max_lines_warning: 5000       # Warn if more lines
+  default_language: en
+  detect_speakers: true         # Enable speaker detection
+  mark_segments: true           # Enable segment hint detection
+  enable_event_blocks: true     # Enable event block segmentation
+  block_coverage_threshold: 0.8 # Minimum % of transcript covered by blocks
+  segmentation_model: gemini-2.0-flash    # LLM model for event block segmentation
+  segmentation_temperature: 0.0 # Temperature for segmentation (deterministic)
+  min_block_confidence: 0.6     # Minimum confidence to include a block
+  allow_block_overlap: true     # Allow blocks to overlap
+
+# Extractor agent settings
+extractor:
+  min_evidence_lines: 1         # Minimum evidence quotes per event
+  max_events: 20                # Cap to prevent over-segmentation
+  quote_min_words: 5            # Minimum words per quote
+  quote_max_words: 150          # Maximum words per quote
+  min_event_confidence: 0.7
+
+# Researcher agent settings
+researcher:
+  max_searches_per_event: 5
+  max_results_per_query: 5
+  source_priority:
+    - official
+    - news
+    - analyst
+    - wiki
+  recency_days: 90              # Prefer sources within this window
+  confidence_threshold: 0.7
+  confidence_weights:
+    official: 1.0
+    news: 0.8
+    analyst: 0.6
+    wiki: 0.4
+
+# Writer agent settings
+writer:
+  target_word_count: 800
+  word_count_tolerance_pct: 20
+  tone: investor                # investor | retail | academic
+  language: zh-TW #zh-TW | en
+  include_sections:
+    - executive_summary
+    - event_details
+    - conflicting_views
+    - winners_losers
+    - open_questions
+    - sources
+  section_weights:
+    executive_summary: 0.15
+    event_details: 0.50
+    winners_losers: 0.20
+    open_questions: 0.10
+    sources: 0.05
+
+# LLM settings
+llm:
+  default_provider: gemini # gemini | openai | anthropic | google
+  extractor_model: gemini-2.0-flash # gpt-5-mini | gemini-2.0-flash | gpt-4o | claude-3.7-sonnet | gemini-2.5-flash | gemini-2.5-pro
+  researcher_model: gemini-2.0-flash
+  writer_model: gemini-3-pro-preview # gemini-2.0-flash
+  segmentation_model: gemini-2.5-pro  # Model for event block segmentation
+  temperatures:
+    extractor: 0.1              # Deterministic extraction
+    researcher: 0.0             # Factual retrieval
+    writer: 0.4                 # Some creativity in phrasing
+    segmentation: 0.0           # Deterministic segmentation
+  token_limits:
+    extractor_input: 100000
+    extractor_output: 16000
+    researcher_input: 32000
+    researcher_output: 8000
+    writer_input: 32000
+    writer_output: 4000
+
+# Search settings
+search:
+  default_engine: tavily
+  timeout_seconds: 30
+
+# Storage settings
+storage:
+  type: local
+  output_dir: ./outputs
+
+# Pipeline settings
+pipeline:
+  gap_threshold: 10             # Human checkpoint if gaps exceed this
+  unfilled_threshold: 3         # Human checkpoint if unfilled gaps exceed this
+  retry:
+    max_retries: 3
+    backoff_seconds:
+      - 5
+      - 15
+      - 30
+
+# GCP / GCS — non-secret deployment constants.
+# Secrets (credentials, API keys) come from Google Secret Manager via
+# src/secrets_bootstrap.py — never committed to disk.
+gcp:
+  project_id: gen-lang-client-0901363254
+  gcs_bucket_name: graphfolio-articles
+

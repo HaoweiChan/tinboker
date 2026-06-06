@@ -1,0 +1,28 @@
+[
+  {
+    "name": "Test Podcast 1",
+    "link": "https://podcasttomp3.com/podcasts/v2/123456",
+    "limit": 2,
+    "spotify_show_link": "https://open.spotify.com/show/test1",
+    "transcript_option": {
+      "transcript_service": "groq",
+      "model": "whisper-large-v3"
+    }
+  },
+  {
+    "name": "Test Podcast 2",
+    "link": "https://podcasttomp3.com/podcasts/v2/789012",
+    "limit": 1,
+    "spotify_show_link": "https://open.spotify.com/show/test2"
+  },
+  {
+    "name": "Test Podcast 3",
+    "link": "https://podcasttomp3.com/podcasts/v2/345678",
+    "limit": 3,
+    "transcript_option": {
+      "transcript_service": "whisper",
+      "model": null
+    }
+  }
+]
+

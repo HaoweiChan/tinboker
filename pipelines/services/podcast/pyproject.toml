@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tinboker-podcast"
+version = "1.0.0"
+description = "Podcast download, transcribe, summarize pipeline"
+requires-python = ">=3.11"
+
+dependencies = [
+    "tinboker-shared",
+    "requests>=2.31.0",
+    "google-cloud-secret-manager>=2.20.0",
+    "pyyaml>=6.0",
+    "assemblyai>=0.28.0",
+    "openai>=1.0.0",
+    "pydub>=0.25.0",
+    "google-cloud-storage>=2.10.0",
+    "firebase-admin>=6.0.0",
+    "google-cloud-speech",
+    "groq",
+    "zhconv>=1.4.2",
+    "numpy>=1.24",
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "psutil>=5.9.0",
+    # content_builder deps (absorbed from content/)
+    "langgraph>=0.2.0",
+    "langchain-core>=0.3.0",
+    "langchain-google-genai>=2.0.0",
+    "langchain-openai>=0.2.0",  # OpenRouter (OpenAI-compatible) provider for content_builder
+    "langsmith>=0.2.0",
+    "pydantic>=2.0.0",
+    # marp_service (Marp markdown -> PPTX Flask app, port 5004)
+    "flask>=3.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-mock>=3.10.0",
+    "pytest-cov>=4.0.0",
+]
+
+[tool.uv.sources]
+tinboker-shared = { workspace = true }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"podcast.content_builder" = ["prompts/*.yaml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"

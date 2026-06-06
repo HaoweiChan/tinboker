@@ -1,0 +1,24 @@
+[
+  {
+    "title": "Episode 1: Introduction",
+    "episodeNumber": 1,
+    "episodeUrl": "https://example.com/episode1.mp3",
+    "description": "First episode of the podcast",
+    "publishedAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "title": "Episode 2: Deep Dive",
+    "episodeNumber": 2,
+    "episodeUrl": "https://example.com/episode2.mp3",
+    "description": "Second episode with deep analysis",
+    "publishedAt": "2024-01-08T00:00:00Z"
+  },
+  {
+    "title": "Episode 3: Advanced Topics",
+    "episodeNumber": 3,
+    "episodeUrl": "https://example.com/episode3.mp3",
+    "description": "Third episode covering advanced topics",
+    "publishedAt": "2024-01-15T00:00:00Z"
+  }
+]
+

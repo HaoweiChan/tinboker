@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tinboker-shared"
+version = "0.1.0"
+description = "Shared utilities for tinboker-agents monorepo"
+requires-python = ">=3.11"
+
+dependencies = [
+    "google-cloud-secret-manager>=2.20.0",
+    "google-cloud-storage>=2.10.0",
+    "pyyaml>=6.0",
+    "python-dotenv>=1.0.0",
+    "sqlalchemy>=2.0",
+    "psycopg[binary]>=3.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+shared = ["data/*.json"]
