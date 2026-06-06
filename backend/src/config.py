@@ -60,6 +60,9 @@ class Settings(BaseSettings):
     # Service token for the article authoring MCP / headless agent.
     # Scoped to article CRUD endpoints only.
     tinboker_article_token: Optional[str] = None
+    tinboker_article_author_id: Optional[str] = None
+    tinboker_article_author_name: Optional[str] = None
+    tinboker_article_author_avatar: Optional[str] = None
 
     # ==================== Social / Threads publishing ====================
     # Meta Threads Graph API credentials. Generate a long-lived access token for
@@ -316,4 +319,3 @@ class Settings(BaseSettings):
 # Global settings instance
 # This will be initialized when the module is imported
 settings = Settings()
-
