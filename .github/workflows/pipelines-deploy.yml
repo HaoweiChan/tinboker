@@ -83,8 +83,7 @@ jobs:
                 export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
             fi
             echo "→ Syncing dependencies..."
-            uv sync --package tinboker-podcast
-            uv sync --package tinboker-news
+            uv sync --package tinboker-podcast --package tinboker-news
             
             # 3. Service Account Credentials
             if [ ! -f "$SA_FILE" ]; then
