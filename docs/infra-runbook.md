@@ -123,8 +123,34 @@ Name: Cache API GET responses
 When: (starts_with(http.request.uri.path, "/api/") and http.request.method eq "GET")
 Cache eligibility: Eligible for cache
 Edge TTL: Use cache-control header
-Browser TTL: Override — 1 hour
+Browser TTL: Respect origin   # do NOT "Override" — see caveat below
 ```
+
+**Caveat — dynamic endpoints must not be over-cached.** This rule makes *every* `GET /api/*`
+edge-cacheable. Endpoints that send no `Cache-Control` header then inherit a long edge
+default. `GET /api/search/suggest` (autocomplete) was observed serving `cf-cache-status: HIT`
+with `cache-control: max-age=86400` (24h) — stale prices, missing new stocks. Two required
+guards:
+
+1. **Origin must declare intent.** Query-driven endpoints set a short header themselves
+   (`/api/search` and `/api/search/suggest` → `public, s-maxage=60` via the `@cdn_cached`
+   decorator in [`backend/src/routers/search.py`](../backend/src/routers/search.py)). With
+   *Edge TTL: Use cache-control header*, the edge then honours the 60s — not the long default.
+2. **Browser TTL must be "Respect origin", not "Override".** A *Browser TTL: Override* value
+   rewrites the `max-age` sent to browsers regardless of origin, which is where the observed
+   `max-age=86400` came from (and it had drifted from the "1 hour" this doc previously listed).
+   Code cannot fix this — it is a dashboard setting. Set Browser TTL to *Respect origin* so the
+   short origin header wins. If you must keep a browser override for other `/api/*` routes, add a
+   higher-priority rule that **bypasses cache** (or respects origin) for
+   `starts_with(http.request.uri.path, "/api/search/")`.
+
+**Post-deploy purge.** Backend deploys ([`backend-deploy.yml`](../.github/workflows/backend-deploy.yml),
+[`backend-deploy-admin.yml`](../.github/workflows/backend-deploy-admin.yml)) purge the deployed
+env's `/api/` edge cache once the container is healthy, so a deploy no longer serves pre-deploy
+`/api/*` responses until TTL. Uses `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ZONE_TAG` from GSM
+(host-scoped purge of `{api_host}` — same method as the manual recipe in
+[`CLAUDE.md`](../CLAUDE.md) — falling back to `purge_everything` on non-Enterprise plans).
+Best-effort: a purge failure warns but does not fail the deploy.
 
 ### 1.5 Docker shared network
 

@@ -5,7 +5,7 @@ from fastapi import APIRouter, Query
 from src.schemas.search import SearchResponse, SearchResultItem
 from src.services.stock import StockService
 from src.services.podcast import PodcastService
-from src.cache.cdn_cache import cdn_cache_trending
+from src.cache.cdn_cache import cdn_cache_trending, cdn_cached
 from src.utils.market import infer_market
 import asyncio
 import logging
@@ -18,6 +18,10 @@ stock_service = StockService()
 podcast_service = PodcastService()
 
 @router.get("", response_model=SearchResponse)
+# Short edge cache only. These results are query-driven and reflect live prices /
+# newly-indexed stocks, so they must NOT inherit the long default TTL the `/api/*`
+# Cloudflare cache rule applies to responses that send no Cache-Control header.
+@cdn_cached(s_maxage=60, max_age=0, stale=30)
 async def search(
     q: str = Query(..., min_length=1, description="Search query"),
     limit: int = Query(default=5, ge=1, le=20, description="Max results per category")
@@ -25,6 +29,8 @@ async def search(
     """
     Unified search endpoint.
     Returns results for stocks, podcasts, episodes, and tags matching the query.
+
+    CDN Cache: 60s edge (short — autocomplete/search must stay fresh).
     """
     if not q.strip():
         return SearchResponse()
@@ -59,6 +65,10 @@ async def search(
     )
 
 @router.get("/suggest", response_model=SearchResponse)
+# Short edge cache only. Without an explicit Cache-Control header the `/api/*`
+# Cloudflare cache rule edge-cached typeahead for ~24h (stale prices / missing new
+# stocks). 60s gives the edge enough to absorb typeahead bursts while staying fresh.
+@cdn_cached(s_maxage=60, max_age=0, stale=30)
 async def suggest(
     q: str = Query(..., min_length=1, description="Prefix query"),
     limit: int = Query(default=8, ge=1, le=20)
@@ -66,6 +76,8 @@ async def suggest(
     """
     Fast typeahead suggestions.
     Returns instant suggestions for autocomplete. Target <50ms.
+
+    CDN Cache: 60s edge (short — must reflect live prices / new stocks).
     """
     if not q.strip():
         return SearchResponse()
