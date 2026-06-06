@@ -144,26 +144,77 @@ class PodcastService:
         return f"{lang_part}:{settings.release_episode_max_age_days}"
 
     @staticmethod
+    def _spotify_release_ms(value) -> Optional[int]:
+        """Parse spotify_release_date ('YYYY-MM-DD' or ISO datetime) to Unix ms.
+
+        This is the trustworthy publish signal. released_at_ms can fall back to
+        ingestion time for episodes re-ingested without a feed date, which makes
+        old/empty episodes mis-float to the top of recency-sorted feeds.
+        """
+        if not value or not isinstance(value, str):
+            return None
+        s = value.strip()
+        if not s:
+            return None
+        try:
+            dt = datetime.fromisoformat(s.replace('Z', '+00:00'))
+        except ValueError:
+            try:
+                dt = datetime.strptime(s[:10], '%Y-%m-%d')
+            except ValueError:
+                return None
+        return int(dt.timestamp() * 1000)
+
+    @staticmethod
     def _episode_release_ms(episode: Episode) -> int:
-        """Publish time for recency checks: released_at_ms, else created_time."""
+        """Publish time for recency/sort: prefer the true Spotify publish date,
+        then released_at_ms, then created_time."""
+        sp = PodcastService._spotify_release_ms(getattr(episode, 'spotify_release_date', None))
+        if sp is not None:
+            return sp
         return episode.released_at_ms if episode.released_at_ms is not None else (episode.created_time or 0)
 
     def _dict_release_ms(self, ep: dict) -> int:
-        """Publish time (Unix ms) for a raw Firestore episode dict."""
+        """Publish time (Unix ms) for a raw Firestore episode dict.
+        Prefers spotify_release_date, then released_at_ms, then created_time."""
+        sp = self._spotify_release_ms(ep.get('spotify_release_date'))
+        if sp is not None:
+            return sp
         r = self.transformer._normalize_released_at_ms(ep.get('released_at_ms'))
         if r is not None:
             return r
         return self.transformer.datetime_to_timestamp_ms(ep.get('created_time', datetime.now()))
 
     @staticmethod
+    def _episode_has_content(ep: Episode) -> bool:
+        """Whether an episode has publishable content. Re-ingested placeholder
+        episodes carry no summary and no key_insights — hide them from public
+        surfaces so empty cards never reach users."""
+        return bool(
+            (ep.summary_content or '').strip()
+            or (ep.modified_summary_content or '').strip()
+            or (ep.key_insights or [])
+        )
+
+    @staticmethod
+    def _dict_has_content(ep: dict) -> bool:
+        """Content guard for a raw Firestore episode dict (see _episode_has_content)."""
+        return bool(
+            (ep.get('summary_content') or '').strip()
+            or (ep.get('modified_summary_content') or '').strip()
+            or (ep.get('key_insights') or [])
+        )
+
+    @staticmethod
     def _scope_episodes(
         episodes: List[Episode], allowed: Optional[frozenset], cutoff: Optional[int],
     ) -> List[Episode]:
-        """Drop episodes outside the release language allowlist / recency window."""
-        if allowed is None and cutoff is None:
-            return episodes
+        """Drop episodes outside the release language allowlist / recency window,
+        and always drop content-empty placeholder episodes."""
         out = []
         for ep in episodes:
+            if not PodcastService._episode_has_content(ep):
+                continue
             if allowed is not None and ep.podcast_name not in allowed:
                 continue
             if cutoff is not None and PodcastService._episode_release_ms(ep) < cutoff:
@@ -210,6 +261,8 @@ class PodcastService:
                 if not name:
                     continue
                 if allowed is not None and name not in allowed:
+                    continue
+                if not self._dict_has_content(ep):
                     continue
                 if cutoff is not None and self._dict_release_ms(ep) < cutoff:
                     continue
@@ -273,6 +326,7 @@ class PodcastService:
             episodes = self.firestore_service.query_collection(
                 collection="episodes", filters=[("podcast_name", "==", podcast_name)],
             )
+            episodes = [ep for ep in episodes if self._dict_has_content(ep)]
             if cutoff is not None:
                 episodes = [ep for ep in episodes if self._dict_release_ms(ep) >= cutoff]
             if not episodes:

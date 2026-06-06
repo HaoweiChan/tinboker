@@ -15,10 +15,17 @@ from src.services.podcast import PodcastService
 from src.services.episode_transformer import EpisodeTransformer
 
 
-def _ep(name: str, created_ms: int, released_ms=None) -> Episode:
+def _ep(
+    name: str, created_ms: int, released_ms=None, *,
+    summary_content: str = "內容摘要", key_insights=None, spotify_release_date=None,
+) -> Episode:
+    # Episodes carry content by default — the public scope now drops content-empty
+    # placeholders, so fixtures must look like real episodes unless testing that guard.
     return Episode(
         id=f"{name}-{created_ms}", podcast_name=name,
         created_time=created_ms, released_at_ms=released_ms,
+        summary_content=summary_content, key_insights=key_insights or [],
+        spotify_release_date=spotify_release_date,
     )
 
 
@@ -80,8 +87,31 @@ def test_episode_release_ms_falls_back_to_created_time():
 # ── _scope_episodes: language allowlist + recency ────────────────────
 
 def test_scope_passthrough_when_unscoped():
+    """With no language/recency scope, content-bearing episodes all pass through."""
     eps = [_ep("Gooaye 股癌", 1), _ep("CNBC's Fast Money", 2)]
-    assert PodcastService._scope_episodes(eps, None, None) is eps
+    out = PodcastService._scope_episodes(eps, None, None)
+    assert {e.podcast_name for e in out} == {"Gooaye 股癌", "CNBC's Fast Money"}
+
+
+def test_scope_drops_content_empty_placeholders():
+    """Re-ingested placeholder episodes (no summary, no key_insights) are hidden
+    even with a recent released_at_ms — they would render as empty cards."""
+    now = datetime.now()
+    real = _ep("Gooaye 股癌", _ms(now), _ms(now - timedelta(days=1)))
+    empty = _ep("Gooaye 股癌", _ms(now), _ms(now - timedelta(days=1)), summary_content="")
+    out = PodcastService._scope_episodes([real, empty], None, None)
+    assert out == [real]
+
+
+def test_episode_release_ms_prefers_spotify_date():
+    """spotify_release_date is the trusted publish signal and wins over a
+    (possibly ingestion-time) released_at_ms."""
+    ep = _ep(
+        "財報狗", created_ms=2_000, released_ms=9_999_999_999_999,
+        spotify_release_date="2026-03-07",
+    )
+    expected = int(datetime.strptime("2026-03-07", "%Y-%m-%d").timestamp() * 1000)
+    assert PodcastService._episode_release_ms(ep) == expected
 
 
 def test_scope_language_allowlist_drops_out_of_scope_shows():
