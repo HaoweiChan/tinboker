@@ -429,10 +429,19 @@ class PodcastService:
             if not episode_dict or episode_dict.get('podcast_name') != podcast_name:
                 return None
             episode = await self.transformer.to_episode(episode_dict)
-            try:
-                await cache_set(cache_key, json.dumps(episode.dict(), default=str), CACHE_TTL["podcast_episode"])
-            except Exception:
-                pass
+            # Skip caching a partially-hydrated episode (content URL set but content
+            # empty, e.g. a transient GCS read failure) so the next request re-attempts
+            # the GCS read instead of pinning a blank payload for the full TTL.
+            if not self.transformer.is_content_incomplete(episode_dict):
+                try:
+                    await cache_set(cache_key, json.dumps(episode.dict(), default=str), CACHE_TTL["podcast_episode"])
+                except Exception:
+                    pass
+            else:
+                logger.warning(
+                    "Skipping cache for episode %s/%s: content hydration incomplete (GCS fetch likely failed)",
+                    podcast_name, episode_id,
+                )
             if apply_scope and not await self._episode_in_scope(episode):
                 return None
             return episode
@@ -468,19 +477,16 @@ class PodcastService:
             # Don't pin a half-hydrated episode (content URL present but content empty,
             # e.g. a transient GCS read failure) — leave it uncached so the next request
             # re-attempts the fetch instead of serving a blank for the full TTL.
-            content_incomplete = any(
-                episode_dict.get(url_field) and not episode_dict.get(content_field)
-                for content_field, url_field in (
-                    ('summary_content', 'summary_url'),
-                    ('transcript', 'transcript_url'),
-                    ('summary_image', 'summary_image_url'),
-                )
-            )
-            if not content_incomplete:
+            if not self.transformer.is_content_incomplete(episode_dict):
                 try:
                     await cache_set(cache_key, json.dumps(episode.dict(), default=str), CACHE_TTL["podcast_episode"])
                 except Exception:
                     pass
+            else:
+                logger.warning(
+                    "Skipping cache for episode %s: content hydration incomplete (GCS fetch likely failed)",
+                    episode_id,
+                )
             return episode
         except Exception as e:
             raise Exception(f"Failed to get episode: {e}") from e
