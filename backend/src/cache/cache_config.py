@@ -46,5 +46,9 @@ CACHE_TTL: Dict[str, int] = {
     "recommendation_by_ticker": 7200,
     "recommendation_by_podcaster": 7200,
     "recommendation_buzz": 7200,
+
+    # Articles
+    "article_item": MIN_LEN * 60,       # 1 hour
+    "article_list": MIN_LEN * 5,        # 5 minutes
 }
 

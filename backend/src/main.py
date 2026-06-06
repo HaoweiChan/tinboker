@@ -33,6 +33,8 @@ from src.routers.admin_system import router as admin_system_router
 from src.routers.admin_analytics import router as admin_analytics_router
 from src.routers.notifications import router as notifications_router
 from src.routers.comments import router as comments_router, comments_router as comments_delete_router
+from src.routers.articles import router as articles_router
+from src.routers.admin_articles import router as admin_articles_router
 from src.middleware.cloudflare import CloudflareMiddleware
 
 
@@ -207,6 +209,8 @@ app.include_router(admin_analytics_router)
 app.include_router(notifications_router)
 app.include_router(comments_router)
 app.include_router(comments_delete_router)
+app.include_router(articles_router)
+app.include_router(admin_articles_router)
 
 
 # Global exception handler

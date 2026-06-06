@@ -407,6 +407,53 @@ export function safeParseResponse<T>(
   }
 }
 
+// ── Articles ─────────────────────────────────────────────────────────────────
+
+export const ArticleStatusSchema = z.enum(['draft', 'pending_review', 'published', 'archived']);
+
+export const ArticleSchema = z.object({
+  id: z.number(),
+  slug: z.string(),
+  title: z.string(),
+  subtitle: z.string().nullable().optional(),
+  author_id: z.string(),
+  author_name: z.string(),
+  author_avatar: z.string().nullable().optional(),
+  status: z.string(),
+  cover_image_url: z.string().nullable().optional(),
+  body_content: z.string().default(''),
+  key_points: z.array(z.string()).nullable().optional(),
+  tags: z.array(z.string()).nullable().optional(),
+  tickers: z.array(z.string()).nullable().optional(),
+  read_minutes: z.number().nullable().optional(),
+  view_count: z.number().default(0),
+  published_at: z.string().nullable().optional(),
+  created_at: z.string().nullable().optional(),
+  updated_at: z.string().nullable().optional(),
+});
+
+export const ArticleListItemSchema = z.object({
+  id: z.number(),
+  slug: z.string(),
+  title: z.string(),
+  subtitle: z.string().nullable().optional(),
+  author_name: z.string(),
+  author_avatar: z.string().nullable().optional(),
+  status: z.string(),
+  cover_image_url: z.string().nullable().optional(),
+  key_points: z.array(z.string()).nullable().optional(),
+  tags: z.array(z.string()).nullable().optional(),
+  tickers: z.array(z.string()).nullable().optional(),
+  read_minutes: z.number().nullable().optional(),
+  view_count: z.number().default(0),
+  published_at: z.string().nullable().optional(),
+  created_at: z.string().nullable().optional(),
+});
+
+export type ArticleStatus = z.infer<typeof ArticleStatusSchema>;
+export type Article = z.infer<typeof ArticleSchema>;
+export type ArticleListItem = z.infer<typeof ArticleListItemSchema>;
+
 // ── Comments ─────────────────────────────────────────────────────────────────
 
 export const CommentSchema = z.object({

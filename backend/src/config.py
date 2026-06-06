@@ -57,6 +57,10 @@ class Settings(BaseSettings):
     # with `openssl rand -hex 32`; store in GSM. Unset = disabled.
     tinboker_write_token: Optional[str] = None
 
+    # Service token for the article authoring MCP / headless agent.
+    # Scoped to article CRUD endpoints only.
+    tinboker_article_token: Optional[str] = None
+
     @field_validator("admin_emails", mode="before")
     @classmethod
     def parse_admin_emails(cls, v: Union[str, list, None]) -> list[str]:

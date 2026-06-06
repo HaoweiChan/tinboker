@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Search, Star, ChevronRight } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
@@ -21,6 +21,7 @@ import { authApi, type AuthResponse } from '@/services/api/auth';
 import { userApi } from '@/services/api/user';
 
 type Tab = 'podcasters' | 'tickers' | 'topics' | 'episodes';
+const VALID_TABS: readonly Tab[] = ['podcasters', 'tickers', 'topics', 'episodes'];
 
 interface StockRow {
   symbol: string;
@@ -58,7 +59,19 @@ export const ProfilePage: React.FC = () => {
   const episodeTickers = useMemo(() => bookmarked.flatMap((ep) => ep.related_tickers ?? []), [bookmarked]);
   const priceMap = useStockPriceMap(episodeTickers);
 
-  const [tab, setTab] = useState<Tab>('podcasters');
+  // Tab is URL-addressable (?tab=…) so the sidebar's "我的" links can deep-link.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get('tab') as Tab | null;
+  const tab: Tab = tabParam && VALID_TABS.includes(tabParam) ? tabParam : 'podcasters';
+  const setTab = (t: Tab) =>
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set('tab', t);
+        return next;
+      },
+      { replace: true },
+    );
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<StockRow[]>([]);

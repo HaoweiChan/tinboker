@@ -83,3 +83,33 @@ async def get_translation_access(
         detail="Admin or translation-writer access required.",
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+
+async def get_article_author_access(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+) -> AdminAccess:
+    """
+    Dependency for article write endpoints.
+
+    Accepts an admin JWT OR the TINBOKER_ARTICLE_TOKEN service token.
+    Scoped to article endpoints only — does not unlock other admin routes.
+    """
+    token = credentials.credentials
+
+    try:
+        from src.utils.auth import verify_jwt_token
+        user_data = verify_jwt_token(token)
+        if user_data and "email" in user_data and is_admin_email(user_data["email"]):
+            return AdminAccess(email=user_data["email"], user_id=user_data.get("user_id"))
+    except Exception as e:
+        logger.debug(f"Token verification failed: {e}")
+
+    service_token = settings.tinboker_article_token
+    if service_token and secrets.compare_digest(token, service_token):
+        return AdminAccess(email="article-author@service", user_id="service")
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Admin or article-author access required.",
+        headers={"WWW-Authenticate": "Bearer"},
+    )

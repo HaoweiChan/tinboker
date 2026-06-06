@@ -12,6 +12,7 @@ import { PodcasterPage } from '@/pages/PodcasterPage';
 import { TagPage } from '@/pages/TagPage';
 import { ProfilePage } from '@/pages/ProfilePage';
 import { SettingsPage } from '@/pages/SettingsPage';
+import { ReportPage } from '@/pages/ReportPage';
 import { DisclaimerPage } from '@/pages/DisclaimerPage';
 import { PodcasterIndex } from '@/pages/PodcasterIndex';
 import { StockIndex } from '@/pages/StockIndex';
@@ -23,6 +24,9 @@ import { TranslationsSection } from '@/pages/TranslationsSection';
 import { SourcesSection } from '@/pages/SourcesSection';
 import { PipelineSettingsPage } from '@/pages/PipelineSettingsPage';
 import { AdminAnalyticsPage } from '@/pages/AdminAnalyticsPage';
+import { AdminArticlesPage } from '@/pages/AdminArticlesPage';
+import { ArticleDetail } from '@/pages/ArticleDetail';
+import { ArticleList } from '@/pages/ArticleList';
 import { DevPortalPage } from '@/pages/DevPortalPage';
 import { DevGrafanaPage } from '@/pages/DevGrafanaPage';
 import { DevPodcasterListPage } from '@/pages/DevPodcasterListPage';
@@ -83,6 +87,8 @@ function App() {
           <Route path="/tag/:tag" element={<TagPage />} />
           <Route path="/episode/:id" element={<EpisodeDetail />} />
           <Route path="/news/:id" element={<NewsRedirect />} />
+          <Route path="/articles" element={<ArticleList />} />
+          <Route path="/article/:slug" element={<ArticleDetail />} />
 
           {/* Retired from primary nav, kept live */}
           <Route path="/story" element={<GraphGallery />} />
@@ -92,6 +98,7 @@ function App() {
           <Route path="/about" element={<About />} />
           <Route path="/contact" element={<ContactPage />} />
           <Route path="/disclaimer" element={<DisclaimerPage />} />
+          <Route path="/report" element={<ReportPage />} />
 
           {/* User */}
           <Route path="/profile" element={<ProfilePage />} />
@@ -105,6 +112,7 @@ function App() {
           <Route path="sources" element={<SourcesSection />} />
           <Route path="pipeline" element={<PipelineSettingsPage />} />
           <Route path="analytics" element={<AdminAnalyticsPage />} />
+          <Route path="articles" element={<AdminArticlesPage />} />
         </Route>
 
         {/* Dev-only design preview (standalone, no shell) */}
