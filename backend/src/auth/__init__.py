@@ -1,17 +1,13 @@
 """Admin authentication module."""
 
 from src.auth.admin_auth import (
-    verify_admin_password,
-    create_admin_token,
-    verify_admin_token,
-    get_current_admin,
-    AdminTokenData,
+    AdminAccess,
+    get_admin_access,
+    is_admin_email,
 )
 
 __all__ = [
-    "verify_admin_password",
-    "create_admin_token",
-    "verify_admin_token",
-    "get_current_admin",
-    "AdminTokenData",
+    "AdminAccess",
+    "get_admin_access",
+    "is_admin_email",
 ]

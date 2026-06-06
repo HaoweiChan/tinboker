@@ -4,12 +4,12 @@ import { Search, ChevronRight } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
 import { Segmented, SentimentChip } from '@/components/redesign';
-import { getTrendingTickers } from '@/services/api/podcasts';
+import { getRecentBuzz, type RecentBuzz } from '@/services/api/podcasts';
 import { getSortedStocks } from '@/services/api/stocks';
-import type { SentimentLabel, TickerTrending } from '@/services/types';
+import type { SentimentLabel } from '@/services/types';
 import { fetchWithFallback } from '@/services/api/migration';
 import type { Sentiment } from '@/lib/sentiment';
-import { getStockLabel } from '@/utils/stockDisplay';
+import { getStockLabel, inferStockMarket } from '@/utils/stockDisplay';
 import { useStockSummaries } from '@/hooks/useStockSummaries';
 import { TickerAvatar } from '@/components/common/TickerAvatar';
 
@@ -26,9 +26,14 @@ const LABEL_RANK: Record<SentimentLabel, number> = {
   STRONG_BEARISH: 1,
 };
 
-function isTW(ticker: string): boolean {
-  return /\.TW[OW]?$/i.test(ticker);
-}
+// Short market badge per row, keyed by the canonical market inference. KR uses a
+// neutral chip; 6-digit codes (005930 Samsung, 000660 SK Hynix) were previously
+// mislabeled TW by the all-numeric heuristic.
+const MARKET_BADGE: Record<ReturnType<typeof inferStockMarket>, { label: string; cls: string }> = {
+  TW: { label: 'TW', cls: 'bg-sentiment-bull-soft text-sentiment-bull' },
+  US: { label: 'US', cls: 'bg-accent-info-soft text-accent-info' },
+  KR: { label: 'KR', cls: 'bg-muted text-muted-foreground' },
+};
 function labelToSentiment(label: SentimentLabel): Sentiment {
   if (label === 'STRONG_BULLISH' || label === 'BULLISH') return 'BULLISH';
   if (label === 'STRONG_BEARISH' || label === 'BEARISH') return 'BEARISH';
@@ -54,9 +59,12 @@ export const StockIndex: React.FC = () => {
     let alive = true;
     (async () => {
       setLoading(true);
-      // Spec § 5.4: default to days=90, limit=200 on StockIndex.
-      const [trending, stocks] = await Promise.all([
-        fetchWithFallback<TickerTrending[]>(() => getTrendingTickers({ days: 90, limit: 200 }), [], 'getTrendingTickers:index').catch(() => [] as TickerTrending[]),
+      // Real recent mention counts over the last 30 days (zh-TW launch feed),
+      // NOT the all-time agents-precomputed trending_tickers (which ignored the
+      // window — days=30 and days=90 returned identical all-time totals).
+      const emptyBuzz: RecentBuzz = { tickers: [], distinct_count: 0, episode_count: 0 };
+      const [buzz, stocks] = await Promise.all([
+        fetchWithFallback<RecentBuzz>(() => getRecentBuzz({ days: 30, limit: 200 }), emptyBuzz, 'getRecentBuzz:index').catch(() => emptyBuzz),
         fetchWithFallback<unknown[]>(() => getSortedStocks({ sortBy: 'ticker', limit: 500 }), [], 'getSortedStocks:index').catch(() => [] as unknown[]),
       ]);
       if (!alive) return;
@@ -66,13 +74,14 @@ export const StockIndex: React.FC = () => {
         const t = o.ticker || o.symbol;
         if (t) nameOf.set(t, o.name || o.company_name || t);
       }
+      const tickers = Array.isArray(buzz?.tickers) ? buzz.tickers : [];
       setRows(
-        (Array.isArray(trending) ? trending : []).map((t) => ({
+        tickers.map((t) => ({
           ticker: t.ticker,
-          name: nameOf.get(t.ticker) || t.ticker,
+          name: nameOf.get(t.ticker) || t.name || t.ticker,
           count: t.count,
-          sentimentLabel: t.sentiment_label,
-          lastMentioned: t.last_mentioned,
+          sentimentLabel: LABEL_RANK[t.sentiment_label] ? t.sentiment_label : ('NEUTRAL' as SentimentLabel),
+          lastMentioned: String(t.last_mentioned ?? ''),
         })),
       );
       setLoading(false);
@@ -84,8 +93,7 @@ export const StockIndex: React.FC = () => {
 
   const list = useMemo(() => {
     let arr = rows.filter((r) => {
-      if (market === 'TW' && !isTW(r.ticker)) return false;
-      if (market === 'US' && isTW(r.ticker)) return false;
+      if (market !== 'all' && inferStockMarket(r.ticker) !== market) return false;
       if (q) {
         const s = q.toLowerCase();
         return r.ticker.toLowerCase().includes(s) || r.name.toLowerCase().includes(s);
@@ -109,9 +117,9 @@ export const StockIndex: React.FC = () => {
       <PageContent>
         <div className="flex items-baseline justify-between mb-1">
           <h1 className="text-[22px] font-semibold tracking-[-0.02em]">所有個股</h1>
-          {!loading && <div className="text-[12px] text-muted-foreground font-mono tabular-nums">{rows.length} 檔（近 90 天提及）</div>}
+          {!loading && <div className="text-[12px] text-muted-foreground font-mono tabular-nums">{rows.length} 檔（近 30 天提及）</div>}
         </div>
-        <p className="text-[13px] text-muted-foreground max-w-[60ch] mb-4">最近 90 天被 TinBoker 追蹤的 Podcast 提及的所有個股，依提及次數排序。點任一檔進入情緒時間軸與相關集數。</p>
+        <p className="text-[13px] text-muted-foreground max-w-[60ch] mb-4">最近 30 天被 TinBoker 追蹤的 Podcast 提及的所有個股，依提及次數排序。點任一檔進入情緒時間軸與相關集數。</p>
 
         <div className="flex gap-2.5 items-center mb-4 flex-wrap">
           <label className="flex items-center gap-2 flex-1 min-w-[180px] bg-card border border-border rounded-md px-3 py-2">
@@ -136,10 +144,12 @@ export const StockIndex: React.FC = () => {
           ) : (
             list.map((r) => {
               const summary = summaries[r.ticker];
+              const mkt = inferStockMarket(r.ticker);
+              const badge = MARKET_BADGE[mkt];
               const { primary, secondary } = getStockLabel({
                 ticker: r.ticker,
                 name: summary?.name ?? r.name,
-                market: summary?.market,
+                market: summary?.market ?? mkt,
               });
               return (
                 <Link
@@ -152,7 +162,7 @@ export const StockIndex: React.FC = () => {
                     <span className="min-w-0">
                       <span className="flex items-center gap-1.5">
                         <span className="text-[13.5px] font-medium truncate">{primary}</span>
-                        <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-semibold ${isTW(r.ticker) ? 'bg-sentiment-bull-soft text-sentiment-bull' : 'bg-accent-info-soft text-accent-info'}`}>{isTW(r.ticker) ? 'TW' : 'US'}</span>
+                        <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-semibold ${badge.cls}`}>{badge.label}</span>
                       </span>
                       {secondary && (
                         <span className="block text-[11px] text-muted-foreground font-mono truncate">{secondary}</span>

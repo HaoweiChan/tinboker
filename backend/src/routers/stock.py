@@ -9,6 +9,7 @@ from src.models.stock import CompanyDetail
 from src.services.websocket_subscriber import WebSocketSubscriber
 from src.database.postgres import get_session
 from src.database.models import StockTranslation
+from src.utils.market import infer_market
 import asyncio
 import logging
 
@@ -99,7 +100,7 @@ async def get_batch_summary(
 
     out = []
     for ticker, info in zip(ticker_list, basic_results):
-        market = "TW" if ticker.split(".")[0].isdigit() else "US"
+        market = infer_market(ticker)
         name = info.get("name") if isinstance(info, dict) else None
         out.append({
             "ticker": ticker,

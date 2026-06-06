@@ -114,13 +114,40 @@ def create_all_tables():
     
     logger.info("Creating all database tables...")
     Base.metadata.create_all(bind=engine)
-    # Add columns that may not exist on pre-existing tables (idempotent)
-    with engine.connect() as conn:
-        conn.execute(text(
-            "ALTER TABLE IF EXISTS stock_translations "
-            "ADD COLUMN IF NOT EXISTS brand_color VARCHAR(7)"
-        ))
-        conn.commit()
+    # Add columns that may not exist on pre-existing tables (idempotent).
+    if engine.dialect.name == "postgresql":
+        with engine.connect() as conn:
+            conn.execute(text(
+                "ALTER TABLE IF EXISTS stock_translations "
+                "ADD COLUMN IF NOT EXISTS brand_color VARCHAR(7)"
+            ))
+            conn.execute(text(
+                "ALTER TABLE IF EXISTS stock_translations "
+                "ADD COLUMN IF NOT EXISTS aliases JSON"
+            ))
+            conn.execute(text(
+                "ALTER TABLE IF EXISTS stock_translations "
+                "ADD COLUMN IF NOT EXISTS name_preference VARCHAR(10) DEFAULT 'auto'"
+            ))
+            conn.execute(text(
+                "ALTER TABLE IF EXISTS content_sources "
+                "ADD COLUMN IF NOT EXISTS cover_image_url TEXT"
+            ))
+            conn.commit()
+    elif engine.dialect.name == "sqlite":
+        # SQLite has no "ADD COLUMN IF NOT EXISTS" — check PRAGMA first.
+        with engine.connect() as conn:
+            cols = {row[1] for row in conn.execute(text("PRAGMA table_info(stock_translations)"))}
+            if cols and "aliases" not in cols:
+                conn.execute(text("ALTER TABLE stock_translations ADD COLUMN aliases JSON"))
+                conn.commit()
+            if cols and "name_preference" not in cols:
+                conn.execute(text("ALTER TABLE stock_translations ADD COLUMN name_preference VARCHAR(10) DEFAULT 'auto'"))
+                conn.commit()
+            cs_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(content_sources)"))}
+            if cs_cols and "cover_image_url" not in cs_cols:
+                conn.execute(text("ALTER TABLE content_sources ADD COLUMN cover_image_url TEXT"))
+                conn.commit()
     logger.info("Database tables created successfully")
 
 

@@ -1,15 +1,24 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useParams, useSearchParams, Link } from 'react-router-dom';
+import { useParams, useSearchParams, Link, useNavigate } from 'react-router-dom';
 import { ChevronLeft, Play, ExternalLink } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
+import { PodcastAvatar } from '@/components/common/PodcastAvatar';
 import { PageContent } from '@/components/layout/PageContent';
-import { PodMark, TickerRow } from '@/components/redesign';
-import { cn } from '@/lib/utils';
-import { getEpisodeById, type Episode as ApiEpisode } from '@/services';
+import { TickerRow } from '@/components/redesign';
+import { getEpisodeById, getEpisodeByIdOnly, getPodcastByName, type Episode as ApiEpisode } from '@/services';
 import { fetchWithFallback } from '@/services/api/migration';
 import { parseTimestampedSections, type TimestampedSection } from '@/utils/parseTimestampedSections';
 import { usePlayerStore } from '@/store/usePlayerStore';
 import { CommentSection } from '@/components/episode/CommentSection';
+import { useStockPriceMap } from '@/hooks/useStockPriceMap';
+import { useTranslationMap } from '@/hooks/useTranslationMap';
+import { useEpisodeSentimentMap } from '@/hooks/useEpisodeSentimentMap';
+import { EpisodeInsightCard, type EpisodeInsight } from '@/components/episode/EpisodeInsightCard';
+import { SummaryMarkdown } from '@/components/episode/SummaryMarkdown';
+import type { Sentiment } from '@/lib/sentiment';
+
+// Episodes can carry dozens of tags; show only a handful so the row stays meaningful.
+const MAX_HERO_TAGS = 6;
 
 function timeAgo(release: string | number | null | undefined, created: number): string {
   const ms = typeof release === 'string' ? Date.parse(release) : (release ?? created);
@@ -35,24 +44,65 @@ function spotifyUriFrom(ep: ApiEpisode | null): string | undefined {
   return undefined;
 }
 
-function bulletsFrom(ep: ApiEpisode | null): string[] {
-  if (!ep) return [];
-  if (Array.isArray(ep.key_insights) && ep.key_insights.length > 0) return ep.key_insights.filter((s) => s && s.trim()).slice(0, 8);
+function cleanSummaryLine(line: string): string {
+  return line
+    .replace(/^(?:#{1,6}\s*)+/, '')
+    .replace(/\s*\(#time:\s*\d+\)/g, '')
+    .replace(/^[-*\s]+/, '')
+    // Strip ALL inline markers ([label](#ticker:..|#tag:..|url)) down to their label
+    // so the insight reads as plain text, never raw markdown.
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/[*_`>~]/g, '')
+    .trim();
+}
+
+function episodeInsightFrom(ep: ApiEpisode | null, fallbackTitle: string): EpisodeInsight | null {
+  if (!ep) return null;
   const src = ep.modified_summary_content || ep.summary_content || '';
-  return src
-    .split('\n')
-    .map((l) => l.replace(/^[#>\-*\s]+/, '').replace(/\(#time:\s*\d+\)/g, '').replace(/[*_`]/g, '').trim())
-    .filter((l) => l.length > 4)
-    .slice(0, 8);
+  const lines = src.split('\n').map((line) => line.trim()).filter(Boolean);
+  // No truncation: the insight is the concise essence of the article and is shown
+  // in full (no "…"). The headline / thesis / section headings are already short.
+  const headline = cleanSummaryLine(lines.find((line) => line.startsWith('#')) || lines[0] || fallbackTitle);
+  const thesis = cleanSummaryLine(lines.find((line) => !line.startsWith('#') && line.length > 12) || '');
+  const keyHighlights = Array.isArray(ep.key_insights) ? ep.key_insights.map((line) => cleanSummaryLine(line)).filter(Boolean) : [];
+  const sectionHighlights = lines
+    .filter((line) => /^#{2,}/.test(line))
+    .map(cleanSummaryLine)
+    .filter((line) => line && line !== headline)
+    .slice(0, 3);
+  const highlights = (keyHighlights.length > 0 ? keyHighlights : sectionHighlights).slice(0, 3);
+
+  if (!headline && !thesis && highlights.length === 0) return null;
+  return {
+    headline: headline || fallbackTitle,
+    thesis: thesis || undefined,
+    highlights,
+  };
+}
+
+function tickerLookupKeys(symbol: string): string[] {
+  const upper = symbol.toUpperCase();
+  const bare = upper.replace(/\.[A-Z]+$/i, '');
+  return [...new Set([upper, bare, `${bare}.TW`, `${bare}.KS`])];
+}
+
+function firstMapValue<T>(map: Map<string, T>, keys: string[]): T | undefined {
+  for (const key of keys) {
+    const value = map.get(key);
+    if (value !== undefined) return value;
+  }
+  return undefined;
 }
 
 export const EpisodeDetail: React.FC = () => {
   const { id } = useParams();
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const podcastName = searchParams.get('podcast') || '';
   const { playEpisode, requestSeek } = usePlayerStore();
 
   const [episode, setEpisode] = useState<ApiEpisode | null>(null);
+  const [podcastImageUrl, setPodcastImageUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -60,10 +110,24 @@ export const EpisodeDetail: React.FC = () => {
     if (!id) return;
     let alive = true;
     setLoading(true);
+    setPodcastImageUrl(null);
     (async () => {
-      const ep = await fetchWithFallback<ApiEpisode | null>(() => getEpisodeById(podcastName, id), null, `getEpisodeById:${podcastName}/${id}`).catch(() => null);
+      // On a cold load (deep link / refresh / shared URL) there is no ?podcast= to
+      // supply the show name, so fall back to the by-id endpoint, then resolve the
+      // show name from the response for the podcast-image fetch.
+      const ep = await fetchWithFallback<ApiEpisode | null>(
+        () => (podcastName ? getEpisodeById(podcastName, id) : getEpisodeByIdOnly(id)),
+        null,
+        `getEpisodeById:${podcastName || '-'}/${id}`,
+      ).catch(() => null);
       if (!alive) return;
       setEpisode(ep);
+      const resolvedName = ep?.podcast_name || podcastName;
+      const podcast = resolvedName
+        ? await fetchWithFallback(() => getPodcastByName(resolvedName), null, `getPodcastByName:${resolvedName}`).catch(() => null)
+        : null;
+      if (!alive) return;
+      setPodcastImageUrl(podcast?.image_url || null);
       setLoading(false);
     })();
     return () => {
@@ -71,14 +135,37 @@ export const EpisodeDetail: React.FC = () => {
     };
   }, [id, podcastName]);
 
-  const bullets = useMemo(() => bulletsFrom(episode), [episode]);
   const chapters = useMemo<TimestampedSection[]>(() => (episode?.events_markdown_content ? parseTimestampedSections(episode.events_markdown_content) : []), [episode]);
   const clips = useMemo<TimestampedSection[]>(() => (episode?.sentences_markdown_content ? parseTimestampedSections(episode.sentences_markdown_content).slice(0, 8) : []), [episode]);
-  const tickers = useMemo(() => (Array.isArray(episode?.related_tickers) ? episode!.related_tickers.slice(0, 8).map((s) => ({ symbol: s })) : []), [episode]);
+  const tickerSymbols = useMemo(() => (Array.isArray(episode?.related_tickers) ? episode!.related_tickers.slice(0, 8) : []), [episode]);
+  const priceMap = useStockPriceMap(tickerSymbols);
+  const rawTranslationMap = useTranslationMap(tickerSymbols);
+  const episodeIds = useMemo(() => (episode ? [episode.id] : []), [episode]);
+  const episodeSentiments = useEpisodeSentimentMap(episodeIds);
+  const tickers = useMemo(() => {
+    const sent = episode ? episodeSentiments.get(episode.id) : undefined;
+    const all = tickerSymbols.map((s) => {
+      const keys = tickerLookupKeys(s);
+      return {
+        symbol: s,
+        name: firstMapValue(rawTranslationMap, keys)?.displayName,
+        sentiment: sent ? firstMapValue<Sentiment>(sent, keys) : undefined,
+        changePercent: firstMapValue(priceMap, keys),
+      };
+    });
+    // Drop tickers the hosts only mentioned in passing — no sentiment means no
+    // expressed view (e.g. a bank cited for a report, or a non-ticker like
+    // SpaceX/"X"). If the episode has no per-ticker sentiment at all, keep every
+    // mention so the panel isn't empty.
+    const scored = all.filter((t) => t.sentiment);
+    return scored.length > 0 ? scored : all;
+  }, [tickerSymbols, rawTranslationMap, episodeSentiments, priceMap, episode]);
   const spotifyUri = useMemo(() => spotifyUriFrom(episode), [episode]);
 
   const title = episode?.episode_title || (episode?.episode_number != null ? `EP ${episode.episode_number}` : '集數摘要');
   const name = episode?.podcast_name || podcastName || '節目';
+  const episodeInsight = useMemo(() => episodeInsightFrom(episode, title), [episode, title]);
+  const podcasterImageUrl = podcastImageUrl || episode?.spotify_images?.[0] || null;
 
   const onPlay = () => {
     if (!episode) return;
@@ -94,20 +181,19 @@ export const EpisodeDetail: React.FC = () => {
 
   return (
     <>
-      <SEO title={title} description={`${name} · ${title} — 結構化重點與關鍵片段。`} />
+      <SEO title={title} description={`${name} · ${title} — 結構化摘要與重點。`} />
       <PageContent
         rail={
-          chapters.length > 0 ? (
-            <nav className="bg-card border border-border rounded-md p-3">
-              <h4 className="text-[11px] font-semibold tracking-[0.08em] uppercase text-muted-foreground px-2 mb-2">章節</h4>
-              <div className="flex flex-col gap-0.5">
-                {chapters.map((c, i) => (
-                  <button key={i} type="button" onClick={() => requestSeek(c.timestampSeconds)} className="flex items-center gap-2.5 px-2 py-1.5 rounded text-left text-[13px] text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
-                    <span className="font-mono text-[11px] text-muted-foreground shrink-0">{c.formattedTime}</span>
-                    <span className="truncate">{c.title}</span>
-                  </button>
-                ))}
-              </div>
+          tickers.length > 0 ? (
+            <nav className="bg-card border border-border rounded-md p-3 max-h-[calc(100vh-96px)] overflow-hidden" aria-label="集數導覽">
+              <section aria-labelledby="episode-rail-tickers">
+                <h4 id="episode-rail-tickers" className="text-[11px] font-semibold tracking-[0.08em] uppercase text-muted-foreground px-2 mb-2">提及股票</h4>
+                <div className="flex flex-col gap-1.5">
+                  {tickers.map((t) => (
+                    <TickerRow key={t.symbol} ticker={t} onClick={() => navigate(`/stock/${encodeURIComponent(t.symbol)}`)} />
+                  ))}
+                </div>
+              </section>
             </nav>
           ) : undefined
         }
@@ -126,12 +212,12 @@ export const EpisodeDetail: React.FC = () => {
             {/* Hero */}
             <div className="bg-card border border-border rounded-md p-5 sm:p-6 mb-[18px]">
               <div className="flex items-center gap-3.5 mb-3.5">
-                {episode.spotify_images?.[0] ? <img src={episode.spotify_images[0]} alt="" className="w-10 h-10 rounded-[9px] object-cover shrink-0" /> : <PodMark label={name.charAt(0)} kind="mute" size={40} />}
+                <PodcastAvatar name={name} src={podcasterImageUrl} size="md" className="rounded-[9px]" />
                 <div className="min-w-0 flex-1">
                   <Link to={`/podcaster/${encodeURIComponent(name)}`} className="text-[14px] font-medium hover:underline">{name}</Link>
                   <div className="text-[12px] text-muted-foreground">
                     {episode.episode_number != null ? `EP ${episode.episode_number} · ` : ''}
-                    {timeAgo(episode.spotify_release_date, episode.created_time)}
+                    {timeAgo(episode.released_at_ms ?? episode.spotify_release_date, episode.created_time)}
                   </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
@@ -148,50 +234,30 @@ export const EpisodeDetail: React.FC = () => {
               <h1 className="text-[24px] sm:text-[26px] font-semibold tracking-[-0.015em] leading-[1.3]">{title}</h1>
               {episode.tags && episode.tags.length > 0 && (
                 <div className="flex gap-1.5 flex-wrap mt-3">
-                  {episode.tags.map((t) => (
-                    <Link key={t} to={`/topics/${encodeURIComponent(t)}`} className="text-[11px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground hover:bg-accent-info-soft hover:text-accent-info transition-colors">#{t}</Link>
+                  {episode.tags.slice(0, MAX_HERO_TAGS).map((t) => (
+                    <Link key={t} to={`/topics/${encodeURIComponent(t)}`} className="text-[12px] px-2.5 py-0.5 rounded-full bg-amber-400/20 text-amber-700 dark:text-amber-300 font-medium hover:bg-amber-400/35 transition-colors">#{t}</Link>
                   ))}
                 </div>
               )}
             </div>
 
-            {/* 本集重點 */}
-            {bullets.length > 0 && (
+            {episodeInsight && <EpisodeInsightCard insight={episodeInsight} />}
+
+            {/* 摘要 — full structured summary (headings, paragraphs, ticker/tag/time markers) */}
+            {(episode.modified_summary_content || episode.summary_content) && (
               <section className="bg-card border border-border rounded-md p-5 sm:p-6 mb-3.5">
-                <h3 className="text-[12px] font-semibold uppercase tracking-[0.08em] text-muted-foreground mb-3.5">本集重點</h3>
-                <ul className="flex flex-col gap-2.5">
-                  {bullets.map((b, i) => (
-                    <li key={i} className="grid grid-cols-[14px_1fr] gap-2 text-[14px] leading-[1.55]">
-                      <span className="mt-[9px] w-1.5 h-1.5 rounded-full bg-foreground" />
-                      <span>{b}</span>
-                    </li>
-                  ))}
-                </ul>
+                <h3 className="text-[12px] font-semibold uppercase tracking-[0.08em] text-muted-foreground mb-3.5">摘要</h3>
+                <SummaryMarkdown content={episode.modified_summary_content || episode.summary_content || ''} onSeek={requestSeek} />
               </section>
             )}
 
-            {/* 提及股票 */}
+            {/* 提及股票 — mobile fallback; desktop uses the right rail. */}
             {tickers.length > 0 && (
-              <section className="bg-card border border-border rounded-md p-5 sm:p-6 mb-3.5">
+              <section className="xl:hidden bg-card border border-border rounded-md p-5 sm:p-6 mb-3.5">
                 <h3 className="text-[12px] font-semibold uppercase tracking-[0.08em] text-muted-foreground mb-3.5">提及股票</h3>
                 <div className="flex flex-col gap-1.5">
                   {tickers.map((t) => (
-                    <TickerRow key={t.symbol} ticker={t} onClick={() => (window.location.href = `/stock/${encodeURIComponent(t.symbol)}`)} />
-                  ))}
-                </div>
-              </section>
-            )}
-
-            {/* 關鍵片段 */}
-            {clips.length > 0 && (
-              <section className="bg-card border border-border rounded-md p-5 sm:p-6 mb-3.5">
-                <h3 className="text-[12px] font-semibold uppercase tracking-[0.08em] text-muted-foreground mb-3.5">關鍵片段</h3>
-                <div className="flex flex-col gap-2">
-                  {clips.map((c, i) => (
-                    <button key={i} type="button" onClick={() => requestSeek(c.timestampSeconds)} className={cn('grid grid-cols-[56px_1fr] gap-3.5 px-3.5 py-3 rounded-md bg-muted/60 border-l-2 border-muted-foreground/40 text-left hover:bg-muted transition-colors')}>
-                      <span className="font-mono text-[12px] font-medium text-muted-foreground">{c.formattedTime}</span>
-                      <span className="text-[14px] leading-[1.55]">「{c.title}」</span>
-                    </button>
+                    <TickerRow key={t.symbol} ticker={t} onClick={() => navigate(`/stock/${encodeURIComponent(t.symbol)}`)} />
                   ))}
                 </div>
               </section>

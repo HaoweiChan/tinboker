@@ -4,15 +4,14 @@ import { Toaster } from 'sonner';
 import { HomeFeed } from '@/pages/HomeFeed';
 import { About } from '@/pages/About';
 import { ContactPage } from '@/pages/ContactPage';
-import { GraphGallery } from '@/pages/GraphGallery';
 import { StockDashboard } from '@/pages/StockDashboard';
-import { IndustryAnalysis } from '@/pages/IndustryAnalysis';
 import { EpisodeDetail } from '@/pages/EpisodeDetail';
 import { NewsRedirect } from '@/pages/NewsRedirect';
 import { PodcasterPage } from '@/pages/PodcasterPage';
 import { TagPage } from '@/pages/TagPage';
 import { ProfilePage } from '@/pages/ProfilePage';
 import { SettingsPage } from '@/pages/SettingsPage';
+import { ReportPage } from '@/pages/ReportPage';
 import { DisclaimerPage } from '@/pages/DisclaimerPage';
 import { PodcasterIndex } from '@/pages/PodcasterIndex';
 import { StockIndex } from '@/pages/StockIndex';
@@ -21,7 +20,12 @@ import { WatchlistPage } from '@/pages/WatchlistPage';
 import { AdminPage } from '@/pages/AdminPage';
 import { AdminDashboardPage } from '@/pages/AdminDashboardPage';
 import { TranslationsSection } from '@/pages/TranslationsSection';
+import { SourcesSection } from '@/pages/SourcesSection';
+import { PipelineSettingsPage } from '@/pages/PipelineSettingsPage';
 import { AdminAnalyticsPage } from '@/pages/AdminAnalyticsPage';
+import { AdminArticlesPage } from '@/pages/AdminArticlesPage';
+import { ArticleDetail } from '@/pages/ArticleDetail';
+import { ArticleList } from '@/pages/ArticleList';
 import { DevPortalPage } from '@/pages/DevPortalPage';
 import { DevGrafanaPage } from '@/pages/DevGrafanaPage';
 import { DevPodcasterListPage } from '@/pages/DevPodcasterListPage';
@@ -61,9 +65,12 @@ function App() {
       </Routes>
       <EnvGate>
       <Routes>
-        {/* Redirects (no chrome needed) */}
-        <Route path="/gallery" element={<Navigate to="/story" replace />} />
-        <Route path="/graph/*" element={<Navigate to="/story" replace />} />
+        {/* Retired /story (knowledge-graph gallery) rendered fabricated demo
+            content, so it and its aliases are pulled from the public build.
+            Page + redirect targets fall through to the catch-all → home. */}
+        <Route path="/gallery" element={<Navigate to="/" replace />} />
+        <Route path="/graph/*" element={<Navigate to="/" replace />} />
+        <Route path="/story" element={<Navigate to="/" replace />} />
 
         {/* Consumer app — wrapped in the sidebar + header shell */}
         <Route element={<AppLayout />}>
@@ -82,13 +89,16 @@ function App() {
           <Route path="/tag/:tag" element={<TagPage />} />
           <Route path="/episode/:id" element={<EpisodeDetail />} />
           <Route path="/news/:id" element={<NewsRedirect />} />
+          <Route path="/articles" element={<ArticleList />} />
+          <Route path="/article/:slug" element={<ArticleDetail />} />
 
-          {/* Retired from primary nav, kept live */}
-          <Route path="/story" element={<GraphGallery />} />
-          <Route path="/industry" element={<IndustryAnalysis />} />
+          {/* /industry hidden for launch — rendered fabricated sector data
+              (mocks/sectorData.ts). Falls through to the catch-all redirect.
+              Page + components retained for future real-data wiring. */}
           <Route path="/about" element={<About />} />
           <Route path="/contact" element={<ContactPage />} />
           <Route path="/disclaimer" element={<DisclaimerPage />} />
+          <Route path="/report" element={<ReportPage />} />
 
           {/* User */}
           <Route path="/profile" element={<ProfilePage />} />
@@ -99,7 +109,10 @@ function App() {
         <Route path="/admin" element={<AdminPage />}>
           <Route index element={<AdminDashboardPage />} />
           <Route path="translations" element={<TranslationsSection />} />
+          <Route path="sources" element={<SourcesSection />} />
+          <Route path="pipeline" element={<PipelineSettingsPage />} />
           <Route path="analytics" element={<AdminAnalyticsPage />} />
+          <Route path="articles" element={<AdminArticlesPage />} />
         </Route>
 
         {/* Dev-only design preview (standalone, no shell) */}

@@ -3,22 +3,13 @@
  */
 
 import { apiClient } from './client';
-import { getAdminToken } from './translations';
+import { useAppStore } from '@/store/useAppStore';
 import type { SystemStatusResponse } from '@/types/system';
 
-/**
- * Create axios config with admin auth header.
- */
 function adminAuthConfig() {
-    const token = getAdminToken();
-    if (!token) {
-        throw new Error('Not authenticated');
-    }
-    return {
-        headers: {
-            Authorization: `Bearer ${token}`,
-        },
-    };
+    const token = useAppStore.getState().token;
+    if (!token) throw new Error('Not authenticated');
+    return { headers: { Authorization: `Bearer ${token}` } };
 }
 
 /**

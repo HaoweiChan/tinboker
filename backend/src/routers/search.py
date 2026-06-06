@@ -5,7 +5,8 @@ from fastapi import APIRouter, Query
 from src.schemas.search import SearchResponse, SearchResultItem
 from src.services.stock import StockService
 from src.services.podcast import PodcastService
-from src.cache.cdn_cache import cdn_cache_trending
+from src.cache.cdn_cache import cdn_cache_trending, cdn_cached
+from src.utils.market import infer_market
 import asyncio
 import logging
 import re
@@ -17,6 +18,10 @@ stock_service = StockService()
 podcast_service = PodcastService()
 
 @router.get("", response_model=SearchResponse)
+# Short edge cache only. These results are query-driven and reflect live prices /
+# newly-indexed stocks, so they must NOT inherit the long default TTL the `/api/*`
+# Cloudflare cache rule applies to responses that send no Cache-Control header.
+@cdn_cached(s_maxage=60, max_age=0, stale=30)
 async def search(
     q: str = Query(..., min_length=1, description="Search query"),
     limit: int = Query(default=5, ge=1, le=20, description="Max results per category")
@@ -24,6 +29,8 @@ async def search(
     """
     Unified search endpoint.
     Returns results for stocks, podcasts, episodes, and tags matching the query.
+
+    CDN Cache: 60s edge (short — autocomplete/search must stay fresh).
     """
     if not q.strip():
         return SearchResponse()
@@ -58,6 +65,10 @@ async def search(
     )
 
 @router.get("/suggest", response_model=SearchResponse)
+# Short edge cache only. Without an explicit Cache-Control header the `/api/*`
+# Cloudflare cache rule edge-cached typeahead for ~24h (stale prices / missing new
+# stocks). 60s gives the edge enough to absorb typeahead bursts while staying fresh.
+@cdn_cached(s_maxage=60, max_age=0, stale=30)
 async def suggest(
     q: str = Query(..., min_length=1, description="Prefix query"),
     limit: int = Query(default=8, ge=1, le=20)
@@ -65,6 +76,8 @@ async def suggest(
     """
     Fast typeahead suggestions.
     Returns instant suggestions for autocomplete. Target <50ms.
+
+    CDN Cache: 60s edge (short — must reflect live prices / new stocks).
     """
     if not q.strip():
         return SearchResponse()
@@ -90,6 +103,36 @@ async def init_search_index():
     """Initialize search index — called from main.py startup."""
     asyncio.create_task(build_search_index())
 
+def _has_cjk(text) -> bool:
+    """True if the text contains a CJK character (i.e. a real Chinese name)."""
+    if not text:
+        return False
+    return any("㐀" <= ch <= "鿿" or "豈" <= ch <= "﫿" for ch in text)
+
+
+def _load_stock_translations(limit: int = 20000):
+    """Read translatable stock rows (blocking SQLAlchemy). Run off the event loop.
+
+    Returns lightweight dicts so the caller never touches detached ORM instances.
+    """
+    from src.database.postgres import get_session
+    from src.services.translation_service import TranslationService
+
+    rows = []
+    for session in get_session():
+        for t in TranslationService(session).get_translatable_rows(limit=limit):
+            rows.append({
+                "ticker": t.ticker,
+                "market": t.market,
+                "name_en": t.name_en,
+                "name_zh_tw": t.name_zh_tw,
+                "name_preference": getattr(t, "name_preference", None) or "auto",
+                "aliases": t.aliases or [],
+            })
+        break
+    return rows
+
+
 async def build_search_index():
     """Build the in-memory suggestion index from all sources."""
     from src.services.suggestion_index import SuggestionIndex
@@ -100,14 +143,21 @@ async def build_search_index():
     index = SuggestionIndex()
 
     try:
-        # 1. Fetch all stocks (cached version is fast)
+        # 1. Fetch all stocks (cached version is fast).
+        # NOTE: this universe comes from the Massive API and is US-only with English
+        # names. TW stocks (e.g. 2330 / 台積電) and Chinese names are added in step 1b
+        # from the stock_translations table.
         stocks = await stock_service.get_sorted_stocks_async(limit=2000)
 
+        # Track which tickers the Massive universe already indexed, so step 1b only
+        # enriches existing items (with zh-TW keywords) or adds genuinely new TW ones.
+        seen_tickers = set()
         for stock in stocks:
             ticker = stock.get("ticker")
             if not ticker:
                 continue
-            market = "TW" if ticker.split(".")[0].isdigit() else "US"
+            seen_tickers.add(ticker.upper())
+            market = infer_market(ticker)
             item = SearchResultItem(
                 id=f"stock-{ticker}",
                 type="stock",
@@ -124,7 +174,47 @@ async def build_search_index():
             short_names = re.findall(r'[（(]([^)）]+)[)）]', name)
             keywords.extend(short_names)
             await index.add_item(item, keywords=keywords)
-            
+
+        # 1b. Enrich/extend the stock index from stock_translations (zh-TW names,
+        # numeric TW tickers, curated aliases). This is what lets 台積電/台積/台/2330
+        # surface TSMC; without it the index is US-English-only.
+        try:
+            translations = await asyncio.to_thread(_load_stock_translations)
+        except Exception as e:
+            translations = []
+            logger.warning(f"Search index: failed to load stock translations: {e}")
+
+        for tr in translations:
+            ticker = tr.get("ticker")
+            if not ticker:
+                continue
+            zh = tr.get("name_zh_tw")
+            en = tr.get("name_en")
+            pref = tr.get("name_preference") or "auto"
+            # Show the zh-TW name only when it's a real CJK name and not forced English.
+            show_zh = _has_cjk(zh) and pref != "en"
+            display = zh if show_zh else (en or ticker)
+
+            # All searchable forms: ticker, both names, and curated aliases.
+            keywords = [ticker, en, zh, *tr.get("aliases", [])]
+
+            if ticker.upper() in seen_tickers:
+                # Already indexed from Massive — just add the extra (zh-TW/alias) keywords.
+                await index.add_keywords(f"stock-{ticker}", keywords)
+            else:
+                market = (tr.get("market") or "").upper() or infer_market(ticker)
+                item = SearchResultItem(
+                    id=f"stock-{ticker}",
+                    type="stock",
+                    title=ticker,
+                    subtitle=display,
+                    link=f"/stock/{ticker}",
+                    market=market,
+                    metadata={"price": None, "change_percent": None},
+                )
+                await index.add_item(item, keywords=keywords)
+                seen_tickers.add(ticker.upper())
+
         # 2. Fetch podcasts
         podcasts = await podcast_service.get_all_podcasts(limit=1000)
         for podcast in podcasts:

@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime
 from contextlib import asynccontextmanager
 from src.config import settings
@@ -25,10 +26,15 @@ from src.routers.recommendations import router as recommendations_router
 from src.routers.ticker_insights import router as ticker_insights_router
 from src.routers.translations import router as translations_router
 from src.routers.admin_translations import router as admin_translations_router
+from src.routers.sources import router as sources_router
+from src.routers.admin_sources import router as admin_sources_router
+from src.routers.admin_pipeline import router as admin_pipeline_router
 from src.routers.admin_system import router as admin_system_router
 from src.routers.admin_analytics import router as admin_analytics_router
 from src.routers.notifications import router as notifications_router
 from src.routers.comments import router as comments_router, comments_router as comments_delete_router
+from src.routers.articles import router as articles_router
+from src.routers.admin_articles import router as admin_articles_router
 from src.middleware.cloudflare import CloudflareMiddleware
 
 
@@ -45,9 +51,14 @@ async def lifespan(app: FastAPI):
         init_engine()
         create_all_tables()
     else:
-        from src.database.postgres import init_engine
+        from src.database.postgres import init_engine, create_all_tables
         try:
             init_engine()
+            # Idempotent: creates any missing tables and ALTERs in missing columns
+            # (e.g. stock_translations.aliases / name_preference) so the ORM schema
+            # stays in sync. Previously only run on the SQLite path, which left
+            # Postgres tables missing newly-added columns -> translation queries 500'd.
+            create_all_tables()
             print("PostgreSQL connection initialized")
         except Exception as e:
             print(f"Warning: Could not initialize PostgreSQL: {e}")
@@ -69,6 +80,61 @@ async def lifespan(app: FastAPI):
 
     await RedisClient.initialize()
     await init_search_index()
+
+    # Seed missing translations and backfill brand colors (insert-only, never overwrites)
+    try:
+        from src.data.brand_colors import BRAND_COLORS
+        from src.data.seed_data import TRANSLATIONS
+        from src.data.us_stocks import US_STOCK_TRANSLATIONS
+        from src.database.postgres import get_session
+        from src.services.translation_service import TranslationService
+        for session in get_session():
+            svc = TranslationService(session)
+            tw_inserted = svc.backfill_translations(TRANSLATIONS, BRAND_COLORS)
+            if tw_inserted:
+                print(f"Backfilled {tw_inserted} new TW/core stock translation(s).")
+            us_inserted = svc.backfill_translations(US_STOCK_TRANSLATIONS, BRAND_COLORS)
+            if us_inserted:
+                print(f"Backfilled {us_inserted} new US stock translation(s).")
+            updated = svc.backfill_brand_colors(BRAND_COLORS)
+            if updated:
+                print(f"Backfilled brand_color for {updated} stock translation(s).")
+            break
+    except Exception as e:
+        print(f"Warning: translation seed/backfill skipped: {e}")
+
+    # Seed followed content sources (podcasts + news feeds) from config (insert-only).
+    try:
+        from src.data.content_sources_seed import ALL_SOURCES
+        from src.database.postgres import get_session
+        from src.services.content_source_service import ContentSourceService
+        for session in get_session():
+            inserted = ContentSourceService(session).seed_from_config(ALL_SOURCES)
+            if inserted:
+                print(f"Seeded {inserted} new content source(s).")
+            break
+    except Exception as e:
+        print(f"Warning: content source seed skipped: {e}")
+
+    # Backfill podcast cover art (Spotify oEmbed) in the background — best-effort,
+    # must NOT block startup/health (external HTTP).
+    async def _backfill_covers_bg():
+        def _run() -> int:
+            from src.database.postgres import get_session
+            from src.services.content_source_service import ContentSourceService
+            result = 0
+            for session in get_session():
+                result = ContentSourceService(session).backfill_missing_covers()
+                break
+            return result
+        try:
+            covered = await asyncio.to_thread(_run)
+            if covered:
+                print(f"Backfilled {covered} podcast cover image(s).")
+        except Exception as e:
+            print(f"Warning: cover backfill skipped: {e}")
+
+    asyncio.create_task(_backfill_covers_bg())
 
     yield
 
@@ -135,11 +201,16 @@ app.include_router(ticker_insights_router)
 app.include_router(analytics_router, prefix="/api/analytics", tags=["analytics"])
 app.include_router(translations_router)
 app.include_router(admin_translations_router)
+app.include_router(sources_router)
+app.include_router(admin_sources_router)
+app.include_router(admin_pipeline_router)
 app.include_router(admin_system_router)
 app.include_router(admin_analytics_router)
 app.include_router(notifications_router)
 app.include_router(comments_router)
 app.include_router(comments_delete_router)
+app.include_router(articles_router)
+app.include_router(admin_articles_router)
 
 
 # Global exception handler

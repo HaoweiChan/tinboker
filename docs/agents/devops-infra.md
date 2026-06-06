@@ -57,9 +57,10 @@ Users → Cloudflare Edge (cache + DDoS) → Netcup VPS (152.53.136.182)
 
 ### Caching layers
 
-1. **Cloudflare edge** — `GET /api/*` responses with `Cache-Control: public, s-maxage=3600` cache at 300+ POPs.
+1. **Cloudflare edge** — `GET /api/*` responses cache at 300+ POPs. A zone Cache Rule (`infra-runbook.md` §1.4) makes *all* `/api/*` GETs edge-cacheable, so an endpoint that emits **no** `Cache-Control` header inherits a long edge default. Query-driven endpoints must declare a short TTL: `/api/search` + `/api/search/suggest` use `@cdn_cached(s_maxage=60)` so autocomplete doesn't go stale (it was previously served `cf-cache-status: HIT` for ~24h). The rule's **Browser TTL must be "Respect origin"** (a dashboard "Override" rewrites browser `max-age` regardless of origin — code can't fix that).
 2. **Redis origin cache** — backend checks Redis before hitting the DB. Pattern: `cache_get` → compute → `cache_set` (see [`backend/AGENTS.md`](../../backend/AGENTS.md#caching-pattern)).
-3. **Cache invalidation** purges BOTH Redis and Cloudflare via the Cloudflare API token.
+3. **Cache invalidation** purges BOTH Redis and Cloudflare via the Cloudflare API token (`purge_cdn_cache` in [`backend/src/cache/cdn_cache.py`](../../backend/src/cache/cdn_cache.py) reads `CLOUDFLARE_ZONE_TAG` + `CLOUDFLARE_API_TOKEN`).
+4. **Post-deploy edge purge** — `backend-deploy.yml` / `backend-deploy-admin.yml` purge the deployed env's `{api_host}` host after the health check passes, so a deploy doesn't serve pre-deploy `/api/*` until TTL. Host purge needs Enterprise; falls back to `purge_everything`. Best-effort (warns, never fails the deploy).
 
 ### Episode-endpoint cache headers (specific values)
 

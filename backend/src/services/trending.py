@@ -12,7 +12,6 @@ from src.services.podcast import PodcastService
 from src.services.stock import StockService
 from src.cache.redis_client import cache_get, cache_set, get_redis
 from src.schemas.search import SearchResultItem
-from src.database.postgres import SessionLocal, init_engine
 from src.database.models import StockTranslation
 
 
@@ -51,8 +50,14 @@ class TrendingService:
         # Fetch from database
         translations = {}
         try:
-            init_engine()
-            db = SessionLocal()
+            # Use the module attribute, not the value imported at module-load time:
+            # init_engine() sets postgres.SessionLocal, but the name imported here
+            # stays None forever → SessionLocal() would call None() ('NoneType' object
+            # is not callable), silently breaking all translations.
+            from src.database import postgres
+            if postgres.SessionLocal is None:
+                postgres.init_engine()
+            db = postgres.SessionLocal()
             try:
                 for ticker in tickers:
                     # Determine market based on ticker format
@@ -76,6 +81,84 @@ class TrendingService:
         except Exception:
             pass
         return translations
+
+    async def get_recent_buzz(self, days: int = 30, limit: int = 10) -> dict:
+        """Genuine 'what people are discussing lately' for the homepage rail.
+
+        Counts tickers mentioned across the RECENT episodes (already zh-TW-scoped and
+        recency-filtered by PodcastService), aggregates a dominant sentiment per ticker
+        from those episodes' ticker_recommendations, and returns the top `limit` plus
+        totals. Unlike `trending_tickers` (agents-precomputed over the full all-time,
+        English-inclusive catalog), this reflects only the launch feed.
+
+        Returns: {tickers: [{ticker, count, sentiment_label, last_mentioned}], distinct_count, episode_count}
+        """
+        cache_key = f"buzz:recent:{days}:{limit}:v1"
+        cached = await cache_get(cache_key)
+        if cached:
+            try:
+                return json.loads(cached)
+            except Exception:
+                pass
+
+        episodes = await self.podcast_service.get_recent_episodes(limit=500, enrich_content=False)
+        cutoff = int((datetime.now() - timedelta(days=days)).timestamp() * 1000)
+        counts: Counter = Counter()
+        last_mentioned: Dict[str, int] = {}
+        eps_by_ticker: Dict[str, list] = {}
+        episode_count = 0
+        for ep in episodes:
+            rel = ep.released_at_ms if ep.released_at_ms is not None else (ep.created_time or 0)
+            if rel < cutoff:
+                continue
+            episode_count += 1
+            for t in (ep.related_tickers or []):
+                tu = str(t).upper()
+                counts[tu] += 1
+                if rel > last_mentioned.get(tu, 0):
+                    last_mentioned[tu] = rel
+                eps_by_ticker.setdefault(tu, []).append(ep.id)
+
+        top = counts.most_common(limit)
+        top_tickers = [t for t, _ in top]
+
+        # zh-TW display names (台積電, 輝達, …) for the rail.
+        translations = await self._get_translations_batch(top_tickers)
+
+        # Aggregate a dominant sentiment per top ticker from the episodes that mention it,
+        # using the per-episode sentiment maps (chunked to respect the service's id cap).
+        sent_maps: Dict[str, dict] = {}
+        try:
+            from src.services.episode_sentiments import EpisodeSentimentService
+            sent_service = EpisodeSentimentService()
+            relevant_ids = list({eid for t in top_tickers for eid in eps_by_ticker.get(t, [])})
+            for i in range(0, len(relevant_ids), 80):
+                sent_maps.update(await sent_service.get_sentiments(relevant_ids[i:i + 80]))
+        except Exception as e:
+            logger.warning(f"buzz sentiment aggregation failed: {e}")
+
+        items = []
+        for ticker, count in top:
+            s_counts: Counter = Counter()
+            for eid in eps_by_ticker.get(ticker, []):
+                s = sent_maps.get(eid, {}).get(ticker)
+                if s:
+                    s_counts[s] += 1
+            dominant = s_counts.most_common(1)[0][0] if s_counts else "NEUTRAL"
+            items.append({
+                "ticker": ticker,
+                "name": translations.get(ticker) or None,
+                "count": count,
+                "sentiment_label": dominant,
+                "last_mentioned": last_mentioned.get(ticker),
+            })
+
+        result = {"tickers": items, "distinct_count": len(counts), "episode_count": episode_count}
+        try:
+            await cache_set(cache_key, json.dumps(result), 1800)  # 30 min
+        except Exception:
+            pass
+        return result
 
     async def get_trending_stocks(self, days: int = 7, limit: int = 5) -> List[SearchResultItem]:
         """

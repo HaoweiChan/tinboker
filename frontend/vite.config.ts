@@ -9,6 +9,12 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
+      // 'prompt': when a new deploy is detected we surface a styled toast
+      // (PWAUpdatePrompt) whose 更新 button calls updateServiceWorker(true) → posts
+      // SKIP_WAITING → the new SW activates → controllerchange reloads the page.
+      // skipWaiting/clientsClaim are intentionally OFF so the waiting SW activates
+      // only when the user taps 更新 (the button is the control). The earlier broken
+      // prompt never posted SKIP_WAITING, so its button did nothing; this flow does.
       registerType: 'prompt',
       includeAssets: ['favicon.png', 'robots.txt', 'sitemap.xml'],
       manifest: {
@@ -38,6 +44,14 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        // Prompt flow: the new SW WAITS (skipWaiting off) until the user taps 更新,
+        // which posts SKIP_WAITING. clientsClaim MUST be on so the freshly-activated
+        // worker claims this page → `controllerchange` fires → we reload. With it off,
+        // skipWaiting activated the worker but never took control, so the button did
+        // nothing visible.
+        skipWaiting: false,
+        clientsClaim: true,
+        cleanupOutdatedCaches: true,
         maximumFileSizeToCacheInBytes: 6 * 1024 * 1024, // 6 MB to handle large bundles
         runtimeCaching: [
           {

@@ -18,10 +18,15 @@ export interface Episode {
   episode_number?: number | null;
   transcript: string;
   summary_content: string;
-  summary_image: string;
+  summary_image?: string | null;
+  summary_image_url?: string | null;
+  summary_image_public_url?: string | null;
   related_tickers: string[];
   tags?: string[];
   created_time: number;
+  /** True publish time (Unix ms), agents-written from the feed. Prefer over
+   *  created_time (ingestion time) and spotify_release_date for display. */
+  released_at_ms?: number | null;
   number_click?: number;
   num_likes?: number;
   raw_mp3?: string | null;
@@ -129,6 +134,15 @@ export async function getPodcastEpisodes(
 export async function getEpisodeById(podcastName: string, episodeId: string): Promise<Episode> {
   const response = await apiClient.get(
     `/api/podcast/${encodeURIComponent(podcastName)}/episodes/${episodeId}`
+  );
+  return response.data;
+}
+
+// Fetch an episode by id alone, without the podcast name. Used for deep links /
+// refreshes of /episode/{id} where the show name isn't available client-side.
+export async function getEpisodeByIdOnly(episodeId: string): Promise<Episode> {
+  const response = await apiClient.get(
+    `/api/episodes/${encodeURIComponent(episodeId)}`
   );
   return response.data;
 }
@@ -257,6 +271,32 @@ export async function getTrendingTickers(
     params: Object.keys(q).length ? q : undefined,
   });
   return Array.isArray(response.data) ? response.data : [];
+}
+
+export interface RecentBuzz {
+  tickers: TickerTrending[];
+  distinct_count: number;
+  episode_count: number;
+}
+
+/** Genuine "what people are discussing lately" from the recent (zh-TW launch) feed:
+ *  real mention counts + aggregated sentiment from recent episodes — NOT the all-time
+ *  agents-precomputed trending_tickers (/api/ticker-insights/trending). */
+export async function getRecentBuzz(
+  params?: { days?: number; limit?: number }
+): Promise<RecentBuzz> {
+  const q: Record<string, number> = {};
+  if (params?.days != null) q.days = params.days;
+  if (params?.limit != null) q.limit = params.limit;
+  const response = await apiClient.get('/api/episodes/buzz', {
+    params: Object.keys(q).length ? q : undefined,
+  });
+  const d = response.data ?? {};
+  return {
+    tickers: Array.isArray(d.tickers) ? d.tickers : [],
+    distinct_count: typeof d.distinct_count === 'number' ? d.distinct_count : 0,
+    episode_count: typeof d.episode_count === 'number' ? d.episode_count : 0,
+  };
 }
 
 export async function getTags(): Promise<TagsResponse> {

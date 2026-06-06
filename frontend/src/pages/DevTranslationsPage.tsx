@@ -1,10 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Languages, Search } from 'lucide-react';
-import {
-  isAdminAuthenticated,
-  listTranslations,
-} from '@/services/api/translations';
+import { listTranslations } from '@/services/api/translations';
+import { useAppStore } from '@/store/useAppStore';
 import type { Translation, TranslationListParams } from '@/types/translation';
 
 const ITEMS_PER_PAGE = 50;
@@ -26,7 +24,7 @@ const statusColor = (s: string) =>
   STATUS_COLORS[s] ?? 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300';
 
 export const DevTranslationsPage: React.FC = () => {
-  const authenticated = isAdminAuthenticated();
+  const authenticated = !!useAppStore.getState().token;
   const [translations, setTranslations] = useState<Translation[]>([]);
   const [loading, setLoading] = useState(false);
   const [total, setTotal] = useState(0);

@@ -14,6 +14,11 @@ class TranslationBase(BaseModel):
     name_en: Optional[str] = Field(None, description="English name")
     name_zh_tw: Optional[str] = Field(None, description="Chinese Traditional name")
     brand_color: Optional[str] = Field(None, max_length=7, description="Brand hex color e.g. '#1A2B3C'")
+    aliases: Optional[List[str]] = Field(None, description="Alt names/symbols that resolve to this ticker")
+    name_preference: Optional[Literal["auto", "zh_tw", "en"]] = Field(
+        None, description="Display preference. 'en' forces English even when a zh name exists; "
+                          "null leaves it unchanged (defaults to 'auto')."
+    )
 
 
 class TranslationCreate(TranslationBase):
@@ -27,6 +32,8 @@ class TranslationUpdate(BaseModel):
     name_zh_tw: Optional[str] = None
     translation_status: Optional[Literal["pending", "approved", "auto"]] = None
     brand_color: Optional[str] = Field(None, max_length=7)
+    aliases: Optional[List[str]] = None
+    name_preference: Optional[Literal["auto", "zh_tw", "en"]] = None
 
 
 class TranslationResponse(TranslationBase):
@@ -48,6 +55,8 @@ class TranslationPublicResponse(BaseModel):
     name_en: Optional[str] = None
     name_zh_tw: Optional[str] = None
     brand_color: Optional[str] = None
+    aliases: Optional[List[str]] = None
+    name_preference: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -59,6 +68,38 @@ class TranslationListResponse(BaseModel):
     page: int
     limit: int
     items: List[TranslationResponse]
+
+
+class TranslationSearchItem(BaseModel):
+    """A single read-only search/batch result, with a resolved display label.
+
+    `has_zh_name` is computed (true only when `name_zh_tw` holds real CJK text, not an
+    English fallback), and `display_name` already encodes the en-vs-zh choice so callers
+    (e.g. the MCP server / summary agent) don't have to.
+    """
+    ticker: str
+    market: str
+    name_en: Optional[str] = None
+    name_zh_tw: Optional[str] = None
+    brand_color: Optional[str] = None
+    aliases: Optional[List[str]] = None
+    translation_status: str
+    name_preference: str = Field(
+        "auto", description="Display preference: 'auto' | 'zh_tw' | 'en'"
+    )
+    has_zh_name: bool = Field(
+        ..., description="True when a real Chinese name is shown (CJK present and preference != 'en')"
+    )
+    display_name: str = Field(
+        ..., description="Label to render: name_zh_tw when has_zh_name else name_en or ticker"
+    )
+
+
+class TranslationSearchResponse(BaseModel):
+    """Read-only search/batch response."""
+    query: Optional[str] = None
+    total: int
+    items: List[TranslationSearchItem]
 
 
 class BulkImportItem(TranslationBase):

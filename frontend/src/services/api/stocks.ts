@@ -59,7 +59,7 @@ export async function getStockBasicInfo(ticker: string): Promise<any> {
 export interface StockSummary {
   ticker: string;
   name: string;
-  market: 'TW' | 'US';
+  market: 'TW' | 'US' | 'KR';
   brand_color?: string | null;
 }
 

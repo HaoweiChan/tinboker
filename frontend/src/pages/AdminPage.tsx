@@ -5,13 +5,14 @@
 
 import React, { useState, useEffect } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { isAdminAuthenticated, adminLogout } from '@/services/api/translations';
 import { AdminLogin } from '@/components/auth/AdminLogin';
 import { AdminSidebar } from '@/components/admin/AdminSidebar';
+import { useAppStore } from '@/store/useAppStore';
 import { Menu, X } from 'lucide-react';
 
 export const AdminPage: React.FC = () => {
-    const [authenticated, setAuthenticated] = useState(isAdminAuthenticated());
+    const logout = useAppStore((state) => state.logout);
+    const [authenticated, setAuthenticated] = useState(false);
     const [sidebarOpen, setSidebarOpen] = useState(true);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const navigate = useNavigate();
@@ -23,7 +24,7 @@ export const AdminPage: React.FC = () => {
     }, [location.pathname]);
 
     const handleLogout = () => {
-        adminLogout();
+        logout();
         setAuthenticated(false);
         navigate('/admin');
     };

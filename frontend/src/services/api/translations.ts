@@ -4,6 +4,7 @@
  */
 
 import { apiClient } from './client';
+import { useAppStore } from '@/store/useAppStore';
 import type {
   Translation,
   TranslationPublic,
@@ -15,54 +16,12 @@ import type {
   BulkImportResponse,
   MissingTranslationsResponse,
   TranslationStats,
-  AdminLoginRequest,
-  AdminLoginResponse,
 } from '@/types/translation';
 
-// Storage key for admin token
-const ADMIN_TOKEN_KEY = 'admin_token';
-
-/**
- * Get stored admin token.
- */
-export function getAdminToken(): string | null {
-  return localStorage.getItem(ADMIN_TOKEN_KEY);
-}
-
-/**
- * Store admin token.
- */
-export function setAdminToken(token: string): void {
-  localStorage.setItem(ADMIN_TOKEN_KEY, token);
-}
-
-/**
- * Clear admin token (logout).
- */
-export function clearAdminToken(): void {
-  localStorage.removeItem(ADMIN_TOKEN_KEY);
-}
-
-/**
- * Check if admin is authenticated.
- */
-export function isAdminAuthenticated(): boolean {
-  return !!getAdminToken();
-}
-
-/**
- * Create axios config with admin auth header.
- */
 function adminAuthConfig() {
-  const token = getAdminToken();
-  if (!token) {
-    throw new Error('Not authenticated');
-  }
-  return {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  };
+  const token = useAppStore.getState().token;
+  if (!token) throw new Error('Not authenticated');
+  return { headers: { Authorization: `Bearer ${token}` } };
 }
 
 // ==================== Public Endpoints ====================
@@ -93,29 +52,6 @@ export async function getTranslation(
     }
     throw error;
   }
-}
-
-// ==================== Admin Authentication ====================
-
-/**
- * Login as admin.
- */
-export async function adminLogin(
-  password: string
-): Promise<AdminLoginResponse> {
-  const response = await apiClient.post<AdminLoginResponse>(
-    '/api/admin/auth/login',
-    { password } as AdminLoginRequest
-  );
-  setAdminToken(response.data.access_token);
-  return response.data;
-}
-
-/**
- * Logout admin.
- */
-export function adminLogout(): void {
-  clearAdminToken();
 }
 
 // ==================== Admin CRUD Endpoints ====================

@@ -145,6 +145,35 @@ ssh root@VPS "docker ps"                                      # container status
 ssh root@VPS "docker logs tinboker-backend-prod --tail=50"    # logs
 ```
 
+### Post-deploy: purge Cloudflare CDN cache (do this WITHOUT asking)
+
+**Backend** deploys now auto-purge the deployed env's API host — the
+`Purge Cloudflare CDN cache` step in [`backend-deploy.yml`](.github/workflows/backend-deploy.yml) /
+[`backend-deploy-admin.yml`](.github/workflows/backend-deploy-admin.yml) runs after the health
+check, so you do **not** need to manually purge `*-api.tinboker.com` after a backend deploy.
+
+Still manual: **frontend (Cloudflare Pages) deploys** (the `*.tinboker.com` frontend hosts are
+purged by nothing automated) and **ad-hoc content/data changes**. In those cases purge via the
+Cloudflare API — the token + zone ID are in GCP Secret Manager, fetch them yourself, never ask
+the user:
+
+```bash
+PROJ=gen-lang-client-0901363254
+TOKEN=$(gcloud secrets versions access latest --secret=CLOUDFLARE_API_TOKEN --project=$PROJ)
+ZONE=$(gcloud secrets versions access latest --secret=CLOUDFLARE_ZONE_TAG --project=$PROJ)
+# Dev/staging — host-scoped (leaves other envs cached). Swap hosts per env.
+curl -s -X POST "https://api.cloudflare.com/client/v4/zones/$ZONE/purge_cache" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  --data '{"hosts":["dev-api.tinboker.com","dev.tinboker.com"]}'
+# Prod launch — whole zone:  --data '{"purge_everything":true}'
+```
+
+Hosts by env: dev = `dev-api.tinboker.com` / `dev.tinboker.com`; staging =
+`staging-api.tinboker.com` / `staging.tinboker.com`; prod = `api.tinboker.com` /
+`tinboker.com` / `www.tinboker.com`. Never print the token. Verify success with
+`cf-cache-status: MISS` on a clean (non-cache-busted) URL afterward. (The backend
+deploy pipeline already automates the API-host purge; frontend-host purge is still manual.)
+
 ---
 
 ## Critical Known Issues (from docs/qa-report-2026-05-09.md)
@@ -202,6 +231,9 @@ GCP_PROJECT_ID=gen-lang-client-0901363254
 FIRESTORE_DATABASE_ID=graphfolio-db
 POSTGRES_HOST=34.14.119.47
 CORS_ORIGINS=http://localhost:5173,https://tinboker.com,https://dev.tinboker.com,https://staging.tinboker.com
+# Release scoping (launch subset) — empty value disables a filter
+RELEASE_PODCAST_LANGUAGES=zh-TW    # only show content_sources podcasts in these languages ("" = all)
+RELEASE_EPISODE_MAX_AGE_DAYS=0     # hide episodes older than N days (0=off; flip to 30 after the released_at_ms backfill — see docs/handoffs/released-at-ms-publish-date.md)
 ```
 
 ### Frontend (`.env.*` per environment)

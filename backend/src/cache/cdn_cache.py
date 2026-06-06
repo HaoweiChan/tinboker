@@ -14,7 +14,10 @@ from datetime import date, datetime
 from decimal import Decimal
 from enum import Enum
 from functools import wraps
-from typing import Callable, Optional
+import logging
+import os
+from typing import Callable, List, Optional
+import httpx
 from fastapi import Response
 from fastapi.responses import JSONResponse
 
@@ -255,61 +258,68 @@ def cdn_no_cache(func: Callable):
 # CDN Cache Invalidation (Cloudflare Purge)
 # =============================================================================
 
-import httpx
-import logging
-import os
-from typing import List
-
 logger = logging.getLogger(__name__)
 
 
 async def purge_cdn_cache(
     urls: Optional[List[str]] = None,
     prefixes: Optional[List[str]] = None,
+    hosts: Optional[List[str]] = None,
     purge_everything: bool = False
 ) -> bool:
     """
-    Purge Cloudflare CDN cache for specific URLs or prefixes.
-    
-    Requires environment variables:
-    - CLOUDFLARE_ZONE_ID: Your Cloudflare zone ID
-    - CLOUDFLARE_API_TOKEN: API token with cache purge permissions
-    
+    Purge Cloudflare CDN cache for specific URLs, prefixes, or hosts.
+
+    Credentials come from settings (loaded from GCP Secret Manager) — the zone id is
+    stored as CLOUDFLARE_ZONE_TAG and the token as CLOUDFLARE_API_TOKEN. Env vars of the
+    same names (plus legacy CLOUDFLARE_ZONE_ID) are accepted as a fallback for CI/tests.
+
     Args:
         urls: List of specific URLs to purge (e.g., ["https://api.tinboker.com/api/news"])
-        prefixes: List of URL prefixes to purge (e.g., ["https://api.tinboker.com/api/podcast/"])
+        prefixes: List of URL prefixes to purge — host+path, no scheme (Enterprise only)
+        hosts: List of hostnames to purge — e.g. ["dev-api.tinboker.com"] (Enterprise only)
         purge_everything: If True, purge entire cache (use sparingly!)
-    
+
     Returns:
         True if purge was successful, False otherwise
-    
+
     Usage:
         # Purge specific URLs
         await purge_cdn_cache(urls=["https://api.tinboker.com/api/news/123"])
-        
-        # Purge by prefix (all podcast endpoints)
-        await purge_cdn_cache(prefixes=["https://api.tinboker.com/api/podcast/"])
-        
+
+        # Purge by host (all cached responses for one env's API)
+        await purge_cdn_cache(hosts=["dev-api.tinboker.com"])
+
         # Purge everything (use carefully!)
         await purge_cdn_cache(purge_everything=True)
     """
-    zone_id = os.getenv("CLOUDFLARE_ZONE_ID")
-    api_token = os.getenv("CLOUDFLARE_API_TOKEN")
-    
+    # Creds live in settings (GCP Secret Manager); fall back to env vars for the CI /
+    # test contexts that set them directly. settings.cloudflare_zone_tag is the zone id.
+    try:
+        from src.config import settings
+        zone_id = settings.cloudflare_zone_tag or os.getenv("CLOUDFLARE_ZONE_TAG") or os.getenv("CLOUDFLARE_ZONE_ID")
+        api_token = settings.cloudflare_api_token or os.getenv("CLOUDFLARE_API_TOKEN")
+    except Exception:
+        zone_id = os.getenv("CLOUDFLARE_ZONE_TAG") or os.getenv("CLOUDFLARE_ZONE_ID")
+        api_token = os.getenv("CLOUDFLARE_API_TOKEN")
+
     if not zone_id or not api_token:
         logger.warning("Cloudflare credentials not configured. CDN cache purge skipped.")
         return False
-    
+
     api_url = f"https://api.cloudflare.com/client/v4/zones/{zone_id}/purge_cache"
     headers = {
         "Authorization": f"Bearer {api_token}",
         "Content-Type": "application/json"
     }
-    
+
     # Build request body
     if purge_everything:
         body = {"purge_everything": True}
         logger.info("Purging entire CDN cache")
+    elif hosts:
+        body = {"hosts": hosts}
+        logger.info(f"Purging CDN cache hosts: {hosts}")
     elif prefixes:
         body = {"prefixes": prefixes}
         logger.info(f"Purging CDN cache prefixes: {prefixes}")
@@ -317,7 +327,7 @@ async def purge_cdn_cache(
         body = {"files": urls}
         logger.info(f"Purging CDN cache URLs: {urls}")
     else:
-        logger.warning("No URLs or prefixes specified for CDN purge")
+        logger.warning("No urls/prefixes/hosts specified for CDN purge")
         return False
     
     try:

@@ -22,10 +22,7 @@ from src.schemas.translation import (
 )
 from src.auth.admin_auth import (
     get_admin_access,
-    verify_admin_password,
-    create_admin_token,
-    LoginRequest,
-    LoginResponse,
+    get_translation_access,
     AdminAccess,
 )
 
@@ -35,39 +32,10 @@ router = APIRouter(
 )
 
 
-# ==================== Authentication ====================
-
-@router.post("/auth/login", response_model=LoginResponse)
-async def admin_login(request: LoginRequest):
-    """
-    Authenticate admin user with password.
-    Returns JWT token on success.
-    """
-    if not verify_admin_password(request.password):
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid password"
-        )
-    return create_admin_token()
-
-
 @router.get("/auth/check")
 async def check_admin_access(admin: AdminAccess = Depends(get_admin_access)):
-    """
-    Check if the current user has admin access.
-    Returns access method (admin token or whitelisted user).
-
-    This endpoint accepts:
-    1. Admin JWT token (from password login)
-    2. Regular user JWT token if user's email is whitelisted in ADMIN_EMAILS
-
-    Whitelisted users can access admin features without needing the admin password.
-    """
-    return {
-        "has_access": True,
-        "access_method": "admin_token" if admin.is_admin_token else "whitelisted_user",
-        "email": admin.email
-    }
+    """Check if the current Google-authenticated user has admin access."""
+    return {"has_access": True, "email": admin.email}
 
 
 # ==================== Reports & Stats (must be before parameterized routes) ====================
@@ -115,10 +83,11 @@ async def list_translations(
     page: int = Query(1, ge=1, description="Page number"),
     limit: int = Query(50, ge=1, le=100, description="Items per page"),
     db: Session = Depends(get_session),
-    admin: AdminAccess = Depends(get_admin_access)
+    admin: AdminAccess = Depends(get_translation_access)
 ):
     """
     List translations with optional filters and pagination.
+    Accepts an admin JWT or the TINBOKER_WRITE_TOKEN (backfill agent work queue).
     """
     service = TranslationService(db)
     items, total = service.list_translations(
@@ -252,9 +221,10 @@ async def bulk_import_translations(
 async def bulk_import_json(
     items: List[BulkImportItem],
     db: Session = Depends(get_session),
-    admin: AdminAccess = Depends(get_admin_access)
+    admin: AdminAccess = Depends(get_translation_access)
 ):
-    """Bulk import translations from JSON array."""
+    """Bulk import translations from JSON array.
+    Accepts an admin JWT or the TINBOKER_WRITE_TOKEN (backfill agent writes)."""
     if not items:
         raise HTTPException(status_code=400, detail="No items provided")
     service = TranslationService(db)

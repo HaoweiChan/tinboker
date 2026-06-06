@@ -4,9 +4,12 @@ import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
 import { Segmented, EpisodeCardV2, ListRow } from '@/components/redesign';
 import { apiEpisodeToCardV2 } from '@/components/redesign/episodeAdapter';
-import { getPodcastEpisodes, type Episode as ApiEpisode } from '@/services/api/podcasts';
+import { getPodcastEpisodes, getSortedPodcasts, type Episode as ApiEpisode, type Podcast } from '@/services/api/podcasts';
+import { fetchWithFallback } from '@/services/api/migration';
 import { useSubscriptions, useWatchlist } from '@/store/useAppStore';
 import { useStockPriceMap } from '@/hooks/useStockPriceMap';
+import { useTranslationMap } from '@/hooks/useTranslationMap';
+import { useEpisodeSentimentMap } from '@/hooks/useEpisodeSentimentMap';
 import { useStockSummaries } from '@/hooks/useStockSummaries';
 import { getStockLabel } from '@/utils/stockDisplay';
 import { Link } from 'react-router-dom';
@@ -19,8 +22,27 @@ export const WatchlistPage: React.FC = () => {
   const watchlist = useWatchlist();
   const [tab, setTab] = useState<Tab>('podcasters');
   const [episodes, setEpisodes] = useState<ApiEpisode[]>([]);
+  const [podcasts, setPodcasts] = useState<Podcast[]>([]);
   const episodeTickers = useMemo(() => episodes.flatMap((ep) => ep.related_tickers ?? []), [episodes]);
   const priceMap = useStockPriceMap(episodeTickers);
+  const rawTranslationMap = useTranslationMap(episodeTickers);
+  // Flatten to ticker → displayName for the adapter (mirrors HomeFeed).
+  const translationMap = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const [k, v] of rawTranslationMap) m.set(k, v.displayName);
+    return m;
+  }, [rawTranslationMap]);
+  // Podcast cover art (name → image_url) so watchlist cards match the homepage.
+  const podcastImageMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const p of podcasts) {
+      if (p.name && p.image_url) map.set(p.name, p.image_url);
+    }
+    return map;
+  }, [podcasts]);
+  // Per-(episode, ticker) sentiment for the visible cards (async; chips populate after render).
+  const visibleEpisodeIds = useMemo(() => episodes.map((e) => e.id), [episodes]);
+  const sentimentMap = useEpisodeSentimentMap(visibleEpisodeIds);
   const [loadingEps, setLoadingEps] = useState(false);
 
   useEffect(() => {
@@ -28,11 +50,18 @@ export const WatchlistPage: React.FC = () => {
     let alive = true;
     setLoadingEps(true);
     (async () => {
-      const arrays = await Promise.all(
-        subscriptions.slice(0, 12).map((name) =>
-          getPodcastEpisodes(name, { sortBy: 'spotify_release_date', order: 'desc', limit: 3, includeContent: false }).catch(() => [] as ApiEpisode[]),
+      const [arrays, podcastList] = await Promise.all([
+        Promise.all(
+          subscriptions.slice(0, 12).map((name) =>
+            getPodcastEpisodes(name, { sortBy: 'spotify_release_date', order: 'desc', limit: 3, includeContent: false }).catch(() => [] as ApiEpisode[]),
+          ),
         ),
-      );
+        fetchWithFallback<Podcast[]>(
+          () => getSortedPodcasts({ sortBy: 'updated_at', order: 'desc', limit: 200 }),
+          [],
+          'getSortedPodcasts:watchlist',
+        ).catch(() => [] as Podcast[]),
+      ]);
       if (!alive) return;
       const flat = arrays
         .flat()
@@ -43,6 +72,7 @@ export const WatchlistPage: React.FC = () => {
         })
         .slice(0, 18);
       setEpisodes(flat);
+      setPodcasts(Array.isArray(podcastList) ? podcastList : []);
       setLoadingEps(false);
     })();
     return () => {
@@ -78,7 +108,7 @@ export const WatchlistPage: React.FC = () => {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {episodes.map((ep) => (
-                <EpisodeCardV2 key={ep.id} {...apiEpisodeToCardV2(ep, priceMap)} />
+                <EpisodeCardV2 key={ep.id} {...apiEpisodeToCardV2(ep, priceMap, podcastImageMap, translationMap, sentimentMap.get(ep.id))} />
               ))}
             </div>
           )

@@ -12,7 +12,6 @@ import { useStockTrendColor } from '@/hooks/useStockTrendColor';
 import { aggregateSentiment, dominantSentiment } from '@/lib/sentiment';
 import { getStockByTicker, getEpisodesByTicker, type Episode as ApiEpisode } from '@/services/api';
 import { fetchWithFallback } from '@/services/api/migration';
-import { mockCompanyDetails, generateMockPriceSeries } from '@/services/mocks';
 import type { CompanyDetail, RealTimePriceUpdate, TimeframeOption } from '@/services/types';
 import { priceWebSocketClient } from '@/services/websocket/priceWebSocket';
 import TradingViewChart from '@/components/charts/TradingViewChart';
@@ -21,11 +20,8 @@ import { getInsightsByTicker } from '@/services/api/podcasts';
 import { transformApiEpisodeToMock } from '@/services/api/transformers';
 import type { TickerInsight } from '@/services/types';
 import { useStockPriceMap } from '@/hooks/useStockPriceMap';
+import { useEpisodeSentimentMap } from '@/hooks/useEpisodeSentimentMap';
 import { getStockLabel, inferStockMarket } from '@/utils/stockDisplay';
-
-function isTW(t: string): boolean {
-  return /\.TW[OW]?$/i.test(t);
-}
 
 const StockHeaderCard: React.FC<{ symbol: string; episodeCount: number }> = ({ symbol, episodeCount }) => {
   const [stockData, setStockData] = useState<CompanyDetail | null>(null);
@@ -37,16 +33,25 @@ const StockHeaderCard: React.FC<{ symbol: string; episodeCount: number }> = ({ s
   const [subChart, setSubChart] = useState<string>('Volume');
 
   const isWatchlisted = watchlist.includes(symbol);
-  const tw = isTW(symbol);
+  // Tickers are bare codes (e.g. "2330"), not ".TW"-suffixed — infer from the code shape.
+  const market = inferStockMarket(symbol);
+  const marketBadge =
+    market === 'TW'
+      ? { label: '台股 上市', cls: 'bg-sentiment-bull-soft text-sentiment-bull' }
+      : market === 'KR'
+        ? { label: '韓股', cls: 'bg-muted text-muted-foreground' }
+        : { label: '美股', cls: 'bg-accent-info-soft text-accent-info' };
 
   const fetchStockData = useCallback(async (ticker: string, tf: TimeframeOption) => {
     setIsLoading(true);
     try {
-      const data = await fetchWithFallback(() => getStockByTicker(ticker.toUpperCase(), tf), mockCompanyDetails[ticker] || null, `GET /api/stocks/${ticker.toUpperCase()}?timeframe=${tf}`);
+      // Real-or-empty: never fall back to fabricated company data (BUG-7). On
+      // failure stockData is null and key stats render as '—'.
+      const data = await fetchWithFallback(() => getStockByTicker(ticker.toUpperCase(), tf), null, `GET /api/stocks/${ticker.toUpperCase()}?timeframe=${tf}`);
       setStockData(data);
     } catch (e) {
       console.error('[StockHeaderCard] Failed to fetch stock data:', e);
-      setStockData(mockCompanyDetails[ticker] || null);
+      setStockData(null);
     } finally {
       setIsLoading(false);
     }
@@ -134,8 +139,9 @@ const StockHeaderCard: React.FC<{ symbol: string; episodeCount: number }> = ({ s
         }, [])
         .sort((a, b) => (a.timestamp as number) - (b.timestamp as number));
     }
-    return generateMockPriceSeries(100, displayPrice || 100);
-  }, [rawChart, displayPrice]);
+    // No fabricated price series (BUG-7): render an empty chart when there's no real data.
+    return [];
+  }, [rawChart]);
 
   const latest = (chartData.length > 0 ? chartData[chartData.length - 1] : null) as { open?: number; high?: number; low?: number; volume?: number } | null;
   const keyStats: { label: string; value: string }[] = [
@@ -160,7 +166,7 @@ const StockHeaderCard: React.FC<{ symbol: string; episodeCount: number }> = ({ s
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-3 flex-wrap mb-1.5">
             <h1 className="text-[22px] font-semibold tracking-[-0.02em]">{isLoading ? displayName : primaryLabel}</h1>
-            <span className={cn('text-[12px] px-3 py-1 rounded-full', tw ? 'bg-sentiment-bull-soft text-sentiment-bull' : 'bg-accent-info-soft text-accent-info')}>{tw ? '台股 上市' : '美股'}</span>
+            <span className={cn('text-[12px] px-3 py-1 rounded-full', marketBadge.cls)}>{marketBadge.label}</span>
           </div>
           {secondaryLabel && (
             <p className="text-[13px] text-muted-foreground font-mono mb-1.5">{secondaryLabel}</p>
@@ -234,6 +240,11 @@ export const StockDashboard: React.FC = () => {
   const [episodes, setEpisodes] = useState<ApiEpisode[]>([]);
   const episodeTickers = useMemo(() => episodes.flatMap((ep) => ep.related_tickers ?? []), [episodes]);
   const priceMap = useStockPriceMap(episodeTickers);
+  // Per-(episode, ticker) sentiment for the chips on each related-episode card —
+  // sourced from the working /api/episodes/ticker-sentiments endpoint (same as HomeFeed),
+  // not the ticker-insights query that powers the 情緒比例/整體情緒 widgets.
+  const episodeIds = useMemo(() => episodes.map((e) => e.id), [episodes]);
+  const sentimentMap = useEpisodeSentimentMap(episodeIds);
   const [insights, setInsights] = useState<TickerInsight[]>([]);
   const [episodesLoading, setEpisodesLoading] = useState(true);
 
@@ -359,7 +370,7 @@ export const StockDashboard: React.FC = () => {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {episodes.map((ep) => (
-              <EpisodeCardV2 key={ep.id} {...apiEpisodeToCardV2(ep, priceMap)} />
+              <EpisodeCardV2 key={ep.id} {...apiEpisodeToCardV2(ep, priceMap, undefined, undefined, sentimentMap.get(ep.id))} />
             ))}
           </div>
         )}

@@ -69,6 +69,26 @@ class SuggestionIndex:
                 for prefix in prefixes:
                     self._index[prefix].add(item.id)
 
+    async def add_keywords(self, item_id: str, keywords: List[str]):
+        """Add extra searchable keywords to an already-indexed item.
+
+        Used to enrich an existing stock (e.g. a US ticker) with its zh-TW name and
+        aliases without creating a duplicate item. No-op if the item is unknown.
+        """
+        async with self._lock:
+            if item_id not in self._items:
+                return
+            existing = self._keywords[item_id]
+            for kw in keywords:
+                if not kw or kw in existing:
+                    continue
+                existing.append(kw)
+                tokens = set(self._tokenize(kw))
+                tokens.add(kw.lower())
+                for token in tokens:
+                    for prefix in self._get_prefixes(token):
+                        self._index[prefix].add(item_id)
+
     async def clear(self):
         """Clear the index."""
         async with self._lock:

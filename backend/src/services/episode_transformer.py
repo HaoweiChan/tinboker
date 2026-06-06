@@ -31,7 +31,13 @@ class EpisodeTransformer:
         self.gcs = gcs_service or GCSContentService()
 
     async def enrich_with_content(self, episode_dict: dict) -> dict:
-        """Fetch missing content fields from GCS/HTTP URLs in parallel"""
+        """Fetch missing content fields from GCS/HTTP URLs in parallel.
+
+        Only non-empty fetch results overwrite a field. An empty result means the
+        fetch failed (the fetchers swallow all errors into ""), so we leave the field
+        untouched rather than persisting a blank — see is_content_incomplete, which the
+        caller uses to avoid caching a half-hydrated episode.
+        """
         fetch_tasks = []
         for content_field, url_field, fetch_type in _GCS_CONTENT_FIELDS:
             if not episode_dict.get(content_field) and episode_dict.get(url_field):
@@ -46,11 +52,26 @@ class EpisodeTransformer:
                     timeout=30.0,
                 )
                 for (field_name, _), result in zip(fetch_tasks, results):
-                    if not isinstance(result, Exception):
+                    # Skip Exceptions and empty strings: both signal a failed/transient
+                    # fetch. Overwriting with "" is what poisoned cached episodes before.
+                    if not isinstance(result, Exception) and result:
                         episode_dict[field_name] = result
             except (asyncio.TimeoutError, Exception):
                 pass
         return episode_dict
+
+    @staticmethod
+    def is_content_incomplete(episode_dict: dict) -> bool:
+        """True if any GCS-backed field is still empty while its source URL is set.
+
+        Signals a failed/partial hydration: the URL promises content but we have none.
+        Callers use this to skip caching so the next request re-attempts the GCS read
+        instead of pinning a blank result for the full TTL.
+        """
+        return any(
+            episode_dict.get(url_field) and not episode_dict.get(content_field)
+            for content_field, url_field, _ in _GCS_CONTENT_FIELDS
+        )
 
     @staticmethod
     def datetime_to_timestamp_ms(dt) -> int:
@@ -60,6 +81,34 @@ class EpisodeTransformer:
         if isinstance(dt, datetime):
             return int(dt.timestamp() * 1000)
         return int(datetime.now().timestamp() * 1000)
+
+    @staticmethod
+    def _normalize_released_at_ms(value) -> Optional[int]:
+        """Normalize a raw released_at_ms value to Unix milliseconds, or None.
+
+        Unlike created_time, this never falls back to now(): a missing publish
+        time stays None so callers can decide how to treat unknown-date episodes.
+        Accepts int/float ms, a datetime, or an ISO-8601 string.
+        """
+        if value is None:
+            return None
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, (int, float)):
+            return int(value)
+        if isinstance(value, datetime):
+            return int(value.timestamp() * 1000)
+        if isinstance(value, str):
+            s = value.strip()
+            if not s:
+                return None
+            if s.isdigit():
+                return int(s)
+            try:
+                return int(datetime.fromisoformat(s.replace('Z', '+00:00')).timestamp() * 1000)
+            except ValueError:
+                return None
+        return None
 
     @staticmethod
     def extract_tags_from_text(text: str) -> set:
@@ -89,6 +138,8 @@ class EpisodeTransformer:
         elif not isinstance(created_time, datetime):
             created_time = datetime.now()
 
+        released_at_ms = self._normalize_released_at_ms(episode_dict.get('released_at_ms'))
+
         return Episode(
             id=episode_dict.get('id') or episode_dict.get('episode_id', ''),
             podcast_name=episode_dict.get('podcast_name', ''),
@@ -100,6 +151,7 @@ class EpisodeTransformer:
             related_tickers=episode_dict.get('related_tickers', []),
             tags=all_tags,
             created_time=self.datetime_to_timestamp_ms(created_time),
+            released_at_ms=released_at_ms,
             number_click=episode_dict.get('number_click', 0),
             num_likes=episode_dict.get('num_likes', 0),
             key_insights=episode_dict.get('key_insights', []) or [],

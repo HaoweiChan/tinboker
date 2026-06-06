@@ -2,14 +2,24 @@
 Episodes API router for cross-podcast episode queries
 """
 from fastapi import APIRouter, HTTPException, Path, Query
+from pydantic import BaseModel, Field
 from typing import Optional
 from src.services.podcast import PodcastService
-from src.cache.cdn_cache import cdn_cache_podcast
+from src.services.translation_discovery import schedule_ticker_discovery
+from src.services.episode_sentiments import EpisodeSentimentService
+from src.services.trending import TrendingService
+from src.cache.cdn_cache import cdn_cache_podcast, cdn_cache_trending
 
 router = APIRouter(prefix="/api/episodes", tags=["episodes"])
 
-# Initialize service
+# Initialize services
 podcast_service = PodcastService()
+sentiment_service = EpisodeSentimentService()
+trending_service = TrendingService(podcast_service=podcast_service)
+
+
+class TickerSentimentsRequest(BaseModel):
+    episode_ids: list[str] = Field(default_factory=list, max_length=80)
 
 
 @router.get("/recent")
@@ -37,7 +47,11 @@ async def get_recent_episodes(
             podcast_name=podcast_name,
             enrich_content=include_content
         )
-        
+
+        # On-ingest discovery: ensure any newly-mentioned ticker gets a pending
+        # stub row (non-blocking, throttled — see translation_discovery).
+        schedule_ticker_discovery(episodes)
+
         # Calculate total and hasMore (we'd need total count for accurate hasMore)
         # For now, hasMore is true if we got exactly the limit
         has_more = len(episodes) == limit
@@ -49,6 +63,40 @@ async def get_recent_episodes(
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching recent episodes: {str(e)}")
+
+
+@router.post("/ticker-sentiments")
+async def get_ticker_sentiments(body: TickerSentimentsRequest):
+    """Per-(episode, ticker) sentiment for episode-card chips.
+
+    POST (not GET) because episode ids are long unicode title strings. Returns
+    `{ episode_id: { TICKER: "BULLISH"|"BEARISH"|"NEUTRAL" } }`. Maps are extracted
+    from each episode's ticker_recommendations file and cached in Redis, so this is
+    cheap after the first warm.
+    """
+    try:
+        return await sentiment_service.get_sentiments(body.episode_ids)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching ticker sentiments: {str(e)}")
+
+
+@router.get("/buzz")
+@cdn_cache_trending
+async def get_recent_buzz(
+    days: int = Query(default=30, ge=1, le=90, description="Rolling window in days"),
+    limit: int = Query(default=10, ge=1, le=200, description="Max tickers to return (rail uses 10; StockIndex uses 200)"),
+):
+    """Genuine 'what people are discussing lately' from the recent launch feed.
+
+    Returns {tickers: [{ticker, count, sentiment_label, last_mentioned}], distinct_count,
+    episode_count} computed from the recent (zh-TW-scoped, recency-filtered) episodes —
+    NOT the all-time agents-precomputed trending_tickers. Powers the homepage right rail
+    and the /stock index (所有個股) — both reflect real recent mention counts.
+    """
+    try:
+        return await trending_service.get_recent_buzz(days=days, limit=limit)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching recent buzz: {str(e)}")
 
 
 @router.get("/by-ticker/{ticker}")
@@ -86,5 +134,32 @@ async def get_episodes_by_ticker(
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching episodes by ticker: {str(e)}")
+
+
+# NOTE: keep this LAST — a single-segment dynamic path must be registered after the
+# static routes (/recent, /by-ticker/..., /ticker-sentiments) so they match first.
+@router.get("/{episode_id}")
+@cdn_cache_podcast
+async def get_episode_by_id(
+    episode_id: str = Path(..., description="Episode ID"),
+):
+    """
+    Get a single episode by ID alone, without the podcast name.
+
+    Supports deep links / refreshes of /episode/{id} where the show name is not
+    known client-side. Returns the same full Episode payload as
+    GET /api/podcast/{podcast_name}/episodes/{episode_id}.
+
+    CDN Cache: 30 minutes
+    """
+    try:
+        episode = await podcast_service.get_episode_by_id_only(episode_id)
+        if not episode:
+            raise HTTPException(status_code=404, detail=f"Episode '{episode_id}' not found")
+        return episode
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching episode: {str(e)}")
 
 

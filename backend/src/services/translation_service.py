@@ -4,7 +4,7 @@ Service for managing stock translations.
 
 import logging
 from typing import Optional, List, Tuple
-from sqlalchemy import func
+from sqlalchemy import func, cast, Text
 from sqlalchemy.orm import Session
 from src.database.models import StockTranslation
 from src.schemas.translation import (
@@ -14,6 +14,18 @@ from src.schemas.translation import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_aliases(aliases: Optional[List[str]]) -> Optional[List[str]]:
+    """Strip/dedupe alias strings, preserving order. None stays None; [] clears the list."""
+    if aliases is None:
+        return None
+    cleaned: List[str] = []
+    for a in aliases:
+        s = (a or "").strip()
+        if s and s not in cleaned:
+            cleaned.append(s)
+    return cleaned
 
 
 class TranslationService:
@@ -60,7 +72,8 @@ class TranslationService:
             query = query.filter(
                 (StockTranslation.ticker.ilike(search_pattern)) |
                 (StockTranslation.name_en.ilike(search_pattern)) |
-                (StockTranslation.name_zh_tw.ilike(search_pattern))
+                (StockTranslation.name_zh_tw.ilike(search_pattern)) |
+                (cast(StockTranslation.aliases, Text).ilike(search_pattern))
             )
         # Get total count
         total = query.count()
@@ -68,6 +81,73 @@ class TranslationService:
         offset = (page - 1) * limit
         items = query.order_by(StockTranslation.ticker).offset(offset).limit(limit).all()
         return items, total
+
+    def get_by_tickers(
+        self, tickers: List[str], market: Optional[str] = None
+    ) -> List[StockTranslation]:
+        """Resolve many tickers at once (symbol-only, mixed markets OK).
+
+        Used by the public batch endpoint to localize a list like `related_tickers`.
+        A ticker present in more than one market yields multiple rows.
+        """
+        norm = sorted({t.strip().upper() for t in tickers if t and t.strip()})
+        if not norm:
+            return []
+        query = self.db.query(StockTranslation).filter(StockTranslation.ticker.in_(norm))
+        if market:
+            query = query.filter(StockTranslation.market == market.upper())
+        return query.order_by(StockTranslation.ticker).all()
+
+    def ensure_pending_stubs(self, symbols: List[str]) -> int:
+        """Insert PENDING stub rows for symbols not yet in the table (any market).
+
+        Used by on-ingest discovery so newly-mentioned tickers surface in the admin
+        queue (`status=pending`) and become work items for the backfill agent.
+        Idempotent. Stores the bare symbol (exchange suffix stripped) with an inferred
+        market. Returns the number of rows inserted.
+
+        Market inference is a best-effort default for a TW-focused app:
+        - digits, optionally with a single class letter (e.g. 00738U, 00632R) → TW
+          (TW stock/ETF/futures codes; the bare `.isdigit()` check alone mislabeled these)
+        - otherwise alphabetic → US
+        Foreign 6-digit codes (KR/CN/HK) are ambiguous by format and fall to the TW
+        default; the backfill agent corrects the market when it resolves the name.
+        """
+        # Collect distinct bare symbols with an inferred market.
+        cleaned: dict[str, str] = {}
+        for s in symbols:
+            if not s or not s.strip():
+                continue
+            bare = s.strip().upper().split(".")[0]
+            if not bare:
+                continue
+            # Treat "digits + optional trailing class letter" as a TW numeric code.
+            core = bare[:-1] if (len(bare) > 1 and bare[-1].isalpha() and bare[:-1].isdigit()) else bare
+            cleaned.setdefault(bare, "TW" if core.isdigit() else "US")
+        if not cleaned:
+            return 0
+
+        existing = {r.ticker for r in self.get_by_tickers(list(cleaned.keys()))}
+        inserted = 0
+        for ticker, market in cleaned.items():
+            if ticker in existing:
+                continue
+            try:
+                self.create(
+                    TranslationCreate(
+                        ticker=ticker,
+                        market=market,
+                        name_en=None,
+                        name_zh_tw=None,
+                        translation_status="pending",
+                    ),
+                    updated_by="ingest_discovery",
+                )
+                inserted += 1
+            except Exception as e:
+                logger.warning("ensure_pending_stubs: skip %s/%s: %s", ticker, market, e)
+                self.db.rollback()
+        return inserted
 
     def create(
         self,
@@ -81,6 +161,8 @@ class TranslationService:
             name_en=data.name_en,
             name_zh_tw=data.name_zh_tw,
             brand_color=getattr(data, 'brand_color', None),
+            aliases=_normalize_aliases(getattr(data, 'aliases', None)),
+            name_preference=(getattr(data, 'name_preference', None) or "auto"),
             translation_status=data.translation_status,
             last_updated_by=updated_by
         )
@@ -101,6 +183,8 @@ class TranslationService:
         if not translation:
             return None
         update_data = data.model_dump(exclude_unset=True)
+        if "aliases" in update_data:
+            update_data["aliases"] = _normalize_aliases(update_data["aliases"])
         for field, value in update_data.items():
             setattr(translation, field, value)
         translation.last_updated_by = updated_by
@@ -126,32 +210,43 @@ class TranslationService:
         name_en: Optional[str] = None,
         name_zh_tw: Optional[str] = None,
         status: str = "auto",
-        updated_by: Optional[str] = None
+        updated_by: Optional[str] = None,
+        brand_color: Optional[str] = None,
+        aliases: Optional[List[str]] = None,
+        name_preference: Optional[str] = None,
     ) -> Tuple[StockTranslation, bool]:
         """
-        Create or update a translation.
+        Create or update a translation. Only provided (non-None) fields are applied,
+        so callers never clobber existing values they didn't intend to touch.
         Returns tuple of (translation, is_new).
         """
         existing = self.get_by_ticker_market(ticker, market)
         if existing:
-            # Update existing
             if name_en is not None:
                 existing.name_en = name_en
             if name_zh_tw is not None:
                 existing.name_zh_tw = name_zh_tw
+            if brand_color is not None:
+                existing.brand_color = brand_color
+            if aliases is not None:
+                existing.aliases = _normalize_aliases(aliases)
+            if name_preference is not None:
+                existing.name_preference = name_preference
             existing.translation_status = status
             existing.last_updated_by = updated_by
             self.db.commit()
             self.db.refresh(existing)
             return existing, False
         else:
-            # Create new
             data = TranslationCreate(
                 ticker=ticker,
                 market=market,
                 name_en=name_en,
                 name_zh_tw=name_zh_tw,
-                translation_status=status
+                translation_status=status,
+                brand_color=brand_color,
+                aliases=aliases,
+                name_preference=name_preference,
             )
             return self.create(data, updated_by), True
 
@@ -175,7 +270,10 @@ class TranslationService:
                     name_en=item.name_en,
                     name_zh_tw=item.name_zh_tw,
                     status=item.translation_status,
-                    updated_by=updated_by
+                    updated_by=updated_by,
+                    brand_color=item.brand_color,
+                    aliases=item.aliases,
+                    name_preference=item.name_preference,
                 )
                 if is_new:
                     imported += 1
@@ -185,6 +283,36 @@ class TranslationService:
                 errors.append(f"{item.ticker}/{item.market}: {str(e)}")
                 logger.error(f"Bulk import error for {item.ticker}: {e}")
         return imported, updated, errors
+
+    def get_rows_with_aliases(self, limit: int = 5000) -> List[StockTranslation]:
+        """All rows that carry at least one curated alias (for the agents' alias-index pull)."""
+        rows = (
+            self.db.query(StockTranslation)
+            .filter(StockTranslation.aliases.isnot(None))
+            .order_by(StockTranslation.ticker)
+            .limit(limit)
+            .all()
+        )
+        # JSON column may hold an empty list; keep only rows with real aliases.
+        return [r for r in rows if r.aliases]
+
+    def get_translatable_rows(self, limit: int = 20000) -> List[StockTranslation]:
+        """All rows that carry a usable name (zh-TW or English), for the suggestion index.
+
+        Powers TW-stock autocomplete: the Massive universe is US-only and English, so
+        Chinese names / numeric TW tickers (e.g. 2330 → 台積電) live only here. Excludes
+        bare PENDING stubs that have neither name (nothing to index for them).
+        """
+        return (
+            self.db.query(StockTranslation)
+            .filter(
+                (StockTranslation.name_zh_tw.isnot(None) & (StockTranslation.name_zh_tw != "")) |
+                (StockTranslation.name_en.isnot(None) & (StockTranslation.name_en != ""))
+            )
+            .order_by(StockTranslation.ticker)
+            .limit(limit)
+            .all()
+        )
 
     def get_missing_translations(
         self,
@@ -199,6 +327,61 @@ class TranslationService:
         if market:
             query = query.filter(StockTranslation.market == market.upper())
         return query.order_by(StockTranslation.ticker).limit(limit).all()
+
+    def backfill_translations(
+        self,
+        entries: list[tuple],
+        colors: dict[str, str],
+    ) -> int:
+        """
+        Seed stock translations from a list of (ticker, market, name_en, name_zh_tw, status).
+        - Inserts rows that don't exist yet.
+        - Fills in name_en/name_zh_tw/brand_color for existing stub rows (name_en is NULL
+          and status is not "approved"), without downgrading approved rows.
+        Returns count of rows inserted or updated.
+        """
+        affected = 0
+        for ticker, market, name_en, name_zh_tw, status in entries:
+            existing = self.get_by_ticker_market(ticker, market)
+            if existing is None:
+                data = TranslationCreate(
+                    ticker=ticker,
+                    market=market,
+                    name_en=name_en,
+                    name_zh_tw=name_zh_tw,
+                    translation_status=status,
+                    brand_color=colors.get(ticker),
+                )
+                self.create(data, "startup_backfill")
+                affected += 1
+            elif existing.name_en is None and existing.translation_status != "approved":
+                # Populate empty auto-created stubs without touching approved rows
+                existing.name_en = name_en
+                existing.name_zh_tw = name_zh_tw
+                existing.translation_status = status
+                if existing.brand_color is None:
+                    existing.brand_color = colors.get(ticker)
+                existing.last_updated_by = "startup_backfill"
+                self.db.commit()
+                affected += 1
+        return affected
+
+    def backfill_brand_colors(self, colors: dict[str, str]) -> int:
+        """Set brand_color for rows where it is currently NULL. Returns count updated."""
+        rows = (
+            self.db.query(StockTranslation)
+            .filter(StockTranslation.brand_color.is_(None))
+            .all()
+        )
+        updated = 0
+        for row in rows:
+            color = colors.get(row.ticker)
+            if color:
+                row.brand_color = color
+                updated += 1
+        if updated:
+            self.db.commit()
+        return updated
 
     def get_stats(self) -> dict:
         """Get translation statistics."""

@@ -8,6 +8,8 @@ import { getRecentEpisodes, getSortedPodcasts, type Episode as ApiEpisode, type 
 import { fetchWithFallback } from '@/services/api/migration';
 import { useSubscriptions } from '@/store/useAppStore';
 import { useStockPriceMap } from '@/hooks/useStockPriceMap';
+import { useTranslationMap } from '@/hooks/useTranslationMap';
+import { useEpisodeSentimentMap } from '@/hooks/useEpisodeSentimentMap';
 
 const FILTERS = ['最新', '我追的', '熱門'] as const;
 type Filter = (typeof FILTERS)[number];
@@ -35,6 +37,13 @@ export const HomeFeed: React.FC = () => {
   const subscriptions = useSubscriptions();
   const episodeTickers = useMemo(() => episodes.flatMap((ep) => ep.related_tickers ?? []), [episodes]);
   const priceMap = useStockPriceMap(episodeTickers);
+  const rawTranslationMap = useTranslationMap(episodeTickers);
+  // Flatten to ticker → displayName for the adapter (keeps episodeAdapter dependency-free)
+  const translationMap = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const [k, v] of rawTranslationMap) m.set(k, v.displayName);
+    return m;
+  }, [rawTranslationMap]);
   const podcastImageMap = useMemo(() => {
     const map = new Map<string, string>();
     for (const p of podcasts) {
@@ -49,7 +58,7 @@ export const HomeFeed: React.FC = () => {
       setLoading(true);
       const [data, podcastList] = await Promise.all([
         fetchWithFallback<ApiEpisode[]>(
-          () => getRecentEpisodes({ limit: 60, sortBy: 'spotify_release_date', order: 'desc', includeContent: false }),
+          () => getRecentEpisodes({ limit: 60, sortBy: 'released_at_ms', order: 'desc', includeContent: false }),
           [],
           'getRecentEpisodes',
         ).catch(() => [] as ApiEpisode[]),
@@ -80,6 +89,10 @@ export const HomeFeed: React.FC = () => {
     return list.slice(0, 30);
   }, [episodes, filter, subscriptions]);
 
+  // Per-(episode, ticker) sentiment for the visible cards (async; chips populate after render).
+  const visibleEpisodeIds = useMemo(() => filtered.map((e) => e.id), [filtered]);
+  const sentimentMap = useEpisodeSentimentMap(visibleEpisodeIds);
+
   return (
     <>
       <SEO description="聽播客 TinBoker — 最新的財經 Podcast 摘要、情緒與相關個股。" />
@@ -101,7 +114,7 @@ export const HomeFeed: React.FC = () => {
           <>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {filtered.map((ep) => (
-                <EpisodeCardV2 key={ep.id} {...apiEpisodeToCardV2(ep, priceMap, podcastImageMap)} />
+                <EpisodeCardV2 key={ep.id} {...apiEpisodeToCardV2(ep, priceMap, podcastImageMap, translationMap, sentimentMap.get(ep.id))} />
               ))}
             </div>
             <div className="mt-6 py-3 text-center text-[12px] text-muted-foreground">— 到這邊 —</div>

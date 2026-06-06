@@ -10,7 +10,7 @@ from src.models.notification import (
     BulkMarkReadResponse
 )
 from src.utils.dependencies import get_current_user
-from src.auth.admin_auth import get_current_admin, AdminTokenData
+from src.auth.admin_auth import get_admin_access, AdminAccess
 from src.database.notification_db import (
     get_user_notifications,
     get_notification_by_id,
@@ -118,7 +118,7 @@ async def remove_notification(
 @router.post("/trigger/new-episode", response_model=TriggerNotificationResponse)
 async def trigger_new_episode_notifications(
     request: TriggerNewEpisodeRequest,
-    admin: AdminTokenData = Depends(get_current_admin)
+    admin: AdminAccess = Depends(get_admin_access)
 ):
     """
     Trigger notifications for all users subscribed to a podcast when a new episode is released.
@@ -139,7 +139,7 @@ async def trigger_new_episode_notifications(
 @router.post("/trigger/stock-mention", response_model=TriggerNotificationResponse)
 async def trigger_stock_mention_notifications(
     request: TriggerStockMentionRequest,
-    admin: AdminTokenData = Depends(get_current_admin)
+    admin: AdminAccess = Depends(get_admin_access)
 ):
     """
     Trigger notifications for users who have a stock in their watchlist

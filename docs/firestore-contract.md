@@ -94,7 +94,7 @@ Legend for **Fulfilled by agents**:
 | `transcript` | string \| null | sometimes | Raw transcript text. Large field — agents may omit from list responses and only populate on detail fetches via the GCS URL. |
 | `summary_content` | string \| null | always | Markdown summary. Primary teaser text for HomeFeed/EpisodeDetail. |
 | `summary_image` | string \| null | sometimes | SVG markup. |
-| `key_insights` | string[] | usually | 3–8 plain-text bullet takeaways. Rendered as a list on EpisodeDetail. No markdown. |
+| `key_insights` | string[] | **required** (see warning) | 3–8 plain-text bullet takeaways, no markdown — the episode's precomputed "essence". Rendered on EpisodeDetail **and** as the primary content of `EpisodeCardV2` across all browsing pages (HomeFeed / Podcaster / Tag / Stock / Watchlist / Profile). Those list views deliberately do **not** hydrate `summary_content` (perf — transcripts are large), so `key_insights` is the only insight source available to cards. ⚠️ **Currently ~0% populated by the agents pipeline** (0/40 recent episodes, 2026-06); cards fall back to the plain teaser until this is backfilled. **Action: agents must populate `key_insights` on every episode.** |
 | `raw_mp3` | string \| null | never (local-dev only) | Present in the Pydantic model as a local filesystem path used during agent processing; **not stored in Firestore** in production. Listed here only to match the model contract; agents must omit when writing to Firestore. |
 
 #### Metadata
@@ -104,7 +104,7 @@ Legend for **Fulfilled by agents**:
 | `related_tickers` | string[] | always (may be empty) | Symbol-only. Mixed TW/US OK. Used by `tickers/{ticker}/episodes` index hydration. |
 | `tags` | string[] | always (may be empty) | Topic tags (e.g. `法說`, `AI`, `科技`). Used by `tags/{tag}/episodes` index hydration. |
 | `created_time` | int (Unix ms) | always | **Immutable after first write.** The notification fan-out service uses this to detect new episodes; mutating it re-fires notifications. |
-| `released_at_ms` | int (Unix ms) | *proposed* | See § 2.3 cleanup #1. Until adopted, frontends parse `spotify_release_date`. |
+| `released_at_ms` | int (Unix ms) | partial → **must become `always`** | True episode **publish** time. **Now consumed by the platform** (backend `Episode` model + transformer; frontend display + the release recency filter). Already written by agents but currently derived from `spotify_release_date` → `created_time`, so it is unreliable (null/ingestion-time) whenever Spotify is unmatched. **Required fix:** source it from the feed's `datePublished` (already fetched by the pipeline). See § 2.3 cleanup #1. |
 | `number_click` | int | always | Default 0; agents seed, platform updates. |
 | `num_likes` | int | always | Default 0; agents seed, platform updates. |
 
@@ -165,7 +165,7 @@ This table maps every UI surface to the subset of episode fields it actually rea
 
 | Surface | File | Required fields |
 |---|---|---|
-| HomeFeed | [frontend/src/pages/HomeFeed.tsx](../frontend/src/pages/HomeFeed.tsx) | `id`, `podcast_name`, `episode_title`, `episode_number`, `created_time`, `spotify_release_date`, `summary_content` ∥ `modified_summary_content`, `related_tickers`, `tags`, `num_likes`, `number_click`, `spotify_images` |
+| HomeFeed (+ all `EpisodeCardV2` lists) | [frontend/src/pages/HomeFeed.tsx](../frontend/src/pages/HomeFeed.tsx), [frontend/src/components/redesign/EpisodeCardV2.tsx](../frontend/src/components/redesign/EpisodeCardV2.tsx) | `id`, `podcast_name`, `episode_title`, `episode_number`, `released_at_ms` (preferred for display) ∥ `spotify_release_date` ∥ `created_time`, `key_insights` (card essence; falls back to `summary_content` ∥ `modified_summary_content`), `related_tickers`, `tags`, `num_likes`, `number_click`, `spotify_images` |
 | EpisodeDetail | [frontend/src/pages/EpisodeDetail.tsx](../frontend/src/pages/EpisodeDetail.tsx) | HomeFeed + `key_insights`, `events_markdown_content`, `sentences_markdown_content`, `spotify_id`, `spotify_url`, `spotify_embed_url` |
 | StockDashboard ("Mentioned in episodes") | [frontend/src/pages/StockDashboard.tsx](../frontend/src/pages/StockDashboard.tsx) | HomeFeed subset, filtered by `related_tickers` |
 | TagPage | [frontend/src/pages/TagPage.tsx](../frontend/src/pages/TagPage.tsx) | HomeFeed subset, filtered by `tags` |
@@ -178,7 +178,7 @@ This table maps every UI surface to the subset of episode fields it actually rea
 
 These are **proposals**; agents team should accept, push back, or counter-propose per item.
 
-1. **Timestamp normalization.** Add a new field `released_at_ms: int` (Unix ms) populated from Spotify release date. Today the frontend parses `spotify_release_date` (string `YYYY-MM-DD`) and falls back to `created_time` (Unix ms) — error-prone and timezone-fragile. Keep the existing fields; add the new one. Frontends migrate to `released_at_ms`, then `spotify_release_date` becomes opportunistic display-only.
+1. **Timestamp normalization — `released_at_ms` from the feed publish date.** Status: **platform consumer shipped** (backend `Episode.released_at_ms` + `episode_transformer._normalize_released_at_ms`; frontend `Episode.released_at_ms` preferred for display; the platform release recency filter reads it — see [docs/agents/podcast-domain.md](agents/podcast-domain.md) / `RELEASE_EPISODE_MAX_AGE_DAYS`). **Agents side is the blocker.** The field is already written but `_compute_released_at_ms` derives it from `spotify_release_date` → `created_time`, both of which are ingestion-time / null for Spotify-unmatched episodes (a Jan-published episode backfilled in May reads as May). The pipeline ALREADY fetches the true publish date — `api_data['datePublished']` (ISO-8601), parsed today by `orchestrator._parse_episode_date` but used only for the lookback window. **Required change (tinboker-agents):** wire `datePublished` into `released_at_ms` (and `created_time` when Spotify is absent) in `services/podcast/src/pipeline/utils.py::create_episode_object` + `models/podcast_models.py::_compute_released_at_ms`, then run a feed-driven backfill to correct historical docs (`datePublished` is returned for every episode by `fetch_episodes`, matched on `episode_number`/title — no Spotify dependency). **Do NOT mutate `created_time` on existing episodes** (§ 6.3) — only set `released_at_ms`. Until the backfill lands, the platform keeps `RELEASE_EPISODE_MAX_AGE_DAYS=0` (recency filter off). See the handoff: [docs/handoffs/released-at-ms-publish-date.md](handoffs/released-at-ms-publish-date.md).
 
 2. **Audit the `*_url` / `*_public_url` pairs.** The Episode model defines both `gs://` and HTTPS variants for each artifact. Most of the time the backend hydrates content via `episode_transformer.py` from `*_content` directly. We propose:
    - Drop the `*_public_url` half of every pair where the backend can sign GCS URLs on demand.

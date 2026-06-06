@@ -209,6 +209,20 @@ class InsightService:
         )
         rows = [_doc_to_trending(d, days) for d in docs if d.get("ticker") or d.get("id")]
         rows = [r for r in rows if r["count"] > 0 and r["ticker"]]
+
+        if not rows:
+            logger.info("trending_tickers empty; falling back to episode aggregation")
+            rows = await self._aggregate_from_episodes(days)
+            rows = rows[:limit]
+            try:
+                await cache_set(
+                    cache_key,
+                    json.dumps(rows, default=str),
+                    CACHE_TTL.get("ticker_insights_trending", TRENDING_TTL),
+                )
+            except Exception as e:
+                logger.warning("Trending cache set failed (episode fallback): %s", e)
+            return rows
         # Sort by count desc, then last_mentioned desc (ISO strings sort lexicographically).
         rows.sort(key=lambda r: (r["count"], r["last_mentioned"]), reverse=True)
         rows = rows[:limit]
@@ -221,6 +235,48 @@ class InsightService:
             )
         except Exception as e:
             logger.warning("Trending cache set failed: %s", e)
+        return rows
+
+    async def _aggregate_from_episodes(self, days: int) -> List[dict]:
+        """Aggregate trending tickers from episodes.related_tickers when trending_tickers is empty."""
+        from collections import Counter
+
+        episode_docs = await asyncio.to_thread(
+            self._fs.get_all_documents, "episodes"
+        )
+        cutoff_ms = None
+        if days > 0:
+            cutoff_ms = (datetime.utcnow() - timedelta(days=days)).timestamp() * 1000
+
+        counts: Counter = Counter()
+        last_seen: dict = {}
+        for doc in episode_docs:
+            ts_ms = doc.get("released_at_ms") or 0
+            if cutoff_ms and ts_ms < cutoff_ms:
+                continue
+            tickers = doc.get("related_tickers") or []
+            ts_s = ts_ms / 1000 if ts_ms > 1e10 else ts_ms or 0
+            try:
+                dt = datetime.utcfromtimestamp(ts_s).strftime("%Y-%m-%d") if ts_s else ""
+            except (OSError, OverflowError, ValueError):
+                dt = ""
+            for ticker in tickers:
+                if not ticker:
+                    continue
+                counts[ticker] += 1
+                if dt > last_seen.get(ticker, ""):
+                    last_seen[ticker] = dt
+
+        rows = [
+            {
+                "ticker": t,
+                "count": c,
+                "sentiment_label": "NEUTRAL",
+                "last_mentioned": last_seen.get(t, ""),
+            }
+            for t, c in counts.most_common()
+        ]
+        rows.sort(key=lambda r: (r["count"], r["last_mentioned"]), reverse=True)
         return rows
 
     async def get_by_ticker(

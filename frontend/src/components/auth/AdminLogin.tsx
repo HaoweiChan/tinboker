@@ -1,86 +1,70 @@
-/**
- * Admin login form component.
- * Simple password-based authentication for admin UI.
- */
-
-import React, { useState } from 'react';
-import { adminLogin, isAdminAuthenticated } from '@/services/api/translations';
+import React, { useEffect, useState } from 'react';
+import { useAppStore } from '@/store/useAppStore';
+import { authApi } from '@/services/api/auth';
+import { BracketMark } from '@/components/logo/AppLogo';
+import { GoogleLoginButton } from '@/components/auth/GoogleLoginButton';
 
 interface AdminLoginProps {
   onSuccess?: () => void;
-  className?: string;
 }
 
-export const AdminLogin: React.FC<AdminLoginProps> = ({
-  onSuccess,
-  className = '',
-}) => {
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+export const AdminLogin: React.FC<AdminLoginProps> = ({ onSuccess }) => {
+  const isAuthReady = useAppStore((state) => state.isAuthReady);
+  const user = useAppStore((state) => state.user);
+  const token = useAppStore((state) => state.token);
+  const logout = useAppStore((state) => state.logout);
+  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setLoading(true);
-    try {
-      await adminLogin(password);
-      onSuccess?.();
-    } catch (err: any) {
-      if (err.response?.status === 401) {
-        setError('Incorrect password');
-      } else {
-        setError('Login failed, please try again');
-      }
-    } finally {
-      setLoading(false);
+  useEffect(() => {
+    if (!isAuthReady || !user || !token) {
+      setIsAdmin(null);
+      return;
     }
-  };
+    authApi.isAdmin(token).then(setIsAdmin);
+  }, [isAuthReady, user, token]);
 
-  // If already authenticated, show nothing (caller should handle redirect)
-  if (isAdminAuthenticated()) {
-    return null;
+  useEffect(() => {
+    if (isAdmin === true) onSuccess?.();
+  }, [isAdmin, onSuccess]);
+
+  if (!isAuthReady || (user && isAdmin === null)) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="w-5 h-5 border-2 border-border border-t-foreground rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-8">
+        <BracketMark size={40} />
+        <div className="text-center">
+          <p className="text-[15px] font-semibold mb-1">管理員登入</p>
+          <p className="text-[13px] text-muted-foreground">請以授權的 Google 帳號登入</p>
+        </div>
+        <GoogleLoginButton className="flex items-center gap-2.5 px-5 py-2.5 rounded-lg bg-card border border-border text-[14px] font-medium hover:bg-muted transition-colors">
+          使用 Google 帳號登入
+        </GoogleLoginButton>
+      </div>
+    );
   }
 
   return (
-    <div className={`flex min-h-[400px] items-center justify-center ${className}`}>
-      <div className="w-full max-w-sm rounded-lg border border-gray-200 bg-white p-8 shadow-sm dark:border-gray-700 dark:bg-gray-800">
-        <h2 className="mb-6 text-center text-2xl font-semibold text-gray-900 dark:text-white">
-          Admin Login
-        </h2>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label
-              htmlFor="admin-password"
-              className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
-            >
-              Password
-            </label>
-            <input
-              id="admin-password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Enter admin password"
-              className="w-full rounded-md border border-gray-300 bg-white px-4 py-2 text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400"
-              required
-              autoFocus
-            />
-          </div>
-          {error && (
-            <div className="rounded-md bg-red-50 p-3 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
-              {error}
-            </div>
-          )}
-          <button
-            type="submit"
-            disabled={loading || !password}
-            className="w-full rounded-md bg-blue-600 px-4 py-2 text-white transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:focus:ring-offset-gray-800"
-          >
-            {loading ? 'Logging in...' : 'Login'}
-          </button>
-        </form>
+    <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-6">
+      <BracketMark size={40} />
+      <div className="text-center">
+        <p className="text-[15px] font-semibold mb-1">無存取權限</p>
+        <p className="text-[13px] text-muted-foreground">
+          <span className="font-mono">{user.email}</span> 未在管理員名單中
+        </p>
       </div>
+      <button
+        onClick={logout}
+        className="text-[13px] text-muted-foreground hover:text-foreground underline underline-offset-2 transition-colors"
+      >
+        切換帳號
+      </button>
     </div>
   );
 };

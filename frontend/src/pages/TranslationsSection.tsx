@@ -13,7 +13,7 @@ import {
     updateTranslation,
     deleteTranslation,
 } from '@/services/api/translations';
-import type { Translation, TranslationStatus, TranslationListParams } from '@/types/translation';
+import type { Translation, TranslationStatus, TranslationUpdate, TranslationListParams } from '@/types/translation';
 
 const ITEMS_PER_PAGE = 50;
 
@@ -54,7 +54,7 @@ export const TranslationsSection: React.FC = () => {
             const response = await listTranslations(params);
             setTranslations(response.items);
             setTotal(response.total);
-        } catch (error: any) {
+        } catch (error) {
             console.error('Failed to fetch translations:', error);
         } finally {
             setLoading(false);
@@ -76,25 +76,10 @@ export const TranslationsSection: React.FC = () => {
         setPage(1);
     };
 
-    // Handle update
-    const handleUpdate = async (id: number, nameZhTw?: string, nameEn?: string, newStatus?: TranslationStatus) => {
-        const updateData: { name_zh_tw?: string; name_en?: string; translation_status?: TranslationStatus } = {};
-        if (nameZhTw !== undefined) updateData.name_zh_tw = nameZhTw;
-        if (nameEn !== undefined) updateData.name_en = nameEn;
-        if (newStatus !== undefined) updateData.translation_status = newStatus;
-        await updateTranslation(id, updateData);
-        setTranslations((prev) =>
-            prev.map((t) =>
-                t.id === id
-                    ? {
-                        ...t,
-                        name_zh_tw: nameZhTw !== undefined ? nameZhTw : t.name_zh_tw,
-                        name_en: nameEn !== undefined ? nameEn : t.name_en,
-                        translation_status: newStatus !== undefined ? newStatus : t.translation_status,
-                    }
-                    : t
-            )
-        );
+    // Handle update — accepts a partial patch; uses the server's row as the new local state.
+    const handleUpdate = async (id: number, data: TranslationUpdate) => {
+        const updated = await updateTranslation(id, data);
+        setTranslations((prev) => prev.map((t) => (t.id === id ? updated : t)));
     };
 
     // Handle delete

@@ -13,7 +13,8 @@ export interface EpisodeCardV2Props {
   timeAgo: string; // "3 小時前"
   durationMinutes?: number;
   title: string;
-  summary?: string; // 1-2 line teaser
+  summary?: string; // 1-2 line teaser (fallback when keyInsights is absent)
+  keyInsights?: string[]; // precomputed bullet takeaways — the episode's essence
   tickers?: TickerRowData[];
   tags?: string[];
   commentCount?: number;
@@ -38,6 +39,7 @@ export const EpisodeCardV2: React.FC<EpisodeCardV2Props> = ({
   durationMinutes,
   title,
   summary,
+  keyInsights,
   tickers,
   tags,
   commentCount,
@@ -70,8 +72,19 @@ export const EpisodeCardV2: React.FC<EpisodeCardV2Props> = ({
     {/* Title */}
     <h3 className="text-[16px] font-medium leading-[1.35] tracking-[-0.005em] mb-2 text-foreground line-clamp-2">{title}</h3>
 
-    {/* Summary */}
-    {summary && <p className="text-[13px] leading-[1.55] text-muted-foreground mb-3.5 line-clamp-2">{summary}</p>}
+    {/* Essence — precomputed key-insight bullets, else the plain teaser */}
+    {keyInsights && keyInsights.length > 0 ? (
+      <ul className="grid gap-1 text-[13px] leading-[1.5] text-muted-foreground mb-3.5">
+        {keyInsights.slice(0, 3).map((insight, i) => (
+          <li key={i} className="grid grid-cols-[10px_1fr] gap-2">
+            <span className="mt-[7px] h-1.5 w-1.5 rounded-full bg-emerald-500/90 shrink-0" />
+            <span>{insight}</span>
+          </li>
+        ))}
+      </ul>
+    ) : (
+      summary && <p className="text-[13px] leading-[1.55] text-muted-foreground mb-3.5 line-clamp-2">{summary}</p>
+    )}
 
     {/* Ticker rows */}
     {tickers && tickers.length > 0 && (

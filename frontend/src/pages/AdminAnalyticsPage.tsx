@@ -4,7 +4,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { ExternalLink, TrendingUp, Users, Eye, Globe, Loader2 } from 'lucide-react';
-import { getAdminToken } from '@/services/api/translations';
+import { useAppStore } from '@/store/useAppStore';
 
 interface AnalyticsCardProps {
   title: string;
@@ -107,13 +107,13 @@ export const AdminAnalyticsPage: React.FC = () => {
       setLoading(true);
       setError(null);
       try {
-        const token = getAdminToken();
-        const apiBase = import.meta.env.DEV 
-          ? 'http://localhost:8000' 
+        const token = useAppStore.getState().token;
+        const apiBase = import.meta.env.DEV
+          ? 'http://localhost:8000'
           : 'https://api.tinboker.com';
         const response = await fetch(`${apiBase}/api/admin/analytics/overview?days=7`, {
           headers: {
-            'x-admin-password': token || '',
+            Authorization: `Bearer ${token || ''}`,
           },
         });
         if (!response.ok) {
