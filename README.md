@@ -105,7 +105,7 @@ npm run dev                   # starts on localhost:5173
 ## Project Structure
 
 ```
-tinboker-platform/
+tinboker/
 ├── backend/
 │   ├── src/
 │   │   ├── main.py           # FastAPI app & lifespan

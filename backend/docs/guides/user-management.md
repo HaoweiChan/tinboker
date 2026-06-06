@@ -22,7 +22,7 @@
 
 **Connect to the database:**
 ```bash
-cd tinboker-platform/backend
+cd tinboker/backend
 sqlite3 data/tinboker.db
 ```
 

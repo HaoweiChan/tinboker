@@ -1,6 +1,6 @@
 # Firestore data contract
 
-> **This is the authoritative cross-repo data contract between the tinboker-platform backend (reader) and the tinboker-agents pipeline (writer).** Edits here require coordination with the tinboker-agents team.
+> **This is the authoritative cross-repo data contract between the tinboker backend (reader) and the tinboker-agents pipeline (writer).** Edits here require coordination with the tinboker-agents team.
 >
 > **Status:** Draft for tinboker-agents team review. Authoritative once both teams sign off § 10.
 > **Owners:** platform team (this doc), tinboker-agents (write contract).
@@ -11,7 +11,7 @@
 
 ## Purpose
 
-This spec is the **data contract between the tinboker-agents pipeline (writer) and the tinboker-platform backend (reader)** for everything that flows through Firestore.
+This spec is the **data contract between the tinboker-agents pipeline (writer) and the tinboker backend (reader)** for everything that flows through Firestore.
 
 Today the platform infers the agents' shape from production traffic. That arrangement is breaking down:
 
@@ -48,7 +48,7 @@ This doc replaces that arrangement. It enumerates every Firestore path the platf
 
 **Versioning:** every agent-written document carries a `schema_version: <int>` field. This doc defines `schema_version: 2`. Bumping the integer requires updating this spec.
 
-**Terminology:** "the agents pipeline" = the tinboker-agents repo (separate from this one). "The platform" = this repo (`tinboker-platform`, frontend + backend).
+**Terminology:** "the agents pipeline" = the tinboker-agents repo (separate from this one). "The platform" = this repo (`tinboker`, frontend + backend).
 
 ---
 

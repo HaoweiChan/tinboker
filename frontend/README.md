@@ -114,7 +114,7 @@ src/
 ```bash
 # Clone the repository
 git clone <repository-url>
-cd tinboker-platform/frontend
+cd tinboker/frontend
 
 # Install dependencies
 npm install

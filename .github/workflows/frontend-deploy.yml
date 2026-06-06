@@ -82,6 +82,8 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # CF Pages project name is immutable and owns the prod custom domains;
+          # it stays "tinboker-platform" even though the repo is now "tinboker".
           projectName: tinboker-platform
           directory: frontend/dist
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}

@@ -131,7 +131,7 @@ psql -h <POSTGRES_HOST> -U podcast_user -d podcast_db
 
 ```bash
 # From your backend directory
-cd tinboker-platform/backend
+cd tinboker/backend
 
 # Install dependencies
 pip install -r requirements.txt

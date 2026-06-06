@@ -16,7 +16,7 @@ This error occurs when `VITE_GOOGLE_CLIENT_ID` is not set in Vercel's environmen
 ### Step 2: Add Environment Variable in Vercel
 
 1. Go to your [Vercel Dashboard](https://vercel.com/dashboard)
-2. Select your project (tinboker-platform/frontend)
+2. Select your project (tinboker/frontend)
 3. Go to **Settings** > **Environment Variables**
 4. Click **Add New** or **Add Environment Variable**
 5. Add the following:
