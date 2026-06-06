@@ -59,14 +59,23 @@ export function apiEpisodeToCardV2(
     // the plain teaser when absent — see firestore-contract.md (key_insights).
     keyInsights: Array.isArray(ep.key_insights) && ep.key_insights.length > 0 ? ep.key_insights : undefined,
     summary: plainTeaser(ep.modified_summary_content || ep.summary_content),
-    tickers: Array.isArray(ep.related_tickers)
-      ? ep.related_tickers.slice(0, 4).map((symbol) => ({
-          symbol,
-          name: translationMap?.get(symbol.toUpperCase()),
-          sentiment: sentimentMap?.get(symbol.toUpperCase()),
-          changePercent: priceMap?.get(symbol) ?? priceMap?.get(symbol.toUpperCase()),
-        }))
-      : undefined,
+    tickers: (() => {
+      if (!Array.isArray(ep.related_tickers)) return undefined;
+      // If the pipeline scored any ticker on this episode, drop the rest as
+      // passing mentions (a bank cited for a report, a non-ticker like
+      // SpaceX/"X"). When nothing is scored, show whatever was mentioned so
+      // the row isn't empty.
+      const scored = sentimentMap && sentimentMap.size > 0
+        ? ep.related_tickers.filter((s) => sentimentMap.has(s.toUpperCase()))
+        : ep.related_tickers;
+      const shown = scored.length > 0 ? scored : ep.related_tickers;
+      return shown.slice(0, 4).map((symbol) => ({
+        symbol,
+        name: translationMap?.get(symbol.toUpperCase()),
+        sentiment: sentimentMap?.get(symbol.toUpperCase()),
+        changePercent: priceMap?.get(symbol) ?? priceMap?.get(symbol.toUpperCase()),
+      }));
+    })(),
     tags: ep.tags ?? [],
     isNew: isRecent,
     href: `/episode/${encodeURIComponent(ep.id)}?podcast=${encodeURIComponent(ep.podcast_name)}`,
