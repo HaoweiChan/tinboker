@@ -44,10 +44,13 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
-        // OFF for the prompt flow: the new SW waits until the user taps 更新
-        // (updateServiceWorker(true) posts SKIP_WAITING), then claims + reloads.
+        // Prompt flow: the new SW WAITS (skipWaiting off) until the user taps 更新,
+        // which posts SKIP_WAITING. clientsClaim MUST be on so the freshly-activated
+        // worker claims this page → `controllerchange` fires → we reload. With it off,
+        // skipWaiting activated the worker but never took control, so the button did
+        // nothing visible.
         skipWaiting: false,
-        clientsClaim: false,
+        clientsClaim: true,
         cleanupOutdatedCaches: true,
         maximumFileSizeToCacheInBytes: 6 * 1024 * 1024, // 6 MB to handle large bundles
         runtimeCaching: [
