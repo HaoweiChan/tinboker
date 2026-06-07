@@ -3,7 +3,9 @@ name: Pipelines Deploy
 on:
   push:
     branches: [develop, main]
-    paths: ['pipelines/**']
+    paths:
+      - 'pipelines/**'
+      - '.github/workflows/pipelines-deploy.yml'
   workflow_dispatch:
 
 env:
