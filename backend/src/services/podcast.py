@@ -3,7 +3,7 @@ import os
 import json
 import asyncio
 import logging
-from typing import Optional, List
+from typing import Optional, List, Collection
 from datetime import datetime
 from src.config import settings
 from src.models.podcast import Podcast, Episode
@@ -17,6 +17,13 @@ import httpx
 
 
 logger = logging.getLogger(__name__)
+
+EPISODE_DETAIL_CONTENT_FIELDS = frozenset({
+    "summary_content",
+    "events_markdown_content",
+    "sentences_markdown_content",
+    "modified_summary_content",
+})
 
 
 class PodcastService:
@@ -142,6 +149,16 @@ class PodcastService:
         langs = settings.release_podcast_languages
         lang_part = ",".join(sorted(langs)) if langs else "all"
         return f"{lang_part}:{settings.release_episode_max_age_days}"
+
+    @staticmethod
+    def _content_cache_tag(content_fields: Optional[Collection[str]]) -> str:
+        """Stable cache-key suffix for hydrated content field sets.
+
+        None means "all configured GCS-backed fields" for legacy/full payload callers.
+        """
+        if content_fields is None:
+            return "full"
+        return "fields-" + ",".join(sorted(content_fields))
 
     @staticmethod
     def _spotify_release_ms(value) -> Optional[int]:
@@ -407,13 +424,15 @@ class PodcastService:
 
     async def get_episode_by_id(
         self, podcast_name: str, episode_id: str, apply_scope: bool = True,
+        content_fields: Optional[Collection[str]] = EPISODE_DETAIL_CONTENT_FIELDS,
     ) -> Optional[Episode]:
         """Get episode by ID with caching.
 
         apply_scope=False bypasses the release language/recency filter — used by
         admin mutations that need the episode back regardless of public scope.
         """
-        cache_key = f"podcast:{podcast_name}:episode:{episode_id}"
+        content_tag = self._content_cache_tag(content_fields)
+        cache_key = f"podcast:{podcast_name}:episode:{episode_id}:v2:{content_tag}"
         cached = await cache_get(cache_key)
         if cached:
             try:
@@ -428,11 +447,11 @@ class PodcastService:
             episode_dict = self.firestore_service.get_document("episodes", episode_id)
             if not episode_dict or episode_dict.get('podcast_name') != podcast_name:
                 return None
-            episode = await self.transformer.to_episode(episode_dict)
+            episode = await self.transformer.to_episode(episode_dict, content_fields=content_fields)
             # Skip caching a partially-hydrated episode (content URL set but content
             # empty, e.g. a transient GCS read failure) so the next request re-attempts
             # the GCS read instead of pinning a blank payload for the full TTL.
-            if not self.transformer.is_content_incomplete(episode_dict):
+            if not self.transformer.is_content_incomplete(episode_dict, content_fields=content_fields):
                 try:
                     await cache_set(cache_key, json.dumps(episode.dict(), default=str), CACHE_TTL["podcast_episode"])
                 except Exception:
@@ -448,7 +467,11 @@ class PodcastService:
         except Exception as e:
             raise Exception(f"Failed to get episode: {e}") from e
 
-    async def get_episode_by_id_only(self, episode_id: str) -> Optional[Episode]:
+    async def get_episode_by_id_only(
+        self,
+        episode_id: str,
+        content_fields: Optional[Collection[str]] = EPISODE_DETAIL_CONTENT_FIELDS,
+    ) -> Optional[Episode]:
         """Get an episode by id without requiring the podcast name.
 
         Episode docs are keyed by id in Firestore; get_episode_by_id only uses
@@ -456,7 +479,8 @@ class PodcastService:
         episode up. Used when the client opens /episode/{id} cold (deep link / refresh /
         shared URL) and has no ?podcast= to supply the show name.
         """
-        cache_key = f"episode:{episode_id}"
+        content_tag = self._content_cache_tag(content_fields)
+        cache_key = f"episode:{episode_id}:v2:{content_tag}"
         cached = await cache_get(cache_key)
         if cached:
             try:
@@ -471,13 +495,13 @@ class PodcastService:
             episode_dict = self.firestore_service.get_document("episodes", episode_id)
             if not episode_dict:
                 return None
-            episode = await self.transformer.to_episode(episode_dict)
+            episode = await self.transformer.to_episode(episode_dict, content_fields=content_fields)
             if not await self._episode_in_scope(episode):
                 return None
             # Don't pin a half-hydrated episode (content URL present but content empty,
             # e.g. a transient GCS read failure) — leave it uncached so the next request
             # re-attempts the fetch instead of serving a blank for the full TTL.
-            if not self.transformer.is_content_incomplete(episode_dict):
+            if not self.transformer.is_content_incomplete(episode_dict, content_fields=content_fields):
                 try:
                     await cache_set(cache_key, json.dumps(episode.dict(), default=str), CACHE_TTL["podcast_episode"])
                 except Exception:
@@ -834,6 +858,8 @@ class PodcastService:
     async def _invalidate_episode_cache(self, podcast_name: str, episode_id: str):
         """Invalidate all caches related to an episode"""
         await cache_delete(f"podcast:{podcast_name}:episode:{episode_id}")
+        await cache_delete_pattern(f"podcast:{podcast_name}:episode:{episode_id}:*")
+        await cache_delete_pattern(f"episode:{episode_id}:*")
         await cache_delete_pattern(f"podcast:{podcast_name}:episodes:*")
         await cache_delete_pattern("episodes:recent:*")
 

@@ -4,7 +4,7 @@ Episodes API router for cross-podcast episode queries
 from fastapi import APIRouter, HTTPException, Path, Query
 from pydantic import BaseModel, Field
 from typing import Optional
-from src.services.podcast import PodcastService
+from src.services.podcast import EPISODE_DETAIL_CONTENT_FIELDS, PodcastService
 from src.services.translation_discovery import schedule_ticker_discovery
 from src.services.episode_sentiments import EpisodeSentimentService
 from src.services.trending import TrendingService
@@ -142,6 +142,10 @@ async def get_episodes_by_ticker(
 @cdn_cache_podcast
 async def get_episode_by_id(
     episode_id: str = Path(..., description="Episode ID"),
+    include_heavy_content: bool = Query(
+        default=False,
+        description="Also hydrate transcript/ticker blobs. False returns the fast episode-detail payload.",
+    ),
 ):
     """
     Get a single episode by ID alone, without the podcast name.
@@ -153,7 +157,10 @@ async def get_episode_by_id(
     CDN Cache: 30 minutes
     """
     try:
-        episode = await podcast_service.get_episode_by_id_only(episode_id)
+        episode = await podcast_service.get_episode_by_id_only(
+            episode_id,
+            content_fields=None if include_heavy_content else EPISODE_DETAIL_CONTENT_FIELDS,
+        )
         if not episode:
             raise HTTPException(status_code=404, detail=f"Episode '{episode_id}' not found")
         return episode
@@ -161,5 +168,4 @@ async def get_episode_by_id(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching episode: {str(e)}")
-
 

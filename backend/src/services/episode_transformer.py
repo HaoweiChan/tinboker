@@ -2,7 +2,7 @@
 import re
 import asyncio
 import logging
-from typing import Optional
+from typing import Optional, Collection
 from datetime import datetime
 from src.models.podcast import Episode
 from src.services.gcs_content import GCSContentService
@@ -30,7 +30,11 @@ class EpisodeTransformer:
     def __init__(self, gcs_service: Optional[GCSContentService] = None):
         self.gcs = gcs_service or GCSContentService()
 
-    async def enrich_with_content(self, episode_dict: dict) -> dict:
+    async def enrich_with_content(
+        self,
+        episode_dict: dict,
+        content_fields: Optional[Collection[str]] = None,
+    ) -> dict:
         """Fetch missing content fields from GCS/HTTP URLs in parallel.
 
         Only non-empty fetch results overwrite a field. An empty result means the
@@ -38,8 +42,11 @@ class EpisodeTransformer:
         untouched rather than persisting a blank — see is_content_incomplete, which the
         caller uses to avoid caching a half-hydrated episode.
         """
+        requested_fields = set(content_fields) if content_fields is not None else None
         fetch_tasks = []
         for content_field, url_field, fetch_type in _GCS_CONTENT_FIELDS:
+            if requested_fields is not None and content_field not in requested_fields:
+                continue
             if not episode_dict.get(content_field) and episode_dict.get(url_field):
                 url = episode_dict[url_field]
                 fetcher = self.gcs.fetch_gcs_content if fetch_type == 'gcs' else self.gcs.fetch_url_content
@@ -61,16 +68,21 @@ class EpisodeTransformer:
         return episode_dict
 
     @staticmethod
-    def is_content_incomplete(episode_dict: dict) -> bool:
+    def is_content_incomplete(
+        episode_dict: dict,
+        content_fields: Optional[Collection[str]] = None,
+    ) -> bool:
         """True if any GCS-backed field is still empty while its source URL is set.
 
         Signals a failed/partial hydration: the URL promises content but we have none.
         Callers use this to skip caching so the next request re-attempts the GCS read
         instead of pinning a blank result for the full TTL.
         """
+        requested_fields = set(content_fields) if content_fields is not None else None
         return any(
             episode_dict.get(url_field) and not episode_dict.get(content_field)
             for content_field, url_field, _ in _GCS_CONTENT_FIELDS
+            if requested_fields is None or content_field in requested_fields
         )
 
     @staticmethod
@@ -120,10 +132,15 @@ class EpisodeTransformer:
         except Exception:
             return set()
 
-    async def to_episode(self, episode_dict: dict, enrich_content: bool = True) -> Episode:
+    async def to_episode(
+        self,
+        episode_dict: dict,
+        enrich_content: bool = True,
+        content_fields: Optional[Collection[str]] = None,
+    ) -> Episode:
         """Convert a Firestore episode dict to an Episode model"""
         if enrich_content:
-            episode_dict = await self.enrich_with_content(episode_dict)
+            episode_dict = await self.enrich_with_content(episode_dict, content_fields=content_fields)
 
         # Merge extracted + existing tags
         extracted = set()

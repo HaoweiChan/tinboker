@@ -3,7 +3,11 @@ Podcast API router
 """
 from fastapi import APIRouter, HTTPException, Path, Query, Body, BackgroundTasks, Response
 from typing import List, Optional
-from src.services.podcast import PodcastService, poll_regeneration_status
+from src.services.podcast import (
+    EPISODE_DETAIL_CONTENT_FIELDS,
+    PodcastService,
+    poll_regeneration_status,
+)
 from src.models.podcast import Podcast, Episode
 from src.config import settings
 from src.cache.cdn_cache import cdn_cache_podcast
@@ -130,7 +134,11 @@ async def get_podcast_episodes(
 async def get_episode_by_id(
     response: Response,
     podcast_name: str = Path(..., description="Podcast name"),
-    episode_id: str = Path(..., description="Episode ID")
+    episode_id: str = Path(..., description="Episode ID"),
+    include_heavy_content: bool = Query(
+        default=False,
+        description="Also hydrate transcript/ticker blobs. False returns the fast episode-detail payload.",
+    )
 ):
     """
     Get specific episode by ID
@@ -141,7 +149,11 @@ async def get_episode_by_id(
     """
     response.headers["Cache-Control"] = CACHE_CONTROL_READ
     try:
-        episode = await podcast_service.get_episode_by_id(podcast_name, episode_id)
+        episode = await podcast_service.get_episode_by_id(
+            podcast_name,
+            episode_id,
+            content_fields=None if include_heavy_content else EPISODE_DETAIL_CONTENT_FIELDS,
+        )
         if not episode:
             raise HTTPException(
                 status_code=404,
@@ -298,4 +310,3 @@ async def regenerate_episode_summary(
             status_code=500,
             detail=f"Failed to trigger regeneration: {str(e)}"
         )
-
