@@ -133,7 +133,8 @@ export async function getPodcastEpisodes(
 
 export async function getEpisodeById(podcastName: string, episodeId: string): Promise<Episode> {
   const response = await apiClient.get(
-    `/api/podcast/${encodeURIComponent(podcastName)}/episodes/${episodeId}`
+    `/api/podcast/${encodeURIComponent(podcastName)}/episodes/${episodeId}`,
+    { params: { include_heavy_content: false } }
   );
   return response.data;
 }
@@ -142,7 +143,8 @@ export async function getEpisodeById(podcastName: string, episodeId: string): Pr
 // refreshes of /episode/{id} where the show name isn't available client-side.
 export async function getEpisodeByIdOnly(episodeId: string): Promise<Episode> {
   const response = await apiClient.get(
-    `/api/episodes/${encodeURIComponent(episodeId)}`
+    `/api/episodes/${encodeURIComponent(episodeId)}`,
+    { params: { include_heavy_content: false } }
   );
   return response.data;
 }
