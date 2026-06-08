@@ -139,7 +139,8 @@ def set_cache_headers(
     max_age = max_age or 0
     stale = stale or 0
 
-    response.headers["Cache-Control"] = build_cache_header(s_maxage, max_age, stale)
+    if "Cache-Control" not in response.headers:
+        response.headers["Cache-Control"] = build_cache_header(s_maxage, max_age, stale)
 
     # Add Vary header to ensure proper cache key differentiation
     response.headers["Vary"] = "Accept-Encoding"
@@ -179,6 +180,9 @@ def cdn_cached(
         @wraps(func)
         async def wrapper(*args, **kwargs):
             result = await func(*args, **kwargs)
+            injected_response = kwargs.get("response")
+            if not isinstance(injected_response, Response):
+                injected_response = next((arg for arg in args if isinstance(arg, Response)), None)
 
             # If result is already a Response, add headers
             if isinstance(result, Response):
@@ -215,6 +219,9 @@ def cdn_cached(
 
             # Create JSONResponse with serialized content
             response = JSONResponse(content=content)
+            if isinstance(injected_response, Response):
+                for name, value in injected_response.headers.items():
+                    response.headers.setdefault(name, value)
             return set_cache_headers(
                 response,
                 profile=profile,
