@@ -80,7 +80,7 @@ class TickerDatePair(BaseModel):
 
 
 class BatchPricesSinceRequest(BaseModel):
-    items: list[TickerDatePair] = Field(..., max_length=100)
+    items: list[TickerDatePair] = Field(..., max_length=300)
 
 
 async def _get_reference_close(ticker: str, ref_date_str: str) -> Optional[float]:
