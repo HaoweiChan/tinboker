@@ -10,6 +10,7 @@ import { getEpisodesByTag, type Episode as ApiEpisode } from '@/services/api';
 import { fetchWithFallback } from '@/services/api/migration';
 import { useAppStore, useTagSubscriptions } from '@/store/useAppStore';
 import { useStockPriceMap } from '@/hooks/useStockPriceMap';
+import { useStockPriceSinceMap } from '@/hooks/useStockPriceSinceMap';
 
 interface EpisodesByTagResponse {
   tag?: string;
@@ -25,6 +26,7 @@ export const TagPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const episodeTickers = useMemo(() => episodes.flatMap((ep) => ep.related_tickers ?? []), [episodes]);
   const priceMap = useStockPriceMap(episodeTickers);
+  const priceSinceMap = useStockPriceSinceMap(episodes);
 
   const cleanTag = decodeURIComponent(tag || '').replace(/^#/, '');
   const isSubscribed = tagSubs.includes(cleanTag) || tagSubs.includes(`#${cleanTag}`);
@@ -96,7 +98,7 @@ export const TagPage: React.FC = () => {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {episodes.map((ep) => (
-              <EpisodeCardV2 key={ep.id} {...apiEpisodeToCardV2(ep, priceMap)} />
+              <EpisodeCardV2 key={ep.id} {...apiEpisodeToCardV2(ep, priceMap, undefined, undefined, undefined, priceSinceMap)} />
             ))}
           </div>
         )}

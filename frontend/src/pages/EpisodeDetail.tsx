@@ -11,6 +11,7 @@ import { parseTimestampedSections, type TimestampedSection } from '@/utils/parse
 import { usePlayerStore } from '@/store/usePlayerStore';
 import { CommentSection } from '@/components/episode/CommentSection';
 import { useStockPriceMap } from '@/hooks/useStockPriceMap';
+import { useStockPriceSinceMap, isRecentEpisode } from '@/hooks/useStockPriceSinceMap';
 import { useTranslationMap } from '@/hooks/useTranslationMap';
 import { useEpisodeSentimentMap } from '@/hooks/useEpisodeSentimentMap';
 import { EpisodeInsightCard, type EpisodeInsight } from '@/components/episode/EpisodeInsightCard';
@@ -139,6 +140,11 @@ export const EpisodeDetail: React.FC = () => {
   const clips = useMemo<TimestampedSection[]>(() => (episode?.sentences_markdown_content ? parseTimestampedSections(episode.sentences_markdown_content).slice(0, 8) : []), [episode]);
   const tickerSymbols = useMemo(() => (Array.isArray(episode?.related_tickers) ? episode!.related_tickers.slice(0, 8) : []), [episode]);
   const priceMap = useStockPriceMap(tickerSymbols);
+  const episodesForSince = useMemo(() => (episode ? [episode] : []), [episode]);
+  const priceSinceMap = useStockPriceSinceMap(episodesForSince);
+  const useSince = episode ? !isRecentEpisode(episode) && priceSinceMap.size > 0 : false;
+  const activeMap = useSince ? priceSinceMap : priceMap;
+  const sinceLabel = useSince ? '播出至今' : null;
   const rawTranslationMap = useTranslationMap(tickerSymbols);
   const episodeIds = useMemo(() => (episode ? [episode.id] : []), [episode]);
   const episodeSentiments = useEpisodeSentimentMap(episodeIds);
@@ -150,16 +156,13 @@ export const EpisodeDetail: React.FC = () => {
         symbol: s,
         name: firstMapValue(rawTranslationMap, keys)?.displayName,
         sentiment: sent ? firstMapValue<Sentiment>(sent, keys) : undefined,
-        changePercent: firstMapValue(priceMap, keys),
+        changePercent: firstMapValue(activeMap, keys),
+        sinceLabel,
       };
     });
-    // Drop tickers the hosts only mentioned in passing — no sentiment means no
-    // expressed view (e.g. a bank cited for a report, or a non-ticker like
-    // SpaceX/"X"). If the episode has no per-ticker sentiment at all, keep every
-    // mention so the panel isn't empty.
     const scored = all.filter((t) => t.sentiment);
     return scored.length > 0 ? scored : all;
-  }, [tickerSymbols, rawTranslationMap, episodeSentiments, priceMap, episode]);
+  }, [tickerSymbols, rawTranslationMap, episodeSentiments, activeMap, episode, sinceLabel]);
   const spotifyUri = useMemo(() => spotifyUriFrom(episode), [episode]);
 
   const title = episode?.episode_title || (episode?.episode_number != null ? `EP ${episode.episode_number}` : '集數摘要');

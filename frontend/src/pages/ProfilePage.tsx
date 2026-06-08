@@ -9,6 +9,7 @@ import { apiEpisodeToCardV2 } from '@/components/redesign/episodeAdapter';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/store/useAppStore';
 import { useStockPriceMap } from '@/hooks/useStockPriceMap';
+import { useStockPriceSinceMap } from '@/hooks/useStockPriceSinceMap';
 import {
   getSortedStocks,
   getPodcastByName,
@@ -58,6 +59,7 @@ export const ProfilePage: React.FC = () => {
   const [bookmarked, setBookmarked] = useState<ApiEpisode[]>([]);
   const episodeTickers = useMemo(() => bookmarked.flatMap((ep) => ep.related_tickers ?? []), [bookmarked]);
   const priceMap = useStockPriceMap(episodeTickers);
+  const priceSinceMap = useStockPriceSinceMap(bookmarked);
 
   // Tab is URL-addressable (?tab=…) so the sidebar's "我的" links can deep-link.
   const [searchParams, setSearchParams] = useSearchParams();
@@ -332,7 +334,7 @@ export const ProfilePage: React.FC = () => {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {bookmarked.map((ep) => (
-                <EpisodeCardV2 key={ep.id} {...apiEpisodeToCardV2(ep, priceMap)} />
+                <EpisodeCardV2 key={ep.id} {...apiEpisodeToCardV2(ep, priceMap, undefined, undefined, undefined, priceSinceMap)} />
               ))}
             </div>
           )

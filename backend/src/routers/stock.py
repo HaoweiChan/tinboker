@@ -1,8 +1,12 @@
 """
 Stock API router
 """
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException, Query, Depends
+import asyncio
+import logging
+from datetime import datetime, timedelta
 from typing import Optional, List
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException, Query, Depends
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from src.services.stock import StockService
 from src.models.stock import CompanyDetail
@@ -10,8 +14,8 @@ from src.services.websocket_subscriber import WebSocketSubscriber
 from src.database.postgres import get_session
 from src.database.models import StockTranslation
 from src.utils.market import infer_market
-import asyncio
-import logging
+from src.cache.redis_client import cache_get, cache_set
+from src.cache.cache_config import CACHE_TTL
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +72,83 @@ async def get_batch_prices(
         ticker: (info.get('changePercent') if isinstance(info, dict) else None)
         for ticker, info in zip(ticker_list, results)
     }
+
+
+class TickerDatePair(BaseModel):
+    ticker: str
+    reference_ms: int = Field(..., description="Episode release timestamp (Unix ms)")
+
+
+class BatchPricesSinceRequest(BaseModel):
+    items: list[TickerDatePair] = Field(..., max_length=100)
+
+
+async def _get_reference_close(ticker: str, ref_date_str: str) -> Optional[float]:
+    """Fetch the closing price on or just before `ref_date_str` for a single ticker.
+
+    Tries a 7-day window ending on ref_date to account for weekends/holidays.
+    Caches the result for 24 h since historical prices don't change.
+    """
+    cache_key = f"stock:{ticker}:close:{ref_date_str}"
+    cached = await cache_get(cache_key)
+    if cached is not None:
+        try:
+            return float(cached)
+        except (ValueError, TypeError):
+            pass
+    loop = asyncio.get_event_loop()
+    is_tw = ticker.split(".")[0].isdigit()
+    if is_tw:
+        from src.services.finmind_service import FinMindAPIService
+        svc = FinMindAPIService()
+        start = (datetime.strptime(ref_date_str, "%Y-%m-%d") - timedelta(days=7)).strftime("%Y-%m-%d")
+        rows = await loop.run_in_executor(None, lambda: svc.list_daily_ticker_summary_range(ticker.split(".")[0], start, ref_date_str))
+    else:
+        from src.services.massive_service import MassiveAPIService
+        svc = MassiveAPIService()
+        start = (datetime.strptime(ref_date_str, "%Y-%m-%d") - timedelta(days=7)).strftime("%Y-%m-%d")
+        rows = await loop.run_in_executor(None, lambda: svc.list_daily_ticker_summary_range(ticker, start, ref_date_str))
+    if not rows:
+        return None
+    close = rows[-1].get("close")
+    if close is not None:
+        await cache_set(cache_key, str(close), CACHE_TTL["stock_history"])
+    return close
+
+
+@router.post("/batch-prices-since")
+async def get_batch_prices_since(body: BatchPricesSinceRequest):
+    """Return % change from each ticker's reference date to its current price.
+
+    Used by episode cards to show "price change since episode aired" instead of
+    today's intraday change.  Returns ``{TICKER: changePercent}`` — ``null`` when
+    historical data is unavailable.
+    """
+    # Deduplicate: same ticker may appear in multiple episodes; pick earliest date
+    earliest: dict[str, str] = {}
+    for item in body.items:
+        t = item.ticker.upper()
+        d = datetime.utcfromtimestamp(item.reference_ms / 1000).strftime("%Y-%m-%d")
+        if t not in earliest or d < earliest[t]:
+            earliest[t] = d
+    tickers = list(earliest.keys())
+    if not tickers:
+        return {}
+    ref_closes, basics = await asyncio.gather(
+        asyncio.gather(*[_get_reference_close(t, earliest[t]) for t in tickers], return_exceptions=True),
+        asyncio.gather(*[stock_service.get_stock_basic_info_async(t) for t in tickers], return_exceptions=True),
+    )
+    out: dict[str, Optional[float]] = {}
+    for ticker, ref_close, basic in zip(tickers, ref_closes, basics):
+        if isinstance(ref_close, Exception) or isinstance(basic, Exception):
+            out[ticker] = None
+            continue
+        current_price = basic.get("price") if isinstance(basic, dict) else None
+        if ref_close and current_price and ref_close > 0:
+            out[ticker] = round((current_price - ref_close) / ref_close * 100, 2)
+        else:
+            out[ticker] = None
+    return out
 
 
 @router.get("/batch-summary")

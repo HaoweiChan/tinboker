@@ -268,6 +268,33 @@ class FinMindAPIService:
             logger.error(f"Error fetching daily summary for {ticker} on {date}: {e}")
             return []
     
+    def list_daily_ticker_summary_range(self, ticker: str, start_date: str, end_date: str) -> List[Dict[str, Any]]:
+        """Get daily OHLCV rows for a date range, sorted by date ascending."""
+        try:
+            params = {
+                "dataset": "TaiwanStockPrice",
+                "data_id": ticker,
+                "start_date": start_date,
+                "end_date": end_date,
+            }
+            data = self._make_request(params)
+            summaries = []
+            if data and data.get("data"):
+                df = pd.DataFrame(data["data"]).sort_values("date")
+                for _, row in df.iterrows():
+                    summaries.append({
+                        "date": str(row.get("date", end_date)),
+                        "open": float(row.get("open", 0)),
+                        "high": float(row.get("max", 0)),
+                        "low": float(row.get("min", 0)),
+                        "close": float(row.get("close", 0)),
+                        "volume": int(row.get("Trading_Volume", 0)),
+                    })
+            return summaries
+        except Exception as e:
+            logger.error(f"Error fetching daily range for {ticker} ({start_date}–{end_date}): {e}")
+            return []
+
     def list_financials_income_statements(self, ticker: str) -> List[Dict[str, Any]]:
         """
         Get income statements for a ticker.

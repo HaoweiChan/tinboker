@@ -20,6 +20,7 @@ import { getInsightsByTicker } from '@/services/api/podcasts';
 import { transformApiEpisodeToMock } from '@/services/api/transformers';
 import type { TickerInsight } from '@/services/types';
 import { useStockPriceMap } from '@/hooks/useStockPriceMap';
+import { useStockPriceSinceMap } from '@/hooks/useStockPriceSinceMap';
 import { useEpisodeSentimentMap } from '@/hooks/useEpisodeSentimentMap';
 import { getStockLabel, inferStockMarket } from '@/utils/stockDisplay';
 
@@ -240,6 +241,7 @@ export const StockDashboard: React.FC = () => {
   const [episodes, setEpisodes] = useState<ApiEpisode[]>([]);
   const episodeTickers = useMemo(() => episodes.flatMap((ep) => ep.related_tickers ?? []), [episodes]);
   const priceMap = useStockPriceMap(episodeTickers);
+  const priceSinceMap = useStockPriceSinceMap(episodes);
   // Per-(episode, ticker) sentiment for the chips on each related-episode card —
   // sourced from the working /api/episodes/ticker-sentiments endpoint (same as HomeFeed),
   // not the ticker-insights query that powers the 情緒比例/整體情緒 widgets.
@@ -370,7 +372,7 @@ export const StockDashboard: React.FC = () => {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {episodes.map((ep) => (
-              <EpisodeCardV2 key={ep.id} {...apiEpisodeToCardV2(ep, priceMap, undefined, undefined, sentimentMap.get(ep.id))} />
+              <EpisodeCardV2 key={ep.id} {...apiEpisodeToCardV2(ep, priceMap, undefined, undefined, sentimentMap.get(ep.id), priceSinceMap)} />
             ))}
           </div>
         )}

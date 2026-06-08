@@ -205,6 +205,34 @@ class MassiveAPIService:
             logger.error(f"Error fetching daily summary for {ticker} on {date}: {e}")
             return []
     
+    def list_daily_ticker_summary_range(self, ticker: str, start_date: str, end_date: str) -> List[Dict[str, Any]]:
+        """Get daily OHLCV bars for a date range, sorted by date ascending."""
+        try:
+            self._check_client()
+            summaries = []
+            for agg in self.client.list_aggs(
+                ticker=ticker, multiplier=1, timespan='day',
+                from_=start_date, to=end_date, limit=50, sort='asc',
+            ):
+                agg_date = end_date
+                if hasattr(agg, 'timestamp'):
+                    try:
+                        agg_date = datetime.fromtimestamp(agg.timestamp / 1000).strftime("%Y-%m-%d")
+                    except Exception:
+                        pass
+                summaries.append({
+                    "date": agg_date,
+                    "open": agg.open,
+                    "high": agg.high,
+                    "low": agg.low,
+                    "close": agg.close,
+                    "volume": getattr(agg, 'volume', 0),
+                })
+            return summaries
+        except Exception as e:
+            logger.error(f"Error fetching daily range for {ticker} ({start_date}–{end_date}): {e}")
+            return []
+
     def list_financials_income_statements(self, ticker: str) -> List[Dict[str, Any]]:
         """
         Get income statements for a ticker.

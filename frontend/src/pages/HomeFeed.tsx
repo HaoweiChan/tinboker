@@ -8,6 +8,7 @@ import { getRecentEpisodes, getSortedPodcasts, type Episode as ApiEpisode, type 
 import { fetchWithFallback } from '@/services/api/migration';
 import { useSubscriptions } from '@/store/useAppStore';
 import { useStockPriceMap } from '@/hooks/useStockPriceMap';
+import { useStockPriceSinceMap } from '@/hooks/useStockPriceSinceMap';
 import { useTranslationMap } from '@/hooks/useTranslationMap';
 import { useEpisodeSentimentMap } from '@/hooks/useEpisodeSentimentMap';
 
@@ -37,6 +38,7 @@ export const HomeFeed: React.FC = () => {
   const subscriptions = useSubscriptions();
   const episodeTickers = useMemo(() => episodes.flatMap((ep) => ep.related_tickers ?? []), [episodes]);
   const priceMap = useStockPriceMap(episodeTickers);
+  const priceSinceMap = useStockPriceSinceMap(episodes);
   const rawTranslationMap = useTranslationMap(episodeTickers);
   // Flatten to ticker → displayName for the adapter (keeps episodeAdapter dependency-free)
   const translationMap = useMemo(() => {
@@ -114,7 +116,7 @@ export const HomeFeed: React.FC = () => {
           <>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {filtered.map((ep) => (
-                <EpisodeCardV2 key={ep.id} {...apiEpisodeToCardV2(ep, priceMap, podcastImageMap, translationMap, sentimentMap.get(ep.id))} />
+                <EpisodeCardV2 key={ep.id} {...apiEpisodeToCardV2(ep, priceMap, podcastImageMap, translationMap, sentimentMap.get(ep.id), priceSinceMap)} />
               ))}
             </div>
             <div className="mt-6 py-3 text-center text-[12px] text-muted-foreground">— 到這邊 —</div>
