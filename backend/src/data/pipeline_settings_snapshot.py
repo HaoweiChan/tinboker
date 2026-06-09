@@ -61,19 +61,23 @@ PIPELINE_SETTINGS: dict = {
         },
     },
     "llm": {
-        "default_provider": "gemini",
-        "extractor_model": "gemini-2.0-flash",
-        "researcher_model": "gemini-2.0-flash",
-        "writer_model": "gemini-3-pro-preview",
+        "default_provider": "openrouter",
+        "default_model": "openrouter:xiaomi/mimo-v2.5",
+        "extractor_model": "openrouter:xiaomi/mimo-v2.5",
+        "writer_model": "openrouter:xiaomi/mimo-v2.5",
+        "marp_writer_model": "openrouter:xiaomi/mimo-v2.5",
+        "ticker_extractor_model": "openrouter:xiaomi/mimo-v2.5",
+        "key_insights_extractor_model": "openrouter:xiaomi/mimo-v2.5",
         "segmentation_model": "gemini-2.5-pro",
-        "temperatures": {"extractor": 0.1, "researcher": 0.0, "writer": 0.4, "segmentation": 0.0},
+        "temperatures": {"extractor": 0.1, "writer": 0.4, "marp_writer": 0.4, "ticker_extractor": 0.1, "key_insights_extractor": 0.3},
         "token_limits": {
             "extractor_input": 100000,
             "extractor_output": 16000,
-            "researcher_input": 32000,
-            "researcher_output": 8000,
             "writer_input": 32000,
-            "writer_output": 4000,
+            "writer_output": 8192,
+            "marp_writer_output": 8192,
+            "ticker_extractor_output": 2048,
+            "key_insights_extractor_output": 1024,
         },
     },
     "search": {"default_engine": "tavily", "timeout_seconds": 30},
@@ -87,12 +91,11 @@ PIPELINE_SETTINGS: dict = {
 }
 
 SNAPSHOT_META: dict = {
-    "source": "tinboker-agents/services/podcast/configs/default.yaml",
-    "snapshot_of_commit": "ab35ba5",
-    "snapshot_date": "2026-05-11",
-    "read_only": True,
+    "source": "pipelines/services/podcast/src/podcast/content_builder/llm.py",
+    "snapshot_of_commit": "HEAD",
+    "snapshot_date": "2026-06-08",
+    "read_only": False,
     "note": (
-        "Static snapshot for operator reference. The tinboker-agents repo is the source "
-        "of truth; values may drift until this snapshot is refreshed."
+        "Defaults from code. Admin overrides (if any) are merged on top."
     ),
 }

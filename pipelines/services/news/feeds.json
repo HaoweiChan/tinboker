@@ -1,0 +1,11 @@
+{
+  "_note": "RSS feeds for the news-ingest pipeline. Edit freely. Each entry: name, url, region (TW|US|...), enabled. Disabled or unreachable feeds are skipped (the run is best-effort). This is a scaffold — populate with the sources you actually want to track.",
+  "feeds": [
+    {"name": "Yahoo Finance", "url": "https://finance.yahoo.com/news/rssindex", "region": "US", "enabled": true},
+    {"name": "CNBC Top News", "url": "https://www.cnbc.com/id/100003114/device/rss/rss.html", "region": "US", "enabled": true},
+    {"name": "NASDAQ Markets", "url": "https://www.nasdaq.com/feed/rssoutbound?category=Markets", "region": "US", "enabled": true},
+    {"name": "MarketWatch Top Stories", "url": "http://feeds.marketwatch.com/marketwatch/topstories/", "region": "US", "enabled": true},
+    {"name": "cnYES 鉅亨網 頭條", "url": "https://news.cnyes.com/rss/v1/news/category/headline", "region": "TW", "enabled": true},
+    {"name": "經濟日報 證券", "url": "https://money.udn.com/rssfeed/news/1001/5590?ch=money", "region": "TW", "enabled": true}
+  ]
+}

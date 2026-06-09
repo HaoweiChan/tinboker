@@ -9,6 +9,7 @@ export interface TickerRowData {
   name?: string;             // resolved display_name from translation table (optional)
   sentiment?: Sentiment;     // LLM-derived; chip color is always green=bull/red=bear
   changePercent?: number | null; // price change %; color follows the TW/US convention
+  sinceLabel?: string | null;    // e.g. "播出至今" — shown next to changePercent when set
 }
 
 interface TickerRowProps {
@@ -42,7 +43,12 @@ export const TickerRow: React.FC<TickerRowProps> = ({ ticker, onClick, className
         <span className="ticker-row-symbol ticker-row-symbol--solo">{bareSymbol(ticker.symbol)}</span>
       )}
       {ticker.sentiment ? <SentimentChip sentiment={ticker.sentiment} /> : <span />}
-      <Change value={ticker.changePercent} />
+      <span className="flex items-baseline gap-1 justify-end">
+        <Change value={ticker.changePercent} />
+        {ticker.sinceLabel && (
+          <span className="text-[10px] text-muted-foreground whitespace-nowrap">{ticker.sinceLabel}</span>
+        )}
+      </span>
     </Tag>
   );
 };

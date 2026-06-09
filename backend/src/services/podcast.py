@@ -3,7 +3,7 @@ import os
 import json
 import asyncio
 import logging
-from typing import Optional, List
+from typing import Optional, List, Collection
 from datetime import datetime
 from src.config import settings
 from src.models.podcast import Podcast, Episode
@@ -17,6 +17,13 @@ import httpx
 
 
 logger = logging.getLogger(__name__)
+
+EPISODE_DETAIL_CONTENT_FIELDS = frozenset({
+    "summary_content",
+    "events_markdown_content",
+    "sentences_markdown_content",
+    "modified_summary_content",
+})
 
 
 class PodcastService:
@@ -142,6 +149,16 @@ class PodcastService:
         langs = settings.release_podcast_languages
         lang_part = ",".join(sorted(langs)) if langs else "all"
         return f"{lang_part}:{settings.release_episode_max_age_days}"
+
+    @staticmethod
+    def _content_cache_tag(content_fields: Optional[Collection[str]]) -> str:
+        """Stable cache-key suffix for hydrated content field sets.
+
+        None means "all configured GCS-backed fields" for legacy/full payload callers.
+        """
+        if content_fields is None:
+            return "full"
+        return "fields-" + ",".join(sorted(content_fields))
 
     @staticmethod
     def _spotify_release_ms(value) -> Optional[int]:
@@ -407,13 +424,15 @@ class PodcastService:
 
     async def get_episode_by_id(
         self, podcast_name: str, episode_id: str, apply_scope: bool = True,
+        content_fields: Optional[Collection[str]] = EPISODE_DETAIL_CONTENT_FIELDS,
     ) -> Optional[Episode]:
         """Get episode by ID with caching.
 
         apply_scope=False bypasses the release language/recency filter — used by
         admin mutations that need the episode back regardless of public scope.
         """
-        cache_key = f"podcast:{podcast_name}:episode:{episode_id}"
+        content_tag = self._content_cache_tag(content_fields)
+        cache_key = f"podcast:{podcast_name}:episode:{episode_id}:v2:{content_tag}"
         cached = await cache_get(cache_key)
         if cached:
             try:
@@ -428,11 +447,11 @@ class PodcastService:
             episode_dict = self.firestore_service.get_document("episodes", episode_id)
             if not episode_dict or episode_dict.get('podcast_name') != podcast_name:
                 return None
-            episode = await self.transformer.to_episode(episode_dict)
+            episode = await self.transformer.to_episode(episode_dict, content_fields=content_fields)
             # Skip caching a partially-hydrated episode (content URL set but content
             # empty, e.g. a transient GCS read failure) so the next request re-attempts
             # the GCS read instead of pinning a blank payload for the full TTL.
-            if not self.transformer.is_content_incomplete(episode_dict):
+            if not self.transformer.is_content_incomplete(episode_dict, content_fields=content_fields):
                 try:
                     await cache_set(cache_key, json.dumps(episode.dict(), default=str), CACHE_TTL["podcast_episode"])
                 except Exception:
@@ -448,7 +467,11 @@ class PodcastService:
         except Exception as e:
             raise Exception(f"Failed to get episode: {e}") from e
 
-    async def get_episode_by_id_only(self, episode_id: str) -> Optional[Episode]:
+    async def get_episode_by_id_only(
+        self,
+        episode_id: str,
+        content_fields: Optional[Collection[str]] = EPISODE_DETAIL_CONTENT_FIELDS,
+    ) -> Optional[Episode]:
         """Get an episode by id without requiring the podcast name.
 
         Episode docs are keyed by id in Firestore; get_episode_by_id only uses
@@ -456,7 +479,8 @@ class PodcastService:
         episode up. Used when the client opens /episode/{id} cold (deep link / refresh /
         shared URL) and has no ?podcast= to supply the show name.
         """
-        cache_key = f"episode:{episode_id}"
+        content_tag = self._content_cache_tag(content_fields)
+        cache_key = f"episode:{episode_id}:v2:{content_tag}"
         cached = await cache_get(cache_key)
         if cached:
             try:
@@ -471,13 +495,13 @@ class PodcastService:
             episode_dict = self.firestore_service.get_document("episodes", episode_id)
             if not episode_dict:
                 return None
-            episode = await self.transformer.to_episode(episode_dict)
+            episode = await self.transformer.to_episode(episode_dict, content_fields=content_fields)
             if not await self._episode_in_scope(episode):
                 return None
             # Don't pin a half-hydrated episode (content URL present but content empty,
             # e.g. a transient GCS read failure) — leave it uncached so the next request
             # re-attempts the fetch instead of serving a blank for the full TTL.
-            if not self.transformer.is_content_incomplete(episode_dict):
+            if not self.transformer.is_content_incomplete(episode_dict, content_fields=content_fields):
                 try:
                     await cache_set(cache_key, json.dumps(episode.dict(), default=str), CACHE_TTL["podcast_episode"])
                 except Exception:
@@ -566,14 +590,10 @@ class PodcastService:
                 direction="DESCENDING", limit=fetch_limit,
             )
 
-            dicts = []
-            for ref in episode_refs:
-                eid = ref.get('episode_id')
-                if eid:
-                    doc = self.firestore_service.get_document("episodes", eid)
-                    if doc:
-                        dicts.append(doc)
-
+            eids = [ref.get('episode_id') for ref in episode_refs if ref.get('episode_id')]
+            dicts = await asyncio.to_thread(
+                self.firestore_service.get_documents_batch, "episodes", eids,
+            ) if eids else []
             episodes = await asyncio.gather(
                 *[self.transformer.to_episode(d, enrich_content=enrich_content) for d in dicts]
             )
@@ -649,26 +669,22 @@ class PodcastService:
         self, tag: str, limit: int = 50, offset: int = 0,
         enrich_content: bool = False,
     ) -> List[Episode]:
-        """Get episodes for a specific tag"""
+        """Get episodes for a specific tag (batch-read for performance)."""
         try:
             allowed = await self._allowed_podcast_names()
             cutoff = self._recency_cutoff_ms()
             scoping_active = allowed is not None or cutoff is not None
             fetch_limit = max((limit + offset) * 5, 100) if scoping_active else (limit + offset)
-            episode_refs = self.firestore_service.get_subcollection_documents(
+            episode_refs = await asyncio.to_thread(
+                self.firestore_service.get_subcollection_documents,
                 collection="tags", parent_doc_id=tag.lower(),
                 subcollection="episodes", order_by="created_time",
                 direction="DESCENDING", limit=fetch_limit,
             )
-
-            dicts = []
-            for ref in episode_refs:
-                eid = ref.get('episode_id')
-                if eid:
-                    doc = self.firestore_service.get_document("episodes", eid)
-                    if doc:
-                        dicts.append(doc)
-
+            eids = [ref.get('episode_id') for ref in episode_refs if ref.get('episode_id')]
+            dicts = await asyncio.to_thread(
+                self.firestore_service.get_documents_batch, "episodes", eids,
+            ) if eids else []
             episodes = await asyncio.gather(
                 *[self.transformer.to_episode(d, enrich_content=enrich_content) for d in dicts]
             )
@@ -676,6 +692,85 @@ class PodcastService:
             return episodes[offset:offset + limit]
         except Exception as e:
             raise Exception(f"Failed to get episodes by tag: {e}") from e
+
+    async def get_trending_tags(self, weeks: int = 6, preview_count: int = 3) -> List[dict]:
+        """Return curated tags with scoped counts, weekly sparkline data, and episode previews.
+        Results are cached for 30 minutes. Tags with 0 scoped episodes are omitted."""
+        cache_key = f"tags:trending:v1:{weeks}:{preview_count}:{self._scope_tag()}"
+        cached = await cache_get(cache_key)
+        if cached:
+            try:
+                return json.loads(cached)
+            except Exception:
+                pass
+        allowed = await self._allowed_podcast_names()
+        cutoff = self._recency_cutoff_ms()
+        now_ms = int(datetime.now().timestamp() * 1000)
+        week_ms = 7 * 24 * 3600 * 1000
+        week_boundaries = [now_ms - i * week_ms for i in range(weeks + 1)]
+        sem = asyncio.Semaphore(6)
+
+        async def _process_tag(tid: str) -> Optional[dict]:
+            async with sem:
+                try:
+                    refs = await asyncio.to_thread(
+                        self.firestore_service.get_subcollection_documents,
+                        collection="tags", parent_doc_id=tid,
+                        subcollection="episodes", order_by="created_time",
+                        direction="DESCENDING", limit=200,
+                    )
+                    eids = [r.get('episode_id') for r in refs if r.get('episode_id')]
+                    if not eids:
+                        return None
+                    dicts = await asyncio.to_thread(
+                        self.firestore_service.get_documents_batch, "episodes", eids,
+                    )
+                    scoped_dicts = []
+                    for d in dicts:
+                        if not self._dict_has_content(d):
+                            continue
+                        if allowed is not None and d.get('podcast_name') not in allowed:
+                            continue
+                        if cutoff is not None and self._dict_release_ms(d) < cutoff:
+                            continue
+                        scoped_dicts.append(d)
+                    if not scoped_dicts:
+                        return None
+                    scoped_dicts.sort(key=lambda d: self._dict_release_ms(d), reverse=True)
+                    weekly = [0] * weeks
+                    for d in scoped_dicts:
+                        t = self._dict_release_ms(d)
+                        for w in range(weeks):
+                            if t >= week_boundaries[w + 1]:
+                                weekly[w] += 1
+                                break
+                    previews = []
+                    for d in scoped_dicts[:preview_count]:
+                        previews.append({
+                            "id": d.get("id", ""),
+                            "title": d.get("episode_title", ""),
+                            "podcast_name": d.get("podcast_name", ""),
+                            "released_at_ms": self._dict_release_ms(d),
+                            "key_insights": (d.get("key_insights") or [])[:3],
+                            "related_tickers": (d.get("related_tickers") or [])[:4],
+                        })
+                    return {
+                        "id": tid, "name": tid,
+                        "scoped_count": len(scoped_dicts),
+                        "weekly_counts": weekly,
+                        "recent_episodes": previews,
+                    }
+                except Exception:
+                    logger.warning("Failed to process trending tag %s", tid, exc_info=True)
+                    return None
+
+        results = await asyncio.gather(*[_process_tag(t) for t in self._TOPIC_TAGS])
+        tags = sorted([r for r in results if r], key=lambda x: x["scoped_count"], reverse=True)
+        try:
+            await cache_set(cache_key, json.dumps(tags), 1800)
+        except Exception:
+            pass
+        return tags
 
     # ── Search ───────────────────────────────────────────────────────
 
@@ -831,9 +926,40 @@ class PodcastService:
             logger.error(f"Failed to delete modified summary: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to delete modified summary: {str(e)}")
 
+    async def patch_episode_fields(
+        self, podcast_name: str, episode_id: str,
+        updates: dict,
+    ) -> Episode:
+        """Patch allowed fields directly in Firestore (dev debug editor)."""
+        from fastapi import HTTPException
+        allowed = {"summary_content", "key_insights", "related_tickers", "tags"}
+        bad_keys = set(updates.keys()) - allowed
+        if bad_keys:
+            raise HTTPException(status_code=422, detail=f"Fields not patchable: {', '.join(sorted(bad_keys))}")
+        if not updates:
+            raise HTTPException(status_code=422, detail="No fields to update")
+        episode_dict = self.firestore_service.get_document("episodes", episode_id)
+        if not episode_dict:
+            raise HTTPException(status_code=404, detail=f"Episode {episode_id} not found")
+        if episode_dict.get("podcast_name") != podcast_name:
+            raise HTTPException(status_code=404, detail=f"Episode {episode_id} not found for podcast {podcast_name}")
+        try:
+            await asyncio.to_thread(
+                self.firestore_service.set_document, "episodes", episode_id, updates, True,
+            )
+            await self._invalidate_episode_cache(podcast_name, episode_id)
+            return await self.get_episode_by_id(podcast_name, episode_id, apply_scope=False)
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Failed to patch episode fields: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to patch episode: {str(e)}")
+
     async def _invalidate_episode_cache(self, podcast_name: str, episode_id: str):
         """Invalidate all caches related to an episode"""
         await cache_delete(f"podcast:{podcast_name}:episode:{episode_id}")
+        await cache_delete_pattern(f"podcast:{podcast_name}:episode:{episode_id}:*")
+        await cache_delete_pattern(f"episode:{episode_id}:*")
         await cache_delete_pattern(f"podcast:{podcast_name}:episodes:*")
         await cache_delete_pattern("episodes:recent:*")
 

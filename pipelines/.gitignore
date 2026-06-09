@@ -1,0 +1,65 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+build/
+dist/
+
+# Virtual envs
+.venv/
+venv/
+env/
+ENV/
+
+# Test/coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+
+# oh-my-claudecode tooling state
+.omc/
+
+# Graphify outputs (top-level)
+graphify-out/
+
+# Wiki content lives in Postgres on the VPS, not in this repo.
+# These dirs may exist locally (e.g. as a one-time migration source) but are
+# never committed — the repo is functional/infra-only and content-agnostic.
+wiki/
+services/wiki/
+
+# Knowledge-graph JSON store (generated at runtime)
+wiki-graph/
+
+# Local scratch / pipeline eval outputs (never committed)
+tmp/
+
+# Stray infographic outputs at any depth
+infographic_*.png
+infographic_*.svg
+infographic_*.txt
+
+# Service-account keys (do not commit)
+gcp-service-account.json
+*.gcp.json
+
+# Claude Code local memory (never committed)
+.claude/
+
+# Logs
+*.log
+
+# uv.lock IS committed for reproducibility — do not ignore it
+
+# Agent session artifacts (never committed)
+.agents/
+.codex/
+progress.txt

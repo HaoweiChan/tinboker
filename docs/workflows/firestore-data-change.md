@@ -1,6 +1,6 @@
 # Firestore data change workflow
 
-Procedure for adding, modifying, or reading Firestore data, or for changing the cross-repo data contract with the `tinboker-agents` pipeline.
+Procedure for adding, modifying, or reading Firestore data, or for changing the data contract shared with the `pipelines/` content tier (the writer; formerly the separate `tinboker-agents` repo).
 
 ## Hard rule: no new Firestore-direct read paths
 
@@ -18,7 +18,7 @@ Do NOT silently introduce a fourth read path — the data contract is the bottle
 
 1. **Read [`../firestore-contract.md`](../firestore-contract.md) §1 (ownership matrix)** to confirm whether the field/collection is platform-owned or agents-owned.
 2. If it's agents-owned (most episode/ticker/insight fields):
-   - This change requires coordination with the `tinboker-agents` team.
+   - This change requires coordination with the `pipelines/` tier (the writer).
    - Update [`../firestore-contract.md`](../firestore-contract.md) with the proposed change before writing any code.
    - Bump `schema_version` in the section affected.
 3. If it's platform-owned (`users/*`, `users/*/notifications/*`, the `modified_*` fields on episodes):
@@ -44,7 +44,7 @@ If you genuinely need a new timestamp, follow the §2.3 cleanup #1 pattern: add 
 1. Update [`../firestore-contract.md`](../firestore-contract.md) §1 (ownership matrix) with: writer, reader(s), lifecycle.
 2. Add a new section to the contract detailing the document schema.
 3. If platform-owned: add Pydantic models in `backend/src/models/`, DB access in `backend/src/database/`, service in `backend/src/services/`, router in `backend/src/routers/`.
-4. If agents-owned: spec the schema first, get tinboker-agents review, only then add backend readers.
+4. If agents-owned: spec the schema first, get `pipelines/`-side review, only then add backend readers.
 
 ## Reading existing data
 

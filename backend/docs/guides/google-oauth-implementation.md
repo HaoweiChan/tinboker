@@ -816,7 +816,7 @@ async def get_current_user(authorization: Optional[str] = Header(None)) -> UserR
 
 ### Step 1: Update Environment Variables
 
-Create or update `.env.local` in `tinboker-platform/frontend`:
+Create or update `.env.local` in `tinboker/frontend`:
 
 ```env
 VITE_GOOGLE_CLIENT_ID=your-client-id-from-oauth-credentials.apps.googleusercontent.com

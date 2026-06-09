@@ -162,6 +162,13 @@ export const Sidebar: React.FC = () => {
             expanded && <span className="text-[12px] text-muted-foreground px-1">尚未登入</span>
           )}
         </div>
+
+        {/* App version */}
+        {expanded && (
+          <div className="px-2.5 pt-3 text-[10px] text-muted-foreground/50 tracking-wide tabular-nums">
+            v{__APP_VERSION__}
+          </div>
+        )}
       </div>
     </aside>
   );

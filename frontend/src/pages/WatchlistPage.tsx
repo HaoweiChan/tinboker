@@ -8,6 +8,7 @@ import { getPodcastEpisodes, getSortedPodcasts, type Episode as ApiEpisode, type
 import { fetchWithFallback } from '@/services/api/migration';
 import { useSubscriptions, useWatchlist } from '@/store/useAppStore';
 import { useStockPriceMap } from '@/hooks/useStockPriceMap';
+import { useStockPriceSinceMap } from '@/hooks/useStockPriceSinceMap';
 import { useTranslationMap } from '@/hooks/useTranslationMap';
 import { useEpisodeSentimentMap } from '@/hooks/useEpisodeSentimentMap';
 import { useStockSummaries } from '@/hooks/useStockSummaries';
@@ -25,6 +26,7 @@ export const WatchlistPage: React.FC = () => {
   const [podcasts, setPodcasts] = useState<Podcast[]>([]);
   const episodeTickers = useMemo(() => episodes.flatMap((ep) => ep.related_tickers ?? []), [episodes]);
   const priceMap = useStockPriceMap(episodeTickers);
+  const priceSinceMap = useStockPriceSinceMap(episodes);
   const rawTranslationMap = useTranslationMap(episodeTickers);
   // Flatten to ticker → displayName for the adapter (mirrors HomeFeed).
   const translationMap = useMemo(() => {
@@ -108,7 +110,7 @@ export const WatchlistPage: React.FC = () => {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {episodes.map((ep) => (
-                <EpisodeCardV2 key={ep.id} {...apiEpisodeToCardV2(ep, priceMap, podcastImageMap, translationMap, sentimentMap.get(ep.id))} />
+                <EpisodeCardV2 key={ep.id} {...apiEpisodeToCardV2(ep, priceMap, podcastImageMap, translationMap, sentimentMap.get(ep.id), priceSinceMap)} />
               ))}
             </div>
           )

@@ -1,0 +1,39 @@
+[project]
+name = "tinboker-agents"
+version = "0.1.0"
+description = "Unified monorepo for financial content and knowledge infrastructure"
+requires-python = ">=3.11"
+
+[tool.uv.workspace]
+members = [
+    "libs/shared",
+    "services/podcast",
+    "services/news",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=7.4.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+ignore = ["E501"]  # line-too-long: not enforced, formatter handles length
+
+[tool.ruff.lint.per-file-ignores]
+"services/podcast/scripts/*" = ["E402"]
+"services/podcast/tests/*" = ["E402", "F401"]
+
+[tool.pytest.ini_options]
+testpaths = ["services/*/tests", "libs/*/tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+markers = [
+    "unit: fast unit tests (no external services)",
+    "integration: tests requiring external services (Firestore, GCS, Postgres)",
+]

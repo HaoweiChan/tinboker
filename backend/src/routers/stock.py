@@ -1,17 +1,23 @@
 """
 Stock API router
 """
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException, Query, Depends
+import json
+import asyncio
+import hashlib
+import logging
+from datetime import datetime, timedelta
 from typing import Optional, List
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException, Query, Depends
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
-from src.services.stock import StockService
 from src.models.stock import CompanyDetail
+from src.services.stock import StockService
 from src.services.websocket_subscriber import WebSocketSubscriber
 from src.database.postgres import get_session
-from src.database.models import StockTranslation
+from src.database.models import StockTranslation, StockDailyClose
 from src.utils.market import infer_market
-import asyncio
-import logging
+from src.cache.redis_client import cache_get, cache_set
+from src.cache.cache_config import CACHE_TTL
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +74,166 @@ async def get_batch_prices(
         ticker: (info.get('changePercent') if isinstance(info, dict) else None)
         for ticker, info in zip(ticker_list, results)
     }
+
+
+class TickerDatePair(BaseModel):
+    ticker: str
+    reference_ms: int = Field(..., description="Episode release timestamp (Unix ms)")
+
+
+class BatchPricesSinceRequest(BaseModel):
+    items: list[TickerDatePair] = Field(..., max_length=300)
+
+
+# Concurrency limiter: at most 5 simultaneous external API calls to avoid
+# thundering-herd on FinMind / Massive (which are aggressively rate-limited).
+_ext_api_sem = asyncio.Semaphore(5)
+
+# Short negative-cache TTL so we don't re-hammer failing APIs on every request.
+_NULL_CACHE_TTL = 300  # 5 min
+
+
+async def _get_reference_close(
+    ticker: str,
+    ref_date_str: str,
+    db: Session,
+) -> Optional[float]:
+    """Return the closing price on or just before *ref_date_str*.
+
+    Lookup order:
+      1. PostgreSQL ``stock_daily_closes`` table (permanent, never expires)
+      2. Redis cache (catches recent API results; 24 h TTL)
+      3. External API (FinMind for TW, Massive for US) — result persisted to both DB + Redis
+    """
+    # --- 1. DB lookup (permanent store, 7-day window) ---
+    window_start = (datetime.strptime(ref_date_str, "%Y-%m-%d") - timedelta(days=7)).strftime("%Y-%m-%d")
+    row = (
+        db.query(StockDailyClose)
+        .filter(
+            StockDailyClose.ticker == ticker,
+            StockDailyClose.date >= window_start,
+            StockDailyClose.date <= ref_date_str,
+        )
+        .order_by(StockDailyClose.date.desc())
+        .first()
+    )
+    if row is not None:
+        return row.close
+
+    # --- 2. Redis cache ---
+    cache_key = f"stock:{ticker}:close:{ref_date_str}"
+    cached = await cache_get(cache_key)
+    if cached is not None:
+        if cached == "__null__":
+            return None
+        try:
+            return float(cached)
+        except (ValueError, TypeError):
+            pass
+
+    # --- 3. External API (rate-limited) ---
+    async with _ext_api_sem:
+        loop = asyncio.get_event_loop()
+        is_tw = ticker.split(".")[0].isdigit()
+        start = (datetime.strptime(ref_date_str, "%Y-%m-%d") - timedelta(days=7)).strftime("%Y-%m-%d")
+        try:
+            if is_tw:
+                from src.services.finmind_service import FinMindAPIService
+                svc = FinMindAPIService()
+                rows = await loop.run_in_executor(
+                    None, lambda: svc.list_daily_ticker_summary_range(ticker.split(".")[0], start, ref_date_str),
+                )
+            else:
+                from src.services.massive_service import MassiveAPIService
+                svc = MassiveAPIService()
+                rows = await loop.run_in_executor(
+                    None, lambda: svc.list_daily_ticker_summary_range(ticker, start, ref_date_str),
+                )
+        except Exception:
+            rows = []
+
+    if not rows:
+        await cache_set(cache_key, "__null__", _NULL_CACHE_TTL)
+        return None
+
+    close = rows[-1].get("close")
+    if close is None:
+        await cache_set(cache_key, "__null__", _NULL_CACHE_TTL)
+        return None
+
+    # Persist to DB so this (ticker, date) never needs an API call again.
+    actual_date = rows[-1].get("date", ref_date_str)
+    try:
+        existing = (
+            db.query(StockDailyClose)
+            .filter(StockDailyClose.ticker == ticker, StockDailyClose.date == actual_date)
+            .first()
+        )
+        if not existing:
+            db.add(StockDailyClose(ticker=ticker, date=actual_date, close=close))
+            db.commit()
+    except Exception:
+        db.rollback()
+
+    await cache_set(cache_key, str(close), CACHE_TTL["stock_history"])
+    return close
+
+
+@router.post("/batch-prices-since")
+async def get_batch_prices_since(
+    body: BatchPricesSinceRequest,
+    db: Session = Depends(get_session),
+):
+    """Return % change from each ticker's reference date to its current price.
+
+    Uses a DB-first strategy for historical closes to minimise external API calls.
+    The full response is cached in Redis for 15 min.
+    """
+    # Deduplicate: same ticker may appear in multiple episodes; pick earliest date.
+    earliest: dict[str, str] = {}
+    for item in body.items:
+        t = item.ticker.upper()
+        d = datetime.utcfromtimestamp(item.reference_ms / 1000).strftime("%Y-%m-%d")
+        if t not in earliest or d < earliest[t]:
+            earliest[t] = d
+    tickers = list(earliest.keys())
+    if not tickers:
+        return {}
+
+    # --- Response-level Redis cache (15 min) ---
+    pairs_key = ",".join(f"{t}:{earliest[t]}" for t in sorted(tickers))
+    resp_cache_key = f"batch_since:{hashlib.md5(pairs_key.encode()).hexdigest()}"
+    cached_resp = await cache_get(resp_cache_key)
+    if cached_resp:
+        try:
+            return json.loads(cached_resp)
+        except Exception:
+            pass
+
+    # Fetch reference closes (DB → Redis → API) and current prices concurrently.
+    ref_closes, basics = await asyncio.gather(
+        asyncio.gather(*[_get_reference_close(t, earliest[t], db) for t in tickers], return_exceptions=True),
+        asyncio.gather(*[stock_service.get_stock_basic_info_async(t) for t in tickers], return_exceptions=True),
+    )
+    out: dict[str, Optional[float]] = {}
+    for ticker, ref_close, basic in zip(tickers, ref_closes, basics):
+        if isinstance(ref_close, Exception) or isinstance(basic, Exception):
+            out[ticker] = None
+            continue
+        current_price = basic.get("price") if isinstance(basic, dict) else None
+        if ref_close and current_price and ref_close > 0:
+            out[ticker] = round((current_price - ref_close) / ref_close * 100, 2)
+        else:
+            out[ticker] = None
+
+    # Cache the response. Use shorter TTL if most values are null (likely API issues).
+    non_null = sum(1 for v in out.values() if v is not None)
+    ttl = 900 if non_null > len(out) * 0.3 else _NULL_CACHE_TTL
+    try:
+        await cache_set(resp_cache_key, json.dumps(out), ttl)
+    except Exception:
+        pass
+    return out
 
 
 @router.get("/batch-summary")

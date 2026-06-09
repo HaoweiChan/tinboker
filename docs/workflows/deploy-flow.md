@@ -48,7 +48,7 @@ Branch conventions:
 | [`.github/workflows/frontend-ci.yml`](../../.github/workflows/frontend-ci.yml) | PR to `develop` / `main` — TypeScript build + ESLint |
 | [`.github/workflows/backend-deploy.yml`](../../.github/workflows/backend-deploy.yml) | Push to `develop` / `main` / tag — builds + pushes to GHCR, SSHs to VPS, runs `docker compose ... up -d --no-deps backend-<env>` |
 | [`.github/workflows/backend-deploy-admin.yml`](../../.github/workflows/backend-deploy-admin.yml) | Manual dispatch — admin/dev portal backend |
-| [`.github/workflows/frontend-deploy.yml`](../../.github/workflows/frontend-deploy.yml) | Push to `develop` / `main` — deploys to Cloudflare Pages project `tinboker-platform` |
+| [`.github/workflows/frontend-deploy.yml`](../../.github/workflows/frontend-deploy.yml) | Push to `develop` / `main` — deploys to Cloudflare Pages project `tinboker` |
 | [`.github/workflows/backend-health-check.yml`](../../.github/workflows/backend-health-check.yml) | Cron every 10 min — hits `/health` per env; restarts the failing container only |
 
 ## Verification

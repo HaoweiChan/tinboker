@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils';
 import { getPodcastByName, getPodcastEpisodes, type Podcast, type Episode as ApiEpisode } from '@/services/api';
 import { fetchWithFallback } from '@/services/api/migration';
 import { useStockPriceMap } from '@/hooks/useStockPriceMap';
+import { useStockPriceSinceMap } from '@/hooks/useStockPriceSinceMap';
 import { useAppStore, useSubscriptions } from '@/store/useAppStore';
 
 export const PodcasterPage: React.FC = () => {
@@ -19,6 +20,7 @@ export const PodcasterPage: React.FC = () => {
   const [episodes, setEpisodes] = useState<ApiEpisode[]>([]);
   const episodeTickers = useMemo(() => episodes.flatMap((ep) => ep.related_tickers ?? []), [episodes]);
   const priceMap = useStockPriceMap(episodeTickers);
+  const priceSinceMap = useStockPriceSinceMap(episodes);
   const [loading, setLoading] = useState(true);
 
   const name = decodeURIComponent(id || '');
@@ -107,7 +109,7 @@ export const PodcasterPage: React.FC = () => {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {episodes.map((ep) => (
-              <EpisodeCardV2 key={ep.id} {...apiEpisodeToCardV2(ep, priceMap, podcastImageMap)} />
+              <EpisodeCardV2 key={ep.id} {...apiEpisodeToCardV2(ep, priceMap, podcastImageMap, undefined, undefined, priceSinceMap)} />
             ))}
           </div>
         )}

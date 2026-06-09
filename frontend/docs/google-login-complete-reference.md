@@ -122,7 +122,7 @@ if (!GOOGLE_CLIENT_ID) {
     '5. Go to Deployments tab and click "Redeploy" on the latest deployment\n' +
     '6. Wait for deployment to complete'
     : '⚠️ VITE_GOOGLE_CLIENT_ID is not set in .env.local!\n' +
-    'Create .env.local file in tinboker-platform/frontend/ with:\n' +
+    'Create .env.local file in tinboker/frontend/ with:\n' +
     'VITE_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com';
 
   console.error(errorMsg);

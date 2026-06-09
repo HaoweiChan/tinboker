@@ -1,0 +1,15 @@
+---
+description: Content/agent pipelines tier (podcast + news ingestion, transcription, summarization, ticker-sentiment, content_builder, wiki_builder). Auto-attached when editing pipelines/ code.
+globs:
+  - pipelines/**
+alwaysApply: false
+---
+
+Read `pipelines/AGENTS.md` for full context before making changes in `pipelines/`. It defines the
+module map (podcast + news services, `libs/shared`), the decision tree for which module to touch,
+and the conventions for this tier. Cross-references: `pipelines/docs/wiki-schema.md` (wiki Postgres
+schema + `/api/wiki` API), `pipelines/docs/content-api-roadmap.md`, and `docs/firestore-contract.md`.
+
+This tier is content/infra-only — **do not build UI here** (the web UI is `frontend/`). It is a uv
+workspace: use `uv sync` / `uv run --package ...`, never `pip install`. Keep the wiki layer
+content-agnostic and avoid new Firestore-direct read paths.

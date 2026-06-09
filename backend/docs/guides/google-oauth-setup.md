@@ -140,7 +140,7 @@
 
 ### Step 1: Create/Update `.env` File
 
-Create or update `.env` file in `tinboker-platform/backend/` directory:
+Create or update `.env` file in `tinboker/backend/` directory:
 
 ```env
 # ============================================
@@ -214,7 +214,7 @@ Copy the output and paste it as `JWT_SECRET_KEY` in your `.env` file.
 
 2. Update `.env` with absolute path:
    ```env
-   GCP_CREDENTIALS_PATH=/home/lewis/1project/tinboker-platform/backend/credentials/firebase-service-account.json
+   GCP_CREDENTIALS_PATH=/home/lewis/1project/tinboker/backend/credentials/firebase-service-account.json
    ```
 
 **For Production (Render.com, etc.):**
@@ -238,7 +238,7 @@ Copy the output and paste it as `JWT_SECRET_KEY` in your `.env` file.
 Check that all required variables are set:
 
 ```bash
-# In tinboker-platform/backend directory
+# In tinboker/backend directory
 python -c "
 import os
 from dotenv import load_dotenv
@@ -282,7 +282,7 @@ else:
 
 ### Step 1: Create/Update `.env.local` File
 
-Create or update `.env.local` file in `tinboker-platform/frontend/` directory:
+Create or update `.env.local` file in `tinboker/frontend/` directory:
 
 ```env
 # ============================================
@@ -311,7 +311,7 @@ VITE_API_URL=http://localhost:3000/api
 Check that the environment variable is loaded:
 
 ```bash
-# In tinboker-platform/frontend directory
+# In tinboker/frontend directory
 # Check if .env.local exists
 if [ -f .env.local ]; then
     echo "✅ .env.local file exists"

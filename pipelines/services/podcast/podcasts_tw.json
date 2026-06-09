@@ -1,0 +1,62 @@
+[
+  {
+    "name": "Gooaye 股癌",
+    "link": "https://podcasttomp3.com/podcasts/v2/358931",
+    "limit": 10,
+    "spotify_show_link": "https://open.spotify.com/show/1zWxx5pKk0XBEzMupVC7UZ",
+    "transcript_option": {
+      "transcript_service": "groq",
+      "model": "whisper-large-v3"
+    }
+  },
+  {
+    "name": "游庭皓的財經皓角",
+    "link": "https://podcasttomp3.com/podcasts/v2/1196687",
+    "limit": 10,
+    "spotify_show_link": "https://open.spotify.com/show/1HOGxT9M7a6kpcDi4q27Q7",
+    "transcript_option": {
+      "transcript_service": "groq",
+      "model": "whisper-large-v3"
+    }
+  },
+  {
+    "name": "財報狗",
+    "link": "https://podcasttomp3.com/podcasts/v2/1244950",
+    "limit": 10,
+    "spotify_show_link": "https://open.spotify.com/show/02nixW8CEcAuGOp31YdpLt",
+    "transcript_option": {
+      "transcript_service": "groq",
+      "model": "whisper-large-v3"
+    }
+  },
+  {
+    "name": "財經M平方",
+    "link": "https://podcasttomp3.com/podcasts/v2/153128",
+    "limit": 10,
+    "spotify_show_link": "https://open.spotify.com/show/6JZtemUFcwHTrTprarLVwL",
+    "transcript_option": {
+      "transcript_service": "groq",
+      "model": "whisper-large-v3"
+    }
+  },
+  {
+    "name": "財女珍妮",
+    "link": "https://podcasttomp3.com/podcasts/v2/3474880",
+    "limit": 10,
+    "spotify_show_link": "https://open.spotify.com/show/3dTKJkvceKNHaYoh7Przbg",
+    "transcript_option": {
+      "transcript_service": "groq",
+      "model": "whisper-large-v3"
+    }
+  },
+  {
+    "name": "財經一路發",
+    "link": "https://podcasttomp3.com/podcasts/v2/5714050",
+    "limit": 10,
+    "spotify_show_link": "https://open.spotify.com/show/16vk9uoUXgbtWqIMbwyHsa",
+    "transcript_option": {
+      "transcript_service": "groq",
+      "model": "whisper-large-v3"
+    }
+  }
+]

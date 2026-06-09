@@ -50,7 +50,7 @@ Frontend (WebUI)                Backend (FastAPI)                  Database (Clo
 ### File Structure
 
 ```
-tinboker-platform/backend/
+tinboker/backend/
 ├── src/
 │   ├── database/
 │   │   ├── postgres.py              [NEW] PostgreSQL connection & session
@@ -130,7 +130,7 @@ Simple password-based auth using JWT:
 ### File Structure
 
 ```
-tinboker-platform/frontend/
+tinboker/frontend/
 ├── src/
 │   ├── pages/
 │   │   ├── AdminTranslationsPage.tsx    [NEW] Admin UI for translations
@@ -271,7 +271,7 @@ Follow `docs/GCP_CLOUD_SQL_SETUP.md`
 
 ```bash
 # On Netcup VPS
-cd /path/to/tinboker-platform
+cd /path/to/tinboker
 nano .env  # Add PostgreSQL settings
 ```
 

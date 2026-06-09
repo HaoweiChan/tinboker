@@ -11,11 +11,15 @@ import { parseTimestampedSections, type TimestampedSection } from '@/utils/parse
 import { usePlayerStore } from '@/store/usePlayerStore';
 import { CommentSection } from '@/components/episode/CommentSection';
 import { useStockPriceMap } from '@/hooks/useStockPriceMap';
+import { useStockPriceSinceMap, isRecentEpisode } from '@/hooks/useStockPriceSinceMap';
 import { useTranslationMap } from '@/hooks/useTranslationMap';
 import { useEpisodeSentimentMap } from '@/hooks/useEpisodeSentimentMap';
 import { EpisodeInsightCard, type EpisodeInsight } from '@/components/episode/EpisodeInsightCard';
 import { SummaryMarkdown } from '@/components/episode/SummaryMarkdown';
+import { EpisodeDebugPanel } from '@/components/episode/EpisodeDebugPanel';
 import type { Sentiment } from '@/lib/sentiment';
+
+const IS_DEV = import.meta.env.DEV || (import.meta.env.VITE_STAGE as string) === 'DEV';
 
 // Episodes can carry dozens of tags; show only a handful so the row stays meaningful.
 const MAX_HERO_TAGS = 6;
@@ -139,6 +143,11 @@ export const EpisodeDetail: React.FC = () => {
   const clips = useMemo<TimestampedSection[]>(() => (episode?.sentences_markdown_content ? parseTimestampedSections(episode.sentences_markdown_content).slice(0, 8) : []), [episode]);
   const tickerSymbols = useMemo(() => (Array.isArray(episode?.related_tickers) ? episode!.related_tickers.slice(0, 8) : []), [episode]);
   const priceMap = useStockPriceMap(tickerSymbols);
+  const episodesForSince = useMemo(() => (episode ? [episode] : []), [episode]);
+  const priceSinceMap = useStockPriceSinceMap(episodesForSince);
+  const useSince = episode ? !isRecentEpisode(episode) && priceSinceMap.size > 0 : false;
+  const activeMap = useSince ? priceSinceMap : priceMap;
+  const sinceLabel = useSince ? '播出至今' : null;
   const rawTranslationMap = useTranslationMap(tickerSymbols);
   const episodeIds = useMemo(() => (episode ? [episode.id] : []), [episode]);
   const episodeSentiments = useEpisodeSentimentMap(episodeIds);
@@ -150,22 +159,47 @@ export const EpisodeDetail: React.FC = () => {
         symbol: s,
         name: firstMapValue(rawTranslationMap, keys)?.displayName,
         sentiment: sent ? firstMapValue<Sentiment>(sent, keys) : undefined,
-        changePercent: firstMapValue(priceMap, keys),
+        changePercent: firstMapValue(activeMap, keys),
+        sinceLabel,
       };
     });
-    // Drop tickers the hosts only mentioned in passing — no sentiment means no
-    // expressed view (e.g. a bank cited for a report, or a non-ticker like
-    // SpaceX/"X"). If the episode has no per-ticker sentiment at all, keep every
-    // mention so the panel isn't empty.
     const scored = all.filter((t) => t.sentiment);
     return scored.length > 0 ? scored : all;
-  }, [tickerSymbols, rawTranslationMap, episodeSentiments, priceMap, episode]);
+  }, [tickerSymbols, rawTranslationMap, episodeSentiments, activeMap, episode, sinceLabel]);
   const spotifyUri = useMemo(() => spotifyUriFrom(episode), [episode]);
 
   const title = episode?.episode_title || (episode?.episode_number != null ? `EP ${episode.episode_number}` : '集數摘要');
   const name = episode?.podcast_name || podcastName || '節目';
   const episodeInsight = useMemo(() => episodeInsightFrom(episode, title), [episode, title]);
   const podcasterImageUrl = podcastImageUrl || episode?.spotify_images?.[0] || null;
+
+  // SEO: a PodcastEpisode JSON-LD with Clip parts (one per timestamped section) so
+  // Google can surface chapters, plus a canonical URL + og:image. Sections come from
+  // the same timestamped parse the page already uses.
+  const canonicalUrl = episode ? `https://tinboker.com/episode/${episode.id}` : undefined;
+  const seoImage = episode?.summary_image_public_url || episode?.spotify_images?.[0] || podcasterImageUrl || undefined;
+  const structuredData = useMemo<Record<string, unknown> | undefined>(() => {
+    if (!episode) return undefined;
+    const sections = chapters.length ? chapters : clips;
+    const data: Record<string, unknown> = {
+      '@context': 'https://schema.org',
+      '@type': 'PodcastEpisode',
+      name: title,
+      partOfSeries: { '@type': 'PodcastSeries', name },
+    };
+    if (canonicalUrl) data.url = canonicalUrl;
+    if (seoImage) data.image = seoImage;
+    if (episode.released_at_ms) data.datePublished = new Date(episode.released_at_ms).toISOString();
+    if (sections.length) {
+      data.hasPart = sections.map((s) => ({
+        '@type': 'Clip',
+        name: s.title,
+        startOffset: s.timestampSeconds,
+        ...(canonicalUrl ? { url: `${canonicalUrl}#t-${s.timestampSeconds}` } : {}),
+      }));
+    }
+    return data;
+  }, [episode, chapters, clips, title, name, canonicalUrl, seoImage]);
 
   const onPlay = () => {
     if (!episode) return;
@@ -181,7 +215,13 @@ export const EpisodeDetail: React.FC = () => {
 
   return (
     <>
-      <SEO title={title} description={`${name} · ${title} — 結構化摘要與重點。`} />
+      <SEO
+        title={title}
+        description={`${name} · ${title} — 結構化摘要與重點。`}
+        image={seoImage}
+        url={canonicalUrl}
+        structuredData={structuredData}
+      />
       <PageContent
         rail={
           tickers.length > 0 ? (
@@ -261,6 +301,10 @@ export const EpisodeDetail: React.FC = () => {
                   ))}
                 </div>
               </section>
+            )}
+
+            {IS_DEV && episode && (
+              <EpisodeDebugPanel episode={episode} onUpdated={setEpisode} />
             )}
 
             {id && podcastName && (

@@ -1,9 +1,9 @@
 # Firestore data contract
 
-> **This is the authoritative cross-repo data contract between the tinboker-platform backend (reader) and the tinboker-agents pipeline (writer).** Edits here require coordination with the tinboker-agents team.
+> **This is the authoritative data contract between the backend (`backend/`, reader) and the content pipelines (`pipelines/`, writer) — two tiers of this monorepo.** Edits here require coordination across both tiers.
 >
-> **Status:** Draft for tinboker-agents team review. Authoritative once both teams sign off § 10.
-> **Owners:** platform team (this doc), tinboker-agents (write contract).
+> **Status:** Authoritative once both sides sign off § 10. (Originally drafted when `pipelines/` was the separate `tinboker-agents` repo; the two are now merged, but the reader/writer boundary still holds.)
+> **Owners:** the `backend/` (platform) tier owns this doc; the `pipelines/` tier owns the write contract.
 > **Doc location:** `docs/firestore-contract.md` (moved from `openspecs/firestore-schema/spec.md`).
 > **Document version:** see `schema_version: 2` in § Scope. Bump `schema_version` inline rather than forking the doc.
 
@@ -11,7 +11,7 @@
 
 ## Purpose
 
-This spec is the **data contract between the tinboker-agents pipeline (writer) and the tinboker-platform backend (reader)** for everything that flows through Firestore.
+This spec is the **data contract between the content pipelines (`pipelines/`, writer) and the backend (`backend/`, reader)** for everything that flows through Firestore.
 
 Today the platform infers the agents' shape from production traffic. That arrangement is breaking down:
 
@@ -48,7 +48,7 @@ This doc replaces that arrangement. It enumerates every Firestore path the platf
 
 **Versioning:** every agent-written document carries a `schema_version: <int>` field. This doc defines `schema_version: 2`. Bumping the integer requires updating this spec.
 
-**Terminology:** "the agents pipeline" = the tinboker-agents repo (separate from this one). "The platform" = this repo (`tinboker-platform`, frontend + backend).
+**Terminology:** "the agents pipeline" / "the pipelines tier" = `pipelines/` (the content/agent backend, formerly the separate `tinboker-agents` repo). "The platform" = `backend/` + `frontend/`. All now live in this one `tinboker` monorepo; the writer/reader split is a tier boundary, not a repo boundary.
 
 ---
 

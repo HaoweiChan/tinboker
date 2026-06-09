@@ -1,7 +1,7 @@
 # Ticker Insights Postgres — Handoff to tinboker-agents
 
 **Date:** 2026-05-27
-**From:** tinboker-platform
+**From:** tinboker
 **To:** tinboker-agents (Podcast-Downloader / content-builder writers)
 **Status:** action required before reads return data
 
@@ -119,5 +119,5 @@ e45a509 chore(scripts): refresh seed_translations from prior SQLite snapshot
 7d13738 refactor(db): rename recommendation_db module to insight_db
 ```
 
-Branch: `tinboker-platform@feat/postgres-restoration`
+Branch: `tinboker@feat/postgres-restoration`
 Contact: Haowei (hwchan42@gmail.com)

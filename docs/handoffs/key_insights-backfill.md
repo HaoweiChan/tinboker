@@ -1,7 +1,7 @@
 # Handoff prompt — populate `key_insights` on every episode (tinboker-agents)
 
 > Paste everything below the line into the LLM/agent working in the **tinboker-agents**
-> repo. It is self-contained. Origin: tinboker-platform, 2026-06-05.
+> repo. It is self-contained. Origin: tinboker, 2026-06-05.
 
 ---
 

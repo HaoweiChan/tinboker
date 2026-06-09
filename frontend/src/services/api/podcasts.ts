@@ -133,7 +133,8 @@ export async function getPodcastEpisodes(
 
 export async function getEpisodeById(podcastName: string, episodeId: string): Promise<Episode> {
   const response = await apiClient.get(
-    `/api/podcast/${encodeURIComponent(podcastName)}/episodes/${episodeId}`
+    `/api/podcast/${encodeURIComponent(podcastName)}/episodes/${episodeId}`,
+    { params: { include_heavy_content: false } }
   );
   return response.data;
 }
@@ -142,7 +143,8 @@ export async function getEpisodeById(podcastName: string, episodeId: string): Pr
 // refreshes of /episode/{id} where the show name isn't available client-side.
 export async function getEpisodeByIdOnly(episodeId: string): Promise<Episode> {
   const response = await apiClient.get(
-    `/api/episodes/${encodeURIComponent(episodeId)}`
+    `/api/episodes/${encodeURIComponent(episodeId)}`,
+    { params: { include_heavy_content: false } }
   );
   return response.data;
 }
@@ -299,6 +301,38 @@ export async function getRecentBuzz(
   };
 }
 
+export interface EpisodePreview {
+  id: string;
+  title: string;
+  podcast_name: string;
+  released_at_ms?: number | null;
+  key_insights: string[];
+  related_tickers: string[];
+}
+
+export interface TrendingTag {
+  id: string;
+  name: string;
+  scoped_count: number;
+  weekly_counts: number[];
+  recent_episodes: EpisodePreview[];
+}
+
+export interface TrendingTagsResponse {
+  tags: TrendingTag[];
+}
+
+export async function getTrendingTags(
+  weeks: number = 6,
+  previewCount: number = 3,
+): Promise<TrendingTagsResponse> {
+  const response = await apiClient.get('/api/tags/trending', {
+    params: { weeks, preview_count: previewCount },
+  });
+  const d = response.data ?? {};
+  return { tags: Array.isArray(d.tags) ? d.tags : [] };
+}
+
 export async function getTags(): Promise<TagsResponse> {
   const response = await apiClient.get('/api/tags');
   if (response.data?.tags && Array.isArray(response.data.tags)) {
@@ -397,4 +431,27 @@ export async function deleteEpisodeSummary(
   await apiClient.delete(
     `/api/podcast/${podcastName}/episodes/${episodeId}/summary`
   );
+}
+
+export async function patchEpisode(
+  podcastName: string,
+  episodeId: string,
+  updates: Partial<Pick<Episode, 'summary_content' | 'key_insights' | 'related_tickers' | 'tags'>>,
+): Promise<Episode> {
+  const response = await apiClient.patch(
+    `/api/podcast/${podcastName}/episodes/${episodeId}`,
+    updates,
+  );
+  return response.data;
+}
+
+export async function getEpisodeHeavy(
+  podcastName: string,
+  episodeId: string,
+): Promise<Episode> {
+  const response = await apiClient.get(
+    `/api/podcast/${podcastName}/episodes/${episodeId}`,
+    { params: { include_heavy_content: true } },
+  );
+  return response.data;
 }

@@ -60,6 +60,37 @@ class Settings(BaseSettings):
     # Service token for the article authoring MCP / headless agent.
     # Scoped to article CRUD endpoints only.
     tinboker_article_token: Optional[str] = None
+    tinboker_article_author_id: Optional[str] = None
+    tinboker_article_author_name: Optional[str] = None
+    tinboker_article_author_avatar: Optional[str] = None
+
+    # ==================== Social / Threads publishing ====================
+    # Meta Threads Graph API credentials. Generate a long-lived access token for
+    # the brand's Threads account + its numeric user id; store both in GSM.
+    # Unset = posting disabled (the publisher runs in dry-run only).
+    threads_access_token: Optional[str] = None
+    threads_user_id: Optional[str] = None
+    threads_api_base: str = "https://graph.threads.net/v1.0"
+    # Service token that lets the agents pipeline (post-ingest) trigger a Threads
+    # publish run without an admin JWT. Scoped to the threads publish endpoint only.
+    # Generate with `openssl rand -hex 32`; store in GSM. Unset = disabled.
+    tinboker_social_token: Optional[str] = None
+    # Only auto-post episodes published within this many days (recency guard that
+    # caps blast radius even if the idempotency store is reset). 0 = no cap.
+    threads_max_age_days: int = 4
+
+    # ==================== SEO ====================
+    # Public site origin — used to build episode permalinks in Threads posts and
+    # the dynamic sitemap. No trailing slash.
+    site_url: str = "https://tinboker.com"
+    # Google Search Console property to read analytics for. Domain properties use
+    # the "sc-domain:tinboker.com" form; URL-prefix properties use the full URL.
+    # Unset = SEO monitoring disabled.
+    gsc_site_url: Optional[str] = None
+    # Path to a Google service-account JSON with Search Console read access. Falls
+    # back to GOOGLE_APPLICATION_CREDENTIALS / ADC when unset (the same credentials
+    # firebase-admin already uses on the VPS, once added as a GSC property user).
+    google_application_credentials: Optional[str] = None
 
     @field_validator("admin_emails", mode="before")
     @classmethod
@@ -288,4 +319,3 @@ class Settings(BaseSettings):
 # Global settings instance
 # This will be initialized when the module is imported
 settings = Settings()
-

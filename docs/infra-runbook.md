@@ -241,7 +241,7 @@ Settings → Secrets and variables → Actions → New repository secret:
 ### 3.1 Rename project (zero downtime, if migrating from a different project name)
 
 1. Cloudflare → Workers & Pages → existing project
-2. Settings → General → Project name → rename to `tinboker-platform`
+2. Settings → General → Project name → rename to `tinboker`
 3. Your `pages.dev` preview subdomain changes to `tinboker-platform.pages.dev`
 4. Update the CNAME root record in DNS (Part 1.3) to `tinboker-platform.pages.dev`
 5. The custom domain `tinboker.com` stays connected automatically
@@ -250,7 +250,7 @@ Settings → Secrets and variables → Actions → New repository secret:
 
 If creating fresh:
 1. Workers & Pages → Create application → Pages → Connect to Git
-2. Select `tinboker-platform` repo
+2. Select `tinboker` repo
 3. Build settings:
    - **Framework preset:** Vite
    - **Build command:** `npm ci && npm run build`
@@ -268,7 +268,7 @@ If this is a brand new server with no running containers:
 ssh root@152.53.136.182
 
 # 1. Clone repo
-git clone git@github.com:YOUR_USERNAME/tinboker-platform.git /app
+git clone git@github.com:YOUR_USERNAME/tinboker.git /app
 cd /app/backend
 
 # 2. Place GCP service account key

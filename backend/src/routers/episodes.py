@@ -1,16 +1,17 @@
 """
 Episodes API router for cross-podcast episode queries
 """
-from fastapi import APIRouter, HTTPException, Path, Query
+from fastapi import APIRouter, HTTPException, Path, Query, Response
 from pydantic import BaseModel, Field
 from typing import Optional
-from src.services.podcast import PodcastService
+from src.services.podcast import EPISODE_DETAIL_CONTENT_FIELDS, PodcastService
 from src.services.translation_discovery import schedule_ticker_discovery
 from src.services.episode_sentiments import EpisodeSentimentService
 from src.services.trending import TrendingService
 from src.cache.cdn_cache import cdn_cache_podcast, cdn_cache_trending
 
 router = APIRouter(prefix="/api/episodes", tags=["episodes"])
+CACHE_CONTROL_READ = "public, max-age=300, s-maxage=3600"
 
 # Initialize services
 podcast_service = PodcastService()
@@ -141,7 +142,12 @@ async def get_episodes_by_ticker(
 @router.get("/{episode_id}")
 @cdn_cache_podcast
 async def get_episode_by_id(
+    response: Response,
     episode_id: str = Path(..., description="Episode ID"),
+    include_heavy_content: bool = Query(
+        default=False,
+        description="Also hydrate transcript/ticker blobs. False returns the fast episode-detail payload.",
+    ),
 ):
     """
     Get a single episode by ID alone, without the podcast name.
@@ -152,8 +158,12 @@ async def get_episode_by_id(
 
     CDN Cache: 30 minutes
     """
+    response.headers["Cache-Control"] = CACHE_CONTROL_READ
     try:
-        episode = await podcast_service.get_episode_by_id_only(episode_id)
+        episode = await podcast_service.get_episode_by_id_only(
+            episode_id,
+            content_fields=None if include_heavy_content else EPISODE_DETAIL_CONTENT_FIELDS,
+        )
         if not episode:
             raise HTTPException(status_code=404, detail=f"Episode '{episode_id}' not found")
         return episode
@@ -161,5 +171,3 @@ async def get_episode_by_id(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching episode: {str(e)}")
-
-

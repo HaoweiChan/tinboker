@@ -1,0 +1,12 @@
+[Unit]
+Description=TinBoker news ingest (RSS feeds -> shared knowledge wiki)
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/tinboker/pipelines/services/news
+ExecStart=/root/tinboker/pipelines/services/news/scripts/run_news.sh
+Environment=GOOGLE_APPLICATION_CREDENTIALS=/root/tinboker/pipelines/services/podcast/gcp-service-account.json
+# A single run is bounded; cap it so a hung fetch cannot wedge the timer.
+TimeoutStartSec=1800

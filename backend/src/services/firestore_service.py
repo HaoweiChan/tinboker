@@ -175,6 +175,22 @@ class FirestoreService:
         except Exception as e:
             raise Exception(f"Failed to get document from Firestore: {e}") from e
     
+    def get_documents_batch(self, collection: str, doc_ids: List[str]) -> List[Dict]:
+        """Batch-read multiple documents by ID using Firestore get_all()."""
+        if self._disabled or not self.db or not doc_ids:
+            return []
+        try:
+            refs = [self.db.collection(collection).document(did) for did in doc_ids]
+            results = []
+            for doc in self.db.get_all(refs):
+                if doc.exists:
+                    data = doc.to_dict()
+                    data['id'] = doc.id
+                    results.append(data)
+            return results
+        except Exception as e:
+            raise Exception(f"Failed to batch-get documents from Firestore: {e}") from e
+
     def set_document(self, collection: str, doc_id: str, data: Dict, merge: bool = False) -> bool:
         """Create or update a document."""
         if self._disabled or not self.db:
