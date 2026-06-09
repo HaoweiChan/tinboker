@@ -59,6 +59,9 @@ jobs:
           # gated + labeled "開發環境", incl. prod. tag → PRODUCTION (public, ungated),
           # main → STAGING (測試環境), anything else → DEV.
           VITE_STAGE: ${{ startsWith(github.ref, 'refs/tags/v') && 'PRODUCTION' || github.ref_name == 'main' && 'STAGING' || 'DEV' }}
+          # On a tagged prod build, surface the release tag as the app version label
+          # (vite strips the leading "v"); empty on branch builds → falls back to package.json.
+          VITE_RELEASE_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
 
       - name: Determine environment
         id: env
