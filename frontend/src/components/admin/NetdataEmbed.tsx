@@ -11,31 +11,20 @@ interface NetdataEmbedProps {
     height?: string;
 }
 
-// Get the Netdata URL based on environment
+// Netdata is proxied through Caddy at /netdata/* on each env's API host
 const getNetdataUrl = (): string => {
-    // In development, use local netdata
     if (!import.meta.env.PROD) {
         return 'http://localhost:19999/';
     }
-
-    // In production, Netdata is proxied through staging API
-    // Check hostname to determine which API to use
     if (typeof window !== 'undefined') {
         const hostname = window.location.hostname;
-
-        // Staging or preview deployments -> use staging API
-        if (hostname.includes('pages.dev') || hostname.includes('vercel.app') || hostname.includes('staging')) {
-            return 'https://staging-api.tinboker.com/netdata/';
-        }
-
-        // Production
+        if (hostname.includes('dev.')) return 'https://dev-api.tinboker.com/netdata/';
+        if (hostname.includes('staging')) return 'https://staging-api.tinboker.com/netdata/';
         if (hostname === 'tinboker.com' || hostname === 'www.tinboker.com') {
             return 'https://api.tinboker.com/netdata/';
         }
     }
-
-    // Default to staging
-    return 'https://staging-api.tinboker.com/netdata/';
+    return 'https://dev-api.tinboker.com/netdata/';
 };
 
 export const NetdataEmbed: React.FC<NetdataEmbedProps> = ({

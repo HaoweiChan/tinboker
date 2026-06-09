@@ -77,9 +77,16 @@ function MarketPulse({ buzz }: { buzz: RecentBuzz }) {
               <span className="text-[11px] text-muted-foreground tracking-wide">新進個股</span>
               <span className="text-[11px] text-muted-foreground font-mono">+{buzz.new_tickers.length} 檔新上榜</span>
             </div>
-            <span className="text-[12px] text-foreground/80 truncate">
-              {buzz.new_tickers.map((t) => t.name || t.ticker).join('、')}
-            </span>
+            <div className="flex flex-wrap gap-x-1.5 gap-y-0.5 text-[12px]">
+              {buzz.new_tickers.map((t, i) => (
+                <span key={t.ticker}>
+                  <Link to={`/stock/${encodeURIComponent(t.ticker)}`} className="text-foreground/80 hover:text-foreground underline decoration-border hover:decoration-foreground/40 transition-colors">
+                    {t.name || t.ticker}
+                  </Link>
+                  {i < buzz.new_tickers!.length - 1 && <span className="text-muted-foreground">、</span>}
+                </span>
+              ))}
+            </div>
           </div>
         )}
       </div>

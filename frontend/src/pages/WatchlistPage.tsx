@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
 import { Segmented, EpisodeCardV2, ListRow } from '@/components/redesign';
 import { apiEpisodeToCardV2 } from '@/components/redesign/episodeAdapter';
-import { getPodcastEpisodes, getSortedPodcasts, type Episode as ApiEpisode, type Podcast } from '@/services/api/podcasts';
+import { getPodcastEpisodes, getSortedPodcasts, getEpisodeById, type Episode as ApiEpisode, type Podcast } from '@/services/api/podcasts';
 import { fetchWithFallback } from '@/services/api/migration';
-import { useSubscriptions, useWatchlist } from '@/store/useAppStore';
+import { userApi } from '@/services/api/user';
+import { useAppStore, useSubscriptions, useWatchlist, useTagSubscriptions } from '@/store/useAppStore';
 import { useStockPriceMap } from '@/hooks/useStockPriceMap';
 import { useStockPriceSinceMap } from '@/hooks/useStockPriceSinceMap';
 import { useTranslationMap } from '@/hooks/useTranslationMap';
@@ -16,25 +18,28 @@ import { getStockLabel } from '@/utils/stockDisplay';
 import { Link } from 'react-router-dom';
 import { TickerAvatar } from '@/components/common/TickerAvatar';
 
-type Tab = 'podcasters' | 'tickers';
+type Tab = 'podcasters' | 'tickers' | 'topics' | 'episodes';
 
 export const WatchlistPage: React.FC = () => {
+  const navigate = useNavigate();
+  const token = useAppStore((s) => s.token);
   const subscriptions = useSubscriptions();
   const watchlist = useWatchlist();
+  const tagSubscriptions = useTagSubscriptions();
   const [tab, setTab] = useState<Tab>('podcasters');
   const [episodes, setEpisodes] = useState<ApiEpisode[]>([]);
   const [podcasts, setPodcasts] = useState<Podcast[]>([]);
+  const [bookmarkedIds, setBookmarkedIds] = useState<string[]>([]);
+  const [bookmarked, setBookmarked] = useState<ApiEpisode[]>([]);
   const episodeTickers = useMemo(() => episodes.flatMap((ep) => ep.related_tickers ?? []), [episodes]);
   const priceMap = useStockPriceMap(episodeTickers);
   const priceSinceMap = useStockPriceSinceMap(episodes);
   const rawTranslationMap = useTranslationMap(episodeTickers);
-  // Flatten to ticker → displayName for the adapter (mirrors HomeFeed).
   const translationMap = useMemo(() => {
     const m = new Map<string, string>();
     for (const [k, v] of rawTranslationMap) m.set(k, v.displayName);
     return m;
   }, [rawTranslationMap]);
-  // Podcast cover art (name → image_url) so watchlist cards match the homepage.
   const podcastImageMap = useMemo(() => {
     const map = new Map<string, string>();
     for (const p of podcasts) {
@@ -42,11 +47,14 @@ export const WatchlistPage: React.FC = () => {
     }
     return map;
   }, [podcasts]);
-  // Per-(episode, ticker) sentiment for the visible cards (async; chips populate after render).
   const visibleEpisodeIds = useMemo(() => episodes.map((e) => e.id), [episodes]);
   const sentimentMap = useEpisodeSentimentMap(visibleEpisodeIds);
   const [loadingEps, setLoadingEps] = useState(false);
+  const bookmarkedTickers = useMemo(() => bookmarked.flatMap((ep) => ep.related_tickers ?? []), [bookmarked]);
+  const bookmarkedPriceMap = useStockPriceMap(bookmarkedTickers);
+  const bookmarkedPriceSinceMap = useStockPriceSinceMap(bookmarked);
 
+  // Fetch subscribed podcast episodes
   useEffect(() => {
     if (tab !== 'podcasters' || subscriptions.length === 0) return;
     let alive = true;
@@ -77,10 +85,39 @@ export const WatchlistPage: React.FC = () => {
       setPodcasts(Array.isArray(podcastList) ? podcastList : []);
       setLoadingEps(false);
     })();
-    return () => {
-      alive = false;
-    };
+    return () => { alive = false; };
   }, [tab, subscriptions]);
+
+  // Fetch bookmarked episode IDs
+  useEffect(() => {
+    if (!token) {
+      setBookmarkedIds([]);
+      return;
+    }
+    userApi.getEpisodeBookmarks().catch(() => [] as string[]).then(setBookmarkedIds);
+  }, [token]);
+
+  // Hydrate bookmarked episodes
+  useEffect(() => {
+    if (bookmarkedIds.length === 0) {
+      setBookmarked([]);
+      return;
+    }
+    let alive = true;
+    Promise.all(
+      bookmarkedIds.map((bookmarkId) => {
+        const [podcastName, ...rest] = bookmarkId.split('_');
+        return fetchWithFallback<ApiEpisode | null>(
+          () => getEpisodeById(podcastName, rest.join('_')),
+          null,
+          `getEpisodeById:${bookmarkId}`,
+        ).catch(() => null);
+      }),
+    ).then((arr) => {
+      if (alive) setBookmarked(arr.filter((e): e is ApiEpisode => e != null));
+    });
+    return () => { alive = false; };
+  }, [bookmarkedIds]);
 
   const sortedWatchlist = useMemo(() => [...watchlist], [watchlist]);
   const summaries = useStockSummaries(sortedWatchlist);
@@ -91,13 +128,22 @@ export const WatchlistPage: React.FC = () => {
       <PageContent>
         <h1 className="text-[22px] font-semibold tracking-[-0.02em] mb-3.5">自選</h1>
         <div className="mb-[18px]">
-          <Segmented options={[{ value: 'podcasters', label: `追蹤節目 ${subscriptions.length}` }, { value: 'tickers', label: `追蹤個股 ${watchlist.length}` }] as const} value={tab} onChange={setTab} />
+          <Segmented
+            options={[
+              { value: 'podcasters', label: `訂閱節目 ${subscriptions.length}` },
+              { value: 'tickers', label: `自選股票 ${watchlist.length}` },
+              { value: 'topics', label: `追蹤話題 ${tagSubscriptions.length}` },
+              { value: 'episodes', label: `收藏集數 ${bookmarked.length || bookmarkedIds.length}` },
+            ] as const}
+            value={tab}
+            onChange={setTab}
+          />
         </div>
 
-        {tab === 'podcasters' ? (
+        {tab === 'podcasters' && (
           subscriptions.length === 0 ? (
             <div className="bg-card border border-border rounded-md p-10 text-center text-[13px] text-muted-foreground">
-              尚未追蹤任何節目 — 去 <Link to="/podcaster" className="text-accent-info hover:underline">節目</Link> 頁追蹤幾個吧。
+              尚未訂閱任何節目 — 去 <Link to="/podcaster" className="text-accent-info hover:underline">節目</Link> 頁追蹤幾個吧。
             </div>
           ) : loadingEps ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -106,7 +152,7 @@ export const WatchlistPage: React.FC = () => {
               ))}
             </div>
           ) : episodes.length === 0 ? (
-            <div className="bg-card border border-border rounded-md p-10 text-center text-[13px] text-muted-foreground">追蹤的節目目前沒有最新集數。</div>
+            <div className="bg-card border border-border rounded-md p-10 text-center text-[13px] text-muted-foreground">訂閱的節目目前沒有最新集數。</div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {episodes.map((ep) => (
@@ -114,31 +160,72 @@ export const WatchlistPage: React.FC = () => {
               ))}
             </div>
           )
-        ) : watchlist.length === 0 ? (
-          <div className="bg-card border border-border rounded-md p-10 text-center text-[13px] text-muted-foreground">
-            尚未加入任何自選股票 — 去 <Link to="/stock" className="text-accent-info hover:underline">個股</Link> 頁加入幾檔吧。
-          </div>
-        ) : (
-          <div className="space-y-1.5">
-            {sortedWatchlist.map((sym) => {
-              const summary = summaries[sym];
-              const { primary, secondary } = getStockLabel({
-                ticker: sym,
-                name: summary?.name,
-                market: summary?.market,
-              });
-              return (
-                <ListRow
-                  key={sym}
-                  lead={<TickerAvatar ticker={sym} brandColor={summary?.brand_color} />}
-                  title={<span>{primary}</span>}
-                  subtitle={secondary ? <span className="font-mono">{secondary}</span> : undefined}
-                  href={`/stock/${encodeURIComponent(sym)}`}
-                  trailing={<ChevronRight size={14} />}
-                />
-              );
-            })}
-          </div>
+        )}
+
+        {tab === 'tickers' && (
+          watchlist.length === 0 ? (
+            <div className="bg-card border border-border rounded-md p-10 text-center text-[13px] text-muted-foreground">
+              尚未加入任何自選股票 — 去 <Link to="/stock" className="text-accent-info hover:underline">個股</Link> 頁加入幾檔吧。
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              {sortedWatchlist.map((sym) => {
+                const summary = summaries[sym];
+                const { primary, secondary } = getStockLabel({
+                  ticker: sym,
+                  name: summary?.name,
+                  market: summary?.market,
+                });
+                return (
+                  <ListRow
+                    key={sym}
+                    lead={<TickerAvatar ticker={sym} brandColor={summary?.brand_color} />}
+                    title={<span>{primary}</span>}
+                    subtitle={secondary ? <span className="font-mono">{secondary}</span> : undefined}
+                    href={`/stock/${encodeURIComponent(sym)}`}
+                    trailing={<ChevronRight size={14} />}
+                  />
+                );
+              })}
+            </div>
+          )
+        )}
+
+        {tab === 'topics' && (
+          tagSubscriptions.length === 0 ? (
+            <div className="bg-card border border-border rounded-md p-10 text-center text-[13px] text-muted-foreground">
+              尚未追蹤任何話題 — 去 <Link to="/topics" className="text-accent-info hover:underline">話題</Link> 頁追蹤幾個吧。
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {tagSubscriptions.map((t) => {
+                const name = t.replace(/^#/, '');
+                return (
+                  <button key={t} type="button" onClick={() => navigate(`/topics/${encodeURIComponent(name)}`)} className="px-3.5 py-1.5 rounded-full bg-muted text-foreground text-[13px] font-medium hover:bg-accent-info-soft hover:text-accent-info transition-colors">
+                    #{name}
+                  </button>
+                );
+              })}
+            </div>
+          )
+        )}
+
+        {tab === 'episodes' && (
+          bookmarked.length === 0 && bookmarkedIds.length === 0 ? (
+            <div className="bg-card border border-border rounded-md p-10 text-center text-[13px] text-muted-foreground">目前沒有收藏的集數。</div>
+          ) : bookmarked.length === 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {Array.from({ length: Math.min(bookmarkedIds.length, 4) }).map((_, i) => (
+                <div key={i} className="bg-card border border-border rounded-md h-[180px] animate-pulse" />
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {bookmarked.map((ep) => (
+                <EpisodeCardV2 key={ep.id} {...apiEpisodeToCardV2(ep, bookmarkedPriceMap, undefined, undefined, undefined, bookmarkedPriceSinceMap)} />
+              ))}
+            </div>
+          )
         )}
       </PageContent>
     </>
