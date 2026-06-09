@@ -243,6 +243,18 @@ export const ProfilePage: React.FC = () => {
                 </div>
               </div>
             </div>
+          ) : token ? (
+            <div className="flex items-center gap-4">
+              <div className="w-[72px] h-[72px] rounded-full grid place-items-center text-white text-2xl font-semibold bg-accent-info shrink-0">?</div>
+              <div className="min-w-0">
+                <div className="text-[13px] text-muted-foreground">已登入</div>
+                <div className="flex gap-4 mt-2.5 text-[12px] text-muted-foreground">
+                  <span><strong className="text-foreground font-mono mr-1 tabular-nums">{podcasters.length || podcastSubs.length}</strong>追蹤節目</span>
+                  <span><strong className="text-foreground font-mono mr-1 tabular-nums">{stockRows.length || effectiveWatchlist.length}</strong>自選股</span>
+                  <span><strong className="text-foreground font-mono mr-1 tabular-nums">{bookmarked.length || episodeBookmarks.length}</strong>收藏集數</span>
+                </div>
+              </div>
+            </div>
           ) : (
             <div className="text-center py-6 text-[13px] text-muted-foreground">
               請先登入以查看個人資料 — <button onClick={() => navigate('/')} className="text-accent-info hover:underline">前往首頁登入</button>
