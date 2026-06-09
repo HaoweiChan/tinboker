@@ -275,10 +275,31 @@ export async function getTrendingTickers(
   return Array.isArray(response.data) ? response.data : [];
 }
 
+export interface SentimentSummary {
+  bull: number;
+  neutral: number;
+  bear: number;
+}
+
+export interface RisingTicker {
+  ticker: string;
+  name: string | null;
+  delta: number;
+}
+
+export interface NewTicker {
+  ticker: string;
+  name: string | null;
+}
+
 export interface RecentBuzz {
   tickers: TickerTrending[];
   distinct_count: number;
   episode_count: number;
+  sentiment_summary?: SentimentSummary;
+  prev_sentiment_summary?: SentimentSummary;
+  rising_ticker?: RisingTicker;
+  new_tickers?: NewTicker[];
 }
 
 /** Genuine "what people are discussing lately" from the recent (zh-TW launch) feed:
@@ -294,11 +315,16 @@ export async function getRecentBuzz(
     params: Object.keys(q).length ? q : undefined,
   });
   const d = response.data ?? {};
-  return {
+  const buzz: RecentBuzz = {
     tickers: Array.isArray(d.tickers) ? d.tickers : [],
     distinct_count: typeof d.distinct_count === 'number' ? d.distinct_count : 0,
     episode_count: typeof d.episode_count === 'number' ? d.episode_count : 0,
   };
+  if (d.sentiment_summary) buzz.sentiment_summary = d.sentiment_summary;
+  if (d.prev_sentiment_summary) buzz.prev_sentiment_summary = d.prev_sentiment_summary;
+  if (d.rising_ticker) buzz.rising_ticker = d.rising_ticker;
+  if (Array.isArray(d.new_tickers)) buzz.new_tickers = d.new_tickers;
+  return buzz;
 }
 
 export interface EpisodePreview {
