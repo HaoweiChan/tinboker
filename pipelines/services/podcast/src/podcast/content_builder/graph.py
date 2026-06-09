@@ -28,7 +28,6 @@ Graph topology (mirrors the original Dify workflow):
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from langgraph.graph import END, StateGraph
@@ -48,22 +47,15 @@ from .state import PipelineState
 
 def _write_ticker_marp(state: PipelineState) -> dict[str, Any]:
     """Generate Marp slides specifically for ticker insights."""
-    from .llm import invoke_json, load_prompt
+    from .llm import invoke_json
+    from .nodes.marp_writer import build_messages_from_events
 
-    prompts = load_prompt("marp_writer")
-    ticker_data = state.get("ticker_insights", {})
-    events_json = json.dumps(ticker_data, ensure_ascii=False)
-
-    user_msg = prompts["user"].format(
-        events=events_json,
-        source=state.get("source", "Podcast"),
-        episode_title=state.get("episode_title", "Episode"),
+    messages = build_messages_from_events(
+        state.get("ticker_insights", {}),
+        state.get("source", "Podcast"),
+        state.get("episode_title", "Episode"),
     )
-
-    result = invoke_json("marp_writer", [
-        {"role": "system", "content": prompts["system"]},
-        {"role": "user", "content": user_msg},
-    ])
+    result = invoke_json("marp_writer", messages)
 
     return {"ticker_marp_slides": result}
 

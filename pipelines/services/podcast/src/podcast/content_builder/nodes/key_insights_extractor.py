@@ -99,6 +99,28 @@ def sanitize_key_insights(items: Any) -> list[str]:
     return out
 
 
+def build_messages(state: PipelineState) -> list[dict[str, str]]:
+    """Render the key-insights chat messages from ``markdown_report`` (no LLM call)."""
+    prompts = load_prompt("key_insights_extractor")
+    user_msg = prompts["user"].format(
+        markdown=state.get("markdown_report", ""),
+        source=state.get("source", "Podcast"),
+        episode_title=state.get("episode_title", "Episode"),
+    )
+    return [
+        {"role": "system", "content": prompts["system"]},
+        {"role": "user", "content": user_msg},
+    ]
+
+
+def postprocess(result: Any, state: PipelineState) -> dict[str, Any]:
+    """Sanitize the model's reply into a ``{"key_insights": [...]}`` state update."""
+    raw = result.get("key_insights")
+    if raw is None:
+        raw = result.get("insights")  # tolerate the alternate key some models emit
+    return {"key_insights": sanitize_key_insights(raw)}
+
+
 def extract_key_insights_from_markdown(
     markdown: str,
     source: str = "Podcast",
@@ -114,26 +136,18 @@ def extract_key_insights_from_markdown(
     if is_placeholder_summary(markdown):
         return []
 
-    prompts = load_prompt("key_insights_extractor")
-    user_msg = prompts["user"].format(
-        markdown=markdown,
-        source=source,
-        episode_title=episode_title,
-    )
-
+    state: PipelineState = {
+        "markdown_report": markdown,
+        "source": source,
+        "episode_title": episode_title,
+    }
     try:
-        result = invoke_json("key_insights_extractor", [
-            {"role": "system", "content": prompts["system"]},
-            {"role": "user", "content": user_msg},
-        ])
+        result = invoke_json("key_insights_extractor", build_messages(state))
     except Exception as exc:  # noqa: BLE001 — one optional field must not abort the run
         print(f"  ⚠ key_insights extraction failed: {exc}")
         return []
 
-    raw = result.get("key_insights")
-    if raw is None:
-        raw = result.get("insights")  # tolerate the alternate key some models emit
-    return sanitize_key_insights(raw)
+    return postprocess(result, state)["key_insights"]
 
 
 def extract_key_insights(state: PipelineState) -> dict[str, Any]:

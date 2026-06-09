@@ -247,7 +247,6 @@ The dated bug catalog in [`docs/qa-report-2026-05-09.md`](docs/qa-report-2026-05
 fixed** (e.g. the `continue-on-error` CI gate and the `trendbrief.xyz` CORS origin are
 resolved), so treat that report as **historical** — verify a bug still reproduces against the
 current code before acting on it. The live, curated issue list is [`docs/issues.md`](docs/issues.md).
-
 When you do need to reproduce or regression-test, follow [`docs/agents/qa-tester.md`](docs/agents/qa-tester.md)
 and the procedural overlay in [`docs/workflows/qa-flow.md`](docs/workflows/qa-flow.md).
 
