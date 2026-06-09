@@ -35,20 +35,40 @@ cache-purge step**, and the `/api/*` zone Cache Rule over-caches endpoints that 
    accepted). NOTE: this helper is currently **defined but never called** at runtime — the
    real purge path is the workflow step above.
 
-## What still needs a human (Cloudflare dashboard — NOT code)
+## ✅ Resolved 2026-06-09 (was: manual Cloudflare dashboard action)
 
-The `/api/*` Cache Rule (`tinboker.com` → Rules → Cache Rules) has **Browser TTL: Override**.
-An override rewrites the `max-age` sent to browsers regardless of origin headers — this is the
-source of the observed `max-age=86400`, and the documented value ("1 hour") had drifted. The
-origin decorator from #2 only controls **edge** TTL; it cannot undo a browser-TTL override.
+The `/api/*` Cache Rule (`tinboker.com` → Rules → Cache Rules) had **Browser TTL: Override**
+(`default=86400`). An override rewrites the `max-age` sent to browsers regardless of origin
+headers — this was the source of the observed `max-age=86400`, and the documented value
+("1 hour") had drifted. The origin decorator from #2 only controls **edge** TTL; it could not
+undo a browser-TTL override. Symptom that finally surfaced it: 2330's ticker-insight cards
+showed the zh-TW "尚未完成繁中轉寫" frontend fallback because browsers held a 24h-cached
+*pre-translation* `/api/ticker-insights` response while the origin/edge already served correct
+zh-TW.
 
-**Action:** set the rule's **Browser TTL → "Respect origin"** (or add a higher-priority rule
-that bypasses cache / respects origin for
-`starts_with(http.request.uri.path, "/api/search/")`). Then re-confirm:
+**Fix (2026-06-09):** the rule's **Browser TTL** was flipped `override_origin → respect_origin`
+via the Cloudflare Rulesets API (no dashboard click required):
+
+- Ruleset `3a79f70b83684381ac87335f06fd8968` (phase `http_request_cache_settings`), rule
+  `c87f100f126d41139d20b96c7fcab229` ("Cache API GET requests",
+  expr `starts_with(http.request.uri.path, "/api/") and http.request.method eq "GET"`).
+- `action_parameters.browser_ttl`: `{"default":86400,"mode":"override_origin"}` →
+  `{"mode":"respect_origin"}`. `edge_ttl` was already `respect_origin`; `cache:true` unchanged.
+- Needs a token with `Zone → Cache Rules: Edit` + `Account → Account Rulesets: Edit` (the GSM
+  `CLOUDFLARE_API_TOKEN` was broadened to include these — consider narrowing it back to
+  `Cache Purge: Purge` now that this one-time change is done).
+
+Re-confirm with **GET** (not HEAD — the rule only matches `method eq "GET"`, so a HEAD shows
+`cf-cache-status: DYNAMIC` with no `cache-control`):
 
 ```bash
-curl -sI 'https://api.tinboker.com/api/search/suggest?q=2330' | grep -i 'cache-control\|cf-cache-status'
-# expect: cache-control: public, s-maxage=60, stale-while-revalidate=30   (no max-age=86400)
+curl -s -o /dev/null -D - 'https://api.tinboker.com/api/ticker-insights/by-ticker/2330' \
+  | grep -i 'cache-control\|cf-cache-status'
+# now: cache-control: public, s-maxage=3600, max-age=3600, stale-while-revalidate=7200  (no max-age=86400)
+
+curl -s -o /dev/null -D - 'https://api.tinboker.com/api/search/suggest?q=2330' \
+  | grep -i 'cache-control\|cf-cache-status'
+# now: cache-control: public, s-maxage=60, stale-while-revalidate=30   (origin header passes through)
 ```
 
 ## Verify the purge step after merge

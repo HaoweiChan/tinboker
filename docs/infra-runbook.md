@@ -123,7 +123,7 @@ Name: Cache API GET responses
 When: (starts_with(http.request.uri.path, "/api/") and http.request.method eq "GET")
 Cache eligibility: Eligible for cache
 Edge TTL: Use cache-control header
-Browser TTL: Respect origin   # do NOT "Override" — see caveat below
+Browser TTL: Respect origin   # SET to respect_origin 2026-06-09 (was Override/86400) — do NOT revert; see caveat
 ```
 
 **Caveat — dynamic endpoints must not be over-cached.** This rule makes *every* `GET /api/*`
@@ -137,11 +137,16 @@ guards:
    decorator in [`backend/src/routers/search.py`](../backend/src/routers/search.py)). With
    *Edge TTL: Use cache-control header*, the edge then honours the 60s — not the long default.
 2. **Browser TTL must be "Respect origin", not "Override".** A *Browser TTL: Override* value
-   rewrites the `max-age` sent to browsers regardless of origin, which is where the observed
-   `max-age=86400` came from (and it had drifted from the "1 hour" this doc previously listed).
-   Code cannot fix this — it is a dashboard setting. Set Browser TTL to *Respect origin* so the
-   short origin header wins. If you must keep a browser override for other `/api/*` routes, add a
-   higher-priority rule that **bypasses cache** (or respects origin) for
+   rewrites the `max-age` sent to browsers regardless of origin — the source of the observed
+   `max-age=86400` (which had drifted from the "1 hour" this doc previously listed). It surfaced
+   as stale UI: 2330's ticker-insight cards stuck on the zh-TW "尚未完成繁中轉寫" fallback because
+   browsers held a 24h-cached pre-translation response. **Resolved 2026-06-09** — Browser TTL was
+   set `override_origin → respect_origin` via the Cloudflare Rulesets API (ruleset `3a79f70b…`,
+   rule `c87f100f…` "Cache API GET requests"); the live `/api/*` header is now
+   `public, s-maxage=3600, max-age=3600, stale-while-revalidate=7200` (origin's TRENDING profile
+   passes through). Code cannot change this — it is a Cache-Rule setting requiring a token with
+   `Cache Rules: Edit` + `Account Rulesets: Edit`. If you ever need a browser override for other
+   `/api/*` routes, add a higher-priority rule that **bypasses cache** (or respects origin) for
    `starts_with(http.request.uri.path, "/api/search/")`.
 
 **Post-deploy purge.** Backend deploys ([`backend-deploy.yml`](../.github/workflows/backend-deploy.yml),
