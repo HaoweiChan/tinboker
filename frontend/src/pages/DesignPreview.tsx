@@ -90,12 +90,24 @@ export default function DesignPreview() {
         </div>
 
         <div className="grid md:grid-cols-3 gap-4 mb-8">
-          <RailCard title="今天的市場" sub="11.25 · 週二">
-            <div className="flex flex-col gap-3 text-[13px]">
-              <div className="flex justify-between"><span className="text-muted-foreground">今天聽到 7 集</span><span className="font-mono font-semibold">7</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">聊到 23 檔股票</span><span className="font-mono font-semibold">23</span></div>
-              <div className="flex justify-between items-center"><span className="text-muted-foreground">大家普遍</span><SentimentChip sentiment="BULLISH" /></div>
-              <SentBar bull={58} neutral={24} bear={18} />
+          <RailCard title="市場脈動" sub="近 30 天">
+            <div className="flex flex-col gap-4 text-[13px]">
+              <div className="flex flex-col gap-1.5">
+                <span className="text-[11px] text-muted-foreground tracking-wide">情緒趨勢</span>
+                <SentBar bull={24} neutral={8} bear={12} />
+                <div className="flex items-center justify-between">
+                  <span><span className="text-sentiment-bull">多 24</span><span className="text-muted-foreground"> · 中 8 · </span><span className="text-sentiment-bear">空 12</span></span>
+                  <span className="text-sentiment-bull font-mono text-[11px]">↑ +3</span>
+                </div>
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-[11px] text-muted-foreground tracking-wide">聲量飆升</span>
+                <div className="flex items-center justify-between"><span className="font-medium">超微 <span className="font-mono text-[10px] text-muted-foreground">AMD</span></span><span className="text-sentiment-bull font-mono text-[11px]">↑ +12 集</span></div>
+              </div>
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center justify-between"><span className="text-[11px] text-muted-foreground tracking-wide">新進個股</span><span className="text-[11px] text-muted-foreground font-mono">+3 檔新上榜</span></div>
+                <span className="text-[12px] text-foreground/80">聯發科、緯創、日月光</span>
+              </div>
             </div>
           </RailCard>
           <RailCard title="這幾天大家在聊" sub="7 天內提及">

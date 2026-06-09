@@ -91,9 +91,10 @@ class TrendingService:
         totals. Unlike `trending_tickers` (agents-precomputed over the full all-time,
         English-inclusive catalog), this reflects only the launch feed.
 
-        Returns: {tickers: [{ticker, count, sentiment_label, last_mentioned}], distinct_count, episode_count}
+        Returns: {tickers, distinct_count, episode_count, sentiment_summary,
+                  prev_sentiment_summary, rising_ticker, new_tickers}
         """
-        cache_key = f"buzz:recent:{days}:{limit}:v1"
+        cache_key = f"buzz:recent:{days}:{limit}:v2"
         cached = await cache_get(cache_key)
         if cached:
             try:
@@ -103,30 +104,45 @@ class TrendingService:
 
         episodes = await self.podcast_service.get_recent_episodes(limit=500, enrich_content=False)
         cutoff = int((datetime.now() - timedelta(days=days)).timestamp() * 1000)
+        prev_cutoff = int((datetime.now() - timedelta(days=days * 2)).timestamp() * 1000)
         counts: Counter = Counter()
+        prev_counts: Counter = Counter()
         last_mentioned: Dict[str, int] = {}
         eps_by_ticker: Dict[str, list] = {}
         episode_count = 0
         for ep in episodes:
             rel = ep.released_at_ms if ep.released_at_ms is not None else (ep.created_time or 0)
-            if rel < cutoff:
-                continue
-            episode_count += 1
-            for t in (ep.related_tickers or []):
-                tu = str(t).upper()
-                counts[tu] += 1
-                if rel > last_mentioned.get(tu, 0):
-                    last_mentioned[tu] = rel
-                eps_by_ticker.setdefault(tu, []).append(ep.id)
+            tickers = [str(t).upper() for t in (ep.related_tickers or [])]
+            if rel >= cutoff:
+                episode_count += 1
+                for tu in tickers:
+                    counts[tu] += 1
+                    if rel > last_mentioned.get(tu, 0):
+                        last_mentioned[tu] = rel
+                    eps_by_ticker.setdefault(tu, []).append(ep.id)
+            elif rel >= prev_cutoff:
+                for tu in tickers:
+                    prev_counts[tu] += 1
 
         top = counts.most_common(limit)
         top_tickers = [t for t, _ in top]
 
-        # zh-TW display names (台積電, 輝達, …) for the rail.
-        translations = await self._get_translations_batch(top_tickers)
+        # Tickers to translate: top tickers + rising candidate + new tickers
+        new_ticker_set = set(counts) - set(prev_counts)
+        rising_ticker_id = None
+        rising_delta = 0
+        for t in counts:
+            delta = counts[t] - prev_counts.get(t, 0)
+            if delta > rising_delta:
+                rising_delta = delta
+                rising_ticker_id = t
+        extra_tickers = list(new_ticker_set)[:5]
+        if rising_ticker_id:
+            extra_tickers.append(rising_ticker_id)
+        all_tickers_to_translate = list(set(top_tickers + extra_tickers))
+        translations = await self._get_translations_batch(all_tickers_to_translate)
 
-        # Aggregate a dominant sentiment per top ticker from the episodes that mention it,
-        # using the per-episode sentiment maps (chunked to respect the service's id cap).
+        # Aggregate dominant sentiment per top ticker
         sent_maps: Dict[str, dict] = {}
         try:
             from src.services.episode_sentiments import EpisodeSentimentService
@@ -137,6 +153,7 @@ class TrendingService:
         except Exception as e:
             logger.warning(f"buzz sentiment aggregation failed: {e}")
 
+        bull = bear = neutral = 0
         items = []
         for ticker, count in top:
             s_counts: Counter = Counter()
@@ -145,6 +162,12 @@ class TrendingService:
                 if s:
                     s_counts[s] += 1
             dominant = s_counts.most_common(1)[0][0] if s_counts else "NEUTRAL"
+            if dominant == "BULLISH":
+                bull += 1
+            elif dominant == "BEARISH":
+                bear += 1
+            else:
+                neutral += 1
             items.append({
                 "ticker": ticker,
                 "name": translations.get(ticker) or None,
@@ -153,9 +176,50 @@ class TrendingService:
                 "last_mentioned": last_mentioned.get(ticker),
             })
 
-        result = {"tickers": items, "distinct_count": len(counts), "episode_count": episode_count}
+        # Compute prev-window sentiment summary from the top tickers' prior counts
+        prev_bull = prev_bear = prev_neutral = 0
+        for t in set(prev_counts):
+            if prev_counts[t] > 0:
+                prev_neutral += 1
+        # Re-use sent_maps for a rough prior approximation: count dominant sentiments
+        # across all tickers that appeared in the prior window. Since we don't have
+        # per-episode sentiment for prior-window episodes without extra fetches, we
+        # approximate using the current sentiment label if the ticker also appeared now.
+        for t in set(prev_counts):
+            label = next((it["sentiment_label"] for it in items if it["ticker"] == t), None)
+            if label == "BULLISH":
+                prev_bull += 1
+            elif label == "BEARISH":
+                prev_bear += 1
+            # else stays neutral (already counted)
+        # Adjust: only count each ticker once
+        prev_total = len(set(prev_counts))
+        if prev_total > 0:
+            prev_neutral = prev_total - prev_bull - prev_bear
+
+        result = {
+            "tickers": items,
+            "distinct_count": len(counts),
+            "episode_count": episode_count,
+            "sentiment_summary": {"bull": bull, "neutral": neutral, "bear": bear},
+            "prev_sentiment_summary": {"bull": prev_bull, "neutral": prev_neutral, "bear": prev_bear},
+        }
+        if rising_ticker_id and rising_delta > 0:
+            result["rising_ticker"] = {
+                "ticker": rising_ticker_id,
+                "name": translations.get(rising_ticker_id) or None,
+                "delta": rising_delta,
+            }
+        new_tickers_list = []
+        for t in sorted(new_ticker_set, key=lambda x: counts[x], reverse=True)[:5]:
+            new_tickers_list.append({
+                "ticker": t,
+                "name": translations.get(t) or None,
+            })
+        if new_tickers_list:
+            result["new_tickers"] = new_tickers_list
         try:
-            await cache_set(cache_key, json.dumps(result), 1800)  # 30 min
+            await cache_set(cache_key, json.dumps(result), 1800)
         except Exception:
             pass
         return result

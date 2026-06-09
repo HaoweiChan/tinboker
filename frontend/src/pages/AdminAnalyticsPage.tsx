@@ -1,10 +1,10 @@
 /**
- * Admin Analytics Page - Links to Cloudflare and Google Analytics dashboards.
+ * Admin Analytics Page - Links to Cloudflare and Google Analytics dashboards,
+ * plus tracking configuration status.
  */
 
-import React, { useEffect, useState } from 'react';
-import { ExternalLink, TrendingUp, Users, Eye, Globe, Loader2 } from 'lucide-react';
-import { useAppStore } from '@/store/useAppStore';
+import React from 'react';
+import { ExternalLink, TrendingUp, Globe, Search, CheckCircle, AlertTriangle } from 'lucide-react';
 
 interface AnalyticsCardProps {
   title: string;
@@ -45,97 +45,29 @@ const AnalyticsCard: React.FC<AnalyticsCardProps> = ({
   </a>
 );
 
-interface QuickStatProps {
+interface TrackingItemProps {
   label: string;
-  value: string;
-  icon: React.ReactNode;
-  trend?: string;
-  trendUp?: boolean;
+  detail: string;
+  status: 'active' | 'pending';
 }
 
-const QuickStat: React.FC<QuickStatProps> = ({ label, value, icon, trend, trendUp }) => (
-  <div className="rounded-xl bg-white p-5 shadow-sm dark:bg-gray-800">
-    <div className="flex items-center justify-between">
-      <div className="rounded-lg bg-gray-100 p-2 dark:bg-gray-700">
-        {icon}
-      </div>
-      {trend && (
-        <span className={`text-sm font-medium ${trendUp ? 'text-green-500' : 'text-red-500'}`}>
-          {trendUp ? '↑' : '↓'} {trend}
-        </span>
-      )}
+const TrackingItem: React.FC<TrackingItemProps> = ({ label, detail, status }) => (
+  <li className="flex items-center gap-3 rounded-lg px-3 py-2.5">
+    {status === 'active' ? (
+      <CheckCircle className="h-4 w-4 flex-shrink-0 text-green-500" />
+    ) : (
+      <AlertTriangle className="h-4 w-4 flex-shrink-0 text-yellow-500" />
+    )}
+    <div className="min-w-0">
+      <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{label}</span>
+      <span className="ml-2 text-sm text-gray-500 dark:text-gray-400">{detail}</span>
     </div>
-    <div className="mt-4">
-      <p className="text-2xl font-bold text-gray-900 dark:text-white">{value}</p>
-      <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{label}</p>
-    </div>
-  </div>
+  </li>
 );
 
-interface AnalyticsData {
-  pageViews: number | string;
-  uniqueVisitors: number | string;
-  requests: number | string;
-  visits: number | string;
-  period: string;
-}
-
-interface AnalyticsResponse {
-  configured: boolean;
-  message: string;
-  data: AnalyticsData | null;
-  dashboards?: {
-    cloudflare: string;
-    googleAnalytics: string;
-  };
-}
-
-const formatNumber = (num: number | string): string => {
-  if (typeof num === 'string') return num;
-  if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
-  if (num >= 1000) return `${(num / 1000).toFixed(1)}K`;
-  return num.toString();
-};
-
 export const AdminAnalyticsPage: React.FC = () => {
-  const [analytics, setAnalytics] = useState<AnalyticsResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const fetchAnalytics = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const token = useAppStore.getState().token;
-        const apiBase = import.meta.env.DEV
-          ? 'http://localhost:8000'
-          : 'https://api.tinboker.com';
-        const response = await fetch(`${apiBase}/api/admin/analytics/overview?days=7`, {
-          headers: {
-            Authorization: `Bearer ${token || ''}`,
-          },
-        });
-        if (!response.ok) {
-          if (response.status === 503) {
-            setAnalytics({ configured: false, message: 'Not configured', data: null });
-          } else {
-            throw new Error(`HTTP ${response.status}`);
-          }
-        } else {
-          const data = await response.json();
-          setAnalytics(data);
-        }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to fetch analytics');
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchAnalytics();
-  }, []);
   return (
-    <div className="space-y-8">
+    <div className="mx-auto max-w-7xl space-y-8">
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
@@ -164,70 +96,23 @@ export const AdminAnalyticsPage: React.FC = () => {
         />
       </div>
 
-      {/* Quick Stats */}
-      <div>
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-            Quick Overview (Last 7 Days)
-          </h2>
-          {loading && <Loader2 className="h-5 w-5 animate-spin text-gray-400" />}
-        </div>
-        {error ? (
-          <div className="rounded-lg bg-red-50 p-4 text-red-600 dark:bg-red-900/20 dark:text-red-400">
-            Failed to load analytics: {error}
-          </div>
-        ) : !analytics?.configured ? (
-          <div className="rounded-lg bg-yellow-50 p-4 text-yellow-700 dark:bg-yellow-900/20 dark:text-yellow-400">
-            Analytics API not configured. Add CLOUDFLARE_API_TOKEN and CLOUDFLARE_ZONE_TAG to secrets.
-          </div>
-        ) : (
-          <>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <QuickStat
-                label="Page Views"
-                value={analytics.data ? formatNumber(analytics.data.pageViews) : '—'}
-                icon={<Eye className="h-5 w-5 text-blue-500" />}
-              />
-              <QuickStat
-                label="Unique Visitors"
-                value={analytics.data ? formatNumber(analytics.data.uniqueVisitors) : '—'}
-                icon={<Users className="h-5 w-5 text-green-500" />}
-              />
-              <QuickStat
-                label="Total Visits"
-                value={analytics.data ? formatNumber(analytics.data.visits) : '—'}
-                icon={<TrendingUp className="h-5 w-5 text-purple-500" />}
-              />
-              <QuickStat
-                label="Requests"
-                value={analytics.data ? formatNumber(analytics.data.requests) : '—'}
-                icon={<Globe className="h-5 w-5 text-orange-500" />}
-              />
-            </div>
-            <div className="mt-4 rounded-lg bg-blue-50 p-4 dark:bg-blue-900/20">
-              <p className="text-sm text-blue-800 dark:text-blue-200">
-                <strong>Note:</strong> {analytics.message} For detailed real-time analytics, please use the dashboard links above.
-              </p>
-              {analytics.data && (
-                <p className="mt-2 text-xs text-blue-600 dark:text-blue-300">
-                  Period: {analytics.data.period}
-                </p>
-              )}
-            </div>
-          </>
-        )}
-      </div>
-
       {/* Google Search Console */}
       <div className="rounded-xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-800">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-          SEO Performance
-        </h2>
-        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-          Track search rankings, indexing status, and organic traffic
-        </p>
+        <div className="flex items-center gap-3">
+          <div className="rounded-lg bg-gray-100 p-2 dark:bg-gray-700">
+            <Search className="h-5 w-5 text-gray-600 dark:text-gray-400" />
+          </div>
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+              SEO Performance
+            </h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Track search rankings, indexing status, and organic traffic
+            </p>
+          </div>
+        </div>
         <a
-          href="https://search.google.com/search-console?resource_id=https://www.tinboker.com/"
+          href="https://search.google.com/search-console?resource_id=https://tinboker.com/"
           target="_blank"
           rel="noopener noreferrer"
           className="mt-4 inline-flex items-center gap-2 rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
@@ -237,24 +122,27 @@ export const AdminAnalyticsPage: React.FC = () => {
         </a>
       </div>
 
-      {/* Tracking Info */}
-      <div className="rounded-xl bg-blue-50 p-6 dark:bg-blue-900/20">
-        <h3 className="font-semibold text-blue-900 dark:text-blue-300">
+      {/* Tracking Configuration */}
+      <div className="rounded-xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-800">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
           Tracking Configuration
         </h3>
-        <ul className="mt-3 space-y-2 text-sm text-blue-800 dark:text-blue-200">
-          <li className="flex items-center gap-2">
-            <span className="inline-flex h-2 w-2 rounded-full bg-green-500" />
-            Cloudflare Web Analytics: Enabled (auto-injected)
-          </li>
-          <li className="flex items-center gap-2">
-            <span className="inline-flex h-2 w-2 rounded-full bg-green-500" />
-            Google Analytics: G-VYVPJ535WH
-          </li>
-          <li className="flex items-center gap-2">
-            <span className="inline-flex h-2 w-2 rounded-full bg-yellow-500" />
-            Google Search Console: Verify domain ownership
-          </li>
+        <ul className="mt-3 space-y-1">
+          <TrackingItem
+            label="Cloudflare Web Analytics"
+            detail="Enabled (auto-injected via Cloudflare Pages)"
+            status="active"
+          />
+          <TrackingItem
+            label="Google Analytics"
+            detail="G-VYVPJ535WH"
+            status="active"
+          />
+          <TrackingItem
+            label="Google Search Console"
+            detail="Verify domain ownership"
+            status="pending"
+          />
         </ul>
       </div>
     </div>

@@ -137,31 +137,46 @@ export const Sidebar: React.FC = () => {
         ))}
 
         {/* Footer: user / login */}
-        <div
-          className={cn(
-            'mt-auto pt-4 border-t border-border flex items-center gap-2.5',
-            expanded ? 'px-1.5' : 'justify-center px-0',
-          )}
-        >
+        <div className="mt-auto pt-4 border-t border-border">
           {user ? (
-            <>
-              <div
-                title={!expanded ? `${user.name || '使用者'} · ${user.email}` : undefined}
-                className="w-7 h-7 rounded-full grid place-items-center text-[11px] font-semibold text-white shrink-0 bg-accent-info"
-              >
-                {(user.name || user.email || '?').charAt(0).toUpperCase()}
-              </div>
-              {expanded && (
-                <div className="min-w-0">
-                  <div className="text-[13px] font-medium truncate">{user.name || '使用者'}</div>
-                  <div className="text-[11px] text-muted-foreground truncate">{user.email}</div>
-                </div>
+            <Link
+              to="/profile"
+              title={!expanded ? `${user.name || '使用者'} · ${user.email}` : '個人檔案'}
+              className={cn(
+                'flex items-center gap-2.5 rounded-lg hover:bg-muted/50 transition-colors',
+                expanded ? 'px-1.5 py-1' : 'justify-center px-0 py-1',
               )}
-            </>
+            >
+              <span className="w-7 h-7 rounded-full overflow-hidden grid place-items-center text-[11px] font-semibold text-white shrink-0 bg-accent-info">
+                {user.avatar ? (
+                  <img
+                    src={user.avatar}
+                    alt={`Avatar of ${user.name}`}
+                    className="w-full h-full object-cover"
+                    loading="lazy"
+                  />
+                ) : (
+                  (user.initials || user.name || user.email || '?').charAt(0).toUpperCase()
+                )}
+              </span>
+              {expanded && (
+                <span className="min-w-0">
+                  <span className="block text-[13px] font-medium truncate">{user.name || '使用者'}</span>
+                  <span className="block text-[11px] text-muted-foreground truncate">{user.email}</span>
+                </span>
+              )}
+            </Link>
           ) : (
-            expanded && <span className="text-[12px] text-muted-foreground px-1">尚未登入</span>
+            expanded && <span className="block px-1.5 text-[12px] text-muted-foreground">尚未登入</span>
           )}
         </div>
+
+        {/* App version */}
+        {expanded && (
+          <div className="px-2.5 pt-3 text-[10px] text-muted-foreground/50 tracking-wide tabular-nums">
+            v{__APP_VERSION__}
+          </div>
+        )}
       </div>
     </aside>
   );
