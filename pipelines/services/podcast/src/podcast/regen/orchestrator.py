@@ -27,8 +27,6 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
-from src.pipeline.utils import extract_tags_and_tickers
-
 from ..content_builder.nodes import (
     extractor,
     key_insights_extractor,
@@ -42,6 +40,8 @@ from ..content_builder.nodes.key_insights_extractor import is_placeholder_summar
 from ..content_builder.nodes.markdown_transform import transform_to_markdown
 from ..content_builder.nodes.marp_converter import convert_marp, convert_marp_ticker
 from ..content_builder.nodes.social_cards_builder import build_social_cards
+from ..content_builder.nodes.tags_tickers import derive_tags_tickers
+from .schemas import GLOBAL_NOTES, STEP_OUTPUT, validate_output
 
 # --- Step model -------------------------------------------------------------
 #
@@ -97,7 +97,7 @@ _STEP_PREREQ = {
 # One-line guidance returned with each prompt so the agent knows what to produce.
 _STEP_HINT = {
     STEP_EXTRACTOR: "Segment the transcript sentences into topics. Return {\"events\": [{section_topic, start_index, end_index}, ...]} covering every sentence index.",
-    STEP_WRITER: "Write the zh-TW summary article. Return the structured JSON {title, executive_summary, sections, conclusion, stock_tickers, tags} — embed [label](#ticker:SYMBOL)/[label](#tag:TAG) links inline in the section prose.",
+    STEP_WRITER: "Write the zh-TW summary article. Return {title, executive_summary, sections, conclusion, stock_tickers, tags} — embed [顯示名](#ticker:SYMBOL)/[顯示名](#tag:Slug) links inline in the prose. #tag:/#ticker: slugs MUST be ASCII (Chinese goes in the display text only); write literal UTF-8, not \\u escapes.",
     STEP_KEY_INSIGHTS: "Extract 3-8 plain-text zh-TW key insights from the summary. Return {\"key_insights\": [...]} (most important first, no markdown/links).",
     STEP_TICKER: "Extract ticker sentiment. Return {\"ticker_recommendations\": [{ticker, sentiment, sentiment_score, time_horizon, bluf_thesis, reasons, risks}, ...]} (keep the legacy key name).",
     STEP_MARP: "Generate episode slide data. Return {title, slides:[{heading, bullet_points, start_time, slide_notes}, ...]}.",
@@ -259,9 +259,7 @@ def _apply(step: str, output: Any, state: dict[str, Any]) -> list[str]:
     elif step == STEP_WRITER:
         state.update(writer.postprocess(output, state))
         state.update(transform_to_markdown(state))
-        tt = extract_tags_and_tickers({"summary_text": state.get("markdown_report", "")})
-        state["tags"] = tt["tags"]
-        state["related_tickers"] = tt["tickers"]
+        state.update(derive_tags_tickers(state))
         if not state.get("markdown_report", "").strip():
             warnings.append("writer produced an empty summary — check the returned JSON shape.")
     elif step == STEP_KEY_INSIGHTS:
@@ -289,15 +287,45 @@ def _ready_steps(completed: list[str]) -> list[str]:
     ]
 
 
+def _output_spec(step: str) -> dict[str, Any]:
+    """The compact, machine-readable shape + example the agent must produce."""
+    spec = STEP_OUTPUT[step]
+    return {
+        "output_schema": spec["schema"],
+        "example": spec["example"],
+        "global_notes": GLOBAL_NOTES,
+    }
+
+
+def _next_pointer(step: str) -> dict[str, Any]:
+    """A lightweight 'what to produce next' — the output contract WITHOUT the
+    transcript-laden system/user body. Fetch the full prompt on demand with
+    ``get_role_prompt`` only when you're ready to fill it (keeps responses small).
+    """
+    return {
+        "step": step,
+        "role": _STEP_ROLE[step],
+        "instructions": _STEP_HINT[step],
+        **_output_spec(step),
+        "how_to_fetch": f"call get_role_prompt(episode_id, '{step}') for the full system+user prompt.",
+    }
+
+
 def _prompt_payload(step: str, state: dict[str, Any]) -> dict[str, Any]:
+    """The full rendered prompt for ``step`` — system + user + the output contract.
+
+    The two messages carry the (large) transcript/events payload, so this is only
+    returned by ``start`` (extractor) and ``get_role_prompt`` (on demand). Note the
+    redundant ``messages`` array was dropped — ``system``/``user`` are the contents.
+    """
     messages = _build_messages(step, state)
     return {
         "step": step,
         "role": _STEP_ROLE[step],
         "instructions": _STEP_HINT[step],
+        **_output_spec(step),
         "system": messages[0]["content"],
         "user": messages[1]["content"],
-        "messages": messages,
     }
 
 
@@ -336,6 +364,33 @@ def _assemble(draft: dict[str, Any]) -> dict[str, Any]:
 def _doc_update(payload: dict[str, Any]) -> dict[str, Any]:
     """The episode-doc merge update — everything except the ticker subcollection."""
     return {k: v for k, v in payload.items() if k != "ticker_insights"}
+
+
+def _manual_cache_commands(
+    base: Optional[str], podcast_name: str, episode_id: str, has_tickers: bool
+) -> list[str]:
+    """Exact copy-paste commands to refresh the platform caches by hand — returned by
+    ``commit`` only when the automatic notify is disabled/failed, so the full cache
+    surface (episode + ticker sentiment + CDN) never has to be reverse-engineered."""
+    api = (base or "https://api.tinboker.com").rstrip("/")
+    cmds = [
+        "# 1. Replay the PATCH (busts episode Redis + ticker cache + CDN via the backend):",
+        f"curl -X PATCH '{api}/api/podcast/{podcast_name}/episodes/{episode_id}' "
+        "-H 'Content-Type: application/json' --data '{\"summary_content\":\"<the new summary>\"}'",
+    ]
+    if has_tickers:
+        cmds.append(
+            "# 2. If sentiment cards stay stale, clear the ticker cache on the VPS:\n"
+            "ssh root@VPS \"docker exec tinboker-redis sh -c \\\"redis-cli -n 0 --scan "
+            "--pattern 'ticker_insights:by_ticker:*' | xargs -r redis-cli -n 0 DEL\\\"\""
+        )
+    cmds.append(
+        "# 3. Cloudflare host purge (confirmed-working method; token/zone from GCP Secret Manager):\n"
+        "curl -X POST \"https://api.cloudflare.com/client/v4/zones/$ZONE/purge_cache\" "
+        "-H \"Authorization: Bearer $TOKEN\" -H 'Content-Type: application/json' "
+        "--data '{\"hosts\":[\"api.tinboker.com\"]}'"
+    )
+    return cmds
 
 
 # --- Public API (the MCP tools are thin wrappers over these) ----------------
@@ -475,17 +530,25 @@ def submit(episode_id: str, step: str, output_json: Any) -> dict[str, Any]:
         except json.JSONDecodeError as exc:
             raise RegenError(f"output_json is not valid JSON: {exc}") from exc
 
+    shape_errors = validate_output(step, output_json)
+    if shape_errors:
+        raise RegenError(
+            f"output_json shape is invalid for step '{step}':\n- " + "\n- ".join(shape_errors)
+            + f"\nSee the step's output_schema/example (get_role_prompt(episode_id, '{step}'))."
+        )
+
     warnings = _apply(step, output_json, draft["state"])
     if step not in draft["completed"]:
         draft["completed"].append(step)
     _save(draft)
 
     ready = _ready_steps(draft["completed"])
-    next_prompt = None
     # Suggest the next required step first, else the next ready (optional) one.
     suggest = next((s for s in REQUIRED_STEPS if s in ready), None) or (ready[0] if ready else None)
-    if suggest:
-        next_prompt = _prompt_payload(suggest, draft["state"])
+    # Return only a lightweight pointer (step + output contract) — NOT the heavy
+    # system/user body. The agent fetches that with get_role_prompt when ready,
+    # so submit responses stay small no matter how long the transcript is.
+    next_step = _next_pointer(suggest) if suggest else None
 
     required_done = all(s in draft["completed"] for s in REQUIRED_STEPS)
     return {
@@ -494,9 +557,10 @@ def submit(episode_id: str, step: str, output_json: Any) -> dict[str, Any]:
         "ready_steps": ready,
         "required_done": required_done,
         "warnings": warnings,
-        "next_prompt": next_prompt,
+        "next": next_step,
         "hint": "All required steps done — call preview_regen then commit_regen."
-                if required_done else "Continue with next_prompt, or fetch another ready step.",
+                if required_done else "Continue with `next` (call get_role_prompt for its full prompt), "
+                "or fetch another ready step.",
     }
 
 
@@ -566,35 +630,48 @@ def commit(
         except Exception as exc:  # noqa: BLE001 — best-effort, never abort the commit
             report["warnings"].append(f"ticker_insights export failed: {exc}")
 
-    # 3. Bust the platform's Redis cache for the user-visible fields by replaying
-    #    them through the backend's existing PATCH (the debug editor's write path).
+    # 3. Refresh the platform caches by replaying the user-visible fields through the
+    #    backend's PATCH (the debug-editor write path). That ONE call busts the episode
+    #    Redis cache, the ticker_insights:* sentiment cache (when related_tickers
+    #    changed), AND the Cloudflare edge for the target env's API host — so the regen
+    #    shows immediately. The result reports what refreshed; if the call is disabled
+    #    or fails, it returns the exact manual commands instead of leaving you guessing.
     cached = {
         k: payload[k]
         for k in ("summary_content", "key_insights", "related_tickers", "tags")
         if k in payload
     }
-    if notify_platform and cached:
-        base = os.getenv("TINBOKER_PLATFORM_API_URL")
-        if base:
-            try:
-                import httpx
+    base = os.getenv("TINBOKER_PLATFORM_API_URL")
+    notified_ok = False
+    if notify_platform and cached and base:
+        try:
+            import httpx
 
-                resp = httpx.patch(
-                    f"{base.rstrip('/')}/api/podcast/{draft['podcast_name']}/episodes/{episode_id}",
-                    json=cached,
-                    timeout=20.0,
-                )
-                report["platform_notified"] = resp.status_code
-                if resp.status_code >= 400:
-                    report["warnings"].append(
-                        f"platform PATCH returned {resp.status_code}: {resp.text[:200]}"
-                    )
-            except Exception as exc:  # noqa: BLE001
-                report["warnings"].append(f"platform notify failed (cache may be stale): {exc}")
+            resp = httpx.patch(
+                f"{base.rstrip('/')}/api/podcast/{draft['podcast_name']}/episodes/{episode_id}",
+                json=cached,
+                timeout=20.0,
+            )
+            report["platform_notified"] = resp.status_code
+            notified_ok = resp.status_code < 400
+            if not notified_ok:
+                report["warnings"].append(f"platform PATCH returned {resp.status_code}: {resp.text[:200]}")
+        except Exception as exc:  # noqa: BLE001
+            report["warnings"].append(f"platform notify failed (cache may be stale): {exc}")
+    elif notify_platform and cached and not base:
+        report["warnings"].append("TINBOKER_PLATFORM_API_URL not set — skipped cache invalidation.")
+
+    if cached:
+        surfaces = ["episode Redis cache"]
+        if "related_tickers" in cached:
+            surfaces.append("ticker_insights:by_ticker cache")
+        surfaces.append("Cloudflare edge (API host)")
+        if notified_ok:
+            report["cache_refreshed"] = {"via": base, "surfaces": surfaces}
         else:
-            report["warnings"].append(
-                "TINBOKER_PLATFORM_API_URL not set — skipped cache invalidation "
-                "(platform reads may be stale until the episode's TTL expires)."
+            report["cache_stale_until_ttl"] = True
+            report["manual_invalidation"] = _manual_cache_commands(
+                base, draft["podcast_name"], episode_id, "related_tickers" in cached
             )
 
     # 4. PNG social-card rendering stays in the normal pipeline (needs marp_service

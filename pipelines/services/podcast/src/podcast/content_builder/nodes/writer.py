@@ -9,6 +9,7 @@ from typing import Any
 
 from ..llm import invoke_json, load_prompt
 from ..state import PipelineState
+from ..tag_vocabulary import vocabulary_prompt_block
 
 
 def build_messages(state: PipelineState) -> list[dict[str, str]]:
@@ -20,6 +21,7 @@ def build_messages(state: PipelineState) -> list[dict[str, str]]:
         events=events_json,
         source=state.get("source", "Podcast"),
         episode_title=state.get("episode_title", "Episode"),
+        tag_vocabulary=vocabulary_prompt_block(),
     )
 
     return [
