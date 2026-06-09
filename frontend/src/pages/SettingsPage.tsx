@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { Sun, Bell, Loader2 } from 'lucide-react';
+import { Sun, Bell, Loader2, Smartphone } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
+import { PWAInstallSection } from '@/components/common/PWAInstallPrompt';
 import { useStockColorMode, useSetStockColorMode } from '@/hooks/useStockTrendColor';
 import { useAppStore } from '@/store/useAppStore';
 import { userSettingsApi, type NotificationPreferences } from '@/services/api/userSettings';
@@ -122,6 +123,10 @@ export const SettingsPage: React.FC = () => {
             control={<Toggle checked={theme === 'dark'} onChange={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label="深色模式" />}
             last
           />
+        </SettingsSection>
+
+        <SettingsSection icon={<Smartphone size={18} />} title="安裝 App">
+          <PWAInstallSection />
         </SettingsSection>
 
         <SettingsSection icon={<Bell size={18} />} title="通知設定">
