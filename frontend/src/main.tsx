@@ -5,6 +5,7 @@ import { GoogleOAuthProvider } from '@react-oauth/google'
 import './index.css'
 import App from './App.tsx'
 import { PWAUpdatePrompt } from './components/common/PWAUpdatePrompt'
+import { PWAInstallBanner } from './components/common/PWAInstallPrompt'
 import { initializeTheme } from './utils/themeInit'
 
 // Initialize theme before rendering
@@ -46,6 +47,7 @@ const AppWrapper = import.meta.env.PROD ? (
       <HelmetProvider>
         <App />
         <PWAUpdatePrompt />
+        <PWAInstallBanner />
       </HelmetProvider>
     </GoogleOAuthProvider>
   </StrictMode>
@@ -54,6 +56,7 @@ const AppWrapper = import.meta.env.PROD ? (
     <HelmetProvider>
       <App />
       <PWAUpdatePrompt />
+      <PWAInstallBanner />
     </HelmetProvider>
   </GoogleOAuthProvider>
 );
