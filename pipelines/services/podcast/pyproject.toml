@@ -34,6 +34,8 @@ dependencies = [
     "pydantic>=2.0.0",
     # marp_service (Marp markdown -> PPTX Flask app, port 5004)
     "flask>=3.0",
+    # content-regeneration MCP server (src/podcast/regen, stdio)
+    "mcp>=1.2.0",
 ]
 
 [project.optional-dependencies]
