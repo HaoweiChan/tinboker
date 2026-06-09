@@ -97,9 +97,16 @@ export default defineConfig({
       }
     })
   ],
-  // App version (from package.json) exposed to the client for the sidebar version label.
+  // App version exposed to the client for the sidebar/About version label.
+  // Prefer the release tag passed by CI (VITE_RELEASE_VERSION, e.g. "v0.3.2") on
+  // tagged prod builds so the label tracks the actual release; fall back to
+  // package.json for local/staging/dev builds.
   define: {
-    __APP_VERSION__: JSON.stringify(process.env.npm_package_version ?? '0.0.0'),
+    __APP_VERSION__: JSON.stringify(
+      process.env.VITE_RELEASE_VERSION?.replace(/^v/, '') ||
+      process.env.npm_package_version ||
+      '0.0.0',
+    ),
   },
   server: {
     proxy: {
