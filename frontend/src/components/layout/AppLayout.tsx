@@ -1,11 +1,12 @@
 import React from 'react';
-import { Outlet, useLocation } from 'react-router-dom';
+import { Link, Outlet, useLocation } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { BottomTabs } from './BottomTabs';
 import { SearchDropdown } from '@/components/ui/SearchDropdown';
 import { ThemeToggle } from '@/components/ui/ThemeToggle';
 import { NotificationDropdown } from '@/components/ui/NotificationDropdown';
 import { UserMenu } from '@/components/ui/UserMenu';
+import { BracketMark } from '@/components/logo/AppLogo';
 
 /** [title, subtitle] for the page header, derived from the route. */
 function pageTitle(pathname: string): [string, string] {
@@ -65,6 +66,9 @@ export const AppLayout: React.FC = () => {
       <div className="flex flex-col min-w-0 min-h-screen">
         <header className="sticky top-0 z-20 border-b border-border bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70">
           <div className="flex items-center gap-2 sm:gap-4 px-4 sm:px-6 lg:px-7 py-2 sm:py-3 max-w-[1440px] mx-auto w-full">
+            <Link to="/" className="lg:hidden shrink-0" aria-label="首頁">
+              <BracketMark size={28} />
+            </Link>
             <div className="hidden sm:flex items-baseline gap-2 shrink-0">
               <span className="text-[16px] sm:text-[18px] font-semibold tracking-[-0.01em] whitespace-nowrap">{title}</span>
               {subtitle && <span className="hidden md:inline text-[12px] text-muted-foreground font-medium">{subtitle}</span>}
