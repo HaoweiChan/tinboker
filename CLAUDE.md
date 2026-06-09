@@ -149,6 +149,8 @@ All changes must go through Git → PR → CI/CD.
 - Bug fixes: `fix/<name>` from `develop`
 - Hotfixes: `hotfix/<name>` from `main`
 - No `staging` branch — staging is the HEAD of `main`
+- **Working alongside other agents?** Create the branch in a dedicated worktree — see
+  [Parallel Agents — Worktree Discipline](#parallel-agents--worktree-discipline).
 
 ### Release Pipeline
 
