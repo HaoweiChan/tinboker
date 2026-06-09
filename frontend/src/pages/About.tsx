@@ -67,6 +67,10 @@ export const About: React.FC = () => (
           </p>
         </Section>
       </div>
+
+      <div className="text-center text-[11px] text-muted-foreground/50 tabular-nums mt-8 pb-4">
+        v{__APP_VERSION__}
+      </div>
     </PageContent>
   </>
 );

@@ -2,7 +2,7 @@
 Seed data for the content_sources table.
 
 Mirrors the current tinboker-agents config at the time of writing:
-  - services/podcast/podcasts_tw.json  (6 TW shows)
+  - services/podcast/podcasts_tw.json  (7 TW shows)
   - services/podcast/podcasts_en.json  (14 EN shows)
   - services/news/feeds.json           (6 RSS feeds)
 
@@ -65,6 +65,15 @@ PODCAST_SOURCES: list[dict] = [
         "name": "財經一路發",
         "feed_url": "https://podcasttomp3.com/podcasts/v2/5714050",
         "spotify_url": "https://open.spotify.com/show/16vk9uoUXgbtWqIMbwyHsa",
+        "lookback_days": 30,
+        "transcript_service": "groq", "transcript_model": "whisper-large-v3",
+        "active": True,
+    },
+    {
+        "source_type": "podcast", "language": "zh-TW", "region": "TW",
+        "name": "曲博科技教室",
+        "feed_url": "https://podcasttomp3.com/podcasts/v2/3414551",
+        "spotify_url": "https://open.spotify.com/show/3BtHZNEH9gktRho5D2uNsB",
         "lookback_days": 30,
         "transcript_service": "groq", "transcript_model": "whisper-large-v3",
         "active": True,

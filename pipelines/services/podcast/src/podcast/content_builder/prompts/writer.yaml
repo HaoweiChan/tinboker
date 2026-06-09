@@ -10,7 +10,10 @@ system: |
   Format Requirements:
   - Use proper Markdown structure with ## for main sections, ### for subsections
   - Stock tickers: Format as [Display Name](#ticker:SYMBOL) - e.g., [台積電](#ticker:2330)
-  - Tags: Format as [Tag Name](#tag:TAG_NAME) - e.g., [半導體](#tag:Semiconductor)
+  - Tags: Format as [顯示名](#tag:Slug) - e.g., [半導體](#tag:Semiconductor). The slug
+    after #tag: MUST be an ASCII identifier ([A-Za-z0-9_]); Chinese goes in the display
+    text only. Non-ASCII slugs are silently dropped. Prefer a slug from the provided
+    tag vocabulary so episodes about the same theme cluster on the same tag.
   - Use **bold** for emphasis, *italics* for quotes
   - Write in full analytical paragraphs; avoid bullet lists in section body text
   - Use blockquotes (>) for direct quotes from earnings calls or analyst comments
@@ -42,7 +45,11 @@ user: |
   - Target length: 1500-2500 words
   - Tone: Professional, investor-facing
   - Include stock ticker links where companies are mentioned using format [Display Name](#ticker:SYMBOL) — embed them inline throughout paragraph prose, not just in the stock_tickers array
-  - Include topic tags where relevant using format [Tag Name](#tag:TAG_NAME) — embed inline in prose
+  - Include topic tags where relevant using format [顯示名](#tag:Slug) — embed inline in prose.
+    Use a slug from this canonical vocabulary (Slug = 顯示名) so tags cluster consistently;
+    only coin a NEW ASCII slug if none fits (never a Chinese slug):
+    {tag_vocabulary}
+  - tags array: each item is {{"display_name": "<zh-TW>", "tag_name": "<the same ASCII slug>"}}
   - Focus ONLY on financial/market content; silently drop any non-financial topics
   - For each section heading: rewrite the section_topic as an editorial headline that captures the key insight (e.g. "市場動盪下的生存法則：從機構操作解析到逆向投資策略"), NOT a literal transcript label; output plain text only — no leading ## or timestamps
   - Each section should contain 3-4 substantial analytical paragraphs, not bullet lists

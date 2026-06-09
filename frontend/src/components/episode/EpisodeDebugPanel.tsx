@@ -9,7 +9,7 @@ interface Props {
 
 type SectionId = 'transcript' | 'summary' | 'insights' | 'tickers' | 'tags';
 
-function Section({ label, open, onToggle, saving, onSave, children }: {
+function Section({ id, label, open, onToggle, saving, onSave, children }: {
   id: SectionId;
   label: string;
   open: boolean;

@@ -105,6 +105,11 @@ class SummarizeService:
                     ticker_insights = api_result.get("ticker_insights")
                     ticker_marp_markdown = api_result.get("ticker_marp_markdown")
                     key_insights = api_result.get("key_insights")
+                    # Canonical tags/related_tickers from the pipeline's
+                    # derive_tags_tickers node (single source of truth; the consumer
+                    # prefers these over the placeholder ticker extraction below).
+                    cb_tags = api_result.get("tags")
+                    cb_related_tickers = api_result.get("related_tickers")
                 else:
                     # Backward compatibility: if API returns string, use it as markdown_report
                     summary_text = api_result
@@ -114,12 +119,16 @@ class SummarizeService:
                     ticker_insights = None
                     ticker_marp_markdown = None
                     key_insights = None
-                
-                # SVG and tickers remain as placeholders (Workflow API doesn't provide them)
+                    cb_tags = None
+                    cb_related_tickers = None
+
+                # SVG stays a placeholder. Tags/related_tickers come from the
+                # pipeline's derive_tags_tickers node when available (single source of
+                # truth); fall back to the placeholder extraction otherwise.
                 from .placeholders import extract_placeholder_tickers, generate_placeholder_svg
                 svg_content = generate_placeholder_svg()
-                related_tickers = extract_placeholder_tickers()
-                
+                related_tickers = cb_related_tickers if cb_related_tickers is not None else extract_placeholder_tickers()
+
                 print("✓ Successfully generated summary using Workflow API")
                 if key_insights:
                     print(f"  ✓ Also received key_insights ({len(key_insights)} items)")
@@ -131,6 +140,10 @@ class SummarizeService:
                     # if extraction failed; downstream only writes it when non-empty).
                     'key_insights': key_insights or []
                 }
+                # Surface the pipeline's canonical tags so the consumer prefers them
+                # over re-deriving (kept as a key only when provided).
+                if cb_tags is not None:
+                    result['tags'] = cb_tags
                 
                 # Add events_markdown if available
                 if events_markdown:
