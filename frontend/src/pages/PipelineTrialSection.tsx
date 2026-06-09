@@ -3,7 +3,7 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { Play, Trash2, Loader2, Clock, Zap } from 'lucide-react';
+import { Play, Trash2, Loader2, Clock } from 'lucide-react';
 import {
   startTrialRun,
   getTrialRuns,
@@ -209,7 +209,7 @@ export const PipelineTrialSection: React.FC<Props> = ({ availableModels }) => {
                     ) : run.output ? (
                       <div className="space-y-3">
                         {/* Slides preview for marp_writer */}
-                        {run.role === 'marp_writer' && run.output.slides && (
+                        {run.role === 'marp_writer' && Array.isArray(run.output.slides) && (
                           <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
                             {(run.output.slides as Array<Record<string, unknown>>).map(
                               (slide, i) => (
@@ -220,7 +220,7 @@ export const PipelineTrialSection: React.FC<Props> = ({ availableModels }) => {
                                   <h4 className="mb-2 font-bold text-white">
                                     {slide.heading as string}
                                   </h4>
-                                  {slide.bullet_points && (
+                                  {Array.isArray(slide.bullet_points) && (
                                     <ul className="space-y-1.5">
                                       {(slide.bullet_points as string[]).map((bp, j) => (
                                         <li
