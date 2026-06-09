@@ -82,5 +82,11 @@ def analyze_transcript_with_workflow_api(
         "ticker_insights": result.get("ticker_insights") or None,
         "ticker_marp_markdown": result.get("ticker_marp_markdown") or None,
         "key_insights": result.get("key_insights") or [],
+        # Canonical tags/related_tickers derived from the summary's #tag:/#ticker:
+        # links by the pipeline's derive_tags_tickers node — the single source of
+        # truth shared with the regen path (the consumer prefers these over the
+        # placeholder ticker extraction).
+        "tags": result.get("tags") or [],
+        "related_tickers": result.get("related_tickers") or [],
         "social_cards": result.get("social_cards") or [],
     }

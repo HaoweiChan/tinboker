@@ -37,6 +37,7 @@ from .nodes.events_markdown import build_events_markdown
 from .nodes.extractor import extract_events
 from .nodes.key_insights_extractor import extract_key_insights
 from .nodes.markdown_transform import transform_to_markdown
+from .nodes.tags_tickers import derive_tags_tickers
 from .nodes.marp_converter import convert_marp, convert_marp_ticker
 from .nodes.marp_writer import write_marp_slides
 from .nodes.social_cards_builder import build_social_cards
@@ -70,6 +71,7 @@ def build_graph() -> StateGraph:
     graph.add_node("build_events_markdown", build_events_markdown)
     graph.add_node("write_article", write_article)
     graph.add_node("transform_to_markdown", transform_to_markdown)
+    graph.add_node("derive_tags_tickers", derive_tags_tickers)
     graph.add_node("extract_key_insights", extract_key_insights)
     graph.add_node("write_marp_slides", write_marp_slides)
     graph.add_node("convert_marp", convert_marp)
@@ -93,9 +95,10 @@ def build_graph() -> StateGraph:
     graph.add_edge("cluster_sentences", "write_marp_slides")
     graph.add_edge("cluster_sentences", "extract_tickers")
 
-    # Article branch (markdown → key_insights, derived from the finished summary)
+    # Article branch (markdown → tags/tickers → key_insights, from the finished summary)
     graph.add_edge("write_article", "transform_to_markdown")
-    graph.add_edge("transform_to_markdown", "extract_key_insights")
+    graph.add_edge("transform_to_markdown", "derive_tags_tickers")
+    graph.add_edge("derive_tags_tickers", "extract_key_insights")
 
     # Marp branch
     graph.add_edge("write_marp_slides", "convert_marp")
@@ -149,5 +152,7 @@ def run_pipeline(
         "ticker_insights": result.get("ticker_insights"),
         "ticker_marp_markdown": result.get("ticker_marp_markdown", ""),
         "key_insights": result.get("key_insights", []),
+        "tags": result.get("tags", []),
+        "related_tickers": result.get("related_tickers", []),
         "social_cards": result.get("social_cards", []),
     }

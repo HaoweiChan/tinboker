@@ -10,6 +10,15 @@ from src.models.podcast import Podcast, Episode
 from src.schemas.search import SearchResultItem
 from src.cache.redis_client import cache_get, cache_set, cache_delete, cache_delete_pattern
 from src.cache.cache_config import CACHE_TTL
+from src.cache.cdn_cache import purge_cdn_cache
+
+# Per-env API host for Cloudflare edge purges (host-scoped so one env never clears
+# another's cache). Mirrors the map in routers/admin_sources.py.
+_API_HOST_BY_ENV = {
+    "production": "api.tinboker.com",
+    "staging": "staging-api.tinboker.com",
+    "development": "dev-api.tinboker.com",
+}
 from src.services.firestore_service import FirestoreService
 from src.services.gcs_content import GCSContentService
 from src.services.episode_transformer import EpisodeTransformer
@@ -948,6 +957,14 @@ class PodcastService:
                 self.firestore_service.set_document, "episodes", episode_id, updates, True,
             )
             await self._invalidate_episode_cache(podcast_name, episode_id)
+            # When related_tickers change (e.g. a content regen), the per-ticker
+            # sentiment cards are served from a separate ticker_insights:* cache the
+            # episode bust above does NOT cover — clear it too.
+            if "related_tickers" in updates:
+                await self._invalidate_ticker_insight_cache(podcast_name)
+            # Refresh the Cloudflare edge for this env so the patched content shows
+            # immediately instead of waiting out s-maxage (≤1h). Best-effort.
+            await self._purge_episode_cdn()
             return await self.get_episode_by_id(podcast_name, episode_id, apply_scope=False)
         except HTTPException:
             raise
@@ -962,6 +979,36 @@ class PodcastService:
         await cache_delete_pattern(f"episode:{episode_id}:*")
         await cache_delete_pattern(f"podcast:{podcast_name}:episodes:*")
         await cache_delete_pattern("episodes:recent:*")
+
+    async def _invalidate_ticker_insight_cache(self, podcast_name: str):
+        """Bust the ticker-sentiment caches (by-ticker / by-podcaster / trending).
+
+        These are keyed independently of the episode doc, so an episode edit that
+        changes related_tickers / ticker sentiment must clear them explicitly or the
+        detail-page sentiment cards stay stale for up to INSIGHT_TTL (2h).
+        Best-effort: a cache hiccup must not fail the write.
+        """
+        for pattern in (
+            "ticker_insights:by_ticker:*",
+            f"ticker_insights:by_podcaster:{podcast_name}:*",
+            "ticker_insights:trending:*",
+        ):
+            try:
+                await cache_delete_pattern(pattern)
+            except Exception as e:
+                logger.warning("ticker insight cache invalidation failed for %s: %s", pattern, e)
+
+    async def _purge_episode_cdn(self):
+        """Host-purge this env's API host at Cloudflare (the confirmed-working method
+        on the tinboker zone). Host-scoped so a dev/staging edit never clears another
+        env's edge cache; never purge_everything. Best-effort — logged, never raised."""
+        host = _API_HOST_BY_ENV.get((settings.environment or "").lower())
+        if not host:
+            return
+        try:
+            await purge_cdn_cache(hosts=[host])
+        except Exception as e:
+            logger.warning("episode CDN purge failed for host %s: %s", host, e)
 
 
 async def poll_regeneration_status(podcast_name: str, episode_id: str):

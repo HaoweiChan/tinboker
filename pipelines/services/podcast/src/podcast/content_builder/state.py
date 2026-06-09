@@ -89,6 +89,11 @@ class PipelineState(TypedDict, total=False):
     # 3–8 plain-text zh-TW takeaways derived from markdown_report
     key_insights: list[str]
 
+    # Tags + tickers parsed from markdown_report's #tag:/#ticker: links
+    # (derive_tags_tickers node) — the canonical episode tags/related_tickers.
+    tags: list[str]
+    related_tickers: list[str]
+
     # Events markdown (parallel branch)
     events_markdown: str
 

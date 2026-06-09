@@ -106,8 +106,10 @@ def get_role_prompt(episode_id: str, step: str) -> dict[str, Any]:
             marp_writer, ticker_marp_writer (aliases like "slides",
             "key_insights_extractor", "tickers" are accepted).
 
-    Returns {step, role, instructions, system, user, messages}. Errors if the
-    step's prerequisite hasn't been submitted yet (e.g. writer needs extractor).
+    Returns {step, role, instructions, output_schema, example, global_notes,
+    system, user}. ``output_schema`` + ``example`` are the exact JSON shape to
+    produce (no need to read pipeline source). Errors if the step's prerequisite
+    hasn't been submitted yet (e.g. writer needs extractor).
     """
     return _run(_orch.get_prompt, episode_id, step)
 
@@ -124,14 +126,22 @@ def submit_role(episode_id: str, step: str, output_json: dict[str, Any]) -> dict
     Args:
         episode_id: The episode being regenerated.
         step: The step this output is for (same identifiers as get_role_prompt).
-        output_json: Your generated JSON for that step. Shapes:
+        output_json: Your generated JSON for that step. Follow the step's
+            ``output_schema`` + ``example`` (returned by start_regen/get_role_prompt)
+            for exact field names. Top-level shapes:
             - extractor:           {"events": [{section_topic, start_index, end_index}, ...]}
             - writer:              {title, executive_summary, sections, conclusion, stock_tickers, tags}
             - key_insights:        {"key_insights": ["...", ...]}
             - ticker_extractor:    {"ticker_recommendations": [{ticker, sentiment, sentiment_score, time_horizon, bluf_thesis, reasons, risks}, ...]}
             - marp_writer / ticker_marp_writer: {title, slides: [{heading, bullet_points, start_time, slide_notes}, ...]}
+            Output is validated on submit; a shape error tells you exactly what to fix.
+            Write all Chinese as literal UTF-8 — never \\uXXXX escapes.
 
-    Returns {stored, completed, ready_steps, required_done, warnings, next_prompt}.
+    Returns {stored, completed, ready_steps, required_done, warnings, next}.
+    ``next`` is a LIGHTWEIGHT pointer — {step, instructions, output_schema, example}
+    with NO transcript body — so responses stay small. Call
+    get_role_prompt(episode_id, next["step"]) to fetch that step's full prompt only
+    when you're ready to fill it.
     """
     return _run(_orch.submit, episode_id, step, output_json)
 
@@ -167,12 +177,19 @@ def commit_regen(
     Args:
         episode_id: The episode being regenerated.
         notify_platform: If True (default), replay the four user-visible fields
-            through the backend's PATCH endpoint to invalidate its Redis cache so
-            the new content shows immediately. Needs TINBOKER_PLATFORM_API_URL set.
+            through the backend's PATCH (TINBOKER_PLATFORM_API_URL). That single call
+            busts the episode Redis cache, the ticker_insights:* sentiment cache (when
+            related_tickers changed), AND the Cloudflare edge for the target env's API
+            host — so the regen shows immediately, no manual SSH/CF steps.
         render_cards: Reserved — PNG social-card rendering stays in the normal
             pipeline; only the slide markdown is saved here.
 
-    Returns a write report (fields written, ticker docs written, warnings).
+    NOTE: writes to the SHARED production Firestore (graphfolio-db) and, by default,
+    busts the production caches — run preview_regen first.
+
+    Returns a write report: episode_fields_written, ticker_insights_written, and
+    either ``cache_refreshed`` {via, surfaces} on success or ``manual_invalidation``
+    (exact copy-paste commands) if the cache bust was disabled/failed.
     """
     return _run(_orch.commit, episode_id, render_cards, notify_platform)
 
