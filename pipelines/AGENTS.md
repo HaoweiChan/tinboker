@@ -12,17 +12,19 @@ a financial-podcast-summary product. It does three things:
    (`/api/podcast/*`, `/api/wiki/*` on the podcast service, port 8003) and a Postgres store, so
    the **TinBoker webui** can render it.
 
-**The TinBoker webui (the React/Traditional-Chinese site) lives in a SEPARATE "platform" repo —
-not here.** Do not build UI in this repo. User accounts, follows, saved episodes, comments,
-notification preferences, and live market quotes (prices / `change` %) are the platform repo's
-concern, not ours. When a frontend mockup is referenced, treat it as a spec for the data
-contracts this repo must expose, and build/extend API endpoints — never React components.
-Keep this repo functional/infra-only and content-agnostic.
+**The TinBoker web UI is a SIBLING tier in this monorepo — `../frontend` (the
+React/Traditional-Chinese site) and `../backend` (the platform API) — not built here.** Do not
+build UI in `pipelines/`. User accounts, follows, saved episodes, comments, notification
+preferences, and live market quotes (prices / `change` %) are the platform tier's concern, not
+ours. When a frontend mockup is referenced, treat it as a spec for the data contracts this tier
+must expose, and build/extend API endpoints — never React components. Keep this tier
+functional/infra-only and content-agnostic.
 
 ## Repo overview
 
-This monorepo uses **uv workspaces** to manage two Python packages:
+This tier uses **uv workspaces** to manage these Python packages:
 - `services/podcast/` — podcast processing pipeline + the HTTP API (`/api/podcast`, `/api/wiki`)
+- `services/news/` — market-news ingestion (Tavily/RSS → ticker resolution → wiki ingest), run as a systemd timer
 - `libs/shared/` — shared utilities (secrets, GCS, config, `wiki_builder`)
 
 > A third package, `services/knowledge_graph/` (Tavily news → entity/relation extraction → JSON
@@ -42,6 +44,7 @@ one-time migration source; it is gitignored and never committed.
 | Path | Purpose | Entry point | Key files |
 |------|---------|-------------|-----------|
 | [services/podcast/](services/podcast/) | Download → transcribe → summarize → Firestore; serves `/api/wiki` | [main.py](services/podcast/main.py) | [podcasts_tw.json](services/podcast/podcasts_tw.json) |
+| [services/news/](services/news/) | Tavily/RSS news → resolve tickers → ingest into the wiki (systemd timer) | [scripts/run_news.sh](services/news/scripts/run_news.sh) | [feeds.json](services/news/feeds.json) |
 | [libs/shared/](libs/shared/) | Secrets, GCS, config, wiki_builder (Postgres-backed) | N/A (library) | [src/shared/](libs/shared/src/shared/) |
 | Wiki content | Postgres DB on the VPS (`WIKI_DATABASE_URL`) | `/api/wiki` (podcast service) | [docs/wiki-schema.md](docs/wiki-schema.md) |
 

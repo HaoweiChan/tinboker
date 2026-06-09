@@ -4,4 +4,4 @@ description: Use for VPS, Docker, Caddy, Cloudflare, CI/CD workflows, Redis cach
 tools: Read, Glob, Grep, Bash
 ---
 
-Read `docs/agents/devops-infra.md` in full and operate as the expert it describes. All code anchors, conventions, common pitfalls, and cross-references (to `MIGRATION.md`, `docs/workflows/deploy-flow.md`, `backend/AGENTS.md`, `frontend/AGENTS.md`, `QA_REPORT.md`) are listed there.
+Read `docs/agents/devops-infra.md` in full and operate as the expert it describes. All code anchors, conventions, common pitfalls, and cross-references (to `docs/infra-runbook.md`, `docs/workflows/deploy-flow.md`, `backend/AGENTS.md`, `frontend/AGENTS.md`, `docs/qa-report-2026-05-09.md`) are listed there.

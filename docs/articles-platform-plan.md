@@ -25,7 +25,7 @@ These were decided up front; the rest of the plan assumes them.
 ### Constraints inherited from the codebase (non-negotiable)
 
 1. **No new Firestore-direct reads.** Reads are consolidating behind VPS Postgres + the upcoming HTTP API ([firestore-data-change](workflows/firestore-data-change.md)). Articles are platform-owned user-generated content → they live in **Postgres/SQLite + GCS**, never in Firestore.
-2. **Stay out of the agents contract.** [`docs/firestore-contract.md`](firestore-contract.md) governs the `episodes`/`tickers`/`tags` collections written by `tinboker-agents`. Articles must not enter those collections or that contract.
+2. **Stay out of the agents contract.** [`docs/firestore-contract.md`](firestore-contract.md) governs the `episodes`/`tickers`/`tags` collections written by the `pipelines/` content tier. Articles must not enter those collections or that contract.
 3. **`use_postgres` portability.** Any new table must work on both SQLite (dev) and Postgres (prod) — use the SQLAlchemy `Base` path in [`backend/src/database/postgres.py`](../backend/src/database/postgres.py), not raw SQL.
 4. **Reuse the marker grammar; never enable raw HTML.** Inline citations use `[label](#ticker:SYMBOL)` / `[label](#tag:ID)`. Block embeds use a closed allowlist of directives. `rehype-raw` stays **off** so no HTML sanitizer is ever required — even for untrusted multi-author content.
 5. **zh-TW + no emoji** in all author-facing UI (`frontend/AGENTS.md`); icons are lucide-react / SVG only.

@@ -1,17 +1,17 @@
-# tinboker-agents
+# pipelines — content &amp; agent backend
 
-The **content / infrastructure backend** for **TinBoker「聽播客」** (a financial-podcast-summary
-product): it ingests podcast episodes (Spotify), derives structured
+The **content / infrastructure tier** of the **TinBoker「聽播客」** monorepo (a financial-podcast-summary
+product): it ingests podcast episodes (Spotify) and market news (Tavily/RSS), derives structured
 content (transcripts, summaries, ticker sentiment, an entity/topic knowledge graph,
 slides, infographics), and serves it over HTTP (`/api/podcast/*`, `/api/wiki/*` on port 8003) and
 a Postgres store.
 
-**The TinBoker webui (the React/Traditional-Chinese site) is built and run from a separate
-"platform" repo — not here.** This repo contains no UI; it's functional/infra-only. Users,
-follows, saved episodes, comments, and live market quotes are the platform repo's concern. Wiki
-*content* lives in Postgres on the VPS, not in git (see [docs/wiki-schema.md](docs/wiki-schema.md)).
-What the webui needs from this backend, and the plan to deliver it, is in
-[docs/content-api-roadmap.md](docs/content-api-roadmap.md).
+**The TinBoker web UI is a sibling tier in this same monorepo — `../frontend` (the
+React/Traditional-Chinese site) and `../backend` (the platform API) — not built here.** This
+directory contains no UI; it's functional/infra-only. Users, follows, saved episodes, comments,
+and live market quotes are the platform tier's concern. Wiki *content* lives in Postgres on the
+VPS, not in git (see [docs/wiki-schema.md](docs/wiki-schema.md)). What the web UI needs from this
+backend, and the plan to deliver it, is in [docs/content-api-roadmap.md](docs/content-api-roadmap.md).
 
 ## Quickstart
 
@@ -29,10 +29,10 @@ cd services/podcast && python main.py --config podcasts_tw.json
 ## Repository Structure
 
 ```
-tinboker-agents/
+pipelines/
 ├── pyproject.toml                    # uv workspace root
 ├── README.md
-├── CLAUDE.md                         # agent development guide
+├── AGENTS.md                         # agent development guide
 ├── docs/
 │   ├── MIGRATION.md                  # deployment runbook
 │   ├── wiki-schema.md                # wiki Postgres schema + /api/wiki API
@@ -66,6 +66,7 @@ tinboker-agents/
 │   │   │   ├── summarize/            # summary generation
 │   │   │   └── models/               # data models
 │   │   └── tests/
+│   └── news/                         # Tavily/RSS market news → resolve tickers → ingest (systemd timer)
 ```
 
 > A `services/knowledge_graph/` module (Tavily news → entity/relation extraction → JSON graph
@@ -134,7 +135,7 @@ uv run --package tinboker-shared pytest
 
 ## Related Docs
 
-- [CLAUDE.md](CLAUDE.md) / [AGENTS.md](AGENTS.md) — purpose, scope, and how to work in this repo
+- [AGENTS.md](AGENTS.md) — purpose, scope, and how to work in this tier (the cross-tool agent guide)
 - [docs/content-api-roadmap.md](docs/content-api-roadmap.md) — what the TinBoker webui needs from this backend, and the delivery plan
 - [docs/wiki-schema.md](docs/wiki-schema.md) — wiki Postgres schema + `/api/wiki` API
 - [docs/MIGRATION.md](docs/MIGRATION.md) — production deployment runbook

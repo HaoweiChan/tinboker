@@ -1,20 +1,27 @@
-# CLAUDE.md — TinBoker Platform
+# CLAUDE.md — TinBoker Monorepo
 
-This file is the root context for Claude Code agents. Sub-agents should also read
-`backend/AGENTS.md` and `frontend/AGENTS.md` for domain-specific rules.
+This file is the root context for Claude Code agents. Sub-agents should also read the
+tier-specific guides — `backend/AGENTS.md`, `frontend/AGENTS.md`, and `pipelines/AGENTS.md` —
+for domain rules.
 
 ---
 
 ## Project Summary
 
-TinBoker is a Taiwanese stock & podcast intelligence platform.
+TinBoker (聽播客) is a Taiwanese stock & podcast intelligence platform. This repo is a **monorepo**
+that consolidated the former `tinboker-platform` (web UI + API) and `tinboker-agents`
+(content pipelines, now under `pipelines/`) into one standalone repo.
 
-- **Frontend:** React 19 + TypeScript + Vite → Cloudflare Pages (`tinboker.com`)
-- **Backend:** FastAPI (Python 3.12) → Docker on Netcup VPS (`api.tinboker.com`)
-- **Database:** SQLite (dev) / Cloud SQL PostgreSQL (main + prod)
+- **Frontend** (`frontend/`): React 19 + TypeScript + Vite → Cloudflare Pages (`tinboker.com`)
+- **Backend** (`backend/`): FastAPI (Python 3.12) platform API → Docker on Netcup VPS (`api.tinboker.com`)
+- **Pipelines** (`pipelines/`): content/agent tier — podcast + news ingestion → transcribe,
+  summarize, extract ticker sentiment, build the wiki knowledge graph. uv workspace; the podcast
+  service serves `/api/wiki` + `/api/podcast` on `:8003`; news runs as a systemd timer. **Infra/content-only — no UI here.**
+- **MCP servers** (`mcp-servers/`): agent tooling — `stock-translations`, `article-authoring`
+- **Database:** SQLite (dev) / Cloud SQL PostgreSQL (main + prod) — incl. the pipelines wiki store
 - **Cache:** Redis 7-alpine on VPS
 - **Auth:** Google OAuth → JWT
-- **External APIs:** Massive API (US stocks), FinMind (TW stocks), GCP Firestore (podcasts)
+- **External APIs:** Massive API (US stocks), FinMind (TW stocks), GCP Firestore (podcasts), Spotify + Tavily (pipelines)
 
 ---
 
@@ -29,26 +36,35 @@ TinBoker is a Taiwanese stock & podcast intelligence platform.
 - `docs/agents/devops-infra.md` — VPS, Docker, Caddy, CI/CD, Redis, monitoring
 - `docs/agents/qa-tester.md` — full QA suite (infra/API/UI/CI/security/perf) across L/D/S/P
 
+**Content pipelines (the `pipelines/` tier — former `tinboker-agents`):**
+- `pipelines/AGENTS.md` — purpose, module map, decision tree, conventions
+- `pipelines/docs/wiki-schema.md` — wiki Postgres schema + `/api/wiki` API
+- `pipelines/docs/content-api-roadmap.md` — what the web UI needs from the pipelines, and the plan
+- `pipelines/docs/data-consolidation-plan.md` — Firestore/GCS → VPS Postgres consolidation
+
 **Procedural workflows:**
 - `docs/workflows/deploy-flow.md` — branch → env → tag pipeline
 - `docs/workflows/qa-flow.md` — reproducing known bugs, dev-bypass flow
 - `docs/workflows/firestore-data-change.md` — Firestore schema / data-contract changes
 
-**Canonical data contract (cross-repo with tinboker-agents):**
+**Canonical data contract (shared between `backend/` and `pipelines/`):**
 - `docs/firestore-contract.md`
 
 **Operational reference:**
 - `docs/infra-runbook.md` — VPS, Caddy, GCP, Cloudflare, Docker, env vars (live ops)
-- `docs/qa-report-2026-05-09.md` — dated bug catalog (BUG-1..15 + INFRA-1..4); verify status before relying on specific claims
+- `docs/qa-report-2026-05-09.md` — dated bug catalog (BUG-1..15 + INFRA-1..4); **historical** — several entries are since fixed, verify before relying on specific claims
 
 **Code style / conventions (unchanged):**
 - `backend/AGENTS.md` — Python style, key file map
 - `frontend/AGENTS.md` — UI conventions, zh-TW localization, icon system
+- `pipelines/AGENTS.md` — uv workspaces, content-builder conventions, "don't build UI here"
 
-**Tool-specific entry points:**
+**Tool-specific entry points (all thin wrappers → `docs/agents/` + `pipelines/AGENTS.md`):**
 - Claude Code subagents: `.claude/agents/<domain>.md` (delegate by domain)
 - Claude Code skills: `.claude/skills/<workflow>/SKILL.md` (invoked by intent)
+- Codex CLI agents: `.codex/agents/<domain>.toml` (+ `.codex/config.toml` for MCP servers)
 - Cursor rules: `.cursor/rules/<domain>.mdc` (auto-attached by file glob)
+- Tool-neutral skills: `.agents/skills/<workflow>/SKILL.md`
 - Codex CLI / OpenCode / Aider: read this file (`AGENTS.md` is symlinked here)
 
 ---
@@ -56,13 +72,17 @@ TinBoker is a Taiwanese stock & podcast intelligence platform.
 ## Repository Layout
 
 ```
-tinboker-platform/
-├── backend/            FastAPI app, Docker, deploy scripts
-├── frontend/           React + Vite app
-├── docs/               Domain references, workflows, firestore-contract
+tinboker/
+├── frontend/           React 19 + Vite web UI → Cloudflare Pages
+├── backend/            FastAPI platform API, Docker, deploy scripts
+├── pipelines/          Content & agent pipelines (podcast + news ingestion, wiki builder; uv workspace)
+├── mcp-servers/        MCP servers for AI tooling (stock-translations, article-authoring)
+├── docs/               Domain references, workflows, firestore-contract, runbooks
 ├── .claude/            Claude Code subagents + skills (thin wrappers)
+├── .codex/             Codex CLI agents + MCP config
 ├── .cursor/rules/      Cursor rules (thin wrappers)
-└── .github/workflows/  CI/CD pipelines (GitHub Actions)
+├── .agents/            Tool-neutral skill wrappers
+└── .github/workflows/  CI/CD pipelines (backend, frontend, pipelines)
 ```
 
 ---
@@ -89,6 +109,16 @@ npm install
 npm run dev                     # Vite dev server (localhost:5173)
 npm run build                   # TypeScript check + Vite build
 npm run lint                    # ESLint
+```
+
+### Pipelines (content/agents)
+
+```bash
+cd pipelines
+uv sync                                          # install uv-workspace deps
+cd services/podcast && python main.py --config podcasts_tw.json   # run podcast pipeline
+uv run --package tinboker-podcast pytest         # tests for the podcast service
+uv run --package tinboker-shared  pytest         # tests for the shared lib
 ```
 
 ---
@@ -176,22 +206,16 @@ deploy pipeline already automates the API-host purge; frontend-host purge is sti
 
 ---
 
-## Critical Known Issues (from docs/qa-report-2026-05-09.md)
+## Known Issues — check before relying
 
-Before adding features, be aware of these open bugs:
+The dated bug catalog in [`docs/qa-report-2026-05-09.md`](docs/qa-report-2026-05-09.md)
+(BUG-1..15 + INFRA-1..4) predates the v0.1.0 production launch. **Several entries are since
+fixed** (e.g. the `continue-on-error` CI gate and the `trendbrief.xyz` CORS origin are
+resolved), so treat that report as **historical** — verify a bug still reproduces against the
+current code before acting on it. The live, curated issue list is [`docs/issues.md`](docs/issues.md).
 
-| ID | Severity | Summary | File |
-|----|----------|---------|------|
-| BUG-1 | CRITICAL | Search index never built (wrong startup hook) | `backend/src/routers/search.py:92` |
-| BUG-2 | CRITICAL | Industry heatmap blank (stub data) | `frontend/src/services/mocks/sectorData.ts:69` |
-| BUG-3 | CRITICAL | 18/51 unit tests failing | `tests/unit/test_graph_service.py` etc. |
-| BUG-4 | CRITICAL | Backend CI never blocks PRs (`continue-on-error: true`) | `.github/workflows/backend-ci.yml:10` |
-| BUG-5 | CRITICAL | Graph Gallery Zod validation errors on `marketCapTier` | `frontend/src/validation/schemas.ts:46` |
-| BUG-7 | MEDIUM | Stock key statistics are fabricated (hardcoded values) | `frontend/src/pages/StockDashboard.tsx:211` |
-| BUG-9 | MEDIUM | CORS origins include old domain `trendbrief.xyz` | `backend/src/config.py:104` |
-| BUG-10 | MEDIUM | Recommendations endpoint 404 (wrong URL in frontend) | `frontend/src/services/recommendationService.ts` |
-
-Run `docs/agents/qa-tester.md` instructions to reproduce any of these before fixing.
+When you do need to reproduce or regression-test, follow [`docs/agents/qa-tester.md`](docs/agents/qa-tester.md)
+and the procedural overlay in [`docs/workflows/qa-flow.md`](docs/workflows/qa-flow.md).
 
 ---
 
@@ -312,41 +336,6 @@ It is NOT stored in the repo — only in this doc and in the server's `.env`.
 
 ---
 
-## Browser MCP — Dev Environment Auth Bypass
-
-The dev/staging environments are gated by Google OAuth + admin email allowlist.
-Automated browsers (Cursor browser MCP, Playwright) cannot complete Google OAuth.
-
-A **dev bypass** flow lets the browser authenticate without Google:
-
-### How it works
-
-1. Backend endpoint `POST /api/auth/dev-token` accepts a secret `token`
-2. Returns a valid JWT + user object (same as Google OAuth login)
-3. Only works when `ENVIRONMENT != production` AND `DEV_BYPASS_TOKEN` is set
-4. Frontend route `/auth/dev-bypass?token=SECRET` calls the backend and stores the JWT
-
-### Usage in Cursor browser MCP
-
-```
-# Step 1: Navigate to the bypass URL
-browser_navigate → https://dev.tinboker.com/auth/dev-bypass?token=CXvkSTaZAghJF0jYidL4ii3DbgOo-Z5NVwgFLoNk05I
-
-# Step 2: Wait for redirect to /
-# Step 3: Now browse freely — session is authenticated
-```
-
-### Token value
-
-| Environment | DEV_BYPASS_TOKEN |
-|---|---|
-| Dev (dev-api.tinboker.com) | `CXvkSTaZAghJF0jYidL4ii3DbgOo-Z5NVwgFLoNk05I` |
-
-The token is set as an env var on the VPS backend container.
-It is NOT stored in the repo — only in this doc and in the server's `.env`.
-
----
-
 ## Do Not
 
 - Commit `.env` files, `gcp-service-account.json`, or any secrets
@@ -355,3 +344,6 @@ It is NOT stored in the repo — only in this doc and in the server's `.env`.
 - Add `continue-on-error: true` to CI test jobs
 - Hardcode financial values (OHLC, P/E ratios) in frontend components
 - Use `time.sleep()` in async code — use `await asyncio.sleep()`
+- Build UI in `pipelines/` — it is content/infra-only; the web UI lives in `frontend/`
+- Add new Firestore-direct read paths — reads are consolidating onto VPS Postgres + the HTTP API
+- Run `pip install` in `pipelines/` — it is a uv workspace; use `uv sync`

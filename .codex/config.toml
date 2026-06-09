@@ -1,0 +1,22 @@
+[mcp_servers.article_authoring]
+command = "uvx"
+args = [
+    "--from",
+    "./mcp-servers/article-authoring",
+    "tinboker-article-authoring-mcp",
+]
+
+[mcp_servers.article_authoring.env]
+TINBOKER_API_BASE_URL = "https://dev-api.tinboker.com"
+TINBOKER_WEB_BASE_URL = "https://dev.tinboker.com"
+
+[mcp_servers.stock_translations]
+command = "uvx"
+args = [
+    "--from",
+    "./mcp-servers/stock-translations",
+    "tinboker-stock-translations-mcp",
+]
+
+[mcp_servers.stock_translations.env]
+TINBOKER_API_BASE_URL = "https://dev-api.tinboker.com"
