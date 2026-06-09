@@ -137,7 +137,11 @@ jobs:
           projectName: tinboker-platform
           directory: frontend/dist
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
-          branch: ${{ github.head_ref }}
+          # Namespace previews by PR number — NEVER use github.head_ref directly:
+          # a PR whose head branch is an env branch (main/staging/develop) would
+          # otherwise deploy to that Cloudflare branch and clobber prod/staging/dev
+          # (e.g. a main→develop back-merge PR with head=main publishing to production).
+          branch: pr-${{ github.event.pull_request.number }}
 
       # Upsert a single comment per PR — update on re-runs instead of spamming.
       - name: Post or update preview URL comment
@@ -153,7 +157,7 @@ jobs:
               '## 🚀 Cloudflare Pages Preview',
               '',
               `**Preview URL:** ${previewUrl}`,
-              `**Branch:** \`${{ github.head_ref }}\``,
+              `**Preview branch:** \`pr-${{ github.event.pull_request.number }}\` (from \`${{ github.head_ref }}\`)`,
               '',
               '_Updates automatically on each push to this PR._'
             ].join('\n');
