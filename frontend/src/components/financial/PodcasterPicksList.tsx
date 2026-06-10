@@ -72,8 +72,9 @@ export const PodcasterPicksList: React.FC<PodcasterPicksListProps> = ({ podcaste
                 showName: episode.showName,
                 coverUrl: episode.imageUrl,
                 spotifyUri: episode.spotifyUri,
+                mp3Url: episode.mp3Url,
             },
-            episode.spotifyUri ? { seekTo: seconds } : undefined
+            episode.spotifyUri || episode.mp3Url ? { seekTo: seconds } : undefined
         );
     };
 

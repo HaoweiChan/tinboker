@@ -1,6 +1,7 @@
 import React from 'react';
 import { usePlayerStore } from '@/store/usePlayerStore';
 import { SpotifyEmbed, type SpotifyEmbedRef } from '@/components/podcast/SpotifyEmbed';
+import { AudioEmbed } from '@/components/player/AudioEmbed';
 import { X, ChevronDown, ChevronUp, Play, Pause, Clock, RotateCcw, RotateCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -309,9 +310,10 @@ export const GlobalPlayer: React.FC = () => {
                         </div>
                     </div>
 
-                    {/* Hidden Spotify Embed (audio only — needs real height to init) */}
+                    {/* Hidden playback engine (audio only — Spotify embed needs real height to init).
+                        Episodes without a Spotify URI play the GCS-hosted MP3 instead. */}
                     <div className="h-0 overflow-hidden" aria-hidden="true">
-                        {player.currentEpisodeData.spotifyUri && (
+                        {player.currentEpisodeData.spotifyUri ? (
                             <SpotifyEmbed
                                 key={player.currentEpisodeData.spotifyUri}
                                 uri={player.currentEpisodeData.spotifyUri}
@@ -320,7 +322,15 @@ export const GlobalPlayer: React.FC = () => {
                                 onPlayerReady={() => setIsEmbedReady(true)}
                                 onPlaybackUpdate={handlePlaybackUpdate}
                             />
-                        )}
+                        ) : player.currentEpisodeData.mp3Url ? (
+                            <AudioEmbed
+                                key={player.currentEpisodeData.mp3Url}
+                                src={player.currentEpisodeData.mp3Url}
+                                ref={spotifyEmbedRef}
+                                onPlayerReady={() => setIsEmbedReady(true)}
+                                onPlaybackUpdate={handlePlaybackUpdate}
+                            />
+                        ) : null}
                     </div>
 
                 </div>

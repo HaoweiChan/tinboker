@@ -2,6 +2,7 @@
 Podcast API router
 """
 from fastapi import APIRouter, HTTPException, Path, Query, Body, BackgroundTasks, Response
+from fastapi.responses import RedirectResponse
 from typing import List, Optional
 from src.services.podcast import (
     EPISODE_DETAIL_CONTENT_FIELDS,
@@ -167,6 +168,33 @@ async def get_episode_by_id(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching episode: {str(e)}")
+
+
+@router.get("/{podcast_name}/episodes/{episode_id}/audio")
+async def get_episode_audio(
+    podcast_name: str = Path(..., description="Podcast name"),
+    episode_id: str = Path(..., description="Episode ID"),
+):
+    """
+    Redirect to a short-lived signed URL for the episode's MP3.
+
+    Used by the web player when an episode has no Spotify URI. Never cached:
+    the signed URL expires, so each playback session gets a fresh one.
+    """
+    try:
+        signed_url = await podcast_service.get_episode_audio_signed_url(podcast_name, episode_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error resolving episode audio: {str(e)}")
+    if not signed_url:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No audio available for episode '{episode_id}'"
+        )
+    return RedirectResponse(
+        url=signed_url,
+        status_code=302,
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @router.put("/{podcast_name}/episodes/{episode_id}/summary", response_model=Episode)

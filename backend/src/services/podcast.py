@@ -521,6 +521,22 @@ class PodcastService:
         except Exception as e:
             raise Exception(f"Failed to get episode: {e}") from e
 
+    async def get_episode_audio_signed_url(
+        self, podcast_name: str, episode_id: str
+    ) -> Optional[str]:
+        """Short-lived signed GCS URL for an episode's MP3, or None if unavailable.
+
+        The mp3 blobs in graphfolio-articles are private (no public ACL), so the
+        player streams them through a signed URL instead of mp3_public_url.
+        """
+        episode_dict = self.firestore_service.get_document("episodes", episode_id)
+        if not episode_dict or episode_dict.get('podcast_name') != podcast_name:
+            return None
+        gs_url = episode_dict.get('mp3_url') or episode_dict.get('mp3_public_url')
+        if not gs_url:
+            return None
+        return await self.gcs.generate_signed_url(gs_url)
+
     async def get_episode_by_id_only(
         self,
         episode_id: str,
@@ -998,7 +1014,7 @@ class PodcastService:
                 await self._invalidate_ticker_insight_cache(podcast_name)
             # Refresh the Cloudflare edge for this env so the patched content shows
             # immediately instead of waiting out s-maxage (≤1h). Best-effort.
-            await self._purge_episode_cdn()
+            await self._purge_api_host_cdn()
             return await self.get_episode_by_id(podcast_name, episode_id, apply_scope=False)
         except HTTPException:
             raise
@@ -1032,7 +1048,7 @@ class PodcastService:
             except Exception as e:
                 logger.warning("ticker insight cache invalidation failed for %s: %s", pattern, e)
 
-    async def _purge_episode_cdn(self):
+    async def _purge_api_host_cdn(self):
         """Host-purge this env's API host at Cloudflare (the confirmed-working method
         on the tinboker zone). Host-scoped so a dev/staging edit never clears another
         env's edge cache; never purge_everything. Best-effort — logged, never raised."""
