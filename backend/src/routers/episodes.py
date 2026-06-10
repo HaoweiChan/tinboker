@@ -24,7 +24,7 @@ class TickerSentimentsRequest(BaseModel):
 
 
 @router.get("/recent")
-@cdn_cached(s_maxage=3600, max_age=120, stale=300)
+@cdn_cached(s_maxage=600, max_age=120, stale=300)
 async def get_recent_episodes(
     limit: int = Query(default=20, ge=1, le=200, description="Maximum number of episodes to return (1-200)"),
     offset: int = Query(default=0, ge=0, description="Pagination offset"),
