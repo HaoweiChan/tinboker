@@ -101,6 +101,14 @@ pipeline:
       - 15
       - 30
 
+# Episode watcher — polls feeds for new episodes and auto-triggers the pipeline.
+# Runs as an async background task inside the podcast-api FastAPI app.
+watcher:
+  enabled: true
+  poll_interval_minutes: 10   # how often to check feeds
+  max_concurrent: 1           # max episodes processing in parallel
+  episodes_per_show: 3        # latest N episodes to check per show per cycle
+
 # GCP / GCS — non-secret deployment constants.
 # Secrets (credentials, API keys) come from Google Secret Manager via
 # src/secrets_bootstrap.py — never committed to disk.

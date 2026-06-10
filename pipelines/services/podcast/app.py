@@ -1,5 +1,7 @@
 """FastAPI application for Podcast Downloader API."""
 
+import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -19,11 +21,33 @@ from src.routers.content import (  # noqa: E402, I001
     podcast_router as content_podcast_router,
     tags_router,
 )
+from src.routers.watcher import router as watcher_router  # noqa: E402, I001
+from src.watcher import EpisodeWatcher, load_watcher_config  # noqa: E402, I001
+
+logger = logging.getLogger("watcher")
+_watcher: EpisodeWatcher | None = None
+
+
+def get_watcher() -> EpisodeWatcher | None:
+    return _watcher
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global _watcher
+    cfg = load_watcher_config()
+    _watcher = EpisodeWatcher(cfg)
+    await _watcher.start()
+    yield
+    await _watcher.stop()
+    _watcher = None
+
 
 app = FastAPI(
     title="Podcast Downloader API",
     description="API for managing podcast episode processing",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan,
 )
 
 # Configure CORS to allow all origins (for testing with public URLs)
@@ -45,6 +69,8 @@ app.include_router(content_podcast_router)
 app.include_router(content_episode_router)
 app.include_router(insights_router)
 app.include_router(tags_router)
+# Episode watcher admin
+app.include_router(watcher_router)
 
 
 @app.get("/")
@@ -60,6 +86,7 @@ async def root():
             "rerun_summarize_get": "/api/episodes/rerun-summarize/{episode_id} (GET)",
             "wiki_pages": "/api/wiki/pages (list; GET/PUT/DELETE /api/wiki/pages/{kind}/{slug})",
             "wiki_index": "/api/wiki/index (GET - knowledge wiki index; ?format=md for markdown)",
+            "watcher_status": "/api/watcher/status (GET - episode watcher state)",
             "health": "/health",
             "docs": "/docs"
         }
