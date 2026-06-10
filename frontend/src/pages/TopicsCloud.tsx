@@ -4,56 +4,8 @@ import { Hash, TrendingUp, TrendingDown, Minus, ChevronRight, Flame, BarChart3 }
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
 import { RailCard } from '@/components/redesign';
-import { getTrendingTags, type TrendingTag, type EpisodePreview } from '@/services/api/podcasts';
+import { getTrendingTags, getTagRegistry, type TrendingTag, type EpisodePreview } from '@/services/api/podcasts';
 import { fetchWithFallback } from '@/services/api/migration';
-
-const topicLabels: Record<string, string> = {
-  ai: 'AI',
-  ai_chip: 'AI 晶片',
-  advanced_packaging: '先進封裝',
-  bitcoin: '比特幣',
-  capital_expenditure: '資本支出',
-  centralbanks: '央行',
-  cryptocurrency: '加密貨幣',
-  datacenters: '資料中心',
-  demographics: '人口趨勢',
-  digitalassets: '數位資產',
-  earningsreport: '財報',
-  electric_vehicles: '電動車',
-  electricvehicles: '電動車',
-  etf: 'ETF',
-  ev: '電動車',
-  federalreserve: '聯準會',
-  financialregulation: '金融監管',
-  fiscalpolicy: '財政政策',
-  fixedincome: '固定收益',
-  interestrates: '利率',
-  interestratepolicy: '利率政策',
-  japanmarket: '日本市場',
-  labormarket: '就業市場',
-  low_earth_orbit_satellite: '低軌衛星',
-  marketnarratives: '市場敘事',
-  media_industry: '媒體產業',
-  mergers_and_acquisitions: '併購',
-  monetarypolicy: '貨幣政策',
-  powersupply: '電力供應',
-  privatemarkets: '私募市場',
-  semiconductor: '半導體',
-  streaming_services: '串流服務',
-  supply_chain: '供應鏈',
-  taiwaneconomy: '台灣經濟',
-  trade_war: '貿易戰',
-  us_stocks: '美股',
-  useconomy: '美國經濟',
-  usstockmarket: '美股市場',
-  ustreasuries: '美債',
-  valuation: '估值',
-};
-
-const getTopicLabel = (name: string) => {
-  const key = name.trim().replace(/^#/, '').toLowerCase();
-  return topicLabels[key] ?? name.replace(/^#/, '').replace(/[_-]/g, ' ');
-};
 
 function timeAgo(ms: number | null | undefined): string {
   if (!ms) return '';
@@ -175,8 +127,13 @@ function EpisodeRow({ ep }: { ep: EpisodePreview }) {
 
 // ── Topic card ─────────────────────────────────────────────────────
 
-function TopicCard({ tag, rank, maxCount }: { tag: TrendingTag; rank: number; maxCount: number }) {
-  const label = getTopicLabel(tag.name);
+function getTopicLabel(name: string, labels: Record<string, string>): string {
+  const key = name.trim().replace(/^#/, '').toLowerCase();
+  return labels[key] ?? name.replace(/^#/, '').replace(/[_-]/g, ' ');
+}
+
+function TopicCard({ tag, rank, maxCount, labels }: { tag: TrendingTag; rank: number; maxCount: number; labels: Record<string, string> }) {
+  const label = getTopicLabel(tag.name, labels);
   const barWidth = `${Math.max(8, Math.round((tag.scoped_count / maxCount) * 100))}%`;
 
   return (
@@ -260,19 +217,28 @@ function TopicSkeleton() {
 
 export const TopicsCloud: React.FC = () => {
   const [tags, setTags] = useState<TrendingTag[]>([]);
+  const [topicLabels, setTopicLabels] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let alive = true;
     (async () => {
       setLoading(true);
-      const res = await fetchWithFallback(
-        () => getTrendingTags(6, 3),
-        { tags: [] as TrendingTag[] },
-        'getTrendingTags',
-      ).catch(() => ({ tags: [] as TrendingTag[] }));
+      const [trendingRes, registryRes] = await Promise.all([
+        fetchWithFallback(
+          () => getTrendingTags(6, 3),
+          { tags: [] as TrendingTag[] },
+          'getTrendingTags',
+        ).catch(() => ({ tags: [] as TrendingTag[] })),
+        getTagRegistry().catch(() => ({ tags: [] })),
+      ]);
       if (!alive) return;
-      setTags(Array.isArray(res?.tags) ? res.tags : []);
+      setTags(Array.isArray(trendingRes?.tags) ? trendingRes.tags : []);
+      const labels: Record<string, string> = {};
+      for (const entry of registryRes.tags) {
+        labels[entry.slug] = entry.display_zh;
+      }
+      setTopicLabels(labels);
       setLoading(false);
     })();
     return () => { alive = false; };
@@ -343,7 +309,7 @@ export const TopicsCloud: React.FC = () => {
             {/* Topic cards grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {tags.map((tag, i) => (
-                <TopicCard key={tag.id} tag={tag} rank={i + 1} maxCount={maxCount} />
+                <TopicCard key={tag.id} tag={tag} rank={i + 1} maxCount={maxCount} labels={topicLabels} />
               ))}
             </div>
           </>

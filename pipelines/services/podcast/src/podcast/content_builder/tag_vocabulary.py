@@ -1,17 +1,19 @@
 """Canonical tag vocabulary: ASCII slug (the clustering join key) → zh-TW display.
 
-Single source of truth. The **slug** is what episodes are tagged and clustered by —
-stable and phrase-independent, so two episodes about the same theme always land on
-the same tag. The zh-TW string is purely for display. Free-text Chinese tags would
-fragment clustering (美股 vs 美國股市 vs 美股大盤, 半導體 vs 晶片, …); a controlled
-slug vocabulary avoids that.
+**Extraction-side vocabulary.** Injected into the writer prompt so the LLM maps
+concepts to KNOWN slugs instead of inventing per-episode phrasings. Extraction
+lowercases slugs (``#tag:Semiconductor`` → ``semiconductor``); ``display_for``
+is case-insensitive.
 
-The writer prompt injects ``vocabulary_prompt_block()`` so the model maps concepts to
-KNOWN slugs instead of inventing per-episode phrasings. Extraction lowercases slugs
-(``#tag:Semiconductor`` → ``semiconductor``); ``display_for`` is case-insensitive.
+The **display-side gate** lives in ``backend/src/tag_registry.py`` (DB-backed,
+managed via the admin UI at ``/admin/tags``). It decides which extracted tags
+appear in trending vs. are hidden. When adding a new slug here, also add it to
+the backend registry so it can surface on the website.
 
-Grow this list as the catalogue expands. A slug not listed here still works (it just
-has no curated zh-TW display yet) — prefer adding it here over inventing variants.
+Grow this list as the catalogue expands. A slug not listed here still works (it
+just has no curated zh-TW display yet) — prefer adding it here over inventing
+variants. Free-text Chinese tags fragment clustering (美股 vs 美國股市 vs 美股大盤,
+半導體 vs 晶片, …); a controlled slug vocabulary avoids that.
 """
 
 from __future__ import annotations

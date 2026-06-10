@@ -171,6 +171,27 @@ class StockDailyClose(Base):
     )
 
 
+class TagRegistry(Base):
+    """Admin-managed tag registry with quality tiers.
+
+    Controls which tags appear in the topics cloud (trending), which are
+    taggable but hidden from trending (valid), and which are suppressed
+    entirely from display.
+    """
+    __tablename__ = "tag_registry"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    slug = Column(String(100), nullable=False, unique=True, index=True)
+    display_zh = Column(Text, nullable=False)
+    tier = Column(String(20), nullable=False, default="trending", index=True)
+    updated_by = Column(String(100), nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    def __repr__(self) -> str:
+        return f"<TagRegistry(slug='{self.slug}', tier='{self.tier}')>"
+
+
 class PipelineConfigOverride(Base):
     """Admin-editable pipeline config overrides.
 

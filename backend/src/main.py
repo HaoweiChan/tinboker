@@ -36,6 +36,7 @@ from src.routers.notifications import router as notifications_router
 from src.routers.comments import router as comments_router, comments_router as comments_delete_router
 from src.routers.articles import router as articles_router
 from src.routers.admin_articles import router as admin_articles_router
+from src.routers.admin_tags import router as admin_tags_router
 from src.routers.social import router as social_router
 from src.routers.seo import router as seo_router
 from src.middleware.cloudflare import CloudflareMiddleware
@@ -118,6 +119,16 @@ async def lifespan(app: FastAPI):
             break
     except Exception as e:
         print(f"Warning: content source seed skipped: {e}")
+
+    # Seed tag registry (insert-only when table is empty).
+    try:
+        from src.database.postgres import get_session as _gs
+        from src.tag_registry import seed_if_empty
+        for session in _gs():
+            seed_if_empty(session)
+            break
+    except Exception as e:
+        print(f"Warning: tag registry seed skipped: {e}")
 
     # Backfill podcast cover art (Spotify oEmbed) in the background — best-effort,
     # must NOT block startup/health (external HTTP).
@@ -215,6 +226,7 @@ app.include_router(comments_router)
 app.include_router(comments_delete_router)
 app.include_router(articles_router)
 app.include_router(admin_articles_router)
+app.include_router(admin_tags_router)
 app.include_router(social_router)
 app.include_router(seo_router)
 

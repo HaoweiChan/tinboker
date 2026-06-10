@@ -6,9 +6,12 @@ import logging
 from typing import Optional, List, Collection
 from datetime import datetime
 from urllib.parse import quote
+
 from src.config import settings
 from src.models.podcast import Podcast, Episode
 from src.schemas.search import SearchResultItem
+from src.tag_registry import trending_slugs
+from src.database.postgres import get_session
 from src.cache.redis_client import cache_get, cache_set, cache_delete, cache_delete_pattern
 from src.cache.cache_config import CACHE_TTL
 from src.cache.cdn_cache import purge_cdn_cache
@@ -658,23 +661,14 @@ class PodcastService:
 
     # ── Tag queries ──────────────────────────────────────────────────
 
-    # Curated financial topic tags for the topics cloud. The `tags` Firestore
-    # collection has ~7k entries (mostly ticker codes / long-tail junk like "0dte")
-    # with no precomputed counts, and the per-episode `tags` field is ~always empty
-    # (tags live in the summary markdown). Counting all 7k subcollections hangs the
-    # backend, so we count only this meaningful, bounded set. Keep in sync with the
-    # frontend topicLabels map in TopicsCloud.tsx.
-    _TOPIC_TAGS = [
-        "ai", "ai_chip", "advanced_packaging", "bitcoin", "capital_expenditure",
-        "centralbanks", "cryptocurrency", "datacenters", "demographics", "digitalassets",
-        "earningsreport", "electric_vehicles", "electricvehicles", "etf", "ev",
-        "federalreserve", "financialregulation", "fiscalpolicy", "fixedincome",
-        "interestrates", "interestratepolicy", "japanmarket", "labormarket",
-        "low_earth_orbit_satellite", "marketnarratives", "media_industry",
-        "mergers_and_acquisitions", "monetarypolicy", "powersupply", "privatemarkets",
-        "semiconductor", "streaming_services", "supply_chain", "taiwaneconomy",
-        "trade_war", "us_stocks", "useconomy", "usstockmarket", "ustreasuries", "valuation",
-    ]
+    @staticmethod
+    def _get_topic_tags() -> list[str]:
+        """Trending-tier tags from the DB-backed registry."""
+        db = next(get_session())
+        try:
+            return trending_slugs(db)
+        finally:
+            db.close()
 
     async def get_all_tags(self) -> List[dict]:
         """Episode counts for the curated topic tags (bounded + cached).
@@ -704,7 +698,7 @@ class PodcastService:
                         return None
                 return {"id": tid, "name": tid, "episode_count": count} if count and count > 0 else None
 
-            counted = await asyncio.gather(*[_count(t) for t in self._TOPIC_TAGS])
+            counted = await asyncio.gather(*[_count(t) for t in self._get_topic_tags()])
             result = sorted([r for r in counted if r], key=lambda x: x["episode_count"], reverse=True)
             try:
                 await cache_set(cache_key, json.dumps(result), 3600)
@@ -813,7 +807,7 @@ class PodcastService:
                     logger.warning("Failed to process trending tag %s", tid, exc_info=True)
                     return None
 
-        results = await asyncio.gather(*[_process_tag(t) for t in self._TOPIC_TAGS])
+        results = await asyncio.gather(*[_process_tag(t) for t in self._get_topic_tags()])
         tags = sorted([r for r in results if r], key=lambda x: x["scoped_count"], reverse=True)
         try:
             await cache_set(cache_key, json.dumps(tags), 1800)

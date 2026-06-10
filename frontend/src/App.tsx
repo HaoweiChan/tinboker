@@ -24,6 +24,7 @@ import { SourcesSection } from '@/pages/SourcesSection';
 import { PipelineSettingsPage } from '@/pages/PipelineSettingsPage';
 import { AdminAnalyticsPage } from '@/pages/AdminAnalyticsPage';
 import { AdminArticlesPage } from '@/pages/AdminArticlesPage';
+import { AdminTagsPage } from '@/pages/AdminTagsPage';
 import { ArticleDetail } from '@/pages/ArticleDetail';
 import { ArticleList } from '@/pages/ArticleList';
 import { DevPortalPage } from '@/pages/DevPortalPage';
@@ -120,6 +121,7 @@ function App() {
             <Route path="translations" element={<TranslationsSection />} />
             <Route path="sources" element={<SourcesSection />} />
             <Route path="pipeline" element={<PipelineSettingsPage />} />
+            <Route path="tags" element={<AdminTagsPage />} />
             <Route path="analytics" element={<AdminAnalyticsPage />} />
             <Route path="articles" element={<AdminArticlesPage />} />
           </Route>
