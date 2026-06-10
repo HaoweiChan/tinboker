@@ -219,7 +219,7 @@ export const EpisodeDetail: React.FC = () => {
       showName: name,
       coverUrl: episode.spotify_images?.[0] || undefined,
       spotifyUri,
-      mp3Url: episode.mp3_url || episode.mp3_public_url
+      mp3Url: episode.podcast_name && (episode.mp3_url || episode.mp3_public_url)
         ? getEpisodeAudioUrl(episode.podcast_name, episode.id)
         : undefined,
       timestampedSections: chapters.length ? chapters : clips.length ? clips : summarySections,

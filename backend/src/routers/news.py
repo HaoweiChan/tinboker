@@ -1,11 +1,12 @@
 """
 News API router
 """
-from fastapi import APIRouter, HTTPException, Path, Query
+from fastapi import APIRouter, HTTPException, Path, Query, Depends
 from typing import List
 from src.services.news import NewsService
 from src.models.news import StockEvent
 from src.cache.cdn_cache import cdn_cache_news
+from src.auth.admin_auth import get_content_write_access, AdminAccess
 
 router = APIRouter(prefix="/api/news", tags=["news"])
 
@@ -47,7 +48,8 @@ async def get_news_by_id(news_id: str = Path(..., description="News ID")):
 @router.post("/fetch/{ticker}", response_model=dict)
 async def fetch_news_from_massive(
     ticker: str = Path(..., description="Stock ticker symbol"),
-    limit: int = Query(default=10, description="Maximum number of articles to fetch")
+    limit: int = Query(default=10, ge=1, le=50, description="Maximum number of articles to fetch (1-50)"),
+    _admin: AdminAccess = Depends(get_content_write_access),
 ):
     """
     Fetch news from Massive API for a ticker and save to database

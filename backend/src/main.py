@@ -180,11 +180,18 @@ app = FastAPI(
 
 
 # CORS Configuration
-# Support Vercel and Cloudflare Pages preview URLs with regex pattern matching
+# In non-prod, allow Vercel/Cloudflare Pages preview URLs so PR previews can hit the
+# dev/staging API. In production this wildcard is DISABLED: with allow_credentials=True
+# any attacker-deployed *.pages.dev / *.vercel.app site would otherwise be a trusted
+# credentialed origin. Prod is restricted to the explicit CORS_ORIGINS allowlist only.
+_preview_origin_regex = (
+    None if settings.is_production
+    else r"https://.*\.(vercel\.app|pages\.dev)$"
+)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
-    allow_origin_regex=r"https://.*\.(vercel\.app|pages\.dev)$",  # Allow Vercel and Cloudflare Pages previews
+    allow_origin_regex=_preview_origin_regex,
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS", "PUT", "DELETE", "PATCH"],
     allow_headers=["*"],  # Allow all headers (including X-Silent-Error, etc.)

@@ -1,5 +1,15 @@
 import { apiClient } from './client';
+import { useAppStore } from '@/store/useAppStore';
 import type { TickerTrending, TickerInsight } from '../types';
+
+// Episode-content mutations are admin-gated on the backend (get_content_write_access).
+// These are only reachable from the non-prod dev/debug editor, where an admin JWT is
+// present; attach it so the request is authorized.
+function adminAuthConfig() {
+  const token = useAppStore.getState().token;
+  if (!token) throw new Error('Not authenticated');
+  return { headers: { Authorization: `Bearer ${token}` } };
+}
 
 /** Streaming URL for an episode's MP3 (backend redirects to a signed GCS URL). */
 export function getEpisodeAudioUrl(podcastName: string, episodeId: string): string {
@@ -162,7 +172,9 @@ export async function regenerateEpisodeSummary(
   episodeId: string
 ): Promise<{ status: string; message: string }> {
   const response = await apiClient.post(
-    `/api/podcast/${encodeURIComponent(podcastName)}/episodes/${episodeId}/regenerate`
+    `/api/podcast/${encodeURIComponent(podcastName)}/episodes/${episodeId}/regenerate`,
+    undefined,
+    adminAuthConfig()
   );
   return response.data;
 }
@@ -414,7 +426,8 @@ export async function updateEpisodeSummary(
 ): Promise<Episode> {
   const response = await apiClient.put(
     `/api/podcast/${podcastName}/episodes/${episodeId}/summary`,
-    { content, modified_by: modifiedBy }
+    { content, modified_by: modifiedBy },
+    adminAuthConfig()
   );
   return response.data;
 }
@@ -424,7 +437,8 @@ export async function deleteEpisodeSummary(
   episodeId: string
 ): Promise<void> {
   await apiClient.delete(
-    `/api/podcast/${podcastName}/episodes/${episodeId}/summary`
+    `/api/podcast/${podcastName}/episodes/${episodeId}/summary`,
+    adminAuthConfig()
   );
 }
 
@@ -436,6 +450,7 @@ export async function patchEpisode(
   const response = await apiClient.patch(
     `/api/podcast/${podcastName}/episodes/${episodeId}`,
     updates,
+    adminAuthConfig()
   );
   return response.data;
 }

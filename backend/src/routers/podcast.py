@@ -1,7 +1,7 @@
 """
 Podcast API router
 """
-from fastapi import APIRouter, HTTPException, Path, Query, Body, BackgroundTasks, Response
+from fastapi import APIRouter, HTTPException, Path, Query, Body, BackgroundTasks, Response, Depends
 from fastapi.responses import RedirectResponse
 from typing import List, Optional
 from src.services.podcast import (
@@ -11,6 +11,7 @@ from src.services.podcast import (
     poll_regeneration_status,
 )
 from src.models.podcast import Podcast, Episode
+from src.auth.admin_auth import get_content_write_access, AdminAccess
 from src.config import settings
 from src.cache.cdn_cache import cdn_cache_podcast
 import httpx
@@ -184,7 +185,11 @@ async def get_episode_audio(
     try:
         signed_url = await podcast_service.get_episode_audio_signed_url(podcast_name, episode_id)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error resolving episode audio: {str(e)}")
+        # A broken/missing GCS object or signing failure is a "no audio" condition
+        # for the player, not a server fault — surface it as 404 so the UI can fall
+        # back gracefully instead of showing an error.
+        logger.warning(f"Failed to resolve audio for {podcast_name}/{episode_id}: {e}")
+        signed_url = None
     if not signed_url:
         raise HTTPException(
             status_code=404,
@@ -202,7 +207,8 @@ async def update_episode_summary(
     podcast_name: str = Path(..., description="Podcast name"),
     episode_id: str = Path(..., description="Episode ID"),
     content: str = Body(..., embed=True, description="Modified summary markdown content"),
-    modified_by: Optional[str] = Body(None, embed=True, description="User identifier (email or ID)")
+    modified_by: Optional[str] = Body(None, embed=True, description="User identifier (email or ID)"),
+    _admin: AdminAccess = Depends(get_content_write_access),
 ):
     """
     Update episode summary with modified content
@@ -237,7 +243,8 @@ async def update_episode_summary(
 @router.delete("/{podcast_name}/episodes/{episode_id}/summary")
 async def delete_episode_summary(
     podcast_name: str = Path(..., description="Podcast name"),
-    episode_id: str = Path(..., description="Episode ID")
+    episode_id: str = Path(..., description="Episode ID"),
+    _admin: AdminAccess = Depends(get_content_write_access),
 ):
     """
     Delete modified episode summary and revert to original
@@ -270,8 +277,9 @@ async def patch_episode(
     podcast_name: str = Path(..., description="Podcast name"),
     episode_id: str = Path(..., description="Episode ID"),
     updates: dict = Body(..., description="Partial update: summary_content, key_insights, related_tickers, tags"),
+    _admin: AdminAccess = Depends(get_content_write_access),
 ):
-    """Patch allowed episode fields directly in Firestore (dev debug editor)."""
+    """Patch allowed episode fields directly in Firestore (admin/content-writer only)."""
     try:
         return await podcast_service.patch_episode_fields(podcast_name, episode_id, updates)
     except HTTPException:
@@ -284,7 +292,8 @@ async def patch_episode(
 async def regenerate_episode_summary(
     background_tasks: BackgroundTasks,
     podcast_name: str = Path(..., description="Podcast name"),
-    episode_id: str = Path(..., description="Episode ID")
+    episode_id: str = Path(..., description="Episode ID"),
+    _admin: AdminAccess = Depends(get_content_write_access),
 ):
     """
     Trigger episode summary regeneration.

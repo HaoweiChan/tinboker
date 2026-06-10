@@ -1,10 +1,11 @@
 """
 Graph API router
 """
-from fastapi import APIRouter, HTTPException, Path
+from fastapi import APIRouter, HTTPException, Path, Depends
 from typing import List
 from src.services.graph import GraphService
 from src.models.graph import GraphData, GraphCreate, NodeUpdate, EdgeUpdate
+from src.auth.admin_auth import get_content_write_access, AdminAccess
 
 router = APIRouter(prefix="/api/graphs", tags=["graphs"])
 
@@ -38,7 +39,10 @@ async def get_graph_by_id(graph_id: str = Path(..., description="Graph ID")):
 
 
 @router.post("", status_code=201)
-async def create_graph(graph_create: GraphCreate):
+async def create_graph(
+    graph_create: GraphCreate,
+    _admin: AdminAccess = Depends(get_content_write_access),
+):
     """
     Create new graph
     
@@ -55,6 +59,7 @@ async def modify_node(
     graph_id: str = Path(..., description="Graph ID"),
     node_id: str = Path(..., description="Node ID"),
     node_update: NodeUpdate = ...,
+    _admin: AdminAccess = Depends(get_content_write_access),
 ):
     """
     Modify node in graph
@@ -72,6 +77,7 @@ async def modify_edge(
     graph_id: str = Path(..., description="Graph ID"),
     edge_id: str = Path(..., description="Edge ID"),
     edge_update: EdgeUpdate = ...,
+    _admin: AdminAccess = Depends(get_content_write_access),
 ):
     """
     Modify edge in graph
@@ -85,7 +91,10 @@ async def modify_edge(
 
 
 @router.delete("/{graph_id}")
-async def delete_graph(graph_id: str = Path(..., description="Graph ID")):
+async def delete_graph(
+    graph_id: str = Path(..., description="Graph ID"),
+    _admin: AdminAccess = Depends(get_content_write_access),
+):
     """
     Delete graph
     
@@ -101,6 +110,7 @@ async def delete_graph(graph_id: str = Path(..., description="Graph ID")):
 async def delete_node(
     graph_id: str = Path(..., description="Graph ID"),
     node_id: str = Path(..., description="Node ID"),
+    _admin: AdminAccess = Depends(get_content_write_access),
 ):
     """
     Delete node from graph
@@ -117,6 +127,7 @@ async def delete_node(
 async def delete_edge(
     graph_id: str = Path(..., description="Graph ID"),
     edge_id: str = Path(..., description="Edge ID"),
+    _admin: AdminAccess = Depends(get_content_write_access),
 ):
     """
     Delete edge from graph
