@@ -1,0 +1,16 @@
+# Cloudflare Pages custom headers.
+#
+# /sw.js must NEVER be cached. Without this rule Cloudflare applied its default
+# 4-hour TTL (edge + browser) to sw.js while index.html stayed uncached, so for
+# up to 4h after every deploy the page, the service worker, and the hashed
+# bundles came from DIFFERENT builds. That version skew is what kept the PWA
+# update prompt reappearing and the update flow hanging.
+/sw.js
+  Cache-Control: no-cache, no-store, must-revalidate
+
+/manifest.webmanifest
+  Cache-Control: no-cache
+
+# Vite content-hashed bundles — immutable by construction, cache forever.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
