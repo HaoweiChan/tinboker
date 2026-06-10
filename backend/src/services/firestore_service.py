@@ -301,7 +301,7 @@ class FirestoreService:
         Used by ticker_insights reads where docs live at
         `ticker_insights/{episode_id}/tickers/{ticker}` — the subcollection name
         is "tickers", same as the existing root `tickers/*` inverted index.
-        Callers MUST filter results (e.g. on `schema_version == 2`) to
+        Callers MUST filter results by supported `schema_version` values to
         disambiguate from the inverted-index docs.
         """
         if self._disabled or not self.db:
@@ -418,4 +418,3 @@ class FirestoreService:
             return count
         except Exception as e:
             raise Exception(f"Failed to count subcollection documents: {e}") from e
-

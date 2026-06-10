@@ -97,7 +97,7 @@ class _LocalMediaUploader:
         sentences_markdown_content: Optional[str] = None,
         pptx_base64: Optional[str] = None,
         marp_markdown_content: Optional[str] = None,
-        ticker_recommendations_data: Optional[dict] = None,
+        ticker_insights_data: Optional[dict] = None,
         ticker_marp_markdown_content: Optional[str] = None,
         skip_existing: bool = True,
         **_kwargs,
@@ -111,7 +111,7 @@ class _LocalMediaUploader:
             "sentences_markdown_url", "sentences_markdown_public_url",
             "pptx_url", "pptx_public_url",
             "marp_markdown_url", "marp_markdown_public_url",
-            "ticker_recommendations_url", "ticker_recommendations_public_url",
+            "ticker_insights_url", "ticker_insights_public_url",
             "ticker_marp_markdown_url", "ticker_marp_markdown_public_url",
         )}
 
@@ -179,13 +179,13 @@ class _LocalMediaUploader:
             if ok:
                 _set("marp_markdown_url", url)
 
-        if ticker_recommendations_data:
+        if ticker_insights_data:
             ok, url = self.upload_file_from_string(
-                json.dumps(ticker_recommendations_data, ensure_ascii=False, indent=2),
-                "ticker_recommendations", podcast_name, episode_id, "json", skip_existing,
+                json.dumps(ticker_insights_data, ensure_ascii=False, indent=2),
+                "ticker_insights", podcast_name, episode_id, "json", skip_existing,
             )
             if ok:
-                _set("ticker_recommendations_url", url)
+                _set("ticker_insights_url", url)
 
         if ticker_marp_markdown_content:
             ok, url = self.upload_file_from_string(
@@ -312,7 +312,7 @@ def upload_to_gcs(
             sentences_markdown_content=episode_data.summary_result.get('sentences_markdown') if episode_data.summary_result else None,
             pptx_base64=episode_data.summary_result.get('pptx_base64') if episode_data.summary_result else None,
             marp_markdown_content=episode_data.summary_result.get('marp_markdown') if episode_data.summary_result else None,
-            ticker_recommendations_data=episode_data.summary_result.get('ticker_insights') if episode_data.summary_result else None,
+            ticker_insights_data=episode_data.summary_result.get('ticker_insights') if episode_data.summary_result else None,
             ticker_marp_markdown_content=episode_data.summary_result.get('ticker_marp_markdown') if episode_data.summary_result else None,
             skip_existing=False  # Force re-upload of all files including MP3
         )
@@ -400,15 +400,13 @@ def upload_to_gcs(
         ticker_insights = episode_data.summary_result.get('ticker_insights') if episode_data.summary_result else None
         if ticker_insights:
             ticker_insights_json = json.dumps(ticker_insights, ensure_ascii=False, indent=2)
-            # Keep the GCS folder name "ticker_recommendations" for backward compatibility
-            # with historical data; the Firestore field names below are spec-compatible.
-            success, ticker_recommendations_url = svc.upload_file_from_string(
-                ticker_insights_json, 'ticker_recommendations', episode_data.podcast_name, episode_data.episode_id, 'json', skip_existing=False
+            success, ticker_insights_url = svc.upload_file_from_string(
+                ticker_insights_json, 'ticker_insights', episode_data.podcast_name, episode_data.episode_id, 'json', skip_existing=False
             )
-            if success and ticker_recommendations_url:
-                gcs_urls['ticker_recommendations_url'] = ticker_recommendations_url
-                blob_path = ticker_recommendations_url.replace(f"gs://{svc.bucket_name}/", "")
-                gcs_urls['ticker_recommendations_public_url'] = svc.generate_public_url(blob_path)
+            if success and ticker_insights_url:
+                gcs_urls['ticker_insights_url'] = ticker_insights_url
+                blob_path = ticker_insights_url.replace(f"gs://{svc.bucket_name}/", "")
+                gcs_urls['ticker_insights_public_url'] = svc.generate_public_url(blob_path)
                 print("  ✓ Re-uploaded ticker insights to GCS")
         
         ticker_marp_markdown = episode_data.summary_result.get('ticker_marp_markdown') if episode_data.summary_result else None
@@ -483,7 +481,7 @@ def upload_to_gcs(
             sentences_markdown_content=episode_data.summary_result.get('sentences_markdown') if episode_data.summary_result else None,
             pptx_base64=episode_data.summary_result.get('pptx_base64') if episode_data.summary_result else None,
             marp_markdown_content=episode_data.summary_result.get('marp_markdown') if episode_data.summary_result else None,
-            ticker_recommendations_data=episode_data.summary_result.get('ticker_insights') if episode_data.summary_result else None,
+            ticker_insights_data=episode_data.summary_result.get('ticker_insights') if episode_data.summary_result else None,
             ticker_marp_markdown_content=episode_data.summary_result.get('ticker_marp_markdown') if episode_data.summary_result else None,
             skip_existing=False  # Force re-upload of derived files
         )
@@ -502,8 +500,8 @@ def upload_to_gcs(
             'pptx_public_url': derived_urls.get('pptx_public_url'),
             'marp_markdown_url': derived_urls.get('marp_markdown_url'),
             'marp_markdown_public_url': derived_urls.get('marp_markdown_public_url'),
-            'ticker_recommendations_url': derived_urls.get('ticker_recommendations_url'),
-            'ticker_recommendations_public_url': derived_urls.get('ticker_recommendations_public_url'),
+            'ticker_insights_url': derived_urls.get('ticker_insights_url'),
+            'ticker_insights_public_url': derived_urls.get('ticker_insights_public_url'),
             'ticker_marp_markdown_url': derived_urls.get('ticker_marp_markdown_url'),
             'ticker_marp_markdown_public_url': derived_urls.get('ticker_marp_markdown_public_url'),
         })
@@ -548,7 +546,7 @@ def upload_to_gcs(
             sentences_markdown_content=episode_data.summary_result.get('sentences_markdown') if episode_data.summary_result else None,
             pptx_base64=episode_data.summary_result.get('pptx_base64') if episode_data.summary_result else None,
             marp_markdown_content=episode_data.summary_result.get('marp_markdown') if episode_data.summary_result else None,
-            ticker_recommendations_data=episode_data.summary_result.get('ticker_insights') if episode_data.summary_result else None,
+            ticker_insights_data=episode_data.summary_result.get('ticker_insights') if episode_data.summary_result else None,
             ticker_marp_markdown_content=episode_data.summary_result.get('ticker_marp_markdown') if episode_data.summary_result else None,
             skip_existing=True
         )
@@ -569,8 +567,8 @@ def upload_to_gcs(
             'pptx_public_url': gcs_urls.get('pptx_public_url'),
             'marp_markdown_url': gcs_urls.get('marp_markdown_url'),
             'marp_markdown_public_url': gcs_urls.get('marp_markdown_public_url'),
-            'ticker_recommendations_url': gcs_urls.get('ticker_recommendations_url'),
-            'ticker_recommendations_public_url': gcs_urls.get('ticker_recommendations_public_url'),
+            'ticker_insights_url': gcs_urls.get('ticker_insights_url'),
+            'ticker_insights_public_url': gcs_urls.get('ticker_insights_public_url'),
             'ticker_marp_markdown_url': gcs_urls.get('ticker_marp_markdown_url'),
             'ticker_marp_markdown_public_url': gcs_urls.get('ticker_marp_markdown_public_url'),
         })

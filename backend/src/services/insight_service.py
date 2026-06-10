@@ -20,11 +20,12 @@ logger = logging.getLogger(__name__)
 
 TRENDING_TTL = 7200  # 2h, matches recommendation_service
 INSIGHT_TTL = 7200  # 2h
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
+SUPPORTED_SCHEMA_VERSIONS = {2, SCHEMA_VERSION}
 TRENDING_COLLECTION = "trending_tickers"
 # Collection-group ID for ticker_insights/{episode_id}/tickers/{ticker}.
 # Same ID as the legacy inverted-index root collection, so callers MUST filter
-# results by `schema_version == SCHEMA_VERSION` to disambiguate.
+# results by a supported `schema_version` to disambiguate.
 INSIGHTS_SUBCOLLECTION = "tickers"
 SEVERITY_LEVELS = {"HIGH", "MEDIUM", "LOW"}
 SENTIMENT_LABELS = {
@@ -315,7 +316,7 @@ class InsightService:
         )
         rows = []
         for d in docs:
-            if d.get("schema_version") != SCHEMA_VERSION:
+            if d.get("schema_version") not in SUPPORTED_SCHEMA_VERSIONS:
                 continue
             if not _in_range(d.get("podcast_launch_time") or "", start, end):
                 continue
@@ -369,7 +370,7 @@ class InsightService:
         )
         rows = []
         for d in docs:
-            if d.get("schema_version") != SCHEMA_VERSION:
+            if d.get("schema_version") not in SUPPORTED_SCHEMA_VERSIONS:
                 continue
             if not _in_range(d.get("podcast_launch_time") or "", start, end):
                 continue

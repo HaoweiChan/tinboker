@@ -457,30 +457,7 @@ export interface Risk {
   end_index: number;
 }
 
-export interface TickerRecommendation {
-  id: number;
-  episode_id: string;
-  podcaster?: string;
-  podcast_launch_time: string; // ISO timestamp
-  ticker: string;
-  bluf_thesis: string;
-  time_horizon: string;
-  sentiment_score: string | number;
-  sentiment: string;
-  reasons: Reason[];
-  risks: Risk[];
-  created_at: string;
-}
-
-export interface TickerBuzz {
-  ticker: string;
-  count: number;
-  sentiment_score: number;
-  last_mentioned: string;
-}
-
-// New shape, per docs/firestore-contract.md § 4.2 / § 5.3.
-// Replaces TickerBuzz on Stock Index once Phase A is flipped in prod.
+// Shape per docs/firestore-contract.md § 4.2 / § 5.3.
 export type SentimentLabel =
   | 'STRONG_BULLISH'
   | 'BULLISH'
@@ -497,9 +474,8 @@ export interface TickerTrending {
   last_mentioned: string;
 }
 
-// Spec § 4.3 — replaces TickerRecommendation. No `id` (composite path
-// {episode_id}/tickers/{ticker} is the identity); no `sentiment_score`
-// (kept internal to Firestore per § 4.2, never returned by the API).
+// Spec § 4.3. No `id` (composite path {episode_id}/tickers/{ticker} is the
+// identity); no `sentiment_score` (internal-only, never returned by the API).
 export interface TickerInsight {
   episode_id: string;
   podcaster?: string;

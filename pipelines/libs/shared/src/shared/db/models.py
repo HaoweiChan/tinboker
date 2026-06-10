@@ -55,7 +55,7 @@ class Episode:
     sentences_markdown_url: Optional[str] = None
     marp_markdown_url: Optional[str] = None
     ticker_marp_markdown_url: Optional[str] = None
-    ticker_recommendations_url: Optional[str] = None  # deprecated after Phase C
+    ticker_insights_url: Optional[str] = None
 
     # Inlined content cache (duplicates GCS content; must be kept in sync on re-gen § 2.3 #4)
     summary_content: Optional[str] = None
@@ -64,7 +64,7 @@ class Episode:
     sentences_markdown_content: Optional[str] = None
     marp_markdown_content: Optional[str] = None
     ticker_marp_markdown_content: Optional[str] = None
-    ticker_recommendations_content: Optional[str] = None  # deprecated after Phase C
+    ticker_insights_content: Optional[str] = None
 
     # Categorisation
     related_tickers: list[str] = field(default_factory=list)  # symbol-only, mixed TW/US
@@ -92,12 +92,12 @@ class Ticker:
 
 @dataclass
 class TickerInsight:
-    """Per-episode, per-ticker insight doc.  Matches spec § 4 (schema_version 2)."""
+    """Per-episode, per-ticker insight doc.  Matches spec § 4 (schema_version 3)."""
 
     episode_id: str  # PK part 1, FK -> episodes.id
     ticker: str  # PK part 2, FK -> tickers.symbol
 
-    schema_version: int = 2
+    schema_version: int = 3
 
     bluf_thesis: Optional[str] = None
     time_horizon: Optional[str] = None  # 短期 | 中期 | 長期
@@ -117,11 +117,11 @@ class TickerInsight:
 
 @dataclass
 class TrendingTicker:
-    """Nightly aggregate per ticker.  Matches spec § 5 (schema_version 2)."""
+    """Nightly aggregate per ticker.  Matches spec § 5 (schema_version 3)."""
 
     ticker: str  # PK, FK -> tickers.symbol
 
-    schema_version: int = 2
+    schema_version: int = 3
 
     count_30d: int = 0
     count_90d: int = 0

@@ -86,7 +86,7 @@ def render_episode_page(
     tags: list[str],
     summary_text: str,
     events_markdown: str | None,
-    ticker_recommendations: list | dict[str, Any] | None,
+    ticker_insights: list | dict[str, Any] | None,
     source_urls: dict[str, str] | None,
 ) -> WikiPage:
     slug = episode_slug(podcast_name, episode_number, title)
@@ -109,20 +109,20 @@ def render_episode_page(
     if events_markdown:
         lines += ["## Events Timeline", "", events_markdown.strip(), ""]
 
-    if isinstance(ticker_recommendations, list):
-        recs = ticker_recommendations
-    elif isinstance(ticker_recommendations, dict):
-        recs = ticker_recommendations.get("ticker_recommendations", [])
+    if isinstance(ticker_insights, list):
+        insights = ticker_insights
+    elif isinstance(ticker_insights, dict):
+        insights = ticker_insights.get("ticker_insights") or ticker_insights.get("ticker_recommendations", [])
     else:
-        recs = []
-    if recs:
+        insights = []
+    if insights:
         lines += [
-            "## Ticker Recommendations",
+            "## Ticker Insights",
             "",
             "| Ticker | Sentiment | Score | Time Horizon | Thesis |",
             "|--------|-----------|-------|--------------|--------|",
         ]
-        for rec in recs:
+        for rec in insights:
             thesis = str(rec.get("bluf_thesis", "")).replace("|", "—")
             lines.append(
                 f"| {rec.get('ticker', '')} | {rec.get('sentiment', '')} "
@@ -132,7 +132,7 @@ def render_episode_page(
 
     # Structured per-ticker sentiment (canonical symbol -> bull|bear|neut) for the stats API.
     sentiment_map: dict[str, str] = {}
-    for rec in recs:
+    for rec in insights:
         sym = rec.get("ticker")
         sent = normalize_sentiment(rec.get("sentiment", ""))
         if sym and sent:

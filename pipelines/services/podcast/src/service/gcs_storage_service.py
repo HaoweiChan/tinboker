@@ -570,7 +570,7 @@ class GCSStorageService:
         sentences_markdown_path: Optional[Path] = None,
         pptx_base64: Optional[str] = None,
         marp_markdown_content: Optional[str] = None,
-        ticker_recommendations_data: Optional[Dict] = None,
+        ticker_insights_data: Optional[Dict] = None,
         ticker_marp_markdown_content: Optional[str] = None,
         skip_existing: bool = True
     ) -> Dict[str, Optional[str]]:
@@ -593,7 +593,7 @@ class GCSStorageService:
             svg_path: Path to SVG file (optional, if svg_content not provided)
             pptx_base64: Optional base64-encoded PPTX file content (optional)
             marp_markdown_content: Optional marp markdown content as string (optional)
-            ticker_recommendations_data: Optional ticker recommendations data as dict (optional, uploads as JSON)
+            ticker_insights_data: Optional ticker insights data as dict (optional, uploads as JSON)
             ticker_marp_markdown_content: Optional ticker marp markdown content as string (optional)
             skip_existing: If True, skip upload if file already exists
             
@@ -612,8 +612,8 @@ class GCSStorageService:
                 'pptx_public_url': https://... or None,
                 'marp_markdown_url': gs://... or None,
                 'marp_markdown_public_url': https://... or None,
-                'ticker_recommendations_url': gs://... or None,
-                'ticker_recommendations_public_url': https://... or None,
+                'ticker_insights_url': gs://... or None,
+                'ticker_insights_public_url': https://... or None,
                 'ticker_marp_markdown_url': gs://... or None,
                 'ticker_marp_markdown_public_url': https://... or None,
             }
@@ -631,8 +631,8 @@ class GCSStorageService:
             'pptx_public_url': None,
             'marp_markdown_url': None,
             'marp_markdown_public_url': None,
-            'ticker_recommendations_url': None,
-            'ticker_recommendations_public_url': None,
+            'ticker_insights_url': None,
+            'ticker_insights_public_url': None,
             'ticker_marp_markdown_url': None,
             'ticker_marp_markdown_public_url': None,
         }
@@ -781,16 +781,16 @@ class GCSStorageService:
                 blob_path = gcs_url.replace(f"gs://{self.bucket_name}/", "")
                 result['marp_markdown_public_url'] = self.generate_public_url(blob_path)
         
-        # Upload ticker_recommendations to 'ticker_recommendations' folder as JSON
-        if ticker_recommendations_data:
-            ticker_recommendations_json = json.dumps(ticker_recommendations_data, ensure_ascii=False, indent=2)
+        # Upload ticker insights to the ticker_insights folder as JSON.
+        if ticker_insights_data:
+            ticker_insights_json = json.dumps(ticker_insights_data, ensure_ascii=False, indent=2)
             success, gcs_url = self.upload_file_from_string(
-                ticker_recommendations_json, 'ticker_recommendations', podcast_name, episode_id, 'json', skip_existing
+                ticker_insights_json, 'ticker_insights', podcast_name, episode_id, 'json', skip_existing
             )
             if success and gcs_url:
-                result['ticker_recommendations_url'] = gcs_url
+                result['ticker_insights_url'] = gcs_url
                 blob_path = gcs_url.replace(f"gs://{self.bucket_name}/", "")
-                result['ticker_recommendations_public_url'] = self.generate_public_url(blob_path)
+                result['ticker_insights_public_url'] = self.generate_public_url(blob_path)
         
         # Upload ticker_marp_markdown to 'ticker_marp' folder
         if ticker_marp_markdown_content:
@@ -803,4 +803,3 @@ class GCSStorageService:
                 result['ticker_marp_markdown_public_url'] = self.generate_public_url(blob_path)
         
         return result
-

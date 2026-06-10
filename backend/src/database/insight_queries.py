@@ -18,7 +18,7 @@ TABLE = "ticker_insights"
 
 
 def _row_to_recommendation(row: Any) -> dict:
-    """Map a DB row to frontend TickerRecommendation shape."""
+    """Map a DB row to frontend TickerInsight-compatible shape."""
     return {
         "id": row["id"],
         "episode_id": row["episode_id"] or "",
@@ -155,7 +155,7 @@ def get_most_discussed(
     limit: int = 10,
 ) -> List[dict]:
     """
-    Return most-discussed tickers in the date range as TickerBuzz:
+    Return most-discussed tickers in the date range as TickerTrending-compatible rows:
     ticker, count, sentiment_score (avg), last_mentioned (max podcast_launch_time).
     """
     if not is_available():

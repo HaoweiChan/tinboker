@@ -93,7 +93,7 @@ def ingest_episode(
     tags: list[str],
     summary_text: str,
     events_markdown: str | None = None,
-    ticker_recommendations: dict[str, Any] | None = None,
+    ticker_insights: dict[str, Any] | None = None,
     source_urls: dict[str, str] | None = None,
     repository: WikiRepository | None = None,
 ) -> WikiPage:
@@ -116,13 +116,13 @@ def ingest_episode(
         tags=tags,
         summary_text=summary_text,
         events_markdown=events_markdown,
-        ticker_recommendations=ticker_recommendations,
+        ticker_insights=ticker_insights,
         source_urls=source_urls,
     )
     ep_link = f"episodes/{episode_page.slug}"
     episode_page = repo.upsert_page(episode_page)
 
-    recs = (ticker_recommendations or {}).get("ticker_recommendations", [])
+    recs = (ticker_insights or {}).get("ticker_insights") or (ticker_insights or {}).get("ticker_recommendations", [])
     recs_by_ticker = {canonical_symbol(r["ticker"]): r for r in recs if r.get("ticker")}
 
     for ticker in tickers:

@@ -36,7 +36,7 @@ def test_render_functions_return_pages():
     ep = render_episode_page(
         podcast_name="Pod", episode_number=2, title="T", date="2026-01-01",
         tickers=["AAPL"], tags=["tech"], summary_text="sum",
-        events_markdown="- x", ticker_recommendations=None, source_urls={"mp3": "gs://x"},
+        events_markdown="- x", ticker_insights=None, source_urls={"mp3": "gs://x"},
     )
     assert ep.kind == "episode" and ep.slug == "pod_ep2"
     assert ep.frontmatter["source_urls"] == {"mp3": "gs://x"}

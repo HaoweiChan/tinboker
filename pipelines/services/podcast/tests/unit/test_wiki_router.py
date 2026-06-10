@@ -111,8 +111,8 @@ def test_stats_routes(client):
     ingest_episode(
         podcast_name="股癌", episode_number=1, title="E1", date="2026-05-12",
         tickers=["2330.TW", "NVDA"], tags=["半導體"], summary_text="s",
-        ticker_recommendations={
-            "ticker_recommendations": [
+        ticker_insights={
+            "ticker_insights": [
                 {"ticker": "2330.TW", "sentiment": "bullish"},
                 {"ticker": "NVDA", "sentiment": "bull"},
             ]
@@ -122,8 +122,8 @@ def test_stats_routes(client):
     ingest_episode(
         podcast_name="財報狗", episode_number=2, title="E2", date="2026-05-12",
         tickers=["NVDA"], tags=["半導體"], summary_text="s",
-        ticker_recommendations={
-            "ticker_recommendations": [{"ticker": "NVDA", "sentiment": "bullish"}]
+        ticker_insights={
+            "ticker_insights": [{"ticker": "NVDA", "sentiment": "bullish"}]
         },
         repository=repo,
     )
@@ -160,8 +160,8 @@ def test_episode_feed_routes(client):
         podcast_name="股癌", episode_number=1, title="E1 半導體大事", date="2026-05-12",
         tickers=["2330.TW", "NVDA"], tags=["半導體"], summary_text="這集講台積電良率。",
         events_markdown="- 2026-05-10: 法說會",
-        ticker_recommendations={
-            "ticker_recommendations": [
+        ticker_insights={
+            "ticker_insights": [
                 {"ticker": "2330.TW", "sentiment": "bullish",
                  "sentiment_score": 8, "bluf_thesis": "良率好"},
             ]
@@ -198,7 +198,7 @@ def test_episode_feed_routes(client):
     assert detail["title"] == "E1 半導體大事"
     assert detail["events_markdown"] == "- 2026-05-10: 法說會"
     assert detail["summary"].startswith("這集講台積電")
-    rec = next(r for r in detail["ticker_recommendations"] if r["sym"] == "2330")
+    rec = next(r for r in detail["ticker_insights"] if r["sym"] == "2330")
     assert rec["sentiment"] == "bull" and rec["thesis"] == "良率好"
     assert {"slug": "2330", "name": "台積電"} in detail["related"]["entities"]
     assert detail["bullets"] == [] and detail["chapters"] == [] and detail["clips"] == []

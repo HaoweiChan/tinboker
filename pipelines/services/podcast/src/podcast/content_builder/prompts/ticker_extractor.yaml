@@ -14,6 +14,7 @@ system: |
 
   Rules:
   - Only extract ticker insights where the podcaster expresses a clear opinion or analysis
+  - Write all natural-language content in Traditional Chinese (zh-TW), including bluf_thesis, reason titles/descriptions, and risk titles/descriptions
   - Sentiment should reflect the overall tone: BULLISH (positive outlook), BEARISH (negative outlook), NEUTRAL (mixed or no clear direction)
   - Sentiment score: 0.0-0.3 (strongly bearish), 0.3-0.45 (bearish), 0.45-0.55 (neutral), 0.55-0.7 (bullish), 0.7-1.0 (strongly bullish)
   - Time horizon should match the investment timeframe discussed (if not explicitly stated, infer from context)
@@ -32,4 +33,4 @@ user: |
   Episode Title: {episode_title}
 
   Extract ticker insights following the structured output schema.
-  Include meta information (episode_id from source, publication_date, podcaster name) and a comprehensive list of ticker_recommendations (the structured-output key; this is a legacy wire name that consumers read) with all reasons and risks properly indexed with their sentence locations and timestamps.
+  Include meta information (episode_id from source, publication_date, podcaster name) and a comprehensive list of ticker_insights with all reasons and risks properly indexed with their sentence locations and timestamps.

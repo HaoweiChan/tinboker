@@ -51,8 +51,9 @@ class Episode(BaseModel):
     ticker_marp_markdown_url: Optional[str] = Field(None, description="GCS URL for ticker-specific Marp markdown file (gs://...)")
     ticker_marp_markdown_public_url: Optional[str] = Field(None, description="Public HTTPS URL for ticker-specific Marp markdown")
     ticker_marp_markdown_content: Optional[str] = Field(None, description="Ticker-specific Marp markdown content")
-    ticker_recommendations_public_url: Optional[str] = Field(None, description="Public HTTPS URL for ticker recommendations JSON")
-    ticker_recommendations_content: Optional[str] = Field(None, description="Ticker recommendations JSON content (cached)")
+    ticker_insights_url: Optional[str] = Field(None, description="GCS URL for ticker insights JSON file (gs://...)")
+    ticker_insights_public_url: Optional[str] = Field(None, description="Public HTTPS URL for ticker insights JSON")
+    ticker_insights_content: Optional[str] = Field(None, description="Ticker insights JSON content (cached)")
     
     # Spotify metadata (optional)
     spotify_embed_url: Optional[str] = Field(None, description="Spotify embed URL")
@@ -84,4 +85,3 @@ class Podcast(BaseModel):
 
     class Config:
         populate_by_name = True
-

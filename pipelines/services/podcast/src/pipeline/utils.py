@@ -240,8 +240,8 @@ def create_episode_object(
         pptx_public_url=gcs_urls.get('pptx_public_url'),
         marp_markdown_url=gcs_urls.get('marp_markdown_url'),
         marp_markdown_public_url=gcs_urls.get('marp_markdown_public_url'),
-        ticker_recommendations_url=gcs_urls.get('ticker_recommendations_url'),
-        ticker_recommendations_public_url=gcs_urls.get('ticker_recommendations_public_url'),
+        ticker_insights_url=gcs_urls.get('ticker_insights_url') or gcs_urls.get('ticker_recommendations_url'),
+        ticker_insights_public_url=gcs_urls.get('ticker_insights_public_url') or gcs_urls.get('ticker_recommendations_public_url'),
         ticker_marp_markdown_url=gcs_urls.get('ticker_marp_markdown_url'),
         ticker_marp_markdown_public_url=gcs_urls.get('ticker_marp_markdown_public_url'),
         related_tickers=related_tickers,
@@ -263,4 +263,3 @@ def create_episode_object(
         spotify_duration_ms=spotify_metadata.get('duration_ms') if spotify_metadata else None,
         spotify_images=spotify_metadata.get('images', []) if spotify_metadata else []
     )
-

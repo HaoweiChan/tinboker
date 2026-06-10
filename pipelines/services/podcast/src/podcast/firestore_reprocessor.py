@@ -129,10 +129,18 @@ def _load_gcs_urls(episode_data: EpisodeData, firestore_episode: Dict, rerun_fro
             "sentences_markdown_url", "sentences_markdown_public_url",
             "pptx_url", "pptx_public_url",
             "marp_markdown_url", "marp_markdown_public_url",
-            "ticker_recommendations_url", "ticker_recommendations_public_url",
+            "ticker_insights_url", "ticker_insights_public_url",
             "ticker_marp_markdown_url", "ticker_marp_markdown_public_url",
         ]
     episode_data.gcs_urls = {k: firestore_episode.get(k) for k in url_keys}
+    episode_data.gcs_urls["ticker_insights_url"] = (
+        firestore_episode.get("ticker_insights_url")
+        or firestore_episode.get("ticker_recommendations_url")
+    )
+    episode_data.gcs_urls["ticker_insights_public_url"] = (
+        firestore_episode.get("ticker_insights_public_url")
+        or firestore_episode.get("ticker_recommendations_public_url")
+    )
 
 
 def _load_spotify_metadata(episode_data: EpisodeData, firestore_episode: Dict) -> None:

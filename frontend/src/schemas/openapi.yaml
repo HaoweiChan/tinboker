@@ -3083,18 +3083,24 @@ components:
           - type: 'null'
           title: Ticker Marp Markdown Content
           description: Ticker-specific Marp markdown content
-        ticker_recommendations_public_url:
+        ticker_insights_url:
           anyOf:
           - type: string
           - type: 'null'
-          title: Ticker Recommendations Public Url
-          description: Public HTTPS URL for ticker recommendations JSON
-        ticker_recommendations_content:
+          title: Ticker Insights Url
+          description: GCS URL for ticker insights JSON file (gs://...)
+        ticker_insights_public_url:
           anyOf:
           - type: string
           - type: 'null'
-          title: Ticker Recommendations Content
-          description: Ticker recommendations JSON content (cached)
+          title: Ticker Insights Public Url
+          description: Public HTTPS URL for ticker insights JSON
+        ticker_insights_content:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Ticker Insights Content
+          description: Ticker insights JSON content (cached)
         spotify_embed_url:
           anyOf:
           - type: string

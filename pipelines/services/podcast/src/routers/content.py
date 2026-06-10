@@ -87,7 +87,7 @@ class EpisodeOut(BaseModel):
     sentences_markdown_url: Optional[str] = None
     marp_markdown_url: Optional[str] = None
     ticker_marp_markdown_url: Optional[str] = None
-    ticker_recommendations_url: Optional[str] = None
+    ticker_insights_url: Optional[str] = None
     # Content fields — omitted from list endpoints unless include_content=true
     summary_content: Optional[str] = None
     key_insights: list[str] = []
@@ -106,7 +106,7 @@ class EpisodeOut(BaseModel):
 
 
 class TickerInsightOut(BaseModel):
-    schema_version: int = 2
+    schema_version: int = 3
     episode_id: str
     ticker: str
     podcaster: Optional[str] = None
@@ -121,7 +121,7 @@ class TickerInsightOut(BaseModel):
 
 class TrendingTickerOut(BaseModel):
     ticker: str
-    schema_version: int = 2
+    schema_version: int = 3
     count_30d: int = 0
     count_90d: int = 0
     count_all_time: int = 0
@@ -164,7 +164,7 @@ def _ep_out(ep: Episode, *, include_content: bool = True) -> EpisodeOut:
         sentences_markdown_url=ep.sentences_markdown_url,
         marp_markdown_url=ep.marp_markdown_url,
         ticker_marp_markdown_url=ep.ticker_marp_markdown_url,
-        ticker_recommendations_url=ep.ticker_recommendations_url,
+        ticker_insights_url=ep.ticker_insights_url,
         summary_content=ep.summary_content if include_content else None,
         key_insights=ep.key_insights if include_content else [],
         events_markdown_content=ep.events_markdown_content if include_content else None,

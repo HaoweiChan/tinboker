@@ -71,8 +71,8 @@ def _episode_date(episode: Episode) -> str | None:
     return None
 
 
-def _ticker_recommendations(insights: list) -> dict | None:
-    """Shape stored TickerInsight rows into ingest_episode's ticker_recommendations dict."""
+def _ticker_insights(insights: list) -> dict | None:
+    """Shape stored TickerInsight rows into ingest_episode's ticker_insights dict."""
     recs = [
         {
             "ticker": i.ticker,
@@ -83,7 +83,7 @@ def _ticker_recommendations(insights: list) -> dict | None:
         }
         for i in insights
     ]
-    return {"ticker_recommendations": recs} if recs else None
+    return {"ticker_insights": recs} if recs else None
 
 
 def _fetch_text(url: str, *, session: requests.Session, timeout: int = 20) -> str:
@@ -175,7 +175,7 @@ def backfill(
                 tags=list(episode.tags or []),
                 summary_text=summary_text,
                 events_markdown=events_markdown or None,
-                ticker_recommendations=_ticker_recommendations(
+                ticker_insights=_ticker_insights(
                     ticker_insights.list_by_episode(episode.id)
                 ),
                 source_urls=source_urls or None,

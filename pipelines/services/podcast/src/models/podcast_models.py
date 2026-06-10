@@ -29,7 +29,7 @@ class PodcastEpisode:
     sentences_markdown_url: Optional[str] = None  # GCS URL for sentences markdown file (gs://...)
     pptx_url: Optional[str] = None  # GCS URL for PPTX presentation file (gs://...)
     marp_markdown_url: Optional[str] = None  # GCS URL for marp markdown file (gs://...)
-    ticker_recommendations_url: Optional[str] = None  # GCS URL for ticker recommendations JSON file (gs://...)
+    ticker_insights_url: Optional[str] = None  # GCS URL for ticker insights JSON file (gs://...)
     ticker_marp_markdown_url: Optional[str] = None  # GCS URL for ticker marp markdown file (gs://...)
     
     # Optional public HTTPS URLs
@@ -41,7 +41,7 @@ class PodcastEpisode:
     sentences_markdown_public_url: Optional[str] = None  # Public HTTPS URL for sentences markdown
     pptx_public_url: Optional[str] = None  # Public HTTPS URL for PPTX presentation
     marp_markdown_public_url: Optional[str] = None  # Public HTTPS URL for marp markdown
-    ticker_recommendations_public_url: Optional[str] = None  # Public HTTPS URL for ticker recommendations
+    ticker_insights_public_url: Optional[str] = None  # Public HTTPS URL for ticker insights
     ticker_marp_markdown_public_url: Optional[str] = None  # Public HTTPS URL for ticker marp markdown
     
     # Metadata
@@ -159,10 +159,10 @@ class PodcastEpisode:
             result['marp_markdown_url'] = self.marp_markdown_url
         if self.marp_markdown_public_url:
             result['marp_markdown_public_url'] = self.marp_markdown_public_url
-        if self.ticker_recommendations_url:
-            result['ticker_recommendations_url'] = self.ticker_recommendations_url
-        if self.ticker_recommendations_public_url:
-            result['ticker_recommendations_public_url'] = self.ticker_recommendations_public_url
+        if self.ticker_insights_url:
+            result['ticker_insights_url'] = self.ticker_insights_url
+        if self.ticker_insights_public_url:
+            result['ticker_insights_public_url'] = self.ticker_insights_public_url
         if self.ticker_marp_markdown_url:
             result['ticker_marp_markdown_url'] = self.ticker_marp_markdown_url
         if self.ticker_marp_markdown_public_url:
@@ -227,8 +227,8 @@ class PodcastEpisode:
             pptx_public_url=data.get('pptx_public_url'),
             marp_markdown_url=data.get('marp_markdown_url'),
             marp_markdown_public_url=data.get('marp_markdown_public_url'),
-            ticker_recommendations_url=data.get('ticker_recommendations_url'),
-            ticker_recommendations_public_url=data.get('ticker_recommendations_public_url'),
+            ticker_insights_url=data.get('ticker_insights_url') or data.get('ticker_recommendations_url'),
+            ticker_insights_public_url=data.get('ticker_insights_public_url') or data.get('ticker_recommendations_public_url'),
             ticker_marp_markdown_url=data.get('ticker_marp_markdown_url'),
             ticker_marp_markdown_public_url=data.get('ticker_marp_markdown_public_url'),
             related_tickers=data.get('related_tickers', []),
@@ -336,4 +336,3 @@ class PodcastCollection:
                     collection.add_episode(podcast_name, episode)
         
         return collection
-

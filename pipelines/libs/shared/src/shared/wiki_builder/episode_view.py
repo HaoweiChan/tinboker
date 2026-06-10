@@ -1,7 +1,7 @@
 """Read episode wiki pages into the shapes the platform webui's episode feed / detail want.
 
 Parses the rendered markdown body back into structured pieces (summary excerpt, events timeline,
-ticker-recommendation table, related links) and combines them with the frontmatter. Content-shape
+ticker-insight table, related links) and combines them with the frontmatter. Content-shape
 aware (like :mod:`.records` / :mod:`.stats`); the storage layer stays agnostic.
 """
 
@@ -15,7 +15,8 @@ from .models import WikiPage
 from .records import normalize_sentiment
 from .slugify import ticker_slug
 
-_REC_HEADER = "## Ticker Recommendations"
+_INSIGHT_HEADER = "## Ticker Insights"
+_LEGACY_INSIGHT_HEADER = "## Ticker Recommendations"
 _EVENTS_HEADER = "## Events Timeline"
 _WIKILINK_RE = re.compile(r"\[\[(entities|topics)/([^\]|]+?)(?:\|[^\]]*)?\]\]")
 
@@ -55,14 +56,14 @@ def summary_text(body: str) -> str:
     return "\n".join(out).strip()
 
 
-def parse_ticker_recommendations(body: str) -> list[dict[str, Any]]:
-    """Parse the ``## Ticker Recommendations`` markdown table into structured rows.
+def parse_ticker_insights(body: str) -> list[dict[str, Any]]:
+    """Parse the ``## Ticker Insights`` markdown table into structured rows.
 
     Returns ``[{sym, sentiment, sentiment_score, time_horizon, thesis}]`` — ``sym`` is the
     canonical symbol, ``sentiment`` is normalized (bull|bear|neut|"").
     """
     rows: list[dict[str, Any]] = []
-    section = _section(body, _REC_HEADER)
+    section = _section(body, _INSIGHT_HEADER) or _section(body, _LEGACY_INSIGHT_HEADER)
     for raw in section.splitlines():
         s = raw.strip()
         if not s.startswith("|"):
@@ -155,15 +156,15 @@ def episode_detail(
     """The full episode detail record (everything the detail page needs that we have today)."""
     fm = page.frontmatter
     body = page.body
-    recs = parse_ticker_recommendations(body)
-    rec_by_sym = {r["sym"]: r for r in recs}
+    insights = parse_ticker_insights(body)
+    insight_by_sym = {r["sym"]: r for r in insights}
     tickers = _tickers(page, entity_names)
     for t in tickers:  # attach the thesis / score / horizon onto the ticker rows
-        rec = rec_by_sym.get(t["sym"])
-        if rec:
-            t["thesis"] = rec["thesis"]
-            t["sentiment_score"] = rec["sentiment_score"]
-            t["time_horizon"] = rec["time_horizon"]
+        insight = insight_by_sym.get(t["sym"])
+        if insight:
+            t["thesis"] = insight["thesis"]
+            t["sentiment_score"] = insight["sentiment_score"]
+            t["time_horizon"] = insight["time_horizon"]
     related = _related(body)
     return {
         "slug": page.slug,
@@ -174,7 +175,7 @@ def episode_detail(
         "duration_minutes": fm.get("duration_minutes"),
         "summary": summary_text(body),
         "events_markdown": _section(body, _EVENTS_HEADER) or None,
-        "ticker_recommendations": recs,
+        "ticker_insights": insights,
         "tickers": tickers,
         "tags": [str(t) for t in (fm.get("tags") or [])],
         "source_urls": fm.get("source_urls") or {},

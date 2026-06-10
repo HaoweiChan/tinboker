@@ -87,7 +87,7 @@ class TrendingService:
 
         Counts tickers mentioned across the RECENT episodes (already zh-TW-scoped and
         recency-filtered by PodcastService), aggregates a dominant sentiment per ticker
-        from those episodes' ticker_recommendations, and returns the top `limit` plus
+        from those episodes' ticker_insights, and returns the top `limit` plus
         totals. Unlike `trending_tickers` (agents-precomputed over the full all-time,
         English-inclusive catalog), this reflects only the launch feed.
 

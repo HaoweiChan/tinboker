@@ -15,8 +15,8 @@ def test_feed_item_and_detail():
         tickers=["2330.TW", "NVDA"], tags=["半導體"],
         summary_text="這集講台積電。\n\n第二段。",
         events_markdown="- 2026-05-10: 法說會",
-        ticker_recommendations={
-            "ticker_recommendations": [
+        ticker_insights={
+            "ticker_insights": [
                 {"ticker": "2330.TW", "sentiment": "bullish", "sentiment_score": 8,
                  "time_horizon": "中期", "bluf_thesis": "良率好"},
                 {"ticker": "NVDA", "sentiment": "bull", "sentiment_score": 9,
@@ -42,7 +42,7 @@ def test_feed_item_and_detail():
     detail = episode_view.episode_detail(page, names, {})
     assert detail["summary"].startswith("這集講台積電") and "第二段" in detail["summary"]
     assert detail["events_markdown"] == "- 2026-05-10: 法說會"
-    recs = {r["sym"]: r for r in detail["ticker_recommendations"]}
+    recs = {r["sym"]: r for r in detail["ticker_insights"]}
     assert recs["2330"]["sentiment"] == "bull" and recs["2330"]["thesis"] == "良率好"
     assert recs["2330"]["sentiment_score"] == "8" and recs["2330"]["time_horizon"] == "中期"
     # thesis/score attached onto the ticker rows too
@@ -55,8 +55,8 @@ def test_feed_item_and_detail():
     assert detail["bullets"] == [] and detail["chapters"] == [] and detail["clips"] == []
 
 
-def test_parse_ticker_recommendations_empty():
-    assert episode_view.parse_ticker_recommendations("# T\n\nno rec table here\n") == []
+def test_parse_ticker_insights_empty():
+    assert episode_view.parse_ticker_insights("# T\n\nno rec table here\n") == []
 
 
 def test_summary_text_stops_at_first_section():

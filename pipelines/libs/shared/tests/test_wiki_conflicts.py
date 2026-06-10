@@ -128,8 +128,8 @@ def test_sentiment_conflict_news_vs_podcast():
         tickers=["2330"],
         tags=["semiconductors"],
         summary_text="A bullish take.",
-        ticker_recommendations={
-            "ticker_recommendations": [{"ticker": "2330", "sentiment": "bullish"}]
+        ticker_insights={
+            "ticker_insights": [{"ticker": "2330", "sentiment": "bullish"}]
         },
         repository=repo,
     )

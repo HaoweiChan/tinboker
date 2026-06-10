@@ -35,8 +35,8 @@ def test_postgres_crud_and_links(repo):
         podcast_name="Gooaye", episode_number=int(str(uuid.uuid4().int)[:6]),
         title="EP", date="2026-05-12", tickers=["TSM", "2330"], tags=["ai-bubble"],
         summary_text="sum",
-        ticker_recommendations={
-            "ticker_recommendations": [
+        ticker_insights={
+            "ticker_insights": [
                 {"ticker": "TSM", "sentiment": "bull", "sentiment_score": 9, "bluf_thesis": "great"}
             ]
         },

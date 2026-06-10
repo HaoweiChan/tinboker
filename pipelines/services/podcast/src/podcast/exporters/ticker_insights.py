@@ -1,11 +1,10 @@
 """Write per-(episode, ticker) ticker-insight documents into Firestore.
 
 Output path: ``ticker_insights/{episode_id}/tickers/{ticker}``.
-Schema: ``schema_version: 2`` per ``docs/spec-from-platform.md`` § 4.
+Schema: ``schema_version: 3`` per ``docs/spec-from-platform.md`` § 4.
 
 The pipeline produces a list of TickerInsight rows under
-``episode_data.summary_result["ticker_insights"]`` (the wrapper dict contains a
-legacy inner key ``ticker_recommendations`` carrying the actual list). This
+``episode_data.summary_result["ticker_insights"]``. This
 module normalizes that list into spec-compliant docs:
 
     * ``time_horizon`` mapped from English (LLM output) to Chinese
@@ -26,7 +25,7 @@ from typing import Any, Iterable
 
 from shared.tickers import canonical_symbol
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 _HORIZON_MAP = {
     "SHORT_TERM": "短期",
@@ -85,8 +84,8 @@ def _extract_list(raw: Any) -> list[dict[str, Any]]:
     if isinstance(raw, list):
         return [r for r in raw if isinstance(r, dict)]
     if isinstance(raw, dict):
-        # The LLM emits {"ticker_recommendations": [...]} as the structured-output
-        # wrapper; tolerate "ticker_insights" too for forward-compat.
+        # Prefer the current wrapper; tolerate the old key for cached historical
+        # payloads that are backfilled into ticker_insights.
         for key in ("ticker_insights", "ticker_recommendations"):
             value = raw.get(key)
             if isinstance(value, list):

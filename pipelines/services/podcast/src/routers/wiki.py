@@ -88,7 +88,7 @@ class EpisodeIngestIn(BaseModel):
     tags: list[str] = Field(default_factory=list)
     summary_text: str = ""
     events_markdown: str | None = None
-    ticker_recommendations: dict[str, Any] | None = None
+    ticker_insights: dict[str, Any] | None = None
     source_urls: dict[str, str] | None = None
 
 

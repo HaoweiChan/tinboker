@@ -72,7 +72,7 @@ async def get_ticker_sentiments(body: TickerSentimentsRequest):
 
     POST (not GET) because episode ids are long unicode title strings. Returns
     `{ episode_id: { TICKER: "BULLISH"|"BEARISH"|"NEUTRAL" } }`. Maps are extracted
-    from each episode's ticker_recommendations file and cached in Redis, so this is
+    from each episode's ticker_insights file and cached in Redis, so this is
     cheap after the first warm.
     """
     try:

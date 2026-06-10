@@ -20,7 +20,7 @@ _GCS_CONTENT_FIELDS = [
     ('marp_markdown_content', 'marp_markdown_url', 'gcs'),
     ('modified_summary_content', 'modified_summary_url', 'gcs'),
     ('ticker_marp_markdown_content', 'ticker_marp_markdown_url', 'any'),
-    ('ticker_recommendations_content', 'ticker_recommendations_public_url', 'any'),
+    ('ticker_insights_content', 'ticker_insights_public_url', 'any'),
 ]
 
 
@@ -29,6 +29,19 @@ class EpisodeTransformer:
 
     def __init__(self, gcs_service: Optional[GCSContentService] = None):
         self.gcs = gcs_service or GCSContentService()
+
+    @staticmethod
+    def _normalize_legacy_insight_fields(episode_dict: dict) -> dict:
+        """Map old episode artifact fields into the current ticker_insights names."""
+        legacy_map = {
+            'ticker_insights_url': 'ticker_recommendations_url',
+            'ticker_insights_public_url': 'ticker_recommendations_public_url',
+            'ticker_insights_content': 'ticker_recommendations_content',
+        }
+        for new_field, old_field in legacy_map.items():
+            if not episode_dict.get(new_field) and episode_dict.get(old_field):
+                episode_dict[new_field] = episode_dict[old_field]
+        return episode_dict
 
     async def enrich_with_content(
         self,
@@ -42,6 +55,7 @@ class EpisodeTransformer:
         untouched rather than persisting a blank — see is_content_incomplete, which the
         caller uses to avoid caching a half-hydrated episode.
         """
+        episode_dict = self._normalize_legacy_insight_fields(episode_dict)
         requested_fields = set(content_fields) if content_fields is not None else None
         fetch_tasks = []
         for content_field, url_field, fetch_type in _GCS_CONTENT_FIELDS:
@@ -78,6 +92,7 @@ class EpisodeTransformer:
         Callers use this to skip caching so the next request re-attempts the GCS read
         instead of pinning a blank result for the full TTL.
         """
+        episode_dict = EpisodeTransformer._normalize_legacy_insight_fields(episode_dict)
         requested_fields = set(content_fields) if content_fields is not None else None
         return any(
             episode_dict.get(url_field) and not episode_dict.get(content_field)
@@ -139,6 +154,8 @@ class EpisodeTransformer:
         content_fields: Optional[Collection[str]] = None,
     ) -> Episode:
         """Convert a Firestore episode dict to an Episode model"""
+        episode_dict = self._normalize_legacy_insight_fields(episode_dict)
+
         if enrich_content:
             episode_dict = await self.enrich_with_content(episode_dict, content_fields=content_fields)
 
@@ -205,6 +222,7 @@ class EpisodeTransformer:
             ticker_marp_markdown_url=episode_dict.get('ticker_marp_markdown_url'),
             ticker_marp_markdown_public_url=episode_dict.get('ticker_marp_markdown_public_url'),
             ticker_marp_markdown_content=episode_dict.get('ticker_marp_markdown_content'),
-            ticker_recommendations_public_url=episode_dict.get('ticker_recommendations_public_url'),
-            ticker_recommendations_content=episode_dict.get('ticker_recommendations_content'),
+            ticker_insights_url=episode_dict.get('ticker_insights_url'),
+            ticker_insights_public_url=episode_dict.get('ticker_insights_public_url'),
+            ticker_insights_content=episode_dict.get('ticker_insights_content'),
         )

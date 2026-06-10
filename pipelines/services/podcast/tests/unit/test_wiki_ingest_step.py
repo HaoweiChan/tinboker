@@ -20,9 +20,7 @@ def _episode_data(**overrides):
             "summary_text": "Summary.",
             "events_markdown": "- 2026-05-12: thing",
             "ticker_insights": {
-                # Inner key stays as 'ticker_recommendations': this is the LLM's structured-output
-                # wrapper, and the wiki layer (legacy compat) reads it under that name.
-                "ticker_recommendations": [
+                "ticker_insights": [
                     {
                         "ticker": "TSM",
                         "sentiment": "bullish",

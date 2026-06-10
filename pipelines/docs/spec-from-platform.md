@@ -3,7 +3,7 @@
 > **Status:** Draft for tinboker-agents team review. Authoritative once both teams sign off § 10.
 > **Owners:** platform team (this doc), tinboker-agents (write contract).
 > **Doc location:** `openspecs/firestore-schema/spec.md`.
-> **Document version:** see `schema_version: 2` in § Scope. The folder is intentionally unversioned — bump `schema_version` inline rather than forking the folder.
+> **Document version:** see `schema_version: 3` in § Scope. The folder is intentionally unversioned — bump `schema_version` inline rather than forking the folder.
 
 ---
 
@@ -44,7 +44,7 @@ This doc replaces that arrangement. It enumerates every Firestore path the platf
 - User state: `watchlist`, `podcast_subscriptions`, `episode_bookmarks`, `alerts`, `tag_subscriptions`, `notification_preferences`. Platform-owned writes.
 - Top Movers / sector heatmaps (currently mocked; see QA_REPORT.md BUG-2). These come from market price feeds.
 
-**Versioning:** every agent-written document carries a `schema_version: <int>` field. This doc defines `schema_version: 2`. Bumping the integer requires updating this spec.
+**Versioning:** every agent-written document carries a `schema_version: <int>` field. This doc defines `schema_version: 3`. Bumping the integer requires updating this spec.
 
 **Terminology:** "the agents pipeline" = the tinboker-agents repo (separate from this one). "The platform" = this repo (`tinboker-platform`, frontend + backend).
 
@@ -118,7 +118,7 @@ Legend for **Fulfilled by agents**:
 | `sentences_markdown_url` | string \| null | usually | |
 | `marp_markdown_url` | string \| null | sometimes | |
 | `ticker_marp_markdown_url` | string \| null | sometimes | |
-| `ticker_recommendations_public_url` | string \| null | usually | JSON of per-ticker insights. Source for `ticker_insights/*` documents (§ 4). |
+| `ticker_insights_url` | string \| null | usually | JSON of per-ticker insights. Source for `ticker_insights/*` documents (§ 4). Historical docs may still carry `ticker_recommendations_url`; readers map it as a legacy fallback only. |
 
 #### File pointers — public HTTPS URLs
 
@@ -132,7 +132,7 @@ Each `*_url` above has an optional `*_public_url` counterpart. Backend reads fro
 | `sentences_markdown_content` | string \| null | usually | Markdown with `(#time: MSEC)` clip markers. |
 | `marp_markdown_content` | string \| null | sometimes | |
 | `ticker_marp_markdown_content` | string \| null | sometimes | |
-| `ticker_recommendations_content` | string \| null | usually | JSON-as-string. Superseded by `ticker_insights/*` collection (§ 4) post-migration. |
+| `ticker_insights_content` | string \| null | usually | JSON-as-string cache of the per-ticker insights payload. Historical docs may still carry `ticker_recommendations_content`; readers map it as a legacy fallback only. Superseded by `ticker_insights/*` collection (§ 4) post-migration. |
 
 #### Spotify metadata
 
@@ -269,7 +269,7 @@ Field set mirrors today's Postgres shape at [backend/src/database/recommendation
 
 - **Removed from public API** (kept in Firestore for internal sort): the raw `sentiment_score` float.
 - **Replaced**: freeform `sentiment` string (`"bull"`/`"bear"`/`"neut"`) → 5-tier `sentiment_label` enum.
-- **Added**: `schema_version: 2`.
+- **Added**: `schema_version: 3`.
 - **Removed**: the auto-increment `id` column (replaced by composite doc path `{episode_id}/tickers/{ticker}`).
 
 ### 4.2 Sentiment label enum
@@ -292,7 +292,7 @@ The raw `sentiment_score` is model-generated and its quantized value isn't meani
 
 ### 4.3 Public API response shape — `TickerInsight[]`
 
-The platform exposes these as `TickerInsight[]` (rename of `TickerRecommendation[]`):
+The platform exposes these as `TickerInsight[]`:
 
 ```ts
 type TickerInsight = {
@@ -347,19 +347,18 @@ Query params identical to existing endpoints: `start_date`, `end_date` (ISO `YYY
 
 Old `/api/recommendations/*` paths remain as deprecation aliases for one release with a `Deprecation: true` header and a log line. Removed in the release after.
 
-### 4.5 Backend rename impact
+### 4.5 Backend rename status
 
-- `backend/src/services/recommendation_service.py` → `backend/src/services/insight_service.py`. Implementation switches from Postgres to Firestore reads.
-- `backend/src/routers/recommendations.py` → `backend/src/routers/ticker_insights.py`. New prefix `/api/ticker-insights`.
-- `backend/src/database/recommendation_queries.py` → deleted once the Postgres `ticker_recommendations` table is dropped (see § 7).
-- `backend/src/database/recommendation_db.py` → deleted with the queries module.
+- Current reader: `backend/src/services/insight_service.py`, `backend/src/routers/ticker_insights.py`, prefix `/api/ticker-insights`.
+- Deprecated aliases: `backend/src/routers/recommendations.py` keeps `/api/recommendations/*` with deprecation headers for one release.
+- Legacy Postgres cleanup: delete `backend/src/database/recommendation_queries.py`, `backend/src/database/recommendation_db.py`, and the old `ticker_recommendations` table once § 7 Phase B6 completes.
 
-### 4.6 Frontend rename impact
+### 4.6 Frontend rename status
 
-- `frontend/src/services/recommendationService.ts` → `frontend/src/services/insightService.ts`.
-- Type `TickerRecommendation` → `TickerInsight`; `TickerBuzz` → `TickerTrending` (see § 5).
-- Function renames: `getRecommendationsByTicker` → `getInsightsByTicker`; `getRecommendationsByPodcaster` → `getInsightsByPodcaster`; `getMostDiscussedTickers` → `getTrendingTickers`.
-- Consumers to update:
+- Active service functions: `getInsightsByTicker`, `getInsightsByPodcaster`, `getTrendingTickers`.
+- Active types: `TickerInsight`, `TickerTrending` (see § 5).
+- Removed compatibility wrapper: `frontend/src/services/recommendationService.ts`.
+- Consumers:
   - [frontend/src/components/financial/WeeklyBuzzWidget.tsx](../../frontend/src/components/financial/WeeklyBuzzWidget.tsx)
   - [frontend/src/components/financial/TickerInsightCard.tsx](../../frontend/src/components/financial/TickerInsightCard.tsx)
   - [frontend/src/pages/StockIndex.tsx](../../frontend/src/pages/StockIndex.tsx)
@@ -435,7 +434,7 @@ type TickerTrending = {
 };
 ```
 
-**Breaking change vs today's `TickerBuzz`** at [frontend/src/services/types.ts:471-476](../../frontend/src/services/types.ts#L471-L476): `sentiment_score: number` removed; `sentiment_label` enum added. Rename `TickerBuzz` → `TickerTrending` in the same migration.
+`sentiment_score` is removed from the public response; `sentiment_label` is the user-facing enum. Frontend code consumes this as `TickerTrending`.
 
 `top_podcasters` and `top_episodes` are stored in Firestore but NOT returned by the public API today. They unlock future UI surfaces (e.g. a hover card on Stock Index showing "mentioned by 股癌, M觀點") without re-spec'ing.
 
@@ -481,7 +480,7 @@ Highest priority. Stock Index is empty in production today because the Postgres 
 |------|-------|--------|-------|
 | A1. Agents wire up nightly job writing `trending_tickers/{ticker}` | tinboker-agents | TBD | Backfill from existing wiki/GCS data first. |
 | A2. Platform adds `/api/ticker-insights/trending` reading from Firestore, behind feature flag `TICKER_INSIGHTS_FROM_FIRESTORE` | platform | TBD | Old `/api/recommendations/buzz` keeps working. |
-| A3. Frontend switches StockIndex/WeeklyBuzzWidget/HomeRail to new endpoint | platform | TBD | Type rename `TickerBuzz` → `TickerTrending`. |
+| A3. Frontend switches StockIndex/WeeklyBuzzWidget/HomeRail to new endpoint | platform | TBD | Type is `TickerTrending`. |
 | A4. Flip feature flag in prod, observe for 48h | both | TBD | Rollback = flip flag off; old code path remains. |
 | A5. Remove old `/api/recommendations/buzz` endpoint | platform | TBD | After 1 full release of green flag. |
 
@@ -546,5 +545,5 @@ These are the issues we know the agents team needs to weigh in on. Reply inline 
 4. **Score-to-label cutoffs.** § 4.2 proposes fixed thresholds. Does your model produce calibrated probabilities, or should the cutoffs be derived from observed score distributions?
 5. **Soft-delete signal.** How should agents mark a previously-published episode as retracted? No current mechanism. Options: `retracted_at` timestamp field, or move to `episodes_retracted/{id}` collection?
 6. **`*_url` audit (§ 2.3 cleanup #2).** Which `*_public_url` fields are actually fetched by external consumers vs. backend-only? If only backend, the GCS `gs://` URL is enough.
-7. **Schema version bump policy.** This doc is `schema_version: 2`. What's the agents-side migration cost of bumping to v3 in the future (e.g. for cleanup #1's `released_at_ms`)?
+7. **Schema version bump policy.** This doc is `schema_version: 3`. What is the agents-side migration cost of future contract bumps?
 8. **Sentiment confidence.** Today there's a single score per insight. Would agents support emitting a confidence band (e.g. `sentiment_confidence: HIGH | MEDIUM | LOW`) alongside `sentiment_label`, or is that out of model scope?

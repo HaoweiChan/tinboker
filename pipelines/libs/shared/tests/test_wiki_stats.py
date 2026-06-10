@@ -23,16 +23,16 @@ def repo() -> InMemoryWikiRepository:
     ingest_episode(
         podcast_name="股癌", episode_number=1, title="E1", date="2026-05-12",
         tickers=["2330.TW", "NVDA"], tags=["半導體", "AI 基建"], summary_text="s",
-        ticker_recommendations={
-            "ticker_recommendations": [_rec("2330.TW", "bullish"), _rec("NVDA", "bull")]
+        ticker_insights={
+            "ticker_insights": [_rec("2330.TW", "bullish"), _rec("NVDA", "bull")]
         },
         repository=r,
     )
     ingest_episode(
         podcast_name="財報狗", episode_number=2, title="E2", date="2026-05-12",
         tickers=["NVDA", "AMD"], tags=["半導體"], summary_text="s",
-        ticker_recommendations={
-            "ticker_recommendations": [_rec("NVDA", "bullish"), _rec("AMD", "bearish")]
+        ticker_insights={
+            "ticker_insights": [_rec("NVDA", "bullish"), _rec("AMD", "bearish")]
         },
         repository=r,
     )
@@ -40,20 +40,20 @@ def repo() -> InMemoryWikiRepository:
     ingest_episode(
         podcast_name="股癌", episode_number=3, title="E3", date="2026-05-10",
         tickers=["2330.TW"], tags=["半導體"], summary_text="s",
-        ticker_recommendations={"ticker_recommendations": [_rec("2330.TW", "neutral")]},
+        ticker_insights={"ticker_insights": [_rec("2330.TW", "neutral")]},
         repository=r,
     )
     # 2026-05-03 / 05-02 — outside the current 7-day window, inside the previous one
     ingest_episode(
         podcast_name="股癌", episode_number=4, title="E4", date="2026-05-03",
         tickers=["2330.TW"], tags=["台股"], summary_text="s",
-        ticker_recommendations={"ticker_recommendations": [_rec("2330.TW", "bull")]},
+        ticker_insights={"ticker_insights": [_rec("2330.TW", "bull")]},
         repository=r,
     )
     ingest_episode(
         podcast_name="M觀點", episode_number=5, title="E5", date="2026-05-02",
         tickers=["TSLA"], tags=["電動車"], summary_text="s",
-        ticker_recommendations={"ticker_recommendations": [_rec("TSLA", "bearish")]},
+        ticker_insights={"ticker_insights": [_rec("TSLA", "bearish")]},
         repository=r,
     )
     return r

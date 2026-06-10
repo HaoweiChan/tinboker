@@ -80,8 +80,8 @@ def test_ingest_episode_creates_entity_and_topic_pages():
         tickers=["AAPL", "2330"],
         tags=["tech", "AI Bubble"],
         summary_text="Summary.",
-        ticker_recommendations={
-            "ticker_recommendations": [
+        ticker_insights={
+            "ticker_insights": [
                 {
                     "ticker": "AAPL",
                     "sentiment": "bullish",

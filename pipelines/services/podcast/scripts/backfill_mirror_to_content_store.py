@@ -162,14 +162,14 @@ def _build_episode(row: dict) -> Episode:
         sentences_markdown_url=doc.get("sentences_markdown_url"),
         marp_markdown_url=doc.get("marp_markdown_url"),
         ticker_marp_markdown_url=doc.get("ticker_marp_markdown_url"),
-        ticker_recommendations_url=doc.get("ticker_recommendations_url"),
+        ticker_insights_url=doc.get("ticker_insights_url") or doc.get("ticker_recommendations_url"),
         summary_content=doc.get("summary_content"),
         key_insights=doc.get("key_insights") or [],
         events_markdown_content=doc.get("events_markdown_content"),
         sentences_markdown_content=doc.get("sentences_markdown_content"),
         marp_markdown_content=doc.get("marp_markdown_content"),
         ticker_marp_markdown_content=doc.get("ticker_marp_markdown_content"),
-        ticker_recommendations_content=doc.get("ticker_recommendations_content"),
+        ticker_insights_content=doc.get("ticker_insights_content") or doc.get("ticker_recommendations_content"),
         related_tickers=related_tickers,
         tags=tags,
         num_likes=int(doc.get("num_likes") or 0),
@@ -334,9 +334,9 @@ def main() -> int:
         print("Step 4: ticker_insights (downloading from GCS)")
         insight_targets = [
             r for r in mirror_rows
-            if (r.get("doc") or {}).get("ticker_recommendations_url")
+            if (r.get("doc") or {}).get("ticker_insights_url") or (r.get("doc") or {}).get("ticker_recommendations_url")
         ]
-        print(f"  {len(insight_targets)} episodes have ticker_recommendations_url")
+        print(f"  {len(insight_targets)} episodes have ticker_insights_url")
 
         written_insights = 0
         skipped_insights: list[str] = []
@@ -344,7 +344,7 @@ def main() -> int:
         for i, row in enumerate(insight_targets, 1):
             ep_id: str = row["episode_id"]
             doc: dict = row.get("doc") or {}
-            gcs_url: str = doc["ticker_recommendations_url"]
+            gcs_url: str = doc.get("ticker_insights_url") or doc["ticker_recommendations_url"]
             podcaster: str = row["podcast_name"] or ""
             # Use spotify_release_date as the canonical launch time; fall back to created_time
             launch_time = doc.get("spotify_release_date") or row.get("created_time")

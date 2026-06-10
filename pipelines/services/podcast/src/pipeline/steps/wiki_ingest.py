@@ -59,7 +59,7 @@ def ingest_into_wiki(
             tags=tags,
             summary_text=summary.get("summary_text", ""),
             events_markdown=summary.get("events_markdown"),
-            ticker_recommendations=summary.get("ticker_insights"),
+            ticker_insights=summary.get("ticker_insights"),
             source_urls=source_urls or None,
         )
 

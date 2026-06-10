@@ -47,8 +47,8 @@ It uses a proper `ci-gate` aggregation job (job 4) that fails if `test` or `lint
 `/api/recommendations/by-podcaster/`, and `/api/recommendations/buzz` endpoints still exist
 in `backend/src/routers/recommendations.py` and return data (logged as deprecated). Active
 frontend code in `StockDashboard.tsx` already uses the new `/api/ticker-insights/` endpoints
-(`getInsightsByTicker`). The `recommendationService.ts` wraps the deprecated paths as a
-migration shim; these can be removed once callers are migrated.
+(`getInsightsByTicker`). The frontend compatibility wrapper was removed; only the backend
+deprecated route aliases remain for one release.
 
 ### BUG-7: Stock key statistics fabricated
 **Status: RESOLVED** — `StockDashboard.tsx` now derives key stats (open, high, low, volume)
@@ -85,9 +85,9 @@ failures. Until these are fixed, the CI gate gives false confidence.
 
 ### Deprecated recommendation paths
 `/api/recommendations/*` routes are soft-deprecated as of 2026-05-14 per spec § 4.4.
-Frontend `recommendationService.ts` still wraps them. Migration to `/api/ticker-insights/*`
-is partially done (StockDashboard uses the new path). Remove the old service methods and
-the backend routes once all callers are migrated.
+Frontend code uses `/api/ticker-insights/*` through `getInsightsByTicker`,
+`getInsightsByPodcaster`, and `getTrendingTickers`. Remove the backend deprecated aliases
+once the one-release compatibility window closes.
 
 ### Industry page
 `/industry` is not in the primary nav (`3e95c67` removed it). The page is live but

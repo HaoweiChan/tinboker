@@ -27,7 +27,7 @@ async def test_to_episode_hydrates_only_requested_content_fields():
         "summary_url": "gs://bucket/summary.md",
         "transcript_url": "gs://bucket/transcript.json",
         "events_markdown_url": "gs://bucket/events.md",
-        "ticker_recommendations_public_url": "https://example.test/recs.json",
+        "ticker_insights_public_url": "https://example.test/insights.json",
     }
 
     episode = await transformer.to_episode(
@@ -38,11 +38,28 @@ async def test_to_episode_hydrates_only_requested_content_fields():
     assert episode.summary_content == "content:gs://bucket/summary.md"
     assert episode.events_markdown_content == "content:gs://bucket/events.md"
     assert episode.transcript == ""
-    assert episode.ticker_recommendations_content is None
+    assert episode.ticker_insights_content is None
     assert gcs.calls == [
         ("gcs", "gs://bucket/summary.md"),
         ("gcs", "gs://bucket/events.md"),
     ]
+
+
+@pytest.mark.asyncio
+async def test_to_episode_maps_legacy_ticker_insight_fields():
+    transformer = EpisodeTransformer(gcs_service=FakeGCSContentService())
+    raw = {
+        "id": "ep1",
+        "podcast_name": "財經一路發",
+        "created_time": 1,
+        "ticker_recommendations_public_url": "https://example.test/legacy.json",
+        "ticker_recommendations_content": '{"ticker_insights":[]}',
+    }
+
+    episode = await transformer.to_episode(raw, enrich_content=False)
+
+    assert episode.ticker_insights_public_url == "https://example.test/legacy.json"
+    assert episode.ticker_insights_content == '{"ticker_insights":[]}'
 
 
 def test_is_content_incomplete_respects_requested_content_fields():

@@ -1,11 +1,10 @@
 """Per-(episode, ticker) sentiment for episode-card chips.
 
-Sentiment lives inside each episode's ticker_recommendations JSON
-(`ticker_recommendations[].sentiment` = BULLISH/BEARISH/NEUTRAL). That payload is
-large (~64KB) and only reachable via a GCS/HTTP URL — it is NOT in the episode list
-response. We extract a tiny `{TICKER: SENTIMENT}` map per episode and cache it
-long-term in Redis (recommendations are immutable once published), so the cards can
-show a sentiment chip without ever fetching the heavy file on the request path.
+Sentiment lives inside each episode's ticker_insights JSON. That payload is
+large (~64KB) and only reachable via a GCS/HTTP URL — it is NOT in the episode
+list response. We extract a tiny `{TICKER: SENTIMENT}` map per episode and
+cache it long-term in Redis, so the cards can show a sentiment chip without
+fetching the heavy file on the request path.
 """
 
 import asyncio
@@ -18,7 +17,7 @@ from src.services.gcs_content import GCSContentService
 
 logger = logging.getLogger(__name__)
 
-_SENTIMENT_TTL = 7 * 24 * 3600  # 7 days — recommendations don't change once published
+_SENTIMENT_TTL = 7 * 24 * 3600  # 7 days — insights don't change once published
 _EMPTY_TTL = 600  # 10 min — an empty result may be a transient miss (GCS hiccup, data
                   # not yet written); cache it briefly so it self-heals instead of
                   # sticking empty for a week.
@@ -41,13 +40,13 @@ def _normalize(raw) -> Optional[str]:
 
 
 def _parse(content: str) -> dict:
-    """Extract {TICKER: SENTIMENT} from a ticker_recommendations JSON string."""
+    """Extract {TICKER: SENTIMENT} from a ticker_insights JSON string."""
     try:
         data = json.loads(content)
     except Exception:
         return {}
     out: dict = {}
-    for rec in (data.get("ticker_recommendations") or []):
+    for rec in (data.get("ticker_insights") or data.get("ticker_recommendations") or []):
         ticker = str(rec.get("ticker", "")).strip().upper()
         sentiment = _normalize(rec.get("sentiment"))
         if ticker and sentiment:
@@ -63,7 +62,7 @@ class EpisodeSentimentService:
         """Return {episode_id: {TICKER: SENTIMENT}} for the given ids.
 
         Cached maps are served from Redis; misses are resolved by fetching and
-        parsing the episode's ticker_recommendations file once, then cached.
+            parsing the episode's ticker_insights file once, then cached.
         """
         ids = list(dict.fromkeys(e.strip() for e in episode_ids if e and e.strip()))[:_MAX_IDS]
         if not ids:
@@ -107,7 +106,7 @@ class EpisodeSentimentService:
         return result
 
     async def _resolve_urls(self, ids: list[str]) -> dict:
-        """Map episode_id -> ticker_recommendations_public_url via the recent window."""
+        """Map episode_id -> ticker_insights_public_url via the recent window."""
         from src.services.podcast import PodcastService
 
         try:
@@ -117,7 +116,7 @@ class EpisodeSentimentService:
             return {}
         wanted = set(ids)
         return {
-            ep.id: ep.ticker_recommendations_public_url
+            ep.id: ep.ticker_insights_public_url
             for ep in episodes
-            if ep.id in wanted and ep.ticker_recommendations_public_url
+            if ep.id in wanted and ep.ticker_insights_public_url
         }

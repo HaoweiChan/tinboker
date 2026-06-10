@@ -231,8 +231,8 @@ class EpisodeProcessor:
                         'pptx_public_url': existing.get('pptx_public_url'),
                         'marp_markdown_url': existing.get('marp_markdown_url'),
                         'marp_markdown_public_url': existing.get('marp_markdown_public_url'),
-                        'ticker_recommendations_url': existing.get('ticker_recommendations_url'),
-                        'ticker_recommendations_public_url': existing.get('ticker_recommendations_public_url'),
+                        'ticker_insights_url': existing.get('ticker_insights_url') or existing.get('ticker_recommendations_url'),
+                        'ticker_insights_public_url': existing.get('ticker_insights_public_url') or existing.get('ticker_recommendations_public_url'),
                         'ticker_marp_markdown_url': existing.get('ticker_marp_markdown_url'),
                         'ticker_marp_markdown_public_url': existing.get('ticker_marp_markdown_public_url'),
                     }

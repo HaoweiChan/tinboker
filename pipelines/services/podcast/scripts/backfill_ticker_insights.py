@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Backfill ``ticker_insights/{episode_id}/tickers/{ticker}`` from GCS JSON.
 
-For each Firestore episode with a ``ticker_recommendations_url`` (GCS gs://),
+For each Firestore episode with a ``ticker_insights_url`` (GCS gs://),
 this script:
   1. Downloads the cached ticker JSON the pipeline already wrote at processing
      time.
@@ -59,11 +59,13 @@ def main() -> int:
     print("Streaming episodes from Firestore...")
     episodes = fb.get_all_episodes(order_by="created_time", descending=True)
     targets = [
-        ep for ep in episodes if ep.get("ticker_recommendations_url")
+        ep
+        for ep in episodes
+        if ep.get("ticker_insights_url") or ep.get("ticker_recommendations_url")
     ]
     if args.limit:
         targets = targets[: args.limit]
-    print(f"  {len(targets)} episodes have ticker_recommendations_url")
+    print(f"  {len(targets)} episodes have ticker_insights_url")
 
     total_written = 0
     skipped: list[str] = []
@@ -73,7 +75,7 @@ def main() -> int:
             skipped.append("<no-id>")
             continue
         try:
-            raw_payload = _read_gcs_json(ep["ticker_recommendations_url"])
+            raw_payload = _read_gcs_json(ep.get("ticker_insights_url") or ep["ticker_recommendations_url"])
         except Exception as e:
             print(f"  [{i}/{len(targets)}] {ep_id}: gcs read failed ({e})")
             skipped.append(ep_id)
