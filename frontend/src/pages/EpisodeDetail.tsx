@@ -6,7 +6,7 @@ import { PodcastAvatar } from '@/components/common/PodcastAvatar';
 import { PageContent } from '@/components/layout/PageContent';
 import { TickerRow } from '@/components/redesign';
 import { cn } from '@/lib/utils';
-import { getEpisodeById, getEpisodeByIdOnly, getPodcastByName, type Episode as ApiEpisode } from '@/services';
+import { getEpisodeById, getEpisodeByIdOnly, getEpisodeAudioUrl, getPodcastByName, type Episode as ApiEpisode } from '@/services';
 import { fetchWithFallback } from '@/services/api/migration';
 import { parseTimestampedSections, type TimestampedSection } from '@/utils/parseTimestampedSections';
 import { usePlayerStore } from '@/store/usePlayerStore';
@@ -214,6 +214,9 @@ export const EpisodeDetail: React.FC = () => {
       showName: name,
       coverUrl: episode.spotify_images?.[0] || undefined,
       spotifyUri,
+      mp3Url: episode.mp3_url || episode.mp3_public_url
+        ? getEpisodeAudioUrl(episode.podcast_name, episode.id)
+        : undefined,
       timestampedSections: chapters.length ? chapters : clips,
     });
   };

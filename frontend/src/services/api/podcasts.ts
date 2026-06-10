@@ -1,4 +1,9 @@
 import { apiClient } from './client';
+
+/** Streaming URL for an episode's MP3 (backend redirects to a signed GCS URL). */
+export function getEpisodeAudioUrl(podcastName: string, episodeId: string): string {
+  return `${apiClient.defaults.baseURL || ''}/api/podcast/${encodeURIComponent(podcastName)}/episodes/${encodeURIComponent(episodeId)}/audio`;
+}
 import type { TickerRecommendation, TickerBuzz, TickerTrending, TickerInsight } from '../types';
 
 
@@ -30,6 +35,8 @@ export interface Episode {
   number_click?: number;
   num_likes?: number;
   raw_mp3?: string | null;
+  mp3_url?: string | null;
+  mp3_public_url?: string | null;
   spotify_url?: string | null;
   spotify_id?: string | null;
   spotify_embed_url?: string | null;

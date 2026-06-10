@@ -4,6 +4,7 @@ import re
 import json
 import asyncio
 import logging
+from datetime import timedelta
 from typing import Optional
 from pathlib import Path
 from google.cloud import storage
@@ -166,6 +167,38 @@ class GCSContentService:
         if url.startswith("http://") or url.startswith("https://"):
             return await self.fetch_http_content(url, timeout)
         return ""
+
+    async def generate_signed_url(self, gs_url: str, expiration_hours: int = 12) -> Optional[str]:
+        """Generate a V4 signed GET URL for a private GCS blob.
+
+        Requires service-account credentials with a private key (the ADC fallback
+        client cannot sign); returns None when signing is unavailable or the blob
+        does not exist.
+        """
+        parsed = self.parse_gs_url(gs_url)
+        if not parsed:
+            return None
+        bucket_name, blob_path = parsed
+        client = self.get_client()
+        if not client:
+            return None
+
+        def _sign_sync() -> Optional[str]:
+            try:
+                blob = client.bucket(bucket_name).blob(blob_path)
+                if not blob.exists():
+                    return None
+                return blob.generate_signed_url(
+                    version="v4",
+                    expiration=timedelta(hours=expiration_hours),
+                    method="GET",
+                )
+            except Exception as e:
+                logger.warning(f"Error generating signed URL for {gs_url}: {e}")
+                return None
+
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, _sign_sync)
 
     async def upload_content(self, bucket_name: str, blob_path: str, content: str, content_type: str = 'text/markdown') -> None:
         """Upload string content to a GCS blob"""

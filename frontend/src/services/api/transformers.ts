@@ -17,6 +17,7 @@ import type {
 
 import type { Episode as MockEpisode } from '../../data/mockData';
 import type { Episode as ApiEpisode } from './index';
+import { getEpisodeAudioUrl } from './podcasts';
 
 // Backend types (from OpenAPI schema)
 interface BackendNode {
@@ -343,6 +344,9 @@ export function transformApiEpisodeToMock(apiEpisode: ApiEpisode): MockEpisode |
     summary,
     imageUrl,
     spotifyUri,
+    mp3Url: apiEpisode.mp3_url || apiEpisode.mp3_public_url
+      ? getEpisodeAudioUrl(apiEpisode.podcast_name, apiEpisode.id)
+      : undefined,
     keyInsights: apiEpisode.key_insights || [],
   };
 }
