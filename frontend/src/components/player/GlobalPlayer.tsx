@@ -298,32 +298,6 @@ export const GlobalPlayer: React.FC = () => {
                         </div>
                     </div>
 
-                    {/* Timestamp chip strip — quick-seek buttons for each chapter */}
-                    {sections.length > 0 && !isExpanded && (
-                        <div className="px-4 pb-2 -mt-0.5 overflow-x-auto no-scrollbar">
-                            <div className="flex gap-1.5">
-                                {sections.map((section, index) => {
-                                    const isActive = currentSection?.timestampSeconds === section.timestampSeconds;
-                                    return (
-                                        <button
-                                            key={`chip-${index}`}
-                                            onClick={() => handleSectionClick(section.timestampSeconds)}
-                                            className={cn(
-                                                "flex-shrink-0 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] transition-colors cursor-pointer",
-                                                isActive
-                                                    ? "bg-accent-info text-white font-semibold"
-                                                    : "bg-muted text-muted-foreground hover:bg-accent-info-soft hover:text-accent-info font-medium"
-                                            )}
-                                        >
-                                            <span className="font-mono tabular-nums">{section.formattedTime}</span>
-                                            <span className="max-w-[100px] truncate hidden sm:inline">{section.title}</span>
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                        </div>
-                    )}
-
                     {/* Hidden playback engine */}
                     <div className="h-0 overflow-hidden" aria-hidden="true">
                         {player.currentEpisodeData.spotifyUri ? (
