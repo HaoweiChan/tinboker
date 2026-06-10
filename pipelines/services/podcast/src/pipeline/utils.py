@@ -154,13 +154,12 @@ def extract_tags_and_tickers(summary_result: Dict) -> Dict[str, List[str]]:
     
     if 'related_tickers' in summary_result and isinstance(summary_result['related_tickers'], list):
         structured_tickers = [ticker.upper() if isinstance(ticker, str) else str(ticker).upper() for ticker in summary_result['related_tickers']]
-        # Only merge tickers that are actually present in the markdown text
-        # This ensures validation will pass - all tickers in related_tickers must be in summary
-        # Note: tickers from extract_tickers_from_markdown() are already uppercase, so we can use them directly
-        tickers_set = set(t.upper() for t in tickers)  # Convert to set for O(1) lookup
-        valid_structured_tickers = [t for t in structured_tickers if t in tickers_set]
-        # Merge: combine markdown tickers with valid structured tickers (only those in markdown)
-        tickers = sorted(list(set(tickers + valid_structured_tickers)))
+        if tickers:
+            tickers_set = set(t.upper() for t in tickers)
+            valid_structured_tickers = [t for t in structured_tickers if t in tickers_set]
+            tickers = sorted(list(set(tickers + valid_structured_tickers)))
+        elif structured_tickers:
+            tickers = sorted(list(set(structured_tickers)))
     
     return {
         'tags': tags,
