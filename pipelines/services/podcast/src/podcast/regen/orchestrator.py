@@ -344,7 +344,13 @@ def _assemble(draft: dict[str, Any]) -> dict[str, Any]:
     if STEP_WRITER in completed:
         payload["summary_content"] = state.get("markdown_report", "")
         payload["tags"] = state.get("tags", [])
-        payload["related_tickers"] = state.get("related_tickers", [])
+        related_tickers = state.get("related_tickers", [])
+        if STEP_TICKER in completed and not related_tickers:
+            from src.podcast.exporters.ticker_insights import iter_insight_tickers
+            ti = state.get("ticker_insights")
+            if ti:
+                related_tickers = sorted(set(iter_insight_tickers(ti)))
+        payload["related_tickers"] = related_tickers
     if STEP_KEY_INSIGHTS in completed:
         payload["key_insights"] = state.get("key_insights", [])
     if STEP_EXTRACTOR in completed:
