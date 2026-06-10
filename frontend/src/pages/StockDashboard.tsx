@@ -16,7 +16,7 @@ import type { CompanyDetail, RealTimePriceUpdate, TimeframeOption } from '@/serv
 import { priceWebSocketClient } from '@/services/websocket/priceWebSocket';
 import TradingViewChart from '@/components/charts/TradingViewChart';
 import { ChartControls } from '@/components/charts/ChartControls';
-import { getInsightsByTicker } from '@/services/api/podcasts';
+import { getInsightsByTicker, getSortedPodcasts, type Podcast } from '@/services/api/podcasts';
 import { transformApiEpisodeToMock } from '@/services/api/transformers';
 import type { TickerInsight } from '@/services/types';
 import { useStockPriceMap } from '@/hooks/useStockPriceMap';
@@ -248,7 +248,15 @@ export const StockDashboard: React.FC = () => {
   const episodeIds = useMemo(() => episodes.map((e) => e.id), [episodes]);
   const sentimentMap = useEpisodeSentimentMap(episodeIds);
   const [insights, setInsights] = useState<TickerInsight[]>([]);
+  const [podcasts, setPodcasts] = useState<Podcast[]>([]);
   const [episodesLoading, setEpisodesLoading] = useState(true);
+  const podcastImageMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const p of podcasts) {
+      if (p.name && p.image_url) map.set(p.name, p.image_url);
+    }
+    return map;
+  }, [podcasts]);
 
   useEffect(() => {
     if (!symbol) return;
@@ -264,6 +272,10 @@ export const StockDashboard: React.FC = () => {
       cancelled = true;
     };
   }, [symbol]);
+
+  useEffect(() => {
+    getSortedPodcasts({ limit: 50 }).then(setPodcasts).catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (!symbol) return;
@@ -372,7 +384,7 @@ export const StockDashboard: React.FC = () => {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {episodes.map((ep) => (
-              <EpisodeCardV2 key={ep.id} {...apiEpisodeToCardV2(ep, priceMap, undefined, undefined, sentimentMap.get(ep.id), priceSinceMap)} />
+              <EpisodeCardV2 key={ep.id} {...apiEpisodeToCardV2(ep, priceMap, podcastImageMap, undefined, sentimentMap.get(ep.id), priceSinceMap)} />
             ))}
           </div>
         )}
