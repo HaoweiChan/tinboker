@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useSearchParams, Link, useNavigate } from 'react-router-dom';
-import { ChevronLeft, Play, ExternalLink } from 'lucide-react';
+import { ChevronLeft, Play, ExternalLink, Bookmark } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
 import { PodcastAvatar } from '@/components/common/PodcastAvatar';
 import { PageContent } from '@/components/layout/PageContent';
 import { TickerRow } from '@/components/redesign';
+import { cn } from '@/lib/utils';
 import { getEpisodeById, getEpisodeByIdOnly, getPodcastByName, type Episode as ApiEpisode } from '@/services';
 import { fetchWithFallback } from '@/services/api/migration';
 import { parseTimestampedSections, type TimestampedSection } from '@/utils/parseTimestampedSections';
 import { usePlayerStore } from '@/store/usePlayerStore';
+import { useAppStore, useEpisodeBookmarks } from '@/store/useAppStore';
 import { CommentSection } from '@/components/episode/CommentSection';
 import { useStockPriceMap } from '@/hooks/useStockPriceMap';
 import { useStockPriceSinceMap, isRecentEpisode } from '@/hooks/useStockPriceSinceMap';
@@ -104,6 +106,8 @@ export const EpisodeDetail: React.FC = () => {
   const navigate = useNavigate();
   const podcastName = searchParams.get('podcast') || '';
   const { playEpisode, requestSeek } = usePlayerStore();
+  const { toggleEpisodeBookmark } = useAppStore();
+  const episodeBookmarks = useEpisodeBookmarks();
 
   const [episode, setEpisode] = useState<ApiEpisode | null>(null);
   const [podcastImageUrl, setPodcastImageUrl] = useState<string | null>(null);
@@ -199,6 +203,9 @@ export const EpisodeDetail: React.FC = () => {
     return data;
   }, [episode, chapters, clips, title, name, canonicalUrl, seoImage]);
 
+  const bookmarkKey = episode ? `${episode.podcast_name}_${episode.id}` : '';
+  const isBookmarked = episodeBookmarks.includes(bookmarkKey);
+
   const onPlay = () => {
     if (!episode) return;
     playEpisode({
@@ -209,6 +216,11 @@ export const EpisodeDetail: React.FC = () => {
       spotifyUri,
       timestampedSections: chapters.length ? chapters : clips,
     });
+  };
+
+  const onBookmark = () => {
+    if (!episode) return;
+    toggleEpisodeBookmark(episode.podcast_name, episode.id);
   };
 
   return (
@@ -261,6 +273,17 @@ export const EpisodeDetail: React.FC = () => {
                 <div className="flex items-center gap-2 shrink-0">
                   <button type="button" onClick={onPlay} className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-foreground text-background text-[13px] font-medium hover:opacity-90 transition-opacity">
                     <Play size={14} className="fill-current" /> 播放本集
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onBookmark}
+                    className={cn(
+                      'inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full text-[13px] font-medium transition-colors',
+                      isBookmarked ? 'bg-accent-info-soft text-accent-info' : 'bg-card border border-border hover:bg-muted',
+                    )}
+                  >
+                    <Bookmark size={13} className={isBookmarked ? 'fill-current' : ''} />
+                    {isBookmarked ? '已收藏' : '收藏'}
                   </button>
                   {episode.spotify_url && (
                     <a href={episode.spotify_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-card border border-border text-[13px] font-medium hover:bg-muted transition-colors">

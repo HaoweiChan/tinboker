@@ -85,6 +85,7 @@ export function useAuthInit() {
             watchlist: user.watchlist || [],
             subscriptions: user.podcast_subscriptions || [],
             tagSubscriptions: user.tag_subscriptions || [],
+            episodeBookmarks: user.episode_bookmarks || [],
             alerts: user.alerts || [],
           });
 
