@@ -163,8 +163,11 @@ jobs:
             docker exec caddy caddy reload --config /etc/caddy/Caddyfile || true
             docker image prune -f
 
-            sleep 15
-            curl -f http://localhost:${{ steps.config.outputs.port }}/health || exit 1
+            for i in $(seq 1 12); do
+              curl -sf http://localhost:${{ steps.config.outputs.port }}/health && break
+              [ $i -eq 12 ] && { echo "Health check failed after 60s"; exit 1; }
+              sleep 5
+            done
 
             if [ "${{ steps.config.outputs.include_netdata }}" == "true" ]; then
               curl -f http://localhost:${{ steps.config.outputs.netdata_port }}/api/v1/info || echo "Netdata health check skipped"

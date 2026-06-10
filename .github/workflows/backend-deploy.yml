@@ -224,14 +224,16 @@ jobs:
 
             ${{ steps.env.outputs.image_var }}=${{ steps.env.outputs.image_tag }} docker compose -f docker-compose.multi.yml pull ${{ steps.env.outputs.service }}
 
-            docker compose -f docker-compose.multi.yml up -d postgres redis netdata
-            sleep 5
+            docker compose -f docker-compose.multi.yml up -d --no-recreate postgres redis netdata
 
             ${{ steps.env.outputs.image_var }}=${{ steps.env.outputs.image_tag }} docker compose -f docker-compose.multi.yml up -d --no-deps ${{ steps.env.outputs.service }}
 
             docker image prune -f
-            sleep 15
-            curl -f http://localhost:${{ steps.env.outputs.port }}/health || exit 1
+            for i in $(seq 1 12); do
+              curl -sf http://localhost:${{ steps.env.outputs.port }}/health && break
+              [ $i -eq 12 ] && { echo "Health check failed after 60s"; exit 1; }
+              sleep 5
+            done
 
       # Drop the Cloudflare edge cache only AFTER the new container is healthy, so the
       # edge re-fetches fresh /api/* instead of serving pre-deploy copies until TTL
