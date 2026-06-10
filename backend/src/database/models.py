@@ -172,11 +172,10 @@ class StockDailyClose(Base):
 
 
 class TagRegistry(Base):
-    """Admin-managed tag registry with quality tiers.
+    """Admin-managed tag registry.
 
-    Controls which tags appear in the topics cloud (trending), which are
-    taggable but hidden from trending (valid), and which are suppressed
-    entirely from display.
+    tier='trending' → shown in topics cloud; tier='hidden' → not shown.
+    Auto-discovered tags from Firestore default to 'hidden'.
     """
     __tablename__ = "tag_registry"
 

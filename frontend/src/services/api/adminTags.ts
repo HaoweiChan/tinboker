@@ -16,6 +16,7 @@ export interface AdminTagEntry {
   slug: string;
   display_zh: string;
   tier: string;
+  episode_count?: number | null;
   updated_by?: string | null;
 }
 
@@ -33,6 +34,11 @@ export interface AdminTagCreate {
 export interface AdminTagUpdate {
   display_zh?: string;
   tier?: string;
+}
+
+export interface DiscoverResponse {
+  discovered: number;
+  message: string;
 }
 
 export async function listAdminTags(params?: {
@@ -66,4 +72,13 @@ export async function updateAdminTag(id: number, data: AdminTagUpdate): Promise<
 
 export async function deleteAdminTag(id: number): Promise<void> {
   await apiClient.delete(`/api/admin/tags/${id}`, adminAuthConfig());
+}
+
+export async function discoverTags(minEpisodes: number = 3): Promise<DiscoverResponse> {
+  const response = await apiClient.post<DiscoverResponse>(
+    '/api/admin/tags/discover',
+    null,
+    { params: { min_episodes: minEpisodes }, ...adminAuthConfig() },
+  );
+  return response.data;
 }
