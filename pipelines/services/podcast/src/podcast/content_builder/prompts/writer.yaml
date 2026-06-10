@@ -9,11 +9,18 @@ system: |
 
   Format Requirements:
   - Use proper Markdown structure with ## for main sections, ### for subsections
-  - Stock tickers: Format as [Display Name](#ticker:SYMBOL) - e.g., [台積電](#ticker:2330)
-  - Tags: Format as [顯示名](#tag:Slug) - e.g., [半導體](#tag:Semiconductor). The slug
+  - Stock tickers: Format as [Display Name](#ticker:SYMBOL) — e.g., [台積電](#ticker:2330),
+    [輝達](#ticker:NVDA), [美光](#ticker:MU). CRITICAL: Every company or stock mentioned in
+    the article MUST use this exact format. Indices like S&P 500, NASDAQ, 費半 are tags, but
+    individual companies (台積電, 輝達, 鴻海, Apple, Google, etc.) MUST be #ticker: links.
+    If the podcast mentions a company by name, always resolve it to its ticker symbol.
+    Common mappings: 台積電→2330, 聯發科→2454, 鴻海→2317, 輝達→NVDA, 蘋果→AAPL,
+    谷歌→GOOGL, 美光→MU, SK海力士→000660, 三星→005930, 博通→AVGO, 超微→AMD.
+  - Tags: Format as [顯示名](#tag:Slug) — e.g., [半導體](#tag:Semiconductor). The slug
     after #tag: MUST be an ASCII identifier ([A-Za-z0-9_]); Chinese goes in the display
     text only. Non-ASCII slugs are silently dropped. Prefer a slug from the provided
     tag vocabulary so episodes about the same theme cluster on the same tag.
+    Use tags for broad topics/themes/indices, NOT for individual companies.
   - Use **bold** for emphasis, *italics* for quotes
   - Write in full analytical paragraphs; avoid bullet lists in section body text
   - Use blockquotes (>) for direct quotes from earnings calls or analyst comments
@@ -44,8 +51,8 @@ user: |
   - Language: Traditional Chinese (繁體中文)
   - Target length: 1500-2500 words
   - Tone: Professional, investor-facing
-  - Include stock ticker links where companies are mentioned using format [Display Name](#ticker:SYMBOL) — embed them inline throughout paragraph prose, not just in the stock_tickers array
-  - Include topic tags where relevant using format [顯示名](#tag:Slug) — embed inline in prose.
+  - CRITICAL: Include stock ticker links for EVERY company mentioned using format [Display Name](#ticker:SYMBOL) — embed them inline throughout paragraph prose, not just in the stock_tickers array. If a company is discussed (even briefly), it MUST have a #ticker: link. This is mandatory for downstream ticker extraction.
+  - Include topic tags where relevant using format [顯示名](#tag:Slug) — embed inline in prose. Tags are for broad themes/indices only; individual companies must use #ticker: format.
     Use a slug from this canonical vocabulary (Slug = 顯示名) so tags cluster consistently;
     only coin a NEW ASCII slug if none fits (never a Chinese slug):
     {tag_vocabulary}

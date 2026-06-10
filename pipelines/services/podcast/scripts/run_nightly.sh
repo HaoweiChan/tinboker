@@ -22,14 +22,15 @@ if [ -z "${GOOGLE_APPLICATION_CREDENTIALS:-}" ] && [ -f "$PODCAST_DIR/gcp-servic
   export GOOGLE_APPLICATION_CREDENTIALS="$PODCAST_DIR/gcp-service-account.json"
 fi
 
-# content_builder LLM model overrides — cost optimisation (code defaults are gemini-2.5-flash).
+# content_builder LLM model overrides — code default is openrouter:xiaomi/mimo-v2.5.
 # extractor + ticker_extractor: structured extraction at temp 0.1 → Flash-Lite is plenty (~6x cheaper output).
-# writer + marp_writer (quality-critical zh prose) stay on gemini-2.5-flash unless overridden here/in the env.
-# To trial OpenRouter for the writer (needs the OPENROUTER_API_KEY secret):
-#   export WRITER_MODEL=openrouter:deepseek/deepseek-chat
+# writer + marp_writer: quality-critical zh prose with mandatory #ticker: link embedding → Gemini 2.5 Flash.
 : "${EXTRACTOR_MODEL:=gemini-2.5-flash-lite}"
 : "${TICKER_EXTRACTOR_MODEL:=gemini-2.5-flash-lite}"
-export EXTRACTOR_MODEL TICKER_EXTRACTOR_MODEL
+: "${WRITER_MODEL:=gemini-2.5-flash}"
+: "${MARP_WRITER_MODEL:=gemini-2.5-flash}"
+: "${KEY_INSIGHTS_EXTRACTOR_MODEL:=gemini-2.5-flash}"
+export EXTRACTOR_MODEL TICKER_EXTRACTOR_MODEL WRITER_MODEL MARP_WRITER_MODEL KEY_INSIGHTS_EXTRACTOR_MODEL
 
 # Pull the followed-shows list from the platform admin (config plane).
 # Override-friendly; unset it to fall back to the local podcasts_*.json.
