@@ -36,6 +36,7 @@ EPISODE_DETAIL_CONTENT_FIELDS = frozenset({
     "events_markdown_content",
     "sentences_markdown_content",
     "modified_summary_content",
+    "marp_markdown_content",
 })
 
 _CONTENT_TO_URL = {

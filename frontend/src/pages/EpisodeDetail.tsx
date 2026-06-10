@@ -19,6 +19,7 @@ import { useEpisodeSentimentMap } from '@/hooks/useEpisodeSentimentMap';
 import { EpisodeInsightCard, type EpisodeInsight } from '@/components/episode/EpisodeInsightCard';
 import { SummaryMarkdown } from '@/components/episode/SummaryMarkdown';
 import { EpisodeDebugPanel } from '@/components/episode/EpisodeDebugPanel';
+import { SlideViewer } from '@/components/common/SlideViewer';
 import type { Sentiment } from '@/lib/sentiment';
 
 const IS_DEV = import.meta.env.DEV || (import.meta.env.VITE_STAGE as string) === 'DEV';
@@ -335,6 +336,22 @@ export const EpisodeDetail: React.FC = () => {
             </div>
 
             {episodeInsight && <EpisodeInsightCard insight={episodeInsight} />}
+
+            {IS_DEV && episode.marp_markdown_content && (
+              <section className="bg-card border border-border rounded-md p-5 sm:p-6 mb-3.5">
+                <h3 className="text-[12px] font-semibold uppercase tracking-[0.08em] text-muted-foreground mb-3.5">投影片</h3>
+                <SlideViewer
+                  content={episode.marp_markdown_content}
+                  onTickerClick={(symbol) => navigate(`/stock/${encodeURIComponent(symbol)}`)}
+                  onTagClick={(tag) => navigate(`/topics/${encodeURIComponent(tag)}`)}
+                  episodeId={episode.id}
+                  episodeTitle={title}
+                  episodeSource={name}
+                  spotifyUri={spotifyUri}
+                  timestampedSections={chapters.length ? chapters : clips.length ? clips : summarySections}
+                />
+              </section>
+            )}
 
             {/* 摘要 — full structured summary (headings, paragraphs, ticker/tag/time markers) */}
             {(episode.modified_summary_content || episode.summary_content) && (
