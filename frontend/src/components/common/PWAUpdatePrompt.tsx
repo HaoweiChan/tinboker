@@ -2,9 +2,14 @@ import { useCallback, useEffect, useState } from 'react'
 import { useRegisterSW } from 'virtual:pwa-register/react'
 import { ArrowUpCircle, X } from 'lucide-react'
 
+const PWA_UPDATE_KEY = 'pwa-update-reload'
+const SUPPRESS_MS = 10_000
+
 function forceReload() {
-  // Use href assignment instead of reload() — iOS standalone PWA respects this better.
-  window.location.href = window.location.href.split('#')[0] + '?_t=' + Date.now()
+  sessionStorage.setItem(PWA_UPDATE_KEY, String(Date.now()))
+  const url = new URL(window.location.href)
+  url.searchParams.set('_t', String(Date.now()))
+  window.location.href = url.toString()
 }
 
 /**
@@ -33,6 +38,21 @@ export function PWAUpdatePrompt() {
   })
 
   const [updating, setUpdating] = useState(false)
+  const [suppressed, setSuppressed] = useState(() => {
+    const ts = sessionStorage.getItem(PWA_UPDATE_KEY)
+    if (ts && Date.now() - Number(ts) < SUPPRESS_MS) return true
+    sessionStorage.removeItem(PWA_UPDATE_KEY)
+    return false
+  })
+
+  useEffect(() => {
+    if (!suppressed) return
+    const id = setTimeout(() => {
+      sessionStorage.removeItem(PWA_UPDATE_KEY)
+      setSuppressed(false)
+    }, SUPPRESS_MS)
+    return () => clearTimeout(id)
+  }, [suppressed])
 
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return
@@ -64,7 +84,7 @@ export function PWAUpdatePrompt() {
     setTimeout(forceReload, 2000)
   }, [updateServiceWorker])
 
-  if (!needRefresh) return null
+  if (!needRefresh || suppressed) return null
 
   return (
     <div
