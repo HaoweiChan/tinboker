@@ -12,3 +12,4 @@ export { StatGroup, type StatItem } from './StatGroup';
 export { TickerRow, type TickerRowData } from './TickerRow';
 export { ListRow } from './ListRow';
 export { EpisodeCardV2, type EpisodeCardV2Props } from './EpisodeCardV2';
+export { ShareMenu, type ShareMenuProps } from './ShareMenu';

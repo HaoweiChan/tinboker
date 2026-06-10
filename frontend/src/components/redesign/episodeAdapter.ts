@@ -47,7 +47,7 @@ export function apiEpisodeToCardV2(
   translationMap?: Map<string, string>,
   sentimentMap?: Map<string, Sentiment>,
   priceSinceMap?: Map<string, number>,
-): EpisodeCardV2Props {
+): Omit<EpisodeCardV2Props, 'isBookmarked' | 'onBookmark'> {
   const released = ep.released_at_ms ?? ep.spotify_release_date ?? ep.created_time;
   const releaseTime = typeof released === 'string' ? Date.parse(released) : (released ?? ep.created_time);
   const isRecent = Number.isFinite(releaseTime) && Date.now() - (releaseTime as number) < ONE_DAY_MS;
@@ -88,5 +88,6 @@ export function apiEpisodeToCardV2(
     tags: ep.tags ?? [],
     isNew: isRecent,
     href: `/episode/${encodeURIComponent(ep.id)}?podcast=${encodeURIComponent(ep.podcast_name)}`,
+    episodeId: ep.id,
   };
 }
