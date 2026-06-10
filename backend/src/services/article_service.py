@@ -126,6 +126,16 @@ class ArticleService:
         self.session.refresh(article)
         return ArticleResponse.model_validate(article)
 
+    def unpublish_article(self, article_id: int) -> Optional[ArticleResponse]:
+        article = self.session.query(Article).filter_by(id=article_id).first()
+        if not article:
+            return None
+        article.status = "draft"
+        article.published_at = None
+        self.session.commit()
+        self.session.refresh(article)
+        return ArticleResponse.model_validate(article)
+
     def delete_article(self, article_id: int) -> bool:
         article = self.session.query(Article).filter_by(id=article_id).first()
         if not article:

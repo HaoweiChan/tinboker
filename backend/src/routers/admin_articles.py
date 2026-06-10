@@ -104,6 +104,21 @@ async def publish_article(
     return article
 
 
+@router.post("/{article_id}/unpublish", response_model=ArticleResponse)
+async def unpublish_article(
+    article_id: int = Path(...),
+    admin: AdminAccess = Depends(get_article_author_access),
+    db: Session = Depends(get_session),
+):
+    """Revert a published article back to draft status."""
+    svc = ArticleService(db)
+    article = svc.unpublish_article(article_id)
+    if not article:
+        raise HTTPException(status_code=404, detail="Article not found")
+    await invalidate_article_cache(slug=article.slug)
+    return article
+
+
 @router.delete("/{article_id}", status_code=204)
 async def delete_article(
     article_id: int = Path(...),

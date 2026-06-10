@@ -63,6 +63,11 @@ export async function adminPublishArticle(token: string, articleId: number): Pro
   return data;
 }
 
+export async function adminUnpublishArticle(token: string, articleId: number): Promise<Article> {
+  const { data } = await apiClient.post<Article>(`/api/admin/articles/${articleId}/unpublish`, {}, authHeaders(token));
+  return data;
+}
+
 export async function adminDeleteArticle(token: string, articleId: number): Promise<void> {
   await apiClient.delete(`/api/admin/articles/${articleId}`, authHeaders(token));
 }

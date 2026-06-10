@@ -12,13 +12,13 @@ import {
   Hash,
   Image,
   Link2,
-  PanelRightClose,
   Pencil,
   Plus,
   Save,
   Send,
   Trash2,
   Type,
+  Undo2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAppStore } from '@/store/useAppStore';
@@ -29,13 +29,13 @@ import {
   adminCreateArticle,
   adminUpdateArticle,
   adminPublishArticle,
+  adminUnpublishArticle,
   adminDeleteArticle,
   type ArticleCreatePayload,
 } from '@/services/articleService';
 import type { Article, ArticleListItem, ArticleStatus } from '@/validation/schemas';
 
 type View = 'list' | 'editor';
-type SidePanel = 'preview' | 'details';
 
 const STATUS_LABELS: Record<ArticleStatus, string> = {
   draft: '草稿',
@@ -146,7 +146,6 @@ export const AdminArticlesPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [editor, setEditor] = useState<EditorState>(EMPTY_EDITOR);
   const [saving, setSaving] = useState(false);
-  const [sidePanel, setSidePanel] = useState<SidePanel>('preview');
 
   const publishedCount = useMemo(
     () => articles.filter((article) => article.status === 'published').length,
@@ -193,7 +192,6 @@ export const AdminArticlesPage: React.FC = () => {
 
   const handleNew = () => {
     setEditor(EMPTY_EDITOR);
-    setSidePanel('preview');
     setView('editor');
   };
 
@@ -201,7 +199,6 @@ export const AdminArticlesPage: React.FC = () => {
     try {
       const article = await adminGetArticle(token, id);
       setEditor(editorFromArticle(article));
-      setSidePanel('preview');
       setView('editor');
     } catch {
       toast.error('載入文章失敗');
@@ -250,6 +247,19 @@ export const AdminArticlesPage: React.FC = () => {
       await loadList();
     } catch {
       toast.error('發布失敗');
+    }
+  };
+
+  const handleUnpublish = async (id: number) => {
+    try {
+      const article = await adminUnpublishArticle(token, id);
+      toast.success('文章已退回草稿');
+      if (view === 'editor' && editor.id === id) {
+        setEditor(editorFromArticle(article));
+      }
+      await loadList();
+    } catch {
+      toast.error('退回草稿失敗');
     }
   };
 
@@ -383,6 +393,15 @@ export const AdminArticlesPage: React.FC = () => {
                             <Send className="h-4 w-4 text-emerald-600" />
                           </button>
                         )}
+                        {article.status === 'published' && (
+                          <button
+                            onClick={() => void handleUnpublish(article.id)}
+                            className="rounded p-1.5 transition-colors hover:bg-amber-100 dark:hover:bg-amber-900/30"
+                            title="退回草稿"
+                          >
+                            <Undo2 className="h-4 w-4 text-amber-600" />
+                          </button>
+                        )}
                         <button
                           onClick={() => void handleDelete(article.id)}
                           className="rounded p-1.5 transition-colors hover:bg-red-100 dark:hover:bg-red-900/30"
@@ -438,6 +457,16 @@ export const AdminArticlesPage: React.FC = () => {
                 複製路徑
               </button>
             )}
+            {editor.id && editor.status === 'published' && (
+              <button
+                onClick={() => void handleUnpublish(editor.id!)}
+                disabled={saving}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-800 transition-colors hover:bg-amber-100 disabled:opacity-50 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-300 dark:hover:bg-amber-900/50"
+              >
+                <Undo2 className="h-4 w-4" />
+                退回草稿
+              </button>
+            )}
             <button
               onClick={() => void handleSave(false)}
               disabled={saving}
@@ -446,19 +475,21 @@ export const AdminArticlesPage: React.FC = () => {
               <Save className="h-4 w-4" />
               儲存草稿
             </button>
-            <button
-              onClick={() => void handleSave(true)}
-              disabled={saving}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-            >
-              <Send className="h-4 w-4" />
-              發布
-            </button>
+            {editor.status !== 'published' && (
+              <button
+                onClick={() => void handleSave(true)}
+                disabled={saving}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+              >
+                <Send className="h-4 w-4" />
+                發布
+              </button>
+            )}
           </div>
         </div>
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_440px]">
+      <div className="flex flex-col gap-5">
         <section className="space-y-4">
           <div className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
             <input
@@ -474,6 +505,60 @@ export const AdminArticlesPage: React.FC = () => {
               onChange={(e) => setField('subtitle', e.target.value)}
               placeholder="副標題"
               className="mt-3 w-full border-0 bg-transparent text-base text-gray-600 outline-none placeholder:text-gray-300 dark:text-gray-300 dark:placeholder:text-gray-600"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">Slug</label>
+              <input
+                type="text"
+                value={editor.slug}
+                onChange={(e) => setField('slug', e.target.value)}
+                placeholder="自動產生"
+                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">標籤</label>
+              <input
+                type="text"
+                value={editor.tags}
+                onChange={(e) => setField('tags', e.target.value)}
+                placeholder="ai-chips, semiconductor"
+                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">提及個股</label>
+              <input
+                type="text"
+                value={editor.tickers}
+                onChange={(e) => setField('tickers', e.target.value)}
+                placeholder="NVDA, 2330"
+                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">封面圖片 URL</label>
+              <input
+                type="text"
+                value={editor.cover_image_url}
+                onChange={(e) => setField('cover_image_url', e.target.value)}
+                placeholder="https://..."
+                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">重點摘要（每行一個）</label>
+            <textarea
+              value={editor.key_points}
+              onChange={(e) => setField('key_points', e.target.value)}
+              placeholder="每行一個重點"
+              rows={3}
+              className="w-full resize-y rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
             />
           </div>
 
@@ -494,8 +579,11 @@ export const AdminArticlesPage: React.FC = () => {
                   );
                 })}
               </div>
-              <div className="text-xs text-gray-500 dark:text-gray-400">
-                {writingStats.chars.toLocaleString('zh-TW')} 字元 · {writingStats.readMinutes} 分鐘
+              <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
+                <span>{writingStats.chars.toLocaleString('zh-TW')} 字元</span>
+                <span>{writingStats.readMinutes} 分鐘</span>
+                <span>{writingStats.tags} 標籤</span>
+                <span>{writingStats.tickers} 個股</span>
               </div>
             </div>
             <textarea
@@ -504,136 +592,46 @@ export const AdminArticlesPage: React.FC = () => {
               onChange={(e) => setField('body_content', e.target.value)}
               placeholder="開始撰寫..."
               rows={28}
-              className="min-h-[680px] w-full resize-y border-0 bg-white px-4 py-4 font-mono text-[15px] leading-7 text-gray-900 outline-none placeholder:text-gray-300 dark:bg-gray-800 dark:text-gray-100 dark:placeholder:text-gray-600"
+              className="min-h-[500px] w-full resize-y border-0 bg-white px-4 py-4 font-mono text-[15px] leading-7 text-gray-900 outline-none placeholder:text-gray-300 dark:bg-gray-800 dark:text-gray-100 dark:placeholder:text-gray-600"
             />
           </div>
         </section>
 
-        <aside className="xl:sticky xl:top-24 xl:self-start">
-          <div className="overflow-hidden rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
-            <div className="flex items-center justify-between border-b border-gray-200 px-3 py-2 dark:border-gray-700">
-              <div className="inline-flex rounded-md bg-gray-100 p-1 dark:bg-gray-900">
-                <button
-                  onClick={() => setSidePanel('preview')}
-                  className={`inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium transition-colors ${sidePanel === 'preview'
-                    ? 'bg-white text-gray-950 shadow-sm dark:bg-gray-700 dark:text-white'
-                    : 'text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-100'
-                    }`}
-                >
-                  <Eye className="h-3.5 w-3.5" />
-                  預覽
-                </button>
-                <button
-                  onClick={() => setSidePanel('details')}
-                  className={`inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium transition-colors ${sidePanel === 'details'
-                    ? 'bg-white text-gray-950 shadow-sm dark:bg-gray-700 dark:text-white'
-                    : 'text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-100'
-                    }`}
-                >
-                  <PanelRightClose className="h-3.5 w-3.5" />
-                  資料
-                </button>
-              </div>
-              <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
-                <CheckCircle2 className="h-3.5 w-3.5" />
-                {writingStats.units.toLocaleString('zh-TW')}
-              </div>
+        <section className="overflow-hidden rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+          <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-gray-700">
+            <div className="flex items-center gap-2">
+              <Eye className="h-4 w-4 text-gray-500" />
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-200">文章預覽</span>
             </div>
-
-            {sidePanel === 'preview' ? (
-              <div className="max-h-[calc(100vh-180px)] overflow-y-auto p-5">
-                {editor.cover_image_url && (
-                  <img
-                    src={editor.cover_image_url}
-                    alt=""
-                    className="mb-4 max-h-[260px] w-full rounded-lg object-cover"
-                  />
-                )}
-                <h1 className="text-[25px] font-bold leading-[1.25] tracking-normal text-gray-950 dark:text-white">
-                  {editor.title || '（無標題）'}
-                </h1>
-                {editor.subtitle && (
-                  <p className="mt-2 text-[15px] leading-relaxed text-gray-500 dark:text-gray-400">
-                    {editor.subtitle}
-                  </p>
-                )}
-                <hr className="my-5 border-gray-200 dark:border-gray-700" />
-                {editor.body_content.trim() ? (
-                  <ArticleBody content={editor.body_content} />
-                ) : (
-                  <p className="py-8 text-center text-sm text-gray-400">尚無內容</p>
-                )}
-              </div>
+            <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              {writingStats.units.toLocaleString('zh-TW')} 字
+            </div>
+          </div>
+          <div className="mx-auto max-w-3xl px-6 py-8">
+            {editor.cover_image_url && (
+              <img
+                src={editor.cover_image_url}
+                alt=""
+                className="mb-6 max-h-[320px] w-full rounded-lg object-cover"
+              />
+            )}
+            <h1 className="text-[28px] font-bold leading-[1.3] tracking-normal text-gray-950 dark:text-white">
+              {editor.title || '（無標題）'}
+            </h1>
+            {editor.subtitle && (
+              <p className="mt-3 text-[16px] leading-relaxed text-gray-500 dark:text-gray-400">
+                {editor.subtitle}
+              </p>
+            )}
+            <hr className="my-6 border-gray-200 dark:border-gray-700" />
+            {editor.body_content.trim() ? (
+              <ArticleBody content={editor.body_content} />
             ) : (
-              <div className="space-y-4 p-4">
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Slug</label>
-                  <input
-                    type="text"
-                    value={editor.slug}
-                    onChange={(e) => setField('slug', e.target.value)}
-                    placeholder="自動產生"
-                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-900"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">封面圖片 URL</label>
-                  <input
-                    type="text"
-                    value={editor.cover_image_url}
-                    onChange={(e) => setField('cover_image_url', e.target.value)}
-                    placeholder="https://..."
-                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-900"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">標籤</label>
-                  <input
-                    type="text"
-                    value={editor.tags}
-                    onChange={(e) => setField('tags', e.target.value)}
-                    placeholder="ai-chips, semiconductor"
-                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-900"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">提及個股</label>
-                  <input
-                    type="text"
-                    value={editor.tickers}
-                    onChange={(e) => setField('tickers', e.target.value)}
-                    placeholder="NVDA, 2330"
-                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-900"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">重點摘要</label>
-                  <textarea
-                    value={editor.key_points}
-                    onChange={(e) => setField('key_points', e.target.value)}
-                    placeholder="每行一個重點"
-                    rows={5}
-                    className="w-full resize-y rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-900"
-                  />
-                </div>
-                <div className="grid grid-cols-3 gap-2 border-t border-gray-200 pt-4 text-center dark:border-gray-700">
-                  <div>
-                    <p className="text-lg font-semibold text-gray-950 dark:text-white">{writingStats.tags}</p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">標籤</p>
-                  </div>
-                  <div>
-                    <p className="text-lg font-semibold text-gray-950 dark:text-white">{writingStats.tickers}</p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">個股</p>
-                  </div>
-                  <div>
-                    <p className="text-lg font-semibold text-gray-950 dark:text-white">{writingStats.keyPoints}</p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">重點</p>
-                  </div>
-                </div>
-              </div>
+              <p className="py-12 text-center text-sm text-gray-400">尚無內容</p>
             )}
           </div>
-        </aside>
+        </section>
       </div>
     </div>
   );
