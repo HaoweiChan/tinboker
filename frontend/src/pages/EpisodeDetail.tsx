@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useSearchParams, Link, useNavigate } from 'react-router-dom';
-import { ChevronLeft, Play, ExternalLink, Bookmark } from 'lucide-react';
+import { ChevronLeft, Play, ExternalLink, Bookmark, Share2, Check } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
 import { PodcastAvatar } from '@/components/common/PodcastAvatar';
 import { PageContent } from '@/components/layout/PageContent';
@@ -225,9 +225,26 @@ export const EpisodeDetail: React.FC = () => {
     });
   };
 
+  const [shareCopied, setShareCopied] = useState(false);
+
   const onBookmark = () => {
     if (!episode) return;
     toggleEpisodeBookmark(episode.podcast_name, episode.id);
+  };
+
+  const onShare = async () => {
+    const url = canonicalUrl || window.location.href;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: `${name} — ${title}`, url });
+        return;
+      } catch { /* user cancelled */ }
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      setShareCopied(true);
+      setTimeout(() => setShareCopied(false), 2000);
+    } catch { /* clipboard unavailable */ }
   };
 
   return (
@@ -291,6 +308,14 @@ export const EpisodeDetail: React.FC = () => {
                   >
                     <Bookmark size={13} className={isBookmarked ? 'fill-current' : ''} />
                     {isBookmarked ? '已收藏' : '收藏'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onShare}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-card border border-border text-[13px] font-medium hover:bg-muted transition-colors"
+                  >
+                    {shareCopied ? <Check size={13} className="text-emerald-500" /> : <Share2 size={13} />}
+                    {shareCopied ? '已複製' : '分享'}
                   </button>
                   {episode.spotify_url && (
                     <a href={episode.spotify_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-card border border-border text-[13px] font-medium hover:bg-muted transition-colors">

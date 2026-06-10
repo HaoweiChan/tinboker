@@ -6,7 +6,7 @@ import { apiEpisodeToCardV2 } from '@/components/redesign/episodeAdapter';
 import { HomeRail } from '@/components/redesign/HomeRail';
 import { getRecentEpisodes, getSortedPodcasts, type Episode as ApiEpisode, type Podcast } from '@/services/api/podcasts';
 import { fetchWithFallback } from '@/services/api/migration';
-import { useSubscriptions } from '@/store/useAppStore';
+import { useSubscriptions, useEpisodeBookmarks, useAppStore } from '@/store/useAppStore';
 import { useStockPriceMap } from '@/hooks/useStockPriceMap';
 import { useStockPriceSinceMap } from '@/hooks/useStockPriceSinceMap';
 import { useTranslationMap } from '@/hooks/useTranslationMap';
@@ -36,6 +36,8 @@ export const HomeFeed: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<Filter>('最新');
   const subscriptions = useSubscriptions();
+  const episodeBookmarks = useEpisodeBookmarks();
+  const { toggleEpisodeBookmark } = useAppStore();
   const episodeTickers = useMemo(() => episodes.flatMap((ep) => ep.related_tickers ?? []), [episodes]);
   const priceMap = useStockPriceMap(episodeTickers);
   const priceSinceMap = useStockPriceSinceMap(episodes);
@@ -127,9 +129,17 @@ export const HomeFeed: React.FC = () => {
         ) : (
           <>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {filtered.map((ep) => (
-                <EpisodeCardV2 key={ep.id} {...apiEpisodeToCardV2(ep, priceMap, podcastImageMap, translationMap, sentimentMap.get(ep.id), priceSinceMap)} />
-              ))}
+              {filtered.map((ep) => {
+                const bookmarkKey = `${ep.podcast_name}_${ep.id}`;
+                return (
+                  <EpisodeCardV2
+                    key={ep.id}
+                    {...apiEpisodeToCardV2(ep, priceMap, podcastImageMap, translationMap, sentimentMap.get(ep.id), priceSinceMap)}
+                    isBookmarked={episodeBookmarks.includes(bookmarkKey)}
+                    onBookmark={() => toggleEpisodeBookmark(ep.podcast_name, ep.id)}
+                  />
+                );
+              })}
             </div>
             <div className="mt-6 py-3 text-center text-[12px] text-muted-foreground">— 到這邊 —</div>
           </>
