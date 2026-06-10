@@ -27,7 +27,7 @@ services:
       POSTGRES_DB: podcast_db
       POSTGRES_USER: podcast_user
       FIRESTORE_DATABASE_ID: graphfolio-db
-      RELEASE_EPISODE_MAX_AGE_DAYS: "30"
+      RELEASE_EPISODE_MAX_AGE_DAYS: "60"
       CORS_ORIGINS: '["https://tinboker.com","https://www.tinboker.com"]'
     volumes:
       - ./gcp-service-account.json:/app/gcp-service-account.json:ro
@@ -64,7 +64,7 @@ services:
       POSTGRES_DB: podcast_db
       POSTGRES_USER: podcast_user
       FIRESTORE_DATABASE_ID: graphfolio-db
-      RELEASE_EPISODE_MAX_AGE_DAYS: "30"
+      RELEASE_EPISODE_MAX_AGE_DAYS: "60"
       CORS_ORIGINS: '["https://dev.tinboker.com","http://localhost:5173","http://localhost:3000"]'
     volumes:
       - ./gcp-service-account.json:/app/gcp-service-account.json:ro
@@ -101,7 +101,7 @@ services:
       POSTGRES_DB: podcast_db
       POSTGRES_USER: podcast_user
       FIRESTORE_DATABASE_ID: graphfolio-db
-      RELEASE_EPISODE_MAX_AGE_DAYS: "30"
+      RELEASE_EPISODE_MAX_AGE_DAYS: "60"
       CORS_ORIGINS: '["https://tinboker.com","https://dev.tinboker.com","https://staging.tinboker.com","http://localhost:5173","http://localhost:3000"]'
     volumes:
       - ./gcp-service-account.json:/app/gcp-service-account.json:ro
