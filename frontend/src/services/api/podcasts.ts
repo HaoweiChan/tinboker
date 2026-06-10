@@ -305,6 +305,22 @@ export async function getTrendingTags(
   return { tags: Array.isArray(d.tags) ? d.tags : [] };
 }
 
+export interface TagRegistryEntry {
+  slug: string;
+  display_zh: string;
+  tier: string;
+}
+
+export interface TagRegistryResponse {
+  tags: TagRegistryEntry[];
+}
+
+export async function getTagRegistry(): Promise<TagRegistryResponse> {
+  const response = await apiClient.get('/api/tags/registry');
+  const d = response.data ?? {};
+  return { tags: Array.isArray(d.tags) ? d.tags : [] };
+}
+
 export async function getTags(): Promise<TagsResponse> {
   const response = await apiClient.get('/api/tags');
   if (response.data?.tags && Array.isArray(response.data.tags)) {

@@ -1,8 +1,13 @@
 """Tags API router for tag-based episode discovery"""
-from fastapi import APIRouter, HTTPException, Path, Query
 from typing import List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
+from src.database.postgres import get_session
 from src.services.podcast import PodcastService
+from src.tag_registry import registry_snapshot, seed_if_empty
 
 router = APIRouter(prefix="/api", tags=["tags"])
 
@@ -17,6 +22,16 @@ class Tag(BaseModel):
 
 class TagsResponse(BaseModel):
     tags: List[Tag]
+
+
+class TagRegistryEntry(BaseModel):
+    slug: str
+    display_zh: str
+    tier: str
+
+
+class TagRegistryResponse(BaseModel):
+    tags: List[TagRegistryEntry]
 
 
 class EpisodePreview(BaseModel):
@@ -44,6 +59,18 @@ class EpisodesByTagResponse(BaseModel):
     tag: str
     episodes: List[dict]
     total: int
+
+
+@router.get("/tags/registry", response_model=TagRegistryResponse)
+async def get_tag_registry(db: Session = Depends(get_session)):
+    """Return the tag registry with display names and quality tiers.
+
+    Fetched by the frontend to build topic labels dynamically.
+    """
+    seed_if_empty(db)
+    return TagRegistryResponse(
+        tags=[TagRegistryEntry(**e) for e in registry_snapshot(db)]
+    )
 
 
 @router.get("/tags", response_model=TagsResponse)

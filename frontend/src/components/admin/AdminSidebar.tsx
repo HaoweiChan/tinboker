@@ -11,6 +11,7 @@ import {
     SlidersHorizontal,
     BarChart3,
     FileText,
+    Hash,
     ChevronLeft,
     ChevronRight,
     LogOut,
@@ -113,6 +114,12 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
                     to="/admin/articles"
                     icon={<FileText className="h-5 w-5" />}
                     label="Articles"
+                    collapsed={collapsed}
+                />
+                <NavItem
+                    to="/admin/tags"
+                    icon={<Hash className="h-5 w-5" />}
+                    label="Tags"
                     collapsed={collapsed}
                 />
                 <NavItem
