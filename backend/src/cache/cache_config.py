@@ -8,13 +8,13 @@ MIN_LEN = 60
 
 # TTL values in seconds (expressed as multiples of minutes)
 CACHE_TTL: Dict[str, int] = {
-    # Stock prices change frequently - short TTL
-    "stock_info": MIN_LEN * 15,        # 5 minutes
-    "stock_basic": MIN_LEN * 15,        # 5 minutes
-    "stock_price": MIN_LEN * 15,         # 1 minute (most volatile)
+    # Stock data — external APIs (Massive, FinMind) have strict rate limits
+    "stock_info": MIN_LEN * 60,          # 1 hour (company details rarely change)
+    "stock_basic": MIN_LEN * 60,         # 1 hour
+    "stock_price": MIN_LEN * 30,         # 30 minutes (current price)
     
-    # Stock lists change often - very short TTL
-    "stock_list": MIN_LEN * 20,          # 1 minute
+    # Stock lists
+    "stock_list": MIN_LEN * 60,          # 1 hour
     
     # Historical data rarely changes - long TTL
     "stock_ohlcv": MIN_LEN * 60 * 24,       # 1 day

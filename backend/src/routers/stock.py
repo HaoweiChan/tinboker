@@ -66,10 +66,14 @@ async def get_batch_prices(
     ticker_list = [t.strip().upper() for t in tickers.split(',') if t.strip()][:100]
     if not ticker_list:
         return {}
-    results = await asyncio.gather(
-        *[stock_service.get_stock_basic_info_async(t) for t in ticker_list],
-        return_exceptions=True,
-    )
+
+    async def _fetch_with_timeout(t: str):
+        try:
+            return await asyncio.wait_for(stock_service.get_stock_basic_info_async(t), timeout=8)
+        except (asyncio.TimeoutError, Exception):
+            return None
+
+    results = await asyncio.gather(*[_fetch_with_timeout(t) for t in ticker_list])
     return {
         ticker: (info.get('changePercent') if isinstance(info, dict) else None)
         for ticker, info in zip(ticker_list, results)
@@ -200,7 +204,7 @@ async def get_batch_prices_since(
     if not tickers:
         return {}
 
-    # --- Response-level Redis cache (15 min) ---
+    # --- Response-level Redis cache (30 min) ---
     pairs_key = ",".join(f"{t}:{earliest[t]}" for t in sorted(tickers))
     resp_cache_key = f"batch_since:{hashlib.md5(pairs_key.encode()).hexdigest()}"
     cached_resp = await cache_get(resp_cache_key)
@@ -211,9 +215,22 @@ async def get_batch_prices_since(
             pass
 
     # Fetch reference closes (DB → Redis → API) and current prices concurrently.
+    # 10s timeout per ticker to avoid hanging when external APIs are rate-limited.
+    async def _ref_close_safe(t, d):
+        try:
+            return await asyncio.wait_for(_get_reference_close(t, d, db), timeout=10)
+        except (asyncio.TimeoutError, Exception):
+            return None
+
+    async def _basic_safe(t):
+        try:
+            return await asyncio.wait_for(stock_service.get_stock_basic_info_async(t), timeout=10)
+        except (asyncio.TimeoutError, Exception):
+            return None
+
     ref_closes, basics = await asyncio.gather(
-        asyncio.gather(*[_get_reference_close(t, earliest[t], db) for t in tickers], return_exceptions=True),
-        asyncio.gather(*[stock_service.get_stock_basic_info_async(t) for t in tickers], return_exceptions=True),
+        asyncio.gather(*[_ref_close_safe(t, earliest[t]) for t in tickers]),
+        asyncio.gather(*[_basic_safe(t) for t in tickers]),
     )
     out: dict[str, Optional[float]] = {}
     for ticker, ref_close, basic in zip(tickers, ref_closes, basics):
@@ -228,7 +245,7 @@ async def get_batch_prices_since(
 
     # Cache the response. Use shorter TTL if most values are null (likely API issues).
     non_null = sum(1 for v in out.values() if v is not None)
-    ttl = 900 if non_null > len(out) * 0.3 else _NULL_CACHE_TTL
+    ttl = 1800 if non_null > len(out) * 0.3 else _NULL_CACHE_TTL
     try:
         await cache_set(resp_cache_key, json.dumps(out), ttl)
     except Exception:
