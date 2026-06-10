@@ -8,7 +8,7 @@ from src.services.podcast import EPISODE_DETAIL_CONTENT_FIELDS, PodcastService, 
 from src.services.translation_discovery import schedule_ticker_discovery
 from src.services.episode_sentiments import EpisodeSentimentService
 from src.services.trending import TrendingService
-from src.cache.cdn_cache import cdn_cache_podcast, cdn_cache_trending
+from src.cache.cdn_cache import cdn_cached, cdn_cache_podcast, cdn_cache_trending
 
 router = APIRouter(prefix="/api/episodes", tags=["episodes"])
 CACHE_CONTROL_READ = "public, max-age=300, s-maxage=3600"
@@ -24,7 +24,7 @@ class TickerSentimentsRequest(BaseModel):
 
 
 @router.get("/recent")
-@cdn_cache_podcast
+@cdn_cached(s_maxage=3600, max_age=120, stale=300)
 async def get_recent_episodes(
     limit: int = Query(default=20, ge=1, le=200, description="Maximum number of episodes to return (1-200)"),
     offset: int = Query(default=0, ge=0, description="Pagination offset"),
