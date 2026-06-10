@@ -92,6 +92,36 @@ jobs:
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
           branch: ${{ steps.env.outputs.branch }}
 
+      - name: Purge Cloudflare CDN cache
+        if: success()
+        run: |
+          CF_API_TOKEN=$(gcloud secrets versions access latest --secret=CLOUDFLARE_API_TOKEN --project=$GCP_PROJECT_ID 2>/dev/null || echo "")
+          CF_ZONE_TAG=$(gcloud secrets versions access latest --secret=CLOUDFLARE_ZONE_TAG --project=$GCP_PROJECT_ID 2>/dev/null || echo "")
+          if [ -z "$CF_API_TOKEN" ] || [ -z "$CF_ZONE_TAG" ]; then
+            echo "::warning::Cloudflare credentials missing; skipping CDN purge."
+            exit 0
+          fi
+          # Determine frontend hosts for this environment
+          case "${{ steps.env.outputs.environment }}" in
+            production) HOSTS='["tinboker.com","www.tinboker.com"]' ;;
+            staging)    HOSTS='["staging.tinboker.com"]' ;;
+            dev)        HOSTS='["dev.tinboker.com"]' ;;
+          esac
+          echo "Purging CDN cache for $HOSTS ..."
+          RESP=$(curl -sS -X POST "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_TAG}/purge_cache" \
+            -H "Authorization: Bearer ${CF_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data "{\"hosts\":${HOSTS}}" || true)
+          if echo "$RESP" | grep -Eq '"success":[[:space:]]*true'; then
+            echo "✅ CDN cache purged for $HOSTS"
+          else
+            echo "::warning::Host-scoped purge failed; falling back to purge_everything."
+            curl -sS -X POST "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_TAG}/purge_cache" \
+              -H "Authorization: Bearer ${CF_API_TOKEN}" \
+              -H "Content-Type: application/json" \
+              --data '{"purge_everything":true}' || true
+          fi
+
       - name: Deployment Summary
         run: |
           echo "## Deployment Complete" >> $GITHUB_STEP_SUMMARY
@@ -99,3 +129,4 @@ jobs:
           echo "- **Environment:** ${{ steps.env.outputs.environment }}" >> $GITHUB_STEP_SUMMARY
           echo "- **URL:** ${{ steps.env.outputs.url }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Cloudflare branch:** ${{ steps.env.outputs.branch }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **CDN purge:** attempted for frontend hosts" >> $GITHUB_STEP_SUMMARY

@@ -175,7 +175,7 @@ All changes must go through Git → PR → CI/CD.
     ```bash
     git push origin :refs/tags/vX.Y.Z && git tag -d vX.Y.Z
     ```
-11. Purge Cloudflare CDN cache for the frontend prod hosts (backend API purge is automatic)
+11. Both CI pipelines now **auto-purge** Cloudflare CDN after deploy (no manual purge needed)
 
 ### Allowed Server Commands (read-only / inspection only)
 
@@ -185,34 +185,44 @@ ssh root@VPS "docker ps"                                      # container status
 ssh root@VPS "docker logs tinboker-backend-prod --tail=50"    # logs
 ```
 
-### Post-deploy: purge Cloudflare CDN cache (do this WITHOUT asking)
+### Post-deploy: Cloudflare CDN cache (fully automated)
 
-**Backend** deploys now auto-purge the deployed env's API host — the
-`Purge Cloudflare CDN cache` step in [`backend-deploy.yml`](.github/workflows/backend-deploy.yml) /
-[`backend-deploy-admin.yml`](.github/workflows/backend-deploy-admin.yml) runs after the health
-check, so you do **not** need to manually purge `*-api.tinboker.com` after a backend deploy.
+**Both pipelines now auto-purge** their respective CDN hosts after deploy:
 
-Still manual: **frontend (Cloudflare Pages) deploys** (the `*.tinboker.com` frontend hosts are
-purged by nothing automated) and **ad-hoc content/data changes**. In those cases purge via the
-Cloudflare API — the token + zone ID are in GCP Secret Manager, fetch them yourself, never ask
-the user:
+- **Backend** (`backend-deploy.yml`): purges `*-api.tinboker.com` after health check
+- **Frontend** (`frontend-deploy.yml`): purges `*.tinboker.com` frontend hosts after Pages deploy
+
+No manual purge is needed for code deploys. For **ad-hoc content/data changes** (e.g.
+Firestore data fix, manual pipeline run), purge via the Cloudflare API — fetch credentials
+from GCP Secret Manager yourself, never ask the user:
 
 ```bash
 PROJ=gen-lang-client-0901363254
 TOKEN=$(gcloud secrets versions access latest --secret=CLOUDFLARE_API_TOKEN --project=$PROJ)
 ZONE=$(gcloud secrets versions access latest --secret=CLOUDFLARE_ZONE_TAG --project=$PROJ)
-# Dev/staging — host-scoped (leaves other envs cached). Swap hosts per env.
+# Host-scoped purge (leaves other envs cached). Swap hosts per env.
 curl -s -X POST "https://api.cloudflare.com/client/v4/zones/$ZONE/purge_cache" \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   --data '{"hosts":["dev-api.tinboker.com","dev.tinboker.com"]}'
-# Prod launch — whole zone:  --data '{"purge_everything":true}'
+# Prod — whole zone:  --data '{"purge_everything":true}'
 ```
 
 Hosts by env: dev = `dev-api.tinboker.com` / `dev.tinboker.com`; staging =
 `staging-api.tinboker.com` / `staging.tinboker.com`; prod = `api.tinboker.com` /
 `tinboker.com` / `www.tinboker.com`. Never print the token. Verify success with
-`cf-cache-status: MISS` on a clean (non-cache-busted) URL afterward. (The backend
-deploy pipeline already automates the API-host purge; frontend-host purge is still manual.)
+`cf-cache-status: MISS` on a clean (non-cache-busted) URL afterward.
+
+### Cache TTLs (episode freshness)
+
+The content pipeline pulls new episodes every ~10 minutes. Cache layers are aligned:
+
+| Layer | TTL | Notes |
+|-------|-----|-------|
+| Redis (`podcast_episodes`) | 10 min | Matches pipeline pull frequency |
+| CDN edge (`s-maxage`) | 10 min | `/api/episodes/recent` endpoint |
+| Browser (`max-age`) | 2 min | Short enough for user to see fresh content on refresh |
+
+Other endpoints (stock, news, graph) retain longer TTLs — see `backend/src/cache/cache_config.py`.
 
 ---
 
