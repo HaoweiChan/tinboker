@@ -153,7 +153,7 @@ export const EpisodeDetail: React.FC = () => {
   const episodeSentiments = useEpisodeSentimentMap(episodeIds);
   const tickers = useMemo(() => {
     const sent = episode ? episodeSentiments.get(episode.id) : undefined;
-    const all = tickerSymbols.map((s) => {
+    return tickerSymbols.map((s) => {
       const keys = tickerLookupKeys(s);
       return {
         symbol: s,
@@ -163,8 +163,6 @@ export const EpisodeDetail: React.FC = () => {
         sinceLabel,
       };
     });
-    const scored = all.filter((t) => t.sentiment);
-    return scored.length > 0 ? scored : all;
   }, [tickerSymbols, rawTranslationMap, episodeSentiments, activeMap, episode, sinceLabel]);
   const spotifyUri = useMemo(() => spotifyUriFrom(episode), [episode]);
 
