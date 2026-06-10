@@ -21,7 +21,7 @@ import {
 export default function DesignPreview() {
   const theme = useAppStore((s) => s.theme);
   const toggleTheme = useAppStore((s) => s.toggleTheme);
-  const [filter, setFilter] = useState<'最新' | '我追的' | '熱門' | '今日法說'>('最新');
+  const [filter, setFilter] = useState<'最新' | '熱門' | '追蹤' | '今日法說'>('最新');
   const [sort, setSort] = useState<'mentions' | 'change' | 'sentiment'>('mentions');
 
   return (
@@ -37,7 +37,7 @@ export default function DesignPreview() {
           Redesign tokens + components QA surface. 字體 Inter / Noto Sans TC / JetBrains Mono.
         </p>
 
-        <FilterPills items={['最新', '我追的', '熱門', '今日法說'] as const} value={filter} onChange={setFilter} meta={<span><span className="font-mono">11.25</span> · 整理了 <span className="font-mono">7</span> 集</span>} />
+        <FilterPills items={['最新', '熱門', '追蹤', '今日法說'] as const} value={filter} onChange={setFilter} meta={<span><span className="font-mono">11.25</span> · 整理了 <span className="font-mono">7</span> 集</span>} />
 
         <div className="flex gap-3 items-center mb-6 flex-wrap">
           <Segmented options={[{ value: 'mentions', label: '提及' }, { value: 'change', label: '漲跌' }, { value: 'sentiment', label: '情緒' }] as const} value={sort} onChange={setSort} />
