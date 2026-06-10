@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useRegisterSW } from 'virtual:pwa-register/react'
 import { ArrowUpCircle, X } from 'lucide-react'
+import { usePlayerStore } from '@/store/usePlayerStore'
 
 const PWA_UPDATE_KEY = 'pwa-update-reload'
 const SUPPRESS_MS = 10_000
@@ -147,13 +148,15 @@ export function PWAUpdatePrompt() {
       .catch(() => forceReload())
   }, [updating])
 
+  const playerVisible = usePlayerStore((s) => s.player.isPlayerVisible)
+
   if (!needRefresh || suppressed) return null
 
   return (
     <div
       role="status"
       aria-live="polite"
-      className="fixed bottom-20 right-4 left-4 sm:left-auto sm:bottom-4 z-[60] sm:max-w-[340px] animate-in fade-in slide-in-from-bottom-2 duration-200"
+      className={`fixed right-4 left-4 sm:left-auto sm:bottom-4 z-[90] sm:max-w-[340px] animate-in fade-in slide-in-from-bottom-2 duration-200 ${playerVisible ? 'bottom-40' : 'bottom-20'}`}
     >
       <div className="flex items-start gap-3 rounded-[var(--radius-md)] border border-border bg-card/95 backdrop-blur p-3.5 shadow-lg shadow-black/30">
         <div className="grid place-items-center h-8 w-8 shrink-0 rounded-full bg-accent-info-soft text-accent-info">

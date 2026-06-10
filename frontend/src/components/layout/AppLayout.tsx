@@ -7,6 +7,7 @@ import { ThemeToggle } from '@/components/ui/ThemeToggle';
 import { NotificationDropdown } from '@/components/ui/NotificationDropdown';
 import { UserMenu } from '@/components/ui/UserMenu';
 import { BracketMark } from '@/components/logo/AppLogo';
+import { usePlayerStore } from '@/store/usePlayerStore';
 
 /** [title, subtitle] for the page header, derived from the route. */
 function pageTitle(pathname: string): [string, string] {
@@ -59,6 +60,7 @@ function pageTitle(pathname: string): [string, string] {
 export const AppLayout: React.FC = () => {
   const { pathname } = useLocation();
   const [title, subtitle] = pageTitle(pathname);
+  const playerVisible = usePlayerStore((s) => s.player.isPlayerVisible);
 
   return (
     <div className="min-h-screen lg:grid lg:grid-cols-[64px_1fr] bg-background">
@@ -84,8 +86,7 @@ export const AppLayout: React.FC = () => {
           </div>
         </header>
 
-        {/* Each page owns its own content container — PageContent for redesigned pages. */}
-        <main className="flex-1 min-w-0">
+        <main className={`flex-1 min-w-0${playerVisible ? ' pb-24 lg:pb-20' : ''}`}>
           <Outlet />
         </main>
 

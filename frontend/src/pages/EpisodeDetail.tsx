@@ -145,6 +145,10 @@ export const EpisodeDetail: React.FC = () => {
 
   const chapters = useMemo<TimestampedSection[]>(() => (episode?.events_markdown_content ? parseTimestampedSections(episode.events_markdown_content) : []), [episode]);
   const clips = useMemo<TimestampedSection[]>(() => (episode?.sentences_markdown_content ? parseTimestampedSections(episode.sentences_markdown_content).slice(0, 8) : []), [episode]);
+  const summarySections = useMemo<TimestampedSection[]>(() => {
+    const content = episode?.modified_summary_content || episode?.summary_content;
+    return content ? parseTimestampedSections(content) : [];
+  }, [episode]);
   const tickerSymbols = useMemo(() => (Array.isArray(episode?.related_tickers) ? episode!.related_tickers.slice(0, 8) : []), [episode]);
   const priceMap = useStockPriceMap(tickerSymbols);
   const episodesForSince = useMemo(() => (episode ? [episode] : []), [episode]);
@@ -182,7 +186,7 @@ export const EpisodeDetail: React.FC = () => {
   const seoImage = episode?.summary_image_public_url || episode?.spotify_images?.[0] || podcasterImageUrl || undefined;
   const structuredData = useMemo<Record<string, unknown> | undefined>(() => {
     if (!episode) return undefined;
-    const sections = chapters.length ? chapters : clips;
+    const sections = chapters.length ? chapters : clips.length ? clips : summarySections;
     const data: Record<string, unknown> = {
       '@context': 'https://schema.org',
       '@type': 'PodcastEpisode',
@@ -201,7 +205,7 @@ export const EpisodeDetail: React.FC = () => {
       }));
     }
     return data;
-  }, [episode, chapters, clips, title, name, canonicalUrl, seoImage]);
+  }, [episode, chapters, clips, summarySections, title, name, canonicalUrl, seoImage]);
 
   const bookmarkKey = episode ? `${episode.podcast_name}_${episode.id}` : '';
   const isBookmarked = episodeBookmarks.includes(bookmarkKey);
@@ -217,7 +221,7 @@ export const EpisodeDetail: React.FC = () => {
       mp3Url: episode.mp3_url || episode.mp3_public_url
         ? getEpisodeAudioUrl(episode.podcast_name, episode.id)
         : undefined,
-      timestampedSections: chapters.length ? chapters : clips,
+      timestampedSections: chapters.length ? chapters : clips.length ? clips : summarySections,
     });
   };
 

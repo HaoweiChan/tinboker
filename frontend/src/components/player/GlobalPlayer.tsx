@@ -107,11 +107,11 @@ export const GlobalPlayer: React.FC = () => {
     const currentSection = [...sections].reverse().find(s => s.timestampSeconds <= playbackState.position);
 
     return (
-        <div className="fixed bottom-0 left-0 right-0 z-[80] shadow-[0_-8px_30px_rgba(0,0,0,0.35)]">
+        <div className="fixed left-0 right-0 bottom-14 lg:bottom-0 z-[80] shadow-[0_-8px_30px_rgba(0,0,0,0.35)]">
             <div className="bg-card/95 border-t border-border backdrop-blur-md">
                 <div className="max-w-7xl mx-auto w-full">
 
-                    {/* Expanded Section List */}
+                    {/* Expanded Section List (full chapter panel) */}
                     <div className={cn(
                         "overflow-hidden transition-all duration-300 ease-in-out",
                         isExpanded ? "max-h-[300px]" : "max-h-0"
@@ -177,7 +177,6 @@ export const GlobalPlayer: React.FC = () => {
                         <div className="flex items-center gap-4">
                             {/* Playback Controls Group */}
                             <div className="flex items-center gap-1.5 flex-shrink-0">
-                                {/* Rewind 15s */}
                                 <button
                                     onClick={() => handleSeekRelative(-15)}
                                     className="rounded-full hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer relative flex items-center justify-center w-10 h-10"
@@ -186,8 +185,6 @@ export const GlobalPlayer: React.FC = () => {
                                     <RotateCcw size={26} strokeWidth={1.2} className="opacity-80" />
                                     <span className="absolute text-[10px] font-bold">15</span>
                                 </button>
-
-                                {/* Play/Pause Button */}
                                 <button
                                     onClick={handlePlayPause}
                                     className="flex-shrink-0 w-11 h-11 rounded-full bg-foreground text-background hover:opacity-90 flex items-center justify-center transition-opacity cursor-pointer"
@@ -195,8 +192,6 @@ export const GlobalPlayer: React.FC = () => {
                                 >
                                     {playbackState.isPaused ? <Play size={18} fill="currentColor" className="ml-0.5" /> : <Pause size={18} fill="currentColor" />}
                                 </button>
-
-                                {/* Forward 15s */}
                                 <button
                                     onClick={() => handleSeekRelative(15)}
                                     className="rounded-full hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer relative flex items-center justify-center w-10 h-10"
@@ -224,8 +219,6 @@ export const GlobalPlayer: React.FC = () => {
                                             </span>
                                         )}
                                     </div>
-
-                                    {/* Right Actions: Expand, Close */}
                                     <div className="flex items-center gap-1 ml-4">
                                         {sections.length > 0 && (
                                             <button
@@ -263,13 +256,10 @@ export const GlobalPlayer: React.FC = () => {
                                         onClick={handleProgressClick}
                                         className="flex-1 h-1.5 bg-muted rounded-full cursor-pointer group relative overflow-visible"
                                     >
-                                        {/* Progress Fill */}
                                         <div
                                             className="h-full bg-accent-info rounded-full transition-all relative z-10"
                                             style={{ width: `${progress}%` }}
                                         />
-
-                                        {/* Section Markers */}
                                         {playbackState.duration > 0 && sections.map((section, index) => {
                                             const markerPosition = (section.timestampSeconds / playbackState.duration) * 100;
                                             const isCurrentSection = currentSection?.timestampSeconds === section.timestampSeconds;
@@ -298,8 +288,6 @@ export const GlobalPlayer: React.FC = () => {
                                                 </div>
                                             );
                                         })}
-
-                                        {/* Hover overlay */}
                                         <div className="absolute inset-0 bg-accent-info/20 opacity-0 group-hover:opacity-100 transition-opacity rounded-full" />
                                     </div>
                                     <span className="text-[10px] font-mono text-muted-foreground tabular-nums w-9">
@@ -310,8 +298,33 @@ export const GlobalPlayer: React.FC = () => {
                         </div>
                     </div>
 
-                    {/* Hidden playback engine (audio only — Spotify embed needs real height to init).
-                        Episodes without a Spotify URI play the GCS-hosted MP3 instead. */}
+                    {/* Timestamp chip strip — quick-seek buttons for each chapter */}
+                    {sections.length > 0 && !isExpanded && (
+                        <div className="px-4 pb-2 -mt-0.5 overflow-x-auto no-scrollbar">
+                            <div className="flex gap-1.5">
+                                {sections.map((section, index) => {
+                                    const isActive = currentSection?.timestampSeconds === section.timestampSeconds;
+                                    return (
+                                        <button
+                                            key={`chip-${index}`}
+                                            onClick={() => handleSectionClick(section.timestampSeconds)}
+                                            className={cn(
+                                                "flex-shrink-0 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] transition-colors cursor-pointer",
+                                                isActive
+                                                    ? "bg-accent-info text-white font-semibold"
+                                                    : "bg-muted text-muted-foreground hover:bg-accent-info-soft hover:text-accent-info font-medium"
+                                            )}
+                                        >
+                                            <span className="font-mono tabular-nums">{section.formattedTime}</span>
+                                            <span className="max-w-[100px] truncate hidden sm:inline">{section.title}</span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Hidden playback engine */}
                     <div className="h-0 overflow-hidden" aria-hidden="true">
                         {player.currentEpisodeData.spotifyUri ? (
                             <SpotifyEmbed
