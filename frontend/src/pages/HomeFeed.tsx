@@ -12,7 +12,7 @@ import { useStockPriceSinceMap } from '@/hooks/useStockPriceSinceMap';
 import { useTranslationMap } from '@/hooks/useTranslationMap';
 import { useEpisodeSentimentMap } from '@/hooks/useEpisodeSentimentMap';
 
-const FILTERS = ['最新', '我追的', '熱門'] as const;
+const FILTERS = ['最新', '熱門', '追蹤'] as const;
 type Filter = (typeof FILTERS)[number];
 
 function CardSkeleton() {
@@ -82,11 +82,23 @@ export const HomeFeed: React.FC = () => {
 
   const filtered = useMemo(() => {
     let list = episodes;
-    if (filter === '我追的') {
+    if (filter === '追蹤') {
       const subs = new Set(subscriptions);
       list = subs.size ? episodes.filter((e) => subs.has(e.podcast_name)) : [];
     } else if (filter === '熱門') {
-      list = [...episodes].sort((a, b) => (b.num_likes ?? b.number_click ?? 0) - (a.num_likes ?? a.number_click ?? 0));
+      const now = Date.now();
+      list = [...episodes].sort((a, b) => {
+        const scoreOf = (ep: ApiEpisode) => {
+          const engagement = (ep.num_likes ?? 0) + (ep.number_click ?? 0);
+          const releaseMs = ep.released_at_ms ?? 0;
+          const ageHours = Math.max(0, (now - releaseMs) / 3_600_000);
+          return (engagement + 1) / Math.pow(ageHours + 2, 1.2);
+        };
+        return scoreOf(b) - scoreOf(a);
+      });
+    } else {
+      // "最新" — defensive chronological sort by release time
+      list = [...episodes].sort((a, b) => (b.released_at_ms ?? 0) - (a.released_at_ms ?? 0));
     }
     return list.slice(0, 30);
   }, [episodes, filter, subscriptions]);
@@ -110,7 +122,7 @@ export const HomeFeed: React.FC = () => {
           </div>
         ) : filtered.length === 0 ? (
           <div className="bg-card border border-border rounded-md p-10 text-center text-[13px] text-muted-foreground">
-            {filter === '我追的' ? '尚未追蹤任何節目，去「節目」頁追蹤幾個吧。' : '目前沒有集數。'}
+            {filter === '追蹤' ? '尚未追蹤任何節目，去「節目」頁追蹤幾個吧。' : '目前沒有集數。'}
           </div>
         ) : (
           <>
