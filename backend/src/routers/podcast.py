@@ -6,6 +6,7 @@ from typing import List, Optional
 from src.services.podcast import (
     EPISODE_DETAIL_CONTENT_FIELDS,
     PodcastService,
+    episode_content_incomplete,
     poll_regeneration_status,
 )
 from src.models.podcast import Podcast, Episode
@@ -147,18 +148,20 @@ async def get_episode_by_id(
     
     CDN Cache: 30 minutes
     """
-    response.headers["Cache-Control"] = CACHE_CONTROL_READ
     try:
+        fields = None if include_heavy_content else EPISODE_DETAIL_CONTENT_FIELDS
         episode = await podcast_service.get_episode_by_id(
-            podcast_name,
-            episode_id,
-            content_fields=None if include_heavy_content else EPISODE_DETAIL_CONTENT_FIELDS,
+            podcast_name, episode_id, content_fields=fields,
         )
         if not episode:
             raise HTTPException(
                 status_code=404,
                 detail=f"Episode '{episode_id}' not found for podcast '{podcast_name}'"
             )
+        if episode_content_incomplete(episode, content_fields=fields):
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        else:
+            response.headers["Cache-Control"] = CACHE_CONTROL_READ
         return episode
     except HTTPException:
         raise

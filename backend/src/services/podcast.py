@@ -5,6 +5,7 @@ import asyncio
 import logging
 from typing import Optional, List, Collection
 from datetime import datetime
+from urllib.parse import quote
 from src.config import settings
 from src.models.podcast import Podcast, Episode
 from src.schemas.search import SearchResultItem
@@ -33,6 +34,29 @@ EPISODE_DETAIL_CONTENT_FIELDS = frozenset({
     "sentences_markdown_content",
     "modified_summary_content",
 })
+
+_CONTENT_TO_URL = {
+    "summary_content": "summary_url",
+    "events_markdown_content": "events_markdown_url",
+    "sentences_markdown_content": "sentences_markdown_url",
+    "modified_summary_content": "modified_summary_url",
+    "transcript": "transcript_url",
+    "summary_image": "summary_image_url",
+    "marp_markdown_content": "marp_markdown_url",
+    "ticker_marp_markdown_content": "ticker_marp_markdown_url",
+    "ticker_recommendations_content": "ticker_recommendations_public_url",
+}
+
+def episode_content_incomplete(
+    episode: Episode, content_fields: Optional[Collection[str]] = None,
+) -> bool:
+    """True if any requested content field has a source URL but empty content."""
+    for content_field, url_field in _CONTENT_TO_URL.items():
+        if content_fields is not None and content_field not in content_fields:
+            continue
+        if getattr(episode, url_field, None) and not getattr(episode, content_field, None):
+            return True
+    return False
 
 
 class PodcastService:
@@ -168,6 +192,26 @@ class PodcastService:
         if content_fields is None:
             return "full"
         return "fields-" + ",".join(sorted(content_fields))
+
+    async def _purge_episode_cdn(self, episode_id: str, podcast_name: str) -> None:
+        """Fire-and-forget CDN purge for an episode's detail URLs.
+
+        Called after successfully hydrating GCS content (Redis cache miss) to evict
+        any previously-cached incomplete (blank-content) response from Cloudflare.
+        """
+        env = getattr(settings, "environment", "development")
+        host = _API_HOST_BY_ENV.get(env, "dev-api.tinboker.com")
+        base = f"https://{host}"
+        urls = [f"{base}/api/episodes/{quote(episode_id, safe='')}"]
+        if podcast_name:
+            urls.append(
+                f"{base}/api/podcast/{quote(podcast_name, safe='')}"
+                f"/episodes/{quote(episode_id, safe='')}"
+            )
+        try:
+            await purge_cdn_cache(urls=urls)
+        except Exception:
+            logger.debug("CDN purge for episode %s failed (non-critical)", episode_id)
 
     @staticmethod
     def _spotify_release_ms(value) -> Optional[int]:
@@ -457,14 +501,12 @@ class PodcastService:
             if not episode_dict or episode_dict.get('podcast_name') != podcast_name:
                 return None
             episode = await self.transformer.to_episode(episode_dict, content_fields=content_fields)
-            # Skip caching a partially-hydrated episode (content URL set but content
-            # empty, e.g. a transient GCS read failure) so the next request re-attempts
-            # the GCS read instead of pinning a blank payload for the full TTL.
             if not self.transformer.is_content_incomplete(episode_dict, content_fields=content_fields):
                 try:
                     await cache_set(cache_key, json.dumps(episode.dict(), default=str), CACHE_TTL["podcast_episode"])
                 except Exception:
                     pass
+                asyncio.create_task(self._purge_episode_cdn(episode_id, podcast_name))
             else:
                 logger.warning(
                     "Skipping cache for episode %s/%s: content hydration incomplete (GCS fetch likely failed)",
@@ -507,14 +549,12 @@ class PodcastService:
             episode = await self.transformer.to_episode(episode_dict, content_fields=content_fields)
             if not await self._episode_in_scope(episode):
                 return None
-            # Don't pin a half-hydrated episode (content URL present but content empty,
-            # e.g. a transient GCS read failure) — leave it uncached so the next request
-            # re-attempts the fetch instead of serving a blank for the full TTL.
             if not self.transformer.is_content_incomplete(episode_dict, content_fields=content_fields):
                 try:
                     await cache_set(cache_key, json.dumps(episode.dict(), default=str), CACHE_TTL["podcast_episode"])
                 except Exception:
                     pass
+                asyncio.create_task(self._purge_episode_cdn(episode_id, episode.podcast_name))
             else:
                 logger.warning(
                     "Skipping cache for episode %s: content hydration incomplete (GCS fetch likely failed)",

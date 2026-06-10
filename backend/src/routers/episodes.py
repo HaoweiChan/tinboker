@@ -4,7 +4,7 @@ Episodes API router for cross-podcast episode queries
 from fastapi import APIRouter, HTTPException, Path, Query, Response
 from pydantic import BaseModel, Field
 from typing import Optional
-from src.services.podcast import EPISODE_DETAIL_CONTENT_FIELDS, PodcastService
+from src.services.podcast import EPISODE_DETAIL_CONTENT_FIELDS, PodcastService, episode_content_incomplete
 from src.services.translation_discovery import schedule_ticker_discovery
 from src.services.episode_sentiments import EpisodeSentimentService
 from src.services.trending import TrendingService
@@ -158,14 +158,17 @@ async def get_episode_by_id(
 
     CDN Cache: 30 minutes
     """
-    response.headers["Cache-Control"] = CACHE_CONTROL_READ
     try:
+        fields = None if include_heavy_content else EPISODE_DETAIL_CONTENT_FIELDS
         episode = await podcast_service.get_episode_by_id_only(
-            episode_id,
-            content_fields=None if include_heavy_content else EPISODE_DETAIL_CONTENT_FIELDS,
+            episode_id, content_fields=fields,
         )
         if not episode:
             raise HTTPException(status_code=404, detail=f"Episode '{episode_id}' not found")
+        if episode_content_incomplete(episode, content_fields=fields):
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        else:
+            response.headers["Cache-Control"] = CACHE_CONTROL_READ
         return episode
     except HTTPException:
         raise
