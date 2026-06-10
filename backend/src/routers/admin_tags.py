@@ -1,5 +1,6 @@
-"""Admin API for managing the tag registry (view, create, update tier, delete)."""
+"""Admin API for managing the tag registry (view, create, update tier, delete, discover)."""
 
+import asyncio
 import logging
 from typing import List, Optional
 
@@ -11,11 +12,14 @@ from src.auth.admin_auth import get_admin_access, AdminAccess
 from src.cache.redis_client import cache_delete_pattern
 from src.database.models import TagRegistry
 from src.database.postgres import get_session
-from src.tag_registry import seed_if_empty
+from src.services.firestore_service import FirestoreService
+from src.tag_registry import TIER_TRENDING, VALID_TIERS, auto_register, seed_if_empty
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
+
+firestore = FirestoreService()
 
 
 class TagEntryResponse(BaseModel):
@@ -23,6 +27,7 @@ class TagEntryResponse(BaseModel):
     slug: str
     display_zh: str
     tier: str
+    episode_count: Optional[int] = None
     updated_by: Optional[str] = None
 
 
@@ -34,12 +39,17 @@ class TagListResponse(BaseModel):
 class TagCreate(BaseModel):
     slug: str = Field(..., min_length=1, max_length=100)
     display_zh: str = Field(..., min_length=1)
-    tier: str = Field(default="trending")
+    tier: str = Field(default=TIER_TRENDING)
 
 
 class TagUpdate(BaseModel):
     display_zh: Optional[str] = None
     tier: Optional[str] = None
+
+
+class DiscoverResponse(BaseModel):
+    discovered: int
+    message: str
 
 
 async def _invalidate_tag_caches() -> None:
@@ -51,6 +61,25 @@ async def _invalidate_tag_caches() -> None:
             logger.warning("tag cache: Redis invalidation failed for %s: %s", pattern, e)
 
 
+async def _count_episodes_for_slugs(slugs: list[str]) -> dict[str, int]:
+    """Batch-count episodes per tag slug via Firestore subcollections."""
+    sem = asyncio.Semaphore(12)
+
+    async def _count(slug: str) -> tuple[str, int]:
+        async with sem:
+            try:
+                count = await asyncio.to_thread(
+                    firestore.count_subcollection_documents,
+                    collection="tags", parent_doc_id=slug, subcollection="episodes",
+                )
+                return (slug, count or 0)
+            except Exception:
+                return (slug, 0)
+
+    results = await asyncio.gather(*[_count(s) for s in slugs])
+    return dict(results)
+
+
 @router.get("/tags", response_model=TagListResponse)
 async def list_tags(
     tier: Optional[str] = Query(None, description="Filter by tier"),
@@ -58,7 +87,7 @@ async def list_tags(
     admin: AdminAccess = Depends(get_admin_access),
     db: Session = Depends(get_session),
 ):
-    """List all tags in the registry (admin view — includes suppressed)."""
+    """List all tags with episode counts (admin view — includes hidden)."""
     seed_if_empty(db)
     q = db.query(TagRegistry)
     if tier:
@@ -70,15 +99,48 @@ async def list_tags(
         )
     q = q.order_by(TagRegistry.slug)
     rows = q.all()
+    counts = await _count_episodes_for_slugs([r.slug for r in rows])
     return TagListResponse(
         tags=[
             TagEntryResponse(
                 id=r.id, slug=r.slug, display_zh=r.display_zh,
-                tier=r.tier, updated_by=r.updated_by,
+                tier=r.tier, episode_count=counts.get(r.slug, 0),
+                updated_by=r.updated_by,
             )
             for r in rows
         ],
         total=len(rows),
+    )
+
+
+@router.post("/tags/discover", response_model=DiscoverResponse)
+async def discover_tags(
+    min_episodes: int = Query(default=3, ge=1, description="Minimum episodes to auto-register"),
+    admin: AdminAccess = Depends(get_admin_access),
+    db: Session = Depends(get_session),
+):
+    """Scan Firestore for tags not yet in the registry and auto-register them as hidden."""
+    all_firestore_slugs = await asyncio.to_thread(
+        firestore.get_all_parent_documents, "tags"
+    )
+    if not all_firestore_slugs:
+        return DiscoverResponse(discovered=0, message="No tags found in Firestore")
+    existing = {r[0] for r in db.query(TagRegistry.slug).all()}
+    unknown = [s for s in all_firestore_slugs if s not in existing]
+    if not unknown:
+        return DiscoverResponse(discovered=0, message="All Firestore tags are already registered")
+    counts = await _count_episodes_for_slugs(unknown)
+    qualifying = [s for s in unknown if counts.get(s, 0) >= min_episodes]
+    if not qualifying:
+        return DiscoverResponse(
+            discovered=0,
+            message=f"Found {len(unknown)} unknown tags but none had >= {min_episodes} episodes",
+        )
+    inserted = auto_register(db, qualifying)
+    await _invalidate_tag_caches()
+    return DiscoverResponse(
+        discovered=inserted,
+        message=f"Auto-registered {inserted} new tags as hidden (from {len(unknown)} unknown, {len(qualifying)} with >= {min_episodes} episodes)",
     )
 
 
@@ -89,8 +151,8 @@ async def create_tag(
     db: Session = Depends(get_session),
 ):
     """Add a new tag to the registry."""
-    if body.tier not in ("trending", "valid", "suppressed"):
-        raise HTTPException(400, "tier must be trending, valid, or suppressed")
+    if body.tier not in VALID_TIERS:
+        raise HTTPException(400, f"tier must be one of: {', '.join(VALID_TIERS)}")
     existing = db.query(TagRegistry).filter(TagRegistry.slug == body.slug).first()
     if existing:
         raise HTTPException(409, f"Tag '{body.slug}' already exists")
@@ -119,8 +181,8 @@ async def update_tag(
     row = db.query(TagRegistry).filter(TagRegistry.id == tag_id).first()
     if not row:
         raise HTTPException(404, "Tag not found")
-    if body.tier and body.tier not in ("trending", "valid", "suppressed"):
-        raise HTTPException(400, "tier must be trending, valid, or suppressed")
+    if body.tier and body.tier not in VALID_TIERS:
+        raise HTTPException(400, f"tier must be one of: {', '.join(VALID_TIERS)}")
     if body.display_zh is not None:
         row.display_zh = body.display_zh
     if body.tier is not None:
