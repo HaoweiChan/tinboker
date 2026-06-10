@@ -309,13 +309,13 @@ export const GlobalPlayer: React.FC = () => {
                         </div>
                     </div>
 
-                    {/* Hidden Spotify Embed (audio only) */}
-                    <div className="h-0 overflow-hidden">
+                    {/* Hidden Spotify Embed (audio only — needs real height to init) */}
+                    <div className="h-0 overflow-hidden" aria-hidden="true">
                         {player.currentEpisodeData.spotifyUri && (
                             <SpotifyEmbed
                                 key={player.currentEpisodeData.spotifyUri}
                                 uri={player.currentEpisodeData.spotifyUri}
-                                height={0}
+                                height={152}
                                 ref={spotifyEmbedRef}
                                 onPlayerReady={() => setIsEmbedReady(true)}
                                 onPlaybackUpdate={handlePlaybackUpdate}
