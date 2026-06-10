@@ -166,8 +166,16 @@ All changes must go through Git → PR → CI/CD.
 2. Merge PR to `develop` → auto-deploys to dev.tinboker.com + dev-api.tinboker.com
 3. When dev is stable, open PR `develop` → `main`
 4. Merge to `main` → auto-deploys to staging.tinboker.com + staging-api.tinboker.com
-5. Verify on staging, then cut a release: `git tag v1.x.0 && git push --tags`
-6. Tag push → auto-deploys to tinboker.com + api.tinboker.com (production)
+5. Verify staging is healthy: frontend loads + `curl https://staging-api.tinboker.com/health` returns `"status":"healthy"`
+6. Cut the release tag: `git tag vX.Y.Z origin/main && git push origin vX.Y.Z`
+7. Tag push → CI auto-deploys to tinboker.com + api.tinboker.com (production)
+8. **Monitor both CI runs** (`Frontend Deploy to Cloudflare Pages` + `Backend Build & Deploy`) to completion — do not declare the release done until both are green
+9. Confirm prod health: `curl https://api.tinboker.com/health`
+10. **If a CI run reports failure:** verify prod directly first — if health returns `"status":"healthy"` it was a false alarm; if prod is actually down, delete the tag and fix forward before re-tagging:
+    ```bash
+    git push origin :refs/tags/vX.Y.Z && git tag -d vX.Y.Z
+    ```
+11. Purge Cloudflare CDN cache for the frontend prod hosts (backend API purge is automatic)
 
 ### Allowed Server Commands (read-only / inspection only)
 
