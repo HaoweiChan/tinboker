@@ -69,11 +69,15 @@ export function apiEpisodeToCardV2(
     summary: plainTeaser(ep.modified_summary_content || ep.summary_content),
     tickers: (() => {
       if (!Array.isArray(ep.related_tickers)) return undefined;
-      const scored = sentimentMap && sentimentMap.size > 0
-        ? ep.related_tickers.filter((s) => sentimentMap.has(s.toUpperCase()))
+      // Sort tickers with sentiment first, but never exclude those without.
+      const sorted = sentimentMap && sentimentMap.size > 0
+        ? [...ep.related_tickers].sort((a, b) => {
+            const aHas = sentimentMap.has(a.toUpperCase()) ? 0 : 1;
+            const bHas = sentimentMap.has(b.toUpperCase()) ? 0 : 1;
+            return aHas - bHas;
+          })
         : ep.related_tickers;
-      const shown = scored.length > 0 ? scored : ep.related_tickers;
-      return shown.slice(0, 4).map((symbol) => ({
+      return sorted.slice(0, 4).map((symbol) => ({
         symbol,
         name: translationMap?.get(symbol.toUpperCase()),
         sentiment: sentimentMap?.get(symbol.toUpperCase()),
