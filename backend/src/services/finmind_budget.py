@@ -30,8 +30,12 @@ from src.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Cap well under the free-tier ceiling to leave headroom. Override via env.
-HOURLY_CAP = int(os.getenv("FINMIND_HOURLY_CAP", "500"))
+# FinMind's registered free tier allows ~300 requests/hour PER KEY. Cap a little under
+# that so we rotate to the next key before FinMind starts returning 402s (a too-high cap
+# means the budget never trips and every call 402s). Override via env. The pool of keys
+# multiplies this — N keys ≈ N×cap effective. Also self-corrects: a real 402/429 retires
+# the key via exhaust() regardless of the cap.
+HOURLY_CAP = int(os.getenv("FINMIND_HOURLY_CAP", "280"))
 _WINDOW_SECONDS = 3700  # one hour + slack, so the key outlives its clock-hour
 
 _redis_client = None
@@ -109,6 +113,30 @@ def consume(bucket: str = "default", weight: int = 1) -> bool:
     except Exception as e:  # Redis hiccup mid-flight — fall back, don't block forever
         logger.debug(f"FinMind budget: redis incr failed, falling back to local: {e}")
         return _consume_local(bucket, weight)
+
+
+def exhaust(bucket: str = "default") -> None:
+    """
+    Retire `bucket` for the rest of the current clock-hour.
+
+    Called when FinMind actually returns a quota error (402/429) for this key, which can
+    happen before the configured HOURLY_CAP is reached (FinMind's real limit may be lower,
+    or it counts differently). Sets the counter above the cap so subsequent consume()s
+    return False and the client rotates to the next key.
+    """
+    key = _window_key(bucket)
+    over = HOURLY_CAP + 1
+    client = _get_sync_redis()
+    if client is None:
+        with _local_lock:
+            _local_counts[bucket] = (key, over)
+        return
+    try:
+        client.set(key, over, ex=_WINDOW_SECONDS)
+    except Exception as e:
+        logger.debug(f"FinMind budget: redis exhaust failed, falling back to local: {e}")
+        with _local_lock:
+            _local_counts[bucket] = (key, over)
 
 
 def _maybe_log_exhausted(bucket: str, count: int) -> None:

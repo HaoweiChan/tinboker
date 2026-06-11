@@ -49,6 +49,16 @@ def test_remaining_decrements_per_bucket(monkeypatch):
     assert budget.remaining("other") == 10
 
 
+def test_exhaust_retires_bucket(monkeypatch):
+    """A 402-triggered exhaust() blocks the bucket but leaves other keys usable."""
+    budget = _fresh_budget(monkeypatch, cap=100)
+    assert budget.consume("keyA") is True       # plenty of budget left
+    budget.exhaust("keyA")                       # FinMind 402'd this key
+    assert budget.consume("keyA") is False       # now retired for the hour
+    assert budget.remaining("keyA") == 0
+    assert budget.consume("keyB") is True        # other key unaffected
+
+
 def test_window_rollover_resets(monkeypatch):
     budget = _fresh_budget(monkeypatch, cap=2)
     assert budget.consume("k") is True

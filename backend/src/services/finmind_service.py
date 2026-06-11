@@ -78,55 +78,73 @@ class FinMindAPIService:
         """Stable per-key budget bucket id (never the raw key — it's used in Redis keys/logs)."""
         return hashlib.sha256(key.encode()).hexdigest()[:12]
 
-    def _acquire_key(self) -> Optional[str]:
-        """
-        Pick the first key in the pool that still has hourly budget, consuming one unit
-        of its quota. Returns None when every key's hourly budget is exhausted.
-        """
-        for key in self.api_keys:
-            if finmind_budget.consume(self._bucket(key)):
-                return key
-        return None
-    
     def _make_request(self, params: Dict[str, Any], timeout: int = 10) -> Optional[Dict[str, Any]]:
         """
-        Make HTTP request to FinMind API.
-        
+        Make an HTTP request to the FinMind API, rotating across the key pool.
+
+        Each key is capped at its hourly budget (finmind_budget). FinMind signals quota
+        exhaustion with HTTP 402 (and 429 for rate limiting) — and sometimes with HTTP 200
+        + a limit message in the body. On any of those, the current key is marked spent for
+        the hour and we transparently retry with the next key, so a pool of N keys actually
+        multiplies capacity. Returns the data on success, or None when every key is
+        exhausted/unavailable (callers degrade to cached/"unavailable").
+
         Args:
             params: Request parameters
             timeout: Request timeout in seconds
-            
+
         Returns:
             Response JSON data or None if error
         """
-        try:
-            self._check_api_key()
+        self._check_api_key()
 
-            # Hard-cap FinMind usage against each key's free-tier hourly quota, rotating to
-            # the next key when one is spent. When ALL keys are exhausted, bail out (callers
-            # degrade to cached/"unavailable") instead of burning quota on 402s.
-            key = self._acquire_key()
-            if key is None:
+        for key in self.api_keys:
+            bucket = self._bucket(key)
+            # Skip keys whose hourly budget is already spent (cap or a prior 402).
+            if not finmind_budget.consume(bucket):
+                continue
+            try:
+                response = requests.get(
+                    self.api_base_url,
+                    headers={"Authorization": f"Bearer {key}"},
+                    params=params,
+                    timeout=timeout,
+                )
+            except requests.exceptions.RequestException as e:
+                # Network/timeout — not key-specific; don't burn the rest of the pool.
+                logger.error(f"FinMind API request failed: {e}")
                 return None
 
-            headers = {"Authorization": f"Bearer {key}"}
+            # Quota / rate-limit at the HTTP layer → retire this key for the hour, rotate.
+            if response.status_code in (402, 429):
+                finmind_budget.exhaust(bucket)
+                logger.warning(
+                    f"FinMind HTTP {response.status_code} (quota) on key {bucket}; rotating to next key."
+                )
+                continue
 
-            response = requests.get(self.api_base_url, headers=headers, params=params, timeout=timeout)
-            response.raise_for_status()
-            data = response.json()
-            
+            try:
+                response.raise_for_status()
+                data = response.json()
+            except Exception as e:
+                logger.error(f"FinMind API request failed: {e}")
+                return None
+
             if data.get("status") == 200:
                 return data
-            else:
-                error_msg = data.get("msg", "Unknown error")
-                logger.error(f"FinMind API error: {error_msg}")
-                return None
-        except requests.exceptions.RequestException as e:
-            logger.error(f"FinMind API request failed: {e}")
+
+            # FinMind also reports quota as HTTP 200 with status 402 / a limit message.
+            msg = str(data.get("msg", ""))
+            if data.get("status") == 402 or "limit" in msg.lower() or "exceed" in msg.lower():
+                finmind_budget.exhaust(bucket)
+                logger.warning(f"FinMind quota (body: {msg or data.get('status')}) on key {bucket}; rotating.")
+                continue
+
+            logger.error(f"FinMind API error: {msg or 'Unknown error'}")
             return None
-        except Exception as e:
-            logger.error(f"Unexpected error in FinMind API request: {e}")
-            return None
+
+        logger.warning("FinMind: all keys exhausted this hour; serving stale/unavailable.")
+        return None
     
     def _get_stock_info_df(self) -> Optional["pd.DataFrame"]:
         """
