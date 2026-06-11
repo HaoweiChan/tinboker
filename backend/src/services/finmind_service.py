@@ -8,13 +8,21 @@ This module provides a wrapper around the FinMind API with:
 """
 
 import logging
+import time
 import requests
 import pandas as pd
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta
 from src.config import settings
+from src.services import finmind_budget
 
 logger = logging.getLogger(__name__)
+
+# The TaiwanStockInfo table (the full stock-id ↔ name/industry registry) is near-static
+# — it changes at most weekly — but get_ticker_details/list_tickers re-downloaded it on
+# every cold miss, which was the single biggest FinMind-quota waster. Cache it in-process.
+_STOCK_INFO_TTL_SECONDS = 6 * 3600
+_stock_info_cache: dict = {"df": None, "ts": 0.0}
 
 
 class FinMindAPIError(Exception):
@@ -68,8 +76,15 @@ class FinMindAPIService:
         """
         try:
             self._check_api_key()
+
+            # Hard-cap FinMind usage against the free-tier hourly quota. When exhausted,
+            # bail out (callers degrade to cached/"unavailable") instead of burning more
+            # of the budget on requests that would 402 anyway.
+            if not finmind_budget.consume():
+                return None
+
             headers = {"Authorization": f"Bearer {self.api_key}"}
-            
+
             response = requests.get(self.api_base_url, headers=headers, params=params, timeout=timeout)
             response.raise_for_status()
             data = response.json()
@@ -87,48 +102,54 @@ class FinMindAPIService:
             logger.error(f"Unexpected error in FinMind API request: {e}")
             return None
     
+    def _get_stock_info_df(self) -> Optional["pd.DataFrame"]:
+        """
+        Return the (cached) TaiwanStockInfo table.
+
+        Cached in-process for _STOCK_INFO_TTL_SECONDS so the full-table download happens
+        at most a few times a day instead of on every cold ticker load. Tries the
+        DataLoader SDK first (budget-counted manually, since it bypasses _make_request),
+        then the REST endpoint (budget-counted inside _make_request).
+        """
+        cached = _stock_info_cache.get("df")
+        if cached is not None and (time.time() - _stock_info_cache["ts"]) < _STOCK_INFO_TTL_SECONDS:
+            return cached
+
+        df = None
+        if self.dataloader:
+            # DataLoader bypasses _make_request, so account for the request explicitly.
+            if not finmind_budget.consume():
+                return cached  # budget exhausted — serve whatever we last had (may be None)
+            try:
+                df = self.dataloader.taiwan_stock_info()
+            except Exception as e:
+                logger.debug(f"DataLoader taiwan_stock_info failed, trying REST: {e}")
+                df = None
+
+        if df is None or getattr(df, "empty", True):
+            data = self._make_request({"dataset": "TaiwanStockInfo"})
+            if data and data.get("data"):
+                df = pd.DataFrame(data["data"])
+
+        if df is not None and not df.empty:
+            _stock_info_cache["df"] = df
+            _stock_info_cache["ts"] = time.time()
+            return df
+        return cached
+
     def get_ticker_details(self, ticker: str) -> Optional[Dict[str, Any]]:
         """
         Get ticker details from FinMind API.
-        
+
         Args:
             ticker: Stock ticker symbol (e.g., "2330" for TSMC)
-            
+
         Returns:
             Ticker details dict or None if error/not found
         """
         try:
-            # Use TaiwanStockInfo dataset
-            if self.dataloader:
-                try:
-                    df = self.dataloader.taiwan_stock_info()
-                    if df is not None and not df.empty:
-                        stock_info = df[df['stock_id'] == ticker]
-                        if not stock_info.empty:
-                            row = stock_info.iloc[0]
-                            return {
-                                "ticker": ticker,
-                                "name": str(row.get("stock_name", ticker)),
-                                "market_cap": None,  # Not available in TaiwanStockInfo
-                                "description": "",
-                                "currency": "TWD",
-                                "industry": str(row.get("industry_category", "Unknown")),
-                                "shares_outstanding": None,
-                                "icon_url": None,
-                                "logo_url": None,
-                                "icon_image": None,
-                                "logo_image": None,
-                            }
-                except Exception as e:
-                    logger.debug(f"DataLoader method failed, trying REST API: {e}")
-            
-            # Fallback to REST API
-            params = {
-                "dataset": "TaiwanStockInfo",
-            }
-            data = self._make_request(params)
-            if data and data.get("data"):
-                df = pd.DataFrame(data["data"])
+            df = self._get_stock_info_df()
+            if df is not None and not df.empty:
                 stock_info = df[df['stock_id'] == ticker]
                 if not stock_info.empty:
                     row = stock_info.iloc[0]
@@ -385,30 +406,11 @@ class FinMindAPIService:
         try:
             tickers = []
             actual_limit = min(limit, 1000)
-            
-            if self.dataloader:
-                try:
-                    df = self.dataloader.taiwan_stock_info()
-                    if df is not None and not df.empty:
-                        for _, row in df.head(actual_limit).iterrows():
-                            tickers.append({
-                                "ticker": str(row.get("stock_id", "")),
-                                "name": str(row.get("stock_name", "")),
-                                "market": "tpex",  # Taiwan market
-                                "currency": "TWD",
-                                "active": True,
-                            })
-                        return tickers
-                except Exception as e:
-                    logger.debug(f"DataLoader method failed, trying REST API: {e}")
-            
-            # Fallback to REST API
-            params = {
-                "dataset": "TaiwanStockInfo",
-            }
-            data = self._make_request(params)
-            if data and data.get("data"):
-                df = pd.DataFrame(data["data"])
+
+            # Reuse the cached TaiwanStockInfo table (same source the REST/DataLoader
+            # paths used) so listing tickers doesn't re-download the full table.
+            df = self._get_stock_info_df()
+            if df is not None and not df.empty:
                 for _, row in df.head(actual_limit).iterrows():
                     tickers.append({
                         "ticker": str(row.get("stock_id", "")),

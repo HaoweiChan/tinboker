@@ -117,8 +117,13 @@ async def lifespan(app: FastAPI):
             if inserted:
                 print(f"Seeded {inserted} new content source(s).")
             break
-    except Exception as e:
-        print(f"Warning: content source seed skipped: {e}")
+    except Exception:
+        # An empty content_sources table makes the release allowlist resolve to 0
+        # podcasts (blank home feed), so a silently-skipped seed is a real outage —
+        # log the full traceback instead of a one-line warning.
+        import traceback
+        print("ERROR: content source seed FAILED — release allowlist will be empty:")
+        traceback.print_exc()
 
     # Seed tag registry (insert-only when table is empty).
     try:

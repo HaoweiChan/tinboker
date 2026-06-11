@@ -78,6 +78,15 @@ PODCAST_SOURCES: list[dict] = [
         "transcript_service": "groq", "transcript_model": "whisper-large-v3",
         "active": True,
     },
+    {
+        "source_type": "podcast", "language": "zh-TW", "region": "TW",
+        "name": "M觀點",
+        "feed_url": "https://podcasttomp3.com/podcasts/v2/843399",
+        "spotify_url": "https://open.spotify.com/show/3q2hc5Zsk9nFEYxXmMqVDW",
+        "lookback_days": 30,
+        "transcript_service": "groq", "transcript_model": "whisper-large-v3",
+        "active": True,
+    },
     # --- English (en) ---
     {
         "source_type": "podcast", "language": "en",
