@@ -174,7 +174,7 @@ export const Sidebar: React.FC = () => {
         {/* App version */}
         {expanded && (
           <div className="px-2.5 pt-3 text-[10px] text-muted-foreground/50 tracking-wide tabular-nums">
-            v{__APP_VERSION__}
+            {__APP_VERSION__}
           </div>
         )}
       </div>

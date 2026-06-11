@@ -49,6 +49,21 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      # Version label shown in the sidebar. Tagged prod builds show the clean release
+      # (e.g. "v0.4.8"); branch builds show env + short commit SHA (e.g. "staging-2eb20ab"
+      # / "dev-1a2b3c4") so the deployed commit is matchable at a glance.
+      - name: Compute version label
+        run: |
+          SHORT=$(echo "${{ github.sha }}" | cut -c1-7)
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            LABEL="${{ github.ref_name }}"
+          elif [[ "${{ github.ref_name }}" == "main" ]]; then
+            LABEL="staging-$SHORT"
+          else
+            LABEL="dev-$SHORT"
+          fi
+          echo "VITE_RELEASE_VERSION=$LABEL" >> $GITHUB_ENV
+
       - name: Build
         working-directory: frontend
         run: npm run build
@@ -59,9 +74,7 @@ jobs:
           # gated + labeled "開發環境", incl. prod. tag → PRODUCTION (public, ungated),
           # main → STAGING (測試環境), anything else → DEV.
           VITE_STAGE: ${{ startsWith(github.ref, 'refs/tags/v') && 'PRODUCTION' || github.ref_name == 'main' && 'STAGING' || 'DEV' }}
-          # On a tagged prod build, surface the release tag as the app version label
-          # (vite strips the leading "v"); empty on branch builds → falls back to package.json.
-          VITE_RELEASE_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
+          VITE_RELEASE_VERSION: ${{ env.VITE_RELEASE_VERSION }}
 
       - name: Determine environment
         id: env
