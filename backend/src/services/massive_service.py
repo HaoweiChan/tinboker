@@ -8,6 +8,7 @@ This module provides a wrapper around the Massive API client with:
 """
 
 import logging
+import time
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta
 from massive import RESTClient
@@ -16,6 +17,17 @@ import requests
 import base64
 
 logger = logging.getLogger(__name__)
+
+# In-process cache for company branding images (base64). The image URLs are authenticated
+# (need the Massive key), so the frontend can't load them directly — they're fetched +
+# base64-encoded server-side. They were being re-fetched on EVERY ticker-details call,
+# which burned the Massive rate limit and made the real price/data calls 429. Company
+# logos are static, so cache hits permanently; cache misses are negatively cached briefly
+# so a rate-limited (429) image isn't retried on every request (which would keep the quota
+# pinned and starve price data). {url: (b64_or_None, expires_at_or_None)}.
+_IMG_CACHE: dict = {}
+_IMG_CACHE_MAX = 4000
+_IMG_FAIL_TTL = 600  # seconds to skip a URL after a failed fetch (e.g. 429)
 
 
 class MassiveAPIError(Exception):
@@ -48,6 +60,36 @@ class MassiveAPIService:
         """Check if client is initialized."""
         if self.client is None:
             raise MassiveAPIError("Massive API client not initialized. Check API key configuration.")
+
+    def _fetch_image_b64(self, url: Optional[str]) -> Optional[str]:
+        """Fetch a branding image as base64, cached in-process.
+
+        Successes are cached for the process lifetime (logos are static); failures are
+        negatively cached for _IMG_FAIL_TTL so a rate-limited image isn't re-requested on
+        every call (which would keep Massive's quota pinned and starve price data).
+        """
+        if not url:
+            return None
+        now = time.time()
+        hit = _IMG_CACHE.get(url)
+        if hit is not None:
+            b64, expires_at = hit
+            if expires_at is None or now < expires_at:
+                return b64  # cached success (no expiry) or still-valid negative cache (None)
+
+        headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
+        try:
+            response = requests.get(url, headers=headers, timeout=10)
+            response.raise_for_status()
+            b64 = base64.b64encode(response.content).decode("utf-8")
+            if len(_IMG_CACHE) < _IMG_CACHE_MAX:
+                _IMG_CACHE[url] = (b64, None)  # cache static image for the process lifetime
+            return b64
+        except Exception as e:
+            logger.warning(f"Error fetching branding image {url}: {e}")
+            if len(_IMG_CACHE) < _IMG_CACHE_MAX:
+                _IMG_CACHE[url] = (None, now + _IMG_FAIL_TTL)  # back off; don't retry every call
+            return None
     
     def get_ticker_details(self, ticker: str) -> Optional[Dict[str, Any]]:
         """
@@ -71,31 +113,10 @@ class MassiveAPIService:
                     icon_url = getattr(branding, 'icon_url', None)  # PNG format
                     logo_url = getattr(branding, 'logo_url', None)   # SVG format
                 
-                # Fetch actual image data with API key authentication
-                icon_image = None
-                logo_image = None
-                
-                # Prepare headers with API key (Massive API uses Authorization: Bearer format)
-                headers = {}
-                if self.api_key:
-                    headers["Authorization"] = f"Bearer {self.api_key}"
-                
-                if icon_url:
-                    try:
-                        response = requests.get(icon_url, headers=headers, timeout=10)
-                        response.raise_for_status()
-                        icon_image = base64.b64encode(response.content).decode('utf-8')
-                    except Exception as e:
-                        logger.warning(f"Error fetching icon image for {ticker}: {e}")
-                
-                if logo_url:
-                    try:
-                        response = requests.get(logo_url, headers=headers, timeout=10)
-                        response.raise_for_status()
-                        logo_image = base64.b64encode(response.content).decode('utf-8')
-                    except Exception as e:
-                        logger.warning(f"Error fetching logo image for {ticker}: {e}")
-                
+                # Fetch branding images (base64), cached in-process — see _fetch_image_b64.
+                icon_image = self._fetch_image_b64(icon_url)
+                logo_image = self._fetch_image_b64(logo_url)
+
                 return {
                     "ticker": details.ticker,
                     "name": details.name,
