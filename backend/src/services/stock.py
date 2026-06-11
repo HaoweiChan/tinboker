@@ -110,8 +110,15 @@ class StockService:
                     logger = logging.getLogger(__name__)
                     logger.warning(f"Invalid timeframe '{timeframe}': {e}. Returning unfiltered data.")
             
-            # Store in cache only if not a pagination request
-            if result and not before:
+            # Pagination requests fetch older chart data — return as-is, never cached.
+            if before:
+                return result
+
+            # Only treat this as a usable result when we actually got a price. A 0/None
+            # price means the snapshot/history fetch failed (only the static ticker
+            # details came through) — caching that would mask the real price for a full
+            # TTL, so fall through to the last known-good (stale) copy instead.
+            if result and (result.price or 0) > 0:
                 try:
                     payload = json.dumps(result.dict(), default=str)
                     await cache_set(cache_key, payload, CACHE_TTL["stock_info"])
@@ -120,11 +127,10 @@ class StockService:
                     await cache_set(f"{cache_key}:stale", payload, _STALE_TTL)
                 except Exception:
                     pass  # Cache failure shouldn't break the request
+                return result
 
-            return result
-
-        # Upstream returned nothing (e.g. FinMind 402 quota). Serve the last-known value
-        # rather than 404 so TW stock pages don't break during rate-limited hours.
+        # Upstream returned nothing usable (rate-limited / no price). Serve the last
+        # known-good value rather than 404 / a price-less blank.
         if not before:
             stale = await cache_get(f"{cache_key}:stale")
             if stale:
@@ -202,17 +208,19 @@ class StockService:
                 }
             }
             
-            # Store in cache (fresh + long-lived stale copy for rate-limited hours)
-            try:
-                payload = json.dumps(result, default=str)
-                await cache_set(cache_key, payload, CACHE_TTL["stock_basic"])
-                await cache_set(f"{cache_key}:stale", payload, _STALE_TTL)
-            except Exception:
-                pass  # Cache failure shouldn't break the request
+            # Only cache/return when we actually got a price. price=0 means the
+            # snapshot/history fetch failed (details alone came through) — caching it
+            # would serve a "$0 / 0.00%" card for a full TTL, so fall through to stale.
+            if (result.get("price") or 0) > 0:
+                try:
+                    payload = json.dumps(result, default=str)
+                    await cache_set(cache_key, payload, CACHE_TTL["stock_basic"])
+                    await cache_set(f"{cache_key}:stale", payload, _STALE_TTL)
+                except Exception:
+                    pass  # Cache failure shouldn't break the request
+                return result
 
-            return result
-
-        # Upstream returned nothing (rate-limited) — serve the last-known value.
+        # No usable price (rate-limited / failed fetch) — serve the last known-good value.
         stale = await cache_get(f"{cache_key}:stale")
         if stale:
             try:
