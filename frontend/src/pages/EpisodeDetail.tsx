@@ -124,11 +124,27 @@ export const EpisodeDetail: React.FC = () => {
       // On a cold load (deep link / refresh / shared URL) there is no ?podcast= to
       // supply the show name, so fall back to the by-id endpoint, then resolve the
       // show name from the response for the podcast-image fetch.
-      const ep = await fetchWithFallback<ApiEpisode | null>(
-        () => (podcastName ? getEpisodeById(podcastName, id) : getEpisodeByIdOnly(id)),
-        null,
-        `getEpisodeById:${podcastName || '-'}/${id}`,
-      ).catch(() => null);
+      const fetchEpisode = () =>
+        fetchWithFallback<ApiEpisode | null>(
+          () => (podcastName ? getEpisodeById(podcastName, id) : getEpisodeByIdOnly(id)),
+          null,
+          `getEpisodeById:${podcastName || '-'}/${id}`,
+        ).catch(() => null);
+
+      // A half-hydrated cold response arrives with a summary source URL but empty
+      // content (the server-side GCS fetch hiccuped and the backend returns it
+      // no-cache). Retry once — the next read almost always returns the full summary —
+      // so the page never gets stuck showing key insights without the summary body.
+      const summaryMissing = (e: ApiEpisode | null) =>
+        !!e && !e.summary_content && !e.modified_summary_content && !!(e.summary_url || e.summary_public_url);
+
+      let ep = await fetchEpisode();
+      if (alive && summaryMissing(ep)) {
+        await new Promise((r) => setTimeout(r, 1200));
+        if (!alive) return;
+        const retry = await fetchEpisode();
+        if (retry && (retry.summary_content || retry.modified_summary_content)) ep = retry;
+      }
       if (!alive) return;
       setEpisode(ep);
       const resolvedName = ep?.podcast_name || podcastName;

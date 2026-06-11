@@ -33,6 +33,8 @@ export interface Episode {
   episode_number?: number | null;
   transcript: string;
   summary_content: string;
+  summary_url?: string | null;
+  summary_public_url?: string | null;
   summary_image?: string | null;
   summary_image_url?: string | null;
   summary_image_public_url?: string | null;

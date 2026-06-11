@@ -4,15 +4,24 @@ import re
 import json
 import asyncio
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 from typing import Optional
 from pathlib import Path
 from google.cloud import storage
 from google.oauth2 import service_account
+from google.api_core.exceptions import NotFound
 import httpx
 
 
 logger = logging.getLogger(__name__)
+
+# Dedicated I/O thread pool for blocking GCS calls, shared across all service
+# instances. The default asyncio executor is only ~(cpu+4) threads (≈8 on the
+# 4-core VPS) and is shared with every other run_in_executor call (FinMind, etc.),
+# so under a post-cache-purge spike GCS fetches would queue behind it. A dedicated
+# pool sized to the fetch semaphore keeps episode hydration from starving.
+_GCS_EXECUTOR = ThreadPoolExecutor(max_workers=20, thread_name_prefix="gcs")
 
 
 class GCSContentService:
@@ -120,16 +129,17 @@ class GCSContentService:
             return ""
 
         def _fetch_sync():
-            # Retry transient errors (network blips, exists()/download hiccups) once.
-            # A blob that genuinely does not exist returns "" immediately — no retry,
-            # since that is not a transient condition.
+            # Download directly — skip the separate blob.exists() probe, which doubled
+            # the GCS round trips on every cold episode hydration (the dominant cold-load
+            # cost, since the payloads themselves are tiny). A genuinely missing blob
+            # raises NotFound (no retry — not transient); other errors retry once.
             last_err = None
             for _attempt in range(2):
                 try:
                     blob = client.bucket(bucket_name).blob(blob_path)
-                    if not blob.exists():
-                        return ""
                     return blob.download_as_text()
+                except NotFound:
+                    return ""
                 except Exception as e:
                     last_err = e
             logger.warning(f"Error fetching GCS content from {gs_url} after retry: {last_err}")
@@ -138,7 +148,7 @@ class GCSContentService:
         try:
             async with self._semaphore:
                 loop = asyncio.get_event_loop()
-                return await asyncio.wait_for(loop.run_in_executor(None, _fetch_sync), timeout=timeout)
+                return await asyncio.wait_for(loop.run_in_executor(_GCS_EXECUTOR, _fetch_sync), timeout=timeout)
         except asyncio.TimeoutError:
             logger.warning(f"Timeout fetching GCS content from {gs_url} (timeout: {timeout}s)")
             return ""
@@ -198,7 +208,7 @@ class GCSContentService:
                 return None
 
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, _sign_sync)
+        return await loop.run_in_executor(_GCS_EXECUTOR, _sign_sync)
 
     async def upload_content(self, bucket_name: str, blob_path: str, content: str, content_type: str = 'text/markdown') -> None:
         """Upload string content to a GCS blob"""
@@ -211,7 +221,7 @@ class GCSContentService:
             blob.upload_from_string(content, content_type=content_type)
 
         loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, _upload_sync)
+        await loop.run_in_executor(_GCS_EXECUTOR, _upload_sync)
 
     async def delete_blob(self, bucket_name: str, blob_path: str) -> None:
         """Delete a GCS blob if it exists"""
@@ -225,4 +235,4 @@ class GCSContentService:
                 blob.delete()
 
         loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, _delete_sync)
+        await loop.run_in_executor(_GCS_EXECUTOR, _delete_sync)
