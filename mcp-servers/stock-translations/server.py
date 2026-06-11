@@ -193,7 +193,10 @@ if WRITE_TOKEN:
         - name_preference: "auto" (default — show zh when it exists), "zh_tw", or "en"
           (force English even if a zh name exists). Omit unless you specifically want to
           override; omitting leaves an existing preference untouched.
-        - brand_color is a hex string like "#76B900".
+        - brand_color is the company's corporate identity hex color, not a sentiment,
+          sector, or random chip color. For TW references: MediaTek/聯發科 2454
+          uses orange "#F58220"; TSMC/台積電 2330 uses red "#E60012";
+          Delta Electronics/台達電 2308 uses light blue "#00AEEF".
         """
         valid_pref = {"auto", "zh_tw", "en"}
         payload: list[dict[str, Any]] = []

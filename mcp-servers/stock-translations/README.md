@@ -38,6 +38,20 @@ Every result row carries:
   English name (or ticker). **zh-TW is intentionally optional** — English-preferred US
   stocks (Palantir, Arm, …) return `has_zh_name=false`; render `display_name` as-is.
 
+## Brand color policy
+
+`brand_color` should be the company's corporate identity color, not a market-sector
+color, sentiment color, or random ticker-chip color. For Taiwan stocks, prefer the
+primary logo/corporate color used on the company's official Taiwan site or investor
+materials. When the logo has multiple colors, pick the distinctive brand signal used
+most consistently in product/investor materials.
+
+Known Taiwan reference examples:
+
+- MediaTek / 聯發科 (`2454`): orange `#F58220`
+- TSMC / 台積電 (`2330`): red `#E60012`
+- Delta Electronics / 台達電 (`2308`): light blue `#00AEEF`
+
 ## Configuration
 
 | Env var | Default | Notes |

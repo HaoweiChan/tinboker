@@ -27,6 +27,22 @@ router = APIRouter(prefix="/api/stocks", tags=["stocks"])
 stock_service = StockService()
 
 
+def _has_cjk(text: Optional[str]) -> bool:
+    if not text:
+        return False
+    return any(
+        "㐀" <= ch <= "鿿" or "豈" <= ch <= "﫿"
+        for ch in text
+    )
+
+
+def _translation_display_name(row: StockTranslation) -> str:
+    pref = getattr(row, "name_preference", None) or "auto"
+    if _has_cjk(row.name_zh_tw) and pref != "en":
+        return row.name_zh_tw or row.ticker
+    return row.name_en or row.ticker
+
+
 @router.get("", response_model=List[dict])
 async def get_sorted_stocks(
     sort_by: str = Query(default="ticker", description="Sort field"),
@@ -264,32 +280,32 @@ async def get_batch_summary(
     Returns a list of {ticker, name, market, brand_color}; entries missing in upstream
     data still appear with name=ticker so callers can render.
     """
-    ticker_list = [t.strip().upper() for t in tickers.split(',') if t.strip()][:100]
-    if not ticker_list:
+    requested_tickers = [t.strip().upper() for t in tickers.split(',') if t.strip()][:100]
+    if not requested_tickers:
         return []
+    lookup_tickers = [t.split(".")[0] for t in requested_tickers]
 
-    # Fetch brand colors from translations table (one query)
-    translations = db.query(StockTranslation).filter(
-        StockTranslation.ticker.in_(ticker_list)
-    ).all()
-    brand_colors: dict[str, str] = {
-        t.ticker: t.brand_color for t in translations if t.brand_color
-    }
-
-    basic_results = await asyncio.gather(
-        *[stock_service.get_stock_basic_info_async(t) for t in ticker_list],
-        return_exceptions=True,
+    rows = (
+        db.query(StockTranslation)
+        .filter(StockTranslation.ticker.in_(lookup_tickers))
+        .all()
     )
+    translations: dict[str, StockTranslation] = {}
+    for row in rows:
+        inferred_market = infer_market(row.ticker)
+        existing = translations.get(row.ticker)
+        if existing is None or row.market == inferred_market:
+            translations[row.ticker] = row
 
     out = []
-    for ticker, info in zip(ticker_list, basic_results):
-        market = infer_market(ticker)
-        name = info.get("name") if isinstance(info, dict) else None
+    for requested, lookup in zip(requested_tickers, lookup_tickers):
+        market = infer_market(lookup)
+        row = translations.get(lookup)
         out.append({
-            "ticker": ticker,
-            "name": name or ticker,
+            "ticker": requested,
+            "name": _translation_display_name(row) if row else lookup,
             "market": market,
-            "brand_color": brand_colors.get(ticker),
+            "brand_color": row.brand_color if row else None,
         })
     return out
 
@@ -455,6 +471,4 @@ async def websocket_ohlcv(websocket: WebSocket, ticker: str):
         # Cleanup subscription
         if subscriber:
             await subscriber.stop()
-
-
 

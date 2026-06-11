@@ -259,11 +259,12 @@ export interface RecentBuzz {
  *  real mention counts + aggregated sentiment from recent episodes — NOT the all-time
  *  agents-precomputed trending_tickers (/api/ticker-insights/trending). */
 export async function getRecentBuzz(
-  params?: { days?: number; limit?: number }
+  params?: { days?: number; limit?: number; ticker?: string }
 ): Promise<RecentBuzz> {
-  const q: Record<string, number> = {};
+  const q: Record<string, number | string> = {};
   if (params?.days != null) q.days = params.days;
   if (params?.limit != null) q.limit = params.limit;
+  if (params?.ticker) q.ticker = params.ticker;
   const response = await apiClient.get('/api/episodes/buzz', {
     params: Object.keys(q).length ? q : undefined,
   });

@@ -471,6 +471,11 @@ export interface TickerTrending {
   name?: string | null;
   count: number;
   sentiment_label: SentimentLabel;
+  sentiment_counts?: {
+    bull: number;
+    neutral: number;
+    bear: number;
+  };
   last_mentioned: string;
 }
 

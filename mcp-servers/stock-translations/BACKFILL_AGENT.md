@@ -79,7 +79,12 @@ token by regenerating and updating both sides.
 >    - `name_preference`: leave unset (defaults to `auto` = show zh when present). Only
 >      set `"en"` when a Chinese name *does* exist but TW investors still use the English
 >      name — that forces English without you having to drop a legitimate zh name.
->    - `brand_color`: the company's primary brand hex color (e.g. NVIDIA `#76B900`).
+>    - `brand_color`: the company's corporate identity hex color, never a sentiment,
+>      sector, or random chip color. For TW stocks, prefer the primary logo/corporate
+>      color from the official Taiwan site or investor materials. Known references:
+>      聯發科 / MediaTek `2454` = orange `#F58220`; 台積電 / TSMC `2330` = red
+>      `#E60012`; 台達電 / Delta Electronics `2308` = light blue `#00AEEF`;
+>      NVIDIA `NVDA` = `#76B900`.
 > 4. Submit a batch with `propose_translations` (status defaults to `auto`).
 > 5. Report what you wrote and which you skipped, and flag any low-confidence guesses
 >    so a human can review them in the admin portal.

@@ -86,6 +86,7 @@ async def get_ticker_sentiments(body: TickerSentimentsRequest):
 async def get_recent_buzz(
     days: int = Query(default=30, ge=1, le=90, description="Rolling window in days"),
     limit: int = Query(default=10, ge=1, le=200, description="Max tickers to return (rail uses 10; StockIndex uses 200)"),
+    ticker: Optional[str] = Query(default=None, description="Optional ticker filter for detail pages"),
 ):
     """Genuine 'what people are discussing lately' from the recent launch feed.
 
@@ -95,7 +96,7 @@ async def get_recent_buzz(
     and the /stock index (所有個股) — both reflect real recent mention counts.
     """
     try:
-        return await trending_service.get_recent_buzz(days=days, limit=limit)
+        return await trending_service.get_recent_buzz(days=days, limit=limit, ticker=ticker)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching recent buzz: {str(e)}")
 

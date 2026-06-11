@@ -9,22 +9,31 @@ import { TickerInsightCard } from '@/components/financial/TickerInsightCard';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/store/useAppStore';
 import { useStockTrendColor } from '@/hooks/useStockTrendColor';
-import { aggregateSentiment, dominantSentiment } from '@/lib/sentiment';
+import { aggregateSentiment, dominantSentiment, normalizeSentiment, type SentimentBreakdown } from '@/lib/sentiment';
 import { getStockByTicker, getEpisodesByTicker, type Episode as ApiEpisode } from '@/services/api';
 import { fetchWithFallback } from '@/services/api/migration';
-import type { CompanyDetail, RealTimePriceUpdate, TimeframeOption } from '@/services/types';
+import type { CompanyDetail, RealTimePriceUpdate, TimeframeOption, TickerInsight, TickerTrending } from '@/services/types';
 import { priceWebSocketClient } from '@/services/websocket/priceWebSocket';
 import TradingViewChart from '@/components/charts/TradingViewChart';
 import { ChartControls } from '@/components/charts/ChartControls';
-import { getInsightsByTicker, getSortedPodcasts, type Podcast } from '@/services/api/podcasts';
+import { getInsightsByTicker, getRecentBuzz, getSortedPodcasts, type Podcast } from '@/services/api/podcasts';
 import { transformApiEpisodeToMock } from '@/services/api/transformers';
-import type { TickerInsight } from '@/services/types';
 import { useStockPriceMap } from '@/hooks/useStockPriceMap';
 import { useStockPriceSinceMap } from '@/hooks/useStockPriceSinceMap';
 import { useEpisodeSentimentMap } from '@/hooks/useEpisodeSentimentMap';
 import { getStockLabel, inferStockMarket } from '@/utils/stockDisplay';
 
-const StockHeaderCard: React.FC<{ symbol: string; episodeCount: number }> = ({ symbol, episodeCount }) => {
+function countsToBreakdown(counts: TickerTrending['sentiment_counts']): SentimentBreakdown | null {
+  if (!counts) return null;
+  const bull = counts.bull || 0;
+  const neutral = counts.neutral || 0;
+  const bear = counts.bear || 0;
+  const total = bull + neutral + bear;
+  if (total <= 0) return null;
+  return { total, bull, neutral, bear, avgScore: null };
+}
+
+const StockHeaderCard: React.FC<{ symbol: string; mentionCount: number }> = ({ symbol, mentionCount }) => {
   const [stockData, setStockData] = useState<CompanyDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -116,7 +125,7 @@ const StockHeaderCard: React.FC<{ symbol: string; episodeCount: number }> = ({ s
   }, [symbol]);
 
   const displayName = stockData?.name ?? symbol;
-  const displayPrice = stockData?.price ?? 0;
+  const displayPrice = stockData?.price ?? null;
   const displayChange = stockData?.change ?? 0;
   const displayChangePercent = stockData?.changePercent ?? 0;
   const trend = useStockTrendColor(displayChange);
@@ -145,10 +154,15 @@ const StockHeaderCard: React.FC<{ symbol: string; episodeCount: number }> = ({ s
   }, [rawChart]);
 
   const latest = (chartData.length > 0 ? chartData[chartData.length - 1] : null) as { open?: number; high?: number; low?: number; volume?: number } | null;
+  const formatPositiveNumber = (value: number | null | undefined, options?: Intl.NumberFormatOptions) => {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return '—';
+    return value.toLocaleString('en-US', options);
+  };
+  const hasDisplayPrice = typeof displayPrice === 'number' && Number.isFinite(displayPrice) && displayPrice > 0;
   const keyStats: { label: string; value: string }[] = [
-    { label: '開盤', value: (latest?.open ?? displayPrice).toLocaleString() },
-    { label: '最高', value: (latest?.high ?? displayPrice).toLocaleString() },
-    { label: '最低', value: (latest?.low ?? displayPrice).toLocaleString() },
+    { label: '開盤', value: formatPositiveNumber(latest?.open) },
+    { label: '最高', value: formatPositiveNumber(latest?.high) },
+    { label: '最低', value: formatPositiveNumber(latest?.low) },
     { label: '成交量', value: latest?.volume || stockData?.stats?.volume ? `${(((latest?.volume ?? stockData?.stats?.volume) || 0) / 1000).toFixed(1)}K` : '—' },
     { label: '市值', value: stockData?.marketCap ? `${(stockData.marketCap / 1e9).toFixed(2)}B` : '—' },
     { label: '本益比', value: stockData?.pe ? stockData.pe.toFixed(1) : '—' },
@@ -173,9 +187,11 @@ const StockHeaderCard: React.FC<{ symbol: string; episodeCount: number }> = ({ s
             <p className="text-[13px] text-muted-foreground font-mono mb-1.5">{secondaryLabel}</p>
           )}
           <div className="flex items-baseline gap-3.5 flex-wrap">
-            <span className={cn('font-mono tabular-nums text-[32px] font-semibold tracking-[-0.02em]', trend.text)}>{isLoading ? '…' : displayPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-            <Change value={displayChangePercent} big />
-            <span className="text-[12px] text-muted-foreground">即時行情 · 延遲 15 分鐘</span>
+            <span className={cn('font-mono tabular-nums text-[32px] font-semibold tracking-[-0.02em]', hasDisplayPrice ? trend.text : 'text-muted-foreground')}>
+              {isLoading ? '…' : formatPositiveNumber(displayPrice, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
+            {hasDisplayPrice && <Change value={displayChangePercent} big />}
+            <span className="text-[12px] text-muted-foreground">{hasDisplayPrice ? '即時行情 · 延遲 15 分鐘' : '行情資料暫無'}</span>
           </div>
         </div>
         <button
@@ -202,21 +218,30 @@ const StockHeaderCard: React.FC<{ symbol: string; episodeCount: number }> = ({ s
             activeIndicators={activeIndicators}
             onToggleIndicator={(ind, active) => setActiveIndicators((prev) => (active ? [...prev, ind] : prev.filter((i) => i !== ind)))}
           />
-          <div className="h-[380px] w-full mt-3">
-            <TradingViewChart
-              data={chartData}
-              theme={theme === 'dark' ? 'dark' : 'light'}
-              lineColor={trend.lineColor}
-              topColor={trend.topColor}
-              bottomColor="transparent"
-              height={380}
-              className="w-full"
-              activeIndicators={activeIndicators}
-              activeSubChart={subChart}
-              onLoadMore={handleLoadMore}
-              isLoadingMore={isLoadingMore}
-            />
-          </div>
+          {isLoading ? (
+            <div className="h-[380px] w-full mt-3 rounded-md bg-muted/30 animate-pulse" />
+          ) : chartData.length > 0 ? (
+            <div className="h-[380px] w-full mt-3">
+              <TradingViewChart
+                data={chartData}
+                theme={theme === 'dark' ? 'dark' : 'light'}
+                lineColor={trend.lineColor}
+                topColor={trend.topColor}
+                bottomColor="transparent"
+                height={380}
+                className="w-full"
+                activeIndicators={activeIndicators}
+                activeSubChart={subChart}
+                onLoadMore={handleLoadMore}
+                isLoadingMore={isLoadingMore}
+              />
+            </div>
+          ) : (
+            <div className="h-[260px] w-full mt-3 rounded-md border border-dashed border-border bg-muted/20 flex flex-col items-center justify-center text-center px-6">
+              <p className="text-[13px] font-medium text-foreground">目前沒有可顯示的股價走勢</p>
+              <p className="text-[12px] text-muted-foreground mt-1">資料供應暫時沒有回傳有效價格，請改用較長區間或稍後再試。</p>
+            </div>
+          )}
         </div>
         <div className="bg-card border border-border rounded-md p-5">
           <h3 className="text-[12px] font-semibold uppercase tracking-[0.08em] text-muted-foreground mb-3.5">關鍵數據</h3>
@@ -228,7 +253,7 @@ const StockHeaderCard: React.FC<{ symbol: string; episodeCount: number }> = ({ s
               </div>
             ))}
           </div>
-          <p className="mt-3 text-[11px] text-muted-foreground">{episodeCount} 集 podcast 提到此標的</p>
+          <p className="mt-3 text-[11px] text-muted-foreground">近 30 天 {mentionCount} 集 podcast 提到此標的</p>
         </div>
       </div>
     </>
@@ -237,7 +262,7 @@ const StockHeaderCard: React.FC<{ symbol: string; episodeCount: number }> = ({ s
 
 export const StockDashboard: React.FC = () => {
   const { ticker } = useParams();
-  const symbol = (ticker ?? '2330.TW').toUpperCase();
+  const symbol = (ticker ?? '2330').toUpperCase().split('.')[0];
   const [episodes, setEpisodes] = useState<ApiEpisode[]>([]);
   const episodeTickers = useMemo(() => episodes.flatMap((ep) => ep.related_tickers ?? []), [episodes]);
   const priceMap = useStockPriceMap(episodeTickers);
@@ -248,6 +273,7 @@ export const StockDashboard: React.FC = () => {
   const episodeIds = useMemo(() => episodes.map((e) => e.id), [episodes]);
   const sentimentMap = useEpisodeSentimentMap(episodeIds);
   const [insights, setInsights] = useState<TickerInsight[]>([]);
+  const [buzzTicker, setBuzzTicker] = useState<TickerTrending | null>(null);
   const [podcasts, setPodcasts] = useState<Podcast[]>([]);
   const [episodesLoading, setEpisodesLoading] = useState(true);
   const podcastImageMap = useMemo(() => {
@@ -257,6 +283,24 @@ export const StockDashboard: React.FC = () => {
     }
     return map;
   }, [podcasts]);
+
+  useEffect(() => {
+    if (!symbol) return;
+    let cancelled = false;
+    setBuzzTicker(null);
+    getRecentBuzz({ days: 30, limit: 1, ticker: symbol })
+      .then((buzz) => {
+        if (cancelled) return;
+        const item = buzz.tickers.find((t) => t.ticker.toUpperCase() === symbol) ?? null;
+        setBuzzTicker(item);
+      })
+      .catch(() => {
+        if (!cancelled) setBuzzTicker(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [symbol]);
 
   useEffect(() => {
     if (!symbol) return;
@@ -301,10 +345,14 @@ export const StockDashboard: React.FC = () => {
     };
   }, [symbol]);
 
-  const breakdown = useMemo(
+  const insightBreakdown = useMemo(
     () => aggregateSentiment(insights.map((r) => ({ sentiment_label: r.sentiment_label }))),
     [insights],
   );
+  const buzzBreakdown = useMemo(() => countsToBreakdown(buzzTicker?.sentiment_counts), [buzzTicker]);
+  const breakdown = buzzBreakdown ?? insightBreakdown;
+  const overallSentiment = normalizeSentiment(buzzTicker?.sentiment_label) ?? dominantSentiment(breakdown);
+  const mentionCount = buzzTicker?.count ?? episodes.length;
   const relatedTags = useMemo(() => {
     const set = new Set<string>();
     for (const e of episodes) for (const t of e.tags ?? []) set.add(t);
@@ -314,8 +362,8 @@ export const StockDashboard: React.FC = () => {
 
   const stats: StatItem[] = [
     {
-      label: '提及集數',
-      value: <>{episodes.length}<span className="text-[14px] text-muted-foreground ml-1">集</span></>,
+      label: '近 30 天提及',
+      value: <>{mentionCount}<span className="text-[14px] text-muted-foreground ml-1">集</span></>,
     },
     {
       label: '情緒比例',
@@ -333,7 +381,7 @@ export const StockDashboard: React.FC = () => {
     {
       label: '整體情緒',
       textValue: true,
-      value: breakdown.total > 0 ? <SentimentChip sentiment={dominantSentiment(breakdown)} /> : <span className="text-muted-foreground text-[14px]">—</span>,
+      value: breakdown.total > 0 || buzzTicker ? <SentimentChip sentiment={overallSentiment} /> : <span className="text-muted-foreground text-[14px]">—</span>,
       sub: newestEp ? `最新：${newestEp.podcast_name}${newestEp.episode_number != null ? ` EP ${newestEp.episode_number}` : ''}` : '無資料',
     },
     {
@@ -351,7 +399,7 @@ export const StockDashboard: React.FC = () => {
         url={typeof window !== 'undefined' ? window.location.href : undefined}
       />
       <PageContent>
-        <StockHeaderCard symbol={symbol} episodeCount={episodes.length} />
+        <StockHeaderCard symbol={symbol} mentionCount={mentionCount} />
 
         <div className="mb-[18px]">
           <StatGroup items={stats} />

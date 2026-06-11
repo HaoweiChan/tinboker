@@ -82,7 +82,12 @@ class TrendingService:
             pass
         return translations
 
-    async def get_recent_buzz(self, days: int = 30, limit: int = 10) -> dict:
+    async def get_recent_buzz(
+        self,
+        days: int = 30,
+        limit: int = 10,
+        ticker: Optional[str] = None,
+    ) -> dict:
         """Genuine 'what people are discussing lately' for the homepage rail.
 
         Counts tickers mentioned across the RECENT episodes (already zh-TW-scoped and
@@ -94,7 +99,8 @@ class TrendingService:
         Returns: {tickers, distinct_count, episode_count, sentiment_summary,
                   prev_sentiment_summary, rising_ticker, new_tickers}
         """
-        cache_key = f"buzz:recent:{days}:{limit}:v2"
+        ticker_filter = ticker.strip().upper().split(".")[0] if ticker else None
+        cache_key = f"buzz:recent:{days}:{limit}:{ticker_filter or 'all'}:v3"
         cached = await cache_get(cache_key)
         if cached:
             try:
@@ -124,7 +130,10 @@ class TrendingService:
                 for tu in tickers:
                     prev_counts[tu] += 1
 
-        top = counts.most_common(limit)
+        if ticker_filter:
+            top = [(ticker_filter, counts[ticker_filter])] if counts.get(ticker_filter, 0) > 0 else []
+        else:
+            top = counts.most_common(limit)
         top_tickers = [t for t, _ in top]
 
         # Tickers to translate: top tickers + rising candidate + new tickers
@@ -139,7 +148,7 @@ class TrendingService:
         extra_tickers = list(new_ticker_set)[:5]
         if rising_ticker_id:
             extra_tickers.append(rising_ticker_id)
-        all_tickers_to_translate = list(set(top_tickers + extra_tickers))
+        all_tickers_to_translate = list(set(top_tickers + extra_tickers + ([ticker_filter] if ticker_filter else [])))
         translations = await self._get_translations_batch(all_tickers_to_translate)
 
         # Aggregate dominant sentiment per top ticker
@@ -162,6 +171,11 @@ class TrendingService:
                 if s:
                     s_counts[s] += 1
             dominant = s_counts.most_common(1)[0][0] if s_counts else "NEUTRAL"
+            sentiment_counts = {
+                "bull": s_counts.get("BULLISH", 0),
+                "neutral": s_counts.get("NEUTRAL", 0),
+                "bear": s_counts.get("BEARISH", 0),
+            }
             if dominant == "BULLISH":
                 bull += 1
             elif dominant == "BEARISH":
@@ -173,6 +187,7 @@ class TrendingService:
                 "name": translations.get(ticker) or None,
                 "count": count,
                 "sentiment_label": dominant,
+                "sentiment_counts": sentiment_counts,
                 "last_mentioned": last_mentioned.get(ticker),
             })
 

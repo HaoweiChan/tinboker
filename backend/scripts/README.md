@@ -53,15 +53,17 @@ from the data modules on every startup (`src/main.py` lifespan → `TranslationS
 
 - `src/data/seed_data.py` — `TRANSLATIONS` (curated TW + core stocks)
 - `src/data/us_stocks.py` — `US_STOCK_TRANSLATIONS` (US stocks)
-- `src/data/brand_colors.py` — `BRAND_COLORS`
+Brand colors are **not** seeded from code. `stock_translations.brand_color` is the
+source of truth and is maintained through the admin portal or bulk JSON import.
 
 The reconciler is **insert / fill-stub only**: it adds missing rows and fills empty
 auto-created stubs, but never overwrites an `approved` row. So the maintenance model is:
 
 1. **Bulk / new tickers** → add to the data module above; they land on next boot.
-2. **Edits & promotions** (`auto`/`pending` → `approved`, fixing a name) → admin portal
-   (`/admin/translations`) or `POST /api/admin/translations/bulk-json`. These are the
-   source of truth for existing rows — editing the data module will *not* overwrite them.
+2. **Edits & promotions** (`auto`/`pending` → `approved`, fixing a name or color) →
+   admin portal (`/admin/translations`) or `POST /api/admin/translations/bulk-json`.
+   These are the source of truth for existing rows — editing the data module will *not*
+   overwrite them.
 3. **Data-quality sweeps** → `scripts/ops/cleanup_translations.py`.
 
 > Removed in this refactor (superseded by the startup reconciler): `seed_translations.py`,

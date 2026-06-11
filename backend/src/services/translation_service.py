@@ -331,13 +331,14 @@ class TranslationService:
     def backfill_translations(
         self,
         entries: list[tuple],
-        colors: dict[str, str],
     ) -> int:
         """
         Seed stock translations from a list of (ticker, market, name_en, name_zh_tw, status).
         - Inserts rows that don't exist yet.
-        - Fills in name_en/name_zh_tw/brand_color for existing stub rows (name_en is NULL
-          and status is not "approved"), without downgrading approved rows.
+        - Fills in name_en/name_zh_tw for existing stub rows (name_en is NULL and status
+          is not "approved"), without downgrading approved rows.
+        - Does not write brand_color; the stock_translations table is the source of truth
+          for colors and is maintained through the admin/bulk endpoints.
         Returns count of rows inserted or updated.
         """
         affected = 0
@@ -350,7 +351,6 @@ class TranslationService:
                     name_en=name_en,
                     name_zh_tw=name_zh_tw,
                     translation_status=status,
-                    brand_color=colors.get(ticker),
                 )
                 self.create(data, "startup_backfill")
                 affected += 1
@@ -359,29 +359,10 @@ class TranslationService:
                 existing.name_en = name_en
                 existing.name_zh_tw = name_zh_tw
                 existing.translation_status = status
-                if existing.brand_color is None:
-                    existing.brand_color = colors.get(ticker)
                 existing.last_updated_by = "startup_backfill"
                 self.db.commit()
                 affected += 1
         return affected
-
-    def backfill_brand_colors(self, colors: dict[str, str]) -> int:
-        """Set brand_color for rows where it is currently NULL. Returns count updated."""
-        rows = (
-            self.db.query(StockTranslation)
-            .filter(StockTranslation.brand_color.is_(None))
-            .all()
-        )
-        updated = 0
-        for row in rows:
-            color = colors.get(row.ticker)
-            if color:
-                row.brand_color = color
-                updated += 1
-        if updated:
-            self.db.commit()
-        return updated
 
     def get_stats(self) -> dict:
         """Get translation statistics."""

@@ -85,24 +85,21 @@ async def lifespan(app: FastAPI):
     await RedisClient.initialize()
     await init_search_index()
 
-    # Seed missing translations and backfill brand colors (insert-only, never overwrites)
+    # Seed missing translations (names only). Brand colors live in stock_translations
+    # and are maintained through the admin/bulk endpoints, not code-side seed data.
     try:
-        from src.data.brand_colors import BRAND_COLORS
         from src.data.seed_data import TRANSLATIONS
         from src.data.us_stocks import US_STOCK_TRANSLATIONS
         from src.database.postgres import get_session
         from src.services.translation_service import TranslationService
         for session in get_session():
             svc = TranslationService(session)
-            tw_inserted = svc.backfill_translations(TRANSLATIONS, BRAND_COLORS)
+            tw_inserted = svc.backfill_translations(TRANSLATIONS)
             if tw_inserted:
                 print(f"Backfilled {tw_inserted} new TW/core stock translation(s).")
-            us_inserted = svc.backfill_translations(US_STOCK_TRANSLATIONS, BRAND_COLORS)
+            us_inserted = svc.backfill_translations(US_STOCK_TRANSLATIONS)
             if us_inserted:
                 print(f"Backfilled {us_inserted} new US stock translation(s).")
-            updated = svc.backfill_brand_colors(BRAND_COLORS)
-            if updated:
-                print(f"Backfilled brand_color for {updated} stock translation(s).")
             break
     except Exception as e:
         print(f"Warning: translation seed/backfill skipped: {e}")
@@ -251,22 +248,11 @@ async def global_exception_handler(request: Request, exc: Exception):
 @app.get("/health")
 async def health_check():
     """Health check endpoint with component status."""
-    import os
     redis_available = await RedisClient.is_available()
     
     # Check Redis configuration
     redis_url = settings.redis_connection_string
     redis_url_configured = redis_url is not None
-    redis_url_from_env = "REDIS_URL" in os.environ
-    
-    # Mask password in URL for logging
-    redis_url_display = None
-    if redis_url:
-        if "@" in redis_url and ":" in redis_url.split("@")[0]:
-            parts = redis_url.split("@")
-            redis_url_display = f"redis://:***@{parts[1]}" if len(parts) > 1 else redis_url
-        else:
-            redis_url_display = redis_url
     
     # Check database connectivity
     db_status = {"status": "unknown", "type": "unknown"}
@@ -431,4 +417,3 @@ if __name__ == "__main__":
             port=settings.port,
             timeout_graceful_shutdown=5,
         )
-

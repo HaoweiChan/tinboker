@@ -68,8 +68,7 @@ tinboker/backend/
 │       └── admin_auth.py            [NEW] Simple password auth
 ├── data/
 │   ├── seed_data.py                 TRANSLATIONS (curated TW + core)
-│   ├── us_stocks.py                 US_STOCK_TRANSLATIONS
-│   └── brand_colors.py              BRAND_COLORS
+│   └── us_stocks.py                 US_STOCK_TRANSLATIONS
 ├── scripts/
 │   └── ops/cleanup_translations.py  Data-quality maintenance sweep
 └── docs/
@@ -206,15 +205,17 @@ reconciles `stock_translations` from the data modules (`src/main.py` lifespan �
 
 - `src/data/seed_data.py` — `TRANSLATIONS` (curated TW + core stocks)
 - `src/data/us_stocks.py` — `US_STOCK_TRANSLATIONS`
-- `src/data/brand_colors.py` — `BRAND_COLORS`
+
+Brand colors are **not** seeded from code. `stock_translations.brand_color` is the
+source of truth and is maintained through the admin portal or bulk JSON import.
 
 The reconciler is **insert / fill-stub only**: it adds missing rows and fills empty
 auto-created stubs, but **never overwrites an `approved` row**. The maintenance model:
 
 1. **Bulk / new tickers** → add to the data module above; they land on next boot.
-2. **Edits & promotions** (`auto`/`pending` → `approved`, fixing a zh-TW name) → admin
-   portal (`/admin/translations`) or `POST /api/admin/translations/bulk-json`. These own
-   existing rows — editing the data module will not overwrite them.
+2. **Edits & promotions** (`auto`/`pending` → `approved`, fixing a zh-TW name or color)
+   → admin portal (`/admin/translations`) or `POST /api/admin/translations/bulk-json`.
+   These own existing rows — editing the data module will not overwrite them.
 3. **Data-quality sweeps** → `python scripts/ops/cleanup_translations.py --dry-run`.
 
 > The old one-off scripts (`migrate_ticker_json.py`, `seed_translations.py`,
