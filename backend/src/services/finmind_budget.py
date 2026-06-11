@@ -30,11 +30,10 @@ from src.config import settings
 
 logger = logging.getLogger(__name__)
 
-# FinMind's registered free tier allows ~300 requests/hour PER KEY. Cap a little under
-# that so we rotate to the next key before FinMind starts returning 402s (a too-high cap
-# means the budget never trips and every call 402s). Override via env. The pool of keys
-# multiplies this — N keys ≈ N×cap effective. Also self-corrects: a real 402/429 retires
-# the key via exhaust() regardless of the cap.
+# FinMind's registered free tier rate-limits PER IP (~300 requests/hour), NOT per key —
+# so extra keys from one host don't raise the ceiling. This is a single global hourly cap
+# set a little under the free limit so we stop calling (and serve stale) BEFORE FinMind
+# starts returning 402s. Override via env. A real 402/429 also retires it via exhaust().
 HOURLY_CAP = int(os.getenv("FINMIND_HOURLY_CAP", "280"))
 _WINDOW_SECONDS = 3700  # one hour + slack, so the key outlives its clock-hour
 

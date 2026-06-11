@@ -16,6 +16,11 @@ from src.cache.cache_config import CACHE_TTL
 
 logger = logging.getLogger(__name__)
 
+# Long-lived "last known good" copy, served when the upstream API is rate-limited
+# (FinMind's free tier is per-IP capped at ~300 req/hr, so heavy hours exhaust it).
+# Serving a stale price beats a 404/blank card.
+_STALE_TTL = 60 * 60 * 24 * 7  # 7 days
+
 
 class StockService:
     """Service for stock operations - always uses Massive API"""
@@ -108,16 +113,25 @@ class StockService:
             # Store in cache only if not a pagination request
             if result and not before:
                 try:
-                    await cache_set(
-                        cache_key,
-                        json.dumps(result.dict(), default=str),
-                        CACHE_TTL["stock_info"]
-                    )
+                    payload = json.dumps(result.dict(), default=str)
+                    await cache_set(cache_key, payload, CACHE_TTL["stock_info"])
+                    # Long-lived stale copy: served when the upstream is rate-limited
+                    # (FinMind free tier is per-IP capped ~300/hr) so prices still render.
+                    await cache_set(f"{cache_key}:stale", payload, _STALE_TTL)
                 except Exception:
                     pass  # Cache failure shouldn't break the request
-            
+
             return result
-        
+
+        # Upstream returned nothing (e.g. FinMind 402 quota). Serve the last-known value
+        # rather than 404 so TW stock pages don't break during rate-limited hours.
+        if not before:
+            stale = await cache_get(f"{cache_key}:stale")
+            if stale:
+                try:
+                    return CompanyDetail(**json.loads(stale))
+                except Exception:
+                    pass
         return None
     
     
@@ -185,18 +199,23 @@ class StockService:
                 }
             }
             
-            # Store in cache
+            # Store in cache (fresh + long-lived stale copy for rate-limited hours)
             try:
-                await cache_set(
-                    cache_key,
-                    json.dumps(result, default=str),
-                    CACHE_TTL["stock_basic"]
-                )
+                payload = json.dumps(result, default=str)
+                await cache_set(cache_key, payload, CACHE_TTL["stock_basic"])
+                await cache_set(f"{cache_key}:stale", payload, _STALE_TTL)
             except Exception:
                 pass  # Cache failure shouldn't break the request
-            
+
             return result
-        
+
+        # Upstream returned nothing (rate-limited) — serve the last-known value.
+        stale = await cache_get(f"{cache_key}:stale")
+        if stale:
+            try:
+                return json.loads(stale)
+            except Exception:
+                pass
         return None
     
     
