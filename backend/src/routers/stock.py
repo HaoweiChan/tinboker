@@ -76,24 +76,32 @@ async def get_batch_prices(
 ):
     """
     Get changePercent for multiple tickers in one request.
-    Uses the same per-ticker Redis cache as /{ticker}/basic.
-    Returns {TICKER: changePercent} — null if not found.
+
+    Serves end-of-day change% from the warm stock_daily_closes table (no external API),
+    falling back to the live per-ticker path only for tickers not yet stored.
+    Returns {TICKER: changePercent} — null if unavailable.
     """
     ticker_list = [t.strip().upper() for t in tickers.split(',') if t.strip()][:100]
     if not ticker_list:
         return {}
 
-    async def _fetch_with_timeout(t: str):
-        try:
-            return await asyncio.wait_for(stock_service.get_stock_basic_info_async(t), timeout=8)
-        except (asyncio.TimeoutError, Exception):
-            return None
+    from src.services.stock_close_refresh import get_eod_change_pct
 
-    results = await asyncio.gather(*[_fetch_with_timeout(t) for t in ticker_list])
-    return {
-        ticker: (info.get('changePercent') if isinstance(info, dict) else None)
-        for ticker, info in zip(ticker_list, results)
-    }
+    async def _change(t: str):
+        # 1. EOD change from Postgres — no external call, immune to the free-tier limits.
+        eod = await get_eod_change_pct(t)
+        if eod is not None:
+            return eod
+        # 2. Fallback for not-yet-stored tickers: the live (rate-limited) path, which
+        #    itself serves last-known-good when the upstream is throttled.
+        try:
+            info = await asyncio.wait_for(stock_service.get_stock_basic_info_async(t), timeout=8)
+        except (asyncio.TimeoutError, Exception):
+            info = None
+        return info.get('changePercent') if isinstance(info, dict) else None
+
+    results = await asyncio.gather(*[_change(t) for t in ticker_list])
+    return {ticker: pct for ticker, pct in zip(ticker_list, results)}
 
 
 class TickerDatePair(BaseModel):

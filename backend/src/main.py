@@ -152,6 +152,18 @@ async def lifespan(app: FastAPI):
 
     asyncio.create_task(_backfill_covers_bg())
 
+    # Keep the permanent stock_daily_closes table warm for trending tickers so the
+    # homepage can serve EOD prices from Postgres instead of hammering the rate-limited
+    # FinMind/Massive free tiers per request. Slow + throttled; must not block startup.
+    async def _refresh_closes_bg():
+        try:
+            from src.services.stock_close_refresh import run_periodic_refresh
+            await run_periodic_refresh(interval_hours=6.0)
+        except Exception as e:
+            print(f"Warning: stock close refresher stopped: {e}")
+
+    asyncio.create_task(_refresh_closes_bg())
+
     yield
 
     # --- Shutdown ---
