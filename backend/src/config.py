@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     # single finmind_api_key when unset.
     finmind_api_keys: Optional[str] = None
     massive_api_key: Optional[str] = None
+    # Optional pool of Massive/Polygon keys (comma-separated) → GSM secret MASSIVE_API_KEYS.
+    # Massive (Polygon) rate-limits PER KEY (~5/min), so a pool genuinely multiplies the
+    # ceiling. Falls back to the single massive_api_key when unset.
+    massive_api_keys: Optional[str] = None
     podcast_api_key: Optional[str] = None  # API key for external podcast API (Netcup server)
     
     # Google OAuth Configuration
@@ -318,6 +322,24 @@ class Settings(BaseSettings):
         FINMIND_API_KEY. De-duplicates while preserving order.
         """
         raw = self.finmind_api_keys or self.finmind_api_key or ""
+        seen: set[str] = set()
+        pool: list[str] = []
+        for k in raw.split(","):
+            k = k.strip()
+            if k and k not in seen:
+                seen.add(k)
+                pool.append(k)
+        return pool
+
+    @property
+    def massive_api_key_pool(self) -> list[str]:
+        """
+        Ordered list of Massive/Polygon API keys to rotate across.
+
+        Prefers the comma-separated MASSIVE_API_KEYS pool; falls back to the single
+        MASSIVE_API_KEY. De-duplicates while preserving order.
+        """
+        raw = self.massive_api_keys or self.massive_api_key or ""
         seen: set[str] = set()
         pool: list[str] = []
         for k in raw.split(","):

@@ -8,6 +8,7 @@ This module provides a wrapper around the Massive API client with:
 """
 
 import logging
+import os
 import time
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta
@@ -29,6 +30,23 @@ _IMG_CACHE: dict = {}
 _IMG_CACHE_MAX = 4000
 _IMG_FAIL_TTL = 600  # seconds to skip a URL after a failed fetch (e.g. 429)
 
+# Massive (Polygon) free tier is ~5 requests/min PER KEY (per-key, not per-IP), so a pool
+# of keys genuinely multiplies the ceiling. We track a per-key per-minute budget in-process
+# and hand out the first key with remaining budget for each SDK call — load-balancing across
+# keys. A key that 429s anyway just raises (caller serves stale); the next call rotates.
+_MASSIVE_PER_MIN = int(os.getenv("MASSIVE_PER_MIN_LIMIT", "5"))
+_minute_counts: dict = {}  # key_id -> [minute, count]
+
+
+def _consume_minute(key_id: str) -> bool:
+    minute = int(time.time() // 60)
+    entry = _minute_counts.get(key_id)
+    if entry is None or entry[0] != minute:
+        entry = [minute, 0]
+        _minute_counts[key_id] = entry
+    entry[1] += 1
+    return entry[1] <= _MASSIVE_PER_MIN
+
 
 class MassiveAPIError(Exception):
     """Custom exception for Massive API errors."""
@@ -45,20 +63,41 @@ class MassiveAPIService:
         Args:
             api_key: Massive API key. If None, reads from MASSIVE_API_KEY env var
         """
-        self.api_key = api_key or settings.massive_api_key
-        if not self.api_key:
-            logger.warning("Massive API key not configured. API calls will fail.")
-            self.client = None
-        else:
+        # Pool of keys (Massive/Polygon limits per key, so a pool multiplies the ceiling).
+        # An explicitly-passed key wins; otherwise use the configured pool.
+        pool = [api_key] if api_key else settings.massive_api_key_pool
+        # First key is also used for the (cached) branding-image auth header.
+        self.api_key = pool[0] if pool else None
+        self._clients = []  # list of (key_id, RESTClient)
+        for i, key in enumerate(pool):
             try:
-                self.client = RESTClient(self.api_key)
+                self._clients.append((str(i), RESTClient(key)))
             except Exception as e:
-                logger.error(f"Failed to initialize Massive API client: {e}")
-                self.client = None
-    
+                logger.error(f"Failed to initialize Massive API client #{i}: {e}")
+        if not self._clients:
+            logger.warning("Massive API key not configured. API calls will fail.")
+        elif len(self._clients) > 1:
+            logger.info(f"Massive: rotating across {len(self._clients)} keys (~{_MASSIVE_PER_MIN}/min each).")
+
+    @property
+    def client(self):
+        """A RESTClient for a key with remaining per-minute budget (rotates/load-balances).
+
+        Accessing this consumes one unit of the chosen key's minute budget, so every
+        existing ``self.client.xxx()`` call automatically spreads across the pool. When all
+        keys are spent for the current minute, returns the first client anyway (it may 429,
+        and the caller degrades to cached/stale data).
+        """
+        if not self._clients:
+            return None
+        for key_id, cl in self._clients:
+            if _consume_minute(key_id):
+                return cl
+        return self._clients[0][1]
+
     def _check_client(self) -> None:
-        """Check if client is initialized."""
-        if self.client is None:
+        """Check that at least one client is configured."""
+        if not self._clients:
             raise MassiveAPIError("Massive API client not initialized. Check API key configuration.")
 
     def _fetch_image_b64(self, url: Optional[str]) -> Optional[str]:
