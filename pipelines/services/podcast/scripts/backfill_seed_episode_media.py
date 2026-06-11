@@ -30,7 +30,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 sys.path.insert(0, str(Path(__file__).parent))
 
-from seed_new_podcasts import SEED_DIR, log, upload_episode_media  # noqa: E402  (bootstraps secrets)
+from seed_new_podcasts import (  # noqa: E402  (bootstraps secrets)
+    SEED_DIR,
+    log,
+    upload_episode_media,
+)
 from src.service.firestore_service import FirestoreService  # noqa: E402
 from src.service.gcs_storage_service import GCSStorageService  # noqa: E402
 
@@ -63,15 +67,15 @@ def backfill_episode(
     log(f"  {ep_id} | {doc.get('episode_title', '')[:50]} | missing: {', '.join(missing)}")
 
     if dry_run:
-        log(f"    [dry-run] would upload media and patch the doc")
+        log("    [dry-run] would upload media and patch the doc")
         return True
 
     media_urls = upload_episode_media(gcs, data, summary_content=doc.get("summary_content"))
     if not media_urls.get("mp3_url"):
-        log(f"    WARNING: MP3 upload failed — episode stays unplayable")
+        log("    WARNING: MP3 upload failed — episode stays unplayable")
     update = {k: v for k, v in media_urls.items() if v}
     if not update:
-        log(f"    Nothing uploaded; doc left unchanged")
+        log("    Nothing uploaded; doc left unchanged")
         return False
 
     fs.set_document("episodes", ep_id, update, merge=True)

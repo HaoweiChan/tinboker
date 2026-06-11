@@ -5,7 +5,6 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from src.watcher import (
     EpisodeWatcher,
     WatcherConfig,
@@ -14,7 +13,6 @@ from src.watcher import (
     _load_active_shows,
     load_watcher_config,
 )
-
 
 # --- _is_fully_processed ---
 

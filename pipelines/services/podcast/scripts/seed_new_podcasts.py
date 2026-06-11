@@ -9,15 +9,15 @@ Usage:
     python scripts/seed_new_podcasts.py fetch     # Phase 1
     python scripts/seed_new_podcasts.py upload     # Phase 2
 """
+import argparse
+import hashlib
 import json
 import os
 import re
 import sys
 import time
-import hashlib
-import argparse
-from pathlib import Path
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from src.secrets_bootstrap import bootstrap
@@ -25,10 +25,10 @@ from src.secrets_bootstrap import bootstrap
 bootstrap()
 
 import requests
-from src.service.speech_to_text import GroqService
-from src.service.upload_to_firebase import FirebaseService
 from src.service.firestore_service import FirestoreService
 from src.service.gcs_storage_service import GCSStorageService
+from src.service.speech_to_text import GroqService
+from src.service.upload_to_firebase import FirebaseService
 
 SEED_DIR = Path(__file__).parent / "seed_data"
 SEED_DIR.mkdir(exist_ok=True)
@@ -137,23 +137,23 @@ def cmd_fetch(args):
 
             result_file = SEED_DIR / f"{ep_id}.json"
             if result_file.exists():
-                log(f"    Already processed, skipping")
+                log("    Already processed, skipping")
                 with open(result_file) as f:
                     podcast_results.append(json.load(f))
                 continue
 
             if not ep_url:
-                log(f"    No MP3 URL, skipping")
+                log("    No MP3 URL, skipping")
                 continue
 
             mp3_dir = SEED_DIR / "mp3"
             mp3_dir.mkdir(exist_ok=True)
             mp3_path = mp3_dir / f"{ep_id}.mp3"
-            log(f"    Downloading MP3...")
+            log("    Downloading MP3...")
             if not download_mp3(ep_url, mp3_path):
                 continue
 
-            log(f"    Transcribing with Groq Whisper...")
+            log("    Transcribing with Groq Whisper...")
             t0 = time.time()
             transcript_result = transcribe_mp3(mp3_path, groq_svc)
             if not transcript_result:
@@ -196,7 +196,7 @@ def cmd_fetch(args):
         log(f"  {name}: {len(results)} episodes")
     total = sum(len(r) for r in all_results.values())
     log(f"  Total: {total} episodes saved to {SEED_DIR}")
-    log(f"\nNext: Generate content for each episode, then run 'upload'")
+    log("\nNext: Generate content for each episode, then run 'upload'")
 
 
 def upload_episode_media(
@@ -215,12 +215,12 @@ def upload_episode_media(
     if not mp3_path.exists():
         ep_url = data.get("episode_url")
         if ep_url:
-            log(f"    MP3 not on disk — re-downloading from source feed...")
+            log("    MP3 not on disk — re-downloading from source feed...")
             mp3_path.parent.mkdir(exist_ok=True)
             if not download_mp3(ep_url, mp3_path):
                 mp3_path = None
         else:
-            log(f"    WARNING: no local MP3 and no episode_url — mp3_url will stay null")
+            log("    WARNING: no local MP3 and no episode_url — mp3_url will stay null")
             mp3_path = None
 
     transcript_data = None
@@ -272,12 +272,12 @@ def cmd_upload(args):
 
         log(f"\n  Uploading: {ep_id} | {name} | {title[:50]}")
 
-        log(f"    Uploading media to GCS...")
+        log("    Uploading media to GCS...")
         media_urls = upload_episode_media(gcs, data)
         if media_urls.get("mp3_url"):
             log(f"    MP3 -> {media_urls['mp3_url']}")
         else:
-            log(f"    WARNING: episode has no MP3 in GCS — unplayable on the platform")
+            log("    WARNING: episode has no MP3 in GCS — unplayable on the platform")
 
         dp = data.get("date_published", "")
         try:
@@ -322,7 +322,7 @@ def cmd_upload(args):
         episode_doc.update(media_urls)
 
         fs.set_document("episodes", ep_id, episode_doc, merge=True)
-        log(f"    Written episode doc")
+        log("    Written episode doc")
 
         tickers = data.get("related_tickers", [])
         tags = data.get("tags", [])
@@ -351,7 +351,7 @@ def cmd_upload(args):
             mp3_path = SEED_DIR / "mp3" / f"{ep_id}.mp3"
             if mp3_path.exists():
                 mp3_path.unlink()
-                log(f"    Cleaned up local MP3 (now in GCS)")
+                log("    Cleaned up local MP3 (now in GCS)")
 
     log(f"\n{'='*60}")
     log("Writing podcast show documents...")
@@ -378,7 +378,7 @@ def cmd_upload(args):
         fb.upsert_podcast_show(name, show_meta)
         log(f"  {name}: show doc written")
 
-    log(f"\nDone! Check https://dev.tinboker.com/podcaster")
+    log("\nDone! Check https://dev.tinboker.com/podcaster")
 
 
 if __name__ == "__main__":
