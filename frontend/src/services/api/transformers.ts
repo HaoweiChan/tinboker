@@ -344,8 +344,11 @@ export function transformApiEpisodeToMock(apiEpisode: ApiEpisode): MockEpisode |
     summary,
     imageUrl,
     spotifyUri,
-    mp3Url: apiEpisode.mp3_url || apiEpisode.mp3_public_url
-      ? getEpisodeAudioUrl(apiEpisode.podcast_name, apiEpisode.id)
+    // Only build the audio URL when we actually have a podcast name and an mp3 source —
+    // otherwise getEpisodeAudioUrl() would produce /api/podcast//episodes/{id}/audio
+    // (or .../undefined/...) which 404s and silently breaks playback.
+    mp3Url: podcastName && (apiEpisode.mp3_url || apiEpisode.mp3_public_url)
+      ? getEpisodeAudioUrl(podcastName, apiEpisode.id)
       : undefined,
     keyInsights: apiEpisode.key_insights || [],
   };

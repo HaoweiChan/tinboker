@@ -1,14 +1,35 @@
 from fastapi import APIRouter, BackgroundTasks
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 import logging
 from src.cache.redis_client import get_redis
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+# This endpoint is intentionally public (fire-and-forget click tracking from the web
+# app), so the inputs must be tightly bounded — an attacker could otherwise send
+# unlimited unique type/id pairs and grow the Redis ZSETs until the shared cache OOMs.
+ALLOWED_CLICK_TYPES = frozenset({"podcast", "stock", "episode"})
+MAX_CLICK_ID_LENGTH = 128
+
 class ClickEvent(BaseModel):
     type: str  # "podcast", "stock", "episode"
     id: str    # "gooaye", "2330", "ep-123"
+
+    @field_validator("type")
+    @classmethod
+    def _validate_type(cls, v: str) -> str:
+        if v not in ALLOWED_CLICK_TYPES:
+            raise ValueError(f"type must be one of {sorted(ALLOWED_CLICK_TYPES)}")
+        return v
+
+    @field_validator("id")
+    @classmethod
+    def _validate_id(cls, v: str) -> str:
+        v = v.strip()
+        if not v or len(v) > MAX_CLICK_ID_LENGTH:
+            raise ValueError(f"id must be 1-{MAX_CLICK_ID_LENGTH} characters")
+        return v
 
 @router.post("/click", status_code=202)
 async def track_click(event: ClickEvent, background_tasks: BackgroundTasks):

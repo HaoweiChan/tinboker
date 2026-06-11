@@ -1,5 +1,12 @@
 # Production Container Reliability
 
+> **⚠️ Historical (2026-02-02) — superseded.** This report describes the original
+> per-environment layout (separate `tinboker-{prod,staging,dev}.service` units running
+> `docker-compose.{env}.yml`). The VPS now runs all three environments from a single
+> `docker-compose.multi.yml` via one `tinboker.service`. For the current setup see
+> [`docs/infra-runbook.md`](../../docs/infra-runbook.md) and
+> [`backend/deploy/systemd/tinboker.service`](../deploy/systemd/tinboker.service).
+
 Implementation report for ensuring TinBoker backend containers are highly available and automatically recover from failures.
 
 ## Implementation Date

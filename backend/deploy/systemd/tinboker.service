@@ -1,0 +1,15 @@
+[Unit]
+Description=TinBoker Backend (all environments via docker-compose.multi.yml)
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/app/backend
+ExecStart=/usr/bin/docker compose -f docker-compose.multi.yml up -d
+ExecStop=/usr/bin/docker compose -f docker-compose.multi.yml down
+ExecReload=/usr/bin/docker compose -f docker-compose.multi.yml up -d --force-recreate
+
+[Install]
+WantedBy=multi-user.target

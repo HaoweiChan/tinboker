@@ -1,131 +1,45 @@
-# Base docker-compose configuration
-# Use with: docker compose -f docker-compose.yml -f docker-compose.{env}.yml up
+# Local development infrastructure (Redis + Postgres).
 #
-# Available environments:
-#   - docker-compose.dev.yml     (port 8001, dev-api.tinboker.com)
-#   - docker-compose.staging.yml (port 8002, staging-api.tinboker.com)
-#   - docker-compose.prod.yml    (port 8000, api.tinboker.com)
+# The VPS runs all three environments from docker-compose.multi.yml — this file is
+# ONLY for local development. Run the backend itself with `python -m src.main`
+# (see CLAUDE.md); use this just to bring up its backing services:
 #
-# Example:
-#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#   docker compose up -d redis        # Redis only (default: USE_POSTGRES=false → SQLite)
+#   docker compose up -d              # Redis + Postgres (for local USE_POSTGRES=true)
 
 services:
-  backend:
-    # Override image in environment-specific files
+  redis:
+    image: redis:7-alpine
+    container_name: tinboker-redis-local
+    ports:
+      - "127.0.0.1:6379:6379"
+    command: redis-server --appendonly no
     restart: unless-stopped
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
-      interval: 30s
-      timeout: 10s
-      start_period: 30s
-      retries: 5
-    depends_on:
-      redis:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-    volumes:
-      - ./gcp-service-account.json:/app/gcp-service-account.json:ro
-    environment:
-      PORT: "8000"
-      HOST: 0.0.0.0
-      REDIS_URL: redis://redis:6379/0
-      USE_POSTGRES: "true"
-      GCP_PROJECT_ID: gen-lang-client-0901363254
-      GOOGLE_APPLICATION_CREDENTIALS: /app/gcp-service-account.json
-      GCP_CREDENTIALS_PATH: /app/gcp-service-account.json
-      FIRESTORE_DATABASE_ID: graphfolio-db
-      # PostgreSQL (VPS) - shared across all environments via the `postgres` service.
-      # POSTGRES_PASSWORD is intentionally not set here so it can be loaded from
-      # GCP Secret Manager via config_loader.py (Settings field: postgres_password).
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: "5432"
-      POSTGRES_DB: podcast_db
-      POSTGRES_USER: podcast_user
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
 
   postgres:
     image: postgres:16-alpine
-    container_name: tinboker-postgres
+    container_name: tinboker-postgres-local
     ports:
-      - "127.0.0.1:5433:5432"
+      - "127.0.0.1:5432:5432"
     environment:
       POSTGRES_USER: podcast_user
       POSTGRES_DB: podcast_db
-      # Read from host .env (see .env.example). Must match POSTGRES_PASSWORD in GSM.
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in backend/.env}
+      # Local-only default; override via backend/.env if you want.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-localdev}
     volumes:
       - postgres-data:/var/lib/postgresql/data
     restart: unless-stopped
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U podcast_user -d podcast_db" ]
+      test: ["CMD-SHELL", "pg_isready -U podcast_user -d podcast_db"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 30s
 
-  redis:
-    image: redis:7-alpine
-    container_name: tinboker-redis
-    ports:
-      - "127.0.0.1:6379:6379"
-    command: redis-server --appendonly no --maxmemory 2gb --maxmemory-policy allkeys-lru
-    volumes:
-      - redis-data:/data
-    restart: unless-stopped
-    healthcheck:
-      test: [ "CMD", "redis-cli", "ping" ]
-      interval: 10s
-      timeout: 3s
-      retries: 3
-
-  # Lightweight monitoring for Docker containers and VPS metrics
-  netdata:
-    image: netdata/netdata:stable
-    container_name: tinboker-netdata
-    hostname: tinboker-vps
-    ports:
-      - "127.0.0.1:19999:19999" # Internal only, accessed via Caddy proxy
-    cap_add:
-      - SYS_PTRACE
-      - SYS_ADMIN
-    security_opt:
-      - apparmor:unconfined
-    volumes:
-      - netdataconfig:/etc/netdata
-      - netdatalib:/var/lib/netdata
-      - netdatacache:/var/cache/netdata
-      - /etc/passwd:/host/etc/passwd:ro
-      - /etc/group:/host/etc/group:ro
-      - /etc/localtime:/etc/localtime:ro
-      - /proc:/host/proc:ro
-      - /sys:/host/sys:ro
-      - /etc/os-release:/host/etc/os-release:ro
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-    environment:
-      - NETDATA_CLAIM_TOKEN= # Optional: for Netdata Cloud
-      - DOCKER_HOST=/var/run/docker.sock
-      # Reduce resource usage for 8GB VPS
-      - NETDATA_DISABLE_TELEMETRY=1
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-    healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:19999/api/v1/info" ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
 volumes:
-  redis-data:
   postgres-data:
-  netdataconfig:
-  netdatalib:
-  netdatacache:
-
-
-networks:
-  default:
-    name: app_default
-    external: true

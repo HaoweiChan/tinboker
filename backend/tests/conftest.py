@@ -4,10 +4,35 @@ Pytest configuration and fixtures
 import pytest
 import sqlite3
 import os
+import sys
 import tempfile
 from pathlib import Path
 from src.database.db import init_db, get_connection
 from src.config import settings
+
+
+@pytest.hookimpl(trylast=True)
+def pytest_sessionfinish(session, exitstatus):
+    """Force a clean process exit after the test summary is printed.
+
+    Starlette's TestClient (used across the integration tests without a context
+    manager) leaks non-daemon anyio worker threads, which idle forever in queue.get.
+    Python's interpreter shutdown joins all non-daemon threads, so the process hangs
+    in threading._shutdown after every test has passed — on CI this stalled the job
+    for 30+ minutes. The pass/fail summary has already been emitted by this point, so
+    exit immediately with the real status instead of waiting on threads that will
+    never return. (This is a test-harness artifact only; production runs under uvicorn,
+    not TestClient.)
+    """
+    # Print an explicit result line — os._exit skips pytest's own trailing summary.
+    print(
+        f"\n[conftest] session complete: {session.testscollected} collected, "
+        f"{session.testsfailed} failed (exitstatus={int(exitstatus)}); forcing clean exit.",
+        flush=True,
+    )
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(int(exitstatus))
 
 
 @pytest.fixture(scope="function")

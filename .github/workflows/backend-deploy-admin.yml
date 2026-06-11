@@ -95,14 +95,16 @@ jobs:
         id: config
         run: |
           if [ "${{ github.event.inputs.environment }}" == "production" ]; then
-            echo "compose_file=docker-compose.prod.yml" >> $GITHUB_OUTPUT
+            echo "service=backend-prod" >> $GITHUB_OUTPUT
+            echo "image_var=PROD_IMAGE_TAG" >> $GITHUB_OUTPUT
             echo "port=8000" >> $GITHUB_OUTPUT
             echo "netdata_port=19999" >> $GITHUB_OUTPUT
             echo "api_host=api.tinboker.com" >> $GITHUB_OUTPUT
           else
-            echo "compose_file=docker-compose.staging.yml" >> $GITHUB_OUTPUT
+            echo "service=backend-staging" >> $GITHUB_OUTPUT
+            echo "image_var=STAGING_IMAGE_TAG" >> $GITHUB_OUTPUT
             echo "port=8002" >> $GITHUB_OUTPUT
-            echo "netdata_port=19998" >> $GITHUB_OUTPUT
+            echo "netdata_port=19999" >> $GITHUB_OUTPUT
             echo "api_host=staging-api.tinboker.com" >> $GITHUB_OUTPUT
           fi
           echo "include_netdata=${{ github.event.inputs.include_netdata }}" >> $GITHUB_OUTPUT
@@ -151,13 +153,17 @@ jobs:
             cd /app/backend
 
             echo "$GHCR_TOKEN" | docker login ghcr.io -u haoweichan --password-stdin
-            docker pull ghcr.io/haoweichan/tinboker-backend:${{ github.event.inputs.image_tag }}
 
-            IMAGE_TAG=${{ github.event.inputs.image_tag }} docker compose -f ${{ steps.config.outputs.compose_file }} up -d backend postgres redis --force-recreate
+            # Deploy the chosen image tag to the selected env's service on the canonical
+            # multi-env compose. Shared infra (postgres/redis) stays running; only the
+            # target backend service is recreated.
+            ${{ steps.config.outputs.image_var }}=${{ github.event.inputs.image_tag }} docker compose -f docker-compose.multi.yml pull ${{ steps.config.outputs.service }}
+            docker compose -f docker-compose.multi.yml up -d --no-recreate postgres redis
+            ${{ steps.config.outputs.image_var }}=${{ github.event.inputs.image_tag }} docker compose -f docker-compose.multi.yml up -d --no-deps ${{ steps.config.outputs.service }}
 
             if [ "${{ steps.config.outputs.include_netdata }}" == "true" ]; then
-              docker compose -f ${{ steps.config.outputs.compose_file }} up -d netdata --force-recreate
-              echo "Netdata deployed on port ${{ steps.config.outputs.netdata_port }}"
+              docker compose -f docker-compose.multi.yml up -d --no-recreate netdata
+              echo "Netdata running on port ${{ steps.config.outputs.netdata_port }}"
             fi
 
             docker exec caddy caddy reload --config /etc/caddy/Caddyfile || true

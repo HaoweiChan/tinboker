@@ -355,7 +355,7 @@ ssh root@152.53.136.182 "docker inspect tinboker-backend-prod --format='{{.Confi
 ```
 
 - [ ] Previous image tag is noted (for manual rollback if needed)
-- [ ] Document rollback command: `docker compose -f docker-compose.prod.yml up -d --no-deps backend` with previous `IMAGE_TAG`
+- [ ] Document rollback command: `PROD_IMAGE_TAG=<prev> docker compose -f docker-compose.multi.yml up -d --no-deps backend-prod` with the previous image tag
 
 ---
 

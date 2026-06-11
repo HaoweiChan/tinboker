@@ -12,8 +12,8 @@ Everything outside the application code: hosting, networking, containers, CI/CD 
 |---|---|
 | CI/CD workflows | [`.github/workflows/backend-ci.yml`](../../.github/workflows/backend-ci.yml), [`.github/workflows/backend-deploy.yml`](../../.github/workflows/backend-deploy.yml), [`.github/workflows/backend-deploy-admin.yml`](../../.github/workflows/backend-deploy-admin.yml), [`.github/workflows/backend-health-check.yml`](../../.github/workflows/backend-health-check.yml), [`.github/workflows/frontend-ci.yml`](../../.github/workflows/frontend-ci.yml), [`.github/workflows/frontend-deploy.yml`](../../.github/workflows/frontend-deploy.yml) |
 | Docker images | [`backend/Dockerfile`](../../backend/Dockerfile) |
-| Docker compose (single env) | [`backend/docker-compose.yml`](../../backend/docker-compose.yml), [`backend/docker-compose.dev.yml`](../../backend/docker-compose.dev.yml), [`backend/docker-compose.staging.yml`](../../backend/docker-compose.staging.yml), [`backend/docker-compose.prod.yml`](../../backend/docker-compose.prod.yml) |
-| Docker compose (multi-env on VPS) | [`backend/docker-compose.multi.yml`](../../backend/docker-compose.multi.yml) |
+| Docker compose (VPS — all 3 envs) | [`backend/docker-compose.multi.yml`](../../backend/docker-compose.multi.yml) — the single source of truth for prod/staging/dev on the VPS |
+| Docker compose (local dev infra) | [`backend/docker-compose.yml`](../../backend/docker-compose.yml) — Redis + Postgres for local development only |
 | Backend config + secrets loader | [`backend/src/config.py`](../../backend/src/config.py), [`backend/src/config_loader.py`](../../backend/src/config_loader.py) |
 | Full deploy runbook | [`infra-runbook.md`](../infra-runbook.md) |
 | Caddy / firewall / DNS | Documented in [`infra-runbook.md`](../infra-runbook.md) Part 1 |

@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     # ==================== Secrets (from .env) ====================
     # These should NEVER have defaults and should be in .env
     finmind_api_key: Optional[str] = None
+    # Optional pool of FinMind free-tier keys (comma-separated) → GSM secret FINMIND_API_KEYS.
+    # Each key has its own hourly quota, so a pool multiplies our ceiling. Falls back to the
+    # single finmind_api_key when unset.
+    finmind_api_keys: Optional[str] = None
     massive_api_key: Optional[str] = None
     podcast_api_key: Optional[str] = None  # API key for external podcast API (Netcup server)
     
@@ -305,6 +309,24 @@ class Settings(BaseSettings):
             GCPSecretManagerSource(settings_cls),
         )
     
+    @property
+    def finmind_api_key_pool(self) -> list[str]:
+        """
+        Ordered list of FinMind API keys to rotate across.
+
+        Prefers the comma-separated FINMIND_API_KEYS pool; falls back to the single
+        FINMIND_API_KEY. De-duplicates while preserving order.
+        """
+        raw = self.finmind_api_keys or self.finmind_api_key or ""
+        seen: set[str] = set()
+        pool: list[str] = []
+        for k in raw.split(","):
+            k = k.strip()
+            if k and k not in seen:
+                seen.add(k)
+                pool.append(k)
+        return pool
+
     @property
     def is_production(self) -> bool:
         """Check if running in production environment"""

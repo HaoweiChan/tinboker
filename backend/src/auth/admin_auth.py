@@ -85,6 +85,39 @@ async def get_translation_access(
     )
 
 
+async def get_content_write_access(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+) -> AdminAccess:
+    """
+    Dependency for content-mutation endpoints (episode summary/patch/regenerate,
+    knowledge-graph create/update/delete, news fetch).
+
+    Accepts an admin JWT (the dev-portal editor) OR the TINBOKER_WRITE_TOKEN service
+    token (the headless content pipeline / regen agent that writes back to the API).
+    Without one of these, the request is rejected — these endpoints mutate production
+    content and must never be reachable anonymously.
+    """
+    token = credentials.credentials
+
+    try:
+        from src.utils.auth import verify_jwt_token
+        user_data = verify_jwt_token(token)
+        if user_data and "email" in user_data and is_admin_email(user_data["email"]):
+            return AdminAccess(email=user_data["email"], user_id=user_data.get("user_id"))
+    except Exception as e:
+        logger.debug(f"Token verification failed: {e}")
+
+    service_token = settings.tinboker_write_token
+    if service_token and secrets.compare_digest(token, service_token):
+        return AdminAccess(email="content-writer@service", user_id="service")
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Admin or content-writer access required.",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
 async def get_article_author_access(
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> AdminAccess:

@@ -1,47 +1,40 @@
 #!/bin/bash
-# Setup script for TinBoker systemd services
-# Run this on the VPS to enable auto-start on boot
+# Setup script for the TinBoker systemd service (auto-start on boot).
+# Run this on the VPS. All three environments run from docker-compose.multi.yml,
+# so there is a single unit (not one per env).
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SYSTEMD_DIR="/etc/systemd/system"
 
-echo "Installing TinBoker systemd services..."
+echo "Installing TinBoker systemd service..."
 
-# Copy service files
-cp "$SCRIPT_DIR/systemd/tinboker-prod.service" "$SYSTEMD_DIR/"
-cp "$SCRIPT_DIR/systemd/tinboker-staging.service" "$SYSTEMD_DIR/"
-cp "$SCRIPT_DIR/systemd/tinboker-dev.service" "$SYSTEMD_DIR/"
+# Remove any legacy per-env units from the pre-multi.yml layout.
+for legacy in tinboker-prod tinboker-staging tinboker-dev; do
+  if systemctl list-unit-files | grep -q "^${legacy}.service"; then
+    echo "Removing legacy unit ${legacy}.service"
+    systemctl disable --now "${legacy}.service" 2>/dev/null || true
+    rm -f "$SYSTEMD_DIR/${legacy}.service"
+  fi
+done
 
-# Reload systemd daemon
+cp "$SCRIPT_DIR/systemd/tinboker.service" "$SYSTEMD_DIR/"
+
 systemctl daemon-reload
-
-# Enable services
-echo "Enabling services..."
-systemctl enable tinboker-prod.service
-systemctl enable tinboker-staging.service
-systemctl enable tinboker-dev.service
-
-# Start services if not already running
-echo "Starting services..."
-systemctl start tinboker-prod.service || true
-systemctl start tinboker-staging.service || true
-systemctl start tinboker-dev.service || true
+systemctl enable tinboker.service
+systemctl start tinboker.service || true
 
 echo ""
 echo "=== Service Status ==="
-systemctl status tinboker-prod.service --no-pager || true
-echo ""
-systemctl status tinboker-staging.service --no-pager || true
-echo ""
-systemctl status tinboker-dev.service --no-pager || true
+systemctl status tinboker.service --no-pager || true
 
 echo ""
-echo "Done! Services will now start automatically on boot."
+echo "Done! The stack will now start automatically on boot."
 echo ""
 echo "Useful commands:"
-echo "  systemctl status tinboker-prod"
-echo "  systemctl restart tinboker-prod"
-echo "  systemctl stop tinboker-prod"
-echo "  journalctl -u tinboker-prod -f"
+echo "  systemctl status tinboker"
+echo "  systemctl restart tinboker            # restarts the whole compose stack"
+echo "  journalctl -u tinboker -f"
+echo "  # Deploy/restart a single env (image tag from CI):"
+echo "  cd /app/backend && PROD_IMAGE_TAG=main docker compose -f docker-compose.multi.yml up -d --no-deps backend-prod"
