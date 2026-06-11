@@ -185,8 +185,11 @@ class StockService:
                 "ticker": stock_data.stock_id,
                 "name": stock_data.metadata.stock_name,
                 "price": stock_data.price or 0.0,
-                "change": stock_data.change or 0.0,
-                "changePercent": stock_data.changePercent or 0.0,
+                # Keep change/changePercent honest: None (not 0.0) when the day-over-day
+                # change couldn't be computed (e.g. <2 days of history). batch-prices then
+                # returns null so the card shows no badge, instead of a misleading "0.00%".
+                "change": stock_data.change,
+                "changePercent": stock_data.changePercent,
                 "marketCap": stock_data.marketCap or 0,
                 "revenue": stock_data.revenue or 0,
                 "pe": stock_data.pe or 0.0,
