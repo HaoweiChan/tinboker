@@ -37,17 +37,17 @@ _WINDOW_SECONDS = 3700  # one hour + slack, so the key outlives its clock-hour
 _redis_client = None
 _redis_unavailable = False
 
-# In-process fallback (used only when Redis can't be reached).
+# In-process fallback (used only when Redis can't be reached). Counts are per-bucket so a
+# pool of keys each get their own quota — {bucket: (window, count)}.
 _local_lock = threading.Lock()
-_local_window = ""
-_local_count = 0
+_local_counts: dict = {}
 
-# Throttle the "budget exhausted" log so we don't spam once we hit the cap.
-_last_exhausted_log = 0.0
+# Throttle the "budget exhausted" log so we don't spam once we hit the cap (per bucket).
+_last_exhausted_log: dict = {}
 
 
-def _window_key() -> str:
-    return f"finmind:budget:{datetime.now(timezone.utc):%Y%m%d%H}"
+def _window_key(bucket: str) -> str:
+    return f"finmind:budget:{bucket}:{datetime.now(timezone.utc):%Y%m%d%H}"
 
 
 def _get_sync_redis():
@@ -75,62 +75,61 @@ def _get_sync_redis():
         return None
 
 
-def _consume_local(weight: int) -> bool:
-    global _local_window, _local_count
-    key = _window_key()
+def _consume_local(bucket: str, weight: int) -> bool:
+    key = _window_key(bucket)
     with _local_lock:
-        if key != _local_window:
-            _local_window = key
-            _local_count = 0
-        _local_count += weight
-        return _local_count <= HOURLY_CAP
+        window, count = _local_counts.get(bucket, ("", 0))
+        if key != window:
+            window, count = key, 0
+        count += weight
+        _local_counts[bucket] = (window, count)
+        return count <= HOURLY_CAP
 
 
-def consume(weight: int = 1) -> bool:
+def consume(bucket: str = "default", weight: int = 1) -> bool:
     """
-    Account for `weight` FinMind HTTP requests against the current hour's budget.
+    Account for `weight` FinMind HTTP requests against `bucket`'s current-hour budget.
 
-    Returns True if the call is within budget (and should proceed), False if the
-    hourly cap is already exhausted (the caller should serve stale cache / "unavailable"
-    rather than hit FinMind).
+    Each API key is its own bucket, so a pool of keys each get a full HOURLY_CAP. Returns
+    True if within budget (proceed), False if this bucket's hourly cap is exhausted (the
+    caller should try another key or serve stale cache / "unavailable").
     """
     client = _get_sync_redis()
     if client is None:
-        return _consume_local(weight)
+        return _consume_local(bucket, weight)
     try:
-        key = _window_key()
+        key = _window_key(bucket)
         count = client.incrby(key, weight)
         if count == weight:  # first write in this window
             client.expire(key, _WINDOW_SECONDS)
         within = count <= HOURLY_CAP
         if not within:
-            _maybe_log_exhausted(count)
+            _maybe_log_exhausted(bucket, count)
         return within
     except Exception as e:  # Redis hiccup mid-flight — fall back, don't block forever
         logger.debug(f"FinMind budget: redis incr failed, falling back to local: {e}")
-        return _consume_local(weight)
+        return _consume_local(bucket, weight)
 
 
-def _maybe_log_exhausted(count: int) -> None:
-    global _last_exhausted_log
+def _maybe_log_exhausted(bucket: str, count: int) -> None:
     now = time.time()
-    if now - _last_exhausted_log > 60:
-        _last_exhausted_log = now
+    if now - _last_exhausted_log.get(bucket, 0.0) > 60:
+        _last_exhausted_log[bucket] = now
         logger.warning(
-            f"FinMind hourly budget exhausted ({count}/{HOURLY_CAP}); serving stale/"
-            f"unavailable for TW stock data until the next clock-hour."
+            f"FinMind hourly budget exhausted for key bucket {bucket} ({count}/{HOURLY_CAP})."
         )
 
 
-def remaining() -> int:
-    """Best-effort remaining budget for the current hour (for logging/alerts)."""
+def remaining(bucket: str = "default") -> int:
+    """Best-effort remaining budget for `bucket` this hour (for logging/alerts)."""
     client = _get_sync_redis()
     if client is None:
         with _local_lock:
-            used = _local_count if _window_key() == _local_window else 0
+            window, count = _local_counts.get(bucket, ("", 0))
+            used = count if _window_key(bucket) == window else 0
         return max(0, HOURLY_CAP - used)
     try:
-        used = int(client.get(_window_key()) or 0)
+        used = int(client.get(_window_key(bucket)) or 0)
         return max(0, HOURLY_CAP - used)
     except Exception:
         return HOURLY_CAP
