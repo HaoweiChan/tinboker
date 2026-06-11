@@ -5,6 +5,19 @@ import pytest
 from fastapi.testclient import TestClient
 from src.main import app
 from src.auth.admin_auth import get_content_write_access, AdminAccess
+from src.routers.graph import graph_service
+
+
+@pytest.fixture(autouse=True)
+def _stub_node_stock_fetch(monkeypatch):
+    """create_graph enriches every node via the live stock API. Stub it so these
+    integration tests never make a real external HTTP call — that call has no hard
+    timeout on all paths and hangs on CI's network (the job ran for 30+ min before
+    this stub), and integration tests must not depend on third-party APIs anyway.
+    """
+    async def _no_stock(_ticker):
+        return None
+    monkeypatch.setattr(graph_service, "_fetch_node_stock_info_async", _no_stock)
 
 
 @pytest.fixture
