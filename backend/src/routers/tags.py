@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from src.database.postgres import get_session
 from src.services.podcast import PodcastService
+from src.services.translation_discovery import schedule_ticker_discovery
 from src.tag_registry import registry_snapshot, seed_if_empty
 
 router = APIRouter(prefix="/api", tags=["tags"])
@@ -108,6 +109,11 @@ async def get_episodes_by_tag(
         episodes = await podcast_service.get_episodes_by_tag(
             tag=tag, limit=limit, offset=offset, enrich_content=include_content,
         )
+        # On-ingest discovery: surface any newly-mentioned ticker as a pending stub +
+        # autofill its name (non-blocking, throttled — see translation_discovery). The
+        # recent-episodes feed already does this; the topic page reaches tickers the
+        # feed may not, so without this their names never resolve.
+        schedule_ticker_discovery(episodes)
         episodes_dict = [ep.dict() for ep in episodes]
         return EpisodesByTagResponse(tag=tag, episodes=episodes_dict, total=len(episodes_dict))
     except Exception as e:

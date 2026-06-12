@@ -73,6 +73,27 @@ async def get_missing_translations(
     )
 
 
+@router.post("/translations/autofill")
+async def autofill_pending_translations(
+    market: Optional[str] = Query(None, description="Limit to a market (e.g. TW/US)"),
+    limit: int = Query(100, ge=1, le=500, description="Max stubs to resolve this run"),
+    db: Session = Depends(get_session),
+    admin: AdminAccess = Depends(get_admin_access),
+):
+    """Resolve names for missing/pending stubs from market data (FinMind TW / Massive US).
+
+    Drains the existing backlog on demand — the same autofill that runs automatically on
+    ingest. Only fills non-approved rows lacking the market-appropriate name; writes
+    ``status='auto'`` (a human approval still wins).
+    """
+    from src.services.translation_autofill import autofill_names_for_rows
+
+    service = TranslationService(db)
+    rows = service.get_missing_translations(market=market, limit=limit)
+    filled = autofill_names_for_rows(db, rows)
+    return {"attempted": len(rows), "filled": filled}
+
+
 # ==================== Translations CRUD ====================
 
 @router.get("/translations", response_model=TranslationListResponse)
