@@ -1,16 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Hash, Plus, Check } from 'lucide-react';
+import { Plus, Check } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
 import { EpisodeCardV2 } from '@/components/redesign';
 import { apiEpisodeToCardV2 } from '@/components/redesign/episodeAdapter';
 import { cn } from '@/lib/utils';
 import { getEpisodesByTag, type Episode as ApiEpisode } from '@/services/api';
+import { getSortedPodcasts, type Podcast } from '@/services/api/podcasts';
 import { fetchWithFallback } from '@/services/api/migration';
 import { useAppStore, useTagSubscriptions } from '@/store/useAppStore';
 import { useStockPriceMap } from '@/hooks/useStockPriceMap';
 import { useStockPriceSinceMap } from '@/hooks/useStockPriceSinceMap';
+import { useTagLabels, tagLabelFor } from '@/hooks/useTagLabels';
+import { topicVisual } from '@/lib/topicVisual';
 
 interface EpisodesByTagResponse {
   tag?: string;
@@ -23,12 +26,24 @@ export const TagPage: React.FC = () => {
   const { toggleTagSubscription } = useAppStore();
   const tagSubs = useTagSubscriptions();
   const [episodes, setEpisodes] = useState<ApiEpisode[]>([]);
+  const [podcasts, setPodcasts] = useState<Podcast[]>([]);
   const [loading, setLoading] = useState(true);
   const episodeTickers = useMemo(() => episodes.flatMap((ep) => ep.related_tickers ?? []), [episodes]);
   const priceMap = useStockPriceMap(episodeTickers);
   const priceSinceMap = useStockPriceSinceMap(episodes);
+  const tagLabels = useTagLabels();
+  // Real podcaster channel icons (podcast_name → image_url); without this the
+  // episode cards fall back to placeholder letter avatars on this page.
+  const podcastImageMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const p of podcasts) {
+      if (p.name && p.image_url) map.set(p.name, p.image_url);
+    }
+    return map;
+  }, [podcasts]);
 
   const cleanTag = decodeURIComponent(tag || '').replace(/^#/, '');
+  const displayLabel = tagLabelFor(cleanTag, tagLabels);
   const isSubscribed = tagSubs.includes(cleanTag) || tagSubs.includes(`#${cleanTag}`);
 
   useEffect(() => {
@@ -36,11 +51,18 @@ export const TagPage: React.FC = () => {
     let alive = true;
     setLoading(true);
     (async () => {
-      const res = await fetchWithFallback<EpisodesByTagResponse>(
-        () => getEpisodesByTag(cleanTag, 50, 0, false),
-        { tag: cleanTag, episodes: [], total: 0 },
-        `getEpisodesByTag:${cleanTag}`,
-      ).catch(() => ({ episodes: [] as ApiEpisode[] }));
+      const [res, podcastList] = await Promise.all([
+        fetchWithFallback<EpisodesByTagResponse>(
+          () => getEpisodesByTag(cleanTag, 50, 0, false),
+          { tag: cleanTag, episodes: [], total: 0 },
+          `getEpisodesByTag:${cleanTag}`,
+        ).catch(() => ({ episodes: [] as ApiEpisode[] })),
+        fetchWithFallback<Podcast[]>(
+          () => getSortedPodcasts({ sortBy: 'updated_at', order: 'desc', limit: 200 }),
+          [],
+          'getSortedPodcasts',
+        ).catch(() => [] as Podcast[]),
+      ]);
       if (!alive) return;
       const list = (Array.isArray(res?.episodes) ? res.episodes : []).slice().sort((a, b) => {
         const da = typeof a.spotify_release_date === 'string' ? Date.parse(a.spotify_release_date) : (a.spotify_release_date ?? a.created_time);
@@ -48,6 +70,7 @@ export const TagPage: React.FC = () => {
         return (db as number) - (da as number);
       });
       setEpisodes(list);
+      setPodcasts(Array.isArray(podcastList) ? podcastList : []);
       setLoading(false);
     })();
     return () => {
@@ -57,18 +80,23 @@ export const TagPage: React.FC = () => {
 
   return (
     <>
-      <SEO title={`#${cleanTag}`} description={`所有關於「${cleanTag}」的 Podcast 摘要與市場討論。`} />
+      <SEO title={`#${displayLabel}`} description={`所有關於「${displayLabel}」的 Podcast 摘要與市場討論。`} />
       <PageContent>
         <div className="flex items-start gap-5 bg-card border border-border rounded-md p-5 sm:p-6 mb-[18px]">
-          <div className="w-[72px] h-[72px] rounded-md grid place-items-center bg-muted text-foreground text-2xl shrink-0">
-            <Hash size={28} />
-          </div>
+          {(() => {
+            const { Icon, gradient } = topicVisual(cleanTag);
+            return (
+              <div className="w-[72px] h-[72px] rounded-md grid place-items-center text-white shadow-sm shrink-0" style={{ background: gradient }}>
+                <Icon size={30} />
+              </div>
+            );
+          })()}
           <div className="flex-1 min-w-0">
             <div className="flex items-start justify-between gap-3 flex-wrap">
               <div className="min-w-0">
-                <h1 className="text-[22px] font-semibold tracking-[-0.02em]">#{cleanTag}</h1>
+                <h1 className="text-[22px] font-semibold tracking-[-0.02em]">#{displayLabel}</h1>
                 <p className="text-[13px] text-muted-foreground mt-1 max-w-[56ch] leading-[1.55]">
-                  瀏覽所有關於「{cleanTag}」的 Podcast 摘要與市場討論{loading ? '' : ` · ${episodes.length} 集`}。
+                  瀏覽所有關於「{displayLabel}」的 Podcast 摘要與市場討論{loading ? '' : ` · ${episodes.length} 集`}。
                 </p>
               </div>
               <button
@@ -98,7 +126,7 @@ export const TagPage: React.FC = () => {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {episodes.map((ep) => (
-              <EpisodeCardV2 key={ep.id} {...apiEpisodeToCardV2(ep, priceMap, undefined, undefined, undefined, priceSinceMap)} />
+              <EpisodeCardV2 key={ep.id} {...apiEpisodeToCardV2(ep, priceMap, podcastImageMap, undefined, undefined, priceSinceMap)} />
             ))}
           </div>
         )}

@@ -15,6 +15,7 @@ import { CommentSection } from '@/components/episode/CommentSection';
 import { useStockPriceMap } from '@/hooks/useStockPriceMap';
 import { useStockPriceSinceMap, isRecentEpisode } from '@/hooks/useStockPriceSinceMap';
 import { useTranslationMap } from '@/hooks/useTranslationMap';
+import { useTagLabels, tagLabelFor } from '@/hooks/useTagLabels';
 import { useEpisodeSentimentMap } from '@/hooks/useEpisodeSentimentMap';
 import { EpisodeInsightCard, type EpisodeInsight } from '@/components/episode/EpisodeInsightCard';
 import { SummaryMarkdown } from '@/components/episode/SummaryMarkdown';
@@ -109,6 +110,7 @@ export const EpisodeDetail: React.FC = () => {
   const { playEpisode, requestSeek } = usePlayerStore();
   const { toggleEpisodeBookmark } = useAppStore();
   const episodeBookmarks = useEpisodeBookmarks();
+  const tagLabels = useTagLabels();
 
   const [episode, setEpisode] = useState<ApiEpisode | null>(null);
   const [podcastImageUrl, setPodcastImageUrl] = useState<string | null>(null);
@@ -166,6 +168,13 @@ export const EpisodeDetail: React.FC = () => {
     const content = episode?.modified_summary_content || episode?.summary_content;
     return content ? parseTimestampedSections(content) : [];
   }, [episode]);
+  // Player chapters: prefer the summary-extracted topic timestamps (the same
+  // sections shown in 摘要) over the raw transcript-derived events/sentences, so
+  // seeking lands on topic boundaries rather than per-sentence transcript timing.
+  const playerSections = useMemo<TimestampedSection[]>(
+    () => (summarySections.length ? summarySections : chapters.length ? chapters : clips),
+    [summarySections, chapters, clips],
+  );
   const tickerSymbols = useMemo(() => (Array.isArray(episode?.related_tickers) ? episode!.related_tickers.slice(0, 8) : []), [episode]);
   const priceMap = useStockPriceMap(tickerSymbols);
   const episodesForSince = useMemo(() => (episode ? [episode] : []), [episode]);
@@ -203,7 +212,7 @@ export const EpisodeDetail: React.FC = () => {
   const seoImage = episode?.summary_image_public_url || episode?.spotify_images?.[0] || podcasterImageUrl || undefined;
   const structuredData = useMemo<Record<string, unknown> | undefined>(() => {
     if (!episode) return undefined;
-    const sections = chapters.length ? chapters : clips.length ? clips : summarySections;
+    const sections = playerSections;
     const data: Record<string, unknown> = {
       '@context': 'https://schema.org',
       '@type': 'PodcastEpisode',
@@ -222,7 +231,7 @@ export const EpisodeDetail: React.FC = () => {
       }));
     }
     return data;
-  }, [episode, chapters, clips, summarySections, title, name, canonicalUrl, seoImage]);
+  }, [episode, playerSections, title, name, canonicalUrl, seoImage]);
 
   const bookmarkKey = episode ? `${episode.podcast_name}_${episode.id}` : '';
   const isBookmarked = episodeBookmarks.includes(bookmarkKey);
@@ -238,7 +247,7 @@ export const EpisodeDetail: React.FC = () => {
       mp3Url: episode.podcast_name && (episode.mp3_url || episode.mp3_public_url)
         ? getEpisodeAudioUrl(episode.podcast_name, episode.id)
         : undefined,
-      timestampedSections: chapters.length ? chapters : clips.length ? clips : summarySections,
+      timestampedSections: playerSections,
     });
   };
 
@@ -345,7 +354,7 @@ export const EpisodeDetail: React.FC = () => {
               {episode.tags && episode.tags.length > 0 && (
                 <div className="flex gap-1.5 flex-wrap mt-3">
                   {episode.tags.slice(0, MAX_HERO_TAGS).map((t) => (
-                    <Link key={t} to={`/topics/${encodeURIComponent(t)}`} className="text-[12px] px-2.5 py-0.5 rounded-full bg-amber-400/20 text-amber-700 dark:text-amber-300 font-medium hover:bg-amber-400/35 transition-colors">#{t}</Link>
+                    <Link key={t} to={`/topics/${encodeURIComponent(t)}`} className="text-[12px] px-2.5 py-0.5 rounded-full bg-amber-400/20 text-amber-700 dark:text-amber-300 font-medium hover:bg-amber-400/35 transition-colors">#{tagLabelFor(t, tagLabels)}</Link>
                   ))}
                 </div>
               )}
@@ -364,7 +373,7 @@ export const EpisodeDetail: React.FC = () => {
                   episodeTitle={title}
                   episodeSource={name}
                   spotifyUri={spotifyUri}
-                  timestampedSections={chapters.length ? chapters : clips.length ? clips : summarySections}
+                  timestampedSections={playerSections}
                 />
               </section>
             )}

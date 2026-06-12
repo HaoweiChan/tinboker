@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Hash, TrendingUp, TrendingDown, Minus, ChevronRight, Flame, BarChart3 } from 'lucide-react';
+import { TrendingUp, TrendingDown, Minus, ChevronRight, Flame, BarChart3 } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
 import { RailCard } from '@/components/redesign';
-import { getTrendingTags, getTagRegistry, type TrendingTag, type EpisodePreview } from '@/services/api/podcasts';
+import { PodcastAvatar } from '@/components/common/PodcastAvatar';
+import { getTrendingTags, getTagRegistry, getSortedPodcasts, type TrendingTag, type EpisodePreview, type Podcast } from '@/services/api/podcasts';
 import { fetchWithFallback } from '@/services/api/migration';
+import { topicVisual } from '@/lib/topicVisual';
+import { tagLabelFor, normalizeTagSlug } from '@/hooks/useTagLabels';
 
 function timeAgo(ms: number | null | undefined): string {
   if (!ms) return '';
@@ -97,12 +100,12 @@ function TrendBadge({ weekly }: { weekly: number[] }) {
 
 // ── Episode preview row ────────────────────────────────────────────
 
-function EpisodeRow({ ep }: { ep: EpisodePreview }) {
+function EpisodeRow({ ep, imageUrl }: { ep: EpisodePreview; imageUrl?: string }) {
   const linkTo = `/episode/${ep.podcast_name}/${ep.id}`;
   return (
     <Link to={linkTo} className="group flex items-start gap-2.5 py-2 first:pt-0 last:pb-0 transition-colors hover:bg-muted/30 rounded px-1.5 -mx-1.5">
-      <div className="mt-0.5 w-5 h-5 rounded bg-muted grid place-items-center text-[10px] text-muted-foreground shrink-0">
-        {(ep.podcast_name || 'P').charAt(0)}
+      <div className="mt-0.5 shrink-0">
+        <PodcastAvatar name={ep.podcast_name || 'P'} src={imageUrl ?? null} size="sm" className="w-5 h-5 rounded text-[10px]" />
       </div>
       <div className="flex-1 min-w-0">
         <div className="text-[12px] leading-[1.5] text-foreground truncate group-hover:text-accent-info transition-colors">
@@ -127,14 +130,15 @@ function EpisodeRow({ ep }: { ep: EpisodePreview }) {
 
 // ── Topic card ─────────────────────────────────────────────────────
 
-function getTopicLabel(name: string, labels: Record<string, string>): string {
-  const key = name.trim().replace(/^#/, '').toLowerCase();
-  return labels[key] ?? name.replace(/^#/, '').replace(/[_-]/g, ' ');
-}
+// Shared label lookup + normalization (PascalCase / snake_case / lowercased all
+// reconcile to one key) lives in useTagLabels — reuse it here so this page can't
+// drift from the episode hero / topic pages.
+const getTopicLabel = tagLabelFor;
 
-function TopicCard({ tag, rank, maxCount, labels }: { tag: TrendingTag; rank: number; maxCount: number; labels: Record<string, string> }) {
+function TopicCard({ tag, rank, maxCount, labels, imageMap }: { tag: TrendingTag; rank: number; maxCount: number; labels: Record<string, string>; imageMap: Map<string, string> }) {
   const label = getTopicLabel(tag.name, labels);
   const barWidth = `${Math.max(8, Math.round((tag.scoped_count / maxCount) * 100))}%`;
+  const { Icon, gradient } = topicVisual(tag.name);
 
   return (
     <div className="bg-card border border-border rounded-md overflow-hidden transition-all hover:border-accent-info/40 hover:shadow-[0_0_12px_-3px_hsl(var(--accent-info)/0.15)]">
@@ -144,8 +148,8 @@ function TopicCard({ tag, rank, maxCount, labels }: { tag: TrendingTag; rank: nu
         className="flex items-center gap-3 px-4 pt-3.5 pb-2 group"
       >
         <div className="relative">
-          <div className="w-9 h-9 rounded-md bg-muted grid place-items-center text-foreground">
-            <Hash size={16} />
+          <div className="w-9 h-9 rounded-md grid place-items-center text-white shadow-sm" style={{ background: gradient }}>
+            <Icon size={16} />
           </div>
           <div className="absolute -top-1.5 -left-1.5 w-5 h-5 rounded-full bg-card border border-border grid place-items-center text-[10px] font-mono font-bold text-muted-foreground">
             {rank}
@@ -182,7 +186,7 @@ function TopicCard({ tag, rank, maxCount, labels }: { tag: TrendingTag; rank: nu
           <div className="text-[10px] font-medium text-muted-foreground mb-1.5 uppercase tracking-wider">最近集數</div>
           <div className="divide-y divide-border/30">
             {tag.recent_episodes.map((ep) => (
-              <EpisodeRow key={ep.id} ep={ep} />
+              <EpisodeRow key={ep.id} ep={ep} imageUrl={imageMap.get(ep.podcast_name)} />
             ))}
           </div>
         </div>
@@ -218,27 +222,43 @@ function TopicSkeleton() {
 export const TopicsCloud: React.FC = () => {
   const [tags, setTags] = useState<TrendingTag[]>([]);
   const [topicLabels, setTopicLabels] = useState<Record<string, string>>({});
+  const [podcasts, setPodcasts] = useState<Podcast[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Real podcaster channel icons (podcast_name → image_url) for the preview rows.
+  const imageMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const p of podcasts) {
+      if (p.name && p.image_url) map.set(p.name, p.image_url);
+    }
+    return map;
+  }, [podcasts]);
 
   useEffect(() => {
     let alive = true;
     (async () => {
       setLoading(true);
-      const [trendingRes, registryRes] = await Promise.all([
+      const [trendingRes, registryRes, podcastList] = await Promise.all([
         fetchWithFallback(
           () => getTrendingTags(6, 3),
           { tags: [] as TrendingTag[] },
           'getTrendingTags',
         ).catch(() => ({ tags: [] as TrendingTag[] })),
         getTagRegistry().catch(() => ({ tags: [] })),
+        fetchWithFallback<Podcast[]>(
+          () => getSortedPodcasts({ sortBy: 'updated_at', order: 'desc', limit: 200 }),
+          [],
+          'getSortedPodcasts',
+        ).catch(() => [] as Podcast[]),
       ]);
       if (!alive) return;
       setTags(Array.isArray(trendingRes?.tags) ? trendingRes.tags : []);
       const labels: Record<string, string> = {};
       for (const entry of registryRes.tags) {
-        labels[entry.slug] = entry.display_zh;
+        labels[normalizeTagSlug(entry.slug)] = entry.display_zh;
       }
       setTopicLabels(labels);
+      setPodcasts(Array.isArray(podcastList) ? podcastList : []);
       setLoading(false);
     })();
     return () => { alive = false; };
@@ -309,7 +329,7 @@ export const TopicsCloud: React.FC = () => {
             {/* Topic cards grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {tags.map((tag, i) => (
-                <TopicCard key={tag.id} tag={tag} rank={i + 1} maxCount={maxCount} labels={topicLabels} />
+                <TopicCard key={tag.id} tag={tag} rank={i + 1} maxCount={maxCount} labels={topicLabels} imageMap={imageMap} />
               ))}
             </div>
           </>

@@ -52,7 +52,7 @@ tinboker-shared = { workspace = true }
 where = ["src"]
 
 [tool.setuptools.package-data]
-"podcast.content_builder" = ["prompts/*.yaml"]
+"podcast.content_builder" = ["prompts/*.yaml", "tag_vocabulary.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

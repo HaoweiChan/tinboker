@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { cn } from '@/lib/utils';
+import { useTagLabels, tagLabelFor } from '@/hooks/useTagLabels';
 import { PodMark, type PodMarkKind } from './PodMark';
 import { ShareMenu } from './ShareMenu';
 import { TickerRow, type TickerRowData } from './TickerRow';
@@ -60,6 +61,7 @@ export const EpisodeCardV2: React.FC<EpisodeCardV2Props> = ({
   className,
 }) => {
   const shareUrl = `${window.location.origin}${href}`;
+  const tagLabels = useTagLabels();
 
   return (
     <Link
@@ -131,11 +133,11 @@ export const EpisodeCardV2: React.FC<EpisodeCardV2Props> = ({
                 }}
                 className="text-[11px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground hover:bg-accent-info-soft hover:text-accent-info transition-colors"
               >
-                #{tag}
+                #{tagLabelFor(tag, tagLabels)}
               </button>
             ) : (
               <span key={tag} className="text-[11px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
-                #{tag}
+                #{tagLabelFor(tag, tagLabels)}
               </span>
             ),
           )}
