@@ -8,6 +8,7 @@ import { PodcastAvatar } from '@/components/common/PodcastAvatar';
 import { getTrendingTags, getTagRegistry, getSortedPodcasts, type TrendingTag, type EpisodePreview, type Podcast } from '@/services/api/podcasts';
 import { fetchWithFallback } from '@/services/api/migration';
 import { topicVisual } from '@/lib/topicVisual';
+import { tagLabelFor, normalizeTagSlug } from '@/hooks/useTagLabels';
 
 function timeAgo(ms: number | null | undefined): string {
   if (!ms) return '';
@@ -129,10 +130,10 @@ function EpisodeRow({ ep, imageUrl }: { ep: EpisodePreview; imageUrl?: string })
 
 // ── Topic card ─────────────────────────────────────────────────────
 
-function getTopicLabel(name: string, labels: Record<string, string>): string {
-  const key = name.trim().replace(/^#/, '').toLowerCase();
-  return labels[key] ?? name.replace(/^#/, '').replace(/[_-]/g, ' ');
-}
+// Shared label lookup + normalization (PascalCase / snake_case / lowercased all
+// reconcile to one key) lives in useTagLabels — reuse it here so this page can't
+// drift from the episode hero / topic pages.
+const getTopicLabel = tagLabelFor;
 
 function TopicCard({ tag, rank, maxCount, labels, imageMap }: { tag: TrendingTag; rank: number; maxCount: number; labels: Record<string, string>; imageMap: Map<string, string> }) {
   const label = getTopicLabel(tag.name, labels);
@@ -254,7 +255,7 @@ export const TopicsCloud: React.FC = () => {
       setTags(Array.isArray(trendingRes?.tags) ? trendingRes.tags : []);
       const labels: Record<string, string> = {};
       for (const entry of registryRes.tags) {
-        labels[entry.slug] = entry.display_zh;
+        labels[normalizeTagSlug(entry.slug)] = entry.display_zh;
       }
       setTopicLabels(labels);
       setPodcasts(Array.isArray(podcastList) ? podcastList : []);
