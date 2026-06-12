@@ -12,6 +12,7 @@ import { fetchWithFallback } from '@/services/api/migration';
 import { useAppStore, useTagSubscriptions } from '@/store/useAppStore';
 import { useStockPriceMap } from '@/hooks/useStockPriceMap';
 import { useStockPriceSinceMap } from '@/hooks/useStockPriceSinceMap';
+import { useTranslationMap } from '@/hooks/useTranslationMap';
 import { useTagLabels, tagLabelFor } from '@/hooks/useTagLabels';
 import { topicVisual } from '@/lib/topicVisual';
 
@@ -31,6 +32,14 @@ export const TagPage: React.FC = () => {
   const episodeTickers = useMemo(() => episodes.flatMap((ep) => ep.related_tickers ?? []), [episodes]);
   const priceMap = useStockPriceMap(episodeTickers);
   const priceSinceMap = useStockPriceSinceMap(episodes);
+  // Localize ticker codes (2330 → 台積電) — same wiring as HomeFeed/PodcasterPage,
+  // without it the shared episode card falls back to raw symbols on this page.
+  const rawTranslationMap = useTranslationMap(episodeTickers);
+  const translationMap = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const [k, v] of rawTranslationMap) m.set(k, v.displayName);
+    return m;
+  }, [rawTranslationMap]);
   const tagLabels = useTagLabels();
   // Real podcaster channel icons (podcast_name → image_url); without this the
   // episode cards fall back to placeholder letter avatars on this page.
@@ -126,7 +135,7 @@ export const TagPage: React.FC = () => {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {episodes.map((ep) => (
-              <EpisodeCardV2 key={ep.id} {...apiEpisodeToCardV2(ep, priceMap, podcastImageMap, undefined, undefined, priceSinceMap)} />
+              <EpisodeCardV2 key={ep.id} {...apiEpisodeToCardV2(ep, priceMap, podcastImageMap, translationMap, undefined, priceSinceMap)} />
             ))}
           </div>
         )}
