@@ -17,6 +17,17 @@ let cache: Labels | null = null;
 let inflight: Promise<Labels> | null = null;
 const subscribers = new Set<(labels: Labels) => void>();
 
+/**
+ * Canonical lookup key for a tag slug — MUST match the backend + pipeline impls
+ * (`normalize_tag_slug`). Lowercases and strips every non-alphanumeric char so
+ * `SupplyChain` (vocabulary) / `supply_chain` (legacy DB slug) / `supplychain`
+ * (lowercased episode tag) all reconcile to one key. This is why a PascalCase
+ * episode tag and a snake_case registry slug can never read differently again.
+ */
+export function normalizeTagSlug(slug: string): string {
+  return slug.replace(/^#/, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
 function load(): Promise<Labels> {
   if (cache) return Promise.resolve(cache);
   if (!inflight) {
@@ -24,7 +35,7 @@ function load(): Promise<Labels> {
       .then((res) => {
         const labels: Labels = {};
         for (const entry of res.tags) {
-          if (entry.slug && entry.display_zh) labels[entry.slug.toLowerCase()] = entry.display_zh;
+          if (entry.slug && entry.display_zh) labels[normalizeTagSlug(entry.slug)] = entry.display_zh;
         }
         cache = labels;
         subscribers.forEach((fn) => fn(labels));
@@ -40,8 +51,7 @@ function load(): Promise<Labels> {
 
 /** Translate a raw tag/slug to its zh-TW label, mirroring the topics-index logic. */
 export function tagLabelFor(tag: string, labels: Labels): string {
-  const key = tag.trim().replace(/^#/, '').toLowerCase();
-  return labels[key] ?? tag.replace(/^#/, '').replace(/[_-]/g, ' ');
+  return labels[normalizeTagSlug(tag.trim())] ?? tag.replace(/^#/, '').replace(/[_-]/g, ' ');
 }
 
 /** Subscribe to the shared tag-label registry (slug → zh-TW display). */

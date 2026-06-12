@@ -93,16 +93,18 @@ jobs:
             echo "url=https://dev.tinboker.com" >> $GITHUB_OUTPUT
           fi
 
+      # Maintained replacement for the deprecated cloudflare/pages-action@v1, which
+      # deployed fine but then crashed reading back the deployment result
+      # ("Cannot destructure ... of '(intermediate value)' as it is null"), reporting a
+      # false failure on every run. wrangler-action runs the same `pages deploy`.
       - name: Deploy to Cloudflare Pages
-        uses: cloudflare/pages-action@v1
+        uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           # CF Pages project name is immutable and owns the prod custom domains;
           # it stays "tinboker-platform" even though the repo is now "tinboker".
-          projectName: tinboker-platform
-          directory: frontend/dist
-          branch: ${{ steps.env.outputs.branch }}
+          command: pages deploy frontend/dist --project-name=tinboker-platform --branch=${{ steps.env.outputs.branch }} --commit-dirty=true
 
       - name: Purge Cloudflare CDN cache
         if: success()

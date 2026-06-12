@@ -12,7 +12,10 @@ Tiers
 
 from __future__ import annotations
 
+import json
 import logging
+import re
+from pathlib import Path
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -72,44 +75,41 @@ _SEED: list[tuple[str, str, str]] = [
 
 
 # ── Canonical extraction vocabulary (label catalogue) ────────────────
-# Mirror of the pipeline's source-of-truth tag vocabulary
-# (pipelines/services/podcast/src/podcast/content_builder/tag_vocabulary.py
-# TAG_DISPLAY). Episode tags are stored PascalCase and looked up lowercased, so
-# keys here are the lowercased slugs. This guarantees every agent-emitted tag has
-# a zh-TW label on the website even when it isn't (yet) curated in the DB table
-# above — the trending GATE still comes from the DB (`trending_slugs`); this map
-# only supplies display labels. Keep in sync when the pipeline vocabulary grows.
-_CANONICAL_DISPLAY: dict[str, str] = {
-    "ai": "AI",
-    "agenticai": "代理型 AI",
-    "llm": "大型語言模型",
-    "semiconductor": "半導體",
-    "memory": "記憶體",
-    "gpu": "GPU",
-    "datacenter": "資料中心",
-    "cloudcomputing": "雲端運算",
-    "supplychain": "供應鏈",
-    "ev": "電動車",
-    "software": "軟體",
-    "cybersecurity": "資安",
-    "biotech": "生技醫療",
-    "energy": "能源",
-    "finance": "金融",
-    "realestate": "房地產",
-    "crypto": "加密貨幣",
-    "usstocks": "美股",
-    "twstocks": "台股",
-    "hkstocks": "港股",
-    "jpstocks": "日股",
-    "macroeconomy": "總體經濟",
-    "fedrate": "聯準會利率",
-    "inflation": "通膨",
-    "marketcorrection": "股市修正",
-    "earnings": "財報",
-    "ipo": "首次公開發行",
-    "mergersacquisitions": "併購",
-    "geopolitics": "地緣政治",
-}
+# The slug→zh-TW label catalogue has a SINGLE source of truth: the pipeline's
+# tag_vocabulary.json. The backend can't import the pipeline package (separate
+# Docker image / build context), so a GENERATED mirror is committed at
+# ``src/data/tag_vocabulary.json`` and refreshed by ``scripts/sync_tag_vocabulary.py``.
+# A drift test in both CI suites fails if the mirror falls out of sync with the
+# canonical, so a newly-added pipeline tag can never again render in English on the
+# website (the bug PRs #161/#162 fixed by hand). See
+# ``docs/tag-vocabulary-source-of-truth.md``.
+#
+# Episode tags are stored PascalCase and looked up via ``normalize_tag_slug``
+# (lowercase + strip separators). This map only supplies DISPLAY labels — the
+# trending GATE still comes from the DB (`trending_slugs`).
+_MIRROR_PATH = Path(__file__).with_name("data") / "tag_vocabulary.json"
+
+
+def normalize_tag_slug(slug: str) -> str:
+    """Canonical lookup key for a tag slug — MUST match the pipeline + frontend impls.
+
+    Lowercases and strips every non-alphanumeric char so ``SupplyChain`` (vocabulary),
+    ``supply_chain`` (legacy DB slug), and ``supplychain`` (lowercased episode tag) all
+    reconcile to ``supplychain``. Mirror of
+    ``pipelines/.../content_builder/tag_vocabulary.py::normalize_tag_slug`` and
+    ``frontend/src/hooks/useTagLabels.ts::normalizeTagSlug``.
+    """
+    return re.sub(r"[^a-z0-9]", "", (slug or "").lower())
+
+
+def _load_canonical_display() -> dict[str, str]:
+    """normalized-slug → zh-TW display, from the committed pipeline mirror."""
+    raw = json.loads(_MIRROR_PATH.read_text(encoding="utf-8"))
+    # The mirror carries a ``_comment`` provenance key (JSON has no comments); drop it.
+    return {normalize_tag_slug(slug): zh for slug, zh in raw.items() if not slug.startswith("_")}
+
+
+_CANONICAL_DISPLAY: dict[str, str] = _load_canonical_display()
 
 
 def seed_if_empty(db: Session) -> None:
