@@ -48,10 +48,19 @@ export const PodcasterPage: React.FC = () => {
       ]);
       if (!alive) return;
       setPodcast(meta);
+      // Order by episode_number (the reliable monotonic release signal within a
+      // podcast — higher = newer). Only fall back to publish time when an episode
+      // has no number. Avoid created_time: it is ingestion time, so re-ingested
+      // old episodes would interleave with recent ones.
+      const releaseMs = (e: ApiEpisode): number => {
+        const r = e.released_at_ms ?? e.spotify_release_date ?? e.created_time;
+        return typeof r === 'string' ? Date.parse(r) : (r ?? e.created_time);
+      };
       const list = (Array.isArray(eps) ? eps : []).slice().sort((a, b) => {
-        const da = typeof a.spotify_release_date === 'string' ? Date.parse(a.spotify_release_date) : (a.spotify_release_date ?? a.created_time);
-        const db = typeof b.spotify_release_date === 'string' ? Date.parse(b.spotify_release_date) : (b.spotify_release_date ?? b.created_time);
-        return (db as number) - (da as number);
+        if (a.episode_number != null && b.episode_number != null && a.episode_number !== b.episode_number) {
+          return b.episode_number - a.episode_number;
+        }
+        return releaseMs(b) - releaseMs(a);
       });
       setEpisodes(list);
       setLoading(false);

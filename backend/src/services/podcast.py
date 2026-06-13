@@ -465,12 +465,23 @@ class PodcastService:
             )
             episodes = self._scope_episodes(list(episodes), allowed, cutoff)
             reverse = order.lower() == "desc"
+            # Publish order within a single podcast: episode_number is the reliable
+            # monotonic release signal (higher = newer). Fall back to true publish
+            # time only when an episode has no number. NEVER sort by created_time
+            # here — that is ingestion time, so re-ingested old episodes float to
+            # the top and interleave with recent ones.
+            def _publish_key(x):
+                return (x.episode_number if x.episode_number is not None else -1,
+                        self._episode_release_ms(x))
             sort_keys = {
                 "created_time": lambda x: x.created_time or 0,
                 "episode_number": lambda x: x.episode_number if x.episode_number is not None else 0,
                 "episode_title": lambda x: (x.episode_title or "").lower(),
+                "spotify_release_date": _publish_key,
+                "released_at_ms": _publish_key,
+                "publish": _publish_key,
             }
-            episodes = sorted(episodes, key=sort_keys.get(sort_by, sort_keys["created_time"]), reverse=reverse)
+            episodes = sorted(episodes, key=sort_keys.get(sort_by, _publish_key), reverse=reverse)
             try:
                 await cache_set(cache_key, json.dumps([e.dict() for e in episodes], default=str), CACHE_TTL["podcast_episodes"])
             except Exception:
