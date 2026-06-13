@@ -5,7 +5,13 @@ import { usePlayerStore } from '@/store/usePlayerStore'
 
 const PWA_UPDATE_KEY = 'pwa-update-reload'
 const SUPPRESS_MS = 10_000
-const RELOAD_BACKSTOP_MS = 2_500
+// Anti-hang fallback only — NOT the normal reload path. The reload is driven by
+// `controllerchange` (the new worker actually taking control); this timer just
+// guarantees the 更新中… button can't dead-end if a worker never takes control
+// (errored, or nothing was really pending). Long enough not to race a slow
+// mobile install+activate — a shorter value reloaded into the still-active OLD
+// worker, re-serving the stale build and looping the prompt (the bug this fixes).
+const RELOAD_BACKSTOP_MS = 10_000
 const VISIBILITY_CHECK_MIN_INTERVAL_MS = 5 * 60 * 1000
 
 // Module-level once-guard: controllerchange, the waiting worker's statechange
@@ -33,13 +39,19 @@ function forceReload() {
  * activates → controllerchange → force-reload into the new build.
  *
  * Hard-won rules encoded here (see PRs #62 #96 #110):
- * - Arm the reload backstop BEFORE any async work. Awaiting reg.update() (a
- *   network fetch of sw.js) before scheduling it left 更新中… hanging forever
- *   on slow mobile connections.
- * - Never call reg.update() in the click path at all — update checks belong in
- *   the background, not between the user's tap and the reload.
- * - If needRefresh is set but no waiting worker exists (page was frozen on iOS,
- *   another tab activated it, …) there is nothing to message: just reload.
+ * - Reload ONLY on `controllerchange` — i.e. once the new worker actually
+ *   controls this page. Reloading any sooner re-serves the old build from the
+ *   still-active old worker, which re-arms needRefresh and loops the prompt
+ *   ("clicked 更新, still old version, prompt again" until the SW finally claims).
+ * - The click-path timer is a long anti-hang BACKSTOP, never the normal path.
+ *   A short blind reload raced the SW activation and won on slow mobile, causing
+ *   exactly that loop.
+ * - Never call reg.update() in the click path — update checks belong in the
+ *   background, not between the user's tap and the reload (awaiting that network
+ *   fetch is what left 更新中… hanging forever).
+ * - If needRefresh is set but no waiting/installing worker exists (page was
+ *   frozen on iOS, another tab activated it, …) there is nothing to activate:
+ *   just reload.
  * - location.reload() is swallowed by iOS standalone PWAs; always navigate via
  *   location.replace() with a cache-bust param.
  */
@@ -120,32 +132,41 @@ export function PWAUpdatePrompt() {
     if (updating) return
     setUpdating(true)
 
-    // Absolute backstop, armed synchronously: whatever happens below, the page
-    // navigates within RELOAD_BACKSTOP_MS — the button can never dead-end.
-    setTimeout(forceReload, RELOAD_BACKSTOP_MS)
-
     if (!('serviceWorker' in navigator)) {
       forceReload()
       return
     }
 
+    // The real reload is driven by `controllerchange` (the effect above), which
+    // fires only once the new worker has actually claimed this page. This timer
+    // is just an anti-hang backstop for the case where no worker ever takes
+    // control — see RELOAD_BACKSTOP_MS. Armed synchronously so the button can't
+    // dead-end even if getRegistration() never resolves.
+    const backstop = setTimeout(forceReload, RELOAD_BACKSTOP_MS)
+
+    // Tell the generated sw.js to self.skipWaiting(); on activation clientsClaim
+    // fires controllerchange → reload. We do NOT reload here ourselves.
+    const skipWaiting = (sw: ServiceWorker) => sw.postMessage({ type: 'SKIP_WAITING' })
+
     navigator.serviceWorker.getRegistration()
       .then((reg) => {
-        const waiting = reg?.waiting
-        if (!waiting) {
-          // Stale prompt — no installed update to switch to; reload picks up
+        if (reg?.waiting) {
+          skipWaiting(reg.waiting)
+        } else if (reg?.installing) {
+          // Update still downloading — wait for it, then activate. Don't reload
+          // into the old build in the meantime.
+          const sw = reg.installing
+          sw.addEventListener('statechange', () => {
+            if (sw.state === 'installed') skipWaiting(sw)
+          })
+        } else {
+          // Stale prompt — nothing pending to switch to; reload picks up
           // whatever is current.
+          clearTimeout(backstop)
           forceReload()
-          return
         }
-        waiting.addEventListener('statechange', () => {
-          if (waiting.state === 'activated') forceReload()
-        })
-        // The generated sw.js handles this message with self.skipWaiting();
-        // activation fires controllerchange (listener above) → reload.
-        waiting.postMessage({ type: 'SKIP_WAITING' })
       })
-      .catch(() => forceReload())
+      .catch(() => { clearTimeout(backstop); forceReload() })
   }, [updating])
 
   const playerVisible = usePlayerStore((s) => s.player.isPlayerVisible)
