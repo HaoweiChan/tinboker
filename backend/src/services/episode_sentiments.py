@@ -48,7 +48,7 @@ def _parse(content: str) -> dict:
     out: dict = {}
     for rec in (data.get("ticker_insights") or data.get("ticker_recommendations") or []):
         ticker = str(rec.get("ticker", "")).strip().upper()
-        sentiment = _normalize(rec.get("sentiment"))
+        sentiment = _normalize(rec.get("sentiment") or rec.get("sentiment_label"))
         if ticker and sentiment:
             out[ticker] = sentiment
     return out

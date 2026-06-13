@@ -12,7 +12,7 @@ interface ChangeProps {
 
 /**
  * Monospace, tabular-numeral ±% with the user's price-change color convention
- * (TW user: red = up). For LLM sentiment labels use `SentimentChip`, not this.
+ * (TW user: red = up). SentimentChip uses the same up/down color convention.
  */
 export const Change: React.FC<ChangeProps> = ({ value, big = false, className }) => {
   const trend = useStockTrendColor(value ?? 0);

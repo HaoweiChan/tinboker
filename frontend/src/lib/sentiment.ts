@@ -1,8 +1,9 @@
 // Centralized sentiment → Chinese label + chip-class mapping, plus aggregation helpers.
-// Sentiment colors are SEMANTIC (always green = bull / red = bear) and intentionally
-// independent of the TW/US price-change color flip handled by `useStockTrendColor`.
+// Sentiment colors follow the user's stock price color convention: 看多 uses the
+// "up" color, 看空 uses the "down" color.
 
 export type Sentiment = 'BULLISH' | 'BEARISH' | 'NEUTRAL' | null | undefined;
+export type StockColorMode = 'TW' | 'US';
 
 /** Normalize whatever the backend / mocks send into the canonical vocabulary. */
 export function normalizeSentiment(raw: unknown): Exclude<Sentiment, null | undefined> | null {
@@ -21,14 +22,31 @@ export interface SentimentDisplay {
   toneClass: string; // text color class only
 }
 
-export function getSentimentDisplay(sentiment: Sentiment): SentimentDisplay | null {
+function directionalClasses(
+  sentiment: 'BULLISH' | 'BEARISH',
+  stockColorMode: StockColorMode,
+): Pick<SentimentDisplay, 'chipClass' | 'toneClass'> {
+  const isBullish = sentiment === 'BULLISH';
+  const shouldUseRed = stockColorMode === 'TW' ? isBullish : !isBullish;
+  return shouldUseRed
+    ? {
+        chipClass: 'sentiment-chip bg-red-100 text-red-600 dark:bg-red-500/20 dark:text-red-400',
+        toneClass: 'text-red-600 dark:text-red-400',
+      }
+    : {
+        chipClass: 'sentiment-chip bg-green-100 text-green-600 dark:bg-green-500/20 dark:text-green-400',
+        toneClass: 'text-green-600 dark:text-green-400',
+      };
+}
+
+export function getSentimentDisplay(sentiment: Sentiment, stockColorMode: StockColorMode = 'US'): SentimentDisplay | null {
   const s = normalizeSentiment(sentiment);
   if (!s) return null;
   switch (s) {
     case 'BULLISH':
-      return { label: '看多', short: '多', chipClass: 'sentiment-chip sentiment-chip-bull', toneClass: 'text-sentiment-bull' };
+      return { label: '看多', short: '多', ...directionalClasses(s, stockColorMode) };
     case 'BEARISH':
-      return { label: '看空', short: '空', chipClass: 'sentiment-chip sentiment-chip-bear', toneClass: 'text-sentiment-bear' };
+      return { label: '看空', short: '空', ...directionalClasses(s, stockColorMode) };
     case 'NEUTRAL':
       return { label: '中性', short: '中', chipClass: 'sentiment-chip sentiment-chip-neutral', toneClass: 'text-sentiment-neutral' };
   }

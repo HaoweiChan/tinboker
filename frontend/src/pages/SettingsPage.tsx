@@ -114,7 +114,7 @@ export const SettingsPage: React.FC = () => {
         <SettingsSection icon={<Sun size={18} />} title="顯示設定">
           <SettingsRow
             label="美股/國際模式 (綠漲紅跌)"
-            hint="啟用後，上漲將顯示為綠色，下跌為紅色（情緒文字標籤永遠維持「看多 / 看空」）。"
+            hint="啟用後，上漲與看多顯示為綠色，下跌與看空顯示為紅色。"
             control={<Toggle checked={stockColorMode === 'US'} onChange={() => setStockColorMode(stockColorMode === 'US' ? 'TW' : 'US')} aria-label="美股/國際模式" />}
           />
           <SettingsRow

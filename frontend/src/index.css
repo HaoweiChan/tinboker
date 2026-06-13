@@ -311,7 +311,8 @@
      ============================================================ */
 
   /* Sentiment chip — LLM-derived bullish/bearish/neutral label.
-     SEMANTIC colors: always green=bull / red=bear (NOT the price-change flip). */
+     Bull/bear colors are supplied by the component so they can follow the
+     user's stock price color convention. */
   .sentiment-chip {
     @apply inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium uppercase tracking-wide;
   }

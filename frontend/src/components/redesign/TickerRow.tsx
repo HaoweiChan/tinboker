@@ -7,7 +7,7 @@ import { Change } from './Change';
 export interface TickerRowData {
   symbol: string;            // e.g. 2330.TW, NVDA
   name?: string;             // resolved display_name from translation table (optional)
-  sentiment?: Sentiment;     // LLM-derived; chip color is always green=bull/red=bear
+  sentiment?: Sentiment;     // LLM-derived; chip color follows the active price color mode
   changePercent?: number | null; // price change %; color follows the TW/US convention
   sinceLabel?: string | null;    // e.g. "播出至今" — shown next to changePercent when set
 }
