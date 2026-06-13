@@ -58,9 +58,10 @@ user: |
     {tag_vocabulary}
   - tags array: each item is {{"display_name": "<zh-TW>", "tag_name": "<the same ASCII slug>"}}
   - Focus ONLY on financial/market content; silently drop any non-financial topics
-  - For each section heading: rewrite the section_topic as an editorial headline that captures the key insight (e.g. "市場動盪下的生存法則：從機構操作解析到逆向投資策略"), NOT a literal transcript label; output plain text only — no leading ## or timestamps
+  - For each section heading: rewrite the section_topic as an editorial headline that captures the key insight (e.g. "市場動盪下的生存法則：從機構操作解析到逆向投資策略"), NOT a literal transcript label; output plain text only — NEVER embed any timestamp, (#time:...), or MM:SS text in the heading
   - Each section should contain 3-4 substantial analytical paragraphs, not bullet lists
-  - start_time: return the raw millisecond value as-is; do NOT embed MM:SS text in the heading
+  - Write ONE section per input event, in the SAME order the events are given — do not reorder or invent sections. The chapter timestamp shown to users is computed by code from each event's real position; do NOT try to author it yourself
+  - start_time: copy event.start verbatim when present (it is only an ordering hint — code re-derives the authoritative value). Omit it rather than guessing; NEVER use a sequence number like 1/2/3
 
   Output a structured JSON object with the following fields:
   - title: Article title in Traditional Chinese
@@ -68,7 +69,7 @@ user: |
   - sections: Array of section objects, each with:
     - heading: Editorial headline in plain text (no leading ## or timestamp) — e.g. "市場動盪下的生存法則：從機構操作解析到逆向投資策略"
     - content: Section content in Markdown format — full paragraphs with inline ticker and tag links throughout
-    - start_time: Start time in milliseconds (from event.start) - include this when available
+    - start_time: Ordering hint only — copy event.start (milliseconds) when available, else omit. Code re-derives the authoritative chapter time; never put a sequence number here
     - subsections: Optional array of subsection objects with heading and content
   - conclusion: Conclusion paragraph in Traditional Chinese
   - stock_tickers: Array of stock ticker objects with display_name and symbol

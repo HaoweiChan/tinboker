@@ -7,6 +7,17 @@ export interface TimestampedSection {
 }
 
 /**
+ * A `#time:` marker is a real audio offset only when it is 0 (episode start) or
+ * at least 1000 ms. The 1–999 ms band is rejected because legacy summaries stored
+ * section ORDINALS there (`#time:1`, `#time:2` …) — a writer-LLM bug now fixed in
+ * the pipeline — which otherwise render as a cluster of 00:00 chapters. Genuine
+ * chapter offsets are either 0 or seconds-to-minutes in, never 1–999 ms.
+ */
+export function isRealTimeMarker(milliseconds: number): boolean {
+    return Number.isFinite(milliseconds) && (milliseconds === 0 || milliseconds >= 1000);
+}
+
+/**
  * Parse markdown to extract section headers with timestamps
  * Looks for patterns like:
  * - "## Section Title (#time:12345)"
@@ -43,6 +54,7 @@ export function parseTimestampedSections(markdown: string): TimestampedSection[]
 
             if (title && title.length > 0) {
                 const milliseconds = parseInt(match[2], 10);
+                if (!isRealTimeMarker(milliseconds)) continue;
                 const timestampSeconds = Math.floor(milliseconds / 1000);
 
                 // Avoid duplicates

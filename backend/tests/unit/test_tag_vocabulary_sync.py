@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -43,6 +44,57 @@ def test_registry_loads_full_catalogue():
     mirror = _strip_meta(json.loads(MIRROR.read_text(encoding="utf-8")))
     expected = {normalize_tag_slug(slug): zh for slug, zh in mirror.items()}
     assert _CANONICAL_DISPLAY == expected
+
+
+class _FakeDb:
+    """Minimal stand-in for the SQLAlchemy session ``registry_snapshot`` uses."""
+
+    def __init__(self, rows):
+        self._rows = rows
+
+    def query(self, *_a, **_k):
+        rows = self._rows
+        return SimpleNamespace(all=lambda: rows)
+
+
+def test_registry_snapshot_translates_episode_tag_slugs():
+    """The production bug: PascalCase episode tags rendered in English.
+
+    Every tag from the screenshotted episodes resolves to its curated zh-TW label
+    via the canonical catalogue, regardless of the DB seed's slug spelling.
+    """
+    from src.tag_registry import normalize_tag_slug, registry_snapshot
+
+    snap = {normalize_tag_slug(e["slug"]): e["display_zh"] for e in registry_snapshot(_FakeDb([]))}
+    expected = {
+        "DataCenter": "資料中心", "Finance": "金融", "TWStocks": "台股",
+        "Memory": "記憶體", "Inflation": "通膨", "FedRate": "聯準會利率",
+        "Macroeconomy": "總體經濟",
+    }
+    for slug, zh in expected.items():
+        assert snap.get(normalize_tag_slug(slug)) == zh, f"{slug} did not resolve to {zh}"
+
+
+def test_registry_snapshot_placeholder_does_not_mask_canonical():
+    """An auto-registered English placeholder must not override the canonical label."""
+    from src.tag_registry import normalize_tag_slug, registry_snapshot
+
+    rows = [SimpleNamespace(slug="DataCenter", display_zh="DataCenter", tier="hidden")]
+    snap = {normalize_tag_slug(e["slug"]): e for e in registry_snapshot(_FakeDb(rows))}
+    assert snap[normalize_tag_slug("DataCenter")]["display_zh"] == "資料中心"
+
+
+def test_registry_snapshot_dedupes_canonical_and_db_by_normalized_slug():
+    """Canonical ``SupplyChain`` and DB ``supply_chain`` collapse to one entry."""
+    from src.tag_registry import normalize_tag_slug, registry_snapshot
+
+    rows = [SimpleNamespace(slug="supply_chain", display_zh="供應鏈", tier="trending")]
+    snap = registry_snapshot(_FakeDb(rows))
+    norm = normalize_tag_slug("SupplyChain")
+    matches = [e for e in snap if normalize_tag_slug(e["slug"]) == norm]
+    assert len(matches) == 1
+    assert matches[0]["display_zh"] == "供應鏈"
+    assert matches[0]["tier"] == "trending"  # DB tier wins
 
 
 def test_normalize_has_no_conflicting_collisions():
