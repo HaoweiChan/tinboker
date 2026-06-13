@@ -206,6 +206,18 @@ jobs:
           key: ${{ env.VPS_SSH_KEY }}
           envs: GHCR_TOKEN,GCP_CREDS_JSON,POSTGRES_PASSWORD
           script: |
+            # Fail the SSH script (and thus the job) on any unhandled error. Without
+            # this, a failed container swap below would silently fall through to the
+            # health check — which would pass against the OLD still-running container —
+            # and the deploy would be falsely reported as healthy. (Root cause of prod
+            # being stuck on a stale image; see backend-deploy.yml history.)
+            set -eo pipefail
+
+            SERVICE="${{ steps.env.outputs.service }}"
+            IMAGE_TAG="${{ steps.env.outputs.image_tag }}"
+            CONTAINER="tinboker-${SERVICE}"
+            export ${{ steps.env.outputs.image_var }}="$IMAGE_TAG"
+
             cd /app
             git fetch origin --tags
             if [[ "${{ github.ref }}" == refs/tags/* ]]; then
@@ -222,18 +234,39 @@ jobs:
 
             echo "$GHCR_TOKEN" | docker login ghcr.io -u haoweichan --password-stdin
 
-            ${{ steps.env.outputs.image_var }}=${{ steps.env.outputs.image_tag }} docker compose -f docker-compose.multi.yml pull ${{ steps.env.outputs.service }}
+            docker compose -f docker-compose.multi.yml pull "$SERVICE"
 
             docker compose -f docker-compose.multi.yml up -d --no-recreate postgres redis netdata
 
-            ${{ steps.env.outputs.image_var }}=${{ steps.env.outputs.image_tag }} docker compose -f docker-compose.multi.yml up -d --no-deps ${{ steps.env.outputs.service }}
+            # Remove any pre-existing container with this name BEFORE `up`. The prod
+            # container was historically created outside this compose project, so a
+            # plain `up` aborted with "container name is already in use" — the swap
+            # no-op'd while the old image kept running. Force-removing the named
+            # container first guarantees `up` (with --force-recreate) recreates it
+            # fresh and compose-owned, regardless of who created the old one.
+            docker rm -f "$CONTAINER" 2>/dev/null || true
+
+            docker compose -f docker-compose.multi.yml up -d --no-deps --force-recreate "$SERVICE"
 
             docker image prune -f
+
+            # Health check against the freshly-started container.
             for i in $(seq 1 12); do
               curl -sf http://localhost:${{ steps.env.outputs.port }}/health && break
               [ $i -eq 12 ] && { echo "Health check failed after 60s"; exit 1; }
               sleep 5
             done
+
+            # Assert the RUNNING container is actually the image we just deployed.
+            # `curl /health` alone can't catch a stale container (it answers the same
+            # on any version), so verify the resolved image tag matches IMAGE_TAG.
+            RUNNING_IMAGE=$(docker inspect --format '{{.Config.Image}}' "$CONTAINER")
+            echo "Running image for $CONTAINER: $RUNNING_IMAGE (expected tag: $IMAGE_TAG)"
+            if ! printf '%s' "$RUNNING_IMAGE" | grep -q ":${IMAGE_TAG}\$"; then
+              echo "ERROR: $CONTAINER is running '$RUNNING_IMAGE', not the deployed tag '$IMAGE_TAG'. Failing deploy."
+              exit 1
+            fi
+            echo "✅ $CONTAINER confirmed running deployed image tag '$IMAGE_TAG'"
 
       # Drop the Cloudflare edge cache only AFTER the new container is healthy, so the
       # edge re-fetches fresh /api/* instead of serving pre-deploy copies until TTL
