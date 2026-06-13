@@ -133,7 +133,11 @@ def auto_register(db: Session, slugs: list[str], min_episodes: int = 3) -> int:
     if not new_slugs:
         return 0
     for slug in new_slugs:
-        db.add(TagRegistry(slug=slug, display_zh=slug, tier=TIER_HIDDEN))
+        # Seed the curated zh-TW label when the slug is in the canonical vocabulary,
+        # so auto-discovered tags render in Chinese immediately instead of as their
+        # raw English slug (and so the DB row can never mask the canonical label).
+        display_zh = _CANONICAL_DISPLAY.get(normalize_tag_slug(slug), slug)
+        db.add(TagRegistry(slug=slug, display_zh=display_zh, tier=TIER_HIDDEN))
     db.commit()
     logger.info("Auto-registered %d new tags as hidden", len(new_slugs))
     return len(new_slugs)
@@ -165,11 +169,21 @@ def registry_snapshot(db: Session) -> list[dict]:
     the site (episode hero, topic pages, episode cards), not just the curated
     trending subset. DB rows win over the canonical baseline (admin curation
     overrides) and carry their real tier.
+
+    Entries are keyed by the NORMALIZED slug so the catalogue and the DB never
+    emit two rows that the frontend would collapse to the same lookup key (e.g.
+    canonical ``SupplyChain`` vs. DB ``supply_chain`` → both ``supplychain``).
+    A DB row whose ``display_zh`` is just its own slug is an auto-registered
+    English placeholder; it must NOT mask a curated canonical label.
     """
-    by_slug: dict[str, dict] = {
-        slug: {"slug": slug, "display_zh": zh, "tier": TIER_HIDDEN}
-        for slug, zh in _CANONICAL_DISPLAY.items()
+    by_norm: dict[str, dict] = {
+        norm_slug: {"slug": norm_slug, "display_zh": zh, "tier": TIER_HIDDEN}
+        for norm_slug, zh in _CANONICAL_DISPLAY.items()
     }
     for r in db.query(TagRegistry).all():
-        by_slug[r.slug] = {"slug": r.slug, "display_zh": r.display_zh, "tier": r.tier}
-    return [by_slug[slug] for slug in sorted(by_slug)]
+        norm = normalize_tag_slug(r.slug)
+        canonical_zh = _CANONICAL_DISPLAY.get(norm)
+        is_placeholder = normalize_tag_slug(r.display_zh) == norm
+        display_zh = canonical_zh if (is_placeholder and canonical_zh) else r.display_zh
+        by_norm[norm] = {"slug": r.slug, "display_zh": display_zh, "tier": r.tier}
+    return [by_norm[k] for k in sorted(by_norm)]

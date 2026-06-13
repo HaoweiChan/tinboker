@@ -76,7 +76,10 @@ _TEMPERATURE_MAP: dict[str, float] = {
 }
 
 _MAX_TOKENS_MAP: dict[str, int] = {
-    "extractor": 2048,
+    # Long episodes (1000+ sentences) produce a topic list whose JSON exceeded the
+    # old 2048 cap — the reply truncated mid-array, failed to parse, and the episode
+    # ended up with zero events (no chapters). 4096 covers even very long shows.
+    "extractor": 4096,
     "writer": 8192,
     "marp_writer": 8192,
     "ticker_extractor": 2048,

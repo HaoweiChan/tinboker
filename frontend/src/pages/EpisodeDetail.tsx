@@ -163,17 +163,20 @@ export const EpisodeDetail: React.FC = () => {
   }, [id, podcastName]);
 
   const chapters = useMemo<TimestampedSection[]>(() => (episode?.events_markdown_content ? parseTimestampedSections(episode.events_markdown_content) : []), [episode]);
-  const clips = useMemo<TimestampedSection[]>(() => (episode?.sentences_markdown_content ? parseTimestampedSections(episode.sentences_markdown_content).slice(0, 8) : []), [episode]);
   const summarySections = useMemo<TimestampedSection[]>(() => {
     const content = episode?.modified_summary_content || episode?.summary_content;
     return content ? parseTimestampedSections(content) : [];
   }, [episode]);
-  // Player chapters: prefer the summary-extracted topic timestamps (the same
-  // sections shown in 摘要) over the raw transcript-derived events/sentences, so
-  // seeking lands on topic boundaries rather than per-sentence transcript timing.
+  // Player chapters: ONLY topic-level timestamps — the summary-extracted sections
+  // (same as shown in 摘要), else the events-markdown topics. We deliberately do
+  // NOT fall back to raw per-sentence transcript timings: surfacing transcript
+  // sentences as "chapters" was the bug where seeking landed on arbitrary speech
+  // fragments instead of topic boundaries. An episode with no topic timestamps
+  // (e.g. a non-financial episode that produced no clustered topics) shows no
+  // chapters rather than transcript noise.
   const playerSections = useMemo<TimestampedSection[]>(
-    () => (summarySections.length ? summarySections : chapters.length ? chapters : clips),
-    [summarySections, chapters, clips],
+    () => (summarySections.length ? summarySections : chapters),
+    [summarySections, chapters],
   );
   const tickerSymbols = useMemo(() => (Array.isArray(episode?.related_tickers) ? episode!.related_tickers.slice(0, 8) : []), [episode]);
   const priceMap = useStockPriceMap(tickerSymbols);
@@ -311,24 +314,26 @@ export const EpisodeDetail: React.FC = () => {
           <>
             {/* Hero */}
             <div className="bg-card border border-border rounded-md p-5 sm:p-6 mb-[18px]">
-              <div className="flex items-center gap-3.5 mb-3.5">
-                <PodcastAvatar name={name} src={podcasterImageUrl} size="md" className="rounded-[9px]" />
-                <div className="min-w-0 flex-1">
-                  <Link to={`/podcaster/${encodeURIComponent(name)}`} className="text-[14px] font-medium hover:underline">{name}</Link>
-                  <div className="text-[12px] text-muted-foreground">
-                    {episode.episode_number != null ? `EP ${episode.episode_number} · ` : ''}
-                    {timeAgo(episode.released_at_ms ?? episode.spotify_release_date, episode.created_time)}
+              <div className="flex flex-col gap-3.5 mb-3.5 sm:flex-row sm:items-center">
+                <div className="flex min-w-0 flex-1 items-center gap-3.5">
+                  <PodcastAvatar name={name} src={podcasterImageUrl} size="md" className="rounded-[9px] shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <Link to={`/podcaster/${encodeURIComponent(name)}`} className="block text-[14px] font-medium leading-snug break-keep hover:underline">{name}</Link>
+                    <div className="text-[12px] text-muted-foreground">
+                      {episode.episode_number != null ? `EP ${episode.episode_number} · ` : ''}
+                      {timeAgo(episode.released_at_ms ?? episode.spotify_release_date, episode.created_time)}
+                    </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <button type="button" onClick={onPlay} className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-foreground text-background text-[13px] font-medium hover:opacity-90 transition-opacity">
+                <div className="flex w-full items-center gap-2 overflow-x-auto pb-1 sm:w-auto sm:shrink-0 sm:overflow-visible sm:pb-0">
+                  <button type="button" onClick={onPlay} className="inline-flex shrink-0 items-center gap-1.5 px-4 py-2 rounded-full bg-foreground text-background text-[13px] font-medium hover:opacity-90 transition-opacity">
                     <Play size={14} className="fill-current" /> 播放本集
                   </button>
                   <button
                     type="button"
                     onClick={onBookmark}
                     className={cn(
-                      'inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full text-[13px] font-medium transition-colors',
+                      'inline-flex shrink-0 items-center gap-1.5 px-3.5 py-2 rounded-full text-[13px] font-medium transition-colors',
                       isBookmarked ? 'bg-accent-info-soft text-accent-info' : 'bg-card border border-border hover:bg-muted',
                     )}
                   >
@@ -338,13 +343,13 @@ export const EpisodeDetail: React.FC = () => {
                   <button
                     type="button"
                     onClick={onShare}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-card border border-border text-[13px] font-medium hover:bg-muted transition-colors"
+                    className="inline-flex shrink-0 items-center gap-1.5 px-3.5 py-2 rounded-full bg-card border border-border text-[13px] font-medium hover:bg-muted transition-colors"
                   >
                     {shareCopied ? <Check size={13} className="text-emerald-500" /> : <Share2 size={13} />}
                     {shareCopied ? '已複製' : '分享'}
                   </button>
                   {episode.spotify_url && (
-                    <a href={episode.spotify_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-card border border-border text-[13px] font-medium hover:bg-muted transition-colors">
+                    <a href={episode.spotify_url} target="_blank" rel="noopener noreferrer" className="inline-flex shrink-0 items-center gap-1.5 px-3.5 py-2 rounded-full bg-card border border-border text-[13px] font-medium hover:bg-muted transition-colors">
                       <ExternalLink size={13} /> Spotify
                     </a>
                   )}
