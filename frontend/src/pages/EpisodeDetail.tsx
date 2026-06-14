@@ -8,7 +8,7 @@ import { TickerRow } from '@/components/redesign';
 import { cn } from '@/lib/utils';
 import { getEpisodeById, getEpisodeByIdOnly, getEpisodeAudioUrl, getPodcastByName, type Episode as ApiEpisode } from '@/services';
 import { fetchWithFallback } from '@/services/api/migration';
-import { parseTimestampedSections, type TimestampedSection } from '@/utils/parseTimestampedSections';
+import { parseSummaryTopicSections, parseTimestampedSections, type TimestampedSection } from '@/utils/parseTimestampedSections';
 import { usePlayerStore } from '@/store/usePlayerStore';
 import { useAppStore, useEpisodeBookmarks } from '@/store/useAppStore';
 import { CommentSection } from '@/components/episode/CommentSection';
@@ -165,7 +165,7 @@ export const EpisodeDetail: React.FC = () => {
   const chapters = useMemo<TimestampedSection[]>(() => (episode?.events_markdown_content ? parseTimestampedSections(episode.events_markdown_content) : []), [episode]);
   const summarySections = useMemo<TimestampedSection[]>(() => {
     const content = episode?.modified_summary_content || episode?.summary_content;
-    return content ? parseTimestampedSections(content) : [];
+    return content ? parseSummaryTopicSections(content, episode?.sentences_markdown_content) : [];
   }, [episode]);
   // Player chapters: ONLY topic-level timestamps — the summary-extracted sections
   // (same as shown in 摘要), else the events-markdown topics. We deliberately do
