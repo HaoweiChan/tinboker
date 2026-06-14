@@ -4,6 +4,8 @@ import { apiClient } from '@/services/api/client';
 export interface TranslationEntry {
   displayName: string;       // zh-TW name when available, English otherwise
   hasZhName: boolean;        // true only for a real CJK name
+  nameEn?: string | null;    // English full name (e.g. "HP Inc.")
+  nameZhTw?: string | null;  // raw zh-TW name (may be a Latin value parked here)
   brandColor?: string | null;
 }
 
@@ -56,6 +58,8 @@ export function useTranslationMap(tickers: string[]): Map<string, TranslationEnt
             value: {
               displayName: String(item.display_name),
               hasZhName: Boolean(item.has_zh_name),
+              nameEn: (item.name_en as string | null) ?? null,
+              nameZhTw: (item.name_zh_tw as string | null) ?? null,
               brandColor: item.brand_color as string | null,
             },
             ts,

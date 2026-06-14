@@ -21,6 +21,7 @@ import { transformApiEpisodeToMock } from '@/services/api/transformers';
 import { useStockPriceMap } from '@/hooks/useStockPriceMap';
 import { useStockPriceSinceMap } from '@/hooks/useStockPriceSinceMap';
 import { useEpisodeSentimentMap } from '@/hooks/useEpisodeSentimentMap';
+import { useTranslationMap } from '@/hooks/useTranslationMap';
 import { getStockLabel, inferStockMarket } from '@/utils/stockDisplay';
 
 function countsToBreakdown(counts: TickerTrending['sentiment_counts']): SentimentBreakdown | null {
@@ -124,7 +125,6 @@ const StockHeaderCard: React.FC<{ symbol: string; mentionCount: number }> = ({ s
     };
   }, [symbol]);
 
-  const displayName = stockData?.name ?? symbol;
   const displayPrice = stockData?.price ?? null;
   const displayChange = stockData?.change ?? 0;
   const displayChangePercent = stockData?.changePercent ?? 0;
@@ -168,11 +168,26 @@ const StockHeaderCard: React.FC<{ symbol: string; mentionCount: number }> = ({ s
     { label: '本益比', value: stockData?.pe ? stockData.pe.toFixed(1) : '—' },
   ];
 
-  const { primary: primaryLabel, secondary: secondaryLabel } = getStockLabel({
-    ticker: symbol,
-    name: stockData?.name,
-    market: inferStockMarket(symbol),
-  });
+  // Resolve names independently of the price API so labels still show when price
+  // data is rate-limited / unavailable (stockData is null).
+  const translationMap = useTranslationMap([symbol]);
+  const translatedName = translationMap.get(symbol.toUpperCase());
+  const zhName = translatedName?.hasZhName ? translatedName.displayName : undefined;
+  const enName = translatedName?.nameEn?.trim() || stockData?.name?.trim() || undefined;
+
+  // US stocks read top-down as: zh name → English full name → ticker.
+  // TW/KR keep the localized name as primary with the ticker as secondary.
+  let primaryLabel: string;
+  const subLines: { text: string; mono: boolean }[] = [];
+  if (market === 'US') {
+    primaryLabel = zhName || enName || symbol;
+    if (enName && enName !== primaryLabel) subLines.push({ text: enName, mono: false });
+    if (primaryLabel !== symbol) subLines.push({ text: symbol, mono: true });
+  } else {
+    const label = getStockLabel({ ticker: symbol, name: zhName || enName, market });
+    primaryLabel = label.primary;
+    if (label.secondary) subLines.push({ text: label.secondary, mono: label.secondary === symbol });
+  }
 
   return (
     <>
@@ -180,11 +195,17 @@ const StockHeaderCard: React.FC<{ symbol: string; mentionCount: number }> = ({ s
       <div className="flex items-start gap-5 bg-card border border-border rounded-md p-5 sm:p-6 mb-[18px]">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-3 flex-wrap mb-1.5">
-            <h1 className="text-[22px] font-semibold tracking-[-0.02em]">{isLoading ? displayName : primaryLabel}</h1>
+            <h1 className="text-[22px] font-semibold tracking-[-0.02em]">{primaryLabel}</h1>
             <span className={cn('text-[12px] px-3 py-1 rounded-full', marketBadge.cls)}>{marketBadge.label}</span>
           </div>
-          {secondaryLabel && (
-            <p className="text-[13px] text-muted-foreground font-mono mb-1.5">{secondaryLabel}</p>
+          {subLines.length > 0 && (
+            <div className="mb-1.5 leading-tight">
+              {subLines.map((line) => (
+                <p key={line.text} className={cn('text-[13px] text-muted-foreground', line.mono && 'font-mono')}>
+                  {line.text}
+                </p>
+              ))}
+            </div>
           )}
           <div className="flex items-baseline gap-3.5 flex-wrap">
             <span className={cn('font-mono tabular-nums text-[32px] font-semibold tracking-[-0.02em]', hasDisplayPrice ? trend.text : 'text-muted-foreground')}>
