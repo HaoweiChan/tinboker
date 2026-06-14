@@ -1,6 +1,7 @@
 """Pipeline orchestrator: coordinates the full podcast processing flow."""
 
 import json
+import os
 import sys
 import tempfile
 import traceback
@@ -9,6 +10,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from src.pipeline import EpisodeProcessor, PipelineConfig
+from src.pipeline.reconcile import reconcile_show_released_at_ms
 from src.pipeline.steps import initialize_services
 from src.service.download_podcasts import extract_podcast_id, fetch_episodes
 
@@ -387,6 +389,10 @@ def _process_single_podcast(
 
         print(f"Found {len(episodes)} episodes from API")
 
+        # Keep the full feed (every episode + its true datePublished) before the
+        # window/limit narrowing below — the reconcile pass needs all of it.
+        feed_episodes = list(episodes)
+
         if fill_limit:
             episodes = _filter_unprocessed_episodes(
                 episodes, name, max_episodes or limit, service_container
@@ -437,6 +443,19 @@ def _process_single_podcast(
         print(f"  Successful: {successful}")
         print(f"  Failed: {failed}")
         print(f"  Total: {len(episodes)}")
+
+        # Self-heal released_at_ms for this show's already-ingested episodes
+        # against the feed's true datePublished. Gated on actual ingest activity
+        # (successful > 0) so idle 10-minute runs add no Firestore reads; new
+        # episodes drop only a few times a week per show. Best-effort: a failure
+        # here must never fail the run. Disable with RECONCILE_RELEASE_DATES=0.
+        if successful > 0 and os.environ.get("RECONCILE_RELEASE_DATES", "1") != "0":
+            try:
+                reconcile_show_released_at_ms(
+                    service_container.firebase_service, name, feed_episodes
+                )
+            except Exception as e:  # noqa: BLE001
+                print(f"  [reconcile] skipped for {name} (non-critical): {e}")
 
     except Exception as e:
         print(f"Error processing podcast {name}: {e}")
