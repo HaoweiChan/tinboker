@@ -100,7 +100,7 @@ class TrendingService:
                   prev_sentiment_summary, rising_ticker, new_tickers}
         """
         ticker_filter = ticker.strip().upper().split(".")[0] if ticker else None
-        cache_key = f"buzz:recent:{days}:{limit}:{ticker_filter or 'all'}:v3"
+        cache_key = f"buzz:recent:{days}:{limit}:{ticker_filter or 'all'}:v4"
         cached = await cache_get(cache_key)
         if cached:
             try:
@@ -145,7 +145,11 @@ class TrendingService:
             if delta > rising_delta:
                 rising_delta = delta
                 rising_ticker_id = t
-        extra_tickers = list(new_ticker_set)[:5]
+        # The newcomers we actually display are the top-5 by mention count — translate
+        # exactly those, not an arbitrary set-iteration slice, or the displayed tickers
+        # come back with name=None and render as raw symbols (e.g. DELL, SNOW).
+        new_ticker_top = sorted(new_ticker_set, key=lambda x: counts[x], reverse=True)[:5]
+        extra_tickers = list(new_ticker_top)
         if rising_ticker_id:
             extra_tickers.append(rising_ticker_id)
         all_tickers_to_translate = list(set(top_tickers + extra_tickers + ([ticker_filter] if ticker_filter else [])))
@@ -226,7 +230,7 @@ class TrendingService:
                 "delta": rising_delta,
             }
         new_tickers_list = []
-        for t in sorted(new_ticker_set, key=lambda x: counts[x], reverse=True)[:5]:
+        for t in new_ticker_top:
             new_tickers_list.append({
                 "ticker": t,
                 "name": translations.get(t) or None,

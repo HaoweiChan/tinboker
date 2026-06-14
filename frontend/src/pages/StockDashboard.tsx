@@ -21,6 +21,7 @@ import { transformApiEpisodeToMock } from '@/services/api/transformers';
 import { useStockPriceMap } from '@/hooks/useStockPriceMap';
 import { useStockPriceSinceMap } from '@/hooks/useStockPriceSinceMap';
 import { useEpisodeSentimentMap } from '@/hooks/useEpisodeSentimentMap';
+import { useTranslationMap } from '@/hooks/useTranslationMap';
 import { getStockLabel, inferStockMarket } from '@/utils/stockDisplay';
 
 function countsToBreakdown(counts: TickerTrending['sentiment_counts']): SentimentBreakdown | null {
@@ -168,9 +169,15 @@ const StockHeaderCard: React.FC<{ symbol: string; mentionCount: number }> = ({ s
     { label: '本益比', value: stockData?.pe ? stockData.pe.toFixed(1) : '—' },
   ];
 
+  // Resolve the company name independently of the price API so the localized name
+  // still shows when price data is rate-limited / unavailable (stockData is null).
+  const translationMap = useTranslationMap([symbol]);
+  const translatedName = translationMap.get(symbol.toUpperCase());
+  const resolvedName = stockData?.name || (translatedName?.hasZhName ? translatedName.displayName : undefined);
+
   const { primary: primaryLabel, secondary: secondaryLabel } = getStockLabel({
     ticker: symbol,
-    name: stockData?.name,
+    name: resolvedName,
     market: inferStockMarket(symbol),
   });
 
