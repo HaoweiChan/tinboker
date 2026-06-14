@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 from src.models.podcast_models import PodcastEpisode, Sentence
+from src.podcast.content_builder.tag_vocabulary import canonical_tag_slug
 
 
 def determine_language(podcast_name: str) -> str:
@@ -80,13 +81,14 @@ def generate_episode_id(
 
 def extract_tags_from_markdown(markdown_text: str) -> List[str]:
     """
-    Extract tags from markdown text by parsing #tag:TAG_NAME patterns.
+    Extract vocabulary-backed tags from markdown text by parsing #tag:TAG_NAME patterns.
     
     Args:
         markdown_text: Markdown content with tag links like [Display](#tag:TAG_NAME)
         
     Returns:
-        List of unique tag names (normalized to lowercase with underscores)
+        List of unique canonical tag slugs. Unknown slugs are ignored until they
+        are added to the pipeline's tag vocabulary.
     """
     if not markdown_text:
         return []
@@ -95,9 +97,25 @@ def extract_tags_from_markdown(markdown_text: str) -> List[str]:
     pattern = r'#tag:([a-zA-Z0-9_]+)'
     matches = re.findall(pattern, markdown_text, re.IGNORECASE)
     
-    # Normalize to lowercase and remove duplicates
-    tags = list(set(tag.lower() for tag in matches))
+    # Only persist tags that resolve through the canonical vocabulary. That makes
+    # every stored episode tag displayable via the backend registry and prevents
+    # one-off LLM slugs from fragmenting topic clusters.
+    tags = {tag for tag in (canonical_tag_slug(match) for match in matches) if tag}
     return sorted(tags)
+
+
+def _canonical_tag_from_value(value) -> str | None:
+    """Canonical tag from either a string slug or writer-style tag object."""
+    if isinstance(value, str):
+        return canonical_tag_slug(value)
+    if isinstance(value, dict):
+        for key in ("tag_name", "slug", "tag", "name"):
+            raw = value.get(key)
+            if isinstance(raw, str):
+                tag = canonical_tag_slug(raw)
+                if tag:
+                    return tag
+    return canonical_tag_slug(str(value)) if value is not None else None
 
 
 def extract_tickers_from_markdown(markdown_text: str) -> List[str]:
@@ -128,8 +146,8 @@ def extract_tags_and_tickers(summary_result: Dict) -> Dict[str, List[str]]:
     
     Always parses the markdown summary_text for tag/ticker links as the primary source,
     then merges with structured 'tags' and 'related_tickers' arrays if they exist.
-    This ensures we capture all tags/tickers from the markdown, even if structured
-    format is incomplete.
+    Tags are filtered through the canonical vocabulary so every emitted tag has a
+    curated zh-TW display label in the backend registry mirror.
     
     Args:
         summary_result: Dictionary with 'summary_text', 'tags', 'related_tickers', etc.
@@ -148,8 +166,11 @@ def extract_tags_and_tickers(summary_result: Dict) -> Dict[str, List[str]]:
     
     # Merge with structured format if it exists (add any additional tags/tickers)
     if 'tags' in summary_result and isinstance(summary_result['tags'], list):
-        structured_tags = [tag.lower() if isinstance(tag, str) else str(tag).lower() for tag in summary_result['tags']]
-        # Merge: combine markdown tags with structured tags
+        structured_tags = [
+            tag for tag in (_canonical_tag_from_value(value) for value in summary_result['tags'])
+            if tag
+        ]
+        # Merge: combine markdown tags with structured tags that exist in the vocabulary.
         tags = sorted(list(set(tags + structured_tags)))
     
     if 'related_tickers' in summary_result and isinstance(summary_result['related_tickers'], list):
