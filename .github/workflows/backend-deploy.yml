@@ -240,7 +240,17 @@ jobs:
 
             docker compose -f docker-compose.multi.yml pull "$SERVICE"
 
-            docker compose -f docker-compose.multi.yml up -d --no-recreate postgres redis netdata
+            # postgres/redis/netdata use fixed container_names, named data volumes,
+            # and an external (shared) network. When they already exist as containers
+            # from an earlier compose project (the tinboker-platform → tinboker repo
+            # rename changed the project name), `up --no-recreate` aborts with
+            # "container name is already in use" even though they're running fine and
+            # still reachable by alias on the external network. Under `set -e` that
+            # killed the whole deploy BEFORE the backend swap below — leaving the old
+            # image silently serving. Tolerate the conflict: these services are already
+            # up, and the backend health check + image-tag assertion still gate success.
+            docker compose -f docker-compose.multi.yml up -d --no-recreate postgres redis netdata \
+              || echo "⚠️  infra services already running (name conflict, harmless) — continuing"
 
             # Remove any pre-existing container with this name BEFORE `up`. The prod
             # container was historically created outside this compose project, so a
