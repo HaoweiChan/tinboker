@@ -50,8 +50,13 @@ class CacheProfile(Enum):
     # News content - 1 hour CDN cache
     NEWS = {"s_maxage": 3600, "max_age": 3600, "stale": 7200}  # CDN: 1 hour
 
-    # Trending/Recommendations - 1 hour CDN cache
-    TRENDING = {"s_maxage": 3600, "max_age": 3600, "stale": 7200}  # CDN: 1 hour
+    # Trending/Recommendations - 1 hour CDN cache, SHORT browser cache.
+    # The browser cache can't be purged remotely (only s-maxage at the CDN is),
+    # so a long max_age pinned users to stale buzz/rail data for up to an hour
+    # after a deploy + CDN purge — the browser never revalidated. Keep the CDN at
+    # 1h (purged on deploy) but let browsers refresh within ~2min (matches the
+    # documented episode-freshness browser TTL in CLAUDE.md).
+    TRENDING = {"s_maxage": 3600, "max_age": 120, "stale": 7200}  # CDN: 1h, browser: 2min
 
     # Search results - 1 hour CDN cache
     SEARCH = {"s_maxage": 3600, "max_age": 3600, "stale": 7200}  # CDN: 1 hour
