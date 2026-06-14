@@ -58,6 +58,18 @@ def normalize_tag_slug(slug: str) -> str:
 
 # Normalized-slug -> display, for case/separator-insensitive lookup against extracted tags.
 _DISPLAY_BY_NORM = {normalize_tag_slug(slug): zh for slug, zh in TAG_DISPLAY.items()}
+_CANONICAL_BY_NORM = {normalize_tag_slug(slug): normalize_tag_slug(slug) for slug in TAG_DISPLAY}
+
+
+def canonical_tag_slug(slug: str) -> str | None:
+    """Canonical stored episode tag for a slug, or ``None`` when not in the vocabulary.
+
+    Episode docs store normalized ASCII tags (for stable joins/indexes), while display
+    labels come from this vocabulary through the platform registry. Returning ``None``
+    for unknown slugs makes the prompt vocabulary enforceable instead of advisory:
+    a tag cannot be persisted until it has a curated zh-TW label here.
+    """
+    return _CANONICAL_BY_NORM.get(normalize_tag_slug(slug))
 
 
 def display_for(slug: str) -> str:

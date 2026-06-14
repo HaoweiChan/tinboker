@@ -35,7 +35,7 @@ def test_mirror_matches_canonical():
 
 def test_tag_display_loads_from_json():
     """``TAG_DISPLAY`` is sourced from the JSON, not a hardcoded dict."""
-    from podcast.content_builder.tag_vocabulary import TAG_DISPLAY, display_for
+    from src.podcast.content_builder.tag_vocabulary import TAG_DISPLAY, display_for
 
     canonical = json.loads(CANONICAL.read_text(encoding="utf-8"))
     assert TAG_DISPLAY == canonical
