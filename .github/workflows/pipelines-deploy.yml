@@ -60,7 +60,9 @@ jobs:
             if [ -d "$MONOREPO_DIR/.git" ]; then
                 echo "→ Pulling latest changes..."
                 cd "$MONOREPO_DIR"
-                git fetch origin --tags
+                # --force so a diverged local tag on the VPS can't abort the
+                # fetch with "would clobber existing tag" and skip the deploy.
+                git fetch origin --tags --force
                 if [[ "${{ github.ref }}" == refs/tags/* ]]; then
                   git checkout -f "${{ github.ref_name }}"
                 else
