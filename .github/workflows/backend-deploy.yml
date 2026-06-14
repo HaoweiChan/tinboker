@@ -219,7 +219,11 @@ jobs:
             export ${{ steps.env.outputs.image_var }}="$IMAGE_TAG"
 
             cd /app
-            git fetch origin --tags
+            # --force so a diverged local tag on the VPS (e.g. a stale v0.3.5)
+            # can't abort the fetch with "would clobber existing tag" — that
+            # failure under `set -e` skipped the container recreate and left
+            # prod silently running the old image.
+            git fetch origin --tags --force
             if [[ "${{ github.ref }}" == refs/tags/* ]]; then
               git checkout -f "${{ github.ref_name }}"
             else
