@@ -18,6 +18,15 @@ from src.database.models import StockTranslation
 def _infer_market(ticker: str) -> str:
     return "TW" if ticker.split(".")[0].isdigit() else "US"
 
+
+def _has_cjk(text: Optional[str]) -> bool:
+    """True if text contains a CJK character (a genuine zh-TW name, not a Latin
+    value like "Arm" parked in the name_zh_tw column). Mirrors the same check in
+    routers/translations.py so the rail localizes names the same way."""
+    if not text:
+        return False
+    return any("㐀" <= ch <= "鿿" or "豈" <= ch <= "﫿" for ch in text)
+
 logger = logging.getLogger(__name__)
 
 # Cache TTL: 1 hour for trending data as it doesn't change second-by-second
@@ -40,7 +49,8 @@ class TrendingService:
         if not tickers:
             return {}
         # Check cache first
-        cache_key = "translations:batch:" + ":".join(sorted(tickers))
+        # v2: values now fall back to name_en when there's no CJK zh-TW name.
+        cache_key = "translations:batch:v2:" + ":".join(sorted(tickers))
         cached = await cache_get(cache_key)
         if cached:
             try:
@@ -67,8 +77,13 @@ class TrendingService:
                         StockTranslation.ticker == clean_ticker.upper(),
                         StockTranslation.market == market
                     ).first()
-                    if result and result.name_zh_tw:
-                        translations[ticker] = result.name_zh_tw
+                    if result:
+                        zh = (result.name_zh_tw or "").strip()
+                        en = (result.name_en or "").strip()
+                        # Prefer a real CJK zh-TW name; otherwise fall back to the
+                        # English company name (e.g. SNOW → "Snowflake") so the rail
+                        # shows a name rather than a bare ticker.
+                        translations[ticker] = zh if _has_cjk(zh) else en
                     else:
                         translations[ticker] = ""
             finally:
@@ -100,7 +115,7 @@ class TrendingService:
                   prev_sentiment_summary, rising_ticker, new_tickers}
         """
         ticker_filter = ticker.strip().upper().split(".")[0] if ticker else None
-        cache_key = f"buzz:recent:{days}:{limit}:{ticker_filter or 'all'}:v4"
+        cache_key = f"buzz:recent:{days}:{limit}:{ticker_filter or 'all'}:v5"
         cached = await cache_get(cache_key)
         if cached:
             try:
