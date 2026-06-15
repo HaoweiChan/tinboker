@@ -36,15 +36,31 @@ STEP_OUTPUT: dict[str, dict[str, Any]] = {
     "extractor": {
         "schema": {
             "events": [
-                {"section_topic": "str — zh-TW topic label", "start_index": "int", "end_index": "int"}
+                {
+                    "section_topic": "str — zh-TW topic label",
+                    "start_index": "int",
+                    "end_index": "int",
+                    "segment_type": "sponsor|intro|outro|chitchat|analysis|guest|qa|unknown",
+                    "is_substantive": "bool — for qa/guest: true if market-relevant",
+                }
             ],
             "_notes": [
                 "Cover EVERY sentence index 0..N-1 with no gaps; ranges may be contiguous.",
-                "Use finance-specific zh-TW topic labels (e.g. 台積電, AI 供應鏈) — the clusterer "
-                "keeps only topics whose label contains a finance keyword.",
+                "segment_type drives the clusterer's policy router: sponsor/intro/outro/chitchat "
+                "are dropped, analysis/guest kept, qa kept only when is_substantive=true. "
+                "Type segments accurately instead of dropping them; use 'unknown' only when "
+                "genuinely unsure (unknown is kept as content).",
+                "In a Q&A section, emit one event per question and set is_substantive per question.",
             ],
         },
-        "example": {"events": [{"section_topic": "台積電法說會與展望", "start_index": 0, "end_index": 12}]},
+        "example": {
+            "events": [
+                {"section_topic": "業配：保健食品", "start_index": 0, "end_index": 5,
+                 "segment_type": "sponsor", "is_substantive": False},
+                {"section_topic": "台積電法說會與展望", "start_index": 6, "end_index": 18,
+                 "segment_type": "analysis", "is_substantive": True},
+            ]
+        },
     },
     "writer": {
         "schema": {

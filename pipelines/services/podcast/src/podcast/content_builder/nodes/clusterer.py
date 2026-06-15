@@ -1,25 +1,29 @@
-"""Sentence clustering node: selects topic events and attaches sentence data."""
+"""Sentence clustering node: routes typed events to chapters and attaches timing.
+
+Each extractor event carries a ``segment_type`` (sponsor/intro/outro/chitchat/
+analysis/guest/qa/unknown) and an ``is_substantive`` flag. This node is a pure-code
+POLICY ROUTER: for each event it looks up the action for its ``segment_type`` in the
+resolved show policy (``state["show_profile"]["policy"]``) and keeps / drops /
+keeps-if-substantive accordingly, then attaches the real sentence-level start/end ms.
+
+This replaces the previous brittle approach (substring-matching free-form zh-TW topic
+labels against hardcoded finance/ad keyword lists), which let conversational sponsor
+reads slip through as "financial content".
+"""
 
 from typing import Any
 
+from ..profiles import load_profile
 from ..state import PipelineState
 
-# Topics whose label contains one of these reads as on-platform financial content.
-# Used to PREFER financial topics, never to hard-drop everything (see below).
-_FINANCIAL_KEYWORDS = [
-    "台積電", "TSMC", "股價", "股票", "投資", "市場", "財經", "營收", "獲利",
-    "半導體", "AI", "記憶體", "散熱", "供應鏈", "多頭", "空頭", "買進", "賣出",
-    "財報", "季報", "年報", "EPS", "本益比", "殖利率", "股息", "股利",
-    "指數", "大盤", "個股", "ETF", "基金", "債券", "匯率", "利率",
-    "經濟", "GDP", "通膨", "通縮", "央行", "聯準會", "FED",
-    "科技股", "金融股", "傳產", "電子", "傳產股", "金融",
-    "策略", "分析", "預測", "展望", "趨勢", "行情",
-]
+# Action constants for a policy entry (segment_type -> action).
+_KEEP = "keep"
+_DROP = "drop"
+_SUBSTANTIVE_ONLY = "substantive_only"
 
-# Sponsor reads, station IDs, and opening chatter — never useful as chapters. Dropped
-# from the fallback (all-topics) path so a non-keyword episode doesn't surface an ad
-# as its first chapter.
-_NON_CONTENT_KEYWORDS = ["廣告", "業配", "贊助", "片頭", "開場", "節目開場", "開頭問候"]
+# Types that must never become a chapter even in the empty-result safety net below —
+# surfacing an ad/intro as a chapter is the exact bug we are preventing.
+_FALLBACK_DROP_TYPES = {"sponsor", "intro", "outro"}
 
 
 def _build_clustered(event: dict, sentences_list: list) -> dict | None:
@@ -45,28 +49,55 @@ def _build_clustered(event: dict, sentences_list: list) -> dict | None:
     return None
 
 
-def cluster_sentences(state: PipelineState) -> dict[str, Any]:
-    """Select topic events and attach real timestamps.
+def _policy(state: PipelineState) -> dict[str, str]:
+    """The resolved segment policy, always complete.
 
-    The financial-keyword match is a PREFERENCE, not a hard gate: substring-matching
-    free-form zh-TW topic labels has false negatives, and a financial episode whose
-    labels just happen to miss a keyword would otherwise lose every chapter (the bug
-    where summaries came back with no #time markers). So: keep the financial topics
-    when any are detected; otherwise fall back to ALL topics (minus sponsor/opening
-    segments) so every episode with a transcript still gets real topic chapters.
+    ``load_profile`` already returns a fully-merged policy, but we merge over the
+    default again so a hand-built or partial ``show_profile.policy`` can't leave a
+    known segment_type unspecified (which would silently fall through to keep).
+    """
+    default = load_profile(None)["policy"]
+    policy = (state.get("show_profile") or {}).get("policy") or {}
+    return {**default, **policy}
+
+
+def _keeps(event: dict, policy: dict[str, str]) -> bool:
+    """Whether the policy keeps this event. Unknown types/actions default to keep."""
+    seg = event.get("segment_type") or "unknown"
+    action = policy.get(seg, _KEEP)
+    if action == _DROP:
+        return False
+    if action == _SUBSTANTIVE_ONLY:
+        return bool(event.get("is_substantive"))
+    return True  # _KEEP or any unrecognized action -> keep (never silently drop content)
+
+
+def cluster_sentences(state: PipelineState) -> dict[str, Any]:
+    """Route typed topic events to chapters via the show policy and attach timestamps.
+
+    Safety net: if the policy keeps nothing but events exist (e.g. the extractor
+    mis-typed everything, or an episode is genuinely all chitchat), fall back to
+    keeping every timed event EXCEPT ads/intros/outros — so an episode with a
+    transcript always gets real topic chapters, but never surfaces an ad as one.
     """
     events = state.get("events", [])
     sentences_list = state.get("sentences", [])
+    policy = _policy(state)
 
-    financial, others = [], []
+    kept: list[dict] = []
     for event in events:
-        topic = event.get("section_topic", "")
-        built = _build_clustered(event, sentences_list)
-        if built is None:
+        if not _keeps(event, policy):
             continue
-        if any(kw in topic for kw in _NON_CONTENT_KEYWORDS):
-            continue  # ads / intros are never chapters
-        (financial if any(kw in topic for kw in _FINANCIAL_KEYWORDS) else others).append(built)
+        built = _build_clustered(event, sentences_list)
+        if built is not None:
+            kept.append(built)
 
-    clustered_events = financial if financial else others
-    return {"clustered_events": clustered_events}
+    if not kept:
+        for event in events:
+            if (event.get("segment_type") or "unknown") in _FALLBACK_DROP_TYPES:
+                continue
+            built = _build_clustered(event, sentences_list)
+            if built is not None:
+                kept.append(built)
+
+    return {"clustered_events": kept}

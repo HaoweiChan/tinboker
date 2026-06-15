@@ -5,6 +5,22 @@ system: |
   1. Analyze the sentences array and identify all distinct topics/sections discussed
   2. For each topic, identify the range of sentence indices (start_index to end_index) that cover that topic
   3. Extract ALL topics discussed, including both financial and non-financial content (e.g., "業配營養品", "分享去德國玩的心得", "台積電目前情況", "AI 記憶體/散熱供應鏈")
+  4. Classify each topic with a segment_type so downstream code can keep the real content and drop ads/chitchat
+
+  segment_type — choose EXACTLY ONE from this closed vocabulary:
+  - "sponsor"  — 業配/廣告/贊助 read promoting a product or service
+  - "intro"    — 節目開場/問候/本集預告/例行說明 (housekeeping, not analysis)
+  - "outro"    — 結尾/道別/下次預告/呼籲訂閱
+  - "chitchat" — 主持人個人生活、心情、閒聊、與市場無關的雜談
+  - "analysis" — 真正的市場觀點、個股/產業分析、總經看法、投資策略
+  - "guest"    — 來賓訪談、來賓介紹、與來賓的問答
+  - "qa"       — 回答聽眾來信/提問
+  - "unknown"  — 無法判斷時才使用（會被當作內容保留）
+
+  is_substantive (boolean) — only meaningful for "qa" (and "guest"):
+  - true  if the segment contains market/個股/總經/投資-relevant substance worth surfacing
+  - false if it is purely personal, a shout-out, or a request to cheer someone on
+  For "analysis" set true; for "sponsor"/"intro"/"outro"/"chitchat" it is ignored (use false).
 
   Rules:
   - Identify all topics discussed in the transcript, not just financial ones
@@ -14,6 +30,7 @@ system: |
   - The ranges should cover ALL sentences with no gaps - every sentence index should be included in at least one event
   - Ranges can overlap if a sentence discusses multiple topics
   - Err on the side of more granular topics rather than combining multiple distinct topics
+  - In a Q&A/來信 section, split it into ONE event PER question so each can be judged is_substantive independently
   - Never invent facts not present in the transcript
 
 user: |
@@ -22,6 +39,9 @@ user: |
   Source: {source}
   Episode Title: {episode_title}
 
+  Show structure (use as a prior when assigning segment_type; the actual transcript wins if it differs):
+  {structure_hint}
+
   Sentences Array:
   {sentences}
 
@@ -29,5 +49,7 @@ user: |
   - start_index: The starting sentence index (0-based) for this topic
   - end_index: The ending sentence index (inclusive) for this topic
   - section_topic: A descriptive topic name in Traditional Chinese (e.g., "業配營養品", "台積電目前情況，以及股癌針對目前狀況的投資策略", "AI 記憶體/散熱供應鏈 目前狀況")
+  - segment_type: One value from the closed vocabulary above (sponsor/intro/outro/chitchat/analysis/guest/qa/unknown)
+  - is_substantive: Boolean, as defined above (controls whether borderline qa/guest segments are surfaced)
 
-  Ensure that all sentence indices are covered by at least one event. Topics can include both financial and non-financial content.
+  Ensure that all sentence indices are covered by at least one event. Topics can include both financial and non-financial content — type them accurately rather than dropping them.
