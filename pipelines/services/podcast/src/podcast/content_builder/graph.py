@@ -134,6 +134,8 @@ def run_pipeline(
         - key_insights
         - social_cards
     """
+    from .profiles import load_profile
+
     app = build_graph()
 
     initial_state: PipelineState = {
@@ -141,6 +143,9 @@ def run_pipeline(
         "sentences": sentences,
         "source": source,
         "episode_title": episode_title,
+        # Per-show structure prior + segment policy; drives the extractor prompt
+        # and the clusterer's policy router. Defaults cover unprofiled shows.
+        "show_profile": load_profile(source),
     }
 
     result = app.invoke(initial_state)

@@ -66,3 +66,6 @@ progress.txt
 
 # Seed-episode working data (transcripts + MP3s) — local-only, never commit
 services/podcast/scripts/seed_data/
+
+# local backfill result cache (not for VCS)
+services/podcast/.regen_cache/

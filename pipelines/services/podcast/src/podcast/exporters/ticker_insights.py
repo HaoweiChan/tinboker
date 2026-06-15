@@ -23,7 +23,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Iterable
 
-from shared.tickers import canonical_symbol
+from shared.tickers import canonical_symbol, is_valid_ticker_symbol
 
 SCHEMA_VERSION = 3
 
@@ -139,7 +139,10 @@ def build_insight_doc(
     Returns None when the row is missing a ticker (the doc would be unkeyable).
     """
     raw_ticker = insight.get("ticker")
-    if not raw_ticker:
+    # Skip rows whose "ticker" is not a real listing — the LLM emits sector/category
+    # names ("被動元件", "EDGE COMPUTING相關類股") and private companies (ANTHROPIC)
+    # here; writing them would create junk sentiment docs + pollute trending.
+    if not raw_ticker or not is_valid_ticker_symbol(str(raw_ticker)):
         return None
 
     ticker = canonical_symbol(str(raw_ticker))
@@ -246,5 +249,5 @@ def iter_insight_tickers(raw_payload: Any) -> Iterable[str]:
     backfill scripts that want to enumerate without building full docs."""
     for row in _extract_list(raw_payload):
         ticker = row.get("ticker")
-        if ticker:
+        if ticker and is_valid_ticker_symbol(str(ticker)):
             yield canonical_symbol(str(ticker))

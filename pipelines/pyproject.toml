@@ -11,10 +11,16 @@ members = [
     "services/news",
 ]
 
+# Installed into the workspace .venv by a plain `uv sync` (default group), so
+# `uv run pytest` resolves the venv's 3.12 interpreter — which has langgraph etc.
+# Without these here, uv falls through to an ambient pytest (e.g. miniforge 3.10)
+# that can't import the pipeline, so the regen/graph tests error on collection.
 [dependency-groups]
 dev = [
     "pytest>=7.4.0",
     "pytest-asyncio>=0.23.0",
+    "pytest-mock>=3.10.0",
+    "pytest-cov>=4.0.0",
 ]
 
 [tool.ruff]

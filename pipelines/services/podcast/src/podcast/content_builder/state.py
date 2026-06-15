@@ -11,6 +11,12 @@ class EventItem(TypedDict, total=False):
     start_index: int
     end_index: int
     section_topic: str
+    # Closed-vocabulary segment classification from the extractor. The clusterer's
+    # policy router keys on this (see nodes/clusterer.py). Missing -> "unknown" -> kept.
+    segment_type: str
+    # For "qa" (and other gated types), whether the segment carries market substance
+    # worth surfacing. Personal/shout-out Q&A is is_substantive=False and dropped.
+    is_substantive: bool
 
 
 class ClusteredEvent(TypedDict, total=False):
@@ -73,6 +79,10 @@ class PipelineState(TypedDict, total=False):
     source: str
     episode_title: str
     sentences: list[dict[str, Any]]
+
+    # Resolved per-show structure profile ({structure_hint, policy}); seeded by
+    # run_pipeline / the regen orchestrator from content_builder.profiles.load_profile.
+    show_profile: dict[str, Any]
 
     # After extraction
     events: list[EventItem]
