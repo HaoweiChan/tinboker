@@ -14,6 +14,7 @@ Extend ``tickers.json`` freely.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -82,6 +83,54 @@ def canonical_symbol(raw: str) -> str:
     """Canonical symbol for a seen form; unknowns return the trimmed/upper-cased input."""
     info = lookup_ticker(raw)
     return info.symbol if info else (raw or "").strip().upper()
+
+
+# A real listing is a Taiwan number (4-6 digits, optional trailing letter for ETFs
+# like 00878B) or a US-style symbol (1-5 letters, optional .CLASS). Everything else —
+# CJK category names ("被動元件"), phrases ("EDGE COMPUTING相關類股"), and over-length
+# words ("OPENAI", "ANTHROPIC") — is the LLM mislabelling a sector or private company.
+_TW_RE = re.compile(r"^\d{3,6}[A-Z]?$")
+_US_RE = re.compile(r"^[A-Z]{1,5}(?:\.[A-Z]{1,2})?$")
+
+# Format-valid but NOT listed: symbols the LLM invents for well-known private
+# companies. (SPCE is intentionally absent — it is a real ticker, Virgin Galactic;
+# the model misusing it for SpaceX is a prompt problem, not a symbol-validity one.)
+_NON_TICKERS = frozenset({
+    "ANTHR", "ANTHROPIC", "OPENAI", "OAI", "SPACEX", "SPCX",
+    "BYTEDANCE", "DEEPSEEK", "XAI", "STRIPE", "SHEIN",
+})
+
+
+def is_valid_ticker_symbol(raw: object) -> bool:
+    """True if ``raw`` is a plausible real exchange symbol.
+
+    Registry/alias members are always valid (the registry is curated but small, so
+    it is a known-good allowlist, NOT an exhaustive one). Anything else must match a
+    TW-number or US-letter shape and not be a known private-company hallucination.
+    """
+    if not isinstance(raw, str):
+        return False
+    s = raw.strip().upper()
+    if not s or s in _NON_TICKERS:
+        return False
+    if lookup_ticker(s) is not None:
+        return True
+    return bool(_TW_RE.match(s) or _US_RE.match(s))
+
+
+def valid_tickers(symbols: object) -> list[str]:
+    """Filter an iterable of symbols to valid, canonical, de-duplicated tickers."""
+    if not symbols:
+        return []
+    seen: set[str] = set()
+    out: list[str] = []
+    for s in symbols:
+        if is_valid_ticker_symbol(s):
+            c = canonical_symbol(s)  # type: ignore[arg-type]
+            if c not in seen:
+                seen.add(c)
+                out.append(c)
+    return out
 
 
 @lru_cache(maxsize=1)

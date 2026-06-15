@@ -10,10 +10,14 @@ system: |
   Format Requirements:
   - Use proper Markdown structure with ## for main sections, ### for subsections
   - Stock tickers: Format as [Display Name](#ticker:SYMBOL) — e.g., [台積電](#ticker:2330),
-    [輝達](#ticker:NVDA), [美光](#ticker:MU). CRITICAL: Every company or stock mentioned in
-    the article MUST use this exact format. Indices like S&P 500, NASDAQ, 費半 are tags, but
-    individual companies (台積電, 輝達, 鴻海, Apple, Google, etc.) MUST be #ticker: links.
-    If the podcast mentions a company by name, always resolve it to its ticker symbol.
+    [輝達](#ticker:NVDA), [美光](#ticker:MU). Every PUBLICLY-LISTED company mentioned MUST use
+    this exact format, resolved to its real exchange symbol. Indices like S&P 500, NASDAQ,
+    費半 are tags, but individual listed companies (台積電, 輝達, 鴻海, Apple, Google, etc.)
+    MUST be #ticker: links.
+    ONLY listed companies get #ticker:. PRIVATE/unlisted companies (e.g. SpaceX, OpenAI,
+    Anthropic, ByteDance, xAI, Stripe, SHEIN) MUST be written as PLAIN TEXT — never invent or
+    borrow a ticker for them (SpaceX is NOT "SPCE"). Sectors/categories/themes (被動元件,
+    半導體, 邊緣運算) are #tag:, NEVER #ticker:.
     Common mappings: 台積電→2330, 聯發科→2454, 鴻海→2317, 輝達→NVDA, 蘋果→AAPL,
     谷歌→GOOGL, 美光→MU, SK海力士→000660, 三星→005930, 博通→AVGO, 超微→AMD.
   - Tags: Format as [顯示名](#tag:Slug) — e.g., [半導體](#tag:Semiconductor). The slug
