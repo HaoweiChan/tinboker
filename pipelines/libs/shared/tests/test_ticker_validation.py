@@ -5,7 +5,6 @@ sector/category names with #ticker:/ticker (OPENAI, ANTHR, 被動元件, 臺股)
 polluted related_tickers, per-episode sentiment docs, and trending.
 """
 import pytest
-
 from shared.tickers import is_valid_ticker_symbol, valid_tickers
 
 

@@ -151,7 +151,10 @@ def commit(episode_id: str, with_tickers: bool = False) -> None:
     written = 0
     ti = out.get("ticker_insights")
     if with_tickers and ti:
-        from src.podcast.exporters.ticker_insights import build_episode_insight_docs, write_episode_insights
+        from src.podcast.exporters.ticker_insights import (
+            build_episode_insight_docs,
+            write_episode_insights,
+        )
 
         docs = build_episode_insight_docs(
             raw_payload=ti, episode_id=episode_id,
