@@ -127,7 +127,13 @@ def test_writer_glue_matches_transform_to_markdown():
     draft = _new_draft()
     orch.submit("ep_test", "extractor", {"events": [{"section_topic": "台積電", "start_index": 0, "end_index": 2}]})
     orch.submit("ep_test", "writer", WRITER_OUT)
-    expected = transform_to_markdown({"writer_output": WRITER_OUT})["markdown_report"]
+    # Parity must feed transform the SAME clustered_events the glue produced — the
+    # heading's (#time:..) anchor is derived from them, so omitting them here would
+    # compare against an unanchored heading.
+    expected = transform_to_markdown({
+        "writer_output": WRITER_OUT,
+        "clustered_events": draft["state"]["clustered_events"],
+    })["markdown_report"]
     assert draft["state"]["markdown_report"] == expected
     # tags/tickers parsed from the markdown links
     assert draft["state"]["tags"] == ["semiconductor"]
@@ -152,11 +158,23 @@ def test_prereq_enforced():
         orch.submit("ep_test", "key_insights", {"key_insights": []})  # before writer
 
 
-def test_extractor_zero_financial_events_warns():
+def test_extractor_all_dropped_events_warns():
+    """When the policy router (+ safety net) keeps nothing, the agent is warned to re-type."""
     _new_draft()
-    res = orch.submit("ep_test", "extractor", {"events": [{"section_topic": "閒聊旅遊", "start_index": 0, "end_index": 2}]})
-    assert res["warnings"]  # clusterer drops non-financial topics
-    assert any("0 financial events" in w for w in res["warnings"])
+    res = orch.submit("ep_test", "extractor", {"events": [
+        # sponsor is dropped by policy AND excluded from the empty-result safety net.
+        {"section_topic": "業配廣告", "start_index": 0, "end_index": 2,
+         "segment_type": "sponsor", "is_substantive": False},
+    ]})
+    assert res["warnings"]
+    assert any("0 events kept" in w for w in res["warnings"])
+
+
+def test_extractor_untyped_events_are_kept_no_warning():
+    """An untyped event -> unknown -> kept, so no 'nothing kept' warning (floor behavior)."""
+    _new_draft()
+    res = orch.submit("ep_test", "extractor", {"events": [{"section_topic": "輝達佈局", "start_index": 0, "end_index": 2}]})
+    assert not res["warnings"]
 
 
 def test_ready_steps_progression():

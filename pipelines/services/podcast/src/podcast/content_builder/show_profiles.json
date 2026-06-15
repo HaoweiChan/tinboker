@@ -1,0 +1,19 @@
+{
+  "default": {
+    "structure_hint": "",
+    "policy": {
+      "sponsor": "drop",
+      "intro": "drop",
+      "outro": "drop",
+      "chitchat": "drop",
+      "analysis": "keep",
+      "guest": "keep",
+      "qa": "substantive_only",
+      "unknown": "keep"
+    }
+  },
+  "Gooaye 股癌": {
+    "structure_hint": "本節目固定結構：開場業配廣告 → 主持人個人生活閒聊 → 真正的市場/個股分析 → 聽眾Q&A（多為生活提問或請主持人打氣，偶有有價值的市場/個股問題）。請依此結構標註每段的 segment_type，並把 Q&A 中與市場/個股相關者標為 is_substantive=true，純生活或打氣的提問標為 is_substantive=false。",
+    "policy": {}
+  }
+}

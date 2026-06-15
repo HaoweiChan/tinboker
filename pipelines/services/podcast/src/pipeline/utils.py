@@ -134,10 +134,12 @@ def extract_tickers_from_markdown(markdown_text: str) -> List[str]:
     # Pattern to match [Display](#ticker:SYMBOL) or just #ticker:SYMBOL
     pattern = r'#ticker:([a-zA-Z0-9]+)'
     matches = re.findall(pattern, markdown_text, re.IGNORECASE)
-    
-    # Normalize to uppercase and remove duplicates
-    tickers = list(set(ticker.upper() for ticker in matches))
-    return sorted(tickers)
+
+    # Drop symbols that aren't real listings (the LLM tags private companies with
+    # #ticker: too, e.g. OPENAI, ANTHR). valid_tickers canonicalizes + de-duplicates;
+    # registry members are always kept.
+    from shared.tickers import valid_tickers
+    return sorted(valid_tickers(ticker.upper() for ticker in matches))
 
 
 def extract_tags_and_tickers(summary_result: Dict) -> Dict[str, List[str]]:

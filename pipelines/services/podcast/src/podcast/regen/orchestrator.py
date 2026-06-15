@@ -41,6 +41,7 @@ from ..content_builder.nodes.markdown_transform import transform_to_markdown
 from ..content_builder.nodes.marp_converter import convert_marp, convert_marp_ticker
 from ..content_builder.nodes.social_cards_builder import build_social_cards
 from ..content_builder.nodes.tags_tickers import derive_tags_tickers
+from ..content_builder.profiles import load_profile
 from .schemas import GLOBAL_NOTES, STEP_OUTPUT, validate_output
 
 # --- Step model -------------------------------------------------------------
@@ -251,10 +252,11 @@ def _apply(step: str, output: Any, state: dict[str, Any]) -> list[str]:
         state.update(build_events_markdown(state))
         if not state.get("clustered_events"):
             warnings.append(
-                "0 financial events after clustering — the clusterer keeps only "
-                "topics whose section_topic contains a finance keyword. Re-run "
-                "'extractor' with finance-specific zh-TW topic labels (e.g. 台積電, "
-                "AI 供應鏈) if the episode is financial."
+                "0 events kept after clustering — the policy router dropped every "
+                "segment (e.g. all typed sponsor/intro/outro/chitchat, or every qa "
+                "marked is_substantive=false). Re-run 'extractor' and type the real "
+                "market-analysis segments as segment_type='analysis' (and mark any "
+                "valuable listener questions is_substantive=true)."
             )
     elif step == STEP_WRITER:
         state.update(writer.postprocess(output, state))
@@ -479,6 +481,9 @@ def start(podcast_name: str, episode_id: str) -> dict[str, Any]:
             "source": source,
             "episode_title": episode_title,
             "transcript": transcript,
+            # Same per-show prior + segment policy the live pipeline seeds, so the
+            # agent regen path is byte-identical (extractor hint + clusterer routing).
+            "show_profile": load_profile(source),
         },
         "completed": [],
         "current_content": {

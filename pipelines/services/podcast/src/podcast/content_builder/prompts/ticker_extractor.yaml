@@ -13,6 +13,10 @@ system: |
      - Risks with their locations (start_index, end_index, start_time, end_time)
 
   Rules:
+  - The "ticker" MUST be a real exchange symbol: a Taiwan listing (4-6 digit number, e.g. 2330)
+    or a US/HK/KR ticker (letters/digits, e.g. NVDA, AVGO). NEVER use a sector/category/theme
+    name (被動元件, 邊緣運算, AI 供應鏈), an index (費半, S&P 500), or a PRIVATE/unlisted company
+    (SpaceX, OpenAI, Anthropic, ByteDance, xAI) as a ticker — skip those entities entirely.
   - Only extract ticker insights where the podcaster expresses a clear opinion or analysis
   - Write all natural-language content in Traditional Chinese (zh-TW), including bluf_thesis, reason titles/descriptions, and risk titles/descriptions
   - Sentiment should reflect the overall tone: BULLISH (positive outlook), BEARISH (negative outlook), NEUTRAL (mixed or no clear direction)

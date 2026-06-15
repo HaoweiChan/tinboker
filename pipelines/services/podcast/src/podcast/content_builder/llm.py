@@ -82,7 +82,11 @@ _MAX_TOKENS_MAP: dict[str, int] = {
     "extractor": 4096,
     "writer": 8192,
     "marp_writer": 8192,
-    "ticker_extractor": 2048,
+    # Verbose models (e.g. mimo) emit ticker reasons/risks whose JSON exceeded the
+    # old 2048 cap — the reply truncated mid-string ("Unterminated string"), failed
+    # to parse, and raised, which aborted the WHOLE episode (summary included). 4096
+    # matches the extractor and comfortably fits a multi-ticker payload.
+    "ticker_extractor": 4096,
     "key_insights_extractor": 1024,
 }
 
