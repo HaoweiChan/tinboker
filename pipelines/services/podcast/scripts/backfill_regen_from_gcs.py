@@ -137,12 +137,16 @@ def commit(episode_id: str, with_tickers: bool = False) -> None:
     # ticker_insights are gated: the LLM over-resolves private companies/categories
     # to fake symbols (SPCE≠SpaceX, ANTHR/OPENAI, "被動元件"), so don't write them
     # unless explicitly asked — better to leave the existing tickers than add junk.
-    fields = ["summary_content", "key_insights", "tags"]
+    doc_update = {k: out[k] for k in ("summary_content", "key_insights", "tags")}
     if with_tickers:
-        fields.append("related_tickers")
-    doc_update = {k: out[k] for k in fields}
+        # The cached related_tickers predate the symbol-validation filter, so clean
+        # them here too (ticker_insights is filtered by the exporter below).
+        from shared.tickers import valid_tickers
+
+        doc_update["related_tickers"] = valid_tickers(out.get("related_tickers") or [])
     fs.set_document("episodes", episode_id, doc_update, merge=True)
-    print(f"episode doc merged: {sorted(doc_update)}")
+    print(f"episode doc merged: {sorted(doc_update)}"
+          + (f" | related_tickers={doc_update['related_tickers']}" if with_tickers else ""))
 
     written = 0
     ti = out.get("ticker_insights")
@@ -162,7 +166,7 @@ def commit(episode_id: str, with_tickers: bool = False) -> None:
         import httpx
 
         cache_fields = ["summary_content", "key_insights", "tags"] + (["related_tickers"] if with_tickers else [])
-        cached = {k: out[k] for k in cache_fields}
+        cached = {k: doc_update.get(k, out.get(k)) for k in cache_fields}
         url = f"{base.rstrip('/')}/api/podcast/{quote(out['podcast_name'])}/episodes/{episode_id}"
         try:
             r = httpx.patch(url, json=cached, timeout=30.0)

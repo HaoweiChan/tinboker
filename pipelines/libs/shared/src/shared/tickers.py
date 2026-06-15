@@ -97,7 +97,7 @@ _US_RE = re.compile(r"^[A-Z]{1,5}(?:\.[A-Z]{1,2})?$")
 # the model misusing it for SpaceX is a prompt problem, not a symbol-validity one.)
 _NON_TICKERS = frozenset({
     "ANTHR", "ANTHROPIC", "OPENAI", "OAI", "SPACEX", "SPCX",
-    "BYTEDANCE", "DEEPSEEK", "XAI", "STRIPE", "SHEIN",
+    "BYTEDANCE", "DEEPSEEK", "XAI", "GRK", "GROK", "STRIPE", "SHEIN",
 })
 
 
