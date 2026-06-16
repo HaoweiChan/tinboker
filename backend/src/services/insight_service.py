@@ -461,6 +461,19 @@ class InsightService:
             if d.get("schema_version") in SUPPORTED_SCHEMA_VERSIONS
         ][:limit]
 
+        # Attach the source episode title (so the blended feed can show "which
+        # episode mentioned this"). One batched read per cache-miss; the episode
+        # doc id == the insight's episode_id.
+        ep_ids = list({r["episode_id"] for r in rows if r.get("episode_id")})
+        if ep_ids:
+            try:
+                eps = await asyncio.to_thread(self._fs.get_documents_batch, "episodes", ep_ids)
+                title_map = {e.get("id"): (e.get("episode_title") or "") for e in eps}
+                for r in rows:
+                    r["episode_title"] = title_map.get(r.get("episode_id"), "")
+            except Exception as e:
+                logger.warning("Recent episode-title join failed: %s", e)
+
         try:
             await cache_set(
                 cache_key,

@@ -492,6 +492,9 @@ export interface TickerInsight {
   reasons: Reason[];
   risks: Risk[];
   created_at: string;
+  /** Source episode title — populated by /recent (blended feed) so the card can
+   *  show which episode mentioned the ticker. */
+  episode_title?: string;
 }
 
 // Forward price return per pick, from /api/stocks/batch-prices-windows.

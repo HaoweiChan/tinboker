@@ -168,6 +168,7 @@ export const PicksPage: React.FC = () => {
                   windows={windows}
                   displayName={nameMap.get(pick.ticker.toUpperCase())}
                   podcastImage={podcastImageMap.get(pick.podcaster || '') || undefined}
+                  episodeTitle={pick.episode_title}
                   shareUrl={`${window.location.origin}/episode/${encodeURIComponent(pick.episode_id)}`}
                   onPlaySegment={onPlaySegment}
                 />
