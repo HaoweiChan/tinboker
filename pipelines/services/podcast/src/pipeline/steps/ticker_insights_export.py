@@ -42,8 +42,10 @@ def export_ticker_insights(
         write_episode_insights,
     )
 
-    launch_time = None
-    if episode_data.spotify_metadata:
+    # Prefer the feed-derived true publish time; fall back to Spotify (null for
+    # ~all zh-TW episodes) then ingestion time. _iso_utc coerces epoch-ms.
+    launch_time = getattr(episode_data, "released_at_ms", None)
+    if launch_time is None and episode_data.spotify_metadata:
         launch_time = episode_data.spotify_metadata.get("release_datetime")
     if launch_time is None:
         launch_time = episode_data.created_time

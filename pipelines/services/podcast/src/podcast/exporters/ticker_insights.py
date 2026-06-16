@@ -74,6 +74,15 @@ def _iso_utc(value: Any) -> str:
             return _iso_utc(dt)
         except ValueError:
             return value  # already formatted, pass through
+    if isinstance(value, (int, float)) and value > 0:
+        # Epoch timestamp — released_at_ms / created_time are milliseconds.
+        # Without this branch an int fell through to datetime.now(), which is why
+        # backfilled insights were all stamped with the backfill RUN date.
+        seconds = value / 1000 if value > 1e11 else value
+        try:
+            return _iso_utc(datetime.fromtimestamp(seconds, tz=timezone.utc))
+        except (OverflowError, OSError, ValueError):
+            pass
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 

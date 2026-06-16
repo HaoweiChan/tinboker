@@ -13,11 +13,34 @@ from datetime import datetime, timezone
 import pytest
 from src.podcast.exporters.ticker_insights import (
     SCHEMA_VERSION,
+    _iso_utc,
     build_episode_insight_docs,
     build_insight_doc,
     horizon_to_chinese,
     score_to_label,
 )
+
+
+def test_iso_utc_coerces_epoch_ms():
+    # Regression: an epoch-ms int (released_at_ms / created_time) used to fall
+    # through to datetime.now(), stamping every backfilled insight with the run
+    # date. It must now resolve to the real timestamp.
+    ms = int(datetime(2025, 12, 23, 14, 0, tzinfo=timezone.utc).timestamp() * 1000)
+    assert _iso_utc(ms) == "2025-12-23T14:00:00Z"
+    # ISO strings and datetimes still pass through correctly.
+    assert _iso_utc("2026-06-13T05:00:00Z") == "2026-06-13T05:00:00Z"
+    assert _iso_utc(datetime(2026, 1, 2, tzinfo=timezone.utc)) == "2026-01-02T00:00:00Z"
+
+
+def test_build_insight_doc_uses_epoch_ms_launch_time():
+    ms = int(datetime(2025, 12, 23, tzinfo=timezone.utc).timestamp() * 1000)
+    doc = build_insight_doc(
+        insight={"ticker": "NVDA", "sentiment_score": 0.7},
+        episode_id="e1",
+        podcaster="P",
+        podcast_launch_time=ms,
+    )
+    assert doc["podcast_launch_time"] == "2025-12-23T00:00:00Z"
 
 
 @pytest.mark.parametrize(
