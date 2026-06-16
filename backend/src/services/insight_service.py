@@ -10,7 +10,7 @@ import asyncio
 import json
 import logging
 from datetime import date, datetime, timedelta
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 from src.cache.cache_config import CACHE_TTL
 from src.cache.redis_client import cache_get, cache_set
@@ -114,6 +114,47 @@ def _in_range(iso_str: str, start: date, end: date) -> bool:
     return start <= d <= end
 
 
+def _safe_int(value: Any) -> int:
+    """Best-effort int; 0 on anything non-numeric (defends against dirty docs)."""
+    if isinstance(value, bool) or value is None:
+        return 0
+    if isinstance(value, (int, float)):
+        return int(value)
+    try:
+        return int(float(str(value).strip()))
+    except (ValueError, TypeError):
+        return 0
+
+
+def _coerce_ms(value: Any) -> int:
+    """Coerce a reason/risk timestamp to integer milliseconds.
+
+    Tolerates the two shapes the pipeline has emitted: a plain ms int, and a
+    human-readable ``MM:SS.mmm`` / ``HH:MM:SS.mmm`` string (older output). A bad
+    value yields 0 rather than 500-ing the whole insight response.
+    """
+    if isinstance(value, bool) or value is None:
+        return 0
+    if isinstance(value, (int, float)):
+        return int(value)
+    s = str(value).strip()
+    if not s:
+        return 0
+    if ":" in s:
+        try:
+            parts = [float(p) for p in s.split(":")]
+        except (ValueError, TypeError):
+            return 0
+        if len(parts) == 2:
+            total_seconds = parts[0] * 60 + parts[1]
+        elif len(parts) == 3:
+            total_seconds = parts[0] * 3600 + parts[1] * 60 + parts[2]
+        else:
+            return 0
+        return int(total_seconds * 1000)
+    return _safe_int(s)
+
+
 def _doc_to_insight(doc: dict) -> dict:
     """
     Map a ticker_insights subcollection doc to the TickerInsight API shape
@@ -130,10 +171,10 @@ def _doc_to_insight(doc: dict) -> dict:
         out = {
             "title": r.get("title") or "",
             "description": r.get("description") or "",
-            "start_time": int(r.get("start_time") or 0),
-            "end_time": int(r.get("end_time") or 0),
-            "start_index": int(r.get("start_index") or 0),
-            "end_index": int(r.get("end_index") or 0),
+            "start_time": _coerce_ms(r.get("start_time")),
+            "end_time": _coerce_ms(r.get("end_time")),
+            "start_index": _safe_int(r.get("start_index")),
+            "end_index": _safe_int(r.get("end_index")),
         }
         if severity:
             out["severity"] = severity
@@ -143,10 +184,10 @@ def _doc_to_insight(doc: dict) -> dict:
         out = {
             "title": r.get("title") or "",
             "description": r.get("description") or "",
-            "start_time": int(r.get("start_time") or 0),
-            "end_time": int(r.get("end_time") or 0),
-            "start_index": int(r.get("start_index") or 0),
-            "end_index": int(r.get("end_index") or 0),
+            "start_time": _coerce_ms(r.get("start_time")),
+            "end_time": _coerce_ms(r.get("end_time")),
+            "start_index": _safe_int(r.get("start_index")),
+            "end_index": _safe_int(r.get("end_index")),
         }
         category = r.get("category")
         if category:
