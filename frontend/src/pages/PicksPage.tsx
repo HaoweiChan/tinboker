@@ -22,6 +22,21 @@ interface ChannelOption {
   image_url?: string | null;
 }
 
+// Keep non-tradeable LLM artifacts out of the feed: indices, private companies,
+// and multi-word labels (VIX, SPX, OPENAI, "台積電 (TSMC)", "US HY BOND ETF", …)
+// have no price and only render as permanent "—". A pipeline-validator fix is the
+// real cleanup at the source; this is the interim feed-side guard.
+const NON_TRADEABLE = new Set([
+  'VIX', 'SPX', 'DJI', 'IXIC', 'RUT', 'NBI', 'MSCI', 'SOX', 'NDX', 'INX', 'GSPC',
+  'OPENAI', 'SPACE', 'ANTHROPIC',
+]);
+function isLikelyTradeable(ticker: string): boolean {
+  const s = (ticker || '').trim();
+  if (!s) return false;
+  if (/[\s()]/.test(s)) return false; // "name (TICKER)" / multi-word labels
+  return !NON_TRADEABLE.has(s.toUpperCase());
+}
+
 export const PicksPage: React.FC = () => {
   const [podcasters, setPodcasters] = useState<Podcast[]>([]);
   const [picks, setPicks] = useState<TickerInsight[]>([]);
@@ -59,18 +74,20 @@ export const PicksPage: React.FC = () => {
 
   // Filter options = channels that actually appear in the feed, so a selection
   // always yields results (and the list stays short).
+  const cleanPicks = useMemo(() => picks.filter((p) => isLikelyTradeable(p.ticker)), [picks]);
+
   const channelOptions = useMemo<ChannelOption[]>(() => {
     const seen = new Map<string, ChannelOption>();
-    for (const p of picks) {
+    for (const p of cleanPicks) {
       const name = p.podcaster || '';
       if (name && !seen.has(name)) seen.set(name, { name, image_url: podcastImageMap.get(name) });
     }
     return Array.from(seen.values());
-  }, [picks, podcastImageMap]);
+  }, [cleanPicks, podcastImageMap]);
 
   const visiblePicks = useMemo(
-    () => (selected.size === 0 ? picks : picks.filter((p) => selected.has(p.podcaster || ''))),
-    [picks, selected],
+    () => (selected.size === 0 ? cleanPicks : cleanPicks.filter((p) => selected.has(p.podcaster || ''))),
+    [cleanPicks, selected],
   );
 
   const pickRefs = useMemo(
