@@ -54,6 +54,11 @@ export const PickCard: React.FC<PickCardProps> = ({
     : '';
   const podcaster = pick.podcaster || '';
 
+  // A pick mentioned today has no elapsed return yet — baseline close == latest
+  // close → "since" is a meaningless 0.0. Show "—" instead until a day has passed.
+  const mentionMs = Date.parse(pick.podcast_launch_time);
+  const tooFreshForSince = Number.isFinite(mentionMs) && Date.now() - mentionMs < 86_400_000;
+
   const canPlay = typeof onPlaySegment === 'function';
 
   return (
@@ -91,12 +96,16 @@ export const PickCard: React.FC<PickCardProps> = ({
 
       {/* Forward 7/30/90D returns */}
       <div className="grid grid-cols-4 gap-2 mt-3 mb-1">
-        {METRICS.map(({ key, label }) => (
-          <div key={key} className="text-center">
-            <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
-            <Change value={windows ? windows[key] : null} />
-          </div>
-        ))}
+        {METRICS.map(({ key, label }) => {
+          const raw = windows ? windows[key] : null;
+          const value = key === 'since' && tooFreshForSince ? null : raw;
+          return (
+            <div key={key} className="text-center">
+              <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
+              <Change value={value} />
+            </div>
+          );
+        })}
       </div>
 
       {/* Thesis + expand toggle */}
