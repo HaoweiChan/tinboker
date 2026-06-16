@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { ChevronDown, ChevronUp, Play } from 'lucide-react';
 import { Card } from '@/components/ui';
 import { Change, SentimentChip, ShareMenu, PodMark } from '@/components/redesign';
@@ -24,10 +24,13 @@ interface PickCardProps {
   className?: string;
 }
 
-const WINDOWS: { key: 'd7' | 'd30' | 'd90'; label: string }[] = [
-  { key: 'd7', label: '7D' },
-  { key: 'd30', label: '30D' },
-  { key: 'd90', label: '90D' },
+// "自提及" (since mention → today) is always available once a baseline close
+// exists; the 7/30/90D windows fill in as each elapses ("—" until then).
+const METRICS: { key: 'since' | 'd7' | 'd30' | 'd90'; label: string }[] = [
+  { key: 'since', label: '自提及' },
+  { key: 'd7', label: '7天' },
+  { key: 'd30', label: '30天' },
+  { key: 'd90', label: '90天' },
 ];
 
 /** Podket-style pick card: channel + ticker + sentiment + 7/30/90D returns,
@@ -87,8 +90,8 @@ export const PickCard: React.FC<PickCardProps> = ({
       </div>
 
       {/* Forward 7/30/90D returns */}
-      <div className="grid grid-cols-3 gap-2 mt-3 mb-1">
-        {WINDOWS.map(({ key, label }) => (
+      <div className="grid grid-cols-4 gap-2 mt-3 mb-1">
+        {METRICS.map(({ key, label }) => (
           <div key={key} className="text-center">
             <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
             <Change value={windows ? windows[key] : null} />
@@ -126,7 +129,13 @@ export const PickCard: React.FC<PickCardProps> = ({
       )}
 
       {episodeTitle && (
-        <p className="text-[11px] text-muted-foreground/80 mt-3 truncate" title={episodeTitle}>{episodeTitle}</p>
+        <Link
+          to={`/episode/${encodeURIComponent(pick.episode_id)}`}
+          className="block text-[11px] text-muted-foreground/80 hover:text-accent-info mt-3 truncate"
+          title={episodeTitle}
+        >
+          🎙 {episodeTitle}
+        </Link>
       )}
     </Card>
   );
