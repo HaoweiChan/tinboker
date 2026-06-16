@@ -10,6 +10,12 @@ export interface PickRef {
 
 const cache = new Map<string, { value: PickWindowReturns; ts: number }>();
 const TTL = 5 * 60_000;
+// Fetch in small chunks: cold baseline-close lookups are rate-limited server-side
+// (FinMind/Massive, 5 concurrent), so one big request can exceed the HTTP timeout
+// and starve sibling requests. Small sequential chunks complete fast, fill the
+// feed progressively, and each is cached server-side.
+const CHUNK_SIZE = 20;
+const CHUNK_TIMEOUT = 45_000;
 
 /** Composite key matching the backend's `"{TICKER}:{reference_ms}"` response keys. */
 function keyOf(p: PickRef): string {
@@ -51,19 +57,28 @@ export function useTickerWindowReturns(picks: PickRef[]): Map<string, PickWindow
     }
 
     let alive = true;
-    apiClient
-      .post('/api/stocks/batch-prices-windows', { items: stale })
-      .then((res) => {
-        if (!alive) return;
-        const ts = Date.now();
-        for (const [k, v] of Object.entries(res.data ?? {})) {
-          if (v && typeof v === 'object') {
-            cache.set(k.toUpperCase(), { value: v as PickWindowReturns, ts });
+    (async () => {
+      for (let i = 0; i < stale.length && alive; i += CHUNK_SIZE) {
+        const chunk = stale.slice(i, i + CHUNK_SIZE);
+        try {
+          const res = await apiClient.post(
+            '/api/stocks/batch-prices-windows',
+            { items: chunk },
+            { timeout: CHUNK_TIMEOUT },
+          );
+          if (!alive) return;
+          const ts = Date.now();
+          for (const [k, v] of Object.entries(res.data ?? {})) {
+            if (v && typeof v === 'object') {
+              cache.set(k.toUpperCase(), { value: v as PickWindowReturns, ts });
+            }
           }
+          setMap(buildMap()); // progressive: fill the feed chunk by chunk
+        } catch {
+          /* skip this chunk; later chunks still proceed */
         }
-        setMap(buildMap());
-      })
-      .catch(() => {});
+      }
+    })();
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requestKey]);
