@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 TRENDING_TTL = 7200  # 2h, matches recommendation_service
 INSIGHT_TTL = 7200  # 2h
+RECENT_TTL = 600  # 10 min — /recent is a live feed; align with the ~10-min pipeline pull
 SCHEMA_VERSION = 3
 SUPPORTED_SCHEMA_VERSIONS = {2, SCHEMA_VERSION}
 TRENDING_COLLECTION = "trending_tickers"
@@ -439,7 +440,9 @@ class InsightService:
         `tickers.podcast_launch_time` (descending).
         """
         limit = max(1, min(int(limit or 100), 200))
-        cache_key = f"ticker_insights:recent:{limit}"
+        # `:v2` namespace — the response now carries episode_title; bumping the key
+        # also sidesteps any rows cached before that field existed.
+        cache_key = f"ticker_insights:recent:v2:{limit}"
         cached = await cache_get(cache_key)
         if cached:
             try:
@@ -475,11 +478,7 @@ class InsightService:
                 logger.warning("Recent episode-title join failed: %s", e)
 
         try:
-            await cache_set(
-                cache_key,
-                json.dumps(rows, default=str),
-                CACHE_TTL.get("ticker_insights_by_ticker", INSIGHT_TTL),
-            )
+            await cache_set(cache_key, json.dumps(rows, default=str), RECENT_TTL)
         except Exception as e:
             logger.warning("Recent cache set failed: %s", e)
         return rows
