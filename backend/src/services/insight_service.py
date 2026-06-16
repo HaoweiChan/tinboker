@@ -394,7 +394,10 @@ class InsightService:
             return []
 
         start, end = _resolve_date_range(start_date, end_date)
-        cache_key = f"ticker_insights:by_podcaster:{name}:{start}:{end}"
+        # `:v2` + short TTL — /picks channel-history reads this, so edits/purges
+        # (e.g. templated-insight cleanup) should reflect within minutes, and the
+        # bump sidesteps any pre-cleanup cached rows.
+        cache_key = f"ticker_insights:by_podcaster:v2:{name}:{start}:{end}"
         cached = await cache_get(cache_key)
         if cached:
             try:
@@ -420,11 +423,7 @@ class InsightService:
         rows.sort(key=lambda r: r["podcast_launch_time"], reverse=True)
 
         try:
-            await cache_set(
-                cache_key,
-                json.dumps(rows, default=str),
-                CACHE_TTL.get("ticker_insights_by_podcaster", INSIGHT_TTL),
-            )
+            await cache_set(cache_key, json.dumps(rows, default=str), RECENT_TTL)
         except Exception as e:
             logger.warning("Insight cache set failed: %s", e)
         return rows

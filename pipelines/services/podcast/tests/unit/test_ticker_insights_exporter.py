@@ -17,8 +17,27 @@ from src.podcast.exporters.ticker_insights import (
     build_episode_insight_docs,
     build_insight_doc,
     horizon_to_chinese,
+    is_boilerplate_thesis,
     score_to_label,
 )
+
+
+def test_is_boilerplate_thesis_flags_templated_filler():
+    assert is_boilerplate_thesis("台積電 具備良好的成長動能，在目前產業趨勢下值得長期追蹤。")
+    assert is_boilerplate_thesis("NVDA當前面臨的產業環境具有挑戰，但長期結構性優勢仍在。")
+    assert is_boilerplate_thesis("X近期表現受到市場關注，節目分析其短期動能與中長期基本面展望。")
+    # A real, specific thesis must NOT be flagged.
+    assert not is_boilerplate_thesis("台積電法說會前，台股多頭格局不變，挑戰前高機會大，但需留意結算風險。")
+    assert not is_boilerplate_thesis(None)
+    assert not is_boilerplate_thesis("")
+
+
+def test_build_insight_doc_drops_boilerplate_thesis():
+    doc = build_insight_doc(
+        insight={"ticker": "NVDA", "bluf_thesis": "NVDA 具備良好的成長動能，在目前產業趨勢下值得長期追蹤。"},
+        episode_id="e1", podcaster="P", podcast_launch_time=0,
+    )
+    assert doc is None
 
 
 def test_iso_utc_coerces_epoch_ms():
