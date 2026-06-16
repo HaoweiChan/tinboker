@@ -505,16 +505,3 @@ export interface PickWindowReturns {
   d90: number | null;
   since: number | null;
 }
-
-// Aggregate hit-rate for a podcaster, from
-// /api/ticker-insights/podcaster-scorecard/{name}. `hit_rate` is over the
-// `n_scored` picks whose window has completed; `null` when nothing is scorable yet.
-export interface PodcasterScorecard {
-  podcaster: string;
-  window: number;
-  n_picks: number;
-  n_scored: number;
-  n_hit: number;
-  hit_rate: number | null;
-  avg_return: number | null;
-}

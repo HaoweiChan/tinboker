@@ -386,3 +386,46 @@ class InsightService:
         except Exception as e:
             logger.warning("Insight cache set failed: %s", e)
         return rows
+
+    async def get_recent(self, limit: int = 100) -> List[dict]:
+        """
+        Recent TickerInsight[] across ALL podcasters, newest-first (blended feed).
+
+        Collection-group query on the `tickers` subcollection ordered by
+        `podcast_launch_time` DESC with a hard limit — the /picks blended timeline.
+        Over-fetches (2×) so legacy / non-conforming docs can be dropped before
+        trimming to `limit`. Requires a single-field COLLECTION_GROUP index on
+        `tickers.podcast_launch_time` (descending).
+        """
+        limit = max(1, min(int(limit or 100), 200))
+        cache_key = f"ticker_insights:recent:{limit}"
+        cached = await cache_get(cache_key)
+        if cached:
+            try:
+                return json.loads(cached)
+            except Exception as e:
+                logger.warning("Recent cache deserialize failed: %s", e)
+
+        docs = await asyncio.to_thread(
+            self._fs.query_collection_group,
+            INSIGHTS_SUBCOLLECTION,
+            None,
+            "podcast_launch_time",
+            "DESCENDING",
+            limit * 2,
+        )
+        rows = [
+            _doc_to_insight(d)
+            for d in docs
+            if d.get("schema_version") in SUPPORTED_SCHEMA_VERSIONS
+        ][:limit]
+
+        try:
+            await cache_set(
+                cache_key,
+                json.dumps(rows, default=str),
+                CACHE_TTL.get("ticker_insights_by_ticker", INSIGHT_TTL),
+            )
+        except Exception as e:
+            logger.warning("Recent cache set failed: %s", e)
+        return rows
