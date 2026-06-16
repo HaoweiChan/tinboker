@@ -493,3 +493,28 @@ export interface TickerInsight {
   risks: Risk[];
   created_at: string;
 }
+
+// Forward price return per pick, from /api/stocks/batch-prices-windows.
+// Each window is the % move from the mention-date close to the close N calendar
+// days later; `null` until the window has fully elapsed (UI renders "—"). `since`
+// is the mention→today move. Keyed in responses by `"{TICKER}:{reference_ms}"`.
+export interface PickWindowReturns {
+  baseline: number | null;
+  d7: number | null;
+  d30: number | null;
+  d90: number | null;
+  since: number | null;
+}
+
+// Aggregate hit-rate for a podcaster, from
+// /api/ticker-insights/podcaster-scorecard/{name}. `hit_rate` is over the
+// `n_scored` picks whose window has completed; `null` when nothing is scorable yet.
+export interface PodcasterScorecard {
+  podcaster: string;
+  window: number;
+  n_picks: number;
+  n_scored: number;
+  n_hit: number;
+  hit_rate: number | null;
+  avg_return: number | null;
+}

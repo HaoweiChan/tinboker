@@ -1,6 +1,6 @@
 import { apiClient } from './client';
 import { useAppStore } from '@/store/useAppStore';
-import type { TickerTrending, TickerInsight } from '../types';
+import type { TickerTrending, TickerInsight, PodcasterScorecard } from '../types';
 
 // Episode-content mutations are admin-gated on the backend (get_content_write_access).
 // These are only reachable from the non-prod dev/debug editor, where an admin JWT is
@@ -226,6 +226,23 @@ export async function getInsightsByPodcaster(
     { params: Object.keys(q).length ? q : undefined }
   );
   return Array.isArray(response.data) ? response.data : [];
+}
+
+/** 命中率 (hit-rate) aggregate for a podcaster's picks over a forward window (7|30|90 days). */
+export async function getPodcasterScorecard(
+  podcasterName: string,
+  window: 7 | 30 | 90 = 30
+): Promise<PodcasterScorecard | null> {
+  try {
+    const response = await apiClient.get(
+      `/api/ticker-insights/podcaster-scorecard/${encodeURIComponent(podcasterName)}`,
+      { params: { window } }
+    );
+    const d = response.data;
+    return d && typeof d === 'object' ? (d as PodcasterScorecard) : null;
+  } catch {
+    return null;
+  }
 }
 
 // Phase A replacement reading Firestore trending_tickers/*.

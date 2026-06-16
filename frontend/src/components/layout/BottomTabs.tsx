@@ -1,12 +1,13 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Home, Mic, LineChart, Hash, Star } from 'lucide-react';
+import { Home, Mic, LineChart, TrendingUp, Hash, Star } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const TABS = [
   { to: '/', label: '首頁', icon: Home, prefix: false },
   { to: '/podcaster', label: '節目', icon: Mic, prefix: true },
   { to: '/stock', label: '個股', icon: LineChart, prefix: true },
+  { to: '/picks', label: '走勢', icon: TrendingUp, prefix: true },
   { to: '/topics', label: '話題', icon: Hash, prefix: true },
   { to: '/watchlist', label: '自選', icon: Star, prefix: false },
 ] as const;

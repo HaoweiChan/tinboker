@@ -277,6 +277,113 @@ async def get_batch_prices_since(
     return out
 
 
+# Forward windows (calendar days) for the podcast-pick performance scoreboard.
+WINDOW_DAYS = (7, 30, 90)
+
+
+async def _window_returns(
+    ticker: str,
+    reference_ms: int,
+    current_price: Optional[float],
+    db: Session,
+) -> dict:
+    """Forward 7/30/90D returns measured *from* the mention date, plus mention→now.
+
+    ``dN`` = ``close@(mention + N calendar days) / baseline − 1``. A window is left
+    ``None`` until it has fully elapsed (so the UI can render "—" like the competitor),
+    or when a close is missing. Reuses ``_get_reference_close`` (DB → Redis → API), so
+    after warm-up this costs no external calls.
+    """
+    result: dict[str, Optional[float]] = {
+        "baseline": None, "d7": None, "d30": None, "d90": None, "since": None,
+    }
+    mention_dt = datetime.utcfromtimestamp(reference_ms / 1000)
+    baseline = await _get_reference_close(ticker, mention_dt.strftime("%Y-%m-%d"), db)
+    if not baseline or baseline <= 0:
+        return result
+    result["baseline"] = baseline
+
+    now = datetime.utcnow()
+    for n in WINDOW_DAYS:
+        end_dt = mention_dt + timedelta(days=n)
+        if end_dt > now:
+            continue  # window not complete yet → leave None ("—")
+        end_close = await _get_reference_close(ticker, end_dt.strftime("%Y-%m-%d"), db)
+        if end_close and end_close > 0:
+            result[f"d{n}"] = round((end_close - baseline) / baseline * 100, 2)
+
+    if current_price and current_price > 0:
+        result["since"] = round((current_price - baseline) / baseline * 100, 2)
+    return result
+
+
+@router.post("/batch-prices-windows")
+async def get_batch_prices_windows(
+    body: BatchPricesSinceRequest,
+    db: Session = Depends(get_session),
+):
+    """Forward 7/30/90D (+ since) returns per *pick*, keyed by ``"{TICKER}:{reference_ms}"``.
+
+    Unlike ``/batch-prices-since`` (one row per ticker), each (ticker, mention-date) pair
+    is computed independently so the same ticker mentioned by different episodes keeps its
+    own scorecard. Current price is fetched once per distinct ticker. Cached in Redis.
+    """
+    # Dedupe by (ticker, reference_ms) — each pick keeps its own mention date.
+    pairs: list[tuple[str, int]] = []
+    seen: set[tuple[str, int]] = set()
+    for item in body.items:
+        key = (item.ticker.upper(), item.reference_ms)
+        if key not in seen:
+            seen.add(key)
+            pairs.append(key)
+    if not pairs:
+        return {}
+
+    # --- Response-level Redis cache ---
+    pairs_key = ",".join(f"{t}:{ms}" for t, ms in sorted(pairs))
+    resp_cache_key = f"batch_windows:{hashlib.md5(pairs_key.encode()).hexdigest()}"
+    cached_resp = await cache_get(resp_cache_key)
+    if cached_resp:
+        try:
+            return json.loads(cached_resp)
+        except Exception:
+            pass
+
+    distinct_tickers = list({t for t, _ in pairs})
+
+    async def _basic_safe(t):
+        try:
+            return await asyncio.wait_for(stock_service.get_stock_basic_info_async(t), timeout=10)
+        except (asyncio.TimeoutError, Exception):
+            return None
+
+    basics_list = await asyncio.gather(*[_basic_safe(t) for t in distinct_tickers])
+    basics = dict(zip(distinct_tickers, basics_list))
+
+    async def _win_safe(t: str, ms: int) -> dict:
+        basic = basics.get(t)
+        current = basic.get("price") if isinstance(basic, dict) else None
+        try:
+            return await asyncio.wait_for(_window_returns(t, ms, current, db), timeout=15)
+        except (asyncio.TimeoutError, Exception):
+            return {"baseline": None, "d7": None, "d30": None, "d90": None, "since": None}
+
+    results = await asyncio.gather(*[_win_safe(t, ms) for t, ms in pairs])
+    out = {f"{t}:{ms}": r for (t, ms), r in zip(pairs, results)}
+
+    # Shorter TTL when most picks have no usable data (likely upstream API issues).
+    non_null = sum(
+        1 for r in out.values()
+        if any(r.get(k) is not None for k in ("d7", "d30", "d90", "since"))
+    )
+    ttl = 1800 if non_null > len(out) * 0.3 else _NULL_CACHE_TTL
+    try:
+        await cache_set(resp_cache_key, json.dumps(out), ttl)
+    except Exception:
+        pass
+    return out
+
+
 @router.get("/batch-summary")
 async def get_batch_summary(
     tickers: str = Query(description="Comma-separated ticker symbols (max 100)"),
