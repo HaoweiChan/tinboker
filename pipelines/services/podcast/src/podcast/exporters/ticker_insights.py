@@ -44,6 +44,27 @@ _SEVERITY_NORMALIZE = {
 }
 
 
+# Boilerplate thesis markers — "watchlist roundup" episodes produce templated,
+# ticker-agnostic theses (the company name swapped into a fixed sentence). These
+# carry no real analysis, so we drop them at export. A genuine thesis won't contain
+# these exact filler clauses. Shared with scripts/purge_templated_insights.py.
+BOILERPLATE_THESIS_MARKERS = (
+    "具備良好的成長動能",
+    "當前面臨的產業環境具有挑戰",
+    "近期表現受到市場關注，節目分析其短期動能",
+    "中長期前景持正面看法，但提醒投資人注意短期波動風險",
+    "的產業前景與競爭優勢，認為其基本面支撐中長期投資價值",
+    "近期營收表現優於市場預期，管理層對未來展望維持樂觀態度",
+)
+
+
+def is_boilerplate_thesis(text: str | None) -> bool:
+    """True when the thesis is templated filler rather than real analysis."""
+    if not text:
+        return False
+    return any(marker in text for marker in BOILERPLATE_THESIS_MARKERS)
+
+
 def score_to_label(score: float | None) -> str:
     """Map a 0.0–1.0 score to the 5-tier sentiment label (spec § 4.2)."""
     if score is None:
@@ -152,6 +173,10 @@ def build_insight_doc(
     # names ("被動元件", "EDGE COMPUTING相關類股") and private companies (ANTHROPIC)
     # here; writing them would create junk sentiment docs + pollute trending.
     if not raw_ticker or not is_valid_ticker_symbol(str(raw_ticker)):
+        return None
+
+    # Skip templated "watchlist roundup" filler — no real analysis, pollutes the feed.
+    if is_boilerplate_thesis(insight.get("bluf_thesis")):
         return None
 
     ticker = canonical_symbol(str(raw_ticker))
