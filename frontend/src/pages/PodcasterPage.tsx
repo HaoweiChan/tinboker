@@ -1,17 +1,22 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { Plus, Check } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
 import { EpisodeCardV2, PodMark } from '@/components/redesign';
 import { apiEpisodeToCardV2 } from '@/components/redesign/episodeAdapter';
+import { PickCard } from '@/components/financial/PickCard';
 import { cn } from '@/lib/utils';
 import { getPodcastByName, getPodcastEpisodes, type Podcast, type Episode as ApiEpisode } from '@/services/api';
+import { getInsightsByPodcaster, getEpisodeAudioUrl } from '@/services/api/podcasts';
 import { fetchWithFallback } from '@/services/api/migration';
 import { useStockPriceMap } from '@/hooks/useStockPriceMap';
 import { useStockPriceSinceMap } from '@/hooks/useStockPriceSinceMap';
+import { useTickerWindowReturns, windowReturnsKey } from '@/hooks/useTickerWindowReturns';
 import { useTranslationMap } from '@/hooks/useTranslationMap';
 import { useAppStore, useSubscriptions } from '@/store/useAppStore';
+import { usePlayerStore } from '@/store/usePlayerStore';
+import type { TickerInsight } from '@/services/types';
 
 export const PodcasterPage: React.FC = () => {
   const { id } = useParams();
@@ -19,6 +24,8 @@ export const PodcasterPage: React.FC = () => {
   const subscriptions = useSubscriptions();
   const [podcast, setPodcast] = useState<Podcast | null>(null);
   const [episodes, setEpisodes] = useState<ApiEpisode[]>([]);
+  const [picks, setPicks] = useState<TickerInsight[]>([]);
+  const playEpisode = usePlayerStore((s) => s.playEpisode);
   const episodeTickers = useMemo(() => episodes.flatMap((ep) => ep.related_tickers ?? []), [episodes]);
   const priceMap = useStockPriceMap(episodeTickers);
   const priceSinceMap = useStockPriceSinceMap(episodes);
@@ -42,12 +49,16 @@ export const PodcasterPage: React.FC = () => {
     let alive = true;
     setLoading(true);
     (async () => {
-      const [meta, eps] = await Promise.all([
+      const wideStart = new Date(Date.now() - 180 * 86_400_000).toISOString().slice(0, 10);
+      const wideEnd = new Date().toISOString().slice(0, 10);
+      const [meta, eps, ins] = await Promise.all([
         fetchWithFallback<Podcast | null>(() => getPodcastByName(name), null, `getPodcastByName:${name}`).catch(() => null),
         fetchWithFallback<ApiEpisode[]>(() => getPodcastEpisodes(name, { limit: 30, sortBy: 'spotify_release_date', order: 'desc', includeContent: false }), [], `getPodcastEpisodes:${name}`).catch(() => [] as ApiEpisode[]),
+        getInsightsByPodcaster(name, { start_date: wideStart, end_date: wideEnd }).catch(() => [] as TickerInsight[]),
       ]);
       if (!alive) return;
       setPodcast(meta);
+      setPicks(Array.isArray(ins) ? ins : []);
       // Order by episode_number (the reliable monotonic release signal within a
       // podcast — higher = newer). Only fall back to publish time when an episode
       // has no number. Avoid created_time: it is ingestion time, so re-ingested
@@ -77,6 +88,44 @@ export const PodcasterPage: React.FC = () => {
     if (name && imageUrl) map.set(name, imageUrl);
     return map;
   }, [name, imageUrl]);
+
+  // Ticker-pick scoreboard: forward returns from each mention date.
+  const pickRefs = useMemo(
+    () =>
+      picks
+        .map((p) => ({ ticker: p.ticker, reference_ms: Date.parse(p.podcast_launch_time) }))
+        .filter((r) => r.ticker && Number.isFinite(r.reference_ms)),
+    [picks],
+  );
+  const windowsMap = useTickerWindowReturns(pickRefs);
+  const episodeMap = useMemo(() => {
+    const m = new Map<string, ApiEpisode>();
+    for (const e of episodes) m.set(e.id, e);
+    return m;
+  }, [episodes]);
+  const onPlaySegment = (episodeId: string, startTimeMs: number) => {
+    const ep = episodeMap.get(episodeId);
+    const seconds = Math.floor(startTimeMs / 1000);
+    if (!ep) {
+      window.open(`https://open.spotify.com/search/${encodeURIComponent(episodeId)}`, '_blank');
+      return;
+    }
+    const spotifyUri = ep.spotify_id ? `spotify:episode:${ep.spotify_id}` : undefined;
+    const mp3Url = ep.podcast_name && (ep.mp3_url || ep.mp3_public_url)
+      ? getEpisodeAudioUrl(ep.podcast_name, ep.id)
+      : undefined;
+    playEpisode(
+      {
+        id: ep.id,
+        title: ep.episode_title || ep.id,
+        showName: name,
+        coverUrl: ep.spotify_images?.[0] || imageUrl,
+        spotifyUri,
+        mp3Url,
+      },
+      spotifyUri || mp3Url ? { seekTo: seconds } : undefined,
+    );
+  };
 
   return (
     <>
@@ -112,6 +161,35 @@ export const PodcasterPage: React.FC = () => {
             <p className="text-[13px] text-muted-foreground mt-3 max-w-[60ch] leading-[1.55]">{name} 的節目摘要 — 由 TinBoker 結構化分析關鍵重點與提及的個股。</p>
           </div>
         </div>
+
+        {picks.length > 0 && (
+          <>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-[13px] font-semibold text-muted-foreground">標的走勢（提及日起算）</h2>
+              <Link to="/picks" className="text-[12px] text-accent-info hover:underline">查看命中率 →</Link>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
+              {picks.slice(0, 6).map((pick) => {
+                const refMs = Date.parse(pick.podcast_launch_time);
+                const windows = Number.isFinite(refMs)
+                  ? windowsMap.get(windowReturnsKey(pick.ticker, refMs))
+                  : undefined;
+                return (
+                  <PickCard
+                    key={`${pick.episode_id}-${pick.ticker}`}
+                    pick={pick}
+                    windows={windows}
+                    displayName={translationMap.get(pick.ticker)}
+                    podcastImage={imageUrl}
+                    episodeTitle={episodeMap.get(pick.episode_id)?.episode_title || undefined}
+                    shareUrl={`${window.location.origin}/episode/${encodeURIComponent(pick.episode_id)}`}
+                    onPlaySegment={onPlaySegment}
+                  />
+                );
+              })}
+            </div>
+          </>
+        )}
 
         <h2 className="text-[13px] font-semibold text-muted-foreground mb-3">最新集數</h2>
         {loading ? (

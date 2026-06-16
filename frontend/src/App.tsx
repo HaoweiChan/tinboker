@@ -17,6 +17,7 @@ import { PodcasterIndex } from '@/pages/PodcasterIndex';
 import { StockIndex } from '@/pages/StockIndex';
 import { TopicsCloud } from '@/pages/TopicsCloud';
 import { WatchlistPage } from '@/pages/WatchlistPage';
+import { PicksPage } from '@/pages/PicksPage';
 import { AdminPage } from '@/pages/AdminPage';
 import { AdminDashboardPage } from '@/pages/AdminDashboardPage';
 import { TranslationsSection } from '@/pages/TranslationsSection';
@@ -91,6 +92,7 @@ function App() {
             <Route path="/stock" element={<StockIndex />} />
             <Route path="/topics" element={<TopicsCloud />} />
             <Route path="/watchlist" element={<WatchlistPage />} />
+            <Route path="/picks" element={<PicksPage />} />
 
             {/* Single-instance / content pages */}
             <Route path="/stock/:ticker" element={<StockDashboard />} />
