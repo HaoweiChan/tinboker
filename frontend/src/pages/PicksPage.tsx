@@ -30,6 +30,9 @@ const WINDOW_OPTIONS = [
 
 const DAY_MS = 86_400_000;
 const isoDate = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+// Cap the rendered feed — an active channel can have 1000+ picks over 180d.
+// The 命中率 stat is still computed server-side over the full set.
+const MAX_CARDS = 40;
 
 /** Searchable channel filter — a compact dropdown that scales to any number of
  *  channels, instead of a fixed wall of pills. */
@@ -180,16 +183,19 @@ export const PicksPage: React.FC = () => {
     return () => { alive = false; };
   }, [selected, windowDays]);
 
+  // picks arrive sorted newest-first; show the most recent MAX_CARDS.
+  const visiblePicks = useMemo(() => picks.slice(0, MAX_CARDS), [picks]);
+
   const pickRefs = useMemo(
     () =>
-      picks
+      visiblePicks
         .map((p) => ({ ticker: p.ticker, reference_ms: Date.parse(p.podcast_launch_time) }))
         .filter((r) => r.ticker && Number.isFinite(r.reference_ms)),
-    [picks],
+    [visiblePicks],
   );
   const windowsMap = useTickerWindowReturns(pickRefs);
 
-  const tickers = useMemo(() => picks.map((p) => p.ticker), [picks]);
+  const tickers = useMemo(() => visiblePicks.map((p) => p.ticker), [visiblePicks]);
   const rawTranslationMap = useTranslationMap(tickers);
   const nameMap = useMemo(() => {
     const m = new Map<string, string>();
@@ -279,8 +285,14 @@ export const PicksPage: React.FC = () => {
             此頻道近半年沒有可顯示的標的分析。
           </div>
         ) : (
+          <>
+            {picks.length > MAX_CARDS && (
+              <p className="text-[12px] text-muted-foreground mb-2.5">
+                顯示最近 {MAX_CARDS} 筆，共 {picks.length} 筆標的分析
+              </p>
+            )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {picks.map((pick) => {
+            {visiblePicks.map((pick) => {
               const refMs = Date.parse(pick.podcast_launch_time);
               const windows = Number.isFinite(refMs)
                 ? windowsMap.get(windowReturnsKey(pick.ticker, refMs))
@@ -299,6 +311,7 @@ export const PicksPage: React.FC = () => {
               );
             })}
           </div>
+          </>
         )}
       </PageContent>
     </>
