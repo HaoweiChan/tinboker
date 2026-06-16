@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Target } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Target, ChevronDown, Search } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
-import { FilterPills, Segmented } from '@/components/redesign';
+import { Segmented } from '@/components/redesign';
 import { PickCard } from '@/components/financial/PickCard';
+import { cn } from '@/lib/utils';
 import {
   getSortedPodcasts,
   getInsightsByPodcaster,
@@ -29,6 +30,95 @@ const WINDOW_OPTIONS = [
 
 const DAY_MS = 86_400_000;
 const isoDate = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+// Cap the rendered feed — an active channel can have 1000+ picks over 180d.
+// The 命中率 stat is still computed server-side over the full set.
+const MAX_CARDS = 40;
+
+/** Searchable channel filter — a compact dropdown that scales to any number of
+ *  channels, instead of a fixed wall of pills. */
+const ChannelSelect: React.FC<{
+  channels: Podcast[];
+  value: string;
+  onChange: (name: string) => void;
+}> = ({ channels, value, onChange }) => {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const selected = channels.find((c) => c.name === value);
+  const q = query.trim().toLowerCase();
+  const filtered = q ? channels.filter((c) => c.name.toLowerCase().includes(q)) : channels;
+
+  return (
+    <div className="relative inline-block" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex items-center gap-2 h-9 pl-2.5 pr-3 rounded-full bg-muted/60 border border-border text-[13px] font-medium hover:bg-muted transition-colors min-w-[180px]"
+      >
+        {selected?.image_url ? (
+          <img src={selected.image_url} alt="" className="w-5 h-5 rounded-full object-cover shrink-0" />
+        ) : (
+          <span className="w-5 h-5 rounded-full bg-border shrink-0" />
+        )}
+        <span className="flex-1 text-left truncate">{value || '選擇頻道'}</span>
+        <ChevronDown size={15} className={cn('text-muted-foreground transition-transform', open && 'rotate-180')} />
+      </button>
+
+      {open && (
+        <div className="absolute z-30 mt-1.5 w-[280px] bg-card border border-border rounded-lg shadow-lg overflow-hidden">
+          <div className="flex items-center gap-2 px-3 border-b border-border">
+            <Search size={14} className="text-muted-foreground shrink-0" />
+            <input
+              autoFocus
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="搜尋頻道…"
+              className="w-full h-9 bg-transparent text-[13px] outline-none placeholder:text-muted-foreground"
+            />
+          </div>
+          <ul className="max-h-[320px] overflow-auto py-1">
+            {filtered.length === 0 ? (
+              <li className="px-3 py-2.5 text-[13px] text-muted-foreground">找不到頻道</li>
+            ) : (
+              filtered.map((c) => (
+                <li key={c.name}>
+                  <button
+                    type="button"
+                    onClick={() => { onChange(c.name); setOpen(false); setQuery(''); }}
+                    className={cn(
+                      'w-full flex items-center gap-2.5 px-3 py-2 text-left text-[13px] hover:bg-muted transition-colors',
+                      c.name === value && 'bg-muted font-medium',
+                    )}
+                  >
+                    {c.image_url ? (
+                      <img src={c.image_url} alt="" className="w-6 h-6 rounded-full object-cover shrink-0" />
+                    ) : (
+                      <span className="w-6 h-6 rounded-full bg-border shrink-0" />
+                    )}
+                    <span className="flex-1 truncate">{c.name}</span>
+                    {typeof c.episode_count === 'number' && c.episode_count > 0 && (
+                      <span className="text-[11px] text-muted-foreground tabular-nums shrink-0">{c.episode_count}</span>
+                    )}
+                  </button>
+                </li>
+              ))
+            )}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+};
 
 export const PicksPage: React.FC = () => {
   const [podcasters, setPodcasters] = useState<Podcast[]>([]);
@@ -93,16 +183,19 @@ export const PicksPage: React.FC = () => {
     return () => { alive = false; };
   }, [selected, windowDays]);
 
+  // picks arrive sorted newest-first; show the most recent MAX_CARDS.
+  const visiblePicks = useMemo(() => picks.slice(0, MAX_CARDS), [picks]);
+
   const pickRefs = useMemo(
     () =>
-      picks
+      visiblePicks
         .map((p) => ({ ticker: p.ticker, reference_ms: Date.parse(p.podcast_launch_time) }))
         .filter((r) => r.ticker && Number.isFinite(r.reference_ms)),
-    [picks],
+    [visiblePicks],
   );
   const windowsMap = useTickerWindowReturns(pickRefs);
 
-  const tickers = useMemo(() => picks.map((p) => p.ticker), [picks]);
+  const tickers = useMemo(() => visiblePicks.map((p) => p.ticker), [visiblePicks]);
   const rawTranslationMap = useTranslationMap(tickers);
   const nameMap = useMemo(() => {
     const m = new Map<string, string>();
@@ -140,7 +233,6 @@ export const PicksPage: React.FC = () => {
     );
   };
 
-  const podcasterNames = useMemo(() => podcasters.map((p) => p.name), [podcasters]);
   const hitRatePct = scorecard?.hit_rate != null ? Math.round(scorecard.hit_rate * 100) : null;
 
   return (
@@ -152,8 +244,10 @@ export const PicksPage: React.FC = () => {
           財經 Podcaster 點名的個股，從提及當日起算的真實漲跌幅與命中率。
         </p>
 
-        {podcasterNames.length > 0 && (
-          <FilterPills items={podcasterNames} value={selected} onChange={setSelected} />
+        {podcasters.length > 0 && (
+          <div className="mb-[18px]">
+            <ChannelSelect channels={podcasters} value={selected} onChange={setSelected} />
+          </div>
         )}
 
         {/* 命中率 header */}
@@ -191,8 +285,14 @@ export const PicksPage: React.FC = () => {
             此頻道近半年沒有可顯示的標的分析。
           </div>
         ) : (
+          <>
+            {picks.length > MAX_CARDS && (
+              <p className="text-[12px] text-muted-foreground mb-2.5">
+                顯示最近 {MAX_CARDS} 筆，共 {picks.length} 筆標的分析
+              </p>
+            )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {picks.map((pick) => {
+            {visiblePicks.map((pick) => {
               const refMs = Date.parse(pick.podcast_launch_time);
               const windows = Number.isFinite(refMs)
                 ? windowsMap.get(windowReturnsKey(pick.ticker, refMs))
@@ -211,6 +311,7 @@ export const PicksPage: React.FC = () => {
               );
             })}
           </div>
+          </>
         )}
       </PageContent>
     </>
