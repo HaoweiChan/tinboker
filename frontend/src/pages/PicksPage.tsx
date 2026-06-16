@@ -5,6 +5,7 @@ import { PageContent } from '@/components/layout/PageContent';
 import { PickCard } from '@/components/financial/PickCard';
 import {
   getRecentInsights,
+  getInsightsByPodcaster,
   getSortedPodcasts,
   getEpisodeByIdOnly,
   getEpisodeAudioUrl,
@@ -42,6 +43,10 @@ export const PicksPage: React.FC = () => {
   const [picks, setPicks] = useState<TickerInsight[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
+  // When channels are filtered, fetch each channel's FULL history (not just the
+  // recent-100 blended feed) so older, settled picks surface. Keyed off `selected`.
+  const [channelHistory, setChannelHistory] = useState<TickerInsight[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   const playEpisode = usePlayerStore((s) => s.playEpisode);
 
@@ -66,6 +71,29 @@ export const PicksPage: React.FC = () => {
     return () => { alive = false; };
   }, []);
 
+  // Filtered view: pull each selected channel's history over the last year,
+  // newest-first, so settled (older) picks appear — the blended /recent only
+  // covers the most recent ~100 across all channels.
+  useEffect(() => {
+    const names = [...selected];
+    if (names.length === 0) { setChannelHistory([]); return; }
+    let alive = true;
+    setHistoryLoading(true);
+    const end = new Date().toISOString().slice(0, 10);
+    const start = new Date(Date.now() - 365 * 86_400_000).toISOString().slice(0, 10);
+    Promise.all(
+      names.map((n) => getInsightsByPodcaster(n, { start_date: start, end_date: end }).catch(() => [] as TickerInsight[])),
+    ).then((arrs) => {
+      if (!alive) return;
+      const merged = arrs
+        .flat()
+        .sort((a, b) => (b.podcast_launch_time || '').localeCompare(a.podcast_launch_time || ''));
+      setChannelHistory(merged);
+      setHistoryLoading(false);
+    });
+    return () => { alive = false; };
+  }, [selected]);
+
   const podcastImageMap = useMemo(() => {
     const m = new Map<string, string>();
     for (const p of podcasters) if (p.name && p.image_url) m.set(p.name, p.image_url);
@@ -74,21 +102,23 @@ export const PicksPage: React.FC = () => {
 
   // Filter options = channels that actually appear in the feed, so a selection
   // always yields results (and the list stays short).
-  const cleanPicks = useMemo(() => picks.filter((p) => isLikelyTradeable(p.ticker)), [picks]);
-
+  // Channel filter options come from the blended feed (always present, stable).
+  const optionPicks = useMemo(() => picks.filter((p) => isLikelyTradeable(p.ticker)), [picks]);
   const channelOptions = useMemo<ChannelOption[]>(() => {
     const seen = new Map<string, ChannelOption>();
-    for (const p of cleanPicks) {
+    for (const p of optionPicks) {
       const name = p.podcaster || '';
       if (name && !seen.has(name)) seen.set(name, { name, image_url: podcastImageMap.get(name) });
     }
     return Array.from(seen.values());
-  }, [cleanPicks, podcastImageMap]);
+  }, [optionPicks, podcastImageMap]);
 
-  const visiblePicks = useMemo(
-    () => (selected.size === 0 ? cleanPicks : cleanPicks.filter((p) => selected.has(p.podcaster || ''))),
-    [cleanPicks, selected],
-  );
+  // Displayed feed: blended recent when no filter; the selected channels' full
+  // history (newest-first) when filtered — so older settled picks show. Capped.
+  const visiblePicks = useMemo(() => {
+    const src = selected.size === 0 ? picks : channelHistory;
+    return src.filter((p) => isLikelyTradeable(p.ticker)).slice(0, 80);
+  }, [picks, channelHistory, selected]);
 
   const pickRefs = useMemo(
     () =>
@@ -161,7 +191,7 @@ export const PicksPage: React.FC = () => {
           </div>
         )}
 
-        {loading ? (
+        {loading || historyLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {Array.from({ length: 6 }).map((_, i) => (
               <div key={i} className="bg-card border border-border rounded-md h-[180px] animate-pulse" />
