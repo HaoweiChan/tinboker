@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Filter, ChevronDown, Search, Check } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
+import { Segmented } from '@/components/redesign';
 import { PickCard } from '@/components/financial/PickCard';
 import {
   getRecentInsights,
@@ -38,6 +39,16 @@ function isLikelyTradeable(ticker: string): boolean {
   return !NON_TRADEABLE.has(s.toUpperCase());
 }
 
+const PAGE_SIZE = 40; // infinite-scroll page size
+const SETTLED_MIN_DAYS = 30; // "已揭曉": picks at least this old (30D window settled)
+const DAY_MS = 86_400_000;
+
+/** Whole days elapsed since a pick's mention date. */
+function picksAgeDays(p: { podcast_launch_time?: string }): number {
+  const ms = Date.parse(p.podcast_launch_time || '');
+  return Number.isFinite(ms) ? Math.floor((Date.now() - ms) / DAY_MS) : 0;
+}
+
 export const PicksPage: React.FC = () => {
   const [podcasters, setPodcasters] = useState<Podcast[]>([]);
   const [picks, setPicks] = useState<TickerInsight[]>([]);
@@ -47,6 +58,11 @@ export const PicksPage: React.FC = () => {
   // recent-100 blended feed) so older, settled picks surface. Keyed off `selected`.
   const [channelHistory, setChannelHistory] = useState<TickerInsight[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  // Feed controls: 最新 (all, newest) vs 已揭曉 (only picks old enough for windows
+  // to have settled); infinite-scroll page size.
+  const [sortMode, setSortMode] = useState<'recent' | 'settled'>('recent');
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const sentinelRef = useRef<HTMLDivElement>(null);
 
   const playEpisode = usePlayerStore((s) => s.playEpisode);
 
@@ -114,11 +130,34 @@ export const PicksPage: React.FC = () => {
   }, [optionPicks, podcastImageMap]);
 
   // Displayed feed: blended recent when no filter; the selected channels' full
-  // history (newest-first) when filtered — so older settled picks show. Capped.
-  const visiblePicks = useMemo(() => {
+  // history when filtered. 已揭曉 mode keeps only picks old enough for windows to
+  // have settled, so 30/90D returns show without scrolling past the recent noise.
+  const filteredPicks = useMemo(() => {
     const src = selected.size === 0 ? picks : channelHistory;
-    return src.filter((p) => isLikelyTradeable(p.ticker)).slice(0, 80);
-  }, [picks, channelHistory, selected]);
+    let out = src.filter((p) => isLikelyTradeable(p.ticker));
+    if (sortMode === 'settled') out = out.filter((p) => picksAgeDays(p) >= SETTLED_MIN_DAYS);
+    return out;
+  }, [picks, channelHistory, selected, sortMode]);
+
+  // Infinite-scroll: render visibleCount, grow as the sentinel scrolls into view.
+  const visiblePicks = useMemo(() => filteredPicks.slice(0, visibleCount), [filteredPicks, visibleCount]);
+
+  useEffect(() => { setVisibleCount(PAGE_SIZE); }, [selected, sortMode, picks, channelHistory]);
+
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          setVisibleCount((c) => (c < filteredPicks.length ? c + PAGE_SIZE : c));
+        }
+      },
+      { rootMargin: '600px' },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [filteredPicks.length]);
 
   const pickRefs = useMemo(
     () =>
@@ -180,16 +219,24 @@ export const PicksPage: React.FC = () => {
           財經 Podcaster 點名的個股，依時間排序，從提及當日起算的 7／30／90 天真實漲跌幅。
         </p>
 
-        {channelOptions.length > 0 && (
-          <div className="mb-[18px]">
+        <div className="flex items-center gap-3 mb-[18px] flex-wrap">
+          {channelOptions.length > 0 && (
             <ChannelFilter
               channels={channelOptions}
               selected={selected}
               onToggle={toggleChannel}
               onClear={() => setSelected(new Set())}
             />
-          </div>
-        )}
+          )}
+          <Segmented
+            options={[
+              { value: 'recent', label: '最新' },
+              { value: 'settled', label: '已揭曉' },
+            ] as const}
+            value={sortMode}
+            onChange={(v) => setSortMode(v as 'recent' | 'settled')}
+          />
+        </div>
 
         {loading || historyLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -202,6 +249,7 @@ export const PicksPage: React.FC = () => {
             {picks.length === 0 ? '目前沒有可顯示的標的分析。' : '所選頻道近期沒有標的分析，試試其他頻道。'}
           </div>
         ) : (
+          <>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {visiblePicks.map((pick) => {
               const refMs = Date.parse(pick.podcast_launch_time);
@@ -222,6 +270,10 @@ export const PicksPage: React.FC = () => {
               );
             })}
           </div>
+          <div ref={sentinelRef} className="h-10 flex items-center justify-center text-[12px] text-muted-foreground/70 mt-2">
+            {visiblePicks.length < filteredPicks.length ? '載入更多…' : `共 ${filteredPicks.length} 筆`}
+          </div>
+          </>
         )}
       </PageContent>
     </>
