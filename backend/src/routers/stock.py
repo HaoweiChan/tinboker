@@ -350,21 +350,24 @@ async def get_batch_prices_windows(
             pass
 
     distinct_tickers = list({t for t, _ in pairs})
+    today_str = datetime.utcnow().strftime("%Y-%m-%d")
 
-    async def _basic_safe(t):
+    # "Current" = latest stored close (DB-first via _get_reference_close), NOT the
+    # live intraday price. The live `get_stock_basic_info_async` path is rate-limited
+    # and returned null for many real tickers under batch load, leaving `since` empty.
+    # Close-to-close is also consistent with the 7/30/90D windows.
+    async def _latest_close_safe(t):
         try:
-            return await asyncio.wait_for(stock_service.get_stock_basic_info_async(t), timeout=10)
+            return await asyncio.wait_for(_get_reference_close(t, today_str, db), timeout=12)
         except (asyncio.TimeoutError, Exception):
             return None
 
-    basics_list = await asyncio.gather(*[_basic_safe(t) for t in distinct_tickers])
-    basics = dict(zip(distinct_tickers, basics_list))
+    latest_list = await asyncio.gather(*[_latest_close_safe(t) for t in distinct_tickers])
+    latest = dict(zip(distinct_tickers, latest_list))
 
     async def _win_safe(t: str, ms: int) -> dict:
-        basic = basics.get(t)
-        current = basic.get("price") if isinstance(basic, dict) else None
         try:
-            return await asyncio.wait_for(_window_returns(t, ms, current, db), timeout=15)
+            return await asyncio.wait_for(_window_returns(t, ms, latest.get(t), db), timeout=15)
         except (asyncio.TimeoutError, Exception):
             return {"baseline": None, "d7": None, "d30": None, "d90": None, "since": None}
 
