@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { ChevronDown, ChevronUp, Play } from 'lucide-react';
+import { ChevronDown, ChevronUp, Play, Mic } from 'lucide-react';
 import { Card } from '@/components/ui';
 import { Change, SentimentChip, ShareMenu, PodMark } from '@/components/redesign';
 import { normalizeSentiment } from '@/lib/sentiment';
@@ -54,10 +54,13 @@ export const PickCard: React.FC<PickCardProps> = ({
     : '';
   const podcaster = pick.podcaster || '';
 
-  // A pick mentioned today has no elapsed return yet — baseline close == latest
-  // close → "since" is a meaningless 0.0. Show "—" instead until a day has passed.
+  // Days elapsed since the mention — drives the forward-window countdown text
+  // (方案一: show "剩餘 N 天" / "N 天後揭曉" instead of bare dashes while a window
+  // hasn't matured yet).
   const mentionMs = Date.parse(pick.podcast_launch_time);
-  const tooFreshForSince = Number.isFinite(mentionMs) && Date.now() - mentionMs < 86_400_000;
+  const deltaDays = Number.isFinite(mentionMs)
+    ? Math.max(0, Math.floor((Date.now() - mentionMs) / 86_400_000))
+    : 9999;
 
   const canPlay = typeof onPlaySegment === 'function';
 
@@ -94,15 +97,33 @@ export const PickCard: React.FC<PickCardProps> = ({
         />
       </div>
 
-      {/* Forward 7/30/90D returns */}
+      {/* Forward 7/30/90D returns — pending windows show a muted countdown, not a bare dash */}
       <div className="grid grid-cols-4 gap-2 mt-3 mb-1">
         {METRICS.map(({ key, label }) => {
-          const raw = windows ? windows[key] : null;
-          const value = key === 'since' && tooFreshForSince ? null : raw;
+          const v = windows ? windows[key] : null;
+          let content: React.ReactNode;
+          if (key === 'since') {
+            // "Since mention" has no return on the day of mention.
+            content = deltaDays < 1
+              ? <span className="text-[11px] text-muted-foreground/50">今日</span>
+              : <Change value={v} />;
+          } else if (v != null) {
+            content = <Change value={v} />;
+          } else {
+            const wd = key === 'd7' ? 7 : key === 'd30' ? 30 : 90;
+            content = deltaDays < wd ? (
+              <span className="text-[11px] text-muted-foreground/50 whitespace-nowrap">
+                {wd === 7 ? `剩餘 ${wd - deltaDays} 天` : `${wd - deltaDays} 天後揭曉`}
+              </span>
+            ) : (
+              // window elapsed but no close data (rare) — keep a plain dash
+              <span className="text-[13px] text-muted-foreground/50">—</span>
+            );
+          }
           return (
             <div key={key} className="text-center">
               <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
-              <Change value={value} />
+              {content}
             </div>
           );
         })}
@@ -140,10 +161,11 @@ export const PickCard: React.FC<PickCardProps> = ({
       {episodeTitle && (
         <Link
           to={`/episode/${encodeURIComponent(pick.episode_id)}`}
-          className="block text-[11px] text-muted-foreground/80 hover:text-accent-info mt-3 truncate"
+          className="flex items-center gap-1 text-[11px] text-muted-foreground/80 hover:text-accent-info mt-3 min-w-0"
           title={episodeTitle}
         >
-          🎙 {episodeTitle}
+          <Mic size={11} className="shrink-0" />
+          <span className="truncate">{episodeTitle}</span>
         </Link>
       )}
     </Card>
