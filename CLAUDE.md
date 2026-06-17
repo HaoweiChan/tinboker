@@ -369,8 +369,8 @@ A **dev bypass** flow lets the browser authenticate without Google:
 ### Usage in Cursor browser MCP
 
 ```
-# Step 1: Navigate to the bypass URL
-browser_navigate → https://dev.tinboker.com/auth/dev-bypass?token=CXvkSTaZAghJF0jYidL4ii3DbgOo-Z5NVwgFLoNk05I
+# Step 1: Navigate to the bypass URL (substitute the live token, see below)
+browser_navigate → https://dev.tinboker.com/auth/dev-bypass?token=$DEV_BYPASS_TOKEN
 
 # Step 2: Wait for redirect to /
 # Step 3: Now browse freely — session is authenticated
@@ -378,12 +378,16 @@ browser_navigate → https://dev.tinboker.com/auth/dev-bypass?token=CXvkSTaZAghJ
 
 ### Token value
 
-| Environment | DEV_BYPASS_TOKEN |
-|---|---|
-| Dev (dev-api.tinboker.com) | `CXvkSTaZAghJF0jYidL4ii3DbgOo-Z5NVwgFLoNk05I` |
+The `DEV_BYPASS_TOKEN` is a rotating secret — **not stored in this repo**. Fetch the
+current value from GCP Secret Manager (it is also set as an env var on the VPS backend
+container):
 
-The token is set as an env var on the VPS backend container.
-It is NOT stored in the repo — only in this doc and in the server's `.env`.
+```bash
+gcloud secrets versions access latest --secret=DEV_BYPASS_TOKEN \
+  --project=gen-lang-client-0901363254
+```
+
+Never paste the token value into docs, commits, or the chat transcript.
 
 ---
 
