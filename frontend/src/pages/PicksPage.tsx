@@ -17,6 +17,7 @@ import { useTickerWindowReturns, windowReturnsKey } from '@/hooks/useTickerWindo
 import { useTranslationMap } from '@/hooks/useTranslationMap';
 import { usePlayerStore } from '@/store/usePlayerStore';
 import { cn } from '@/lib/utils';
+import { groupPicks } from '@/lib/pickGroups';
 import type { TickerInsight } from '@/services/types';
 
 interface ChannelOption {
@@ -40,12 +41,19 @@ function isLikelyTradeable(ticker: string): boolean {
 }
 
 const PAGE_SIZE = 40; // infinite-scroll page size
-const SETTLED_MIN_DAYS = 30; // "已揭曉": picks at least this old (30D window settled)
 const DAY_MS = 86_400_000;
+// When a settled tier is active we sort the whole filtered set by that window's
+// return, so we must fetch windows beyond the visible slice — capped to keep the
+// chunked batch bounded.
+const WINDOW_FETCH_CAP = 120;
 
-/** Whole days elapsed since a pick's mention date. */
-function picksAgeDays(p: { podcast_launch_time?: string }): number {
-  const ms = Date.parse(p.podcast_launch_time || '');
+/** Settled maturity tiers (days). 已揭曉 defaults to 7D for immediate density. */
+type SettledTier = 7 | 30 | 90;
+const TIER_WINDOW: Record<SettledTier, 'd7' | 'd30' | 'd90'> = { 7: 'd7', 30: 'd30', 90: 'd90' };
+
+/** Whole days elapsed since a mention date (ISO string). */
+function ageDays(launch?: string): number {
+  const ms = Date.parse(launch || '');
   return Number.isFinite(ms) ? Math.floor((Date.now() - ms) / DAY_MS) : 0;
 }
 
@@ -58,9 +66,11 @@ export const PicksPage: React.FC = () => {
   // recent-100 blended feed) so older, settled picks surface. Keyed off `selected`.
   const [channelHistory, setChannelHistory] = useState<TickerInsight[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
-  // Feed controls: 最新 (all, newest) vs 已揭曉 (only picks old enough for windows
-  // to have settled); infinite-scroll page size.
-  const [sortMode, setSortMode] = useState<'recent' | 'settled'>('recent');
+  // Feed controls: 最新 (all, newest) vs 已揭曉 (picks old enough for a window to
+  // have settled). 已揭曉 has a 7/30/90-day sub-tier — default 7D for density,
+  // and sorting flips to "highest return over that window".
+  const [view, setView] = useState<'recent' | 'settled'>('recent');
+  const [settledTier, setSettledTier] = useState<SettledTier>(7);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
@@ -129,20 +139,60 @@ export const PicksPage: React.FC = () => {
     return Array.from(seen.values());
   }, [optionPicks, podcastImageMap]);
 
-  // Displayed feed: blended recent when no filter; the selected channels' full
-  // history when filtered. 已揭曉 mode keeps only picks old enough for windows to
-  // have settled, so 30/90D returns show without scrolling past the recent noise.
-  const filteredPicks = useMemo(() => {
+  // Collapse the stream into master cards: blended recent when no filter; the
+  // selected channels' full history when filtered. Repeated calls of the same
+  // canonical ticker by one podcaster within 14 days fold into one card.
+  const groups = useMemo(() => {
     const src = selected.size === 0 ? picks : channelHistory;
-    let out = src.filter((p) => isLikelyTradeable(p.ticker));
-    if (sortMode === 'settled') out = out.filter((p) => picksAgeDays(p) >= SETTLED_MIN_DAYS);
-    return out;
-  }, [picks, channelHistory, selected, sortMode]);
+    return groupPicks(src.filter((p) => isLikelyTradeable(p.ticker)));
+  }, [picks, channelHistory, selected]);
+
+  // 已揭曉 keeps only cards whose master mention is old enough for the active tier
+  // to have settled, so the chosen window's return is always populated.
+  const filteredGroups = useMemo(() => {
+    if (view !== 'settled') return groups;
+    return groups.filter((g) => ageDays(g.master.podcast_launch_time) >= settledTier);
+  }, [groups, view, settledTier]);
+
+  // Window returns: in 最新 we only need the visible slice; in 已揭曉 we sort the
+  // whole filtered set by the tier's return, so fetch up to the cap.
+  const refGroups = useMemo(
+    () => filteredGroups.slice(0, view === 'settled' ? WINDOW_FETCH_CAP : visibleCount),
+    [filteredGroups, view, visibleCount],
+  );
+  const pickRefs = useMemo(
+    () =>
+      refGroups
+        .map((g) => ({ ticker: g.canonicalTicker, reference_ms: Date.parse(g.master.podcast_launch_time) }))
+        .filter((r) => r.ticker && Number.isFinite(r.reference_ms)),
+    [refGroups],
+  );
+  const windowsMap = useTickerWindowReturns(pickRefs);
+
+  // Dynamic sort: 已揭曉 orders by the active window's return (desc, unsettled
+  // last); 最新 keeps the newest-master order from groupPicks.
+  const sortedGroups = useMemo(() => {
+    if (view !== 'settled') return filteredGroups;
+    const wk = TIER_WINDOW[settledTier];
+    const ret = (g: (typeof filteredGroups)[number]) => {
+      const refMs = Date.parse(g.master.podcast_launch_time);
+      const v = Number.isFinite(refMs) ? windowsMap.get(windowReturnsKey(g.canonicalTicker, refMs))?.[wk] : null;
+      return v == null ? Number.NEGATIVE_INFINITY : v;
+    };
+    return [...filteredGroups].sort((a, b) => {
+      const ra = ret(a);
+      const rb = ret(b);
+      // Higher return first; groups with a settled return outrank unsettled ones
+      // (−Infinity). Equal (incl. both unsettled) falls back to newest-master.
+      if (ra !== rb) return rb - ra;
+      return Date.parse(b.master.podcast_launch_time) - Date.parse(a.master.podcast_launch_time);
+    });
+  }, [filteredGroups, view, settledTier, windowsMap]);
 
   // Infinite-scroll: render visibleCount, grow as the sentinel scrolls into view.
-  const visiblePicks = useMemo(() => filteredPicks.slice(0, visibleCount), [filteredPicks, visibleCount]);
+  const visibleGroups = useMemo(() => sortedGroups.slice(0, visibleCount), [sortedGroups, visibleCount]);
 
-  useEffect(() => { setVisibleCount(PAGE_SIZE); }, [selected, sortMode, picks, channelHistory]);
+  useEffect(() => { setVisibleCount(PAGE_SIZE); }, [selected, view, settledTier, picks, channelHistory]);
 
   useEffect(() => {
     const el = sentinelRef.current;
@@ -150,25 +200,16 @@ export const PicksPage: React.FC = () => {
     const io = new IntersectionObserver(
       (entries) => {
         if (entries[0]?.isIntersecting) {
-          setVisibleCount((c) => (c < filteredPicks.length ? c + PAGE_SIZE : c));
+          setVisibleCount((c) => (c < sortedGroups.length ? c + PAGE_SIZE : c));
         }
       },
       { rootMargin: '600px' },
     );
     io.observe(el);
     return () => io.disconnect();
-  }, [filteredPicks.length]);
+  }, [sortedGroups.length]);
 
-  const pickRefs = useMemo(
-    () =>
-      visiblePicks
-        .map((p) => ({ ticker: p.ticker, reference_ms: Date.parse(p.podcast_launch_time) }))
-        .filter((r) => r.ticker && Number.isFinite(r.reference_ms)),
-    [visiblePicks],
-  );
-  const windowsMap = useTickerWindowReturns(pickRefs);
-
-  const tickers = useMemo(() => visiblePicks.map((p) => p.ticker), [visiblePicks]);
+  const tickers = useMemo(() => visibleGroups.map((g) => g.canonicalTicker), [visibleGroups]);
   const rawTranslationMap = useTranslationMap(tickers);
   const nameMap = useMemo(() => {
     const m = new Map<string, string>();
@@ -233,9 +274,20 @@ export const PicksPage: React.FC = () => {
               { value: 'recent', label: '最新' },
               { value: 'settled', label: '已揭曉' },
             ] as const}
-            value={sortMode}
-            onChange={(v) => setSortMode(v as 'recent' | 'settled')}
+            value={view}
+            onChange={(v) => setView(v as 'recent' | 'settled')}
           />
+          {view === 'settled' && (
+            <Segmented
+              options={[
+                { value: '7', label: '7日已揭曉' },
+                { value: '30', label: '30日已揭曉' },
+                { value: '90', label: '90日已揭曉' },
+              ] as const}
+              value={String(settledTier)}
+              onChange={(v) => setSettledTier(Number(v) as SettledTier)}
+            />
+          )}
         </div>
 
         {loading || historyLoading ? (
@@ -244,26 +296,33 @@ export const PicksPage: React.FC = () => {
               <div key={i} className="bg-card border border-border rounded-md h-[180px] animate-pulse" />
             ))}
           </div>
-        ) : visiblePicks.length === 0 ? (
+        ) : visibleGroups.length === 0 ? (
           <div className="bg-card border border-border rounded-md p-10 text-center text-[13px] text-muted-foreground">
-            {picks.length === 0 ? '目前沒有可顯示的標的分析。' : '所選頻道近期沒有標的分析，試試其他頻道。'}
+            {picks.length === 0
+              ? '目前沒有可顯示的標的分析。'
+              : view === 'settled'
+                ? `所選頻道近期沒有滿 ${settledTier} 天的已揭曉標的，試試較短的天期或其他頻道。`
+                : '所選頻道近期沒有標的分析，試試其他頻道。'}
           </div>
         ) : (
           <>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {visiblePicks.map((pick) => {
+            {visibleGroups.map((g) => {
+              const pick = g.master;
               const refMs = Date.parse(pick.podcast_launch_time);
               const windows = Number.isFinite(refMs)
-                ? windowsMap.get(windowReturnsKey(pick.ticker, refMs))
+                ? windowsMap.get(windowReturnsKey(g.canonicalTicker, refMs))
                 : undefined;
               return (
                 <PickCard
-                  key={`${pick.episode_id}-${pick.ticker}`}
+                  key={g.key}
                   pick={pick}
                   windows={windows}
-                  displayName={nameMap.get(pick.ticker.toUpperCase())}
+                  displayName={nameMap.get(g.canonicalTicker.toUpperCase())}
+                  displayTicker={g.canonicalTicker}
                   podcastImage={podcastImageMap.get(pick.podcaster || '') || undefined}
                   episodeTitle={pick.episode_title}
+                  mentions={g.occurrences}
                   shareUrl={`${window.location.origin}/episode/${encodeURIComponent(pick.episode_id)}`}
                   onPlaySegment={onPlaySegment}
                 />
@@ -271,7 +330,7 @@ export const PicksPage: React.FC = () => {
             })}
           </div>
           <div ref={sentinelRef} className="h-10 flex items-center justify-center text-[12px] text-muted-foreground/70 mt-2">
-            {visiblePicks.length < filteredPicks.length ? '載入更多…' : `共 ${filteredPicks.length} 筆`}
+            {visibleGroups.length < sortedGroups.length ? '載入更多…' : `共 ${sortedGroups.length} 筆`}
           </div>
           </>
         )}

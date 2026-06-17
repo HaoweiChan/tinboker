@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { ChevronDown, ChevronUp, Play, Mic } from 'lucide-react';
+import { ChevronDown, ChevronUp, Play, Mic, Layers } from 'lucide-react';
 import { Card } from '@/components/ui';
 import { Change, SentimentChip, ShareMenu, PodMark } from '@/components/redesign';
 import { normalizeSentiment } from '@/lib/sentiment';
@@ -13,6 +13,8 @@ interface PickCardProps {
   windows?: PickWindowReturns;
   /** Localized ticker display name (台積電, 輝達, …). */
   displayName?: string;
+  /** Canonical symbol to show/link (e.g. 2330 even when the row stored TSM). Defaults to pick.ticker. */
+  displayTicker?: string;
   /** Channel cover image; falls back to a PodMark of the podcaster's initial. */
   podcastImage?: string;
   /** Episode title for the footer (TickerInsight only carries episode_id). */
@@ -21,6 +23,9 @@ interface PickCardProps {
   shareUrl?: string;
   /** Seek the player to a reason/risk timestamp. When omitted, ▶ buttons are hidden. */
   onPlaySegment?: (episodeId: string, startTimeMs: number) => void;
+  /** All mentions collapsed into this card (newest-first, incl. the master). When
+   *  length > 1, the card shows a "近期連續點名 N 次" badge + an occurrence timeline. */
+  mentions?: TickerInsight[];
   className?: string;
 }
 
@@ -39,20 +44,25 @@ export const PickCard: React.FC<PickCardProps> = ({
   pick,
   windows,
   displayName,
+  displayTicker,
   podcastImage,
   episodeTitle,
   shareUrl,
   onPlaySegment,
+  mentions,
   className,
 }) => {
   const navigate = useNavigate();
   const [expanded, setExpanded] = useState(false);
+  const [mentionsOpen, setMentionsOpen] = useState(false);
 
+  const ticker = displayTicker || pick.ticker;
   const sentiment = normalizeSentiment(pick.sentiment_label);
   const dateLabel = pick.podcast_launch_time
     ? new Date(pick.podcast_launch_time).toLocaleDateString()
     : '';
   const podcaster = pick.podcaster || '';
+  const repeatCount = mentions && mentions.length > 1 ? mentions.length : 0;
 
   // Days elapsed since the mention — drives the forward-window countdown text
   // (方案一: show "剩餘 N 天" / "N 天後揭曉" instead of bare dashes while a window
@@ -78,21 +88,27 @@ export const PickCard: React.FC<PickCardProps> = ({
             <span className="text-[12px] text-muted-foreground truncate">{podcaster}</span>
             <span className="text-[12px] text-muted-foreground tabular-nums shrink-0">{dateLabel}</span>
           </div>
-          <div className="flex items-center gap-2 mt-0.5">
+          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
             <button
               type="button"
-              onClick={() => navigate(`/stock/${encodeURIComponent(pick.ticker)}`)}
+              onClick={() => navigate(`/stock/${encodeURIComponent(ticker)}`)}
               className="font-mono font-semibold text-[16px] text-foreground hover:text-accent-info transition-colors"
             >
-              {pick.ticker}
+              {ticker}
             </button>
             {displayName && <span className="text-[13px] text-muted-foreground truncate">{displayName}</span>}
             {sentiment && <SentimentChip sentiment={sentiment} />}
+            {repeatCount > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-muted/70 border border-border px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                <Layers size={11} className="shrink-0" />
+                近期連續點名 {repeatCount} 次
+              </span>
+            )}
           </div>
         </div>
         <ShareMenu
           shareUrl={shareUrl}
-          shareTitle={`${podcaster} 看${sentiment === 'BEARISH' ? '空' : '多'} ${pick.ticker}｜TinBoker`}
+          shareTitle={`${podcaster} 看${sentiment === 'BEARISH' ? '空' : '多'} ${ticker}｜TinBoker`}
           className="shrink-0"
         />
       </div>
@@ -154,6 +170,46 @@ export const PickCard: React.FC<PickCardProps> = ({
           )}
           {pick.risks?.length > 0 && (
             <Segment title="風險提示" items={pick.risks} tone="bear" episodeId={pick.episode_id} onPlaySegment={canPlay ? onPlaySegment : undefined} />
+          )}
+        </div>
+      )}
+
+      {repeatCount > 0 && mentions && (
+        <div className="mt-3">
+          <button
+            type="button"
+            onClick={() => setMentionsOpen((v) => !v)}
+            className="flex items-center gap-1 text-[12px] text-accent-info hover:underline"
+          >
+            {mentionsOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            查看連續點名集數與摘要
+          </button>
+          {mentionsOpen && (
+            <ol className="mt-2 pt-2 border-t border-border space-y-2.5">
+              {mentions.map((m) => (
+                <li key={`${m.episode_id}-${m.ticker}`} className="relative pl-3 border-l-2 border-border">
+                  <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                    <span className="tabular-nums shrink-0">
+                      {m.podcast_launch_time ? new Date(m.podcast_launch_time).toLocaleDateString() : ''}
+                    </span>
+                    {m.episode_title && (
+                      <Link
+                        to={`/episode/${encodeURIComponent(m.episode_id)}`}
+                        className="truncate hover:text-accent-info"
+                        title={m.episode_title}
+                      >
+                        {m.episode_title}
+                      </Link>
+                    )}
+                  </div>
+                  {m.bluf_thesis && (
+                    <p className="text-[12px] text-muted-foreground/90 leading-relaxed mt-0.5 line-clamp-2">
+                      {m.bluf_thesis}
+                    </p>
+                  )}
+                </li>
+              ))}
+            </ol>
           )}
         </div>
       )}
