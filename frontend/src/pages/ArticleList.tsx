@@ -8,12 +8,7 @@ import { Clock, FileText } from 'lucide-react';
 import { PageContent } from '@/components/layout/PageContent';
 import { getPublishedArticles } from '@/services/articleService';
 import type { ArticleListItem } from '@/validation/schemas';
-
-function formatDate(iso: string | null | undefined): string {
-  if (!iso) return '';
-  const d = new Date(iso);
-  return d.toLocaleDateString('zh-TW', { year: 'numeric', month: 'short', day: 'numeric' });
-}
+import { formatDate } from '@/lib/date';
 
 const ArticleCard: React.FC<{ article: ArticleListItem }> = ({ article }) => (
   <Link

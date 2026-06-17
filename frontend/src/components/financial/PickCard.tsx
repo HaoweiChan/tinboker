@@ -4,6 +4,7 @@ import { ChevronDown, ChevronUp, Play, Mic, Layers } from 'lucide-react';
 import { Card } from '@/components/ui';
 import { Change, SentimentChip, ShareMenu, PodMark } from '@/components/redesign';
 import { normalizeSentiment } from '@/lib/sentiment';
+import { formatDate } from '@/lib/date';
 import { cn } from '@/lib/utils';
 import type { PickWindowReturns, TickerInsight } from '@/services/types';
 
@@ -58,9 +59,7 @@ export const PickCard: React.FC<PickCardProps> = ({
 
   const ticker = displayTicker || pick.ticker;
   const sentiment = normalizeSentiment(pick.sentiment_label);
-  const dateLabel = pick.podcast_launch_time
-    ? new Date(pick.podcast_launch_time).toLocaleDateString()
-    : '';
+  const dateLabel = formatDate(pick.podcast_launch_time);
   const podcaster = pick.podcaster || '';
   const repeatCount = mentions && mentions.length > 1 ? mentions.length : 0;
 
@@ -190,7 +189,7 @@ export const PickCard: React.FC<PickCardProps> = ({
                 <li key={`${m.episode_id}-${m.ticker}`} className="relative pl-3 border-l-2 border-border">
                   <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
                     <span className="tabular-nums shrink-0">
-                      {m.podcast_launch_time ? new Date(m.podcast_launch_time).toLocaleDateString() : ''}
+                      {formatDate(m.podcast_launch_time)}
                     </span>
                     {m.episode_title && (
                       <Link
