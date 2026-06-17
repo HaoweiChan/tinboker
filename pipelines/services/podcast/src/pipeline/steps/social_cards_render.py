@@ -109,6 +109,7 @@ def render_social_cards(
             ok, url = svc.upload_file_from_base64(
                 b64, "social_cards", episode_data.podcast_name,
                 f"{episode_data.episode_id}/{i}", "png", skip_existing=False,
+                public=True,  # Threads fetches these by URL — must be world-readable.
             )
         except Exception as e:
             print(f"  ⚠ Social card {i} upload failed: {e}")

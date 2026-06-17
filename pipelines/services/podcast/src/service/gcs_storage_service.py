@@ -297,11 +297,12 @@ class GCSStorageService:
         podcast_name: str,
         episode_id: str,
         extension: str,
-        skip_existing: bool = True
+        skip_existing: bool = True,
+        public: bool = False,
     ) -> Tuple[bool, Optional[str]]:
         """
         Upload file content from a base64-encoded string to Google Cloud Storage.
-        
+
         Args:
             base64_content: Base64-encoded file content as string
             file_type: Type of file ('pptx', 'presentations', etc.)
@@ -309,30 +310,37 @@ class GCSStorageService:
             episode_id: Episode ID (matches Firestore document ID)
             extension: File extension (e.g., 'pptx')
             skip_existing: If True, skip upload if file already exists
-            
+            public: If True, grant allUsers:READER so the object is fetchable via
+                its https URL. Needed for social-card images that Threads fetches
+                directly (the bucket is not uniformly public). Best-effort.
+
         Returns:
             Tuple of (success: bool, gcs_url: Optional[str])
         """
         try:
             import base64 as b64
-            
+
             # Generate GCS blob path
             blob_path = self._get_file_path(file_type, podcast_name, episode_id, extension)
-            
+
             # Get blob reference
             blob = self.bucket.blob(blob_path)
-            
+
             # Check if file already exists
             if skip_existing and blob.exists():
+                if public:
+                    self._make_public(blob)
                 gcs_url = self.generate_gcs_url(blob_path)
                 return (True, gcs_url)
-            
+
             # Decode base64 content
             file_content = b64.b64decode(base64_content)
-            
+
             # Upload binary content
             blob.upload_from_string(file_content, content_type=self._get_content_type(extension))
-            
+            if public:
+                self._make_public(blob)
+
             # Generate and return GCS URL
             gcs_url = self.generate_gcs_url(blob_path)
             return (True, gcs_url)
@@ -340,6 +348,14 @@ class GCSStorageService:
         except Exception as e:
             print(f"  ✗ Error uploading {file_type} from base64 to GCS: {e}")
             return (False, None)
+
+    @staticmethod
+    def _make_public(blob) -> None:
+        """Grant allUsers:READER on a blob (best-effort; bucket isn't uniformly public)."""
+        try:
+            blob.make_public()
+        except Exception as e:  # noqa: BLE001 — non-fatal; the upload itself succeeded
+            print(f"  ⚠ Could not make {getattr(blob, 'name', '?')} public: {e}")
 
     def download_text_by_gcs_url(self, gcs_url: str, encoding: str = "utf-8") -> str:
         """
