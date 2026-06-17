@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { ChevronLeft, ChevronRight, X, Maximize2 } from 'lucide-react';
-import { parseMarpFrontmatter, parseMarpSize, renderMarpToHTML, splitMarpSlides } from '@/utils/marpParser';
+import { parseMarpFrontmatter, parseMarpSize, renderMarpToHTML, splitMarpSlides, extractMarpStyles } from '@/utils/marpParser';
 import { PostProcessedSlide } from '@/utils/marpPostProcessor';
 
 interface SlideViewerProps {
@@ -68,6 +68,7 @@ export const SlideViewer: React.FC<SlideViewerProps> = ({
     const metadata = useMemo(() => parseMarpFrontmatter(content), [content]);
     const slideSize = useMemo(() => parseMarpSize(metadata.size), [metadata.size]);
     const slides = useMemo(() => splitMarpSlides(content), [content]);
+    const globalStyles = useMemo(() => extractMarpStyles(content), [content]);
 
     useEffect(() => {
         let cancelled = false;
@@ -75,7 +76,10 @@ export const SlideViewer: React.FC<SlideViewerProps> = ({
             const frontmatter = content.match(/^---\n([\s\S]*?)\n---\n/)?.[0] || '';
             const results = await Promise.all(
                 slides.map(async (slide, index) => {
-                    const fullSlideContent = frontmatter + '\n\n' + slide;
+                    // Re-attach the deck-wide <style> to each slide — marp-core
+                    // renders each slide here in isolation, so without this only
+                    // the slide that originally held the style would be themed.
+                    const fullSlideContent = `${frontmatter}\n\n${globalStyles}\n\n${slide}`;
                     const { html, css } = await renderMarpToHTML(fullSlideContent);
                     return { html, css, index };
                 }),
@@ -84,7 +88,7 @@ export const SlideViewer: React.FC<SlideViewerProps> = ({
         };
         if (slides.length > 0) renderAll();
         return () => { cancelled = true; };
-    }, [slides, content]);
+    }, [slides, globalStyles, content]);
 
     const nextSlide = useCallback((e?: React.MouseEvent) => {
         e?.stopPropagation();

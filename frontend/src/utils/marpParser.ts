@@ -83,6 +83,22 @@ export async function renderMarpToHTML(markdown: string): Promise<{ html: string
   return { html, css };
 }
 
+const STYLE_BLOCK_RE = /<style[\s\S]*?<\/style>/gi;
+
+/**
+ * Extract all global `<style>` blocks from Marp content, joined together.
+ *
+ * Marp treats a `<style>` block as deck-wide CSS, but it must be present in the
+ * markdown that marp-core actually renders. Because SlideViewer renders each
+ * slide in isolation, the style block (which lives in just one slide chunk after
+ * splitting) has to be re-injected into every slide — otherwise only the slide
+ * carrying it gets the theme and the rest fall back to the bare base theme.
+ */
+export function extractMarpStyles(content: string): string {
+  const matches = content.match(STYLE_BLOCK_RE);
+  return matches ? matches.join('\n') : '';
+}
+
 /**
  * Split Marp content into individual slides
  */
@@ -90,9 +106,13 @@ export function splitMarpSlides(content: string): string[] {
   // Remove frontmatter first
   let contentWithoutFrontmatter = content.replace(/^---\n[\s\S]*?\n---\n/, '');
 
+  // Drop global <style> blocks so a style-only chunk doesn't become a blank
+  // slide (they're re-injected per slide at render time).
+  contentWithoutFrontmatter = contentWithoutFrontmatter.replace(STYLE_BLOCK_RE, '');
+
   // Split by slide separator
   const slides = contentWithoutFrontmatter.split(/\n---\n/);
 
-  // Filter out empty slides
+  // Filter out empty slides (incl. doubled `---` separators)
   return slides.filter((slide) => slide.trim().length > 0);
 }
