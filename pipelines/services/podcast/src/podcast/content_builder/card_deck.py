@@ -190,8 +190,14 @@ def build_inline_deck_markdown(
     # The shared CSS hardcodes the 1080² PNG canvas; override for other sizes.
     if (width, height) != (1080, 1080):
         css += f"\nsection {{ width: {width}px; height: {height}px; }}"
+    # Use the `tinboker-cards` theme + a size keyword it DECLARES, so marp-core
+    # emits a matching SVG viewBox (square / 1240×780). With a built-in theme
+    # like `uncover` the `size:` is ignored — it only declares 16:9/4:3 — so the
+    # deck would render in a 16:9 viewBox and letterbox inside the square frame.
+    # The frontend (marpParser.renderMarpToHTML) registers this theme's @size.
+    size_token = {(1080, 1080): "1:1", (1240, 780): "wide"}.get((width, height), f"{width}x{height}")
     front = [
-        "---", "marp: true", "theme: uncover", f"size: {width}x{height}",
+        "---", "marp: true", "theme: tinboker-cards", f"size: {size_token}",
         "paginate: false", 'header: ""', 'footer: ""', "---", "",
         f"<style>\n{css}\n</style>", "",
     ]

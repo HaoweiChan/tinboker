@@ -48,6 +48,10 @@ def test_convert_marp_emits_inline_card_deck_design():
     # Cover + one slide per (bulleted) theme, via spot-directive classes.
     assert "_class: cover" in md
     assert md.count("_class: theme") == 2
+    # Square deck must use the size-declaring theme + 1:1 size so marp-core emits
+    # a 1080² SVG viewBox (else it letterboxes inside the square frame).
+    assert "theme: tinboker-cards" in md
+    assert re.search(r"size:\s*1:1", md)
 
 
 def test_convert_marp_has_no_doubled_separators():
@@ -76,4 +80,6 @@ def test_convert_marp_ticker_uses_blue_accent_and_size():
         "source": "股癌",
     })["ticker_marp_markdown"]
     assert "#5b8dff" in md          # ACCENT_BLUE
-    assert re.search(r"size:\s*1240x780", md)
+    assert "theme: tinboker-cards" in md
+    assert re.search(r"size:\s*wide", md)           # named size the theme declares
+    assert "width: 1240px; height: 780px;" in md
