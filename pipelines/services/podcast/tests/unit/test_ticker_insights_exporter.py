@@ -16,6 +16,7 @@ from src.podcast.exporters.ticker_insights import (
     _iso_utc,
     build_episode_insight_docs,
     build_insight_doc,
+    episode_publish_time,
     horizon_to_chinese,
     is_boilerplate_thesis,
     score_to_label,
@@ -49,6 +50,38 @@ def test_iso_utc_coerces_epoch_ms():
     # ISO strings and datetimes still pass through correctly.
     assert _iso_utc("2026-06-13T05:00:00Z") == "2026-06-13T05:00:00Z"
     assert _iso_utc(datetime(2026, 1, 2, tzinfo=timezone.utc)) == "2026-01-02T00:00:00Z"
+
+
+def test_episode_publish_time_prefers_real_release_over_ingest():
+    """The resolver every dict-based writer uses to stamp ``podcast_launch_time``.
+
+    ``released_at_ms`` is the true mention date; ``created_time`` (ingest) is the last
+    resort. Stamping insights with ``created_time`` collapses a whole back-catalogue
+    onto the reprocessing date on /picks — the regression this guards.
+    """
+    # released_at_ms wins even when a (different) created_time is present.
+    assert episode_publish_time(
+        {"released_at_ms": 1700000000000, "created_time": "2026-06-17T20:22:12Z"}
+    ) == 1700000000000
+    # Spotify release datetime is preferred over ingest time.
+    assert episode_publish_time(
+        {"spotify_metadata": {"release_datetime": "2025-01-02T00:00:00Z"},
+         "created_time": "2026-06-17T20:22:12Z"}
+    ) == "2025-01-02T00:00:00Z"
+    # spotify_release_date before created_time.
+    assert episode_publish_time(
+        {"spotify_release_date": "2025-03-04", "created_time": "2026-06-17T20:22:12Z"}
+    ) == "2025-03-04"
+    # created_time only as the last resort.
+    assert episode_publish_time(
+        {"created_time": "2026-06-17T20:22:12Z"}
+    ) == "2026-06-17T20:22:12Z"
+    # A zero/empty released_at_ms is ignored (must not stamp epoch 0), and an empty
+    # spotify_metadata dict falls through.
+    assert episode_publish_time({"released_at_ms": 0, "created_time": "x"}) == "x"
+    assert episode_publish_time({"spotify_metadata": {}, "created_time": "x"}) == "x"
+    # Nothing usable at all → None (the exporter's _iso_utc then stamps now()).
+    assert episode_publish_time({}) is None
 
 
 def test_build_insight_doc_uses_epoch_ms_launch_time():

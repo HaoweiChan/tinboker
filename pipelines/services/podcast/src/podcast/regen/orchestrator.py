@@ -494,6 +494,8 @@ def find_candidates(
 
 def start(podcast_name: str, episode_id: str) -> dict[str, Any]:
     """Load a transcribed episode and open a working draft; return the first prompt."""
+    from src.podcast.exporters.ticker_insights import episode_publish_time
+
     fs = _firestore()
     doc = fs.get_document("episodes", episode_id)
     if not doc:
@@ -529,6 +531,11 @@ def start(podcast_name: str, episode_id: str) -> dict[str, Any]:
         "episode_title": episode_title,
         "source": source,
         "created_time": doc.get("created_time") if isinstance(doc.get("created_time"), str) else None,
+        # The episode's TRUE publish time (released_at_ms → Spotify → created_time),
+        # stamped onto every ticker_insight so /picks measures forward returns from the
+        # real mention date, not the regen-run date. Captured at draft time from the
+        # episode doc so commit() doesn't need to re-read it.
+        "podcast_launch_time": episode_publish_time(doc),
         "state": {
             "sentences": sentences,
             "source": source,
@@ -686,7 +693,9 @@ def commit(
                 raw_payload=payload["ticker_insights"],
                 episode_id=episode_id,
                 podcaster=draft["podcast_name"],
-                podcast_launch_time=draft.get("created_time"),
+                # Real publish time, captured from the episode doc at draft time.
+                # `created_time` fallback covers drafts opened before this field existed.
+                podcast_launch_time=draft.get("podcast_launch_time") or draft.get("created_time"),
             )
             report["ticker_insights_written"] = (
                 write_episode_insights(fs.db, episode_id=episode_id, docs=docs) if docs else 0

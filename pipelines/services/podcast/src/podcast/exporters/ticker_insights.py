@@ -107,6 +107,29 @@ def _iso_utc(value: Any) -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+def episode_publish_time(doc: dict[str, Any]) -> Any:
+    """An episode doc's true publish time, for stamping ``podcast_launch_time``.
+
+    Prefer the feed-derived ``released_at_ms`` (epoch ms), then Spotify's release
+    datetime / date, then the ingestion ``created_time`` only as a last resort.
+    ``_iso_utc`` coerces whatever shape is returned. Stamping with ``created_time``
+    (ingest time) collapses a whole back-catalogue's picks onto the reprocessing date
+    on /picks — measuring forward returns from the wrong day — so it is the fallback of
+    last resort, never the primary. Shared by every dict-based writer (the regen
+    orchestrator + the GCS backfill); the live pipeline step applies the same priority
+    over its EpisodeData model.
+    """
+    released = doc.get("released_at_ms")
+    if released not in (None, "", 0):
+        return released
+    meta = doc.get("spotify_metadata")
+    if isinstance(meta, dict) and meta.get("release_datetime"):
+        return meta["release_datetime"]
+    if doc.get("spotify_release_date"):
+        return doc["spotify_release_date"]
+    return doc.get("created_time")
+
+
 def _extract_list(raw: Any) -> list[dict[str, Any]]:
     """Pull the list of ticker rows from the LLM wrapper or accept a bare list."""
     if raw is None:

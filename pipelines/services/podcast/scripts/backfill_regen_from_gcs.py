@@ -89,6 +89,7 @@ def generate(episode_id: str) -> dict:
     os.environ.pop("PLATFORM_DATABASE_URL", None)
 
     from src.podcast.content_builder import run_pipeline
+    from src.podcast.exporters.ticker_insights import episode_publish_time
 
     result = run_pipeline(transcript=text, sentences=sentences, source=source, episode_title=title)
     out = {
@@ -101,6 +102,9 @@ def generate(episode_id: str) -> dict:
         "related_tickers": result.get("related_tickers", []),
         "ticker_insights": result.get("ticker_insights"),
         "created_time": doc.get("created_time") if isinstance(doc.get("created_time"), str) else None,
+        # The episode's TRUE publish time — stamp insights from the real mention date,
+        # not this backfill run's date (the bug that collapsed back-catalogues on /picks).
+        "podcast_launch_time": episode_publish_time(doc),
     }
     CACHE_DIR.mkdir(exist_ok=True)
     (CACHE_DIR / f"{episode_id}.json").write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -158,7 +162,9 @@ def commit(episode_id: str, with_tickers: bool = False) -> None:
 
         docs = build_episode_insight_docs(
             raw_payload=ti, episode_id=episode_id,
-            podcaster=out["podcast_name"], podcast_launch_time=out.get("created_time"),
+            podcaster=out["podcast_name"],
+            # Real publish time; created_time fallback covers caches from before this field.
+            podcast_launch_time=out.get("podcast_launch_time") or out.get("created_time"),
         )
         if docs:
             written = write_episode_insights(fs.db, episode_id=episode_id, docs=docs)
