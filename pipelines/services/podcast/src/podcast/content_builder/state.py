@@ -115,6 +115,10 @@ class PipelineState(TypedDict, total=False):
     # marp_slides + key_insights. Powers the Threads carousel/replies + episode SEO.
     social_cards: list[dict[str, Any]]
 
+    # Human-tone Threads copy: a grand-summary post + one comment per theme card.
+    # {"post": str, "comments": [{"heading": str, "text": str}, ...]}
+    social_thread: dict[str, Any]
+
     # Ticker insights (parallel branch)
     ticker_insights: dict[str, Any]
     ticker_marp_slides: dict[str, Any]
