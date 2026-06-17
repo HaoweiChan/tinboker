@@ -30,7 +30,7 @@ class TranslationUpdate(BaseModel):
     """Schema for updating an existing translation."""
     name_en: Optional[str] = None
     name_zh_tw: Optional[str] = None
-    translation_status: Optional[Literal["pending", "approved", "auto"]] = None
+    translation_status: Optional[Literal["pending", "approved", "auto", "unresolvable"]] = None
     brand_color: Optional[str] = Field(None, max_length=7)
     aliases: Optional[List[str]] = None
     name_preference: Optional[Literal["auto", "zh_tw", "en"]] = None
