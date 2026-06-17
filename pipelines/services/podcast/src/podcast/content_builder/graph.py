@@ -40,6 +40,7 @@ from .nodes.markdown_transform import transform_to_markdown
 from .nodes.marp_converter import convert_marp, convert_marp_ticker
 from .nodes.marp_writer import write_marp_slides
 from .nodes.social_cards_builder import build_social_cards
+from .nodes.social_copy_writer import write_social_copy
 from .nodes.tags_tickers import derive_tags_tickers
 from .nodes.ticker_extractor import extract_tickers
 from .nodes.writer import write_article
@@ -76,6 +77,7 @@ def build_graph() -> StateGraph:
     graph.add_node("write_marp_slides", write_marp_slides)
     graph.add_node("convert_marp", convert_marp)
     graph.add_node("build_social_cards", build_social_cards)
+    graph.add_node("write_social_copy", write_social_copy)
     graph.add_node("extract_tickers", extract_tickers)
     graph.add_node("write_ticker_marp", _write_ticker_marp)
     graph.add_node("convert_marp_ticker", convert_marp_ticker)
@@ -107,7 +109,9 @@ def build_graph() -> StateGraph:
     # build_social_cards waits on both branches (LangGraph fan-in) before END.
     graph.add_edge("extract_key_insights", "build_social_cards")
     graph.add_edge("convert_marp", "build_social_cards")
-    graph.add_edge("build_social_cards", END)
+    # Social copy reads the assembled cards + summary, then ends the branch.
+    graph.add_edge("build_social_cards", "write_social_copy")
+    graph.add_edge("write_social_copy", END)
 
     # Ticker branch
     graph.add_edge("extract_tickers", "write_ticker_marp")
@@ -166,4 +170,5 @@ def run_pipeline(
         "tags": result.get("tags", []),
         "related_tickers": related_tickers,
         "social_cards": result.get("social_cards", []),
+        "social_thread": result.get("social_thread") or {"post": "", "comments": []},
     }
