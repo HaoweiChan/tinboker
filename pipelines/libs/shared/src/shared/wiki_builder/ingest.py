@@ -29,6 +29,28 @@ from .repository import WikiRepository
 from .slugify import news_slug, slugify, ticker_slug
 
 
+def _insight_rows(ticker_insights: Any) -> list[dict[str, Any]]:
+    """Pull the list of insight row-dicts from the summarizer payload.
+
+    The summarizer emits ``ticker_insights`` as either a bare ``list`` of row
+    dicts or a ``{"ticker_insights"|"ticker_recommendations": [...]}`` wrapper.
+    Tolerate both shapes (and anything else) so a producer shape change can never
+    crash the ingest — mirrors ``_extract_list`` in the podcast ticker-insights
+    exporter. Non-dict rows are dropped so callers can ``.get`` safely.
+    """
+    if isinstance(ticker_insights, list):
+        rows: Any = ticker_insights
+    elif isinstance(ticker_insights, dict):
+        rows = (
+            ticker_insights.get("ticker_insights")
+            or ticker_insights.get("ticker_recommendations")
+            or []
+        )
+    else:
+        rows = []
+    return [r for r in rows if isinstance(r, dict)]
+
+
 def _canonical_tickers(tickers: list[str]) -> list[str]:
     """Canonicalize + de-duplicate a ticker list, preserving first-seen order."""
     seen: dict[str, None] = {}
@@ -93,7 +115,7 @@ def ingest_episode(
     tags: list[str],
     summary_text: str,
     events_markdown: str | None = None,
-    ticker_insights: dict[str, Any] | None = None,
+    ticker_insights: list | dict[str, Any] | None = None,
     source_urls: dict[str, str] | None = None,
     repository: WikiRepository | None = None,
 ) -> WikiPage:
@@ -122,7 +144,7 @@ def ingest_episode(
     ep_link = f"episodes/{episode_page.slug}"
     episode_page = repo.upsert_page(episode_page)
 
-    recs = (ticker_insights or {}).get("ticker_insights") or (ticker_insights or {}).get("ticker_recommendations", [])
+    recs = _insight_rows(ticker_insights)
     recs_by_ticker = {canonical_symbol(r["ticker"]): r for r in recs if r.get("ticker")}
 
     for ticker in tickers:
