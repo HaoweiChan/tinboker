@@ -39,6 +39,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--fill-limit", action="store_true",
         help="Skip processed episodes; process exactly 'limit' non-processed ones",
     )
+    parser.add_argument(
+        "--show", action="append", default=None, dest="shows", metavar="NAME",
+        help=(
+            "Only process the show(s) with these exact names (repeatable). "
+            "Default: every active show. Useful for ad-hoc single-show ingestion."
+        ),
+    )
     return parser
 
 
@@ -60,6 +67,7 @@ def main():
             reuse_existing_transcript=False,
             episode_id=args.episode,
             fill_limit=args.fill_limit,
+            only_shows=args.shows,
         )
     except KeyboardInterrupt:
         print("\n\nPipeline interrupted by user.")
