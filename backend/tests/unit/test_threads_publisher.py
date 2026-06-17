@@ -184,6 +184,39 @@ def test_compose_reply_clamps_and_keeps_whole_bullets():
     assert text.startswith("【標題】")
 
 
+def test_compose_thread_prefers_human_social_thread():
+    ep = _ep_cards("EP610", _cards(), )
+    ep.related_tickers = ["2330"]
+    ep.social_thread = {
+        "post": "這集聊台積電跟離散元件，重點都在下面 👇",
+        "comments": [
+            {"heading": "主題A", "text": "題材輪動很快，籌碼要顧好。"},
+            {"heading": "主題B", "text": "離散元件的缺口慢慢養出來。"},
+        ],
+    }
+    draft = threads_publisher.compose_thread(ep)
+    # Human post is used as the body, with the link + hashtags tail appended.
+    assert draft["main_text"].startswith("這集聊台積電跟離散元件")
+    assert "tinboker.com/episode/EP610" in draft["main_text"]
+    assert "#2330" in draft["main_text"]
+    # Replies are the human comments verbatim — no 【title】 / bullet scaffolding.
+    assert [r["text"] for r in draft["replies"]] == [
+        "題材輪動很快，籌碼要顧好。",
+        "離散元件的缺口慢慢養出來。",
+    ]
+    assert "【" not in draft["replies"][0]["text"]
+    # Images still come from the cards.
+    assert draft["image_urls"] == ["https://c/0.png", "https://c/1.png", "https://c/2.png"]
+
+
+def test_compose_thread_falls_back_when_social_thread_empty():
+    ep = _ep_cards("EP611", _cards())
+    ep.social_thread = {"post": "", "comments": []}
+    draft = threads_publisher.compose_thread(ep)
+    # Empty thread → mechanical 【title】 + bullets compose.
+    assert [r["text"].splitlines()[0] for r in draft["replies"]] == ["【主題A】", "【主題B】"]
+
+
 @pytest.mark.asyncio
 async def test_publish_thread_carousel_then_reply_chain():
     fake = _FakeThreads()

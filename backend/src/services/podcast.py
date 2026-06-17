@@ -1034,6 +1034,45 @@ class PodcastService:
             logger.error(f"Failed to patch episode fields: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to patch episode: {str(e)}")
 
+    async def get_episode_admin(
+        self,
+        episode_id: str,
+        content_fields: Optional[Collection[str]] = EPISODE_DETAIL_CONTENT_FIELDS,
+    ) -> Optional[Episode]:
+        """Fetch an episode for admin tooling — no release-scope filtering.
+
+        The public getters drop episodes outside the launch scope (language /
+        recency); admin must see every episode, so this reads Firestore directly.
+        """
+        episode_dict = self.firestore_service.get_document("episodes", episode_id)
+        if not episode_dict:
+            return None
+        return await self.transformer.to_episode(episode_dict, content_fields=content_fields)
+
+    async def set_social_thread(self, episode_id: str, thread: dict) -> Episode:
+        """Persist the human-tone Threads copy (post + comments) + bust caches."""
+        from fastapi import HTTPException
+        episode_dict = self.firestore_service.get_document("episodes", episode_id)
+        if not episode_dict:
+            raise HTTPException(status_code=404, detail=f"Episode {episode_id} not found")
+        podcast_name = episode_dict.get("podcast_name", "")
+        try:
+            await asyncio.to_thread(
+                self.firestore_service.set_document,
+                "episodes", episode_id, {"social_thread": thread}, True,
+            )
+            await self._invalidate_episode_cache(podcast_name, episode_id)
+            await self._purge_api_host_cdn()
+            episode = await self.get_episode_admin(episode_id)
+            if not episode:
+                raise HTTPException(status_code=404, detail=f"Episode {episode_id} not found")
+            return episode
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Failed to set social_thread for {episode_id}: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to save social thread: {str(e)}")
+
     async def _invalidate_episode_cache(self, podcast_name: str, episode_id: str):
         """Invalidate all caches related to an episode"""
         await cache_delete(f"podcast:{podcast_name}:episode:{episode_id}")
