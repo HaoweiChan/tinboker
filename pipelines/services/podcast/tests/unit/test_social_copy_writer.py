@@ -7,7 +7,6 @@ from __future__ import annotations
 import json
 
 import pytest
-
 from src.podcast.content_builder.nodes import social_copy_writer as scw
 
 _STATE = {
