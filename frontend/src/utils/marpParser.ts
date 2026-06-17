@@ -54,10 +54,11 @@ export function parseMarpSize(size?: string): { width: number; height: number } 
     return { width: 1280, height: 720 };
   }
 
-  // Handle preset aspect ratios
+  // Handle preset aspect ratios + the tinboker-cards named sizes
   if (size === '16:9') return { width: 1280, height: 720 };
   if (size === '4:3') return { width: 960, height: 720 };
   if (size === '1:1') return { width: 1080, height: 1080 };
+  if (size === 'wide') return { width: 1240, height: 780 };
 
   // Handle explicit dimensions (e.g., "1080x1080", "1280x720")
   const dimensionMatch = size.match(/^(\d+)x(\d+)$/);
@@ -72,6 +73,20 @@ export function parseMarpSize(size?: string): { width: number; height: number } 
   return { width: 1280, height: 720 };
 }
 
+// The TinBoker card decks (convert_marp output) use `theme: tinboker-cards` with
+// `size: 1:1` (podcast, 1080²) or `size: wide` (ticker, 1240×780). marp-core only
+// honours a `size:` directive whose dimensions a registered theme DECLARES via
+// `@size`, and its built-in themes only declare 16:9/4:3 — so without this the
+// deck renders inside a 16:9 SVG viewBox and letterboxes (white band) in the
+// square container. This theme only declares the sizes; the visual styling stays
+// in each deck's inline <style> block (hoisted per slide by SlideViewer).
+const TINBOKER_CARDS_THEME = `
+/* @theme tinboker-cards */
+/* @size 1:1 1080px 1080px */
+/* @size wide 1240px 780px */
+section { box-sizing: border-box; }
+`;
+
 /**
  * Render Marp markdown to HTML (lazy-loads @marp-team/marp-core to
  * avoid Node.js module externalization warnings on every page load)
@@ -79,6 +94,12 @@ export function parseMarpSize(size?: string): { width: number; height: number } 
 export async function renderMarpToHTML(markdown: string): Promise<{ html: string; css: string }> {
   const { Marp } = await import('@marp-team/marp-core');
   const marp = new Marp();
+  // Register the card-deck theme so its `size: 1:1` / `size: wide` are honoured.
+  try {
+    marp.themeSet.add(TINBOKER_CARDS_THEME);
+  } catch {
+    // Already registered (or duplicate) — safe to ignore.
+  }
   const { html, css } = marp.render(markdown);
   return { html, css };
 }
