@@ -190,6 +190,7 @@ class EpisodeTransformer:
             num_likes=episode_dict.get('num_likes', 0),
             key_insights=episode_dict.get('key_insights', []) or [],
             social_cards=episode_dict.get('social_cards', []) or [],
+            social_thread=episode_dict.get('social_thread') or None,
             raw_mp3=episode_dict.get('raw_mp3'),
             mp3_url=episode_dict.get('mp3_url'),
             transcript_url=episode_dict.get('transcript_url'),
