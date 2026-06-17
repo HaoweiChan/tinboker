@@ -239,7 +239,7 @@ export const StockChartPanel: React.FC<StockChartPanelProps> = ({
             if (data) {
               const price = (data as any).value || (data as any).close || 0;
               const date = new Date((param.time as number) * 1000);
-              const formattedDate = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+              const formattedDate = date.toLocaleDateString('zh-TW', { month: '2-digit', day: '2-digit' });
               const formattedPrice = typeof price === 'number' ? price.toFixed(2) : 'N/A';
               
               legend.innerHTML = `

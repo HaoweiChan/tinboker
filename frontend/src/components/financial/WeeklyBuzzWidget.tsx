@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle, Button } from '@/components/u
 import { getTrendingTickers } from '@/services/api/podcasts';
 import type { SentimentLabel, TickerTrending } from '@/services/types';
 import { cn } from '@/lib/utils';
+import { formatDate } from '@/lib/date';
 
 interface WeeklyBuzzWidgetProps {
     className?: string;
@@ -86,7 +87,7 @@ export const WeeklyBuzzWidget: React.FC<WeeklyBuzzWidgetProps> = ({ className, i
                                         </div>
                                         <div className="flex items-center text-xs text-slate-400">
                                             <Clock size={10} className="mr-1" />
-                                            {new Date(item.last_mentioned).toLocaleDateString()}
+                                            {formatDate(item.last_mentioned)}
                                         </div>
                                     </div>
                                 </div>

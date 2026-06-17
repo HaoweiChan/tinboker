@@ -5,6 +5,7 @@
 import React, { useState } from 'react';
 import { Loader2, Trash2, Pencil, ExternalLink } from 'lucide-react';
 import type { ContentSource, ContentSourceUpdate, SourceRunStatus } from '@/types/contentSource';
+import { formatDateTime } from '@/lib/date';
 
 function timeAgo(iso: string | null): string {
   if (!iso) return '—';
@@ -234,7 +235,7 @@ export const SourceTable: React.FC<SourceTableProps> = ({
                   {rs && rs.last_ingested_at ? (
                     <span
                       className="text-gray-600 dark:text-gray-300"
-                      title={`${rs.episode_count} episode(s) · ${new Date(rs.last_ingested_at).toLocaleString()}`}
+                      title={`${rs.episode_count} episode(s) · ${formatDateTime(rs.last_ingested_at)}`}
                     >
                       {timeAgo(rs.last_ingested_at)}
                       <span className="ml-1 text-xs text-gray-400">· {rs.episode_count}</span>

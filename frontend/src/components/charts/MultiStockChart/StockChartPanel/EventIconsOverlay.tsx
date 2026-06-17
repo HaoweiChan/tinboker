@@ -103,7 +103,7 @@ export const EventIconsOverlay: React.FC<EventIconsOverlayProps> = ({
                   ? `drop-shadow(0 0 4px ${iconColor}60)` 
                   : undefined,
               }}
-              title={`${event.title} - ${new Date(event.date).toLocaleDateString()}`}
+              title={`${event.title} - ${new Date(event.date).toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit' })}`}
             >
               <img
                 src={getEventIcon(event.type)}

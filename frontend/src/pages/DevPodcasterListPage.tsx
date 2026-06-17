@@ -2,14 +2,11 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Search, Mic2 } from 'lucide-react';
 import { getSortedPodcasts, type Podcast } from '@/services/api/podcasts';
 import { fetchWithFallback } from '@/services/api/migration';
+import { formatDate } from '@/lib/date';
 
 function formatTs(ts: number | null | undefined): string {
   if (!ts) return '—';
-  return new Date(ts * 1000).toLocaleDateString('zh-TW', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  });
+  return formatDate(ts * 1000);
 }
 
 export const DevPodcasterListPage: React.FC = () => {
