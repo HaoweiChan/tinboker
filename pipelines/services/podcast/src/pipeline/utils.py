@@ -182,7 +182,11 @@ def extract_tags_and_tickers(summary_result: Dict) -> Dict[str, List[str]]:
             valid_structured_tickers = [t for t in structured_tickers if t in tickers_set]
             tickers = sorted(list(set(tickers + valid_structured_tickers)))
         elif structured_tickers:
-            tickers = sorted(list(set(structured_tickers)))
+            # Apply the same valid_tickers() guard used by the markdown path so that
+            # junk strings (country names, index codes, private companies) emitted by
+            # the LLM in the structured related_tickers list are rejected here too.
+            from shared.tickers import valid_tickers as _valid_tickers
+            tickers = sorted(set(_valid_tickers(structured_tickers)))
     
     return {
         'tags': tags,

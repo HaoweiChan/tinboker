@@ -89,15 +89,31 @@ def canonical_symbol(raw: str) -> str:
 # like 00878B) or a US-style symbol (1-5 letters, optional .CLASS). Everything else —
 # CJK category names ("被動元件"), phrases ("EDGE COMPUTING相關類股"), and over-length
 # words ("OPENAI", "ANTHROPIC") — is the LLM mislabelling a sector or private company.
-_TW_RE = re.compile(r"^\d{3,6}[A-Z]?$")
+#
+# _TW_RE: leading-zero guard (``(?!0{4,})``) rejects codes like "000000" (no TW listing
+# has four or more leading zeros) while keeping real ETF codes like 00878 / 006208.
+_TW_RE = re.compile(r"^(?!0{4,})\d{3,6}[A-Z]?$")
 _US_RE = re.compile(r"^[A-Z]{1,5}(?:\.[A-Z]{1,2})?$")
 
-# Format-valid but NOT listed: symbols the LLM invents for well-known private
-# companies. (SPCE is intentionally absent — it is a real ticker, Virgin Galactic;
-# the model misusing it for SpaceX is a prompt problem, not a symbol-validity one.)
+# Format-valid but NOT listed: symbols the LLM uses for indices, countries, private
+# companies, or non-US/TW listed entities that pass the regex above.
+# (SPCE is intentionally absent — it is a real ticker, Virgin Galactic; the model
+# misusing it for SpaceX is a prompt problem, not a symbol-validity one.)
 _NON_TICKERS = frozenset({
+    # known private-company hallucinations
     "ANTHR", "ANTHROPIC", "OPENAI", "OAI", "SPACEX", "SPCX",
     "BYTEDANCE", "DEEPSEEK", "XAI", "GRK", "GROK", "STRIPE", "SHEIN",
+    # YMTC = Yangtze Memory (Chinese state-owned, not listed on TW/US exchanges)
+    "YMTC",
+    # BNP = BNP Paribas (French bank; listed on Euronext, not TW/US)
+    "BNP",
+    # payment brand — not a listed ticker on any exchange
+    "LINEPAY",
+    # country / region abbreviations the LLM emits as ticker symbols
+    "US", "TW", "CN", "KR", "JP", "EU", "HK", "IN",
+    "INDIA", "CHINA", "JAPAN", "KOREA",
+    # index names / benchmark codes
+    "HSCEI", "OEX", "CRBRS", "TSE",
 })
 
 

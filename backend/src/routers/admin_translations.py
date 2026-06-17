@@ -94,6 +94,27 @@ async def autofill_pending_translations(
     return {"attempted": len(rows), "filled": filled}
 
 
+@router.post("/translations/cleanup-unresolvable")
+async def cleanup_unresolvable_translations(
+    stale_days: int = Query(7, ge=1, le=365, description="Mark stubs older than this many days as unresolvable"),
+    dry_run: bool = Query(False, description="Count affected rows without writing"),
+    db: Session = Depends(get_session),
+    admin: AdminAccess = Depends(get_admin_access),
+):
+    """Mark long-lived, name-less PENDING stubs as ``unresolvable``.
+
+    Targets stubs that were auto-created by ingest discovery (``last_updated_by =
+    'ingest_discovery'``) but have no name from FinMind or Massive after ``stale_days``
+    days.  These are typically junk strings (country names, index codes, non-listed
+    companies) that slipped through ticker extraction.  Marking them ``unresolvable``
+    removes them from the active pending queue without deleting history.
+    """
+    from src.services.translation_autofill import mark_unresolvable_stubs
+
+    marked = mark_unresolvable_stubs(db, stale_days=stale_days, dry_run=dry_run)
+    return {"marked": marked, "stale_days": stale_days, "dry_run": dry_run}
+
+
 # ==================== Translations CRUD ====================
 
 @router.get("/translations", response_model=TranslationListResponse)

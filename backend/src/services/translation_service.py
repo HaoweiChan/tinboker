@@ -3,9 +3,54 @@ Service for managing stock translations.
 """
 
 import logging
+import re
 from typing import Optional, List, Tuple
 from sqlalchemy import func, cast, Text
 from sqlalchemy.orm import Session
+
+# ---------------------------------------------------------------------------
+# Ticker format validation used by ensure_pending_stubs.
+#
+# Mirrors the regex logic in pipelines/libs/shared/src/shared/tickers.py so
+# the backend independently rejects junk before it ever hits the DB.  The
+# backend cannot import the pipelines shared lib, so the rules are replicated
+# here.  Keep the two in sync when either changes.
+# ---------------------------------------------------------------------------
+# TW: 3-6 digits with optional trailing class letter (00878B, 00632R).
+# Leading-zero guard: rejects "000000" — no real TW listing has 4+ leading zeros.
+_STUB_TW_RE = re.compile(r"^(?!0{4,})\d{3,6}[A-Z]?$")
+# US: 1-5 ASCII letters with optional .CLASS suffix (BRK.A, BRK.B).
+_STUB_US_RE = re.compile(r"^[A-Z]{1,5}(?:\.[A-Z]{1,2})?$")
+# Symbols that pass the regex but are NOT listed on TW or US exchanges.
+_STUB_NON_TICKERS: frozenset[str] = frozenset({
+    # private-company hallucinations
+    "ANTHR", "ANTHROPIC", "OPENAI", "OAI", "SPACEX", "SPCX",
+    "BYTEDANCE", "DEEPSEEK", "XAI", "GRK", "GROK", "STRIPE", "SHEIN",
+    # Yangtze Memory — Chinese state-owned, not listed on TW/US
+    "YMTC",
+    # BNP Paribas — Euronext only, not TW/US
+    "BNP",
+    # payment brand, not a listed ticker
+    "LINEPAY",
+    # country / region abbreviations
+    "US", "TW", "CN", "KR", "JP", "EU", "HK", "IN",
+    "INDIA", "CHINA", "JAPAN", "KOREA",
+    # index / benchmark codes
+    "HSCEI", "OEX", "CRBRS", "TSE",
+})
+
+
+def _is_stub_candidate(bare: str) -> bool:
+    """True if ``bare`` looks like a real TW or US exchange listing.
+
+    Used by :meth:`TranslationService.ensure_pending_stubs` to reject junk
+    strings (country names, index codes, private companies) before they are
+    written to the DB as pending stubs.
+    """
+    return (
+        bare not in _STUB_NON_TICKERS
+        and bool(_STUB_TW_RE.match(bare) or _STUB_US_RE.match(bare))
+    )
 from src.database.models import StockTranslation
 from src.schemas.translation import (
     TranslationCreate,
@@ -120,6 +165,11 @@ class TranslationService:
                 continue
             bare = s.strip().upper().split(".")[0]
             if not bare:
+                continue
+            # Reject junk strings (country names, index codes, private companies)
+            # before they reach the DB.  Real listings must pass _is_stub_candidate.
+            if not _is_stub_candidate(bare):
+                logger.debug("ensure_pending_stubs: skipping non-ticker %r", bare)
                 continue
             # Treat "digits + optional trailing class letter" as a TW numeric code.
             core = bare[:-1] if (len(bare) > 1 and bare[-1].isalpha() and bare[:-1].isdigit()) else bare
