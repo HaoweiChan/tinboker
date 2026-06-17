@@ -187,13 +187,11 @@ def _sentences_from_gcs(transcript_url: Optional[str]) -> list[dict[str, Any]]:
     """
     if not transcript_url or not str(transcript_url).startswith("gs://"):
         return []
+    bucket_name, _, blob_path = transcript_url[len("gs://"):].partition("/")
+    if not bucket_name or not blob_path:
+        return []
     try:
-        from google.cloud import storage  # lazy: keeps the import off the hot path
-
-        bucket_name, _, blob_path = transcript_url[len("gs://"):].partition("/")
-        if not bucket_name or not blob_path:
-            return []
-        blob = storage.Client().bucket(bucket_name).blob(blob_path)
+        blob = _gcs_client().bucket(bucket_name).blob(blob_path)
         data = json.loads(blob.download_as_text())
         if isinstance(data, dict):
             return data.get("sentences") or data.get("transcript_sentences") or []
@@ -202,6 +200,23 @@ def _sentences_from_gcs(transcript_url: Optional[str]) -> list[dict[str, Any]]:
     except Exception:  # noqa: BLE001 — missing/unauthorized/malformed → fall back
         return []
     return []
+
+
+def _gcs_client():
+    """An authenticated ``storage.Client``.
+
+    The MCP authenticates GCP with an explicit service-account JSON (not ADC), so
+    reuse the pipeline's credential-bootstrapped client from ``GCSStorageService``;
+    fall back to a default client only if that can't be constructed.
+    """
+    try:
+        from src.service.gcs_storage_service import GCSStorageService
+
+        return GCSStorageService().client
+    except Exception:  # noqa: BLE001 — no bucket env / import issue → try ADC
+        from google.cloud import storage
+
+        return storage.Client()
 
 
 def _derive_sentences_from_transcript(
