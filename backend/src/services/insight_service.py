@@ -14,6 +14,7 @@ from typing import Any, List, Optional, Tuple
 
 from src.cache.cache_config import CACHE_TTL
 from src.cache.redis_client import cache_get, cache_set
+from src.config import settings
 from src.services.firestore_service import FirestoreService
 
 logger = logging.getLogger(__name__)
@@ -113,6 +114,25 @@ def _in_range(iso_str: str, start: date, end: date) -> bool:
     except (ValueError, TypeError):
         return False
     return start <= d <= end
+
+
+def _release_recency_floor() -> Optional[date]:
+    """Earliest publish date the launch release window allows, or None when off.
+
+    Mirrors ``PodcastService`` recency scoping (``release_episode_max_age_days``)
+    so the /picks surfaces only show insights from RELEASED episodes — old
+    back-catalogue picks stay hidden until that window is widened. ``0`` (the
+    default) disables the floor, preserving the full-history behaviour.
+    """
+    days = getattr(settings, "release_episode_max_age_days", 0) or 0
+    if days <= 0:
+        return None
+    return date.today() - timedelta(days=days)
+
+
+def _scope_tag() -> str:
+    """Release-scope signature for cache-key isolation (busts on env change)."""
+    return f"r{getattr(settings, 'release_episode_max_age_days', 0) or 0}"
 
 
 def _safe_int(value: Any) -> int:
@@ -394,10 +414,13 @@ class InsightService:
             return []
 
         start, end = _resolve_date_range(start_date, end_date)
+        floor = _release_recency_floor()
+        if floor and floor > start:
+            start = floor  # honour the launch release window — hide unreleased back-catalogue
         # `:v2` + short TTL — /picks channel-history reads this, so edits/purges
         # (e.g. templated-insight cleanup) should reflect within minutes, and the
         # bump sidesteps any pre-cleanup cached rows.
-        cache_key = f"ticker_insights:by_podcaster:v2:{name}:{start}:{end}"
+        cache_key = f"ticker_insights:by_podcaster:v2:{_scope_tag()}:{name}:{start}:{end}"
         cached = await cache_get(cache_key)
         if cached:
             try:
@@ -440,8 +463,9 @@ class InsightService:
         """
         limit = max(1, min(int(limit or 100), 200))
         # `:v2` namespace — the response now carries episode_title; bumping the key
-        # also sidesteps any rows cached before that field existed.
-        cache_key = f"ticker_insights:recent:v2:{limit}"
+        # also sidesteps any rows cached before that field existed. The scope tag
+        # isolates the cache per release window.
+        cache_key = f"ticker_insights:recent:v2:{_scope_tag()}:{limit}"
         cached = await cache_get(cache_key)
         if cached:
             try:
@@ -449,6 +473,9 @@ class InsightService:
             except Exception as e:
                 logger.warning("Recent cache deserialize failed: %s", e)
 
+        # Newest-first, so any recency floor only trims the tail — the released
+        # window sits contiguously at the head; a 2× cushion covers legacy drops.
+        floor = _release_recency_floor()
         docs = await asyncio.to_thread(
             self._fs.query_collection_group,
             INSIGHTS_SUBCOLLECTION,
@@ -457,10 +484,12 @@ class InsightService:
             "DESCENDING",
             limit * 2,
         )
+        today = date.today()
         rows = [
             _doc_to_insight(d)
             for d in docs
             if d.get("schema_version") in SUPPORTED_SCHEMA_VERSIONS
+            and (floor is None or _in_range(d.get("podcast_launch_time") or "", floor, today))
         ][:limit]
 
         # Attach the source episode title (so the blended feed can show "which
