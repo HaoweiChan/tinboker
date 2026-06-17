@@ -176,6 +176,34 @@ def _episode_sentences(doc: dict[str, Any]) -> list[dict[str, Any]]:
     return doc.get("sentences") or doc.get("transcript_sentences") or []
 
 
+def _sentences_from_gcs(transcript_url: Optional[str]) -> list[dict[str, Any]]:
+    """Fetch the sentence array from a ``gs://`` transcript JSON, or ``[]``.
+
+    Published/consolidated episodes keep only a flat ``transcript`` field in
+    Firestore and store the real sentence-level transcript (``{index, content,
+    start, end}``) as a JSON object in GCS at ``transcript_url``. Without this,
+    regen is impossible for every already-published episode (the inline fields
+    are empty). Read failures degrade to ``[]`` so callers fall back cleanly.
+    """
+    if not transcript_url or not str(transcript_url).startswith("gs://"):
+        return []
+    try:
+        from google.cloud import storage  # lazy: keeps the import off the hot path
+
+        bucket_name, _, blob_path = transcript_url[len("gs://"):].partition("/")
+        if not bucket_name or not blob_path:
+            return []
+        blob = storage.Client().bucket(bucket_name).blob(blob_path)
+        data = json.loads(blob.download_as_text())
+        if isinstance(data, dict):
+            return data.get("sentences") or data.get("transcript_sentences") or []
+        if isinstance(data, list):
+            return data
+    except Exception:  # noqa: BLE001 — missing/unauthorized/malformed → fall back
+        return []
+    return []
+
+
 def _derive_sentences_from_transcript(
     transcript: str, duration_ms: Optional[int] = None, target_chars: int = 45
 ) -> list[dict[str, Any]]:
@@ -422,7 +450,12 @@ def find_candidates(
     out: list[dict[str, Any]] = []
     for d in rows:
         sentences = _episode_sentences(d)
-        if not sentences:
+        # A regen needs *a* transcript: inline sentences, a GCS transcript JSON,
+        # or at least the flat text. (We don't download GCS here — checking the
+        # URL's presence keeps the listing cheap.) ``start`` resolves the real
+        # source on demand.
+        has_transcript = bool(sentences) or bool(d.get("transcript_url")) or bool((d.get("transcript") or "").strip())
+        if not has_transcript:
             continue
         summary = d.get("summary_content") or ""
         placeholder = (not summary.strip()) or is_placeholder_summary(summary)
@@ -432,7 +465,8 @@ def find_candidates(
             "episode_id": d.get("episode_id") or d.get("id"),
             "podcast_name": d.get("podcast_name"),
             "episode_title": d.get("episode_title") or d.get("title"),
-            "sentence_count": len(sentences),
+            "sentence_count": len(sentences) if sentences else None,
+            "transcript_source": "inline" if sentences else ("gcs" if d.get("transcript_url") else "flat_text"),
             "has_summary": bool(summary.strip()),
             "is_placeholder": placeholder,
             "key_insight_count": len(d.get("key_insights") or []),
@@ -457,8 +491,12 @@ def start(podcast_name: str, episode_id: str) -> dict[str, Any]:
     transcript = doc.get("transcript") or ""
     sentences = _episode_sentences(doc)
     derived_sentences = False
+    if not sentences:
+        # Published episodes keep the real sentence-level transcript in GCS, not
+        # inline — pull it before falling back to deriving from flat text.
+        sentences = _sentences_from_gcs(doc.get("transcript_url"))
     if not sentences and transcript.strip():
-        # Already-published episodes often keep only the flat transcript text.
+        # Last resort: only the flat transcript text is available.
         sentences = _derive_sentences_from_transcript(transcript, doc.get("spotify_duration_ms"))
         derived_sentences = True
     if not sentences:

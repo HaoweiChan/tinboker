@@ -149,3 +149,55 @@ def build_card_deck_markdown(
         for c in cards
     ]
     return "\n".join(front) + "\n" + "\n\n---\n\n".join(slides) + "\n"
+
+
+def _parse_size(size: str) -> tuple[int, int]:
+    """Parse ``"1080x1080"`` / ``"1:1"`` into pixel (width, height)."""
+    presets = {"1:1": (1080, 1080), "16:9": (1280, 720), "4:3": (960, 720)}
+    if size in presets:
+        return presets[size]
+    if "x" in size:
+        try:
+            w, h = size.lower().split("x", 1)
+            return int(w), int(h)
+        except ValueError:
+            pass
+    return 1080, 1080
+
+
+def build_inline_deck_markdown(
+    cards: list[dict[str, Any]],
+    show_name: Optional[str] = None,
+    date_str: Optional[str] = None,
+    content_type: str = "podcast",
+    size: str = "1080x1080",
+) -> str:
+    """Browser-renderable variant of :func:`build_card_deck_markdown`.
+
+    Identical cover/theme slides, but the theme CSS is emitted *inline* as a
+    single ``<style>`` block (and a built-in Marp theme is named) so the
+    frontend's in-browser ``@marp-team/marp-core`` can render it without the
+    external ``--theme-set`` file that the PNG path uses. This keeps the on-page
+    episode deck and the PNG social cards visually identical from one CSS source.
+
+    NOTE: the frontend ``SlideViewer`` renders each slide in isolation, so it
+    must hoist this ``<style>`` block onto every slide (it does). The block is
+    emitted once here to keep the stored markdown small.
+    """
+    accent, soft = ACCENT_BY_KIND.get(content_type, ACCENT_YELLOW)
+    width, height = _parse_size(size)
+    css = card_theme_css(accent, soft)
+    # The shared CSS hardcodes the 1080² PNG canvas; override for other sizes.
+    if (width, height) != (1080, 1080):
+        css += f"\nsection {{ width: {width}px; height: {height}px; }}"
+    front = [
+        "---", "marp: true", "theme: uncover", f"size: {width}x{height}",
+        "paginate: false", 'header: ""', 'footer: ""', "---", "",
+        f"<style>\n{css}\n</style>", "",
+    ]
+    slides = [
+        _cover_slide(c, show_name or "", date_str or "") if c.get("kind") == "cover"
+        else _theme_slide(c)
+        for c in cards
+    ]
+    return "\n".join(front) + "\n" + "\n\n---\n\n".join(slides) + "\n"
