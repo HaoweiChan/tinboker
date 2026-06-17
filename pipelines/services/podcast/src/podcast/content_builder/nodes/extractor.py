@@ -71,13 +71,66 @@ def _normalize_event(ev: Any) -> dict[str, Any]:
     return {**ev, "segment_type": seg, "is_substantive": sub}
 
 
+def _raw_events(result: Any) -> list:
+    """Pull the raw events list out of an array or a ``{"events": [...]}`` reply."""
+    return result if isinstance(result, list) else (result or {}).get("events", [])
+
+
 def postprocess(result: Any, state: PipelineState) -> dict[str, Any]:
     """Normalize the extractor reply into a ``{"events": [...]}`` state update."""
-    events = result if isinstance(result, list) else (result or {}).get("events", [])
-    return {"events": [_normalize_event(ev) for ev in (events or [])]}
+    return {"events": [_normalize_event(ev) for ev in _raw_events(result)]}
+
+
+# Long episodes overflow a single extractor call: the JSON reply grows with the
+# transcript and, past ~1500 sentences, exceeds even Gemini's max output tokens —
+# the reply truncates mid-array, fails to parse, and the episode falls back to the
+# placeholder summarizer (see content_builder/llm.py ``_MAX_TOKENS_MAP`` history).
+# For long transcripts we extract in sentence-position chunks and merge, keeping
+# each call's reply small. Episodes at or below the threshold keep the original
+# single-call behavior byte-for-byte, so only currently-failing long episodes take
+# the new path.
+_CHUNK_THRESHOLD = 1200  # sentences; at or below this -> single call (unchanged)
+_CHUNK_SIZE = 800        # sentences per chunk on the long-episode path
+
+
+def _extract_chunked(state: PipelineState, sentences: list) -> list[dict[str, Any]]:
+    """Extract events for a long transcript by chunking sentence positions.
+
+    Each chunk is re-indexed to 0-based local positions (matching the extractor
+    prompt's "0-based sentence index" contract); the model's returned ranges are
+    offset back to global positions so the clusterer — which indexes the full
+    sentence list positionally (``sentences_list[i]``) — still resolves them.
+
+    A topic straddling a chunk boundary is split into one event per chunk; the
+    clusterer handles each independently, so the only effect is slightly finer
+    chaptering at boundaries — a fair trade vs. the whole episode failing.
+    """
+    merged: list[dict[str, Any]] = []
+    for offset in range(0, len(sentences), _CHUNK_SIZE):
+        batch = sentences[offset:offset + _CHUNK_SIZE]
+        local = [{**s, "index": i} for i, s in enumerate(batch)]
+        sub_state = {**state, "sentences": local}
+        for ev in _raw_events(invoke_json("extractor", build_messages(sub_state))):
+            if isinstance(ev, dict):
+                ev = dict(ev)
+                if isinstance(ev.get("start_index"), int):
+                    ev["start_index"] += offset
+                if isinstance(ev.get("end_index"), int):
+                    ev["end_index"] += offset
+            merged.append(ev)
+    return merged
 
 
 def extract_events(state: PipelineState) -> dict[str, Any]:
-    """Extract topic events from transcript sentences."""
+    """Extract topic events from transcript sentences.
+
+    Long transcripts are processed in position-chunks (``_extract_chunked``) to
+    keep each LLM reply small enough to parse; shorter ones use a single call as
+    before.
+    """
+    sentences = state.get("sentences", [])
+    if len(sentences) > _CHUNK_THRESHOLD:
+        merged = _extract_chunked(state, sentences)
+        return {"events": [_normalize_event(ev) for ev in merged]}
     result = invoke_json("extractor", build_messages(state))
     return postprocess(result, state)
