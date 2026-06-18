@@ -87,6 +87,13 @@ class Settings(BaseSettings):
     # caps blast radius even if the idempotency store is reset). 0 = no cap.
     threads_max_age_days: int = 4
 
+    # Meta Facebook Page Graph API credentials. A long-lived Page access token
+    # (pages_manage_posts) + the numeric Page id; store both in GSM. Unset =
+    # Facebook posting disabled (its publisher runs in dry-run only).
+    facebook_page_id: Optional[str] = None
+    facebook_page_access_token: Optional[str] = None
+    facebook_api_base: str = "https://graph.facebook.com/v21.0"
+
     # ==================== SEO ====================
     # Public site origin — used to build episode permalinks in Threads posts and
     # the dynamic sitemap. No trailing slash.
