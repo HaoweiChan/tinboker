@@ -1,0 +1,336 @@
+{
+  "version": 1,
+  "max_tickers": 10,
+  "_comment": "Compiled runtime artifact for deterministic podcast sector/theme exposure extraction. Runtime code must read this file only; external sources such as FinMind, ETF issuer CSVs, and Tavily belong to maintenance jobs.",
+  "exposures": [
+    {
+      "exposure_id": "sector_semiconductor",
+      "exposure_type": "sector",
+      "sector_id": "semiconductor",
+      "theme_id": null,
+      "display_name": "半導體",
+      "aliases": [
+        "半導體",
+        "晶片",
+        "晶圓代工",
+        "護國神山",
+        "semiconductor",
+        "semiconductors",
+        "semiconductor foundry",
+        "chip stocks"
+      ],
+      "members": [
+        {
+          "ticker": "2330",
+          "name": "台積電",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1,
+          "market_cap_rank": 1
+        },
+        {
+          "ticker": "NVDA",
+          "name": "輝達",
+          "market": "US",
+          "source": "issuer_etf",
+          "rank": 2,
+          "market_cap_rank": 1
+        },
+        {
+          "ticker": "AVGO",
+          "name": "博通",
+          "market": "US",
+          "source": "issuer_etf",
+          "rank": 3,
+          "market_cap_rank": 2
+        },
+        {
+          "ticker": "TSM",
+          "name": "台積電 (ADR)",
+          "market": "US",
+          "source": "issuer_etf",
+          "rank": 4,
+          "market_cap_rank": 3
+        },
+        {
+          "ticker": "2454",
+          "name": "聯發科",
+          "market": "TW",
+          "source": "curated",
+          "rank": 5,
+          "market_cap_rank": 2
+        },
+        {
+          "ticker": "AMD",
+          "name": "超微",
+          "market": "US",
+          "source": "issuer_etf",
+          "rank": 6,
+          "market_cap_rank": 4
+        },
+        {
+          "ticker": "QCOM",
+          "name": "高通",
+          "market": "US",
+          "source": "issuer_etf",
+          "rank": 7,
+          "market_cap_rank": 5
+        },
+        {
+          "ticker": "MRVL",
+          "name": "邁威爾",
+          "market": "US",
+          "source": "issuer_etf",
+          "rank": 8,
+          "market_cap_rank": 6
+        },
+        {
+          "ticker": "INTC",
+          "name": "英特爾",
+          "market": "US",
+          "source": "issuer_etf",
+          "rank": 9,
+          "market_cap_rank": 7
+        },
+        {
+          "ticker": "4919",
+          "name": "新唐",
+          "market": "TW",
+          "source": "finmind",
+          "rank": 10,
+          "market_cap_rank": 6
+        },
+        {
+          "ticker": "5274",
+          "name": "信驊",
+          "market": "TW",
+          "source": "finmind",
+          "rank": 11,
+          "market_cap_rank": 7
+        },
+        {
+          "ticker": "2337",
+          "name": "旺宏",
+          "market": "TW",
+          "source": "finmind",
+          "rank": 12,
+          "market_cap_rank": 8
+        }
+      ]
+    },
+    {
+      "exposure_id": "sector_passive_components",
+      "exposure_type": "sector",
+      "sector_id": "passive_components",
+      "theme_id": null,
+      "display_name": "被動元件",
+      "aliases": [
+        "被動元件",
+        "passive component",
+        "passive components",
+        "mlcc"
+      ],
+      "members": [
+        {
+          "ticker": "2327",
+          "name": "國巨",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1,
+          "market_cap_rank": 1
+        },
+        {
+          "ticker": "VSH",
+          "name": "威世",
+          "market": "US",
+          "source": "issuer_etf",
+          "rank": 2,
+          "market_cap_rank": 1
+        }
+      ]
+    },
+    {
+      "exposure_id": "sector_shipping",
+      "exposure_type": "sector",
+      "sector_id": "shipping",
+      "theme_id": null,
+      "display_name": "航運",
+      "aliases": [
+        "航運",
+        "貨櫃航運",
+        "shipping",
+        "container shipping",
+        "marine shipping"
+      ],
+      "members": [
+        {
+          "ticker": "2603",
+          "name": "長榮",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1,
+          "market_cap_rank": 1
+        },
+        {
+          "ticker": "2609",
+          "name": "陽明",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2,
+          "market_cap_rank": 2
+        },
+        {
+          "ticker": "2615",
+          "name": "萬海",
+          "market": "TW",
+          "source": "curated",
+          "rank": 3,
+          "market_cap_rank": 3
+        }
+      ]
+    },
+    {
+      "exposure_id": "theme_ai_server",
+      "exposure_type": "theme",
+      "sector_id": null,
+      "theme_id": "ai_server",
+      "display_name": "AI 伺服器",
+      "aliases": [
+        "AI 伺服器",
+        "AI server",
+        "AI servers",
+        "ai server supply chain",
+        "AI 供應鏈"
+      ],
+      "members": [
+        {
+          "ticker": "2382",
+          "name": "廣達",
+          "name_en": "Quanta",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1
+        },
+        {
+          "ticker": "6669",
+          "name": "緯穎",
+          "name_en": "Wiwynn",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2
+        },
+        {
+          "ticker": "NVDA",
+          "name": "輝達",
+          "name_en": "NVIDIA",
+          "market": "US",
+          "source": "curated",
+          "rank": 3
+        },
+        {
+          "ticker": "SMCI",
+          "name": "Supermicro",
+          "name_en": "Super Micro Computer",
+          "market": "US",
+          "source": "curated",
+          "rank": 4
+        }
+      ]
+    },
+    {
+      "exposure_id": "theme_liquid_cooling",
+      "exposure_type": "theme",
+      "sector_id": null,
+      "theme_id": "liquid_cooling",
+      "display_name": "液冷",
+      "aliases": [
+        "液冷",
+        "水冷",
+        "liquid cooling",
+        "direct liquid cooling"
+      ],
+      "members": [
+        {
+          "ticker": "3017",
+          "name": "奇鋐",
+          "name_en": "AVC",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1
+        },
+        {
+          "ticker": "3324",
+          "name": "雙鴻",
+          "name_en": "Auras",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2
+        },
+        {
+          "ticker": "3653",
+          "name": "健策",
+          "name_en": "Jentech",
+          "market": "TW",
+          "source": "curated",
+          "rank": 3
+        }
+      ]
+    },
+    {
+      "exposure_id": "theme_silicon_photonics",
+      "exposure_type": "theme",
+      "sector_id": null,
+      "theme_id": "silicon_photonics",
+      "display_name": "矽光子",
+      "aliases": [
+        "矽光子",
+        "光通訊",
+        "silicon photonics",
+        "optical interconnect",
+        "co-packaged optics"
+      ],
+      "members": [
+        {
+          "ticker": "3081",
+          "name": "聯亞",
+          "name_en": "LandMark Optoelectronics",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1
+        },
+        {
+          "ticker": "3450",
+          "name": "聯鈞",
+          "name_en": "ELaser",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2
+        },
+        {
+          "ticker": "AOI",
+          "name": "應用光電",
+          "name_en": "Applied Optoelectronics",
+          "market": "US",
+          "source": "curated",
+          "rank": 3
+        },
+        {
+          "ticker": "LITE",
+          "name": "Lumentum",
+          "name_en": "Lumentum Holdings",
+          "market": "US",
+          "source": "curated",
+          "rank": 4
+        },
+        {
+          "ticker": "COHR",
+          "name": "高意",
+          "name_en": "Coherent",
+          "market": "US",
+          "source": "curated",
+          "rank": 5
+        }
+      ]
+    }
+  ]
+}

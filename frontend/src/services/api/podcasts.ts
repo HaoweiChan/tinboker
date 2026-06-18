@@ -26,6 +26,38 @@ export interface Podcast {
   image_url?: string | null;
 }
 
+export interface SectorResolvedTicker {
+  ticker: string;
+  name: string;
+  name_en?: string;
+  market: 'TW' | 'US' | string;
+  source: string;
+}
+
+export interface SectorExposure {
+  exposure_id: string;
+  exposure_type: 'sector' | 'theme' | string;
+  sector_id?: string | null;
+  theme_id?: string | null;
+  display_name: string;
+  mention_text: string;
+  confidence: number;
+  start_index?: number | null;
+  end_index?: number | null;
+  start_time?: number | null;
+  end_time?: number | null;
+  resolved_tickers: SectorResolvedTicker[];
+  total_matches: number;
+}
+
+export interface UnresolvedMarketTrend {
+  mention_text: string;
+  normalized_text: string;
+  context?: string;
+  start_time?: number | null;
+  confidence: number;
+}
+
 export interface Episode {
   id: string;
   podcast_name: string;
@@ -40,6 +72,12 @@ export interface Episode {
   summary_image_public_url?: string | null;
   related_tickers: string[];
   tags?: string[];
+  sector_exposures?: SectorExposure[];
+  unresolved_market_trends?: UnresolvedMarketTrend[];
+  sector_exposure_ids?: string[];
+  sector_ids?: string[];
+  theme_ids?: string[];
+  unresolved_market_trend_ids?: string[];
   created_time: number;
   /** True publish time (Unix ms), agents-written from the feed. Prefer over
    *  created_time (ingestion time) and spotify_release_date for display. */

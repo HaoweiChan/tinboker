@@ -19,6 +19,7 @@ from src.podcast.exporters.ticker_insights import (
     episode_publish_time,
     horizon_to_chinese,
     is_boilerplate_thesis,
+    market_for_ticker,
     score_to_label,
 )
 
@@ -170,6 +171,7 @@ def test_build_insight_doc_carries_locations_and_drops_critical_severity():
     assert doc is not None
     assert doc["schema_version"] == SCHEMA_VERSION
     assert doc["ticker"] == "NVDA"  # canonicalized
+    assert doc["market"] == "US"
     assert doc["time_horizon"] == "中期"
     assert doc["sentiment_label"] == "BULLISH"
     assert doc["sentiment_score"] == 0.78
@@ -208,6 +210,11 @@ def test_build_episode_insight_docs_tolerates_legacy_wrapper_key():
     assert set(docs) == {"NVDA", "AMD"}
     assert docs["NVDA"]["sentiment_label"] == "STRONG_BULLISH"
     assert docs["AMD"]["sentiment_label"] == "STRONG_BEARISH"
+
+
+def test_market_for_ticker_infers_tw_and_us_namespaces():
+    assert market_for_ticker("2330") == "TW"
+    assert market_for_ticker("nvda") == "US"
 
 
 def test_build_episode_insight_docs_tiebreaks_by_conviction():

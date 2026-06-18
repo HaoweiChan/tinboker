@@ -6,6 +6,8 @@ This module contains the EpisodeProcessor class that orchestrates all processing
 
 from typing import Dict
 
+from src.models.podcast_models import PodcastEpisode
+
 from .config import PipelineConfig
 from .episode_data import EpisodeData
 from .service_container import ServiceContainer
@@ -401,7 +403,9 @@ class EpisodeProcessor:
             "spotify_id": meta.get("spotify_id"),
             "spotify_url": meta.get("spotify_url"),
             "spotify_embed_url": meta.get("spotify_embed_url"),
-            "spotify_release_date": meta.get("release_date"),
+            "spotify_release_date": PodcastEpisode.normalize_spotify_release_date(
+                meta.get("release_date")
+            ),
             "spotify_description": meta.get("description"),
             "spotify_duration_ms": meta.get("duration_ms"),
             "spotify_images": meta.get("images", []),

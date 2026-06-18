@@ -1,8 +1,10 @@
-"""Step 5d: Write per-ticker insight documents to Firestore.
+"""Step 5d: dual-write per-ticker insight documents to Firestore.
 
 Writes ``ticker_insights/{episode_id}/tickers/{ticker}`` per the platform
-contract in ``docs/spec-from-platform.md`` § 4. Best-effort — failures are
-logged but do not abort the rest of the pipeline.
+contract in ``docs/firestore-contract.md`` § 4. During Phase B cutover this
+step runs after the Postgres mirror so new episodes have both the legacy row
+copy and the composite Firestore docs. Best-effort — failures are logged but do
+not abort the rest of the pipeline.
 """
 
 from __future__ import annotations

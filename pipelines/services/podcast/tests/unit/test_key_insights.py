@@ -100,25 +100,30 @@ def test_extractor_parses_key_insights_key(monkeypatch):
         lambda *a, **k: {"key_insights": ["[台積電](#ticker:2330)展望佳", "降息在即"]},
     )
     out = kx.extract_key_insights_from_markdown("# 摘要\n內容")
-    assert out == ["台積電展望佳", "降息在即"]
+    assert out[:2] == ["台積電展望佳", "降息在即"]
+    assert len(out) >= 3
 
 
 def test_extractor_tolerates_alternate_insights_key(monkeypatch):
     monkeypatch.setattr(kx, "invoke_json", lambda *a, **k: {"insights": ["甲", "乙"]})
-    assert kx.extract_key_insights_from_markdown("內容") == ["甲", "乙"]
+    out = kx.extract_key_insights_from_markdown("內容")
+    assert out[:2] == ["甲", "乙"]
+    assert len(out) >= 3
 
 
-def test_extractor_returns_empty_on_llm_failure(monkeypatch):
+def test_extractor_falls_back_on_llm_failure(monkeypatch):
     def boom(*a, **k):
         raise RuntimeError("LLM down")
 
     monkeypatch.setattr(kx, "invoke_json", boom)
-    assert kx.extract_key_insights_from_markdown("內容") == []
+    out = kx.extract_key_insights_from_markdown("# 台股展望\n台積電法說會釋出樂觀展望。")
+    assert len(out) >= 3
 
 
-def test_extractor_returns_empty_on_unexpected_shape(monkeypatch):
+def test_extractor_falls_back_on_unexpected_shape(monkeypatch):
     monkeypatch.setattr(kx, "invoke_json", lambda *a, **k: {"something_else": 1})
-    assert kx.extract_key_insights_from_markdown("內容") == []
+    out = kx.extract_key_insights_from_markdown("# 台股展望\n聯準會降息時點仍是市場焦點。")
+    assert len(out) >= 3
 
 
 # ---------------------------------------------------------------------------
@@ -181,6 +186,19 @@ def _episode(**kw) -> PodcastEpisode:
 def test_to_firestore_dict_includes_key_insights_when_set():
     d = _episode(key_insights=["甲", "乙", "丙"]).to_firestore_dict()
     assert d["key_insights"] == ["甲", "乙", "丙"]
+
+
+def test_to_firestore_dict_normalizes_spotify_release_date_and_retracted_at():
+    d = _episode(
+        spotify_release_date="2026-06-01T08:30:00Z",
+        retracted_at=1_781_234_567_000,
+    ).to_firestore_dict()
+    assert d["spotify_release_date"] == "2026-06-01"
+    assert d["retracted_at"] == 1_781_234_567_000
+
+
+def test_to_firestore_dict_defaults_retracted_at_to_null():
+    assert _episode().to_firestore_dict()["retracted_at"] is None
 
 
 def test_to_firestore_dict_omits_key_insights_when_empty():

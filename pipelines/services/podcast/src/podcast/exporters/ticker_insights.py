@@ -1,7 +1,7 @@
 """Write per-(episode, ticker) ticker-insight documents into Firestore.
 
 Output path: ``ticker_insights/{episode_id}/tickers/{ticker}``.
-Schema: ``schema_version: 3`` per ``docs/spec-from-platform.md`` § 4.
+Schema: ``schema_version: 3`` per ``docs/firestore-contract.md`` § 4.
 
 The pipeline produces a list of TickerInsight rows under
 ``episode_data.summary_result["ticker_insights"]``. This
@@ -23,7 +23,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Iterable
 
-from shared.tickers import canonical_symbol, is_valid_ticker_symbol
+from shared.tickers import canonical_symbol, is_valid_ticker_symbol, lookup_ticker
 
 SCHEMA_VERSION = 3
 
@@ -78,6 +78,26 @@ def score_to_label(score: float | None) -> str:
     if score >= 0.20:
         return "BEARISH"
     return "STRONG_BEARISH"
+
+
+def market_for_ticker(raw_ticker: str | None) -> str:
+    """Infer the market namespace for a ticker-insight row.
+
+    The registry is authoritative when it knows the symbol. The shape fallback
+    keeps uncatalogued but valid TW/US symbols segregated for trending
+    aggregation, where the contract still uses a single-string document ID.
+    """
+    if not raw_ticker:
+        return ""
+    info = lookup_ticker(raw_ticker)
+    if info and info.market:
+        return info.market
+    ticker = canonical_symbol(raw_ticker)
+    if ticker.isdigit() or (ticker[:-1].isdigit() and ticker[-1:].isalpha()):
+        return "TW"
+    if ticker.replace(".", "").isalpha():
+        return "US"
+    return ""
 
 
 def horizon_to_chinese(horizon: str | None) -> str:
@@ -226,6 +246,7 @@ def build_insight_doc(
         "podcaster": podcaster,
         "podcast_launch_time": _iso_utc(podcast_launch_time),
         "ticker": ticker,
+        "market": market_for_ticker(ticker),
         "bluf_thesis": str(insight.get("bluf_thesis", "")),
         "time_horizon": horizon_to_chinese(insight.get("time_horizon")),
         "sentiment_label": score_to_label(score_value),
@@ -293,12 +314,59 @@ def write_episode_insights(
     if not docs or not episode_id:
         return 0
     parent = firestore_client.collection("ticker_insights").document(episode_id)
-    batch = firestore_client.batch()
-    for ticker, doc in docs.items():
-        ref = parent.collection("tickers").document(ticker)
-        batch.set(ref, doc)
-    batch.commit()
+    pending = list(docs.items())
+    # Firestore WriteBatch caps at 500 operations. Keep the writer grouped by
+    # episode_id while staying under the per-batch limit.
+    batch_size = 500
+    while pending:
+        chunk = pending[:batch_size]
+        pending = pending[batch_size:]
+        batch = firestore_client.batch()
+        for ticker, doc in chunk:
+            ref = parent.collection("tickers").document(ticker)
+            batch.set(ref, doc)
+        batch.commit()
     return len(docs)
+
+
+def write_many_episode_insights(
+    firestore_client: Any,
+    episode_docs: dict[str, dict[str, dict[str, Any]]],
+    *,
+    batch_size: int = 500,
+) -> int:
+    """Batch-write many ``ticker_insights/{episode_id}/tickers/{ticker}`` docs.
+
+    Operations are still organized by episode_id, matching the contract's
+    composite path. The caller supplies already-built docs so live, regen, and
+    Phase B2 backfill paths share one path contract.
+    """
+    if batch_size <= 0 or batch_size > 500:
+        raise ValueError("batch_size must be between 1 and 500")
+
+    ops: list[tuple[str, str, dict[str, Any]]] = []
+    for episode_id, docs in episode_docs.items():
+        if not episode_id:
+            continue
+        for ticker, doc in docs.items():
+            ops.append((episode_id, ticker, doc))
+
+    written = 0
+    while ops:
+        chunk = ops[:batch_size]
+        ops = ops[batch_size:]
+        batch = firestore_client.batch()
+        for episode_id, ticker, doc in chunk:
+            ref = (
+                firestore_client.collection("ticker_insights")
+                .document(episode_id)
+                .collection("tickers")
+                .document(ticker)
+            )
+            batch.set(ref, doc)
+        batch.commit()
+        written += len(chunk)
+    return written
 
 
 def iter_insight_tickers(raw_payload: Any) -> Iterable[str]:

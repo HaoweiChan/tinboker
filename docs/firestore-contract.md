@@ -2,7 +2,7 @@
 
 > **This is the authoritative data contract between the backend (`backend/`, reader) and the content pipelines (`pipelines/`, writer) — two tiers of this monorepo.** Edits here require coordination across both tiers.
 >
-> **Status:** Authoritative once both sides sign off § 10. (Originally drafted when `pipelines/` was the separate `tinboker-agents` repo; the two are now merged, but the reader/writer boundary still holds.)
+> **Status:** Authoritative. § 10 now records accepted implementation decisions rather than open blockers. (Originally drafted when `pipelines/` was the separate `tinboker-agents` repo; the two are now merged, but the reader/writer boundary still holds.)
 > **Owners:** the `backend/` (platform) tier owns this doc; the `pipelines/` tier owns the write contract.
 > **Doc location:** `docs/firestore-contract.md` (moved from `openspecs/firestore-schema/spec.md`).
 > **Document version:** see `schema_version: 3` in § Scope. Bump `schema_version` inline rather than forking the doc.
@@ -36,6 +36,7 @@ This doc replaces that arrangement. It enumerates every Firestore path the platf
 - `tags/{tag}/episodes/*` (existing inverted index — documented)
 - `ticker_insights/{episode_id}/tickers/{ticker}` (new — replaces Postgres `ticker_recommendations`)
 - `trending_tickers/{ticker}` (new — replaces Postgres-backed `/buzz` aggregate)
+- Sector/theme exposure fields embedded on `episodes/{episode_id}` (new metadata layer; no standalone `sectors/*` or `themes/*` collections yet)
 
 **In scope (platform-owned, listed for completeness):**
 - `users/{user_id}`
@@ -60,7 +61,7 @@ This doc replaces that arrangement. It enumerates every Firestore path the platf
 | `tickers/{ticker}/episodes/*` | agents | backend `get_episodes_by_ticker` | append-only index | § 3 |
 | `tags/{tag}/episodes/*` | agents | backend tag pages, `get_all_tags` | append-only index | § 3 |
 | `ticker_insights/{episode_id}/tickers/{ticker}` | agents | backend `/api/ticker-insights/by-ticker/{ticker}`, `/by-podcaster/{name}`; `StockDashboard`, `TickerInsightCard` | one doc/(episode,ticker), mutable | § 4 |
-| `trending_tickers/{ticker}` | agents (nightly job) | backend `/api/ticker-insights/trending`; `StockIndex`, `WeeklyBuzzWidget`, `HomeRail` | rolling, recomputed nightly | § 5 |
+| `trending_tickers/{ticker}` | agents (hourly delta job + full backfill mode) | backend `/api/ticker-insights/trending`; `StockIndex`, `WeeklyBuzzWidget`, `HomeRail` | rolling, recomputed for touched tickers | § 5 |
 | `users/{user_id}` | **platform** | platform only | per-user lifecycle | § 6 |
 | `users/{user_id}/notifications/{notification_id}` | **platform** | platform only | append + cleanup | § 6 |
 
@@ -94,7 +95,7 @@ Legend for **Fulfilled by agents**:
 | `transcript` | string \| null | sometimes | Raw transcript text. Large field — agents may omit from list responses and only populate on detail fetches via the GCS URL. |
 | `summary_content` | string \| null | always | Markdown summary. Primary teaser text for HomeFeed/EpisodeDetail. |
 | `summary_image` | string \| null | sometimes | SVG markup. |
-| `key_insights` | string[] | **required** (see warning) | 3–8 plain-text bullet takeaways, no markdown — the episode's precomputed "essence". Rendered on EpisodeDetail **and** as the primary content of `EpisodeCardV2` across all browsing pages (HomeFeed / Podcaster / Tag / Stock / Watchlist / Profile). Those list views deliberately do **not** hydrate `summary_content` (perf — transcripts are large), so `key_insights` is the only insight source available to cards. ⚠️ **Currently ~0% populated by the agents pipeline** (0/40 recent episodes, 2026-06); cards fall back to the plain teaser until this is backfilled. **Action: agents must populate `key_insights` on every episode.** |
+| `key_insights` | string[] | **required** | 3–8 plain-text bullet takeaways, no markdown — the episode's precomputed "essence". Rendered on EpisodeDetail **and** as the primary content of `EpisodeCardV2` across all browsing pages (HomeFeed / Podcaster / Tag / Stock / Watchlist / Profile). Those list views deliberately do **not** hydrate `summary_content` (perf — transcripts are large), so `key_insights` is the only insight source available to cards. Agents must populate this on every processed, non-placeholder episode; the pipeline uses deterministic markdown fallback when LLM extraction is sparse or fails. |
 | `raw_mp3` | string \| null | never (local-dev only) | Present in the Pydantic model as a local filesystem path used during agent processing; **not stored in Firestore** in production. Listed here only to match the model contract; agents must omit when writing to Firestore. |
 
 #### Metadata
@@ -107,6 +108,62 @@ Legend for **Fulfilled by agents**:
 | `released_at_ms` | int (Unix ms) | partial → **must become `always`** | True episode **publish** time. **Now consumed by the platform** (backend `Episode` model + transformer; frontend display + the release recency filter). Already written by agents but currently derived from `spotify_release_date` → `created_time`, so it is unreliable (null/ingestion-time) whenever Spotify is unmatched. **Required fix:** source it from the feed's `datePublished` (already fetched by the pipeline). See § 2.3 cleanup #1. |
 | `number_click` | int | always | Default 0; agents seed, platform updates. |
 | `num_likes` | int | always | Default 0; agents seed, platform updates. |
+| `retracted_at` | int \| null | sometimes | Soft-delete/retraction marker. `null`/missing means active; Unix ms means the episode was retracted at that time. Agents should keep the episode doc in place so inverted indices and foreign keys do not break. |
+
+#### Sector/theme exposure metadata
+
+These fields are inferred metadata only. They MUST NOT be copied into `related_tickers`, `tickers/{ticker}/episodes/*`, or company-level `ticker_insights`; direct ticker mentions remain the only source for watchlist notifications and stock-page episode membership.
+
+| Field | Type | Fulfilled | Notes |
+|------|------|-----------|-------|
+| `sector_exposures` | object[] | always (may be empty) | Resolved sector/theme mentions from clustered podcast events. Uses capped representative baskets, not exhaustive ticker expansion. See § 2.1.1. |
+| `sector_exposure_ids` | string[] | always (may be empty) | Flat companion array for Firestore `array-contains` filters. Contains both sector and theme exposure IDs. |
+| `sector_ids` | string[] | always (may be empty) | Flat sector-only IDs for future filtering. |
+| `theme_ids` | string[] | always (may be empty) | Flat theme-only IDs for future filtering. |
+| `unresolved_market_trends` | object[] | always (may be empty) | Plausible but unmapped emerging market concepts for demand-driven curation. |
+| `unresolved_market_trend_ids` | string[] | always (may be empty) | Normalized unresolved trend IDs for aggregation/filtering. |
+
+##### 2.1.1 `sector_exposures[]` object shape
+
+```jsonc
+{
+  "exposure_id": "theme_ai_server",
+  "exposure_type": "theme",              // sector | theme
+  "sector_id": null,
+  "theme_id": "ai_server",
+  "display_name": "AI 伺服器",
+  "mention_text": "AI 伺服器",
+  "confidence": 1.0,
+  "start_index": 120,
+  "end_index": 145,
+  "start_time": 530000,
+  "end_time": 552000,
+  "resolved_tickers": [
+    { "ticker": "2382", "name": "廣達", "market": "TW", "source": "curated" },
+    { "ticker": "NVDA", "name": "NVIDIA", "market": "US", "source": "issuer_etf" }
+  ],
+  "total_matches": 18
+}
+```
+
+Rules:
+- `resolved_tickers` supports `market: "TW" | "US"` and is capped to at most 10 members per exposure to avoid API payload bloat.
+- `total_matches` preserves the full candidate count before the cap.
+- Deterministic exact keyword/alias matches use `confidence: 1.0`. Fuzzy or semantic extraction must use a calculated confidence score and retain provenance.
+- Runtime extraction reads the compiled `sector_and_theme_universe.json` artifact only. Static compilation/curation may use FinMind, official ETF issuer CSVs, and reviewed `curated_themes.json`, but request-time extraction must stay offline.
+- Matching uses Chinese/English normalization, many-to-many alias mapping, and longest-match-first matching.
+
+##### 2.1.2 `unresolved_market_trends[]` object shape
+
+```jsonc
+{
+  "mention_text": "CPO",
+  "normalized_text": "cpo",
+  "context": "主持人提到 CPO 會帶動下一波光通訊需求",
+  "start_time": 840000,
+  "confidence": 0.74
+}
+```
 
 #### File pointers — GCS gs:// URLs
 
@@ -174,22 +231,22 @@ This table maps every UI surface to the subset of episode fields it actually rea
 | ProfilePage (My Subscriptions tab) | [frontend/src/pages/ProfilePage.tsx](../frontend/src/pages/ProfilePage.tsx) | HomeFeed subset |
 | PodcasterIndex | [frontend/src/pages/PodcasterIndex.tsx](../frontend/src/pages/PodcasterIndex.tsx) | Aggregated only: `podcast_name`, `created_time`, `spotify_images[0]` (for cover) |
 
-### 2.3 Proposed targeted cleanups
+### 2.3 Targeted cleanup status
 
-These are **proposals**; agents team should accept, push back, or counter-propose per item.
+These are contract cleanups tracked across platform and pipeline work.
 
-1. **Timestamp normalization — `released_at_ms` from the feed publish date.** Status: **platform consumer shipped** (backend `Episode.released_at_ms` + `episode_transformer._normalize_released_at_ms`; frontend `Episode.released_at_ms` preferred for display; the platform release recency filter reads it — see [docs/agents/podcast-domain.md](agents/podcast-domain.md) / `RELEASE_EPISODE_MAX_AGE_DAYS`). **Agents side is the blocker.** The field is already written but `_compute_released_at_ms` derives it from `spotify_release_date` → `created_time`, both of which are ingestion-time / null for Spotify-unmatched episodes (a Jan-published episode backfilled in May reads as May). The pipeline ALREADY fetches the true publish date — `api_data['datePublished']` (ISO-8601), parsed today by `orchestrator._parse_episode_date` but used only for the lookback window. **Required change (tinboker-agents):** wire `datePublished` into `released_at_ms` (and `created_time` when Spotify is absent) in `services/podcast/src/pipeline/utils.py::create_episode_object` + `models/podcast_models.py::_compute_released_at_ms`, then run a feed-driven backfill to correct historical docs (`datePublished` is returned for every episode by `fetch_episodes`, matched on `episode_number`/title — no Spotify dependency). **Do NOT mutate `created_time` on existing episodes** (§ 6.3) — only set `released_at_ms`. Until the backfill lands, the platform keeps `RELEASE_EPISODE_MAX_AGE_DAYS=0` (recency filter off). See the handoff: [docs/handoffs/released-at-ms-publish-date.md](handoffs/released-at-ms-publish-date.md).
+1. **Timestamp normalization — `released_at_ms` from the feed publish date.** Status: **pipeline write path implemented for new episodes**. The pipeline wires feed `datePublished` into `released_at_ms` and uses it as the creation-time fallback when Spotify is absent. Existing episodes still require the historical feed-driven backfill before the platform can safely enable `RELEASE_EPISODE_MAX_AGE_DAYS`. **Do NOT mutate `created_time` on existing episodes** (§ 6.3) — only set `released_at_ms`. See the handoff: [docs/handoffs/released-at-ms-publish-date.md](handoffs/released-at-ms-publish-date.md).
 
 2. **Audit the `*_url` / `*_public_url` pairs.** The Episode model defines both `gs://` and HTTPS variants for each artifact. Most of the time the backend hydrates content via `episode_transformer.py` from `*_content` directly. We propose:
    - Drop the `*_public_url` half of every pair where the backend can sign GCS URLs on demand.
    - Keep both only for fields the frontend fetches directly without backend mediation.
    - Action: a separate sub-doc auditing each pair's usage; merge with this spec or land alongside.
 
-3. **`modified_*` is platform-only.** Agents pipeline must not overwrite `modified_summary_url`, `modified_summary_content`, `modified_by`, `modified_at` during regenerations. Spec requires agents to perform Firestore writes with `merge=True` *excluding* these fields. (Backend writes already use `merge=True` for adds and `DELETE_FIELD` for removals.)
+3. **`modified_*` is platform-only.** Agents pipeline must not overwrite `modified_summary_url`, `modified_summary_content`, `modified_by`, `modified_at` during regenerations. Spec requires agents to perform Firestore writes with `merge=True` *excluding* these fields. Pipeline episode update/regeneration paths enforce this; backend writes already use `merge=True` for adds and `DELETE_FIELD` for removals.
 
 4. **`*_content` fields are a cache, not a source.** Document that inlined markdown duplicates what `*_url` points to. Staleness rule: when agents regenerate the GCS file, they MUST also rewrite the matching `*_content` field in the same Firestore commit. Otherwise readers see drift.
 
-5. **`spotify_release_date` typed as string.** Backend model declares `Optional[str]` but production data sometimes contains numbers (per frontend type `string | number | null`). Spec mandates string `YYYY-MM-DD`; agents normalize on write.
+5. **`spotify_release_date` typed as string.** Backend model declares `Optional[str]` but production data sometimes contains numbers (per frontend type `string | number | null`). Spec mandates string `YYYY-MM-DD`; agents normalize on write for all new/updated episode docs.
 
 ---
 
@@ -232,6 +289,7 @@ This replaces the Postgres `ticker_recommendations` table. Renamed end-to-end fr
   "podcaster": "股癌",
   "podcast_launch_time": "2026-05-12T08:30:00Z",   // ISO 8601 UTC
   "ticker": "NVDA",
+  "market": "US",                                  // internal namespace: TW | US | other future market
   "bluf_thesis": "AI capex cycle has another 4-6 quarters of upside.",
   "time_horizon": "中期",                            // 短期 | 中期 | 長期
 
@@ -272,6 +330,7 @@ Field set mirrors today's Postgres shape at [backend/src/database/recommendation
 - **Removed from public API** (kept in Firestore for internal sort): the raw `sentiment_score` float.
 - **Replaced**: freeform `sentiment` string (`"bull"`/`"bear"`/`"neut"`) → 5-tier `sentiment_label` enum.
 - **Added**: `schema_version: 3`.
+- **Added internal**: `market` for multi-market namespace segregation. Public APIs may omit it unless a future UI needs market-specific display.
 - **Removed**: the auto-increment `id` column (replaced by composite doc path `{episode_id}/tickers/{ticker}`).
 
 ### 4.2 Sentiment label enum
@@ -282,7 +341,7 @@ STRONG_BULLISH | BULLISH | NEUTRAL | BEARISH | STRONG_BEARISH
 
 The raw `sentiment_score` is model-generated and its quantized value isn't meaningful to users. Spec **forbids** rendering the float on the UI. Public API responses omit it. Backend uses the float only for sort/order on `sentiment_label` ties.
 
-**Proposed score-to-label cutoffs** (agents own the final boundaries; bring counter-proposals if these don't fit your model):
+**Score-to-label cutoffs** (implemented in the pipeline post-processing layer before Firestore write):
 
 | sentiment_score | sentiment_label |
 |---|---|
@@ -371,13 +430,14 @@ Old `/api/recommendations/*` paths remain as deprecation aliases for one release
 
 ## § 5. `trending_tickers/{ticker}` — Stock Index aggregate (NEW)
 
-This replaces the on-the-fly Postgres aggregation that powers `/api/recommendations/buzz`. Agents recompute this collection nightly.
+This replaces the on-the-fly Postgres aggregation that powers `/api/recommendations/buzz`. Agents refresh this collection hourly via a localized delta job: recent `ticker_insights/*/tickers/*` writes identify touched `(ticker, market)` pairs, then only those tickers are recomputed from their historical source rows. A full recompute mode remains available for backfills/audits.
 
 ### 5.1 Document schema
 
 ```jsonc
 {
-  "ticker": "NVDA",                          // doc id, mirrored in field for convenience
+  "ticker": "NVDA",                          // canonical ticker token
+  "market": "US",                            // internal namespace; TW | US today
   "schema_version": 3,
 
   // Rolling mention counts. Three windows so frontends can switch without re-aggregating.
@@ -409,6 +469,12 @@ This replaces the on-the-fly Postgres aggregation that powers `/api/recommendati
   "computed_at": "2026-05-14T00:00:00Z"      // when this doc was last rewritten
 }
 ```
+
+Document ID rule:
+- Normal case: the document ID is the canonical `ticker` token, preserving the existing `trending_tickers/{ticker}` path.
+- US tickers are always written with the exact ticker token as the document ID.
+- Non-US documents always use the deterministic fallback `{ticker}.{market}` (for example, `2330.TW`) to keep the single-string Firestore path namespace-safe. The document body still carries `ticker` and `market` separately.
+- Aggregation must reject ticker tokens with unknown market metadata rather than committing ambiguous documents.
 
 ### 5.2 Public API endpoint
 
@@ -466,6 +532,8 @@ The notification fan-out service ([backend/src/services/notification_service.py]
 
 - A document arriving at `episodes/{id}` with a never-before-seen `created_time` triggers `new_episode` notifications for every user with that `podcast_name` in `podcast_subscriptions`, and `stock_mention` notifications for every user whose `watchlist` overlaps `related_tickers`.
 - **Therefore agents MUST NOT mutate `created_time` on existing episodes.** Doing so would re-fire notifications.
+- Sector/theme-derived `resolved_tickers` are inferred exposure metadata only and MUST NOT trigger `stock_mention` notifications unless the ticker is also present in `related_tickers`.
+- Retracted episodes should be marked with `retracted_at`; the episode doc remains in place so notification and index foreign keys do not break.
 - Agents MAY update other fields freely (re-summarization, transcript corrections, ticker re-extraction).
 
 ---
@@ -480,7 +548,7 @@ Highest priority. Stock Index is empty in production today because the Postgres 
 
 | Step | Owner | Target | Notes |
 |------|-------|--------|-------|
-| A1. Agents wire up nightly job writing `trending_tickers/{ticker}` | tinboker-agents | TBD | Backfill from existing wiki/GCS data first. |
+| A1. Agents wire up hourly delta job writing `trending_tickers/{ticker}` | pipelines | implemented | Default mode recomputes only touched tickers from recent `ticker_insights` writes; full mode remains for audits/backfills. |
 | A2. Platform adds `/api/ticker-insights/trending` reading from Firestore, behind feature flag `TICKER_INSIGHTS_FROM_FIRESTORE` | platform | TBD | Old `/api/recommendations/buzz` keeps working. |
 | A3. Frontend switches StockIndex/WeeklyBuzzWidget/HomeRail to new endpoint | platform | TBD | Type is `TickerTrending`. |
 | A4. Flip feature flag in prod, observe for 48h | both | TBD | Rollback = flip flag off; old code path remains. |
@@ -490,8 +558,8 @@ Highest priority. Stock Index is empty in production today because the Postgres 
 
 | Step | Owner | Target | Notes |
 |------|-------|--------|-------|
-| B1. Agents dual-write (Postgres + Firestore) for new episodes | tinboker-agents | TBD | Ensures parity during cutover. |
-| B2. Agents backfill historical episodes to `ticker_insights/*` | tinboker-agents | TBD | One-shot job; size estimate needed (§ 10 Q3). |
+| B1. Agents dual-write (Postgres + Firestore) for new episodes | pipelines | implemented | Firestore write path uses `ticker_insights/{episode_id}/tickers/{ticker}` and `WriteBatch` grouped by episode. |
+| B2. Agents backfill historical episodes to `ticker_insights/*` | pipelines | implemented | One-shot Phase B2 script uses standard Firestore `WriteBatch` chunks of 500 operations. Historical scale is low-thousands; no partition worker needed. |
 | B3. Platform adds new endpoints under `/api/ticker-insights/*`, behind flag | platform | TBD | Reads from Firestore. |
 | B4. Frontend renames type/service, switches consumers | platform | TBD | See § 4.6 list. |
 | B5. Flip flag in prod, soak for 7 days | both | TBD | |
@@ -503,9 +571,11 @@ Rolling schedule; each cleanup is independent.
 
 | Step | Owner | Target | Notes |
 |------|-------|--------|-------|
-| C1. Add `released_at_ms` to new episode writes; backfill historical | tinboker-agents | TBD | § 2.3 cleanup #1. |
+| C1. Add `released_at_ms` to new episode writes; backfill historical | pipelines | partial | New write path implemented; historical feed-driven backfill still required. § 2.3 cleanup #1. |
 | C2. Audit `*_url` / `*_public_url` pairs; produce drop list | both | TBD | § 2.3 cleanup #2. |
-| C3. Normalize `spotify_release_date` to string format | tinboker-agents | TBD | § 2.3 cleanup #5. |
+| C3. Normalize `spotify_release_date` to string format | pipelines | implemented | § 2.3 cleanup #5. |
+| C4. Preserve `created_time` and platform `modified_*` fields on regeneration | pipelines | implemented | Existing episode updates use merge semantics excluding protected fields. |
+| C5. Add `retracted_at` soft-delete marker | pipelines | implemented | Keeps episode docs and indices intact while signaling retraction. |
 
 **Rollback triggers (any phase):** P0 incident, > 1% of episode reads returning 500s, sentiment label distribution shift > 30% from pre-flag baseline (model regression check).
 
@@ -537,15 +607,15 @@ These came up implicitly in the agents-team message ("we'll flag anything imposs
 
 ---
 
-## § 10. Open questions for the agents team
+## § 10. Accepted pipeline decisions
 
-These are the issues we know the agents team needs to weigh in on. Reply inline in this section during review.
+These decisions close the implementation questions that originally blocked the Firestore migration.
 
-1. **Refresh cadence for `trending_tickers`.** Nightly is the default; can you afford hourly without write-cost concerns? StockIndex on prod would feel more "alive" with hourly recomputes.
-2. **Composite path for `ticker_insights`.** Spec proposes `ticker_insights/{episode_id}/tickers/{ticker}`. Acceptable, or do you prefer flat `ticker_insights/{auto_id}` with `episode_id` + `ticker` as indexed fields? Flat is simpler to backfill; composite gives natural collection-group queries.
-3. **Backfill scope for Phase B2.** How many `(episode, ticker)` pairs exist historically? Is the backfill safe to run in a single job, or does it need chunking?
-4. **Score-to-label cutoffs.** § 4.2 proposes fixed thresholds. Does your model produce calibrated probabilities, or should the cutoffs be derived from observed score distributions?
-5. **Soft-delete signal.** How should agents mark a previously-published episode as retracted? No current mechanism. Options: `retracted_at` timestamp field, or move to `episodes_retracted/{id}` collection?
-6. **`*_url` audit (§ 2.3 cleanup #2).** Which `*_public_url` fields are actually fetched by external consumers vs. backend-only? If only backend, the GCS `gs://` URL is enough.
-7. **Schema version bump policy.** This doc is `schema_version: 3`. What's the agents-side migration cost of future contract bumps?
-8. **Sentiment confidence.** Today there's a single score per insight. Would agents support emitting a confidence band (e.g. `sentiment_confidence: HIGH | MEDIUM | LOW`) alongside `sentiment_label`, or is that out of model scope?
+1. **Refresh cadence for `trending_tickers`: hourly delta.** The default job runs hourly without a full historical scan. It reads recent `ticker_insights` writes, derives touched `(ticker, market)` pairs, then recomputes only those tickers from their historical insight docs. Full recompute remains available for backfill/audit runs.
+2. **Composite path for `ticker_insights`: confirmed.** The canonical path is `ticker_insights/{episode_id}/tickers/{ticker}`. Pipeline writers use Firestore `WriteBatch`, grouped by `episode_id`, and collection-group queries power aggregate readers.
+3. **Backfill scope for Phase B2: standard batch job.** Historical `(episode, ticker)` scale is low-thousands. The Phase B2 script uses standard Firestore batched writes in chunks of 500 operations and does not require partition workers.
+4. **Score-to-label cutoffs: fixed 5-tier thresholds.** The pipeline quantizes `sentiment_score` before write using § 4.2 exactly: `>=0.80`, `>=0.60`, `>=0.40`, `>=0.20`, else `STRONG_BEARISH`.
+5. **Soft-delete signal: `retracted_at`.** Retracted episodes remain in `episodes/{episode_id}` with `retracted_at: int | null`; no separate retracted collection is introduced. This preserves index foreign keys.
+6. **Multi-market namespace: internal `market` metadata.** `ticker_insights` and `trending_tickers` carry market metadata so TW/US symbols can be segregated while preserving existing string document IDs. Ambiguous overlaps without market metadata must fail validation before commit.
+7. **Sector/theme exposures: episode metadata only.** Sector/theme-derived ticker baskets are written to `sector_exposures` and companion flat arrays on the episode document. They do not populate `related_tickers`, inverted ticker indices, ticker pages, watchlist notifications, or `ticker_insights`.
+8. **Still open: `*_url` audit (§ 2.3 cleanup #2).** Which `*_public_url` fields are actually fetched by external consumers vs. backend-only remains an audit task.
