@@ -12,8 +12,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from src.auth.admin_auth import AdminAccess, get_admin_access, get_social_access
-from src.services import threads_publisher
+from src.services import facebook_publisher, threads_publisher
 from src.services.podcast import PodcastService
+
+_PUBLISHERS = {"threads": threads_publisher, "facebook": facebook_publisher}
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +54,7 @@ def _social_list_item(episode) -> dict:
 
 
 @router.post("/publish")
-async def publish_to_threads(
+async def publish_social(
     dry_run: bool = Query(default=True, description="Compose only; do not post (default)"),
     limit: int = Query(default=10, ge=1, le=50, description="How many recent episodes to scan"),
     max_age_days: int = Query(
@@ -60,29 +62,48 @@ async def publish_to_threads(
         ge=0,
         description="Only post episodes published within N days (default: configured threads_max_age_days)",
     ),
+    platforms: str = Query(
+        default="threads,facebook",
+        description="Comma list of platforms to publish to (threads, facebook).",
+    ),
     _: AdminAccess = Depends(get_social_access),
 ):
-    """Scan recent episodes and post any not-yet-posted ones to Threads.
+    """Scan recent episodes and post any not-yet-posted ones to the given platforms.
 
     Defaults to dry-run (returns the composed drafts). Pass ``dry_run=false`` to
-    actually publish. Forced to dry-run when Threads credentials are unconfigured.
+    actually publish. Each platform is independently idempotent and is forced to
+    dry-run when its credentials are unconfigured. Returns one result per platform.
     """
-    try:
-        return await threads_publisher.publish_recent(
-            limit=limit, dry_run=dry_run, max_age_days=max_age_days
-        )
-    except Exception as e:
-        logger.exception("Threads publish run failed")
-        raise HTTPException(status_code=500, detail=f"Threads publish failed: {e}")
+    selected = [p.strip().lower() for p in platforms.split(",") if p.strip()]
+    bad = [p for p in selected if p not in _PUBLISHERS]
+    if bad:
+        raise HTTPException(status_code=422, detail=f"Unknown platform(s): {', '.join(bad)}")
+    if not selected:
+        raise HTTPException(status_code=422, detail="No platforms selected")
+
+    results = {}
+    for name in selected:
+        try:
+            results[name] = await _PUBLISHERS[name].publish_recent(
+                limit=limit, dry_run=dry_run, max_age_days=max_age_days
+            )
+        except Exception as e:
+            logger.exception("%s publish run failed", name)
+            results[name] = {"platform": name, "error": str(e)}
+    return {"platforms": results}
 
 
 @router.get("/posts")
-async def list_threads_posts(
+async def list_social_posts(
     limit: int = Query(default=50, ge=1, le=200),
+    platform: str = Query(default="threads", description="threads or facebook"),
     _: AdminAccess = Depends(get_admin_access),
 ):
-    """List episodes already posted to Threads (idempotency ledger)."""
-    return {"posts": threads_publisher.list_posted(limit=limit)}
+    """List episodes already posted to a platform (its idempotency ledger)."""
+    pub = _PUBLISHERS.get(platform.strip().lower())
+    if not pub:
+        raise HTTPException(status_code=422, detail=f"Unknown platform: {platform}")
+    return {"platform": platform, "posts": pub.list_posted(limit=limit)}
 
 
 # ── Social copy management (the human-tone post + per-theme comments) ──────────

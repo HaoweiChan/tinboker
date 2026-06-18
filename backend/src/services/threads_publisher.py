@@ -360,6 +360,7 @@ async def publish_recent(
             skipped.append({"episode_id": episode_id, "reason": f"publish_failed: {e}"})
 
     return {
+        "platform": "threads",
         "configured": configured,
         "dry_run": effective_dry_run,
         "candidates": len(episodes),
