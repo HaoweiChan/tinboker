@@ -216,6 +216,89 @@
           "name_en": "Solomon Technology"
         }
       ]
+    },
+    {
+      "theme_id": "silicon_ip",
+      "display_name": "矽智財",
+      "aliases": [
+        "矽智財",
+        "矽智財股",
+        "silicon ip",
+        "semiconductor ip",
+        "設計服務",
+        "design service"
+      ],
+      "members": [
+        {
+          "ticker": "3443",
+          "name": "創意",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1,
+          "name_en": "Global Unichip"
+        },
+        {
+          "ticker": "3035",
+          "name": "智原",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2,
+          "name_en": "Faraday Technology"
+        },
+        {
+          "ticker": "3529",
+          "name": "力旺",
+          "market": "TW",
+          "source": "curated",
+          "rank": 3,
+          "name_en": "eMemory Technology"
+        },
+        {
+          "ticker": "6643",
+          "name": "M31",
+          "market": "TW",
+          "source": "curated",
+          "rank": 4,
+          "name_en": "M31 Technology"
+        }
+      ]
+    },
+    {
+      "theme_id": "advanced_packaging",
+      "display_name": "先進封裝",
+      "aliases": [
+        "先進封裝",
+        "cowos",
+        "封測",
+        "封裝測試",
+        "advanced packaging",
+        "chip packaging"
+      ],
+      "members": [
+        {
+          "ticker": "3711",
+          "name": "日月光投控",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1,
+          "name_en": "ASE Technology"
+        },
+        {
+          "ticker": "2449",
+          "name": "京元電子",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2,
+          "name_en": "King Yuan Electronics"
+        },
+        {
+          "ticker": "3374",
+          "name": "精材",
+          "market": "TW",
+          "source": "curated",
+          "rank": 3
+        }
+      ]
     }
   ]
 }
