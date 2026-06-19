@@ -368,3 +368,53 @@ async def publish_recent(
         "posted": posted,
         "skipped": skipped,
     }
+
+
+async def publish_episode(episode: Any, dry_run: bool = True) -> dict:
+    """Publish one already-fetched episode to Threads (the admin "發佈" button).
+
+    Unlike :func:`publish_recent` this targets a single, explicitly chosen episode
+    and ignores the recency window (the operator picked it). Still idempotent
+    (skips if already posted) and forced to dry-run when unconfigured. Returns a
+    flat result: ``{platform, configured, dry_run, episode_id, posted, ...}`` with
+    ``posted`` True only on a real publish, else a ``reason`` for the skip/preview.
+    """
+    _ensure_table()
+    service = ThreadsService()
+    configured = service.is_configured
+    effective_dry_run = dry_run or not configured
+    episode_id = _field(episode, "id") or _field(episode, "episode_id") or ""
+    base = {"platform": "threads", "configured": configured, "dry_run": effective_dry_run, "episode_id": episode_id}
+
+    if not episode_id:
+        return {**base, "posted": False, "reason": "no_episode_id"}
+    if already_posted(episode_id):
+        return {**base, "posted": False, "reason": "already_posted", "url": episode_url(episode_id)}
+    has_cards = bool(_field(episode, "social_cards"))
+    if not (has_cards or _field(episode, "key_insights") or _field(episode, "episode_title")):
+        return {**base, "posted": False, "reason": "no_postable_content"}
+
+    if has_cards:
+        thread = compose_thread(episode)
+        if effective_dry_run:
+            return {**base, "posted": False, "reason": "dry_run", "url": thread["url"],
+                    "main_text": thread["main_text"], "image_count": len(thread["image_urls"]),
+                    "reply_count": len(thread["replies"])}
+        try:
+            res = await publish_thread(service, thread)
+        except ThreadsError as e:
+            return {**base, "posted": False, "reason": f"publish_failed: {e}", "url": thread["url"]}
+        _record(episode_id, res["root_media_id"], thread["url"], res["reply_ids"])
+        logger.info("Posted thread for %s (root=%s, %d replies)", episode_id, res["root_media_id"], res["reply_count"])
+        return {**base, "posted": True, "url": thread["url"], **res}
+
+    draft = compose_post(episode)
+    if effective_dry_run:
+        return {**base, "posted": False, "reason": "dry_run", **draft}
+    try:
+        media_id = await service.publish(draft["text"], image_url=draft["image_url"])
+    except ThreadsError as e:
+        return {**base, "posted": False, "reason": f"publish_failed: {e}", "url": draft["url"]}
+    _record(episode_id, media_id, draft["url"])
+    logger.info("Posted episode %s to Threads (%s)", episode_id, media_id)
+    return {**base, "posted": True, "media_id": media_id, **draft}

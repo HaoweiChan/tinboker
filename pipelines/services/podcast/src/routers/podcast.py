@@ -1,7 +1,8 @@
 """Router for podcast-specific endpoints (show metadata + episode processing)."""
 
+import asyncio
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Security
 from pydantic import BaseModel
@@ -85,3 +86,84 @@ async def regenerate_episode(
         podcast_name=podcast_name,
         status="started"
     )
+
+
+# ── On-demand social copy (Threads/Facebook post + per-theme comments) ─────────
+
+
+class SocialCopyComment(BaseModel):
+    """One conversational comment, mapped to a theme card."""
+    heading: str = ""
+    text: str = ""
+
+
+class SocialCopyResponse(BaseModel):
+    """The freshly generated human-tone social copy for an episode."""
+    episode_id: str
+    post: str
+    comments: List[SocialCopyComment]
+
+
+def _generate_social_copy(episode_id: str) -> dict[str, Any]:
+    """Load the episode and run the social_copy_writer LLM node.
+
+    Read-only against Firestore: it pulls the episode's stored ``social_cards`` +
+    ``summary_content`` and returns the generated ``social_thread``. Persistence
+    (and cache invalidation) is the platform backend's job via its
+    ``set_social_thread`` write path — this endpoint never writes.
+    """
+    from src.podcast.content_builder.nodes.social_copy_writer import write_social_copy
+    from src.service.firestore_service import FirestoreService
+
+    doc = FirestoreService().get_document("episodes", episode_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail=f"Episode '{episode_id}' not found")
+
+    # The writer reads cards + the summary steer from a minimal pipeline state; the
+    # field names mirror what the live pipeline seeds (markdown_report == the
+    # episode's summary_content; source == podcast_name).
+    state: dict[str, Any] = {
+        "social_cards": doc.get("social_cards") or [],
+        "key_insights": doc.get("key_insights") or [],
+        "episode_title": doc.get("episode_title") or doc.get("title") or "Episode",
+        "source": doc.get("podcast_name") or "Podcast",
+        "markdown_report": doc.get("summary_content") or "",
+    }
+    return write_social_copy(state).get("social_thread") or {}
+
+
+@router.post("/episodes/{episode_id}/social-copy", response_model=SocialCopyResponse)
+async def generate_social_copy(
+    episode_id: str,
+    api_key: str = Security(verify_api_key),
+):
+    """Generate the human-tone social copy (a grand-summary post + one comment per
+    theme card) for an existing episode, on demand.
+
+    The platform backend has no LLM, so its admin Social page proxies here to
+    (re-)author copy — e.g. for episodes that predate the pipeline's
+    social_copy_writer node. Returns the generated copy; the caller persists it.
+    """
+    if not episode_id or not episode_id.strip():
+        raise HTTPException(status_code=400, detail="episode_id is required")
+
+    try:
+        thread = await asyncio.to_thread(_generate_social_copy, episode_id)
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001 — surface LLM/Firestore failures as 502
+        raise HTTPException(status_code=502, detail=f"Social copy generation failed: {e}")
+
+    post = (thread.get("post") or "").strip()
+    comments = [
+        SocialCopyComment(heading=(c or {}).get("heading", ""), text=(c or {}).get("text", ""))
+        for c in (thread.get("comments") or [])
+        if (c or {}).get("text")
+    ]
+    if not post and not comments:
+        raise HTTPException(
+            status_code=502,
+            detail="Social copy generation produced no content (empty post + comments).",
+        )
+
+    return SocialCopyResponse(episode_id=episode_id, post=post, comments=comments)

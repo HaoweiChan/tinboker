@@ -5,16 +5,29 @@ platform's publish endpoint so the new episode fans out to Threads immediately. 
 platform reads Firestore, composes the carousel + reply chain, and self-guards with its
 idempotency ledger + recency window — so this trigger is safe to fire on every fresh run.
 
-Only fires on a fresh, full run (not reruns/backfills) and only when the episode actually
-has social cards. Opt-in + non-fatal: a no-op unless TINBOKER_PLATFORM_API_URL +
-TINBOKER_SOCIAL_TOKEN are set, and any failure is logged without aborting the pipeline.
+**Off by default.** The brand reviews + edits each episode's copy on the admin Social
+page and publishes from there (per-episode, to Threads + Facebook). Auto-publish is
+therefore opt-in behind ``SOCIAL_AUTOPUBLISH`` — without it, this step is a no-op and
+nothing posts on ingest. Even when enabled it only fires on a fresh, full run (not
+reruns/backfills) and only when the episode actually has social cards, and it additionally
+needs TINBOKER_PLATFORM_API_URL + TINBOKER_SOCIAL_TOKEN. Any failure is logged without
+aborting the pipeline.
 """
 
 from __future__ import annotations
 
+import os
+
 from ..config import PipelineConfig
 from ..episode_data import EpisodeData
 from ..service_container import ServiceContainer
+
+_AUTOPUBLISH_ENV = "SOCIAL_AUTOPUBLISH"
+_TRUTHY = {"1", "true", "yes", "on"}
+
+
+def _autopublish_enabled() -> bool:
+    return os.environ.get(_AUTOPUBLISH_ENV, "").strip().lower() in _TRUTHY
 
 
 def trigger_social_publish(
@@ -28,6 +41,11 @@ def trigger_social_publish(
         return
     summary_result = episode_data.summary_result
     if not summary_result or not summary_result.get("social_cards"):
+        return
+
+    # Manual-publish is the default: the brand publishes from the admin Social page.
+    if not _autopublish_enabled():
+        print(f"  ⏸ Threads auto-publish off ({_AUTOPUBLISH_ENV} unset) — publish from the admin Social page")
         return
 
     try:
