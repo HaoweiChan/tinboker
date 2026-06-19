@@ -19,7 +19,7 @@ const MemberRow: React.FC<MemberRowProps> = ({ member }) => {
   const hasSeries = member.series && member.series.length > 1;
 
   return (
-    <div className="flex items-center gap-2 py-1.5 first:pt-0 last:pb-0">
+    <div className="flex items-center gap-3 py-2 first:pt-0 last:pb-0">
       {/* Ticker */}
       <span className="font-mono text-[11px] text-muted-foreground tabular-nums min-w-[3.5rem] shrink-0 leading-none">
         {member.ticker.replace(/\.[A-Z]+$/i, '')}
@@ -30,15 +30,18 @@ const MemberRow: React.FC<MemberRowProps> = ({ member }) => {
         {member.name}
       </span>
 
-      {/* Sparkline slot — skeleton when no series */}
+      {/* Sparkline slot — muted thin trajectory; skeleton when no series */}
       <div className="shrink-0 w-[44px] h-[18px] flex items-center">
         {hasSeries ? (
           <SimpleSparkline
             data={member.series}
             isPositive={(member.change_percent ?? 0) >= 0}
             color={hasChange ? trend.lineColor : undefined}
+            strokeWidth={1.2}
+            fill={false}
             width={44}
             height={18}
+            className="opacity-60"
           />
         ) : (
           <span className="w-full h-[10px] animate-pulse bg-muted rounded" />
@@ -80,9 +83,9 @@ export const SectorBoardCard: React.FC<SectorBoardCardProps> = ({ sector }) => {
 
   return (
     <div
-      className="bg-card border border-border rounded-xl overflow-hidden transition-all duration-200
-                 hover:border-border/70 hover:shadow-[0_2px_16px_-4px_rgba(0,0,0,0.12)]
-                 dark:hover:shadow-[0_2px_16px_-4px_rgba(0,0,0,0.4)]"
+      className="bg-card border border-white/[0.08] rounded-xl overflow-hidden transition-all duration-200
+                 shadow-[0_1px_3px_rgba(0,0,0,0.18)] hover:border-white/[0.14]
+                 hover:shadow-[0_4px_20px_-6px_rgba(0,0,0,0.35)]"
     >
       {/* ── Card header ─────────────────────────────────────────── */}
       <Link
@@ -122,18 +125,21 @@ export const SectorBoardCard: React.FC<SectorBoardCardProps> = ({ sector }) => {
 
       {/* ── Member rows ─────────────────────────────────────────── */}
       {topMembers.length > 0 && (
-        <div className="px-4 py-2 divide-y divide-border/25">
+        <div className="px-4 py-2.5 divide-y divide-border/20">
           {topMembers.map((m) => (
             <MemberRow key={m.ticker} member={m} />
           ))}
         </div>
       )}
 
-      {/* Bottom accent bar — color-matched to trend */}
+      {/* Bottom accent — soft center-weighted hairline, color-matched to trend */}
       {hasChange && (
         <div
-          className="h-[2px] w-full"
-          style={{ backgroundColor: trend.lineColor, opacity: 0.35 }}
+          className="h-px w-full"
+          style={{
+            background: `linear-gradient(to right, transparent, ${trend.lineColor}, transparent)`,
+            opacity: 0.25,
+          }}
         />
       )}
     </div>

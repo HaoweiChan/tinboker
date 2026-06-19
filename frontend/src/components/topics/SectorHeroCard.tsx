@@ -22,33 +22,38 @@ export const SectorHeroCard: React.FC<SectorHeroCardProps> = ({ sector }) => {
   const isPositive = (sector.avg_change ?? 0) >= 0;
   const Arrow = isPositive ? ArrowUpRight : ArrowDownRight;
 
-  // Glow intensity scales with magnitude, clamped between 8px and 28px blur
+  // Soft ambient glow: a large-radius, low-opacity (~10–16%) wash so the trend color
+  // bleeds out as mist rather than reading as a hard neon outline. Paired with a faint
+  // base elevation shadow so the card still lifts off the page when change is flat.
   const magnitude = Math.min(Math.abs(sector.avg_change ?? 0), 10);
-  const glowBlur = Math.round(8 + (magnitude / 10) * 20);
-  const glowSpread = Math.round(-4 + (magnitude / 10) * 4);
-  const glowAlpha = (0.25 + (magnitude / 10) * 0.45).toFixed(2);
-  const glowStyle = hasChange
-    ? {
-        boxShadow: `0 0 ${glowBlur}px ${glowSpread}px ${trend.lineColor}${Math.round(Number(glowAlpha) * 255).toString(16).padStart(2, '0')}`,
-      }
-    : undefined;
+  const glowBlur = Math.round(24 + (magnitude / 10) * 12); // 24–36px radius
+  const glowAlpha = 0.1 + (magnitude / 10) * 0.06;          // 0.10–0.16 opacity
+  const alphaHex = Math.round(glowAlpha * 255).toString(16).padStart(2, '0');
+  const baseShadow = '0 1px 3px rgba(0,0,0,0.22)';
+  const glowStyle = {
+    boxShadow: hasChange
+      ? `${baseShadow}, 0 0 ${glowBlur}px 0 ${trend.lineColor}${alphaHex}`
+      : baseShadow,
+  };
 
   const series = sector.series && sector.series.length > 1 ? sector.series : undefined;
 
   return (
     <Link
       to={`/sector/${encodeURIComponent(sector.exposure_id)}`}
-      className="group relative flex flex-col justify-between min-w-[148px] flex-1 bg-card border border-border rounded-xl p-4 overflow-hidden
-                 hover:border-border/80 transition-all duration-300"
+      className="group relative flex flex-col justify-between min-w-[148px] flex-1 bg-card rounded-xl p-4 overflow-hidden
+                 border border-white/[0.08] hover:border-white/[0.14] transition-all duration-300"
       style={glowStyle}
     >
       {/* Full-bleed background sparkline for depth */}
       {series && (
-        <div className="absolute inset-0 pointer-events-none opacity-[0.14]">
+        <div className="absolute inset-0 pointer-events-none opacity-[0.1]">
           <SimpleSparkline
             data={series}
             isPositive={isPositive}
             color={trend.lineColor}
+            smooth
+            strokeWidth={1.5}
             width={200}
             height={80}
             className="w-full h-full"
@@ -94,14 +99,6 @@ export const SectorHeroCard: React.FC<SectorHeroCardProps> = ({ sector }) => {
           {sector.episode_count} 集
         </div>
       </div>
-
-      {/* Accent line at bottom edge, intensity-matched to glow */}
-      {hasChange && (
-        <div
-          className="absolute bottom-0 left-0 right-0 h-[2px] transition-opacity duration-300"
-          style={{ backgroundColor: trend.lineColor, opacity: 0.5 + (magnitude / 10) * 0.4 }}
-        />
-      )}
     </Link>
   );
 };
