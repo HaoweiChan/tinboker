@@ -317,10 +317,11 @@ export const EpisodeDetail: React.FC = () => {
                               <Link
                                 key={rt.ticker}
                                 to={`/stock/${encodeURIComponent(rt.ticker)}`}
-                                className="inline-flex items-center gap-0.5 text-[11px] px-1.5 py-0.5 rounded bg-muted hover:bg-muted/80 font-mono text-muted-foreground transition-colors"
+                                className="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded bg-muted hover:bg-muted/80 transition-colors"
                                 title={rt.name}
                               >
-                                {rt.ticker}
+                                <span className="font-mono text-[10px] text-muted-foreground">{rt.ticker}</span>
+                                {rt.name && rt.name !== rt.ticker && <span>{rt.name}</span>}
                               </Link>
                             ))}
                           </div>
