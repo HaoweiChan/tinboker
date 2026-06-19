@@ -209,5 +209,6 @@ async def test_pagination_offset_and_limit():
     ):
         result = await svc.get_episodes_by_sector("sector_passive_components", limit=3, offset=2)
 
-    assert result["total"] == 3
+    # total = full matched count (for pagination); episodes = this page slice.
+    assert result["total"] == 10
     assert len(result["episodes"]) == 3
