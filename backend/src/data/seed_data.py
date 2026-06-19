@@ -173,7 +173,7 @@ TRANSLATIONS: list[tuple[str, str, str | None, str | None, str]] = [
     ("6446", "TW", "PharmaEssentia Corporation", "藥華藥", "approved"),
     ("8996", "TW", "Kaori Heat Treatment", "高力", "approved"),
     ("6285", "TW", "WNC Corporation", "啟碁", "approved"),
-    ("3023", "TW", "SINBON Electronics", "新漢", "approved"),
+    ("3023", "TW", "SINBON Electronics", "信邦", "approved"),
     ("1560", "TW", "Kinik Company", "中國砂輪", "approved"),
     ("2838", "TW", "Union Bank of Taiwan", "聯邦銀行", "approved"),
     ("2812", "TW", "Taichung Commercial Bank", "台中銀行", "approved"),
