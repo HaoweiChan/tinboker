@@ -48,9 +48,11 @@ def test_fixes_wrong_zh_name(session):
          name_zh_tw="再生-KY", translation_status="approved")
     _add(session, ticker="5351", market="TW", name_en="Etron Technology",
          name_zh_tw="鉅祥", translation_status="approved")
+    _add(session, ticker="3363", market="TW", name_en="Browave",
+         name_zh_tw="凌群", translation_status="approved")
 
     fixed = TranslationService(session).apply_known_name_corrections()
-    assert fixed == 8
+    assert fixed == 9
     assert session.query(StockTranslation).filter_by(ticker="6285").one().name_zh_tw == "啟碁"
     assert session.query(StockTranslation).filter_by(ticker="6147").one().name_zh_tw == "頎邦"
     assert session.query(StockTranslation).filter_by(ticker="3661").one().name_zh_tw == "世芯-KY"
@@ -59,6 +61,7 @@ def test_fixes_wrong_zh_name(session):
     assert session.query(StockTranslation).filter_by(ticker="6472").one().name_zh_tw == "保瑞"
     assert session.query(StockTranslation).filter_by(ticker="3357").one().name_zh_tw == "臺慶科"
     assert session.query(StockTranslation).filter_by(ticker="5351").one().name_zh_tw == "鈺創"
+    assert session.query(StockTranslation).filter_by(ticker="3363").one().name_zh_tw == "上詮"
 
 
 def test_idempotent_and_does_not_overwrite_human_edit(session):

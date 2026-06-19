@@ -250,6 +250,62 @@
           "source": "curated",
           "rank": 3,
           "market_cap_rank": 3
+        },
+        {
+          "ticker": "2606",
+          "name": "裕民",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 4
+        },
+        {
+          "ticker": "2605",
+          "name": "新興",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 5
+        },
+        {
+          "ticker": "2601",
+          "name": "益航",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 6
+        },
+        {
+          "ticker": "2612",
+          "name": "中航",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 7
+        },
+        {
+          "ticker": "2617",
+          "name": "台航",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 8
+        },
+        {
+          "ticker": "2637",
+          "name": "慧洋-KY",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 9
+        },
+        {
+          "ticker": "5608",
+          "name": "四維航",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 10
+        },
+        {
+          "ticker": "2641",
+          "name": "正德",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 11
         }
       ]
     },
@@ -491,6 +547,48 @@
           "market": "US",
           "source": "curated",
           "rank": 5
+        },
+        {
+          "ticker": "3363",
+          "name": "上詮",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 6
+        },
+        {
+          "ticker": "6442",
+          "name": "光聖",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 7
+        },
+        {
+          "ticker": "4979",
+          "name": "華星光",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 8
+        },
+        {
+          "ticker": "3163",
+          "name": "波若威",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 9
+        },
+        {
+          "ticker": "4977",
+          "name": "眾達-KY",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 10
+        },
+        {
+          "ticker": "3234",
+          "name": "光環",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 11
         }
       ]
     },
@@ -660,6 +758,20 @@
           "source": "curated",
           "rank": 5,
           "name_en": "Tatung Company"
+        },
+        {
+          "ticker": "1504",
+          "name": "東元",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 6
+        },
+        {
+          "ticker": "1529",
+          "name": "樂事綠能",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 7
         }
       ]
     },
@@ -815,6 +927,55 @@
           "source": "curated",
           "rank": 4,
           "name_en": "Elite Material"
+        },
+        {
+          "ticker": "2313",
+          "name": "華通",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 5
+        },
+        {
+          "ticker": "2368",
+          "name": "金像電",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 6
+        },
+        {
+          "ticker": "3044",
+          "name": "健鼎",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 7
+        },
+        {
+          "ticker": "6274",
+          "name": "台燿",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 8
+        },
+        {
+          "ticker": "2367",
+          "name": "燿華",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 9
+        },
+        {
+          "ticker": "6251",
+          "name": "定穎",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 10
+        },
+        {
+          "ticker": "8155",
+          "name": "博智",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 11
         }
       ]
     },
@@ -943,6 +1104,62 @@
           "source": "curated",
           "rank": 3,
           "name_en": "Solomon Technology"
+        },
+        {
+          "ticker": "1536",
+          "name": "和大",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 4
+        },
+        {
+          "ticker": "1597",
+          "name": "直得",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 5
+        },
+        {
+          "ticker": "4540",
+          "name": "全球傳動",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 6
+        },
+        {
+          "ticker": "4576",
+          "name": "大銀微系統",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 7
+        },
+        {
+          "ticker": "4583",
+          "name": "台灣精銳",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 8
+        },
+        {
+          "ticker": "7750",
+          "name": "新代",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 9
+        },
+        {
+          "ticker": "8374",
+          "name": "羅昇",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 10
+        },
+        {
+          "ticker": "6188",
+          "name": "廣明",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 11
         }
       ]
     },
@@ -1202,6 +1419,27 @@
           "source": "curated",
           "rank": 4,
           "name_en": "M31 Technology"
+        },
+        {
+          "ticker": "3661",
+          "name": "世芯-KY",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 5
+        },
+        {
+          "ticker": "6533",
+          "name": "晶心科",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 6
+        },
+        {
+          "ticker": "6531",
+          "name": "愛普",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 7
         }
       ]
     },
