@@ -37,6 +37,9 @@ _KNOWN_NAME_CORRECTIONS: List[Tuple[str, str, str, str]] = [
     ("6285", "TW", "合勤控", "啟碁"),      # WNC = Wistron NeWeb; 合勤控 is 3704 (Zyxel)
     ("6147", "TW", "精材", "頎邦"),        # Chipbond; 精材 is 3374 (XinTec)
     ("3661", "TW", "譜瑞-KY", "世芯-KY"),  # Alchip; 譜瑞-KY is 4966 (Parade)
+    ("3023", "TW", "新漢", "信邦"),        # SINBON Electronics; 新漢 is 8234 (NEXCOM)
+    ("2745", "TW", "上銀", "五福"),        # Wu Fu Travel; 上銀 is 2049 (Hiwin)
+    ("6472", "TW", "閎暉", "保瑞"),        # Bora Pharmaceuticals; 閎暉 is 3311
 ]
 
 
