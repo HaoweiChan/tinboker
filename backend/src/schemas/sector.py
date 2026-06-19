@@ -38,6 +38,7 @@ class SectorBoardMember(BaseModel):
     ticker: str
     name: str
     change_percent: Optional[float] = None
+    series: List[float] = []
 
 
 class SectorBoardItem(BaseModel):
@@ -48,6 +49,7 @@ class SectorBoardItem(BaseModel):
     avg_change: Optional[float] = None
     hotness: float
     members: List[SectorBoardMember]
+    series: List[float] = []
 
 
 class SectorBoardResponse(BaseModel):

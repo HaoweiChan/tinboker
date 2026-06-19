@@ -530,6 +530,7 @@ export interface SectorBoardMember {
   ticker: string;
   name: string;
   change_percent: number | null;
+  series?: number[]; // last ~12 daily closes, old->new; may be absent or []
 }
 
 export interface SectorBoardItem {
@@ -540,6 +541,7 @@ export interface SectorBoardItem {
   avg_change: number | null;
   hotness: number;
   members: SectorBoardMember[];
+  series?: number[]; // normalized aggregate trajectory, old->new; may be absent or []
 }
 
 export async function getSectorBoard(): Promise<SectorBoardItem[]> {
