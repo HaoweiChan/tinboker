@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "max_tickers": 10,
+  "max_tickers": 12,
   "_comment": "Compiled runtime artifact for deterministic podcast sector/theme exposure extraction. Runtime code must read this file only; external sources such as FinMind, ETF issuer CSVs, and Tavily belong to maintenance jobs.",
   "exposures": [
     {
@@ -154,6 +154,62 @@
           "source": "issuer_etf",
           "rank": 2,
           "market_cap_rank": 1
+        },
+        {
+          "ticker": "2492",
+          "name": "華新科",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 3
+        },
+        {
+          "ticker": "3026",
+          "name": "禾伸堂",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 4
+        },
+        {
+          "ticker": "3357",
+          "name": "臺慶科",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 5
+        },
+        {
+          "ticker": "6173",
+          "name": "信昌電",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 6
+        },
+        {
+          "ticker": "3624",
+          "name": "光頡",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 7
+        },
+        {
+          "ticker": "6862",
+          "name": "三集瑞-KY",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 8
+        },
+        {
+          "ticker": "2375",
+          "name": "凱美",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 9
+        },
+        {
+          "ticker": "2472",
+          "name": "立隆電",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 10
         }
       ]
     },
@@ -397,6 +453,55 @@
           "source": "curated",
           "rank": 5,
           "name_en": "Wolfspeed"
+        },
+        {
+          "ticker": "5425",
+          "name": "台半",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 6
+        },
+        {
+          "ticker": "3675",
+          "name": "德微",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 7
+        },
+        {
+          "ticker": "8255",
+          "name": "朋程",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 8
+        },
+        {
+          "ticker": "6435",
+          "name": "大中",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 9
+        },
+        {
+          "ticker": "8261",
+          "name": "富鼎",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 10
+        },
+        {
+          "ticker": "5299",
+          "name": "杰力",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 11
+        },
+        {
+          "ticker": "3016",
+          "name": "嘉晶",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 12
         }
       ]
     },
@@ -525,6 +630,41 @@
           "source": "curated",
           "rank": 6,
           "name_en": "Micron Technology"
+        },
+        {
+          "ticker": "3006",
+          "name": "晶豪科",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 7
+        },
+        {
+          "ticker": "5351",
+          "name": "鈺創",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 8
+        },
+        {
+          "ticker": "2451",
+          "name": "創見",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 9
+        },
+        {
+          "ticker": "8271",
+          "name": "宇瞻",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 10
+        },
+        {
+          "ticker": "4967",
+          "name": "十銓",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 11
         }
       ]
     },
@@ -620,6 +760,48 @@
           "source": "curated",
           "rank": 3,
           "name_en": "Sercomm Corporation"
+        },
+        {
+          "ticker": "3596",
+          "name": "智易",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 4
+        },
+        {
+          "ticker": "4906",
+          "name": "正文",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 5
+        },
+        {
+          "ticker": "3704",
+          "name": "合勤控",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 6
+        },
+        {
+          "ticker": "3380",
+          "name": "明泰",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 7
+        },
+        {
+          "ticker": "2332",
+          "name": "友訊",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 8
+        },
+        {
+          "ticker": "2419",
+          "name": "仲琦",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 9
         }
       ]
     },
@@ -970,6 +1152,48 @@
           "source": "curated",
           "rank": 2,
           "name_en": "Ta Chen Stainless Pipe"
+        },
+        {
+          "ticker": "2015",
+          "name": "豐興",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 3
+        },
+        {
+          "ticker": "2014",
+          "name": "中鴻",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 4
+        },
+        {
+          "ticker": "2023",
+          "name": "燁輝",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 5
+        },
+        {
+          "ticker": "2031",
+          "name": "新光鋼",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 6
+        },
+        {
+          "ticker": "2010",
+          "name": "春源",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 7
+        },
+        {
+          "ticker": "2028",
+          "name": "威致",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 8
         }
       ]
     },
@@ -1004,6 +1228,76 @@
           "source": "curated",
           "rank": 2,
           "name_en": "Phoenix Tours"
+        },
+        {
+          "ticker": "2745",
+          "name": "五福",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 3
+        },
+        {
+          "ticker": "2719",
+          "name": "燦星旅",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 4
+        },
+        {
+          "ticker": "2734",
+          "name": "易飛網",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 5
+        },
+        {
+          "ticker": "2743",
+          "name": "山富",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 6
+        },
+        {
+          "ticker": "6961",
+          "name": "旅天下",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 7
+        },
+        {
+          "ticker": "2736",
+          "name": "富野",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 8
+        },
+        {
+          "ticker": "2722",
+          "name": "夏都",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 9
+        },
+        {
+          "ticker": "2739",
+          "name": "寒舍",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 10
+        },
+        {
+          "ticker": "2707",
+          "name": "晶華",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 11
+        },
+        {
+          "ticker": "2704",
+          "name": "國賓",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 12
         }
       ]
     }
