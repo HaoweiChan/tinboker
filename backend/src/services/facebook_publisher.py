@@ -213,3 +213,54 @@ async def publish_recent(
         "posted": posted,
         "skipped": skipped,
     }
+
+
+async def publish_episode(episode, dry_run: bool = True) -> dict:
+    """Publish one already-fetched episode to the Facebook Page (admin "發佈" button).
+
+    Mirrors :func:`threads_publisher.publish_episode`: single explicit episode, no
+    recency window, idempotent against the ``facebook_posts`` ledger, dry-run forced
+    when unconfigured. Returns ``{platform, configured, dry_run, episode_id, posted, ...}``.
+    """
+    _ensure_table()
+    service = FacebookService()
+    configured = service.is_configured
+    effective_dry_run = dry_run or not configured
+    episode_id = _field(episode, "id") or _field(episode, "episode_id") or ""
+    base = {"platform": "facebook", "configured": configured, "dry_run": effective_dry_run, "episode_id": episode_id}
+
+    if not episode_id:
+        return {**base, "posted": False, "reason": "no_episode_id"}
+    if already_posted(episode_id):
+        return {**base, "posted": False, "reason": "already_posted"}
+    has_cards = bool(_field(episode, "social_cards"))
+    if not (has_cards or _field(episode, "key_insights") or _field(episode, "episode_title")):
+        return {**base, "posted": False, "reason": "no_postable_content"}
+
+    if has_cards:
+        thread = compose_thread(episode)
+        if effective_dry_run:
+            return {**base, "posted": False, "reason": "dry_run", "url": thread["url"],
+                    "main_text": thread["main_text"], "image_count": len(thread["image_urls"]),
+                    "comment_count": len(thread["replies"])}
+        try:
+            res = await publish_thread(service, thread)
+        except FacebookError as e:
+            return {**base, "posted": False, "reason": f"publish_failed: {e}", "url": thread["url"]}
+        _record(episode_id, res["root_post_id"], thread["url"], res["comment_ids"])
+        logger.info("Posted FB album for %s (post=%s, %d comments)", episode_id, res["root_post_id"], res["comment_count"])
+        return {**base, "posted": True, "url": thread["url"], **res}
+
+    draft = compose_post(episode)
+    if effective_dry_run:
+        return {**base, "posted": False, "reason": "dry_run", **draft}
+    try:
+        if draft.get("image_url"):
+            post_id = await service.publish_photo(draft["text"], draft["image_url"])
+        else:
+            post_id = await service.publish_text(draft["text"])
+    except FacebookError as e:
+        return {**base, "posted": False, "reason": f"publish_failed: {e}", "url": draft["url"]}
+    _record(episode_id, post_id, draft["url"])
+    logger.info("Posted episode %s to Facebook (%s)", episode_id, post_id)
+    return {**base, "posted": True, "post_id": post_id, **draft}

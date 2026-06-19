@@ -134,3 +134,42 @@ def _aret(value):
     async def _f(*a, **k):
         return value
     return _f
+
+
+# ── publish_episode (single explicit episode — the admin 發佈 button) ──────────
+
+
+@pytest.mark.asyncio
+async def test_publish_episode_dry_run_when_unconfigured(temp_db, monkeypatch):
+    monkeypatch.setattr(fbp, "FacebookService", lambda: _FakeFB(configured=False))
+    res = await fbp.publish_episode(_ep("EP800"), dry_run=False)
+    assert res["configured"] is False
+    assert res["dry_run"] is True
+    assert res["posted"] is False
+    assert res["reason"] == "dry_run"
+    assert fbp.already_posted("EP800") is False  # dry-run never records
+
+
+@pytest.mark.asyncio
+async def test_publish_episode_publishes_and_is_idempotent(temp_db, monkeypatch):
+    fake = _FakeFB()
+    monkeypatch.setattr(fbp, "FacebookService", lambda: fake)
+
+    res = await fbp.publish_episode(_ep("EP801"), dry_run=False)
+    assert res["posted"] is True
+    assert res["comment_count"] == 2
+    assert fake.calls[0][0] == "album"
+    assert fbp.already_posted("EP801") is True
+
+    again = await fbp.publish_episode(_ep("EP801"), dry_run=False)
+    assert again["posted"] is False
+    assert again["reason"] == "already_posted"
+
+
+@pytest.mark.asyncio
+async def test_publish_episode_skips_when_no_content(temp_db):
+    ep = Episode(id="EP802", podcast_name="股癌", episode_title="", key_insights=[],
+                 created_time=_now_ms(), released_at_ms=_now_ms())
+    res = await fbp.publish_episode(ep, dry_run=False)
+    assert res["posted"] is False
+    assert res["reason"] == "no_postable_content"

@@ -39,7 +39,17 @@ def test_skips_without_cards():
     sp.trigger_social_publish(_cfg(None), None, _ep([]))
 
 
+def test_skips_when_autopublish_disabled(monkeypatch):
+    # Default (env unset): manual-publish model — never calls the client.
+    monkeypatch.delenv("SOCIAL_AUTOPUBLISH", raising=False)
+    called = {"n": 0}
+    _inject_fake_client(monkeypatch, lambda **k: called.update(n=called["n"] + 1))
+    sp.trigger_social_publish(_cfg(None), None, _ep([{"kind": "cover"}]))
+    assert called["n"] == 0
+
+
 def test_fires_on_fresh_run_with_cards(monkeypatch):
+    monkeypatch.setenv("SOCIAL_AUTOPUBLISH", "true")
     seen = {}
     _inject_fake_client(monkeypatch, lambda **k: seen.update(k) or {"posted_count": 1, "dry_run": False})
     sp.trigger_social_publish(_cfg(None), None, _ep([{"kind": "cover"}]))
@@ -47,6 +57,7 @@ def test_fires_on_fresh_run_with_cards(monkeypatch):
 
 
 def test_fire_is_non_fatal_on_client_error(monkeypatch):
+    monkeypatch.setenv("SOCIAL_AUTOPUBLISH", "1")
     def _boom(**k):
         raise RuntimeError("platform down")
     _inject_fake_client(monkeypatch, _boom)
