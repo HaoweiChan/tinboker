@@ -101,6 +101,11 @@ export async function saveSocialEpisode(
   );
 }
 
+// LLM generation + multi-post publishing run far longer than the client's 30s
+// default; the backend proxies these with a 120s budget, so the browser must wait
+// at least as long or it aborts (ECONNABORTED) before the real response lands.
+const LLM_REQUEST_TIMEOUT_MS = 120000;
+
 /**
  * Generate (or re-generate) the social copy for an episode via the LLM pipeline.
  * Persists the result server-side; returns the freshly written post + comments.
@@ -111,7 +116,7 @@ export async function generateSocialEpisode(
   const res = await apiClient.post<{ post: string; comments: SocialComment[] }>(
     `/api/admin/threads/episodes/${encodeURIComponent(episodeId)}/social-copy`,
     null,
-    adminAuthConfig(),
+    { ...adminAuthConfig(), timeout: LLM_REQUEST_TIMEOUT_MS },
   );
   return res.data;
 }
@@ -129,6 +134,7 @@ export async function publishSocialEpisode(
     null,
     {
       ...adminAuthConfig(),
+      timeout: LLM_REQUEST_TIMEOUT_MS,
       params: {
         dry_run: opts.dryRun ?? true,
         platforms: opts.platforms ?? 'threads,facebook',
