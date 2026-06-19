@@ -387,6 +387,123 @@ async def get_batch_prices_windows(
     return out
 
 
+# ── Trailing performance windows (sector / stock cards) ──────────────────────
+# Backward-looking 1/7/30/90D close-to-close returns from today, plus a recent
+# close series for sparklines. Powers the /sector/:id member mini-cards.
+TRAILING_WINDOWS = (7, 30, 90)
+
+
+def _read_recent_series(tickers: List[str], limit: int = 30) -> dict:
+    """Last ``limit`` daily closes per ticker from stock_daily_closes (old→new).
+
+    Opens its own DB session (it's called via asyncio.to_thread) so it never shares
+    the request session across threads.
+    """
+    out: dict = {}
+    if not tickers:
+        return out
+    for session in get_session():
+        try:
+            rows = (
+                session.query(
+                    StockDailyClose.ticker, StockDailyClose.date, StockDailyClose.close
+                )
+                .filter(StockDailyClose.ticker.in_(tickers))
+                .order_by(StockDailyClose.ticker.asc(), StockDailyClose.date.asc())
+                .all()
+            )
+            for ticker, _date, close in rows:
+                out.setdefault(ticker, []).append(close)
+        except Exception as exc:
+            logger.debug(f"trailing series read failed: {exc}")
+        break
+    return {t: closes[-limit:] for t, closes in out.items()}
+
+
+async def _trailing_returns(ticker: str, db: Session) -> dict:
+    """Trailing 1/7/30/90D close-to-close % returns measured backward from today.
+
+    ``d1`` uses the two most recent stored closes (always consecutive trading days);
+    ``d7/d30/d90`` anchor on the close on-or-before (today − N days) via
+    ``_get_reference_close`` (DB → Redis → API), so deep windows fill in even when the
+    local table is shallow. A window stays ``None`` when its anchor close is missing.
+    """
+    result: dict = {"price": None, "d1": None, "d7": None, "d30": None, "d90": None}
+    now = datetime.utcnow()
+    latest = await _get_reference_close(ticker, now.strftime("%Y-%m-%d"), db)
+    if latest and latest > 0:
+        result["price"] = latest
+        for n in TRAILING_WINDOWS:
+            past_dt = now - timedelta(days=n)
+            past = await _get_reference_close(ticker, past_dt.strftime("%Y-%m-%d"), db)
+            if past and past > 0:
+                result[f"d{n}"] = round((latest - past) / past * 100, 2)
+
+    # d1 from the last two stored closes — correct consecutive-trading-day delta.
+    from src.services.stock_close_refresh import get_eod_change_pct
+    d1 = await get_eod_change_pct(ticker)
+    if d1 is not None:
+        result["d1"] = round(d1, 2)
+    return result
+
+
+class BatchTrailingRequest(BaseModel):
+    tickers: List[str] = Field(default_factory=list)
+
+
+@router.post("/batch-prices-trailing")
+async def get_batch_prices_trailing(
+    body: BatchTrailingRequest,
+    db: Session = Depends(get_session),
+):
+    """Trailing 1/7/30/90D returns (+ recent close series) per ticker.
+
+    Keyed by upper-cased ticker → ``{price, d1, d7, d30, d90, series}``. Powers the
+    /sector/:id member performance cards. DB-first via ``_get_reference_close`` so it
+    costs no external calls once warm; the whole response is cached in Redis.
+    """
+    tickers = list({t.strip().upper() for t in body.tickers if t and t.strip()})[:60]
+    if not tickers:
+        return {}
+
+    resp_cache_key = "batch_trailing:" + hashlib.md5(
+        ",".join(sorted(tickers)).encode()
+    ).hexdigest()
+    cached_resp = await cache_get(resp_cache_key)
+    if cached_resp:
+        try:
+            return json.loads(cached_resp)
+        except Exception:
+            pass
+
+    series_map = await asyncio.to_thread(_read_recent_series, tickers, 30)
+
+    async def _safe(t: str) -> dict:
+        try:
+            return await asyncio.wait_for(_trailing_returns(t, db), timeout=15)
+        except (asyncio.TimeoutError, Exception):
+            return {"price": None, "d1": None, "d7": None, "d30": None, "d90": None}
+
+    results = await asyncio.gather(*[_safe(t) for t in tickers])
+    out: dict = {}
+    for t, r in zip(tickers, results):
+        r = dict(r)
+        s = series_map.get(t, [])
+        r["series"] = s if len(s) >= 2 else []
+        out[t] = r
+
+    non_null = sum(
+        1 for r in out.values()
+        if any(r.get(k) is not None for k in ("d1", "d7", "d30", "d90"))
+    )
+    ttl = 1800 if non_null > len(out) * 0.3 else _NULL_CACHE_TTL
+    try:
+        await cache_set(resp_cache_key, json.dumps(out), ttl)
+    except Exception:
+        pass
+    return out
+
+
 @router.get("/batch-summary")
 async def get_batch_summary(
     tickers: str = Query(description="Comma-separated ticker symbols (max 100)"),

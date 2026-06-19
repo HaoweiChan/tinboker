@@ -550,6 +550,27 @@ export async function getSectorBoard(): Promise<SectorBoardItem[]> {
   return Array.isArray(d.sectors) ? d.sectors : [];
 }
 
+/** Trailing close-to-close performance for a ticker over fixed windows. */
+export interface TrailingPerf {
+  price: number | null;
+  d1: number | null;
+  d7: number | null;
+  d30: number | null;
+  d90: number | null;
+  series: number[]; // recent daily closes, old->new (for the sparkline)
+}
+
+/** Trailing 1/7/30/90D returns (+ recent close series) for a set of tickers,
+ *  keyed by UPPER-cased ticker. Powers the /sector/:id member cards. */
+export async function getBatchPricesTrailing(
+  tickers: string[],
+): Promise<Record<string, TrailingPerf>> {
+  const unique = [...new Set(tickers.map((t) => t.toUpperCase()))];
+  if (!unique.length) return {};
+  const response = await apiClient.post('/api/stocks/batch-prices-trailing', { tickers: unique });
+  return response.data && typeof response.data === 'object' ? response.data : {};
+}
+
 export interface EpisodesBySectorResponse {
   exposure_id: string;
   display_name: string;
