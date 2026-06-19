@@ -12,6 +12,28 @@ import pytest
 from src.services.podcast import PodcastService
 
 
+def _patch_get_session(close_rows: list | None = None):
+    """Patch get_session used inside _batch_read_closes to return fake DB rows.
+
+    close_rows is a list of (ticker, date, close) tuples fed to the query mock.
+    Pass None (default) for an empty result — series will be [] for all tickers.
+    """
+    if close_rows is None:
+        close_rows = []
+
+    mock_session = MagicMock()
+    mock_query = MagicMock()
+    mock_session.query.return_value = mock_query
+    mock_query.filter.return_value = mock_query
+    mock_query.order_by.return_value = mock_query
+    mock_query.all.return_value = close_rows
+
+    def _gen():
+        yield mock_session
+
+    return patch("src.services.podcast.get_session", side_effect=_gen)
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _ms(dt: datetime) -> int:
@@ -86,6 +108,7 @@ async def test_members_carry_change_percent():
         patch("src.services.podcast.cache_set", new=AsyncMock()),
         patch.object(svc, "_allowed_podcast_names", new=AsyncMock(return_value=None)),
         patch("src.services.stock_close_refresh.get_eod_change_pct", side_effect=_fake_eod),
+        _patch_get_session(),
     ):
         result = await svc.sector_board()
 
@@ -124,6 +147,7 @@ async def test_avg_change_is_mean_of_non_null():
         patch("src.services.podcast.cache_set", new=AsyncMock()),
         patch.object(svc, "_allowed_podcast_names", new=AsyncMock(return_value=None)),
         patch("src.services.stock_close_refresh.get_eod_change_pct", side_effect=_fake_eod),
+        _patch_get_session(),
     ):
         result = await svc.sector_board()
 
@@ -146,6 +170,7 @@ async def test_avg_change_none_when_all_prices_unavailable():
         patch("src.services.podcast.cache_set", new=AsyncMock()),
         patch.object(svc, "_allowed_podcast_names", new=AsyncMock(return_value=None)),
         patch("src.services.stock_close_refresh.get_eod_change_pct", side_effect=_fake_eod),
+        _patch_get_session(),
     ):
         result = await svc.sector_board()
 
@@ -194,6 +219,7 @@ async def test_sectors_ordered_by_hotness_desc():
         patch("src.services.podcast.cache_set", new=AsyncMock()),
         patch.object(svc, "_allowed_podcast_names", new=AsyncMock(return_value=None)),
         patch("src.services.stock_close_refresh.get_eod_change_pct", side_effect=_fake_eod),
+        _patch_get_session(),
     ):
         result = await svc.sector_board()
 
@@ -232,6 +258,7 @@ async def test_members_sorted_change_percent_desc_none_last():
         patch("src.services.podcast.cache_set", new=AsyncMock()),
         patch.object(svc, "_allowed_podcast_names", new=AsyncMock(return_value=None)),
         patch("src.services.stock_close_refresh.get_eod_change_pct", side_effect=_fake_eod),
+        _patch_get_session(),
     ):
         result = await svc.sector_board()
 
@@ -259,6 +286,7 @@ async def test_retracted_and_out_of_scope_excluded():
         patch("src.services.podcast.cache_set", new=AsyncMock()),
         patch.object(svc, "_allowed_podcast_names", new=AsyncMock(return_value=allowed)),
         patch("src.services.stock_close_refresh.get_eod_change_pct", side_effect=_fake_eod),
+        _patch_get_session(),
     ):
         result = await svc.sector_board()
 
@@ -322,8 +350,44 @@ async def test_hotness_between_zero_and_one():
         patch("src.services.podcast.cache_set", new=AsyncMock()),
         patch.object(svc, "_allowed_podcast_names", new=AsyncMock(return_value=None)),
         patch("src.services.stock_close_refresh.get_eod_change_pct", side_effect=_fake_eod),
+        _patch_get_session(),
     ):
         result = await svc.sector_board()
 
     for s in result:
         assert 0.0 <= s["hotness"] <= 1.0
+
+
+@pytest.mark.asyncio
+async def test_member_and_sector_series_populated():
+    """member.series carries last-12 closes; sector.series is the rebased aggregate."""
+    docs = [_doc("ep-001")]
+    svc, _ = _make_svc(docs)
+
+    # Provide 5 daily closes for ticker 2327 (>= 2, so series is non-empty).
+    closes_2327 = [100.0, 102.0, 101.0, 103.0, 105.0]
+    close_rows = [("2327", f"2026-06-{14 + i:02d}", c) for i, c in enumerate(closes_2327)]
+
+    async def _fake_eod(ticker: str):
+        return {"2327": 2.0}.get(ticker)
+
+    with (
+        patch("src.services.podcast.cache_get", new=AsyncMock(return_value=None)),
+        patch("src.services.podcast.cache_set", new=AsyncMock()),
+        patch.object(svc, "_allowed_podcast_names", new=AsyncMock(return_value=None)),
+        patch("src.services.stock_close_refresh.get_eod_change_pct", side_effect=_fake_eod),
+        _patch_get_session(close_rows=close_rows),
+    ):
+        result = await svc.sector_board()
+
+    assert len(result) == 1
+    sector = result[0]
+
+    # member series = the raw closes (all 5, within the 12-point cap)
+    members = sector["members"]
+    assert len(members) == 1
+    assert members[0]["series"] == pytest.approx(closes_2327)
+
+    # sector series = rebased to 100 at first close
+    expected_sector_series = [c / closes_2327[0] * 100.0 for c in closes_2327]
+    assert sector["series"] == pytest.approx(expected_sector_series)

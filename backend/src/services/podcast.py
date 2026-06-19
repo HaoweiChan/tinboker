@@ -937,7 +937,7 @@ class PodcastService:
 
         Cache TTL matches podcast_episodes (10 min) so prices stay fresh.
         """
-        cache_key = f"sectors:board:v1:{self._scope_tag()}"
+        cache_key = f"sectors:board:v2:{self._scope_tag()}"
         cached = await cache_get(cache_key)
         if cached:
             try:
@@ -992,6 +992,7 @@ class PodcastService:
 
         # Gather all unique tickers and fetch EOD change% concurrently
         from src.services.stock_close_refresh import get_eod_change_pct
+        from src.database.models import StockDailyClose
 
         all_tickers: list[str] = list({
             t for tickers in ticker_map.values() for t in tickers
@@ -999,15 +1000,50 @@ class PodcastService:
         pcts = await asyncio.gather(*[get_eod_change_pct(t) for t in all_tickers])
         ticker_pct: dict[str, Optional[float]] = dict(zip(all_tickers, pcts))
 
+        # Batch-read daily closes for sparkline series (last 12 per ticker)
+        _SERIES_LIMIT = 12
+        _CHUNK_SIZE = 200
+
+        def _batch_read_closes(tickers: list[str]) -> dict[str, list[float]]:
+            """Sync: query StockDailyClose for all tickers, return ordered close lists."""
+            result_map: dict[str, list[float]] = {}
+            for session in get_session():
+                try:
+                    for chunk_start in range(0, len(tickers), _CHUNK_SIZE):
+                        chunk = tickers[chunk_start: chunk_start + _CHUNK_SIZE]
+                        rows = (
+                            session.query(
+                                StockDailyClose.ticker,
+                                StockDailyClose.date,
+                                StockDailyClose.close,
+                            )
+                            .filter(StockDailyClose.ticker.in_(chunk))
+                            .order_by(StockDailyClose.ticker.asc(), StockDailyClose.date.asc())
+                            .all()
+                        )
+                        for ticker, _date, close in rows:
+                            result_map.setdefault(ticker, []).append(close)
+                except Exception as exc:
+                    logger.debug(f"sector_board: close series read failed: {exc}")
+                break
+            # Trim to last _SERIES_LIMIT points
+            return {t: closes[-_SERIES_LIMIT:] for t, closes in result_map.items()}
+
+        ticker_series: dict[str, list[float]] = {}
+        if all_tickers:
+            ticker_series = await asyncio.to_thread(_batch_read_closes, all_tickers)
+
         # Build per-sector members + avg_change
         sectors_raw: list[dict] = []
         for eid, count in counts.items():
             members_unsorted: list[dict] = []
             for ticker, name in ticker_map.get(eid, {}).items():
+                closes = ticker_series.get(ticker, [])
                 members_unsorted.append({
                     "ticker": ticker,
                     "name": name,
                     "change_percent": ticker_pct.get(ticker),
+                    "series": closes if len(closes) >= 2 else [],
                 })
             # Sort members: non-None change_percent DESC, then None last
             members = sorted(
@@ -1018,6 +1054,25 @@ class PodcastService:
             non_null = [m["change_percent"] for m in members if m["change_percent"] is not None]
             avg_change: Optional[float] = (sum(non_null) / len(non_null)) if non_null else None
 
+            # Compute sector series: element-wise mean of rebased member series.
+            # Rebase each member's closes to 100 at first point, then align to the
+            # shortest length by taking the trailing K points, then average across members.
+            member_rebased: list[list[float]] = []
+            for m in members:
+                s = m["series"]
+                if len(s) >= 2:
+                    base = s[0]
+                    if base:
+                        member_rebased.append([v / base * 100.0 for v in s])
+            if member_rebased:
+                min_len = min(len(r) for r in member_rebased)
+                aligned = [r[-min_len:] for r in member_rebased]
+                sector_series: list[float] = [
+                    sum(col) / len(col) for col in zip(*aligned)
+                ]
+            else:
+                sector_series = []
+
             sectors_raw.append({
                 "exposure_id": eid,
                 "display_name": meta[eid]["display_name"],
@@ -1025,6 +1080,7 @@ class PodcastService:
                 "episode_count": count,
                 "avg_change": avg_change,
                 "members": members,
+                "series": sector_series,
             })
 
         # Min-max normalise avg_change and episode_count to 0..1, blend into hotness
