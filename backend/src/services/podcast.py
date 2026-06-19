@@ -806,9 +806,12 @@ class PodcastService:
         # Sort by publish time descending in Python
         dicts.sort(key=lambda d: self._dict_release_ms(d), reverse=True)
 
-        # Build Episode objects and apply release scope + content guard
+        # Build Episode objects and apply release scope + content guard.
+        # enrich_content=False keeps this a lean list view (no transcript/summary
+        # GCS hydration) — same as get_episodes_by_tag, so the sector page payload
+        # stays small and the page renders fast.
         episodes_raw = await asyncio.gather(
-            *[self.transformer.to_episode(d) for d in dicts]
+            *[self.transformer.to_episode(d, enrich_content=False) for d in dicts]
         )
         episodes = self._scope_episodes(list(episodes_raw), allowed, cutoff)
 
@@ -860,7 +863,7 @@ class PodcastService:
             "exposure_type": exposure_type,
             "resolved_tickers": resolved_tickers,
             "episodes": [ep.dict() for ep in paged],
-            "total": len(paged),
+            "total": len(episodes),
         }
 
         try:
