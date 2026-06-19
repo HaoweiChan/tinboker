@@ -40,6 +40,8 @@ _KNOWN_NAME_CORRECTIONS: List[Tuple[str, str, str, str]] = [
     ("3023", "TW", "新漢", "信邦"),        # SINBON Electronics; 新漢 is 8234 (NEXCOM)
     ("2745", "TW", "上銀", "五福"),        # Wu Fu Travel; 上銀 is 2049 (Hiwin)
     ("6472", "TW", "閎暉", "保瑞"),        # Bora Pharmaceuticals; 閎暉 is 3311
+    ("3357", "TW", "再生-KY", "臺慶科"),   # Taiwan Ceramic; 再生-KY is 1337
+    ("5351", "TW", "鉅祥", "鈺創"),        # Etron Technology; 鉅祥 is 2476
 ]
 
 

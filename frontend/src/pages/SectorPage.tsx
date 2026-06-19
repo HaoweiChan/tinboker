@@ -90,7 +90,7 @@ export const SectorPage: React.FC = () => {
   // request is in flight or if it fails — show a skeleton, then the resolved name
   // (or a generic label as a last resort).
   const titleText = displayName || '產業 / 主題';
-  const representativeTickers = resolvedTickers.slice(0, 8);
+  const representativeTickers = resolvedTickers.slice(0, 12);
 
   return (
     <>
