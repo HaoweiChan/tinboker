@@ -117,7 +117,7 @@ def main() -> int:
                 pending_episode_docs,
                 batch_size=500,
             )
-            print(f"  wrote staged docs in 500-op Firestore batches")
+            print("  wrote staged docs in 500-op Firestore batches")
         except Exception as e:
             print(f"  batch write failed ({e}); falling back to per-episode writes")
             total_written = 0

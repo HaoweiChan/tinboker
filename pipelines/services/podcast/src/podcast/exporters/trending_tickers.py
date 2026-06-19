@@ -9,9 +9,9 @@ historical source rows.
 
 from __future__ import annotations
 
+import logging
 from collections import Counter
 from datetime import datetime, timedelta, timezone
-import logging
 from typing import Any, Iterable
 
 from .ticker_insights import SCHEMA_VERSION, market_for_ticker, score_to_label
