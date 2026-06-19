@@ -28,6 +28,18 @@ def _normalize_aliases(aliases: Optional[List[str]]) -> Optional[List[str]]:
     return cleaned
 
 
+# Rows whose committed/auto "approved" zh name actually belongs to a DIFFERENT
+# company (the English name is correct and disambiguates). Each tuple is
+# (ticker, market, wrong_name_zh, correct_name_zh). The correction is
+# self-deactivating — it only fires while the row still holds the wrong value —
+# so it never fights a later human edit through the admin translations editor.
+_KNOWN_NAME_CORRECTIONS: List[Tuple[str, str, str, str]] = [
+    ("6285", "TW", "合勤控", "啟碁"),      # WNC = Wistron NeWeb; 合勤控 is 3704 (Zyxel)
+    ("6147", "TW", "精材", "頎邦"),        # Chipbond; 精材 is 3374 (XinTec)
+    ("3661", "TW", "譜瑞-KY", "世芯-KY"),  # Alchip; 譜瑞-KY is 4966 (Parade)
+]
+
+
 class TranslationService:
     """Service class for stock translation CRUD operations."""
 
@@ -48,6 +60,24 @@ class TranslationService:
             StockTranslation.ticker == ticker.upper(),
             StockTranslation.market == market.upper()
         ).first()
+
+    def apply_known_name_corrections(self) -> int:
+        """Fix rows whose approved zh name belongs to a different company.
+
+        Self-deactivating: a row is only updated while it still holds the exact
+        known-wrong value, so re-running is a no-op and a later human edit is
+        never overwritten. Returns the number of rows corrected.
+        """
+        fixed = 0
+        for ticker, market, wrong_zh, correct_zh in _KNOWN_NAME_CORRECTIONS:
+            row = self.get_by_ticker_market(ticker, market)
+            if row is not None and row.name_zh_tw == wrong_zh:
+                row.name_zh_tw = correct_zh
+                row.last_updated_by = "known_correction"
+                self.db.commit()
+                logger.info("Corrected %s %s zh name %s -> %s", ticker, market, wrong_zh, correct_zh)
+                fixed += 1
+        return fixed
 
     def list_translations(
         self,

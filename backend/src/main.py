@@ -100,6 +100,9 @@ async def lifespan(app: FastAPI):
             us_inserted = svc.backfill_translations(US_STOCK_TRANSLATIONS)
             if us_inserted:
                 print(f"Backfilled {us_inserted} new US stock translation(s).")
+            corrected = svc.apply_known_name_corrections()
+            if corrected:
+                print(f"Corrected {corrected} mislabeled stock translation name(s).")
             break
     except Exception as e:
         print(f"Warning: translation seed/backfill skipped: {e}")
