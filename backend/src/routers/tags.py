@@ -8,6 +8,9 @@ from sqlalchemy.orm import Session
 from src.database.postgres import get_session
 from src.schemas.sector import (
     EpisodesBySectorResponse,
+    SectorBoardItem,
+    SectorBoardMember,
+    SectorBoardResponse,
     SectorListItem,
     SectorResolvedTicker,
     SectorsListResponse,
@@ -139,6 +142,31 @@ async def list_sectors():
         return SectorsListResponse(sectors=[SectorListItem(**s) for s in sectors])
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching sectors: {str(e)}")
+
+
+@router.get("/sectors/board", response_model=SectorBoardResponse)
+async def get_sector_board():
+    """Return a ranked hot-sectors board with price performance.
+
+    Each sector entry includes its constituent tickers' daily % change,
+    an avg_change aggregate, and a blended hotness score (0..1).  Sorted
+    by hotness DESC so the most price-active, most-mentioned sectors float
+    to the top.  Intended as a richer replacement for the vague tag ranking
+    shown on /topics.
+    """
+    try:
+        sectors = await podcast_service.sector_board()
+        return SectorBoardResponse(
+            sectors=[
+                SectorBoardItem(
+                    **{k: v for k, v in s.items() if k != "members"},
+                    members=[SectorBoardMember(**m) for m in s["members"]],
+                )
+                for s in sectors
+            ]
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching sector board: {str(e)}")
 
 
 @router.get("/episodes/by-sector/{exposure_id}", response_model=EpisodesBySectorResponse)

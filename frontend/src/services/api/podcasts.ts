@@ -526,6 +526,28 @@ export async function getSectors(): Promise<SectorListItem[]> {
   return Array.isArray(d.sectors) ? d.sectors : [];
 }
 
+export interface SectorBoardMember {
+  ticker: string;
+  name: string;
+  change_percent: number | null;
+}
+
+export interface SectorBoardItem {
+  exposure_id: string;
+  display_name: string;
+  exposure_type: string;
+  episode_count: number;
+  avg_change: number | null;
+  hotness: number;
+  members: SectorBoardMember[];
+}
+
+export async function getSectorBoard(): Promise<SectorBoardItem[]> {
+  const response = await apiClient.get('/api/sectors/board');
+  const d = response.data ?? {};
+  return Array.isArray(d.sectors) ? d.sectors : [];
+}
+
 export interface EpisodesBySectorResponse {
   exposure_id: string;
   display_name: string;
