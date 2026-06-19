@@ -298,6 +298,62 @@
           "market": "US",
           "source": "curated",
           "rank": 4
+        },
+        {
+          "ticker": "3231",
+          "name": "緯創",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 5
+        },
+        {
+          "ticker": "2317",
+          "name": "鴻海",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 6
+        },
+        {
+          "ticker": "2356",
+          "name": "英業達",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 7
+        },
+        {
+          "ticker": "2376",
+          "name": "技嘉",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 8
+        },
+        {
+          "ticker": "3017",
+          "name": "奇鋐",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 9
+        },
+        {
+          "ticker": "3324",
+          "name": "雙鴻",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 10
+        },
+        {
+          "ticker": "2308",
+          "name": "台達電",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 11
+        },
+        {
+          "ticker": "3706",
+          "name": "神達",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 12
         }
       ]
     },
@@ -337,6 +393,48 @@
           "market": "TW",
           "source": "curated",
           "rank": 3
+        },
+        {
+          "ticker": "2308",
+          "name": "台達電",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 4
+        },
+        {
+          "ticker": "6125",
+          "name": "廣運",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 5
+        },
+        {
+          "ticker": "3483",
+          "name": "力致",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 6
+        },
+        {
+          "ticker": "2421",
+          "name": "建準",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 7
+        },
+        {
+          "ticker": "6230",
+          "name": "尼得科超眾",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 8
+        },
+        {
+          "ticker": "8996",
+          "name": "高力",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 9
         }
       ]
     },
@@ -904,6 +1002,55 @@
           "source": "curated",
           "rank": 5,
           "name_en": "E.SUN Financial Holding"
+        },
+        {
+          "ticker": "2885",
+          "name": "元大金",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 6
+        },
+        {
+          "ticker": "2892",
+          "name": "第一金",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 7
+        },
+        {
+          "ticker": "2880",
+          "name": "華南金",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 8
+        },
+        {
+          "ticker": "5880",
+          "name": "合庫金",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 9
+        },
+        {
+          "ticker": "2883",
+          "name": "凱基金",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 10
+        },
+        {
+          "ticker": "2890",
+          "name": "永豐金",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 11
+        },
+        {
+          "ticker": "2889",
+          "name": "國票金",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 12
         }
       ]
     },
@@ -957,6 +1104,55 @@
           "market": "TW",
           "source": "curated",
           "rank": 5
+        },
+        {
+          "ticker": "2404",
+          "name": "漢唐",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 6
+        },
+        {
+          "ticker": "3680",
+          "name": "家登",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 7
+        },
+        {
+          "ticker": "1560",
+          "name": "中砂",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 8
+        },
+        {
+          "ticker": "2360",
+          "name": "致茂",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 9
+        },
+        {
+          "ticker": "3455",
+          "name": "由田",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 10
+        },
+        {
+          "ticker": "8091",
+          "name": "翔名",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 11
+        },
+        {
+          "ticker": "6691",
+          "name": "洋基工程",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 12
         }
       ]
     },
@@ -1046,6 +1242,69 @@
           "market": "TW",
           "source": "curated",
           "rank": 3
+        },
+        {
+          "ticker": "6239",
+          "name": "力成",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 4
+        },
+        {
+          "ticker": "6510",
+          "name": "精測",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 5
+        },
+        {
+          "ticker": "6223",
+          "name": "旺矽",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 6
+        },
+        {
+          "ticker": "6515",
+          "name": "穎崴",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 7
+        },
+        {
+          "ticker": "6451",
+          "name": "訊芯-KY",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 8
+        },
+        {
+          "ticker": "8150",
+          "name": "南茂",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 9
+        },
+        {
+          "ticker": "6257",
+          "name": "矽格",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 10
+        },
+        {
+          "ticker": "6271",
+          "name": "同欣電",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 11
+        },
+        {
+          "ticker": "6147",
+          "name": "頎邦",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 12
         }
       ]
     },
