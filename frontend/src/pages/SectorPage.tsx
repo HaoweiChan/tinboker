@@ -85,21 +85,31 @@ export const SectorPage: React.FC = () => {
     };
   }, [exposureId]);
 
-  const displayName = data?.display_name || exposureId || '';
+  const displayName = data?.display_name || '';
+  // Never flash the raw exposure id (e.g. "sector_passive_components") while the
+  // request is in flight or if it fails — show a skeleton, then the resolved name
+  // (or a generic label as a last resort).
+  const titleText = displayName || '產業 / 主題';
   const representativeTickers = resolvedTickers.slice(0, 8);
 
   return (
     <>
       <SEO
-        title={displayName}
-        description={`所有關於「${displayName}」產業 / 主題的 Podcast 摘要與市場討論。`}
+        title={titleText}
+        description={`所有關於「${titleText}」產業 / 主題的 Podcast 摘要與市場討論。`}
       />
       <PageContent>
         <div className="flex items-start gap-5 bg-card border border-border rounded-md p-5 sm:p-6 mb-[18px]">
           <div className="flex-1 min-w-0">
-            <h1 className="text-[22px] font-semibold tracking-[-0.02em]">{displayName}</h1>
+            {loading ? (
+              <div className="h-7 w-40 bg-muted rounded animate-pulse" />
+            ) : (
+              <h1 className="text-[22px] font-semibold tracking-[-0.02em]">{titleText}</h1>
+            )}
             <p className="text-[13px] text-muted-foreground mt-1 max-w-[56ch] leading-[1.55]">
-              瀏覽所有關於「{displayName}」的 Podcast 摘要與市場討論{loading ? '' : ` · ${episodes.length} 集`}。
+              {loading
+                ? '載入中…'
+                : `瀏覽所有關於「${titleText}」的 Podcast 摘要與市場討論 · ${episodes.length} 集。`}
             </p>
             {!loading && representativeTickers.length > 0 && (
               <div className="flex flex-wrap gap-1.5 mt-3">
