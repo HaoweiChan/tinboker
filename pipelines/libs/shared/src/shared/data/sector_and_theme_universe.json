@@ -907,6 +907,105 @@
           "rank": 3
         }
       ]
+    },
+    {
+      "exposure_id": "sector_bicycle",
+      "exposure_type": "sector",
+      "sector_id": "bicycle",
+      "theme_id": null,
+      "display_name": "自行車",
+      "aliases": [
+        "自行車",
+        "單車",
+        "腳踏車",
+        "電動自行車",
+        "bicycle",
+        "e-bike"
+      ],
+      "members": [
+        {
+          "ticker": "9921",
+          "name": "巨大",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1,
+          "name_en": "Giant Manufacturing"
+        },
+        {
+          "ticker": "9914",
+          "name": "美利達",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2,
+          "name_en": "Merida Industry"
+        }
+      ]
+    },
+    {
+      "exposure_id": "sector_steel",
+      "exposure_type": "sector",
+      "sector_id": "steel",
+      "theme_id": null,
+      "display_name": "鋼鐵",
+      "aliases": [
+        "鋼鐵",
+        "鋼鐵股",
+        "鋼價",
+        "不鏽鋼",
+        "steel"
+      ],
+      "members": [
+        {
+          "ticker": "2002",
+          "name": "中鋼",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1,
+          "name_en": "China Steel"
+        },
+        {
+          "ticker": "2027",
+          "name": "大成鋼",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2,
+          "name_en": "Ta Chen Stainless Pipe"
+        }
+      ]
+    },
+    {
+      "exposure_id": "sector_tourism",
+      "exposure_type": "sector",
+      "sector_id": "tourism",
+      "theme_id": null,
+      "display_name": "觀光",
+      "aliases": [
+        "觀光",
+        "旅遊",
+        "觀光股",
+        "旅遊股",
+        "旅行社",
+        "tourism",
+        "travel"
+      ],
+      "members": [
+        {
+          "ticker": "2731",
+          "name": "雄獅",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1,
+          "name_en": "Lion Travel"
+        },
+        {
+          "ticker": "5706",
+          "name": "鳳凰",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2,
+          "name_en": "Phoenix Tours"
+        }
+      ]
     }
   ]
 }
