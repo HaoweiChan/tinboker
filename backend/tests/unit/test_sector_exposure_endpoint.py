@@ -167,6 +167,34 @@ async def test_release_scope_applied():
 
 
 @pytest.mark.asyncio
+async def test_metadata_derived_even_when_all_episodes_scoped_out():
+    """When every matched episode is filtered out by release scope, the header
+    still shows the friendly display_name + resolved tickers (derived pre-scope),
+    not the raw exposure_id."""
+    docs = [_raw_doc("ep-en", podcast_name="CNBC Fast Money", display_name="網通",
+                     exposure_id="sector_networking",
+                     tickers=[{"ticker": "2345", "name": "智邦", "market": "TW", "source": "curated"}])]
+
+    mock_fs = MagicMock()
+    mock_fs.query_collection.return_value = docs
+
+    svc = PodcastService(firestore_service=mock_fs)
+    allowed = frozenset({"Gooaye 股癌"})  # excludes the only match
+
+    with (
+        patch("src.services.podcast.cache_get", new=AsyncMock(return_value=None)),
+        patch("src.services.podcast.cache_set", new=AsyncMock()),
+        patch.object(svc, "_allowed_podcast_names", new=AsyncMock(return_value=allowed)),
+    ):
+        result = await svc.get_episodes_by_sector("sector_networking")
+
+    assert result["total"] == 0
+    assert result["episodes"] == []
+    assert result["display_name"] == "網通"  # not the raw "sector_networking"
+    assert [t["ticker"] for t in result["resolved_tickers"]] == ["2345"]
+
+
+@pytest.mark.asyncio
 async def test_firestore_query_uses_array_contains():
     """query_collection is called with the array-contains filter on sector_exposure_ids."""
     mock_fs = MagicMock()
