@@ -237,11 +237,26 @@ class FirebaseService:
                 if not episode_data.get('podcast_name') and existing_data.get('podcast_name'):
                     episode_data['podcast_name'] = existing_data['podcast_name']
                     print(f"  ⚠ Preserved existing podcast_name: {existing_data['podcast_name']}")
-                # Update existing episode (merge to preserve any additional fields)
-                doc_ref.update(episode_data)
+                # Contract invariants: created_time is immutable once the
+                # episode exists, and platform-owned modified_* fields must not
+                # be overwritten by pipeline regeneration writes.
+                update_data = dict(episode_data)
+                for protected_field in (
+                    'created_time',
+                    'modified_summary_url',
+                    'modified_summary_content',
+                    'modified_by',
+                    'modified_at',
+                ):
+                    update_data.pop(protected_field, None)
+                if update_data.get('retracted_at') is None:
+                    update_data.pop('retracted_at', None)
+                # Merge keeps unknown/frontend-owned fields intact.
+                doc_ref.set(update_data, merge=True)
             else:
                 print(f"  ✨ Creating new episode document: {episode_id}")
                 # Create new episode document
+                episode_data.setdefault('retracted_at', None)
                 doc_ref.set(episode_data)
             
             # Upload episode to tags and tickers subcollections
@@ -912,4 +927,3 @@ class FirebaseService:
                     result['tickers_valid'] = False
         
         return result
-

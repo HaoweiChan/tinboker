@@ -39,6 +39,7 @@ from ..content_builder.nodes.events_markdown import build_events_markdown
 from ..content_builder.nodes.key_insights_extractor import is_placeholder_summary
 from ..content_builder.nodes.markdown_transform import transform_to_markdown
 from ..content_builder.nodes.marp_converter import convert_marp, convert_marp_ticker
+from ..content_builder.nodes.sector_exposures import derive_sector_exposures
 from ..content_builder.nodes.social_cards_builder import build_social_cards
 from ..content_builder.nodes.tags_tickers import derive_tags_tickers
 from ..content_builder.profiles import load_profile
@@ -293,6 +294,7 @@ def _apply(step: str, output: Any, state: dict[str, Any]) -> list[str]:
         state.update(extractor.postprocess(output, state))
         state.update(cluster_sentences(state))
         state.update(build_events_markdown(state))
+        state.update(derive_sector_exposures(state))
         if not state.get("clustered_events"):
             warnings.append(
                 "0 events kept after clustering — the policy router dropped every "
@@ -400,6 +402,15 @@ def _assemble(draft: dict[str, Any]) -> dict[str, Any]:
         payload["key_insights"] = state.get("key_insights", [])
     if STEP_EXTRACTOR in completed:
         payload["events_markdown"] = state.get("events_markdown", "")
+        for field in (
+            "sector_exposures",
+            "unresolved_market_trends",
+            "sector_exposure_ids",
+            "sector_ids",
+            "theme_ids",
+            "unresolved_market_trend_ids",
+        ):
+            payload[field] = state.get(field, [])
     if STEP_TICKER in completed:
         payload["ticker_insights"] = state.get("ticker_insights")
     if STEP_MARP in completed:
@@ -414,7 +425,15 @@ def _assemble(draft: dict[str, Any]) -> dict[str, Any]:
 
 def _doc_update(payload: dict[str, Any]) -> dict[str, Any]:
     """The episode-doc merge update — everything except the ticker subcollection."""
-    return {k: v for k, v in payload.items() if k != "ticker_insights"}
+    protected = {
+        "ticker_insights",
+        "created_time",
+        "modified_summary_url",
+        "modified_summary_content",
+        "modified_by",
+        "modified_at",
+    }
+    return {k: v for k, v in payload.items() if k not in protected}
 
 
 def _manual_cache_commands(
@@ -653,6 +672,8 @@ def preview(episode_id: str) -> dict[str, Any]:
         "key_insights": payload.get("key_insights", []),
         "tags": payload.get("tags", []),
         "related_tickers": payload.get("related_tickers", []),
+        "sector_exposures": payload.get("sector_exposures", []),
+        "unresolved_market_trends": payload.get("unresolved_market_trends", []),
         "ticker_insight_count": ticker_count,
         "marp_chars": len(payload.get("marp_markdown", "")),
         "ticker_marp_chars": len(payload.get("ticker_marp_markdown", "")),

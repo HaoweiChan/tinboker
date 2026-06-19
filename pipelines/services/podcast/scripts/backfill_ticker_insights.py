@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Backfill ``ticker_insights/{episode_id}/tickers/{ticker}`` from GCS JSON.
+"""Phase B2 migration: backfill ``ticker_insights/{episode_id}/tickers/{ticker}``.
 
 For each Firestore episode with a ``ticker_insights_url`` (GCS gs://),
 this script:
@@ -8,7 +8,8 @@ this script:
   2. Translates it through the same exporter the live pipeline uses
      (`build_episode_insight_docs` — same spec output, same 5-tier label
      derivation, same Chinese horizon mapping).
-  3. Writes the per-ticker docs into Firestore.
+  3. Writes the per-ticker docs into Firestore with standard 500-op
+     WriteBatch chunks.
 
 Idempotent: re-running overwrites each doc with a fresh build. Reads any GCS
 bucket directly via ``google.cloud.storage`` so legacy episodes that live in
@@ -34,6 +35,7 @@ sys.path.insert(0, str(_SERVICE_ROOT))
 from src.podcast.exporters.ticker_insights import (  # noqa: E402
     build_episode_insight_docs,
     write_episode_insights,
+    write_many_episode_insights,
 )
 from src.service.upload_to_firebase import FirebaseService  # noqa: E402
 
@@ -73,6 +75,7 @@ def main() -> int:
 
     total_written = 0
     skipped: list[str] = []
+    pending_episode_docs: dict[str, dict[str, dict]] = {}
     for i, ep in enumerate(targets, 1):
         ep_id = ep.get("id")
         if not ep_id:
@@ -104,13 +107,26 @@ def main() -> int:
             print(f"  [{i}/{len(targets)}] {ep_id}: would write {len(docs)} tickers")
             total_written += len(docs)
             continue
+        pending_episode_docs[ep_id] = docs
+        print(f"  [{i}/{len(targets)}] {ep_id}: staged {len(docs)} tickers")
+
+    if pending_episode_docs:
         try:
-            written = write_episode_insights(fb.db, episode_id=ep_id, docs=docs)
-            total_written += written
-            print(f"  [{i}/{len(targets)}] {ep_id}: wrote {written}")
+            total_written = write_many_episode_insights(
+                fb.db,
+                pending_episode_docs,
+                batch_size=500,
+            )
+            print("  wrote staged docs in 500-op Firestore batches")
         except Exception as e:
-            print(f"  [{i}/{len(targets)}] {ep_id}: write failed ({e})")
-            skipped.append(ep_id)
+            print(f"  batch write failed ({e}); falling back to per-episode writes")
+            total_written = 0
+            for ep_id, docs in pending_episode_docs.items():
+                try:
+                    total_written += write_episode_insights(fb.db, episode_id=ep_id, docs=docs)
+                except Exception as inner:
+                    print(f"  {ep_id}: write failed ({inner})")
+                    skipped.append(ep_id)
 
     print(f"\n{'(dry-run) ' if args.dry_run else ''}{total_written} ticker docs across {len(targets) - len(skipped)} episodes")
     if skipped:

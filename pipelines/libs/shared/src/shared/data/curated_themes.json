@@ -1,0 +1,221 @@
+{
+  "_comment": "Manually reviewed market themes/concepts. Official sector classifications do not cover themes such as AI servers, liquid cooling, silicon photonics, or CPO. The compile script merges this seed with low-cost static sources into sector_and_theme_universe.json.",
+  "themes": [
+    {
+      "theme_id": "ai_server",
+      "display_name": "AI 伺服器",
+      "aliases": [
+        "AI 伺服器",
+        "AI server",
+        "AI servers",
+        "ai server supply chain",
+        "AI 供應鏈"
+      ],
+      "members": [
+        {
+          "ticker": "2382",
+          "source": "curated",
+          "rank": 1
+        },
+        {
+          "ticker": "6669",
+          "name": "緯穎",
+          "name_en": "Wiwynn",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2
+        },
+        {
+          "ticker": "NVDA",
+          "source": "curated",
+          "rank": 3
+        },
+        {
+          "ticker": "SMCI",
+          "name": "Supermicro",
+          "name_en": "Super Micro Computer",
+          "market": "US",
+          "source": "curated",
+          "rank": 4
+        }
+      ]
+    },
+    {
+      "theme_id": "liquid_cooling",
+      "display_name": "液冷",
+      "aliases": [
+        "液冷",
+        "水冷",
+        "liquid cooling",
+        "direct liquid cooling"
+      ],
+      "members": [
+        {
+          "ticker": "3017",
+          "name": "奇鋐",
+          "name_en": "AVC",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1
+        },
+        {
+          "ticker": "3324",
+          "name": "雙鴻",
+          "name_en": "Auras",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2
+        },
+        {
+          "ticker": "3653",
+          "name": "健策",
+          "name_en": "Jentech",
+          "market": "TW",
+          "source": "curated",
+          "rank": 3
+        }
+      ]
+    },
+    {
+      "theme_id": "silicon_photonics",
+      "display_name": "矽光子",
+      "aliases": [
+        "矽光子",
+        "光通訊",
+        "silicon photonics",
+        "optical interconnect",
+        "co-packaged optics"
+      ],
+      "members": [
+        {
+          "ticker": "3081",
+          "name": "聯亞",
+          "name_en": "LandMark Optoelectronics",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1
+        },
+        {
+          "ticker": "3450",
+          "name": "聯鈞",
+          "name_en": "ELaser",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2
+        },
+        {
+          "ticker": "AOI",
+          "source": "curated",
+          "rank": 3
+        },
+        {
+          "ticker": "LITE",
+          "source": "curated",
+          "rank": 4
+        },
+        {
+          "ticker": "COHR",
+          "source": "curated",
+          "rank": 5
+        }
+      ]
+    },
+    {
+      "theme_id": "power_semiconductor",
+      "display_name": "功率半導體",
+      "aliases": [
+        "功率半導體",
+        "功率元件",
+        "功率 IC",
+        "第三代半導體",
+        "碳化矽",
+        "氮化鎵",
+        "power semiconductor",
+        "power semiconductors",
+        "silicon carbide",
+        "gallium nitride"
+      ],
+      "members": [
+        {
+          "ticker": "2342",
+          "name": "茂矽",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1,
+          "name_en": "Mosel Vitelic"
+        },
+        {
+          "ticker": "2481",
+          "name": "強茂",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2
+        },
+        {
+          "ticker": "3707",
+          "name": "漢磊科技",
+          "market": "TW",
+          "source": "curated",
+          "rank": 3,
+          "name_en": "Episil-Precision"
+        },
+        {
+          "ticker": "ON",
+          "name": "安森美",
+          "market": "US",
+          "source": "curated",
+          "rank": 4,
+          "name_en": "ON Semiconductor"
+        },
+        {
+          "ticker": "WOLF",
+          "name": "Wolfspeed",
+          "market": "US",
+          "source": "curated",
+          "rank": 5,
+          "name_en": "Wolfspeed"
+        }
+      ]
+    },
+    {
+      "theme_id": "robotics",
+      "display_name": "機器人",
+      "aliases": [
+        "機器人",
+        "人形機器人",
+        "工業機器人",
+        "工廠自動化",
+        "自動化",
+        "robot",
+        "robotics",
+        "humanoid"
+      ],
+      "members": [
+        {
+          "ticker": "2049",
+          "name": "上銀",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1,
+          "name_en": "Hiwin Technologies"
+        },
+        {
+          "ticker": "1590",
+          "name": "亞德客-KY",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2,
+          "name_en": "Airtac International Group"
+        },
+        {
+          "ticker": "2359",
+          "name": "所羅門",
+          "market": "TW",
+          "source": "curated",
+          "rank": 3,
+          "name_en": "Solomon Technology"
+        }
+      ]
+    }
+  ]
+}

@@ -226,7 +226,8 @@ def test_full_run_preview_has_everything():
     orch.submit("ep_test", "marp_writer", MARP_OUT)
     orch.submit("ep_test", "ticker_marp_writer", {"title": "T", "slides": [{"heading": "2330", "bullet_points": ["看多"], "start_time": 0}]})
     prev = orch.preview("ep_test")
-    assert prev["key_insights"] == ["台積電財報優於預期", "半導體供應鏈樂觀"]
+    assert prev["key_insights"][:2] == ["台積電財報優於預期", "半導體供應鏈樂觀"]
+    assert len(prev["key_insights"]) >= 3
     assert prev["related_tickers"] == ["2330"]
     assert prev["ticker_insight_count"] == 1
     assert prev["social_card_count"] >= 1  # cover + theme cards
@@ -342,9 +343,12 @@ def test_episode_doc_parity_pipeline_vs_regen(monkeypatch):
     assert payload["related_tickers"] == pipe["related_tickers"]
     assert payload["events_markdown"] == pipe["events_markdown"]
     assert payload["ticker_insights"] == pipe["ticker_insights"]
+    assert payload["sector_exposures"] == pipe["sector_exposures"]
+    assert payload["sector_exposure_ids"] == pipe["sector_exposure_ids"]
     # And the canonical tags are the ASCII slug parsed from the #tag: link.
     assert payload["tags"] == ["semiconductor"]
     assert payload["related_tickers"] == ["2330"]
+    assert "sector_semiconductor" in payload["sector_exposure_ids"]
 
 
 # --- Publish-date stamping (the /picks "走勢" forward-return reference date) ----

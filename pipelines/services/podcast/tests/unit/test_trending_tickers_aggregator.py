@@ -8,20 +8,35 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from src.podcast.exporters.trending_tickers import aggregate_trending
+from src.podcast.exporters.trending_tickers import (
+    aggregate_trending,
+    market_collision_doc_ids,
+    touched_ticker_markets,
+    validate_trending_document,
+)
 
 _NOW = datetime(2026, 5, 14, 0, 0, tzinfo=timezone.utc)
 
 
-def _insight(ticker: str, score: float, days_ago: int, podcaster: str, episode_id: str):
+def _insight(
+    ticker: str,
+    score: float,
+    days_ago: int,
+    podcaster: str,
+    episode_id: str,
+    market: str | None = None,
+):
     launch = _NOW - timedelta(days=days_ago)
-    return {
+    row = {
         "ticker": ticker,
         "sentiment_score": score,
         "podcaster": podcaster,
         "podcast_launch_time": launch.isoformat().replace("+00:00", "Z"),
         "episode_id": episode_id,
     }
+    if market:
+        row["market"] = market
+    return row
 
 
 def test_rolling_windows_count_correctly():
@@ -91,3 +106,61 @@ def test_skips_rows_without_ticker():
     ]
     docs = aggregate_trending(rows, now=_NOW)
     assert set(docs) == {"GOOG"}
+
+
+def test_aggregates_by_ticker_and_market_metadata():
+    rows = [
+        _insight("TSM", 0.7, 1, "股癌", "us", market="US"),
+        _insight("2330", 0.8, 1, "股癌", "tw", market="TW"),
+    ]
+    docs = aggregate_trending(rows, now=_NOW)
+    assert docs["TSM"]["market"] == "US"
+    assert docs["2330.TW"]["ticker"] == "2330"
+    assert docs["2330.TW"]["market"] == "TW"
+
+
+def test_collision_keeps_us_doc_id_exact_and_suffixes_non_us():
+    rows = [
+        _insight("ABC", 0.7, 1, "股癌", "us", market="US"),
+        _insight("ABC", 0.6, 1, "股癌", "tw", market="TW"),
+    ]
+    docs = aggregate_trending(rows, now=_NOW)
+    assert "ABC" in docs
+    assert docs["ABC"]["market"] == "US"
+    assert docs["ABC.TW"]["ticker"] == "ABC"
+    assert docs["ABC.TW"]["market"] == "TW"
+
+
+def test_non_us_doc_id_is_always_suffixed_even_without_collision():
+    docs = aggregate_trending(
+        [_insight("2330", 0.8, 1, "股癌", "tw", market="TW")],
+        now=_NOW,
+    )
+    assert set(docs) == {"2330.TW"}
+
+
+def test_market_validation_rejects_unknown_market_tokens():
+    rows = [
+        _insight("X1", 0.6, 1, "股癌", "unknown"),
+    ]
+    try:
+        market_collision_doc_ids(rows)
+    except ValueError as exc:
+        assert "unknown market" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("expected collision validation failure")
+
+
+def test_touched_ticker_markets_infers_legacy_market_shape():
+    rows = [
+        _insight("NVDA", 0.7, 1, "股癌", "e1"),
+        _insight("2330", 0.6, 1, "股癌", "e2"),
+    ]
+    assert touched_ticker_markets(rows) == {("NVDA", "US"), ("2330", "TW")}
+
+
+def test_invalid_trending_document_is_rejected_before_write():
+    assert validate_trending_document("NVDA", {"ticker": "NVDA", "market": "US"})
+    assert validate_trending_document("2330.TW", {"ticker": "2330", "market": "TW"})
+    assert not validate_trending_document("2330", {"ticker": "2330", "market": "TW"})
+    assert not validate_trending_document("X1", {"ticker": "X1"})

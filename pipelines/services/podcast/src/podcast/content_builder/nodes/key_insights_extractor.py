@@ -23,6 +23,7 @@ from ..state import PipelineState
 # generation lenient but drop anything longer than this hard cap — a paragraph is
 # not a key insight and would blow out the card layout.
 _MAX_ITEM_CHARS = 80
+_MIN_ITEMS = 3
 _MAX_ITEMS = 8
 
 # [label](target) -> label  (covers [台積電](#ticker:2330), [x](#tag:y), [x](url))
@@ -49,6 +50,18 @@ _PLACEHOLDER_MARKERS = (
     "real summary generation pending",
     "summary generation will be implemented",
 )
+
+_GENERIC_HEADINGS = {
+    "摘要",
+    "重點",
+    "結論",
+    "市場趨勢",
+    "投資觀點",
+    "風險",
+    "ticker insights",
+    "key insights",
+    "podcast episode summary",
+}
 
 
 def is_placeholder_summary(markdown: str) -> bool:
@@ -99,6 +112,67 @@ def sanitize_key_insights(items: Any) -> list[str]:
     return out
 
 
+def _fallback_candidates_from_markdown(markdown: str) -> list[str]:
+    """Extract deterministic plain-text fallback candidates from summary markdown."""
+    candidates: list[str] = []
+
+    def add(raw: str) -> None:
+        cleaned = _clean_item(raw)
+        if not cleaned or len(cleaned) > _MAX_ITEM_CHARS:
+            return
+        if cleaned.lower() in _GENERIC_HEADINGS:
+            return
+        if cleaned not in candidates:
+            candidates.append(cleaned)
+
+    for line in markdown.splitlines():
+        add(line)
+
+    plain = _clean_item(markdown)
+    for sentence in re.split(r"(?<=[。！？!?])\s+|[。！？!?]\s*", plain):
+        add(sentence)
+    return candidates
+
+
+def ensure_key_insights(
+    items: Any,
+    *,
+    markdown: str = "",
+    source: str = "Podcast",
+    episode_title: str = "Episode",
+) -> list[str]:
+    """Return 3–8 plain-text insights for a real processed summary.
+
+    Empty/placeholder summaries still return ``[]`` because they are not
+    considered processed content. Real summaries get deterministic fallbacks so
+    episode list cards never lose their required insight bullets when the LLM
+    response is sparse or malformed.
+    """
+    insights = sanitize_key_insights(items)
+    if len(insights) >= _MIN_ITEMS:
+        return insights[:_MAX_ITEMS]
+    if not markdown or not markdown.strip() or is_placeholder_summary(markdown):
+        return insights
+
+    for candidate in _fallback_candidates_from_markdown(markdown):
+        if candidate not in insights:
+            insights.append(candidate)
+        if len(insights) >= _MIN_ITEMS:
+            return insights[:_MAX_ITEMS]
+
+    fallback_items = [
+        f"{episode_title}整理本集核心市場脈絡",
+        f"{source}本集聚焦產業趨勢、資金動向與投資風險",
+        "後續可觀察主持人提到的催化因素與不確定性",
+    ]
+    for candidate in sanitize_key_insights(fallback_items):
+        if candidate not in insights:
+            insights.append(candidate)
+        if len(insights) >= _MIN_ITEMS:
+            break
+    return insights[:_MAX_ITEMS]
+
+
 def build_messages(state: PipelineState) -> list[dict[str, str]]:
     """Render the key-insights chat messages from ``markdown_report`` (no LLM call)."""
     prompts = load_prompt("key_insights_extractor")
@@ -118,7 +192,14 @@ def postprocess(result: Any, state: PipelineState) -> dict[str, Any]:
     raw = result.get("key_insights")
     if raw is None:
         raw = result.get("insights")  # tolerate the alternate key some models emit
-    return {"key_insights": sanitize_key_insights(raw)}
+    return {
+        "key_insights": ensure_key_insights(
+            raw,
+            markdown=state.get("markdown_report", ""),
+            source=state.get("source", "Podcast"),
+            episode_title=state.get("episode_title", "Episode"),
+        )
+    }
 
 
 def extract_key_insights_from_markdown(
@@ -128,8 +209,9 @@ def extract_key_insights_from_markdown(
 ) -> list[str]:
     """Generate sanitized ``key_insights`` from an episode summary markdown.
 
-    Best-effort: returns ``[]`` on empty input or any LLM/parse failure so the
-    caller (live pipeline node or backfill) never breaks on this one field.
+    Best-effort: returns ``[]`` on empty/placeholder input. For real summaries,
+    sparse or failed LLM output is completed from deterministic markdown
+    fallbacks so processed episodes keep the required 3–8 item contract.
     """
     if not markdown or not markdown.strip():
         return []
@@ -145,7 +227,12 @@ def extract_key_insights_from_markdown(
         result = invoke_json("key_insights_extractor", build_messages(state))
     except Exception as exc:  # noqa: BLE001 — one optional field must not abort the run
         print(f"  ⚠ key_insights extraction failed: {exc}")
-        return []
+        return ensure_key_insights(
+            [],
+            markdown=markdown,
+            source=source,
+            episode_title=episode_title,
+        )
 
     return postprocess(result, state)["key_insights"]
 
