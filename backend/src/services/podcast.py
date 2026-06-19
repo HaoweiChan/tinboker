@@ -881,6 +881,48 @@ class PodcastService:
     _BOARD_W_PRICE: float = 0.5
     _BOARD_W_MENTION: float = 0.5
 
+    async def sector_member_tickers(self) -> list[str]:
+        """Union of every sector/theme basket ticker across scoped episodes (no prices).
+
+        The daily-close refresher uses this so price diffs are warm for ALL board
+        constituents, not just individually-trending tickers. Scan-based + cached,
+        mirroring list_sectors' scoping (retracted / allowlist / recency).
+        """
+        cache_key = f"sectors:tickers:v1:{self._scope_tag()}"
+        cached = await cache_get(cache_key)
+        if cached:
+            try:
+                return json.loads(cached)
+            except Exception:
+                pass
+        allowed = await self._allowed_podcast_names()
+        cutoff = self._recency_cutoff_ms()
+        try:
+            docs = await asyncio.to_thread(self.firestore_service.get_all_documents, "episodes")
+        except Exception as e:
+            logger.warning("sector_member_tickers scan failed: %s", e)
+            return []
+        seen: set = set()
+        out: list[str] = []
+        for doc in docs:
+            if doc.get("retracted_at"):
+                continue
+            if allowed is not None and doc.get("podcast_name") not in allowed:
+                continue
+            if cutoff is not None and self._dict_release_ms(doc) < cutoff:
+                continue
+            for entry in doc.get("sector_exposures") or []:
+                for rt in entry.get("resolved_tickers") or []:
+                    t = str(rt.get("ticker") or "").strip().upper()
+                    if t and t not in seen:
+                        seen.add(t)
+                        out.append(t)
+        try:
+            await cache_set(cache_key, json.dumps(out), CACHE_TTL["podcast_episodes"])
+        except Exception:
+            pass
+        return out
+
     async def sector_board(self) -> list[dict]:
         """Return a ranked 'hot sectors' board with price performance.
 
