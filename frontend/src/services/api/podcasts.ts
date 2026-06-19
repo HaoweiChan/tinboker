@@ -512,3 +512,32 @@ export async function getEpisodeHeavy(
   );
   return response.data;
 }
+
+export interface EpisodesBySectorResponse {
+  exposure_id: string;
+  display_name: string;
+  exposure_type: string;
+  resolved_tickers: SectorResolvedTicker[];
+  episodes: Episode[];
+  total: number;
+}
+
+export async function getEpisodesBySector(
+  exposureId: string,
+  limit: number = 50,
+  offset: number = 0,
+): Promise<EpisodesBySectorResponse> {
+  const response = await apiClient.get(
+    `/api/episodes/by-sector/${encodeURIComponent(exposureId)}`,
+    { params: { limit, offset } },
+  );
+  const d = response.data ?? {};
+  return {
+    exposure_id: d.exposure_id ?? exposureId,
+    display_name: d.display_name ?? '',
+    exposure_type: d.exposure_type ?? 'sector',
+    resolved_tickers: Array.isArray(d.resolved_tickers) ? d.resolved_tickers : [],
+    episodes: Array.isArray(d.episodes) ? d.episodes : [],
+    total: typeof d.total === 'number' ? d.total : 0,
+  };
+}

@@ -764,6 +764,112 @@ class PodcastService:
         except Exception as e:
             raise Exception(f"Failed to get episodes by tag: {e}") from e
 
+    async def get_episodes_by_sector(
+        self,
+        exposure_id: str,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict:
+        """Get episodes where sector_exposure_ids array contains exposure_id.
+
+        Returns a dict with exposure metadata (display_name, exposure_type,
+        resolved_tickers aggregated across matched episodes) plus the episode list.
+        All release-scoping and content-empty guards are applied identically to
+        get_episodes_by_tag.
+        """
+        cache_key = f"sector:episodes:v1:{exposure_id}:{offset}:{limit}:{self._scope_tag()}"
+        cached = await cache_get(cache_key)
+        if cached:
+            try:
+                return json.loads(cached)
+            except Exception:
+                pass
+
+        allowed = await self._allowed_podcast_names()
+        cutoff = self._recency_cutoff_ms()
+        scoping_active = allowed is not None or cutoff is not None
+        # Over-fetch when scoping is active so we still hit limit after filtering
+        fetch_limit = max((limit + offset) * 5, 100) if scoping_active else (limit + offset)
+
+        try:
+            dicts = await asyncio.to_thread(
+                self.firestore_service.query_collection,
+                "episodes",
+                [("sector_exposure_ids", "array-contains", exposure_id)],
+                None,       # no Firestore-side ordering — sort in Python to avoid composite index
+                None,
+                fetch_limit,
+            )
+        except Exception as e:
+            raise Exception(f"Failed to query episodes by sector: {e}") from e
+
+        # Sort by publish time descending in Python
+        dicts.sort(key=lambda d: self._dict_release_ms(d), reverse=True)
+
+        # Build Episode objects and apply release scope + content guard
+        episodes_raw = await asyncio.gather(
+            *[self.transformer.to_episode(d) for d in dicts]
+        )
+        episodes = self._scope_episodes(list(episodes_raw), allowed, cutoff)
+
+        # --- Derive metadata from the matched episodes ---
+        display_name = exposure_id
+        exposure_type = "sector"
+        seen_tickers: dict[str, dict] = {}  # ticker -> first-seen entry
+        exposure_counts: dict[str, int] = {}  # display_name -> count, for majority vote
+
+        for ep in episodes:
+            for entry in ep.sector_exposures:
+                if entry.get("exposure_id") != exposure_id:
+                    continue
+                dn = entry.get("display_name") or exposure_id
+                exposure_counts[dn] = exposure_counts.get(dn, 0) + 1
+                et = entry.get("exposure_type") or "sector"
+                # Use the type from the most-frequent display_name entry (updated below)
+                # For now capture the first one seen; we overwrite with majority below
+                for rt in entry.get("resolved_tickers") or []:
+                    ticker = rt.get("ticker") or ""
+                    if ticker and ticker not in seen_tickers:
+                        seen_tickers[ticker] = {
+                            "ticker": ticker,
+                            "name": rt.get("name") or "",
+                            "name_en": rt.get("name_en"),
+                            "market": rt.get("market") or "",
+                            "source": rt.get("source") or "",
+                        }
+                # Track exposure_type alongside display_name for the winner
+                # Store as tuple (display_name, exposure_type) frequency
+                key = (dn, et)
+                exposure_counts[key] = exposure_counts.get(key, 0) + 1  # type: ignore[assignment]
+
+        # Pick display_name/exposure_type from most-frequent (dn, et) pair
+        best_key = max(
+            [(k, v) for k, v in exposure_counts.items() if isinstance(k, tuple)],
+            key=lambda x: x[1],
+            default=(None, 0),
+        )[0]
+        if best_key:
+            display_name, exposure_type = best_key
+
+        resolved_tickers = list(seen_tickers.values())[:12]
+
+        paged = episodes[offset:offset + limit]
+        result = {
+            "exposure_id": exposure_id,
+            "display_name": display_name,
+            "exposure_type": exposure_type,
+            "resolved_tickers": resolved_tickers,
+            "episodes": [ep.dict() for ep in paged],
+            "total": len(paged),
+        }
+
+        try:
+            await cache_set(cache_key, json.dumps(result), CACHE_TTL["podcast_episodes"])
+        except Exception:
+            pass
+
+        return result
+
     async def get_trending_tags(self, weeks: int = 6, preview_count: int = 3) -> List[dict]:
         """Return curated tags with scoped counts, weekly sparkline data, and episode previews.
         Results are cached for 30 minutes. Tags with 0 scoped episodes are omitted."""

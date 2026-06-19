@@ -238,7 +238,9 @@ class FirestoreService:
                         query = query.where(field, "!=", value)
                     elif operator == "in":
                         query = query.where(field, "in", value)
-            
+                    elif operator == "array-contains":
+                        query = query.where(field, "array_contains", value)
+
             # Apply ordering
             if order_by:
                 direction_enum = firestore.Query.DESCENDING if direction == "DESCENDING" else firestore.Query.ASCENDING

@@ -21,6 +21,19 @@ _LATIN_WORD_RE = re.compile(r"[a-z0-9][a-z0-9+.-]{1,12}")
 _UNRESOLVED_UPPER_RE = re.compile(r"\b[A-Z][A-Z0-9+.-]{1,10}\b")
 DEFAULT_MAX_TICKERS = 10
 
+# Common macro/finance/general acronyms that the uppercase scanner would otherwise
+# surface as "emerging market concepts". They are not curation candidates, so we
+# drop them to keep ``unresolved_market_trends`` (written to every episode doc)
+# low-noise. Values are normalized (lower-cased) to match ``normalize_text``.
+_UNRESOLVED_STOPWORDS: frozenset[str] = frozenset({
+    "ceo", "cfo", "coo", "cto", "cio", "vp", "ir", "vc", "pe", "pb", "ps", "eps",
+    "roe", "roa", "roi", "gdp", "cpi", "ppi", "pce", "ism", "pmi", "fomc", "fed",
+    "ecb", "boj", "imf", "usd", "twd", "jpy", "eur", "rmb", "cny", "krw", "etf",
+    "ipo", "spo", "m&a", "esg", "yoy", "qoq", "mom", "ttm", "q1", "q2", "q3", "q4",
+    "h1", "h2", "1h", "2h", "fy", "ai", "ev", "iot", "5g", "6g", "pc", "tv", "us",
+    "uk", "eu", "ok", "ceo's", "api", "app", "ui", "ux", "faq", "diy", "b2b", "b2c",
+})
+
 
 @dataclass(frozen=True)
 class ExposureMatch:
@@ -214,6 +227,9 @@ def find_unresolved_market_trends(
             continue
         # Avoid common ticker-like one-offs; curation triggers only after recurrence.
         if len(norm) < 2:
+            continue
+        # Drop macro/finance/general acronyms — they are noise, not market concepts.
+        if norm in _UNRESOLVED_STOPWORDS:
             continue
         seen.add(norm)
         out.append({

@@ -9,6 +9,7 @@ import { EpisodeDetail } from '@/pages/EpisodeDetail';
 import { NewsRedirect } from '@/pages/NewsRedirect';
 import { PodcasterPage } from '@/pages/PodcasterPage';
 import { TagPage } from '@/pages/TagPage';
+import { SectorPage } from '@/pages/SectorPage';
 import { ProfilePage } from '@/pages/ProfilePage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { ReportPage } from '@/pages/ReportPage';
@@ -100,6 +101,7 @@ function App() {
             <Route path="/podcaster/:id" element={<PodcasterPage />} />
             <Route path="/topics/:tag" element={<TagPage />} />
             <Route path="/tag/:tag" element={<TagPage />} />
+            <Route path="/sector/:exposureId" element={<SectorPage />} />
             <Route path="/episode/:id" element={<EpisodeDetail />} />
             <Route path="/news/:id" element={<NewsRedirect />} />
             <Route path="/articles" element={<ArticleList />} />

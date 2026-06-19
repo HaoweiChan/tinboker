@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from src.database.postgres import get_session
+from src.schemas.sector import EpisodesBySectorResponse, SectorResolvedTicker
 from src.services.podcast import PodcastService
 from src.services.translation_discovery import schedule_ticker_discovery
 from src.tag_registry import registry_snapshot, seed_if_empty
@@ -118,3 +119,31 @@ async def get_episodes_by_tag(
         return EpisodesByTagResponse(tag=tag, episodes=episodes_dict, total=len(episodes_dict))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching episodes by tag: {str(e)}")
+
+
+@router.get("/episodes/by-sector/{exposure_id}", response_model=EpisodesBySectorResponse)
+async def get_episodes_by_sector(
+    exposure_id: str = Path(..., description="Sector or theme exposure ID (e.g. 'sector_passive_components')"),
+    limit: int = Query(default=50, ge=1, le=200, description="Maximum number of episodes to return"),
+    offset: int = Query(default=0, ge=0, description="Pagination offset"),
+):
+    """Get episodes that mention a given sector or theme, plus aggregated representative tickers.
+
+    Queries Firestore episodes where sector_exposure_ids array contains the given
+    exposure_id. Returns the same episode list shape as GET /api/episodes/by-tag/{tag}.
+    When no episodes match, returns 200 with empty lists (never 404).
+    """
+    try:
+        result = await podcast_service.get_episodes_by_sector(
+            exposure_id=exposure_id, limit=limit, offset=offset,
+        )
+        return EpisodesBySectorResponse(
+            exposure_id=result["exposure_id"],
+            display_name=result["display_name"],
+            exposure_type=result["exposure_type"],
+            resolved_tickers=[SectorResolvedTicker(**t) for t in result["resolved_tickers"]],
+            episodes=result["episodes"],
+            total=result["total"],
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching episodes by sector: {str(e)}")

@@ -115,6 +115,14 @@
           "source": "finmind",
           "rank": 12,
           "market_cap_rank": 8
+        },
+        {
+          "ticker": "2303",
+          "name": "聯電",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2,
+          "market_cap_rank": 3
         }
       ]
     },
@@ -329,6 +337,332 @@
           "market": "US",
           "source": "curated",
           "rank": 5
+        }
+      ]
+    },
+    {
+      "exposure_id": "theme_power_semiconductor",
+      "exposure_type": "theme",
+      "sector_id": null,
+      "theme_id": "power_semiconductor",
+      "display_name": "功率半導體",
+      "aliases": [
+        "功率半導體",
+        "功率元件",
+        "功率 IC",
+        "第三代半導體",
+        "碳化矽",
+        "氮化鎵",
+        "power semiconductor",
+        "power semiconductors",
+        "silicon carbide",
+        "gallium nitride"
+      ],
+      "members": [
+        {
+          "ticker": "2342",
+          "name": "茂矽",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1,
+          "name_en": "Mosel Vitelic"
+        },
+        {
+          "ticker": "2481",
+          "name": "強茂",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2
+        },
+        {
+          "ticker": "3707",
+          "name": "漢磊科技",
+          "market": "TW",
+          "source": "curated",
+          "rank": 3,
+          "name_en": "Episil-Precision"
+        },
+        {
+          "ticker": "ON",
+          "name": "安森美",
+          "market": "US",
+          "source": "curated",
+          "rank": 4,
+          "name_en": "ON Semiconductor"
+        },
+        {
+          "ticker": "WOLF",
+          "name": "Wolfspeed",
+          "market": "US",
+          "source": "curated",
+          "rank": 5,
+          "name_en": "Wolfspeed"
+        }
+      ]
+    },
+    {
+      "exposure_id": "sector_heavy_electrical",
+      "exposure_type": "sector",
+      "sector_id": "heavy_electrical",
+      "theme_id": null,
+      "display_name": "重電",
+      "aliases": [
+        "重電",
+        "重電股",
+        "電網",
+        "電力建設",
+        "輸配電",
+        "電力設備",
+        "power grid",
+        "grid infrastructure",
+        "heavy electrical"
+      ],
+      "members": [
+        {
+          "ticker": "1519",
+          "name": "華城電機",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1,
+          "name_en": "Fortune Electric"
+        },
+        {
+          "ticker": "1503",
+          "name": "士林電機",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2,
+          "name_en": "Shihlin Electric & Engineering"
+        },
+        {
+          "ticker": "1513",
+          "name": "中興電",
+          "market": "TW",
+          "source": "curated",
+          "rank": 3,
+          "name_en": "Chung-Hsin Electric"
+        },
+        {
+          "ticker": "1514",
+          "name": "亞力電機",
+          "market": "TW",
+          "source": "curated",
+          "rank": 4,
+          "name_en": "Allis Electric"
+        },
+        {
+          "ticker": "2371",
+          "name": "大同",
+          "market": "TW",
+          "source": "curated",
+          "rank": 5,
+          "name_en": "Tatung Company"
+        }
+      ]
+    },
+    {
+      "exposure_id": "sector_memory",
+      "exposure_type": "sector",
+      "sector_id": "memory",
+      "theme_id": null,
+      "display_name": "記憶體",
+      "aliases": [
+        "記憶體",
+        "記憶體模組",
+        "dram",
+        "nand",
+        "nand flash",
+        "hbm",
+        "高頻寬記憶體",
+        "memory chip",
+        "memory"
+      ],
+      "members": [
+        {
+          "ticker": "2408",
+          "name": "南亞科技",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1,
+          "name_en": "Nanya Technology"
+        },
+        {
+          "ticker": "2344",
+          "name": "華邦電",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2,
+          "name_en": "Winbond Electronics"
+        },
+        {
+          "ticker": "8299",
+          "name": "群聯",
+          "market": "TW",
+          "source": "curated",
+          "rank": 3,
+          "name_en": "Phison Electronics"
+        },
+        {
+          "ticker": "3260",
+          "name": "威剛",
+          "market": "TW",
+          "source": "curated",
+          "rank": 4,
+          "name_en": "ADATA Technology"
+        },
+        {
+          "ticker": "2337",
+          "name": "旺宏",
+          "market": "TW",
+          "source": "curated",
+          "rank": 5,
+          "name_en": "Macronix International"
+        },
+        {
+          "ticker": "MU",
+          "name": "美光科技",
+          "market": "US",
+          "source": "curated",
+          "rank": 6,
+          "name_en": "Micron Technology"
+        }
+      ]
+    },
+    {
+      "exposure_id": "sector_pcb_substrate",
+      "exposure_type": "sector",
+      "sector_id": "pcb_substrate",
+      "theme_id": null,
+      "display_name": "PCB / 載板",
+      "aliases": [
+        "pcb",
+        "印刷電路板",
+        "abf",
+        "abf 載板",
+        "ic 載板",
+        "載板",
+        "ccl",
+        "銅箔基板",
+        "substrate"
+      ],
+      "members": [
+        {
+          "ticker": "3037",
+          "name": "欣興",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1,
+          "name_en": "Unimicron Technology"
+        },
+        {
+          "ticker": "8046",
+          "name": "南亞電路板",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2,
+          "name_en": "Nan Ya Printed Circuit Board"
+        },
+        {
+          "ticker": "3189",
+          "name": "景碩",
+          "market": "TW",
+          "source": "curated",
+          "rank": 3,
+          "name_en": "Kinsus Interconnect Technology"
+        },
+        {
+          "ticker": "2383",
+          "name": "台光電",
+          "market": "TW",
+          "source": "curated",
+          "rank": 4,
+          "name_en": "Elite Material"
+        }
+      ]
+    },
+    {
+      "exposure_id": "sector_networking",
+      "exposure_type": "sector",
+      "sector_id": "networking",
+      "theme_id": null,
+      "display_name": "網通",
+      "aliases": [
+        "網通",
+        "網通股",
+        "網路通訊",
+        "networking",
+        "network equipment",
+        "交換器",
+        "switch",
+        "white box"
+      ],
+      "members": [
+        {
+          "ticker": "2345",
+          "name": "智邦",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1,
+          "name_en": "Accton Technology"
+        },
+        {
+          "ticker": "6285",
+          "name": "啟碁",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2,
+          "name_en": "Wistron NeWeb"
+        },
+        {
+          "ticker": "5388",
+          "name": "中磊",
+          "market": "TW",
+          "source": "curated",
+          "rank": 3,
+          "name_en": "Sercomm Corporation"
+        }
+      ]
+    },
+    {
+      "exposure_id": "theme_robotics",
+      "exposure_type": "theme",
+      "sector_id": null,
+      "theme_id": "robotics",
+      "display_name": "機器人",
+      "aliases": [
+        "機器人",
+        "人形機器人",
+        "工業機器人",
+        "工廠自動化",
+        "自動化",
+        "robot",
+        "robotics",
+        "humanoid"
+      ],
+      "members": [
+        {
+          "ticker": "2049",
+          "name": "上銀",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1,
+          "name_en": "Hiwin Technologies"
+        },
+        {
+          "ticker": "1590",
+          "name": "亞德客-KY",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2,
+          "name_en": "Airtac International Group"
+        },
+        {
+          "ticker": "2359",
+          "name": "所羅門",
+          "market": "TW",
+          "source": "curated",
+          "rank": 3,
+          "name_en": "Solomon Technology"
         }
       ]
     }
