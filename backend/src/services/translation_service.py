@@ -42,6 +42,7 @@ _KNOWN_NAME_CORRECTIONS: List[Tuple[str, str, str, str]] = [
     ("6472", "TW", "閎暉", "保瑞"),        # Bora Pharmaceuticals; 閎暉 is 3311
     ("3357", "TW", "再生-KY", "臺慶科"),   # Taiwan Ceramic; 再生-KY is 1337
     ("5351", "TW", "鉅祥", "鈺創"),        # Etron Technology; 鉅祥 is 2476
+    ("3363", "TW", "凌群", "上詮"),        # Browave; 凌群 is 2453 (Syscom)
 ]
 
 
