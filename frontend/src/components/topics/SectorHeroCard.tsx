@@ -42,7 +42,7 @@ export const SectorHeroCard: React.FC<SectorHeroCardProps> = ({ sector }) => {
     <Link
       to={`/sector/${encodeURIComponent(sector.exposure_id)}`}
       className="group relative flex flex-col justify-between min-w-[148px] flex-1 bg-card rounded-xl p-4 overflow-hidden
-                 border border-white/[0.08] hover:border-white/[0.14] transition-all duration-300"
+                 border border-border dark:border-white/[0.08] hover:border-border/80 dark:hover:border-white/[0.14] transition-all duration-300"
       style={glowStyle}
     >
       {/* Full-bleed background sparkline for depth */}

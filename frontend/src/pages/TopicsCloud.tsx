@@ -47,7 +47,7 @@ function SortToggle({ value, onChange }: { value: SortKey; onChange: (k: SortKey
 
 function HeroSkeleton() {
   return (
-    <div className="flex-1 min-w-[148px] bg-card border border-border rounded-xl p-4 animate-pulse">
+    <div className="flex-1 min-w-[148px] bg-card border border-border dark:border-white/[0.08] rounded-xl p-4 animate-pulse">
       <div className="flex items-center gap-1.5 mb-3">
         <div className="h-3 w-3 bg-muted rounded" />
         <div className="h-3 w-8 bg-muted rounded" />
@@ -61,7 +61,7 @@ function HeroSkeleton() {
 
 function BoardSkeleton() {
   return (
-    <div className="bg-card border border-border rounded-xl p-4 animate-pulse">
+    <div className="bg-card border border-border dark:border-white/[0.08] rounded-xl p-4 animate-pulse">
       <div className="flex items-start justify-between mb-3">
         <div className="flex-1">
           <div className="flex items-center gap-1.5 mb-1.5">
