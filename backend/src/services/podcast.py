@@ -877,6 +877,154 @@ class PodcastService:
 
         return result
 
+    # ── Sector board constants ────────────────────────────────────────
+    _BOARD_W_PRICE: float = 0.5
+    _BOARD_W_MENTION: float = 0.5
+
+    async def sector_board(self) -> list[dict]:
+        """Return a ranked 'hot sectors' board with price performance.
+
+        Each sector entry includes its constituent tickers' daily % change,
+        an avg_change aggregate, and a blended hotness score (0..1) that
+        weights price performance equally with episode-mention frequency.
+
+        Applies the same release scoping as list_sectors (retracted_at,
+        allowlist, recency cutoff).  Prices are fetched from the local
+        stock_daily_closes table via get_eod_change_pct — no external API
+        calls per request.
+
+        Cache TTL matches podcast_episodes (10 min) so prices stay fresh.
+        """
+        cache_key = f"sectors:board:v1:{self._scope_tag()}"
+        cached = await cache_get(cache_key)
+        if cached:
+            try:
+                return json.loads(cached)
+            except Exception:
+                pass
+
+        allowed = await self._allowed_podcast_names()
+        cutoff = self._recency_cutoff_ms()
+
+        try:
+            docs = await asyncio.to_thread(
+                self.firestore_service.get_all_documents, "episodes"
+            )
+        except Exception as e:
+            raise Exception(f"Failed to scan episodes for sector board: {e}") from e
+
+        # Tally per sector: episode count, first-seen meta, union of tickers (cap 12)
+        counts: dict[str, int] = {}
+        meta: dict[str, dict] = {}       # exposure_id -> {display_name, exposure_type}
+        ticker_map: dict[str, dict[str, str]] = {}  # exposure_id -> {ticker: first-seen name}
+
+        for doc in docs:
+            if doc.get("retracted_at"):
+                continue
+            if allowed is not None and doc.get("podcast_name") not in allowed:
+                continue
+            if cutoff is not None and self._dict_release_ms(doc) < cutoff:
+                continue
+            for entry in doc.get("sector_exposures") or []:
+                eid = entry.get("exposure_id") or ""
+                if not eid:
+                    continue
+                counts[eid] = counts.get(eid, 0) + 1
+                if eid not in meta:
+                    meta[eid] = {
+                        "display_name": entry.get("display_name") or eid,
+                        "exposure_type": entry.get("exposure_type") or "sector",
+                    }
+                sector_tickers = ticker_map.setdefault(eid, {})
+                for rt in entry.get("resolved_tickers") or []:
+                    ticker = (rt.get("ticker") or "").strip()
+                    if ticker and ticker not in sector_tickers and len(sector_tickers) < 12:
+                        sector_tickers[ticker] = rt.get("name") or ""
+
+        if not counts:
+            try:
+                await cache_set(cache_key, json.dumps([]), CACHE_TTL["podcast_episodes"])
+            except Exception:
+                pass
+            return []
+
+        # Gather all unique tickers and fetch EOD change% concurrently
+        from src.services.stock_close_refresh import get_eod_change_pct
+
+        all_tickers: list[str] = list({
+            t for tickers in ticker_map.values() for t in tickers
+        })
+        pcts = await asyncio.gather(*[get_eod_change_pct(t) for t in all_tickers])
+        ticker_pct: dict[str, Optional[float]] = dict(zip(all_tickers, pcts))
+
+        # Build per-sector members + avg_change
+        sectors_raw: list[dict] = []
+        for eid, count in counts.items():
+            members_unsorted: list[dict] = []
+            for ticker, name in ticker_map.get(eid, {}).items():
+                members_unsorted.append({
+                    "ticker": ticker,
+                    "name": name,
+                    "change_percent": ticker_pct.get(ticker),
+                })
+            # Sort members: non-None change_percent DESC, then None last
+            members = sorted(
+                members_unsorted,
+                key=lambda m: (m["change_percent"] is None, -(m["change_percent"] or 0.0)),
+            )
+
+            non_null = [m["change_percent"] for m in members if m["change_percent"] is not None]
+            avg_change: Optional[float] = (sum(non_null) / len(non_null)) if non_null else None
+
+            sectors_raw.append({
+                "exposure_id": eid,
+                "display_name": meta[eid]["display_name"],
+                "exposure_type": meta[eid]["exposure_type"],
+                "episode_count": count,
+                "avg_change": avg_change,
+                "members": members,
+            })
+
+        # Min-max normalise avg_change and episode_count to 0..1, blend into hotness
+        all_avgs = [s["avg_change"] for s in sectors_raw]
+        all_counts = [s["episode_count"] for s in sectors_raw]
+
+        min_avg = min((v for v in all_avgs if v is not None), default=0.0)
+        max_avg = max((v for v in all_avgs if v is not None), default=0.0)
+        min_cnt = min(all_counts)
+        max_cnt = max(all_counts)
+
+        def _norm_avg(v: Optional[float]) -> float:
+            if v is None:
+                return 0.0
+            span = max_avg - min_avg
+            if span == 0:
+                return 0.5
+            return (v - min_avg) / span
+
+        def _norm_cnt(v: int) -> float:
+            span = max_cnt - min_cnt
+            if span == 0:
+                return 0.5
+            return (v - min_cnt) / span
+
+        result: list[dict] = []
+        for s in sectors_raw:
+            hotness = (
+                self._BOARD_W_PRICE * _norm_avg(s["avg_change"])
+                + self._BOARD_W_MENTION * _norm_cnt(s["episode_count"])
+            )
+            result.append({**s, "hotness": hotness})
+
+        result.sort(key=lambda x: x["hotness"], reverse=True)
+
+        try:
+            await cache_set(cache_key, json.dumps(result), CACHE_TTL["podcast_episodes"])
+        except Exception:
+            pass
+
+        return result
+
     async def list_sectors(self) -> list[dict]:
         """Return all sector/theme exposures that appear in at least one episode, with counts.
 
