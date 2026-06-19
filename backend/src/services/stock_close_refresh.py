@@ -22,8 +22,9 @@ from src.services import finmind_budget
 
 logger = logging.getLogger(__name__)
 
-# How many of the most-relevant tickers to keep warm.
-MAX_TRACKED = 200
+# How many of the most-relevant tickers to keep warm. Covers the sector/theme basket
+# members (so the /topics board's price diffs are populated) plus the trending set.
+MAX_TRACKED = 400
 # Throttle between external calls. Massive/Polygon free is ~5 req/min, so US tickers get
 # a wide gap; FinMind is gated by its hourly budget but we still space calls out.
 _US_GAP_SECONDS = 14.0
@@ -37,22 +38,35 @@ def _is_tw(ticker: str) -> bool:
 
 
 async def get_tracked_tickers(limit: int = MAX_TRACKED) -> List[str]:
-    """The tickers worth keeping warm: the trending set (derived from episode mentions)."""
-    try:
-        from src.services.insight_service import InsightService
-        rows = await InsightService().get_trending(days=30, limit=limit)
-    except Exception as e:
-        logger.warning(f"close-refresh: could not load trending tickers: {e}")
-        return []
+    """Tickers worth keeping warm: the sector/theme basket members PLUS the trending
+    set (episode mentions). Sector members come first so the /topics board's price
+    diffs are always populated; trending fills any remaining headroom."""
     seen: set = set()
     out: List[str] = []
-    for r in rows or []:
-        t = (r.get("ticker") if isinstance(r, dict) else None) or ""
-        t = t.strip().upper()
+
+    def _add(raw) -> None:
+        t = raw.strip().upper() if isinstance(raw, str) else ""
         if t and t not in seen:
             seen.add(t)
             out.append(t)
-    return out
+
+    # 1. Sector/theme basket members — the board's constituents (priority).
+    try:
+        from src.services.podcast import PodcastService
+        for t in await PodcastService().sector_member_tickers():
+            _add(t)
+    except Exception as e:
+        logger.warning(f"close-refresh: could not load sector tickers: {e}")
+
+    # 2. Trending (episode-mention) set — fills the rest.
+    try:
+        from src.services.insight_service import InsightService
+        for r in (await InsightService().get_trending(days=30, limit=limit)) or []:
+            _add(r.get("ticker") if isinstance(r, dict) else None)
+    except Exception as e:
+        logger.warning(f"close-refresh: could not load trending tickers: {e}")
+
+    return out[:limit]
 
 
 def _has_recent_close(db, ticker: str, since_date: str) -> bool:
