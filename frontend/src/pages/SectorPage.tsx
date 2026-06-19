@@ -1,14 +1,52 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
 import { EpisodeCardV2 } from '@/components/redesign';
 import { apiEpisodeToCardV2 } from '@/components/redesign/episodeAdapter';
-import { getEpisodesBySector, getSortedPodcasts, type EpisodesBySectorResponse, type Episode as ApiEpisode, type Podcast, type SectorResolvedTicker } from '@/services/api/podcasts';
+import {
+  getEpisodesBySector,
+  getSortedPodcasts,
+  getBatchPricesTrailing,
+  type EpisodesBySectorResponse,
+  type Episode as ApiEpisode,
+  type Podcast,
+  type SectorResolvedTicker,
+  type TrailingPerf,
+} from '@/services/api/podcasts';
 import { fetchWithFallback } from '@/services/api/migration';
 import { useStockPriceMap } from '@/hooks/useStockPriceMap';
 import { useStockPriceSinceMap } from '@/hooks/useStockPriceSinceMap';
 import { useTranslationMap } from '@/hooks/useTranslationMap';
+import { SectorTickerCard, type Timeframe } from '@/components/topics/SectorTickerCard';
+
+const TIMEFRAMES: { key: Timeframe; label: string }[] = [
+  { key: 'd1', label: '1日' },
+  { key: 'd7', label: '7日' },
+  { key: 'd30', label: '30日' },
+  { key: 'd90', label: '90日' },
+];
+
+function TimeframeToggle({ value, onChange }: { value: Timeframe; onChange: (t: Timeframe) => void }) {
+  return (
+    <div className="flex items-center gap-0.5 bg-muted/50 border border-border rounded-lg p-0.5 shrink-0">
+      {TIMEFRAMES.map((opt) => (
+        <button
+          key={opt.key}
+          type="button"
+          onClick={() => onChange(opt.key)}
+          className={`px-2.5 py-1 rounded-md text-[12px] font-medium tabular-nums transition-all duration-150
+            ${value === opt.key
+              ? 'bg-card text-foreground shadow-sm border border-border/60'
+              : 'text-muted-foreground hover:text-foreground'
+            }`}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 function resolvedTickerName(t: SectorResolvedTicker, translationMap: Map<string, string>): string {
   const upper = t.ticker.toUpperCase();
@@ -25,6 +63,9 @@ export const SectorPage: React.FC = () => {
   const [data, setData] = useState<EpisodesBySectorResponse | null>(null);
   const [podcasts, setPodcasts] = useState<Podcast[]>([]);
   const [loading, setLoading] = useState(true);
+  const [timeframe, setTimeframe] = useState<Timeframe>('d1');
+  const [perfMap, setPerfMap] = useState<Record<string, TrailingPerf>>({});
+  const [perfLoading, setPerfLoading] = useState(false);
 
   const episodes = useMemo<ApiEpisode[]>(() => data?.episodes ?? [], [data]);
   const episodeTickers = useMemo(() => episodes.flatMap((ep) => ep.related_tickers ?? []), [episodes]);
@@ -85,12 +126,30 @@ export const SectorPage: React.FC = () => {
     };
   }, [exposureId]);
 
+  // Members shown in the performance grid (resolved constituents, capped at 12).
+  const members = useMemo(() => resolvedTickers.slice(0, 12), [resolvedTickers]);
+  const memberKey = useMemo(() => members.map((t) => t.ticker).join(','), [members]);
+
+  // Fetch trailing 1/7/30/90D performance for the member tickers.
+  useEffect(() => {
+    if (!memberKey) {
+      setPerfMap({});
+      return;
+    }
+    let alive = true;
+    setPerfLoading(true);
+    getBatchPricesTrailing(memberKey.split(','))
+      .then((m) => { if (alive) setPerfMap(m || {}); })
+      .catch(() => { if (alive) setPerfMap({}); })
+      .finally(() => { if (alive) setPerfLoading(false); });
+    return () => { alive = false; };
+  }, [memberKey]);
+
   const displayName = data?.display_name || '';
   // Never flash the raw exposure id (e.g. "sector_passive_components") while the
   // request is in flight or if it fails — show a skeleton, then the resolved name
   // (or a generic label as a last resort).
   const titleText = displayName || '產業 / 主題';
-  const representativeTickers = resolvedTickers.slice(0, 12);
 
   return (
     <>
@@ -111,22 +170,39 @@ export const SectorPage: React.FC = () => {
                 ? '載入中…'
                 : `瀏覽所有關於「${titleText}」的 Podcast 摘要與市場討論 · ${episodes.length} 集。`}
             </p>
-            {!loading && representativeTickers.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 mt-3">
-                {representativeTickers.map((t) => (
-                  <Link
-                    key={t.ticker}
-                    to={`/stock/${encodeURIComponent(t.ticker)}`}
-                    className="inline-flex items-center gap-1 text-[12px] px-2.5 py-0.5 rounded-full bg-muted hover:bg-muted/80 border border-border font-medium transition-colors"
-                  >
-                    <span className="font-mono text-[11px] text-muted-foreground">{t.ticker}</span>
-                    <span>{resolvedTickerName(t, translationMap)}</span>
-                  </Link>
-                ))}
-              </div>
-            )}
           </div>
         </div>
+
+        {/* ── Constituent performance (multi-timeframe) ───────────────── */}
+        {loading ? (
+          <div className="mb-7">
+            <div className="h-4 w-24 bg-muted rounded animate-pulse mb-3" />
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <div key={i} className="bg-card border border-border dark:border-white/[0.08] rounded-lg h-[88px] animate-pulse" />
+              ))}
+            </div>
+          </div>
+        ) : members.length > 0 ? (
+          <div className="mb-7">
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <h2 className="text-[13px] font-semibold text-muted-foreground">成分股表現</h2>
+              <TimeframeToggle value={timeframe} onChange={setTimeframe} />
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">
+              {members.map((t) => (
+                <SectorTickerCard
+                  key={t.ticker}
+                  ticker={t.ticker}
+                  name={resolvedTickerName(t, translationMap)}
+                  perf={perfMap[t.ticker.toUpperCase()]}
+                  timeframe={timeframe}
+                  loading={perfLoading}
+                />
+              ))}
+            </div>
+          </div>
+        ) : null}
 
         <h2 className="text-[13px] font-semibold text-muted-foreground mb-3">相關集數</h2>
         {loading ? (
