@@ -815,13 +815,17 @@ class PodcastService:
         )
         episodes = self._scope_episodes(list(episodes_raw), allowed, cutoff)
 
-        # --- Derive metadata from the matched episodes ---
+        # --- Derive metadata from ALL matched episodes (pre-scope) ---
+        # Use episodes_raw, not the scoped list, so the friendly display_name and
+        # representative tickers still render when every matched episode is filtered
+        # out by the release scope (otherwise the page would show the raw exposure_id
+        # as its title with no tickers).
         display_name = exposure_id
         exposure_type = "sector"
         seen_tickers: dict[str, dict] = {}  # ticker -> first-seen entry
         exposure_counts: dict[str, int] = {}  # display_name -> count, for majority vote
 
-        for ep in episodes:
+        for ep in episodes_raw:
             for entry in ep.sector_exposures:
                 if entry.get("exposure_id") != exposure_id:
                     continue
