@@ -253,8 +253,10 @@ def write_trending(
 ) -> int:
     """Replace each ``trending_tickers/{ticker}`` document. Returns the count.
 
-    Stale tickers (no longer in ``docs`` but present in Firestore) are NOT
-    deleted automatically — that's a separate housekeeping concern.
+    Tickers that have dropped out of ``docs`` but still have a Firestore doc are
+    NOT pruned here. Legacy *bare-token* docs orphaned by the ``{ticker}.{market}``
+    doc-id scheme (PR #229) are cleaned separately — see
+    :func:`delete_orphaned_bare_docs`, which the refresh job runs after this.
     """
     if not docs:
         return 0
@@ -300,3 +302,63 @@ def validate_trending_document(doc_id: str, doc: dict[str, Any]) -> bool:
         )
         return False
     return True
+
+
+def delete_orphaned_bare_docs(
+    firestore_client: Any,
+    docs: dict[str, dict[str, Any]],
+) -> int:
+    """Delete legacy bare-token ``trending_tickers`` docs orphaned by the suffix scheme.
+
+    Before PR #229 a non-US ticker (e.g. ``2330``) was written at the bare doc id
+    ``trending_tickers/2330``. PR #229 moved non-US tickers to ``{ticker}.{market}``
+    (``trending_tickers/2330.TW``) but left the old doc in place. Both then stream
+    out of the backend ``InsightService.get_trending``, which maps rows by the
+    ``ticker`` *field* — so 2330 double-lists in StockIndex / WeeklyBuzz / HomeRail.
+
+    For every suffixed (non-US) doc in ``docs`` — i.e. one we just wrote whose
+    id differs from its bare ``ticker`` — delete the matching bare-token doc, but
+    only when that bare doc is **not** itself a live US-market doc. That guard keeps
+    a token that legitimately exists in both markets (US at the bare id, non-US at
+    the suffixed id) from losing its US row. Pruning is scoped to tickers we just
+    rewrote, so a bare doc is only removed once its suffixed replacement exists.
+
+    Returns the number of bare docs deleted. Safe to call repeatedly (idempotent).
+    """
+    if not docs:
+        return 0
+    collection = firestore_client.collection("trending_tickers")
+
+    # Orphan candidates: the bare token of each suffixed doc we just wrote. A US
+    # doc already lives at the bare id (doc_id == ticker), so it is never a
+    # candidate. Dedup so a token mentioned across markets is checked once.
+    candidates: set[str] = set()
+    for doc_id, doc in docs.items():
+        ticker = str(doc.get("ticker") or "").strip().upper()
+        if ticker and doc_id != ticker:
+            candidates.add(ticker)
+
+    stale_refs = []
+    for ticker in sorted(candidates):
+        ref = collection.document(ticker)
+        snap = ref.get()
+        if not getattr(snap, "exists", False):
+            continue
+        existing = snap.to_dict() or {}
+        if str(existing.get("market") or "").strip().upper() == "US":
+            continue  # legitimate US doc sharing the token — keep it
+        stale_refs.append(ref)
+
+    deleted = 0
+    batch_size = 400  # Firestore batches cap at 500 operations.
+    while stale_refs:
+        chunk = stale_refs[:batch_size]
+        stale_refs = stale_refs[batch_size:]
+        batch = firestore_client.batch()
+        for ref in chunk:
+            batch.delete(ref)
+        batch.commit()
+        deleted += len(chunk)
+    if deleted:
+        logger.info("Deleted %d orphaned bare-token trending_tickers docs", deleted)
+    return deleted

@@ -26,6 +26,7 @@ sys.path.insert(0, str(_SERVICE_ROOT))
 
 from src.podcast.exporters.trending_tickers import (  # noqa: E402
     aggregate_trending,
+    delete_orphaned_bare_docs,
     fetch_all_insights,
     fetch_insights_for_ticker_markets,
     fetch_recent_insights,
@@ -83,6 +84,12 @@ def main() -> int:
 
     written = write_trending(fb.db, docs)
     print(f"  wrote {written} trending_tickers docs")
+
+    # Prune legacy bare-token docs that the {ticker}.{market} scheme (PR #229)
+    # left behind, so the same ticker can't double-list on the platform.
+    removed = delete_orphaned_bare_docs(fb.db, docs)
+    if removed:
+        print(f"  removed {removed} orphaned bare-token docs")
     return 0
 
 
