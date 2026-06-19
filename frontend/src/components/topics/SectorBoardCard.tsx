@@ -83,9 +83,10 @@ export const SectorBoardCard: React.FC<SectorBoardCardProps> = ({ sector }) => {
 
   return (
     <div
-      className="bg-card border border-white/[0.08] rounded-xl overflow-hidden transition-all duration-200
-                 shadow-[0_1px_3px_rgba(0,0,0,0.18)] hover:border-white/[0.14]
-                 hover:shadow-[0_4px_20px_-6px_rgba(0,0,0,0.35)]"
+      className="bg-card border border-border dark:border-white/[0.08] rounded-xl overflow-hidden transition-all duration-200
+                 shadow-[0_1px_2px_rgba(0,0,0,0.04)] dark:shadow-[0_1px_3px_rgba(0,0,0,0.18)]
+                 hover:border-border/80 dark:hover:border-white/[0.14]
+                 hover:shadow-[0_4px_16px_-6px_rgba(0,0,0,0.10)] dark:hover:shadow-[0_4px_20px_-6px_rgba(0,0,0,0.35)]"
     >
       {/* ── Card header ─────────────────────────────────────────── */}
       <Link
