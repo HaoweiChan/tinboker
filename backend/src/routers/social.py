@@ -206,16 +206,18 @@ async def generate_social_episode(
         raise HTTPException(status_code=503, detail="Pipeline service URL is not configured")
     headers = {"X-API-Key": settings.podcast_api_key} if settings.podcast_api_key else {}
 
+    # Bound connection setup tightly (fail fast if the pipeline URL is wrong/down)
+    # but allow a long read — the Gemini generation itself can take tens of seconds.
+    timeout = httpx.Timeout(120.0, connect=5.0)
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=timeout) as client:
             resp = await client.post(
                 f"{base}/api/podcast/episodes/{episode_id}/social-copy",
                 headers=headers,
-                timeout=120.0,
             )
     except httpx.HTTPError as e:
-        logger.warning("social-copy pipeline call failed for %s: %s", episode_id, e)
-        raise HTTPException(status_code=502, detail=f"Pipeline service unreachable: {e}")
+        logger.warning("social-copy pipeline call failed for %s: %r", episode_id, e)
+        raise HTTPException(status_code=502, detail=f"Pipeline service unreachable: {e!r}")
 
     if resp.status_code == 404:
         raise HTTPException(status_code=404, detail=f"Episode {episode_id} not found")

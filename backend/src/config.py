@@ -280,9 +280,15 @@ class Settings(BaseSettings):
     websocket_update_interval: int = 5  # seconds
     intraday_snapshot_retention_days: int = 30
     
-    # External Podcast API (Netcup server) configuration
+    # Podcast pipeline service (LangGraph + Wiki API) — runs as podcast-api.service
+    # on the same VPS, uvicorn :8003. The backend proxies a few endpoints to it
+    # (episode regenerate, social-copy generation). The old default pointed at the
+    # pre-monorepo external host (159.195.45.195:8000), which no longer exists, so
+    # an unset env black-holed the proxy until httpx timed out. NOTE: this field has
+    # a validation_alias, so the GSM secret source (keyed by field name) can't set
+    # it — only the NETCUP_IP env var or this default apply.
     netcup_api_url: str = Field(
-        default="http://159.195.45.195:8000",
+        default="http://152.53.136.182:8003",
         validation_alias="NETCUP_IP"
     )
     
