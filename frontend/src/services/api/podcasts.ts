@@ -513,6 +513,19 @@ export async function getEpisodeHeavy(
   return response.data;
 }
 
+export interface SectorListItem {
+  exposure_id: string;
+  display_name: string;
+  exposure_type: string;
+  count: number;
+}
+
+export async function getSectors(): Promise<SectorListItem[]> {
+  const response = await apiClient.get('/api/sectors');
+  const d = response.data ?? {};
+  return Array.isArray(d.sectors) ? d.sectors : [];
+}
+
 export interface EpisodesBySectorResponse {
   exposure_id: string;
   display_name: string;

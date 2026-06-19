@@ -6,7 +6,12 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from src.database.postgres import get_session
-from src.schemas.sector import EpisodesBySectorResponse, SectorResolvedTicker
+from src.schemas.sector import (
+    EpisodesBySectorResponse,
+    SectorListItem,
+    SectorResolvedTicker,
+    SectorsListResponse,
+)
 from src.services.podcast import PodcastService
 from src.services.translation_discovery import schedule_ticker_discovery
 from src.tag_registry import registry_snapshot, seed_if_empty
@@ -119,6 +124,21 @@ async def get_episodes_by_tag(
         return EpisodesByTagResponse(tag=tag, episodes=episodes_dict, total=len(episodes_dict))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching episodes by tag: {str(e)}")
+
+
+@router.get("/sectors", response_model=SectorsListResponse)
+async def list_sectors():
+    """List all sector/theme exposures that have at least one episode, sorted by episode count.
+
+    Returns a directory of sectors and themes so the frontend /topics page can render
+    a browsable sectors listing.  Sectors are only reachable from episode detail pages
+    without this endpoint.
+    """
+    try:
+        sectors = await podcast_service.list_sectors()
+        return SectorsListResponse(sectors=[SectorListItem(**s) for s in sectors])
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching sectors: {str(e)}")
 
 
 @router.get("/episodes/by-sector/{exposure_id}", response_model=EpisodesBySectorResponse)

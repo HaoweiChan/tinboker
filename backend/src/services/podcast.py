@@ -877,6 +877,79 @@ class PodcastService:
 
         return result
 
+    async def list_sectors(self) -> list[dict]:
+        """Return all sector/theme exposures that appear in at least one episode, with counts.
+
+        Scans every episode document in Firestore and tallies exposure_id occurrences
+        across each doc's sector_exposures list, applying the same release scoping as
+        get_episodes_by_sector (retracted, allowlist, recency cutoff).
+
+        NOTE: this is a full-collection scan on cache miss.  A maintained counter doc
+        (e.g. Firestore aggregation or pipeline-written summary) could eliminate the
+        scan later — defer until traffic warrants it.
+
+        Returns list of dicts sorted by count DESC then exposure_id ASC.
+        """
+        cache_key = f"sectors:list:v1:{self._scope_tag()}"
+        cached = await cache_get(cache_key)
+        if cached:
+            try:
+                return json.loads(cached)
+            except Exception:
+                pass
+
+        allowed = await self._allowed_podcast_names()
+        cutoff = self._recency_cutoff_ms()
+
+        try:
+            docs = await asyncio.to_thread(
+                self.firestore_service.get_all_documents, "episodes"
+            )
+        except Exception as e:
+            raise Exception(f"Failed to scan episodes for sectors: {e}") from e
+
+        # Tally exposures across scoped episodes
+        counts: dict[str, int] = {}
+        meta: dict[str, dict] = {}  # exposure_id -> first-seen {display_name, exposure_type}
+
+        for doc in docs:
+            if doc.get("retracted_at"):
+                continue
+            if allowed is not None and doc.get("podcast_name") not in allowed:
+                continue
+            if cutoff is not None and self._dict_release_ms(doc) < cutoff:
+                continue
+            for entry in doc.get("sector_exposures") or []:
+                eid = entry.get("exposure_id") or ""
+                if not eid:
+                    continue
+                counts[eid] = counts.get(eid, 0) + 1
+                if eid not in meta:
+                    meta[eid] = {
+                        "display_name": entry.get("display_name") or eid,
+                        "exposure_type": entry.get("exposure_type") or "sector",
+                    }
+
+        result = sorted(
+            [
+                {
+                    "exposure_id": eid,
+                    "display_name": meta[eid]["display_name"],
+                    "exposure_type": meta[eid]["exposure_type"],
+                    "count": cnt,
+                }
+                for eid, cnt in counts.items()
+            ],
+            key=lambda x: (-x["count"], x["exposure_id"]),
+        )
+
+        try:
+            await cache_set(cache_key, json.dumps(result), 1800)
+        except Exception:
+            pass
+
+        return result
+
     async def get_trending_tags(self, weeks: int = 6, preview_count: int = 3) -> List[dict]:
         """Return curated tags with scoped counts, weekly sparkline data, and episode previews.
         Results are cached for 30 minutes. Tags with 0 scoped episodes are omitted."""

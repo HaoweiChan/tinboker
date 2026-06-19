@@ -5,7 +5,7 @@ import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
 import { RailCard } from '@/components/redesign';
 import { PodcastAvatar } from '@/components/common/PodcastAvatar';
-import { getTrendingTags, getTagRegistry, getSortedPodcasts, type TrendingTag, type EpisodePreview, type Podcast } from '@/services/api/podcasts';
+import { getTrendingTags, getTagRegistry, getSortedPodcasts, getSectors, type TrendingTag, type EpisodePreview, type Podcast, type SectorListItem } from '@/services/api/podcasts';
 import { fetchWithFallback } from '@/services/api/migration';
 import { topicVisual } from '@/lib/topicVisual';
 import { tagLabelFor, normalizeTagSlug } from '@/hooks/useTagLabels';
@@ -223,6 +223,7 @@ export const TopicsCloud: React.FC = () => {
   const [tags, setTags] = useState<TrendingTag[]>([]);
   const [topicLabels, setTopicLabels] = useState<Record<string, string>>({});
   const [podcasts, setPodcasts] = useState<Podcast[]>([]);
+  const [sectors, setSectors] = useState<SectorListItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Real podcaster channel icons (podcast_name → image_url) for the preview rows.
@@ -238,7 +239,7 @@ export const TopicsCloud: React.FC = () => {
     let alive = true;
     (async () => {
       setLoading(true);
-      const [trendingRes, registryRes, podcastList] = await Promise.all([
+      const [trendingRes, registryRes, podcastList, sectorList] = await Promise.all([
         fetchWithFallback(
           () => getTrendingTags(6, 3),
           { tags: [] as TrendingTag[] },
@@ -250,6 +251,7 @@ export const TopicsCloud: React.FC = () => {
           [],
           'getSortedPodcasts',
         ).catch(() => [] as Podcast[]),
+        getSectors().catch(() => [] as SectorListItem[]),
       ]);
       if (!alive) return;
       setTags(Array.isArray(trendingRes?.tags) ? trendingRes.tags : []);
@@ -259,6 +261,7 @@ export const TopicsCloud: React.FC = () => {
       }
       setTopicLabels(labels);
       setPodcasts(Array.isArray(podcastList) ? podcastList : []);
+      setSectors(Array.isArray(sectorList) ? sectorList : []);
       setLoading(false);
     })();
     return () => { alive = false; };
@@ -325,6 +328,28 @@ export const TopicsCloud: React.FC = () => {
                 </div>
               </RailCard>
             </div>
+
+            {/* Sector / theme chips */}
+            {sectors.length > 0 && (
+              <div className="mb-6">
+                <div className="flex items-center justify-between mb-2.5">
+                  <h2 className="text-[15px] font-semibold tracking-[-0.01em]">產業 / 主題</h2>
+                  <span className="text-[11px] text-muted-foreground font-mono">{sectors.length} 個分類</span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {sectors.map((s) => (
+                    <Link
+                      key={s.exposure_id}
+                      to={`/sector/${encodeURIComponent(s.exposure_id)}`}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[13px] font-medium transition-colors hover:border-accent-info/60 hover:text-accent-info hover:bg-accent-info/5 ${s.exposure_type === 'theme' ? 'border-border/60 bg-muted/40' : 'border-border bg-card'}`}
+                    >
+                      {s.display_name}
+                      <span className="text-[11px] font-mono text-muted-foreground tabular-nums">{s.count}</span>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Topic cards grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
