@@ -133,6 +133,150 @@ def finmind_budget_bucket() -> str:
     return _FINMIND_BUDGET
 
 
+# Profile fields (name/market-cap/P-E) drift slowly; refresh weekly. Logos are static and
+# fetched from Massive only when missing (the 429 saver). yfinance has no per-key cap but
+# we still space calls out to be polite to Yahoo and avoid an IP throttle.
+_PROFILE_TTL_DAYS = 7
+_YF_GAP_SECONDS = 1.5
+
+
+def _warm_us_slow_data(ticker: str, yf_provider, mas_provider) -> bool:
+    """Warm stock_profiles (+ logo once) and stock_daily_ohlc for one US ticker.
+
+    Sync (runs in a thread). Returns True if anything was written. Profile + P/E + OHLC
+    come from yfinance (rate-cap-free, best-effort); the company logo is pulled from Massive
+    only when we don't already have one stored — collapsing the per-request logo 429 storm
+    to roughly one Massive call per ticker, ever.
+    """
+    from src.database.models import StockDailyOHLC, StockProfile
+
+    wrote = False
+    profile = yf_provider.get_profile(ticker)  # best-effort; may be None on scraper hiccup
+
+    for session in get_session():
+        try:
+            existing = (
+                session.query(StockProfile).filter(StockProfile.ticker == ticker).first()
+            )
+            # Logo: only hit Massive when we lack one — this is the rate-limit win.
+            logo = None
+            if existing is None or not existing.logo_image:
+                mp = mas_provider.get_profile(ticker)
+                if mp:
+                    logo = mp
+
+            if profile or logo:
+                row = existing or StockProfile(ticker=ticker)
+                if profile:
+                    row.name = profile.name or row.name
+                    row.market_cap = profile.market_cap if profile.market_cap is not None else row.market_cap
+                    row.sector = profile.sector or row.sector
+                    row.industry = profile.industry or row.industry
+                    row.pe = profile.pe if profile.pe is not None else row.pe
+                    row.dividend_yield = (
+                        profile.dividend_yield if profile.dividend_yield is not None else row.dividend_yield
+                    )
+                    row.currency = profile.currency or row.currency
+                    row.description = profile.description or row.description
+                    row.source = profile.source or row.source
+                if logo:
+                    row.logo_url = logo.logo_url or row.logo_url
+                    row.icon_url = logo.icon_url or row.icon_url
+                    row.logo_image = logo.logo_image or row.logo_image
+                    row.icon_image = logo.icon_image or row.icon_image
+                    row.name = row.name or logo.name
+                if existing is None:
+                    session.add(row)
+                session.commit()
+                wrote = True
+        except Exception as e:
+            session.rollback()
+            logger.debug(f"slow-data: profile upsert failed for {ticker}: {e}")
+        break
+
+    # OHLC bars (full chart data) — yfinance end is exclusive, so pad +1 day.
+    end = (datetime.utcnow() + timedelta(days=1)).strftime("%Y-%m-%d")
+    start = (datetime.utcnow() - timedelta(days=_LOOKBACK_DAYS)).strftime("%Y-%m-%d")
+    bars = yf_provider.get_daily_ohlc(ticker, start, end)
+    if bars:
+        for session in get_session():
+            try:
+                inserted = 0
+                for b in bars:
+                    exists = (
+                        session.query(StockDailyOHLC.id)
+                        .filter(StockDailyOHLC.ticker == ticker, StockDailyOHLC.date == b.date)
+                        .first()
+                    )
+                    if not exists:
+                        session.add(
+                            StockDailyOHLC(
+                                ticker=ticker, date=b.date, open=b.open, high=b.high,
+                                low=b.low, close=b.close, volume=b.volume,
+                            )
+                        )
+                        inserted += 1
+                if inserted:
+                    session.commit()
+                    wrote = True
+            except Exception as e:
+                session.rollback()
+                logger.debug(f"slow-data: ohlc upsert failed for {ticker}: {e}")
+            break
+    return wrote
+
+
+def _profile_is_fresh(db, ticker: str, cutoff: datetime) -> bool:
+    """True if we have a profile for ``ticker`` updated on/after ``cutoff``."""
+    from src.database.models import StockProfile
+
+    row = (
+        db.query(StockProfile.updated_at, StockProfile.logo_image)
+        .filter(StockProfile.ticker == ticker)
+        .first()
+    )
+    if not row:
+        return False
+    updated_at, logo_image = row
+    # Re-warm if the logo is still missing, even within the TTL, so it gets backfilled once.
+    return bool(logo_image) and updated_at is not None and updated_at >= cutoff
+
+
+async def refresh_us_slow_data(max_tracked: int = MAX_TRACKED) -> int:
+    """Warm profiles + OHLC for the tracked US tickers. Returns tickers warmed."""
+    tickers = [t for t in await get_tracked_tickers(max_tracked) if not _is_tw(t)]
+    if not tickers:
+        return 0
+
+    from src.services.providers import MassiveProvider, YFinanceProvider
+    yf_provider = YFinanceProvider()
+    mas_provider = MassiveProvider()
+
+    cutoff = datetime.utcnow() - timedelta(days=_PROFILE_TTL_DAYS)
+    loop = asyncio.get_event_loop()
+    warmed = 0
+    for ticker in tickers:
+        try:
+            skip = False
+            for session in get_session():
+                skip = _profile_is_fresh(session, ticker, cutoff)
+                break
+            if skip:
+                continue
+            wrote = await loop.run_in_executor(
+                None, _warm_us_slow_data, ticker, yf_provider, mas_provider
+            )
+            if wrote:
+                warmed += 1
+        except Exception as e:
+            logger.debug(f"slow-data: skipping {ticker}: {e}")
+        await asyncio.sleep(_YF_GAP_SECONDS)
+
+    if warmed:
+        logger.info(f"slow-data: warmed profile/OHLC for {warmed} US ticker(s).")
+    return warmed
+
+
 async def refresh_daily_closes(max_tracked: int = MAX_TRACKED) -> int:
     """Refresh missing recent closes for the tracked tickers. Returns rows inserted."""
     tickers = await get_tracked_tickers(max_tracked)
@@ -181,7 +325,56 @@ async def run_periodic_refresh(interval_hours: float = 6.0) -> None:
             await refresh_daily_closes()
         except Exception as e:
             logger.warning(f"close-refresh cycle failed: {e}")
+        try:
+            await refresh_us_slow_data()
+        except Exception as e:
+            logger.warning(f"slow-data refresh cycle failed: {e}")
         await asyncio.sleep(interval_hours * 3600)
+
+
+def read_stored_profile_sync(ticker: str) -> Optional[dict]:
+    """Sync read of a warmed US profile (incl. base64 logo/icon) from Postgres, or None.
+
+    Lets request paths serve company logos/profile from the DB instead of re-fetching from
+    Massive on a 1-hour TTL per ticker — the change that collapses the profile 429 storm.
+    Safe to call from sync code (e.g. the CompanyDetail builder); never raises.
+    """
+    from src.database.models import StockProfile
+
+    ticker = ticker.strip().upper()
+    try:
+        for session in get_session():
+            row = (
+                session.query(StockProfile)
+                .filter(StockProfile.ticker == ticker)
+                .first()
+            )
+            if row is None:
+                return None
+            return {
+                "ticker": row.ticker,
+                "name": row.name,
+                "market_cap": row.market_cap,
+                "sector": row.sector,
+                "industry": row.industry,
+                "pe": row.pe,
+                "dividend_yield": row.dividend_yield,
+                "currency": row.currency,
+                "description": row.description,
+                "logo_url": row.logo_url,
+                "icon_url": row.icon_url,
+                "logo_image": row.logo_image,
+                "icon_image": row.icon_image,
+            }
+    except Exception as e:
+        logger.debug(f"slow-data: profile read failed for {ticker}: {e}")
+    return None
+
+
+async def get_stored_profile(ticker: str) -> Optional[dict]:
+    """Async wrapper around :func:`read_stored_profile_sync` (runs in a thread)."""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, read_stored_profile_sync, ticker)
 
 
 async def get_eod_change_pct(ticker: str) -> Optional[float]:
