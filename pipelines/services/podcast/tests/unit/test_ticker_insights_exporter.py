@@ -42,6 +42,35 @@ def test_build_insight_doc_drops_boilerplate_thesis():
     assert doc is None
 
 
+@pytest.mark.parametrize("bad_ticker", ["JPOW", "N", "POWELL", "FED"])
+def test_build_insight_doc_drops_non_ticker_symbols(bad_ticker):
+    # The extractor emits person names ("JPOW" = Jerome Powell) and bare letters
+    # ("N") in the ticker slot; writing them creates junk sentiment docs + priceless
+    # pills. build_insight_doc must reject them before a doc is keyed.
+    doc = build_insight_doc(
+        insight={"ticker": bad_ticker, "bluf_thesis": "鮑爾談話偏鷹，市場關注利率路徑。"},
+        episode_id="e1", podcaster="P", podcast_launch_time=0,
+    )
+    assert doc is None
+
+
+def test_build_episode_insight_docs_filters_junk_keeps_real_and_kr():
+    # Simulates re-running extraction on an episode whose LLM output contains the
+    # reported junk (JPOW + bare N) alongside real tickers: the junk is dropped and
+    # real TW/US plus the price-feed-less Korean codes (005930, 000660) survive.
+    payload = {"ticker_insights": [
+        {"ticker": "JPOW", "bluf_thesis": "鮑爾談話偏鷹"},
+        {"ticker": "N", "bluf_thesis": "雜訊片段"},
+        {"ticker": "2330", "bluf_thesis": "台積電先進製程領先，CoWoS 產能吃緊。"},
+        {"ticker": "005930", "bluf_thesis": "三星記憶體報價落底回升。"},
+        {"ticker": "000660", "bluf_thesis": "SK 海力士 HBM 需求強勁。"},
+    ]}
+    docs = build_episode_insight_docs(
+        raw_payload=payload, episode_id="e1", podcaster="P", podcast_launch_time=0,
+    )
+    assert set(docs) == {"2330", "005930", "000660"}
+
+
 def test_iso_utc_coerces_epoch_ms():
     # Regression: an epoch-ms int (released_at_ms / created_time) used to fall
     # through to datetime.now(), stamping every backfilled insight with the run

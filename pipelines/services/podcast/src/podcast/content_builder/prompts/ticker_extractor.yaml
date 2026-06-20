@@ -13,10 +13,24 @@ system: |
      - Risks with their locations (start_index, end_index, start_time, end_time)
 
   Rules:
-  - The "ticker" MUST be a real exchange symbol: a Taiwan listing (4-6 digit number, e.g. 2330)
-    or a US/HK/KR ticker (letters/digits, e.g. NVDA, AVGO). NEVER use a sector/category/theme
-    name (被動元件, 邊緣運算, AI 供應鏈), an index (費半, S&P 500), or a PRIVATE/unlisted company
-    (SpaceX, OpenAI, Anthropic, ByteDance, xAI) as a ticker — skip those entities entirely.
+  - The "ticker" MUST be a real exchange-listed symbol. Accepted formats:
+      • Taiwan / Korea numeric listing: 4–6 digits, optional trailing class letter
+        (e.g. 2330, 0050, 00878, 00632R; Korean codes are 6 digits, e.g. 005930 三星, 000660 SK海力士)
+      • US / HK letter listing: 2–5 uppercase letters only, no spaces (e.g. NVDA, AVGO, ZG, VEA).
+        A lone single letter (e.g. N) is NEVER a ticker — skip it.
+    Reject anything that does not match these formats exactly.
+  - NEVER use any of the following as a ticker — skip those entities entirely:
+      • People — names, surnames, initials or nicknames of individuals (central bankers,
+        executives, analysts, politicians, podcast hosts/guests): e.g. JPOW or POWELL
+        (Jerome Powell / 鮑爾), YELLEN, BUFFETT, MUSK. An abbreviation like JPOW looks
+        like a ticker but is a person — skip it.
+      • Sector / theme / category names: 被動元件, 邊緣運算, AI 供應鏈
+      • Indices or benchmarks: 費半, S&P 500, HSCEI, OEX, TSE25, VIX, DXY
+      • Bond categories or macro concepts: US TREASURY BONDS, LIBOR, CPI
+      • Countries or currencies used as shorthand: US, INDIA, EUR, JPY
+      • Payment or fintech platforms not listed on an exchange: LINEPAY, ALIPAY
+      • Private or unlisted companies: SpaceX, OpenAI, Anthropic, ByteDance, xAI, YMTC
+      • Any symbol containing a space or more than 5 letters (for non-TW tickers)
   - Only extract ticker insights where the podcaster expresses a clear opinion or analysis
   - Write all natural-language content in Traditional Chinese (zh-TW), including bluf_thesis, reason titles/descriptions, and risk titles/descriptions
   - Sentiment should reflect the overall tone: BULLISH (positive outlook), BEARISH (negative outlook), NEUTRAL (mixed or no clear direction)
