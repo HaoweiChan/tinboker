@@ -5,15 +5,16 @@ Gated by Google OAuth + ADMIN_EMAILS whitelist (same as admin translations).
 
 import logging
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
-from src.database.postgres import get_session
 from datetime import datetime, timezone
 
-from src.config import settings
-from src.cache import cache_delete_pattern, purge_cdn_cache
-from src.services.content_source_service import ContentSourceService
+from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends, HTTPException, Query
+
 from src.services.podcast import PodcastService
+from src.database.postgres import get_session
+from src.cache import cache_delete_pattern, purge_cdn_cache
+from src.auth.admin_auth import get_admin_access, AdminAccess
+from src.services.content_source_service import ContentSourceService
 from src.schemas.content_source import (
     ContentSourceCreate,
     ContentSourceUpdate,
@@ -22,7 +23,6 @@ from src.schemas.content_source import (
     SourceRunStatus,
     SourceRunStatusResponse,
 )
-from src.auth.admin_auth import get_admin_access, AdminAccess
 
 logger = logging.getLogger(__name__)
 
@@ -31,18 +31,30 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 # Reused for the Firestore-derived run-status (cached podcast aggregation).
 podcast_service = PodcastService()
 
-# Each environment's public API host, for scoping the post-edit Cloudflare purge.
-_API_HOST_BY_ENV = {
-    "production": "api.tinboker.com",
-    "staging": "staging-api.tinboker.com",
-    "development": "dev-api.tinboker.com",
-}
+# All API + frontend hosts that may cache content-source-derived responses.
+# Since all environments share the same Postgres and Redis, a content-source
+# change from any env must invalidate ALL envs' CDN caches immediately.
+_ALL_API_HOSTS = [
+    "api.tinboker.com",
+    "staging-api.tinboker.com",
+    "dev-api.tinboker.com",
+]
+_ALL_FRONTEND_HOSTS = [
+    "tinboker.com",
+    "www.tinboker.com",
+    "staging.tinboker.com",
+    "dev.tinboker.com",
+]
 
 
 async def _invalidate_source_caches() -> None:
     """Bust the caches a content-source change affects so an admin edit (e.g. toggling a
     source active/inactive) shows up on the public site promptly, instead of waiting out
     the Redis (origin) and Cloudflare (edge) TTLs.
+
+    All environments share the same Postgres and Redis, so a change made from any env's
+    admin page must purge ALL envs' CDN caches — otherwise the other envs serve stale
+    edge-cached responses until the TTL expires (up to 1h + stale-while-revalidate).
 
     Best-effort: every failure is logged, never raised — the admin write has already
     committed, so a cache hiccup must not turn a successful edit into a 500.
@@ -61,17 +73,14 @@ async def _invalidate_source_caches() -> None:
         except Exception as e:
             logger.warning("source cache: Redis invalidation failed for %s: %s", pattern, e)
 
-    # Cloudflare (edge). Purge only THIS environment's API host, so a dev/staging edit
-    # never clears another env's cache. Host purge is confirmed working on the tinboker
-    # zone; if it ever stops (e.g. a plan change), the call just no-ops (logged) and the
-    # edge self-heals within s-maxage (≤1h). We never purge_everything here — that would
-    # wipe the whole shared zone, including production.
-    host = _API_HOST_BY_ENV.get((settings.environment or "").lower())
-    if host:
-        try:
-            await purge_cdn_cache(hosts=[host])
-        except Exception as e:
-            logger.warning("source cache: CDN purge failed for host %s: %s", host, e)
+    # Cloudflare (edge). Purge ALL environments' API and frontend hosts in one call.
+    # All envs share the same DB/Redis, so a source change from any admin page must
+    # be reflected everywhere. One batched host purge is cheaper than per-env calls.
+    all_hosts = _ALL_API_HOSTS + _ALL_FRONTEND_HOSTS
+    try:
+        await purge_cdn_cache(hosts=all_hosts)
+    except Exception as e:
+        logger.warning("source cache: CDN purge failed for hosts %s: %s", all_hosts, e)
 
 
 # ==================== Stats (before parameterized routes) ====================
