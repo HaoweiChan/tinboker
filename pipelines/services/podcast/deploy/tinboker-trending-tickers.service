@@ -1,0 +1,12 @@
+[Unit]
+Description=TinBoker trending ticker delta refresh
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/tinboker/pipelines/services/podcast
+ExecStart=/root/tinboker/pipelines/services/podcast/scripts/run_hourly_trending.sh
+Environment=GOOGLE_APPLICATION_CREDENTIALS=/root/tinboker/pipelines/services/podcast/gcp-service-account.json
+# Delta refresh should be quick; fail rather than overlapping with the next hour.
+TimeoutStartSec=900

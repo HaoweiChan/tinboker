@@ -100,6 +100,9 @@ async def lifespan(app: FastAPI):
             us_inserted = svc.backfill_translations(US_STOCK_TRANSLATIONS)
             if us_inserted:
                 print(f"Backfilled {us_inserted} new US stock translation(s).")
+            corrected = svc.apply_known_name_corrections()
+            if corrected:
+                print(f"Corrected {corrected} mislabeled stock translation name(s).")
             break
     except Exception as e:
         print(f"Warning: translation seed/backfill skipped: {e}")
@@ -163,6 +166,18 @@ async def lifespan(app: FastAPI):
             print(f"Warning: stock close refresher stopped: {e}")
 
     asyncio.create_task(_refresh_closes_bg())
+
+    # Refresh-ahead for the /topics hot-sectors board: recompute + rewrite its Redis
+    # entry every 5 min (inside the 10-min TTL) so the serving path never pays the
+    # cold ~2700-doc episode scan. Off the request path; must not block startup.
+    async def _refresh_board_bg():
+        try:
+            from src.services.podcast import run_periodic_board_refresh
+            await run_periodic_board_refresh(interval_seconds=300.0)
+        except Exception as e:
+            print(f"Warning: sector board refresher stopped: {e}")
+
+    asyncio.create_task(_refresh_board_bg())
 
     yield
 

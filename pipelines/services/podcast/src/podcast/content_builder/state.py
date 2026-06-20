@@ -73,6 +73,38 @@ class TickerInsight(TypedDict, total=False):
     risks: list[TickerRisk]
 
 
+class ResolvedTicker(TypedDict, total=False):
+    ticker: str
+    name: str
+    name_en: str
+    market: str
+    source: str
+
+
+class SectorExposure(TypedDict, total=False):
+    exposure_id: str
+    exposure_type: str
+    sector_id: Optional[str]
+    theme_id: Optional[str]
+    display_name: str
+    mention_text: str
+    confidence: float
+    start_index: Optional[int]
+    end_index: Optional[int]
+    start_time: Optional[int]
+    end_time: Optional[int]
+    resolved_tickers: list[ResolvedTicker]
+    total_matches: int
+
+
+class UnresolvedMarketTrend(TypedDict, total=False):
+    mention_text: str
+    normalized_text: str
+    context: str
+    start_time: Optional[int]
+    confidence: float
+
+
 class PipelineState(TypedDict, total=False):
     # Inputs
     transcript: str
@@ -115,10 +147,22 @@ class PipelineState(TypedDict, total=False):
     # marp_slides + key_insights. Powers the Threads carousel/replies + episode SEO.
     social_cards: list[dict[str, Any]]
 
+    # Human-tone Threads copy: a grand-summary post + one comment per theme card.
+    # {"post": str, "comments": [{"heading": str, "text": str}, ...]}
+    social_thread: dict[str, Any]
+
     # Ticker insights (parallel branch)
     ticker_insights: dict[str, Any]
     ticker_marp_slides: dict[str, Any]
     ticker_marp_markdown: str
+
+    # Deterministic broad market exposure metadata (NOT direct ticker mentions).
+    sector_exposures: list[SectorExposure]
+    unresolved_market_trends: list[UnresolvedMarketTrend]
+    sector_exposure_ids: list[str]
+    sector_ids: list[str]
+    theme_ids: list[str]
+    unresolved_market_trend_ids: list[str]
 
     # Error tracking
     errors: list[str]

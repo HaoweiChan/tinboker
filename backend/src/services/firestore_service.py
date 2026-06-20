@@ -238,7 +238,9 @@ class FirestoreService:
                         query = query.where(field, "!=", value)
                     elif operator == "in":
                         query = query.where(field, "in", value)
-            
+                    elif operator == "array-contains":
+                        query = query.where(field, "array_contains", value)
+
             # Apply ordering
             if order_by:
                 direction_enum = firestore.Query.DESCENDING if direction == "DESCENDING" else firestore.Query.ASCENDING
@@ -273,7 +275,28 @@ class FirestoreService:
             return results
         except Exception as e:
             raise Exception(f"Failed to get all documents from Firestore: {e}") from e
-    
+
+    def stream_documents_projected(self, collection: str, fields: List[str]) -> List[Dict]:
+        """Like get_all_documents but fetches only ``fields`` via Firestore .select().
+
+        Projection skips heavy episode fields (transcript/summary refs, etc.) so
+        aggregation scans (e.g. the /topics sector board) pull a few bytes per doc
+        instead of the full document. Read count is unchanged; egress + deserialise
+        cost drop sharply — that's the cold-path win.
+        """
+        if self._disabled or not self.db:
+            return []
+
+        try:
+            results = []
+            for doc in self.db.collection(collection).select(fields).stream():
+                data = doc.to_dict() or {}
+                data['id'] = doc.id
+                results.append(data)
+            return results
+        except Exception as e:
+            raise Exception(f"Failed to stream projected documents from Firestore: {e}") from e
+
     def delete_document(self, collection: str, doc_id: str) -> bool:
         """Delete a document."""
         if self._disabled or not self.db:

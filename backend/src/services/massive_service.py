@@ -9,6 +9,7 @@ This module provides a wrapper around the Massive API client with:
 
 import logging
 import os
+import re
 import time
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta
@@ -16,6 +17,17 @@ from massive import RESTClient
 from src.config import settings
 import requests
 import base64
+
+# Boundary guard: Massive is a US-equities provider, but the prod logs showed display names
+# ("聯發科", "FOXCONN", "SALESFORCE") and TW codes ("00993A") leaking in from callers and
+# 429-storming the aggregates/reference endpoints with guaranteed-fail requests. Reject
+# anything that isn't a plausible US symbol before it ever hits the wire. (Mirror of
+# providers.base.is_us_ticker — inlined here to keep this low-level client import-cycle-free.)
+_US_TICKER_RE = re.compile(r"^[A-Z]{1,5}([.\-][A-Z]{1,2})?$")
+
+
+def _looks_us(ticker: str) -> bool:
+    return bool(ticker and _US_TICKER_RE.match(ticker.strip().upper()))
 
 logger = logging.getLogger(__name__)
 
@@ -140,6 +152,8 @@ class MassiveAPIService:
         Returns:
             Ticker details dict or None if error/not found
         """
+        if not _looks_us(ticker):
+            return None  # not a US symbol — don't waste the rate budget on a sure 429/404
         try:
             self._check_client()
             details = self.client.get_ticker_details(ticker)
@@ -184,6 +198,8 @@ class MassiveAPIService:
         Returns:
             Snapshot dict with latest price data or None if error
         """
+        if not _looks_us(ticker):
+            return None
         try:
             self._check_client()
             # Get the most recent day's data from aggregates
@@ -229,6 +245,8 @@ class MassiveAPIService:
         Returns:
             List of daily summary dicts
         """
+        if not _looks_us(ticker):
+            return []
         try:
             self._check_client()
             if date is None:
@@ -249,7 +267,7 @@ class MassiveAPIService:
                 if hasattr(agg, 'timestamp'):
                     try:
                         agg_date = datetime.fromtimestamp(agg.timestamp / 1000).strftime("%Y-%m-%d")
-                    except:
+                    except Exception:
                         pass
                 
                 summaries.append({
@@ -267,6 +285,8 @@ class MassiveAPIService:
     
     def list_daily_ticker_summary_range(self, ticker: str, start_date: str, end_date: str) -> List[Dict[str, Any]]:
         """Get daily OHLCV bars for a date range, sorted by date ascending."""
+        if not _looks_us(ticker):
+            return []
         try:
             self._check_client()
             summaries = []
@@ -390,7 +410,6 @@ class MassiveAPIService:
         """
         try:
             self._check_client()
-            tickers = []
             # Massive API expects limit as int, max 1000
             actual_limit = min(limit, 1000)
             

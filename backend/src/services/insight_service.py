@@ -273,6 +273,22 @@ class InsightService:
         rows = [_doc_to_trending(d, days) for d in docs if d.get("ticker") or d.get("id")]
         rows = [r for r in rows if r["count"] > 0 and r["ticker"]]
 
+        # Dedup by ticker. The agents write non-US trending docs at id "{ticker}.{market}"
+        # (e.g. "2330.TW") but keep the bare "ticker" field, so a legacy "trending_tickers/2330"
+        # doc and a new "2330.TW" doc can coexist and both surface as ticker 2330. Keep the
+        # row with the higher count (then the more recent mention) so the UI never double-lists.
+        if rows:
+            best: dict = {}
+            for r in rows:
+                cur = best.get(r["ticker"])
+                if (
+                    cur is None
+                    or r["count"] > cur["count"]
+                    or (r["count"] == cur["count"] and r["last_mentioned"] > cur["last_mentioned"])
+                ):
+                    best[r["ticker"]] = r
+            rows = list(best.values())
+
         if not rows:
             logger.info("trending_tickers empty; falling back to episode aggregation")
             rows = await self._aggregate_from_episodes(days)

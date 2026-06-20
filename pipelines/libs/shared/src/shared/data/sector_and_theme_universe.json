@@ -1,0 +1,1997 @@
+{
+  "version": 1,
+  "max_tickers": 12,
+  "_comment": "Compiled runtime artifact for deterministic podcast sector/theme exposure extraction. Runtime code must read this file only; external sources such as FinMind, ETF issuer CSVs, and Tavily belong to maintenance jobs.",
+  "exposures": [
+    {
+      "exposure_id": "sector_semiconductor",
+      "exposure_type": "sector",
+      "sector_id": "semiconductor",
+      "theme_id": null,
+      "display_name": "半導體",
+      "aliases": [
+        "半導體",
+        "晶片",
+        "晶圓代工",
+        "護國神山",
+        "semiconductor",
+        "semiconductors",
+        "semiconductor foundry",
+        "chip stocks"
+      ],
+      "members": [
+        {
+          "ticker": "2330",
+          "name": "台積電",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1,
+          "market_cap_rank": 1,
+          "reason": "提供全球最先進的晶圓代工服務，是無數半導體產品的關鍵製造商。"
+        },
+        {
+          "ticker": "NVDA",
+          "name": "輝達",
+          "market": "US",
+          "source": "issuer_etf",
+          "rank": 2,
+          "market_cap_rank": 1,
+          "reason": "領先的圖形處理器（GPU）和人工智慧晶片設計商，廣泛應用於AI與資料中心。"
+        },
+        {
+          "ticker": "AVGO",
+          "name": "博通",
+          "market": "US",
+          "source": "issuer_etf",
+          "rank": 3,
+          "market_cap_rank": 2,
+          "reason": "提供廣泛的半導體解決方案，涵蓋網路通訊、寬頻與儲存等關鍵領域。"
+        },
+        {
+          "ticker": "TSM",
+          "name": "台積電 (ADR)",
+          "market": "US",
+          "source": "issuer_etf",
+          "rank": 4,
+          "market_cap_rank": 3,
+          "reason": "提供全球最先進的晶圓代工服務，是無數半導體產品的關鍵製造商。"
+        },
+        {
+          "ticker": "2454",
+          "name": "聯發科",
+          "market": "TW",
+          "source": "curated",
+          "rank": 5,
+          "market_cap_rank": 2,
+          "reason": "全球領先的IC設計公司，專注於手機、智慧家庭與物聯網晶片解決方案。"
+        },
+        {
+          "ticker": "AMD",
+          "name": "超微",
+          "market": "US",
+          "source": "issuer_etf",
+          "rank": 6,
+          "market_cap_rank": 4,
+          "reason": "開發高效能中央處理器（CPU）與圖形處理器（GPU），應用於PC、伺服器及遊戲機。"
+        },
+        {
+          "ticker": "QCOM",
+          "name": "高通",
+          "market": "US",
+          "source": "issuer_etf",
+          "rank": 7,
+          "market_cap_rank": 5,
+          "reason": "行動通訊晶片與無線技術的領導者，提供智慧型手機與物聯網解決方案。"
+        },
+        {
+          "ticker": "MRVL",
+          "name": "邁威爾",
+          "market": "US",
+          "source": "issuer_etf",
+          "rank": 8,
+          "market_cap_rank": 6,
+          "reason": "專注於資料基礎設施半導體，提供網路、儲存與客製化ASIC解決方案。"
+        },
+        {
+          "ticker": "INTC",
+          "name": "英特爾",
+          "market": "US",
+          "source": "issuer_etf",
+          "rank": 9,
+          "market_cap_rank": 7,
+          "reason": "全球主要的中央處理器（CPU）設計與製造商，並積極發展晶圓代工業務。"
+        },
+        {
+          "ticker": "4919",
+          "name": "新唐",
+          "market": "TW",
+          "source": "finmind",
+          "rank": 10,
+          "market_cap_rank": 6,
+          "reason": "專精於微控制器（MCU）與嵌入式控制IC，廣泛應用於工業及消費性電子。"
+        },
+        {
+          "ticker": "5274",
+          "name": "信驊",
+          "market": "TW",
+          "source": "finmind",
+          "rank": 11,
+          "market_cap_rank": 7,
+          "reason": "全球伺服器管理晶片（BMC）領導廠商，提供遠端管理與控制解決方案。"
+        },
+        {
+          "ticker": "2337",
+          "name": "旺宏",
+          "market": "TW",
+          "source": "finmind",
+          "rank": 12,
+          "market_cap_rank": 8,
+          "reason": "專業生產非揮發性記憶體，包括NOR Flash、NAND Flash及唯讀記憶體。"
+        },
+        {
+          "ticker": "2303",
+          "name": "聯電",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2,
+          "market_cap_rank": 3,
+          "reason": "提供多元化製程技術的專業晶圓代工服務，是全球重要的半導體製造商。"
+        }
+      ]
+    },
+    {
+      "exposure_id": "sector_passive_components",
+      "exposure_type": "sector",
+      "sector_id": "passive_components",
+      "theme_id": null,
+      "display_name": "被動元件",
+      "aliases": [
+        "被動元件",
+        "passive component",
+        "passive components",
+        "mlcc"
+      ],
+      "members": [
+        {
+          "ticker": "2327",
+          "name": "國巨",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1,
+          "market_cap_rank": 1,
+          "reason": "為全球領先的積層陶瓷電容(MLCC)與晶片電阻供應商，廣泛應用於各類電子產品。"
+        },
+        {
+          "ticker": "VSH",
+          "name": "威世",
+          "market": "US",
+          "source": "issuer_etf",
+          "rank": 2,
+          "market_cap_rank": 1,
+          "reason": "作為全球領先的離散半導體和被動元件製造商，提供電阻、電容、電感等多元產品。"
+        },
+        {
+          "ticker": "2492",
+          "name": "華新科",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 3,
+          "reason": "專注於積層陶瓷電容(MLCC)、晶片電阻、電感等被動元件的研發與製造。"
+        },
+        {
+          "ticker": "3026",
+          "name": "禾伸堂",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 4,
+          "reason": "主要代理銷售各類被動元件，並生產自有品牌積層陶瓷電容(MLCC)產品。"
+        },
+        {
+          "ticker": "3357",
+          "name": "臺慶科",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 5,
+          "reason": "專精於電感元件的設計、製造與銷售，為電子產品提供關鍵零組件。"
+        },
+        {
+          "ticker": "6173",
+          "name": "信昌電",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 6,
+          "reason": "主要生產積層陶瓷電容(MLCC)、晶片電阻及電感等被動元件，應用於多種電子裝置。"
+        },
+        {
+          "ticker": "3624",
+          "name": "光頡",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 7,
+          "reason": "提供薄膜與厚膜晶片電阻、電感及電容等精密被動元件解決方案。"
+        },
+        {
+          "ticker": "6862",
+          "name": "三集瑞-KY",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 8,
+          "reason": "專注於電感元件的研發、製造與銷售，產品廣泛應用於消費性電子。"
+        },
+        {
+          "ticker": "2375",
+          "name": "凱美",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 9,
+          "reason": "為專業的鋁質電解電容器製造商，產品廣泛應用於電源供應器及消費性電子。"
+        },
+        {
+          "ticker": "2472",
+          "name": "立隆電",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 10,
+          "reason": "專注於鋁質電解電容器的生產與銷售，為電子產品提供穩定電源解決方案。"
+        }
+      ]
+    },
+    {
+      "exposure_id": "sector_shipping",
+      "exposure_type": "sector",
+      "sector_id": "shipping",
+      "theme_id": null,
+      "display_name": "航運",
+      "aliases": [
+        "航運",
+        "貨櫃航運",
+        "shipping",
+        "container shipping",
+        "marine shipping"
+      ],
+      "members": [
+        {
+          "ticker": "2603",
+          "name": "長榮",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1,
+          "market_cap_rank": 1,
+          "reason": "主要經營全球貨櫃航線，提供國際間貨物運輸服務。"
+        },
+        {
+          "ticker": "2609",
+          "name": "陽明",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2,
+          "market_cap_rank": 2,
+          "reason": "全球主要貨櫃航運公司之一，提供國際貨物運輸及物流服務。"
+        },
+        {
+          "ticker": "2615",
+          "name": "萬海",
+          "market": "TW",
+          "source": "curated",
+          "rank": 3,
+          "market_cap_rank": 3,
+          "reason": "深耕亞洲區間貨櫃航線，提供密集且高效的區域海運服務。"
+        },
+        {
+          "ticker": "2606",
+          "name": "裕民",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 4,
+          "reason": "主要經營散裝貨輪運輸，承載鐵礦砂、煤炭等大宗乾散貨物。"
+        },
+        {
+          "ticker": "2605",
+          "name": "新興",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 5,
+          "reason": "經營散裝船隊，主要承運鐵礦砂、煤炭、穀物等大宗原物料。"
+        },
+        {
+          "ticker": "2601",
+          "name": "益航",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 6,
+          "reason": "主要經營散裝貨輪運輸，提供大宗原物料的海上運送服務。"
+        },
+        {
+          "ticker": "2612",
+          "name": "中航",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 7,
+          "reason": "經營散裝貨輪船隊，主要承運鐵礦砂、煤炭等大宗乾散貨物。"
+        },
+        {
+          "ticker": "2617",
+          "name": "台航",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 8,
+          "reason": "經營散裝貨輪與油輪，提供大宗物資及液體燃料海上運輸。"
+        },
+        {
+          "ticker": "2637",
+          "name": "慧洋-KY",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 9,
+          "reason": "專業散裝航運業者，以節能環保船隊提供全球乾散貨運輸。"
+        },
+        {
+          "ticker": "5608",
+          "name": "四維航",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 10,
+          "reason": "經營散裝貨輪船隊，提供全球大宗乾散貨物的運輸服務。"
+        },
+        {
+          "ticker": "2641",
+          "name": "正德",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 11,
+          "reason": "經營散裝貨輪船隊，主要承運大宗乾散貨物，服務全球航線。"
+        }
+      ]
+    },
+    {
+      "exposure_id": "theme_ai_server",
+      "exposure_type": "theme",
+      "sector_id": null,
+      "theme_id": "ai_server",
+      "display_name": "AI 伺服器",
+      "aliases": [
+        "AI 伺服器",
+        "AI server",
+        "AI servers",
+        "ai server supply chain",
+        "AI 供應鏈"
+      ],
+      "members": [
+        {
+          "ticker": "2382",
+          "name": "廣達",
+          "name_en": "Quanta",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1,
+          "reason": "領先的AI伺服器ODM廠商，為全球資料中心提供高效能運算解決方案。"
+        },
+        {
+          "ticker": "6669",
+          "name": "緯穎",
+          "name_en": "Wiwynn",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2,
+          "reason": "專注於雲端及AI伺服器解決方案，直接供應大型資料中心客戶。"
+        },
+        {
+          "ticker": "NVDA",
+          "name": "輝達",
+          "name_en": "NVIDIA",
+          "market": "US",
+          "source": "curated",
+          "rank": 3,
+          "reason": "提供AI運算核心的GPU與CUDA平台，是AI伺服器不可或缺的關鍵技術。"
+        },
+        {
+          "ticker": "SMCI",
+          "name": "Supermicro",
+          "name_en": "Super Micro Computer",
+          "market": "US",
+          "source": "curated",
+          "rank": 4,
+          "reason": "供應全方位的AI伺服器系統，以機架式整合與液冷技術聞名。"
+        },
+        {
+          "ticker": "3231",
+          "name": "緯創",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 5,
+          "reason": "重要的AI伺服器ODM製造商，負責組裝與生產高效能運算設備。"
+        },
+        {
+          "ticker": "2317",
+          "name": "鴻海",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 6,
+          "reason": "全球電子製造龍頭，積極投入AI伺服器組裝與相關零組件生產。"
+        },
+        {
+          "ticker": "2356",
+          "name": "英業達",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 7,
+          "reason": "領先的伺服器ODM廠，積極開發與製造AI伺服器產品線。"
+        },
+        {
+          "ticker": "2376",
+          "name": "技嘉",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 8,
+          "reason": "提供高效能AI伺服器與工作站，包含GPU加速運算系統。"
+        },
+        {
+          "ticker": "3017",
+          "name": "奇鋐",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 9,
+          "reason": "供應先進的散熱解決方案，對於高功耗AI伺服器運作至關重要。"
+        },
+        {
+          "ticker": "3324",
+          "name": "雙鴻",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 10,
+          "reason": "專業散熱模組供應商，提供AI伺服器所需的液冷與氣冷散熱技術。"
+        },
+        {
+          "ticker": "2308",
+          "name": "台達電",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 11,
+          "reason": "提供AI伺服器關鍵的電源供應器與散熱風扇等基礎設施。"
+        },
+        {
+          "ticker": "3706",
+          "name": "神達",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 12,
+          "reason": "投入伺服器與儲存解決方案，包含AI就緒平台與機架整合服務。"
+        }
+      ]
+    },
+    {
+      "exposure_id": "theme_liquid_cooling",
+      "exposure_type": "theme",
+      "sector_id": null,
+      "theme_id": "liquid_cooling",
+      "display_name": "液冷",
+      "aliases": [
+        "液冷",
+        "水冷",
+        "liquid cooling",
+        "direct liquid cooling"
+      ],
+      "members": [
+        {
+          "ticker": "3017",
+          "name": "奇鋐",
+          "name_en": "AVC",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1,
+          "reason": "提供伺服器液冷散熱解決方案，涵蓋冷板、水冷分配單元與機櫃，為液冷系統關鍵供應商。"
+        },
+        {
+          "ticker": "3324",
+          "name": "雙鴻",
+          "name_en": "Auras",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2,
+          "reason": "專注於伺服器液冷散熱產品，提供冷板、CDU 與水冷背門，為液冷系統重要供應商。"
+        },
+        {
+          "ticker": "3653",
+          "name": "健策",
+          "name_en": "Jentech",
+          "market": "TW",
+          "source": "curated",
+          "rank": 3,
+          "reason": "生產精密均熱片與水冷板等關鍵零組件，為液冷散熱系統提供高效導熱解決方案。"
+        },
+        {
+          "ticker": "2308",
+          "name": "台達電",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 4,
+          "reason": "提供資料中心液冷基礎設施、電源供應器及散熱風扇，為液冷系統整合方案供應商。"
+        },
+        {
+          "ticker": "6125",
+          "name": "廣運",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 5,
+          "reason": "提供浸沒式液冷散熱解決方案，包含整機櫃與相關設備，積極切入資料中心液冷市場。"
+        },
+        {
+          "ticker": "3483",
+          "name": "力致",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 6,
+          "reason": "開發伺服器液冷散熱模組與水冷板，為高效能運算提供關鍵液冷散熱解決方案。"
+        },
+        {
+          "ticker": "2421",
+          "name": "建準",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 7,
+          "reason": "提供液冷系統中關鍵的幫浦與風扇，協助熱能傳導與散熱，提升系統效率。"
+        },
+        {
+          "ticker": "6230",
+          "name": "尼得科超眾",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 8,
+          "reason": "積極投入伺服器液冷散熱模組與水冷板的研發與生產，為高效能運算提供方案。"
+        },
+        {
+          "ticker": "8996",
+          "name": "高力",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 9,
+          "reason": "提供高效能板式熱交換器，為液冷系統中的熱能交換核心元件，確保散熱效率。"
+        }
+      ]
+    },
+    {
+      "exposure_id": "theme_silicon_photonics",
+      "exposure_type": "theme",
+      "sector_id": null,
+      "theme_id": "silicon_photonics",
+      "display_name": "矽光子",
+      "aliases": [
+        "矽光子",
+        "光通訊",
+        "silicon photonics",
+        "optical interconnect",
+        "co-packaged optics"
+      ],
+      "members": [
+        {
+          "ticker": "3081",
+          "name": "聯亞",
+          "name_en": "LandMark Optoelectronics",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1,
+          "reason": "提供矽光子磊晶片與光通訊雷射二極體，是關鍵上游材料供應商。"
+        },
+        {
+          "ticker": "3450",
+          "name": "聯鈞",
+          "name_en": "ELaser",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2,
+          "reason": "專注於光通訊次模組封裝，為矽光子模組提供關鍵的封裝整合服務。"
+        },
+        {
+          "ticker": "AOI",
+          "name": "應用光電",
+          "name_en": "Applied Optoelectronics",
+          "market": "US",
+          "source": "curated",
+          "rank": 3,
+          "reason": "生產光收發模組，其產品廣泛應用於資料中心與光纖到府，支援矽光子技術。"
+        },
+        {
+          "ticker": "LITE",
+          "name": "Lumentum",
+          "name_en": "Lumentum Holdings",
+          "market": "US",
+          "source": "curated",
+          "rank": 4,
+          "reason": "提供光通訊元件與模組，包括雷射與光學次系統，是矽光子應用的重要供應商。"
+        },
+        {
+          "ticker": "COHR",
+          "name": "高意",
+          "name_en": "Coherent",
+          "market": "US",
+          "source": "curated",
+          "rank": 5,
+          "reason": "供應光通訊元件、雷射與光學材料，其技術與產品是矽光子發展的基石。"
+        },
+        {
+          "ticker": "3363",
+          "name": "上詮",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 6,
+          "reason": "研發與製造光纖被動元件及光收發模組，為矽光子傳輸提供基礎設施。"
+        },
+        {
+          "ticker": "6442",
+          "name": "光聖",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 7,
+          "reason": "生產光纖連接器與光被動元件，是矽光子模組與系統間連接的關鍵。"
+        },
+        {
+          "ticker": "4979",
+          "name": "華星光",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 8,
+          "reason": "專精於光收發模組的設計與製造，產品應用於資料中心與電信網路，支援矽光子技術。"
+        },
+        {
+          "ticker": "3163",
+          "name": "波若威",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 9,
+          "reason": "提供光纖被動元件與光通訊模組，其產品在矽光子網路中扮演重要角色。"
+        },
+        {
+          "ticker": "4977",
+          "name": "眾達-KY",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 10,
+          "reason": "研發高速光收發模組，廣泛應用於資料中心與雲端運算，是矽光子技術的實踐者。"
+        },
+        {
+          "ticker": "3234",
+          "name": "光環",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 11,
+          "reason": "供應光通訊主動元件，如雷射二極體與檢光器，為矽光子模組提供核心元件。"
+        }
+      ]
+    },
+    {
+      "exposure_id": "theme_power_semiconductor",
+      "exposure_type": "theme",
+      "sector_id": null,
+      "theme_id": "power_semiconductor",
+      "display_name": "功率半導體",
+      "aliases": [
+        "功率半導體",
+        "功率元件",
+        "功率 IC",
+        "第三代半導體",
+        "碳化矽",
+        "氮化鎵",
+        "power semiconductor",
+        "power semiconductors",
+        "silicon carbide",
+        "gallium nitride"
+      ],
+      "members": [
+        {
+          "ticker": "2342",
+          "name": "茂矽",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1,
+          "name_en": "Mosel Vitelic",
+          "reason": "主要生產MOSFET、IGBT等功率元件，廣泛應用於電源管理。"
+        },
+        {
+          "ticker": "2481",
+          "name": "強茂",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2,
+          "reason": "專業二極體製造商，產品涵蓋蕭特基二極體、整流二極體及TVS，是功率半導體重要供應商。"
+        },
+        {
+          "ticker": "3707",
+          "name": "漢磊科技",
+          "market": "TW",
+          "source": "curated",
+          "rank": 3,
+          "name_en": "Episil-Precision",
+          "reason": "專注於功率半導體晶圓代工，提供高壓製程技術，是碳化矽（SiC）功率元件的關鍵製造商。"
+        },
+        {
+          "ticker": "ON",
+          "name": "安森美",
+          "market": "US",
+          "source": "curated",
+          "rank": 4,
+          "name_en": "ON Semiconductor",
+          "reason": "全球領先的功率半導體供應商，提供廣泛的電源管理、類比、感測器及SiC解決方案。"
+        },
+        {
+          "ticker": "WOLF",
+          "name": "Wolfspeed",
+          "market": "US",
+          "source": "curated",
+          "rank": 5,
+          "name_en": "Wolfspeed",
+          "reason": "碳化矽（SiC）技術的全球領導者，提供SiC晶圓、功率元件及射頻元件，應用於電動車與再生能源。"
+        },
+        {
+          "ticker": "5425",
+          "name": "台半",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 6,
+          "reason": "專業二極體製造商，產品線包含蕭特基、整流二極體及TVS，廣泛應用於車用與工業領域。"
+        },
+        {
+          "ticker": "3675",
+          "name": "德微",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 7,
+          "reason": "專注於二極體、整流器及蕭特基二極體等功率元件的設計與製造，是車用電子重要供應商。"
+        },
+        {
+          "ticker": "8255",
+          "name": "朋程",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 8,
+          "reason": "主要生產車用整流二極體，是全球車用發電機二極體的主要供應商之一。"
+        },
+        {
+          "ticker": "6435",
+          "name": "大中",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 9,
+          "reason": "專業功率元件設計公司，主要產品為MOSFET，廣泛應用於電源供應器及馬達控制。"
+        },
+        {
+          "ticker": "8261",
+          "name": "富鼎",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 10,
+          "reason": "台灣功率半導體設計公司，專精於MOSFET、IGBT等功率元件，應用於消費性電子及工業。"
+        },
+        {
+          "ticker": "5299",
+          "name": "杰力",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 11,
+          "reason": "專注於功率半導體元件設計，主要產品為MOSFET，應用於筆記型電腦、主機板及電源供應器。"
+        },
+        {
+          "ticker": "3016",
+          "name": "嘉晶",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 12,
+          "reason": "專業半導體矽晶圓製造商，提供磊晶圓產品，是功率半導體元件的關鍵上游材料供應商。"
+        }
+      ]
+    },
+    {
+      "exposure_id": "sector_heavy_electrical",
+      "exposure_type": "sector",
+      "sector_id": "heavy_electrical",
+      "theme_id": null,
+      "display_name": "重電",
+      "aliases": [
+        "重電",
+        "重電股",
+        "電網",
+        "電力建設",
+        "輸配電",
+        "電力設備",
+        "power grid",
+        "grid infrastructure",
+        "heavy electrical"
+      ],
+      "members": [
+        {
+          "ticker": "1519",
+          "name": "華城電機",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1,
+          "name_en": "Fortune Electric",
+          "reason": "華城電機是台灣重電設備領導廠商，專精於變壓器、開關設備及配電盤，為電網升級提供關鍵產品。"
+        },
+        {
+          "ticker": "1503",
+          "name": "士林電機",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2,
+          "name_en": "Shihlin Electric & Engineering",
+          "reason": "士林電機提供變壓器、配電盤、開關設備及馬達等多元重電產品，為電力基礎設施建設提供關鍵支援。"
+        },
+        {
+          "ticker": "1513",
+          "name": "中興電",
+          "market": "TW",
+          "source": "curated",
+          "rank": 3,
+          "name_en": "Chung-Hsin Electric",
+          "reason": "中興電是氣體絕緣開關（GIS）主要供應商，並承攬多項電力工程，為電網穩定與升級貢獻心力。"
+        },
+        {
+          "ticker": "1514",
+          "name": "亞力電機",
+          "market": "TW",
+          "source": "curated",
+          "rank": 4,
+          "name_en": "Allis Electric",
+          "reason": "亞力電機專精於電力變壓器、配電盤及高低壓開關設備，提供電力系統整合方案，強化電網韌性。"
+        },
+        {
+          "ticker": "2371",
+          "name": "大同",
+          "market": "TW",
+          "source": "curated",
+          "rank": 5,
+          "name_en": "Tatung Company",
+          "reason": "大同重電事業部生產變壓器、開關設備及馬達等電力設備，是台電電網強韌計畫的重要供應商。"
+        },
+        {
+          "ticker": "1504",
+          "name": "東元",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 6,
+          "reason": "東元以馬達製造聞名，亦提供變壓器、配電盤等重電設備，並積極參與綠能電力工程建置。"
+        },
+        {
+          "ticker": "1529",
+          "name": "樂事綠能",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 7,
+          "reason": "樂事綠能近年積極轉型，投入儲能系統與充電樁等綠能基礎設施，跨足重電領域提供解決方案。"
+        }
+      ]
+    },
+    {
+      "exposure_id": "sector_memory",
+      "exposure_type": "sector",
+      "sector_id": "memory",
+      "theme_id": null,
+      "display_name": "記憶體",
+      "aliases": [
+        "記憶體",
+        "記憶體模組",
+        "dram",
+        "nand",
+        "nand flash",
+        "hbm",
+        "高頻寬記憶體",
+        "memory chip",
+        "memory"
+      ],
+      "members": [
+        {
+          "ticker": "2408",
+          "name": "南亞科技",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1,
+          "name_en": "Nanya Technology",
+          "reason": "專注於DRAM記憶體產品的研發、設計、製造與銷售，是台灣重要的DRAM供應商。"
+        },
+        {
+          "ticker": "2344",
+          "name": "華邦電",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2,
+          "name_en": "Winbond Electronics",
+          "reason": "提供DRAM與NOR Flash記憶體解決方案，廣泛應用於消費性電子及工業領域。"
+        },
+        {
+          "ticker": "8299",
+          "name": "群聯",
+          "market": "TW",
+          "source": "curated",
+          "rank": 3,
+          "name_en": "Phison Electronics",
+          "reason": "為NAND Flash記憶體提供控制晶片及儲存解決方案，是全球主要控制IC供應商。"
+        },
+        {
+          "ticker": "3260",
+          "name": "威剛",
+          "market": "TW",
+          "source": "curated",
+          "rank": 4,
+          "name_en": "ADATA Technology",
+          "reason": "專營DRAM模組與NAND Flash應用產品，為全球知名記憶體品牌供應商。"
+        },
+        {
+          "ticker": "2337",
+          "name": "旺宏",
+          "market": "TW",
+          "source": "curated",
+          "rank": 5,
+          "name_en": "Macronix International",
+          "reason": "全球非揮發性記憶體領導廠商，提供NOR Flash、NAND Flash及ROM產品。"
+        },
+        {
+          "ticker": "MU",
+          "name": "美光科技",
+          "market": "US",
+          "source": "curated",
+          "rank": 6,
+          "name_en": "Micron Technology",
+          "reason": "全球領先的記憶體與儲存解決方案供應商，主要生產DRAM和NAND Flash。"
+        },
+        {
+          "ticker": "3006",
+          "name": "晶豪科",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 7,
+          "reason": "提供利基型DRAM、Flash及SRAM等記憶體IC產品，應用於多種嵌入式系統。"
+        },
+        {
+          "ticker": "5351",
+          "name": "鈺創",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 8,
+          "reason": "專注於利基型DRAM產品設計與銷售，並提供記憶體相關的IC解決方案。"
+        },
+        {
+          "ticker": "2451",
+          "name": "創見",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 9,
+          "reason": "研發、生產與銷售記憶體模組、快閃記憶體卡及USB隨身碟等儲存產品。"
+        },
+        {
+          "ticker": "8271",
+          "name": "宇瞻",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 10,
+          "reason": "提供工業級與消費性記憶體模組、固態硬碟及數位儲存應用產品。"
+        },
+        {
+          "ticker": "4967",
+          "name": "十銓",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 11,
+          "reason": "專業生產記憶體模組、快閃記憶體產品及固態硬碟，服務全球市場。"
+        }
+      ]
+    },
+    {
+      "exposure_id": "sector_pcb_substrate",
+      "exposure_type": "sector",
+      "sector_id": "pcb_substrate",
+      "theme_id": null,
+      "display_name": "PCB / 載板",
+      "aliases": [
+        "pcb",
+        "印刷電路板",
+        "abf",
+        "abf 載板",
+        "ic 載板",
+        "載板",
+        "ccl",
+        "銅箔基板",
+        "substrate"
+      ],
+      "members": [
+        {
+          "ticker": "3037",
+          "name": "欣興",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1,
+          "name_en": "Unimicron Technology",
+          "reason": "為全球領先的ABF載板供應商，廣泛應用於高階AI晶片與伺服器，亦生產高密度連結板。"
+        },
+        {
+          "ticker": "8046",
+          "name": "南亞電路板",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2,
+          "name_en": "Nan Ya Printed Circuit Board",
+          "reason": "專注於ABF載板與BT載板的研發與製造，為記憶體、網通及車用電子提供關鍵零組件。"
+        },
+        {
+          "ticker": "3189",
+          "name": "景碩",
+          "market": "TW",
+          "source": "curated",
+          "rank": 3,
+          "name_en": "Kinsus Interconnect Technology",
+          "reason": "專業生產ABF與BT載板，產品廣泛應用於CPU、GPU及記憶體等高階半導體封裝領域。"
+        },
+        {
+          "ticker": "2383",
+          "name": "台光電",
+          "market": "TW",
+          "source": "curated",
+          "rank": 4,
+          "name_en": "Elite Material",
+          "reason": "領先的無鹵素銅箔基板（CCL）供應商，其材料是製造高階PCB與載板不可或缺的基礎。"
+        },
+        {
+          "ticker": "2313",
+          "name": "華通",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 5,
+          "reason": "全球主要高密度連結板（HDI）與軟硬結合板製造商，產品廣泛應用於通訊、電腦及消費電子。"
+        },
+        {
+          "ticker": "2368",
+          "name": "金像電",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 6,
+          "reason": "專精於伺服器、網通設備及資料中心所需的高階印刷電路板製造，為AI應用提供關鍵支援。"
+        },
+        {
+          "ticker": "3044",
+          "name": "健鼎",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 7,
+          "reason": "主要生產多層印刷電路板，廣泛應用於汽車電子、伺服器、記憶體模組及網通產品。"
+        },
+        {
+          "ticker": "6274",
+          "name": "台燿",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 8,
+          "reason": "專注於高速低損耗銅箔基板（CCL）的研發與生產，為高階網通與AI伺服器PCB提供材料。"
+        },
+        {
+          "ticker": "2367",
+          "name": "燿華",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 9,
+          "reason": "專業生產高密度連結板（HDI）、軟板及軟硬結合板，廣泛應用於消費性電子與車用領域。"
+        },
+        {
+          "ticker": "6251",
+          "name": "定穎",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 10,
+          "reason": "主要生產汽車電子用印刷電路板，並提供顯示器與網通產品的PCB解決方案。"
+        },
+        {
+          "ticker": "8155",
+          "name": "博智",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 11,
+          "reason": "專精於高階伺服器、工業電腦及網通設備的印刷電路板製造，產品具高可靠度特性。"
+        }
+      ]
+    },
+    {
+      "exposure_id": "sector_networking",
+      "exposure_type": "sector",
+      "sector_id": "networking",
+      "theme_id": null,
+      "display_name": "網通",
+      "aliases": [
+        "網通",
+        "網通股",
+        "網路通訊",
+        "networking",
+        "network equipment",
+        "交換器",
+        "switch",
+        "white box"
+      ],
+      "members": [
+        {
+          "ticker": "2345",
+          "name": "智邦",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1,
+          "name_en": "Accton Technology",
+          "reason": "提供企業級與資料中心高速乙太網路交換器及無線網路解決方案。"
+        },
+        {
+          "ticker": "6285",
+          "name": "啟碁",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2,
+          "name_en": "Wistron NeWeb",
+          "reason": "專注於無線通訊模組、寬頻網路設備及車用通訊產品的研發與製造。"
+        },
+        {
+          "ticker": "5388",
+          "name": "中磊",
+          "market": "TW",
+          "source": "curated",
+          "rank": 3,
+          "name_en": "Sercomm Corporation",
+          "reason": "專精於寬頻網路接取設備、無線區域網路與智慧家庭解決方案。"
+        },
+        {
+          "ticker": "3596",
+          "name": "智易",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 4,
+          "reason": "為電信營運商提供寬頻閘道器、無線路由器及光纖網路設備。"
+        },
+        {
+          "ticker": "4906",
+          "name": "正文",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 5,
+          "reason": "研發製造無線區域網路、藍牙、物聯網及行動通訊相關產品。"
+        },
+        {
+          "ticker": "3704",
+          "name": "合勤控",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 6,
+          "reason": "提供企業與家庭網路交換器、無線基地台及資安防火牆等設備。"
+        },
+        {
+          "ticker": "3380",
+          "name": "明泰",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 7,
+          "reason": "研發製造區域網路、無線網路、光纖網路及寬頻網路通訊產品。"
+        },
+        {
+          "ticker": "2332",
+          "name": "友訊",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 8,
+          "reason": "知名網通品牌，提供家用與中小企業路由器、交換器及無線網路設備。"
+        },
+        {
+          "ticker": "2419",
+          "name": "仲琦",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 9,
+          "reason": "提供纜線數據機、光纖數據機與數位用戶迴路等寬頻網路接取設備。"
+        }
+      ]
+    },
+    {
+      "exposure_id": "theme_robotics",
+      "exposure_type": "theme",
+      "sector_id": null,
+      "theme_id": "robotics",
+      "display_name": "機器人",
+      "aliases": [
+        "機器人",
+        "人形機器人",
+        "工業機器人",
+        "工廠自動化",
+        "自動化",
+        "robot",
+        "robotics",
+        "humanoid"
+      ],
+      "members": [
+        {
+          "ticker": "2049",
+          "name": "上銀",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1,
+          "name_en": "Hiwin Technologies",
+          "reason": "台灣線性傳動元件領導廠，提供機器人關鍵的滾珠螺桿、線性滑軌與工業機器人本體。"
+        },
+        {
+          "ticker": "1590",
+          "name": "亞德客-KY",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2,
+          "name_en": "Airtac International Group",
+          "reason": "氣動元件製造商，其氣缸、閥類等產品廣泛應用於工業自動化設備與機器人。"
+        },
+        {
+          "ticker": "2359",
+          "name": "所羅門",
+          "market": "TW",
+          "source": "curated",
+          "rank": 3,
+          "name_en": "Solomon Technology",
+          "reason": "專精於AI視覺與機器人應用，提供3D視覺系統與AI視覺軟體，賦予機器人智慧辨識能力。"
+        },
+        {
+          "ticker": "1536",
+          "name": "和大",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 4,
+          "reason": "電動車齒輪供應商，其精密齒輪技術亦可應用於機器人的傳動系統。"
+        },
+        {
+          "ticker": "1597",
+          "name": "直得",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 5,
+          "reason": "專業生產微型線性滑軌與線性馬達，為小型化、高精度機器人提供關鍵零組件。"
+        },
+        {
+          "ticker": "4540",
+          "name": "全球傳動",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 6,
+          "reason": "提供滾珠螺桿、線性滑軌、線性模組等傳動元件，為機器人運動控制核心。"
+        },
+        {
+          "ticker": "4576",
+          "name": "大銀微系統",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 7,
+          "reason": "專注於運動控制與驅動器，提供機器人高精度、高效率的運動控制解決方案。"
+        },
+        {
+          "ticker": "4583",
+          "name": "台灣精銳",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 8,
+          "reason": "行星式減速機領導廠，其精密減速機是工業機器人關節傳動的關鍵零組件。"
+        },
+        {
+          "ticker": "7750",
+          "name": "新代",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 9,
+          "reason": "數控系統與機器人控制器供應商，提供機器人運動控制與人機介面整合方案。"
+        },
+        {
+          "ticker": "8374",
+          "name": "羅昇",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 10,
+          "reason": "代理銷售自動化控制元件與機器人相關產品，提供整合性自動化解決方案。"
+        },
+        {
+          "ticker": "6188",
+          "name": "廣明",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 11,
+          "reason": "旗下達明機器人（Techman Robot）為全球第二大協作型機器人品牌，提供智慧自動化解決方案。"
+        }
+      ]
+    },
+    {
+      "exposure_id": "sector_financials",
+      "exposure_type": "sector",
+      "sector_id": "financials",
+      "theme_id": null,
+      "display_name": "金融",
+      "aliases": [
+        "金融",
+        "金融股",
+        "金控",
+        "銀行股",
+        "壽險",
+        "financials",
+        "financial holding",
+        "banks"
+      ],
+      "members": [
+        {
+          "ticker": "2881",
+          "name": "富邦金",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1,
+          "name_en": "Fubon Financial",
+          "reason": "提供銀行、保險、證券等多元金融服務，為台灣大型綜合性金融控股公司。"
+        },
+        {
+          "ticker": "2882",
+          "name": "國泰金",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2,
+          "name_en": "Cathay Financial",
+          "reason": "以壽險業務為核心，並提供銀行、證券等多元金融服務，為台灣大型綜合性金控。"
+        },
+        {
+          "ticker": "2891",
+          "name": "中信金",
+          "market": "TW",
+          "source": "curated",
+          "rank": 3,
+          "name_en": "CTBC Financial",
+          "reason": "以銀行業務為主體，提供信用卡、財富管理、保險等多元金融商品與服務。"
+        },
+        {
+          "ticker": "2886",
+          "name": "兆豐金",
+          "market": "TW",
+          "source": "curated",
+          "rank": 4,
+          "name_en": "Mega Financial",
+          "reason": "旗下兆豐銀行為國際貿易融資與外匯業務龍頭，提供多元銀行與證券服務。"
+        },
+        {
+          "ticker": "2884",
+          "name": "玉山金",
+          "market": "TW",
+          "source": "curated",
+          "rank": 5,
+          "name_en": "E.SUN Financial Holding",
+          "reason": "以銀行業務為主，積極發展數位金融與財富管理，提供多元個人與企業金融服務。"
+        },
+        {
+          "ticker": "2885",
+          "name": "元大金",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 6,
+          "reason": "為台灣證券業龍頭，提供經紀、自營、承銷等服務，並發展銀行與期貨業務。"
+        },
+        {
+          "ticker": "2892",
+          "name": "第一金",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 7,
+          "reason": "旗下第一銀行在中小企業放款與海外布局具優勢，提供多元銀行與證券服務。"
+        },
+        {
+          "ticker": "2880",
+          "name": "華南金",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 8,
+          "reason": "旗下華南銀行深耕中小企業與在地金融服務，提供多元銀行、證券與保險業務。"
+        },
+        {
+          "ticker": "5880",
+          "name": "合庫金",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 9,
+          "reason": "旗下合作金庫銀行為農業金融與不動產放款主要機構，提供多元銀行服務。"
+        },
+        {
+          "ticker": "2883",
+          "name": "凱基金",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 10,
+          "reason": "提供銀行、證券、壽險等多元金融商品與服務，為台灣中型綜合性金融控股公司。"
+        },
+        {
+          "ticker": "2890",
+          "name": "永豐金",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 11,
+          "reason": "以銀行業務為主，積極發展數位金融與海外市場，提供多元個人與企業金融服務。"
+        },
+        {
+          "ticker": "2889",
+          "name": "國票金",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 12,
+          "reason": "為台灣票券業龍頭，主要從事票券金融、證券經紀與債券自營業務。"
+        }
+      ]
+    },
+    {
+      "exposure_id": "sector_semiconductor_equipment",
+      "exposure_type": "sector",
+      "sector_id": "semiconductor_equipment",
+      "theme_id": null,
+      "display_name": "半導體設備",
+      "aliases": [
+        "半導體設備",
+        "設備股",
+        "晶圓設備",
+        "semiconductor equipment",
+        "fab equipment",
+        "wafer fab equipment"
+      ],
+      "members": [
+        {
+          "ticker": "3131",
+          "name": "弘塑",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1,
+          "reason": "提供濕製程設備與化學品供應系統，廣泛應用於先進封裝與晶圓製造。"
+        },
+        {
+          "ticker": "3583",
+          "name": "辛耘",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2,
+          "reason": "供應濕製程、先進封裝設備及再生晶圓，並代理多種半導體檢測與製造設備。"
+        },
+        {
+          "ticker": "6187",
+          "name": "萬潤",
+          "market": "TW",
+          "source": "curated",
+          "rank": 3,
+          "reason": "研發製造自動化光學檢測設備、自動測試設備及後段封裝設備。"
+        },
+        {
+          "ticker": "6196",
+          "name": "帆宣",
+          "market": "TW",
+          "source": "curated",
+          "rank": 4,
+          "name_en": "Marketech International",
+          "reason": "提供高科技廠房整合工程服務、設備模組與零組件，以及自動化解決方案。"
+        },
+        {
+          "ticker": "3413",
+          "name": "京鼎",
+          "market": "TW",
+          "source": "curated",
+          "rank": 5,
+          "reason": "為全球半導體設備大廠提供關鍵模組與零組件代工服務。"
+        },
+        {
+          "ticker": "2404",
+          "name": "漢唐",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 6,
+          "reason": "專精於高科技廠房無塵室與機電系統整合工程，為半導體製程提供潔淨環境。"
+        },
+        {
+          "ticker": "3680",
+          "name": "家登",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 7,
+          "reason": "供應極紫外光（EUV）光罩盒與晶圓傳送盒，為先進製程關鍵耗材。"
+        },
+        {
+          "ticker": "1560",
+          "name": "中砂",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 8,
+          "reason": "提供鑽石碟、再生晶圓與研磨液，為晶圓製造與封裝製程的關鍵耗材。"
+        },
+        {
+          "ticker": "2360",
+          "name": "致茂",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 9,
+          "reason": "研發製造半導體自動化測試設備，提供晶圓級與IC封裝測試解決方案。"
+        },
+        {
+          "ticker": "3455",
+          "name": "由田",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 10,
+          "reason": "提供自動光學檢測（AOI）設備，應用於半導體封裝與載板檢測。"
+        },
+        {
+          "ticker": "8091",
+          "name": "翔名",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 11,
+          "reason": "供應離子植入機之關鍵零組件與耗材，為半導體前段製程所需。"
+        },
+        {
+          "ticker": "6691",
+          "name": "洋基工程",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 12,
+          "reason": "承攬高科技廠房無塵室與機電空調工程，確保半導體生產環境潔淨度。"
+        }
+      ]
+    },
+    {
+      "exposure_id": "theme_silicon_ip",
+      "exposure_type": "theme",
+      "sector_id": null,
+      "theme_id": "silicon_ip",
+      "display_name": "矽智財",
+      "aliases": [
+        "矽智財",
+        "矽智財股",
+        "silicon ip",
+        "semiconductor ip",
+        "設計服務",
+        "design service"
+      ],
+      "members": [
+        {
+          "ticker": "3443",
+          "name": "創意",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1,
+          "name_en": "Global Unichip",
+          "reason": "提供高速傳輸介面與特殊應用晶片（ASIC）設計服務，並授權其先進製程矽智財。"
+        },
+        {
+          "ticker": "3035",
+          "name": "智原",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2,
+          "name_en": "Faraday Technology",
+          "reason": "專注於提供完整的特殊應用晶片（ASIC）設計服務與豐富的基礎元件矽智財解決方案。"
+        },
+        {
+          "ticker": "3529",
+          "name": "力旺",
+          "market": "TW",
+          "source": "curated",
+          "rank": 3,
+          "name_en": "eMemory Technology",
+          "reason": "獨家提供嵌入式非揮發性記憶體（eNVM）矽智財，廣泛應用於各類晶片設計。"
+        },
+        {
+          "ticker": "6643",
+          "name": "M31",
+          "market": "TW",
+          "source": "curated",
+          "rank": 4,
+          "name_en": "M31 Technology",
+          "reason": "專業開發高速傳輸介面矽智財（IP）與基礎元件IP，支援先進製程技術。"
+        },
+        {
+          "ticker": "3661",
+          "name": "世芯-KY",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 5,
+          "reason": "為人工智慧與高效能運算領域提供客製化特殊應用晶片（ASIC）設計服務及相關矽智財。"
+        },
+        {
+          "ticker": "6533",
+          "name": "晶心科",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 6,
+          "reason": "專注於開發與授權高效能、低功耗的32/64位元CPU處理器核心矽智財（IP）。"
+        },
+        {
+          "ticker": "6531",
+          "name": "愛普",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 7,
+          "reason": "提供客製化記憶體解決方案與相關矽智財，特別是應用於AI與高效能運算領域。"
+        }
+      ]
+    },
+    {
+      "exposure_id": "theme_advanced_packaging",
+      "exposure_type": "theme",
+      "sector_id": null,
+      "theme_id": "advanced_packaging",
+      "display_name": "先進封裝",
+      "aliases": [
+        "先進封裝",
+        "cowos",
+        "封測",
+        "封裝測試",
+        "advanced packaging",
+        "chip packaging"
+      ],
+      "members": [
+        {
+          "ticker": "3711",
+          "name": "日月光投控",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1,
+          "name_en": "ASE Technology",
+          "reason": "全球最大半導體封測代工廠，提供多種先進封裝技術，如扇出型與系統級封裝。"
+        },
+        {
+          "ticker": "2449",
+          "name": "京元電子",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2,
+          "name_en": "King Yuan Electronics",
+          "reason": "提供晶圓測試與成品測試服務，為先進封裝製程中的關鍵品質驗證環節。"
+        },
+        {
+          "ticker": "3374",
+          "name": "精材",
+          "market": "TW",
+          "source": "curated",
+          "rank": 3,
+          "reason": "專注於晶圓級尺寸封裝 (WLCSP) 與晶圓級測試，是先進封裝領域的重要供應商。"
+        },
+        {
+          "ticker": "6239",
+          "name": "力成",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 4,
+          "reason": "提供記憶體與邏輯IC封裝測試服務，積極投入高頻寬記憶體等先進封裝技術。"
+        },
+        {
+          "ticker": "6510",
+          "name": "精測",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 5,
+          "reason": "研發並製造高階探針卡，用於先進封裝製程中的晶圓測試與IC測試。"
+        },
+        {
+          "ticker": "6223",
+          "name": "旺矽",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 6,
+          "reason": "提供探針卡、測試座及自動化測試設備，支援先進封裝的測試需求。"
+        },
+        {
+          "ticker": "6515",
+          "name": "穎崴",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 7,
+          "reason": "專業於高階測試座與探針卡，為先進封裝IC提供高效能測試解決方案。"
+        },
+        {
+          "ticker": "6451",
+          "name": "訊芯-KY",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 8,
+          "reason": "專注於光通訊模組與系統級封裝 (SiP) 產品，應用於高速資料傳輸。"
+        },
+        {
+          "ticker": "8150",
+          "name": "南茂",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 9,
+          "reason": "提供記憶體與LCD驅動IC的封裝測試服務，涵蓋多種先進封裝技術。"
+        },
+        {
+          "ticker": "6257",
+          "name": "矽格",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 10,
+          "reason": "提供IC測試服務，特別在邏輯、混合訊號與記憶體IC的先進封裝測試領域。"
+        },
+        {
+          "ticker": "6271",
+          "name": "同欣電",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 11,
+          "reason": "專精於陶瓷基板與影像感測元件封裝，應用於高階光電與車用電子。"
+        },
+        {
+          "ticker": "6147",
+          "name": "頎邦",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 12,
+          "reason": "專業於驅動IC封裝與測試，提供捲帶式薄膜覆晶 (COF) 等先進封裝解決方案。"
+        }
+      ]
+    },
+    {
+      "exposure_id": "sector_biotech",
+      "exposure_type": "sector",
+      "sector_id": "biotech",
+      "theme_id": null,
+      "display_name": "生技",
+      "aliases": [
+        "生技",
+        "生技股",
+        "生醫",
+        "製藥",
+        "新藥",
+        "biotech",
+        "pharmaceutical",
+        "biotechnology"
+      ],
+      "members": [
+        {
+          "ticker": "6446",
+          "name": "藥華藥",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1,
+          "name_en": "PharmaEssentia",
+          "reason": "專注於新藥研發，其治療真性紅血球增多症的P1101新藥已獲多國核准上市。"
+        },
+        {
+          "ticker": "1795",
+          "name": "美時",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2,
+          "reason": "台灣學名藥龍頭，致力於特殊學名藥與品牌藥的研發、製造與銷售，並拓展癌症用藥市場。"
+        },
+        {
+          "ticker": "8436",
+          "name": "大江生醫",
+          "market": "TW",
+          "source": "curated",
+          "rank": 3,
+          "reason": "運用生物整合設計，為全球客戶提供保健食品、機能飲品與美容保養品的ODM/OEM代工服務。"
+        }
+      ]
+    },
+    {
+      "exposure_id": "sector_bicycle",
+      "exposure_type": "sector",
+      "sector_id": "bicycle",
+      "theme_id": null,
+      "display_name": "自行車",
+      "aliases": [
+        "自行車",
+        "單車",
+        "腳踏車",
+        "電動自行車",
+        "bicycle",
+        "e-bike"
+      ],
+      "members": [
+        {
+          "ticker": "9921",
+          "name": "巨大",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1,
+          "name_en": "Giant Manufacturing",
+          "reason": "巨大是全球知名的自行車製造商，提供各式自行車及電動自行車產品。"
+        },
+        {
+          "ticker": "9914",
+          "name": "美利達",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2,
+          "name_en": "Merida Industry",
+          "reason": "美利達為全球自行車領導品牌之一，專注於中高階自行車的設計與生產。"
+        }
+      ]
+    },
+    {
+      "exposure_id": "sector_steel",
+      "exposure_type": "sector",
+      "sector_id": "steel",
+      "theme_id": null,
+      "display_name": "鋼鐵",
+      "aliases": [
+        "鋼鐵",
+        "鋼鐵股",
+        "鋼價",
+        "不鏽鋼",
+        "steel"
+      ],
+      "members": [
+        {
+          "ticker": "2002",
+          "name": "中鋼",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1,
+          "name_en": "China Steel",
+          "reason": "作為台灣最大的綜合鋼鐵廠，主要生產鋼板、棒線、型鋼等基礎鋼材，是國內鋼鐵產業的龍頭。"
+        },
+        {
+          "ticker": "2027",
+          "name": "大成鋼",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2,
+          "name_en": "Ta Chen Stainless Pipe",
+          "reason": "主要從事不鏽鋼捲、板、管、棒等產品的加工與銷售，為全球不鏽鋼通路領導廠商。"
+        },
+        {
+          "ticker": "2015",
+          "name": "豐興",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 3,
+          "reason": "為台灣電爐煉鋼廠，主要生產鋼筋、型鋼及盤元，是國內重要的建築用鋼供應商。"
+        },
+        {
+          "ticker": "2014",
+          "name": "中鴻",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 4,
+          "reason": "為中鋼集團旗下子公司，專注於熱軋、冷軋鋼捲及鋼管產品的生產與銷售。"
+        },
+        {
+          "ticker": "2023",
+          "name": "燁輝",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 5,
+          "reason": "為台灣最大的鍍鋅鋼捲及烤漆鋼捲製造商，產品廣泛應用於建築、家電等領域。"
+        },
+        {
+          "ticker": "2031",
+          "name": "新光鋼",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 6,
+          "reason": "為台灣鋼鐵裁剪加工及銷售大廠，提供鋼板、型鋼、鋼管等多元鋼材產品。"
+        },
+        {
+          "ticker": "2010",
+          "name": "春源",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 7,
+          "reason": "主要從事鋼板裁剪、鋼結構製造及鋼捲買賣，是國內重要的鋼材加工與通路商。"
+        },
+        {
+          "ticker": "2028",
+          "name": "威致",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 8,
+          "reason": "為台灣電爐煉鋼廠，主要生產鋼筋、型鋼及鋼胚，供應國內營建及機械產業。"
+        }
+      ]
+    },
+    {
+      "exposure_id": "sector_tourism",
+      "exposure_type": "sector",
+      "sector_id": "tourism",
+      "theme_id": null,
+      "display_name": "觀光",
+      "aliases": [
+        "觀光",
+        "旅遊",
+        "觀光股",
+        "旅遊股",
+        "旅行社",
+        "tourism",
+        "travel"
+      ],
+      "members": [
+        {
+          "ticker": "2731",
+          "name": "雄獅",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1,
+          "name_en": "Lion Travel",
+          "reason": "作為台灣大型綜合旅行社，提供國內外團體旅遊、自由行及票務等多元服務。"
+        },
+        {
+          "ticker": "5706",
+          "name": "鳳凰",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2,
+          "name_en": "Phoenix Tours",
+          "reason": "台灣老牌旅行社，專營國際線團體旅遊、郵輪行程及客製化旅遊服務。"
+        },
+        {
+          "ticker": "2745",
+          "name": "五福",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 3,
+          "reason": "專注於國內外團體旅遊、機票訂購及自由行規劃，提供多元旅遊產品。"
+        },
+        {
+          "ticker": "2719",
+          "name": "燦星旅",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 4,
+          "reason": "提供國內外團體旅遊、機票、訂房及自由行等服務，以線上銷售為主要通路。"
+        },
+        {
+          "ticker": "2734",
+          "name": "易飛網",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 5,
+          "reason": "台灣知名線上旅遊平台，提供機票、訂房、團體行程及自由行等一站式服務。"
+        },
+        {
+          "ticker": "2743",
+          "name": "山富",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 6,
+          "reason": "經營國內外團體旅遊、機票、訂房及郵輪行程，提供多元旅遊選擇。"
+        },
+        {
+          "ticker": "6961",
+          "name": "旅天下",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 7,
+          "reason": "雄獅集團旗下品牌，專營國內外團體旅遊、自由行及主題旅遊產品。"
+        },
+        {
+          "ticker": "2736",
+          "name": "富野",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 8,
+          "reason": "經營連鎖飯店及渡假村，提供住宿、餐飲及會議服務，涵蓋多個觀光熱點。"
+        },
+        {
+          "ticker": "2722",
+          "name": "夏都",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 9,
+          "reason": "墾丁知名渡假飯店，以海灘景觀和休閒設施吸引國內外觀光客。"
+        },
+        {
+          "ticker": "2739",
+          "name": "寒舍",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 10,
+          "reason": "旗下擁有多個國際品牌飯店及自有品牌酒店，提供高端住宿及餐飲服務。"
+        },
+        {
+          "ticker": "2707",
+          "name": "晶華",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 11,
+          "reason": "經營國際級連鎖飯店及餐飲品牌，提供頂級住宿、餐飲及宴會服務。"
+        },
+        {
+          "ticker": "2704",
+          "name": "國賓",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 12,
+          "reason": "旗下擁有多家五星級飯店，提供住宿、餐飲、宴會及會議等多元服務。"
+        }
+      ]
+    }
+  ]
+}

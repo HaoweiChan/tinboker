@@ -226,7 +226,8 @@ def test_full_run_preview_has_everything():
     orch.submit("ep_test", "marp_writer", MARP_OUT)
     orch.submit("ep_test", "ticker_marp_writer", {"title": "T", "slides": [{"heading": "2330", "bullet_points": ["看多"], "start_time": 0}]})
     prev = orch.preview("ep_test")
-    assert prev["key_insights"] == ["台積電財報優於預期", "半導體供應鏈樂觀"]
+    assert prev["key_insights"][:2] == ["台積電財報優於預期", "半導體供應鏈樂觀"]
+    assert len(prev["key_insights"]) >= 3
     assert prev["related_tickers"] == ["2330"]
     assert prev["ticker_insight_count"] == 1
     assert prev["social_card_count"] >= 1  # cover + theme cards
@@ -302,12 +303,19 @@ def _patch_canned_llm(monkeypatch):
         "key_insights_extractor": {"key_insights": ["台積電財報優於預期", "半導體供應鏈樂觀"]},
         "ticker_extractor": TICKER_OUT,
         "marp_writer": MARP_OUT,
+        # run_pipeline also drives the social-copy node; the regen parity assertions
+        # don't cover social output, but the canned map must answer every role the
+        # pipeline calls or invoke_json KeyErrors mid-run.
+        "social_copy_writer": {"post": "今天聊台積電", "comments": []},
     }
 
     def fake(role, messages=None, schema=None):
         return canned[role]
 
-    for mod in ("extractor", "writer", "key_insights_extractor", "ticker_extractor", "marp_writer"):
+    for mod in (
+        "extractor", "writer", "key_insights_extractor",
+        "ticker_extractor", "marp_writer", "social_copy_writer",
+    ):
         monkeypatch.setattr(f"src.podcast.content_builder.nodes.{mod}.invoke_json", fake)
     monkeypatch.setattr("src.podcast.content_builder.llm.invoke_json", fake)
     return canned
@@ -335,6 +343,75 @@ def test_episode_doc_parity_pipeline_vs_regen(monkeypatch):
     assert payload["related_tickers"] == pipe["related_tickers"]
     assert payload["events_markdown"] == pipe["events_markdown"]
     assert payload["ticker_insights"] == pipe["ticker_insights"]
+    assert payload["sector_exposures"] == pipe["sector_exposures"]
+    assert payload["sector_exposure_ids"] == pipe["sector_exposure_ids"]
     # And the canonical tags are the ASCII slug parsed from the #tag: link.
     assert payload["tags"] == ["semiconductor"]
     assert payload["related_tickers"] == ["2330"]
+    assert "sector_semiconductor" in payload["sector_exposure_ids"]
+
+
+# --- Publish-date stamping (the /picks "走勢" forward-return reference date) ----
+# The publish-time resolver itself is unit-tested in
+# tests/unit/test_ticker_insights_exporter.py::test_episode_publish_time_*; these
+# guard that commit() actually threads the captured value into the exporter.
+
+
+class _FakeFS:
+    """Minimal FirestoreService stand-in: records set_document calls, exposes .db."""
+
+    def __init__(self):
+        self.db = object()
+        self.writes = []
+
+    def set_document(self, *args, **kwargs):
+        self.writes.append((args, kwargs))
+
+
+def _capture_export(monkeypatch):
+    """Patch the insight exporter so commit() can run without Firestore, capturing the
+    ``podcast_launch_time`` it would stamp. Returns the capture dict."""
+    captured: dict = {}
+
+    def fake_build(*, raw_payload, episode_id, podcaster, podcast_launch_time):
+        captured["podcast_launch_time"] = podcast_launch_time
+        return {"2330": {"ticker": "2330"}}
+
+    monkeypatch.setattr(orch, "_firestore", lambda: _FakeFS())
+    monkeypatch.setattr(
+        "src.podcast.exporters.ticker_insights.build_episode_insight_docs", fake_build
+    )
+    monkeypatch.setattr(
+        "src.podcast.exporters.ticker_insights.write_episode_insights",
+        lambda db, *, episode_id, docs: len(docs),
+    )
+    return captured
+
+
+def test_commit_stamps_insights_with_real_publish_time(monkeypatch):
+    """commit() stamps ticker_insights with the episode's true publish time
+    (draft['podcast_launch_time']), NOT the ingest-time created_time."""
+    draft = _new_draft()
+    draft["created_time"] = "2026-06-17T20:22:12Z"   # ingest/regen time — the wrong ref
+    draft["podcast_launch_time"] = 1700000000000      # real release (epoch ms)
+    _drive_required()
+
+    captured = _capture_export(monkeypatch)
+    report = orch.commit("ep_test", notify_platform=False)
+
+    assert captured["podcast_launch_time"] == 1700000000000
+    assert report["ticker_insights_written"] == 1
+
+
+def test_commit_falls_back_to_created_time_for_legacy_draft(monkeypatch):
+    """A draft opened before podcast_launch_time existed still stamps via created_time
+    rather than crashing or stamping None."""
+    draft = _new_draft()
+    draft["created_time"] = "2025-05-09T00:00:00Z"
+    draft.pop("podcast_launch_time", None)
+    _drive_required()
+
+    captured = _capture_export(monkeypatch)
+    orch.commit("ep_test", notify_platform=False)
+
+    assert captured["podcast_launch_time"] == "2025-05-09T00:00:00Z"

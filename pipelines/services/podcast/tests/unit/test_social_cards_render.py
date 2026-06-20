@@ -19,9 +19,11 @@ class FakeUploader:
 
     def __init__(self):
         self.calls = []
+        self.public_flags = []
 
-    def upload_file_from_base64(self, b64, file_type, podcast, episode_id, ext, skip_existing=True):
+    def upload_file_from_base64(self, b64, file_type, podcast, episode_id, ext, skip_existing=True, public=False):
         self.calls.append((file_type, episode_id, ext))
+        self.public_flags.append(public)
         return True, f"gs://{self.bucket_name}/{file_type}/{episode_id}.{ext}"
 
     def generate_public_url(self, blob):
@@ -73,6 +75,8 @@ def test_happy_path_joins_public_urls_in_order(monkeypatch):
     assert up.calls == [("social_cards", "EP1/0", "png"),
                         ("social_cards", "EP1/1", "png"),
                         ("social_cards", "EP1/2", "png")]
+    # Card images must be uploaded world-readable (Threads fetches them by URL).
+    assert up.public_flags == [True, True, True]
 
 
 def test_count_mismatch_skips_upload(monkeypatch):

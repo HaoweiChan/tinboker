@@ -12,12 +12,17 @@ Image URLs are filled in later by the upload step; here they are left ``None``.
 
 from __future__ import annotations
 
+import re
 from typing import Any, Optional
 
 from ..state import PipelineState
 
 # Threads carousels accept at most 20 items, so cap at cover + 19 themes.
 MAX_CARDS = 20
+
+# Detects a bullet that already carries its own trailing [MM:SS]/[HH:MM:SS] stamp
+# (the marp_writer prompt asks for a timestamp at the end of each point).
+_HAS_TRAILING_TS = re.compile(r"\[\d{1,2}:\d{2}(?::\d{2})?\]\s*$")
 
 
 def format_timestamp(ms: Optional[int]) -> str:
@@ -37,16 +42,30 @@ def format_timestamp(ms: Optional[int]) -> str:
     return f"[{minutes:02d}:{seconds:02d}]"
 
 
-def build_social_cards(state: PipelineState) -> dict[str, Any]:
-    """Join node: build ``social_cards`` from ``marp_slides`` + ``key_insights``."""
-    marp = state.get("marp_slides") or {}
-    key_insights = [s.strip() for s in (state.get("key_insights") or []) if s and s.strip()]
-    deck_title = (marp.get("title") or state.get("episode_title") or "").strip()
+def cards_from_marp_slides(
+    marp_slides: Optional[dict[str, Any]],
+    key_insights: Optional[list[str]] = None,
+    episode_title: str = "",
+) -> list[dict[str, Any]]:
+    """Build the ordered cover+theme card list from structured marp slides.
+
+    Pure (no ``state``) so it is the single source of truth shared by the PNG
+    social cards (:func:`build_social_cards`) and the on-page episode deck
+    (``marp_converter.convert_marp``) — keeping the two visually identical.
+
+    The cover carries the key insights as its hook; each theme card's last
+    bullet is stamped with the slide's transcript timestamp *unless* a bullet
+    already ends with its own ``[MM:SS]`` (the marp_writer prompt emits a
+    per-point timestamp, which we must not double-stamp).
+    """
+    marp = marp_slides or {}
+    insights = [s.strip() for s in (key_insights or []) if s and s.strip()]
+    deck_title = (marp.get("title") or episode_title or "").strip()
 
     cards: list[dict[str, Any]] = [{
         "kind": "cover",
         "title": deck_title,
-        "bullets": key_insights,
+        "bullets": insights,
         "start_time_ms": None,
         "image_url": None,
     }]
@@ -59,7 +78,7 @@ def build_social_cards(state: PipelineState) -> dict[str, Any]:
             continue
         start_ms = slide.get("start_time")
         stamp = format_timestamp(start_ms)
-        if stamp:
+        if stamp and not any(_HAS_TRAILING_TS.search(b) for b in bullets):
             bullets = bullets[:-1] + [f"{bullets[-1]} {stamp}"]
         cards.append({
             "kind": "theme",
@@ -71,9 +90,20 @@ def build_social_cards(state: PipelineState) -> dict[str, Any]:
         if len(cards) >= MAX_CARDS:
             break
 
+    return cards
+
+
+def build_social_cards(state: PipelineState) -> dict[str, Any]:
+    """Join node: build ``social_cards`` from ``marp_slides`` + ``key_insights``."""
+    cards = cards_from_marp_slides(
+        state.get("marp_slides") or {},
+        state.get("key_insights") or [],
+        (state.get("episode_title") or ""),
+    )
+
     # Nothing postable (no insights and no theme cards) → empty so the platform skips
     # cleanly instead of posting a blank cover.
-    if len(cards) == 1 and not key_insights:
+    if len(cards) == 1 and not cards[0]["bullets"]:
         return {"social_cards": []}
 
     return {"social_cards": cards}

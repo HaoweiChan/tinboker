@@ -105,6 +105,12 @@ class SummarizeService:
                     ticker_insights = api_result.get("ticker_insights")
                     ticker_marp_markdown = api_result.get("ticker_marp_markdown")
                     key_insights = api_result.get("key_insights")
+                    sector_exposures = api_result.get("sector_exposures") or []
+                    unresolved_market_trends = api_result.get("unresolved_market_trends") or []
+                    sector_exposure_ids = api_result.get("sector_exposure_ids") or []
+                    sector_ids = api_result.get("sector_ids") or []
+                    theme_ids = api_result.get("theme_ids") or []
+                    unresolved_market_trend_ids = api_result.get("unresolved_market_trend_ids") or []
                     # Canonical tags/related_tickers from the pipeline's
                     # derive_tags_tickers node (single source of truth; the consumer
                     # prefers these over the placeholder ticker extraction below).
@@ -119,6 +125,12 @@ class SummarizeService:
                     ticker_insights = None
                     ticker_marp_markdown = None
                     key_insights = None
+                    sector_exposures = []
+                    unresolved_market_trends = []
+                    sector_exposure_ids = []
+                    sector_ids = []
+                    theme_ids = []
+                    unresolved_market_trend_ids = []
                     cb_tags = None
                     cb_related_tickers = None
 
@@ -136,9 +148,19 @@ class SummarizeService:
                     'summary_text': summary_text,
                     'svg_content': svg_content,
                     'related_tickers': related_tickers,
-                    # 3–8 plain-text zh-TW takeaways for the episode doc (may be empty
-                    # if extraction failed; downstream only writes it when non-empty).
-                    'key_insights': key_insights or []
+                    # 3–8 plain-text zh-TW takeaways for the episode doc. The
+                    # Firestore assembly path deterministically fills sparse
+                    # extractor output from the summary markdown before write.
+                    'key_insights': key_insights or [],
+                    # Broad sector/theme exposure metadata. These are intentionally
+                    # separate from related_tickers and ticker_insights so inferred
+                    # baskets never trigger direct-mention behavior.
+                    'sector_exposures': sector_exposures,
+                    'unresolved_market_trends': unresolved_market_trends,
+                    'sector_exposure_ids': sector_exposure_ids,
+                    'sector_ids': sector_ids,
+                    'theme_ids': theme_ids,
+                    'unresolved_market_trend_ids': unresolved_market_trend_ids,
                 }
                 # Surface the pipeline's canonical tags so the consumer prefers them
                 # over re-deriving (kept as a key only when provided).

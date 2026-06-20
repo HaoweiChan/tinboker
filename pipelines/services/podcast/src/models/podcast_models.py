@@ -2,6 +2,7 @@
 Podcast data models for Firestore integration.
 """
 
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
@@ -48,6 +49,12 @@ class PodcastEpisode:
     related_tickers: List[str] = field(default_factory=list)  # List of ticker symbols
     key_insights: List[str] = field(default_factory=list)  # 3–8 plain-text zh-TW takeaways
     social_cards: List[Dict] = field(default_factory=list)  # AlphaMemo-style cards (cover + per theme)
+    sector_exposures: List[Dict] = field(default_factory=list)  # Broad sector/theme exposure metadata
+    unresolved_market_trends: List[Dict] = field(default_factory=list)  # Demand-driven curation candidates
+    sector_exposure_ids: List[str] = field(default_factory=list)
+    sector_ids: List[str] = field(default_factory=list)
+    theme_ids: List[str] = field(default_factory=list)
+    unresolved_market_trend_ids: List[str] = field(default_factory=list)
     created_time: datetime = field(default_factory=datetime.now)  # Timestamp
     number_click: int = 0  # Number of clicks
     num_likes: int = 0  # Number of likes
@@ -68,12 +75,44 @@ class PodcastEpisode:
     # Frontends should prefer this over the timezone-fragile string + ms parsing
     # the spec replaced.
     released_at_ms: Optional[int] = None
+    retracted_at: Optional[int] = None
 
     # Feed ``datePublished`` (the podcasttomp3 API value) already converted to
     # Unix ms. This is the *reliable* publish time and the primary source for
     # ``released_at_ms``. It is an input only — never persisted as its own field
     # (see ``to_firestore_dict``); it feeds ``released_at_ms``.
     feed_date_published_ms: Optional[int] = None
+
+    @staticmethod
+    def normalize_spotify_release_date(value: object) -> Optional[str]:
+        """Coerce Spotify release metadata to the contract's ``YYYY-MM-DD`` string."""
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value.date().isoformat()
+        if isinstance(value, (int, float)):
+            timestamp = float(value)
+            if timestamp > 10_000_000_000:
+                timestamp = timestamp / 1000
+            return datetime.fromtimestamp(timestamp, tz=timezone.utc).date().isoformat()
+        if not isinstance(value, str):
+            return None
+        raw = value.strip()
+        if not raw:
+            return None
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw):
+            return raw
+        if re.fullmatch(r"\d{4}/\d{2}/\d{2}", raw):
+            return raw.replace("/", "-")
+        if re.fullmatch(r"\d{4}-\d{2}", raw):
+            return f"{raw}-01"
+        if re.fullmatch(r"\d{4}", raw):
+            return f"{raw}-01-01"
+        try:
+            dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            return dt.date().isoformat()
+        except ValueError:
+            return None
 
     def _compute_released_at_ms(self) -> Optional[int]:
         """Resolve the spec § 2.3 #1 ``released_at_ms`` value.
@@ -90,9 +129,10 @@ class PodcastEpisode:
             return self.released_at_ms
         if self.feed_date_published_ms is not None:
             return self.feed_date_published_ms
-        if self.spotify_release_date:
+        normalized_release_date = self.normalize_spotify_release_date(self.spotify_release_date)
+        if normalized_release_date:
             try:
-                dt = datetime.strptime(str(self.spotify_release_date), "%Y-%m-%d")
+                dt = datetime.strptime(normalized_release_date, "%Y-%m-%d")
                 return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1000)
             except ValueError:
                 pass
@@ -102,6 +142,13 @@ class PodcastEpisode:
                 dt = dt.replace(tzinfo=timezone.utc)
             return int(dt.timestamp() * 1000)
         return None
+
+    def resolved_publish_ms(self) -> Optional[int]:
+        """The episode's true publish time (Unix ms), exactly as written to the doc's
+        ``released_at_ms``. Public accessor for anything that must agree with the stored
+        value — e.g. ticker_insights ``podcast_launch_time`` (the /picks reference date).
+        """
+        return self._compute_released_at_ms()
 
     def to_firestore_dict(self) -> Dict:
         """
@@ -122,6 +169,7 @@ class PodcastEpisode:
             'episode_title': self.episode_title,
             'podcast_name': self.podcast_name,
             'episode_number': self.episode_number,
+            'retracted_at': self.retracted_at,
         }
         
         # Only write key_insights when we actually have them — on an update()
@@ -133,6 +181,13 @@ class PodcastEpisode:
         # Same merge-safe rule for the social cards (cover + per-theme).
         if self.social_cards:
             result['social_cards'] = self.social_cards
+
+        result['sector_exposures'] = self.sector_exposures
+        result['unresolved_market_trends'] = self.unresolved_market_trends
+        result['sector_exposure_ids'] = self.sector_exposure_ids
+        result['sector_ids'] = self.sector_ids
+        result['theme_ids'] = self.theme_ids
+        result['unresolved_market_trend_ids'] = self.unresolved_market_trend_ids
 
         # Add public URLs if they exist
         if self.mp3_public_url:
@@ -175,9 +230,10 @@ class PodcastEpisode:
             result['spotify_id'] = self.spotify_id
         if self.spotify_url:
             result['spotify_url'] = self.spotify_url
-        if self.spotify_release_date:
+        normalized_release_date = self.normalize_spotify_release_date(self.spotify_release_date)
+        if normalized_release_date:
             # Spec § 2.3 #5: persist as string YYYY-MM-DD regardless of input shape.
-            result['spotify_release_date'] = str(self.spotify_release_date)
+            result['spotify_release_date'] = normalized_release_date
         if self.spotify_description:
             result['spotify_description'] = self.spotify_description
         if self.spotify_duration_ms:
@@ -234,6 +290,12 @@ class PodcastEpisode:
             related_tickers=data.get('related_tickers', []),
             key_insights=data.get('key_insights', []),
             social_cards=data.get('social_cards', []),
+            sector_exposures=data.get('sector_exposures', []),
+            unresolved_market_trends=data.get('unresolved_market_trends', []),
+            sector_exposure_ids=data.get('sector_exposure_ids', []),
+            sector_ids=data.get('sector_ids', []),
+            theme_ids=data.get('theme_ids', []),
+            unresolved_market_trend_ids=data.get('unresolved_market_trend_ids', []),
             created_time=created_time,
             number_click=data.get('number_click', 0),
             num_likes=data.get('num_likes', 0),
@@ -248,6 +310,7 @@ class PodcastEpisode:
             spotify_duration_ms=data.get('spotify_duration_ms'),
             spotify_images=data.get('spotify_images', []),
             released_at_ms=data.get('released_at_ms'),
+            retracted_at=data.get('retracted_at'),
         )
 
 

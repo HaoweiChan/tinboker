@@ -8,6 +8,13 @@ from typing import Optional, List, Tuple
 from sqlalchemy import func, cast, Text
 from sqlalchemy.orm import Session
 
+from src.database.models import StockTranslation
+from src.schemas.translation import (
+    TranslationCreate,
+    TranslationUpdate,
+    BulkImportItem,
+)
+
 # ---------------------------------------------------------------------------
 # Ticker format validation used by ensure_pending_stubs.
 #
@@ -51,12 +58,7 @@ def _is_stub_candidate(bare: str) -> bool:
         bare not in _STUB_NON_TICKERS
         and bool(_STUB_TW_RE.match(bare) or _STUB_US_RE.match(bare))
     )
-from src.database.models import StockTranslation
-from src.schemas.translation import (
-    TranslationCreate,
-    TranslationUpdate,
-    BulkImportItem,
-)
+
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +73,24 @@ def _normalize_aliases(aliases: Optional[List[str]]) -> Optional[List[str]]:
         if s and s not in cleaned:
             cleaned.append(s)
     return cleaned
+
+
+# Rows whose committed/auto "approved" zh name actually belongs to a DIFFERENT
+# company (the English name is correct and disambiguates). Each tuple is
+# (ticker, market, wrong_name_zh, correct_name_zh). The correction is
+# self-deactivating — it only fires while the row still holds the wrong value —
+# so it never fights a later human edit through the admin translations editor.
+_KNOWN_NAME_CORRECTIONS: List[Tuple[str, str, str, str]] = [
+    ("6285", "TW", "合勤控", "啟碁"),      # WNC = Wistron NeWeb; 合勤控 is 3704 (Zyxel)
+    ("6147", "TW", "精材", "頎邦"),        # Chipbond; 精材 is 3374 (XinTec)
+    ("3661", "TW", "譜瑞-KY", "世芯-KY"),  # Alchip; 譜瑞-KY is 4966 (Parade)
+    ("3023", "TW", "新漢", "信邦"),        # SINBON Electronics; 新漢 is 8234 (NEXCOM)
+    ("2745", "TW", "上銀", "五福"),        # Wu Fu Travel; 上銀 is 2049 (Hiwin)
+    ("6472", "TW", "閎暉", "保瑞"),        # Bora Pharmaceuticals; 閎暉 is 3311
+    ("3357", "TW", "再生-KY", "臺慶科"),   # Taiwan Ceramic; 再生-KY is 1337
+    ("5351", "TW", "鉅祥", "鈺創"),        # Etron Technology; 鉅祥 is 2476
+    ("3363", "TW", "凌群", "上詮"),        # Browave; 凌群 is 2453 (Syscom)
+]
 
 
 class TranslationService:
@@ -93,6 +113,24 @@ class TranslationService:
             StockTranslation.ticker == ticker.upper(),
             StockTranslation.market == market.upper()
         ).first()
+
+    def apply_known_name_corrections(self) -> int:
+        """Fix rows whose approved zh name belongs to a different company.
+
+        Self-deactivating: a row is only updated while it still holds the exact
+        known-wrong value, so re-running is a no-op and a later human edit is
+        never overwritten. Returns the number of rows corrected.
+        """
+        fixed = 0
+        for ticker, market, wrong_zh, correct_zh in _KNOWN_NAME_CORRECTIONS:
+            row = self.get_by_ticker_market(ticker, market)
+            if row is not None and row.name_zh_tw == wrong_zh:
+                row.name_zh_tw = correct_zh
+                row.last_updated_by = "known_correction"
+                self.db.commit()
+                logger.info("Corrected %s %s zh name %s -> %s", ticker, market, wrong_zh, correct_zh)
+                fixed += 1
+        return fixed
 
     def list_translations(
         self,

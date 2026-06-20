@@ -171,6 +171,62 @@ class StockDailyClose(Base):
     )
 
 
+class StockProfile(Base):
+    """Warmed slow-moving company facts for US stocks.
+
+    Company profiles + logos barely change, yet they were being re-fetched from
+    Massive/Polygon (~5 req/min) on a 1-hour TTL per ticker — the single biggest source
+    of upstream 429s. A background warmer keeps this table fresh (profile + P/E from
+    yfinance, logo from Massive once) so request paths read from Postgres instead.
+    """
+
+    __tablename__ = "stock_profiles"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    ticker = Column(String(20), nullable=False, unique=True, index=True)
+    name = Column(Text, nullable=True)
+    market_cap = Column(Float, nullable=True)
+    sector = Column(String(100), nullable=True)
+    industry = Column(String(200), nullable=True)
+    pe = Column(Float, nullable=True)
+    dividend_yield = Column(Float, nullable=True)
+    currency = Column(String(10), nullable=True)
+    description = Column(Text, nullable=True)
+    logo_url = Column(Text, nullable=True)
+    icon_url = Column(Text, nullable=True)
+    logo_image = Column(Text, nullable=True)  # base64 SVG (auth-gated upstream)
+    icon_image = Column(Text, nullable=True)  # base64 PNG
+    source = Column(String(20), nullable=True)  # provider that produced the profile fields
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class StockDailyOHLC(Base):
+    """Warmed full daily OHLCV bars for US stocks (chart data).
+
+    Sibling to ``stock_daily_closes`` (which stays close-only for the lightweight change%
+    path). Filled by the warmer from yfinance — no per-key rate cap — so the per-request
+    chart path can read from Postgres instead of hitting Massive's aggregates endpoint.
+    """
+
+    __tablename__ = "stock_daily_ohlc"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    ticker = Column(String(20), nullable=False)
+    date = Column(String(10), nullable=False)  # YYYY-MM-DD
+    open = Column(Float, nullable=True)
+    high = Column(Float, nullable=True)
+    low = Column(Float, nullable=True)
+    close = Column(Float, nullable=False)
+    volume = Column(Float, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("ticker", "date", name="uq_ohlc_ticker_date"),
+        Index("idx_ohlc_ticker_date", "ticker", "date"),
+    )
+
+
 class TagRegistry(Base):
     """Admin-managed tag registry.
 

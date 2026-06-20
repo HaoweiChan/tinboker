@@ -2,6 +2,31 @@
 
 Utility scripts for managing the podcast downloader system.
 
+## run_hourly_trending.sh
+
+Runs the optimized hourly `trending_tickers` delta refresh. It calls
+`refresh_trending_tickers.py --mode delta --lookback-hours 1`, so it only
+recomputes tickers touched by recent `ticker_insights` writes. The systemd
+timer lives at `../deploy/tinboker-trending-tickers.timer`.
+
+```bash
+./scripts/run_hourly_trending.sh
+TRENDING_LOOKBACK_HOURS=2 ./scripts/run_hourly_trending.sh --dry-run
+```
+
+## backfill_ticker_insights_from_postgres.py
+
+Phase B2 one-shot migration from the legacy Postgres `ticker_insights` or
+`ticker_recommendations` table into the Firestore composite path
+`ticker_insights/{episode_id}/tickers/{ticker}`. It reuses the live exporter
+normalizer, writes internal `market` metadata, quantizes legacy scores to the
+5-tier `sentiment_label`, and commits Firestore batches in chunks of 500 ops.
+
+```bash
+uv run python services/podcast/scripts/backfill_ticker_insights_from_postgres.py --dry-run
+uv run python services/podcast/scripts/backfill_ticker_insights_from_postgres.py --table ticker_recommendations
+```
+
 ## find_and_remove_duplicates.py
 
 Finds and removes duplicate episodes from Firestore and GCS.
@@ -119,4 +144,3 @@ For each duplicate episode, the script deletes:
 - The script only deletes files that exist in GCS (won't error if file is missing)
 - Firestore document deletion happens after GCS file deletion
 - If GCS deletion fails, Firestore deletion still proceeds (you may need to manually clean up orphaned files)
-

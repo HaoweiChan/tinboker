@@ -52,10 +52,10 @@ export function apiEpisodeToCardV2(
   const releaseTime = typeof released === 'string' ? Date.parse(released) : (released ?? ep.created_time);
   const isRecent = Number.isFinite(releaseTime) && Date.now() - (releaseTime as number) < ONE_DAY_MS;
 
-  // For episodes > 1 day old, prefer the "since episode" price map.
-  const useSince = !isRecent && priceSinceMap && priceSinceMap.size > 0;
-  const activeMap = useSince ? priceSinceMap : priceMap;
-  const label = useSince ? SINCE_LABEL : null;
+  // For episodes > 1 day old, prefer the "since episode" price map — but fall back
+  // to the daily map PER TICKER, so a ticker missing from the (sparser) since-map
+  // still shows its daily change instead of an empty "—".
+  const preferSince = !isRecent && !!priceSinceMap && priceSinceMap.size > 0;
 
   return {
     podcasterName: ep.podcast_name,
@@ -77,13 +77,21 @@ export function apiEpisodeToCardV2(
             return aHas - bHas;
           })
         : ep.related_tickers;
-      return sorted.slice(0, 4).map((symbol) => ({
-        symbol,
-        name: translationMap?.get(symbol.toUpperCase()),
-        sentiment: sentimentMap?.get(symbol.toUpperCase()),
-        changePercent: activeMap?.get(symbol) ?? activeMap?.get(symbol.toUpperCase()),
-        sinceLabel: label,
-      }));
+      return sorted.slice(0, 4).map((symbol) => {
+        const symU = symbol.toUpperCase();
+        const sinceVal = preferSince
+          ? priceSinceMap!.get(symbol) ?? priceSinceMap!.get(symU)
+          : undefined;
+        const dailyVal = priceMap?.get(symbol) ?? priceMap?.get(symU);
+        const usedSince = sinceVal != null;
+        return {
+          symbol,
+          name: translationMap?.get(symU),
+          sentiment: sentimentMap?.get(symU),
+          changePercent: usedSince ? sinceVal : dailyVal,
+          sinceLabel: usedSince ? SINCE_LABEL : null,
+        };
+      });
     })(),
     tags: ep.tags ?? [],
     isNew: isRecent,

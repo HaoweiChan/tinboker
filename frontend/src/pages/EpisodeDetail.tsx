@@ -6,7 +6,7 @@ import { PodcastAvatar } from '@/components/common/PodcastAvatar';
 import { PageContent } from '@/components/layout/PageContent';
 import { TickerRow } from '@/components/redesign';
 import { cn } from '@/lib/utils';
-import { getEpisodeById, getEpisodeByIdOnly, getEpisodeAudioUrl, getPodcastByName, type Episode as ApiEpisode } from '@/services';
+import { getEpisodeById, getEpisodeByIdOnly, getEpisodeAudioUrl, getPodcastByName, type Episode as ApiEpisode, type SectorExposure, type SectorResolvedTicker } from '@/services';
 import { fetchWithFallback } from '@/services/api/migration';
 import { parseSummaryTopicSections, parseTimestampedSections, type TimestampedSection } from '@/utils/parseTimestampedSections';
 import { usePlayerStore } from '@/store/usePlayerStore';
@@ -287,16 +287,50 @@ export const EpisodeDetail: React.FC = () => {
       />
       <PageContent
         rail={
-          tickers.length > 0 ? (
+          (tickers.length > 0 || (episode?.sector_exposures?.length ?? 0) > 0) ? (
             <nav className="bg-card border border-border rounded-md p-3 max-h-[calc(100vh-96px)] overflow-hidden" aria-label="集數導覽">
-              <section aria-labelledby="episode-rail-tickers">
-                <h4 id="episode-rail-tickers" className="text-[11px] font-semibold tracking-[0.08em] uppercase text-muted-foreground px-2 mb-2">提及股票</h4>
-                <div className="flex flex-col gap-1.5">
-                  {tickers.map((t) => (
-                    <TickerRow key={t.symbol} ticker={t} onClick={() => navigate(`/stock/${encodeURIComponent(t.symbol)}`)} />
-                  ))}
-                </div>
-              </section>
+              {tickers.length > 0 && (
+                <section aria-labelledby="episode-rail-tickers">
+                  <h4 id="episode-rail-tickers" className="text-[11px] font-semibold tracking-[0.08em] uppercase text-muted-foreground px-2 mb-2">提及股票</h4>
+                  <div className="flex flex-col gap-1.5">
+                    {tickers.map((t) => (
+                      <TickerRow key={t.symbol} ticker={t} onClick={() => navigate(`/stock/${encodeURIComponent(t.symbol)}`)} />
+                    ))}
+                  </div>
+                </section>
+              )}
+              {(episode?.sector_exposures?.length ?? 0) > 0 && (
+                <section aria-labelledby="episode-rail-sectors" className={tickers.length > 0 ? 'mt-4' : ''}>
+                  <h4 id="episode-rail-sectors" className="text-[11px] font-semibold tracking-[0.08em] uppercase text-muted-foreground px-2 mb-2">產業 / 主題曝險</h4>
+                  <div className="flex flex-col gap-2">
+                    {episode!.sector_exposures!.map((exp: SectorExposure) => (
+                      <div key={exp.exposure_id} className="px-2">
+                        <Link
+                          to={`/sector/${encodeURIComponent(exp.exposure_id)}`}
+                          className="text-[13px] font-medium hover:underline block leading-snug"
+                        >
+                          {exp.display_name}
+                        </Link>
+                        {exp.resolved_tickers.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {exp.resolved_tickers.slice(0, 8).map((rt: SectorResolvedTicker) => (
+                              <Link
+                                key={rt.ticker}
+                                to={`/stock/${encodeURIComponent(rt.ticker)}`}
+                                className="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded bg-muted hover:bg-muted/80 transition-colors"
+                                title={rt.name}
+                              >
+                                <span className="font-mono text-[10px] text-muted-foreground">{rt.ticker}</span>
+                                {rt.name && rt.name !== rt.ticker && <span>{rt.name}</span>}
+                              </Link>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
             </nav>
           ) : undefined
         }
@@ -398,6 +432,39 @@ export const EpisodeDetail: React.FC = () => {
                 <div className="flex flex-col gap-1.5">
                   {tickers.map((t) => (
                     <TickerRow key={t.symbol} ticker={t} onClick={() => navigate(`/stock/${encodeURIComponent(t.symbol)}`)} />
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* 產業 / 主題曝險 — mobile fallback; desktop uses the right rail. */}
+            {(episode.sector_exposures?.length ?? 0) > 0 && (
+              <section className="xl:hidden bg-card border border-border rounded-md p-5 sm:p-6 mb-3.5">
+                <h3 className="text-[12px] font-semibold uppercase tracking-[0.08em] text-muted-foreground mb-3.5">產業 / 主題曝險</h3>
+                <div className="flex flex-col gap-3">
+                  {episode.sector_exposures!.map((exp: SectorExposure) => (
+                    <div key={exp.exposure_id}>
+                      <Link
+                        to={`/sector/${encodeURIComponent(exp.exposure_id)}`}
+                        className="inline-block text-[13px] font-medium px-2.5 py-0.5 rounded-full bg-blue-500/10 text-blue-700 dark:text-blue-300 hover:bg-blue-500/20 transition-colors mb-1.5"
+                      >
+                        {exp.display_name}
+                      </Link>
+                      {exp.resolved_tickers.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5">
+                          {exp.resolved_tickers.slice(0, 8).map((rt: SectorResolvedTicker) => (
+                            <Link
+                              key={rt.ticker}
+                              to={`/stock/${encodeURIComponent(rt.ticker)}`}
+                              className="inline-flex items-center gap-1 text-[12px] px-2 py-0.5 rounded-full bg-muted hover:bg-muted/80 border border-border font-medium transition-colors"
+                            >
+                              <span className="font-mono text-[10px] text-muted-foreground">{rt.ticker}</span>
+                              <span>{rt.name}</span>
+                            </Link>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   ))}
                 </div>
               </section>

@@ -18,6 +18,11 @@ import { useAppStore, useSubscriptions } from '@/store/useAppStore';
 import { usePlayerStore } from '@/store/usePlayerStore';
 import type { TickerInsight } from '@/services/types';
 
+// The embedded 標的走勢 (pick-performance) block is part of the dev-only /picks
+// feature — surfaced on dev.tinboker.com only, hidden on staging/prod (where /picks
+// itself is unregistered, so its "查看命中率 →" link would otherwise dead-link).
+const IS_DEV_ENV = (import.meta.env.VITE_STAGE as string) === 'DEV';
+
 export const PodcasterPage: React.FC = () => {
   const { id } = useParams();
   const { toggleSubscription } = useAppStore();
@@ -162,7 +167,7 @@ export const PodcasterPage: React.FC = () => {
           </div>
         </div>
 
-        {picks.length > 0 && (
+        {IS_DEV_ENV && picks.length > 0 && (
           <>
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-[13px] font-semibold text-muted-foreground">標的走勢（提及日起算）</h2>
