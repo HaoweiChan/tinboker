@@ -53,6 +53,48 @@ def _stub_firestore(monkeypatch, doc):
     monkeypatch.setattr(fs_mod, "FirestoreService", lambda: _FakeFirestore(doc))
 
 
+def _stub_gcs(monkeypatch, text=None, error=None):
+    import src.service.gcs_storage_service as gcs_mod
+
+    class _FakeGCS:
+        def download_text_by_gcs_url(self, url, encoding="utf-8"):
+            if error is not None:
+                raise error
+            return text
+
+    monkeypatch.setattr(gcs_mod, "GCSStorageService", _FakeGCS)
+
+
+def test_load_summary_prefers_inline(monkeypatch):
+    # Inline summary present → used as-is; GCS must not be touched.
+    import src.service.gcs_storage_service as gcs_mod
+
+    class _BoomGCS:
+        def download_text_by_gcs_url(self, *a, **k):
+            raise AssertionError("GCS should not be read when inline summary exists")
+
+    monkeypatch.setattr(gcs_mod, "GCSStorageService", _BoomGCS)
+    assert podcast_router._load_summary(_DOC, "ep1") == "# 標題\n\n孟恭談市場。"
+
+
+def test_load_summary_reads_gcs_when_inline_empty(monkeypatch):
+    # Published episodes keep the sectioned summary in GCS, inline field empty.
+    doc = {**_DOC, "summary_content": "", "summary_url": "gs://b/ep1/summary.md"}
+    _stub_gcs(monkeypatch, text="# 標題\n\n## 段落A\n\n內容A\n\n## 段落B\n\n內容B\n")
+    out = podcast_router._load_summary(doc, "ep1")
+    assert "## 段落A" in out and "內容B" in out
+
+
+def test_load_summary_degrades_to_empty_on_gcs_error(monkeypatch):
+    doc = {**_DOC, "summary_content": "", "summary_url": "gs://b/ep1/summary.md"}
+    _stub_gcs(monkeypatch, error=RuntimeError("gcs down"))
+    assert podcast_router._load_summary(doc, "ep1") == ""
+
+
+def test_load_summary_empty_when_no_inline_and_no_url():
+    assert podcast_router._load_summary({**_DOC, "summary_content": "", "summary_url": None}, "ep1") == ""
+
+
 def test_generate_helper_maps_doc_fields_to_state(monkeypatch):
     _stub_firestore(monkeypatch, _DOC)
     captured = {}

@@ -1,6 +1,7 @@
 """Router for podcast-specific endpoints (show metadata + episode processing)."""
 
 import asyncio
+import logging
 from pathlib import Path
 from typing import Any, List, Optional
 
@@ -9,6 +10,8 @@ from pydantic import BaseModel
 
 from src.auth import verify_api_key
 from src.routers.episode import run_episode_rerun
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/podcast", tags=["podcast"])
 
@@ -104,13 +107,37 @@ class SocialCopyResponse(BaseModel):
     comments: List[SocialCopyComment]
 
 
+def _load_summary(doc: dict[str, Any], episode_id: str) -> str:
+    """The episode's full summary markdown — inline if present, else from GCS.
+
+    Published/consolidated episodes keep the (sectioned) summary in GCS at
+    ``summary_url`` with the inline ``summary_content`` empty. The social_copy_writer
+    writes one comment per summary section, so it needs the real markdown, not just
+    the short key_insights — read it through the same helper the pipeline uses
+    (``download_text_by_gcs_url``). Returns "" if neither source is available.
+    """
+    summary = (doc.get("summary_content") or "").strip()
+    if summary:
+        return summary
+    summary_url = doc.get("summary_url")
+    if not summary_url:
+        return ""
+    try:
+        from src.service.gcs_storage_service import GCSStorageService
+        return (GCSStorageService().download_text_by_gcs_url(summary_url) or "").strip()
+    except Exception as e:  # noqa: BLE001 — degrade to cards/key_insights on a GCS read error
+        logger.warning("social-copy: GCS summary read failed for %s: %s", episode_id, e)
+        return ""
+
+
 def _generate_social_copy(episode_id: str) -> dict[str, Any]:
     """Load the episode and run the social_copy_writer LLM node.
 
-    Read-only against Firestore: it pulls the episode's stored ``social_cards`` +
-    ``summary_content`` and returns the generated ``social_thread``. Persistence
-    (and cache invalidation) is the platform backend's job via its
-    ``set_social_thread`` write path — this endpoint never writes.
+    Read-only against Firestore + GCS: it pulls the episode's ``social_cards`` and
+    full summary (``summary_content`` inline, or ``summary_url`` from GCS) and
+    returns the generated ``social_thread``. Persistence (and cache invalidation) is
+    the platform backend's job via its ``set_social_thread`` write path — this
+    endpoint never writes.
     """
     from src.podcast.content_builder.nodes.social_copy_writer import write_social_copy
     from src.service.firestore_service import FirestoreService
@@ -119,15 +146,14 @@ def _generate_social_copy(episode_id: str) -> dict[str, Any]:
     if not doc:
         raise HTTPException(status_code=404, detail=f"Episode '{episode_id}' not found")
 
-    # The writer reads cards + the summary steer from a minimal pipeline state; the
-    # field names mirror what the live pipeline seeds (markdown_report == the
-    # episode's summary_content; source == podcast_name).
+    # Field names mirror what the live pipeline seeds (markdown_report == the
+    # episode's summary; source == podcast_name).
     state: dict[str, Any] = {
         "social_cards": doc.get("social_cards") or [],
         "key_insights": doc.get("key_insights") or [],
         "episode_title": doc.get("episode_title") or doc.get("title") or "Episode",
         "source": doc.get("podcast_name") or "Podcast",
-        "markdown_report": doc.get("summary_content") or "",
+        "markdown_report": _load_summary(doc, episode_id),
     }
     return write_social_copy(state).get("social_thread") or {}
 
