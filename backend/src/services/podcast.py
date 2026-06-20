@@ -31,6 +31,51 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
+# Exposures suppressed from every sector surface (board, list, by-sector page).
+# "sector_semiconductor" is the broad 半導體 umbrella — it dominates the board on
+# mention count alone while saying little (almost every TW tech episode mentions
+# chips), so we hide it in favour of the specific semiconductor themes
+# (功率半導體 / 矽光子 / 先進封裝 / 半導體設備 …). Existing episodes still carry the
+# stamp in Firestore; this serve-time filter removes it without a backfill, and the
+# compiled universe drops it too so new episodes stop being tagged with it.
+EXCLUDED_EXPOSURE_IDS: frozenset[str] = frozenset({"sector_semiconductor"})
+
+
+def _read_close_series(tickers: list[str], limit: int = 12) -> dict[str, list[float]]:
+    """Read the trailing ``limit`` daily closes per ticker from Postgres.
+
+    Returns ``{ticker: [oldest, …, latest]}``. Shared by the sector board and the
+    by-sector page so both draw sparklines from the same warm StockDailyClose table
+    (no external API calls). Best-effort: a DB error yields an empty map.
+    """
+    from src.database.models import StockDailyClose
+
+    _CHUNK_SIZE = 200
+    result_map: dict[str, list[float]] = {}
+    if not tickers:
+        return result_map
+    for session in get_session():
+        try:
+            for chunk_start in range(0, len(tickers), _CHUNK_SIZE):
+                chunk = tickers[chunk_start: chunk_start + _CHUNK_SIZE]
+                rows = (
+                    session.query(
+                        StockDailyClose.ticker,
+                        StockDailyClose.date,
+                        StockDailyClose.close,
+                    )
+                    .filter(StockDailyClose.ticker.in_(chunk))
+                    .order_by(StockDailyClose.ticker.asc(), StockDailyClose.date.asc())
+                    .all()
+                )
+                for ticker, _date, close in rows:
+                    result_map.setdefault(ticker, []).append(close)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(f"_read_close_series: close series read failed: {exc}")
+        break
+    return {t: closes[-limit:] for t, closes in result_map.items()}
+
+
 EPISODE_DETAIL_CONTENT_FIELDS = frozenset({
     "summary_content",
     "events_markdown_content",
@@ -777,7 +822,19 @@ class PodcastService:
         All release-scoping and content-empty guards are applied identically to
         get_episodes_by_tag.
         """
-        cache_key = f"sector:episodes:v1:{exposure_id}:{offset}:{limit}:{self._scope_tag()}"
+        # Suppressed umbrella exposures (e.g. the broad 半導體 sector) resolve to an
+        # empty page — the frontend renders the standard "no episodes" state.
+        if exposure_id in EXCLUDED_EXPOSURE_IDS:
+            return {
+                "exposure_id": exposure_id,
+                "display_name": "",
+                "exposure_type": "sector",
+                "resolved_tickers": [],
+                "episodes": [],
+                "total": 0,
+            }
+
+        cache_key = f"sector:episodes:v2:{exposure_id}:{offset}:{limit}:{self._scope_tag()}"
         cached = await cache_get(cache_key)
         if cached:
             try:
@@ -860,6 +917,18 @@ class PodcastService:
 
         resolved_tickers = list(seen_tickers.values())[:12]
 
+        # Enrich each constituent with a short zh-TW "why this ticker belongs to the
+        # sector" reason from the compiled universe (Tavily-discovered, LLM-authored).
+        # Best-effort: a ticker with no reason on file simply omits the field. The
+        # sparkline series is drawn client-side from /batch-prices-trailing, so it is
+        # not duplicated here.
+        from src.data.sector_reasons import reason_for
+
+        for t in resolved_tickers:
+            reason = reason_for(exposure_id, str(t.get("ticker") or ""))
+            if reason:
+                t["reason"] = reason
+
         paged = episodes[offset:offset + limit]
         result = {
             "exposure_id": exposure_id,
@@ -921,6 +990,8 @@ class PodcastService:
             if cutoff is not None and self._dict_release_ms(doc) < cutoff:
                 continue
             for entry in doc.get("sector_exposures") or []:
+                if (entry.get("exposure_id") or "") in EXCLUDED_EXPOSURE_IDS:
+                    continue
                 for rt in entry.get("resolved_tickers") or []:
                     t = str(rt.get("ticker") or "").strip().upper()
                     if t and t not in seen:
@@ -1012,7 +1083,7 @@ class PodcastService:
                 continue
             for entry in doc.get("sector_exposures") or []:
                 eid = entry.get("exposure_id") or ""
-                if not eid:
+                if not eid or eid in EXCLUDED_EXPOSURE_IDS:
                     continue
                 counts[eid] = counts.get(eid, 0) + 1
                 if eid not in meta:
@@ -1031,7 +1102,6 @@ class PodcastService:
 
         # Gather all unique tickers and fetch EOD change% concurrently
         from src.services.stock_close_refresh import get_eod_change_pct
-        from src.database.models import StockDailyClose
 
         all_tickers: list[str] = list({
             t for tickers in ticker_map.values() for t in tickers
@@ -1040,37 +1110,9 @@ class PodcastService:
         ticker_pct: dict[str, Optional[float]] = dict(zip(all_tickers, pcts))
 
         # Batch-read daily closes for sparkline series (last 12 per ticker)
-        _SERIES_LIMIT = 12
-        _CHUNK_SIZE = 200
-
-        def _batch_read_closes(tickers: list[str]) -> dict[str, list[float]]:
-            """Sync: query StockDailyClose for all tickers, return ordered close lists."""
-            result_map: dict[str, list[float]] = {}
-            for session in get_session():
-                try:
-                    for chunk_start in range(0, len(tickers), _CHUNK_SIZE):
-                        chunk = tickers[chunk_start: chunk_start + _CHUNK_SIZE]
-                        rows = (
-                            session.query(
-                                StockDailyClose.ticker,
-                                StockDailyClose.date,
-                                StockDailyClose.close,
-                            )
-                            .filter(StockDailyClose.ticker.in_(chunk))
-                            .order_by(StockDailyClose.ticker.asc(), StockDailyClose.date.asc())
-                            .all()
-                        )
-                        for ticker, _date, close in rows:
-                            result_map.setdefault(ticker, []).append(close)
-                except Exception as exc:
-                    logger.debug(f"sector_board: close series read failed: {exc}")
-                break
-            # Trim to last _SERIES_LIMIT points
-            return {t: closes[-_SERIES_LIMIT:] for t, closes in result_map.items()}
-
         ticker_series: dict[str, list[float]] = {}
         if all_tickers:
-            ticker_series = await asyncio.to_thread(_batch_read_closes, all_tickers)
+            ticker_series = await asyncio.to_thread(_read_close_series, all_tickers, 12)
 
         # Build per-sector members + avg_change
         sectors_raw: list[dict] = []
@@ -1202,7 +1244,7 @@ class PodcastService:
                 continue
             for entry in doc.get("sector_exposures") or []:
                 eid = entry.get("exposure_id") or ""
-                if not eid:
+                if not eid or eid in EXCLUDED_EXPOSURE_IDS:
                     continue
                 counts[eid] = counts.get(eid, 0) + 1
                 if eid not in meta:

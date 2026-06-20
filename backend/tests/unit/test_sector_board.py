@@ -14,7 +14,7 @@ from src.services.podcast import PodcastService
 
 
 def _patch_get_session(close_rows: list | None = None):
-    """Patch get_session used inside _batch_read_closes to return fake DB rows.
+    """Patch get_session used inside _read_close_series to return fake DB rows.
 
     close_rows is a list of (ticker, date, close) tuples fed to the query mock.
     Pass None (default) for an empty result — series will be [] for all tickers.
@@ -293,6 +293,48 @@ async def test_retracted_and_out_of_scope_excluded():
 
     assert len(result) == 1
     assert result[0]["episode_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_excluded_exposure_dropped_from_board():
+    """Suppressed umbrella exposures (e.g. sector_semiconductor) are not counted on
+    the board even when episodes are stamped with them."""
+    exposures = [
+        {
+            "exposure_id": "sector_semiconductor",
+            "exposure_type": "sector",
+            "display_name": "半導體",
+            "resolved_tickers": [
+                {"ticker": "2330", "name": "台積電", "market": "TW", "source": "curated"},
+            ],
+        },
+        {
+            "exposure_id": "sector_passive_components",
+            "exposure_type": "sector",
+            "display_name": "被動元件",
+            "resolved_tickers": [
+                {"ticker": "2327", "name": "國巨", "market": "TW", "source": "curated"},
+            ],
+        },
+    ]
+    docs = [_doc("ep-001", exposures=exposures)]
+    svc, _ = _make_svc(docs)
+
+    async def _fake_eod(ticker: str):
+        return 1.0
+
+    with (
+        patch("src.services.podcast.cache_get", new=AsyncMock(return_value=None)),
+        patch("src.services.podcast.cache_set", new=AsyncMock()),
+        patch.object(svc, "_allowed_podcast_names", new=AsyncMock(return_value=None)),
+        patch("src.services.stock_close_refresh.get_eod_change_pct", side_effect=_fake_eod),
+        _patch_get_session(),
+    ):
+        result = await svc.sector_board()
+
+    ids = {s["exposure_id"] for s in result}
+    assert "sector_semiconductor" not in ids
+    assert "sector_passive_components" in ids
 
 
 @pytest.mark.asyncio
