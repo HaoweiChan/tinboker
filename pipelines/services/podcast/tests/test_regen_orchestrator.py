@@ -240,6 +240,155 @@ def test_commit_with_nothing_submitted_errors():
         orch.commit("ep_empty")
 
 
+# --- commit writes the served content path (GCS re-upload + authed cache bust) ----
+
+
+class _Resp:
+    """Minimal stand-in for an httpx.Response (status + body) for the cache-bust PATCH."""
+
+    def __init__(self, status_code, text=""):
+        self.status_code = status_code
+        self.text = text
+
+
+class _FakeFirestore:
+    """Captures set_document writes so a commit can be asserted without Firestore."""
+
+    def __init__(self):
+        self.writes = []  # list of (collection, doc_id, data, merge)
+        self.db = object()
+
+    def set_document(self, collection, doc_id, data, merge=False):
+        self.writes.append((collection, doc_id, dict(data), merge))
+
+    def merged(self, doc_id):
+        """The union of every merge write for ``doc_id`` (commit writes in parts)."""
+        out = {}
+        for collection, did, data, _ in self.writes:
+            if collection == "episodes" and did == doc_id:
+                out.update(data)
+        return out
+
+
+class _FakeGCS:
+    """Records upload_episode_files calls and returns deterministic gs:// URLs for
+    whatever content was provided (mirrors the real service's return shape)."""
+
+    def __init__(self):
+        self.calls = []
+
+    def upload_episode_files(self, **kwargs):
+        self.calls.append(kwargs)
+        eid = kwargs["episode_id"]
+        out = {}
+        if kwargs.get("summary_content"):
+            out["summary_url"] = f"gs://b/summaries/{eid}.md"
+            out["summary_public_url"] = f"https://h/summaries/{eid}.md"
+        if kwargs.get("events_markdown_content"):
+            out["events_markdown_url"] = f"gs://b/events/{eid}.md"
+            out["events_markdown_public_url"] = f"https://h/events/{eid}.md"
+        if kwargs.get("marp_markdown_content"):
+            out["marp_markdown_url"] = f"gs://b/marp/{eid}.md"
+            out["marp_markdown_public_url"] = f"https://h/marp/{eid}.md"
+        return out
+
+
+def _drive_summary_and_marp(episode_id="ep_test"):
+    """extractor -> writer -> marp: yields summary_content, events_markdown, and
+    marp_markdown in the payload WITHOUT the ticker subcollection (kept out so the
+    test doesn't touch the ticker_insights exporter)."""
+    orch.submit(episode_id, "extractor", {"events": [{"section_topic": "台積電", "start_index": 0, "end_index": 2}]})
+    orch.submit(episode_id, "writer", WRITER_OUT)
+    orch.submit(episode_id, "marp_writer", MARP_OUT)
+
+
+def test_commit_reuploads_gcs_served_content_and_repoints_urls(monkeypatch):
+    """The core fix: commit must overwrite the GCS blobs the backend hydrates from
+    (marp/events/summary) and repoint the episode doc's *_url at the fresh upload —
+    otherwise the page keeps serving the OLD marp."""
+    _new_draft()
+    _drive_summary_and_marp()
+
+    fake_fs = _FakeFirestore()
+    fake_gcs = _FakeGCS()
+    monkeypatch.setattr(orch, "_firestore", lambda: fake_fs)
+    monkeypatch.setattr(orch, "_gcs_storage_service", lambda: fake_gcs)
+    monkeypatch.setattr("httpx.patch", lambda *a, **k: _Resp(200))
+    monkeypatch.setenv("TINBOKER_PLATFORM_API_URL", "https://api.example.com")
+    monkeypatch.setenv("TINBOKER_WRITE_TOKEN", "svc-token-123")
+
+    report = orch.commit("ep_test")
+
+    # 1. The served-from-GCS artifacts were re-uploaded, force-overwriting the blob.
+    assert len(fake_gcs.calls) == 1
+    call = fake_gcs.calls[0]
+    assert call["skip_existing"] is False
+    assert call["episode_id"] == "ep_test"
+    assert call["marp_markdown_content"]      # the regenerated slides
+    assert call["events_markdown_content"]
+    assert call["summary_content"]
+
+    # 2. The doc's *_url fields now point at the fresh upload (so hydration reads it).
+    merged = fake_fs.merged("ep_test")
+    assert merged["marp_markdown_url"] == "gs://b/marp/ep_test.md"
+    assert merged["events_markdown_url"] == "gs://b/events/ep_test.md"
+    assert merged["summary_url"] == "gs://b/summaries/ep_test.md"
+    assert "marp_markdown_url" in report["gcs_content_uploaded"]
+
+
+def test_commit_patch_carries_content_writer_token(monkeypatch):
+    """Gap #2: the cache-bust PATCH must send the content-writer bearer token, or the
+    admin-gated endpoint 403s and Redis/CDN stay stale."""
+    _new_draft()
+    _drive_summary_and_marp()
+    monkeypatch.setattr(orch, "_firestore", lambda: _FakeFirestore())
+    monkeypatch.setattr(orch, "_gcs_storage_service", lambda: _FakeGCS())
+    monkeypatch.setenv("TINBOKER_PLATFORM_API_URL", "https://api.example.com")
+    monkeypatch.setenv("TINBOKER_WRITE_TOKEN", "svc-token-123")
+
+    captured = {}
+
+    def fake_patch(url, json=None, headers=None, timeout=None):
+        captured["url"] = url
+        captured["headers"] = headers or {}
+        captured["json"] = json
+        return _Resp(200)
+
+    monkeypatch.setattr("httpx.patch", fake_patch)
+
+    report = orch.commit("ep_test")
+
+    assert captured["headers"].get("Authorization") == "Bearer svc-token-123"
+    assert captured["url"].endswith("/api/podcast/股癌/episodes/ep_test")
+    assert report.get("platform_notified") == 200
+    assert not report["warnings"]
+
+
+def test_commit_without_write_token_skips_patch_and_warns(monkeypatch):
+    """No token -> do NOT fire an anonymous PATCH that 403s; warn and fall back to the
+    manual (now auth-aware) commands."""
+    _new_draft()
+    _drive_summary_and_marp()
+    monkeypatch.setattr(orch, "_firestore", lambda: _FakeFirestore())
+    monkeypatch.setattr(orch, "_gcs_storage_service", lambda: _FakeGCS())
+    monkeypatch.setenv("TINBOKER_PLATFORM_API_URL", "https://api.example.com")
+    monkeypatch.delenv("TINBOKER_WRITE_TOKEN", raising=False)
+
+    def fail_patch(*a, **k):
+        raise AssertionError("must not PATCH without a content-writer token")
+
+    monkeypatch.setattr("httpx.patch", fail_patch)
+
+    report = orch.commit("ep_test")
+
+    assert "platform_notified" not in report
+    assert any("TINBOKER_WRITE_TOKEN" in w for w in report["warnings"])
+    assert report.get("cache_stale_until_ttl") is True
+    # The manual fallback PATCH must itself carry the auth header.
+    assert any("Authorization: Bearer $TINBOKER_WRITE_TOKEN" in c
+               for c in report["manual_invalidation"])
+
+
 def test_discard_removes_session():
     _new_draft("ep_discard")
     res = orch.discard("ep_discard")

@@ -167,12 +167,15 @@ def commit_regen(
     render_cards: bool = False,
     notify_platform: bool = True,
 ) -> dict[str, Any]:
-    """Persist the regenerated content to Firestore and bust the platform cache.
+    """Persist the regenerated content to Firestore + GCS and bust the platform cache.
 
     Writes only the fields whose steps you actually completed (Firestore merge —
     untouched fields are left alone): the episode doc (summary_content,
     key_insights, tags, related_tickers, marp/events markdown, social_cards) and
     the rich ticker sentiment under ticker_insights/{episode_id}/tickers/{ticker}.
+    It ALSO re-uploads the GCS blobs the backend serves marp/events/ticker_marp/summary
+    from (overwriting the prior content) and repoints the doc's *_url at them —
+    otherwise the page keeps rendering the OLD slides/events even after the commit.
 
     Args:
         episode_id: The episode being regenerated.
@@ -180,16 +183,20 @@ def commit_regen(
             through the backend's PATCH (TINBOKER_PLATFORM_API_URL). That single call
             busts the episode Redis cache, the ticker_insights:* sentiment cache (when
             related_tickers changed), AND the Cloudflare edge for the target env's API
-            host — so the regen shows immediately, no manual SSH/CF steps.
+            host — so the regen shows immediately, no manual SSH/CF steps. The PATCH is
+            admin-gated, so TINBOKER_WRITE_TOKEN (the content-writer service token) must
+            be set in the environment; without it the call is skipped with a warning and
+            manual_invalidation commands are returned instead.
         render_cards: Reserved — PNG social-card rendering stays in the normal
             pipeline; only the slide markdown is saved here.
 
-    NOTE: writes to the SHARED production Firestore (graphfolio-db) and, by default,
-    busts the production caches — run preview_regen first.
+    NOTE: writes to the SHARED production Firestore (graphfolio-db) + GCS and, by
+    default, busts the production caches — run preview_regen first.
 
-    Returns a write report: episode_fields_written, ticker_insights_written, and
-    either ``cache_refreshed`` {via, surfaces} on success or ``manual_invalidation``
-    (exact copy-paste commands) if the cache bust was disabled/failed.
+    Returns a write report: episode_fields_written, gcs_content_uploaded,
+    ticker_insights_written, and either ``cache_refreshed`` {via, surfaces} on success
+    or ``manual_invalidation`` (exact copy-paste commands) if the cache bust was
+    disabled/failed/unauthenticated.
     """
     return _run(_orch.commit, episode_id, render_cards, notify_platform)
 

@@ -220,6 +220,15 @@ def _gcs_client():
         return storage.Client()
 
 
+def _gcs_storage_service():
+    """The pipeline's credential-bootstrapped GCS uploader (same one ``gcs_upload``
+    uses). Imported lazily so importing this module doesn't require the GCS env —
+    ``commit`` is the only caller, and tests monkeypatch this to avoid real uploads."""
+    from src.service.gcs_storage_service import GCSStorageService
+
+    return GCSStorageService()
+
+
 def _derive_sentences_from_transcript(
     transcript: str, duration_ms: Optional[int] = None, target_chars: int = 45
 ) -> list[dict[str, Any]]:
@@ -436,6 +445,76 @@ def _doc_update(payload: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in payload.items() if k not in protected}
 
 
+# Assembled-payload field -> the ``upload_episode_files`` kwarg that writes its GCS
+# blob. These are the artifacts the backend serves *from GCS*: the episode
+# transformer hydrates each ``*_content`` field from the matching ``*_url`` only when
+# the inline field is empty (see ``episode_transformer._GCS_CONTENT_FIELDS``). The
+# regen writes the inline doc fields (``marp_markdown``/``events_markdown``/…) but the
+# page reads the GCS blob, so a Firestore-only commit keeps serving the OLD content —
+# the blob itself must be re-uploaded.
+_GCS_UPLOAD_KWARGS = {
+    "summary_content": "summary_content",
+    "events_markdown": "events_markdown_content",
+    "marp_markdown": "marp_markdown_content",
+    "ticker_marp_markdown": "ticker_marp_markdown_content",
+}
+
+# ``*_url`` fields returned by ``upload_episode_files`` that we copy back onto the
+# episode doc, so hydration reads the freshly-uploaded blob even when the doc's old
+# URL pointed at a different bucket/path than this env's uploader produces.
+_GCS_URL_FIELDS = (
+    "summary_url", "summary_public_url",
+    "events_markdown_url", "events_markdown_public_url",
+    "marp_markdown_url", "marp_markdown_public_url",
+    "ticker_marp_markdown_url", "ticker_marp_markdown_public_url",
+    "ticker_insights_url", "ticker_insights_public_url",
+)
+
+
+def _upload_regen_content(
+    episode_id: str, podcast_name: str, payload: dict[str, Any]
+) -> tuple[dict[str, Any], Optional[str]]:
+    """Re-upload the GCS-served artifacts (marp/events/ticker_marp/summary + ticker
+    insights JSON) so the backend hydrates the regenerated content, not the stale blob.
+
+    Overwrites the existing blobs (``skip_existing=False``) and returns the
+    ``{*_url: ...}`` updates to merge onto the episode doc. Returns
+    ``(url_updates, error)`` — ``error`` is a human-readable string when the upload
+    couldn't run (storage unavailable or the upload itself failed), so ``commit`` can
+    surface it as a warning instead of silently leaving the page on the old content.
+    """
+    upload_kwargs: dict[str, Any] = {
+        kwarg: payload[field]
+        for field, kwarg in _GCS_UPLOAD_KWARGS.items()
+        if payload.get(field)
+    }
+    if payload.get("ticker_insights"):
+        upload_kwargs["ticker_insights_data"] = payload["ticker_insights"]
+    if not upload_kwargs:
+        return {}, None
+
+    try:
+        svc = _gcs_storage_service()
+    except Exception as exc:  # noqa: BLE001 — no GCS env → can't refresh the blob
+        return {}, (
+            f"GCS upload skipped — storage unavailable ({exc}); the page will keep "
+            "serving the OLD marp/events content until the blob is re-uploaded."
+        )
+    try:
+        urls = svc.upload_episode_files(
+            episode_id=episode_id,
+            podcast_name=podcast_name,
+            skip_existing=False,  # the whole point: overwrite the prior blob
+            **upload_kwargs,
+        )
+    except Exception as exc:  # noqa: BLE001 — never abort an otherwise-good commit
+        return {}, (
+            f"GCS upload failed ({exc}); the page will keep serving the OLD "
+            "marp/events content until the blob is re-uploaded."
+        )
+    return {k: urls[k] for k in _GCS_URL_FIELDS if urls.get(k)}, None
+
+
 def _manual_cache_commands(
     base: Optional[str], podcast_name: str, episode_id: str, has_tickers: bool
 ) -> list[str]:
@@ -444,8 +523,10 @@ def _manual_cache_commands(
     surface (episode + ticker sentiment + CDN) never has to be reverse-engineered."""
     api = (base or "https://api.tinboker.com").rstrip("/")
     cmds = [
-        "# 1. Replay the PATCH (busts episode Redis + ticker cache + CDN via the backend):",
+        "# 1. Replay the PATCH (busts episode Redis + ticker cache + CDN via the backend).",
+        "#    The endpoint is admin-gated — pass the content-writer service token or it 403s:",
         f"curl -X PATCH '{api}/api/podcast/{podcast_name}/episodes/{episode_id}' "
+        "-H \"Authorization: Bearer $TINBOKER_WRITE_TOKEN\" "
         "-H 'Content-Type: application/json' --data '{\"summary_content\":\"<the new summary>\"}'",
     ]
     if has_tickers:
@@ -702,6 +783,20 @@ def commit(
         fs.set_document("episodes", episode_id, doc_update, merge=True)
         report["episode_fields_written"] = sorted(doc_update.keys())
 
+    # 1b. Re-upload the GCS-served artifacts (marp/events/ticker_marp/summary). The
+    #     backend serves these by hydrating ``*_content`` from ``*_url`` when the inline
+    #     field is empty, so the Firestore merge above is NOT enough — without this the
+    #     page keeps rendering the OLD slides/events. Overwrite the blobs and repoint
+    #     the doc's ``*_url`` fields at the fresh upload so hydration reads the regen.
+    gcs_url_updates, gcs_error = _upload_regen_content(
+        episode_id, draft["podcast_name"], payload
+    )
+    if gcs_error:
+        report["warnings"].append(gcs_error)
+    if gcs_url_updates:
+        fs.set_document("episodes", episode_id, gcs_url_updates, merge=True)
+        report["gcs_content_uploaded"] = sorted(gcs_url_updates.keys())
+
     # 2. Rich ticker sentiment -> ticker_insights/{episode_id}/tickers/{ticker}.
     if payload.get("ticker_insights"):
         try:
@@ -736,14 +831,27 @@ def commit(
         if k in payload
     }
     base = os.getenv("TINBOKER_PLATFORM_API_URL")
+    # The PATCH endpoint is admin-gated (``get_content_write_access``); the regen agent
+    # authenticates with the ``TINBOKER_WRITE_TOKEN`` content-writer service token (the
+    # same token name the backend accepts for headless content writes). Without it the
+    # call 403s and the caches stay stale, so require it explicitly rather than firing
+    # an anonymous request that silently fails.
+    write_token = os.getenv("TINBOKER_WRITE_TOKEN")
     notified_ok = False
-    if notify_platform and cached and base:
+    if notify_platform and cached and base and not write_token:
+        report["warnings"].append(
+            "TINBOKER_WRITE_TOKEN not set — the platform PATCH requires content-writer "
+            "auth and would return 403, leaving Redis/CDN stale until TTL. Set the "
+            "service token in the MCP environment, or run the manual commands below."
+        )
+    elif notify_platform and cached and base:
         try:
             import httpx
 
             resp = httpx.patch(
                 f"{base.rstrip('/')}/api/podcast/{draft['podcast_name']}/episodes/{episode_id}",
                 json=cached,
+                headers={"Authorization": f"Bearer {write_token}"},
                 timeout=20.0,
             )
             report["platform_notified"] = resp.status_code
