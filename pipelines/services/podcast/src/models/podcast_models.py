@@ -143,6 +143,13 @@ class PodcastEpisode:
             return int(dt.timestamp() * 1000)
         return None
 
+    def resolved_publish_ms(self) -> Optional[int]:
+        """The episode's true publish time (Unix ms), exactly as written to the doc's
+        ``released_at_ms``. Public accessor for anything that must agree with the stored
+        value — e.g. ticker_insights ``podcast_launch_time`` (the /picks reference date).
+        """
+        return self._compute_released_at_ms()
+
     def to_firestore_dict(self) -> Dict:
         """
         Convert PodcastEpisode to Firestore document format.
