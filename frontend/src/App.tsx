@@ -94,7 +94,10 @@ function App() {
             <Route path="/stock" element={<StockIndex />} />
             <Route path="/topics" element={<TopicsCloud />} />
             <Route path="/watchlist" element={<WatchlistPage />} />
-            <Route path="/picks" element={<PicksPage />} />
+            {/* /picks (走勢) — dev-only while unstable; excluded from the release.
+                STAGING/PRODUCTION don't register it, so a direct URL falls through
+                to the catch-all → home. */}
+            {IS_DEV_ENV && <Route path="/picks" element={<PicksPage />} />}
 
             {/* Single-instance / content pages */}
             <Route path="/stock/:ticker" element={<StockDashboard />} />
