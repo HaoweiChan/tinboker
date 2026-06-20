@@ -18,7 +18,7 @@ import { fetchWithFallback } from '@/services/api/migration';
 import { useStockPriceMap } from '@/hooks/useStockPriceMap';
 import { useStockPriceSinceMap } from '@/hooks/useStockPriceSinceMap';
 import { useTranslationMap } from '@/hooks/useTranslationMap';
-import { SectorTickerCard } from '@/components/topics/SectorTickerCard';
+import { SectorTickerRow } from '@/components/topics/SectorTickerRow';
 
 function resolvedTickerName(t: SectorResolvedTicker, translationMap: Map<string, string>): string {
   const upper = t.ticker.toUpperCase();
@@ -144,29 +144,39 @@ export const SectorPage: React.FC = () => {
           </div>
         </div>
 
-        {/* ── Constituent performance (trailing 1/7/30/90D, picks-aligned) ── */}
+        {/* ── Constituent performance — one aligned table, labels in the header ── */}
         {loading ? (
           <div className="mb-7">
             <div className="h-4 w-24 bg-muted rounded animate-pulse mb-3" />
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+            <div className="bg-card border border-border dark:border-white/[0.08] rounded-xl overflow-hidden">
               {Array.from({ length: 6 }).map((_, i) => (
-                <div key={i} className="bg-card border border-border dark:border-white/[0.08] rounded-lg h-[84px] animate-pulse" />
+                <div key={i} className="h-[45px] border-b border-border/40 last:border-0 bg-muted/20 animate-pulse" />
               ))}
             </div>
           </div>
         ) : members.length > 0 ? (
           <div className="mb-7">
             <h2 className="text-[13px] font-semibold text-muted-foreground mb-3">成分股表現</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-              {members.map((t) => (
-                <SectorTickerCard
-                  key={t.ticker}
-                  ticker={t.ticker}
-                  name={resolvedTickerName(t, translationMap)}
-                  perf={perfMap[t.ticker.toUpperCase()]}
-                  loading={perfLoading}
-                />
-              ))}
+            <div className="bg-card border border-border dark:border-white/[0.08] rounded-xl overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.04)] dark:shadow-none">
+              {/* Column header — timeframe labels appear once for the whole table */}
+              <div className="flex items-center gap-1.5 px-4 py-2 border-b border-border/60 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                <span className="flex-1 min-w-0">代號</span>
+                <span className="w-[56px] text-right shrink-0">1天</span>
+                <span className="w-[56px] text-right shrink-0">7天</span>
+                <span className="w-[56px] text-right shrink-0">30天</span>
+                <span className="w-[56px] text-right shrink-0">90天</span>
+              </div>
+              <div className="divide-y divide-border/40">
+                {members.map((t) => (
+                  <SectorTickerRow
+                    key={t.ticker}
+                    ticker={t.ticker}
+                    name={resolvedTickerName(t, translationMap)}
+                    perf={perfMap[t.ticker.toUpperCase()]}
+                    loading={perfLoading}
+                  />
+                ))}
+              </div>
             </div>
           </div>
         ) : null}
