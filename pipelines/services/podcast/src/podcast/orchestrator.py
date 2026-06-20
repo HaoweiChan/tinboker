@@ -12,7 +12,6 @@ from typing import Dict, List, Optional
 from src.pipeline import EpisodeProcessor, PipelineConfig
 from src.pipeline.reconcile import reconcile_show_released_at_ms
 from src.pipeline.steps import initialize_services
-from src.service.download_podcasts import extract_podcast_id, fetch_episodes
 
 from .firestore_reprocessor import process_firestore_episode
 
@@ -109,8 +108,14 @@ def run_pipeline(
     reuse_existing_transcript: bool = False,
     episode_id: Optional[str] = None,
     fill_limit: bool = False,
+    only_shows: Optional[List[str]] = None,
 ) -> None:
-    """Run the full podcast processing pipeline."""
+    """Run the full podcast processing pipeline.
+
+    ``only_shows`` (exact show names) restricts a feed run to those shows — used
+    for ad-hoc single-show ingestion (e.g. pulling one freshly-published episode)
+    without processing the whole roster.
+    """
     print("=" * 60)
     print("Podcast Processing Pipeline")
     print("=" * 60)
@@ -154,6 +159,15 @@ def run_pipeline(
         except Exception as e:
             print(f"Warning: Could not load podcasts config: {e}")
             podcasts = []
+
+    if only_shows:
+        wanted = set(only_shows)
+        filtered = [p for p in podcasts if p.get("name") in wanted]
+        missing = wanted - {p.get("name") for p in filtered}
+        if missing:
+            print(f"Warning: --show name(s) not found in active roster: {sorted(missing)}")
+        podcasts = filtered
+        print(f"Restricted to {len(podcasts)} show(s) via --show: {[p.get('name') for p in podcasts]}")
 
     if episode_id:
         _handle_firestore_mode(
@@ -375,19 +389,17 @@ def _process_single_podcast(
     print(f"{'='*60}")
 
     try:
-        podcast_id = extract_podcast_id(link)
-        if not podcast_id or podcast_id.strip() == "":
-            print(f"Error: Invalid podcast ID extracted from URL: {link}")
-            return
+        from src.service.feed_source import fetch_feed_episodes, resolve_rss_url
 
-        print("Fetching episode list from API...")
-        episodes = fetch_episodes(podcast_id)
+        source = "canonical RSS" if resolve_rss_url(podcast) else "mirror"
+        print(f"Fetching episode list ({source})...")
+        episodes = fetch_feed_episodes(podcast)
 
         if not episodes:
             print("No episodes found or error fetching episodes")
             return
 
-        print(f"Found {len(episodes)} episodes from API")
+        print(f"Found {len(episodes)} episodes from {source}")
 
         # Keep the full feed (every episode + its true datePublished) before the
         # window/limit narrowing below — the reconcile pass needs all of it.

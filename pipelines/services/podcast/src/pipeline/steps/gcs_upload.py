@@ -70,8 +70,11 @@ class _LocalMediaUploader:
 
     def upload_file_from_base64(
         self, b64_content: str, file_type: str, podcast_name: str,
-        episode_id: str, extension: str, skip_existing: bool = True
+        episode_id: str, extension: str, skip_existing: bool = True,
+        public: bool = False,
     ) -> tuple[bool, Optional[str]]:
+        # `public` is a no-op here — files in the VPS media dir are already served
+        # publicly over HTTP; the flag exists for parity with the GCS uploader.
         import base64
         blob = self._blob(file_type, podcast_name, episode_id, extension)
         return self._write(blob, base64.b64decode(b64_content), skip_existing)

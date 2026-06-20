@@ -492,4 +492,19 @@ export interface TickerInsight {
   reasons: Reason[];
   risks: Risk[];
   created_at: string;
+  /** Source episode title — populated by /recent (blended feed) so the card can
+   *  show which episode mentioned the ticker. */
+  episode_title?: string;
+}
+
+// Forward price return per pick, from /api/stocks/batch-prices-windows.
+// Each window is the % move from the mention-date close to the close N calendar
+// days later; `null` until the window has fully elapsed (UI renders "—"). `since`
+// is the mention→today move. Keyed in responses by `"{TICKER}:{reference_ms}"`.
+export interface PickWindowReturns {
+  baseline: number | null;
+  d7: number | null;
+  d30: number | null;
+  d90: number | null;
+  since: number | null;
 }

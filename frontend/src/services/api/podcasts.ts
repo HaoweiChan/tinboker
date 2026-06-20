@@ -26,6 +26,38 @@ export interface Podcast {
   image_url?: string | null;
 }
 
+export interface SectorResolvedTicker {
+  ticker: string;
+  name: string;
+  name_en?: string;
+  market: 'TW' | 'US' | string;
+  source: string;
+}
+
+export interface SectorExposure {
+  exposure_id: string;
+  exposure_type: 'sector' | 'theme' | string;
+  sector_id?: string | null;
+  theme_id?: string | null;
+  display_name: string;
+  mention_text: string;
+  confidence: number;
+  start_index?: number | null;
+  end_index?: number | null;
+  start_time?: number | null;
+  end_time?: number | null;
+  resolved_tickers: SectorResolvedTicker[];
+  total_matches: number;
+}
+
+export interface UnresolvedMarketTrend {
+  mention_text: string;
+  normalized_text: string;
+  context?: string;
+  start_time?: number | null;
+  confidence: number;
+}
+
 export interface Episode {
   id: string;
   podcast_name: string;
@@ -40,6 +72,12 @@ export interface Episode {
   summary_image_public_url?: string | null;
   related_tickers: string[];
   tags?: string[];
+  sector_exposures?: SectorExposure[];
+  unresolved_market_trends?: UnresolvedMarketTrend[];
+  sector_exposure_ids?: string[];
+  sector_ids?: string[];
+  theme_ids?: string[];
+  unresolved_market_trend_ids?: string[];
   created_time: number;
   /** True publish time (Unix ms), agents-written from the feed. Prefer over
    *  created_time (ingestion time) and spotify_release_date for display. */
@@ -225,6 +263,12 @@ export async function getInsightsByPodcaster(
     `/api/ticker-insights/by-podcaster/${encodeURIComponent(podcasterName)}`,
     { params: Object.keys(q).length ? q : undefined }
   );
+  return Array.isArray(response.data) ? response.data : [];
+}
+
+/** Recent picks across ALL podcasters, newest-first — the blended /picks timeline. */
+export async function getRecentInsights(limit = 100): Promise<TickerInsight[]> {
+  const response = await apiClient.get('/api/ticker-insights/recent', { params: { limit } });
   return Array.isArray(response.data) ? response.data : [];
 }
 
@@ -467,4 +511,91 @@ export async function getEpisodeHeavy(
     { params: { include_heavy_content: true } },
   );
   return response.data;
+}
+
+export interface SectorListItem {
+  exposure_id: string;
+  display_name: string;
+  exposure_type: string;
+  count: number;
+}
+
+export async function getSectors(): Promise<SectorListItem[]> {
+  const response = await apiClient.get('/api/sectors');
+  const d = response.data ?? {};
+  return Array.isArray(d.sectors) ? d.sectors : [];
+}
+
+export interface SectorBoardMember {
+  ticker: string;
+  name: string;
+  change_percent: number | null;
+  series?: number[]; // last ~12 daily closes, old->new; may be absent or []
+}
+
+export interface SectorBoardItem {
+  exposure_id: string;
+  display_name: string;
+  exposure_type: string;
+  episode_count: number;
+  avg_change: number | null;
+  hotness: number;
+  members: SectorBoardMember[];
+  series?: number[]; // normalized aggregate trajectory, old->new; may be absent or []
+}
+
+export async function getSectorBoard(): Promise<SectorBoardItem[]> {
+  const response = await apiClient.get('/api/sectors/board');
+  const d = response.data ?? {};
+  return Array.isArray(d.sectors) ? d.sectors : [];
+}
+
+/** Trailing close-to-close performance for a ticker over fixed windows. */
+export interface TrailingPerf {
+  price: number | null;
+  d1: number | null;
+  d7: number | null;
+  d30: number | null;
+  d90: number | null;
+  series: number[]; // recent daily closes, old->new (for the sparkline)
+}
+
+/** Trailing 1/7/30/90D returns (+ recent close series) for a set of tickers,
+ *  keyed by UPPER-cased ticker. Powers the /sector/:id member cards. */
+export async function getBatchPricesTrailing(
+  tickers: string[],
+): Promise<Record<string, TrailingPerf>> {
+  const unique = [...new Set(tickers.map((t) => t.toUpperCase()))];
+  if (!unique.length) return {};
+  const response = await apiClient.post('/api/stocks/batch-prices-trailing', { tickers: unique });
+  return response.data && typeof response.data === 'object' ? response.data : {};
+}
+
+export interface EpisodesBySectorResponse {
+  exposure_id: string;
+  display_name: string;
+  exposure_type: string;
+  resolved_tickers: SectorResolvedTicker[];
+  episodes: Episode[];
+  total: number;
+}
+
+export async function getEpisodesBySector(
+  exposureId: string,
+  limit: number = 50,
+  offset: number = 0,
+): Promise<EpisodesBySectorResponse> {
+  const response = await apiClient.get(
+    `/api/episodes/by-sector/${encodeURIComponent(exposureId)}`,
+    { params: { limit, offset } },
+  );
+  const d = response.data ?? {};
+  return {
+    exposure_id: d.exposure_id ?? exposureId,
+    display_name: d.display_name ?? '',
+    exposure_type: d.exposure_type ?? 'sector',
+    resolved_tickers: Array.isArray(d.resolved_tickers) ? d.resolved_tickers : [],
+    episodes: Array.isArray(d.episodes) ? d.episodes : [],
+    total: typeof d.total === 'number' ? d.total : 0,
+  };
 }

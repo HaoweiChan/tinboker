@@ -10,16 +10,18 @@ import asyncio
 import json
 import logging
 from datetime import date, datetime, timedelta
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 from src.cache.cache_config import CACHE_TTL
 from src.cache.redis_client import cache_get, cache_set
+from src.config import settings
 from src.services.firestore_service import FirestoreService
 
 logger = logging.getLogger(__name__)
 
 TRENDING_TTL = 7200  # 2h, matches recommendation_service
 INSIGHT_TTL = 7200  # 2h
+RECENT_TTL = 600  # 10 min — /recent is a live feed; align with the ~10-min pipeline pull
 SCHEMA_VERSION = 3
 SUPPORTED_SCHEMA_VERSIONS = {2, SCHEMA_VERSION}
 TRENDING_COLLECTION = "trending_tickers"
@@ -114,6 +116,66 @@ def _in_range(iso_str: str, start: date, end: date) -> bool:
     return start <= d <= end
 
 
+def _release_recency_floor() -> Optional[date]:
+    """Earliest publish date the launch release window allows, or None when off.
+
+    Mirrors ``PodcastService`` recency scoping (``release_episode_max_age_days``)
+    so the /picks surfaces only show insights from RELEASED episodes — old
+    back-catalogue picks stay hidden until that window is widened. ``0`` (the
+    default) disables the floor, preserving the full-history behaviour.
+    """
+    days = getattr(settings, "release_episode_max_age_days", 0) or 0
+    if days <= 0:
+        return None
+    return date.today() - timedelta(days=days)
+
+
+def _scope_tag() -> str:
+    """Release-scope signature for cache-key isolation (busts on env change)."""
+    return f"r{getattr(settings, 'release_episode_max_age_days', 0) or 0}"
+
+
+def _safe_int(value: Any) -> int:
+    """Best-effort int; 0 on anything non-numeric (defends against dirty docs)."""
+    if isinstance(value, bool) or value is None:
+        return 0
+    if isinstance(value, (int, float)):
+        return int(value)
+    try:
+        return int(float(str(value).strip()))
+    except (ValueError, TypeError):
+        return 0
+
+
+def _coerce_ms(value: Any) -> int:
+    """Coerce a reason/risk timestamp to integer milliseconds.
+
+    Tolerates the two shapes the pipeline has emitted: a plain ms int, and a
+    human-readable ``MM:SS.mmm`` / ``HH:MM:SS.mmm`` string (older output). A bad
+    value yields 0 rather than 500-ing the whole insight response.
+    """
+    if isinstance(value, bool) or value is None:
+        return 0
+    if isinstance(value, (int, float)):
+        return int(value)
+    s = str(value).strip()
+    if not s:
+        return 0
+    if ":" in s:
+        try:
+            parts = [float(p) for p in s.split(":")]
+        except (ValueError, TypeError):
+            return 0
+        if len(parts) == 2:
+            total_seconds = parts[0] * 60 + parts[1]
+        elif len(parts) == 3:
+            total_seconds = parts[0] * 3600 + parts[1] * 60 + parts[2]
+        else:
+            return 0
+        return int(total_seconds * 1000)
+    return _safe_int(s)
+
+
 def _doc_to_insight(doc: dict) -> dict:
     """
     Map a ticker_insights subcollection doc to the TickerInsight API shape
@@ -130,10 +192,10 @@ def _doc_to_insight(doc: dict) -> dict:
         out = {
             "title": r.get("title") or "",
             "description": r.get("description") or "",
-            "start_time": int(r.get("start_time") or 0),
-            "end_time": int(r.get("end_time") or 0),
-            "start_index": int(r.get("start_index") or 0),
-            "end_index": int(r.get("end_index") or 0),
+            "start_time": _coerce_ms(r.get("start_time")),
+            "end_time": _coerce_ms(r.get("end_time")),
+            "start_index": _safe_int(r.get("start_index")),
+            "end_index": _safe_int(r.get("end_index")),
         }
         if severity:
             out["severity"] = severity
@@ -143,10 +205,10 @@ def _doc_to_insight(doc: dict) -> dict:
         out = {
             "title": r.get("title") or "",
             "description": r.get("description") or "",
-            "start_time": int(r.get("start_time") or 0),
-            "end_time": int(r.get("end_time") or 0),
-            "start_index": int(r.get("start_index") or 0),
-            "end_index": int(r.get("end_index") or 0),
+            "start_time": _coerce_ms(r.get("start_time")),
+            "end_time": _coerce_ms(r.get("end_time")),
+            "start_index": _safe_int(r.get("start_index")),
+            "end_index": _safe_int(r.get("end_index")),
         }
         category = r.get("category")
         if category:
@@ -210,6 +272,22 @@ class InsightService:
         )
         rows = [_doc_to_trending(d, days) for d in docs if d.get("ticker") or d.get("id")]
         rows = [r for r in rows if r["count"] > 0 and r["ticker"]]
+
+        # Dedup by ticker. The agents write non-US trending docs at id "{ticker}.{market}"
+        # (e.g. "2330.TW") but keep the bare "ticker" field, so a legacy "trending_tickers/2330"
+        # doc and a new "2330.TW" doc can coexist and both surface as ticker 2330. Keep the
+        # row with the higher count (then the more recent mention) so the UI never double-lists.
+        if rows:
+            best: dict = {}
+            for r in rows:
+                cur = best.get(r["ticker"])
+                if (
+                    cur is None
+                    or r["count"] > cur["count"]
+                    or (r["count"] == cur["count"] and r["last_mentioned"] > cur["last_mentioned"])
+                ):
+                    best[r["ticker"]] = r
+            rows = list(best.values())
 
         if not rows:
             logger.info("trending_tickers empty; falling back to episode aggregation")
@@ -352,7 +430,13 @@ class InsightService:
             return []
 
         start, end = _resolve_date_range(start_date, end_date)
-        cache_key = f"ticker_insights:by_podcaster:{name}:{start}:{end}"
+        floor = _release_recency_floor()
+        if floor and floor > start:
+            start = floor  # honour the launch release window — hide unreleased back-catalogue
+        # `:v2` + short TTL — /picks channel-history reads this, so edits/purges
+        # (e.g. templated-insight cleanup) should reflect within minutes, and the
+        # bump sidesteps any pre-cleanup cached rows.
+        cache_key = f"ticker_insights:by_podcaster:v2:{_scope_tag()}:{name}:{start}:{end}"
         cached = await cache_get(cache_key)
         if cached:
             try:
@@ -378,11 +462,67 @@ class InsightService:
         rows.sort(key=lambda r: r["podcast_launch_time"], reverse=True)
 
         try:
-            await cache_set(
-                cache_key,
-                json.dumps(rows, default=str),
-                CACHE_TTL.get("ticker_insights_by_podcaster", INSIGHT_TTL),
-            )
+            await cache_set(cache_key, json.dumps(rows, default=str), RECENT_TTL)
         except Exception as e:
             logger.warning("Insight cache set failed: %s", e)
+        return rows
+
+    async def get_recent(self, limit: int = 100) -> List[dict]:
+        """
+        Recent TickerInsight[] across ALL podcasters, newest-first (blended feed).
+
+        Collection-group query on the `tickers` subcollection ordered by
+        `podcast_launch_time` DESC with a hard limit — the /picks blended timeline.
+        Over-fetches (2×) so legacy / non-conforming docs can be dropped before
+        trimming to `limit`. Requires a single-field COLLECTION_GROUP index on
+        `tickers.podcast_launch_time` (descending).
+        """
+        limit = max(1, min(int(limit or 100), 200))
+        # `:v2` namespace — the response now carries episode_title; bumping the key
+        # also sidesteps any rows cached before that field existed. The scope tag
+        # isolates the cache per release window.
+        cache_key = f"ticker_insights:recent:v2:{_scope_tag()}:{limit}"
+        cached = await cache_get(cache_key)
+        if cached:
+            try:
+                return json.loads(cached)
+            except Exception as e:
+                logger.warning("Recent cache deserialize failed: %s", e)
+
+        # Newest-first, so any recency floor only trims the tail — the released
+        # window sits contiguously at the head; a 2× cushion covers legacy drops.
+        floor = _release_recency_floor()
+        docs = await asyncio.to_thread(
+            self._fs.query_collection_group,
+            INSIGHTS_SUBCOLLECTION,
+            None,
+            "podcast_launch_time",
+            "DESCENDING",
+            limit * 2,
+        )
+        today = date.today()
+        rows = [
+            _doc_to_insight(d)
+            for d in docs
+            if d.get("schema_version") in SUPPORTED_SCHEMA_VERSIONS
+            and (floor is None or _in_range(d.get("podcast_launch_time") or "", floor, today))
+        ][:limit]
+
+        # Attach the source episode title (so the blended feed can show "which
+        # episode mentioned this"). One batched read per cache-miss; the episode
+        # doc id == the insight's episode_id.
+        ep_ids = list({r["episode_id"] for r in rows if r.get("episode_id")})
+        if ep_ids:
+            try:
+                eps = await asyncio.to_thread(self._fs.get_documents_batch, "episodes", ep_ids)
+                title_map = {e.get("id"): (e.get("episode_title") or "") for e in eps}
+                for r in rows:
+                    r["episode_title"] = title_map.get(r.get("episode_id"), "")
+            except Exception as e:
+                logger.warning("Recent episode-title join failed: %s", e)
+
+        try:
+            await cache_set(cache_key, json.dumps(rows, default=str), RECENT_TTL)
+        except Exception as e:
+            logger.warning("Recent cache set failed: %s", e)
         return rows

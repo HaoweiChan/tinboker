@@ -6,6 +6,15 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from src.database.postgres import get_session
+from src.schemas.sector import (
+    EpisodesBySectorResponse,
+    SectorBoardItem,
+    SectorBoardMember,
+    SectorBoardResponse,
+    SectorListItem,
+    SectorResolvedTicker,
+    SectorsListResponse,
+)
 from src.services.podcast import PodcastService
 from src.services.translation_discovery import schedule_ticker_discovery
 from src.tag_registry import registry_snapshot, seed_if_empty
@@ -118,3 +127,71 @@ async def get_episodes_by_tag(
         return EpisodesByTagResponse(tag=tag, episodes=episodes_dict, total=len(episodes_dict))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching episodes by tag: {str(e)}")
+
+
+@router.get("/sectors", response_model=SectorsListResponse)
+async def list_sectors():
+    """List all sector/theme exposures that have at least one episode, sorted by episode count.
+
+    Returns a directory of sectors and themes so the frontend /topics page can render
+    a browsable sectors listing.  Sectors are only reachable from episode detail pages
+    without this endpoint.
+    """
+    try:
+        sectors = await podcast_service.list_sectors()
+        return SectorsListResponse(sectors=[SectorListItem(**s) for s in sectors])
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching sectors: {str(e)}")
+
+
+@router.get("/sectors/board", response_model=SectorBoardResponse)
+async def get_sector_board():
+    """Return a ranked hot-sectors board with price performance.
+
+    Each sector entry includes its constituent tickers' daily % change,
+    an avg_change aggregate, and a blended hotness score (0..1).  Sorted
+    by hotness DESC so the most price-active, most-mentioned sectors float
+    to the top.  Intended as a richer replacement for the vague tag ranking
+    shown on /topics.
+    """
+    try:
+        sectors = await podcast_service.sector_board()
+        return SectorBoardResponse(
+            sectors=[
+                SectorBoardItem(
+                    **{k: v for k, v in s.items() if k != "members"},
+                    members=[SectorBoardMember(**m) for m in s["members"]],
+                )
+                for s in sectors
+            ]
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching sector board: {str(e)}")
+
+
+@router.get("/episodes/by-sector/{exposure_id}", response_model=EpisodesBySectorResponse)
+async def get_episodes_by_sector(
+    exposure_id: str = Path(..., description="Sector or theme exposure ID (e.g. 'sector_passive_components')"),
+    limit: int = Query(default=50, ge=1, le=200, description="Maximum number of episodes to return"),
+    offset: int = Query(default=0, ge=0, description="Pagination offset"),
+):
+    """Get episodes that mention a given sector or theme, plus aggregated representative tickers.
+
+    Queries Firestore episodes where sector_exposure_ids array contains the given
+    exposure_id. Returns the same episode list shape as GET /api/episodes/by-tag/{tag}.
+    When no episodes match, returns 200 with empty lists (never 404).
+    """
+    try:
+        result = await podcast_service.get_episodes_by_sector(
+            exposure_id=exposure_id, limit=limit, offset=offset,
+        )
+        return EpisodesBySectorResponse(
+            exposure_id=result["exposure_id"],
+            display_name=result["display_name"],
+            exposure_type=result["exposure_type"],
+            resolved_tickers=[SectorResolvedTicker(**t) for t in result["resolved_tickers"]],
+            episodes=result["episodes"],
+            total=result["total"],
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching episodes by sector: {str(e)}")

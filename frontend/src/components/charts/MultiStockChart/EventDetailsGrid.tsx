@@ -75,10 +75,10 @@ export const EventDetailsGrid: React.FC<EventDetailsGridProps> = ({
   };
 
   const formatDate = (timestamp: number): string => {
-    return new Date(timestamp).toLocaleDateString('en-US', {
-      month: 'long',
-      day: 'numeric',
+    return new Date(timestamp).toLocaleDateString('zh-TW', {
       year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
     });
   };
 

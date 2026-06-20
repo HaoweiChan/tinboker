@@ -764,6 +764,473 @@ class PodcastService:
         except Exception as e:
             raise Exception(f"Failed to get episodes by tag: {e}") from e
 
+    async def get_episodes_by_sector(
+        self,
+        exposure_id: str,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict:
+        """Get episodes where sector_exposure_ids array contains exposure_id.
+
+        Returns a dict with exposure metadata (display_name, exposure_type,
+        resolved_tickers aggregated across matched episodes) plus the episode list.
+        All release-scoping and content-empty guards are applied identically to
+        get_episodes_by_tag.
+        """
+        cache_key = f"sector:episodes:v1:{exposure_id}:{offset}:{limit}:{self._scope_tag()}"
+        cached = await cache_get(cache_key)
+        if cached:
+            try:
+                return json.loads(cached)
+            except Exception:
+                pass
+
+        allowed = await self._allowed_podcast_names()
+        cutoff = self._recency_cutoff_ms()
+        scoping_active = allowed is not None or cutoff is not None
+        # Over-fetch when scoping is active so we still hit limit after filtering
+        fetch_limit = max((limit + offset) * 5, 100) if scoping_active else (limit + offset)
+
+        try:
+            dicts = await asyncio.to_thread(
+                self.firestore_service.query_collection,
+                "episodes",
+                [("sector_exposure_ids", "array-contains", exposure_id)],
+                None,       # no Firestore-side ordering — sort in Python to avoid composite index
+                None,
+                fetch_limit,
+            )
+        except Exception as e:
+            raise Exception(f"Failed to query episodes by sector: {e}") from e
+
+        # Sort by publish time descending in Python
+        dicts.sort(key=lambda d: self._dict_release_ms(d), reverse=True)
+
+        # Build Episode objects and apply release scope + content guard.
+        # enrich_content=False keeps this a lean list view (no transcript/summary
+        # GCS hydration) — same as get_episodes_by_tag, so the sector page payload
+        # stays small and the page renders fast.
+        episodes_raw = await asyncio.gather(
+            *[self.transformer.to_episode(d, enrich_content=False) for d in dicts]
+        )
+        episodes = self._scope_episodes(list(episodes_raw), allowed, cutoff)
+
+        # --- Derive metadata from ALL matched episodes (pre-scope) ---
+        # Use episodes_raw, not the scoped list, so the friendly display_name and
+        # representative tickers still render when every matched episode is filtered
+        # out by the release scope (otherwise the page would show the raw exposure_id
+        # as its title with no tickers).
+        display_name = exposure_id
+        exposure_type = "sector"
+        seen_tickers: dict[str, dict] = {}  # ticker -> first-seen entry
+        exposure_counts: dict[str, int] = {}  # display_name -> count, for majority vote
+
+        for ep in episodes_raw:
+            for entry in ep.sector_exposures:
+                if entry.get("exposure_id") != exposure_id:
+                    continue
+                dn = entry.get("display_name") or exposure_id
+                exposure_counts[dn] = exposure_counts.get(dn, 0) + 1
+                et = entry.get("exposure_type") or "sector"
+                # Use the type from the most-frequent display_name entry (updated below)
+                # For now capture the first one seen; we overwrite with majority below
+                for rt in entry.get("resolved_tickers") or []:
+                    ticker = rt.get("ticker") or ""
+                    if ticker and ticker not in seen_tickers:
+                        seen_tickers[ticker] = {
+                            "ticker": ticker,
+                            "name": rt.get("name") or "",
+                            "name_en": rt.get("name_en"),
+                            "market": rt.get("market") or "",
+                            "source": rt.get("source") or "",
+                        }
+                # Track exposure_type alongside display_name for the winner
+                # Store as tuple (display_name, exposure_type) frequency
+                key = (dn, et)
+                exposure_counts[key] = exposure_counts.get(key, 0) + 1  # type: ignore[assignment]
+
+        # Pick display_name/exposure_type from most-frequent (dn, et) pair
+        best_key = max(
+            [(k, v) for k, v in exposure_counts.items() if isinstance(k, tuple)],
+            key=lambda x: x[1],
+            default=(None, 0),
+        )[0]
+        if best_key:
+            display_name, exposure_type = best_key
+
+        resolved_tickers = list(seen_tickers.values())[:12]
+
+        paged = episodes[offset:offset + limit]
+        result = {
+            "exposure_id": exposure_id,
+            "display_name": display_name,
+            "exposure_type": exposure_type,
+            "resolved_tickers": resolved_tickers,
+            "episodes": [ep.dict() for ep in paged],
+            "total": len(episodes),
+        }
+
+        try:
+            await cache_set(cache_key, json.dumps(result), CACHE_TTL["podcast_episodes"])
+        except Exception:
+            pass
+
+        return result
+
+    # ── Sector board constants ────────────────────────────────────────
+    _BOARD_W_PRICE: float = 0.5
+    _BOARD_W_MENTION: float = 0.5
+    # Episode fields the board / sectors scans actually read — projected via
+    # stream_documents_projected so the ~2700-doc scan skips transcript/summary
+    # refs etc. Covers the tally + scoping (_dict_release_ms, allowlist, retracted).
+    _SECTOR_SCAN_FIELDS = [
+        "sector_exposures", "podcast_name", "retracted_at",
+        "released_at_ms", "spotify_release_date", "created_time",
+    ]
+
+    async def sector_member_tickers(self) -> list[str]:
+        """Union of every sector/theme basket ticker across scoped episodes (no prices).
+
+        The daily-close refresher uses this so price diffs are warm for ALL board
+        constituents, not just individually-trending tickers. Scan-based + cached,
+        mirroring list_sectors' scoping (retracted / allowlist / recency).
+        """
+        cache_key = f"sectors:tickers:v1:{self._scope_tag()}"
+        cached = await cache_get(cache_key)
+        if cached:
+            try:
+                return json.loads(cached)
+            except Exception:
+                pass
+        allowed = await self._allowed_podcast_names()
+        cutoff = self._recency_cutoff_ms()
+        try:
+            docs = await asyncio.to_thread(
+                self.firestore_service.stream_documents_projected, "episodes", self._SECTOR_SCAN_FIELDS,
+            )
+        except Exception as e:
+            logger.warning("sector_member_tickers scan failed: %s", e)
+            return []
+        seen: set = set()
+        out: list[str] = []
+        for doc in docs:
+            if doc.get("retracted_at"):
+                continue
+            if allowed is not None and doc.get("podcast_name") not in allowed:
+                continue
+            if cutoff is not None and self._dict_release_ms(doc) < cutoff:
+                continue
+            for entry in doc.get("sector_exposures") or []:
+                for rt in entry.get("resolved_tickers") or []:
+                    t = str(rt.get("ticker") or "").strip().upper()
+                    if t and t not in seen:
+                        seen.add(t)
+                        out.append(t)
+        try:
+            await cache_set(cache_key, json.dumps(out), CACHE_TTL["podcast_episodes"])
+        except Exception:
+            pass
+        return out
+
+    async def sector_board(self) -> list[dict]:
+        """Return a ranked 'hot sectors' board with price performance.
+
+        Each sector entry includes its constituent tickers' daily % change,
+        an avg_change aggregate, and a blended hotness score (0..1) that
+        weights price performance equally with episode-mention frequency.
+
+        Applies the same release scoping as list_sectors (retracted_at,
+        allowlist, recency cutoff).  Prices are fetched from the local
+        stock_daily_closes table via get_eod_change_pct — no external API
+        calls per request.
+
+        Serving path: returns the warm Redis entry kept fresh by
+        run_periodic_board_refresh (refresh-ahead), and only falls back to a
+        recompute on a cold cache. Cache TTL matches podcast_episodes (10 min).
+        """
+        cache_key = f"sectors:board:v2:{self._scope_tag()}"
+        cached = await cache_get(cache_key)
+        if cached:
+            try:
+                return json.loads(cached)
+            except Exception:
+                pass
+
+        result = await self._compute_sector_board()
+        await self._cache_sector_board(result)
+        return result
+
+    async def warm_sector_board(self) -> list[dict]:
+        """Force-recompute the board and overwrite the cache, ignoring any existing
+        entry. Called by run_periodic_board_refresh so the serving cache is rewritten
+        before its TTL expires (refresh-ahead) — the request path then always hits warm.
+        """
+        result = await self._compute_sector_board()
+        await self._cache_sector_board(result)
+        return result
+
+    async def _cache_sector_board(self, result: list[dict]) -> None:
+        """Write the board payload to the scope-keyed Redis entry (10-min TTL)."""
+        cache_key = f"sectors:board:v2:{self._scope_tag()}"
+        try:
+            await cache_set(cache_key, json.dumps(result), CACHE_TTL["podcast_episodes"])
+        except Exception:
+            pass
+
+    async def _compute_sector_board(self) -> list[dict]:
+        """Scan + aggregate + price-join the board (no cache read/write).
+
+        Heavy path, kept off the request path by warm_sector_board: a projected
+        episode scan (stream_documents_projected — only _SECTOR_SCAN_FIELDS, not
+        full docs) tallies per-exposure episode_count / display meta / member
+        tickers, then joins warm EOD prices + close series from Postgres. The
+        returned list is sorted by hotness DESC.
+        """
+        allowed = await self._allowed_podcast_names()
+        cutoff = self._recency_cutoff_ms()
+
+        try:
+            docs = await asyncio.to_thread(
+                self.firestore_service.stream_documents_projected,
+                "episodes",
+                self._SECTOR_SCAN_FIELDS,
+            )
+        except Exception as e:
+            raise Exception(f"Failed to scan episodes for sector board: {e}") from e
+
+        # Tally per sector: episode count, first-seen meta, union of tickers (cap 12)
+        counts: dict[str, int] = {}
+        meta: dict[str, dict] = {}       # exposure_id -> {display_name, exposure_type}
+        ticker_map: dict[str, dict[str, str]] = {}  # exposure_id -> {ticker: first-seen name}
+
+        for doc in docs:
+            if doc.get("retracted_at"):
+                continue
+            if allowed is not None and doc.get("podcast_name") not in allowed:
+                continue
+            if cutoff is not None and self._dict_release_ms(doc) < cutoff:
+                continue
+            for entry in doc.get("sector_exposures") or []:
+                eid = entry.get("exposure_id") or ""
+                if not eid:
+                    continue
+                counts[eid] = counts.get(eid, 0) + 1
+                if eid not in meta:
+                    meta[eid] = {
+                        "display_name": entry.get("display_name") or eid,
+                        "exposure_type": entry.get("exposure_type") or "sector",
+                    }
+                sector_tickers = ticker_map.setdefault(eid, {})
+                for rt in entry.get("resolved_tickers") or []:
+                    ticker = (rt.get("ticker") or "").strip()
+                    if ticker and ticker not in sector_tickers and len(sector_tickers) < 12:
+                        sector_tickers[ticker] = rt.get("name") or ""
+
+        if not counts:
+            return []
+
+        # Gather all unique tickers and fetch EOD change% concurrently
+        from src.services.stock_close_refresh import get_eod_change_pct
+        from src.database.models import StockDailyClose
+
+        all_tickers: list[str] = list({
+            t for tickers in ticker_map.values() for t in tickers
+        })
+        pcts = await asyncio.gather(*[get_eod_change_pct(t) for t in all_tickers])
+        ticker_pct: dict[str, Optional[float]] = dict(zip(all_tickers, pcts))
+
+        # Batch-read daily closes for sparkline series (last 12 per ticker)
+        _SERIES_LIMIT = 12
+        _CHUNK_SIZE = 200
+
+        def _batch_read_closes(tickers: list[str]) -> dict[str, list[float]]:
+            """Sync: query StockDailyClose for all tickers, return ordered close lists."""
+            result_map: dict[str, list[float]] = {}
+            for session in get_session():
+                try:
+                    for chunk_start in range(0, len(tickers), _CHUNK_SIZE):
+                        chunk = tickers[chunk_start: chunk_start + _CHUNK_SIZE]
+                        rows = (
+                            session.query(
+                                StockDailyClose.ticker,
+                                StockDailyClose.date,
+                                StockDailyClose.close,
+                            )
+                            .filter(StockDailyClose.ticker.in_(chunk))
+                            .order_by(StockDailyClose.ticker.asc(), StockDailyClose.date.asc())
+                            .all()
+                        )
+                        for ticker, _date, close in rows:
+                            result_map.setdefault(ticker, []).append(close)
+                except Exception as exc:
+                    logger.debug(f"sector_board: close series read failed: {exc}")
+                break
+            # Trim to last _SERIES_LIMIT points
+            return {t: closes[-_SERIES_LIMIT:] for t, closes in result_map.items()}
+
+        ticker_series: dict[str, list[float]] = {}
+        if all_tickers:
+            ticker_series = await asyncio.to_thread(_batch_read_closes, all_tickers)
+
+        # Build per-sector members + avg_change
+        sectors_raw: list[dict] = []
+        for eid, count in counts.items():
+            members_unsorted: list[dict] = []
+            for ticker, name in ticker_map.get(eid, {}).items():
+                closes = ticker_series.get(ticker, [])
+                members_unsorted.append({
+                    "ticker": ticker,
+                    "name": name,
+                    "change_percent": ticker_pct.get(ticker),
+                    "series": closes if len(closes) >= 2 else [],
+                })
+            # Sort members: non-None change_percent DESC, then None last
+            members = sorted(
+                members_unsorted,
+                key=lambda m: (m["change_percent"] is None, -(m["change_percent"] or 0.0)),
+            )
+
+            non_null = [m["change_percent"] for m in members if m["change_percent"] is not None]
+            avg_change: Optional[float] = (sum(non_null) / len(non_null)) if non_null else None
+
+            # Compute sector series: element-wise mean of rebased member series.
+            # Rebase each member's closes to 100 at first point, then align to the
+            # shortest length by taking the trailing K points, then average across members.
+            member_rebased: list[list[float]] = []
+            for m in members:
+                s = m["series"]
+                if len(s) >= 2:
+                    base = s[0]
+                    if base:
+                        member_rebased.append([v / base * 100.0 for v in s])
+            if member_rebased:
+                min_len = min(len(r) for r in member_rebased)
+                aligned = [r[-min_len:] for r in member_rebased]
+                sector_series: list[float] = [
+                    sum(col) / len(col) for col in zip(*aligned)
+                ]
+            else:
+                sector_series = []
+
+            sectors_raw.append({
+                "exposure_id": eid,
+                "display_name": meta[eid]["display_name"],
+                "exposure_type": meta[eid]["exposure_type"],
+                "episode_count": count,
+                "avg_change": avg_change,
+                "members": members,
+                "series": sector_series,
+            })
+
+        # Min-max normalise avg_change and episode_count to 0..1, blend into hotness
+        all_avgs = [s["avg_change"] for s in sectors_raw]
+        all_counts = [s["episode_count"] for s in sectors_raw]
+
+        min_avg = min((v for v in all_avgs if v is not None), default=0.0)
+        max_avg = max((v for v in all_avgs if v is not None), default=0.0)
+        min_cnt = min(all_counts)
+        max_cnt = max(all_counts)
+
+        def _norm_avg(v: Optional[float]) -> float:
+            if v is None:
+                return 0.0
+            span = max_avg - min_avg
+            if span == 0:
+                return 0.5
+            return (v - min_avg) / span
+
+        def _norm_cnt(v: int) -> float:
+            span = max_cnt - min_cnt
+            if span == 0:
+                return 0.5
+            return (v - min_cnt) / span
+
+        result: list[dict] = []
+        for s in sectors_raw:
+            hotness = (
+                self._BOARD_W_PRICE * _norm_avg(s["avg_change"])
+                + self._BOARD_W_MENTION * _norm_cnt(s["episode_count"])
+            )
+            result.append({**s, "hotness": hotness})
+
+        result.sort(key=lambda x: x["hotness"], reverse=True)
+        return result
+
+    async def list_sectors(self) -> list[dict]:
+        """Return all sector/theme exposures that appear in at least one episode, with counts.
+
+        Scans every episode document in Firestore and tallies exposure_id occurrences
+        across each doc's sector_exposures list, applying the same release scoping as
+        get_episodes_by_sector (retracted, allowlist, recency cutoff).
+
+        NOTE: this is a full-collection scan on cache miss.  A maintained counter doc
+        (e.g. Firestore aggregation or pipeline-written summary) could eliminate the
+        scan later — defer until traffic warrants it.
+
+        Returns list of dicts sorted by count DESC then exposure_id ASC.
+        """
+        cache_key = f"sectors:list:v1:{self._scope_tag()}"
+        cached = await cache_get(cache_key)
+        if cached:
+            try:
+                return json.loads(cached)
+            except Exception:
+                pass
+
+        allowed = await self._allowed_podcast_names()
+        cutoff = self._recency_cutoff_ms()
+
+        try:
+            docs = await asyncio.to_thread(
+                self.firestore_service.stream_documents_projected,
+                "episodes",
+                self._SECTOR_SCAN_FIELDS,
+            )
+        except Exception as e:
+            raise Exception(f"Failed to scan episodes for sectors: {e}") from e
+
+        # Tally exposures across scoped episodes
+        counts: dict[str, int] = {}
+        meta: dict[str, dict] = {}  # exposure_id -> first-seen {display_name, exposure_type}
+
+        for doc in docs:
+            if doc.get("retracted_at"):
+                continue
+            if allowed is not None and doc.get("podcast_name") not in allowed:
+                continue
+            if cutoff is not None and self._dict_release_ms(doc) < cutoff:
+                continue
+            for entry in doc.get("sector_exposures") or []:
+                eid = entry.get("exposure_id") or ""
+                if not eid:
+                    continue
+                counts[eid] = counts.get(eid, 0) + 1
+                if eid not in meta:
+                    meta[eid] = {
+                        "display_name": entry.get("display_name") or eid,
+                        "exposure_type": entry.get("exposure_type") or "sector",
+                    }
+
+        result = sorted(
+            [
+                {
+                    "exposure_id": eid,
+                    "display_name": meta[eid]["display_name"],
+                    "exposure_type": meta[eid]["exposure_type"],
+                    "count": cnt,
+                }
+                for eid, cnt in counts.items()
+            ],
+            key=lambda x: (-x["count"], x["exposure_id"]),
+        )
+
+        try:
+            await cache_set(cache_key, json.dumps(result), 1800)
+        except Exception:
+            pass
+
+        return result
+
     async def get_trending_tags(self, weeks: int = 6, preview_count: int = 3) -> List[dict]:
         """Return curated tags with scoped counts, weekly sparkline data, and episode previews.
         Results are cached for 30 minutes. Tags with 0 scoped episodes are omitted."""
@@ -1034,6 +1501,45 @@ class PodcastService:
             logger.error(f"Failed to patch episode fields: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to patch episode: {str(e)}")
 
+    async def get_episode_admin(
+        self,
+        episode_id: str,
+        content_fields: Optional[Collection[str]] = EPISODE_DETAIL_CONTENT_FIELDS,
+    ) -> Optional[Episode]:
+        """Fetch an episode for admin tooling — no release-scope filtering.
+
+        The public getters drop episodes outside the launch scope (language /
+        recency); admin must see every episode, so this reads Firestore directly.
+        """
+        episode_dict = self.firestore_service.get_document("episodes", episode_id)
+        if not episode_dict:
+            return None
+        return await self.transformer.to_episode(episode_dict, content_fields=content_fields)
+
+    async def set_social_thread(self, episode_id: str, thread: dict) -> Episode:
+        """Persist the human-tone Threads copy (post + comments) + bust caches."""
+        from fastapi import HTTPException
+        episode_dict = self.firestore_service.get_document("episodes", episode_id)
+        if not episode_dict:
+            raise HTTPException(status_code=404, detail=f"Episode {episode_id} not found")
+        podcast_name = episode_dict.get("podcast_name", "")
+        try:
+            await asyncio.to_thread(
+                self.firestore_service.set_document,
+                "episodes", episode_id, {"social_thread": thread}, True,
+            )
+            await self._invalidate_episode_cache(podcast_name, episode_id)
+            await self._purge_api_host_cdn()
+            episode = await self.get_episode_admin(episode_id)
+            if not episode:
+                raise HTTPException(status_code=404, detail=f"Episode {episode_id} not found")
+            return episode
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Failed to set social_thread for {episode_id}: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to save social thread: {str(e)}")
+
     async def _invalidate_episode_cache(self, podcast_name: str, episode_id: str):
         """Invalidate all caches related to an episode"""
         await cache_delete(f"podcast:{podcast_name}:episode:{episode_id}")
@@ -1109,3 +1615,20 @@ async def poll_regeneration_status(podcast_name: str, episode_id: str):
                 await asyncio.sleep(5)
 
     logger.warning(f"Regeneration polling timed out for {podcast_name}/{episode_id}")
+
+
+async def run_periodic_board_refresh(interval_seconds: float = 300.0) -> None:
+    """Refresh-ahead loop for the /topics sector board.
+
+    Recomputes the board for the active release scope and overwrites its Redis
+    entry every ``interval_seconds`` (default 5 min) — comfortably inside the
+    10-min cache TTL, so the serving path always finds a warm entry and a user
+    never pays the cold full-scan. Runs immediately on start, then loops. Never
+    raises (mirrors stock_close_refresh.run_periodic_refresh).
+    """
+    while True:
+        try:
+            await PodcastService().warm_sector_board()
+        except Exception as e:
+            logger.warning(f"sector-board refresh cycle failed: {e}")
+        await asyncio.sleep(interval_seconds)

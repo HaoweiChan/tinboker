@@ -1,0 +1,1802 @@
+{
+  "version": 1,
+  "max_tickers": 12,
+  "_comment": "Compiled runtime artifact for deterministic podcast sector/theme exposure extraction. Runtime code must read this file only; external sources such as FinMind, ETF issuer CSVs, and Tavily belong to maintenance jobs.",
+  "exposures": [
+    {
+      "exposure_id": "sector_semiconductor",
+      "exposure_type": "sector",
+      "sector_id": "semiconductor",
+      "theme_id": null,
+      "display_name": "半導體",
+      "aliases": [
+        "半導體",
+        "晶片",
+        "晶圓代工",
+        "護國神山",
+        "semiconductor",
+        "semiconductors",
+        "semiconductor foundry",
+        "chip stocks"
+      ],
+      "members": [
+        {
+          "ticker": "2330",
+          "name": "台積電",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1,
+          "market_cap_rank": 1
+        },
+        {
+          "ticker": "NVDA",
+          "name": "輝達",
+          "market": "US",
+          "source": "issuer_etf",
+          "rank": 2,
+          "market_cap_rank": 1
+        },
+        {
+          "ticker": "AVGO",
+          "name": "博通",
+          "market": "US",
+          "source": "issuer_etf",
+          "rank": 3,
+          "market_cap_rank": 2
+        },
+        {
+          "ticker": "TSM",
+          "name": "台積電 (ADR)",
+          "market": "US",
+          "source": "issuer_etf",
+          "rank": 4,
+          "market_cap_rank": 3
+        },
+        {
+          "ticker": "2454",
+          "name": "聯發科",
+          "market": "TW",
+          "source": "curated",
+          "rank": 5,
+          "market_cap_rank": 2
+        },
+        {
+          "ticker": "AMD",
+          "name": "超微",
+          "market": "US",
+          "source": "issuer_etf",
+          "rank": 6,
+          "market_cap_rank": 4
+        },
+        {
+          "ticker": "QCOM",
+          "name": "高通",
+          "market": "US",
+          "source": "issuer_etf",
+          "rank": 7,
+          "market_cap_rank": 5
+        },
+        {
+          "ticker": "MRVL",
+          "name": "邁威爾",
+          "market": "US",
+          "source": "issuer_etf",
+          "rank": 8,
+          "market_cap_rank": 6
+        },
+        {
+          "ticker": "INTC",
+          "name": "英特爾",
+          "market": "US",
+          "source": "issuer_etf",
+          "rank": 9,
+          "market_cap_rank": 7
+        },
+        {
+          "ticker": "4919",
+          "name": "新唐",
+          "market": "TW",
+          "source": "finmind",
+          "rank": 10,
+          "market_cap_rank": 6
+        },
+        {
+          "ticker": "5274",
+          "name": "信驊",
+          "market": "TW",
+          "source": "finmind",
+          "rank": 11,
+          "market_cap_rank": 7
+        },
+        {
+          "ticker": "2337",
+          "name": "旺宏",
+          "market": "TW",
+          "source": "finmind",
+          "rank": 12,
+          "market_cap_rank": 8
+        },
+        {
+          "ticker": "2303",
+          "name": "聯電",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2,
+          "market_cap_rank": 3
+        }
+      ]
+    },
+    {
+      "exposure_id": "sector_passive_components",
+      "exposure_type": "sector",
+      "sector_id": "passive_components",
+      "theme_id": null,
+      "display_name": "被動元件",
+      "aliases": [
+        "被動元件",
+        "passive component",
+        "passive components",
+        "mlcc"
+      ],
+      "members": [
+        {
+          "ticker": "2327",
+          "name": "國巨",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1,
+          "market_cap_rank": 1
+        },
+        {
+          "ticker": "VSH",
+          "name": "威世",
+          "market": "US",
+          "source": "issuer_etf",
+          "rank": 2,
+          "market_cap_rank": 1
+        },
+        {
+          "ticker": "2492",
+          "name": "華新科",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 3
+        },
+        {
+          "ticker": "3026",
+          "name": "禾伸堂",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 4
+        },
+        {
+          "ticker": "3357",
+          "name": "臺慶科",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 5
+        },
+        {
+          "ticker": "6173",
+          "name": "信昌電",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 6
+        },
+        {
+          "ticker": "3624",
+          "name": "光頡",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 7
+        },
+        {
+          "ticker": "6862",
+          "name": "三集瑞-KY",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 8
+        },
+        {
+          "ticker": "2375",
+          "name": "凱美",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 9
+        },
+        {
+          "ticker": "2472",
+          "name": "立隆電",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 10
+        }
+      ]
+    },
+    {
+      "exposure_id": "sector_shipping",
+      "exposure_type": "sector",
+      "sector_id": "shipping",
+      "theme_id": null,
+      "display_name": "航運",
+      "aliases": [
+        "航運",
+        "貨櫃航運",
+        "shipping",
+        "container shipping",
+        "marine shipping"
+      ],
+      "members": [
+        {
+          "ticker": "2603",
+          "name": "長榮",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1,
+          "market_cap_rank": 1
+        },
+        {
+          "ticker": "2609",
+          "name": "陽明",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2,
+          "market_cap_rank": 2
+        },
+        {
+          "ticker": "2615",
+          "name": "萬海",
+          "market": "TW",
+          "source": "curated",
+          "rank": 3,
+          "market_cap_rank": 3
+        },
+        {
+          "ticker": "2606",
+          "name": "裕民",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 4
+        },
+        {
+          "ticker": "2605",
+          "name": "新興",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 5
+        },
+        {
+          "ticker": "2601",
+          "name": "益航",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 6
+        },
+        {
+          "ticker": "2612",
+          "name": "中航",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 7
+        },
+        {
+          "ticker": "2617",
+          "name": "台航",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 8
+        },
+        {
+          "ticker": "2637",
+          "name": "慧洋-KY",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 9
+        },
+        {
+          "ticker": "5608",
+          "name": "四維航",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 10
+        },
+        {
+          "ticker": "2641",
+          "name": "正德",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 11
+        }
+      ]
+    },
+    {
+      "exposure_id": "theme_ai_server",
+      "exposure_type": "theme",
+      "sector_id": null,
+      "theme_id": "ai_server",
+      "display_name": "AI 伺服器",
+      "aliases": [
+        "AI 伺服器",
+        "AI server",
+        "AI servers",
+        "ai server supply chain",
+        "AI 供應鏈"
+      ],
+      "members": [
+        {
+          "ticker": "2382",
+          "name": "廣達",
+          "name_en": "Quanta",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1
+        },
+        {
+          "ticker": "6669",
+          "name": "緯穎",
+          "name_en": "Wiwynn",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2
+        },
+        {
+          "ticker": "NVDA",
+          "name": "輝達",
+          "name_en": "NVIDIA",
+          "market": "US",
+          "source": "curated",
+          "rank": 3
+        },
+        {
+          "ticker": "SMCI",
+          "name": "Supermicro",
+          "name_en": "Super Micro Computer",
+          "market": "US",
+          "source": "curated",
+          "rank": 4
+        },
+        {
+          "ticker": "3231",
+          "name": "緯創",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 5
+        },
+        {
+          "ticker": "2317",
+          "name": "鴻海",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 6
+        },
+        {
+          "ticker": "2356",
+          "name": "英業達",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 7
+        },
+        {
+          "ticker": "2376",
+          "name": "技嘉",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 8
+        },
+        {
+          "ticker": "3017",
+          "name": "奇鋐",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 9
+        },
+        {
+          "ticker": "3324",
+          "name": "雙鴻",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 10
+        },
+        {
+          "ticker": "2308",
+          "name": "台達電",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 11
+        },
+        {
+          "ticker": "3706",
+          "name": "神達",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 12
+        }
+      ]
+    },
+    {
+      "exposure_id": "theme_liquid_cooling",
+      "exposure_type": "theme",
+      "sector_id": null,
+      "theme_id": "liquid_cooling",
+      "display_name": "液冷",
+      "aliases": [
+        "液冷",
+        "水冷",
+        "liquid cooling",
+        "direct liquid cooling"
+      ],
+      "members": [
+        {
+          "ticker": "3017",
+          "name": "奇鋐",
+          "name_en": "AVC",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1
+        },
+        {
+          "ticker": "3324",
+          "name": "雙鴻",
+          "name_en": "Auras",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2
+        },
+        {
+          "ticker": "3653",
+          "name": "健策",
+          "name_en": "Jentech",
+          "market": "TW",
+          "source": "curated",
+          "rank": 3
+        },
+        {
+          "ticker": "2308",
+          "name": "台達電",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 4
+        },
+        {
+          "ticker": "6125",
+          "name": "廣運",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 5
+        },
+        {
+          "ticker": "3483",
+          "name": "力致",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 6
+        },
+        {
+          "ticker": "2421",
+          "name": "建準",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 7
+        },
+        {
+          "ticker": "6230",
+          "name": "尼得科超眾",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 8
+        },
+        {
+          "ticker": "8996",
+          "name": "高力",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 9
+        }
+      ]
+    },
+    {
+      "exposure_id": "theme_silicon_photonics",
+      "exposure_type": "theme",
+      "sector_id": null,
+      "theme_id": "silicon_photonics",
+      "display_name": "矽光子",
+      "aliases": [
+        "矽光子",
+        "光通訊",
+        "silicon photonics",
+        "optical interconnect",
+        "co-packaged optics"
+      ],
+      "members": [
+        {
+          "ticker": "3081",
+          "name": "聯亞",
+          "name_en": "LandMark Optoelectronics",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1
+        },
+        {
+          "ticker": "3450",
+          "name": "聯鈞",
+          "name_en": "ELaser",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2
+        },
+        {
+          "ticker": "AOI",
+          "name": "應用光電",
+          "name_en": "Applied Optoelectronics",
+          "market": "US",
+          "source": "curated",
+          "rank": 3
+        },
+        {
+          "ticker": "LITE",
+          "name": "Lumentum",
+          "name_en": "Lumentum Holdings",
+          "market": "US",
+          "source": "curated",
+          "rank": 4
+        },
+        {
+          "ticker": "COHR",
+          "name": "高意",
+          "name_en": "Coherent",
+          "market": "US",
+          "source": "curated",
+          "rank": 5
+        },
+        {
+          "ticker": "3363",
+          "name": "上詮",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 6
+        },
+        {
+          "ticker": "6442",
+          "name": "光聖",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 7
+        },
+        {
+          "ticker": "4979",
+          "name": "華星光",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 8
+        },
+        {
+          "ticker": "3163",
+          "name": "波若威",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 9
+        },
+        {
+          "ticker": "4977",
+          "name": "眾達-KY",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 10
+        },
+        {
+          "ticker": "3234",
+          "name": "光環",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 11
+        }
+      ]
+    },
+    {
+      "exposure_id": "theme_power_semiconductor",
+      "exposure_type": "theme",
+      "sector_id": null,
+      "theme_id": "power_semiconductor",
+      "display_name": "功率半導體",
+      "aliases": [
+        "功率半導體",
+        "功率元件",
+        "功率 IC",
+        "第三代半導體",
+        "碳化矽",
+        "氮化鎵",
+        "power semiconductor",
+        "power semiconductors",
+        "silicon carbide",
+        "gallium nitride"
+      ],
+      "members": [
+        {
+          "ticker": "2342",
+          "name": "茂矽",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1,
+          "name_en": "Mosel Vitelic"
+        },
+        {
+          "ticker": "2481",
+          "name": "強茂",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2
+        },
+        {
+          "ticker": "3707",
+          "name": "漢磊科技",
+          "market": "TW",
+          "source": "curated",
+          "rank": 3,
+          "name_en": "Episil-Precision"
+        },
+        {
+          "ticker": "ON",
+          "name": "安森美",
+          "market": "US",
+          "source": "curated",
+          "rank": 4,
+          "name_en": "ON Semiconductor"
+        },
+        {
+          "ticker": "WOLF",
+          "name": "Wolfspeed",
+          "market": "US",
+          "source": "curated",
+          "rank": 5,
+          "name_en": "Wolfspeed"
+        },
+        {
+          "ticker": "5425",
+          "name": "台半",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 6
+        },
+        {
+          "ticker": "3675",
+          "name": "德微",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 7
+        },
+        {
+          "ticker": "8255",
+          "name": "朋程",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 8
+        },
+        {
+          "ticker": "6435",
+          "name": "大中",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 9
+        },
+        {
+          "ticker": "8261",
+          "name": "富鼎",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 10
+        },
+        {
+          "ticker": "5299",
+          "name": "杰力",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 11
+        },
+        {
+          "ticker": "3016",
+          "name": "嘉晶",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 12
+        }
+      ]
+    },
+    {
+      "exposure_id": "sector_heavy_electrical",
+      "exposure_type": "sector",
+      "sector_id": "heavy_electrical",
+      "theme_id": null,
+      "display_name": "重電",
+      "aliases": [
+        "重電",
+        "重電股",
+        "電網",
+        "電力建設",
+        "輸配電",
+        "電力設備",
+        "power grid",
+        "grid infrastructure",
+        "heavy electrical"
+      ],
+      "members": [
+        {
+          "ticker": "1519",
+          "name": "華城電機",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1,
+          "name_en": "Fortune Electric"
+        },
+        {
+          "ticker": "1503",
+          "name": "士林電機",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2,
+          "name_en": "Shihlin Electric & Engineering"
+        },
+        {
+          "ticker": "1513",
+          "name": "中興電",
+          "market": "TW",
+          "source": "curated",
+          "rank": 3,
+          "name_en": "Chung-Hsin Electric"
+        },
+        {
+          "ticker": "1514",
+          "name": "亞力電機",
+          "market": "TW",
+          "source": "curated",
+          "rank": 4,
+          "name_en": "Allis Electric"
+        },
+        {
+          "ticker": "2371",
+          "name": "大同",
+          "market": "TW",
+          "source": "curated",
+          "rank": 5,
+          "name_en": "Tatung Company"
+        },
+        {
+          "ticker": "1504",
+          "name": "東元",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 6
+        },
+        {
+          "ticker": "1529",
+          "name": "樂事綠能",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 7
+        }
+      ]
+    },
+    {
+      "exposure_id": "sector_memory",
+      "exposure_type": "sector",
+      "sector_id": "memory",
+      "theme_id": null,
+      "display_name": "記憶體",
+      "aliases": [
+        "記憶體",
+        "記憶體模組",
+        "dram",
+        "nand",
+        "nand flash",
+        "hbm",
+        "高頻寬記憶體",
+        "memory chip",
+        "memory"
+      ],
+      "members": [
+        {
+          "ticker": "2408",
+          "name": "南亞科技",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1,
+          "name_en": "Nanya Technology"
+        },
+        {
+          "ticker": "2344",
+          "name": "華邦電",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2,
+          "name_en": "Winbond Electronics"
+        },
+        {
+          "ticker": "8299",
+          "name": "群聯",
+          "market": "TW",
+          "source": "curated",
+          "rank": 3,
+          "name_en": "Phison Electronics"
+        },
+        {
+          "ticker": "3260",
+          "name": "威剛",
+          "market": "TW",
+          "source": "curated",
+          "rank": 4,
+          "name_en": "ADATA Technology"
+        },
+        {
+          "ticker": "2337",
+          "name": "旺宏",
+          "market": "TW",
+          "source": "curated",
+          "rank": 5,
+          "name_en": "Macronix International"
+        },
+        {
+          "ticker": "MU",
+          "name": "美光科技",
+          "market": "US",
+          "source": "curated",
+          "rank": 6,
+          "name_en": "Micron Technology"
+        },
+        {
+          "ticker": "3006",
+          "name": "晶豪科",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 7
+        },
+        {
+          "ticker": "5351",
+          "name": "鈺創",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 8
+        },
+        {
+          "ticker": "2451",
+          "name": "創見",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 9
+        },
+        {
+          "ticker": "8271",
+          "name": "宇瞻",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 10
+        },
+        {
+          "ticker": "4967",
+          "name": "十銓",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 11
+        }
+      ]
+    },
+    {
+      "exposure_id": "sector_pcb_substrate",
+      "exposure_type": "sector",
+      "sector_id": "pcb_substrate",
+      "theme_id": null,
+      "display_name": "PCB / 載板",
+      "aliases": [
+        "pcb",
+        "印刷電路板",
+        "abf",
+        "abf 載板",
+        "ic 載板",
+        "載板",
+        "ccl",
+        "銅箔基板",
+        "substrate"
+      ],
+      "members": [
+        {
+          "ticker": "3037",
+          "name": "欣興",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1,
+          "name_en": "Unimicron Technology"
+        },
+        {
+          "ticker": "8046",
+          "name": "南亞電路板",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2,
+          "name_en": "Nan Ya Printed Circuit Board"
+        },
+        {
+          "ticker": "3189",
+          "name": "景碩",
+          "market": "TW",
+          "source": "curated",
+          "rank": 3,
+          "name_en": "Kinsus Interconnect Technology"
+        },
+        {
+          "ticker": "2383",
+          "name": "台光電",
+          "market": "TW",
+          "source": "curated",
+          "rank": 4,
+          "name_en": "Elite Material"
+        },
+        {
+          "ticker": "2313",
+          "name": "華通",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 5
+        },
+        {
+          "ticker": "2368",
+          "name": "金像電",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 6
+        },
+        {
+          "ticker": "3044",
+          "name": "健鼎",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 7
+        },
+        {
+          "ticker": "6274",
+          "name": "台燿",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 8
+        },
+        {
+          "ticker": "2367",
+          "name": "燿華",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 9
+        },
+        {
+          "ticker": "6251",
+          "name": "定穎",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 10
+        },
+        {
+          "ticker": "8155",
+          "name": "博智",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 11
+        }
+      ]
+    },
+    {
+      "exposure_id": "sector_networking",
+      "exposure_type": "sector",
+      "sector_id": "networking",
+      "theme_id": null,
+      "display_name": "網通",
+      "aliases": [
+        "網通",
+        "網通股",
+        "網路通訊",
+        "networking",
+        "network equipment",
+        "交換器",
+        "switch",
+        "white box"
+      ],
+      "members": [
+        {
+          "ticker": "2345",
+          "name": "智邦",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1,
+          "name_en": "Accton Technology"
+        },
+        {
+          "ticker": "6285",
+          "name": "啟碁",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2,
+          "name_en": "Wistron NeWeb"
+        },
+        {
+          "ticker": "5388",
+          "name": "中磊",
+          "market": "TW",
+          "source": "curated",
+          "rank": 3,
+          "name_en": "Sercomm Corporation"
+        },
+        {
+          "ticker": "3596",
+          "name": "智易",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 4
+        },
+        {
+          "ticker": "4906",
+          "name": "正文",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 5
+        },
+        {
+          "ticker": "3704",
+          "name": "合勤控",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 6
+        },
+        {
+          "ticker": "3380",
+          "name": "明泰",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 7
+        },
+        {
+          "ticker": "2332",
+          "name": "友訊",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 8
+        },
+        {
+          "ticker": "2419",
+          "name": "仲琦",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 9
+        }
+      ]
+    },
+    {
+      "exposure_id": "theme_robotics",
+      "exposure_type": "theme",
+      "sector_id": null,
+      "theme_id": "robotics",
+      "display_name": "機器人",
+      "aliases": [
+        "機器人",
+        "人形機器人",
+        "工業機器人",
+        "工廠自動化",
+        "自動化",
+        "robot",
+        "robotics",
+        "humanoid"
+      ],
+      "members": [
+        {
+          "ticker": "2049",
+          "name": "上銀",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1,
+          "name_en": "Hiwin Technologies"
+        },
+        {
+          "ticker": "1590",
+          "name": "亞德客-KY",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2,
+          "name_en": "Airtac International Group"
+        },
+        {
+          "ticker": "2359",
+          "name": "所羅門",
+          "market": "TW",
+          "source": "curated",
+          "rank": 3,
+          "name_en": "Solomon Technology"
+        },
+        {
+          "ticker": "1536",
+          "name": "和大",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 4
+        },
+        {
+          "ticker": "1597",
+          "name": "直得",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 5
+        },
+        {
+          "ticker": "4540",
+          "name": "全球傳動",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 6
+        },
+        {
+          "ticker": "4576",
+          "name": "大銀微系統",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 7
+        },
+        {
+          "ticker": "4583",
+          "name": "台灣精銳",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 8
+        },
+        {
+          "ticker": "7750",
+          "name": "新代",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 9
+        },
+        {
+          "ticker": "8374",
+          "name": "羅昇",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 10
+        },
+        {
+          "ticker": "6188",
+          "name": "廣明",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 11
+        }
+      ]
+    },
+    {
+      "exposure_id": "sector_financials",
+      "exposure_type": "sector",
+      "sector_id": "financials",
+      "theme_id": null,
+      "display_name": "金融",
+      "aliases": [
+        "金融",
+        "金融股",
+        "金控",
+        "銀行股",
+        "壽險",
+        "financials",
+        "financial holding",
+        "banks"
+      ],
+      "members": [
+        {
+          "ticker": "2881",
+          "name": "富邦金",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1,
+          "name_en": "Fubon Financial"
+        },
+        {
+          "ticker": "2882",
+          "name": "國泰金",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2,
+          "name_en": "Cathay Financial"
+        },
+        {
+          "ticker": "2891",
+          "name": "中信金",
+          "market": "TW",
+          "source": "curated",
+          "rank": 3,
+          "name_en": "CTBC Financial"
+        },
+        {
+          "ticker": "2886",
+          "name": "兆豐金",
+          "market": "TW",
+          "source": "curated",
+          "rank": 4,
+          "name_en": "Mega Financial"
+        },
+        {
+          "ticker": "2884",
+          "name": "玉山金",
+          "market": "TW",
+          "source": "curated",
+          "rank": 5,
+          "name_en": "E.SUN Financial Holding"
+        },
+        {
+          "ticker": "2885",
+          "name": "元大金",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 6
+        },
+        {
+          "ticker": "2892",
+          "name": "第一金",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 7
+        },
+        {
+          "ticker": "2880",
+          "name": "華南金",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 8
+        },
+        {
+          "ticker": "5880",
+          "name": "合庫金",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 9
+        },
+        {
+          "ticker": "2883",
+          "name": "凱基金",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 10
+        },
+        {
+          "ticker": "2890",
+          "name": "永豐金",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 11
+        },
+        {
+          "ticker": "2889",
+          "name": "國票金",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 12
+        }
+      ]
+    },
+    {
+      "exposure_id": "sector_semiconductor_equipment",
+      "exposure_type": "sector",
+      "sector_id": "semiconductor_equipment",
+      "theme_id": null,
+      "display_name": "半導體設備",
+      "aliases": [
+        "半導體設備",
+        "設備股",
+        "晶圓設備",
+        "semiconductor equipment",
+        "fab equipment",
+        "wafer fab equipment"
+      ],
+      "members": [
+        {
+          "ticker": "3131",
+          "name": "弘塑",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1
+        },
+        {
+          "ticker": "3583",
+          "name": "辛耘",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2
+        },
+        {
+          "ticker": "6187",
+          "name": "萬潤",
+          "market": "TW",
+          "source": "curated",
+          "rank": 3
+        },
+        {
+          "ticker": "6196",
+          "name": "帆宣",
+          "market": "TW",
+          "source": "curated",
+          "rank": 4,
+          "name_en": "Marketech International"
+        },
+        {
+          "ticker": "3413",
+          "name": "京鼎",
+          "market": "TW",
+          "source": "curated",
+          "rank": 5
+        },
+        {
+          "ticker": "2404",
+          "name": "漢唐",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 6
+        },
+        {
+          "ticker": "3680",
+          "name": "家登",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 7
+        },
+        {
+          "ticker": "1560",
+          "name": "中砂",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 8
+        },
+        {
+          "ticker": "2360",
+          "name": "致茂",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 9
+        },
+        {
+          "ticker": "3455",
+          "name": "由田",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 10
+        },
+        {
+          "ticker": "8091",
+          "name": "翔名",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 11
+        },
+        {
+          "ticker": "6691",
+          "name": "洋基工程",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 12
+        }
+      ]
+    },
+    {
+      "exposure_id": "theme_silicon_ip",
+      "exposure_type": "theme",
+      "sector_id": null,
+      "theme_id": "silicon_ip",
+      "display_name": "矽智財",
+      "aliases": [
+        "矽智財",
+        "矽智財股",
+        "silicon ip",
+        "semiconductor ip",
+        "設計服務",
+        "design service"
+      ],
+      "members": [
+        {
+          "ticker": "3443",
+          "name": "創意",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1,
+          "name_en": "Global Unichip"
+        },
+        {
+          "ticker": "3035",
+          "name": "智原",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2,
+          "name_en": "Faraday Technology"
+        },
+        {
+          "ticker": "3529",
+          "name": "力旺",
+          "market": "TW",
+          "source": "curated",
+          "rank": 3,
+          "name_en": "eMemory Technology"
+        },
+        {
+          "ticker": "6643",
+          "name": "M31",
+          "market": "TW",
+          "source": "curated",
+          "rank": 4,
+          "name_en": "M31 Technology"
+        },
+        {
+          "ticker": "3661",
+          "name": "世芯-KY",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 5
+        },
+        {
+          "ticker": "6533",
+          "name": "晶心科",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 6
+        },
+        {
+          "ticker": "6531",
+          "name": "愛普",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 7
+        }
+      ]
+    },
+    {
+      "exposure_id": "theme_advanced_packaging",
+      "exposure_type": "theme",
+      "sector_id": null,
+      "theme_id": "advanced_packaging",
+      "display_name": "先進封裝",
+      "aliases": [
+        "先進封裝",
+        "cowos",
+        "封測",
+        "封裝測試",
+        "advanced packaging",
+        "chip packaging"
+      ],
+      "members": [
+        {
+          "ticker": "3711",
+          "name": "日月光投控",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1,
+          "name_en": "ASE Technology"
+        },
+        {
+          "ticker": "2449",
+          "name": "京元電子",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2,
+          "name_en": "King Yuan Electronics"
+        },
+        {
+          "ticker": "3374",
+          "name": "精材",
+          "market": "TW",
+          "source": "curated",
+          "rank": 3
+        },
+        {
+          "ticker": "6239",
+          "name": "力成",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 4
+        },
+        {
+          "ticker": "6510",
+          "name": "精測",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 5
+        },
+        {
+          "ticker": "6223",
+          "name": "旺矽",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 6
+        },
+        {
+          "ticker": "6515",
+          "name": "穎崴",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 7
+        },
+        {
+          "ticker": "6451",
+          "name": "訊芯-KY",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 8
+        },
+        {
+          "ticker": "8150",
+          "name": "南茂",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 9
+        },
+        {
+          "ticker": "6257",
+          "name": "矽格",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 10
+        },
+        {
+          "ticker": "6271",
+          "name": "同欣電",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 11
+        },
+        {
+          "ticker": "6147",
+          "name": "頎邦",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 12
+        }
+      ]
+    },
+    {
+      "exposure_id": "sector_biotech",
+      "exposure_type": "sector",
+      "sector_id": "biotech",
+      "theme_id": null,
+      "display_name": "生技",
+      "aliases": [
+        "生技",
+        "生技股",
+        "生醫",
+        "製藥",
+        "新藥",
+        "biotech",
+        "pharmaceutical",
+        "biotechnology"
+      ],
+      "members": [
+        {
+          "ticker": "6446",
+          "name": "藥華藥",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1,
+          "name_en": "PharmaEssentia"
+        },
+        {
+          "ticker": "1795",
+          "name": "美時",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2
+        },
+        {
+          "ticker": "8436",
+          "name": "大江生醫",
+          "market": "TW",
+          "source": "curated",
+          "rank": 3
+        }
+      ]
+    },
+    {
+      "exposure_id": "sector_bicycle",
+      "exposure_type": "sector",
+      "sector_id": "bicycle",
+      "theme_id": null,
+      "display_name": "自行車",
+      "aliases": [
+        "自行車",
+        "單車",
+        "腳踏車",
+        "電動自行車",
+        "bicycle",
+        "e-bike"
+      ],
+      "members": [
+        {
+          "ticker": "9921",
+          "name": "巨大",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1,
+          "name_en": "Giant Manufacturing"
+        },
+        {
+          "ticker": "9914",
+          "name": "美利達",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2,
+          "name_en": "Merida Industry"
+        }
+      ]
+    },
+    {
+      "exposure_id": "sector_steel",
+      "exposure_type": "sector",
+      "sector_id": "steel",
+      "theme_id": null,
+      "display_name": "鋼鐵",
+      "aliases": [
+        "鋼鐵",
+        "鋼鐵股",
+        "鋼價",
+        "不鏽鋼",
+        "steel"
+      ],
+      "members": [
+        {
+          "ticker": "2002",
+          "name": "中鋼",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1,
+          "name_en": "China Steel"
+        },
+        {
+          "ticker": "2027",
+          "name": "大成鋼",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2,
+          "name_en": "Ta Chen Stainless Pipe"
+        },
+        {
+          "ticker": "2015",
+          "name": "豐興",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 3
+        },
+        {
+          "ticker": "2014",
+          "name": "中鴻",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 4
+        },
+        {
+          "ticker": "2023",
+          "name": "燁輝",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 5
+        },
+        {
+          "ticker": "2031",
+          "name": "新光鋼",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 6
+        },
+        {
+          "ticker": "2010",
+          "name": "春源",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 7
+        },
+        {
+          "ticker": "2028",
+          "name": "威致",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 8
+        }
+      ]
+    },
+    {
+      "exposure_id": "sector_tourism",
+      "exposure_type": "sector",
+      "sector_id": "tourism",
+      "theme_id": null,
+      "display_name": "觀光",
+      "aliases": [
+        "觀光",
+        "旅遊",
+        "觀光股",
+        "旅遊股",
+        "旅行社",
+        "tourism",
+        "travel"
+      ],
+      "members": [
+        {
+          "ticker": "2731",
+          "name": "雄獅",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1,
+          "name_en": "Lion Travel"
+        },
+        {
+          "ticker": "5706",
+          "name": "鳳凰",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2,
+          "name_en": "Phoenix Tours"
+        },
+        {
+          "ticker": "2745",
+          "name": "五福",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 3
+        },
+        {
+          "ticker": "2719",
+          "name": "燦星旅",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 4
+        },
+        {
+          "ticker": "2734",
+          "name": "易飛網",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 5
+        },
+        {
+          "ticker": "2743",
+          "name": "山富",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 6
+        },
+        {
+          "ticker": "6961",
+          "name": "旅天下",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 7
+        },
+        {
+          "ticker": "2736",
+          "name": "富野",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 8
+        },
+        {
+          "ticker": "2722",
+          "name": "夏都",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 9
+        },
+        {
+          "ticker": "2739",
+          "name": "寒舍",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 10
+        },
+        {
+          "ticker": "2707",
+          "name": "晶華",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 11
+        },
+        {
+          "ticker": "2704",
+          "name": "國賓",
+          "market": "TW",
+          "source": "websearch",
+          "rank": 12
+        }
+      ]
+    }
+  ]
+}

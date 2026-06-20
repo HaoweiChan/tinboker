@@ -9,12 +9,7 @@ import { PageContent } from '@/components/layout/PageContent';
 import { ArticleBody } from '@/components/article/ArticleBody';
 import { getArticleBySlug } from '@/services/articleService';
 import type { Article } from '@/validation/schemas';
-
-function formatDate(iso: string | null | undefined): string {
-  if (!iso) return '';
-  const d = new Date(iso);
-  return d.toLocaleDateString('zh-TW', { year: 'numeric', month: 'long', day: 'numeric' });
-}
+import { formatDate } from '@/lib/date';
 
 export const ArticleDetail: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();

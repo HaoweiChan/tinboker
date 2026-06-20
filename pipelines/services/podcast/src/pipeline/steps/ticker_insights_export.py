@@ -1,8 +1,10 @@
-"""Step 5d: Write per-ticker insight documents to Firestore.
+"""Step 5d: dual-write per-ticker insight documents to Firestore.
 
 Writes ``ticker_insights/{episode_id}/tickers/{ticker}`` per the platform
-contract in ``docs/spec-from-platform.md`` § 4. Best-effort — failures are
-logged but do not abort the rest of the pipeline.
+contract in ``docs/firestore-contract.md`` § 4. During Phase B cutover this
+step runs after the Postgres mirror so new episodes have both the legacy row
+copy and the composite Firestore docs. Best-effort — failures are logged but do
+not abort the rest of the pipeline.
 """
 
 from __future__ import annotations
@@ -42,8 +44,18 @@ def export_ticker_insights(
         write_episode_insights,
     )
 
+    # The insight's mention date MUST equal the episode doc's released_at_ms — the
+    # value /picks measures forward 7/30/90D returns from. Source it from the uploaded
+    # PodcastEpisode, the same model + resolver that wrote released_at_ms, so the two
+    # can never diverge. (The old `getattr(episode_data, "released_at_ms")` was dead:
+    # the pipeline EpisodeData has no such field, so it silently fell through to
+    # `created_time` — itself often unset on back-catalogue reprocessing — and then to
+    # `_iso_utc(None)` → now(), collapsing whole back-catalogues onto the run date.)
     launch_time = None
-    if episode_data.spotify_metadata:
+    episode_model = getattr(episode_data, "episode", None)
+    if episode_model is not None:
+        launch_time = episode_model.resolved_publish_ms()
+    if launch_time is None and episode_data.spotify_metadata:
         launch_time = episode_data.spotify_metadata.get("release_datetime")
     if launch_time is None:
         launch_time = episode_data.created_time

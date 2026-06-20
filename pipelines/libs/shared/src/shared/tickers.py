@@ -85,19 +85,40 @@ def canonical_symbol(raw: str) -> str:
     return info.symbol if info else (raw or "").strip().upper()
 
 
-# A real listing is a Taiwan number (4-6 digits, optional trailing letter for ETFs
-# like 00878B) or a US-style symbol (1-5 letters, optional .CLASS). Everything else —
-# CJK category names ("被動元件"), phrases ("EDGE COMPUTING相關類股"), and over-length
-# words ("OPENAI", "ANTHROPIC") — is the LLM mislabelling a sector or private company.
+# A real listing is a Taiwan / Korea number (3-6 digits, optional trailing class letter
+# for ETFs like 00878B; Korean codes such as 005930 / 000660 share this numeric shape)
+# or a US-style symbol (2-5 letters, optional .CLASS). Everything else — CJK category
+# names ("被動元件"), phrases ("EDGE COMPUTING相關類股"), and over-length words ("OPENAI",
+# "ANTHROPIC") — is the LLM mislabelling a sector or private company.
+#
+# The letter floor is 2, not 1: a lone capital ("N") is almost always a transcription
+# fragment / list marker, never an equity, and renders a priceless junk pill on the UI.
+# A genuine single-letter listing (F, T, V) must be added to the registry, which is
+# consulted before this format fallback — registry membership is the escape hatch.
 _TW_RE = re.compile(r"^\d{3,6}[A-Z]?$")
-_US_RE = re.compile(r"^[A-Z]{1,5}(?:\.[A-Z]{1,2})?$")
+_US_RE = re.compile(r"^[A-Z]{2,5}(?:\.[A-Z]{1,2})?$")
 
-# Format-valid but NOT listed: symbols the LLM invents for well-known private
-# companies. (SPCE is intentionally absent — it is a real ticker, Virgin Galactic;
-# the model misusing it for SpaceX is a prompt problem, not a symbol-validity one.)
+# Format-valid (they fit the US-letter shape) but NOT exchange listings. The LLM drops
+# these into the "ticker" slot and the shape check alone would wave them through:
+#   1. Symbols it invents for well-known PRIVATE companies.
+#   2. PEOPLE — central bankers / officials / executives / investors named by surname
+#      or nickname. "JPOW" (Jerome Powell) is the recurring offender; an abbreviation
+#      like it looks exactly like a 4-letter ticker, so only a denylist catches it.
+#   3. MACRO / index / policy abbreviations the prompt already says to skip but that
+#      still slip through. Kept deliberately small and unambiguous to avoid colliding
+#      with a real ticker; the prompt is the first line of defense for the long tail.
+# (SPCE is intentionally absent — it is a real ticker, Virgin Galactic; the model
+# misusing it for SpaceX is a prompt problem, not a symbol-validity one.)
 _NON_TICKERS = frozenset({
+    # Private companies
     "ANTHR", "ANTHROPIC", "OPENAI", "OAI", "SPACEX", "SPCX",
     "BYTEDANCE", "DEEPSEEK", "XAI", "GRK", "GROK", "STRIPE", "SHEIN",
+    # People — surnames / nicknames (the >5-letter ones are already rejected by the
+    # length rule; listed for intent and in case the format floor ever loosens).
+    "JPOW", "POWELL", "YELLEN", "BERNANKE", "GREENSPAN", "LAGARDE",
+    "MUSK", "BUFFETT", "DIMON", "TRUMP", "BIDEN",
+    # Macro / index / policy — unambiguous non-equities.
+    "FED", "FOMC", "ECB", "BOJ", "PBOC", "VIX", "DXY", "LIBOR", "SOFR",
 })
 
 

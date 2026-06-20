@@ -65,6 +65,10 @@ _MODEL_MAP: dict[str, str] = {
     "marp_writer": _LLM_OVERRIDES.get("marp_writer_model") or os.getenv("MARP_WRITER_MODEL", _DEFAULT_MODEL),
     "ticker_extractor": _LLM_OVERRIDES.get("ticker_extractor_model") or os.getenv("TICKER_EXTRACTOR_MODEL", _DEFAULT_MODEL),
     "key_insights_extractor": _LLM_OVERRIDES.get("key_insights_extractor_model") or os.getenv("KEY_INSIGHTS_EXTRACTOR_MODEL", _DEFAULT_MODEL),
+    # Social copy must be clean 正體中文 for a Taiwanese audience — the default
+    # Chinese model leaks Simplified glyphs (还/会/获) and garbles phrasing, so use
+    # Gemini here (verified clean + a livelier, more colloquial register).
+    "social_copy_writer": _LLM_OVERRIDES.get("social_copy_writer_model") or os.getenv("SOCIAL_COPY_WRITER_MODEL", "gemini-2.5-flash"),
 }
 
 _TEMPERATURE_MAP: dict[str, float] = {

@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 from src.models.podcast_models import PodcastEpisode, Sentence
+from src.podcast.content_builder.nodes.key_insights_extractor import ensure_key_insights
 from src.podcast.content_builder.tag_vocabulary import canonical_tag_slug
 
 
@@ -245,6 +246,20 @@ def create_episode_object(
     else:
         related_tickers = []
     
+    key_insights = []
+    if summary_result:
+        key_insights = ensure_key_insights(
+            summary_result.get('key_insights', []),
+            markdown=(
+                summary_result.get('markdown_report')
+                or summary_result.get('summary_content')
+                or summary_result.get('summary_text')
+                or ''
+            ),
+            source=episode_data.podcast_name or 'Podcast',
+            episode_title=episode_data.api_data.get('title', 'Episode'),
+        )
+
     return PodcastEpisode(
         mp3_url=gcs_urls.get('mp3_url', ''),
         transcript_url=gcs_urls.get('transcript_url', ''),
@@ -267,8 +282,14 @@ def create_episode_object(
         ticker_marp_markdown_url=gcs_urls.get('ticker_marp_markdown_url'),
         ticker_marp_markdown_public_url=gcs_urls.get('ticker_marp_markdown_public_url'),
         related_tickers=related_tickers,
-        key_insights=summary_result.get('key_insights', []) if summary_result else [],
+        key_insights=key_insights,
         social_cards=summary_result.get('social_cards', []) if summary_result else [],
+        sector_exposures=summary_result.get('sector_exposures', []) if summary_result else [],
+        unresolved_market_trends=summary_result.get('unresolved_market_trends', []) if summary_result else [],
+        sector_exposure_ids=summary_result.get('sector_exposure_ids', []) if summary_result else [],
+        sector_ids=summary_result.get('sector_ids', []) if summary_result else [],
+        theme_ids=summary_result.get('theme_ids', []) if summary_result else [],
+        unresolved_market_trend_ids=summary_result.get('unresolved_market_trend_ids', []) if summary_result else [],
         created_time=created_time,
         feed_date_published_ms=feed_date_published_ms,
         number_click=0,
@@ -280,7 +301,9 @@ def create_episode_object(
         spotify_embed_url=spotify_metadata.get('embed_url') if spotify_metadata else None,
         spotify_id=spotify_metadata.get('spotify_id') if spotify_metadata else None,
         spotify_url=spotify_metadata.get('spotify_url') if spotify_metadata else None,
-        spotify_release_date=spotify_metadata.get('release_date') if spotify_metadata else None,
+        spotify_release_date=PodcastEpisode.normalize_spotify_release_date(
+            spotify_metadata.get('release_date') if spotify_metadata else None
+        ),
         spotify_description=spotify_metadata.get('description') if spotify_metadata else None,
         spotify_duration_ms=spotify_metadata.get('duration_ms') if spotify_metadata else None,
         spotify_images=spotify_metadata.get('images', []) if spotify_metadata else []

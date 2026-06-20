@@ -12,6 +12,7 @@ import {
     BarChart3,
     FileText,
     Hash,
+    Share2,
     ChevronLeft,
     ChevronRight,
     LogOut,
@@ -120,6 +121,12 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
                     to="/admin/tags"
                     icon={<Hash className="h-5 w-5" />}
                     label="Tags"
+                    collapsed={collapsed}
+                />
+                <NavItem
+                    to="/admin/social"
+                    icon={<Share2 className="h-5 w-5" />}
+                    label="Social"
                     collapsed={collapsed}
                 />
                 <NavItem

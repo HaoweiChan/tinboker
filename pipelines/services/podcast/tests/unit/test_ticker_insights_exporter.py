@@ -13,11 +13,116 @@ from datetime import datetime, timezone
 import pytest
 from src.podcast.exporters.ticker_insights import (
     SCHEMA_VERSION,
+    _iso_utc,
     build_episode_insight_docs,
     build_insight_doc,
+    episode_publish_time,
     horizon_to_chinese,
+    is_boilerplate_thesis,
+    market_for_ticker,
     score_to_label,
 )
+
+
+def test_is_boilerplate_thesis_flags_templated_filler():
+    assert is_boilerplate_thesis("台積電 具備良好的成長動能，在目前產業趨勢下值得長期追蹤。")
+    assert is_boilerplate_thesis("NVDA當前面臨的產業環境具有挑戰，但長期結構性優勢仍在。")
+    assert is_boilerplate_thesis("X近期表現受到市場關注，節目分析其短期動能與中長期基本面展望。")
+    # A real, specific thesis must NOT be flagged.
+    assert not is_boilerplate_thesis("台積電法說會前，台股多頭格局不變，挑戰前高機會大，但需留意結算風險。")
+    assert not is_boilerplate_thesis(None)
+    assert not is_boilerplate_thesis("")
+
+
+def test_build_insight_doc_drops_boilerplate_thesis():
+    doc = build_insight_doc(
+        insight={"ticker": "NVDA", "bluf_thesis": "NVDA 具備良好的成長動能，在目前產業趨勢下值得長期追蹤。"},
+        episode_id="e1", podcaster="P", podcast_launch_time=0,
+    )
+    assert doc is None
+
+
+@pytest.mark.parametrize("bad_ticker", ["JPOW", "N", "POWELL", "FED"])
+def test_build_insight_doc_drops_non_ticker_symbols(bad_ticker):
+    # The extractor emits person names ("JPOW" = Jerome Powell) and bare letters
+    # ("N") in the ticker slot; writing them creates junk sentiment docs + priceless
+    # pills. build_insight_doc must reject them before a doc is keyed.
+    doc = build_insight_doc(
+        insight={"ticker": bad_ticker, "bluf_thesis": "鮑爾談話偏鷹，市場關注利率路徑。"},
+        episode_id="e1", podcaster="P", podcast_launch_time=0,
+    )
+    assert doc is None
+
+
+def test_build_episode_insight_docs_filters_junk_keeps_real_and_kr():
+    # Simulates re-running extraction on an episode whose LLM output contains the
+    # reported junk (JPOW + bare N) alongside real tickers: the junk is dropped and
+    # real TW/US plus the price-feed-less Korean codes (005930, 000660) survive.
+    payload = {"ticker_insights": [
+        {"ticker": "JPOW", "bluf_thesis": "鮑爾談話偏鷹"},
+        {"ticker": "N", "bluf_thesis": "雜訊片段"},
+        {"ticker": "2330", "bluf_thesis": "台積電先進製程領先，CoWoS 產能吃緊。"},
+        {"ticker": "005930", "bluf_thesis": "三星記憶體報價落底回升。"},
+        {"ticker": "000660", "bluf_thesis": "SK 海力士 HBM 需求強勁。"},
+    ]}
+    docs = build_episode_insight_docs(
+        raw_payload=payload, episode_id="e1", podcaster="P", podcast_launch_time=0,
+    )
+    assert set(docs) == {"2330", "005930", "000660"}
+
+
+def test_iso_utc_coerces_epoch_ms():
+    # Regression: an epoch-ms int (released_at_ms / created_time) used to fall
+    # through to datetime.now(), stamping every backfilled insight with the run
+    # date. It must now resolve to the real timestamp.
+    ms = int(datetime(2025, 12, 23, 14, 0, tzinfo=timezone.utc).timestamp() * 1000)
+    assert _iso_utc(ms) == "2025-12-23T14:00:00Z"
+    # ISO strings and datetimes still pass through correctly.
+    assert _iso_utc("2026-06-13T05:00:00Z") == "2026-06-13T05:00:00Z"
+    assert _iso_utc(datetime(2026, 1, 2, tzinfo=timezone.utc)) == "2026-01-02T00:00:00Z"
+
+
+def test_episode_publish_time_prefers_real_release_over_ingest():
+    """The resolver every dict-based writer uses to stamp ``podcast_launch_time``.
+
+    ``released_at_ms`` is the true mention date; ``created_time`` (ingest) is the last
+    resort. Stamping insights with ``created_time`` collapses a whole back-catalogue
+    onto the reprocessing date on /picks — the regression this guards.
+    """
+    # released_at_ms wins even when a (different) created_time is present.
+    assert episode_publish_time(
+        {"released_at_ms": 1700000000000, "created_time": "2026-06-17T20:22:12Z"}
+    ) == 1700000000000
+    # Spotify release datetime is preferred over ingest time.
+    assert episode_publish_time(
+        {"spotify_metadata": {"release_datetime": "2025-01-02T00:00:00Z"},
+         "created_time": "2026-06-17T20:22:12Z"}
+    ) == "2025-01-02T00:00:00Z"
+    # spotify_release_date before created_time.
+    assert episode_publish_time(
+        {"spotify_release_date": "2025-03-04", "created_time": "2026-06-17T20:22:12Z"}
+    ) == "2025-03-04"
+    # created_time only as the last resort.
+    assert episode_publish_time(
+        {"created_time": "2026-06-17T20:22:12Z"}
+    ) == "2026-06-17T20:22:12Z"
+    # A zero/empty released_at_ms is ignored (must not stamp epoch 0), and an empty
+    # spotify_metadata dict falls through.
+    assert episode_publish_time({"released_at_ms": 0, "created_time": "x"}) == "x"
+    assert episode_publish_time({"spotify_metadata": {}, "created_time": "x"}) == "x"
+    # Nothing usable at all → None (the exporter's _iso_utc then stamps now()).
+    assert episode_publish_time({}) is None
+
+
+def test_build_insight_doc_uses_epoch_ms_launch_time():
+    ms = int(datetime(2025, 12, 23, tzinfo=timezone.utc).timestamp() * 1000)
+    doc = build_insight_doc(
+        insight={"ticker": "NVDA", "sentiment_score": 0.7},
+        episode_id="e1",
+        podcaster="P",
+        podcast_launch_time=ms,
+    )
+    assert doc["podcast_launch_time"] == "2025-12-23T00:00:00Z"
 
 
 @pytest.mark.parametrize(
@@ -95,6 +200,7 @@ def test_build_insight_doc_carries_locations_and_drops_critical_severity():
     assert doc is not None
     assert doc["schema_version"] == SCHEMA_VERSION
     assert doc["ticker"] == "NVDA"  # canonicalized
+    assert doc["market"] == "US"
     assert doc["time_horizon"] == "中期"
     assert doc["sentiment_label"] == "BULLISH"
     assert doc["sentiment_score"] == 0.78
@@ -133,6 +239,11 @@ def test_build_episode_insight_docs_tolerates_legacy_wrapper_key():
     assert set(docs) == {"NVDA", "AMD"}
     assert docs["NVDA"]["sentiment_label"] == "STRONG_BULLISH"
     assert docs["AMD"]["sentiment_label"] == "STRONG_BEARISH"
+
+
+def test_market_for_ticker_infers_tw_and_us_namespaces():
+    assert market_for_ticker("2330") == "TW"
+    assert market_for_ticker("nvda") == "US"
 
 
 def test_build_episode_insight_docs_tiebreaks_by_conviction():

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Home, Mic, LineChart, Hash, Info, MessageSquareText, Bookmark } from 'lucide-react';
+import { Home, Mic, LineChart, TrendingUp, Hash, Info, MessageSquareText, Bookmark } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { AppLogo } from '@/components/logo/AppLogo';
 import { useUser } from '@/store/useAppStore';
@@ -13,7 +13,12 @@ interface NavItem {
   prefix?: boolean;
   /** For /profile deep-links: the tab this item maps to (active when ?tab= matches). */
   tab?: string;
+  /** Surfaced only on dev.tinboker.com (VITE_STAGE=DEV); hidden on staging/prod. */
+  devOnly?: boolean;
 }
+
+// Mirrors App.tsx route gating: dev-only nav entries appear on dev.tinboker.com only.
+const IS_DEV_ENV = (import.meta.env.VITE_STAGE as string) === 'DEV';
 
 interface NavSection {
   /** Group heading, shown only when the sidebar is expanded. */
@@ -30,6 +35,7 @@ const SECTIONS: readonly NavSection[] = [
     items: [
       { to: '/podcaster', label: '節目', icon: Mic, prefix: true },
       { to: '/stock', label: '個股', icon: LineChart, prefix: true },
+      { to: '/picks', label: '走勢', icon: TrendingUp, prefix: true, devOnly: true },
       { to: '/topics', label: '話題', icon: Hash, prefix: true },
       // 文章 (articles) hidden from nav until at least one article is published —
       // the /articles route still works, it just isn't surfaced while empty.
@@ -132,7 +138,9 @@ export const Sidebar: React.FC = () => {
             ) : (
               <div className="mx-2.5 my-3 h-px bg-border" />
             )}
-            <nav className="flex flex-col gap-1">{section.items.map(renderItem)}</nav>
+            <nav className="flex flex-col gap-1">
+              {section.items.filter((it) => IS_DEV_ENV || !it.devOnly).map(renderItem)}
+            </nav>
           </div>
         ))}
 

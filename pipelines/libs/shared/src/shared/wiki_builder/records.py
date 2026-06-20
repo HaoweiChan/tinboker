@@ -115,6 +115,7 @@ def render_episode_page(
         insights = ticker_insights.get("ticker_insights") or ticker_insights.get("ticker_recommendations", [])
     else:
         insights = []
+    insights = [rec for rec in insights if isinstance(rec, dict)]  # tolerate junk rows
     if insights:
         lines += [
             "## Ticker Insights",

@@ -127,7 +127,7 @@ function estimateReadMinutes(text: string): number {
 
 function formatDate(value?: string | null): string {
   if (!value) return '-';
-  return new Date(value).toLocaleDateString('zh-TW', { month: 'short', day: 'numeric' });
+  return new Date(value).toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit' });
 }
 
 function statusLabel(status: string): string {

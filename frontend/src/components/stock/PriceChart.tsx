@@ -99,7 +99,7 @@ export const PriceChart: React.FC<PriceChartProps> = ({ data, ticker }) => {
       }
 
       const dateLabel = timestamp
-        ? new Date(timestamp * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+        ? new Date(timestamp * 1000).toLocaleDateString('zh-TW', { month: '2-digit', day: '2-digit' })
         : '';
       const priceLabel =
         typeof price === 'number' ? `$${price.toFixed(2)}` : '';

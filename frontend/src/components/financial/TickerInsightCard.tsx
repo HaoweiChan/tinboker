@@ -4,6 +4,7 @@ import { Button, Card, CardContent, CardHeader, Badge } from '@/components/ui';
 import type { Reason, Risk, SentimentLabel, TickerInsight } from '@/services/types';
 import { normalizeSentiment } from '@/lib/sentiment';
 import { cn } from '@/lib/utils';
+import { formatDate as formatYMD } from '@/lib/date';
 import { usePlayerStore } from '@/store/usePlayerStore';
 import type { Episode as MockEpisode } from '@/data/mockData';
 
@@ -109,9 +110,7 @@ export const TickerInsightCard: React.FC<TickerInsightCardProps> = ({ insight, e
     const displayReasons = displayReasonsFor(insight);
     const displayRisks = displayRisksFor(insight);
 
-    const formatDate = (dateString: string) => {
-        return new Date(dateString).toLocaleDateString('zh-TW', { month: 'long', day: 'numeric', year: 'numeric' });
-    };
+    const formatDate = (dateString: string) => formatYMD(dateString);
 
     // Backend provides start_time in milliseconds; convert to seconds for GlobalPlayer
     const handlePlay = (startTimeMs: number) => {

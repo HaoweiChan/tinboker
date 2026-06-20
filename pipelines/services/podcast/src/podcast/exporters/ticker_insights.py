@@ -1,7 +1,7 @@
 """Write per-(episode, ticker) ticker-insight documents into Firestore.
 
 Output path: ``ticker_insights/{episode_id}/tickers/{ticker}``.
-Schema: ``schema_version: 3`` per ``docs/spec-from-platform.md`` § 4.
+Schema: ``schema_version: 3`` per ``docs/firestore-contract.md`` § 4.
 
 The pipeline produces a list of TickerInsight rows under
 ``episode_data.summary_result["ticker_insights"]``. This
@@ -23,7 +23,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Iterable
 
-from shared.tickers import canonical_symbol, is_valid_ticker_symbol
+from shared.tickers import canonical_symbol, is_valid_ticker_symbol, lookup_ticker
 
 SCHEMA_VERSION = 3
 
@@ -44,6 +44,27 @@ _SEVERITY_NORMALIZE = {
 }
 
 
+# Boilerplate thesis markers — "watchlist roundup" episodes produce templated,
+# ticker-agnostic theses (the company name swapped into a fixed sentence). These
+# carry no real analysis, so we drop them at export. A genuine thesis won't contain
+# these exact filler clauses. Shared with scripts/purge_templated_insights.py.
+BOILERPLATE_THESIS_MARKERS = (
+    "具備良好的成長動能",
+    "當前面臨的產業環境具有挑戰",
+    "近期表現受到市場關注，節目分析其短期動能",
+    "中長期前景持正面看法，但提醒投資人注意短期波動風險",
+    "的產業前景與競爭優勢，認為其基本面支撐中長期投資價值",
+    "近期營收表現優於市場預期，管理層對未來展望維持樂觀態度",
+)
+
+
+def is_boilerplate_thesis(text: str | None) -> bool:
+    """True when the thesis is templated filler rather than real analysis."""
+    if not text:
+        return False
+    return any(marker in text for marker in BOILERPLATE_THESIS_MARKERS)
+
+
 def score_to_label(score: float | None) -> str:
     """Map a 0.0–1.0 score to the 5-tier sentiment label (spec § 4.2)."""
     if score is None:
@@ -57,6 +78,26 @@ def score_to_label(score: float | None) -> str:
     if score >= 0.20:
         return "BEARISH"
     return "STRONG_BEARISH"
+
+
+def market_for_ticker(raw_ticker: str | None) -> str:
+    """Infer the market namespace for a ticker-insight row.
+
+    The registry is authoritative when it knows the symbol. The shape fallback
+    keeps uncatalogued but valid TW/US symbols segregated for trending
+    aggregation, where the contract still uses a single-string document ID.
+    """
+    if not raw_ticker:
+        return ""
+    info = lookup_ticker(raw_ticker)
+    if info and info.market:
+        return info.market
+    ticker = canonical_symbol(raw_ticker)
+    if ticker.isdigit() or (ticker[:-1].isdigit() and ticker[-1:].isalpha()):
+        return "TW"
+    if ticker.replace(".", "").isalpha():
+        return "US"
+    return ""
 
 
 def horizon_to_chinese(horizon: str | None) -> str:
@@ -74,7 +115,39 @@ def _iso_utc(value: Any) -> str:
             return _iso_utc(dt)
         except ValueError:
             return value  # already formatted, pass through
+    if isinstance(value, (int, float)) and value > 0:
+        # Epoch timestamp — released_at_ms / created_time are milliseconds.
+        # Without this branch an int fell through to datetime.now(), which is why
+        # backfilled insights were all stamped with the backfill RUN date.
+        seconds = value / 1000 if value > 1e11 else value
+        try:
+            return _iso_utc(datetime.fromtimestamp(seconds, tz=timezone.utc))
+        except (OverflowError, OSError, ValueError):
+            pass
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def episode_publish_time(doc: dict[str, Any]) -> Any:
+    """An episode doc's true publish time, for stamping ``podcast_launch_time``.
+
+    Prefer the feed-derived ``released_at_ms`` (epoch ms), then Spotify's release
+    datetime / date, then the ingestion ``created_time`` only as a last resort.
+    ``_iso_utc`` coerces whatever shape is returned. Stamping with ``created_time``
+    (ingest time) collapses a whole back-catalogue's picks onto the reprocessing date
+    on /picks — measuring forward returns from the wrong day — so it is the fallback of
+    last resort, never the primary. Shared by every dict-based writer (the regen
+    orchestrator + the GCS backfill); the live pipeline step applies the same priority
+    over its EpisodeData model.
+    """
+    released = doc.get("released_at_ms")
+    if released not in (None, "", 0):
+        return released
+    meta = doc.get("spotify_metadata")
+    if isinstance(meta, dict) and meta.get("release_datetime"):
+        return meta["release_datetime"]
+    if doc.get("spotify_release_date"):
+        return doc["spotify_release_date"]
+    return doc.get("created_time")
 
 
 def _extract_list(raw: Any) -> list[dict[str, Any]]:
@@ -145,6 +218,10 @@ def build_insight_doc(
     if not raw_ticker or not is_valid_ticker_symbol(str(raw_ticker)):
         return None
 
+    # Skip templated "watchlist roundup" filler — no real analysis, pollutes the feed.
+    if is_boilerplate_thesis(insight.get("bluf_thesis")):
+        return None
+
     ticker = canonical_symbol(str(raw_ticker))
     score = insight.get("sentiment_score")
     try:
@@ -169,6 +246,7 @@ def build_insight_doc(
         "podcaster": podcaster,
         "podcast_launch_time": _iso_utc(podcast_launch_time),
         "ticker": ticker,
+        "market": market_for_ticker(ticker),
         "bluf_thesis": str(insight.get("bluf_thesis", "")),
         "time_horizon": horizon_to_chinese(insight.get("time_horizon")),
         "sentiment_label": score_to_label(score_value),
@@ -236,12 +314,59 @@ def write_episode_insights(
     if not docs or not episode_id:
         return 0
     parent = firestore_client.collection("ticker_insights").document(episode_id)
-    batch = firestore_client.batch()
-    for ticker, doc in docs.items():
-        ref = parent.collection("tickers").document(ticker)
-        batch.set(ref, doc)
-    batch.commit()
+    pending = list(docs.items())
+    # Firestore WriteBatch caps at 500 operations. Keep the writer grouped by
+    # episode_id while staying under the per-batch limit.
+    batch_size = 500
+    while pending:
+        chunk = pending[:batch_size]
+        pending = pending[batch_size:]
+        batch = firestore_client.batch()
+        for ticker, doc in chunk:
+            ref = parent.collection("tickers").document(ticker)
+            batch.set(ref, doc)
+        batch.commit()
     return len(docs)
+
+
+def write_many_episode_insights(
+    firestore_client: Any,
+    episode_docs: dict[str, dict[str, dict[str, Any]]],
+    *,
+    batch_size: int = 500,
+) -> int:
+    """Batch-write many ``ticker_insights/{episode_id}/tickers/{ticker}`` docs.
+
+    Operations are still organized by episode_id, matching the contract's
+    composite path. The caller supplies already-built docs so live, regen, and
+    Phase B2 backfill paths share one path contract.
+    """
+    if batch_size <= 0 or batch_size > 500:
+        raise ValueError("batch_size must be between 1 and 500")
+
+    ops: list[tuple[str, str, dict[str, Any]]] = []
+    for episode_id, docs in episode_docs.items():
+        if not episode_id:
+            continue
+        for ticker, doc in docs.items():
+            ops.append((episode_id, ticker, doc))
+
+    written = 0
+    while ops:
+        chunk = ops[:batch_size]
+        ops = ops[batch_size:]
+        batch = firestore_client.batch()
+        for episode_id, ticker, doc in chunk:
+            ref = (
+                firestore_client.collection("ticker_insights")
+                .document(episode_id)
+                .collection("tickers")
+                .document(ticker)
+            )
+            batch.set(ref, doc)
+        batch.commit()
+        written += len(chunk)
+    return written
 
 
 def iter_insight_tickers(raw_payload: Any) -> Iterable[str]:

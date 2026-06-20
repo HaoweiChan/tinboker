@@ -3,6 +3,7 @@ import { Bell, TrendingUp, Mic, AlertTriangle, X, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { notificationsApi, type AppNotification } from '@/services/api/notifications';
 import { useAppStore } from '@/store/useAppStore';
+import { formatDate } from '@/lib/date';
 
 interface DisplayNotification {
   id: string;
@@ -25,7 +26,7 @@ function formatTimeAgo(dateStr: string): string {
   if (diffMins < 60) return `${diffMins} 分鐘前`;
   if (diffHours < 24) return `${diffHours} 小時前`;
   if (diffDays < 7) return `${diffDays} 天前`;
-  return date.toLocaleDateString('zh-TW');
+  return formatDate(date);
 }
 
 function mapToDisplay(n: AppNotification): DisplayNotification {

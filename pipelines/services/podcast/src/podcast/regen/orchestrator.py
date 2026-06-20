@@ -39,6 +39,7 @@ from ..content_builder.nodes.events_markdown import build_events_markdown
 from ..content_builder.nodes.key_insights_extractor import is_placeholder_summary
 from ..content_builder.nodes.markdown_transform import transform_to_markdown
 from ..content_builder.nodes.marp_converter import convert_marp, convert_marp_ticker
+from ..content_builder.nodes.sector_exposures import derive_sector_exposures
 from ..content_builder.nodes.social_cards_builder import build_social_cards
 from ..content_builder.nodes.tags_tickers import derive_tags_tickers
 from ..content_builder.profiles import load_profile
@@ -176,6 +177,49 @@ def _episode_sentences(doc: dict[str, Any]) -> list[dict[str, Any]]:
     return doc.get("sentences") or doc.get("transcript_sentences") or []
 
 
+def _sentences_from_gcs(transcript_url: Optional[str]) -> list[dict[str, Any]]:
+    """Fetch the sentence array from a ``gs://`` transcript JSON, or ``[]``.
+
+    Published/consolidated episodes keep only a flat ``transcript`` field in
+    Firestore and store the real sentence-level transcript (``{index, content,
+    start, end}``) as a JSON object in GCS at ``transcript_url``. Without this,
+    regen is impossible for every already-published episode (the inline fields
+    are empty). Read failures degrade to ``[]`` so callers fall back cleanly.
+    """
+    if not transcript_url or not str(transcript_url).startswith("gs://"):
+        return []
+    bucket_name, _, blob_path = transcript_url[len("gs://"):].partition("/")
+    if not bucket_name or not blob_path:
+        return []
+    try:
+        blob = _gcs_client().bucket(bucket_name).blob(blob_path)
+        data = json.loads(blob.download_as_text())
+        if isinstance(data, dict):
+            return data.get("sentences") or data.get("transcript_sentences") or []
+        if isinstance(data, list):
+            return data
+    except Exception:  # noqa: BLE001 — missing/unauthorized/malformed → fall back
+        return []
+    return []
+
+
+def _gcs_client():
+    """An authenticated ``storage.Client``.
+
+    The MCP authenticates GCP with an explicit service-account JSON (not ADC), so
+    reuse the pipeline's credential-bootstrapped client from ``GCSStorageService``;
+    fall back to a default client only if that can't be constructed.
+    """
+    try:
+        from src.service.gcs_storage_service import GCSStorageService
+
+        return GCSStorageService().client
+    except Exception:  # noqa: BLE001 — no bucket env / import issue → try ADC
+        from google.cloud import storage
+
+        return storage.Client()
+
+
 def _derive_sentences_from_transcript(
     transcript: str, duration_ms: Optional[int] = None, target_chars: int = 45
 ) -> list[dict[str, Any]]:
@@ -250,6 +294,7 @@ def _apply(step: str, output: Any, state: dict[str, Any]) -> list[str]:
         state.update(extractor.postprocess(output, state))
         state.update(cluster_sentences(state))
         state.update(build_events_markdown(state))
+        state.update(derive_sector_exposures(state))
         if not state.get("clustered_events"):
             warnings.append(
                 "0 events kept after clustering — the policy router dropped every "
@@ -357,6 +402,15 @@ def _assemble(draft: dict[str, Any]) -> dict[str, Any]:
         payload["key_insights"] = state.get("key_insights", [])
     if STEP_EXTRACTOR in completed:
         payload["events_markdown"] = state.get("events_markdown", "")
+        for field in (
+            "sector_exposures",
+            "unresolved_market_trends",
+            "sector_exposure_ids",
+            "sector_ids",
+            "theme_ids",
+            "unresolved_market_trend_ids",
+        ):
+            payload[field] = state.get(field, [])
     if STEP_TICKER in completed:
         payload["ticker_insights"] = state.get("ticker_insights")
     if STEP_MARP in completed:
@@ -371,7 +425,15 @@ def _assemble(draft: dict[str, Any]) -> dict[str, Any]:
 
 def _doc_update(payload: dict[str, Any]) -> dict[str, Any]:
     """The episode-doc merge update — everything except the ticker subcollection."""
-    return {k: v for k, v in payload.items() if k != "ticker_insights"}
+    protected = {
+        "ticker_insights",
+        "created_time",
+        "modified_summary_url",
+        "modified_summary_content",
+        "modified_by",
+        "modified_at",
+    }
+    return {k: v for k, v in payload.items() if k not in protected}
 
 
 def _manual_cache_commands(
@@ -422,7 +484,12 @@ def find_candidates(
     out: list[dict[str, Any]] = []
     for d in rows:
         sentences = _episode_sentences(d)
-        if not sentences:
+        # A regen needs *a* transcript: inline sentences, a GCS transcript JSON,
+        # or at least the flat text. (We don't download GCS here — checking the
+        # URL's presence keeps the listing cheap.) ``start`` resolves the real
+        # source on demand.
+        has_transcript = bool(sentences) or bool(d.get("transcript_url")) or bool((d.get("transcript") or "").strip())
+        if not has_transcript:
             continue
         summary = d.get("summary_content") or ""
         placeholder = (not summary.strip()) or is_placeholder_summary(summary)
@@ -432,7 +499,8 @@ def find_candidates(
             "episode_id": d.get("episode_id") or d.get("id"),
             "podcast_name": d.get("podcast_name"),
             "episode_title": d.get("episode_title") or d.get("title"),
-            "sentence_count": len(sentences),
+            "sentence_count": len(sentences) if sentences else None,
+            "transcript_source": "inline" if sentences else ("gcs" if d.get("transcript_url") else "flat_text"),
             "has_summary": bool(summary.strip()),
             "is_placeholder": placeholder,
             "key_insight_count": len(d.get("key_insights") or []),
@@ -445,6 +513,8 @@ def find_candidates(
 
 def start(podcast_name: str, episode_id: str) -> dict[str, Any]:
     """Load a transcribed episode and open a working draft; return the first prompt."""
+    from src.podcast.exporters.ticker_insights import episode_publish_time
+
     fs = _firestore()
     doc = fs.get_document("episodes", episode_id)
     if not doc:
@@ -457,8 +527,12 @@ def start(podcast_name: str, episode_id: str) -> dict[str, Any]:
     transcript = doc.get("transcript") or ""
     sentences = _episode_sentences(doc)
     derived_sentences = False
+    if not sentences:
+        # Published episodes keep the real sentence-level transcript in GCS, not
+        # inline — pull it before falling back to deriving from flat text.
+        sentences = _sentences_from_gcs(doc.get("transcript_url"))
     if not sentences and transcript.strip():
-        # Already-published episodes often keep only the flat transcript text.
+        # Last resort: only the flat transcript text is available.
         sentences = _derive_sentences_from_transcript(transcript, doc.get("spotify_duration_ms"))
         derived_sentences = True
     if not sentences:
@@ -476,6 +550,11 @@ def start(podcast_name: str, episode_id: str) -> dict[str, Any]:
         "episode_title": episode_title,
         "source": source,
         "created_time": doc.get("created_time") if isinstance(doc.get("created_time"), str) else None,
+        # The episode's TRUE publish time (released_at_ms → Spotify → created_time),
+        # stamped onto every ticker_insight so /picks measures forward returns from the
+        # real mention date, not the regen-run date. Captured at draft time from the
+        # episode doc so commit() doesn't need to re-read it.
+        "podcast_launch_time": episode_publish_time(doc),
         "state": {
             "sentences": sentences,
             "source": source,
@@ -593,6 +672,8 @@ def preview(episode_id: str) -> dict[str, Any]:
         "key_insights": payload.get("key_insights", []),
         "tags": payload.get("tags", []),
         "related_tickers": payload.get("related_tickers", []),
+        "sector_exposures": payload.get("sector_exposures", []),
+        "unresolved_market_trends": payload.get("unresolved_market_trends", []),
         "ticker_insight_count": ticker_count,
         "marp_chars": len(payload.get("marp_markdown", "")),
         "ticker_marp_chars": len(payload.get("ticker_marp_markdown", "")),
@@ -633,7 +714,9 @@ def commit(
                 raw_payload=payload["ticker_insights"],
                 episode_id=episode_id,
                 podcaster=draft["podcast_name"],
-                podcast_launch_time=draft.get("created_time"),
+                # Real publish time, captured from the episode doc at draft time.
+                # `created_time` fallback covers drafts opened before this field existed.
+                podcast_launch_time=draft.get("podcast_launch_time") or draft.get("created_time"),
             )
             report["ticker_insights_written"] = (
                 write_episode_insights(fs.db, episode_id=episode_id, docs=docs) if docs else 0

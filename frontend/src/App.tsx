@@ -9,6 +9,7 @@ import { EpisodeDetail } from '@/pages/EpisodeDetail';
 import { NewsRedirect } from '@/pages/NewsRedirect';
 import { PodcasterPage } from '@/pages/PodcasterPage';
 import { TagPage } from '@/pages/TagPage';
+import { SectorPage } from '@/pages/SectorPage';
 import { ProfilePage } from '@/pages/ProfilePage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { ReportPage } from '@/pages/ReportPage';
@@ -17,6 +18,7 @@ import { PodcasterIndex } from '@/pages/PodcasterIndex';
 import { StockIndex } from '@/pages/StockIndex';
 import { TopicsCloud } from '@/pages/TopicsCloud';
 import { WatchlistPage } from '@/pages/WatchlistPage';
+import { PicksPage } from '@/pages/PicksPage';
 import { AdminPage } from '@/pages/AdminPage';
 import { AdminDashboardPage } from '@/pages/AdminDashboardPage';
 import { TranslationsSection } from '@/pages/TranslationsSection';
@@ -25,6 +27,7 @@ import { PipelineSettingsPage } from '@/pages/PipelineSettingsPage';
 import { AdminAnalyticsPage } from '@/pages/AdminAnalyticsPage';
 import { AdminArticlesPage } from '@/pages/AdminArticlesPage';
 import { AdminTagsPage } from '@/pages/AdminTagsPage';
+import { AdminSocialPage } from '@/pages/AdminSocialPage';
 import { ArticleDetail } from '@/pages/ArticleDetail';
 import { ArticleList } from '@/pages/ArticleList';
 import { DevPortalPage } from '@/pages/DevPortalPage';
@@ -91,12 +94,17 @@ function App() {
             <Route path="/stock" element={<StockIndex />} />
             <Route path="/topics" element={<TopicsCloud />} />
             <Route path="/watchlist" element={<WatchlistPage />} />
+            {/* /picks (走勢) — dev-only while unstable; excluded from the release.
+                STAGING/PRODUCTION don't register it, so a direct URL falls through
+                to the catch-all → home. */}
+            {IS_DEV_ENV && <Route path="/picks" element={<PicksPage />} />}
 
             {/* Single-instance / content pages */}
             <Route path="/stock/:ticker" element={<StockDashboard />} />
             <Route path="/podcaster/:id" element={<PodcasterPage />} />
             <Route path="/topics/:tag" element={<TagPage />} />
             <Route path="/tag/:tag" element={<TagPage />} />
+            <Route path="/sector/:exposureId" element={<SectorPage />} />
             <Route path="/episode/:id" element={<EpisodeDetail />} />
             <Route path="/news/:id" element={<NewsRedirect />} />
             <Route path="/articles" element={<ArticleList />} />
@@ -122,6 +130,7 @@ function App() {
             <Route path="sources" element={<SourcesSection />} />
             <Route path="pipeline" element={<PipelineSettingsPage />} />
             <Route path="tags" element={<AdminTagsPage />} />
+            <Route path="social" element={<AdminSocialPage />} />
             <Route path="analytics" element={<AdminAnalyticsPage />} />
             <Route path="articles" element={<AdminArticlesPage />} />
           </Route>

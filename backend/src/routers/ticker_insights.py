@@ -34,6 +34,24 @@ async def get_trending(
     return await insight_service.get_trending(days=days, limit=limit)
 
 
+@router.get("/recent")
+@cdn_cache_trending
+async def get_recent(
+    limit: int = Query(default=100, ge=1, le=200, description="Max picks, newest first"),
+) -> List[dict]:
+    """
+    Recent TickerInsight[] across ALL podcasters, newest-first (blended timeline).
+
+    Powers the /picks feed: one reverse-chronological stream of individual
+    podcaster·ticker·date picks (the client filters by podcaster in the UI).
+    A collection-group query on `tickers` ordered by `podcast_launch_time` DESC
+    with a hard limit — replaces the per-podcaster full-history fetch.
+
+    CDN Cache: 5 minutes.
+    """
+    return await insight_service.get_recent(limit=limit)
+
+
 @router.get("/by-ticker/{ticker}")
 @cdn_cache_trending
 async def get_by_ticker(

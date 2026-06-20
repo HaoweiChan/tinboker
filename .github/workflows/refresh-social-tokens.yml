@@ -1,0 +1,51 @@
+name: Refresh Social Tokens
+
+# Threads long-lived access tokens expire after 60 days but can be refreshed
+# (each refresh extends another 60 days). Run monthly so the token never lapses.
+# Also runnable on demand from the Actions tab.
+#
+# This only updates the GSM secret THREADS_ACCESS_TOKEN. The backend reads secrets
+# at startup, so the refreshed token takes effect on the next backend deploy — which
+# happens on every merge to develop/main, well within the 60-day window. If a
+# service ever runs >60 days with no deploy, re-run the latest "Backend Build &
+# Deploy" workflow to pick it up.
+#
+# Facebook Page tokens derived from a long-lived user token do not expire, so there
+# is nothing to refresh for Facebook.
+
+on:
+  schedule:
+    - cron: '0 3 1 * *'        # 03:00 UTC on the 1st of each month
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  GCP_PROJECT_ID: gen-lang-client-0901363254
+
+jobs:
+  refresh-threads-token:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install deps
+        run: pip install --quiet google-cloud-secret-manager
+
+      - name: Refresh Threads token in GSM
+        run: python backend/scripts/ops/refresh_threads_token.py

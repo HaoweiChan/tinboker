@@ -83,7 +83,7 @@ const getEventColor = (type: string): string => {
 
 const formatDate = (timestamp: number): string => {
   const date = new Date(timestamp);
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return date.toLocaleDateString('zh-TW', { month: '2-digit', day: '2-digit' });
 };
 
 export const EventTimeline: React.FC<EventTimelineProps> = ({ tickers }) => {

@@ -8,7 +8,63 @@ This module handles generating summaries, SVG, and tickers from transcripts.
 from ..config import PipelineConfig
 from ..episode_data import EpisodeData
 from ..service_container import ServiceContainer
-from ..utils import extract_tags_and_tickers
+from ..utils import extract_tags_and_tickers, extract_tickers_from_markdown
+
+
+class SummaryNotPersistableError(RuntimeError):
+    """Raised when a summary must NOT be persisted (placeholder / failed validation).
+
+    Raising this in the summarize step (BEFORE the GCS/Firestore/Postgres/wiki
+    write steps) is what prevents a bad run from overwriting previously-good
+    episode content. The processor catches it, logs the failure, and skips the
+    episode — the existing stored summary is left untouched.
+    """
+
+
+def assert_summary_persistable(episode_data: EpisodeData) -> None:
+    """Gate persistence on a real, self-consistent summary.
+
+    A failed external summarization falls back to the placeholder summarizer,
+    which emits junk prose + random tickers. Those writes used to land in GCS /
+    Firestore / Postgres / wiki *before* the validate step ran, so a failed run
+    clobbered good content. We validate the in-memory summary here, before any
+    write, and refuse to persist when:
+
+    - the summary is a placeholder (``is_placeholder`` marker), or
+    - there is no real summary text, or
+    - a related ticker is missing from the summary body (the same ticker/summary
+      consistency check the validate step runs — moved earlier so it gates writes
+      instead of firing after them).
+    """
+    summary_result = episode_data.summary_result or {}
+
+    if summary_result.get('is_placeholder'):
+        raise SummaryNotPersistableError(
+            "Refusing to persist: summarizer fell back to the placeholder result "
+            "(the external summarizer failed — e.g. truncated/unparseable LLM JSON "
+            "on a long episode). Not overwriting existing content with placeholder."
+        )
+
+    summary_text = (summary_result.get('summary_text') or '').strip()
+    if not summary_text:
+        raise SummaryNotPersistableError(
+            "Refusing to persist: summary text is empty."
+        )
+
+    # Every related ticker must appear as #ticker:SYMBOL in the summary body. In
+    # the success path episode_data.tickers is derived FROM the summary, so this
+    # always holds; it only trips for placeholder/garbage output (random tickers
+    # with no #ticker: links) — catching the exact "Ticker Mismatch" the validate
+    # step used to raise, but now BEFORE anything is written.
+    if episode_data.tickers:
+        tickers_in_summary = {t.upper() for t in extract_tickers_from_markdown(summary_text)}
+        missing = [t.upper() for t in episode_data.tickers if t.upper() not in tickers_in_summary]
+        if missing:
+            raise SummaryNotPersistableError(
+                "Refusing to persist: related ticker(s) missing from summary text: "
+                f"{', '.join(missing)}. The summary and ticker list are inconsistent "
+                "(typical of a placeholder fallback)."
+            )
 
 
 def generate_summary(
@@ -89,4 +145,10 @@ def generate_summary(
         print(f"  ✓ Extracted {len(episode_data.tickers)} tickers: {', '.join(episode_data.tickers[:5])}{'...' if len(episode_data.tickers) > 5 else ''}")
     
     print(f"  ✓ Generated summary ({len(summary_result.get('summary_text', '')):,} characters)")
+
+    # Gate persistence: refuse to continue (and thus to write GCS/Firestore/
+    # Postgres/wiki in the later steps) when the summary is a placeholder or fails
+    # the ticker/summary consistency check. Raising here — before any write step —
+    # is what keeps a failed run from overwriting previously-good content.
+    assert_summary_persistable(episode_data)
 

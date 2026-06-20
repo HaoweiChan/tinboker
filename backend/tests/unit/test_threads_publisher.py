@@ -184,6 +184,39 @@ def test_compose_reply_clamps_and_keeps_whole_bullets():
     assert text.startswith("【標題】")
 
 
+def test_compose_thread_prefers_human_social_thread():
+    ep = _ep_cards("EP610", _cards(), )
+    ep.related_tickers = ["2330"]
+    ep.social_thread = {
+        "post": "這集聊台積電跟離散元件，重點都在下面 👇",
+        "comments": [
+            {"heading": "主題A", "text": "題材輪動很快，籌碼要顧好。"},
+            {"heading": "主題B", "text": "離散元件的缺口慢慢養出來。"},
+        ],
+    }
+    draft = threads_publisher.compose_thread(ep)
+    # Human post is used as the body, with the link + hashtags tail appended.
+    assert draft["main_text"].startswith("這集聊台積電跟離散元件")
+    assert "tinboker.com/episode/EP610" in draft["main_text"]
+    assert "#2330" in draft["main_text"]
+    # Replies are the human comments verbatim — no 【title】 / bullet scaffolding.
+    assert [r["text"] for r in draft["replies"]] == [
+        "題材輪動很快，籌碼要顧好。",
+        "離散元件的缺口慢慢養出來。",
+    ]
+    assert "【" not in draft["replies"][0]["text"]
+    # Images still come from the cards.
+    assert draft["image_urls"] == ["https://c/0.png", "https://c/1.png", "https://c/2.png"]
+
+
+def test_compose_thread_falls_back_when_social_thread_empty():
+    ep = _ep_cards("EP611", _cards())
+    ep.social_thread = {"post": "", "comments": []}
+    draft = threads_publisher.compose_thread(ep)
+    # Empty thread → mechanical 【title】 + bullets compose.
+    assert [r["text"].splitlines()[0] for r in draft["replies"]] == ["【主題A】", "【主題B】"]
+
+
 @pytest.mark.asyncio
 async def test_publish_thread_carousel_then_reply_chain():
     fake = _FakeThreads()
@@ -228,3 +261,47 @@ async def test_publish_recent_thread_path_records_root_and_replies(temp_db, monk
     again = await threads_publisher.publish_recent(limit=5, dry_run=False)
     assert again["posted_count"] == 0
     assert again["skipped"][0]["reason"] == "already_posted"
+
+
+# ── publish_episode (single explicit episode — the admin 發佈 button) ──────────
+
+
+@pytest.mark.asyncio
+async def test_publish_episode_dry_run_when_unconfigured(temp_db, monkeypatch):
+    # Even with dry_run=False, unconfigured creds force a no-post preview.
+    monkeypatch.setattr(settings, "threads_access_token", None)
+    monkeypatch.setattr(settings, "threads_user_id", None)
+    res = await threads_publisher.publish_episode(_ep_cards("EP800", _cards()), dry_run=False)
+    assert res["configured"] is False
+    assert res["dry_run"] is True
+    assert res["posted"] is False
+    assert res["reason"] == "dry_run"
+    assert threads_publisher.already_posted("EP800") is False  # dry-run never records
+
+
+@pytest.mark.asyncio
+async def test_publish_episode_publishes_and_is_idempotent(temp_db, monkeypatch):
+    fake = _FakeThreads()
+    monkeypatch.setattr(threads_publisher, "ThreadsService", lambda *a, **k: fake)
+    monkeypatch.setattr(settings, "threads_access_token", "tok")
+    monkeypatch.setattr(settings, "threads_user_id", "123")
+
+    res = await threads_publisher.publish_episode(_ep_cards("EP801", _cards()), dry_run=False)
+    assert res["posted"] is True
+    assert res["root_media_id"] == "root1"
+    assert res["reply_count"] == 2
+    assert threads_publisher.already_posted("EP801") is True
+
+    # Second publish of the same episode is a no-op skip (idempotent).
+    again = await threads_publisher.publish_episode(_ep_cards("EP801", _cards()), dry_run=False)
+    assert again["posted"] is False
+    assert again["reason"] == "already_posted"
+
+
+@pytest.mark.asyncio
+async def test_publish_episode_skips_when_no_content(temp_db):
+    ep = Episode(id="EP802", podcast_name="股癌", episode_title="", key_insights=[],
+                 created_time=_now_ms(), released_at_ms=_now_ms())
+    res = await threads_publisher.publish_episode(ep, dry_run=False)
+    assert res["posted"] is False
+    assert res["reason"] == "no_postable_content"

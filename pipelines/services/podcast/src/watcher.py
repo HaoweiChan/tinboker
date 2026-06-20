@@ -1,10 +1,15 @@
-"""Episode watcher: polls RSS feeds and triggers the pipeline for new episodes.
+"""Episode watcher: polls feeds and triggers the pipeline for new episodes.
 
 Runs as an async background task inside the podcast-api FastAPI app. Each cycle:
 1. Load active shows (platform API -> Postgres registry -> JSON config fallback).
-2. For each show, fetch the latest episodes from the podcasttomp3 API.
+2. For each show, fetch the latest episodes from its canonical RSS feed
+   (falling back to the podcasttomp3 mirror) — see ``service.feed_source``.
 3. Compare against Firestore to find unprocessed episodes.
 4. Run the processing pipeline for each new episode in a thread pool.
+
+The lightweight check (steps 1-3) only reads feed metadata; the heavy
+download/transcribe/summarize pipeline (step 4) runs solely for episodes that
+are genuinely new, so an idle cycle costs a feed fetch plus a few Firestore reads.
 """
 
 from __future__ import annotations
@@ -231,13 +236,16 @@ def _load_active_shows() -> list[dict[str, Any]]:
 def _find_new_episodes(
     show: dict[str, Any], limit: int = 3
 ) -> list[dict[str, Any]]:
-    """Fetch the latest episodes for *show* and return those not yet in Firestore."""
-    from src.service.download_podcasts import extract_podcast_id, fetch_episodes
+    """Fetch the latest episodes for *show* and return those not yet in Firestore.
 
-    link = show.get("link", "")
+    Reads the show's canonical RSS feed (falling back to the podcasttomp3 mirror)
+    via :func:`fetch_feed_episodes`, so a freshly-published episode is detected
+    within the poll interval rather than after the mirror catches up hours later.
+    """
+    from src.service.feed_source import fetch_feed_episodes
+
     name = show.get("name", "Unknown")
-    podcast_id = extract_podcast_id(link)
-    episodes = fetch_episodes(podcast_id)
+    episodes = fetch_feed_episodes(show)
     if not episodes:
         return []
 

@@ -34,24 +34,35 @@ export function useStockPriceMap(tickers: string[]): Map<string, number> {
     }
 
     let alive = true;
-    apiClient
-      .get('/api/stocks/batch-prices', { params: { tickers: stale.join(',') } })
-      .then((res) => {
-        if (!alive) return;
-        const ts = Date.now();
-        for (const [ticker, changePercent] of Object.entries(res.data ?? {})) {
+    // /api/stocks/batch-prices caps at 100 tickers per request — chunk so large
+    // lists (e.g. a sector page with 170+ related tickers) don't silently drop the
+    // tail, which showed priceable tickers (NVDA, MU, …) as an empty "—".
+    const CHUNK = 90;
+    const chunks: string[][] = [];
+    for (let i = 0; i < stale.length; i += CHUNK) chunks.push(stale.slice(i, i + CHUNK));
+    Promise.all(
+      chunks.map((c) =>
+        apiClient
+          .get('/api/stocks/batch-prices', { params: { tickers: c.join(',') } })
+          .then((res) => res.data as Record<string, unknown>)
+          .catch(() => ({} as Record<string, unknown>)),
+      ),
+    ).then((results) => {
+      if (!alive) return;
+      const ts = Date.now();
+      for (const data of results) {
+        for (const [ticker, changePercent] of Object.entries(data ?? {})) {
           if (Number.isFinite(changePercent)) {
             tickerCache.set(ticker, { value: changePercent as number, ts });
           }
         }
-        setMap(buildMap());
-      })
-      .catch(() => {});
+      }
+      setMap(buildMap());
+    });
 
     return () => {
       alive = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tickerKey]);
 
   return map;

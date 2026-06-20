@@ -183,5 +183,11 @@ def generate_placeholder_result(transcript_text: str) -> Dict:
     return {
         'summary_text': summary_text,
         'svg_content': svg_content,
-        'related_tickers': related_tickers
+        'related_tickers': related_tickers,
+        # Marker so the pipeline can refuse to PERSIST a placeholder over good
+        # content. The external summarizer falls back here when the LLM reply is
+        # unparseable (e.g. truncated JSON on long episodes); the resulting junk
+        # summary + random tickers must never overwrite a previously-good episode.
+        # See src/pipeline/steps/summarize.py (assert_summary_persistable).
+        'is_placeholder': True,
     }
