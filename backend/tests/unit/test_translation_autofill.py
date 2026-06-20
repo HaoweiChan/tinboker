@@ -86,14 +86,39 @@ def test_skips_already_named_rows_without_api_call(session):
     assert dc.finmind_service.calls == []  # no redundant network call
 
 
-def test_unresolved_ticker_stays_pending(session):
+def test_definitive_miss_marked_unresolvable(session):
     _add(session, ticker="999999", market="TW", translation_status="pending")
-    dc = _FakeDC(tw={}, us={})  # FinMind echoes the symbol → treated as a miss
+    dc = _FakeDC(tw={}, us={})  # FinMind echoes the symbol → definitive miss
 
     filled = autofill_names_for_rows(session, session.query(StockTranslation).all(), dc=dc)
     assert filled == 0
     row = session.query(StockTranslation).filter_by(ticker="999999").one()
-    assert row.name_zh_tw is None and row.translation_status == "pending"
+    assert row.name_zh_tw is None and row.translation_status == "unresolvable"
+
+
+def test_transient_api_error_leaves_stub_pending(session):
+    class _ErrorService:
+        def get_ticker_details(self, ticker: str):
+            raise RuntimeError("network timeout")
+
+    class _ErrorDC:
+        finmind_service = _ErrorService()
+        massive_service = _ErrorService()
+
+    _add(session, ticker="ZZZZ", market="US", translation_status="pending")
+    filled = autofill_names_for_rows(session, session.query(StockTranslation).all(), dc=_ErrorDC())
+    assert filled == 0
+    row = session.query(StockTranslation).filter_by(ticker="ZZZZ").one()
+    assert row.translation_status == "pending"  # transient error → do not mark unresolvable
+
+
+def test_unresolvable_rows_skipped_on_rerun(session):
+    _add(session, ticker="FAKE", market="US", translation_status="unresolvable")
+    dc = _FakeDC(tw={}, us={"FAKE": "Fake Corp"})  # API now knows it — but it should be skipped
+
+    filled = autofill_names_for_rows(session, session.query(StockTranslation).all(), dc=dc)
+    assert filled == 0
+    assert dc.massive_service.calls == []  # skipped before any lookup
 
 
 def test_needs_name_logic():

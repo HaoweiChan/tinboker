@@ -26,8 +26,8 @@ logger = logging.getLogger(__name__)
 
 
 def _needs_name(row) -> bool:
-    """True for a non-approved stub missing its market-appropriate display name."""
-    if row.translation_status == "approved":
+    """True for a non-approved, non-unresolvable stub missing its market-appropriate display name."""
+    if row.translation_status in ("approved", "unresolvable"):
         return False
     if row.market == "TW":
         return not (row.name_zh_tw or "").strip()
@@ -38,8 +38,16 @@ def _needs_name(row) -> bool:
     return False
 
 
-def _resolve_name(dc, ticker: str, market: str) -> tuple[Optional[str], Optional[str]]:
-    """(name_en, name_zh_tw) for one ticker from market data; (None, None) if unknown.
+def _resolve_name(
+    dc, ticker: str, market: str
+) -> tuple[Optional[str], Optional[str], bool]:
+    """(name_en, name_zh_tw, is_definitive) for one ticker from market data.
+
+    ``is_definitive=True`` means the API responded successfully — a (None, None)
+    result with is_definitive=True means the ticker genuinely doesn't exist in that
+    market and the stub should be marked 'unresolvable'.
+    ``is_definitive=False`` means a transient error occurred — leave the stub
+    'pending' so the next autofill run retries.
 
     FinMind's ``TaiwanStockInfo.stock_name`` is Traditional Chinese; Massive's
     ``ticker_details.name`` is English. ``get_ticker_details`` echoes the bare symbol as
@@ -49,18 +57,26 @@ def _resolve_name(dc, ticker: str, market: str) -> tuple[Optional[str], Optional
         if market == "TW":
             details = dc.finmind_service.get_ticker_details(ticker)
             name = (details or {}).get("name")
-            return (None, name) if name and name != ticker else (None, None)
+            if name and name != ticker:
+                return (None, name, True)
+            return (None, None, True)  # definitive miss — ticker not in FinMind
         if market == "US":
             details = dc.massive_service.get_ticker_details(ticker)
             name = (details or {}).get("name")
-            return (name, None) if name and name != ticker else (None, None)
-    except Exception as e:  # market API hiccup — best-effort, leave the stub pending
+            if name and name != ticker:
+                return (name, None, True)
+            return (None, None, True)  # definitive miss — ticker not in Massive
+    except Exception as e:  # transient API hiccup — retry next run
         logger.debug("autofill: resolve %s/%s failed: %s", ticker, market, e)
-    return (None, None)
+    return (None, None, False)
 
 
 def autofill_names_for_rows(session, rows: Iterable, dc=None) -> int:
     """Fill names for the given translation rows from market data. Returns count filled.
+
+    Stubs that the market API definitively cannot resolve (is_definitive=True but no
+    name returned) are marked 'unresolvable' so they don't pollute the pending queue.
+    Transient API errors leave the stub 'pending' for the next run to retry.
 
     ``dc`` is a ``DataCollectionService`` (injectable for tests); constructed lazily so
     a missing API key never breaks the caller.
@@ -82,25 +98,41 @@ def autofill_names_for_rows(session, rows: Iterable, dc=None) -> int:
 
     service = TranslationService(session)
     filled = 0
+    unresolvable = 0
     for r in targets:
-        name_en, name_zh_tw = _resolve_name(dc, r.ticker, r.market)
-        if not (name_en or name_zh_tw):
-            continue
-        try:
-            service.create_or_update(
-                ticker=r.ticker,
-                market=r.market,
-                name_en=name_en,
-                name_zh_tw=name_zh_tw,
-                status="auto",
-                updated_by="market_autofill",
-            )
-            filled += 1
-        except Exception as e:
-            logger.warning("autofill: write %s/%s failed: %s", r.ticker, r.market, e)
-            session.rollback()
+        name_en, name_zh_tw, is_definitive = _resolve_name(dc, r.ticker, r.market)
+        if name_en or name_zh_tw:
+            try:
+                service.create_or_update(
+                    ticker=r.ticker,
+                    market=r.market,
+                    name_en=name_en,
+                    name_zh_tw=name_zh_tw,
+                    status="auto",
+                    updated_by="market_autofill",
+                )
+                filled += 1
+            except Exception as e:
+                logger.warning("autofill: write %s/%s failed: %s", r.ticker, r.market, e)
+                session.rollback()
+        elif is_definitive:
+            # API confirmed the ticker doesn't exist — mark so it won't clog the queue.
+            try:
+                service.create_or_update(
+                    ticker=r.ticker,
+                    market=r.market,
+                    status="unresolvable",
+                    updated_by="market_autofill",
+                )
+                unresolvable += 1
+                logger.debug("autofill: marked %s/%s unresolvable", r.ticker, r.market)
+            except Exception as e:
+                logger.warning("autofill: mark-unresolvable %s/%s failed: %s", r.ticker, r.market, e)
+                session.rollback()
     if filled:
         logger.info("autofill: resolved %d ticker name(s) from market data", filled)
+    if unresolvable:
+        logger.info("autofill: marked %d ticker(s) unresolvable (not found in market data)", unresolvable)
     return filled
 
 
