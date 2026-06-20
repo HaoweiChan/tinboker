@@ -195,6 +195,51 @@ async def test_metadata_derived_even_when_all_episodes_scoped_out():
 
 
 @pytest.mark.asyncio
+async def test_excluded_exposure_returns_empty_without_querying():
+    """Suppressed umbrella exposures (e.g. the broad 半導體 sector) short-circuit to
+    an empty payload and never hit Firestore."""
+    mock_fs = MagicMock()
+
+    svc = PodcastService(firestore_service=mock_fs)
+
+    with (
+        patch("src.services.podcast.cache_get", new=AsyncMock(return_value=None)),
+        patch("src.services.podcast.cache_set", new=AsyncMock()),
+        patch.object(svc, "_allowed_podcast_names", new=AsyncMock(return_value=None)),
+    ):
+        result = await svc.get_episodes_by_sector("sector_semiconductor")
+
+    assert result["resolved_tickers"] == []
+    assert result["episodes"] == []
+    assert result["total"] == 0
+    mock_fs.query_collection.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_resolved_tickers_enriched_with_reason():
+    """Each constituent gets a zh-TW 'why it belongs to the sector' reason from the
+    compiled universe mirror."""
+    doc = _raw_doc("ep-001", tickers=[
+        {"ticker": "2327", "name": "國巨", "name_en": None, "market": "TW", "source": "curated"},
+    ])
+
+    mock_fs = MagicMock()
+    mock_fs.query_collection.return_value = [doc]
+
+    svc = PodcastService(firestore_service=mock_fs)
+
+    with (
+        patch("src.services.podcast.cache_get", new=AsyncMock(return_value=None)),
+        patch("src.services.podcast.cache_set", new=AsyncMock()),
+        patch.object(svc, "_allowed_podcast_names", new=AsyncMock(return_value=None)),
+    ):
+        result = await svc.get_episodes_by_sector("sector_passive_components")
+
+    rt = {t["ticker"]: t for t in result["resolved_tickers"]}
+    assert rt["2327"].get("reason"), "expected a sector-relationship reason for 2327"
+
+
+@pytest.mark.asyncio
 async def test_firestore_query_uses_array_contains():
     """query_collection is called with the array-contains filter on sector_exposure_ids."""
     mock_fs = MagicMock()
