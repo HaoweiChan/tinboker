@@ -99,6 +99,8 @@ def _clean_member(member: dict[str, Any]) -> dict[str, Any]:
     }
     if member.get("name_en"):
         out["name_en"] = str(member["name_en"])
+    if member.get("reason"):
+        out["reason"] = str(member["reason"])
     return out
 
 

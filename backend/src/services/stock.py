@@ -493,15 +493,27 @@ class StockService:
         is_taiwan_stock = stock_data.stock_id.isdigit()
         
         if not is_taiwan_stock:
-            # US stock - try to get images from Massive API
+            # US stock - prefer the warmed profile store (logos/profile kept fresh by the
+            # background slow-data warmer). This avoids a per-request Massive call on a 1-hour
+            # TTL, which was the top source of upstream 429s. Fall back to a live Massive fetch
+            # only on a cold miss (untracked ticker not yet warmed).
             try:
-                details = self.data_collection_service.massive_service.get_ticker_details(stock_data.stock_id)
-                if details:
-                    icon_url = details.get("icon_url")
-                    logo_url = details.get("logo_url")
-                    icon_image = details.get("icon_image")
-                    logo_image = details.get("logo_image")
-                    logger.debug(f"Fetched image data for {stock_data.stock_id}: icon={bool(icon_image)}, logo={bool(logo_image)}")
+                from src.services.stock_close_refresh import read_stored_profile_sync
+
+                stored = read_stored_profile_sync(stock_data.stock_id)
+                if stored and (stored.get("logo_image") or stored.get("icon_image")):
+                    icon_url = stored.get("icon_url")
+                    logo_url = stored.get("logo_url")
+                    icon_image = stored.get("icon_image")
+                    logo_image = stored.get("logo_image")
+                else:
+                    details = self.data_collection_service.massive_service.get_ticker_details(stock_data.stock_id)
+                    if details:
+                        icon_url = details.get("icon_url")
+                        logo_url = details.get("logo_url")
+                        icon_image = details.get("icon_image")
+                        logo_image = details.get("logo_image")
+                        logger.debug(f"Fetched image data for {stock_data.stock_id}: icon={bool(icon_image)}, logo={bool(logo_image)}")
             except Exception as e:
                 logger.warning(f"Could not fetch image data for {stock_data.stock_id}: {e}")
         else:

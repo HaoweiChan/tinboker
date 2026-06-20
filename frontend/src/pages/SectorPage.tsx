@@ -198,6 +198,7 @@ export const SectorPage: React.FC = () => {
                   perf={perfMap[t.ticker.toUpperCase()]}
                   timeframe={timeframe}
                   loading={perfLoading}
+                  reason={t.reason}
                 />
               ))}
             </div>

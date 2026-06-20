@@ -25,5 +25,6 @@ dependencies = [
     "sqlalchemy>=2.0.0",
     "tqdm>=4.67.1",
     "uvicorn[standard]==0.24.0",
+    "yfinance>=0.2.66",
     "google-auth>=2.23.0",
 ]

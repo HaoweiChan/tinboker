@@ -55,14 +55,23 @@ class RedisClient:
         # Retry logic for connection
         for attempt in range(retries):
             try:
-                cls._client = aioredis.from_url(
+                # BlockingConnectionPool (not the default pool): under a homepage burst
+                # dozens of tickers each do concurrent cache ops. The default pool *raises*
+                # "Too many connections" the instant max_connections is exceeded, which makes
+                # cache_get fail and the caller fall through to a live upstream API call —
+                # turning a cache hit into a Massive/FinMind request and pinning their rate
+                # limits. The blocking pool instead waits up to `timeout` for a free
+                # connection, so bursts queue briefly rather than bypassing the cache.
+                pool = aioredis.BlockingConnectionPool.from_url(
                     redis_url,
                     encoding="utf-8",
                     decode_responses=True,
-                    max_connections=50,
+                    max_connections=int(os.getenv("REDIS_MAX_CONNECTIONS", "100")),
+                    timeout=float(os.getenv("REDIS_POOL_TIMEOUT", "0.5")),  # wait for a free conn, don't throw
                     socket_connect_timeout=float(os.getenv("REDIS_CONNECT_TIMEOUT", "1")),
-                    socket_timeout=float(os.getenv("REDIS_SOCKET_TIMEOUT", "1"))
+                    socket_timeout=float(os.getenv("REDIS_SOCKET_TIMEOUT", "1")),
                 )
+                cls._client = aioredis.Redis(connection_pool=pool)
                 # Test connection
                 await cls._client.ping()
                 logger.info("Redis connection established successfully")

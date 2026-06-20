@@ -10,6 +10,9 @@ class SectorResolvedTicker(BaseModel):
     name_en: Optional[str] = None
     market: str
     source: str
+    # Short zh-TW explanation of how this ticker relates to the sector/theme
+    # (Tavily-discovered, LLM-authored). Absent when no reason is on file.
+    reason: Optional[str] = None
 
 
 class EpisodesBySectorResponse(BaseModel):

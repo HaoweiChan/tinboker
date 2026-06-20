@@ -19,9 +19,13 @@ const MemberRow: React.FC<MemberRowProps> = ({ member }) => {
   const hasSeries = member.series && member.series.length > 1;
 
   return (
-    <div className="flex items-center gap-3 py-2 first:pt-0 last:pb-0">
+    <Link
+      to={`/stock/${encodeURIComponent(member.ticker)}`}
+      className="group/row flex items-center gap-3 py-2 first:pt-0 last:pb-0 -mx-1 px-1 rounded
+                 transition-colors hover:bg-muted/40"
+    >
       {/* Ticker */}
-      <span className="font-mono text-[11px] text-muted-foreground tabular-nums min-w-[3.5rem] shrink-0 leading-none">
+      <span className="font-mono text-[11px] text-muted-foreground tabular-nums min-w-[3.5rem] shrink-0 leading-none group-hover/row:text-accent-info transition-colors">
         {member.ticker.replace(/\.[A-Z]+$/i, '')}
       </span>
 
@@ -56,7 +60,7 @@ const MemberRow: React.FC<MemberRowProps> = ({ member }) => {
           skeleton
         />
       </div>
-    </div>
+    </Link>
   );
 };
 
