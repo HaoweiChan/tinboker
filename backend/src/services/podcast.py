@@ -880,6 +880,13 @@ class PodcastService:
     # ── Sector board constants ────────────────────────────────────────
     _BOARD_W_PRICE: float = 0.5
     _BOARD_W_MENTION: float = 0.5
+    # Episode fields the board / sectors scans actually read — projected via
+    # stream_documents_projected so the ~2700-doc scan skips transcript/summary
+    # refs etc. Covers the tally + scoping (_dict_release_ms, allowlist, retracted).
+    _SECTOR_SCAN_FIELDS = [
+        "sector_exposures", "podcast_name", "retracted_at",
+        "released_at_ms", "spotify_release_date", "created_time",
+    ]
 
     async def sector_member_tickers(self) -> list[str]:
         """Union of every sector/theme basket ticker across scoped episodes (no prices).
@@ -898,7 +905,9 @@ class PodcastService:
         allowed = await self._allowed_podcast_names()
         cutoff = self._recency_cutoff_ms()
         try:
-            docs = await asyncio.to_thread(self.firestore_service.get_all_documents, "episodes")
+            docs = await asyncio.to_thread(
+                self.firestore_service.stream_documents_projected, "episodes", self._SECTOR_SCAN_FIELDS,
+            )
         except Exception as e:
             logger.warning("sector_member_tickers scan failed: %s", e)
             return []
@@ -935,7 +944,9 @@ class PodcastService:
         stock_daily_closes table via get_eod_change_pct — no external API
         calls per request.
 
-        Cache TTL matches podcast_episodes (10 min) so prices stay fresh.
+        Serving path: returns the warm Redis entry kept fresh by
+        run_periodic_board_refresh (refresh-ahead), and only falls back to a
+        recompute on a cold cache. Cache TTL matches podcast_episodes (10 min).
         """
         cache_key = f"sectors:board:v2:{self._scope_tag()}"
         cached = await cache_get(cache_key)
@@ -945,12 +956,44 @@ class PodcastService:
             except Exception:
                 pass
 
+        result = await self._compute_sector_board()
+        await self._cache_sector_board(result)
+        return result
+
+    async def warm_sector_board(self) -> list[dict]:
+        """Force-recompute the board and overwrite the cache, ignoring any existing
+        entry. Called by run_periodic_board_refresh so the serving cache is rewritten
+        before its TTL expires (refresh-ahead) — the request path then always hits warm.
+        """
+        result = await self._compute_sector_board()
+        await self._cache_sector_board(result)
+        return result
+
+    async def _cache_sector_board(self, result: list[dict]) -> None:
+        """Write the board payload to the scope-keyed Redis entry (10-min TTL)."""
+        cache_key = f"sectors:board:v2:{self._scope_tag()}"
+        try:
+            await cache_set(cache_key, json.dumps(result), CACHE_TTL["podcast_episodes"])
+        except Exception:
+            pass
+
+    async def _compute_sector_board(self) -> list[dict]:
+        """Scan + aggregate + price-join the board (no cache read/write).
+
+        Heavy path, kept off the request path by warm_sector_board: a projected
+        episode scan (stream_documents_projected — only _SECTOR_SCAN_FIELDS, not
+        full docs) tallies per-exposure episode_count / display meta / member
+        tickers, then joins warm EOD prices + close series from Postgres. The
+        returned list is sorted by hotness DESC.
+        """
         allowed = await self._allowed_podcast_names()
         cutoff = self._recency_cutoff_ms()
 
         try:
             docs = await asyncio.to_thread(
-                self.firestore_service.get_all_documents, "episodes"
+                self.firestore_service.stream_documents_projected,
+                "episodes",
+                self._SECTOR_SCAN_FIELDS,
             )
         except Exception as e:
             raise Exception(f"Failed to scan episodes for sector board: {e}") from e
@@ -984,10 +1027,6 @@ class PodcastService:
                         sector_tickers[ticker] = rt.get("name") or ""
 
         if not counts:
-            try:
-                await cache_set(cache_key, json.dumps([]), CACHE_TTL["podcast_episodes"])
-            except Exception:
-                pass
             return []
 
         # Gather all unique tickers and fetch EOD change% concurrently
@@ -1115,12 +1154,6 @@ class PodcastService:
             result.append({**s, "hotness": hotness})
 
         result.sort(key=lambda x: x["hotness"], reverse=True)
-
-        try:
-            await cache_set(cache_key, json.dumps(result), CACHE_TTL["podcast_episodes"])
-        except Exception:
-            pass
-
         return result
 
     async def list_sectors(self) -> list[dict]:
@@ -1149,7 +1182,9 @@ class PodcastService:
 
         try:
             docs = await asyncio.to_thread(
-                self.firestore_service.get_all_documents, "episodes"
+                self.firestore_service.stream_documents_projected,
+                "episodes",
+                self._SECTOR_SCAN_FIELDS,
             )
         except Exception as e:
             raise Exception(f"Failed to scan episodes for sectors: {e}") from e
@@ -1580,3 +1615,20 @@ async def poll_regeneration_status(podcast_name: str, episode_id: str):
                 await asyncio.sleep(5)
 
     logger.warning(f"Regeneration polling timed out for {podcast_name}/{episode_id}")
+
+
+async def run_periodic_board_refresh(interval_seconds: float = 300.0) -> None:
+    """Refresh-ahead loop for the /topics sector board.
+
+    Recomputes the board for the active release scope and overwrites its Redis
+    entry every ``interval_seconds`` (default 5 min) — comfortably inside the
+    10-min cache TTL, so the serving path always finds a warm entry and a user
+    never pays the cold full-scan. Runs immediately on start, then loops. Never
+    raises (mirrors stock_close_refresh.run_periodic_refresh).
+    """
+    while True:
+        try:
+            await PodcastService().warm_sector_board()
+        except Exception as e:
+            logger.warning(f"sector-board refresh cycle failed: {e}")
+        await asyncio.sleep(interval_seconds)

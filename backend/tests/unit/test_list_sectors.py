@@ -1,6 +1,6 @@
 """Unit tests for list_sectors() and GET /api/sectors.
 
-Mocks FirestoreService.get_all_documents and cache so no real Firebase
+Mocks FirestoreService.stream_documents_projected and cache so no real Firebase
 connection is needed.  Mirrors the pattern of test_sector_exposure_endpoint.py.
 """
 from datetime import datetime
@@ -74,7 +74,7 @@ async def test_returns_sectors_sorted_by_count_desc():
     ]
 
     mock_fs = MagicMock()
-    mock_fs.get_all_documents.return_value = docs
+    mock_fs.stream_documents_projected.return_value = docs
     svc = PodcastService(firestore_service=mock_fs)
 
     with (
@@ -104,7 +104,7 @@ async def test_same_count_sorts_by_exposure_id_asc():
     ]
 
     mock_fs = MagicMock()
-    mock_fs.get_all_documents.return_value = docs
+    mock_fs.stream_documents_projected.return_value = docs
     svc = PodcastService(firestore_service=mock_fs)
 
     with (
@@ -127,7 +127,7 @@ async def test_retracted_docs_excluded():
     ]
 
     mock_fs = MagicMock()
-    mock_fs.get_all_documents.return_value = docs
+    mock_fs.stream_documents_projected.return_value = docs
     svc = PodcastService(firestore_service=mock_fs)
 
     with (
@@ -150,7 +150,7 @@ async def test_out_of_scope_podcast_excluded():
     ]
 
     mock_fs = MagicMock()
-    mock_fs.get_all_documents.return_value = docs
+    mock_fs.stream_documents_projected.return_value = docs
     svc = PodcastService(firestore_service=mock_fs)
     allowed = frozenset({"Gooaye 股癌"})
 
@@ -174,7 +174,7 @@ async def test_display_name_and_exposure_type_from_first_seen():
     docs = [_doc(f"ep-{i}", exposures=exposures) for i in range(3)]
 
     mock_fs = MagicMock()
-    mock_fs.get_all_documents.return_value = docs
+    mock_fs.stream_documents_projected.return_value = docs
     svc = PodcastService(firestore_service=mock_fs)
 
     with (
@@ -194,7 +194,7 @@ async def test_display_name_and_exposure_type_from_first_seen():
 async def test_empty_when_no_episodes():
     """Empty Firestore result yields an empty sectors list."""
     mock_fs = MagicMock()
-    mock_fs.get_all_documents.return_value = []
+    mock_fs.stream_documents_projected.return_value = []
     svc = PodcastService(firestore_service=mock_fs)
 
     with (
@@ -212,7 +212,7 @@ async def test_response_shape_has_required_keys():
     """Each item in the result has the four required keys."""
     docs = [_doc("ep-001")]
     mock_fs = MagicMock()
-    mock_fs.get_all_documents.return_value = docs
+    mock_fs.stream_documents_projected.return_value = docs
     svc = PodcastService(firestore_service=mock_fs)
 
     with (

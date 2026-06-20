@@ -1,9 +1,10 @@
 """Unit tests for sector_board() and GET /api/sectors/board.
 
-Mocks FirestoreService.get_all_documents, get_eod_change_pct, and cache so
-no real Firebase or DB connection is needed.  Mirrors the pattern established
+Mocks FirestoreService.stream_documents_projected, get_eod_change_pct, and cache
+so no real Firebase or DB connection is needed.  Mirrors the pattern established
 in test_list_sectors.py.
 """
+import json
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -85,7 +86,7 @@ def _doc(
 def _make_svc(docs: list, price_map: dict | None = None) -> tuple:
     """Return (svc, price_map) ready for use inside a `with patch(...)` block."""
     mock_fs = MagicMock()
-    mock_fs.get_all_documents.return_value = docs
+    mock_fs.stream_documents_projected.return_value = docs
     svc = PodcastService(firestore_service=mock_fs)
     if price_map is None:
         price_map = {}
@@ -391,3 +392,54 @@ async def test_member_and_sector_series_populated():
     # sector series = rebased to 100 at first close
     expected_sector_series = [c / closes_2327[0] * 100.0 for c in closes_2327]
     assert sector["series"] == pytest.approx(expected_sector_series)
+
+
+# ── Refresh-ahead (warm cache off the request path) ─────────────────────────────
+
+@pytest.mark.asyncio
+async def test_sector_board_serves_cache_without_scanning():
+    """On a cache hit, sector_board() returns the cached payload and never runs the
+    expensive Firestore scan — this is what keeps the warm serving path fast."""
+    docs = [_doc("ep-001")]
+    svc, _ = _make_svc(docs)
+    cached_payload = [{"exposure_id": "sector_cached", "hotness": 0.9}]
+
+    with (
+        patch("src.services.podcast.cache_get", new=AsyncMock(return_value=json.dumps(cached_payload))),
+        patch("src.services.podcast.cache_set", new=AsyncMock()),
+        patch.object(svc, "_allowed_podcast_names", new=AsyncMock(return_value=None)),
+    ):
+        result = await svc.sector_board()
+
+    assert result == cached_payload
+    svc.firestore_service.stream_documents_projected.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_warm_sector_board_recomputes_ignoring_cache():
+    """warm_sector_board() (used by the refresh-ahead loop) ignores any existing
+    cached value, recomputes from the scan, and writes the fresh result to cache."""
+    docs = [_doc("ep-001")]
+    svc, _ = _make_svc(docs)
+
+    async def _fake_eod(ticker: str):
+        return {"2327": 1.5}.get(ticker)
+
+    set_mock = AsyncMock()
+    with (
+        # A STALE cache value is present; warm must recompute regardless.
+        patch("src.services.podcast.cache_get", new=AsyncMock(return_value=json.dumps([{"stale": True}]))),
+        patch("src.services.podcast.cache_set", new=set_mock),
+        patch.object(svc, "_allowed_podcast_names", new=AsyncMock(return_value=None)),
+        patch("src.services.stock_close_refresh.get_eod_change_pct", side_effect=_fake_eod),
+        _patch_get_session(),
+    ):
+        result = await svc.warm_sector_board()
+
+    # Recomputed from the scan, not the stale cache.
+    assert len(result) == 1
+    assert result[0]["exposure_id"] == "sector_passive_components"
+    # And the fresh board was written back to cache exactly once.
+    assert set_mock.await_count == 1
+    cached_written = json.loads(set_mock.await_args.args[1])
+    assert cached_written[0]["exposure_id"] == "sector_passive_components"
