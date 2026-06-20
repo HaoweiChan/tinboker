@@ -54,6 +54,7 @@ def test_canonical_symbol():
     "SPY", "QQQ",                   # registry ETFs (type=etf)
     "SPCE",                         # real ticker (Virgin Galactic) — stays valid
     "ZZZZ",                         # not in registry but valid US shape
+    "00878", "006208",             # real TW ETF codes — leading-zero guard must allow
 ])
 def test_valid_symbols_pass(sym):
     assert is_valid_ticker_symbol(sym) is True
@@ -64,8 +65,14 @@ def test_valid_symbols_pass(sym):
     "VIX", "SPX", "DJI", "IXIC", "RUT", "NBI", "MSCI", "SOX", "NDX",
     # Private companies / wrong-or-junk symbols with no price data.
     "OPENAI", "ANTHROPIC", "SPACEX", "TSMC", "SPACE", "WD", "GIGA", "ASE",
+    # Foreign / unlisted-on-our-feeds names that pass the US-letter shape.
+    "YMTC", "BNP", "LINEPAY", "HSCEI",
+    # Country / region abbreviations (mostly 2-letter, would pass the shape check).
+    "US", "TW", "CN", "KR", "JP", "EU", "HK", "IN", "INDIA", "CHINA",
     # Bare asset-class / instrument words.
     "ETF", "BOND", "BONDS", "REIT",
+    # TW leading-zero junk — no listing has 4+ leading zeros.
+    "000000", "0000",
     # Name+ticker strings and multi-word asset-class labels.
     "台積電 (TSMC)", "TSMC (台積電)", "TSM Inc",
     "EMERGING MARKET LOCAL CURRENCY BONDS", "US HY BOND ETF",

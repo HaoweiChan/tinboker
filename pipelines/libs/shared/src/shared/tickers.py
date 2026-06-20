@@ -95,7 +95,10 @@ def canonical_symbol(raw: str) -> str:
 # fragment / list marker, never an equity, and renders a priceless junk pill on the UI.
 # A genuine single-letter listing (F, T, V) must be added to the registry, which is
 # consulted before this format fallback — registry membership is the escape hatch.
-_TW_RE = re.compile(r"^\d{3,6}[A-Z]?$")
+# _TW_RE: leading-zero guard (``(?!0{4,})``) rejects codes like "000000" (no TW
+# listing has four or more leading zeros) while keeping real ETF codes like
+# 00878 / 006208.
+_TW_RE = re.compile(r"^(?!0{4,})\d{3,6}[A-Z]?$")
 _US_RE = re.compile(r"^[A-Z]{2,5}(?:\.[A-Z]{1,2})?$")
 
 # Embedded whitespace or brackets ⇒ a name+ticker string ("台積電 (TSMC)") or a
@@ -148,6 +151,16 @@ _NON_TICKERS = frozenset({
     "MUSK", "BUFFETT", "DIMON", "TRUMP", "BIDEN",
     # Macro / index / policy — unambiguous non-equities.
     "FED", "FOMC", "ECB", "BOJ", "PBOC", "VIX", "DXY", "LIBOR", "SOFR",
+    # Country / region abbreviations the LLM emits as ticker symbols (most are
+    # 2 letters and would otherwise pass the US-letter shape).
+    "US", "TW", "CN", "KR", "JP", "EU", "HK", "IN",
+    "INDIA", "CHINA", "JAPAN", "KOREA",
+    # Foreign / unlisted-on-our-feeds companies that pass the US-letter shape:
+    # YMTC (Yangtze Memory, PRC state-owned), BNP (BNP Paribas, Euronext),
+    # LINEPAY (payment brand, unlisted).
+    "YMTC", "BNP", "LINEPAY",
+    # Additional index / benchmark codes (HSCEI, Taiwan/Tokyo exchange shorthands).
+    "HSCEI", "CRBRS", "TSE",
 })
 
 
