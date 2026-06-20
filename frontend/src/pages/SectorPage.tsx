@@ -18,7 +18,7 @@ import { fetchWithFallback } from '@/services/api/migration';
 import { useStockPriceMap } from '@/hooks/useStockPriceMap';
 import { useStockPriceSinceMap } from '@/hooks/useStockPriceSinceMap';
 import { useTranslationMap } from '@/hooks/useTranslationMap';
-import { SectorTickerRow } from '@/components/topics/SectorTickerRow';
+import { SectorTickerCard, type Timeframe } from '@/components/topics/SectorTickerCard';
 
 function resolvedTickerName(t: SectorResolvedTicker, translationMap: Map<string, string>): string {
   const upper = t.ticker.toUpperCase();
@@ -30,11 +30,40 @@ function resolvedTickerName(t: SectorResolvedTicker, translationMap: Map<string,
   return t.name || t.ticker;
 }
 
+const TIMEFRAMES: { key: Timeframe; label: string }[] = [
+  { key: 'd1', label: '1天' },
+  { key: 'd7', label: '7天' },
+  { key: 'd30', label: '30天' },
+  { key: 'd90', label: '90天' },
+];
+
+function TimeframeToggle({ value, onChange }: { value: Timeframe; onChange: (t: Timeframe) => void }) {
+  return (
+    <div className="flex items-center gap-0.5 bg-muted/50 border border-border rounded-lg p-0.5 shrink-0">
+      {TIMEFRAMES.map((opt) => (
+        <button
+          key={opt.key}
+          type="button"
+          onClick={() => onChange(opt.key)}
+          className={`px-2.5 py-1 rounded-md text-[12px] font-medium tabular-nums transition-all duration-150
+            ${value === opt.key
+              ? 'bg-card text-foreground shadow-sm border border-border/60'
+              : 'text-muted-foreground hover:text-foreground'
+            }`}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export const SectorPage: React.FC = () => {
   const { exposureId } = useParams<{ exposureId: string }>();
   const [data, setData] = useState<EpisodesBySectorResponse | null>(null);
   const [podcasts, setPodcasts] = useState<Podcast[]>([]);
   const [loading, setLoading] = useState(true);
+  const [timeframe, setTimeframe] = useState<Timeframe>('d1');
   const [perfMap, setPerfMap] = useState<Record<string, TrailingPerf>>({});
   const [perfLoading, setPerfLoading] = useState(false);
 
@@ -144,39 +173,33 @@ export const SectorPage: React.FC = () => {
           </div>
         </div>
 
-        {/* ── Constituent performance — one aligned table, labels in the header ── */}
+        {/* ── Constituent performance — one timeframe at a time via the toggle ── */}
         {loading ? (
           <div className="mb-7">
             <div className="h-4 w-24 bg-muted rounded animate-pulse mb-3" />
-            <div className="bg-card border border-border dark:border-white/[0.08] rounded-xl overflow-hidden">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <div key={i} className="h-[45px] border-b border-border/40 last:border-0 bg-muted/20 animate-pulse" />
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <div key={i} className="bg-card border border-border dark:border-white/[0.08] rounded-lg h-[72px] animate-pulse" />
               ))}
             </div>
           </div>
         ) : members.length > 0 ? (
           <div className="mb-7">
-            <h2 className="text-[13px] font-semibold text-muted-foreground mb-3">成分股表現</h2>
-            <div className="bg-card border border-border dark:border-white/[0.08] rounded-xl overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.04)] dark:shadow-none">
-              {/* Column header — timeframe labels appear once for the whole table */}
-              <div className="flex items-center gap-1.5 px-4 py-2 border-b border-border/60 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                <span className="flex-1 min-w-0">代號</span>
-                <span className="w-[56px] text-right shrink-0">1天</span>
-                <span className="w-[56px] text-right shrink-0">7天</span>
-                <span className="w-[56px] text-right shrink-0">30天</span>
-                <span className="w-[56px] text-right shrink-0">90天</span>
-              </div>
-              <div className="divide-y divide-border/40">
-                {members.map((t) => (
-                  <SectorTickerRow
-                    key={t.ticker}
-                    ticker={t.ticker}
-                    name={resolvedTickerName(t, translationMap)}
-                    perf={perfMap[t.ticker.toUpperCase()]}
-                    loading={perfLoading}
-                  />
-                ))}
-              </div>
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <h2 className="text-[13px] font-semibold text-muted-foreground">成分股表現</h2>
+              <TimeframeToggle value={timeframe} onChange={setTimeframe} />
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">
+              {members.map((t) => (
+                <SectorTickerCard
+                  key={t.ticker}
+                  ticker={t.ticker}
+                  name={resolvedTickerName(t, translationMap)}
+                  perf={perfMap[t.ticker.toUpperCase()]}
+                  timeframe={timeframe}
+                  loading={perfLoading}
+                />
+              ))}
             </div>
           </div>
         ) : null}
