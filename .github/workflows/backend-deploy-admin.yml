@@ -166,7 +166,11 @@ jobs:
               echo "Netdata running on port ${{ steps.config.outputs.netdata_port }}"
             fi
 
-            docker exec caddy caddy reload --config /etc/caddy/Caddyfile || true
+            # NOTE: Caddy is a HOST systemd service (not a container), and this
+            # workflow's `git pull || true` above can leave /app stale — so it must NOT
+            # touch /etc/caddy/Caddyfile (a stale copy could revert live routing).
+            # Caddy config is owned by backend-deploy.yml, which force-checks-out the
+            # deployed ref before validating + reloading. Nothing to do here.
             docker image prune -f
 
             for i in $(seq 1 12); do

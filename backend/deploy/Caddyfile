@@ -1,123 +1,163 @@
-# Caddyfile for TinBoker Backend API
-# Includes admin dashboard and Netdata monitoring proxy
+# ============================================================================
+# TinBoker — CANONICAL Caddy reverse-proxy config (host systemd service)
+# ============================================================================
+# THIS FILE IS DEPLOYED. .github/workflows/backend-deploy.yml syncs it to
+# /etc/caddy/Caddyfile on the VPS on every dev/staging/prod backend deploy:
+# it `caddy validate`s this file, copies it to /etc/caddy/Caddyfile, then runs
+# `systemctl reload caddy`. Caddy runs as a HOST systemd service (User=caddy,
+# caddy v2.10.x) — NOT a Docker container.
+#
+# To change routing: edit THIS file → PR → merge. Do NOT hand-edit
+# /etc/caddy/Caddyfile on the VPS; it is overwritten on the next deploy.
+#
+# One shared Netdata (localhost:19999) serves every env's /netdata/*.
+# ============================================================================
 
-# Production API
+# TinBoker Caddyfile
+# Multi-environment setup
+# 
+# Frontend: Served by Cloudflare Pages (tinboker.com, www.tinboker.com)
+# Backend: Served by VPS (api.tinboker.com, dev-api.tinboker.com, staging-api.tinboker.com)
+
+# ==========================================
+# Production API: api.tinboker.com (port 8000)
+# With Netdata monitoring on /netdata/*
+# ==========================================
 api.tinboker.com {
-    # TLS with automatic HTTPS
-    tls {
-        protocols tls1.2 tls1.3
-    }
+	encode gzip
 
-    # Security headers
-    header {
-        Strict-Transport-Security "max-age=31536000; includeSubDomains"
-        X-Content-Type-Options nosniff
-        X-Frame-Options SAMEORIGIN
-        Referrer-Policy strict-origin-when-cross-origin
-        -Server
-    }
+	# Netdata monitoring dashboard
+	handle /netdata/* {
+		uri strip_prefix /netdata
+		reverse_proxy localhost:19999
+	}
 
-    # Health check (no auth required)
-    handle /health {
-        reverse_proxy localhost:8000
-    }
+	# Default: API proxy
+	handle {
+		reverse_proxy localhost:8000
+	}
 
-    # Netdata monitoring dashboard (admin access only)
-    # Accessible at /netdata/
-    handle_path /netdata/* {
-        # Allow iframe embedding from admin dashboard
-        header {
-            X-Frame-Options "ALLOW-FROM https://tinboker.com"
-            Content-Security-Policy "frame-ancestors 'self' https://tinboker.com https://www.tinboker.com"
-        }
-        
-        # Proxy to Netdata container
-        reverse_proxy localhost:19999 {
-            # Strip /netdata prefix when forwarding
-            header_up Host {upstream_hostport}
-        }
-    }
-
-    # Admin API endpoints (JWT protected at application level)
-    handle /api/admin/* {
-        reverse_proxy localhost:8000
-    }
-
-    # All other API requests
-    handle {
-        reverse_proxy localhost:8000
-    }
-
-    # Logging
-    log {
-        output file /var/log/caddy/api.tinboker.com.log {
-            roll_size 10mb
-            roll_keep 5
-        }
-        format json
-    }
+	log {
+		output file /var/log/caddy/api-access.log
+		format json
+	}
 }
 
-# Development API
+# ==========================================
+# Development API: dev-api.tinboker.com (port 8001)
+# ==========================================
 dev-api.tinboker.com {
-    tls {
-        protocols tls1.2 tls1.3
-    }
+	encode gzip
 
-    handle /health {
-        reverse_proxy localhost:8001
-    }
+	# Netdata monitoring dashboard
+	handle /netdata/* {
+		uri strip_prefix /netdata
+		reverse_proxy localhost:19999
+	}
 
-    handle_path /netdata/* {
-        header {
-            X-Frame-Options "ALLOW-FROM https://dev.tinboker.com"
-            Content-Security-Policy "frame-ancestors 'self' https://dev.tinboker.com"
-        }
-        reverse_proxy localhost:19997 {
-            header_up Host {upstream_hostport}
-        }
-    }
+	# Default: API proxy
+	handle {
+		reverse_proxy localhost:8001
+	}
 
-    handle {
-        reverse_proxy localhost:8001
-    }
-
-    log {
-        output file /var/log/caddy/dev-api.tinboker.com.log {
-            roll_size 10mb
-            roll_keep 5
-        }
-    }
+	log {
+		output file /var/log/caddy/dev-api-access.log
+		format json
+	}
 }
 
-# Staging API (optional)
-api-staging.tinboker.com {
-    tls {
-        protocols tls1.2 tls1.3
-    }
+# ==========================================
+# Staging API: staging-api.tinboker.com (port 8002)
+# With Netdata monitoring on /netdata/*
+# ==========================================
+staging-api.tinboker.com {
+	encode gzip
 
-    handle /health {
-        reverse_proxy localhost:8002
-    }
+	# Netdata monitoring dashboard
+	handle /netdata/* {
+		uri strip_prefix /netdata
+		reverse_proxy localhost:19999
+	}
 
-    handle_path /netdata/* {
-        header {
-            X-Frame-Options "ALLOW-FROM https://staging.tinboker.com"
-            Content-Security-Policy "frame-ancestors 'self' https://staging.tinboker.com"
-        }
-        reverse_proxy localhost:19998 {
-            header_up Host {upstream_hostport}
-        }
-    }
+	# Default: API proxy
+	handle {
+		reverse_proxy localhost:8002
+	}
 
-    handle {
-        reverse_proxy localhost:8002
-    }
+	log {
+		output file /var/log/caddy/staging-api-access.log
+		format json
+	}
+}
 
-    log {
-        output file /var/log/caddy/api-staging.tinboker.com.log {
-            roll_size 10mb
-            roll_keep 5
-        }
-    }
+# ==========================================
+# Development Frontend: dev.tinboker.com
+# (Still served from VPS for development)
+# ==========================================
+dev.tinboker.com {
+	encode gzip
+
+	handle /api/* {
+		reverse_proxy localhost:8001
+	}
+
+	handle /ws/* {
+		reverse_proxy localhost:8001
+	}
+
+	handle /health {
+		reverse_proxy localhost:8001
+	}
+
+	handle {
+		root * /var/www/html-dev
+		try_files {path} /index.html
+		file_server
+	}
+
+	log {
+		output file /var/log/caddy/dev-access.log
+		format json
+	}
+}
+
+# ==========================================
+# Direct IP access (for health checks)
+# ==========================================
+:80 {
+	encode gzip
+
+	handle /api/* {
+		reverse_proxy localhost:8000
+	}
+
+	handle /health {
+		reverse_proxy localhost:8000
+	}
+
+	respond "VPS is running" 200
+}
+
+# ==========================================
+# Podcast / Wiki content API: podcast-api.tinboker.com (port 8003)
+# tinboker-agents — /api/podcast/*, /api/episodes/*, /api/wiki/*
+# ==========================================
+podcast-api.tinboker.com {
+	encode gzip
+
+	# Static media files (Phase E: GCS -> VPS blob store)
+	handle /media/* {
+		root * /var/lib/tinboker
+		file_server
+	}
+
+	# Content API
+	handle {
+		reverse_proxy localhost:8003
+	}
+
+	log {
+		output file /var/log/caddy/podcast-api-access.log
+		format json
+	}
 }
