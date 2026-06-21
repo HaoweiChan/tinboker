@@ -54,7 +54,7 @@ def _theme_entry(theme: dict[str, Any], tickers: dict[str, Any]) -> dict[str, An
         member["rank"] = int(raw.get("rank") or i)
         members.append(member)
     theme_id = str(theme["theme_id"])
-    return {
+    entry = {
         "exposure_id": f"theme_{theme_id}",
         "exposure_type": "theme",
         "sector_id": None,
@@ -63,6 +63,12 @@ def _theme_entry(theme: dict[str, Any], tickers: dict[str, Any]) -> dict[str, An
         "aliases": theme.get("aliases") or [theme.get("display_name", theme_id)],
         "members": sorted(members, key=lambda m: int(m.get("rank") or 1_000_000)),
     }
+    # Carry through display visuals (icon_id/color_hex) authored by
+    # generate_sector_visuals.py so a recompile doesn't drop them.
+    for key in ("icon_id", "color_hex"):
+        if theme.get(key):
+            entry[key] = theme[key]
+    return entry
 
 
 def main(argv: list[str] | None = None) -> int:

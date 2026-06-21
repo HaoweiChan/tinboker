@@ -38,7 +38,9 @@
           "source": "curated",
           "rank": 4
         }
-      ]
+      ],
+      "icon_id": "server",
+      "color_hex": "#8B5CF6"
     },
     {
       "theme_id": "liquid_cooling",
@@ -74,7 +76,9 @@
           "source": "curated",
           "rank": 3
         }
-      ]
+      ],
+      "icon_id": "droplets",
+      "color_hex": "#38BDF8"
     },
     {
       "theme_id": "silicon_photonics",
@@ -118,7 +122,9 @@
           "source": "curated",
           "rank": 5
         }
-      ]
+      ],
+      "icon_id": "radio",
+      "color_hex": "#0EA5E9"
     },
     {
       "theme_id": "power_semiconductor",
@@ -175,7 +181,9 @@
           "rank": 5,
           "name_en": "Wolfspeed"
         }
-      ]
+      ],
+      "icon_id": "zap",
+      "color_hex": "#EAB308"
     },
     {
       "theme_id": "robotics",
@@ -215,7 +223,9 @@
           "rank": 3,
           "name_en": "Solomon Technology"
         }
-      ]
+      ],
+      "icon_id": "bot",
+      "color_hex": "#06B6D4"
     },
     {
       "theme_id": "silicon_ip",
@@ -261,7 +271,9 @@
           "rank": 4,
           "name_en": "M31 Technology"
         }
-      ]
+      ],
+      "icon_id": "file-code",
+      "color_hex": "#EC4899"
     },
     {
       "theme_id": "advanced_packaging",
@@ -298,7 +310,9 @@
           "source": "curated",
           "rank": 3
         }
-      ]
+      ],
+      "icon_id": "package",
+      "color_hex": "#D946EF"
     }
   ]
 }

@@ -19,6 +19,7 @@ import { useStockPriceMap } from '@/hooks/useStockPriceMap';
 import { useStockPriceSinceMap } from '@/hooks/useStockPriceSinceMap';
 import { useTranslationMap } from '@/hooks/useTranslationMap';
 import { SectorTickerCard, type Timeframe } from '@/components/topics/SectorTickerCard';
+import { SectorIcon } from '@/components/topics/SectorIcon';
 
 function resolvedTickerName(t: SectorResolvedTicker, translationMap: Map<string, string>): string {
   const upper = t.ticker.toUpperCase();
@@ -159,6 +160,17 @@ export const SectorPage: React.FC = () => {
       />
       <PageContent>
         <div className="flex items-start gap-5 bg-card border border-border rounded-md p-5 sm:p-6 mb-[18px]">
+          {loading ? (
+            <div className="w-11 h-11 rounded-md bg-muted animate-pulse shrink-0" />
+          ) : (
+            <SectorIcon
+              exposureId={exposureId ?? ''}
+              iconId={data?.icon_id}
+              color={data?.color_hex}
+              size={26}
+              variant="chip"
+            />
+          )}
           <div className="flex-1 min-w-0">
             {loading ? (
               <div className="h-7 w-40 bg-muted rounded animate-pulse" />

@@ -137,7 +137,9 @@
           "market_cap_rank": 3,
           "reason": "提供多元化製程技術的專業晶圓代工服務，是全球重要的半導體製造商。"
         }
-      ]
+      ],
+      "icon_id": "cpu",
+      "color_hex": "#3B82F6"
     },
     {
       "exposure_id": "sector_passive_components",
@@ -234,7 +236,9 @@
           "rank": 10,
           "reason": "專注於鋁質電解電容器的生產與銷售，為電子產品提供穩定電源解決方案。"
         }
-      ]
+      ],
+      "icon_id": "circuit-board",
+      "color_hex": "#10B981"
     },
     {
       "exposure_id": "sector_shipping",
@@ -341,7 +345,9 @@
           "rank": 11,
           "reason": "經營散裝貨輪船隊，主要承運大宗乾散貨物，服務全球航線。"
         }
-      ]
+      ],
+      "icon_id": "ship",
+      "color_hex": "#14B8A6"
     },
     {
       "exposure_id": "theme_ai_server",
@@ -457,7 +463,9 @@
           "rank": 12,
           "reason": "投入伺服器與儲存解決方案，包含AI就緒平台與機架整合服務。"
         }
-      ]
+      ],
+      "icon_id": "server",
+      "color_hex": "#8B5CF6"
     },
     {
       "exposure_id": "theme_liquid_cooling",
@@ -547,7 +555,9 @@
           "rank": 9,
           "reason": "提供高效能板式熱交換器，為液冷系統中的熱能交換核心元件，確保散熱效率。"
         }
-      ]
+      ],
+      "icon_id": "droplets",
+      "color_hex": "#38BDF8"
     },
     {
       "exposure_id": "theme_silicon_photonics",
@@ -656,7 +666,9 @@
           "rank": 11,
           "reason": "供應光通訊主動元件，如雷射二極體與檢光器，為矽光子模組提供核心元件。"
         }
-      ]
+      ],
+      "icon_id": "radio",
+      "color_hex": "#0EA5E9"
     },
     {
       "exposure_id": "theme_power_semiconductor",
@@ -777,7 +789,9 @@
           "rank": 12,
           "reason": "專業半導體矽晶圓製造商，提供磊晶圓產品，是功率半導體元件的關鍵上游材料供應商。"
         }
-      ]
+      ],
+      "icon_id": "zap",
+      "color_hex": "#EAB308"
     },
     {
       "exposure_id": "sector_heavy_electrical",
@@ -858,7 +872,9 @@
           "rank": 7,
           "reason": "樂事綠能近年積極轉型，投入儲能系統與充電樁等綠能基礎設施，跨足重電領域提供解決方案。"
         }
-      ]
+      ],
+      "icon_id": "plug",
+      "color_hex": "#F97316"
     },
     {
       "exposure_id": "sector_memory",
@@ -972,7 +988,9 @@
           "rank": 11,
           "reason": "專業生產記憶體模組、快閃記憶體產品及固態硬碟，服務全球市場。"
         }
-      ]
+      ],
+      "icon_id": "memory-stick",
+      "color_hex": "#EF4444"
     },
     {
       "exposure_id": "sector_pcb_substrate",
@@ -1084,7 +1102,9 @@
           "rank": 11,
           "reason": "專精於高階伺服器、工業電腦及網通設備的印刷電路板製造，產品具高可靠度特性。"
         }
-      ]
+      ],
+      "icon_id": "circuit-board",
+      "color_hex": "#A855F7"
     },
     {
       "exposure_id": "sector_networking",
@@ -1178,7 +1198,9 @@
           "rank": 9,
           "reason": "提供纜線數據機、光纖數據機與數位用戶迴路等寬頻網路接取設備。"
         }
-      ]
+      ],
+      "icon_id": "network",
+      "color_hex": "#6366F1"
     },
     {
       "exposure_id": "theme_robotics",
@@ -1288,7 +1310,9 @@
           "rank": 11,
           "reason": "旗下達明機器人（Techman Robot）為全球第二大協作型機器人品牌，提供智慧自動化解決方案。"
         }
-      ]
+      ],
+      "icon_id": "bot",
+      "color_hex": "#06B6D4"
     },
     {
       "exposure_id": "sector_financials",
@@ -1408,7 +1432,9 @@
           "rank": 12,
           "reason": "為台灣票券業龍頭，主要從事票券金融、證券經紀與債券自營業務。"
         }
-      ]
+      ],
+      "icon_id": "landmark",
+      "color_hex": "#F59E0B"
     },
     {
       "exposure_id": "sector_semiconductor_equipment",
@@ -1522,7 +1548,9 @@
           "rank": 12,
           "reason": "承攬高科技廠房無塵室與機電空調工程，確保半導體生產環境潔淨度。"
         }
-      ]
+      ],
+      "icon_id": "wrench",
+      "color_hex": "#2DD4BF"
     },
     {
       "exposure_id": "theme_silicon_ip",
@@ -1599,7 +1627,9 @@
           "rank": 7,
           "reason": "提供客製化記憶體解決方案與相關矽智財，特別是應用於AI與高效能運算領域。"
         }
-      ]
+      ],
+      "icon_id": "file-code",
+      "color_hex": "#EC4899"
     },
     {
       "exposure_id": "theme_advanced_packaging",
@@ -1714,7 +1744,9 @@
           "rank": 12,
           "reason": "專業於驅動IC封裝與測試，提供捲帶式薄膜覆晶 (COF) 等先進封裝解決方案。"
         }
-      ]
+      ],
+      "icon_id": "package",
+      "color_hex": "#D946EF"
     },
     {
       "exposure_id": "sector_biotech",
@@ -1758,7 +1790,9 @@
           "rank": 3,
           "reason": "運用生物整合設計，為全球客戶提供保健食品、機能飲品與美容保養品的ODM/OEM代工服務。"
         }
-      ]
+      ],
+      "icon_id": "flask-conical",
+      "color_hex": "#22C55E"
     },
     {
       "exposure_id": "sector_bicycle",
@@ -1793,7 +1827,9 @@
           "name_en": "Merida Industry",
           "reason": "美利達為全球自行車領導品牌之一，專注於中高階自行車的設計與生產。"
         }
-      ]
+      ],
+      "icon_id": "bike",
+      "color_hex": "#84CC16"
     },
     {
       "exposure_id": "sector_steel",
@@ -1875,7 +1911,9 @@
           "rank": 8,
           "reason": "為台灣電爐煉鋼廠，主要生產鋼筋、型鋼及鋼胚，供應國內營建及機械產業。"
         }
-      ]
+      ],
+      "icon_id": "factory",
+      "color_hex": "#94A3B8"
     },
     {
       "exposure_id": "sector_tourism",
@@ -1991,7 +2029,9 @@
           "rank": 12,
           "reason": "旗下擁有多家五星級飯店，提供住宿、餐飲、宴會及會議等多元服務。"
         }
-      ]
+      ],
+      "icon_id": "plane",
+      "color_hex": "#F43F5E"
     }
   ]
 }
