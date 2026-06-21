@@ -34,6 +34,7 @@ from ..content_builder.nodes import (
     ticker_extractor,
     writer,
 )
+from ..content_builder.nodes.chapter_consolidator import consolidate_chapters
 from ..content_builder.nodes.clusterer import cluster_sentences
 from ..content_builder.nodes.events_markdown import build_events_markdown
 from ..content_builder.nodes.key_insights_extractor import is_placeholder_summary
@@ -302,6 +303,7 @@ def _apply(step: str, output: Any, state: dict[str, Any]) -> list[str]:
     if step == STEP_EXTRACTOR:
         state.update(extractor.postprocess(output, state))
         state.update(cluster_sentences(state))
+        state.update(consolidate_chapters(state))
         state.update(build_events_markdown(state))
         state.update(derive_sector_exposures(state))
         if not state.get("clustered_events"):

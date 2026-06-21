@@ -69,9 +69,14 @@ def transform_to_markdown(state: PipelineState) -> dict[str, Any]:
         return {"markdown_report": ""}
 
     sections = writer_output.get("sections", []) or []
+    # Anchor against the SAME list the writer turned into sections: the
+    # consolidated ``chapter_events`` when present, else the fine
+    # ``clustered_events`` (regen/legacy). The writer emits one section per event
+    # in order, so this stays positionally aligned.
+    anchor_events = state.get("chapter_events") or state.get("clustered_events", [])
     cluster_starts = [
         e.get("start")
-        for e in state.get("clustered_events", [])
+        for e in anchor_events
         if e.get("start") is not None
     ]
     section_times = _anchor_section_times(sections, cluster_starts)
