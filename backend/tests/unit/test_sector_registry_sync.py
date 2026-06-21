@@ -18,6 +18,7 @@ from src.tag_registry import (
     TIER_HIDDEN,
     TIER_TRENDING,
     hidden_sector_exposure_ids,
+    hidden_tag_slugs,
     sync_sectors,
     trending_slugs,
 )
@@ -94,3 +95,18 @@ def test_trending_slugs_excludes_sectors(session):
     slugs = trending_slugs(session)
     assert "ai" in slugs
     assert "sector_semiconductor" not in slugs
+
+
+def test_hidden_tag_slugs_normalized_and_tag_only(session):
+    # A hidden tag (mixed spelling) → normalized; a visible tag and a hidden sector excluded.
+    session.add(TagRegistry(slug="Supply_Chain", display_zh="供應鏈", tier=TIER_HIDDEN, kind=KIND_TAG))
+    session.add(TagRegistry(slug="ai", display_zh="AI", tier=TIER_TRENDING, kind=KIND_TAG))
+    session.commit()
+    sync_sectors(session, [_sector("sector_semiconductor", "半導體")])
+    session.query(TagRegistry).filter_by(exposure_id="sector_semiconductor").one().tier = TIER_HIDDEN
+    session.commit()
+
+    hidden = hidden_tag_slugs(session)
+    assert "supplychain" in hidden          # normalized (strips case + underscore)
+    assert "ai" not in hidden               # visible tag not hidden
+    assert "sectorsemiconductor" not in hidden  # sectors are not tag-kind
