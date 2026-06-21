@@ -189,7 +189,9 @@ class Settings(BaseSettings):
     
     # API configuration
     api_title: str = "TinBoker Backend API"
-    api_version: str = "1.0.0"
+    # Shown on the admin dashboard. Keep in sync with the latest release tag
+    # (see `git tag`) and pyproject — we are pre-1.0 (v0.x) until stable.
+    api_version: str = "0.4.14"
     
     # Environment
     environment: str = "development"  # development, staging, production

@@ -6,12 +6,12 @@ runtime resolver stays offline reading the compiled artifact; this script (run
 manually or on a schedule, alongside ``enrich_sectors_with_tavily.py``) fills the
 ``reason`` field on every member of ``sector_and_theme_universe.json``.
 
-The relationships are factual and well-known, so a single Gemini call per exposure
+The relationships are factual and well-known, so a single LLM call per exposure
 (all of its members at once) produces grounded one-liners cheaply. The model is
 asked for STRICT JSON ``{ticker: reason}`` and anything it omits or malforms is
 simply skipped — a member with no reason just renders without one.
 
-GOOGLE_API_KEY is read from env or GCP Secret Manager. Dry-run by default.
+OPENROUTER_API_KEY is read from env or GCP Secret Manager. Dry-run by default.
 
 Usage:
   uv run python libs/shared/scripts/generate_sector_reasons.py --only theme_power_semiconductor
@@ -35,8 +35,8 @@ DATA = Path(__file__).resolve().parents[1] / "src" / "shared" / "data" / "sector
 # Compact mirror the backend serves from (it cannot import the pipelines package).
 BACKEND_MIRROR = Path(__file__).resolve().parents[4] / "backend" / "src" / "data" / "sector_reasons.json"
 GCP_PROJECT = "gen-lang-client-0901363254"
-MODEL = "gemini-2.5-flash"
-GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent"
+MODEL = "deepseek/deepseek-v4-pro"
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 
 def _secret(name: str) -> str:
@@ -61,7 +61,7 @@ _SYSTEM = (
 )
 
 
-def _gemini_reasons(api_key: str, display_name: str, members: list[dict[str, Any]]) -> dict[str, str]:
+def _openrouter_reasons(api_key: str, display_name: str, members: list[dict[str, Any]]) -> dict[str, str]:
     roster = "\n".join(
         f'- {m.get("ticker")} {m.get("name") or ""}'.rstrip() for m in members
     )
@@ -71,15 +71,30 @@ def _gemini_reasons(api_key: str, display_name: str, members: list[dict[str, Any
         "只輸出 JSON，不要其他文字。"
     )
     body = {
-        "system_instruction": {"parts": [{"text": _SYSTEM}]},
-        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": 0.3, "responseMimeType": "application/json"},
+        "model": MODEL,
+        "messages": [
+            {"role": "system", "content": _SYSTEM},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.2,
+        "reasoning": {"enabled": False},
     }
     for attempt in range(3):
         try:
-            r = httpx.post(GEMINI_URL, params={"key": api_key}, json=body, timeout=90)
+            r = httpx.post(
+                OPENROUTER_URL,
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json=body,
+                timeout=90,
+            )
             r.raise_for_status()
-            text = r.json()["candidates"][0]["content"]["parts"][0]["text"]
+            text = r.json()["choices"][0]["message"]["content"]
+            # Strip markdown fences if present
+            text = text.strip()
+            if text.startswith("```"):
+                import re
+                text = re.sub(r"^```(?:json)?\s*\n?", "", text)
+                text = re.sub(r"\n?```\s*$", "", text)
             parsed = json.loads(text)
             # The model occasionally keys by "<code> <name>" instead of the bare
             # code; take the leading whitespace-delimited token as the ticker so the
@@ -90,7 +105,7 @@ def _gemini_reasons(api_key: str, display_name: str, members: list[dict[str, Any
                 if v and str(k).strip()
             }
         except Exception as e:  # noqa: BLE001
-            print(f"    gemini error (attempt {attempt + 1}): {e}", file=sys.stderr)
+            print(f"    openrouter error (attempt {attempt + 1}): {e}", file=sys.stderr)
             time.sleep(2 ** attempt)
     return {}
 
@@ -102,7 +117,7 @@ def main() -> int:
     ap.add_argument("--overwrite", action="store_true", help="regenerate reasons that already exist")
     args = ap.parse_args()
 
-    api_key = _secret("GOOGLE_API_KEY")
+    api_key = _secret("OPENROUTER_API_KEY")
     universe = json.loads(DATA.read_text(encoding="utf-8"))
 
     filled = 0
@@ -115,7 +130,7 @@ def main() -> int:
         if not pending:
             continue
         print(f"\n[{eid}] {exp.get('display_name')} — {len(pending)} member(s)")
-        reasons = _gemini_reasons(api_key, exp.get("display_name", eid), members)
+        reasons = _openrouter_reasons(api_key, exp.get("display_name", eid), members)
         for m in pending:
             key = str(m.get("ticker") or "").strip().upper()
             reason = reasons.get(key)

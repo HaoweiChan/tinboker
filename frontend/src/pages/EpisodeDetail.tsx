@@ -6,7 +6,9 @@ import { PodcastAvatar } from '@/components/common/PodcastAvatar';
 import { PageContent } from '@/components/layout/PageContent';
 import { TickerRow } from '@/components/redesign';
 import { cn } from '@/lib/utils';
-import { getEpisodeById, getEpisodeByIdOnly, getEpisodeAudioUrl, getPodcastByName, type Episode as ApiEpisode, type SectorExposure, type SectorResolvedTicker } from '@/services';
+import { getEpisodeById, getEpisodeByIdOnly, getEpisodeAudioUrl, getPodcastByName, type Episode as ApiEpisode } from '@/services';
+import { getSectorBoard, type SectorBoardItem } from '@/services/api/podcasts';
+import { SectorExposureList } from '@/components/episode/SectorExposureList';
 import { fetchWithFallback } from '@/services/api/migration';
 import { parseSummaryTopicSections, parseTimestampedSections, type TimestampedSection } from '@/utils/parseTimestampedSections';
 import { usePlayerStore } from '@/store/usePlayerStore';
@@ -115,6 +117,11 @@ export const EpisodeDetail: React.FC = () => {
   const [episode, setEpisode] = useState<ApiEpisode | null>(null);
   const [podcastImageUrl, setPodcastImageUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  // Per-sector performance + visuals for the 產業/主題曝險 rail, keyed by exposure_id.
+  // Sourced from the (cached) hot-sectors board so each exposure shows its aggregate
+  // change without a bespoke price fetch.
+  const [sectorPerf, setSectorPerf] = useState<Map<string, SectorBoardItem>>(new Map());
+  const [sectorPerfLoading, setSectorPerfLoading] = useState(false);
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -162,6 +169,23 @@ export const EpisodeDetail: React.FC = () => {
     };
   }, [id, podcastName]);
 
+  // Load the hot-sectors board once an episode with exposures is in hand, then index
+  // it by exposure_id so the rail can show each sector's aggregate performance.
+  const hasExposures = (episode?.sector_exposures?.length ?? 0) > 0;
+  useEffect(() => {
+    if (!hasExposures) return;
+    let alive = true;
+    setSectorPerfLoading(true);
+    getSectorBoard()
+      .then((items) => {
+        if (!alive) return;
+        setSectorPerf(new Map(items.map((it) => [it.exposure_id, it])));
+      })
+      .catch(() => { if (alive) setSectorPerf(new Map()); })
+      .finally(() => { if (alive) setSectorPerfLoading(false); });
+    return () => { alive = false; };
+  }, [hasExposures]);
+
   const chapters = useMemo<TimestampedSection[]>(() => (episode?.events_markdown_content ? parseTimestampedSections(episode.events_markdown_content) : []), [episode]);
   const summarySections = useMemo<TimestampedSection[]>(() => {
     const content = episode?.modified_summary_content || episode?.summary_content;
@@ -202,6 +226,13 @@ export const EpisodeDetail: React.FC = () => {
     });
   }, [tickerSymbols, rawTranslationMap, episodeSentiments, activeMap, episode, sinceLabel]);
   const spotifyUri = useMemo(() => spotifyUriFrom(episode), [episode]);
+
+  // Hero sector chips: collapse duplicate exposure_ids (an episode tags the same
+  // sector once per section), keeping first-seen order.
+  const heroSectors = useMemo(
+    () => [...new Map((episode?.sector_exposures ?? []).map((e) => [e.exposure_id, e])).values()],
+    [episode],
+  );
 
   const title = episode?.episode_title || (episode?.episode_number != null ? `EP ${episode.episode_number}` : '集數摘要');
   const name = episode?.podcast_name || podcastName || '節目';
@@ -288,7 +319,7 @@ export const EpisodeDetail: React.FC = () => {
       <PageContent
         rail={
           (tickers.length > 0 || (episode?.sector_exposures?.length ?? 0) > 0) ? (
-            <nav className="bg-card border border-border rounded-md p-3 max-h-[calc(100vh-96px)] overflow-hidden" aria-label="集數導覽">
+            <nav className="bg-card border border-border rounded-md p-3 max-h-[calc(100vh-96px)] overflow-y-auto" aria-label="集數導覽">
               {tickers.length > 0 && (
                 <section aria-labelledby="episode-rail-tickers">
                   <h4 id="episode-rail-tickers" className="text-[11px] font-semibold tracking-[0.08em] uppercase text-muted-foreground px-2 mb-2">提及股票</h4>
@@ -301,34 +332,12 @@ export const EpisodeDetail: React.FC = () => {
               )}
               {(episode?.sector_exposures?.length ?? 0) > 0 && (
                 <section aria-labelledby="episode-rail-sectors" className={tickers.length > 0 ? 'mt-4' : ''}>
-                  <h4 id="episode-rail-sectors" className="text-[11px] font-semibold tracking-[0.08em] uppercase text-muted-foreground px-2 mb-2">產業 / 主題曝險</h4>
-                  <div className="flex flex-col gap-2">
-                    {episode!.sector_exposures!.map((exp: SectorExposure) => (
-                      <div key={exp.exposure_id} className="px-2">
-                        <Link
-                          to={`/sector/${encodeURIComponent(exp.exposure_id)}`}
-                          className="text-[13px] font-medium hover:underline block leading-snug"
-                        >
-                          {exp.display_name}
-                        </Link>
-                        {exp.resolved_tickers.length > 0 && (
-                          <div className="flex flex-wrap gap-1 mt-1">
-                            {exp.resolved_tickers.slice(0, 8).map((rt: SectorResolvedTicker) => (
-                              <Link
-                                key={rt.ticker}
-                                to={`/stock/${encodeURIComponent(rt.ticker)}`}
-                                className="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded bg-muted hover:bg-muted/80 transition-colors"
-                                title={rt.name}
-                              >
-                                <span className="font-mono text-[10px] text-muted-foreground">{rt.ticker}</span>
-                                {rt.name && rt.name !== rt.ticker && <span>{rt.name}</span>}
-                              </Link>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
+                  <h4 id="episode-rail-sectors" className="text-[11px] font-semibold tracking-[0.08em] uppercase text-muted-foreground px-2 mb-2">提及產業</h4>
+                  <SectorExposureList
+                    exposures={episode!.sector_exposures!}
+                    perfMap={sectorPerf}
+                    loading={sectorPerfLoading}
+                  />
                 </section>
               )}
             </nav>
@@ -390,10 +399,16 @@ export const EpisodeDetail: React.FC = () => {
                 </div>
               </div>
               <h1 className="text-[24px] sm:text-[26px] font-semibold tracking-[-0.015em] leading-[1.3]">{title}</h1>
-              {episode.tags && episode.tags.length > 0 && (
+              {((episode.tags?.length ?? 0) > 0 || (episode.sector_exposures?.length ?? 0) > 0) && (
                 <div className="flex gap-1.5 flex-wrap mt-3">
-                  {episode.tags.slice(0, MAX_HERO_TAGS).map((t) => (
+                  {episode.tags?.slice(0, MAX_HERO_TAGS).map((t) => (
                     <Link key={t} to={`/topics/${encodeURIComponent(t)}`} className="text-[12px] px-2.5 py-0.5 rounded-full bg-amber-400/20 text-amber-700 dark:text-amber-300 font-medium hover:bg-amber-400/35 transition-colors">#{tagLabelFor(t, tagLabels)}</Link>
+                  ))}
+                  {/* Sectors render in the same row, distinguished by the blue tint + their
+                      own /sector route — a sector is a kind of topic, but ticker-backed.
+                      Deduped by exposure_id: an episode tags the same sector once per section. */}
+                  {heroSectors.map((exp) => (
+                    <Link key={exp.exposure_id} to={`/sector/${encodeURIComponent(exp.exposure_id)}`} className="text-[12px] px-2.5 py-0.5 rounded-full bg-blue-500/15 text-blue-700 dark:text-blue-300 font-medium hover:bg-blue-500/25 transition-colors">#{exp.display_name}</Link>
                   ))}
                 </div>
               )}
@@ -440,33 +455,12 @@ export const EpisodeDetail: React.FC = () => {
             {/* 產業 / 主題曝險 — mobile fallback; desktop uses the right rail. */}
             {(episode.sector_exposures?.length ?? 0) > 0 && (
               <section className="xl:hidden bg-card border border-border rounded-md p-5 sm:p-6 mb-3.5">
-                <h3 className="text-[12px] font-semibold uppercase tracking-[0.08em] text-muted-foreground mb-3.5">產業 / 主題曝險</h3>
-                <div className="flex flex-col gap-3">
-                  {episode.sector_exposures!.map((exp: SectorExposure) => (
-                    <div key={exp.exposure_id}>
-                      <Link
-                        to={`/sector/${encodeURIComponent(exp.exposure_id)}`}
-                        className="inline-block text-[13px] font-medium px-2.5 py-0.5 rounded-full bg-blue-500/10 text-blue-700 dark:text-blue-300 hover:bg-blue-500/20 transition-colors mb-1.5"
-                      >
-                        {exp.display_name}
-                      </Link>
-                      {exp.resolved_tickers.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5">
-                          {exp.resolved_tickers.slice(0, 8).map((rt: SectorResolvedTicker) => (
-                            <Link
-                              key={rt.ticker}
-                              to={`/stock/${encodeURIComponent(rt.ticker)}`}
-                              className="inline-flex items-center gap-1 text-[12px] px-2 py-0.5 rounded-full bg-muted hover:bg-muted/80 border border-border font-medium transition-colors"
-                            >
-                              <span className="font-mono text-[10px] text-muted-foreground">{rt.ticker}</span>
-                              <span>{rt.name}</span>
-                            </Link>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
+                <h3 className="text-[12px] font-semibold uppercase tracking-[0.08em] text-muted-foreground mb-3.5">提及產業</h3>
+                <SectorExposureList
+                  exposures={episode.sector_exposures!}
+                  perfMap={sectorPerf}
+                  loading={sectorPerfLoading}
+                />
               </section>
             )}
 

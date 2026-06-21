@@ -37,7 +37,7 @@ from src.routers.comments import router as comments_router, comments_router as c
 from src.routers.articles import router as articles_router
 from src.routers.admin_articles import router as admin_articles_router
 from src.routers.admin_tags import router as admin_tags_router
-from src.routers.social import router as social_router
+from src.routers.social import router as social_router, facebook_router
 from src.routers.seo import router as seo_router
 from src.middleware.cloudflare import CloudflareMiddleware
 
@@ -179,6 +179,37 @@ async def lifespan(app: FastAPI):
 
     asyncio.create_task(_refresh_board_bg())
 
+    # Refresh-ahead for the /topics 熱門標籤 board: the volume-driven candidate set
+    # scans every tag's Firestore subcollection, so keep that off the request path by
+    # recomputing + rewriting its Redis entry every 10 min (inside the 30-min TTL).
+    async def _refresh_trending_bg():
+        try:
+            from src.services.podcast import run_periodic_trending_refresh
+            await run_periodic_trending_refresh(interval_seconds=600.0)
+        except Exception as e:
+            print(f"Warning: trending-tags refresher stopped: {e}")
+
+    asyncio.create_task(_refresh_trending_bg())
+
+    # Auto-index sector/theme exposures from the pipeline universe into the registry so
+    # new sectors surface (as visible) without an admin clicking 同步產業. The universe
+    # JSON stays curated; this only keeps the registry index in sync. Best-effort.
+    async def _sync_sectors_bg():
+        try:
+            from src.services.podcast import PodcastService
+            from src.database.postgres import get_session
+            from src.tag_registry import sync_sectors
+            sectors = await PodcastService().list_sectors()
+            for session in get_session():
+                added = sync_sectors(session, sectors)
+                break
+            if added:
+                print(f"Sector sync: indexed {added} new sector(s).")
+        except Exception as e:
+            print(f"Warning: sector sync skipped: {e}")
+
+    asyncio.create_task(_sync_sectors_bg())
+
     yield
 
     # --- Shutdown ---
@@ -264,6 +295,7 @@ app.include_router(articles_router)
 app.include_router(admin_articles_router)
 app.include_router(admin_tags_router)
 app.include_router(social_router)
+app.include_router(facebook_router)
 app.include_router(seo_router)
 
 

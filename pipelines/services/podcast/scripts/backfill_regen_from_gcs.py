@@ -18,9 +18,8 @@ Two-phase, for safety on PROD Firestore:
     # 2. commit — load the cached result, write Firestore + bust the platform cache.
     uv run --package tinboker-podcast python services/podcast/scripts/backfill_regen_from_gcs.py EP_ID --commit
 
-Model: OPENROUTER_API_KEY is not in GSM, so the openrouter:* default can't run
-here; we pin all roles to gemini-2.5-flash (GOOGLE_API_KEY is present). Production
-new-episode runs use whatever the VPS pipeline_config_overrides set.
+Model: uses the pipeline default (openrouter:deepseek/deepseek-v4-pro via OPENROUTER_API_KEY).
+Production new-episode runs use whatever the VPS pipeline_config_overrides set.
 """
 
 from __future__ import annotations
@@ -33,11 +32,12 @@ import sys
 from pathlib import Path
 from urllib.parse import quote, urlparse
 
-# Pin LLM roles to Gemini BEFORE importing the pipeline (llm.py reads *_MODEL at
-# import time). gemini-2.5-flash supports JSON mode and the GOOGLE_API_KEY path.
+# The pipeline default (openrouter:deepseek/deepseek-v4-pro) applies; override
+# per-role here if needed before the pipeline module is imported (llm.py reads
+# *_MODEL at import time).
 for _role in ("EXTRACTOR_MODEL", "WRITER_MODEL", "TICKER_EXTRACTOR_MODEL",
               "KEY_INSIGHTS_EXTRACTOR_MODEL", "MARP_WRITER_MODEL"):
-    os.environ.setdefault(_role, "gemini-2.5-flash")
+    os.environ.setdefault(_role, "openrouter:deepseek/deepseek-v4-pro")
 
 _SERVICE_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_SERVICE_ROOT))

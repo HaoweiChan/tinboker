@@ -122,6 +122,12 @@ class PipelineState(TypedDict, total=False):
     # After clustering
     clustered_events: list[ClusteredEvent]
 
+    # After chapter consolidation — fine clustered_events merged into a small,
+    # length-scaled set of reader-facing chapters. Only the writer + markdown
+    # timestamp anchoring read this; ticker/sector/slide nodes keep using the
+    # fine clustered_events above.
+    chapter_events: list[ClusteredEvent]
+
     # After writing
     writer_output: WriterOutput
 

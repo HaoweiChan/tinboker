@@ -17,7 +17,7 @@ from src.schemas.sector import (
 )
 from src.services.podcast import PodcastService
 from src.services.translation_discovery import schedule_ticker_discovery
-from src.tag_registry import registry_snapshot, seed_if_empty
+from src.tag_registry import hidden_sector_exposure_ids, registry_snapshot, seed_if_empty
 
 router = APIRouter(prefix="/api", tags=["tags"])
 
@@ -130,32 +130,37 @@ async def get_episodes_by_tag(
 
 
 @router.get("/sectors", response_model=SectorsListResponse)
-async def list_sectors():
+async def list_sectors(db: Session = Depends(get_session)):
     """List all sector/theme exposures that have at least one episode, sorted by episode count.
 
     Returns a directory of sectors and themes so the frontend /topics page can render
     a browsable sectors listing.  Sectors are only reachable from episode detail pages
-    without this endpoint.
+    without this endpoint.  Admin-hidden sectors (registry tier='hidden') are excluded.
     """
     try:
         sectors = await podcast_service.list_sectors()
-        return SectorsListResponse(sectors=[SectorListItem(**s) for s in sectors])
+        hidden = hidden_sector_exposure_ids(db)
+        visible = [s for s in sectors if s.get("exposure_id") not in hidden]
+        return SectorsListResponse(sectors=[SectorListItem(**s) for s in visible])
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching sectors: {str(e)}")
 
 
 @router.get("/sectors/board", response_model=SectorBoardResponse)
-async def get_sector_board():
+async def get_sector_board(db: Session = Depends(get_session)):
     """Return a ranked hot-sectors board with price performance.
 
     Each sector entry includes its constituent tickers' daily % change,
     an avg_change aggregate, and a blended hotness score (0..1).  Sorted
     by hotness DESC so the most price-active, most-mentioned sectors float
     to the top.  Intended as a richer replacement for the vague tag ranking
-    shown on /topics.
+    shown on /topics.  Admin-hidden sectors (registry tier='hidden') are excluded
+    here (cheap per-request filter) so curation takes effect without busting the
+    warm board cache.
     """
     try:
         sectors = await podcast_service.sector_board()
+        hidden = hidden_sector_exposure_ids(db)
         return SectorBoardResponse(
             sectors=[
                 SectorBoardItem(
@@ -163,6 +168,7 @@ async def get_sector_board():
                     members=[SectorBoardMember(**m) for m in s["members"]],
                 )
                 for s in sectors
+                if s.get("exposure_id") not in hidden
             ]
         )
     except Exception as e:

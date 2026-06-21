@@ -1,5 +1,6 @@
 """Graph nodes for the content generation pipeline."""
 
+from .chapter_consolidator import consolidate_chapters
 from .clusterer import cluster_sentences
 from .events_markdown import build_events_markdown
 from .extractor import extract_events
@@ -13,6 +14,7 @@ from .writer import write_article
 __all__ = [
     "extract_events",
     "cluster_sentences",
+    "consolidate_chapters",
     "write_article",
     "transform_to_markdown",
     "build_events_markdown",

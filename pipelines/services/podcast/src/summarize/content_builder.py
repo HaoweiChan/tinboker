@@ -9,8 +9,8 @@ from typing import Optional
 
 
 def is_workflow_api_available() -> bool:
-    """Check if the LangGraph pipeline can run (needs GOOGLE_API_KEY)."""
-    return os.getenv("GOOGLE_API_KEY") is not None
+    """Check if the LangGraph pipeline can run (needs OPENROUTER_API_KEY)."""
+    return os.getenv("OPENROUTER_API_KEY") is not None
 
 
 def analyze_transcript_with_workflow_api(
@@ -45,12 +45,12 @@ def analyze_transcript_with_workflow_api(
         ticker_insights, ticker_marp_markdown, key_insights.
 
     Raises:
-        ValueError: If GOOGLE_API_KEY is not set
+        ValueError: If OPENROUTER_API_KEY is not set
         RuntimeError: If the pipeline fails
     """
-    if not os.getenv("GOOGLE_API_KEY"):
+    if not os.getenv("OPENROUTER_API_KEY"):
         raise ValueError(
-            "GOOGLE_API_KEY is required for the content generation pipeline. "
+            "OPENROUTER_API_KEY is required for the content generation pipeline. "
             "Set it via Google Secret Manager or environment variable."
         )
 

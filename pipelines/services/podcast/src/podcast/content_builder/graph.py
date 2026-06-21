@@ -11,19 +11,26 @@ Graph topology (mirrors the original Dify workflow):
       ▼                              ▼
   cluster_sentences          build_events_markdown ──► END
       │
-      ├────────────────┬─────────────────────┐
-      ▼                ▼                     ▼
-  write_article   write_marp_slides    extract_tickers
-      │                │                     │
-      ▼                ▼                     ▼
-  transform_md    convert_marp        write_ticker_marp
-      │                │                     │
-      ▼                ▼                     ▼
- extract_key_     convert_marp        convert_ticker_marp
-   insights           │                     │
-      │               ▼                     ▼
-      ▼              END                    END
+      ├────────────────────┬──────────────────┐
+      ▼                    ▼                  ▼
+ consolidate_chapters  write_marp_slides  extract_tickers
+      │                    │                  │
+      ▼                    ▼                  ▼
+  write_article        convert_marp       write_ticker_marp
+      │                    │                  │
+      ▼                    ▼                  ▼
+  transform_md           END            convert_ticker_marp
+      │                                       │
+      ▼                                       ▼
+ extract_key_insights                        END
+      │
+      ▼
      END
+
+(cluster_sentences also fans out to derive_sector_exposures ──► END.
+ consolidate_chapters merges the fine clustered_events into a small,
+ length-scaled set of chapter_events that only the writer + markdown
+ timestamp anchoring read.)
 """
 
 from __future__ import annotations
@@ -32,6 +39,7 @@ from typing import Any
 
 from langgraph.graph import END, StateGraph
 
+from .nodes.chapter_consolidator import consolidate_chapters
 from .nodes.clusterer import cluster_sentences
 from .nodes.events_markdown import build_events_markdown
 from .nodes.extractor import extract_events
@@ -70,6 +78,7 @@ def build_graph() -> StateGraph:
     # Add nodes
     graph.add_node("extract_events", extract_events)
     graph.add_node("cluster_sentences", cluster_sentences)
+    graph.add_node("consolidate_chapters", consolidate_chapters)
     graph.add_node("build_events_markdown", build_events_markdown)
     graph.add_node("write_article", write_article)
     graph.add_node("transform_to_markdown", transform_to_markdown)
@@ -94,11 +103,14 @@ def build_graph() -> StateGraph:
     # Events markdown is a terminal branch
     graph.add_edge("build_events_markdown", END)
 
-    # After clustering: fan out to writer + marp_writer + ticker_extractor
-    graph.add_edge("cluster_sentences", "write_article")
+    # After clustering: fan out to marp_writer + ticker_extractor + sector
+    # exposures (all on the fine clustered_events), and to chapter consolidation
+    # which feeds the writer with the coarse, length-scaled chapters.
+    graph.add_edge("cluster_sentences", "consolidate_chapters")
     graph.add_edge("cluster_sentences", "write_marp_slides")
     graph.add_edge("cluster_sentences", "extract_tickers")
     graph.add_edge("cluster_sentences", "derive_sector_exposures")
+    graph.add_edge("consolidate_chapters", "write_article")
 
     # Article branch (markdown → tags/tickers → key_insights, from the finished summary)
     graph.add_edge("write_article", "transform_to_markdown")

@@ -62,7 +62,7 @@ jobs:
           # Dummy values so secrets_bootstrap skips Google Secret Manager.
           PODCAST_API_KEY: ci-dummy
           GROQ_API_KEY: ci-dummy
-          GOOGLE_API_KEY: ci-dummy
+          OPENROUTER_API_KEY: ci-dummy
           FIRESTORE_DATABASE_ID: ci-dummy
           GCP_CREDENTIALS_JSON: "{}"
           SPOTIFY_ID: ci-dummy

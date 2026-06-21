@@ -1,14 +1,18 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Flame, BarChart3, Layers } from 'lucide-react';
+import { Flame, BarChart3, Layers, Hash } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
 import { SectorHeroCard } from '@/components/topics/SectorHeroCard';
 import { SectorBoardCard } from '@/components/topics/SectorBoardCard';
+import { TagBoardCard } from '@/components/topics/TagBoardCard';
 import {
   getSectorBoard,
+  getTrendingTags,
   type SectorBoardItem,
+  type TrendingTag,
 } from '@/services/api/podcasts';
 import { fetchWithFallback } from '@/services/api/migration';
+import { useTagLabels, tagLabelFor } from '@/hooks/useTagLabels';
 
 // ── Sort types ─────────────────────────────────────────────────────────────
 
@@ -92,6 +96,8 @@ export const TopicsCloud: React.FC = () => {
   const [sectors, setSectors] = useState<SectorBoardItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [sortKey, setSortKey] = useState<SortKey>('hotness');
+  const [tags, setTags] = useState<TrendingTag[]>([]);
+  const tagLabels = useTagLabels();
 
   useEffect(() => {
     let alive = true;
@@ -105,6 +111,17 @@ export const TopicsCloud: React.FC = () => {
       if (!alive) return;
       setSectors(result);
       setLoading(false);
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  // Trending tags for the secondary section (free-form topics, no price data).
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const res = await getTrendingTags().catch(() => ({ tags: [] as TrendingTag[] }));
+      if (!alive) return;
+      setTags(res.tags);
     })();
     return () => { alive = false; };
   }, []);
@@ -193,6 +210,21 @@ export const TopicsCloud: React.FC = () => {
             {sortedSectors.map((s) => (
               <SectorBoardCard key={s.exposure_id} sector={s} />
             ))}
+          </div>
+        )}
+
+        {/* ── TAGS ────────────────────────────────────────────────── */}
+        {tags.length > 0 && (
+          <div className="mt-9">
+            <div className="flex items-center gap-1.5 mb-3">
+              <Hash size={13} className="text-muted-foreground" />
+              <h2 className="text-[13px] font-semibold">熱門標籤</h2>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {tags.map((t) => (
+                <TagBoardCard key={t.id} tag={t} label={tagLabelFor(t.id, tagLabels)} />
+              ))}
+            </div>
           </div>
         )}
       </PageContent>
