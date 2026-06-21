@@ -78,7 +78,9 @@ Registered in the repo-root `.mcp.json` as `podcast_regen`:
 | Env var | Purpose |
 |---|---|
 | `GCP_PROJECT_ID`, `FIRESTORE_DATABASE_ID` | Firestore (episode read + write) — `graphfolio-db` is the **shared production** store |
+| `GCS_BUCKET_NAME` (+ GCP creds) | The articles bucket (`graphfolio-articles`) commit re-uploads the regenerated marp/events/summary blobs to. Inherited from the shell/GSM-bootstrapped env |
 | `TINBOKER_PLATFORM_API_URL` | Backend base URL for cache invalidation on commit. Points at the env whose caches should refresh — defaults to **prod** because commit writes the shared prod Firestore |
+| `TINBOKER_WRITE_TOKEN` | **Required for the commit cache-bust.** The content-writer service token the backend's `PATCH /api/podcast/.../episodes/...` accepts. Without it the PATCH 403s and Redis/CDN stay stale until TTL. Not hardcoded in `.mcp.json` (it's a secret) — inherited from the shell/GSM env |
 | `TINBOKER_REGEN_WORK_DIR` | Where per-episode working drafts are persisted (default: system temp) |
 
 ## Persistence & cache on `commit_regen`
@@ -89,14 +91,22 @@ Registered in the repo-root `.mcp.json` as `podcast_regen`:
 - **Episode doc** (Firestore merge): only the fields whose steps you completed
   (`summary_content`, `key_insights`, `tags`, `related_tickers`, `events_markdown`,
   `marp_markdown`, `ticker_marp_markdown`, `social_cards`).
+- **GCS blobs** (re-upload): the backend serves `marp`/`events`/`ticker_marp` (and
+  `summary`) by hydrating each `*_content` field from the GCS `*_url` when the inline
+  doc field is empty, so commit overwrites those blobs (`skip_existing=False`) and
+  repoints the doc's `*_url` at the fresh upload (`gcs_content_uploaded` in the
+  report). Without this the page keeps rendering the OLD slides/events even though the
+  doc fields changed.
 - **Rich ticker sentiment** → `ticker_insights/{episode_id}/tickers/{ticker}` via the
   pipeline's exporter.
-- **Cache** → one PATCH to `TINBOKER_PLATFORM_API_URL` busts the **episode Redis
-  cache**, the **`ticker_insights:by_ticker` sentiment cache** (when `related_tickers`
-  changed), **and** the **Cloudflare edge** for that env's API host — so the regen
-  shows immediately, no manual SSH/CF steps. The result reports `cache_refreshed`
-  `{via, surfaces}`; if the bust is disabled/unreachable it returns
-  `manual_invalidation` with the exact copy-paste commands instead.
+- **Cache** → one PATCH to `TINBOKER_PLATFORM_API_URL` (authenticated with
+  `TINBOKER_WRITE_TOKEN`) busts the **episode Redis cache**, the
+  **`ticker_insights:by_ticker` sentiment cache** (when `related_tickers` changed),
+  **and** the **Cloudflare edge** for that env's API host — so the regen shows
+  immediately, no manual SSH/CF steps. The result reports `cache_refreshed`
+  `{via, surfaces}`; if the token is missing or the bust is disabled/unreachable it
+  returns `manual_invalidation` with the exact copy-paste commands (including the
+  `Authorization` header) instead.
 - PNG social-card rendering stays in the normal pipeline (only the slide *markdown*
   is saved here).
 
