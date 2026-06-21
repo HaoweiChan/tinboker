@@ -114,8 +114,7 @@ new read routes are added to that existing router. Entity and topic pages are
 Steps live in `services/news/src/news/pipeline/steps/` mirroring
 `services/podcast/src/pipeline/steps/`. Deployment is a **systemd timer**
 (`tinboker-news.timer` → oneshot `tinboker-news.service`, runs a
-`run_news.sh` analogous to `run_nightly.sh`), every ~6 h — no port, no
-long-running process.
+`run_news.sh`), every ~6 h — no port, no long-running process.
 
 ## Schema delta (minimal — frontmatter is the store)
 

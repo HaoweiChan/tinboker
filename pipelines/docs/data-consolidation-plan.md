@@ -136,7 +136,7 @@ between phases must be green before starting the next.
    - Whisper STT in English (Groq's `whisper-large-v3` supports it; the existing `per-podcast transcript_option` mechanism lets you set different services per show if needed).
    - `content_builder` language handling — `determine_language(podcast_name)` in `services/podcast/src/pipeline/utils.py`. Test one English episode through the full pipeline locally before committing.
 3. Disable the legacy cron on the VPS: comment out the `21:00` entry in `crontab -e` for root. The legacy repo files stay on disk for one week so Phase B's validation can diff against them; delete after Phase C validation passes.
-4. Add a new cron / systemd timer that runs `python services/podcast/main.py` for all 20 shows nightly. Reuse the existing `services/podcast/scripts/run_nightly.sh` pattern.
+4. Add a new cron / systemd timer that runs `python services/podcast/main.py` for all 20 shows nightly. Per-episode ingestion is handled by the EpisodeWatcher in the podcast-api service; ad-hoc backfill of older/failed episodes is `python main.py --config podcasts_tw.json --fill-limit`.
 5. Verify a one-night soak: nightly run completes for all 20 shows, no regressions on the 3 zh shows, the 17 new shows generate episodes in `tinboker_wiki`.
 
 **Validation gate before Phase B:** the new cron has run successfully for one night; new episodes appear in `tinboker_wiki`; the legacy cron is disabled but the legacy repo files are still on disk for rollback.

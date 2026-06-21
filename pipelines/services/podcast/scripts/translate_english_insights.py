@@ -40,9 +40,7 @@ from src.service.upload_to_firebase import FirebaseService  # noqa: E402
 
 INSIGHTS_SUBCOLLECTION = "tickers"
 SUPPORTED_SCHEMA = {2, 3}
-# Gemini handles zh-TW finance translation cleanly; the default OpenRouter model
-# (mimo) left snippets half-translated. Overridable via --model.
-DEFAULT_MODEL = "gemini-2.5-flash"
+DEFAULT_MODEL = "openrouter:deepseek/deepseek-v4-pro"
 _MAX_RETRIES = 3
 # Fields on a reason/risk dict that carry natural language.
 TEXT_KEYS = ("title", "description")
@@ -108,10 +106,19 @@ def _get_translator():
     if _TRANSLATOR is None:
         import os as _os
 
-        from langchain_google_genai import ChatGoogleGenerativeAI
+        from langchain_openai import ChatOpenAI
 
-        _TRANSLATOR = ChatGoogleGenerativeAI(
-            model=_MODEL_NAME, temperature=0.0, google_api_key=_os.getenv("GOOGLE_API_KEY")
+        or_model = _MODEL_NAME[len("openrouter:"):] if _MODEL_NAME.startswith("openrouter:") else _MODEL_NAME
+        _TRANSLATOR = ChatOpenAI(
+            model=or_model,
+            temperature=0.0,
+            base_url="https://openrouter.ai/api/v1",
+            api_key=_os.getenv("OPENROUTER_API_KEY"),
+            default_headers={
+                "HTTP-Referer": "https://tinboker.com",
+                "X-Title": "TinBoker translate-insights",
+            },
+            extra_body={"reasoning": {"enabled": False}},
         )
     return _TRANSLATOR
 
