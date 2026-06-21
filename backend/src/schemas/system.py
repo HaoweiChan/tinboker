@@ -18,7 +18,7 @@ class BackendStatus(BaseModel):
 
     status: Literal["healthy", "degraded", "unhealthy"]
     uptime_seconds: float
-    version: str = "1.0.0"
+    version: str = "0.4.14"  # fallback only; the live value comes from settings.api_version
 
 
 class RedisStatus(BaseModel):
