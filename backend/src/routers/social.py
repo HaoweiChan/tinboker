@@ -16,6 +16,7 @@ from src.auth.admin_auth import AdminAccess, get_admin_access, get_social_access
 from src.config import settings
 from src.services import facebook_publisher, threads_publisher
 from src.services.podcast import PodcastService
+from src.services.threads_insights_service import ThreadsInsightsService
 
 _PUBLISHERS = {"threads": threads_publisher, "facebook": facebook_publisher}
 
@@ -118,6 +119,23 @@ async def list_social_posts(
     if not pub:
         raise HTTPException(status_code=422, detail=f"Unknown platform: {platform}")
     return {"platform": platform, "posts": pub.list_posted(limit=limit)}
+
+
+@router.get("/insights")
+async def threads_insights(
+    days: int = Query(default=28, ge=1, le=90),
+    posts: int = Query(default=5, ge=0, le=25, description="How many recent posts to include"),
+    _: AdminAccess = Depends(get_admin_access),
+):
+    """Threads engagement insights: account totals + per-post breakdown.
+
+    Always 200 — when Threads isn't configured (or the API errors) the payload reports
+    ``available: false`` so the admin UI shows a "not connected" state.
+    """
+    svc = ThreadsInsightsService()
+    summary = await svc.account_summary(days=days)
+    recent = await svc.recent_post_insights(limit=posts) if posts else []
+    return {**summary, "recent_posts": recent}
 
 
 # ── Social copy management (the human-tone post + per-theme comments) ──────────
