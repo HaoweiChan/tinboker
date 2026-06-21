@@ -106,6 +106,14 @@ def normalize_tag_slug(slug: str) -> str:
     return re.sub(r"[^a-z0-9]", "", (slug or "").lower())
 
 
+def canonical_label(slug: str) -> str:
+    """zh-TW display for a tag slug from the canonical vocabulary, else the slug itself.
+
+    Used to label VIRTUAL admin rows (Firestore tags not yet in the registry).
+    """
+    return _CANONICAL_DISPLAY.get(normalize_tag_slug(slug), slug)
+
+
 def _load_canonical_display() -> dict[str, str]:
     """normalized-slug → zh-TW display, from the committed pipeline mirror."""
     raw = json.loads(_MIRROR_PATH.read_text(encoding="utf-8"))
