@@ -13,13 +13,23 @@ from src.cache.redis_client import cache_delete_pattern
 from src.database.models import TagRegistry
 from src.database.postgres import get_session
 from src.services.firestore_service import FirestoreService
-from src.tag_registry import TIER_TRENDING, VALID_TIERS, auto_register, seed_if_empty
+from src.services.podcast import PodcastService
+from src.tag_registry import (
+    KIND_SECTOR,
+    KIND_TAG,
+    TIER_TRENDING,
+    VALID_TIERS,
+    auto_register,
+    seed_if_empty,
+    sync_sectors,
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 firestore = FirestoreService()
+podcast_service = PodcastService()
 
 
 class TagEntryResponse(BaseModel):
@@ -27,6 +37,10 @@ class TagEntryResponse(BaseModel):
     slug: str
     display_zh: str
     tier: str
+    kind: str = KIND_TAG
+    exposure_id: Optional[str] = None
+    icon_id: Optional[str] = None
+    color_hex: Optional[str] = None
     episode_count: Optional[int] = None
     updated_by: Optional[str] = None
 
@@ -49,6 +63,12 @@ class TagUpdate(BaseModel):
 
 class DiscoverResponse(BaseModel):
     discovered: int
+    message: str
+
+
+class SyncSectorsResponse(BaseModel):
+    synced: int
+    total: int
     message: str
 
 
@@ -83,15 +103,23 @@ async def _count_episodes_for_slugs(slugs: list[str]) -> dict[str, int]:
 @router.get("/tags", response_model=TagListResponse)
 async def list_tags(
     tier: Optional[str] = Query(None, description="Filter by tier"),
+    kind: Optional[str] = Query(None, description="Filter by kind: 'tag' or 'sector'"),
     search: Optional[str] = Query(None, description="Search slug or display name"),
     admin: AdminAccess = Depends(get_admin_access),
     db: Session = Depends(get_session),
 ):
-    """List all tags with episode counts (admin view — includes hidden)."""
+    """List registry topics with episode counts (admin view — includes hidden).
+
+    Covers both kinds: 'tag' counts come from Firestore tag subcollections; 'sector'
+    counts come from the pipeline universe (list_sectors), since sectors are not stored
+    in the 'tags' collection.
+    """
     seed_if_empty(db)
     q = db.query(TagRegistry)
     if tier:
         q = q.filter(TagRegistry.tier == tier)
+    if kind:
+        q = q.filter(TagRegistry.kind == kind)
     if search:
         like = f"%{search}%"
         q = q.filter(
@@ -99,13 +127,33 @@ async def list_tags(
         )
     q = q.order_by(TagRegistry.slug)
     rows = q.all()
-    counts = await _count_episodes_for_slugs([r.slug for r in rows])
+
+    tag_rows = [r for r in rows if r.kind != KIND_SECTOR]
+    sector_rows = [r for r in rows if r.kind == KIND_SECTOR]
+
+    tag_counts = await _count_episodes_for_slugs([r.slug for r in tag_rows]) if tag_rows else {}
+    sector_counts: dict[str, int] = {}
+    if sector_rows:
+        try:
+            sectors = await podcast_service.list_sectors()
+            sector_counts = {
+                s["exposure_id"]: s.get("count", 0) for s in sectors if s.get("exposure_id")
+            }
+        except Exception as e:
+            logger.warning("sector counts: list_sectors failed: %s", e)
+
+    def _count_for(r: TagRegistry) -> int:
+        if r.kind == KIND_SECTOR:
+            return sector_counts.get(r.exposure_id or "", 0)
+        return tag_counts.get(r.slug, 0)
+
     return TagListResponse(
         tags=[
             TagEntryResponse(
                 id=r.id, slug=r.slug, display_zh=r.display_zh,
-                tier=r.tier, episode_count=counts.get(r.slug, 0),
-                updated_by=r.updated_by,
+                tier=r.tier, kind=r.kind, exposure_id=r.exposure_id,
+                icon_id=r.icon_id, color_hex=r.color_hex,
+                episode_count=_count_for(r), updated_by=r.updated_by,
             )
             for r in rows
         ],
@@ -144,13 +192,36 @@ async def discover_tags(
     )
 
 
+@router.post("/tags/sync-sectors", response_model=SyncSectorsResponse)
+async def sync_sectors_endpoint(
+    admin: AdminAccess = Depends(get_admin_access),
+    db: Session = Depends(get_session),
+):
+    """Sync sector/theme exposures from the pipeline universe into the registry.
+
+    New sectors are added as VISIBLE (trending); existing rows refresh their display
+    name / visuals but keep their curated visibility. Admins then hide unwanted sectors.
+    """
+    try:
+        sectors = await podcast_service.list_sectors()
+    except Exception as e:
+        raise HTTPException(500, f"Failed to read sectors from universe: {e}")
+    new_count = sync_sectors(db, sectors)
+    await _invalidate_tag_caches()
+    return SyncSectorsResponse(
+        synced=new_count,
+        total=len(sectors),
+        message=f"Synced {len(sectors)} sectors ({new_count} new, added as visible)",
+    )
+
+
 @router.post("/tags", response_model=TagEntryResponse, status_code=201)
 async def create_tag(
     body: TagCreate,
     admin: AdminAccess = Depends(get_admin_access),
     db: Session = Depends(get_session),
 ):
-    """Add a new tag to the registry."""
+    """Add a new tag to the registry (tag kind only — sectors are synced, not authored)."""
     if body.tier not in VALID_TIERS:
         raise HTTPException(400, f"tier must be one of: {', '.join(VALID_TIERS)}")
     existing = db.query(TagRegistry).filter(TagRegistry.slug == body.slug).first()
@@ -203,10 +274,16 @@ async def delete_tag(
     admin: AdminAccess = Depends(get_admin_access),
     db: Session = Depends(get_session),
 ):
-    """Remove a tag from the registry entirely."""
+    """Remove a tag from the registry entirely (tag kind only).
+
+    Sectors are synced from the pipeline universe; they cannot be hand-deleted (a
+    re-sync would just re-add them). Hide them via PATCH tier='hidden' instead.
+    """
     row = db.query(TagRegistry).filter(TagRegistry.id == tag_id).first()
     if not row:
         raise HTTPException(404, "Tag not found")
+    if row.kind == KIND_SECTOR:
+        raise HTTPException(400, "Sectors are synced, not deletable — hide it instead (tier='hidden')")
     db.delete(row)
     db.commit()
     await _invalidate_tag_caches()

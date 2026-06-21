@@ -228,10 +228,18 @@ class StockDailyOHLC(Base):
 
 
 class TagRegistry(Base):
-    """Admin-managed tag registry.
+    """Admin-managed topic registry — the unified index of tags AND sectors/themes.
 
     tier='trending' → shown in topics cloud; tier='hidden' → not shown.
     Auto-discovered tags from Firestore default to 'hidden'.
+
+    kind discriminates the two topic flavours that share this index:
+      'tag'    → free-form extraction tags (full admin CRUD; this is the default).
+      'sector' → sector/theme exposures synced from the pipeline universe. These are
+                 NOT hand-authored: members/aliases/icons stay pipeline-owned and are
+                 merged at read time. Admin only curates their visibility (tier).
+    Sector rows carry the universe identity (exposure_id) and display visuals
+    (icon_id, color_hex) so the admin list can render them without a universe lookup.
     """
     __tablename__ = "tag_registry"
 
@@ -239,12 +247,16 @@ class TagRegistry(Base):
     slug = Column(String(100), nullable=False, unique=True, index=True)
     display_zh = Column(Text, nullable=False)
     tier = Column(String(20), nullable=False, default="trending", index=True)
+    kind = Column(String(20), nullable=False, default="tag", index=True)
+    exposure_id = Column(String(120), nullable=True, index=True)
+    icon_id = Column(String(64), nullable=True)
+    color_hex = Column(String(16), nullable=True)
     updated_by = Column(String(100), nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     def __repr__(self) -> str:
-        return f"<TagRegistry(slug='{self.slug}', tier='{self.tier}')>"
+        return f"<TagRegistry(slug='{self.slug}', kind='{self.kind}', tier='{self.tier}')>"
 
 
 class PipelineConfigOverride(Base):

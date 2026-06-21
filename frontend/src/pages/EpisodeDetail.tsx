@@ -325,7 +325,7 @@ export const EpisodeDetail: React.FC = () => {
               )}
               {(episode?.sector_exposures?.length ?? 0) > 0 && (
                 <section aria-labelledby="episode-rail-sectors" className={tickers.length > 0 ? 'mt-4' : ''}>
-                  <h4 id="episode-rail-sectors" className="text-[11px] font-semibold tracking-[0.08em] uppercase text-muted-foreground px-2 mb-2">產業 / 主題曝險</h4>
+                  <h4 id="episode-rail-sectors" className="text-[11px] font-semibold tracking-[0.08em] uppercase text-muted-foreground px-2 mb-2">提及產業</h4>
                   <SectorExposureList
                     exposures={episode!.sector_exposures!}
                     perfMap={sectorPerf}
@@ -392,10 +392,15 @@ export const EpisodeDetail: React.FC = () => {
                 </div>
               </div>
               <h1 className="text-[24px] sm:text-[26px] font-semibold tracking-[-0.015em] leading-[1.3]">{title}</h1>
-              {episode.tags && episode.tags.length > 0 && (
+              {((episode.tags?.length ?? 0) > 0 || (episode.sector_exposures?.length ?? 0) > 0) && (
                 <div className="flex gap-1.5 flex-wrap mt-3">
-                  {episode.tags.slice(0, MAX_HERO_TAGS).map((t) => (
+                  {episode.tags?.slice(0, MAX_HERO_TAGS).map((t) => (
                     <Link key={t} to={`/topics/${encodeURIComponent(t)}`} className="text-[12px] px-2.5 py-0.5 rounded-full bg-amber-400/20 text-amber-700 dark:text-amber-300 font-medium hover:bg-amber-400/35 transition-colors">#{tagLabelFor(t, tagLabels)}</Link>
+                  ))}
+                  {/* Sectors render in the same row, distinguished by the blue tint + their
+                      own /sector route — a sector is a kind of topic, but ticker-backed. */}
+                  {episode.sector_exposures?.map((exp) => (
+                    <Link key={exp.exposure_id} to={`/sector/${encodeURIComponent(exp.exposure_id)}`} className="text-[12px] px-2.5 py-0.5 rounded-full bg-blue-500/15 text-blue-700 dark:text-blue-300 font-medium hover:bg-blue-500/25 transition-colors">{exp.display_name}</Link>
                   ))}
                 </div>
               )}
@@ -442,7 +447,7 @@ export const EpisodeDetail: React.FC = () => {
             {/* 產業 / 主題曝險 — mobile fallback; desktop uses the right rail. */}
             {(episode.sector_exposures?.length ?? 0) > 0 && (
               <section className="xl:hidden bg-card border border-border rounded-md p-5 sm:p-6 mb-3.5">
-                <h3 className="text-[12px] font-semibold uppercase tracking-[0.08em] text-muted-foreground mb-3.5">產業 / 主題曝險</h3>
+                <h3 className="text-[12px] font-semibold uppercase tracking-[0.08em] text-muted-foreground mb-3.5">提及產業</h3>
                 <SectorExposureList
                   exposures={episode.sector_exposures!}
                   perfMap={sectorPerf}

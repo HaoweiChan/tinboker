@@ -4,15 +4,19 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, RefreshCw, Search, Trash2, Check, X, Eye, EyeOff, Radar } from 'lucide-react';
+import { Plus, RefreshCw, Search, Trash2, Check, X, Eye, EyeOff, Radar, Layers } from 'lucide-react';
 import {
   listAdminTags,
   createAdminTag,
   updateAdminTag,
   deleteAdminTag,
   discoverTags,
+  syncSectors,
   type AdminTagEntry,
 } from '@/services/api/adminTags';
+import { SectorIcon } from '@/components/topics/SectorIcon';
+
+const KIND_SECTOR = 'sector';
 
 function VisibilityToggle({ visible, onToggle }: { visible: boolean; onToggle: () => void }) {
   return (
@@ -35,11 +39,13 @@ export const AdminTagsPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [tierFilter, setTierFilter] = useState('');
+  const [kindFilter, setKindFilter] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [showAddRow, setShowAddRow] = useState(false);
   const [newSlug, setNewSlug] = useState('');
   const [newDisplay, setNewDisplay] = useState('');
   const [discovering, setDiscovering] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [discoverMsg, setDiscoverMsg] = useState('');
 
   useEffect(() => {
@@ -52,6 +58,7 @@ export const AdminTagsPage: React.FC = () => {
     try {
       const params: Record<string, string> = {};
       if (tierFilter) params.tier = tierFilter;
+      if (kindFilter) params.kind = kindFilter;
       if (debouncedSearch) params.search = debouncedSearch;
       const res = await listAdminTags(params);
       setTags(res.tags);
@@ -60,7 +67,7 @@ export const AdminTagsPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [tierFilter, debouncedSearch]);
+  }, [tierFilter, kindFilter, debouncedSearch]);
 
   useEffect(() => { fetchTags(); }, [fetchTags]);
 
@@ -116,6 +123,21 @@ export const AdminTagsPage: React.FC = () => {
     }
   };
 
+  const handleSyncSectors = async () => {
+    setSyncing(true);
+    setDiscoverMsg('');
+    try {
+      const res = await syncSectors();
+      setDiscoverMsg(res.message);
+      await fetchTags();
+    } catch (err) {
+      console.error('Failed to sync sectors:', err);
+      setDiscoverMsg('Sector sync failed');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   const trendingCount = tags.filter((t) => t.tier === 'trending').length;
   const hiddenCount = tags.filter((t) => t.tier !== 'trending').length;
 
@@ -124,9 +146,9 @@ export const AdminTagsPage: React.FC = () => {
       {/* Header */}
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Tag Registry</h1>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Topic Registry</h1>
           <p className="text-sm text-gray-500 dark:text-gray-400">
-            {tags.length} tags — {trendingCount} trending · {hiddenCount} hidden
+            {tags.length} topics — {trendingCount} visible · {hiddenCount} hidden
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -138,6 +160,15 @@ export const AdminTagsPage: React.FC = () => {
           >
             <Radar className={`h-4 w-4 ${discovering ? 'animate-spin' : ''}`} />
             Discover
+          </button>
+          <button
+            onClick={handleSyncSectors}
+            disabled={syncing}
+            className="flex items-center gap-2 rounded-md border border-purple-300 px-3 py-2 text-sm text-purple-700 hover:bg-purple-50 disabled:opacity-50 dark:border-purple-600 dark:text-purple-300 dark:hover:bg-purple-900/20"
+            title="Sync sectors/themes from the pipeline universe (new ones added as visible)"
+          >
+            <Layers className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
+            同步產業
           </button>
           <button
             onClick={fetchTags}
@@ -179,12 +210,21 @@ export const AdminTagsPage: React.FC = () => {
           />
         </div>
         <select
+          value={kindFilter}
+          onChange={(e) => setKindFilter(e.target.value)}
+          className="rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+        >
+          <option value="">All kinds</option>
+          <option value="tag">標籤 Tags</option>
+          <option value="sector">產業 Sectors</option>
+        </select>
+        <select
           value={tierFilter}
           onChange={(e) => setTierFilter(e.target.value)}
           className="rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
         >
           <option value="">All</option>
-          <option value="trending">Trending</option>
+          <option value="trending">Visible</option>
           <option value="hidden">Hidden</option>
         </select>
       </div>
@@ -196,6 +236,7 @@ export const AdminTagsPage: React.FC = () => {
             <tr>
               <th className="px-4 py-3">Slug</th>
               <th className="px-4 py-3">顯示名稱</th>
+              <th className="px-4 py-3">Kind</th>
               <th className="px-4 py-3 text-right">Episodes</th>
               <th className="px-4 py-3">Visibility</th>
               <th className="px-4 py-3 text-right">Actions</th>
@@ -224,8 +265,9 @@ export const AdminTagsPage: React.FC = () => {
                     className="w-full rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
                   />
                 </td>
+                <td className="px-4 py-2 text-gray-400 text-xs">標籤</td>
                 <td className="px-4 py-2 text-right text-gray-400">—</td>
-                <td className="px-4 py-2 text-gray-400 text-xs">will be trending</td>
+                <td className="px-4 py-2 text-gray-400 text-xs">will be visible</td>
                 <td className="px-4 py-2 text-right">
                   <div className="flex items-center justify-end gap-1.5">
                     <button
@@ -249,20 +291,41 @@ export const AdminTagsPage: React.FC = () => {
 
             {loading ? (
               <tr>
-                <td colSpan={5} className="px-4 py-10 text-center text-gray-400">Loading…</td>
+                <td colSpan={6} className="px-4 py-10 text-center text-gray-400">Loading…</td>
               </tr>
             ) : tags.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-4 py-10 text-center text-gray-400">No tags found.</td>
+                <td colSpan={6} className="px-4 py-10 text-center text-gray-400">No tags found.</td>
               </tr>
             ) : (
-              tags.map((tag) => (
+              tags.map((tag) => {
+                const isSector = tag.kind === KIND_SECTOR;
+                return (
                 <tr key={tag.id} className={`hover:bg-gray-50 dark:hover:bg-gray-800/50 ${tag.tier !== 'trending' ? 'opacity-60' : ''}`}>
                   <td className="px-4 py-2.5 font-mono text-sm text-gray-900 dark:text-white">
-                    {tag.slug}
+                    <span className="inline-flex items-center gap-2">
+                      {isSector && (
+                        <SectorIcon
+                          exposureId={tag.exposure_id || tag.slug}
+                          iconId={tag.icon_id}
+                          color={tag.color_hex}
+                          variant="chip"
+                          size={13}
+                        />
+                      )}
+                      {tag.slug}
+                    </span>
                   </td>
                   <td className="px-4 py-2.5 text-gray-700 dark:text-gray-300">
                     {tag.display_zh}
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <span className={`inline-flex rounded px-1.5 py-0.5 text-xs font-medium ${isSector
+                      ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300'
+                      : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
+                    }`}>
+                      {isSector ? '產業' : '標籤'}
+                    </span>
                   </td>
                   <td className="px-4 py-2.5 text-right font-mono text-sm tabular-nums text-gray-600 dark:text-gray-400">
                     {tag.episode_count != null ? tag.episode_count.toLocaleString() : '—'}
@@ -274,16 +337,23 @@ export const AdminTagsPage: React.FC = () => {
                     />
                   </td>
                   <td className="px-4 py-2.5 text-right">
-                    <button
-                      onClick={() => handleDelete(tag)}
-                      className="rounded p-1 text-gray-400 hover:bg-red-100 hover:text-red-600 dark:hover:bg-red-900/30"
-                      title="Delete tag"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+                    {isSector ? (
+                      <span className="text-xs text-gray-400" title="Synced from the pipeline universe — hide it instead of deleting">
+                        synced
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => handleDelete(tag)}
+                        className="rounded p-1 text-gray-400 hover:bg-red-100 hover:text-red-600 dark:hover:bg-red-900/30"
+                        title="Delete tag"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    )}
                   </td>
                 </tr>
-              ))
+                );
+              })
             )}
           </tbody>
         </table>
