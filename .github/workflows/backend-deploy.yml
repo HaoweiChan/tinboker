@@ -282,6 +282,35 @@ jobs:
             fi
             echo "✅ $CONTAINER confirmed running deployed image tag '$IMAGE_TAG'"
 
+            # ── Sync the repo-managed Caddyfile to the host systemd Caddy ──────────
+            # Caddy runs as a HOST service (not a container), so changes to
+            # backend/deploy/Caddyfile only take effect once copied to /etc/caddy and
+            # reloaded. /app was just `git checkout -f`'d above, so the file here is the
+            # deployed ref. Validate FIRST; only swap + reload when it's valid AND
+            # actually changed. Wrapped so a Caddy hiccup never fails an otherwise-good
+            # backend deploy (errexit is suspended on the left of `||`).
+            {
+              if [ -f /app/backend/deploy/Caddyfile ]; then
+                if caddy validate --config /app/backend/deploy/Caddyfile --adapter caddyfile >/tmp/caddy-validate.log 2>&1; then
+                  if cmp -s /app/backend/deploy/Caddyfile /etc/caddy/Caddyfile; then
+                    echo "Caddy config unchanged — no reload needed"
+                  else
+                    cp /app/backend/deploy/Caddyfile /etc/caddy/Caddyfile
+                    if systemctl reload caddy; then
+                      echo "✅ Caddy config synced to /etc/caddy/Caddyfile and reloaded"
+                    else
+                      echo "::warning::caddy reload failed; previous config still serving"
+                    fi
+                  fi
+                else
+                  echo "::warning::repo Caddyfile failed validation — left /etc/caddy/Caddyfile unchanged"
+                  cat /tmp/caddy-validate.log
+                fi
+              else
+                echo "::warning::/app/backend/deploy/Caddyfile not found — skipping Caddy sync"
+              fi
+            } || echo "::warning::Caddy sync step errored (continuing — backend deploy already succeeded)"
+
       # Drop the Cloudflare edge cache only AFTER the new container is healthy, so the
       # edge re-fetches fresh /api/* instead of serving pre-deploy copies until TTL
       # (s-maxage up to 1h, plus a /api/* cache rule that over-caches). Best-effort:

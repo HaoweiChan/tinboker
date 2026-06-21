@@ -64,38 +64,23 @@ apt update && apt install -y caddy
 
 ### 1.2 Caddy configuration
 
-Write `/etc/caddy/Caddyfile`:
+Caddy runs as a **host systemd service** (`User=caddy`), not a container. Its config is
+**Git-managed**: the canonical source is [`backend/deploy/Caddyfile`](../backend/deploy/Caddyfile),
+and `backend-deploy.yml` syncs it to `/etc/caddy/Caddyfile` on every dev/staging/prod
+backend deploy (it `caddy validate`s the file, copies it, then runs `systemctl reload caddy`).
 
+**To change routing:** edit `backend/deploy/Caddyfile` → PR → merge. Do **not** hand-edit
+`/etc/caddy/Caddyfile` on the VPS — the next deploy overwrites it. The live file covers all
+host blocks: `api` / `dev-api` / `staging-api` (each with `/netdata/*` → the shared Netdata
+on `localhost:19999`), the `dev.tinboker.com` frontend, the `:80` IP health endpoint, and
+`podcast-api.tinboker.com` (pipelines content API + `/media/*` blob store).
+
+Emergency manual reload (e.g. hand-patching the live file before a deploy can run):
+
+```bash
+caddy validate --config /etc/caddy/Caddyfile   # always validate first
+systemctl reload caddy                          # atomic; keeps old config if invalid
 ```
-api.tinboker.com {
-    encode gzip
-    reverse_proxy localhost:8000
-}
-
-dev-api.tinboker.com {
-    encode gzip
-    reverse_proxy localhost:8001
-}
-
-staging-api.tinboker.com {
-    encode gzip
-    reverse_proxy localhost:8002
-}
-
-dev.tinboker.com {
-    encode gzip
-    handle /api/* {
-        reverse_proxy localhost:8001
-    }
-    handle {
-        root * /var/www/html-dev
-        try_files {path} /index.html
-        file_server
-    }
-}
-```
-
-Then reload: `systemctl reload caddy`
 
 Caddy issues Let's Encrypt certs automatically — no cert setup required.
 
