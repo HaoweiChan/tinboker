@@ -67,8 +67,10 @@ export const SectorHeroCard: React.FC<SectorHeroCardProps> = ({ sector }) => {
         <div className="flex items-center gap-1.5 mb-3">
           <SectorIcon
             exposureId={sector.exposure_id}
+            iconId={sector.icon_id}
+            color={sector.color_hex}
             size={12}
-            className="text-muted-foreground shrink-0"
+            variant="chip"
           />
           <span className="text-[10px] font-medium text-muted-foreground bg-muted/70 px-1.5 py-0.5 rounded leading-none">
             {sector.exposure_type === 'sector' ? '產業' : sector.exposure_type === 'theme' ? '主題' : '總經'}

@@ -102,8 +102,10 @@ export const SectorBoardCard: React.FC<SectorBoardCardProps> = ({ sector }) => {
           <div className="flex items-center gap-1.5 mb-1.5">
             <SectorIcon
               exposureId={sector.exposure_id}
+              iconId={sector.icon_id}
+              color={sector.color_hex}
               size={13}
-              className="text-muted-foreground/70 shrink-0"
+              variant="chip"
             />
             <span className="text-[10px] font-medium text-muted-foreground bg-muted/60 px-1.5 py-0.5 rounded leading-none shrink-0">
               {typeLabel}

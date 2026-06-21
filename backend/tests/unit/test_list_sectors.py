@@ -209,7 +209,7 @@ async def test_empty_when_no_episodes():
 
 @pytest.mark.asyncio
 async def test_response_shape_has_required_keys():
-    """Each item in the result has the four required keys."""
+    """Each item in the result has the required keys (incl. display visuals)."""
     docs = [_doc("ep-001")]
     mock_fs = MagicMock()
     mock_fs.stream_documents_projected.return_value = docs
@@ -224,4 +224,6 @@ async def test_response_shape_has_required_keys():
 
     assert len(result) == 1
     item = result[0]
-    assert set(item.keys()) == {"exposure_id", "display_name", "exposure_type", "count"}
+    assert set(item.keys()) == {
+        "exposure_id", "display_name", "exposure_type", "icon_id", "color_hex", "count",
+    }

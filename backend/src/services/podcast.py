@@ -834,7 +834,7 @@ class PodcastService:
                 "total": 0,
             }
 
-        cache_key = f"sector:episodes:v2:{exposure_id}:{offset}:{limit}:{self._scope_tag()}"
+        cache_key = f"sector:episodes:v3:{exposure_id}:{offset}:{limit}:{self._scope_tag()}"
         cached = await cache_get(cache_key)
         if cached:
             try:
@@ -929,11 +929,16 @@ class PodcastService:
             if reason:
                 t["reason"] = reason
 
+        from src.data.sector_visuals import visual_for
+        visual = visual_for(exposure_id) or {}
+
         paged = episodes[offset:offset + limit]
         result = {
             "exposure_id": exposure_id,
             "display_name": display_name,
             "exposure_type": exposure_type,
+            "icon_id": visual.get("icon_id"),
+            "color_hex": visual.get("color_hex"),
             "resolved_tickers": resolved_tickers,
             "episodes": [ep.dict() for ep in paged],
             "total": len(episodes),
@@ -1019,7 +1024,7 @@ class PodcastService:
         run_periodic_board_refresh (refresh-ahead), and only falls back to a
         recompute on a cold cache. Cache TTL matches podcast_episodes (10 min).
         """
-        cache_key = f"sectors:board:v2:{self._scope_tag()}"
+        cache_key = f"sectors:board:v3:{self._scope_tag()}"
         cached = await cache_get(cache_key)
         if cached:
             try:
@@ -1042,7 +1047,7 @@ class PodcastService:
 
     async def _cache_sector_board(self, result: list[dict]) -> None:
         """Write the board payload to the scope-keyed Redis entry (10-min TTL)."""
-        cache_key = f"sectors:board:v2:{self._scope_tag()}"
+        cache_key = f"sectors:board:v3:{self._scope_tag()}"
         try:
             await cache_set(cache_key, json.dumps(result), CACHE_TTL["podcast_episodes"])
         except Exception:
@@ -1102,6 +1107,7 @@ class PodcastService:
 
         # Gather all unique tickers and fetch EOD change% concurrently
         from src.services.stock_close_refresh import get_eod_change_pct
+        from src.data.sector_visuals import visual_for
 
         all_tickers: list[str] = list({
             t for tickers in ticker_map.values() for t in tickers
@@ -1154,10 +1160,13 @@ class PodcastService:
             else:
                 sector_series = []
 
+            visual = visual_for(eid) or {}
             sectors_raw.append({
                 "exposure_id": eid,
                 "display_name": meta[eid]["display_name"],
                 "exposure_type": meta[eid]["exposure_type"],
+                "icon_id": visual.get("icon_id"),
+                "color_hex": visual.get("color_hex"),
                 "episode_count": count,
                 "avg_change": avg_change,
                 "members": members,
@@ -1211,7 +1220,7 @@ class PodcastService:
 
         Returns list of dicts sorted by count DESC then exposure_id ASC.
         """
-        cache_key = f"sectors:list:v1:{self._scope_tag()}"
+        cache_key = f"sectors:list:v2:{self._scope_tag()}"
         cached = await cache_get(cache_key)
         if cached:
             try:
@@ -1253,12 +1262,15 @@ class PodcastService:
                         "exposure_type": entry.get("exposure_type") or "sector",
                     }
 
+        from src.data.sector_visuals import visual_for
         result = sorted(
             [
                 {
                     "exposure_id": eid,
                     "display_name": meta[eid]["display_name"],
                     "exposure_type": meta[eid]["exposure_type"],
+                    "icon_id": (visual_for(eid) or {}).get("icon_id"),
+                    "color_hex": (visual_for(eid) or {}).get("color_hex"),
                     "count": cnt,
                 }
                 for eid, cnt in counts.items()
