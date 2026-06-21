@@ -33,6 +33,13 @@ for var in ("EXTRACTOR_MODEL", "WRITER_MODEL", "MARP_WRITER_MODEL",
 os.environ.pop("PLATFORM_DATABASE_URL", None)
 os.environ.pop("EPISODE_DATABASE_URL", None)
 
+# Make `src.podcast…` importable regardless of CWD: locate the podcast service root
+# (the dir containing src/podcast) from the current dir or the usual `pipelines/` CWD.
+for _cand in (os.getcwd(), os.path.join(os.getcwd(), "services", "podcast")):
+    if os.path.isdir(os.path.join(_cand, "src", "podcast")):
+        sys.path.insert(0, _cand)
+        break
+
 from src.podcast.content_builder.nodes.chapter_consolidator import consolidate_chapters
 from src.podcast.content_builder.nodes.clusterer import cluster_sentences
 from src.podcast.content_builder.nodes.extractor import extract_events
