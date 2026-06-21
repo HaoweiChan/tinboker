@@ -16,6 +16,10 @@ export interface AdminTagEntry {
   slug: string;
   display_zh: string;
   tier: string;
+  kind: string;
+  exposure_id?: string | null;
+  icon_id?: string | null;
+  color_hex?: string | null;
   episode_count?: number | null;
   updated_by?: string | null;
 }
@@ -41,8 +45,15 @@ export interface DiscoverResponse {
   message: string;
 }
 
+export interface SyncSectorsResponse {
+  synced: number;
+  total: number;
+  message: string;
+}
+
 export async function listAdminTags(params?: {
   tier?: string;
+  kind?: string;
   search?: string;
 }): Promise<AdminTagListResponse> {
   const response = await apiClient.get<AdminTagListResponse>(
@@ -79,6 +90,15 @@ export async function discoverTags(minEpisodes: number = 3): Promise<DiscoverRes
     '/api/admin/tags/discover',
     null,
     { params: { min_episodes: minEpisodes }, ...adminAuthConfig() },
+  );
+  return response.data;
+}
+
+export async function syncSectors(): Promise<SyncSectorsResponse> {
+  const response = await apiClient.post<SyncSectorsResponse>(
+    '/api/admin/tags/sync-sectors',
+    null,
+    adminAuthConfig(),
   );
   return response.data;
 }

@@ -133,6 +133,23 @@ def create_all_tables():
                 "ALTER TABLE IF EXISTS content_sources "
                 "ADD COLUMN IF NOT EXISTS cover_image_url TEXT"
             ))
+            # Unified topic registry: tag rows pre-date these columns.
+            conn.execute(text(
+                "ALTER TABLE IF EXISTS tag_registry "
+                "ADD COLUMN IF NOT EXISTS kind VARCHAR(20) NOT NULL DEFAULT 'tag'"
+            ))
+            conn.execute(text(
+                "ALTER TABLE IF EXISTS tag_registry "
+                "ADD COLUMN IF NOT EXISTS exposure_id VARCHAR(120)"
+            ))
+            conn.execute(text(
+                "ALTER TABLE IF EXISTS tag_registry "
+                "ADD COLUMN IF NOT EXISTS icon_id VARCHAR(64)"
+            ))
+            conn.execute(text(
+                "ALTER TABLE IF EXISTS tag_registry "
+                "ADD COLUMN IF NOT EXISTS color_hex VARCHAR(16)"
+            ))
             conn.commit()
     elif engine.dialect.name == "sqlite":
         # SQLite has no "ADD COLUMN IF NOT EXISTS" — check PRAGMA first.
@@ -147,6 +164,19 @@ def create_all_tables():
             cs_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(content_sources)"))}
             if cs_cols and "cover_image_url" not in cs_cols:
                 conn.execute(text("ALTER TABLE content_sources ADD COLUMN cover_image_url TEXT"))
+                conn.commit()
+            tr_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(tag_registry)"))}
+            if tr_cols and "kind" not in tr_cols:
+                conn.execute(text("ALTER TABLE tag_registry ADD COLUMN kind VARCHAR(20) NOT NULL DEFAULT 'tag'"))
+                conn.commit()
+            if tr_cols and "exposure_id" not in tr_cols:
+                conn.execute(text("ALTER TABLE tag_registry ADD COLUMN exposure_id VARCHAR(120)"))
+                conn.commit()
+            if tr_cols and "icon_id" not in tr_cols:
+                conn.execute(text("ALTER TABLE tag_registry ADD COLUMN icon_id VARCHAR(64)"))
+                conn.commit()
+            if tr_cols and "color_hex" not in tr_cols:
+                conn.execute(text("ALTER TABLE tag_registry ADD COLUMN color_hex VARCHAR(16)"))
                 conn.commit()
     logger.info("Database tables created successfully")
 

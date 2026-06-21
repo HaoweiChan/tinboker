@@ -28,6 +28,10 @@ TIER_TRENDING = "trending"
 TIER_HIDDEN = "hidden"
 VALID_TIERS = {TIER_TRENDING, TIER_HIDDEN}
 
+KIND_TAG = "tag"
+KIND_SECTOR = "sector"
+VALID_KINDS = {KIND_TAG, KIND_SECTOR}
+
 
 # ── Seed data (inserted once when table is empty) ───────────────────
 _SEED: list[tuple[str, str, str]] = [
@@ -143,11 +147,74 @@ def auto_register(db: Session, slugs: list[str], min_episodes: int = 3) -> int:
     return len(new_slugs)
 
 
+def sync_sectors(db: Session, sectors: list[dict]) -> int:
+    """Upsert sector/theme exposures into the unified registry. Returns count of NEW rows.
+
+    The pipeline universe owns sector identity, members, aliases and visuals; this only
+    maintains the registry INDEX so admins can curate sector visibility alongside tags.
+    Caller supplies the sector list (e.g. ``PodcastService.list_sectors()`` output) so
+    this stays a pure sync DB helper, mirroring ``auto_register``.
+
+    New sectors default to ``trending`` (VISIBLE) so a first sync never empties the live
+    board — admins HIDE the ones they don't want. Existing rows refresh their display
+    name / visuals from the universe but keep their curated ``tier`` untouched.
+    """
+    by_exposure = {
+        r.exposure_id: r
+        for r in db.query(TagRegistry).filter(TagRegistry.kind == KIND_SECTOR).all()
+    }
+    new_count = 0
+    for sector in sectors:
+        eid = str(sector.get("exposure_id") or "").strip()
+        if not eid:
+            continue
+        display = str(sector.get("display_name") or eid)
+        icon_id = sector.get("icon_id")
+        color_hex = sector.get("color_hex")
+        existing = by_exposure.get(eid)
+        if existing is not None:
+            existing.display_zh = display
+            existing.icon_id = icon_id
+            existing.color_hex = color_hex
+        else:
+            db.add(TagRegistry(
+                slug=eid,  # exposure_id is globally unique (sector_*/theme_* prefixed)
+                display_zh=display,
+                tier=TIER_TRENDING,
+                kind=KIND_SECTOR,
+                exposure_id=eid,
+                icon_id=icon_id,
+                color_hex=color_hex,
+            ))
+            new_count += 1
+    db.commit()
+    logger.info("Synced sectors: %d new, %d refreshed", new_count, len(sectors) - new_count)
+    return new_count
+
+
+def hidden_sector_exposure_ids(db: Session) -> set[str]:
+    """Exposure IDs of sectors the admin has HIDDEN — excluded from the public board.
+
+    Default-visible semantics: a sector with no registry row (never synced) stays
+    visible, so the board never silently empties between universe updates and syncs.
+    """
+    rows = (
+        db.query(TagRegistry.exposure_id)
+        .filter(TagRegistry.kind == KIND_SECTOR, TagRegistry.tier == TIER_HIDDEN)
+        .all()
+    )
+    return {r[0] for r in rows if r[0]}
+
+
 # ── Public query helpers ─────────────────────────────────────────────
 
 def trending_slugs(db: Session) -> list[str]:
-    """Slugs shown in the topics cloud (trending tier only)."""
-    rows = db.query(TagRegistry.slug).filter(TagRegistry.tier == TIER_TRENDING).all()
+    """Slugs shown in the topics cloud (trending tier only, tag kind only)."""
+    rows = (
+        db.query(TagRegistry.slug)
+        .filter(TagRegistry.tier == TIER_TRENDING, TagRegistry.kind == KIND_TAG)
+        .all()
+    )
     return [r[0] for r in rows]
 
 
@@ -181,6 +248,11 @@ def registry_snapshot(db: Session) -> list[dict]:
         for norm_slug, zh in _CANONICAL_DISPLAY.items()
     }
     for r in db.query(TagRegistry).all():
+        # Tag-label catalogue only — sector rows are indexed in the same table but
+        # must not pollute the tag display map. (Filtered in Python, not the query,
+        # so a slug-only / mocked session without .filter() still works.)
+        if getattr(r, "kind", KIND_TAG) == KIND_SECTOR:
+            continue
         norm = normalize_tag_slug(r.slug)
         canonical_zh = _CANONICAL_DISPLAY.get(norm)
         is_placeholder = normalize_tag_slug(r.display_zh) == norm

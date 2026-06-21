@@ -1,14 +1,18 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Flame, BarChart3, Layers } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Flame, BarChart3, Layers, Hash } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
 import { SectorHeroCard } from '@/components/topics/SectorHeroCard';
 import { SectorBoardCard } from '@/components/topics/SectorBoardCard';
 import {
   getSectorBoard,
+  getTrendingTags,
   type SectorBoardItem,
+  type TrendingTag,
 } from '@/services/api/podcasts';
 import { fetchWithFallback } from '@/services/api/migration';
+import { useTagLabels, tagLabelFor } from '@/hooks/useTagLabels';
 
 // ── Sort types ─────────────────────────────────────────────────────────────
 
@@ -92,6 +96,8 @@ export const TopicsCloud: React.FC = () => {
   const [sectors, setSectors] = useState<SectorBoardItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [sortKey, setSortKey] = useState<SortKey>('hotness');
+  const [tags, setTags] = useState<TrendingTag[]>([]);
+  const tagLabels = useTagLabels();
 
   useEffect(() => {
     let alive = true;
@@ -105,6 +111,17 @@ export const TopicsCloud: React.FC = () => {
       if (!alive) return;
       setSectors(result);
       setLoading(false);
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  // Trending tags for the secondary section (free-form topics, no price data).
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const res = await getTrendingTags().catch(() => ({ tags: [] as TrendingTag[] }));
+      if (!alive) return;
+      setTags(res.tags);
     })();
     return () => { alive = false; };
   }, []);
@@ -193,6 +210,30 @@ export const TopicsCloud: React.FC = () => {
             {sortedSectors.map((s) => (
               <SectorBoardCard key={s.exposure_id} sector={s} />
             ))}
+          </div>
+        )}
+
+        {/* ── TAGS ────────────────────────────────────────────────── */}
+        {tags.length > 0 && (
+          <div className="mt-9">
+            <div className="flex items-center gap-1.5 mb-3">
+              <Hash size={13} className="text-muted-foreground" />
+              <h2 className="text-[13px] font-semibold">熱門標籤</h2>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {tags.map((t) => (
+                <Link
+                  key={t.id}
+                  to={`/topics/${encodeURIComponent(t.id)}`}
+                  className="inline-flex items-center gap-1.5 text-[13px] px-3 py-1 rounded-full bg-amber-400/20 text-amber-700 dark:text-amber-300 font-medium hover:bg-amber-400/35 transition-colors"
+                >
+                  #{t.name || tagLabelFor(t.id, tagLabels)}
+                  {t.scoped_count > 0 && (
+                    <span className="font-mono text-[11px] tabular-nums opacity-70">{t.scoped_count}</span>
+                  )}
+                </Link>
+              ))}
+            </div>
           </div>
         )}
       </PageContent>
