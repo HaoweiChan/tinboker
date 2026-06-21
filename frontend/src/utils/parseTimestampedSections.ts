@@ -107,7 +107,15 @@ export function parseSummaryTopicSections(summaryMarkdown: string, transcriptMar
         })
         .filter((section): section is TimestampedSection => section !== null);
 
-    if (explicitSections.length === headings.length && hasUsefulTimeline(explicitSections)) {
+    // Use the real `#time` markers whenever the timed headings form a usable
+    // timeline. We deliberately do NOT require EVERY heading to be timed: the
+    // summary always ends with a markerless `## 結論`, and may carry `###`
+    // subsections, none of which the pipeline stamps. Demanding all headings be
+    // timed made that single markerless 結論 poison the whole set into the
+    // synthesized even-spacing fallback (00:00, 00:57, 01:55 …) — the exact
+    // mismatch between the player chapters and the summary's real badges
+    // (15:02, 16:51 …). Markerless headings simply aren't surfaced as chapters.
+    if (explicitSections.length > 0 && hasUsefulTimeline(explicitSections)) {
         return dedupeAndSort(explicitSections);
     }
 
