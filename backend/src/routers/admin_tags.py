@@ -17,9 +17,12 @@ from src.services.podcast import PodcastService
 from src.tag_registry import (
     KIND_SECTOR,
     KIND_TAG,
+    TIER_HIDDEN,
     TIER_TRENDING,
     VALID_TIERS,
     auto_register,
+    canonical_label,
+    normalize_tag_slug,
     seed_if_empty,
     sync_sectors,
 )
@@ -33,11 +36,15 @@ podcast_service = PodcastService()
 
 
 class TagEntryResponse(BaseModel):
-    id: int
+    # id is None for VIRTUAL rows — tags that appear in episodes (so they auto-surface
+    # on /topics) but have no registry row yet. Surfacing them here lets admins hide
+    # them; hiding creates the registry row (see the frontend toggle).
+    id: Optional[int] = None
     slug: str
     display_zh: str
     tier: str
     kind: str = KIND_TAG
+    registered: bool = True
     exposure_id: Optional[str] = None
     icon_id: Optional[str] = None
     color_hex: Optional[str] = None
@@ -108,11 +115,15 @@ async def list_tags(
     admin: AdminAccess = Depends(get_admin_access),
     db: Session = Depends(get_session),
 ):
-    """List registry topics with episode counts (admin view — includes hidden).
+    """List topics with episode counts (admin view — includes hidden).
 
-    Covers both kinds: 'tag' counts come from Firestore tag subcollections; 'sector'
-    counts come from the pipeline universe (list_sectors), since sectors are not stored
-    in the 'tags' collection.
+    Returns the full curatable set so nothing that can surface on /topics is
+    unmanageable:
+      • registry rows (tags + synced sectors), and
+      • VIRTUAL tag rows — Firestore tags with no registry row yet. They auto-surface
+        on /topics by volume, so they're shown here (visible-by-default, registered=
+        False) and can be hidden; hiding creates the registry row.
+    Tag counts come from Firestore tag subcollections; sector counts from the universe.
     """
     seed_if_empty(db)
     q = db.query(TagRegistry)
@@ -131,7 +142,33 @@ async def list_tags(
     tag_rows = [r for r in rows if r.kind != KIND_SECTOR]
     sector_rows = [r for r in rows if r.kind == KIND_SECTOR]
 
-    tag_counts = await _count_episodes_for_slugs([r.slug for r in tag_rows]) if tag_rows else {}
+    # ── Virtual tags: Firestore tags not registered anywhere (closes the loophole
+    # where an auto-surfaced tag had no admin row to hide). Visible-by-default, so
+    # only shown when not filtering to hidden and not filtering to the sector kind.
+    virtual: list[dict] = []
+    if kind != KIND_SECTOR and tier != TIER_HIDDEN:
+        try:
+            fs_slugs = await asyncio.to_thread(firestore.get_all_parent_documents, "tags")
+        except Exception as e:
+            logger.warning("virtual tags: Firestore tag listing failed: %s", e)
+            fs_slugs = []
+        # Dedupe against ALL registry tag rows (normalized), not just the filtered page,
+        # so a registered+hidden tag never reappears as a virtual visible row.
+        registered_norm = {
+            normalize_tag_slug(s)
+            for (s,) in db.query(TagRegistry.slug).filter(TagRegistry.kind != KIND_SECTOR).all()
+        }
+        needle = search.lower() if search else None
+        for s in fs_slugs:
+            if normalize_tag_slug(s) in registered_norm:
+                continue
+            label = canonical_label(s)
+            if needle and needle not in s.lower() and needle not in label.lower():
+                continue
+            virtual.append({"slug": s, "display_zh": label})
+
+    tag_slugs_to_count = [r.slug for r in tag_rows] + [v["slug"] for v in virtual]
+    tag_counts = await _count_episodes_for_slugs(tag_slugs_to_count) if tag_slugs_to_count else {}
     sector_counts: dict[str, int] = {}
     if sector_rows:
         try:
@@ -147,18 +184,25 @@ async def list_tags(
             return sector_counts.get(r.exposure_id or "", 0)
         return tag_counts.get(r.slug, 0)
 
-    return TagListResponse(
-        tags=[
-            TagEntryResponse(
-                id=r.id, slug=r.slug, display_zh=r.display_zh,
-                tier=r.tier, kind=r.kind, exposure_id=r.exposure_id,
-                icon_id=r.icon_id, color_hex=r.color_hex,
-                episode_count=_count_for(r), updated_by=r.updated_by,
-            )
-            for r in rows
-        ],
-        total=len(rows),
-    )
+    entries = [
+        TagEntryResponse(
+            id=r.id, slug=r.slug, display_zh=r.display_zh,
+            tier=r.tier, kind=r.kind, registered=True, exposure_id=r.exposure_id,
+            icon_id=r.icon_id, color_hex=r.color_hex,
+            episode_count=_count_for(r), updated_by=r.updated_by,
+        )
+        for r in rows
+    ]
+    entries += [
+        TagEntryResponse(
+            id=None, slug=v["slug"], display_zh=v["display_zh"],
+            tier=TIER_TRENDING, kind=KIND_TAG, registered=False,
+            episode_count=tag_counts.get(v["slug"], 0),
+        )
+        for v in virtual
+    ]
+    entries.sort(key=lambda e: (e.kind, e.slug.lower()))
+    return TagListResponse(tags=entries, total=len(entries))
 
 
 @router.post("/tags/discover", response_model=DiscoverResponse)

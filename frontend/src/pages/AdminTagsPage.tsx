@@ -72,8 +72,15 @@ export const AdminTagsPage: React.FC = () => {
   useEffect(() => { fetchTags(); }, [fetchTags]);
 
   const handleToggleTier = async (tag: AdminTagEntry) => {
-    const newTier = tag.tier === 'trending' ? 'hidden' : 'trending';
     try {
+      if (tag.registered === false || tag.id == null) {
+        // Virtual tag (auto-surfaced, visible by default) → hide it by creating the
+        // registry row at tier='hidden'. Refetch so it shows as a registered row.
+        await createAdminTag({ slug: tag.slug, display_zh: tag.display_zh, tier: 'hidden' });
+        await fetchTags();
+        return;
+      }
+      const newTier = tag.tier === 'trending' ? 'hidden' : 'trending';
       const updated = await updateAdminTag(tag.id, { tier: newTier });
       setTags((prev) => prev.map((t) => (t.id === tag.id ? { ...t, ...updated } : t)));
     } catch (err) {
@@ -82,6 +89,7 @@ export const AdminTagsPage: React.FC = () => {
   };
 
   const handleDelete = async (tag: AdminTagEntry) => {
+    if (tag.id == null) return; // virtual rows have no registry row to delete
     if (!confirm(`Delete tag "${tag.slug}" (${tag.display_zh})?`)) return;
     try {
       await deleteAdminTag(tag.id);
@@ -300,8 +308,9 @@ export const AdminTagsPage: React.FC = () => {
             ) : (
               tags.map((tag) => {
                 const isSector = tag.kind === KIND_SECTOR;
+                const isVirtual = tag.registered === false;
                 return (
-                <tr key={tag.id} className={`hover:bg-gray-50 dark:hover:bg-gray-800/50 ${tag.tier !== 'trending' ? 'opacity-60' : ''}`}>
+                <tr key={`${tag.kind}:${tag.slug}`} className={`hover:bg-gray-50 dark:hover:bg-gray-800/50 ${tag.tier !== 'trending' ? 'opacity-60' : ''}`}>
                   <td className="px-4 py-2.5 font-mono text-sm text-gray-900 dark:text-white">
                     <span className="inline-flex items-center gap-2">
                       {isSector && (
@@ -326,6 +335,14 @@ export const AdminTagsPage: React.FC = () => {
                     }`}>
                       {isSector ? '產業' : '標籤'}
                     </span>
+                    {isVirtual && (
+                      <span
+                        className="ml-1.5 inline-flex rounded px-1.5 py-0.5 text-xs font-medium bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400"
+                        title="Auto-surfaced from episodes — not yet in the registry. Hide it to create a registry row."
+                      >
+                        auto
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-2.5 text-right font-mono text-sm tabular-nums text-gray-600 dark:text-gray-400">
                     {tag.episode_count != null ? tag.episode_count.toLocaleString() : '—'}
@@ -340,6 +357,10 @@ export const AdminTagsPage: React.FC = () => {
                     {isSector ? (
                       <span className="text-xs text-gray-400" title="Synced from the pipeline universe — hide it instead of deleting">
                         synced
+                      </span>
+                    ) : isVirtual ? (
+                      <span className="text-xs text-gray-400" title="Auto-surfaced — hide it to create a registry row, then it can be deleted">
+                        —
                       </span>
                     ) : (
                       <button
