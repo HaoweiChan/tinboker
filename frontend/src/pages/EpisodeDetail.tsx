@@ -227,6 +227,13 @@ export const EpisodeDetail: React.FC = () => {
   }, [tickerSymbols, rawTranslationMap, episodeSentiments, activeMap, episode, sinceLabel]);
   const spotifyUri = useMemo(() => spotifyUriFrom(episode), [episode]);
 
+  // Hero sector chips: collapse duplicate exposure_ids (an episode tags the same
+  // sector once per section), keeping first-seen order.
+  const heroSectors = useMemo(
+    () => [...new Map((episode?.sector_exposures ?? []).map((e) => [e.exposure_id, e])).values()],
+    [episode],
+  );
+
   const title = episode?.episode_title || (episode?.episode_number != null ? `EP ${episode.episode_number}` : '集數摘要');
   const name = episode?.podcast_name || podcastName || '節目';
   const episodeInsight = useMemo(() => episodeInsightFrom(episode, title), [episode, title]);
@@ -398,9 +405,10 @@ export const EpisodeDetail: React.FC = () => {
                     <Link key={t} to={`/topics/${encodeURIComponent(t)}`} className="text-[12px] px-2.5 py-0.5 rounded-full bg-amber-400/20 text-amber-700 dark:text-amber-300 font-medium hover:bg-amber-400/35 transition-colors">#{tagLabelFor(t, tagLabels)}</Link>
                   ))}
                   {/* Sectors render in the same row, distinguished by the blue tint + their
-                      own /sector route — a sector is a kind of topic, but ticker-backed. */}
-                  {episode.sector_exposures?.map((exp) => (
-                    <Link key={exp.exposure_id} to={`/sector/${encodeURIComponent(exp.exposure_id)}`} className="text-[12px] px-2.5 py-0.5 rounded-full bg-blue-500/15 text-blue-700 dark:text-blue-300 font-medium hover:bg-blue-500/25 transition-colors">{exp.display_name}</Link>
+                      own /sector route — a sector is a kind of topic, but ticker-backed.
+                      Deduped by exposure_id: an episode tags the same sector once per section. */}
+                  {heroSectors.map((exp) => (
+                    <Link key={exp.exposure_id} to={`/sector/${encodeURIComponent(exp.exposure_id)}`} className="text-[12px] px-2.5 py-0.5 rounded-full bg-blue-500/15 text-blue-700 dark:text-blue-300 font-medium hover:bg-blue-500/25 transition-colors">#{exp.display_name}</Link>
                   ))}
                 </div>
               )}
