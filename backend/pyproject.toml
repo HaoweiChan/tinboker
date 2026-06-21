@@ -1,7 +1,7 @@
 [project]
 name = "tinboker-backend"
-version = "0.1.0"
-description = "Add your description here"
+version = "0.4.14"
+description = "TinBoker platform backend API (FastAPI)"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
