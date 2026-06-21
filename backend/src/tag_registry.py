@@ -192,6 +192,21 @@ def sync_sectors(db: Session, sectors: list[dict]) -> int:
     return new_count
 
 
+def hidden_tag_slugs(db: Session) -> set[str]:
+    """NORMALIZED slugs of admin-hidden tags — excluded from the trending board.
+
+    Trending is auto-surfaced by volume (any tag with enough recent episodes), so the
+    registry tier acts as a HIDE-override only: a tag-kind row at tier='hidden' is
+    suppressed. Returned normalized so it matches Firestore tag slugs of any spelling.
+    """
+    rows = (
+        db.query(TagRegistry.slug)
+        .filter(TagRegistry.kind == KIND_TAG, TagRegistry.tier == TIER_HIDDEN)
+        .all()
+    )
+    return {normalize_tag_slug(r[0]) for r in rows if r[0]}
+
+
 def hidden_sector_exposure_ids(db: Session) -> set[str]:
     """Exposure IDs of sectors the admin has HIDDEN — excluded from the public board.
 

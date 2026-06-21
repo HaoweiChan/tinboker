@@ -10,7 +10,7 @@ from urllib.parse import quote
 from src.config import settings
 from src.models.podcast import Podcast, Episode
 from src.schemas.search import SearchResultItem
-from src.tag_registry import trending_slugs
+from src.tag_registry import hidden_tag_slugs, normalize_tag_slug, trending_slugs
 from src.database.postgres import get_session
 from src.cache.redis_client import cache_get, cache_set, cache_delete, cache_delete_pattern
 from src.cache.cache_config import CACHE_TTL
@@ -734,11 +734,26 @@ class PodcastService:
 
     # ── Tag queries ──────────────────────────────────────────────────
 
-    @staticmethod
-    def _get_topic_tags() -> list[str]:
-        """Trending-tier tags from the DB-backed registry."""
+    def _get_topic_tags(self) -> list[str]:
+        """Candidate tags for the trending board — auto-surfaced by volume.
+
+        Every tag that appears in episodes (the Firestore ``tags`` parent docs),
+        MINUS admin-hidden ones. A tag does NOT need to be pre-promoted to trend:
+        get_trending_tags ranks by recent scoped-count and drops anything below the
+        TRENDING_MIN_EPISODES floor, so the registry tier is only a HIDE override.
+        Falls back to the registry trending tier if the Firestore listing is
+        unavailable (so the board degrades to the curated set, never to empty).
+        """
         db = next(get_session())
         try:
+            hidden = hidden_tag_slugs(db)
+            try:
+                all_slugs = self.firestore_service.get_all_parent_documents("tags")
+            except Exception as e:
+                logger.warning("trending tags: tag listing failed (%s); using registry", e)
+                all_slugs = []
+            if all_slugs:
+                return [s for s in all_slugs if normalize_tag_slug(s) not in hidden]
             return trending_slugs(db)
         finally:
             db.close()
@@ -954,6 +969,12 @@ class PodcastService:
     # ── Sector board constants ────────────────────────────────────────
     _BOARD_W_PRICE: float = 0.5
     _BOARD_W_MENTION: float = 0.5
+
+    # ── Trending tags (auto-surface by volume) ────────────────────────
+    # A tag must have >= this many scoped episodes (recency + language window) to
+    # surface on the board, filtering one-off noise; the board shows the top N.
+    _TRENDING_MIN_EPISODES: int = 2
+    _TRENDING_MAX_TAGS: int = 40
     # Episode fields the board / sectors scans actually read — projected via
     # stream_documents_projected so the ~2700-doc scan skips transcript/summary
     # refs etc. Covers the tally + scoping (_dict_release_ms, allowlist, retracted).
@@ -1285,16 +1306,23 @@ class PodcastService:
 
         return result
 
-    async def get_trending_tags(self, weeks: int = 6, preview_count: int = 3) -> List[dict]:
-        """Return curated tags with scoped counts, weekly sparkline data, and episode previews.
-        Results are cached for 30 minutes. Tags with 0 scoped episodes are omitted."""
+    async def get_trending_tags(
+        self, weeks: int = 6, preview_count: int = 3, force_refresh: bool = False,
+    ) -> List[dict]:
+        """Auto-surfaced trending tags with scoped counts, weekly sparklines, and previews.
+
+        Candidate set is volume-driven (see _get_topic_tags); tags below
+        _TRENDING_MIN_EPISODES are dropped and the top _TRENDING_MAX_TAGS are returned.
+        Cached 30 min. force_refresh skips the cache read (used by the refresh-ahead loop
+        so the heavier all-tags scan stays off the request path)."""
         cache_key = f"tags:trending:v1:{weeks}:{preview_count}:{self._scope_tag()}"
-        cached = await cache_get(cache_key)
-        if cached:
-            try:
-                return json.loads(cached)
-            except Exception:
-                pass
+        if not force_refresh:
+            cached = await cache_get(cache_key)
+            if cached:
+                try:
+                    return json.loads(cached)
+                except Exception:
+                    pass
         allowed = await self._allowed_podcast_names()
         cutoff = self._recency_cutoff_ms()
         now_ms = int(datetime.now().timestamp() * 1000)
@@ -1357,7 +1385,13 @@ class PodcastService:
                     return None
 
         results = await asyncio.gather(*[_process_tag(t) for t in self._get_topic_tags()])
-        tags = sorted([r for r in results if r], key=lambda x: x["scoped_count"], reverse=True)
+        # Auto-surface by volume: keep tags above the recent-episode floor, rank by
+        # scoped count, and cap to the board size. (Sub-floor / zero-count tags drop.)
+        tags = sorted(
+            [r for r in results if r and r["scoped_count"] >= self._TRENDING_MIN_EPISODES],
+            key=lambda x: x["scoped_count"],
+            reverse=True,
+        )[: self._TRENDING_MAX_TAGS]
         try:
             await cache_set(cache_key, json.dumps(tags), 1800)
         except Exception:
@@ -1685,4 +1719,19 @@ async def run_periodic_board_refresh(interval_seconds: float = 300.0) -> None:
             await PodcastService().warm_sector_board()
         except Exception as e:
             logger.warning(f"sector-board refresh cycle failed: {e}")
+        await asyncio.sleep(interval_seconds)
+
+
+async def run_periodic_trending_refresh(interval_seconds: float = 600.0) -> None:
+    """Refresh-ahead loop for the /topics 熱門標籤 board.
+
+    The volume-driven candidate set scans every tag's Firestore subcollection, so this
+    keeps that cost off the request path: it force-recomputes + rewrites the Redis entry
+    (30-min TTL) on the API's default params every ``interval_seconds``. Runs immediately
+    on start, then loops. Never raises (mirrors run_periodic_board_refresh)."""
+    while True:
+        try:
+            await PodcastService().get_trending_tags(force_refresh=True)
+        except Exception as e:
+            logger.warning(f"trending-tags refresh cycle failed: {e}")
         await asyncio.sleep(interval_seconds)
