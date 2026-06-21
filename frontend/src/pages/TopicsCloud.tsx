@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { Flame, BarChart3, Layers, Hash } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
 import { SectorHeroCard } from '@/components/topics/SectorHeroCard';
 import { SectorBoardCard } from '@/components/topics/SectorBoardCard';
+import { TagBoardCard } from '@/components/topics/TagBoardCard';
 import {
   getSectorBoard,
   getTrendingTags,
@@ -220,18 +220,9 @@ export const TopicsCloud: React.FC = () => {
               <Hash size={13} className="text-muted-foreground" />
               <h2 className="text-[13px] font-semibold">熱門標籤</h2>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {tags.map((t) => (
-                <Link
-                  key={t.id}
-                  to={`/topics/${encodeURIComponent(t.id)}`}
-                  className="inline-flex items-center gap-1.5 text-[13px] px-3 py-1 rounded-full bg-amber-400/20 text-amber-700 dark:text-amber-300 font-medium hover:bg-amber-400/35 transition-colors"
-                >
-                  #{t.name || tagLabelFor(t.id, tagLabels)}
-                  {t.scoped_count > 0 && (
-                    <span className="font-mono text-[11px] tabular-nums opacity-70">{t.scoped_count}</span>
-                  )}
-                </Link>
+                <TagBoardCard key={t.id} tag={t} label={tagLabelFor(t.id, tagLabels)} />
               ))}
             </div>
           </div>
