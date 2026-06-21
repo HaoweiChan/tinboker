@@ -2,7 +2,8 @@
  * Admin Analytics Page — live traffic + SEO + social engagement.
  *
  * Pulls Cloudflare zone analytics, Google Search Console (clicks/impressions/CTR +
- * top queries & pages), and Threads engagement insights, and renders them inline.
+ * top queries & pages), and Threads + Facebook Page engagement insights, and renders
+ * them inline.
  * Each source degrades to a "not connected" note + dashboard link when its upstream
  * credentials aren't configured, so the page is always safe to open.
  */
@@ -23,15 +24,20 @@ import {
     Heart,
     MessageCircle,
     Repeat2,
+    Facebook,
+    ThumbsUp,
+    MousePointerClick,
 } from 'lucide-react';
 import {
     getCloudflareOverview,
     getSeoOverview,
     getThreadsInsights,
+    getFacebookInsights,
     type CloudflareOverview,
     type SeoOverview,
     type SeoRow,
     type ThreadsInsights,
+    type FacebookInsights,
 } from '@/services/api/adminAnalytics';
 
 // ── formatting helpers ─────────────────────────────────────────────────────
@@ -176,19 +182,22 @@ export const AdminAnalyticsPage: React.FC = () => {
     const [cf, setCf] = useState<CloudflareOverview | null>(null);
     const [seo, setSeo] = useState<SeoOverview | null>(null);
     const [threads, setThreads] = useState<ThreadsInsights | null>(null);
+    const [fb, setFb] = useState<FacebookInsights | null>(null);
     const [loading, setLoading] = useState(true);
 
     const load = useCallback(async () => {
         setLoading(true);
         // Independent sources — settle each on its own so one failure never blanks the page.
-        const [cfRes, seoRes, thRes] = await Promise.allSettled([
+        const [cfRes, seoRes, thRes, fbRes] = await Promise.allSettled([
             getCloudflareOverview(7),
             getSeoOverview(28),
             getThreadsInsights(28, 5),
+            getFacebookInsights(28),
         ]);
         if (cfRes.status === 'fulfilled') setCf(cfRes.value);
         if (seoRes.status === 'fulfilled') setSeo(seoRes.value);
         if (thRes.status === 'fulfilled') setThreads(thRes.value);
+        if (fbRes.status === 'fulfilled') setFb(fbRes.value);
         setLoading(false);
     }, []);
 
@@ -197,6 +206,7 @@ export const AdminAnalyticsPage: React.FC = () => {
     }, [load]);
 
     const tm = threads?.metrics || {};
+    const fm = fb?.metrics || {};
 
     return (
         <div className="mx-auto max-w-7xl space-y-8">
@@ -379,6 +389,38 @@ export const AdminAnalyticsPage: React.FC = () => {
                 )}
             </SectionCard>
 
+            {/* Facebook Page engagement */}
+            <SectionCard
+                icon={<Facebook className="h-5 w-5 text-blue-600" />}
+                title="Facebook Page"
+                subtitle={
+                    fb?.name
+                        ? `${fb.name} · last ${fb.range?.days ?? 28} days`
+                        : 'Page audience, views & engagement'
+                }
+            >
+                {fb?.available ? (
+                    <div className="mt-4 grid gap-4 sm:grid-cols-3 lg:grid-cols-5">
+                        <Stat icon={<Users className="h-4 w-4" />} label="Followers" value={fmt(fb.followers)} />
+                        <Stat icon={<ThumbsUp className="h-4 w-4" />} label="Page Likes" value={fmt(fb.fans)} />
+                        <Stat icon={<Eye className="h-4 w-4" />} label="Page Views" value={fmt(fm.page_views_total)} />
+                        <Stat icon={<Heart className="h-4 w-4" />} label="Engagements" value={fmt(fm.page_post_engagements)} />
+                        <Stat icon={<MousePointerClick className="h-4 w-4" />} label="Actions" value={fmt(fm.page_total_actions)} />
+                    </div>
+                ) : (
+                    <NotConnected
+                        detail={
+                            fb?.detail ||
+                            (loading
+                                ? 'Loading…'
+                                : 'Set FACEBOOK_PAGE_ID and FACEBOOK_PAGE_ACCESS_TOKEN to enable Facebook insights.')
+                        }
+                        href="https://business.facebook.com/latest/insights/overview"
+                        cta="Open Meta Business Suite"
+                    />
+                )}
+            </SectionCard>
+
             {/* External dashboards */}
             <div className="grid gap-4 sm:grid-cols-2">
                 <a
@@ -426,6 +468,11 @@ export const AdminAnalyticsPage: React.FC = () => {
                         label="Threads (Meta)"
                         detail={threads?.available ? 'Connected (Graph API)' : 'Set THREADS_ACCESS_TOKEN to enable'}
                         status={threads?.available ? 'active' : 'pending'}
+                    />
+                    <TrackingItem
+                        label="Facebook Page (Meta)"
+                        detail={fb?.available ? 'Connected (Graph API)' : 'Set FACEBOOK_PAGE_ACCESS_TOKEN to enable'}
+                        status={fb?.available ? 'active' : 'pending'}
                     />
                 </ul>
             </div>

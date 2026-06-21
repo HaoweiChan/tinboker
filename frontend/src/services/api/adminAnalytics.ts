@@ -87,3 +87,23 @@ export async function getThreadsInsights(days = 28, posts = 5): Promise<ThreadsI
     });
     return res.data;
 }
+
+// ── Facebook Page insights ─────────────────────────────────────────────────
+export interface FacebookInsights {
+    configured: boolean;
+    available: boolean;
+    detail?: string;
+    range?: { days: number };
+    name?: string | null;
+    fans?: number | null;
+    followers?: number | null;
+    metrics?: Record<string, number>;
+}
+
+export async function getFacebookInsights(days = 28): Promise<FacebookInsights> {
+    const res = await apiClient.get<FacebookInsights>('/api/admin/facebook/insights', {
+        ...adminAuthConfig(),
+        params: { days },
+    });
+    return res.data;
+}
