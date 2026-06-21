@@ -12,10 +12,22 @@ from ..state import PipelineState
 from ..tag_vocabulary import vocabulary_prompt_block
 
 
+def _writer_events(state: PipelineState) -> list:
+    """The events the writer turns into sections, one section each.
+
+    Prefer the consolidated ``chapter_events`` (a small, length-scaled set of
+    reader-facing chapters) when the consolidation node has run; fall back to the
+    fine ``clustered_events`` for the regen/legacy paths that haven't populated it.
+    ``markdown_transform`` anchors timestamps off the same list, so the two stay
+    positionally aligned.
+    """
+    return state.get("chapter_events") or state.get("clustered_events", [])
+
+
 def build_messages(state: PipelineState) -> list[dict[str, str]]:
-    """Render the writer chat messages from ``clustered_events`` (no LLM call)."""
+    """Render the writer chat messages (no LLM call)."""
     prompts = load_prompt("writer")
-    events_json = json.dumps(state.get("clustered_events", []), ensure_ascii=False)
+    events_json = json.dumps(_writer_events(state), ensure_ascii=False)
 
     user_msg = prompts["user"].format(
         events=events_json,
@@ -93,17 +105,23 @@ def _merge_writer_outputs(outputs: list[Any]) -> dict[str, Any]:
 
 
 def _write_chunked(state: PipelineState, events: list) -> dict[str, Any]:
-    """Write the article for a long episode by chunking ``clustered_events``.
+    """Write the article for a long episode by chunking the writer's event list.
 
     Each chunk gets a sub-state with just its slice of events; ``build_messages``
     renders the identical prompt over that slice, so each reply stays small enough
-    to parse. The full ``clustered_events`` remains in the real graph state, so
+    to parse. We override BOTH ``chapter_events`` and ``clustered_events`` so the
+    slice is what ``build_messages`` (via ``_writer_events``) sees regardless of
+    which list is active; the full lists remain in the real graph state, so
     downstream timestamp anchoring is unaffected.
+
+    Note: chapter consolidation caps the writer's event count well below
+    ``_CHUNK_THRESHOLD`` for the normal graph path, so this is reached only on the
+    regen/legacy path that writes straight from the fine ``clustered_events``.
     """
     outputs: list[Any] = []
     for offset in range(0, len(events), _CHUNK_SIZE):
         batch = events[offset:offset + _CHUNK_SIZE]
-        sub_state = {**state, "clustered_events": batch}
+        sub_state = {**state, "chapter_events": batch, "clustered_events": batch}
         outputs.append(invoke_json("writer", build_messages(sub_state)))
     return _merge_writer_outputs(outputs)
 
@@ -115,7 +133,7 @@ def write_article(state: PipelineState) -> dict[str, Any]:
     (``_write_chunked``) to keep each LLM reply small enough to parse; shorter ones
     use a single call as before.
     """
-    events = state.get("clustered_events", [])
+    events = _writer_events(state)
     if len(events) > _CHUNK_THRESHOLD:
         result = _write_chunked(state, events)
     else:
