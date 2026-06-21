@@ -16,7 +16,7 @@ the immutable ``created_time`` — untouched. Idempotent: re-running overwrites
 
 Requires (loaded from Google Secret Manager via ``secrets_bootstrap`` on the VPS,
 or set in the environment locally):
-    GOOGLE_API_KEY                      the Gemini key for the extractor
+    OPENROUTER_API_KEY                  the OpenRouter key for the extractor
     GCP_CREDENTIALS_JSON / _PATH        Firestore + GCS access
     FIRESTORE_DATABASE_ID               (optional) non-default database
 
@@ -105,8 +105,8 @@ def main() -> int:
     ap.add_argument("--podcast", help="only process episodes whose podcast_name matches this exactly")
     args = ap.parse_args()
 
-    if not os.getenv("GOOGLE_API_KEY"):
-        print("ERROR: GOOGLE_API_KEY is not set — the extractor needs it.", file=sys.stderr)
+    if not os.getenv("OPENROUTER_API_KEY"):
+        print("ERROR: OPENROUTER_API_KEY is not set — the extractor needs it.", file=sys.stderr)
         return 2
 
     fb = FirebaseService()

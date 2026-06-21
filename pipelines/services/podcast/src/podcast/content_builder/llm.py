@@ -1,11 +1,15 @@
 """LLM configuration and prompt loading utilities.
 
-Per-role models are configured via env vars (``EXTRACTOR_MODEL``, ``WRITER_MODEL``,
-``MARP_WRITER_MODEL``, ``TICKER_EXTRACTOR_MODEL``). A value is interpreted as:
+All roles run on OpenRouter (``OPENROUTER_API_KEY`` required).
+Default model: ``deepseek/deepseek-v4-pro`` (via ``openrouter:`` prefix).
+Hidden reasoning is disabled for every call so structured-JSON outputs cannot
+be truncated mid-array by a reasoning budget (reasoning-capable models like
+deepseek-v4-flash ignore the field gracefully).
 
-- ``"gemini-2.5-flash"`` (or any bare name)  → Google Gemini (``GOOGLE_API_KEY``)
-- ``"openrouter:deepseek/deepseek-chat"``    → OpenRouter, OpenAI-compatible API
-  (``OPENROUTER_API_KEY``). The part after ``openrouter:`` is the OpenRouter model id.
+Per-role models are configured via env vars (``EXTRACTOR_MODEL``, ``WRITER_MODEL``,
+``MARP_WRITER_MODEL``, ``TICKER_EXTRACTOR_MODEL``). Prefix any model id with
+``openrouter:`` to select it; a bare model name (no prefix) is also passed to
+OpenRouter as-is.
 
 Admin overrides from the platform DB (``pipeline_config_overrides`` table) take
 precedence over env vars when available. The pipeline reads them once at import time.
@@ -23,13 +27,12 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from langchain_google_genai import ChatGoogleGenerativeAI
 
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
 _MAX_RETRIES = 2
 _log = logging.getLogger(__name__)
 
-_DEFAULT_MODEL = "openrouter:xiaomi/mimo-v2.5"
+_DEFAULT_MODEL = "openrouter:deepseek/deepseek-v4-pro"
 _OPENROUTER_PREFIX = "openrouter:"
 _OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
@@ -65,10 +68,7 @@ _MODEL_MAP: dict[str, str] = {
     "marp_writer": _LLM_OVERRIDES.get("marp_writer_model") or os.getenv("MARP_WRITER_MODEL", _DEFAULT_MODEL),
     "ticker_extractor": _LLM_OVERRIDES.get("ticker_extractor_model") or os.getenv("TICKER_EXTRACTOR_MODEL", _DEFAULT_MODEL),
     "key_insights_extractor": _LLM_OVERRIDES.get("key_insights_extractor_model") or os.getenv("KEY_INSIGHTS_EXTRACTOR_MODEL", _DEFAULT_MODEL),
-    # Social copy must be clean 正體中文 for a Taiwanese audience — the default
-    # Chinese model leaks Simplified glyphs (还/会/获) and garbles phrasing, so use
-    # Gemini here (verified clean + a livelier, more colloquial register).
-    "social_copy_writer": _LLM_OVERRIDES.get("social_copy_writer_model") or os.getenv("SOCIAL_COPY_WRITER_MODEL", "gemini-2.5-flash"),
+    "social_copy_writer": _LLM_OVERRIDES.get("social_copy_writer_model") or os.getenv("SOCIAL_COPY_WRITER_MODEL", _DEFAULT_MODEL),
 }
 
 _TEMPERATURE_MAP: dict[str, float] = {
@@ -114,31 +114,30 @@ def _is_openrouter(model: str) -> bool:
 def get_model(role: str):
     """Get a configured LangChain chat model for a pipeline role.
 
-    Returns a ``ChatOpenAI`` pointed at OpenRouter when the role's model is
-    prefixed ``openrouter:``, otherwise a ``ChatGoogleGenerativeAI``.
+    Always returns a ``ChatOpenAI`` pointed at OpenRouter. The ``openrouter:``
+    prefix is stripped from the model id before sending; bare model ids (no
+    prefix) are forwarded to OpenRouter as-is.
     """
+    from langchain_openai import ChatOpenAI
+
     model = _model_name(role)
     temperature = _TEMPERATURE_MAP.get(role, 0.2)
+    or_model = model[len(_OPENROUTER_PREFIX):] if _is_openrouter(model) else model
 
-    if _is_openrouter(model):
-        from langchain_openai import ChatOpenAI
-
-        return ChatOpenAI(
-            model=model[len(_OPENROUTER_PREFIX):],
-            temperature=temperature,
-            max_tokens=_MAX_TOKENS_MAP.get(role, 4096),
-            base_url=_OPENROUTER_BASE_URL,
-            api_key=os.getenv("OPENROUTER_API_KEY"),
-            default_headers={
-                "HTTP-Referer": os.getenv("OPENROUTER_SITE_URL", "https://tinboker.com"),
-                "X-Title": "TinBoker content pipeline",
-            },
-        )
-
-    return ChatGoogleGenerativeAI(
-        model=model,
+    return ChatOpenAI(
+        model=or_model,
         temperature=temperature,
-        google_api_key=os.getenv("GOOGLE_API_KEY"),
+        max_tokens=_MAX_TOKENS_MAP.get(role, 4096),
+        base_url=_OPENROUTER_BASE_URL,
+        api_key=os.getenv("OPENROUTER_API_KEY"),
+        default_headers={
+            "HTTP-Referer": os.getenv("OPENROUTER_SITE_URL", "https://tinboker.com"),
+            "X-Title": "TinBoker content pipeline",
+        },
+        # Every role emits structured JSON; disable hidden reasoning so it can't burn
+        # the max_tokens budget and truncate the JSON mid-array (reasoning-capable
+        # models like deepseek-v4-flash). Non-reasoning models ignore this field.
+        extra_body={"reasoning": {"enabled": False}},
     )
 
 
@@ -152,12 +151,12 @@ def _sanitize_json_text(text: str) -> str:
 
 
 def _json_kwargs(model: str) -> dict[str, Any]:
-    """Provider-appropriate "respond in JSON" hint for ``model.invoke``."""
-    if _is_openrouter(model):
-        # OpenAI-compatible JSON mode (supported by most OpenRouter models; ignored by the rest,
-        # in which case _sanitize_json_text + the retry loop still recover the JSON).
-        return {"response_format": {"type": "json_object"}}
-    return {"response_mime_type": "application/json"}
+    """OpenAI-compatible JSON-mode hint for ``model.invoke``.
+
+    All models now run on OpenRouter, so we always use the OpenAI response_format.
+    Models that don't support it ignore it; the retry loop in invoke_json recovers.
+    """
+    return {"response_format": {"type": "json_object"}}
 
 
 def invoke_json(role: str, messages: list[dict], schema: dict | None = None) -> dict:

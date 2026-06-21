@@ -284,8 +284,8 @@ def main() -> int:
     )
     args = ap.parse_args()
 
-    if not args.list_only and not os.getenv("GOOGLE_API_KEY"):
-        print("ERROR: GOOGLE_API_KEY is not set; ticker extraction needs it.", file=sys.stderr)
+    if not args.list_only and not os.getenv("OPENROUTER_API_KEY"):
+        print("ERROR: OPENROUTER_API_KEY is not set; ticker extraction needs it.", file=sys.stderr)
         return 2
 
     fb = FirebaseService()

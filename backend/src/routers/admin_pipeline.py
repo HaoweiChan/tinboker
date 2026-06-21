@@ -24,9 +24,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 AVAILABLE_MODELS = [
+    {"id": "openrouter:deepseek/deepseek-v4-pro", "label": "DeepSeek V4 Pro", "price_per_ep": "$0.020", "topic_score": "7/7", "speed": "120s"},
     {"id": "openrouter:xiaomi/mimo-v2.5", "label": "Xiaomi MiMo-V2.5", "price_per_ep": "$0.010", "topic_score": "6/7", "speed": "79s"},
     {"id": "openrouter:deepseek/deepseek-v4-flash", "label": "DeepSeek V4 Flash", "price_per_ep": "$0.007", "topic_score": "5/7", "speed": "170s"},
-    {"id": "gemini-2.5-flash", "label": "Gemini 2.5 Flash", "price_per_ep": "$0.040", "topic_score": "5/7", "speed": "208s"},
     {"id": "openrouter:deepseek/deepseek-v3.2", "label": "DeepSeek V3.2", "price_per_ep": "$0.014", "topic_score": "4/7", "speed": "401s"},
 ]
 

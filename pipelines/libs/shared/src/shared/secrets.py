@@ -69,7 +69,7 @@ def bootstrap(
     gsm_vars: tuple[str, ...] = (
         "PODCAST_API_KEY",
         "GROQ_API_KEY",
-        "GOOGLE_API_KEY",
+        "OPENROUTER_API_KEY",
         "FIRESTORE_DATABASE_ID",
         "GCP_CREDENTIALS_JSON",
     ),
@@ -79,7 +79,6 @@ def bootstrap(
         "LANGSMITH_API_KEY",
         "TAVILY_API_KEY",
         "WIKI_DATABASE_URL",
-        "OPENROUTER_API_KEY",
     ),
     yaml_path: Optional[Path] = None,
     env_path: Optional[Path] = None,

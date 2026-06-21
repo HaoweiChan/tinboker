@@ -306,7 +306,7 @@ def _build_template_vars(role: str, episode_data: dict[str, Any]) -> dict[str, s
 
 
 def _invoke_llm(model_id: str, role: str, system_msg: str, user_msg: str) -> Any:
-    """Call the LLM via OpenRouter (OpenAI-compatible) or Google Gemini."""
+    """Call the LLM via OpenRouter (OpenAI-compatible)."""
     import re
     import httpx
 
@@ -324,56 +324,33 @@ def _invoke_llm(model_id: str, role: str, system_msg: str, user_msg: str) -> Any
         {"role": "user", "content": user_msg},
     ]
 
-    if model_id.startswith("openrouter:"):
-        # OpenRouter uses OpenAI-compatible API
-        api_key = os.getenv("OPENROUTER_API_KEY")
-        if not api_key:
-            raise ValueError("OPENROUTER_API_KEY not set")
-        model_name = model_id[len("openrouter:"):]
-        resp = httpx.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "HTTP-Referer": "https://tinboker.com",
-                "X-Title": "TinBoker trial run",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": model_name,
-                "messages": messages,
-                "temperature": temperature,
-                "max_tokens": 8192,
-                "response_format": {"type": "json_object"},
-            },
-            timeout=120.0,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        raw = data["choices"][0]["message"]["content"]
-    else:
-        # Google Gemini via generativelanguage API
-        api_key = os.getenv("GOOGLE_API_KEY")
-        if not api_key:
-            raise ValueError("GOOGLE_API_KEY not set")
-        resp = httpx.post(
-            f"https://generativelanguage.googleapis.com/v1beta/models/{model_id}:generateContent",
-            params={"key": api_key},
-            headers={"Content-Type": "application/json"},
-            json={
-                "contents": [
-                    {"role": "user", "parts": [{"text": f"{system_msg}\n\n{user_msg}"}]}
-                ],
-                "generationConfig": {
-                    "temperature": temperature,
-                    "maxOutputTokens": 8192,
-                    "responseMimeType": "application/json",
-                },
-            },
-            timeout=120.0,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        raw = data["candidates"][0]["content"]["parts"][0]["text"]
+    api_key = os.getenv("OPENROUTER_API_KEY")
+    if not api_key:
+        raise ValueError("OPENROUTER_API_KEY not set")
+    # Strip the "openrouter:" prefix if present; bare ids are forwarded as-is.
+    model_name = model_id[len("openrouter:"):] if model_id.startswith("openrouter:") else model_id
+    resp = httpx.post(
+        "https://openrouter.ai/api/v1/chat/completions",
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "HTTP-Referer": "https://tinboker.com",
+            "X-Title": "TinBoker trial run",
+            "Content-Type": "application/json",
+        },
+        json={
+            "model": model_name,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": 8192,
+            "response_format": {"type": "json_object"},
+            # Disable hidden reasoning so it can't truncate structured-JSON output mid-array.
+            "reasoning": {"enabled": False},
+        },
+        timeout=120.0,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    raw = data["choices"][0]["message"]["content"]
 
     # Strip markdown fences
     raw = raw.strip()
