@@ -38,6 +38,7 @@ CACHE_TTL: Dict[str, int] = {
     
     # Podcast data — pipeline pulls every 10 min, keep Redis ≤ pull interval
     "podcast_list": MIN_LEN * 30,            # 30 minutes (show list is stable)
+    "podcast_popularity": MIN_LEN * 60 * 24, # 1 day (Apple top-charts refresh slowly)
     "podcast_item": MIN_LEN * 60,            # 1 hour (individual podcast metadata)
     "podcast_episodes": MIN_LEN * 10,        # 10 minutes (matches pipeline pull frequency)
     "podcast_episode": MIN_LEN * 60,         # 1 hour (individual episode detail)

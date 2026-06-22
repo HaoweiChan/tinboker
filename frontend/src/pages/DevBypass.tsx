@@ -24,8 +24,8 @@ export const DevBypass: React.FC = () => {
     apiClient
       .post('/api/auth/dev-token', { token })
       .then((res) => {
-        const { user, token: jwt } = res.data;
-        login(user, jwt);
+        const { user, token: jwt, refresh_token } = res.data;
+        login(user, jwt, refresh_token);
         setStatus('success');
       })
       .catch((err) => {

@@ -34,16 +34,17 @@ logger = logging.getLogger(__name__)
 @cdn_cache_podcast
 async def get_sorted_podcasts(
     response: Response,
-    sort_by: str = Query(default="name", description="Sort field (name, episode_count, created_at, updated_at)"),
+    sort_by: str = Query(default="name", description="Sort field (name, episode_count, created_at, updated_at, popularity)"),
     order: str = Query(default="asc", description="Sort order (asc, desc)"),
     limit: int = Query(default=50, ge=1, le=200, description="Maximum number of podcasts to return (1-200)"),
     offset: int = Query(default=0, ge=0, description="Pagination offset")
 ):
     """
     Get sorted podcasts list
-    
+
     Query params:
-    - sort_by: Sort field (name, episode_count, created_at, updated_at)
+    - sort_by: Sort field (name, episode_count, created_at, updated_at, popularity).
+      "popularity" orders by Apple Podcasts TW top-chart rank (unranked shows last).
     - order: Sort order (asc, desc)
     - limit: Maximum number of podcasts to return (1-200)
     - offset: Pagination offset

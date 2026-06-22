@@ -7,19 +7,19 @@ import { Segmented, PodMark } from '@/components/redesign';
 import { getSortedPodcasts, type Podcast } from '@/services/api/podcasts';
 import { fetchWithFallback } from '@/services/api/migration';
 
-type Sort = 'episodes' | 'recent';
+type Sort = 'popularity' | 'episodes' | 'recent';
 
 export const PodcasterIndex: React.FC = () => {
   const [podcasts, setPodcasts] = useState<Podcast[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
-  const [sort, setSort] = useState<Sort>('episodes');
+  const [sort, setSort] = useState<Sort>('popularity');
 
   useEffect(() => {
     let alive = true;
     (async () => {
       setLoading(true);
-      const data = await fetchWithFallback<Podcast[]>(() => getSortedPodcasts({ sortBy: 'episode_count', order: 'desc', limit: 200 }), [], 'getSortedPodcasts:index').catch(() => [] as Podcast[]);
+      const data = await fetchWithFallback<Podcast[]>(() => getSortedPodcasts({ sortBy: 'popularity', order: 'asc', limit: 200 }), [], 'getSortedPodcasts:index').catch(() => [] as Podcast[]);
       if (!alive) return;
       setPodcasts(Array.isArray(data) ? data : []);
       setLoading(false);
@@ -31,9 +31,15 @@ export const PodcasterIndex: React.FC = () => {
 
   const list = useMemo(() => {
     let arr = podcasts.filter((p) => !q || (p.name || '').toLowerCase().includes(q.toLowerCase()));
-    arr = [...arr].sort((a, b) =>
-      sort === 'episodes' ? (b.episode_count || 0) - (a.episode_count || 0) : (b.updated_at || 0) - (a.updated_at || 0),
-    );
+    arr = [...arr].sort((a, b) => {
+      if (sort === 'episodes') return (b.episode_count || 0) - (a.episode_count || 0);
+      if (sort === 'recent') return (b.updated_at || 0) - (a.updated_at || 0);
+      // popularity: rank 1 first, unranked last, episode count as tiebreak
+      const ra = a.popularity_rank ?? Infinity;
+      const rb = b.popularity_rank ?? Infinity;
+      if (ra !== rb) return ra - rb;
+      return (b.episode_count || 0) - (a.episode_count || 0);
+    });
     return arr;
   }, [podcasts, q, sort]);
 
@@ -58,7 +64,7 @@ export const PodcasterIndex: React.FC = () => {
             <Search size={14} className="text-muted-foreground shrink-0" />
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜尋節目名稱…" className="flex-1 bg-transparent outline-none text-sm" />
           </label>
-          <Segmented options={[{ value: 'episodes', label: '集數' }, { value: 'recent', label: '最近更新' }] as const} value={sort} onChange={setSort} />
+          <Segmented options={[{ value: 'popularity', label: '人氣' }, { value: 'episodes', label: '集數' }, { value: 'recent', label: '最近更新' }] as const} value={sort} onChange={setSort} />
         </div>
 
         {loading ? (
@@ -82,6 +88,16 @@ export const PodcasterIndex: React.FC = () => {
                   <div className="text-md font-semibold tracking-[-0.01em] truncate">{p.name}</div>
                   <div className="text-2xs text-muted-foreground font-mono tabular-nums mt-1">{(p.episode_count || 0).toLocaleString('en-US')} 集已分析</div>
                 </div>
+                {p.popularity_rank != null && (
+                  <div
+                    className={`shrink-0 self-start font-mono tabular-nums text-[11px] leading-none px-1.5 py-1 rounded border ${
+                      p.popularity_rank <= 3 ? 'border-accent/40 text-accent' : 'border-border text-muted-foreground'
+                    }`}
+                    title="Apple Podcasts 台灣財經排行榜名次"
+                  >
+                    Apple 財經榜 #{p.popularity_rank}
+                  </div>
+                )}
               </Link>
             ))}
           </div>

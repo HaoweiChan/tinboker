@@ -167,43 +167,89 @@ def create_jwt_token(user_id: str, email: str) -> str:
         raise ValueError("JWT_SECRET_KEY not configured")
     
     expiration = datetime.now(timezone.utc) + timedelta(hours=settings.jwt_expiration_hours or 24)
-    
+
     payload = {
         'sub': user_id,  # Subject (user ID)
         'email': email,
         'exp': expiration,
         'iat': datetime.now(timezone.utc),
+        'type': 'access',
     }
-    
+
     token = jwt.encode(
         payload,
         settings.jwt_secret_key,
         algorithm=settings.jwt_algorithm
     )
-    
+
     return token
 
 
-def verify_jwt_token(token: str) -> Optional[Dict[str, Any]]:
+def create_refresh_token(user_id: str, email: str) -> str:
+    """
+    Create a long-lived JWT refresh token for the user.
+
+    The client exchanges this (via /api/auth/refresh) for a fresh access token
+    without re-running Google OAuth, so a user stays logged in until the refresh
+    token itself expires.
+
+    Args:
+        user_id: User's unique identifier
+        email: User's email address
+
+    Returns:
+        Encoded JWT refresh token string
+    """
+    if not settings.jwt_secret_key:
+        raise ValueError("JWT_SECRET_KEY not configured")
+
+    expiration = datetime.now(timezone.utc) + timedelta(days=settings.jwt_refresh_expiration_days or 60)
+
+    payload = {
+        'sub': user_id,
+        'email': email,
+        'exp': expiration,
+        'iat': datetime.now(timezone.utc),
+        'type': 'refresh',
+    }
+
+    return jwt.encode(
+        payload,
+        settings.jwt_secret_key,
+        algorithm=settings.jwt_algorithm
+    )
+
+
+def verify_jwt_token(token: str, expected_type: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """
     Verify and decode a JWT session token
-    
+
     Args:
         token: JWT token string
-        
+        expected_type: If set ("access" or "refresh"), reject tokens whose
+            ``type`` claim does not match. Legacy tokens minted before the
+            refresh-token rollout have no ``type`` claim and are treated as
+            "access" for backward compatibility.
+
     Returns:
         Decoded token payload or None if invalid
     """
     if not settings.jwt_secret_key:
         return None
-    
+
     try:
         payload = jwt.decode(
             token,
             settings.jwt_secret_key,
             algorithms=[settings.jwt_algorithm]
         )
-        return payload
     except JWTError:
         return None
+
+    if expected_type is not None:
+        token_type = payload.get('type', 'access')
+        if token_type != expected_type:
+            return None
+
+    return payload
 

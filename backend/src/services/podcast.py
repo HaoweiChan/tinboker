@@ -45,6 +45,13 @@ logger = logging.getLogger(__name__)
 # compiled universe drops it too so new episodes stop being tagged with it.
 EXCLUDED_EXPOSURE_IDS: frozenset[str] = frozenset({"sector_semiconductor"})
 
+# Podcasts hidden from every public surface (channel list, feed, search, by-name).
+# "曲博科技教室" is a near-dormant show with only ~2 analysed episodes; it adds noise
+# without value. Hidden here at the release chokepoint rather than via
+# content_sources.active=False so it stays version-controlled and the pipeline can
+# still ingest it (in case it picks back up). Matched on exact podcast_name.
+HIDDEN_PODCAST_NAMES: frozenset[str] = frozenset({"曲博科技教室"})
+
 
 def _read_close_series(tickers: list[str], limit: int = 12) -> dict[str, list[float]]:
     """Read the trailing ``limit`` daily closes per ticker from Postgres.
@@ -176,7 +183,10 @@ class PodcastService:
                     source_type="podcast", active=True, limit=1000,
                 )
                 langset = set(langs)
-                return [s.name for s in items if (s.language or "") in langset]
+                return [
+                    s.name for s in items
+                    if (s.language or "") in langset and s.name not in HIDDEN_PODCAST_NAMES
+                ]
             finally:
                 db.close()
         except Exception as e:
@@ -221,6 +231,92 @@ class PodcastService:
         except Exception as e:
             logger.error("Failed to load podcast covers from content_sources: %s", e)
             return {}
+
+    # Apple Podcasts public top-charts → channel popularity rank. Region/genres are
+    # fixed to the zh-TW launch scope: every live (non-hidden) show charts under
+    # Business (1321). The parser takes a list of charts, so add more genres here if
+    # a future show needs a different one. Endpoint is unauthenticated and free — no
+    # creds, unlike the dead Spotify app credentials.
+    _APPLE_CHART_REGION = "tw"
+    _APPLE_CHART_GENRES = (1321,)  # 1321 = Business
+    _APPLE_CHART_LIMIT = 100
+
+    async def _apple_popularity_map(self) -> dict:
+        """Ordered {normalized show name -> rank} from Apple's public top-podcasts
+        charts (see _APPLE_CHART_GENRES). Lower rank = more popular. Cached 1 day.
+
+        Best-effort: any network/parse failure returns {} so the show list cleanly
+        falls back to episode-count ordering (today's behaviour).
+        """
+        cache_key = "podcast:apple_popularity"
+        cached = await cache_get(cache_key)
+        if cached is not None:
+            try:
+                return json.loads(cached)
+            except Exception:
+                pass
+        try:
+            chart_lists: List[list] = []
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                for genre in self._APPLE_CHART_GENRES:
+                    url = (
+                        f"https://itunes.apple.com/{self._APPLE_CHART_REGION}"
+                        f"/rss/toppodcasts/limit={self._APPLE_CHART_LIMIT}/genre={genre}/json"
+                    )
+                    resp = await client.get(url)
+                    resp.raise_for_status()
+                    feed = (resp.json() or {}).get("feed", {}) or {}
+                    entries = feed.get("entry", [])
+                    chart_lists.append(entries if isinstance(entries, list) else [])
+            ranks = self._parse_apple_charts(chart_lists)
+        except Exception as e:
+            logger.warning("Apple popularity chart fetch failed: %s", e)
+            return {}
+        if ranks:
+            try:
+                await cache_set(cache_key, json.dumps(ranks), CACHE_TTL["podcast_popularity"])
+            except Exception:
+                pass
+        return ranks
+
+    @staticmethod
+    def _parse_apple_charts(chart_lists: List[list]) -> dict:
+        """Flatten ordered Apple chart entry-lists into {normalized name -> rank}.
+
+        Charts are concatenated in priority order (Business before Technology) and a
+        show already seen in an earlier chart keeps its better (earlier) rank, so
+        Business-charted shows always sort ahead of Technology-only ones.
+        """
+        ranks: dict = {}
+        seen_ids: set = set()
+        rank = 0
+        for entries in chart_lists:
+            for e in entries:
+                if not isinstance(e, dict):
+                    continue
+                apple_id = (e.get("id") or {}).get("attributes", {}).get("im:id")
+                name = (e.get("im:name") or {}).get("label", "")
+                if not name or (apple_id and apple_id in seen_ids):
+                    continue
+                if apple_id:
+                    seen_ids.add(apple_id)
+                rank += 1
+                ranks.setdefault(name.strip().lower(), rank)
+        return ranks
+
+    @staticmethod
+    def _popularity_rank_for(name: str, ranks: dict) -> Optional[int]:
+        """Best (lowest) rank for a show name. Apple chart titles often carry a
+        tagline (e.g. '財報狗 - 掌握台股美股時事議題'), so match by substring either way."""
+        if not name or not ranks:
+            return None
+        n = name.strip().lower()
+        best: Optional[int] = None
+        for chart_name, rank in ranks.items():
+            if n in chart_name or chart_name in n:
+                if best is None or rank < best:
+                    best = rank
+        return best
 
     @staticmethod
     def _recency_cutoff_ms() -> Optional[int]:
@@ -376,6 +472,7 @@ class PodcastService:
             allowed = await self._allowed_podcast_names()
             cutoff = self._recency_cutoff_ms()
             covers = await self._podcast_cover_map()
+            popularity = await self._apple_popularity_map()
             all_episodes = await asyncio.to_thread(
                 self.firestore_service.get_all_documents, "episodes",
             )
@@ -412,16 +509,25 @@ class PodcastService:
                     id=name, name=name, episode_count=len(data['episodes']),
                     created_at=data['created_at'], updated_at=data['updated_at'],
                     image_url=image_url or covers.get(name),
+                    popularity_rank=self._popularity_rank_for(name, popularity),
                 ))
 
-            reverse = order.lower() == "desc"
-            sort_keys = {
-                "name": lambda x: x.name.lower(),
-                "episode_count": lambda x: x.episode_count,
-                "created_at": lambda x: x.created_at or 0,
-                "updated_at": lambda x: x.updated_at or 0,
-            }
-            podcasts.sort(key=sort_keys.get(sort_by, sort_keys["name"]), reverse=reverse)
+            if sort_by == "popularity":
+                # rank 1 = most popular; unranked shows sort last, tie-broken by
+                # episode count (desc). Independent of the `order` arg by design.
+                podcasts.sort(key=lambda x: (
+                    x.popularity_rank if x.popularity_rank is not None else 10 ** 9,
+                    -x.episode_count,
+                ))
+            else:
+                reverse = order.lower() == "desc"
+                sort_keys = {
+                    "name": lambda x: x.name.lower(),
+                    "episode_count": lambda x: x.episode_count,
+                    "created_at": lambda x: x.created_at or 0,
+                    "updated_at": lambda x: x.updated_at or 0,
+                }
+                podcasts.sort(key=sort_keys.get(sort_by, sort_keys["name"]), reverse=reverse)
 
             try:
                 await cache_set(cache_key, json.dumps([p.dict() for p in podcasts], default=str), CACHE_TTL["podcast_list"])
