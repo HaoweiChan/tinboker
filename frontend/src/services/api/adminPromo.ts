@@ -67,8 +67,12 @@ export interface PromoPublishResult {
 export async function uploadPromoMedia(file: File): Promise<PromoMedia> {
   const form = new FormData();
   form.append('file', file);
+  // The shared apiClient defaults to Content-Type: application/json — override it so
+  // axios re-detects the FormData and emits multipart/form-data with the boundary,
+  // otherwise the backend can't parse the file field (422).
+  const auth = adminAuthConfig();
   const res = await apiClient.post<PromoMedia>('/api/admin/promo/media', form, {
-    ...adminAuthConfig(),
+    headers: { ...auth.headers, 'Content-Type': 'multipart/form-data' },
     timeout: PROMO_TIMEOUT_MS,
   });
   return res.data;
