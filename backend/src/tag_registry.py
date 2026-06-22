@@ -114,6 +114,18 @@ def canonical_label(slug: str) -> str:
     return _CANONICAL_DISPLAY.get(normalize_tag_slug(slug), slug)
 
 
+def canonical_tag_slugs() -> frozenset[str]:
+    """NORMALIZED slugs of the canonical tag vocabulary — the source of truth for which
+    tags are 'real'.
+
+    The LLM writer is only prompt-constrained to this vocabulary, so the Firestore
+    ``tags`` collection accumulates thousands of off-vocabulary slugs (hallucinated
+    proper nouns, ETF/fund names, ticker symbols). Trending + admin intersect against
+    this set so only real topics surface. Add a tag via tag_vocabulary.json.
+    """
+    return frozenset(_CANONICAL_DISPLAY.keys())
+
+
 def _load_canonical_display() -> dict[str, str]:
     """normalized-slug → zh-TW display, from the committed pipeline mirror."""
     raw = json.loads(_MIRROR_PATH.read_text(encoding="utf-8"))

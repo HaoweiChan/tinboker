@@ -22,6 +22,7 @@ from src.tag_registry import (
     VALID_TIERS,
     auto_register,
     canonical_label,
+    canonical_tag_slugs,
     normalize_tag_slug,
     seed_if_empty,
     sync_sectors,
@@ -142,40 +143,27 @@ async def list_tags(
     tag_rows = [r for r in rows if r.kind != KIND_SECTOR]
     sector_rows = [r for r in rows if r.kind == KIND_SECTOR]
 
-    # ── Virtual tags: Firestore tags not registered anywhere (closes the loophole
-    # where an auto-surfaced tag had no admin row to hide). The tags collection holds
-    # THOUSANDS of slugs, so we never dump them all — virtual rows are only computed
-    # when SEARCHING. To hide an auto-surfaced tag, search its slug/name, then hide it.
-    # (Default view = the bounded registry set; sector kind / hidden tier never include
-    # virtual rows since they're tag-kind and visible-by-default.)
-    VIRTUAL_CAP = 200
+    # ── Virtual tags: canonical-vocabulary tags with no registry row yet. The 168-tag
+    # vocabulary is the source of truth for real tags, so we surface those (visible-by-
+    # default, registered=False) WITHOUT scanning the thousands of junk slugs in the
+    # Firestore tags collection — bounded and no Firestore call. Hiding one creates its
+    # registry row. Excluded for the sector kind and the hidden tier (visible-by-default).
     virtual: list[dict] = []
-    virtual_truncated = False
-    if search and kind != KIND_SECTOR and tier != TIER_HIDDEN:
-        try:
-            fs_slugs = await asyncio.to_thread(firestore.get_all_parent_documents, "tags")
-        except Exception as e:
-            logger.warning("virtual tags: Firestore tag listing failed: %s", e)
-            fs_slugs = []
+    if kind != KIND_SECTOR and tier != TIER_HIDDEN:
         # Dedupe against ALL registry tag rows (normalized), not just the filtered page,
         # so a registered+hidden tag never reappears as a virtual visible row.
         registered_norm = {
             normalize_tag_slug(s)
             for (s,) in db.query(TagRegistry.slug).filter(TagRegistry.kind != KIND_SECTOR).all()
         }
-        needle = search.lower()
-        for s in fs_slugs:
-            if normalize_tag_slug(s) in registered_norm:
+        needle = search.lower() if search else None
+        for norm in sorted(canonical_tag_slugs()):
+            if norm in registered_norm:
                 continue
-            label = canonical_label(s)
-            if needle not in s.lower() and needle not in label.lower():
+            label = canonical_label(norm)
+            if needle and needle not in norm and needle not in label.lower():
                 continue
-            virtual.append({"slug": s, "display_zh": label})
-            if len(virtual) >= VIRTUAL_CAP:
-                virtual_truncated = True
-                break
-    if virtual_truncated:
-        logger.info("virtual tags: capped at %d matches for search %r", VIRTUAL_CAP, search)
+            virtual.append({"slug": norm, "display_zh": label})
 
     # Count ONLY registry tag rows (a bounded ~dozens). Virtual tags are NOT counted —
     # there can be hundreds of Firestore tags and one subcollection count each blows past
