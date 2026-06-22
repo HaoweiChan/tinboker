@@ -7,14 +7,17 @@ fan the new episode out to Threads. It is idempotent and dry-run by default.
 
 import logging
 import uuid
-from typing import List
+from typing import List, Optional
 
 import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
 from src.auth.admin_auth import AdminAccess, get_admin_access, get_social_access
 from src.config import settings
+from src.database.models import PromoDraft
+from src.database.postgres import get_session
 from src.services import facebook_publisher, promo_publisher, threads_publisher
 from src.services.gcs_content import GCSContentService
 from src.services.podcast import PodcastService
@@ -333,7 +336,9 @@ promo_router = APIRouter(prefix="/api/admin/promo", tags=["admin", "social"])
 
 class PromoMedia(BaseModel):
     type: str = Field(..., description="'image' or 'video'")
-    url: str = Field(..., description="Public/signed URL Meta can fetch")
+    url: Optional[str] = Field(None, description="Signed URL Meta can fetch (publish); re-signed on draft load")
+    path: Optional[str] = Field(None, description="Durable gs:// location (persisted in drafts)")
+    filename: Optional[str] = None
 
 
 class PromoPublishBody(BaseModel):
@@ -373,15 +378,17 @@ async def upload_promo_media(
     ext = name.rsplit(".", 1)[-1].lower() if "." in name else (ctype.split("/", 1)[-1] or mtype)
     bucket = settings.promo_media_bucket
     blob_path = f"promo-media/{uuid.uuid4().hex}.{ext}"
+    gs_url = f"gs://{bucket}/{blob_path}"
     try:
         await _gcs.upload_bytes(bucket, blob_path, data, ctype)
-        url = await _gcs.generate_signed_url(f"gs://{bucket}/{blob_path}", expiration_hours=12)
+        url = await _gcs.generate_signed_url(gs_url, expiration_hours=12)
     except Exception as e:  # noqa: BLE001 — surface any GCS failure as a 502
         logger.exception("promo media upload failed")
         raise HTTPException(status_code=502, detail=f"Upload failed: {e}")
     if not url:
         raise HTTPException(status_code=502, detail="Could not sign media URL (SA key unavailable)")
-    return {"type": mtype, "url": url, "filename": name}
+    # ``path`` (the gs:// location) is what drafts persist — the signed ``url`` expires.
+    return {"type": mtype, "url": url, "path": gs_url, "filename": name}
 
 
 @promo_router.post("/publish")
@@ -405,7 +412,130 @@ async def publish_promo_post(
     for m in media:
         if m["type"] not in ("image", "video"):
             raise HTTPException(status_code=422, detail=f"Bad media type: {m['type']}")
+        if not m.get("url"):
+            raise HTTPException(status_code=422, detail="Each media item needs a url to publish")
 
     return await promo_publisher.publish_promo(
         body.text, media, platforms, comments=body.comments, dry_run=body.dry_run
     )
+
+
+# ── Promo drafts (durable, server-side; media re-signed on load) ────────────────
+
+class PromoDraftBody(BaseModel):
+    name: str = Field("未命名草稿", max_length=200)
+    text: str = ""
+    media: List[PromoMedia] = Field(default_factory=list)
+    comments: List[str] = Field(default_factory=list)
+    platforms: List[str] = Field(default_factory=lambda: ["threads", "facebook"])
+
+
+def _store_media(media: List[PromoMedia]) -> list:
+    """Persist only the durable parts ({type, path, filename}); the signed url expires."""
+    return [
+        {"type": m.type, "path": m.path, "filename": m.filename}
+        for m in media if m.path
+    ]
+
+
+async def _resign_media(stored: list) -> list:
+    """Re-sign each stored gs:// path into a fresh 12h URL for the composer/preview."""
+    out = []
+    for m in stored or []:
+        url = None
+        if m.get("path"):
+            try:
+                url = await _gcs.generate_signed_url(m["path"], expiration_hours=12)
+            except Exception as e:  # noqa: BLE001 — a missing blob shouldn't 500 the load
+                logger.warning("promo draft media re-sign failed for %s: %s", m.get("path"), e)
+        out.append({"type": m.get("type"), "url": url, "path": m.get("path"), "filename": m.get("filename")})
+    return out
+
+
+@promo_router.get("/drafts")
+def list_promo_drafts(_: AdminAccess = Depends(get_admin_access), db: Session = Depends(get_session)):
+    """List saved promo drafts (metadata only; newest first)."""
+    rows = db.query(PromoDraft).order_by(PromoDraft.updated_at.desc()).all()
+    return {"drafts": [
+        {
+            "id": r.id, "name": r.name,
+            "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+            "media_count": len(r.media or []), "comment_count": len(r.comments or []),
+            "platforms": r.platforms or [],
+        }
+        for r in rows
+    ]}
+
+
+@promo_router.get("/drafts/{draft_id}")
+async def get_promo_draft(
+    draft_id: int,
+    _: AdminAccess = Depends(get_admin_access),
+    db: Session = Depends(get_session),
+):
+    """One draft, with media re-signed to fresh URLs (the stored signed URLs expire)."""
+    row = db.query(PromoDraft).filter(PromoDraft.id == draft_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Draft not found")
+    return {
+        "id": row.id, "name": row.name, "text": row.text or "",
+        "media": await _resign_media(row.media), "comments": row.comments or [],
+        "platforms": row.platforms or [],
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+    }
+
+
+@promo_router.post("/drafts", status_code=201)
+def create_promo_draft(
+    body: PromoDraftBody,
+    admin: AdminAccess = Depends(get_admin_access),
+    db: Session = Depends(get_session),
+):
+    """Save a new promo draft. Returns its id."""
+    row = PromoDraft(
+        name=(body.name or "").strip() or "未命名草稿",
+        text=body.text or "",
+        media=_store_media(body.media),
+        comments=[c for c in body.comments],
+        platforms=body.platforms,
+        updated_by=admin.email,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return {"id": row.id, "name": row.name}
+
+
+@promo_router.put("/drafts/{draft_id}")
+def update_promo_draft(
+    draft_id: int,
+    body: PromoDraftBody,
+    admin: AdminAccess = Depends(get_admin_access),
+    db: Session = Depends(get_session),
+):
+    """Overwrite an existing draft."""
+    row = db.query(PromoDraft).filter(PromoDraft.id == draft_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Draft not found")
+    row.name = (body.name or "").strip() or "未命名草稿"
+    row.text = body.text or ""
+    row.media = _store_media(body.media)
+    row.comments = [c for c in body.comments]
+    row.platforms = body.platforms
+    row.updated_by = admin.email
+    db.commit()
+    return {"id": row.id, "name": row.name}
+
+
+@promo_router.delete("/drafts/{draft_id}", status_code=204)
+def delete_promo_draft(
+    draft_id: int,
+    _: AdminAccess = Depends(get_admin_access),
+    db: Session = Depends(get_session),
+):
+    """Delete a draft."""
+    row = db.query(PromoDraft).filter(PromoDraft.id == draft_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Draft not found")
+    db.delete(row)
+    db.commit()

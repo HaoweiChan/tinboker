@@ -280,7 +280,7 @@ export const AdminSocialPage: React.FC = () => {
                     className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-base font-semibold text-foreground hover:bg-muted disabled:opacity-60"
                   >
                     {saved ? <Check className="h-4 w-4" /> : <Save className="h-4 w-4" />}
-                    {saving ? '儲存中…' : saved ? '已儲存' : '儲存'}
+                    {saving ? '儲存中…' : saved ? '已儲存草稿' : '儲存草稿'}
                   </button>
                   <button
                     onClick={handlePublish}
