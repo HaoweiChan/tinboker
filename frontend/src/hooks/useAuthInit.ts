@@ -65,6 +65,11 @@ export function useAuthInit() {
         try {
           const user = await authApi.getCurrentUser(token);
 
+          // getCurrentUser may have triggered a silent token refresh inside the
+          // axios interceptor; prefer the (possibly refreshed) token now in the
+          // store over the stale one captured when this effect started.
+          const currentToken = useAppStore.getState().token ?? token;
+
           login(
             {
               id: user.id,
@@ -78,7 +83,7 @@ export function useAuthInit() {
                 .toUpperCase()
                 .slice(0, 2),
             },
-            token,
+            currentToken,
           );
 
           useAppStore.setState({

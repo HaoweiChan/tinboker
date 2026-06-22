@@ -52,6 +52,10 @@ class Settings(BaseSettings):
     jwt_secret_key: Optional[str] = None
     jwt_algorithm: str = "HS256"
     jwt_expiration_hours: Optional[int] = 24
+    # Long-lived refresh token lifetime. The frontend silently exchanges a valid
+    # refresh token for a fresh access token (see /api/auth/refresh), so users
+    # only need to log in again once the refresh token itself expires.
+    jwt_refresh_expiration_days: Optional[int] = 60
 
     # Admin Authentication (from GSM: ADMIN_EMAILS)
     admin_emails: list[str] = []  # Comma-separated list of admin email addresses
@@ -135,7 +139,19 @@ class Settings(BaseSettings):
                 return 24  # Default
             return int(v)
         return int(v) if v else 24
-    
+
+    @field_validator("jwt_refresh_expiration_days", mode="before")
+    @classmethod
+    def parse_jwt_refresh_expiration_days(cls, v: Union[str, int, None]) -> Optional[int]:
+        """Parse JWT refresh expiration days, handling empty strings"""
+        if v is None or v == "":
+            return 60  # Default
+        if isinstance(v, str):
+            if v.strip() == "":
+                return 60  # Default
+            return int(v)
+        return int(v) if v else 60
+
     @model_validator(mode='after')
     def enforce_production_postgres(self):
         """Enforce PostgreSQL usage in production environment"""
