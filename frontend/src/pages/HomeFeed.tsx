@@ -113,7 +113,7 @@ export const HomeFeed: React.FC = () => {
     <>
       <SEO description="聽播客 TinBoker — 最新的財經 Podcast 摘要、情緒與相關個股。" />
       <PageContent rail={<HomeRail episodeCount={episodes.length} podcasts={podcasts} />}>
-        <h1 className="text-[22px] font-semibold tracking-[-0.02em] mb-3.5">今天聽什麼</h1>
+        <h1 className="text-2xl font-semibold tracking-[-0.02em] mb-3.5">今天聽什麼</h1>
         <FilterPills items={FILTERS} value={filter} onChange={setFilter} meta={loading ? null : <span>整理了 <span className="font-mono tabular-nums">{filtered.length}</span> 集</span>} />
 
         {loading ? (
@@ -123,7 +123,7 @@ export const HomeFeed: React.FC = () => {
             ))}
           </div>
         ) : filtered.length === 0 ? (
-          <div className="bg-card border border-border rounded-md p-10 text-center text-[13px] text-muted-foreground">
+          <div className="bg-card border border-border rounded-md p-10 text-center text-sm text-muted-foreground">
             {filter === '追蹤' ? '尚未追蹤任何節目，去「節目」頁追蹤幾個吧。' : '目前沒有集數。'}
           </div>
         ) : (
@@ -141,7 +141,7 @@ export const HomeFeed: React.FC = () => {
                 );
               })}
             </div>
-            <div className="mt-6 py-3 text-center text-[12px] text-muted-foreground">— 到這邊 —</div>
+            <div className="mt-6 py-3 text-center text-xs text-muted-foreground">— 到這邊 —</div>
           </>
         )}
       </PageContent>

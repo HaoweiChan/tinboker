@@ -160,9 +160,9 @@ export const NotificationDropdown: React.FC = () => {
       case 'new_episode':
         return <Mic size={16} className="text-accent-info" />;
       case 'stock_mention':
-        return <TrendingUp size={16} className="text-blue-400" />;
+        return <TrendingUp size={16} className="text-accent-info" />;
       case 'price_alert':
-        return <AlertTriangle size={16} className="text-red-400" />;
+        return <AlertTriangle size={16} className="text-destructive" />;
     }
   };
 
@@ -174,22 +174,22 @@ export const NotificationDropdown: React.FC = () => {
       {/* Bell Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="text-slate-400 hover:text-slate-900 dark:hover:text-slate-50 transition relative p-2"
+        className="text-muted-foreground hover:text-foreground transition relative p-2"
       >
         <Bell size={20} />
         {unreadCount > 0 && (
-          <span className="absolute top-1.5 right-1.5 block h-2 w-2 rounded-full ring-2 ring-white dark:ring-slate-900 bg-red-500"></span>
+          <span className="absolute top-1.5 right-1.5 block h-2 w-2 rounded-full ring-2 ring-background bg-destructive"></span>
         )}
       </button>
       {/* Dropdown Menu */}
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-80 sm:w-96 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-xl overflow-hidden z-50">
+        <div className="absolute right-0 mt-2 w-80 sm:w-96 rounded-xl bg-card border border-border shadow-xl overflow-hidden z-50">
           {/* Header */}
-          <div className="p-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+          <div className="p-4 border-b border-border flex items-center justify-between">
             <div>
-              <h3 className="font-bold text-slate-900 dark:text-slate-50">通知</h3>
+              <h3 className="font-bold text-foreground">通知</h3>
               {unreadCount > 0 && (
-                <p className="text-xs text-slate-500 dark:text-slate-400">{unreadCount} 則未讀</p>
+                <p className="text-xs text-muted-foreground">{unreadCount} 則未讀</p>
               )}
             </div>
             {unreadCount > 0 && (
@@ -204,12 +204,12 @@ export const NotificationDropdown: React.FC = () => {
           {/* Notifications List */}
           <div className="max-h-96 overflow-y-auto">
             {isLoading ? (
-              <div className="p-8 text-center text-slate-500">
+              <div className="p-8 text-center text-muted-foreground">
                 <Loader2 size={32} className="mx-auto mb-2 animate-spin" />
                 <p>載入中...</p>
               </div>
             ) : notifications.length === 0 ? (
-              <div className="p-8 text-center text-slate-500">
+              <div className="p-8 text-center text-muted-foreground">
                 <Bell size={32} className="mx-auto mb-2 opacity-50" />
                 <p>暫無通知</p>
               </div>
@@ -218,27 +218,27 @@ export const NotificationDropdown: React.FC = () => {
                 <button
                   key={notification.id}
                   onClick={() => handleNotificationClick(notification)}
-                  className={`w-full p-4 flex items-start gap-3 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors text-left border-b border-slate-100 dark:border-slate-700/50 last:border-0 ${
-                    !notification.isRead ? 'bg-slate-50/50 dark:bg-slate-700/30' : ''
+                  className={`w-full p-4 flex items-start gap-3 hover:bg-muted transition-colors text-left border-b border-border/50 last:border-0 ${
+                    !notification.isRead ? 'bg-muted/50' : ''
                   }`}
                 >
-                  <div className="mt-0.5 p-2 rounded-lg bg-slate-100 dark:bg-slate-700/50">
+                  <div className="mt-0.5 p-2 rounded-lg bg-muted">
                     {getIcon(notification.type)}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between gap-2">
-                      <p className={`font-medium text-sm ${notification.isRead ? 'text-slate-600 dark:text-slate-300' : 'text-slate-900 dark:text-slate-50'}`}>
+                      <p className={`font-medium text-base ${notification.isRead ? 'text-muted-foreground' : 'text-foreground'}`}>
                         {notification.title}
                       </p>
                       <button
                         onClick={(e) => clearNotification(notification.id, e)}
-                        className="text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300 transition shrink-0"
+                        className="text-muted-foreground hover:text-foreground transition shrink-0"
                       >
                         <X size={14} />
                       </button>
                     </div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">{notification.description}</p>
-                    <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">{notification.time}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5 truncate">{notification.description}</p>
+                    <p className="text-xs text-muted-foreground/70 mt-1">{notification.time}</p>
                   </div>
                   {!notification.isRead && (
                     <div className="w-2 h-2 rounded-full bg-accent-info dark:bg-accent-info shrink-0 mt-2"></div>
@@ -249,13 +249,13 @@ export const NotificationDropdown: React.FC = () => {
           </div>
           {/* Footer */}
           {notifications.length > 0 && (
-            <div className="p-3 border-t border-slate-200 dark:border-slate-700">
+            <div className="p-3 border-t border-border">
               <button
                 onClick={() => {
                   setIsOpen(false);
                   navigate('/settings');
                 }}
-                className="w-full text-center text-sm text-slate-500 hover:text-accent-info dark:text-slate-400 dark:hover:text-accent-info transition"
+                className="w-full text-center text-base text-muted-foreground hover:text-accent-info transition"
               >
                 通知設定
               </button>

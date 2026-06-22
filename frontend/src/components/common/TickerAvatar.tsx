@@ -21,7 +21,7 @@ export function TickerAvatar({ ticker, brandColor, className }: TickerAvatarProp
   return (
     <span
       className={cn(
-        'inline-flex items-center justify-center rounded text-white font-bold font-mono text-[10px] tracking-tight select-none shrink-0',
+        'inline-flex items-center justify-center rounded text-white font-bold font-mono text-2xs tracking-tight select-none shrink-0',
         className,
       )}
       style={{ backgroundColor: bg, minWidth: '2.75rem', height: '1.5rem', padding: '0 0.25rem' }}

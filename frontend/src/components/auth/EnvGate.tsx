@@ -47,15 +47,15 @@ function LoginScreen() {
     <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-8">
       <div className="flex flex-col items-center gap-3">
         <BracketMark size={40} />
-        <span className="text-[11px] font-semibold tracking-[0.1em] uppercase text-muted-foreground bg-muted px-2.5 py-1 rounded-full">
+        <span className="text-2xs font-semibold tracking-[0.1em] uppercase text-muted-foreground bg-muted px-2.5 py-1 rounded-full">
           {ENV_LABEL}
         </span>
       </div>
       <div className="text-center">
-        <p className="text-[15px] font-semibold mb-1">僅限授權人員存取</p>
-        <p className="text-[13px] text-muted-foreground">請以授權的 Google 帳號登入</p>
+        <p className="text-md font-semibold mb-1">僅限授權人員存取</p>
+        <p className="text-sm text-muted-foreground">請以授權的 Google 帳號登入</p>
       </div>
-      <GoogleLoginButton className="flex items-center gap-2.5 px-5 py-2.5 rounded-lg bg-card border border-border text-[14px] font-medium hover:bg-muted transition-colors">
+      <GoogleLoginButton className="flex items-center gap-2.5 px-5 py-2.5 rounded-lg bg-card border border-border text-base font-medium hover:bg-muted transition-colors">
         <GoogleIcon />
         使用 Google 帳號登入
       </GoogleLoginButton>
@@ -69,19 +69,19 @@ function DeniedScreen({ email }: { email: string }) {
     <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-6">
       <div className="flex flex-col items-center gap-3">
         <BracketMark size={40} />
-        <span className="text-[11px] font-semibold tracking-[0.1em] uppercase text-muted-foreground bg-muted px-2.5 py-1 rounded-full">
+        <span className="text-2xs font-semibold tracking-[0.1em] uppercase text-muted-foreground bg-muted px-2.5 py-1 rounded-full">
           {ENV_LABEL}
         </span>
       </div>
       <div className="text-center">
-        <p className="text-[15px] font-semibold mb-1">無存取權限</p>
-        <p className="text-[13px] text-muted-foreground">
+        <p className="text-md font-semibold mb-1">無存取權限</p>
+        <p className="text-sm text-muted-foreground">
           <span className="font-mono">{email}</span> 未在授權名單中
         </p>
       </div>
       <button
         onClick={logout}
-        className="text-[13px] text-muted-foreground hover:text-foreground underline underline-offset-2 transition-colors"
+        className="text-sm text-muted-foreground hover:text-foreground underline underline-offset-2 transition-colors"
       >
         切換帳號
       </button>

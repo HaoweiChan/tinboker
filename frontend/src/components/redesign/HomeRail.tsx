@@ -6,14 +6,15 @@ import { RailCard } from './RailCard';
 import { SentBar } from './SentBar';
 import { SentimentChip } from './SentimentChip';
 import { PodMark } from './PodMark';
+import { StockIdentity } from '@/components/common/StockIdentity';
 import { normalizeSentiment } from '@/lib/sentiment';
 
 const EMPTY_BUZZ: RecentBuzz = { tickers: [], distinct_count: 0, episode_count: 0 };
 
 function TrendArrow({ delta }: { delta: number }) {
-  if (delta > 0) return <span className="text-sentiment-bull font-mono text-[11px]">↑ +{delta}</span>;
-  if (delta < 0) return <span className="text-sentiment-bear font-mono text-[11px]">↓ {delta}</span>;
-  return <span className="text-muted-foreground font-mono text-[11px]">→ 0</span>;
+  if (delta > 0) return <span className="text-sentiment-bull font-mono text-2xs">↑ +{delta}</span>;
+  if (delta < 0) return <span className="text-sentiment-bear font-mono text-2xs">↓ {delta}</span>;
+  return <span className="text-muted-foreground font-mono text-2xs">→ 0</span>;
 }
 
 function MarketPulse({ buzz }: { buzz: RecentBuzz }) {
@@ -34,10 +35,10 @@ function MarketPulse({ buzz }: { buzz: RecentBuzz }) {
 
   return (
     <RailCard title="市場脈動" sub="近 30 天">
-      <div className="flex flex-col gap-4 text-[13px]">
+      <div className="flex flex-col gap-4 text-sm">
         {/* Row 1: Sentiment trend */}
         <div className="flex flex-col gap-1.5">
-          <span className="text-[11px] text-muted-foreground tracking-wide">情緒趨勢</span>
+          <span className="text-sm font-medium text-muted-foreground tracking-wide">情緒趨勢</span>
           {total > 0 && <SentBar bull={sent.bull} neutral={sent.neutral} bear={sent.bear} />}
           <div className="flex items-center justify-between">
             <span>
@@ -54,18 +55,13 @@ function MarketPulse({ buzz }: { buzz: RecentBuzz }) {
         {/* Row 2: Fastest rising ticker */}
         {buzz.rising_ticker && (
           <div className="flex flex-col gap-1">
-            <span className="text-[11px] text-muted-foreground tracking-wide">聲量飆升</span>
+            <span className="text-sm font-medium text-muted-foreground tracking-wide">聲量飆升</span>
             <Link
               to={`/stock/${encodeURIComponent(buzz.rising_ticker.ticker)}`}
               className="flex items-center justify-between hover:opacity-80 transition-opacity"
             >
-              <span className="flex items-baseline gap-1.5 min-w-0">
-                <span className="font-medium truncate">{buzz.rising_ticker.name || buzz.rising_ticker.ticker}</span>
-                {buzz.rising_ticker.name && (
-                  <span className="font-mono text-[10px] text-muted-foreground shrink-0">{buzz.rising_ticker.ticker}</span>
-                )}
-              </span>
-              <span className="text-sentiment-bull font-mono text-[11px] shrink-0">↑ +{buzz.rising_ticker.delta} 集</span>
+              <StockIdentity ticker={buzz.rising_ticker.ticker} name={buzz.rising_ticker.name} size="sm" className="min-w-0" />
+              <span className="text-sentiment-bull font-mono text-2xs shrink-0">↑ +{buzz.rising_ticker.delta} 集</span>
             </Link>
           </div>
         )}
@@ -74,17 +70,19 @@ function MarketPulse({ buzz }: { buzz: RecentBuzz }) {
         {buzz.new_tickers && buzz.new_tickers.length > 0 && (
           <div className="flex flex-col gap-1">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] text-muted-foreground tracking-wide">新進個股</span>
-              <span className="text-[11px] text-muted-foreground font-mono">+{buzz.new_tickers.length} 檔新上榜</span>
+              <span className="text-sm font-medium text-muted-foreground tracking-wide">新進個股</span>
+              <span className="text-2xs text-muted-foreground font-mono">+{buzz.new_tickers.length} 檔新上榜</span>
             </div>
-            <div className="flex flex-wrap gap-x-1.5 gap-y-0.5 text-[12px]">
-              {buzz.new_tickers.map((t, i) => (
-                <span key={t.ticker}>
-                  <Link to={`/stock/${encodeURIComponent(t.ticker)}`} className="text-foreground/80 hover:text-foreground underline decoration-border hover:decoration-foreground/40 transition-colors">
-                    {t.name || t.ticker}
-                  </Link>
-                  {i < buzz.new_tickers!.length - 1 && <span className="text-muted-foreground">、</span>}
-                </span>
+            <div className="flex flex-col">
+              {buzz.new_tickers.slice(0, 5).map((t) => (
+                <Link
+                  key={t.ticker}
+                  to={`/stock/${encodeURIComponent(t.ticker)}`}
+                  className="flex items-center justify-between gap-2 py-1.5 border-t border-border first:border-t-0 hover:opacity-80 transition-opacity"
+                >
+                  <StockIdentity ticker={t.ticker} name={t.name} size="sm" className="min-w-0" />
+                  <span className="text-2xs font-mono text-accent-info shrink-0">NEW</span>
+                </Link>
               ))}
             </div>
           </div>
@@ -105,13 +103,10 @@ function TopTickers({ buzz }: { buzz: RecentBuzz }) {
             to={`/stock/${encodeURIComponent(b.ticker)}`}
             className="grid grid-cols-[18px_1fr_auto] gap-2.5 items-center py-2 border-t border-border first:border-t-0 hover:opacity-80 transition-opacity"
           >
-            <span className="font-mono text-[11px] text-muted-foreground text-right">{String(i + 1).padStart(2, '0')}</span>
-            <span className="min-w-0 flex items-baseline gap-1.5">
-              <span className="text-[13px] font-medium truncate">{b.name || b.ticker}</span>
-              {b.name && <span className="font-mono text-[10px] text-muted-foreground shrink-0">{b.ticker}</span>}
-            </span>
+            <span className="font-mono text-2xs text-muted-foreground text-right">{String(i + 1).padStart(2, '0')}</span>
+            <StockIdentity ticker={b.ticker} name={b.name} size="sm" className="min-w-0" />
             <span className="flex items-center gap-2">
-              <span className="text-[11px] text-muted-foreground font-mono tabular-nums">{b.count} 集</span>
+              <span className="text-2xs text-muted-foreground font-mono tabular-nums">{b.count} 集</span>
               <SentimentChip sentiment={normalizeSentiment(b.sentiment_label)} bare />
             </span>
           </Link>
@@ -137,8 +132,8 @@ function TopPodcasters({ podcasts }: { podcasts: Podcast[] }) {
             ) : (
               <PodMark label={(p.name || '?').charAt(0)} kind="mute" size={28} />
             )}
-            <span className="text-[13px] font-medium truncate">{p.name}</span>
-            <span className="text-[11px] text-muted-foreground font-mono tabular-nums">{p.episode_count} 集</span>
+            <span className="text-sm font-medium truncate">{p.name}</span>
+            <span className="text-2xs text-muted-foreground font-mono tabular-nums">{p.episode_count} 集</span>
           </Link>
         ))}
       </div>

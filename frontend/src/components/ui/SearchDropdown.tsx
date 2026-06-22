@@ -27,7 +27,7 @@ import { trackClick } from '@/services/api/analytics';
 const SEARCH_PLACEHOLDER = '搜尋節目、代號…';
 
 const searchInputClass =
-  'w-full h-9 pl-9 pr-9 rounded-full bg-muted/50 border border-border text-[13px] text-foreground placeholder:text-muted-foreground focus:bg-background focus:border-foreground/20 focus-visible:ring-1 focus-visible:ring-foreground/10 focus-visible:ring-offset-0 transition-colors';
+  'w-full h-9 pl-9 pr-9 rounded-full bg-muted/50 border border-border text-sm text-foreground placeholder:text-muted-foreground focus:bg-background focus:border-foreground/20 focus-visible:ring-1 focus-visible:ring-foreground/10 focus-visible:ring-offset-0 transition-colors';
 
 export const SearchDropdown: React.FC<SearchDropdownProps> = () => {
   const searchQuery = useAppStore((state) => state.searchQuery);
@@ -129,7 +129,7 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = () => {
             type: 'tag',
             title: item.title,
             subtitle: item.subtitle,
-            icon: <Hash size={16} className="text-indigo-400" />,
+            icon: <Hash size={16} className="text-accent-info" />,
             link: item.link
           });
         });
@@ -221,12 +221,12 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = () => {
             </div>
           )}
           <div className="flex-1 min-w-0">
-            <p className="font-medium text-foreground text-[13px] truncate">{result.title}</p>
+            <p className="font-medium text-foreground text-sm truncate">{result.title}</p>
             {result.subtitle && (
-              <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{result.subtitle}</p>
+              <p className="text-2xs text-muted-foreground mt-0.5 truncate">{result.subtitle}</p>
             )}
           </div>
-          <span className="text-[10px] text-muted-foreground px-2 py-0.5 rounded-md bg-muted shrink-0">
+          <span className="text-2xs text-muted-foreground px-2 py-0.5 rounded-md bg-muted shrink-0">
             {result.type === 'stock' ? '股票' :
               result.type === 'podcast' ? '頻道' :
                 result.type === 'episode' ? '集數' : '標籤'}
@@ -247,7 +247,7 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = () => {
         results.length === 0 ? (
           <div className="py-6 text-center text-muted-foreground">
             <Search size={24} className="mx-auto mb-2 opacity-50" />
-            <p className="text-[13px]">找不到「{searchQuery}」的相關結果</p>
+            <p className="text-sm">找不到「{searchQuery}」的相關結果</p>
           </div>
         ) : (
           renderResultsList(results)
@@ -257,12 +257,12 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = () => {
           {recentSearches.length > 0 && (
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <h3 className="text-[11px] font-semibold tracking-[0.06em] uppercase text-muted-foreground flex items-center gap-1.5">
+                <h3 className="text-2xs font-semibold tracking-[0.06em] uppercase text-muted-foreground flex items-center gap-1.5">
                   <Clock size={14} /> 最近搜尋
                 </h3>
                 <button
                   onClick={clearRecentSearches}
-                  className="text-muted-foreground hover:text-destructive text-[11px] transition-colors"
+                  className="text-muted-foreground hover:text-destructive text-2xs transition-colors"
                 >
                   清除
                 </button>
@@ -272,7 +272,7 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = () => {
                   <button
                     key={idx}
                     onClick={() => handleRecentClick(query)}
-                    className="px-2.5 py-1 bg-muted hover:bg-muted/80 rounded-full text-[12px] text-foreground transition-colors"
+                    className="px-2.5 py-1 bg-muted hover:bg-muted/80 rounded-full text-xs text-foreground transition-colors"
                   >
                     {query}
                   </button>
@@ -285,7 +285,7 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = () => {
             <>
               {popularData.stocks.length > 0 && (
                 <div className="space-y-2">
-                  <h3 className="text-[11px] font-semibold tracking-[0.06em] uppercase text-muted-foreground flex items-center gap-1.5">
+                  <h3 className="text-2xs font-semibold tracking-[0.06em] uppercase text-muted-foreground flex items-center gap-1.5">
                     <TrendingUp size={14} /> 熱門標的
                   </h3>
                   <div className="grid grid-cols-1 gap-1">
@@ -298,9 +298,9 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = () => {
                       return (
                         <button key={item.id} onClick={() => handlePopularItemClick(item)} className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-muted/60 transition-colors text-left">
                           <div className="min-w-0">
-                            <p className="text-[13px] font-medium text-foreground truncate">{primary}</p>
+                            <p className="text-sm font-medium text-foreground truncate">{primary}</p>
                             {secondary && (
-                              <p className="text-[11px] text-muted-foreground truncate">{secondary}</p>
+                              <p className="text-2xs text-muted-foreground truncate">{secondary}</p>
                             )}
                           </div>
                         </button>
@@ -312,7 +312,7 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = () => {
 
               {popularData.podcasts.length > 0 && (
                 <div className="space-y-2">
-                  <h3 className="text-[11px] font-semibold tracking-[0.06em] uppercase text-muted-foreground flex items-center gap-1.5">
+                  <h3 className="text-2xs font-semibold tracking-[0.06em] uppercase text-muted-foreground flex items-center gap-1.5">
                     <Mic size={14} /> 熱門頻道
                   </h3>
                   <div className="grid grid-cols-1 gap-1">
@@ -322,8 +322,8 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = () => {
                           <PodcastAvatar name={item.title} src={item.icon_url} size="sm" className="w-full h-full" />
                         </div>
                         <div className="min-w-0">
-                          <p className="text-[13px] font-medium text-foreground truncate">{item.title}</p>
-                          <p className="text-[11px] text-muted-foreground truncate">{item.subtitle}</p>
+                          <p className="text-sm font-medium text-foreground truncate">{item.title}</p>
+                          <p className="text-2xs text-muted-foreground truncate">{item.subtitle}</p>
                         </div>
                       </button>
                     ))}
@@ -333,12 +333,12 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = () => {
 
               {popularData.tags.length > 0 && (
                 <div className="space-y-2">
-                  <h3 className="text-[11px] font-semibold tracking-[0.06em] uppercase text-muted-foreground flex items-center gap-1.5">
+                  <h3 className="text-2xs font-semibold tracking-[0.06em] uppercase text-muted-foreground flex items-center gap-1.5">
                     <Tag size={14} /> 熱門標籤
                   </h3>
                   <div className="flex flex-wrap gap-1.5">
                     {popularData.tags.map((item) => (
-                      <button key={item.id} onClick={() => handlePopularItemClick(item)} className="px-2.5 py-1 bg-accent-info-soft text-accent-info rounded-full text-[12px] font-medium hover:opacity-80 transition-opacity">
+                      <button key={item.id} onClick={() => handlePopularItemClick(item)} className="px-2.5 py-1 bg-accent-info-soft text-accent-info rounded-full text-xs font-medium hover:opacity-80 transition-opacity">
                         #{item.title}
                       </button>
                     ))}
@@ -389,7 +389,7 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = () => {
               results.length === 0 ? (
                 <div className="py-6 text-center text-muted-foreground">
                   <Search size={20} className="mx-auto mb-2 opacity-50" />
-                  <p className="text-[13px]">找不到「{searchQuery}」的相關結果</p>
+                  <p className="text-sm">找不到「{searchQuery}」的相關結果</p>
                 </div>
               ) : (
                 <div className="p-1.5 max-h-80 overflow-y-auto">
@@ -413,7 +413,7 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = () => {
           className="w-full flex items-center gap-2 px-3 h-9 bg-muted/50 border border-border rounded-full text-muted-foreground"
         >
           <Search className="h-4 w-4 shrink-0" />
-          <span className="text-[13px] truncate">{SEARCH_PLACEHOLDER}</span>
+          <span className="text-sm truncate">{SEARCH_PLACEHOLDER}</span>
         </button>
       </div>
 
@@ -456,7 +456,7 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = () => {
               </div>
               <button
                 onClick={() => setIsOpen(false)}
-                className="text-[13px] text-muted-foreground hover:text-foreground px-1 shrink-0 transition-colors"
+                className="text-sm text-muted-foreground hover:text-foreground px-1 shrink-0 transition-colors"
               >
                 取消
               </button>

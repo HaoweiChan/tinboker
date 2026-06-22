@@ -34,7 +34,7 @@ function countsToBreakdown(counts: TickerTrending['sentiment_counts']): Sentimen
   return { total, bull, neutral, bear, avgScore: null };
 }
 
-const StockHeaderCard: React.FC<{ symbol: string; mentionCount: number }> = ({ symbol, mentionCount }) => {
+const StockHeaderCard: React.FC<{ symbol: string }> = ({ symbol }) => {
   const [stockData, setStockData] = useState<CompanyDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -195,31 +195,31 @@ const StockHeaderCard: React.FC<{ symbol: string; mentionCount: number }> = ({ s
       <div className="flex items-start gap-5 bg-card border border-border rounded-md p-5 sm:p-6 mb-[18px]">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-3 flex-wrap mb-1.5">
-            <h1 className="text-[22px] font-semibold tracking-[-0.02em]">{primaryLabel}</h1>
-            <span className={cn('text-[12px] px-3 py-1 rounded-full', marketBadge.cls)}>{marketBadge.label}</span>
+            <h1 className="text-2xl font-semibold tracking-[-0.02em]">{primaryLabel}</h1>
+            <span className={cn('text-xs px-3 py-1 rounded-full', marketBadge.cls)}>{marketBadge.label}</span>
           </div>
           {subLines.length > 0 && (
             <div className="mb-1.5 leading-tight">
               {subLines.map((line) => (
-                <p key={line.text} className={cn('text-[13px] text-muted-foreground', line.mono && 'font-mono')}>
+                <p key={line.text} className={cn('text-sm text-muted-foreground', line.mono && 'font-mono')}>
                   {line.text}
                 </p>
               ))}
             </div>
           )}
           <div className="flex items-baseline gap-3.5 flex-wrap">
-            <span className={cn('font-mono tabular-nums text-[32px] font-semibold tracking-[-0.02em]', hasDisplayPrice ? trend.text : 'text-muted-foreground')}>
+            <span className={cn('font-mono tabular-nums text-3xl font-semibold tracking-[-0.02em]', hasDisplayPrice ? trend.text : 'text-muted-foreground')}>
               {isLoading ? '…' : formatPositiveNumber(displayPrice, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
             {hasDisplayPrice && <Change value={displayChangePercent} big />}
-            <span className="text-[12px] text-muted-foreground">{hasDisplayPrice ? '即時行情 · 延遲 15 分鐘' : '行情資料暫無'}</span>
+            <span className="text-xs text-muted-foreground">{hasDisplayPrice ? '即時行情 · 延遲 15 分鐘' : '行情資料暫無'}</span>
           </div>
         </div>
         <button
           type="button"
           onClick={() => toggleWatchlist(symbol)}
           className={cn(
-            'inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-[13px] font-medium transition-colors shrink-0',
+            'inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium transition-colors shrink-0',
             isWatchlisted ? 'bg-card border border-border text-foreground hover:bg-muted' : 'bg-foreground text-background hover:opacity-90',
           )}
         >
@@ -259,22 +259,21 @@ const StockHeaderCard: React.FC<{ symbol: string; mentionCount: number }> = ({ s
             </div>
           ) : (
             <div className="h-[260px] w-full mt-3 rounded-md border border-dashed border-border bg-muted/20 flex flex-col items-center justify-center text-center px-6">
-              <p className="text-[13px] font-medium text-foreground">目前沒有可顯示的股價走勢</p>
-              <p className="text-[12px] text-muted-foreground mt-1">資料供應暫時沒有回傳有效價格，請改用較長區間或稍後再試。</p>
+              <p className="text-sm font-medium text-foreground">目前沒有可顯示的股價走勢</p>
+              <p className="text-xs text-muted-foreground mt-1">資料供應暫時沒有回傳有效價格，請改用較長區間或稍後再試。</p>
             </div>
           )}
         </div>
         <div className="bg-card border border-border rounded-md p-5">
-          <h3 className="text-[12px] font-semibold uppercase tracking-[0.08em] text-muted-foreground mb-3.5">關鍵數據</h3>
+          <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground mb-3.5">關鍵數據</h3>
           <div className="divide-y divide-border">
             {keyStats.map((s) => (
               <div key={s.label} className="flex justify-between items-center py-2.5">
-                <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{s.label}</span>
-                <span className="text-[13px] font-mono tabular-nums font-semibold">{s.value}</span>
+                <span className="text-2xs font-medium uppercase tracking-wider text-muted-foreground">{s.label}</span>
+                <span className="text-sm font-mono tabular-nums font-semibold">{s.value}</span>
               </div>
             ))}
           </div>
-          <p className="mt-3 text-[11px] text-muted-foreground">近 30 天 {mentionCount} 集 podcast 提到此標的</p>
         </div>
       </div>
     </>
@@ -384,12 +383,12 @@ export const StockDashboard: React.FC = () => {
   const stats: StatItem[] = [
     {
       label: '近 30 天提及',
-      value: <>{mentionCount}<span className="text-[14px] text-muted-foreground ml-1">集</span></>,
+      value: <>{mentionCount}<span className="text-base text-muted-foreground ml-1">集</span></>,
     },
     {
       label: '情緒比例',
       textValue: true,
-      value: breakdown.total > 0 ? <SentBar bull={breakdown.bull} neutral={breakdown.neutral} bear={breakdown.bear} width={88} /> : <span className="text-muted-foreground text-[14px]">—</span>,
+      value: breakdown.total > 0 ? <SentBar bull={breakdown.bull} neutral={breakdown.neutral} bear={breakdown.bear} width={88} /> : <span className="text-muted-foreground text-base">—</span>,
       sub:
         breakdown.total > 0 ? (
           <span>
@@ -402,7 +401,7 @@ export const StockDashboard: React.FC = () => {
     {
       label: '整體情緒',
       textValue: true,
-      value: breakdown.total > 0 || buzzTicker ? <SentimentChip sentiment={overallSentiment} /> : <span className="text-muted-foreground text-[14px]">—</span>,
+      value: breakdown.total > 0 || buzzTicker ? <SentimentChip sentiment={overallSentiment} /> : <span className="text-muted-foreground text-base">—</span>,
       sub: newestEp ? `最新：${newestEp.podcast_name}${newestEp.episode_number != null ? ` EP ${newestEp.episode_number}` : ''}` : '無資料',
     },
     {
@@ -420,7 +419,7 @@ export const StockDashboard: React.FC = () => {
         url={typeof window !== 'undefined' ? window.location.href : undefined}
       />
       <PageContent>
-        <StockHeaderCard symbol={symbol} mentionCount={mentionCount} />
+        <StockHeaderCard symbol={symbol} />
 
         <div className="mb-[18px]">
           <StatGroup items={stats} />
@@ -428,7 +427,7 @@ export const StockDashboard: React.FC = () => {
 
         {insights.length > 0 && (
           <section className="mb-[18px]">
-            <h2 className="text-[13px] font-semibold text-muted-foreground mb-3">分析師觀點 & 投資摘要</h2>
+            <h2 className="text-sm font-semibold text-muted-foreground mb-3">分析師觀點 & 投資摘要</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {insights.map((rec) => (
                 <TickerInsightCard
@@ -441,7 +440,7 @@ export const StockDashboard: React.FC = () => {
           </section>
         )}
 
-        <h2 className="text-[13px] font-semibold text-muted-foreground mb-3">這檔被哪些集數聊到</h2>
+        <h2 className="text-sm font-semibold text-muted-foreground mb-3">這檔被哪些集數聊到</h2>
         {episodesLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {Array.from({ length: 4 }).map((_, i) => (
@@ -449,7 +448,7 @@ export const StockDashboard: React.FC = () => {
             ))}
           </div>
         ) : episodes.length === 0 ? (
-          <div className="bg-card border border-border rounded-md p-10 text-center text-[13px] text-muted-foreground">目前沒有 Podcast 提到此標的。</div>
+          <div className="bg-card border border-border rounded-md p-10 text-center text-sm text-muted-foreground">目前沒有 Podcast 提到此標的。</div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {episodes.map((ep) => (

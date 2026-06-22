@@ -191,7 +191,7 @@ const TreeGraphContent: React.FC<TreeGraphProps> = ({ isWidget = false, data, ti
           {!isWidget && (
             <Panel position="top-left" className="flex flex-col gap-3 max-w-xs">
               <div className="p-4 rounded-xl shadow-sm backdrop-blur-sm relative" style={sharedPanelStyle}>
-                <h2 className="text-lg font-bold mb-1" style={{ color: 'var(--text-primary)' }}>{title || "Hierarchical Tree"}</h2>
+                <h2 className="text-xl font-bold mb-1" style={{ color: 'var(--text-primary)' }}>{title || "Hierarchical Tree"}</h2>
                 <p className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>
                   {description || "Ownership structures (Parent → Subsidiary)."}
                 </p>
@@ -208,7 +208,7 @@ const TreeGraphContent: React.FC<TreeGraphProps> = ({ isWidget = false, data, ti
               </div>
               <div className="p-3 rounded-xl shadow-sm backdrop-blur-sm" style={sharedPanelStyle}>
                 <div className="mb-3">
-                  <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                  <h3 className="text-2xs font-bold text-slate-400 uppercase tracking-wider mb-2">
                     Display Mode
                   </h3>
                   <div className="flex flex-col gap-1">
@@ -234,7 +234,7 @@ const TreeGraphContent: React.FC<TreeGraphProps> = ({ isWidget = false, data, ti
                 </div>
                 {displayMode !== DisplayMode.PRICE && (
                   <div>
-                    <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Node Style</h3>
+                    <h3 className="text-2xs font-bold text-slate-400 uppercase tracking-wider mb-2">Node Style</h3>
                     <div className="flex flex-col gap-1">
                       <GraphControlToggle
                         label="Ghost"

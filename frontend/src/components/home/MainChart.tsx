@@ -34,10 +34,10 @@ const MainChart: React.FC<MainChartProps> = ({ isDark, index, timeframe }) => {
     return generateMockPriceSeries(points, index.baseValue);
   }, [index.baseValue, timeframe]);
   const changeIcon = index.isPositive ? ArrowUpRight : ArrowDownRight;
-  const changeColor = index.isPositive ? 'text-emerald-400' : 'text-red-500';
-  const pillClasses = index.isPositive ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-300';
-  const lineColor = index.isPositive ? '#22c55e' : '#fb7185';
-  const fillColor = index.isPositive ? 'rgba(34,197,94,0.25)' : 'rgba(248,113,113,0.25)';
+  const changeColor = index.isPositive ? 'text-sentiment-bull' : 'text-sentiment-bear';
+  const pillClasses = index.isPositive ? 'bg-sentiment-bull-soft text-sentiment-bull' : 'bg-sentiment-bear-soft text-sentiment-bear';
+  const lineColor = index.isPositive ? 'hsl(var(--sentiment-bull))' : 'hsl(var(--sentiment-bear))';
+  const fillColor = index.isPositive ? 'hsl(var(--sentiment-bull) / 0.25)' : 'hsl(var(--sentiment-bear) / 0.25)';
   const chartHeight = typeof window !== 'undefined' && window.innerWidth < 768 ? 260 : 320;
 
   return (
@@ -46,7 +46,7 @@ const MainChart: React.FC<MainChartProps> = ({ isDark, index, timeframe }) => {
         <div className="flex items-center gap-3 flex-wrap">
           <div className={`text-xs font-bold px-2 py-1 rounded ${pillClasses}`}>{index.label}</div>
           <h2 className="text-3xl font-bold tracking-tight text-foreground">{index.value}</h2>
-          <span className={`${changeColor} font-mono text-lg flex items-center gap-1`}>
+          <span className={`${changeColor} font-mono text-xl flex items-center gap-1`}>
             {React.createElement(changeIcon, { size: 20 })}
             {index.change}
           </span>

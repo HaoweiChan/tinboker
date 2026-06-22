@@ -102,7 +102,7 @@ export const ShareMenu: React.FC<ShareMenuProps> = ({
           <button
             type="button"
             onClick={handleShare}
-            className="flex items-center gap-2 w-full px-3 py-2 text-[13px] text-foreground hover:bg-muted transition-colors"
+            className="flex items-center gap-2 w-full px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors"
           >
             <Share2 size={14} />
             分享
@@ -111,7 +111,7 @@ export const ShareMenu: React.FC<ShareMenuProps> = ({
             <button
               type="button"
               onClick={handleBookmark}
-              className="flex items-center gap-2 w-full px-3 py-2 text-[13px] text-foreground hover:bg-muted transition-colors"
+              className="flex items-center gap-2 w-full px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors"
             >
               <Bookmark size={14} className={isBookmarked ? 'fill-current text-accent-info' : ''} />
               {isBookmarked ? '取消收藏' : '收藏'}
@@ -120,9 +120,9 @@ export const ShareMenu: React.FC<ShareMenuProps> = ({
           <button
             type="button"
             onClick={handleCopyLink}
-            className="flex items-center gap-2 w-full px-3 py-2 text-[13px] text-foreground hover:bg-muted transition-colors"
+            className="flex items-center gap-2 w-full px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors"
           >
-            {copied ? <Check size={14} className="text-emerald-500" /> : <Link size={14} />}
+            {copied ? <Check size={14} className="text-sentiment-bull" /> : <Link size={14} />}
             {copied ? '已複製' : '複製連結'}
           </button>
         </div>

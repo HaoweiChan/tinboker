@@ -44,19 +44,19 @@ export const PodcasterIndex: React.FC = () => {
       <SEO title="所有節目" description="TinBoker 持續結構化分析的中文財經 Podcast。" />
       <PageContent>
         <div className="flex items-baseline justify-between mb-1">
-          <h1 className="text-[22px] font-semibold tracking-[-0.02em]">所有節目</h1>
+          <h1 className="text-2xl font-semibold tracking-[-0.02em]">所有節目</h1>
           {!loading && (
-            <div className="text-[12px] text-muted-foreground font-mono tabular-nums">
+            <div className="text-xs text-muted-foreground font-mono tabular-nums">
               {podcasts.length} 個節目 · {totalEpisodes.toLocaleString('en-US')} 集已分析
             </div>
           )}
         </div>
-        <p className="text-[13px] text-muted-foreground max-w-[60ch] mb-4">TinBoker 持續結構化的中文財經 podcast。點任一節目進入完整集數列表與情緒分析。</p>
+        <p className="text-sm text-muted-foreground max-w-[60ch] mb-4">TinBoker 持續結構化的中文財經 podcast。點任一節目進入完整集數列表與情緒分析。</p>
 
         <div className="flex gap-2.5 items-center mb-4 flex-wrap">
           <label className="flex items-center gap-2 flex-1 min-w-[200px] bg-card border border-border rounded-md px-3 py-2">
             <Search size={14} className="text-muted-foreground shrink-0" />
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜尋節目名稱…" className="flex-1 bg-transparent outline-none text-[13px]" />
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜尋節目名稱…" className="flex-1 bg-transparent outline-none text-sm" />
           </label>
           <Segmented options={[{ value: 'episodes', label: '集數' }, { value: 'recent', label: '最近更新' }] as const} value={sort} onChange={setSort} />
         </div>
@@ -68,7 +68,7 @@ export const PodcasterIndex: React.FC = () => {
             ))}
           </div>
         ) : list.length === 0 ? (
-          <div className="bg-card border border-border rounded-md p-10 text-center text-[13px] text-muted-foreground">{q ? `找不到符合「${q}」的節目` : '目前沒有節目資料。'}</div>
+          <div className="bg-card border border-border rounded-md p-10 text-center text-sm text-muted-foreground">{q ? `找不到符合「${q}」的節目` : '目前沒有節目資料。'}</div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {list.map((p) => (
@@ -79,8 +79,8 @@ export const PodcasterIndex: React.FC = () => {
                   <PodMark label={(p.name || '?').charAt(0)} kind="mute" size={48} />
                 )}
                 <div className="min-w-0 flex-1">
-                  <div className="text-[15px] font-semibold tracking-[-0.01em] truncate">{p.name}</div>
-                  <div className="text-[11px] text-muted-foreground font-mono tabular-nums mt-1">{(p.episode_count || 0).toLocaleString('en-US')} 集已分析</div>
+                  <div className="text-md font-semibold tracking-[-0.01em] truncate">{p.name}</div>
+                  <div className="text-2xs text-muted-foreground font-mono tabular-nums mt-1">{(p.episode_count || 0).toLocaleString('en-US')} 集已分析</div>
                 </div>
               </Link>
             ))}

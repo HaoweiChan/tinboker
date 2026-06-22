@@ -48,7 +48,7 @@ export const BottomTabs: React.FC = () => {
               key={t.to}
               to={t.to}
               aria-current={on ? 'page' : undefined}
-              className={cn('flex flex-col items-center gap-0.5 py-2 text-[10px]', on ? 'text-foreground' : 'text-muted-foreground')}
+              className={cn('flex flex-col items-center gap-0.5 py-2 text-2xs', on ? 'text-foreground' : 'text-muted-foreground')}
             >
               <Icon size={22} />
               <span>{t.label}</span>

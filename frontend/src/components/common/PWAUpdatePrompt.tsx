@@ -184,8 +184,8 @@ export function PWAUpdatePrompt() {
           <ArrowUpCircle size={18} />
         </div>
         <div className="min-w-0 flex-1">
-          <div className="text-[13px] font-semibold text-foreground">有新版本可用</div>
-          <p className="mt-0.5 text-[12px] leading-[1.5] text-muted-foreground">
+          <div className="text-sm font-semibold text-foreground">有新版本可用</div>
+          <p className="mt-0.5 text-xs leading-[1.5] text-muted-foreground">
             重新整理以載入最新內容與修正。
           </p>
           <div className="mt-2.5 flex items-center gap-2">
@@ -193,14 +193,14 @@ export function PWAUpdatePrompt() {
               type="button"
               onClick={handleUpdate}
               disabled={updating}
-              className="inline-flex items-center justify-center rounded-md bg-accent-info px-3 py-1.5 text-[12px] font-semibold text-accent-info-foreground hover:opacity-90 transition-opacity disabled:opacity-60"
+              className="inline-flex items-center justify-center rounded-md bg-accent-info px-3 py-1.5 text-xs font-semibold text-accent-info-foreground hover:opacity-90 transition-opacity disabled:opacity-60"
             >
               {updating ? '更新中…' : '立即更新'}
             </button>
             <button
               type="button"
               onClick={() => setNeedRefresh(false)}
-              className="inline-flex items-center justify-center rounded-md px-2.5 py-1.5 text-[12px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+              className="inline-flex items-center justify-center rounded-md px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
             >
               稍後
             </button>

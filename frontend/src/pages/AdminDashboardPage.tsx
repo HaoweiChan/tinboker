@@ -56,10 +56,10 @@ export const AdminDashboardPage: React.FC = () => {
             {/* Header */}
             <div className="mb-6 flex items-center justify-between">
                 <div>
-                    <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+                    <h1 className="text-2xl font-bold text-foreground">
                         System Status
                     </h1>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                    <p className="text-base text-muted-foreground">
                         {lastUpdated
                             ? `Last updated: ${lastUpdated.toLocaleTimeString()}`
                             : 'Loading...'}
@@ -68,7 +68,7 @@ export const AdminDashboardPage: React.FC = () => {
                 <button
                     onClick={fetchStatus}
                     disabled={loading}
-                    className="flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+                    className="flex items-center gap-2 rounded-md border border-border px-3 py-2 text-base text-foreground hover:bg-muted disabled:opacity-50"
                 >
                     <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
                     Refresh
@@ -77,7 +77,7 @@ export const AdminDashboardPage: React.FC = () => {
 
             {/* Error message */}
             {error && (
-                <div className="mb-6 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-4 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
+                <div className="mb-6 flex items-center gap-2 rounded-lg border border-destructive bg-destructive/10 p-4 text-destructive">
                     <AlertCircle className="h-5 w-5 flex-shrink-0" />
                     <span>{error}</span>
                 </div>
@@ -151,10 +151,10 @@ export const AdminDashboardPage: React.FC = () => {
             </div>
 
             {/* Netdata embed */}
-            <div className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+            <div className="rounded-lg border border-border bg-card p-4">
                 <div className="mb-4 flex items-center gap-2">
-                    <Activity className="h-5 w-5 text-gray-500 dark:text-gray-400" />
-                    <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                    <Activity className="h-5 w-5 text-muted-foreground" />
+                    <h2 className="text-xl font-semibold text-foreground">
                         Netdata Monitoring
                     </h2>
                 </div>

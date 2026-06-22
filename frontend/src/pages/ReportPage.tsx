@@ -21,9 +21,9 @@ export const ReportPage: React.FC = () => (
     <PageContent className="max-w-3xl">
       <div className="flex items-center gap-2.5 mb-2 pt-2">
         <MessageSquareText size={24} className="text-foreground" />
-        <h1 className="text-[22px] font-semibold tracking-[-0.02em]">意見回饋</h1>
+        <h1 className="text-2xl font-semibold tracking-[-0.02em]">意見回饋</h1>
       </div>
-      <p className="text-[14px] text-muted-foreground mb-6 leading-[1.65]">
+      <p className="text-base text-muted-foreground mb-6 leading-[1.65]">
         TinBoker 還在很早期的階段，一定有很多不完美的地方。
         歡迎登入後在這裡留言 —— 不論是 bug 回報、功能許願，還是任何想法，我們都會看。
         留言可以互相回覆，一起把這個平台變得更好。

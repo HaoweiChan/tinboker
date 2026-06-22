@@ -43,8 +43,8 @@ function fmtDate(ms: number): string {
   return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
 }
 
-const card = 'rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800';
-const label = 'text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400';
+const card = 'rounded-xl border border-border bg-card';
+const label = 'text-xs font-semibold uppercase tracking-wide text-muted-foreground';
 
 export const AdminSocialPage: React.FC = () => {
   const [episodes, setEpisodes] = useState<SocialEpisodeListItem[]>([]);
@@ -168,14 +168,14 @@ export const AdminSocialPage: React.FC = () => {
     <div className="p-4 lg:p-8">
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Social</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400">
+          <h1 className="text-2xl font-bold text-foreground">Social</h1>
+          <p className="text-base text-muted-foreground">
             自動生成 Threads／Facebook 文案 — 可編輯、預覽卡片圖，按「發佈」即同步貼到兩個平台。
           </p>
         </div>
         <button
           onClick={fetchList}
-          className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
+          className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-base font-medium text-foreground hover:bg-muted"
         >
           <RefreshCw className={`h-4 w-4 ${loadingList ? 'animate-spin' : ''}`} /> Refresh
         </button>
@@ -188,14 +188,14 @@ export const AdminSocialPage: React.FC = () => {
             <button
               key={ep.episode_id}
               onClick={() => selectEpisode(ep.episode_id)}
-              className={`flex w-full flex-col gap-1 border-b border-gray-100 p-3 text-left last:border-0 dark:border-gray-700/60 ${
-                selectedId === ep.episode_id ? 'bg-amber-50 dark:bg-amber-500/10' : 'hover:bg-gray-50 dark:hover:bg-gray-700/40'
+              className={`flex w-full flex-col gap-1 border-b border-border p-3 text-left last:border-0 ${
+                selectedId === ep.episode_id ? 'bg-primary/10' : 'hover:bg-muted'
               }`}
             >
-              <div className="line-clamp-1 text-sm font-medium text-gray-900 dark:text-white">
+              <div className="line-clamp-1 text-base font-medium text-foreground">
                 {ep.episode_title || ep.episode_id}
               </div>
-              <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <span>{ep.podcast_name}</span>
                 <span>·</span>
                 <span>{fmtDate(ep.released_at_ms)}</span>
@@ -216,14 +216,14 @@ export const AdminSocialPage: React.FC = () => {
             </button>
           ))}
           {!episodes.length && !loadingList && (
-            <div className="p-4 text-sm text-gray-500">沒有節目</div>
+            <div className="p-4 text-base text-muted-foreground">沒有節目</div>
           )}
         </div>
 
         {/* Editor */}
         <div className="min-w-0">
           {!bundle && (
-            <div className={`${card} p-10 text-center text-sm text-gray-500`}>
+            <div className={`${card} p-10 text-center text-base text-muted-foreground`}>
               {loadingBundle ? '載入中…' : '從左邊選一集來編輯'}
             </div>
           )}
@@ -232,7 +232,7 @@ export const AdminSocialPage: React.FC = () => {
             <div className="space-y-6">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-2">
-                  <h2 className="line-clamp-1 text-lg font-semibold text-gray-900 dark:text-white">
+                  <h2 className="line-clamp-1 text-xl font-semibold text-foreground">
                     {bundle.episode_title || bundle.episode_id}
                   </h2>
                   {bundle.posted.threads && <PostedPill>Threads 已發佈</PostedPill>}
@@ -243,7 +243,7 @@ export const AdminSocialPage: React.FC = () => {
                     onClick={handleGenerate}
                     disabled={generating || saving || publishing}
                     title="用 AI 從卡片＋摘要生成文案（會覆蓋目前內容）"
-                    className="inline-flex items-center gap-2 rounded-lg border border-amber-500 px-3 py-2 text-sm font-semibold text-amber-600 hover:bg-amber-50 disabled:opacity-60 dark:text-amber-400 dark:hover:bg-amber-500/10"
+                    className="inline-flex items-center gap-2 rounded-lg border border-primary px-3 py-2 text-base font-semibold text-primary hover:bg-primary/10 disabled:opacity-60"
                   >
                     <Wand2 className={`h-4 w-4 ${generating ? 'animate-pulse' : ''}`} />
                     {generating ? '生成中…' : bundle.has_copy ? '重新生成' : '生成文案'}
@@ -251,7 +251,7 @@ export const AdminSocialPage: React.FC = () => {
                   <button
                     onClick={handleSave}
                     disabled={saving || generating || publishing}
-                    className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
+                    className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-base font-semibold text-foreground hover:bg-muted disabled:opacity-60"
                   >
                     {saved ? <Check className="h-4 w-4" /> : <Save className="h-4 w-4" />}
                     {saving ? '儲存中…' : saved ? '已儲存' : '儲存'}
@@ -260,7 +260,7 @@ export const AdminSocialPage: React.FC = () => {
                     onClick={handlePublish}
                     disabled={publishing || generating || saving}
                     title="儲存目前文案並發佈到 Threads + Facebook"
-                    className="inline-flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-gray-900 hover:bg-amber-400 disabled:opacity-60"
+                    className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-base font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
                   >
                     <Send className={`h-4 w-4 ${publishing ? 'animate-pulse' : ''}`} />
                     {publishing ? '發佈中…' : '發佈'}
@@ -269,7 +269,7 @@ export const AdminSocialPage: React.FC = () => {
               </div>
 
               {publishMsg && (
-                <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
+                <div className="rounded-lg border border-primary/40 bg-primary/10 px-4 py-2 text-base text-foreground">
                   {publishMsg}
                 </div>
               )}
@@ -281,7 +281,7 @@ export const AdminSocialPage: React.FC = () => {
                 </div>
                 {bundle.marp_markdown
                   ? <SlideViewer content={bundle.marp_markdown} />
-                  : <div className="text-sm text-gray-500">這集還沒有 marp 投影片</div>}
+                  : <div className="text-base text-muted-foreground">這集還沒有 marp 投影片</div>}
               </div>
 
               {/* Post */}
@@ -292,9 +292,9 @@ export const AdminSocialPage: React.FC = () => {
                   onChange={(e) => { setPost(e.target.value); setSaved(false); }}
                   rows={4}
                   placeholder="整集的總結，口語一點，最後引導大家看留言…"
-                  className="w-full resize-y rounded-lg border border-gray-300 bg-white p-3 text-sm text-gray-900 focus:border-amber-500 focus:outline-none dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+                  className="w-full resize-y rounded-lg border border-input bg-card p-3 text-base text-foreground placeholder:text-muted-foreground focus:border-accent-info focus:outline-none focus:ring-1 focus:ring-accent-info"
                 />
-                <div className="mt-1 text-right text-xs text-gray-400">{post.length} 字</div>
+                <div className="mt-1 text-right text-xs text-muted-foreground">{post.length} 字</div>
               </div>
 
               {/* Comments */}
@@ -302,12 +302,12 @@ export const AdminSocialPage: React.FC = () => {
                 <div className={label}>留言 Comments（每張主題卡片一則）</div>
                 {comments.map((c, i) => (
                   <div key={i} className={`${card} p-4`}>
-                    <div className="mb-2 flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-200">
-                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-amber-500 text-xs font-bold text-gray-900">{i + 1}</span>
+                    <div className="mb-2 flex items-center gap-2 text-base font-medium text-foreground">
+                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">{i + 1}</span>
                       {c.heading || bundle.theme_cards[i]?.heading || `留言 ${i + 1}`}
                     </div>
                     {bundle.theme_cards[i]?.bullets?.length ? (
-                      <ul className="mb-2 space-y-0.5 text-xs text-gray-400">
+                      <ul className="mb-2 space-y-0.5 text-xs text-muted-foreground">
                         {bundle.theme_cards[i].bullets.map((b, bi) => <li key={bi}>· {b}</li>)}
                       </ul>
                     ) : null}
@@ -316,9 +316,9 @@ export const AdminSocialPage: React.FC = () => {
                       onChange={(e) => updateComment(i, e.target.value)}
                       rows={3}
                       placeholder="這段的人話重點…"
-                      className="w-full resize-y rounded-lg border border-gray-300 bg-white p-3 text-sm text-gray-900 focus:border-amber-500 focus:outline-none dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+                      className="w-full resize-y rounded-lg border border-input bg-card p-3 text-base text-foreground placeholder:text-muted-foreground focus:border-accent-info focus:outline-none focus:ring-1 focus:ring-accent-info"
                     />
-                    <div className="mt-1 text-right text-xs text-gray-400">{c.text.length} 字</div>
+                    <div className="mt-1 text-right text-xs text-muted-foreground">{c.text.length} 字</div>
                   </div>
                 ))}
               </div>
@@ -333,11 +333,11 @@ export const AdminSocialPage: React.FC = () => {
                 </button>
                 {showComposed && (
                   <div className="mt-3 space-y-3">
-                    <pre className="whitespace-pre-wrap rounded-lg bg-gray-50 p-3 text-xs text-gray-700 dark:bg-gray-900 dark:text-gray-300">{bundle.composed.main_text}</pre>
+                    <pre className="whitespace-pre-wrap rounded-lg bg-muted p-3 text-xs text-foreground">{bundle.composed.main_text}</pre>
                     {bundle.composed.replies.map((r, i) => (
-                      <pre key={i} className="whitespace-pre-wrap rounded-lg bg-gray-50 p-3 text-xs text-gray-700 dark:bg-gray-900 dark:text-gray-300">↳ {r.text}</pre>
+                      <pre key={i} className="whitespace-pre-wrap rounded-lg bg-muted p-3 text-xs text-foreground">↳ {r.text}</pre>
                     ))}
-                    <p className="text-xs text-gray-400">註：以上為目前存檔內容組出的貼文；編輯後請先儲存再看預覽。</p>
+                    <p className="text-xs text-muted-foreground">註：以上為目前存檔內容組出的貼文；編輯後請先儲存再看預覽。</p>
                   </div>
                 )}
               </div>
@@ -351,9 +351,9 @@ export const AdminSocialPage: React.FC = () => {
 
 function Badge({ ok, icon, children }: { ok: boolean; icon: React.ReactNode; children: React.ReactNode }) {
   return (
-    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${
-      ok ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
-         : 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400'
+    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-2xs font-medium ${
+      ok ? 'bg-sentiment-bull-soft text-sentiment-bull'
+         : 'bg-muted text-muted-foreground'
     }`}>
       {icon}{children}
     </span>
@@ -362,7 +362,7 @@ function Badge({ ok, icon, children }: { ok: boolean; icon: React.ReactNode; chi
 
 function PostedPill({ children }: { children: React.ReactNode }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:bg-amber-500/20 dark:text-amber-300">
+    <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-2xs font-semibold text-primary">
       <Send className="h-3 w-3" />{children}
     </span>
   );

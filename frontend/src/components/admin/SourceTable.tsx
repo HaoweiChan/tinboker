@@ -108,28 +108,28 @@ export const SourceTable: React.FC<SourceTableProps> = ({
   if (loading && sources.length === 0) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
   if (sources.length === 0) {
     return (
-      <div className="flex h-64 items-center justify-center text-gray-500 dark:text-gray-400">
+      <div className="flex h-64 items-center justify-center text-muted-foreground">
         No sources found
       </div>
     );
   }
 
   const inputCls =
-    'w-full rounded border border-blue-500 bg-white px-2 py-1 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white';
+    'w-full rounded border border-accent-info bg-card px-2 py-1 text-base text-foreground focus:outline-none focus:ring-2 focus:ring-accent-info';
   const thCls =
-    'px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400';
+    'px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground';
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
-      <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-        <thead className="bg-gray-50 dark:bg-gray-800">
+    <div className="overflow-x-auto rounded-lg border border-border">
+      <table className="min-w-full divide-y divide-border">
+        <thead className="bg-muted">
           <tr>
             <th className={thCls}>Name</th>
             <th className={thCls}>Locale</th>
@@ -144,7 +144,7 @@ export const SourceTable: React.FC<SourceTableProps> = ({
             <th className={thCls}>Actions</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-gray-200 bg-white dark:divide-gray-700 dark:bg-gray-900">
+        <tbody className="divide-y divide-border bg-card">
           {sources.map((source) => {
             const isSaving = saving === source.id;
             const isDeleting = deleting === source.id;
@@ -153,7 +153,7 @@ export const SourceTable: React.FC<SourceTableProps> = ({
             const locale = source.source_type === 'news' ? source.region : source.language;
             const rs = runStatus?.get(source.name);
             return (
-              <tr key={source.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
+              <tr key={source.id} className="hover:bg-muted/50">
                 {/* Name */}
                 <td className="px-4 py-3">
                   {editingName ? (
@@ -169,7 +169,7 @@ export const SourceTable: React.FC<SourceTableProps> = ({
                   ) : (
                     <div
                       onClick={() => startEdit(source.id, 'name', source.name)}
-                      className="cursor-pointer rounded px-2 py-1 text-sm font-medium text-gray-900 hover:bg-gray-100 dark:text-white dark:hover:bg-gray-700"
+                      className="cursor-pointer rounded px-2 py-1 text-base font-medium text-foreground hover:bg-muted"
                     >
                       {isSaving && !editingCell ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
@@ -180,8 +180,8 @@ export const SourceTable: React.FC<SourceTableProps> = ({
                   )}
                 </td>
                 {/* Locale */}
-                <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600 dark:text-gray-300">
-                  {locale || <span className="italic text-gray-400">—</span>}
+                <td className="whitespace-nowrap px-4 py-3 text-base text-muted-foreground">
+                  {locale || <span className="italic text-muted-foreground/60">—</span>}
                 </td>
                 {/* Feed */}
                 <td className="px-4 py-3">
@@ -189,7 +189,7 @@ export const SourceTable: React.FC<SourceTableProps> = ({
                     href={source.feed_url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex max-w-xs items-center gap-1 truncate text-sm text-blue-600 hover:underline dark:text-blue-400"
+                    className="flex max-w-xs items-center gap-1 truncate text-base text-accent-info hover:underline"
                     title={source.feed_url}
                   >
                     <span className="truncate">{source.feed_url}</span>
@@ -212,7 +212,7 @@ export const SourceTable: React.FC<SourceTableProps> = ({
                   ) : (
                     <div
                       onClick={() => startEdit(source.id, 'lookback_days', source.lookback_days)}
-                      className="flex cursor-pointer items-baseline gap-1 rounded px-2 py-1 text-sm text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
+                      className="flex cursor-pointer items-baseline gap-1 rounded px-2 py-1 text-base text-muted-foreground hover:bg-muted"
                       title={
                         source.max_episodes != null
                           ? `Last ${source.lookback_days ?? '?'} days, capped at ${source.max_episodes} items/run`
@@ -222,26 +222,26 @@ export const SourceTable: React.FC<SourceTableProps> = ({
                       {source.lookback_days != null ? (
                         <span>{source.lookback_days}d</span>
                       ) : (
-                        <span className="italic text-gray-400">Click…</span>
+                        <span className="italic text-muted-foreground/60">Click…</span>
                       )}
                       {source.max_episodes != null && (
-                        <span className="text-xs text-gray-400">≤{source.max_episodes}</span>
+                        <span className="text-xs text-muted-foreground/60">≤{source.max_episodes}</span>
                       )}
                     </div>
                   )}
                 </td>
                 {/* Last episode ingested (Firestore-derived; podcasts only) */}
-                <td className="whitespace-nowrap px-4 py-3 text-sm">
+                <td className="whitespace-nowrap px-4 py-3 text-base">
                   {rs && rs.last_ingested_at ? (
                     <span
-                      className="text-gray-600 dark:text-gray-300"
+                      className="text-muted-foreground"
                       title={`${rs.episode_count} episode(s) · ${formatDateTime(rs.last_ingested_at)}`}
                     >
                       {timeAgo(rs.last_ingested_at)}
-                      <span className="ml-1 text-xs text-gray-400">· {rs.episode_count}</span>
+                      <span className="ml-1 text-xs text-muted-foreground/60">· {rs.episode_count}</span>
                     </span>
                   ) : (
-                    <span className="italic text-gray-400">—</span>
+                    <span className="italic text-muted-foreground/60">—</span>
                   )}
                 </td>
                 {/* Active toggle */}
@@ -252,12 +252,12 @@ export const SourceTable: React.FC<SourceTableProps> = ({
                     role="switch"
                     aria-checked={source.active}
                     className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors disabled:opacity-50 ${
-                      source.active ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'
+                      source.active ? 'bg-sentiment-bull' : 'bg-muted-foreground/40'
                     }`}
                     title={source.active ? 'Active — click to disable' : 'Inactive — click to enable'}
                   >
                     <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      className={`inline-block h-4 w-4 transform rounded-full bg-card transition-transform ${
                         source.active ? 'translate-x-6' : 'translate-x-1'
                       }`}
                     />
@@ -268,7 +268,7 @@ export const SourceTable: React.FC<SourceTableProps> = ({
                   <div className="flex items-center gap-1">
                     <button
                       onClick={() => onEdit(source)}
-                      className="rounded p-1 text-gray-400 hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-900/20"
+                      className="rounded p-1 text-muted-foreground hover:bg-accent-info-soft hover:text-accent-info"
                       title="Edit source"
                     >
                       <Pencil className="h-4 w-4" />
@@ -276,7 +276,7 @@ export const SourceTable: React.FC<SourceTableProps> = ({
                     <button
                       onClick={() => handleDelete(source.id)}
                       disabled={isDeleting}
-                      className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-50 dark:hover:bg-red-900/20"
+                      className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
                       title="Delete source"
                     >
                       {isDeleting ? (

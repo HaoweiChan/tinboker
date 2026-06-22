@@ -5,8 +5,8 @@ import { AppLogo } from '@/components/logo/AppLogo';
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="bg-card border border-border rounded-md p-5 sm:p-6">
-      <h2 className="text-[16px] font-semibold tracking-[-0.01em] mb-4">{title}</h2>
-      <div className="text-[14px] leading-[1.65] text-muted-foreground space-y-4">{children}</div>
+      <h2 className="text-lg font-semibold tracking-[-0.01em] mb-4">{title}</h2>
+      <div className="text-base leading-[1.65] text-muted-foreground space-y-4">{children}</div>
     </section>
   );
 }
@@ -28,10 +28,10 @@ export const About: React.FC = () => (
     <SEO title="關於 TinBoker" description="TinBoker（聽播客）— 結合 Podcast 觀點與即時數據的財經平台。" />
     <PageContent className="max-w-3xl">
       <div className="flex items-center justify-center gap-2 mb-2 pt-4">
-        <span className="text-[22px] font-semibold tracking-[-0.02em]">關於</span>
+        <span className="text-2xl font-semibold tracking-[-0.02em]">關於</span>
         <AppLogo size={28} />
       </div>
-      <p className="text-center text-[14px] text-muted-foreground max-w-xl mx-auto mb-8 leading-[1.65]">
+      <p className="text-center text-base text-muted-foreground max-w-xl mx-auto mb-8 leading-[1.65]">
         TinBoker（聽播客）把財經 Podcast 的觀點結構化、和即時市場數據對照，幫你用更短的時間掌握重點。
       </p>
 
@@ -39,9 +39,9 @@ export const About: React.FC = () => (
         <Section title="核心功能">
           {FEATURES.map((f) => (
             <div key={f.n} className="grid grid-cols-[24px_1fr] gap-3">
-              <span className="font-mono text-[13px] text-muted-foreground pt-0.5 tabular-nums">{f.n}</span>
+              <span className="font-mono text-sm text-muted-foreground pt-0.5 tabular-nums">{f.n}</span>
               <div>
-                <h3 className="text-[14px] font-semibold text-foreground mb-1">{f.title}</h3>
+                <h3 className="text-base font-semibold text-foreground mb-1">{f.title}</h3>
                 <p>{f.body}</p>
               </div>
             </div>
@@ -61,14 +61,14 @@ export const About: React.FC = () => (
               </li>
             ))}
           </ul>
-          <p className="text-[12px] pt-4 border-t border-border">
+          <p className="text-xs pt-4 border-t border-border">
             <strong className="text-foreground">免責聲明：</strong>
             TinBoker 提供的資訊僅供參考和教育目的，不應視為投資建議。在做出投資決策前，請務必自行研究並諮詢合格的財務顧問。
           </p>
         </Section>
       </div>
 
-      <div className="text-center text-[11px] text-muted-foreground/50 tabular-nums mt-8 pb-4">
+      <div className="text-center text-2xs text-muted-foreground/50 tabular-nums mt-8 pb-4">
         {__APP_VERSION__}
       </div>
     </PageContent>

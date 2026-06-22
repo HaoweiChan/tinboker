@@ -29,15 +29,15 @@ export const GraphGallery: React.FC = () => {
       <SEO title="探索 · 互動模型" description="TinBoker 編輯室的互動式論點與知識圖譜。" />
       <PageContent>
         <div className="mb-7">
-          <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground mb-1.5">Interactive Models</p>
-          <h1 className="text-[24px] sm:text-[28px] font-semibold tracking-[-0.02em] leading-[1.25]">探索編輯室的互動式論點</h1>
-          <p className="text-[13px] text-muted-foreground mt-2 max-w-[60ch]">把產業關聯、供應鏈與所有權結構視覺化 — 點任一張卡片進入完整的互動圖譜。</p>
+          <p className="text-2xs uppercase tracking-[0.18em] text-muted-foreground mb-1.5">Interactive Models</p>
+          <h1 className="text-2xl sm:text-3xl font-semibold tracking-[-0.02em] leading-[1.25]">探索編輯室的互動式論點</h1>
+          <p className="text-sm text-muted-foreground mt-2 max-w-[60ch]">把產業關聯、供應鏈與所有權結構視覺化 — 點任一張卡片進入完整的互動圖譜。</p>
         </div>
 
         <div className="flex flex-col gap-3 mb-6">
           <label className="flex items-center gap-2 max-w-2xl bg-card border border-border rounded-full px-4 py-2.5">
             <Search size={15} className="text-muted-foreground shrink-0" />
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜尋互動模型…" className="flex-1 bg-transparent outline-none text-[13px]" />
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜尋互動模型…" className="flex-1 bg-transparent outline-none text-sm" />
           </label>
           <div className="flex flex-wrap gap-2">
             {categories.map((c) => (
@@ -72,7 +72,7 @@ export const GraphGallery: React.FC = () => {
             );
           })}
           {filtered.length === 0 && (
-            <div className={cn('bg-card border border-border rounded-md p-10 text-center text-[13px] text-muted-foreground', 'md:col-span-2')}>找不到符合「{q}」的模型。</div>
+            <div className={cn('bg-card border border-border rounded-md p-10 text-center text-sm text-muted-foreground', 'md:col-span-2')}>找不到符合「{q}」的模型。</div>
           )}
         </div>
       </PageContent>

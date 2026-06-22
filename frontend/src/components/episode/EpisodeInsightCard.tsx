@@ -18,25 +18,25 @@ interface EpisodeInsightCardProps {
 export const EpisodeInsightCard: React.FC<EpisodeInsightCardProps> = ({ insight, className }) => (
   <section
     aria-label="關鍵洞察"
-    className={cn('bg-card border border-border border-l-[3px] border-l-emerald-500 rounded-md p-3.5 sm:p-4 mb-3.5', className)}
+    className={cn('bg-card border border-border border-l-[3px] border-l-accent-info rounded-md p-3.5 sm:p-4 mb-3.5', className)}
   >
-    <div className="flex items-center gap-1.5 text-[11px] font-semibold tracking-[0.08em] uppercase text-muted-foreground mb-2">
-      <Lightbulb size={14} className="text-emerald-500" />
+    <div className="flex items-center gap-1.5 text-2xs font-semibold tracking-[0.08em] uppercase text-muted-foreground mb-2">
+      <Lightbulb size={14} className="text-accent-info" />
       <span>關鍵洞察</span>
     </div>
-    <h2 className="text-[16px] sm:text-[17px] font-semibold leading-[1.35] tracking-[-0.005em] mb-1.5">
+    <h2 className="text-lg sm:text-lg font-semibold leading-[1.35] tracking-[-0.005em] mb-1.5">
       <MentionText text={insight.headline} />
     </h2>
     {insight.thesis && (
-      <p className="text-[14px] leading-[1.65] text-muted-foreground">
+      <p className="text-base leading-[1.65] text-muted-foreground">
         <MentionText text={insight.thesis} />
       </p>
     )}
     {insight.highlights && insight.highlights.length > 0 && (
-      <ul className="mt-2.5 grid gap-1.5 text-[13px] leading-[1.55] text-muted-foreground">
+      <ul className="mt-2.5 grid gap-1.5 text-sm leading-[1.55] text-muted-foreground">
         {insight.highlights.slice(0, 2).map((item, index) => (
           <li key={index} className="grid grid-cols-[10px_1fr] gap-2">
-            <span className="mt-[7px] h-1.5 w-1.5 rounded-full bg-emerald-500/90" />
+            <span className="mt-[7px] h-1.5 w-1.5 rounded-full bg-accent-info" />
             <span>
               <MentionText text={item} />
             </span>
@@ -44,6 +44,6 @@ export const EpisodeInsightCard: React.FC<EpisodeInsightCardProps> = ({ insight,
         ))}
       </ul>
     )}
-    {insight.meta && <p className="mt-3 text-[12px] text-muted-foreground">{insight.meta}</p>}
+    {insight.meta && <p className="mt-3 text-xs text-muted-foreground">{insight.meta}</p>}
   </section>
 );

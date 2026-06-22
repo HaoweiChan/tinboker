@@ -75,7 +75,7 @@ export const EpisodeCardV2: React.FC<EpisodeCardV2Props> = ({
         ) : (
           <PodMark label={podcasterInitial} kind={highlight ? 'solid' : podcasterKind} size={28} />
         )}
-        <div className="min-w-0 flex-1 text-[13px] truncate">
+        <div className="min-w-0 flex-1 text-sm truncate">
           <span className="font-semibold text-foreground">{podcasterName}</span>
           <span className="text-muted-foreground ml-1.5">
             {episodeNumber ? `${episodeNumber} · ` : ''}
@@ -93,20 +93,20 @@ export const EpisodeCardV2: React.FC<EpisodeCardV2Props> = ({
       </div>
 
       {/* Title */}
-      <h3 className="text-[16px] font-medium leading-[1.35] tracking-[-0.005em] mb-2 text-foreground line-clamp-2">{title}</h3>
+      <h3 className="text-lg font-medium leading-[1.35] tracking-[-0.005em] mb-2 text-foreground line-clamp-2">{title}</h3>
 
       {/* Essence — precomputed key-insight bullets, else the plain teaser */}
       {keyInsights && keyInsights.length > 0 ? (
-        <ul className="grid gap-1 text-[13px] leading-[1.5] text-muted-foreground mb-3.5">
+        <ul className="grid gap-1 text-sm leading-[1.5] text-muted-foreground mb-3.5">
           {keyInsights.slice(0, 3).map((insight, i) => (
             <li key={i} className="grid grid-cols-[10px_1fr] gap-2">
-              <span className="mt-[7px] h-1.5 w-1.5 rounded-full bg-emerald-500/90 shrink-0" />
+              <span className="mt-[7px] h-1.5 w-1.5 rounded-full bg-accent-info shrink-0" />
               <span>{insight}</span>
             </li>
           ))}
         </ul>
       ) : (
-        summary && <p className="text-[13px] leading-[1.55] text-muted-foreground mb-3.5 line-clamp-2">{summary}</p>
+        summary && <p className="text-sm leading-[1.55] text-muted-foreground mb-3.5 line-clamp-2">{summary}</p>
       )}
 
       {/* Ticker rows */}
@@ -131,12 +131,12 @@ export const EpisodeCardV2: React.FC<EpisodeCardV2Props> = ({
                   e.stopPropagation();
                   onTagClick(tag);
                 }}
-                className="text-[11px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground hover:bg-accent-info-soft hover:text-accent-info transition-colors"
+                className="text-2xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground hover:bg-accent-info-soft hover:text-accent-info transition-colors"
               >
                 #{tagLabelFor(tag, tagLabels)}
               </button>
             ) : (
-              <span key={tag} className="text-[11px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+              <span key={tag} className="text-2xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
                 #{tagLabelFor(tag, tagLabels)}
               </span>
             ),
@@ -146,12 +146,12 @@ export const EpisodeCardV2: React.FC<EpisodeCardV2Props> = ({
 
       {/* Footer — only when there's something to show */}
       {(durationMinutes != null || commentCount != null || isNew) && (
-        <div className="flex items-center gap-2.5 pt-2.5 border-t border-border text-[12px] text-muted-foreground">
+        <div className="flex items-center gap-2.5 pt-2.5 border-t border-border text-xs text-muted-foreground">
           {durationMinutes != null && <span>{durationMinutes} 分鐘</span>}
           {durationMinutes != null && commentCount != null && <span aria-hidden>·</span>}
           {commentCount != null && <span>{commentCount} 則討論</span>}
           {isNew && (
-            <span className="ml-auto inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-[0.06em] bg-accent-info-soft text-accent-info">
+            <span className="ml-auto inline-flex items-center px-2 py-0.5 rounded-full text-2xs font-semibold uppercase tracking-[0.06em] bg-accent-info-soft text-accent-info">
               NEW
             </span>
           )}

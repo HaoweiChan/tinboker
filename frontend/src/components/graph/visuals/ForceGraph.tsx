@@ -208,7 +208,7 @@ const ForceGraphInner: React.FC<ForceGraphProps> = ({ isWidget = false, data, ti
            <Panel position="top-left" className="flex flex-col gap-3">
              {/* Description Panel */}
              <div className="p-4 rounded-xl shadow-sm backdrop-blur-sm max-w-xs relative" style={sharedPanelStyle}>
-                <h2 className="text-lg font-bold mb-1" style={{ color: 'var(--color-foreground)' }}>{title || "Ecosystem Cluster"}</h2>
+                <h2 className="text-xl font-bold mb-1" style={{ color: 'var(--color-foreground)' }}>{title || "Ecosystem Cluster"}</h2>
                 <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>
                   {description || "Visualizing soft connections (Shared Board Members, Investors)."}
                 </p>
@@ -224,7 +224,7 @@ const ForceGraphInner: React.FC<ForceGraphProps> = ({ isWidget = false, data, ti
              {/* Controls Panel */}
             <div className="p-3 rounded-xl shadow-sm backdrop-blur-sm w-48" style={sharedPanelStyle}>
                 <div className="mb-3">
-                    <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Display Mode</h3>
+                    <h3 className="text-2xs font-bold text-slate-400 uppercase tracking-wider mb-2">Display Mode</h3>
                     <div className="flex flex-col gap-1">
                         <GraphControlToggle
                           label="Price Chart"
@@ -249,7 +249,7 @@ const ForceGraphInner: React.FC<ForceGraphProps> = ({ isWidget = false, data, ti
 
                 {(displayMode !== DisplayMode.PRICE) && (
                     <div>
-                        <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Node Style</h3>
+                        <h3 className="text-2xs font-bold text-slate-400 uppercase tracking-wider mb-2">Node Style</h3>
                         <div className="flex flex-col gap-1">
                             <GraphControlToggle
                               label="Ghost"

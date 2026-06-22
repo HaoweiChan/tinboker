@@ -253,7 +253,7 @@ export const StockNodePopover: React.FC<StockNodePopoverProps> = ({
         paddingClass: 'p-3',
         gridColumns: 'grid-cols-1 gap-2',
         priceClass: 'text-xl',
-        metricValueClass: 'text-sm',
+        metricValueClass: 'text-base',
       };
     }
     return {
@@ -262,7 +262,7 @@ export const StockNodePopover: React.FC<StockNodePopoverProps> = ({
       paddingClass: 'p-4',
       gridColumns: 'grid-cols-2 gap-3',
       priceClass: 'text-2xl',
-      metricValueClass: 'text-sm',
+      metricValueClass: 'text-base',
     };
   }, [variant]);
 
@@ -317,7 +317,7 @@ export const StockNodePopover: React.FC<StockNodePopoverProps> = ({
     >
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.35em] text-slate-400 dark:text-slate-500">
+          <p className="text-2xs font-semibold uppercase tracking-[0.35em] text-slate-400 dark:text-slate-500">
             {popoverData.subtitle ? `${popoverData.subtitle} 概覽` : '股票概覽'}
           </p>
           {(() => {
@@ -327,15 +327,15 @@ export const StockNodePopover: React.FC<StockNodePopoverProps> = ({
             });
             return (
               <>
-                <p className="mt-1 text-lg font-semibold leading-tight">{primary}</p>
+                <p className="mt-1 text-xl font-semibold leading-tight">{primary}</p>
                 {secondary && (
-                  <p className="text-sm font-mono text-slate-500 dark:text-slate-400">{secondary}</p>
+                  <p className="text-base font-mono text-slate-500 dark:text-slate-400">{secondary}</p>
                 )}
               </>
             );
           })()}
         </div>
-        <span className={`px-2 py-0.5 text-[11px] font-semibold rounded-full ${statusToken.className}`}>
+        <span className={`px-2 py-0.5 text-2xs font-semibold rounded-full ${statusToken.className}`}>
           {statusToken.label}
         </span>
         <button
@@ -356,7 +356,7 @@ export const StockNodePopover: React.FC<StockNodePopoverProps> = ({
         <div className="text-right">
           <p className="text-xs uppercase tracking-wider text-slate-400 dark:text-slate-500">漲跌</p>
           <p
-            className={`inline-flex items-center gap-1 text-base font-semibold ${
+            className={`inline-flex items-center gap-1 text-lg font-semibold ${
               typeof popoverData.changePct === 'number' && popoverData.changePct < 0 ? 'text-rose-500' : 'text-emerald-500'
             }`}
           >
@@ -374,7 +374,7 @@ export const StockNodePopover: React.FC<StockNodePopoverProps> = ({
               isDark ? 'border-slate-700 bg-slate-800/60' : 'border-slate-100 bg-slate-50'
             }`}
           >
-            <p className="text-[10px] uppercase tracking-wider text-slate-400 dark:text-slate-500">{metric.label}</p>
+            <p className="text-2xs uppercase tracking-wider text-slate-400 dark:text-slate-500">{metric.label}</p>
             <p className={`${metricValueClass} font-semibold`}>{metric.value}</p>
           </div>
         ))}
@@ -384,7 +384,7 @@ export const StockNodePopover: React.FC<StockNodePopoverProps> = ({
         <button
           type="button"
           onClick={handleNavigate}
-          className={`rounded-xl px-4 py-2 text-sm font-semibold transition-all inline-flex items-center gap-2 ${
+          className={`rounded-xl px-4 py-2 text-base font-semibold transition-all inline-flex items-center gap-2 ${
             isDark ? 'bg-indigo-500/20 text-indigo-200 hover:bg-indigo-500/30' : 'bg-indigo-600 text-slate-50 hover:bg-indigo-700'
           }`}
         >

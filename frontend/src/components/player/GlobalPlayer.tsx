@@ -119,7 +119,7 @@ export const GlobalPlayer: React.FC = () => {
                         <div className="px-2 py-3 border-b border-border overflow-y-auto max-h-[280px] no-scrollbar">
                             <div className="flex items-center gap-2 mb-3 px-2">
                                 <Clock size={14} className="text-muted-foreground" />
-                                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.08em]">
+                                <span className="text-2xs font-semibold text-muted-foreground uppercase tracking-[0.08em]">
                                     章節
                                 </span>
                             </div>
@@ -149,7 +149,7 @@ export const GlobalPlayer: React.FC = () => {
                                                 </span>
                                                 <div className="flex-1 min-w-0">
                                                     <span className={cn(
-                                                        "block text-[13px] leading-relaxed",
+                                                        "block text-sm leading-relaxed",
                                                         isActive
                                                             ? "text-accent-info font-semibold"
                                                             : "text-foreground/80"
@@ -165,7 +165,7 @@ export const GlobalPlayer: React.FC = () => {
                                     })}
                                 </div>
                             ) : (
-                                <div className="text-[13px] text-muted-foreground text-center py-4">
+                                <div className="text-sm text-muted-foreground text-center py-4">
                                     此節目無章節資訊
                                 </div>
                             )}
@@ -183,7 +183,7 @@ export const GlobalPlayer: React.FC = () => {
                                     title="倒退 15 秒"
                                 >
                                     <RotateCcw size={26} strokeWidth={1.2} className="opacity-80" />
-                                    <span className="absolute text-[10px] font-bold">15</span>
+                                    <span className="absolute text-2xs font-bold">15</span>
                                 </button>
                                 <button
                                     onClick={handlePlayPause}
@@ -198,7 +198,7 @@ export const GlobalPlayer: React.FC = () => {
                                     title="快進 15 秒"
                                 >
                                     <RotateCw size={26} strokeWidth={1.2} className="opacity-80" />
-                                    <span className="absolute text-[10px] font-bold">15</span>
+                                    <span className="absolute text-2xs font-bold">15</span>
                                 </button>
                             </div>
 
@@ -206,14 +206,14 @@ export const GlobalPlayer: React.FC = () => {
                             <div className="flex-1 min-w-0">
                                 <div className="flex items-center justify-between mb-1">
                                     <div className="flex items-center gap-2 min-w-0 flex-1">
-                                        <span className="text-[13px] font-semibold truncate text-foreground">
+                                        <span className="text-sm font-semibold truncate text-foreground">
                                             {player.currentEpisodeData.title}
                                         </span>
-                                        <span className="text-[12px] text-muted-foreground truncate hidden sm:inline">
+                                        <span className="text-xs text-muted-foreground truncate hidden sm:inline">
                                             · {player.currentEpisodeData.showName}
                                         </span>
                                         {currentSection && (
-                                            <span className="text-[12px] truncate hidden md:inline-flex items-center gap-1.5 text-accent-info">
+                                            <span className="text-xs truncate hidden md:inline-flex items-center gap-1.5 text-accent-info">
                                                 <span className="w-1 h-1 rounded-full bg-muted-foreground/50" />
                                                 {currentSection.title}
                                             </span>
@@ -249,7 +249,7 @@ export const GlobalPlayer: React.FC = () => {
 
                                 {/* Progress Bar with Section Markers */}
                                 <div className="flex items-center gap-2">
-                                    <span className="text-[10px] font-mono text-muted-foreground tabular-nums w-9 text-right">
+                                    <span className="text-2xs font-mono text-muted-foreground tabular-nums w-9 text-right">
                                         {formatTime(playbackState.position)}
                                     </span>
                                     <div
@@ -281,7 +281,7 @@ export const GlobalPlayer: React.FC = () => {
                                                     }}
                                                 >
                                                     {hoveredSection === index && (
-                                                        <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-foreground text-background text-[11px] px-3 py-1.5 rounded-md shadow-xl whitespace-nowrap pointer-events-none z-50 animate-in fade-in slide-in-from-bottom-1 duration-150 max-w-[200px] truncate font-medium">
+                                                        <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-foreground text-background text-2xs px-3 py-1.5 rounded-md shadow-xl whitespace-nowrap pointer-events-none z-50 animate-in fade-in slide-in-from-bottom-1 duration-150 max-w-[200px] truncate font-medium">
                                                             {section.title}
                                                         </div>
                                                     )}
@@ -290,7 +290,7 @@ export const GlobalPlayer: React.FC = () => {
                                         })}
                                         <div className="absolute inset-0 bg-accent-info/20 opacity-0 group-hover:opacity-100 transition-opacity rounded-full" />
                                     </div>
-                                    <span className="text-[10px] font-mono text-muted-foreground tabular-nums w-9">
+                                    <span className="text-2xs font-mono text-muted-foreground tabular-nums w-9">
                                         {formatTime(playbackState.duration)}
                                     </span>
                                 </div>

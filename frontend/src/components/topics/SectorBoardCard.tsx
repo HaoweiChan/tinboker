@@ -4,6 +4,7 @@ import { useStockTrendColor } from '@/hooks/useStockTrendColor';
 import { SimpleSparkline } from '@/components/charts/SimpleSparkline';
 import { SectorIcon } from './SectorIcon';
 import { ChangePct } from './ChangePct';
+import { StockIdentity } from '@/components/common/StockIdentity';
 import type { SectorBoardItem, SectorBoardMember } from '@/services/api/podcasts';
 
 // ── MemberRow ──────────────────────────────────────────────────────────────
@@ -21,21 +22,20 @@ const MemberRow: React.FC<MemberRowProps> = ({ member }) => {
   return (
     <Link
       to={`/stock/${encodeURIComponent(member.ticker)}`}
-      className="group/row flex items-center gap-3 py-2 first:pt-0 last:pb-0 -mx-1 px-1 rounded
+      className="group/row flex items-center gap-3 py-2.5 first:pt-0 last:pb-0 -mx-1 px-1 rounded
                  transition-colors hover:bg-muted/40"
     >
-      {/* Ticker */}
-      <span className="font-mono text-[11px] text-muted-foreground tabular-nums min-w-[3.5rem] shrink-0 leading-none group-hover/row:text-accent-info transition-colors">
-        {member.ticker.replace(/\.[A-Z]+$/i, '')}
-      </span>
-
-      {/* Name */}
-      <span className="text-[11px] text-foreground/80 truncate flex-1 min-w-0 leading-none">
-        {member.name}
-      </span>
+      {/* Stock identity — canonical CODE + NAME (same colour, same size) */}
+      <StockIdentity
+        ticker={member.ticker}
+        name={member.name}
+        size="sm"
+        codeClassName="group-hover/row:text-accent-info transition-colors"
+        className="flex-1 gap-2 leading-tight"
+      />
 
       {/* Sparkline slot — muted thin trajectory; skeleton when no series */}
-      <div className="shrink-0 w-[44px] h-[18px] flex items-center">
+      <div className="shrink-0 w-[52px] h-[22px] flex items-center">
         {hasSeries ? (
           <SimpleSparkline
             data={member.series}
@@ -43,8 +43,8 @@ const MemberRow: React.FC<MemberRowProps> = ({ member }) => {
             color={hasChange ? trend.lineColor : undefined}
             strokeWidth={1.2}
             fill={false}
-            width={44}
-            height={18}
+            width={52}
+            height={22}
             className="opacity-60"
           />
         ) : (
@@ -53,10 +53,10 @@ const MemberRow: React.FC<MemberRowProps> = ({ member }) => {
       </div>
 
       {/* Change % slot — skeleton when null */}
-      <div className="shrink-0 w-[3.8rem] flex justify-end">
+      <div className="shrink-0 w-[4.25rem] flex justify-end">
         <ChangePct
           value={member.change_percent}
-          sizeClass="text-[11px]"
+          sizeClass="text-sm"
           skeleton
         />
       </div>
@@ -107,11 +107,11 @@ export const SectorBoardCard: React.FC<SectorBoardCardProps> = ({ sector }) => {
               size={13}
               variant="chip"
             />
-            <span className="text-[10px] font-medium text-muted-foreground bg-muted/60 px-1.5 py-0.5 rounded leading-none shrink-0">
+            <span className="text-2xs font-medium text-muted-foreground bg-muted/60 px-1.5 py-0.5 rounded leading-none shrink-0">
               {typeLabel}
             </span>
           </div>
-          <span className="text-[14px] font-semibold tracking-[-0.01em] group-hover:text-foreground/80 transition-colors leading-snug block">
+          <span className="text-lg font-semibold tracking-[-0.01em] group-hover:text-foreground/80 transition-colors leading-snug block">
             {sector.display_name}
           </span>
         </div>
@@ -120,11 +120,11 @@ export const SectorBoardCard: React.FC<SectorBoardCardProps> = ({ sector }) => {
         <div className="shrink-0 flex flex-col items-end gap-1 pt-0.5">
           <ChangePct
             value={sector.avg_change}
-            sizeClass="text-[15px]"
+            sizeClass="text-xl"
             showArrow
             skeleton={false}
           />
-          <span className="text-[10px] text-muted-foreground font-mono tabular-nums">
+          <span className="text-2xs text-muted-foreground font-mono tabular-nums">
             {sector.episode_count} 集
           </span>
         </div>
