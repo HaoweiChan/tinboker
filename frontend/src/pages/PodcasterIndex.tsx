@@ -90,8 +90,10 @@ export const PodcasterIndex: React.FC = () => {
                 </div>
                 {p.popularity_rank != null && (
                   <div
-                    className={`shrink-0 self-start font-mono tabular-nums text-[11px] leading-none px-1.5 py-1 rounded border ${
-                      p.popularity_rank <= 3 ? 'border-accent/40 text-accent' : 'border-border text-muted-foreground'
+                    className={`shrink-0 font-mono tabular-nums font-medium text-sm leading-none px-2 py-1 rounded border ${
+                      p.popularity_rank <= 3
+                        ? 'border-primary/50 text-primary bg-primary/10'
+                        : 'border-border text-muted-foreground'
                     }`}
                     title="Apple Podcasts 台灣財經排行榜名次"
                   >
