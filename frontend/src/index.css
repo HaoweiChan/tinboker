@@ -372,7 +372,11 @@
      [stock identity (StockIdentity) | sentiment chip | price change %]. */
   .ticker-row {
     @apply grid items-center gap-2.5 px-2.5 py-2 rounded-md;
-    grid-template-columns: minmax(0, 1fr) auto auto;
+    /* fixed identity | flexible sentiment capsule | auto price (right-aligned).
+       Identity is fixed-width so the capsules share one left edge; the capsule flexes
+       to fill the row and extends right toward the price (or the em-dash when there's
+       no price), instead of stopping mid-row as a floating fixed-width box. */
+    grid-template-columns: 7.5rem minmax(0, 1fr) auto;
     background-color: hsl(var(--muted) / 0.6);
   }
 
