@@ -2,7 +2,6 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowUpRight, ArrowDownRight } from 'lucide-react';
 import { useStockTrendColor } from '@/hooks/useStockTrendColor';
-import { SimpleSparkline } from '@/components/charts/SimpleSparkline';
 import { SectorIcon } from './SectorIcon';
 import type { SectorBoardItem } from '@/services/api/podcasts';
 
@@ -22,21 +21,9 @@ export const SectorHeroCard: React.FC<SectorHeroCardProps> = ({ sector }) => {
   const isPositive = (sector.avg_change ?? 0) >= 0;
   const Arrow = isPositive ? ArrowUpRight : ArrowDownRight;
 
-  // Soft ambient glow: a large-radius, low-opacity (~10–16%) wash so the trend color
-  // bleeds out as mist rather than reading as a hard neon outline. Paired with a faint
-  // base elevation shadow so the card still lifts off the page when change is flat.
-  const magnitude = Math.min(Math.abs(sector.avg_change ?? 0), 10);
-  const glowBlur = Math.round(24 + (magnitude / 10) * 12); // 24–36px radius
-  const glowAlpha = 0.1 + (magnitude / 10) * 0.06;          // 0.10–0.16 opacity
-  const alphaHex = Math.round(glowAlpha * 255).toString(16).padStart(2, '0');
-  const baseShadow = '0 1px 3px rgba(0,0,0,0.22)';
-  const glowStyle = {
-    boxShadow: hasChange
-      ? `${baseShadow}, 0 0 ${glowBlur}px 0 ${trend.lineColor}${alphaHex}`
-      : baseShadow,
-  };
-
-  const series = sector.series && sector.series.length > 1 ? sector.series : undefined;
+  // ponytail: outer glow removed — box-shadow ignores overflow-hidden, so the per-card
+  // wash bled across the strip into neighbouring cards. Plain base elevation only.
+  const glowStyle = { boxShadow: '0 1px 3px rgba(0,0,0,0.22)' };
 
   return (
     <Link
@@ -45,23 +32,6 @@ export const SectorHeroCard: React.FC<SectorHeroCardProps> = ({ sector }) => {
                  border border-border dark:border-white/[0.08] hover:border-border/80 dark:hover:border-white/[0.14] transition-all duration-300"
       style={glowStyle}
     >
-      {/* Full-bleed background sparkline for depth */}
-      {series && (
-        <div className="absolute inset-0 pointer-events-none opacity-[0.1]">
-          <SimpleSparkline
-            data={series}
-            isPositive={isPositive}
-            color={trend.lineColor}
-            smooth
-            strokeWidth={1.5}
-            width={200}
-            height={80}
-            className="w-full h-full"
-          />
-        </div>
-      )}
-
-      {/* Content sits above the sparkline */}
       <div className="relative z-10">
         {/* Top row: icon + type badge */}
         <div className="flex items-center gap-1.5 mb-3">
