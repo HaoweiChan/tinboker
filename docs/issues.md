@@ -1,100 +1,67 @@
 # TinBoker Issues & Status
 
-Last updated: 2026-05-24
+The **canonical, curated issue list** for the platform. This replaces the old dated QA
+snapshot (`qa-report-2026-05-09.md`, removed). Bug IDs (`BUG-N`) are retained as stable labels
+that other docs cite — when you resolve one, move it to **Resolved** with a date + commit SHA
+rather than deleting it.
+
+Last updated: 2026-06-22
 
 ---
 
-## Fixed in This Session
+## Open issues
 
-### Zod schema validation crashes (was BUG-5)
-**Files:** `frontend/src/validation/schemas.ts`, `frontend/src/services/api/news.ts`
-
-The Zod schemas used for API response validation were too strict, causing hard throws that could
-crash entire data-fetching flows when the backend returned unexpected-but-harmless values.
-
-**Changes made:**
-- `GraphNodeDataSchema.marketCapTier`: narrow enum → `.catch(undefined)` — unexpected values now
-  silently map to `undefined` instead of throwing. Prevents `getGraphById` from crashing on nodes
-  with non-standard tier values.
-- `GraphEdgeDataSchema.category`: same treatment as above.
-- `CompanyStatsSchema` (volume, beta, volatility): added `.catch(0)` — missing or null stats fields
-  default to 0 instead of breaking stock page validation.
-- `CompanyDetailSchema` (price, change, changePercent, marketCap, about): added `.catch(defaultValue)`
-  — prevents hard crashes when fields are null/missing in API response.
-- `InteractiveModelDataSchema.graphType`: added `.catch('force')` — unknown graph type now defaults
-  to force layout instead of throwing.
-- `getSortedNews` in `news.ts`: changed `Array.map(parseResponse)` → `reduce` with `safeParse` —
-  individual invalid news items are now silently filtered out instead of crashing the whole fetch.
-
----
-
-## Already Fixed (Pre-Existing Fixes Confirmed)
-
-### BUG-1: Search index never built
-**Status: FIXED** — `main.py:68` calls `await init_search_index()` inside the `lifespan`
-context manager (correct pattern, not deprecated `@app.on_event("startup")`).
-
-### BUG-4: Backend CI never blocks PRs
-**Status: FIXED** — `.github/workflows/backend-ci.yml` has no `continue-on-error: true`.
-It uses a proper `ci-gate` aggregation job (job 4) that fails if `test` or `lint` jobs fail.
-
-### BUG-9: CORS origins include old domain trendbrief.xyz
-**Status: FIXED** — `backend/src/config.py` CORS origins list no longer contains
-`trendbrief.xyz`. Only current domains are present.
-
-### BUG-10: Recommendations endpoint 404
-**Status: RESOLVED** — The deprecated `/api/recommendations/by-ticker/`,
-`/api/recommendations/by-podcaster/`, and `/api/recommendations/buzz` endpoints still exist
-in `backend/src/routers/recommendations.py` and return data (logged as deprecated). Active
-frontend code in `StockDashboard.tsx` already uses the new `/api/ticker-insights/` endpoints
-(`getInsightsByTicker`). The frontend compatibility wrapper was removed; only the backend
-deprecated route aliases remain for one release.
-
-### BUG-7: Stock key statistics fabricated
-**Status: RESOLVED** — `StockDashboard.tsx` now derives key stats (open, high, low, volume)
-from the last chart data point returned by the API (`latest?.open`, `latest?.high`, etc.)
-and falls back to `—` when data is unavailable. Market cap and P/E come from the validated
-API response.
-
----
-
-## Open Issues (Require Backend Work)
-
-### BUG-2: Industry heatmap / analysis page uses stub data
-**Severity:** Medium (page is functional but shows static demo data)
-**File:** `frontend/src/pages/IndustryAnalysis.tsx`, `frontend/src/services/mocks/sectorData.ts`
+### BUG-2 — Industry analysis page uses stub data
+**Severity:** Medium · **Files:** [`frontend/src/pages/IndustryAnalysis.tsx`](../frontend/src/pages/IndustryAnalysis.tsx), [`frontend/src/components/industry/TreeMap.tsx`](../frontend/src/components/industry/TreeMap.tsx), [`frontend/src/services/mocks/sectorData.ts`](../frontend/src/services/mocks/sectorData.ts)
 
 The industry analysis page (S&P 500 treemap, sector bubbles, rotation chart) reads entirely
-from hardcoded mock data in `sectorData.ts`. No backend API endpoint for sector/market data
-exists (`backend/src/routers/` has no sector router).
+from hardcoded mock data in `sectorData.ts`. There is no backend sector/market endpoint
+(`backend/src/routers/` has no sector router). The page is **not in the primary nav** (removed in
+`3e95c67`) and is only reachable by direct URL, so it is low-impact — but it must be wired to a
+real data source before it re-enters the nav.
 
-**To fix:** Implement a `/api/sector/treemap` and `/api/sector/performance` backend endpoint
-(or integrate a third-party data source like FinViz, Polygon, or Massive), then wire up
-`IndustryAnalysis.tsx` to call it with `fetchWithFallback`.
+**To fix:** add a `/api/sector/*` backend endpoint (or integrate a third-party feed such as
+FinViz / Polygon / Massive), then point `IndustryAnalysis.tsx` at it via `fetchWithFallback`.
 
-### BUG-3: 18/51 unit tests failing
-**Severity:** Critical (CI quality gate is only as good as the tests)
-**File:** `backend/tests/unit/test_graph_service.py` and others
+### GraphGallery → EpisodeDetail dead links
+**Severity:** Low · **Files:** [`frontend/src/pages/GraphGallery.tsx`](../frontend/src/pages/GraphGallery.tsx), `EpisodeDetail`
 
-Backend unit tests have failures. Run `cd backend && pytest tests/unit/ -v` to see current
-failures. Until these are fixed, the CI gate gives false confidence.
+Clicking a graph card in `/story` navigates to `/episode/{model-id}` (e.g. `/episode/supply-chain`).
+Those are static interactive-model IDs, not real episode IDs, so EpisodeDetail shows
+"找不到這集摘要。". This is intentional (the graph models are demo content) but a dedicated
+`/story/:id` detail route would be cleaner.
 
 ---
 
-## Architectural Notes
+## Resolved
+
+| ID | Issue | Resolution |
+|----|-------|------------|
+| BUG-1 | Search/suggestion index never built (`@router.on_event` no-ops) | Built from the app `lifespan` in `main.py` (`await init_search_index()`) |
+| BUG-3 | Backend unit tests failing | `pytest tests/unit/` is green (209 tests, 0 failed as of 2026-06-22) |
+| BUG-4 | Backend CI never blocks PRs | `backend-ci.yml` uses a `ci-gate` aggregation job; no `continue-on-error` |
+| BUG-5 | Zod schema validation crashes data fetches | `schemas.ts` uses `.catch(...)` fallbacks; `news.ts` filters invalid items via `safeParse` |
+| BUG-7 | Stock "Key Statistics" fabricated (Open = price×0.98, P/E = 15.4) | `StockDashboard.tsx` derives stats from real OHLC chart data, falls back to `—` |
+| BUG-9 | CORS origins included dead domain `trendbrief.xyz` | `config.py` CORS list is current domains only |
+| BUG-10 | Recommendations endpoint 404 | Frontend uses `/api/ticker-insights/*`; legacy `/api/recommendations/*` kept as deprecated aliases |
+
+---
+
+## Architectural notes
 
 ### Deprecated recommendation paths
-`/api/recommendations/*` routes are soft-deprecated as of 2026-05-14 per spec § 4.4.
-Frontend code uses `/api/ticker-insights/*` through `getInsightsByTicker`,
-`getInsightsByPodcaster`, and `getTrendingTickers`. Remove the backend deprecated aliases
-once the one-release compatibility window closes.
+`/api/recommendations/*` ([`backend/src/routers/recommendations.py`](../backend/src/routers/recommendations.py))
+are soft-deprecated (as of 2026-05-14, `deprecated=True`). The frontend reads
+`/api/ticker-insights/*` via `getInsightsByTicker`, `getInsightsByPodcaster`, and
+`getTrendingTickers`. Remove the legacy aliases once the compatibility window closes.
 
-### Industry page
-`/industry` is not in the primary nav (`3e95c67` removed it). The page is live but
-unreachable without a direct URL. If the page re-enters nav, connect it to real data first.
+### Industry page is not in nav
+`/industry` is live but unlinked from the primary nav. If it re-enters the nav, connect it to
+real data first (see BUG-2).
 
-### GraphGallery → EpisodeDetail navigation
-Clicking a graph card in `/story` navigates to `/episode/{model-id}` (e.g.
-`/episode/supply-chain`). These are static interactive-model IDs, not real episode IDs.
-EpisodeDetail shows "找不到這集摘要。" for these URLs. This is intentional (the graph
-models are demo content) but could be improved with a dedicated `/story/:id` detail route.
+---
+
+## Reproducing & regression-testing
+
+The per-bug repro recipes and the full QA suite live in
+[`workflows/qa-flow.md`](workflows/qa-flow.md) and [`agents/qa-tester.md`](agents/qa-tester.md).

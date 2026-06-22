@@ -43,7 +43,7 @@ Boundaries: the underlying episode/stock data lives in [`podcast-domain.md`](./p
 
 ## Common pitfalls
 
-- **BUG-1 (critical, historical):** The suggestion index was built via `@router.on_event("startup")` in [`backend/src/routers/search.py`](../../backend/src/routers/search.py) — but `on_event` only fires on the FastAPI `app`, not on routers. Build the index from the app's `lifespan` context in [`backend/src/main.py`](../../backend/src/main.py), or call the builder there explicitly. See [`../qa-report-2026-05-09.md`](../qa-report-2026-05-09.md) BUG-1 for the full root cause.
+- **BUG-1 (critical, historical):** The suggestion index was built via `@router.on_event("startup")` in [`backend/src/routers/search.py`](../../backend/src/routers/search.py) — but `on_event` only fires on the FastAPI `app`, not on routers. Build the index from the app's `lifespan` context in [`backend/src/main.py`](../../backend/src/main.py), or call the builder there explicitly. See [`../issues.md`](../issues.md) BUG-1 for the full root cause.
 - **`asyncio.create_task(build_search_index())` inside `/suggest` is a race condition** — it doesn't block the response, so the first few requests see an empty index. Don't rely on this as a fallback.
 - **Suggestion responses must be fast.** If a query starts taking > 200ms, the index has likely been rebuilt incorrectly or a downstream service is being hit per-request. Re-check that everything is in memory.
 - **Trending data must not be mocked.** Earlier versions returned hardcoded values; the spec requires real platform data from `episodes.related_tickers` (stocks) and the Redis click sorted set (channels).
@@ -59,4 +59,4 @@ Boundaries: the underlying episode/stock data lives in [`podcast-domain.md`](./p
 - Workflow for QA on broken search: [`../workflows/qa-flow.md`](../workflows/qa-flow.md) §2.2
 - Backend code style: [`../../backend/AGENTS.md`](../../backend/AGENTS.md)
 - Frontend zh-TW conventions: [`../../frontend/AGENTS.md`](../../frontend/AGENTS.md)
-- Bugs: BUG-1 (search broken) in [`../qa-report-2026-05-09.md`](../qa-report-2026-05-09.md)
+- Bugs: BUG-1 (search broken) in [`../issues.md`](../issues.md)

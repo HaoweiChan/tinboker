@@ -52,7 +52,7 @@ that consolidated the former `tinboker-platform` (web UI + API) and `tinboker-ag
 
 **Operational reference:**
 - `docs/infra-runbook.md` — VPS, Caddy, GCP, Cloudflare, Docker, env vars (live ops)
-- `docs/qa-report-2026-05-09.md` — dated bug catalog (BUG-1..15 + INFRA-1..4); **historical** — several entries are since fixed, verify before relying on specific claims
+- `docs/issues.md` — the canonical, curated issue list (open issues + resolved log + architectural notes). Verify a bug still reproduces against current code before acting on it.
 
 **Code style / conventions (unchanged):**
 - `backend/AGENTS.md` — Python style, key file map
@@ -260,12 +260,10 @@ merges; run `git worktree prune` periodically (stale worktrees accumulate).
 
 ## Known Issues — check before relying
 
-The dated bug catalog in [`docs/qa-report-2026-05-09.md`](docs/qa-report-2026-05-09.md)
-(BUG-1..15 + INFRA-1..4) predates the v0.1.0 production launch. **Several entries are since
-fixed** (e.g. the `continue-on-error` CI gate and the `trendbrief.xyz` CORS origin are
-resolved), so treat that report as **historical** — verify a bug still reproduces against the
-current code before acting on it. The live, curated issue list is [`docs/issues.md`](docs/issues.md).
-When you do need to reproduce or regression-test, follow [`docs/agents/qa-tester.md`](docs/agents/qa-tester.md)
+The live, curated issue list is [`docs/issues.md`](docs/issues.md) — open issues, a resolved log
+(stable `BUG-N` labels), and architectural notes. Most of the original launch-era bugs are
+resolved; **always verify a bug still reproduces against current code before acting on it.**
+When you need to reproduce or regression-test, follow [`docs/agents/qa-tester.md`](docs/agents/qa-tester.md)
 and the procedural overlay in [`docs/workflows/qa-flow.md`](docs/workflows/qa-flow.md).
 
 ---
@@ -308,7 +306,7 @@ POSTGRES_HOST=34.14.119.47
 CORS_ORIGINS=http://localhost:5173,https://tinboker.com,https://dev.tinboker.com,https://staging.tinboker.com
 # Release scoping (launch subset) — empty value disables a filter
 RELEASE_PODCAST_LANGUAGES=zh-TW    # only show content_sources podcasts in these languages ("" = all)
-RELEASE_EPISODE_MAX_AGE_DAYS=0     # hide episodes older than N days (0=off; flip to 30 after the released_at_ms backfill — see docs/handoffs/released-at-ms-publish-date.md)
+RELEASE_EPISODE_MAX_AGE_DAYS=0     # hide episodes older than N days (0=off; flip to 30 once released_at_ms is backfilled on existing episodes — see docs/firestore-contract.md § contract cleanups)
 ```
 
 ### Frontend (`.env.*` per environment)

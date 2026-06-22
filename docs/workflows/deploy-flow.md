@@ -85,7 +85,7 @@ Anything that writes (restart, pull, rebuild, file edit) goes through CI/CD or �
 
 ## Rollback
 
-There is no automated rollback (INFRA-3 in [`../qa-report-2026-05-09.md`](../qa-report-2026-05-09.md)). Before each prod deploy:
+There is no automated rollback. Before each prod deploy:
 
 1. Note the previous image tag: `ssh root@152.53.136.182 "docker inspect tinboker-backend-prod --format='{{.Config.Image}}'"`.
 2. If the new deploy is bad, manually roll back on the VPS:
@@ -106,7 +106,7 @@ Before opening or merging a `develop → main` PR:
 - [ ] No new `continue-on-error: true` anywhere in `.github/workflows/`
 - [ ] No new `time.sleep()` in async code (per [`CLAUDE.md`](../../CLAUDE.md) "Do Not")
 - [ ] No new `@app.on_event("startup")` — use the lifespan pattern
-- [ ] Search/heatmap/Zod regressions checked (BUG-1, BUG-2, BUG-5 in [`../qa-report-2026-05-09.md`](../qa-report-2026-05-09.md))
+- [ ] Search/heatmap/Zod regressions checked (BUG-1, BUG-2, BUG-5 in [`../issues.md`](../issues.md))
 - [ ] CORS still includes `tinboker.com`, `dev.tinboker.com`, `staging.tinboker.com` (BUG-9 history)
 
 ## Cross-references
