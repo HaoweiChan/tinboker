@@ -52,7 +52,7 @@ Boundaries: stock-data, search, and the knowledge-graph visualizations are **sep
 - **`spotify_release_date` is sometimes a number, sometimes a string.** Frontend type is `string | number | null`. Spec wants string `YYYY-MM-DD`; normalize defensively when parsing.
 - **Episode comments table schema and Comment Pydantic model can drift.** Recent commits (`e7f2348 fix(types): add missing Comment fields and CommentForm props to fix CI build`) point to this — add new fields to both `backend/src/database/comment_db.py` AND the model, plus the frontend `Comment` type, in the same change.
 - **Don't bypass `episode_transformer.py`.** It normalizes raw Firestore docs into the canonical `Episode` shape. Adding a new field requires updating the transformer plus the Pydantic model plus the frontend type.
-- **Two recommendation paths exist in parallel.** Legacy `/api/recommendations/*` (Postgres-backed, currently broken in prod per [`qa-report-2026-05-09.md`](../qa-report-2026-05-09.md) BUG-1 root cause notes — `pool_not_initialized`) and new `/api/ticker-insights/*` (Firestore-backed). New work goes through ticker-insights; the legacy router stays as a deprecation alias for one release.
+- **Two recommendation paths exist in parallel.** Legacy `/api/recommendations/*` (Postgres-backed, **soft-deprecated** — `deprecated=True`, kept as an alias for one release) and new `/api/ticker-insights/*` (Firestore-backed). New work goes through ticker-insights.
 
 ## External integrations
 
@@ -67,4 +67,3 @@ Boundaries: stock-data, search, and the knowledge-graph visualizations are **sep
 - Workflow for schema changes: [`../workflows/firestore-data-change.md`](../workflows/firestore-data-change.md)
 - Backend code style: [`../../backend/AGENTS.md`](../../backend/AGENTS.md)
 - Frontend conventions (zh-TW, no emoji): [`../../frontend/AGENTS.md`](../../frontend/AGENTS.md)
-- Known bugs in this domain: [`../qa-report-2026-05-09.md`](../qa-report-2026-05-09.md) (BUG-10 recommendations endpoint URL, comment-type drift history)

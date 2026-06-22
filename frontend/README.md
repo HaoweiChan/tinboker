@@ -1,160 +1,146 @@
-# TinBoker WebUI
-
 <div align="center">
-  <img src="public/trendbrief-logo-dark.png" alt="TinBoker Logo" width="200" />
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="public/brand/tinboker-square-dark-512.png">
+  <img src="public/brand/tinboker-square-light-512.png" alt="TinBoker logo" width="120" height="120">
+</picture>
+
+# TinBoker Web UI
+
+**Listen to the market, see the trend.**
+
+React 19 + TypeScript + Vite single-page app for the [TinBoker](../README.md) platform —
+a Traditional-Chinese financial intelligence site pairing TW/US stock data with
+AI-summarized financial podcasts.
+
+[![React](https://img.shields.io/badge/React-19-149ECA?style=flat-square&logo=react&logoColor=white)](https://react.dev)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![Vite](https://img.shields.io/badge/Vite-7-646CFF?style=flat-square&logo=vite&logoColor=white)](https://vite.dev)
+[![Cloudflare Pages](https://img.shields.io/badge/Cloudflare-Pages-F38020?style=flat-square&logo=cloudflare&logoColor=white)](https://pages.cloudflare.com)
+
+**Live:** [tinboker.com](https://tinboker.com)
+
 </div>
 
-> Listen to the Market, See the Trend.
+---
 
-TinBoker is an interactive financial intelligence platform that combines podcast insights with real-time market data. It visualizes the connections between industry trends, company performance, and expert analysis, helping investors make informed decisions through an intuitive interface.
+## Pages at a glance
 
-## Page Overview
+| Page | Route | What it is |
+|------|-------|-----------|
+| **Home** | `/` | Latest podcast summaries, top market movers, active channels |
+| **Episode / News detail** | `/episode/:id`, `/news/:id` | AI summary with clickable in-text tickers and tag navigation |
+| **Stock** | `/stock/:ticker` | Live price + chart, key stats, and every episode that mentioned the ticker |
+| **Channel** | `/podcaster/:id` | A creator's episode archive and pick performance |
+| **Tag / Topic** | `/tag/:tag` | All content for a theme (e.g. `#AI伺服器`, `#半導體`) across channels |
+| **Picks** | `/picks` | Podcast-pick performance scoreboard |
+| **Story / Graph gallery** | `/story` | Interactive concept/supply-chain relationship graphs |
 
-TinBoker is organized into distinct content categories to help you navigate financial intelligence effectively.
+<div align="center">
+  <img src="public/screenshots/home-dark.png" alt="Home dashboard" width="48%">
+  <img src="public/screenshots/stock-dark.png" alt="Stock dashboard" width="48%">
+</div>
 
-### 🏠 Home Dashboard
-The central command center. View the latest podcast summaries (feed), top market movers (tickers), and active channels.
-![Home Page](public/screenshots/home-dark.png)
+---
 
-### 📰 News & Podcast Detail
-The core unit of content. Each page represents a specific podcast episode or news article, enriched with:
-- **AI Summary**: Key takeaways and financial insights.
-- **Interactive Tickers**: Mentioned stocks are clickable and show real-time data.
-- **Tag Navigation**: Jump to related topics or channels.
-![News Page](public/screenshots/news-dark.png)
+## Features
 
-### 📈 Ticker (Stock) Page
-Comprehensive dashboard for individual stocks (e.g., TSMC, NVIDIA).
-- **Real-time Price**: Live quotes and daily change.
-- **Related Episodes**: A curated feed of all podcast episodes that have mentioned this specific stock.
-![Stock Page](public/screenshots/stock-dark.png)
+- **Podcast intelligence** — AI episode summaries with interactive tickers that surface live
+  price + chart on hover, plus channel and tag filtering.
+- **Stock dashboards** — TradingView charts, real-time quotes over WebSocket, and the related
+  episode feed for each ticker (TW + US markets).
+- **Relationship graphs** — force-directed company/sector/concept graphs (React Flow + D3).
+- **Search** — full-text search with autocomplete and trending tickers/tags.
+- **PWA** — installable, offline-aware, with light/dark theming and an SVG icon system (no emoji).
+- **i18n** — Traditional-Chinese (`zh-TW`) UI throughout.
 
-### 🎙️ Channel Page
-Dedicated page for specific content creators (e.g., "Gooaye", "Earnings Dog").
-- **Episode Archive**: Browse all historical episodes from this channel.
-- **Channel Stats**: (Future) Performance tracking of the channel's mentioned picks.
-![Channel Page](public/screenshots/channel-dark.png)
-
-### 🏷️ Tag (Topic) Page
-Aggregates content based on specific themes or industries (e.g., "#AI Server", "#Semiconductors").
-- **Topic Feed**: See all news and episodes related to this specific theme across different channels.
-![Tag Page](public/screenshots/tag-dark.png)
-
-## Key Features
-
-### Smart Podcast Integration
-
-### Smart Podcast Integration
-- **Episode Summaries**: AI-powered summaries of popular financial podcasts (e.g., Gooaye, Earnings Dog) with interactive stock tickers.
-- **Visual Highlights**: Interactive elements within summaries—hover over stock symbols mentioned in podcasts to see instant price charts and performance data.
-- **Channel Filtering**: Easily filter content by your favorite podcasters or shows.
-
-### Interactive Market Dashboard
-- **Real-time Data**: Live stock prices, daily changes, and market mentions.
-- **Interactive Charts**: TradingView-powered charts for deep technical analysis.
-- **Graph Visualization**: Explore supply chain relationships and industry connections using interactive node graphs.
-
-### Deep Dive Analysis
-- **Stock Dashboard**: Comprehensive view for individual stocks including price history, related podcast episodes, and sector positioning.
-- **Industry Analysis**: Visual heatmaps (TreeMap) and performance charts to spot sector-wide trends.
-- **Concept Graphs**: Visualize complex industry relationships (e.g., AI Supply Chain, Robotics) with force-directed graphs.
-
-### Modern UX/UI
-- **Responsive Design**: Optimized experience across mobile, tablet, and desktop.
-- **Dark/Light Mode**: Full theme support for comfortable viewing in any environment.
-- **Interactive Widgets**: Draggable graphs, hover cards, and dynamic filters.
+---
 
 ## Tech Stack
 
-| Layer | Technology | Purpose |
-|-------|-----------|---------|
-| **Framework** | React 18 + TypeScript | Core application logic |
-| **Styling** | Tailwind CSS + Shadcn UI | Responsive, accessible UI components |
-| **Visualization** | React Flow + D3.js | Interactive graph visualizations |
-| **Charting** | Lightweight Charts (TradingView) | High-performance financial charts |
-| **State** | Zustand | Global state management |
-| **Routing** | React Router v6 | Client-side navigation |
-| **Build** | Vite | Ultra-fast build tool |
-| **Markdown** | React Markdown | Rendering rich text content |
+| Layer | Technology |
+|-------|-----------|
+| Framework | React 19, TypeScript 5.9 |
+| Build | Vite 7 |
+| Styling | Tailwind CSS 4, Shadcn UI |
+| Charts | TradingView Lightweight Charts, D3.js, Nivo |
+| Graph viz | React Flow 11, Dagre, ELK |
+| State / routing | Zustand 5, React Router 7 |
+| Validation | Zod 4 (every API response is schema-validated) |
+| Markdown | React Markdown |
+
+---
+
+## Getting Started
+
+**Prerequisites:** Node 20+, npm. A running backend (see [`../backend/`](../backend/)) or point at
+a deployed API.
+
+```bash
+npm install
+cp .env.example .env.local      # set VITE_API_BASE_URL
+npm run dev                     # → http://localhost:5173
+```
+
+### Environment
+
+`.env.local` (git-ignored) overrides per-developer settings:
+
+```bash
+VITE_API_BASE_URL=http://localhost:5174   # or https://api.tinboker.com
+VITE_STAGE=DEV|STAGING|PRODUCTION
+VITE_GOOGLE_CLIENT_ID=...
+```
+
+### Scripts
+
+| Command | What it does |
+|---------|--------------|
+| `npm run dev` | Vite dev server (mode `dev`) on `:5173` |
+| `npm run build` | `tsc -b` type-check + Vite production build |
+| `npm run lint` | ESLint |
+| `npm run preview` | Serve the production build locally |
+| `npm run generate-pwa-icons` / `generate-screenshots` / `generate-sitemap` | Asset/SEO generators |
+
+---
 
 ## Project Structure
 
 ```
 src/
-├── components/          # Reusable UI components
-│   ├── auth/           # Authentication components
-│   ├── charts/         # TradingView & D3 charts
-│   ├── common/         # SEO, Breadcrumbs
-│   ├── graph/          # React Flow graph visuals
-│   ├── home/           # Dashboard widgets & cards
-│   ├── layout/         # Header, Footer
-│   ├── stock/          # Stock-specific displays
-│   └── ui/             # Core design system components
-├── data/               # Static & Mock data definitions
-├── pages/              # Main route views
-│   ├── Landing.tsx     # Home dashboard
-│   ├── NewsPage.tsx    # Article & Podcast detail view
-│   ├── StockDashboard.tsx # Individual stock analysis
-│   └── ...
-├── services/           # API integration
-│   ├── api/            # Backend endpoints
-│   └── websocket/      # Real-time price updates
-└── store/              # Zustand stores
+├── pages/          Route-level views (42 pages)
+├── components/     Reusable UI — charts/ stock/ graph/ home/ industry/ podcast/ player/ ui/ …
+├── services/       API client (axios) + WebSocket price feed
+│   └── api/        Per-domain backend endpoint wrappers
+├── store/          Zustand global state
+├── schemas/ validation/   Zod schemas for API response validation
+├── hooks/ lib/ utils/     Hooks and helpers
+├── types/          TypeScript type definitions
+└── assets/         SVG icon system (no emoji icons)
 ```
 
-## Getting Started
-
-### Prerequisites
-
-- Node.js 18+
-- npm or yarn
-
-### Installation
-
-```bash
-# Clone the repository
-git clone <repository-url>
-cd tinboker/frontend
-
-# Install dependencies
-npm install
-
-# Start development server
-npm run dev
-```
-
-The application will launch at `http://localhost:5173`
-
-## Deployment
-
-### Vercel (Recommended)
-
-```bash
-# Install Vercel CLI
-npm i -g vercel
-
-# Deploy
-vercel
-```
-
-Or connect your GitHub repository to Vercel for automatic deployments.
-
-## API Integration
-
-The application supports a hybrid data model, capable of switching between mock data (for development/demo) and real backend APIs.
-
-- **API Services**: Located in `src/services/api/`
-- **WebSocket**: Real-time price updates handled in `src/services/websocket/`
-- **Content Guidelines**: See `docs/news-content-guidelines.md` for backend content formatting rules.
-
-## Contributing
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+Conventions (no `any`, Zod-validated responses, DEV-gated console output, the icon system) are in
+[`AGENTS.md`](AGENTS.md).
 
 ---
 
-Built with React, TypeScript, and Tailwind CSS
+## Deployment
+
+The app deploys to **Cloudflare Pages** via GitHub Actions — never deploy by hand:
+
+| Branch / ref | Environment | URL |
+|--------------|-------------|-----|
+| merge to `develop` | Dev | [dev.tinboker.com](https://dev.tinboker.com) |
+| merge to `main` | Staging | [staging.tinboker.com](https://staging.tinboker.com) |
+| `v*` tag on `main` | Production | [tinboker.com](https://tinboker.com) |
+
+The `frontend-ci.yml` (type-check + lint) and `frontend-deploy.yml` (Pages deploy + CDN purge)
+workflows handle this. See the root [`README.md`](../README.md) and
+[`docs/workflows/deploy-flow.md`](../docs/workflows/deploy-flow.md).
+
+---
+
+## Contributing
+
+Branch from `develop` (`feat/<name>` or `fix/<name>`), open a PR targeting `develop`, and make sure
+CI is green. See [`CLAUDE.md`](../CLAUDE.md) for the full branching and review flow.

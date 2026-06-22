@@ -64,13 +64,13 @@ Duplicate Episode Finder and Remover
 ================================================================================
 
 Initializing services...
-✓ Services initialized
+Services initialized
 
 Fetching all episodes from Firestore...
-✓ Found 150 episode(s) in Firestore
+Found 150 episode(s) in Firestore
 
 Analyzing episodes for duplicates...
-⚠ Found 3 duplicate group(s)
+Found 3 duplicate group(s)
 
 ================================================================================
 Duplicate Group: Gooaye 股癌
@@ -96,21 +96,21 @@ Found 2 duplicate episode(s):
 
 Which episode should be KEPT? (1-2) or 's' to skip this group, or 'q' to quit: 1
 
-✓ Keeping episode: gooaye_ep123
+Keeping episode: gooaye_ep123
   Will delete 1 duplicate(s)
 
 Confirm deletion? (yes/no): yes
 
 Deleting episode: gooaye_ep123_duplicate
   Deleting files from GCS...
-  ✓ Deleted mp3: podcasts/mp3/gooaye/gooaye_ep123_duplicate.mp3
-  ✓ Deleted transcripts: podcasts/transcripts/gooaye/gooaye_ep123_duplicate.txt
-  ✓ Deleted summaries: podcasts/summaries/gooaye/gooaye_ep123_duplicate.md
-  ✓ Deleted images: podcasts/images/gooaye/gooaye_ep123_duplicate.svg
+  Deleted mp3: podcasts/mp3/gooaye/gooaye_ep123_duplicate.mp3
+  Deleted transcripts: podcasts/transcripts/gooaye/gooaye_ep123_duplicate.txt
+  Deleted summaries: podcasts/summaries/gooaye/gooaye_ep123_duplicate.md
+  Deleted images: podcasts/images/gooaye/gooaye_ep123_duplicate.svg
   Deleting from Firestore...
-  ✓ Deleted from Firestore: gooaye_ep123_duplicate
+  Deleted from Firestore: gooaye_ep123_duplicate
 
-✓ Completed. Kept 1, deleted 1.
+Completed. Kept 1, deleted 1.
 ```
 
 ### Requirements

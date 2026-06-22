@@ -6,7 +6,7 @@ A Python pipeline to download podcast episodes, transcribe them to text, generat
 
 The system uses a **step-based pipeline architecture** that processes episodes through independent, testable steps. Files are stored in **Google Cloud Storage (GCS)** with only URLs stored in Firestore, reducing document size and storage costs.
 
-📖 **For detailed architecture documentation, see:** [`docs/dev/251221_simplify_refactor/simplified_architecture.md`](docs/dev/251221_simplify_refactor/simplified_architecture.md)
+**For detailed architecture documentation, see:** [`docs/dev/251221_simplify_refactor/simplified_architecture.md`](docs/dev/251221_simplify_refactor/simplified_architecture.md)
 
 ## Architecture
 
@@ -280,10 +280,10 @@ The pipeline uses a **rerun logic** that's more intuitive than skip flags:
   - Useful for cron jobs or automated processing where you want to ensure a certain number of new episodes are processed
 
 **Benefits:**
-- ✅ More intuitive: "rerun from transcribe" is clearer than "skip download"
-- ✅ Explicit dependencies: Makes it clear what inputs are needed
-- ✅ Flexible: Can rerun any part of the pipeline
-- ✅ Idempotent: Safe to rerun from any point
+- More intuitive: "rerun from transcribe" is clearer than "skip download"
+- Explicit dependencies: Makes it clear what inputs are needed
+- Flexible: Can rerun any part of the pipeline
+- Idempotent: Safe to rerun from any point
 
 ### Processing Modes
 

@@ -102,4 +102,3 @@ Two distinct auth surfaces plus a shared "logged-in user" experience:
 - User/notification schemas: [`../firestore-contract.md`](../firestore-contract.md) §6
 - Backend code style: [`../../backend/AGENTS.md`](../../backend/AGENTS.md)
 - Frontend conventions: [`../../frontend/AGENTS.md`](../../frontend/AGENTS.md)
-- Bugs: BUG-13 (sync sleep in auth) in [`../qa-report-2026-05-09.md`](../qa-report-2026-05-09.md)

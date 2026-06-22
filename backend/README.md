@@ -1,26 +1,30 @@
 # TinBoker Backend
 
-A FastAPI-based backend service for managing stock portfolios with graph-based visualization. Features include stock data management, graph relationships between companies, news/events tracking, and real-time WebSocket updates.
+The FastAPI platform API for [TinBoker](../README.md) — it serves the web UI with TW/US stock
+data, relationship graphs, full-text search, podcast/episode content, auth, and an
+admin/config control plane. It reads the content the pipelines derive (Postgres + Firestore)
+and exposes it over a single HTTP API.
 
 ## Features
 
-- 📊 **Stock Management**: CRUD operations for stock data with OHLCV history
-- 🕸️ **Graph Visualization**: Create and manage relationship graphs between companies
-- 📰 **News & Events**: Track stock-related news and events
-- 🔄 **Real-time Updates**: WebSocket support for live stock data streaming
-- 💾 **Database**: SQLite (development) / PostgreSQL (production) support
-- 🧪 **Well-tested**: 65 unit and integration tests
-- 🚀 **Production-ready**: Render.com deployment configuration included
+- **Stock data**: TW + US prices, charts, key stats, ticker insights (Massive + FinMind)
+- **Graph visualization**: company/sector/concept relationship graphs
+- **Search & discovery**: full-text search, autocomplete, trending tickers/tags
+- **Podcast & content**: episodes, podcasts, comments, news, articles
+- **Real-time prices**: WebSocket price streaming
+- **Auth & admin**: Google OAuth → JWT, watchlists, admin/config control plane
+- **Storage**: SQLite (dev) / PostgreSQL (staging + prod), Redis cache
+- **Tested**: 200+ unit and integration tests (`pytest`)
 
 ## Tech Stack
 
 - **Framework**: FastAPI 0.104.1
-- **Python**: 3.11+
-- **Database**: SQLite (dev) / PostgreSQL (prod)
-- **Caching**: Redis
-- **Data Sources**: Massive API, FinMind API (with mock data fallback)
+- **Python**: 3.12+
+- **Database**: SQLite (dev) / PostgreSQL (staging + prod) via SQLAlchemy 2
+- **Caching**: Redis 7
+- **Data Sources**: Massive API (US), FinMind API (TW), Firestore (podcasts) — mock-data fallback
 - **Testing**: pytest, httpx
-- **Deployment**: Render.com
+- **Deployment**: Docker on Netcup VPS, via GitHub Actions (see [deploy flow](../docs/workflows/deploy-flow.md))
 
 ## Installation
 
@@ -28,7 +32,7 @@ You can use either **pip** (standard) or **uv** (faster, recommended) to manage 
 
 ### Prerequisites
 
-- Python 3.11 or higher
+- Python 3.12 or higher
 - pip package manager (or uv)
 - (Optional) PostgreSQL and Redis for production
 
@@ -92,7 +96,7 @@ USE_POSTGRES=false
 
 # Server Configuration
 HOST=0.0.0.0
-PORT=3000
+PORT=5174
 ENVIRONMENT=development
 
 # CORS
@@ -129,7 +133,7 @@ docker exec tinboker-redis redis-cli ping
 
 ### Development Mode
 
-The server port is configured in `.env` file (default: `PORT=3000`).
+The server port is configured in `.env` file (default: `PORT=5174`).
 
 **Option 1: Using Python (Recommended - uses port from .env automatically)**
 
@@ -146,7 +150,7 @@ python -m src.main
 When using `uv run` or if `pkill -f "src.main"` doesn't work, kill by the port the app listens on (see `PORT` in `.env`, default 5174):
 
 ```bash
-# By port (most reliable – use your PORT from .env, e.g. 5174 or 3000)
+# By port (most reliable – use your PORT from .env, default 5174)
 lsof -ti :5174 | xargs kill -9
 # Or: fuser -k 5174/tcp
 
@@ -162,7 +166,7 @@ pkill -9 -f "uv run python"
 docker compose up -d redis
 
 # Start the application
-uvicorn src.main:app --reload --host 0.0.0.0 --port 3000
+uvicorn src.main:app --reload --host 0.0.0.0 --port 5174
 ```
 
 Note: When using uvicorn directly, the `--port` flag overrides the `.env` setting. To use the port from `.env`, use Option 1 instead.
@@ -204,13 +208,12 @@ python3 scripts/clear_episode_cache.py
 python3 scripts/test_episode_firestore.py
 ```
 
-**for Redis server on Render**
+**Redis**
 
-Follow https://www.youtube.com/watch?v=uBmgwGQM6G8,
-get the redis url, and (ex: redis://red-d4rfvss9c44c73bsr93g:6379)
-
-And set this URL in backend environment:
-REDIS_URL=>redis://red-d4rfvss9c44c73bsr93g:6379
+Locally, Redis runs via `docker compose up -d redis` (see [Running](#running-the-application)).
+In staging/prod, `REDIS_URL` points at the VPS Redis 7 instance and is loaded from GCP Secret
+Manager. Note: the local `.env`'s `REDIS_URL` may point at a *shared remote* Redis — override it
+to `redis://localhost:6379/0` before any local cache operation.
 
 ### Starting WebSocket Services
 
@@ -224,9 +227,9 @@ import json
 from websockets import connect
 
 async def test():
-    async with connect('ws://localhost:3000/ws/prices') as ws:
+    async with connect('ws://localhost:5174/ws/prices') as ws:
         msg = await ws.recv()
-        print('✅ WebSocket connected!')
+        print('WebSocket connected!')
         print('Response:', json.loads(msg))
 
 asyncio.run(test())
@@ -234,11 +237,11 @@ asyncio.run(test())
 ```
 
 The API will be available at:
-- **API**: http://localhost:3000 (or the port specified in `.env`)
-- **WebSocket**: ws://localhost:3000/ws/prices
-- **Interactive Docs (Swagger)**: http://localhost:3000/docs
-- **Alternative Docs (ReDoc)**: http://localhost:3000/redoc
-- **Health Check**: http://localhost:3000/health (shows Redis status and cache statistics)
+- **API**: http://localhost:5174 (or the port specified in `.env`)
+- **WebSocket**: ws://localhost:5174/ws/prices
+- **Interactive Docs (Swagger)**: http://localhost:5174/docs
+- **Alternative Docs (ReDoc)**: http://localhost:5174/redoc
+- **Health Check**: http://localhost:5174/health (shows Redis status and cache statistics)
 
 ### Production Mode
 
@@ -283,10 +286,27 @@ python scripts/test-redis-connection.py
 
 ## API Documentation
 
+> **The authoritative, always-current API reference is the auto-generated OpenAPI docs at
+> [`/docs`](https://api.tinboker.com/docs)** (Swagger UI) and `/redoc`. The sections below cover
+> the core stock/graph/news/podcast endpoints by hand; for everything else (auth, search, tags,
+> comments, articles, social, SEO, notifications, ticker-insights, admin/config), use `/docs`.
+
+### Router map
+
+The API is organised into 32 routers under `src/routers/`:
+
+| Group | Routers |
+|-------|---------|
+| Stocks & markets | `stock`, `company`, `ticker_insights`, `translations`, `websocket_prices`, `websocket` |
+| Content | `episodes`, `podcast`, `comments`, `news`, `articles`, `content`, `recommendations` |
+| Discovery | `search`, `tags`, `graph`, `visual_graph` |
+| Platform | `auth`, `user`, `notifications`, `analytics`, `seo`, `social`, `sources` |
+| Admin / config | `admin_system`, `admin_analytics`, `admin_articles`, `admin_pipeline`, `admin_pipeline_trial`, `admin_sources`, `admin_tags`, `admin_translations` |
+
 ### Base URL
 
-- **Local**: `http://localhost:3000`
-- **Production**: `https://your-app.onrender.com`
+- **Local**: `http://localhost:5174`
+- **Production**: `https://api.tinboker.com`
 
 ---
 
@@ -297,7 +317,7 @@ python scripts/test-redis-connection.py
 Get a sorted list of all stocks in the database.
 
 ```bash
-curl -X GET "http://localhost:3000/api/stocks?sort_by=ticker"
+curl -X GET "http://localhost:5174/api/stocks?sort_by=ticker"
 ```
 
 **Query Parameters:**
@@ -333,7 +353,7 @@ curl -X GET "http://localhost:3000/api/stocks?sort_by=ticker"
 Get detailed information about a specific stock including chart data.
 
 ```bash
-curl -X GET "http://localhost:3000/api/stocks/NVDA"
+curl -X GET "http://localhost:5174/api/stocks/NVDA"
 ```
 
 **Query Parameters:**
@@ -357,25 +377,25 @@ curl -X GET "http://localhost:3000/api/stocks/NVDA"
 
 ```bash
 # Get all available data (default)
-curl -X GET "http://localhost:3000/api/stocks/NVDA"
+curl -X GET "http://localhost:5174/api/stocks/NVDA"
 
 # Get last 1 hour with minute-level data
-curl -X GET "http://localhost:3000/api/stocks/NVDA?timeframe=1H"
+curl -X GET "http://localhost:5174/api/stocks/NVDA?timeframe=1H"
 
 # Get last 24 hours with minute-level data
-curl -X GET "http://localhost:3000/api/stocks/NVDA?timeframe=1D"
+curl -X GET "http://localhost:5174/api/stocks/NVDA?timeframe=1D"
 
 # Get last week of data (daily granularity)
-curl -X GET "http://localhost:3000/api/stocks/NVDA?timeframe=1W"
+curl -X GET "http://localhost:5174/api/stocks/NVDA?timeframe=1W"
 
 # Get last 30 days of data
-curl -X GET "http://localhost:3000/api/stocks/NVDA?timeframe=1M"
+curl -X GET "http://localhost:5174/api/stocks/NVDA?timeframe=1M"
 
 # Get last year of data
-curl -X GET "http://localhost:3000/api/stocks/NVDA?timeframe=1Y"
+curl -X GET "http://localhost:5174/api/stocks/NVDA?timeframe=1Y"
 
 # Get year-to-date data
-curl -X GET "http://localhost:3000/api/stocks/NVDA?timeframe=YTD"
+curl -X GET "http://localhost:5174/api/stocks/NVDA?timeframe=YTD"
 ```
 
 **Example Response:**
@@ -419,7 +439,7 @@ curl -X GET "http://localhost:3000/api/stocks/NVDA?timeframe=YTD"
 Get basic stock information without chart data (faster response).
 
 ```bash
-curl -X GET "http://localhost:3000/api/stocks/MSFT/basic"
+curl -X GET "http://localhost:5174/api/stocks/MSFT/basic"
 ```
 
 **Example Response:**
@@ -450,12 +470,12 @@ curl -X GET "http://localhost:3000/api/stocks/MSFT/basic"
 
 Connect via WebSocket to receive real-time stock price updates using the `/ws/prices` endpoint.
 
-**Endpoint:** `ws://localhost:3000/ws/prices`
+**Endpoint:** `ws://localhost:5174/ws/prices`
 
 **JavaScript Example:**
 
 ```javascript
-const ws = new WebSocket('ws://localhost:3000/ws/prices');
+const ws = new WebSocket('ws://localhost:5174/ws/prices');
 
 ws.onopen = () => {
   // Subscribe to tickers
@@ -508,7 +528,7 @@ ws.onmessage = (event) => {
 Get a sorted list of all graphs.
 
 ```bash
-curl -X GET "http://localhost:3000/api/graphs?sort_by=concept_id"
+curl -X GET "http://localhost:5174/api/graphs?sort_by=concept_id"
 ```
 
 **Query Parameters:**
@@ -534,7 +554,7 @@ curl -X GET "http://localhost:3000/api/graphs?sort_by=concept_id"
 Get complete graph data including nodes and edges.
 
 ```bash
-curl -X GET "http://localhost:3000/api/graphs/abc123-def456"
+curl -X GET "http://localhost:5174/api/graphs/abc123-def456"
 ```
 
 **Example Response:**
@@ -590,7 +610,7 @@ curl -X GET "http://localhost:3000/api/graphs/abc123-def456"
 Create a new graph with nodes and edges.
 
 ```bash
-curl -X POST "http://localhost:3000/api/graphs" \
+curl -X POST "http://localhost:5174/api/graphs" \
   -H "Content-Type: application/json" \
   -d '{
     "conceptId": "ai",
@@ -642,7 +662,7 @@ curl -X POST "http://localhost:3000/api/graphs" \
 Update a node in an existing graph.
 
 ```bash
-curl -X PUT "http://localhost:3000/api/graphs/abc123-def456/nodes/NVDA" \
+curl -X PUT "http://localhost:5174/api/graphs/abc123-def456/nodes/NVDA" \
   -H "Content-Type: application/json" \
   -d '{
     "positionX": 150.0,
@@ -665,7 +685,7 @@ curl -X PUT "http://localhost:3000/api/graphs/abc123-def456/nodes/NVDA" \
 Update an edge in an existing graph.
 
 ```bash
-curl -X PUT "http://localhost:3000/api/graphs/abc123-def456/edges/e1" \
+curl -X PUT "http://localhost:5174/api/graphs/abc123-def456/edges/e1" \
   -H "Content-Type: application/json" \
   -d '{
     "label": "Strategic Partnership",
@@ -688,7 +708,7 @@ curl -X PUT "http://localhost:3000/api/graphs/abc123-def456/edges/e1" \
 Delete a graph and all its nodes and edges.
 
 ```bash
-curl -X DELETE "http://localhost:3000/api/graphs/abc123-def456"
+curl -X DELETE "http://localhost:5174/api/graphs/abc123-def456"
 ```
 
 **Example Response:**
@@ -706,7 +726,7 @@ curl -X DELETE "http://localhost:3000/api/graphs/abc123-def456"
 Delete a node from a graph (also deletes connected edges).
 
 ```bash
-curl -X DELETE "http://localhost:3000/api/graphs/abc123-def456/nodes/NVDA"
+curl -X DELETE "http://localhost:5174/api/graphs/abc123-def456/nodes/NVDA"
 ```
 
 **Example Response:**
@@ -724,7 +744,7 @@ curl -X DELETE "http://localhost:3000/api/graphs/abc123-def456/nodes/NVDA"
 Delete an edge from a graph.
 
 ```bash
-curl -X DELETE "http://localhost:3000/api/graphs/abc123-def456/edges/e1"
+curl -X DELETE "http://localhost:5174/api/graphs/abc123-def456/edges/e1"
 ```
 
 **Example Response:**
@@ -744,7 +764,7 @@ curl -X DELETE "http://localhost:3000/api/graphs/abc123-def456/edges/e1"
 Get a sorted list of all news/events.
 
 ```bash
-curl -X GET "http://localhost:3000/api/news?sort_by=date"
+curl -X GET "http://localhost:5174/api/news?sort_by=date"
 ```
 
 **Query Parameters:**
@@ -773,7 +793,7 @@ curl -X GET "http://localhost:3000/api/news?sort_by=date"
 Fetch news articles from Massive API for a specific ticker and save them to the database.
 
 ```bash
-curl -X POST "http://localhost:3000/api/news/fetch/NVDA?limit=10"
+curl -X POST "http://localhost:5174/api/news/fetch/NVDA?limit=10"
 ```
 
 **Path Parameters:**
@@ -809,7 +829,7 @@ curl -X POST "http://localhost:3000/api/news/fetch/NVDA?limit=10"
 Get detailed information about a specific news item.
 
 ```bash
-curl -X GET "http://localhost:3000/api/news/news-123"
+curl -X GET "http://localhost:5174/api/news/news-123"
 ```
 
 **Example Response:**
@@ -835,7 +855,7 @@ curl -X GET "http://localhost:3000/api/news/news-123"
 Get a sorted list of all podcasts.
 
 ```bash
-curl -X GET "http://localhost:3000/api/podcast?sort_by=name&order=asc&limit=50&offset=0"
+curl -X GET "http://localhost:5174/api/podcast?sort_by=name&order=asc&limit=50&offset=0"
 ```
 
 **Query Parameters:**
@@ -867,11 +887,11 @@ Get detailed information about a specific podcast.
 
 ```bash
 # Using URL-encoded podcast name (required for Chinese characters)
-curl -X GET "http://localhost:3000/api/podcast/%E8%82%A1%E7%99%8C"
+curl -X GET "http://localhost:5174/api/podcast/%E8%82%A1%E7%99%8C"
 
 # Or use curl with --data-urlencode (for simple cases)
 # For podcast names with spaces: "Gooaye 股癌" -> "Gooaye%20%E8%82%A1%E7%99%8C"
-curl -X GET "http://localhost:3000/api/podcast/Gooaye%20%E8%82%A1%E7%99%8C"
+curl -X GET "http://localhost:5174/api/podcast/Gooaye%20%E8%82%A1%E7%99%8C"
 ```
 
 **Path Parameters:**
@@ -898,10 +918,10 @@ Get all episodes for a specific podcast.
 
 ```bash
 # Using URL-encoded podcast name
-curl -X GET "http://localhost:3000/api/podcast/%E8%82%A1%E7%99%8C/episodes?sort_by=created_time&order=desc&limit=50&offset=0"
+curl -X GET "http://localhost:5174/api/podcast/%E8%82%A1%E7%99%8C/episodes?sort_by=created_time&order=desc&limit=50&offset=0"
 
 # Example with podcast name containing space
-curl -X GET "http://localhost:3000/api/podcast/Gooaye%20%E8%82%A1%E7%99%8C/episodes?sort_by=created_time&order=desc&limit=50&offset=0"
+curl -X GET "http://localhost:5174/api/podcast/Gooaye%20%E8%82%A1%E7%99%8C/episodes?sort_by=created_time&order=desc&limit=50&offset=0"
 ```
 
 **Path Parameters:**
@@ -943,10 +963,10 @@ Get detailed information about a specific episode.
 
 ```bash
 # Using URL-encoded podcast name and episode ID
-curl -X GET "http://localhost:3000/api/podcast/%E8%82%A1%E7%99%8C/episodes/podcast_episode_123"
+curl -X GET "http://localhost:5174/api/podcast/%E8%82%A1%E7%99%8C/episodes/podcast_episode_123"
 
 # Example with podcast name containing space
-curl -X GET "http://localhost:3000/api/podcast/Gooaye%20%E8%82%A1%E7%99%8C/episodes/Gooaye_b92f18e46367339e"
+curl -X GET "http://localhost:5174/api/podcast/Gooaye%20%E8%82%A1%E7%99%8C/episodes/Gooaye_b92f18e46367339e"
 ```
 
 **Path Parameters:**
@@ -987,7 +1007,7 @@ curl -X GET "http://localhost:3000/api/podcast/Gooaye%20%E8%82%A1%E7%99%8C/episo
 Check if the API is running and healthy.
 
 ```bash
-curl -X GET "http://localhost:3000/health"
+curl -X GET "http://localhost:5174/health"
 ```
 
 **Example Response:**
@@ -1006,7 +1026,7 @@ curl -X GET "http://localhost:3000/health"
 Get API information.
 
 ```bash
-curl -X GET "http://localhost:3000/"
+curl -X GET "http://localhost:5174/"
 ```
 
 **Example Response:**
@@ -1148,9 +1168,11 @@ TinBoker-Backend/
 │   └── conftest.py        # Test fixtures
 ├── data/                  # SQLite database (gitignored)
 ├── .env                   # Environment variables (gitignored)
-├── requirements.txt       # Python dependencies
+├── requirements.txt       # Python dependencies (uv sync preferred)
+├── pyproject.toml         # Project metadata + deps
 ├── pytest.ini            # Pytest configuration
-├── render.yaml           # Render deployment config
+├── Dockerfile             # Production image
+├── docker-compose.yml     # Local: backend + Redis + Netdata
 └── README.md             # This file
 ```
 
@@ -1158,33 +1180,34 @@ TinBoker-Backend/
 
 ## Deployment
 
-### Render.com 
+Deploys go **only** through Git → PR → GitHub Actions → Docker on the Netcup VPS — never SSH/rsync
+by hand. CI builds `ghcr.io/haoweichan/tinboker-backend` and deploys per branch/tag:
 
-The project includes `render.yaml` for easy deployment to Render.com:
+| Branch / ref | Environment | URL · port |
+|--------------|-------------|------------|
+| merge to `develop` | Dev | dev-api.tinboker.com `:8001` |
+| merge to `main` | Staging | staging-api.tinboker.com `:8002` |
+| `v*` tag on `main` | Production | api.tinboker.com `:8000` |
 
-1. Push your code to a GitHub repository
-2. Connect the repository to Render
-3. Set environment variables in Render dashboard:
-   - `MASSIVE_API_KEY`
-   - `FINMIND_API_KEY`
-   - `CORS_ORIGINS`
-4. Render will automatically:
-   - Create a PostgreSQL database
-   - Create a Redis instance
-   - Run migrations
-   - Deploy the application
+The full procedure (pre-merge checks, health verification, rollback) is in
+[`../docs/workflows/deploy-flow.md`](../docs/workflows/deploy-flow.md). Infra/ops reference:
+[`../docs/infra-runbook.md`](../docs/infra-runbook.md).
 
 ### Environment Variables for Production
 
 ```env
 ENVIRONMENT=production
 USE_POSTGRES=true
-DATABASE_URL=<provided_by_render>
-REDIS_URL=<provided_by_render>
-MASSIVE_API_KEY=your_key
-FINMIND_API_KEY=your_key
-CORS_ORIGINS=https://your-frontend-domain.com
+POSTGRES_HOST=...            # Cloud SQL PostgreSQL
+REDIS_URL=redis://...
+MASSIVE_API_KEY=...
+FINMIND_API_KEY=...
+JWT_SECRET_KEY=...
+CORS_ORIGINS=https://tinboker.com,https://staging.tinboker.com
 ```
+
+Production secrets are loaded from GCP Secret Manager at startup by `config_loader.py` — see
+the root [`CLAUDE.md`](../CLAUDE.md) "Environment Variables".
 
 ---
 
@@ -1219,7 +1242,7 @@ python -m src.database.migrate
 
 ### Port Already in Use
 
-**Problem**: Port 3000 is already in use
+**Problem**: Port 5174 is already in use
 ```bash
 # Solution: Use a different port
 uvicorn src.main:app --port 8000
@@ -1241,17 +1264,19 @@ pip install -r requirements.txt
 
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+1. Branch from `develop`: `git checkout -b feat/<name> develop` (or `fix/<name>`)
+2. Make your change; run `ruff check src/` and `pytest tests/ -v`
+3. Open a PR targeting `develop` — CI (`backend-ci.yml`) must pass its `ci-gate`
+4. Merge to `develop` auto-deploys to dev; promote via `develop` → `main` (staging) → `v*` tag (prod)
+
+See the root [`CLAUDE.md`](../CLAUDE.md) and [`AGENTS.md`](AGENTS.md) for conventions.
 
 ---
 
 ## License
 
-This project is licensed under the MIT License.
+Proprietary — all rights reserved. The code is publicly visible for reference only and is not
+licensed for reuse. See the root [`LICENSE`](../LICENSE).
 
 ---
 
@@ -1264,7 +1289,8 @@ For issues, questions, or contributions, please open an issue on GitHub.
 ## Acknowledgments
 
 - **FastAPI**: Modern, fast web framework
-- **Massive API**: Financial data provider
+- **Massive API**: US financial data provider
 - **FinMind**: Taiwan/US stock data
-- **Render.com**: Cloud deployment platform
+- **Netcup VPS + Docker + Caddy**: hosting & reverse proxy
+- **Cloudflare**: CDN + DNS
 
