@@ -6,18 +6,23 @@ fan the new episode out to Threads. It is idempotent and dry-run by default.
 """
 
 import logging
+import uuid
 from typing import List
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
 
 from src.auth.admin_auth import AdminAccess, get_admin_access, get_social_access
 from src.config import settings
-from src.services import facebook_publisher, threads_publisher
+from src.services import facebook_publisher, promo_publisher, threads_publisher
+from src.services.gcs_content import GCSContentService
 from src.services.podcast import PodcastService
 from src.services.facebook_insights_service import FacebookInsightsService
 from src.services.threads_insights_service import ThreadsInsightsService
+
+_MAX_MEDIA_BYTES = 200 * 1024 * 1024  # 200 MB per file
+_gcs = GCSContentService()
 
 _PUBLISHERS = {"threads": threads_publisher, "facebook": facebook_publisher}
 
@@ -317,3 +322,90 @@ def _marp_size(marp_markdown: str) -> str:
         if s.startswith("size:"):
             return s.split(":", 1)[1].strip()
     return "1:1"
+
+
+# ── Free-form promo posts (operator-authored text + media → Threads/Facebook) ──────
+# Distinct from the episode flow above: no LLM, no idempotency. The operator writes
+# everything; media is uploaded here, stored private in GCS, and handed to Meta as a
+# short-lived signed URL at publish time.
+promo_router = APIRouter(prefix="/api/admin/promo", tags=["admin", "social"])
+
+
+class PromoMedia(BaseModel):
+    type: str = Field(..., description="'image' or 'video'")
+    url: str = Field(..., description="Public/signed URL Meta can fetch")
+
+
+class PromoPublishBody(BaseModel):
+    text: str = Field("", description="The full post text (operator-authored)")
+    media: List[PromoMedia] = Field(default_factory=list)
+    comments: List[str] = Field(default_factory=list, description="Text-only follow-up comments/replies")
+    platforms: List[str] = Field(default_factory=lambda: ["threads", "facebook"])
+    dry_run: bool = Field(True, description="Plan only; do not post (default)")
+
+
+@promo_router.post("/media")
+async def upload_promo_media(
+    file: UploadFile = File(...),
+    _: AdminAccess = Depends(get_admin_access),
+):
+    """Upload one image/video for a promo post; returns its type + a signed URL.
+
+    The signed URL is valid for 12h — long enough to compose and publish in one
+    session. ``ponytail: 12h window; regenerate from the gs:// path if drafts ever
+    need to outlive that.``
+    """
+    ctype = (file.content_type or "").lower()
+    if ctype.startswith("image/"):
+        mtype = "image"
+    elif ctype.startswith("video/"):
+        mtype = "video"
+    else:
+        raise HTTPException(status_code=415, detail="Only image/* or video/* files are supported")
+
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Empty file")
+    if len(data) > _MAX_MEDIA_BYTES:
+        raise HTTPException(status_code=413, detail="File too large (max 200 MB)")
+
+    name = file.filename or ""
+    ext = name.rsplit(".", 1)[-1].lower() if "." in name else (ctype.split("/", 1)[-1] or mtype)
+    bucket = settings.promo_media_bucket
+    blob_path = f"promo-media/{uuid.uuid4().hex}.{ext}"
+    try:
+        await _gcs.upload_bytes(bucket, blob_path, data, ctype)
+        url = await _gcs.generate_signed_url(f"gs://{bucket}/{blob_path}", expiration_hours=12)
+    except Exception as e:  # noqa: BLE001 — surface any GCS failure as a 502
+        logger.exception("promo media upload failed")
+        raise HTTPException(status_code=502, detail=f"Upload failed: {e}")
+    if not url:
+        raise HTTPException(status_code=502, detail="Could not sign media URL (SA key unavailable)")
+    return {"type": mtype, "url": url, "filename": name}
+
+
+@promo_router.post("/publish")
+async def publish_promo_post(
+    body: PromoPublishBody,
+    _: AdminAccess = Depends(get_admin_access),
+):
+    """Publish one operator-authored promo to the selected platforms.
+
+    Dry-run by default (returns the per-platform plan). Each platform is independent:
+    a Facebook block (e.g. mixed photo+video) never stops the Threads post.
+    """
+    platforms = [p.strip().lower() for p in body.platforms if p.strip()]
+    bad = [p for p in platforms if p not in _PUBLISHERS]
+    if bad:
+        raise HTTPException(status_code=422, detail=f"Unknown platform(s): {', '.join(bad)}")
+    if not platforms:
+        raise HTTPException(status_code=422, detail="No platforms selected")
+
+    media = [m.model_dump() for m in body.media]
+    for m in media:
+        if m["type"] not in ("image", "video"):
+            raise HTTPException(status_code=422, detail=f"Bad media type: {m['type']}")
+
+    return await promo_publisher.publish_promo(
+        body.text, media, platforms, comments=body.comments, dry_run=body.dry_run
+    )
