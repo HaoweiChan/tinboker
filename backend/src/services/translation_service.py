@@ -132,6 +132,75 @@ class TranslationService:
                 fixed += 1
         return fixed
 
+    def reclassify_markets(self) -> int:
+        """Fix the ``market`` of discovery-created rows that disagree with the ticker shape.
+
+        Recomputes :func:`src.utils.market.infer_market` and updates ``market`` when it
+        differs — e.g. a 6-digit Korean code like 000660 that on-ingest discovery once
+        defaulted to TW moves to KR.
+
+        Scoped to rows ``last_updated_by == 'ingest_discovery'`` ONLY. Authoritative seed
+        rows (exchange crawl / FinMind / curated lists) set ``market`` from the source of
+        truth and must NOT be second-guessed by the shape heuristic — TW has legitimate
+        6-digit codes (TDRs, some ETFs/REITs) that ``infer_market`` would wrongly call KR.
+        ``approved`` rows are excluded too, so a human market fix is never overwritten.
+
+        Self-deactivating and idempotent: once a row matches its inferred market the
+        update no longer fires, so re-running on every boot is a no-op. Guards the
+        ``uq_ticker_market`` constraint by skipping a move that would collide with an
+        existing (ticker, target-market) row. Returns the number of rows updated.
+        """
+        from src.utils.market import infer_market
+
+        fixed = 0
+        rows = (
+            self.db.query(StockTranslation)
+            .filter(
+                StockTranslation.translation_status != "approved",
+                StockTranslation.last_updated_by == "ingest_discovery",
+            )
+            .all()
+        )
+        for row in rows:
+            target = infer_market(row.ticker)
+            if target == row.market:
+                continue
+            target_row = self.get_by_ticker_market(row.ticker, target)
+            if target_row is not None and target_row.id != row.id:
+                # An authoritative row already occupies (ticker, target). If this
+                # discovery stub is nameless, it's a superseded duplicate (e.g. the old
+                # 000660/TW stub once the 000660/KR seed lands) — delete it. Otherwise
+                # leave it for an admin to merge by hand.
+                if not (row.name_en or "").strip() and not (row.name_zh_tw or "").strip():
+                    try:
+                        self.db.delete(row)
+                        self.db.commit()
+                        logger.info(
+                            "reclassify_markets: deleted stale nameless stub %s/%s "
+                            "(superseded by %s/%s)", row.ticker, row.market, row.ticker, target,
+                        )
+                        fixed += 1
+                    except Exception as e:
+                        logger.warning("reclassify_markets: delete %s failed: %s", row.ticker, e)
+                        self.db.rollback()
+                else:
+                    logger.warning(
+                        "reclassify_markets: %s %s->%s skipped (named target row exists)",
+                        row.ticker, row.market, target,
+                    )
+                continue
+            old = row.market
+            row.market = target
+            row.last_updated_by = "market_reclassify"
+            try:
+                self.db.commit()
+                logger.info("reclassify_markets: %s %s -> %s", row.ticker, old, target)
+                fixed += 1
+            except Exception as e:
+                logger.warning("reclassify_markets: commit %s failed: %s", row.ticker, e)
+                self.db.rollback()
+        return fixed
+
     def list_translations(
         self,
         market: Optional[str] = None,
@@ -189,13 +258,16 @@ class TranslationService:
         Idempotent. Stores the bare symbol (exchange suffix stripped) with an inferred
         market. Returns the number of rows inserted.
 
-        Market inference is a best-effort default for a TW-focused app:
-        - digits, optionally with a single class letter (e.g. 00738U, 00632R) → TW
-          (TW stock/ETF/futures codes; the bare `.isdigit()` check alone mislabeled these)
+        Market inference delegates to :func:`src.utils.market.infer_market` so the
+        backend, the pipeline, and the frontend agree on one rule:
+        - 3-5 digit codes (with optional class letter, 00878B/00632R) → TW
+        - 6-digit codes (005930 Samsung, 000660 SK Hynix) → KR
         - otherwise alphabetic → US
-        Foreign 6-digit codes (KR/CN/HK) are ambiguous by format and fall to the TW
-        default; the backfill agent corrects the market when it resolves the name.
+        KR/HK stubs aren't auto-named by FinMind/Massive (out of their coverage); the
+        authoritative seed (foreign_stocks / FinMind) supplies their names instead.
         """
+        from src.utils.market import infer_market
+
         # Collect distinct bare symbols with an inferred market.
         cleaned: dict[str, str] = {}
         for s in symbols:
@@ -209,9 +281,7 @@ class TranslationService:
             if not _is_stub_candidate(bare):
                 logger.debug("ensure_pending_stubs: skipping non-ticker %r", bare)
                 continue
-            # Treat "digits + optional trailing class letter" as a TW numeric code.
-            core = bare[:-1] if (len(bare) > 1 and bare[-1].isalpha() and bare[:-1].isdigit()) else bare
-            cleaned.setdefault(bare, "TW" if core.isdigit() else "US")
+            cleaned.setdefault(bare, infer_market(bare))
         if not cleaned:
             return 0
 
@@ -273,6 +343,17 @@ class TranslationService:
         update_data = data.model_dump(exclude_unset=True)
         if "aliases" in update_data:
             update_data["aliases"] = _normalize_aliases(update_data["aliases"])
+        if update_data.get("market"):
+            target_market = update_data["market"].upper()
+            update_data["market"] = target_market
+            # Guard the uq_ticker_market constraint: refuse a move that collides with
+            # another existing (ticker, market) row.
+            if target_market != translation.market:
+                clash = self.get_by_ticker_market(translation.ticker, target_market)
+                if clash is not None and clash.id != translation.id:
+                    raise ValueError(
+                        f"{translation.ticker}/{target_market} already exists"
+                    )
         for field, value in update_data.items():
             setattr(translation, field, value)
         translation.last_updated_by = updated_by
@@ -421,16 +502,20 @@ class TranslationService:
         entries: list[tuple],
     ) -> int:
         """
-        Seed stock translations from a list of (ticker, market, name_en, name_zh_tw, status).
-        - Inserts rows that don't exist yet.
+        Seed stock translations from a list of
+        (ticker, market, name_en, name_zh_tw, status[, aliases]) tuples.
+        - Inserts rows that don't exist yet (with aliases if the 6th element is present).
         - Fills in name_en/name_zh_tw for existing stub rows (name_en is NULL and status
-          is not "approved"), without downgrading approved rows.
+          is not "approved"), without downgrading approved rows; seeds aliases onto a row
+          that has none yet (never clobbers curated aliases).
         - Does not write brand_color; the stock_translations table is the source of truth
           for colors and is maintained through the admin/bulk endpoints.
         Returns count of rows inserted or updated.
         """
         affected = 0
-        for ticker, market, name_en, name_zh_tw, status in entries:
+        for entry in entries:
+            ticker, market, name_en, name_zh_tw, status = entry[:5]
+            aliases = entry[5] if len(entry) > 5 else None
             existing = self.get_by_ticker_market(ticker, market)
             if existing is None:
                 data = TranslationCreate(
@@ -439,6 +524,7 @@ class TranslationService:
                     name_en=name_en,
                     name_zh_tw=name_zh_tw,
                     translation_status=status,
+                    aliases=aliases,
                 )
                 self.create(data, "startup_backfill")
                 affected += 1
@@ -447,9 +533,111 @@ class TranslationService:
                 existing.name_en = name_en
                 existing.name_zh_tw = name_zh_tw
                 existing.translation_status = status
+                # Seed aliases only when the row carries none yet (don't clobber curation).
+                if aliases and not existing.aliases:
+                    existing.aliases = _normalize_aliases(aliases)
                 existing.last_updated_by = "startup_backfill"
                 self.db.commit()
                 affected += 1
+            elif aliases and not existing.aliases:
+                # Row already has a name but no aliases — seed them without other changes.
+                existing.aliases = _normalize_aliases(aliases)
+                existing.last_updated_by = "startup_backfill"
+                self.db.commit()
+                affected += 1
+        return affected
+
+    def seed_tw_from_finmind(self, finmind_service=None) -> int:
+        """Seed TW translations from the full FinMind TaiwanStockInfo registry.
+
+        Pulls the cached TaiwanStockInfo table (one in-process call, not per-ticker) and,
+        for each listing, inserts a new ``auto`` TW row or fills an existing name-less
+        stub's zh name. Makes the table authoritative for TW market+name *before* any
+        episode mentions a ticker, shrinking on-ingest discovery to a linker.
+
+        Clobber-safe and cheap on repeat: a row that already carries a ``name_zh_tw`` (or
+        is ``approved``) is skipped without a write, so re-running on every boot only
+        commits genuinely-new or still-empty rows.
+
+        ``finmind_service`` is injectable for tests; constructed lazily otherwise so a
+        missing API key degrades to a no-op instead of breaking the caller.
+        Returns the number of rows created or filled.
+        """
+        if finmind_service is None:
+            try:
+                from src.services.finmind_service import FinMindAPIService
+
+                finmind_service = FinMindAPIService()
+            except Exception as e:
+                logger.warning("seed_tw_from_finmind: FinMind unavailable: %s", e)
+                return 0
+
+        try:
+            listings = finmind_service.list_all_tw_stocks()
+        except Exception as e:
+            logger.warning("seed_tw_from_finmind: listing fetch failed: %s", e)
+            return 0
+
+        affected = 0
+        for ticker, name_zh_tw, _industry in listings:
+            ticker = (ticker or "").strip().upper()
+            name_zh_tw = (name_zh_tw or "").strip()
+            if not ticker or not name_zh_tw:
+                continue
+            existing = self.get_by_ticker_market(ticker, "TW")
+            try:
+                if existing is None:
+                    self.create(
+                        TranslationCreate(
+                            ticker=ticker,
+                            market="TW",
+                            name_zh_tw=name_zh_tw,
+                            translation_status="auto",
+                        ),
+                        updated_by="finmind_seed",
+                    )
+                    affected += 1
+                elif (
+                    not (existing.name_zh_tw or "").strip()
+                    and existing.translation_status != "approved"
+                ):
+                    # Fill a name-less stub without touching approved rows or curated names.
+                    existing.name_zh_tw = name_zh_tw
+                    existing.translation_status = "auto"
+                    existing.last_updated_by = "finmind_seed"
+                    self.db.commit()
+                    affected += 1
+                # else: row already has a zh name (or is approved) — leave it.
+            except Exception as e:
+                logger.debug("seed_tw_from_finmind: skip %s: %s", ticker, e)
+                self.db.rollback()
+        if affected:
+            logger.info("seed_tw_from_finmind: seeded/filled %d TW listing(s)", affected)
+        return affected
+
+    def seed_aliases(self, entries: list[tuple]) -> int:
+        """Seed curated aliases onto existing rows from (ticker, market, aliases) tuples.
+
+        Clobber-safe: only writes when the matching row exists and carries no aliases yet,
+        so an admin-curated alias list (e.g. SPCX -> "SpaceX") is never overwritten and
+        re-running on every boot is a no-op once seeded. Returns the number of rows seeded.
+        """
+        affected = 0
+        for ticker, market, aliases in entries:
+            row = self.get_by_ticker_market(ticker, market)
+            if row is None or row.aliases:
+                continue
+            cleaned = _normalize_aliases(aliases)
+            if not cleaned:
+                continue
+            row.aliases = cleaned
+            row.last_updated_by = "alias_seed"
+            try:
+                self.db.commit()
+                affected += 1
+            except Exception as e:
+                logger.warning("seed_aliases: commit %s/%s failed: %s", ticker, market, e)
+                self.db.rollback()
         return affected
 
     def get_stats(self) -> dict:
