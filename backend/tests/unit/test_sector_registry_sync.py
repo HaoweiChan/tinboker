@@ -97,6 +97,17 @@ def test_trending_slugs_excludes_sectors(session):
     assert "sector_semiconductor" not in slugs
 
 
+def test_canonical_tag_slugs_gates_junk():
+    """The vocabulary gate keeps real tags and drops LLM-hallucinated junk/tickers."""
+    from src.tag_registry import canonical_tag_slugs
+
+    vocab = canonical_tag_slugs()
+    assert len(vocab) > 100               # the curated vocabulary, not empty
+    assert "twstocks" in vocab            # real topic
+    assert "taiwanstocks" not in vocab    # off-vocabulary junk (the reported tag)
+    assert "000660" not in vocab          # ticker symbol written as a tag
+
+
 def test_hidden_tag_slugs_normalized_and_tag_only(session):
     # A hidden tag (mixed spelling) → normalized; a visible tag and a hidden sector excluded.
     session.add(TagRegistry(slug="Supply_Chain", display_zh="供應鏈", tier=TIER_HIDDEN, kind=KIND_TAG))

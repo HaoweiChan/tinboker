@@ -10,7 +10,12 @@ from urllib.parse import quote
 from src.config import settings
 from src.models.podcast import Podcast, Episode
 from src.schemas.search import SearchResultItem
-from src.tag_registry import hidden_tag_slugs, normalize_tag_slug, trending_slugs
+from src.tag_registry import (
+    canonical_tag_slugs,
+    hidden_tag_slugs,
+    normalize_tag_slug,
+    trending_slugs,
+)
 from src.database.postgres import get_session
 from src.cache.redis_client import cache_get, cache_set, cache_delete, cache_delete_pattern
 from src.cache.cache_config import CACHE_TTL
@@ -735,25 +740,31 @@ class PodcastService:
     # ── Tag queries ──────────────────────────────────────────────────
 
     def _get_topic_tags(self) -> list[str]:
-        """Candidate tags for the trending board — auto-surfaced by volume.
+        """Candidate tags for the trending board — auto-surfaced by volume, vocab-gated.
 
-        Every tag that appears in episodes (the Firestore ``tags`` parent docs),
-        MINUS admin-hidden ones. A tag does NOT need to be pre-promoted to trend:
-        get_trending_tags ranks by recent scoped-count and drops anything below the
-        TRENDING_MIN_EPISODES floor, so the registry tier is only a HIDE override.
-        Falls back to the registry trending tier if the Firestore listing is
-        unavailable (so the board degrades to the curated set, never to empty).
+        Real topics only: Firestore ``tags`` parent docs INTERSECTED with the canonical
+        tag vocabulary (the LLM hallucinates thousands of off-vocab junk slugs into the
+        collection — tickers, fund names — which we must not surface or pay to scan),
+        MINUS admin-hidden ones. A tag does NOT need to be pre-promoted: get_trending_tags
+        ranks by recent scoped-count and drops anything below the floor; the registry
+        tier is only a HIDE override. The real Firestore spelling is kept for the
+        subcollection lookup; vocab membership is tested on the normalized form.
+        Falls back to the registry trending tier if the Firestore listing is unavailable.
         """
         db = next(get_session())
         try:
             hidden = hidden_tag_slugs(db)
+            canon = canonical_tag_slugs()
             try:
                 all_slugs = self.firestore_service.get_all_parent_documents("tags")
             except Exception as e:
                 logger.warning("trending tags: tag listing failed (%s); using registry", e)
                 all_slugs = []
             if all_slugs:
-                return [s for s in all_slugs if normalize_tag_slug(s) not in hidden]
+                return [
+                    s for s in all_slugs
+                    if normalize_tag_slug(s) in canon and normalize_tag_slug(s) not in hidden
+                ]
             return trending_slugs(db)
         finally:
             db.close()
