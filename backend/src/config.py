@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     # Each key has its own hourly quota, so a pool multiplies our ceiling. Falls back to the
     # single finmind_api_key when unset.
     finmind_api_keys: Optional[str] = None
+    # Self-imposed FinMind hourly request cap (see finmind_budget). Default suits the free
+    # tier (~600/hr); the backer plan allows ~1600/hr, so raise via GSM secret
+    # FINMIND_HOURLY_CAP once the backer key is the primary key in the pool.
+    finmind_hourly_cap: int = 280
     massive_api_key: Optional[str] = None
     # Optional pool of Massive/Polygon keys (comma-separated) → GSM secret MASSIVE_API_KEYS.
     # Massive (Polygon) rate-limits PER KEY (~5/min), so a pool genuinely multiplies the
