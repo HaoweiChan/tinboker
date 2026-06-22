@@ -49,11 +49,17 @@ function summarize(result: PromoPublishResult): string {
       if (r.error) return `${label}：錯誤（${r.error}）`;
       if (r.posted) {
         const got = r.posted_comments ?? 0;
-        return `${label}：✅ 已發佈${got ? `（+${got} 則留言）` : ''}`;
+        let s = `${label}：✅ 已發佈${got ? `（+${got} 則留言）` : ''}`;
+        if (r.comment_error === 'insufficient_permission') s += '（留言未發出：權限不足，FB 需 pages_manage_engagement）';
+        else if (r.comment_error === 'token_expired') s += '（留言未發出：token 已過期）';
+        else if (r.comment_error) s += '（留言未發出）';
+        return s;
       }
       if (r.dry_run && r.configured === false) return `${label}：未發佈（尚未設定金鑰）`;
       if (r.reason === 'dry_run') return `${label}：預覽 OK（${r.plan}${cc}）`;
       if (r.reason === 'comment_too_long') return `${label}：留言超過 ${THREADS_MAX_CHARS} 字`;
+      if (r.reason === 'threads_token_expired') return `${label}：未發佈（token 已過期，請重新產生長期 token）`;
+      if (r.reason === 'fb_token_expired') return `${label}：未發佈（token 已過期，請重新產生）`;
       if (r.reason === 'fb_mixed_media') return `${label}：略過（圖片＋影片不可混合）`;
       if (r.reason === 'fb_multiple_videos') return `${label}：略過（只能一支影片）`;
       if (r.reason === 'empty') return `${label}：略過（沒有內容）`;

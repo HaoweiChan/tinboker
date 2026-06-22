@@ -56,6 +56,7 @@ export interface PromoPlatformResult {
   post_id?: string;
   comment_count?: number;
   posted_comments?: number;
+  comment_error?: string;
   error?: string;
 }
 
