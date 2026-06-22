@@ -24,6 +24,9 @@ export interface Podcast {
   created_at?: number | null;
   updated_at?: number | null;
   image_url?: string | null;
+  /** Channel popularity rank (1 = most popular) from Apple Podcasts TW top charts;
+   *  null/undefined when the show isn't charted. */
+  popularity_rank?: number | null;
 }
 
 export interface SectorResolvedTicker {
