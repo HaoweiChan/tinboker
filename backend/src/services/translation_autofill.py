@@ -56,8 +56,15 @@ def _resolve_name(
     ``ticker_details.name`` is English. ``get_ticker_details`` echoes the bare symbol as
     ``name`` when it can't resolve, so we treat ``name == ticker`` as a miss.
     """
+    from src.services.finmind_service import is_tw_ticker
+
     try:
         if market == "TW":
+            # A KR/HK code mis-classified as market="TW" (e.g. 6-digit 005930) would burn
+            # FinMind's TW-only budget on a guaranteed miss — treat as a definitive miss so
+            # the stub is marked unresolvable instead of retried every run.
+            if not is_tw_ticker(ticker):
+                return (None, None, True)
             details = dc.finmind_service.get_ticker_details(ticker)
             name = (details or {}).get("name")
             if name and name != ticker:

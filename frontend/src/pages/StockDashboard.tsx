@@ -257,6 +257,14 @@ const StockHeaderCard: React.FC<{ symbol: string }> = ({ symbol }) => {
                 isLoadingMore={isLoadingMore}
               />
             </div>
+          ) : market !== 'TW' && market !== 'US' ? (
+            // We only have price feeds for TW (FinMind) and US (Massive). KR/other foreign
+            // tickers surface from podcasts but have no chart source — say so plainly rather
+            // than show the generic "try a longer range" hint that will never resolve.
+            <div className="h-[260px] w-full mt-3 rounded-md border border-dashed border-border bg-muted/20 flex flex-col items-center justify-center text-center px-6">
+              <p className="text-sm font-medium text-foreground">{marketBadge.label}暫不提供股價走勢</p>
+              <p className="text-xs text-muted-foreground mt-1">目前股價圖表僅支援台股與美股，{marketBadge.label}個股的行情資料尚未串接。</p>
+            </div>
           ) : (
             <div className="h-[260px] w-full mt-3 rounded-md border border-dashed border-border bg-muted/20 flex flex-col items-center justify-center text-center px-6">
               <p className="text-sm font-medium text-foreground">目前沒有可顯示的股價走勢</p>

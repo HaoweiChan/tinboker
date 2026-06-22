@@ -3,7 +3,7 @@ import logging
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta
 from src.services.massive_service import MassiveAPIService, MassiveAPIError
-from src.services.finmind_service import FinMindAPIService, FinMindAPIError
+from src.services.finmind_service import FinMindAPIService, FinMindAPIError, is_tw_ticker
 from src.models.schemas import Stock, StockMetadata, StockPriceRecord, StockPriceHistory, CompanyStats
 
 logger = logging.getLogger(__name__)
@@ -21,18 +21,12 @@ class DataCollectionService:
         self.finmind_service = finmind_service or FinMindAPIService()
     
     def _is_taiwan_stock(self, ticker: str) -> bool:
+        """Route only TW (TWSE/TPEx) tickers to FinMind. See ``is_tw_ticker``.
+
+        A bare ``ticker.isdigit()`` mis-routed 6-digit Korean codes (005930) to FinMind,
+        burning the TW-only budget on calls that always 404 — the launch budget incident.
         """
-        Check if ticker is a Taiwan stock (numeric ticker).
-        
-        Args:
-            ticker: Stock ticker symbol
-            
-        Returns:
-            True if ticker is all digits (Taiwan stock), False otherwise
-        """
-        # Taiwan stocks use numeric tickers (e.g., "2330" for TSMC)
-        # US stocks use alphabetic tickers (e.g., "AAPL", "NVDA")
-        return ticker.isdigit()
+        return is_tw_ticker(ticker)
     
     def collect_stock_data(self, ticker: str, use_mock_fallback: bool = True, timeframe: Optional[str] = None, before: Optional[int] = None) -> Optional[Stock]:
         """
