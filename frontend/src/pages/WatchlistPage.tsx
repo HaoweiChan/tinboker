@@ -3,7 +3,7 @@ import { ChevronRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
-import { Segmented, EpisodeCardV2, ListRow } from '@/components/redesign';
+import { EpisodeCardV2, ListRow } from '@/components/redesign';
 import { apiEpisodeToCardV2 } from '@/components/redesign/episodeAdapter';
 import { getPodcastEpisodes, getSortedPodcasts, getEpisodeById, type Episode as ApiEpisode, type Podcast } from '@/services/api/podcasts';
 import { fetchWithFallback } from '@/services/api/migration';
@@ -14,7 +14,7 @@ import { useStockPriceSinceMap } from '@/hooks/useStockPriceSinceMap';
 import { useTranslationMap } from '@/hooks/useTranslationMap';
 import { useEpisodeSentimentMap } from '@/hooks/useEpisodeSentimentMap';
 import { useStockSummaries } from '@/hooks/useStockSummaries';
-import { getStockLabel } from '@/utils/stockDisplay';
+import { StockIdentity } from '@/components/common/StockIdentity';
 import { Link } from 'react-router-dom';
 import { TickerAvatar } from '@/components/common/TickerAvatar';
 
@@ -164,20 +164,26 @@ export const WatchlistPage: React.FC = () => {
 
   return (
     <>
-      <SEO title="自選" description="追蹤的節目與個股。" />
+      <SEO title="收藏" description="追蹤的節目與個股。" />
       <PageContent>
-        <h1 className="text-2xl font-semibold tracking-[-0.02em] mb-3.5">自選</h1>
-        <div className="mb-[18px]">
-          <Segmented
-            options={[
-              { value: 'podcasters', label: `訂閱節目 ${subscriptions.length}` },
-              { value: 'tickers', label: `自選股票 ${watchlist.length}` },
-              { value: 'topics', label: `追蹤話題 ${tagSubscriptions.length}` },
-              { value: 'episodes', label: `收藏集數 ${bookmarked.length || bookmarkedIds.length}` },
-            ] as const}
-            value={tab}
-            onChange={setTab}
-          />
+        <h1 className="text-2xl font-semibold tracking-[-0.02em] mb-3.5">收藏</h1>
+        <div className="flex items-center gap-2 flex-wrap mb-[18px]">
+          {([
+            ['podcasters', `訂閱節目 ${subscriptions.length}`],
+            ['tickers', `自選股票 ${watchlist.length}`],
+            ['topics', `追蹤話題 ${tagSubscriptions.length}`],
+            ['episodes', `收藏集數 ${bookmarked.length || bookmarkedIds.length}`],
+          ] as const).map(([val, label]) => (
+            <button
+              key={val}
+              type="button"
+              onClick={() => setTab(val)}
+              data-active={tab === val || undefined}
+              className="filter-pill"
+            >
+              {label}
+            </button>
+          ))}
         </div>
 
         {isLoading ? (
@@ -219,17 +225,11 @@ export const WatchlistPage: React.FC = () => {
                 <div className="space-y-1.5">
                   {sortedWatchlist.map((sym) => {
                     const summary = summaries[sym];
-                    const { primary, secondary } = getStockLabel({
-                      ticker: sym,
-                      name: summary?.name,
-                      market: summary?.market,
-                    });
                     return (
                       <ListRow
                         key={sym}
                         lead={<TickerAvatar ticker={sym} brandColor={summary?.brand_color} />}
-                        title={<span>{primary}</span>}
-                        subtitle={secondary ? <span className="font-mono">{secondary}</span> : undefined}
+                        title={<StockIdentity ticker={sym} name={summary?.name} size="sm" />}
                         href={`/stock/${encodeURIComponent(sym)}`}
                         trailing={<ChevronRight size={14} />}
                       />
