@@ -151,7 +151,8 @@ def init_db():
                 content TEXT NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 parent_comment_id TEXT REFERENCES comments(id) ON DELETE SET NULL,
-                depth INTEGER NOT NULL DEFAULT 0
+                depth INTEGER NOT NULL DEFAULT 0,
+                is_public INTEGER NOT NULL DEFAULT 1
             )
         """)
 
@@ -169,6 +170,8 @@ def init_db():
             cursor.execute("ALTER TABLE comments ADD COLUMN parent_comment_id TEXT")
         if "depth" not in existing_cols:
             cursor.execute("ALTER TABLE comments ADD COLUMN depth INTEGER NOT NULL DEFAULT 0")
+        if "is_public" not in existing_cols:
+            cursor.execute("ALTER TABLE comments ADD COLUMN is_public INTEGER NOT NULL DEFAULT 1")
 
         conn.commit()
         print(f"Database initialized successfully at {get_db_path()}")

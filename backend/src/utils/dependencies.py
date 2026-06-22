@@ -49,6 +49,19 @@ def get_current_user(authorization: Optional[str] = Header(None)) -> UserRespons
             status_code=404,
             detail="User not found"
         )
-    
+
     return user
+
+
+def get_optional_user(authorization: Optional[str] = Header(None)) -> Optional[UserResponse]:
+    """Like get_current_user, but returns None instead of raising when no/invalid auth.
+
+    For endpoints that are public but show extra data to a signed-in viewer.
+    """
+    if not authorization:
+        return None
+    try:
+        return get_current_user(authorization)
+    except HTTPException:
+        return None
 

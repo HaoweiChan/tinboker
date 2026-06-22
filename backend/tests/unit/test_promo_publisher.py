@@ -72,3 +72,15 @@ async def test_comments_counted_and_blank_dropped():
 async def test_threads_overlong_comment_blocked_even_in_dry_run():
     out = await publish_promo("hi", [], ["threads"], comments=["x" * (THREADS_MAX_CHARS + 1)], dry_run=True)
     assert out["platforms"]["threads"]["reason"] == "comment_too_long"
+
+
+def test_draft_store_persists_durable_path_not_signed_url():
+    """A saved draft must store the gs:// path (re-signed on load), never the expiring
+    signed URL; media with no path (nothing uploaded) is dropped."""
+    from src.routers.social import _store_media, PromoMedia
+
+    stored = _store_media([
+        PromoMedia(type="image", url="https://signed/expires-in-12h", path="gs://b/i.jpg", filename="i.jpg"),
+        PromoMedia(type="video", url="https://signed/only", path=None),  # not uploaded → dropped
+    ])
+    assert stored == [{"type": "image", "path": "gs://b/i.jpg", "filename": "i.jpg"}]

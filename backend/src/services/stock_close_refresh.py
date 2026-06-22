@@ -19,6 +19,7 @@ from typing import List, Optional
 from src.database.models import StockDailyClose
 from src.database.postgres import get_session
 from src.services import finmind_budget
+from src.services.finmind_service import is_tw_ticker as _is_tw
 
 logger = logging.getLogger(__name__)
 
@@ -31,10 +32,6 @@ _US_GAP_SECONDS = 14.0
 _TW_GAP_SECONDS = 2.0
 # Lookback window to fetch per ticker (enough for the last 2 trading days incl. weekends).
 _LOOKBACK_DAYS = 7
-
-
-def _is_tw(ticker: str) -> bool:
-    return ticker.split(".")[0].isdigit()
 
 
 async def get_tracked_tickers(limit: int = MAX_TRACKED) -> List[str]:

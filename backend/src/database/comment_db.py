@@ -16,6 +16,7 @@ def create_comment(
     content: str,
     parent_comment_id: Optional[str] = None,
     depth: int = 0,
+    is_public: bool = True,
 ) -> dict:
     conn = get_connection()
     try:
@@ -25,11 +26,11 @@ def create_comment(
             """
             INSERT INTO comments
               (id, podcast_name, episode_id, user_id, user_name, user_avatar,
-               content, created_at, parent_comment_id, depth)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               content, created_at, parent_comment_id, depth, is_public)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (comment_id, podcast_name, episode_id, user_id, user_name, user_avatar,
-             content, created_at, parent_comment_id, depth),
+             content, created_at, parent_comment_id, depth, int(is_public)),
         )
         conn.commit()
         return {
@@ -43,26 +44,41 @@ def create_comment(
             "created_at": created_at,
             "parent_comment_id": parent_comment_id,
             "depth": depth,
+            "is_public": is_public,
         }
     finally:
         conn.close()
 
 
-def get_comments(podcast_name: str, episode_id: str) -> list[dict]:
-    """Return all comments for an episode (flat, oldest-first) for client-side tree building."""
+def get_comments(
+    podcast_name: str,
+    episode_id: str,
+    viewer_id: Optional[str] = None,
+    is_admin: bool = False,
+) -> list[dict]:
+    """Return comments for an episode (flat, oldest-first) for client-side tree building.
+
+    Private comments (is_public=0) are only returned to their author or an admin.
+    """
     conn = get_connection()
     try:
         rows = conn.execute(
             """
             SELECT id, podcast_name, episode_id, user_id, user_name, user_avatar,
-                   content, created_at, parent_comment_id, depth
+                   content, created_at, parent_comment_id, depth, is_public
             FROM comments
             WHERE podcast_name = ? AND episode_id = ?
             ORDER BY created_at ASC
             """,
             (podcast_name, episode_id),
         ).fetchall()
-        return [dict(row) for row in rows]
+        out = []
+        for row in rows:
+            c = dict(row)
+            c["is_public"] = bool(c["is_public"])
+            if c["is_public"] or is_admin or c["user_id"] == viewer_id:
+                out.append(c)
+        return out
     finally:
         conn.close()
 

@@ -6,10 +6,12 @@ import { cn } from '@/lib/utils';
 const MAX_CHARS = 500;
 
 interface CommentFormProps {
-  onSubmit: (content: string) => Promise<void>;
+  onSubmit: (content: string, isPublic: boolean) => Promise<void>;
   onCancel?: () => void;
   placeholder?: string;
   autoFocus?: boolean;
+  /** Show the public/private visibility toggle (defaults public). */
+  showVisibilityToggle?: boolean;
 }
 
 export const CommentForm: React.FC<CommentFormProps> = ({
@@ -17,8 +19,10 @@ export const CommentForm: React.FC<CommentFormProps> = ({
   onCancel,
   placeholder = '留下你的想法…',
   autoFocus = false,
+  showVisibilityToggle = false,
 }) => {
   const [content, setContent] = useState('');
+  const [isPublic, setIsPublic] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
   const trimmed = content.trim();
@@ -29,8 +33,9 @@ export const CommentForm: React.FC<CommentFormProps> = ({
     if (!canSubmit) return;
     setSubmitting(true);
     try {
-      await onSubmit(trimmed);
+      await onSubmit(trimmed, isPublic);
       setContent('');
+      setIsPublic(true);
     } catch {
       toast.error('留言失敗，請稍後再試。');
     } finally {
@@ -55,9 +60,23 @@ export const CommentForm: React.FC<CommentFormProps> = ({
         disabled={submitting}
       />
       <div className="flex items-center justify-between">
-        <span className={cn('text-2xs text-muted-foreground', trimmed.length > MAX_CHARS && 'text-destructive')}>
-          {content.length} / {MAX_CHARS}
-        </span>
+        <div className="flex items-center gap-3">
+          <span className={cn('text-2xs text-muted-foreground', trimmed.length > MAX_CHARS && 'text-destructive')}>
+            {content.length} / {MAX_CHARS}
+          </span>
+          {showVisibilityToggle && (
+            <label className="flex items-center gap-1.5 text-2xs text-muted-foreground cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={!isPublic}
+                onChange={(e) => setIsPublic(!e.target.checked)}
+                disabled={submitting}
+                className="h-3 w-3 accent-primary"
+              />
+              僅自己與團隊可見
+            </label>
+          )}
+        </div>
         <div className="flex gap-2">
           {onCancel && (
             <Button type="button" variant="ghost" size="sm" onClick={onCancel} disabled={submitting}>
