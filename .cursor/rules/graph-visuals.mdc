@@ -18,4 +18,4 @@ globs:
 alwaysApply: false
 ---
 
-Read `docs/agents/graph-visuals.md` for full context before making changes in these files. Notes BUG-2 (sector heatmap stub) and BUG-5 (Zod marketCapTier) — see `docs/issues.md`. Code style: `frontend/AGENTS.md` (no emoji; use SVG icons from `Icons.tsx`).
+Read `docs/agents/graph-visuals.md` for full context before making changes in these files. Code style: `frontend/AGENTS.md` (no emoji; use SVG icons from `Icons.tsx`).

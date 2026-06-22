@@ -7,8 +7,7 @@ globs:
   - backend/src/config.py
   - backend/src/config_loader.py
   - docs/infra-runbook.md
-  - docs/issues.md
 alwaysApply: false
 ---
 
-Read `docs/agents/devops-infra.md` for full context before making changes in these files. Deploy procedure: `docs/workflows/deploy-flow.md`. Cardinal rule: never deploy via SSH/rsync — all changes go Git → PR → CI/CD. Notes BUG-4 (`continue-on-error` regression), BUG-9 (stale CORS), BUG-11 (Redis URL leak) — see `docs/issues.md`.
+Read `docs/agents/devops-infra.md` for full context before making changes in these files. Deploy procedure: `docs/workflows/deploy-flow.md`. Cardinal rule: never deploy via SSH/rsync — all changes go Git → PR → CI/CD.

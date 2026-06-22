@@ -49,9 +49,9 @@ Boundaries: episode-level content rendering and the "mentioned in episodes" list
 
 ## Common pitfalls
 
-- **BUG-7 (medium):** [`frontend/src/pages/StockDashboard.tsx`](../../frontend/src/pages/StockDashboard.tsx) historically fabricated "Key Statistics" (Open = price × 0.98, P/E = 15.4). Any change to that section must read from actual OHLC data, not multipliers. See [`../issues.md`](../issues.md) BUG-7.
+- **BUG-7 (medium):** [`frontend/src/pages/StockDashboard.tsx`](../../frontend/src/pages/StockDashboard.tsx) historically fabricated "Key Statistics" (Open = price × 0.98, P/E = 15.4). Any change to that section must read from actual OHLC data, not multipliers.
 - **BUG-10 (medium):** Frontend recommendation client called `/api/recommendations/ticker/2330` but the real route is `/api/recommendations/by-ticker/2330`. The new flow uses `/api/ticker-insights/*` — prefer those when wiring new consumers. See [`../firestore-contract.md`](../firestore-contract.md) §4.
-- **`marketCapTier` Zod validation.** [`frontend/src/validation/schemas.ts`](../../frontend/src/validation/schemas.ts) requires `large | medium | small` but the API returns other values on some nodes. Either keep the field optional or fix the producer — not both with a fallback that masks the error. See [`../issues.md`](../issues.md) BUG-5.
+- **`marketCapTier` Zod validation.** [`frontend/src/validation/schemas.ts`](../../frontend/src/validation/schemas.ts) requires `large | medium | small` but the API returns other values on some nodes. Either keep the field optional or fix the producer — not both with a fallback that masks the error.
 - **Postgres pool DNS error in prod.** The legacy recommendation Postgres reports `pool_not_initialized` because `docker-db_postgres-1` is unreachable. Migrating reads to Firestore (via ticker-insights) is the actual fix, not a Postgres workaround. See [`../firestore-contract.md`](../firestore-contract.md) Phase A.
 - **TradingView logo URLs are external.** Render with a graceful broken-image state; don't block on logo load.
 
@@ -69,4 +69,3 @@ Boundaries: episode-level content rendering and the "mentioned in episodes" list
 - Workflow for Firestore changes: [`../workflows/firestore-data-change.md`](../workflows/firestore-data-change.md)
 - Backend code style: [`../../backend/AGENTS.md`](../../backend/AGENTS.md)
 - Frontend zh-TW glossary (stock terms): [`../../frontend/AGENTS.md`](../../frontend/AGENTS.md)
-- QA bugs in this domain: BUG-5, BUG-7, BUG-9, BUG-10 in [`../issues.md`](../issues.md)

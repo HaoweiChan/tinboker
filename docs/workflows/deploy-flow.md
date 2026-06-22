@@ -106,7 +106,7 @@ Before opening or merging a `develop → main` PR:
 - [ ] No new `continue-on-error: true` anywhere in `.github/workflows/`
 - [ ] No new `time.sleep()` in async code (per [`CLAUDE.md`](../../CLAUDE.md) "Do Not")
 - [ ] No new `@app.on_event("startup")` — use the lifespan pattern
-- [ ] Search/heatmap/Zod regressions checked (BUG-1, BUG-2, BUG-5 in [`../issues.md`](../issues.md))
+- [ ] Search/heatmap/Zod regressions checked (BUG-1, BUG-2, BUG-5)
 - [ ] CORS still includes `tinboker.com`, `dev.tinboker.com`, `staging.tinboker.com` (BUG-9 history)
 
 ## Cross-references

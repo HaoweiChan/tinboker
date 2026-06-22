@@ -65,7 +65,7 @@ The design-system half applies everywhere in the frontend, not just to graph pag
 
 ## Common pitfalls
 
-- **BUG-2 (critical):** [`frontend/src/services/mocks/sectorData.ts`](../../frontend/src/services/mocks/sectorData.ts) `getTreeMapData()` returns `[]` — that's why the S&P 500 industry heatmap renders blank. Either populate with real sector data or hide the tab. See [`../issues.md`](../issues.md) BUG-2. (Industry heatmap is rendered by [`frontend/src/pages/IndustryAnalysis.tsx`](../../frontend/src/pages/IndustryAnalysis.tsx) — itself sitting in the stock-data domain, but the data layer lives here.)
+- **BUG-2 (critical):** [`frontend/src/services/mocks/sectorData.ts`](../../frontend/src/services/mocks/sectorData.ts) `getTreeMapData()` returns `[]` — that's why the S&P 500 industry heatmap renders blank. Either populate with real sector data or hide the tab. (Industry heatmap is rendered by [`frontend/src/pages/IndustryAnalysis.tsx`](../../frontend/src/pages/IndustryAnalysis.tsx) — itself sitting in the stock-data domain, but the data layer lives here.)
 - **BUG-5 (critical):** [`frontend/src/validation/schemas.ts`](../../frontend/src/validation/schemas.ts) `GraphNodeDataSchema` requires `marketCapTier: z.enum(['large', 'medium', 'small'])` and `ticker`, but graph nodes from the API don't always have them. Console shows `Schema validation failed: data.nodes.0.data.marketCapTier`. Make the fields optional OR fix the API producer — don't add a silent fallback that masks the validation.
 - **Dark-mode Marp slides become unreadable.** The slides have transparent backgrounds and black text. Force a light background on the slide container regardless of theme.
 - **`EpisodeCard` must not have surface-specific variants.** Same look across HomeFeed, TagPage, PodcasterPage, StockDashboard. If a page needs a tweak, change the design tokens, not the component.
@@ -79,4 +79,3 @@ The design-system half applies everywhere in the frontend, not just to graph pag
 - Episode card content (data fields rendered): [`../firestore-contract.md`](../firestore-contract.md) §2.2 (Per-surface field consumption table)
 - Frontend conventions (zh-TW, no emoji): [`../../frontend/AGENTS.md`](../../frontend/AGENTS.md)
 - Backend code style: [`../../backend/AGENTS.md`](../../backend/AGENTS.md)
-- QA bugs: BUG-2 (heatmap), BUG-5 (Zod) in [`../issues.md`](../issues.md)

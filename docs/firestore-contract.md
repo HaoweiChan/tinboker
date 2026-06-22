@@ -45,7 +45,7 @@ This doc replaces that arrangement. It enumerates every Firestore path the platf
 **Out of scope — agents are NOT on the hook for these:**
 - Live market data: `price`, `change`, `changePercent`, `marketCap`, `volume`, `pe`, `dividendYield`, `chartData[]`. Source: FinMind (TW) and Massive API (US) via the backend's `stock_service`.
 - User state: `watchlist`, `podcast_subscriptions`, `episode_bookmarks`, `alerts`, `tag_subscriptions`, `notification_preferences`. Platform-owned writes.
-- Top Movers / sector heatmaps (currently mocked; see [issues.md](./issues.md) BUG-2). These come from market price feeds.
+- Top Movers / sector heatmaps (currently mocked). These come from market price feeds.
 
 **Versioning:** every agent-written document carries a `schema_version: <int>` field. This doc defines `schema_version: 3`. Bumping the integer requires updating this spec.
 
@@ -601,7 +601,7 @@ These came up implicitly in the agents-team message ("we'll flag anything imposs
 | Live stock price, change, market cap | FinMind API (TW), Massive API (US) | [backend/src/services/stock_service.py](../backend/src/services/stock_service.py) |
 | Chart OHLC data | Massive API + Postgres cache | Same |
 | User watchlist, subscriptions, bookmarks, alerts, preferences | Platform writes on `users/{user_id}` | [backend/src/database/user_db.py](../backend/src/database/user_db.py) |
-| Top Movers / sector heatmap | Currently mocked ([issues.md](./issues.md) BUG-2); future market data feed | [frontend/src/services/mocks/sectorData.ts](../frontend/src/services/mocks/sectorData.ts) |
+| Top Movers / sector heatmap | Currently mocked; future market data feed | [frontend/src/services/mocks/sectorData.ts](../frontend/src/services/mocks/sectorData.ts) |
 | Notification delivery | Platform | [backend/src/services/notification_service.py](../backend/src/services/notification_service.py) |
 | Authentication, JWT | Platform | [backend/src/services/auth_service.py](../backend/src/services/auth_service.py) |
 

@@ -6,8 +6,7 @@ globs:
   - .github/workflows/frontend-ci.yml
   - backend/tests/**
   - backend/src/main.py
-  - docs/issues.md
 alwaysApply: false
 ---
 
-Read `docs/agents/qa-tester.md` for full context before making changes in these files. Procedural overlay: `docs/workflows/qa-flow.md`. Bug catalog: `docs/issues.md`.
+Read `docs/agents/qa-tester.md` for full context before making changes in these files. Procedural overlay: `docs/workflows/qa-flow.md`.

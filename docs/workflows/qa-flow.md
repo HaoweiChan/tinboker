@@ -1,6 +1,6 @@
 # QA flow
 
-Procedure for QA-ing an environment, reproducing the known bugs in [`../issues.md`](../issues.md), and using the dev-bypass token for automated browser testing. The full QA suite (every endpoint, every page, every CI check) lives in [`../agents/qa-tester.md`](../agents/qa-tester.md) — this doc is the procedural overlay: when and how to use it.
+Procedure for QA-ing an environment, reproducing the known bugs, and using the dev-bypass token for automated browser testing. The full QA suite (every endpoint, every page, every CI check) lives in [`../agents/qa-tester.md`](../agents/qa-tester.md) — this doc is the procedural overlay: when and how to use it.
 
 ## When to run
 
@@ -26,10 +26,9 @@ Passes iff: `/health` healthy + Redis connected + Redis URL NOT exposed + stocks
 
 ## Known-issue regression checks
 
-These were the historical platform bugs. **All but BUG-2 are resolved** (see
-[`../issues.md`](../issues.md)) — the recipes below now serve as regression assertions: every row
-except BUG-2 should pass. Full context is in [`../agents/qa-tester.md`](../agents/qa-tester.md) and
-[`../issues.md`](../issues.md):
+These were the historical platform bugs — all but BUG-2 (industry heatmap stub) are resolved. The
+recipes below now serve as regression assertions: every row except BUG-2 should pass. Full context
+is in [`../agents/qa-tester.md`](../agents/qa-tester.md):
 
 | Bug | What to run | Owner doc |
 |---|---|---|
@@ -81,12 +80,11 @@ After fixing one of the known bugs:
 
 1. Re-run the exact repro from the bug table above.
 2. Run the smoke script.
-3. Update [`../issues.md`](../issues.md) to mark the bug fixed (date + commit SHA).
+3. Record the fix (date + commit SHA) in the PR description.
 4. Add a regression test if one doesn't exist (see [`backend/AGENTS.md`](../../backend/AGENTS.md) testing pattern).
 
 ## Cross-references
 
 - Full QA suite (every endpoint + page): [`../agents/qa-tester.md`](../agents/qa-tester.md)
-- Bug catalog with file locations and fix notes: [`../issues.md`](../issues.md)
 - Dev bypass details: [`CLAUDE.md`](../../CLAUDE.md) "Browser MCP — Dev Environment Auth Bypass"
 - Deploy verification: [`./deploy-flow.md`](./deploy-flow.md) "Verification"

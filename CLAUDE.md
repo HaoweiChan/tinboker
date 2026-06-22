@@ -52,7 +52,6 @@ that consolidated the former `tinboker-platform` (web UI + API) and `tinboker-ag
 
 **Operational reference:**
 - `docs/infra-runbook.md` — VPS, Caddy, GCP, Cloudflare, Docker, env vars (live ops)
-- `docs/issues.md` — the canonical, curated issue list (open issues + resolved log + architectural notes). Verify a bug still reproduces against current code before acting on it.
 
 **Code style / conventions (unchanged):**
 - `backend/AGENTS.md` — Python style, key file map
@@ -260,11 +259,10 @@ merges; run `git worktree prune` periodically (stale worktrees accumulate).
 
 ## Known Issues — check before relying
 
-The live, curated issue list is [`docs/issues.md`](docs/issues.md) — open issues, a resolved log
-(stable `BUG-N` labels), and architectural notes. Most of the original launch-era bugs are
-resolved; **always verify a bug still reproduces against current code before acting on it.**
-When you need to reproduce or regression-test, follow [`docs/agents/qa-tester.md`](docs/agents/qa-tester.md)
-and the procedural overlay in [`docs/workflows/qa-flow.md`](docs/workflows/qa-flow.md).
+The original launch-era bugs are resolved; **always verify a bug still reproduces against current
+code before acting on it.** When you need to reproduce or regression-test, follow
+[`docs/agents/qa-tester.md`](docs/agents/qa-tester.md) and the procedural overlay in
+[`docs/workflows/qa-flow.md`](docs/workflows/qa-flow.md).
 
 ---
 

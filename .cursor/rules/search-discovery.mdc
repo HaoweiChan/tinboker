@@ -15,4 +15,4 @@ globs:
 alwaysApply: false
 ---
 
-Read `docs/agents/search-discovery.md` for full context before making changes in these files. Note BUG-1 (suggestion index startup hook) — see `docs/issues.md`.
+Read `docs/agents/search-discovery.md` for full context before making changes in these files.
