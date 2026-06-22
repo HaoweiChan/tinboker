@@ -223,6 +223,19 @@ class GCSContentService:
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(_GCS_EXECUTOR, _upload_sync)
 
+    async def upload_bytes(self, bucket_name: str, blob_path: str, data: bytes, content_type: str) -> None:
+        """Upload raw bytes (e.g. an uploaded image/video) to a GCS blob."""
+        client = self.get_client()
+        if not client:
+            raise RuntimeError("GCS client not available")
+
+        def _upload_sync():
+            blob = client.bucket(bucket_name).blob(blob_path)
+            blob.upload_from_string(data, content_type=content_type)
+
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(_GCS_EXECUTOR, _upload_sync)
+
     async def delete_blob(self, bucket_name: str, blob_path: str) -> None:
         """Delete a GCS blob if it exists"""
         client = self.get_client()

@@ -118,10 +118,82 @@ class ThreadsService:
             await asyncio.sleep(delay)
             return await self._publish_container(client, container_id)
 
-    async def _create_carousel_item(self, client: httpx.AsyncClient, image_url: str) -> str:
+    async def publish_single_media(self, text: str, item: dict, *, video_timeout: float = 180.0) -> str:
+        """Publish one post carrying a single media item ``{type, url}`` (image or video).
+
+        Videos are processed asynchronously by Meta, so the container is polled until
+        FINISHED before publishing (a fixed sleep would race long uploads). Returns the
+        published media id.
+        """
+        if not self.is_configured:
+            raise ThreadsError("Threads API not configured (missing access token or user id)")
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            if item.get("type") == "video":
+                params = {"media_type": "VIDEO", "video_url": item["url"], "text": text, "access_token": self._token}
+                resp = await client.post(f"{self._base}/{self._user_id}/threads", data=params)
+                container_id = self._parse(resp, "create video container").get("id")
+                if not container_id:
+                    raise ThreadsError("Threads create video container returned no id")
+                await self._wait_until_ready(client, container_id, timeout=video_timeout)
+                return await self._publish_container(client, container_id)
+            # image path mirrors publish() but without re-opening a client
+            container_id = await self._create_container(client, text, item["url"])
+            await asyncio.sleep(5.0)
+            return await self._publish_container(client, container_id)
+
+    async def publish_media_carousel(
+        self, items: list[dict], text: str, *, video_timeout: float = 180.0, parent_delay: float = 3.0,
+    ) -> str:
+        """Publish a carousel of mixed media (2–20 ``{type, url}`` items). Returns root id.
+
+        Threads carousels may mix images and videos. Each child container is created,
+        then ALL are polled to FINISHED (videos take longest) before the parent is
+        created and published.
+        """
+        if not self.is_configured:
+            raise ThreadsError("Threads API not configured (missing access token or user id)")
+        if not (2 <= len(items) <= 20):
+            raise ThreadsError(f"Carousel needs 2–20 items, got {len(items)}")
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            child_ids: list[str] = []
+            for it in items:
+                if it.get("type") == "video":
+                    child_ids.append(await self._create_carousel_item(client, it["url"], media_type="VIDEO"))
+                else:
+                    child_ids.append(await self._create_carousel_item(client, it["url"]))
+            for cid in child_ids:
+                await self._wait_until_ready(client, cid, timeout=video_timeout)
+            await asyncio.sleep(parent_delay)
+            parent_id = await self._create_carousel_parent(client, child_ids, text)
+            return await self._publish_container(client, parent_id)
+
+    async def _wait_until_ready(
+        self, client: httpx.AsyncClient, container_id: str, *, timeout: float = 180.0, interval: float = 3.0,
+    ) -> None:
+        """Poll a media container until status == FINISHED (or raise on ERROR/timeout)."""
+        elapsed = 0.0
+        while elapsed < timeout:
+            resp = await client.get(
+                f"{self._base}/{container_id}",
+                params={"fields": "status,error_message", "access_token": self._token},
+            )
+            data = self._parse(resp, "check container status")
+            status = data.get("status")
+            if status == "FINISHED":
+                return
+            if status in ("ERROR", "EXPIRED"):
+                raise ThreadsError(f"Threads container {container_id} {status}: {data.get('error_message')}")
+            await asyncio.sleep(interval)
+            elapsed += interval
+        raise ThreadsError(f"Threads container {container_id} not ready after {timeout}s")
+
+    async def _create_carousel_item(
+        self, client: httpx.AsyncClient, media_url: str, *, media_type: str = "IMAGE"
+    ) -> str:
         params = {
-            "media_type": "IMAGE", "is_carousel_item": "true",
-            "image_url": image_url, "access_token": self._token,
+            "media_type": media_type, "is_carousel_item": "true",
+            ("video_url" if media_type == "VIDEO" else "image_url"): media_url,
+            "access_token": self._token,
         }
         resp = await client.post(f"{self._base}/{self._user_id}/threads", data=params)
         data = self._parse(resp, "create carousel item")

@@ -116,6 +116,25 @@ class FacebookService:
                 raise FacebookError(f"Facebook album post returned no id: {data}")
             return post_id
 
+    async def publish_video(self, message: str, video_url: str) -> str:
+        """Publish a single video post to the Page (description = caption).
+
+        Facebook fetches the video from ``video_url`` (a public/signed URL) and processes
+        it asynchronously; the returned video id identifies the post. A feed post cannot
+        mix a video with photos, so the caller must send video-only here.
+        """
+        self._require_configured()
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            resp = await client.post(
+                f"{self._base}/{self._page_id}/videos",
+                data={"file_url": video_url, "description": message, "access_token": self._token},
+            )
+            data = self._parse(resp, "create video post")
+            video_id = data.get("id")
+            if not video_id:
+                raise FacebookError(f"Facebook video post returned no id: {data}")
+            return video_id
+
     async def comment(self, post_id: str, message: str, image_url: Optional[str] = None) -> str:
         """Comment on a post (optionally with an image). Returns the comment id."""
         self._require_configured()
