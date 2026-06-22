@@ -75,7 +75,7 @@ export const SectorTickerCard: React.FC<SectorTickerCardProps> = ({
       </div>
 
       {reason && (
-        <p className="text-[11px] leading-[1.45] text-muted-foreground/90 line-clamp-2 mt-0.5">
+        <p className="text-[11px] leading-[1.5] text-muted-foreground/90 mt-0.5">
           {reason}
         </p>
       )}
