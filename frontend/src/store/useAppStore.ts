@@ -28,6 +28,7 @@ interface AppState {
   // Auth
   user: User | null;
   token: string | null;
+  refreshToken: string | null;
   isAuthReady: boolean;
 
   // Graph visualization
@@ -64,7 +65,7 @@ interface AppState {
   setTheme: (theme: 'dark' | 'light') => void;
 
   // Auth actions
-  login: (user: User, token: string) => void;
+  login: (user: User, token: string, refreshToken?: string) => void;
   logout: () => void;
   setAuthReady: (ready: boolean) => void;
 
@@ -113,6 +114,7 @@ export const useAppStore = create<AppState>()(
       heroSearchInView: false,
       user: null,
       token: null,
+      refreshToken: null,
       isAuthReady: false,
       selectedConcept: null,
       selectedCompany: null,
@@ -153,8 +155,16 @@ export const useAppStore = create<AppState>()(
           return { theme };
         }),
 
-      login: (user, token) => set(() => ({ user, token })),
-      logout: () => set(() => ({ user: null, token: null })),
+      // refreshToken is only overwritten when explicitly provided, so callers
+      // that re-issue just an access token (e.g. token re-validation) keep the
+      // persisted refresh token intact.
+      login: (user, token, refreshToken) =>
+        set((state) => ({
+          user,
+          token,
+          refreshToken: refreshToken !== undefined ? refreshToken : state.refreshToken,
+        })),
+      logout: () => set(() => ({ user: null, token: null, refreshToken: null })),
       setAuthReady: (ready) => set(() => ({ isAuthReady: ready })),
 
       toggleWatchlist: async (ticker) => {
@@ -403,6 +413,7 @@ export const useAppStore = create<AppState>()(
       partialize: (state) => ({
         theme: state.theme,
         token: state.token,
+        refreshToken: state.refreshToken,
         user: state.user,
         watchlist: state.watchlist,
         alerts: state.alerts,

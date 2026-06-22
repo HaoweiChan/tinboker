@@ -57,5 +57,6 @@ class UpdateNotificationPreferencesRequest(BaseModel):
 class AuthResponse(BaseModel):
     """Authentication response model"""
     user: UserResponse
-    token: str  # JWT session token
+    token: str  # JWT access token
+    refresh_token: Optional[str] = None  # Long-lived JWT for silent re-auth
 
