@@ -742,19 +742,19 @@ class PodcastService:
     def _get_topic_tags(self) -> list[str]:
         """Candidate tags for the trending board — auto-surfaced by volume, vocab-gated.
 
-        Real topics only: Firestore ``tags`` parent docs INTERSECTED with the canonical
-        tag vocabulary (the LLM hallucinates thousands of off-vocab junk slugs into the
-        collection — tickers, fund names — which we must not surface or pay to scan),
-        MINUS admin-hidden ones. A tag does NOT need to be pre-promoted: get_trending_tags
-        ranks by recent scoped-count and drops anything below the floor; the registry
-        tier is only a HIDE override. The real Firestore spelling is kept for the
-        subcollection lookup; vocab membership is tested on the normalized form.
-        Falls back to the registry trending tier if the Firestore listing is unavailable.
+        A Firestore tag surfaces iff it is in the canonical vocabulary OR an admin has
+        explicitly promoted it (registry trending tag row — the allow-override for legit
+        off-vocab topics like 2nm/3d_packaging), AND it is not admin-hidden. Without an
+        override, off-vocab junk (the thousands of hallucinated ticker/fund slugs) is
+        neither surfaced nor scanned. The real Firestore spelling is kept for the
+        subcollection lookup; membership is tested on the normalized form. Falls back to
+        the registry trending tier if the Firestore listing is unavailable.
         """
         db = next(get_session())
         try:
             hidden = hidden_tag_slugs(db)
             canon = canonical_tag_slugs()
+            promoted = {normalize_tag_slug(s) for s in trending_slugs(db)}  # admin allow-override
             try:
                 all_slugs = self.firestore_service.get_all_parent_documents("tags")
             except Exception as e:
@@ -763,7 +763,8 @@ class PodcastService:
             if all_slugs:
                 return [
                     s for s in all_slugs
-                    if normalize_tag_slug(s) in canon and normalize_tag_slug(s) not in hidden
+                    if (normalize_tag_slug(s) in canon or normalize_tag_slug(s) in promoted)
+                    and normalize_tag_slug(s) not in hidden
                 ]
             return trending_slugs(db)
         finally:

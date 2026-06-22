@@ -74,9 +74,11 @@ export const AdminTagsPage: React.FC = () => {
   const handleToggleTier = async (tag: AdminTagEntry) => {
     try {
       if (tag.registered === false || tag.id == null) {
-        // Virtual tag (auto-surfaced, visible by default) → hide it by creating the
-        // registry row at tier='hidden'. Refetch so it shows as a registered row.
-        await createAdminTag({ slug: tag.slug, display_zh: tag.display_zh, tier: 'hidden' });
+        // Virtual tag (no registry row yet) → materialize it at the FLIPPED tier:
+        // a visible vocab tag becomes hidden; a hidden off-vocab tag becomes trending
+        // (promoting it past the vocabulary gate). Refetch so it shows as registered.
+        const newTier = tag.tier === 'trending' ? 'hidden' : 'trending';
+        await createAdminTag({ slug: tag.slug, display_zh: tag.display_zh, tier: newTier });
         await fetchTags();
         return;
       }
@@ -236,6 +238,10 @@ export const AdminTagsPage: React.FC = () => {
           <option value="hidden">Hidden</option>
         </select>
       </div>
+
+      <p className="mb-4 -mt-1 text-xs text-gray-400">
+        Off-vocabulary tags (auto-extracted, hidden from /topics) appear only when you search — find one and toggle it to “show” to promote it.
+      </p>
 
       {/* Table */}
       <div className="overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
