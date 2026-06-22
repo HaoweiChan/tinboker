@@ -167,8 +167,10 @@ async def list_tags(
                 continue
             virtual.append({"slug": s, "display_zh": label})
 
-    tag_slugs_to_count = [r.slug for r in tag_rows] + [v["slug"] for v in virtual]
-    tag_counts = await _count_episodes_for_slugs(tag_slugs_to_count) if tag_slugs_to_count else {}
+    # Count ONLY registry tag rows (a bounded ~dozens). Virtual tags are NOT counted —
+    # there can be hundreds of Firestore tags and one subcollection count each blows past
+    # the gateway timeout (caused a 524). Virtual rows show episode_count=None ("—").
+    tag_counts = await _count_episodes_for_slugs([r.slug for r in tag_rows]) if tag_rows else {}
     sector_counts: dict[str, int] = {}
     if sector_rows:
         try:
@@ -197,7 +199,7 @@ async def list_tags(
         TagEntryResponse(
             id=None, slug=v["slug"], display_zh=v["display_zh"],
             tier=TIER_TRENDING, kind=KIND_TAG, registered=False,
-            episode_count=tag_counts.get(v["slug"], 0),
+            episode_count=None,  # not counted — see note above (avoids the 524 timeout)
         )
         for v in virtual
     ]
