@@ -30,8 +30,8 @@ export const TickerRow: React.FC<TickerRowProps> = ({ ticker, onClick, className
       className={cn('ticker-row w-full text-left', interactive && 'hover:bg-muted transition-colors', className)}
     >
       <StockIdentity ticker={ticker.symbol} name={ticker.name} size="sm" className="min-w-0" />
-      {ticker.sentiment ? <SentimentChip sentiment={ticker.sentiment} /> : <span />}
-      <span className="flex items-baseline gap-1 justify-end">
+      {ticker.sentiment ? <SentimentChip sentiment={ticker.sentiment} className="w-full justify-start" /> : <span />}
+      <span className="flex items-baseline gap-1.5 justify-end">
         <Change value={ticker.changePercent} />
         {ticker.sinceLabel && (
           <span className="text-2xs text-muted-foreground whitespace-nowrap">{ticker.sinceLabel}</span>

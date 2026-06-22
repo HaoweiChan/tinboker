@@ -16,7 +16,7 @@ interface SegmentedProps<T extends string> {
 /** Pill-shaped segmented control (used for sort/market toggles). */
 export function Segmented<T extends string>({ options, value, onChange, className }: SegmentedProps<T>) {
   return (
-    <div className={cn('inline-flex p-[3px] rounded-full bg-muted', className)} role="tablist">
+    <div className={cn('inline-flex p-[3px] rounded-md bg-muted', className)} role="tablist">
       {options.map((opt) => {
         const active = opt.value === value;
         return (
@@ -27,8 +27,8 @@ export function Segmented<T extends string>({ options, value, onChange, classNam
             aria-selected={active}
             onClick={() => onChange(opt.value)}
             className={cn(
-              'px-3.5 py-1.5 rounded-full text-xs font-medium transition-colors whitespace-nowrap',
-              active ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+              'px-3.5 py-1.5 rounded-sm text-xs font-medium transition-colors whitespace-nowrap',
+              active ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground',
             )}
           >
             {opt.label}

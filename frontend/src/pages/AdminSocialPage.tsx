@@ -8,6 +8,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { RefreshCw, Save, Check, MessageSquare, Image as ImageIcon, Eye, Wand2, Send } from 'lucide-react';
 import { SlideViewer } from '@/components/common/SlideViewer';
+import { PromoComposer } from '@/components/admin/PromoComposer';
 import {
   listSocialEpisodes,
   getSocialEpisode,
@@ -60,6 +61,7 @@ export const AdminSocialPage: React.FC = () => {
   const [publishing, setPublishing] = useState(false);
   const [publishMsg, setPublishMsg] = useState<string | null>(null);
   const [showComposed, setShowComposed] = useState(false);
+  const [tab, setTab] = useState<'episodes' | 'promo'>('episodes');
 
   const fetchList = useCallback(async () => {
     setLoadingList(true);
@@ -166,21 +168,45 @@ export const AdminSocialPage: React.FC = () => {
 
   return (
     <div className="p-4 lg:p-8">
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-4 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Social</h1>
           <p className="text-base text-muted-foreground">
-            自動生成 Threads／Facebook 文案 — 可編輯、預覽卡片圖，按「發佈」即同步貼到兩個平台。
+            {tab === 'episodes'
+              ? '自動生成 Threads／Facebook 文案 — 可編輯、預覽卡片圖，按「發佈」即同步貼到兩個平台。'
+              : '自己寫一則宣傳貼文，附圖片／影片，一鍵同步貼到 Threads + Facebook。'}
           </p>
         </div>
-        <button
-          onClick={fetchList}
-          className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-base font-medium text-foreground hover:bg-muted"
-        >
-          <RefreshCw className={`h-4 w-4 ${loadingList ? 'animate-spin' : ''}`} /> Refresh
-        </button>
+        {tab === 'episodes' && (
+          <button
+            onClick={fetchList}
+            className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-base font-medium text-foreground hover:bg-muted"
+          >
+            <RefreshCw className={`h-4 w-4 ${loadingList ? 'animate-spin' : ''}`} /> Refresh
+          </button>
+        )}
       </div>
 
+      {/* Tabs: episode social copy vs. free-form promo composer */}
+      <div className="mb-6 flex gap-1 border-b border-border">
+        {([['episodes', '節目文案'], ['promo', '宣傳貼文']] as const).map(([key, txt]) => (
+          <button
+            key={key}
+            onClick={() => setTab(key)}
+            className={`-mb-px border-b-2 px-4 py-2 text-base font-semibold ${
+              tab === key
+                ? 'border-primary text-primary'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            {txt}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'promo' && <PromoComposer />}
+
+      {tab === 'episodes' && (
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[320px_1fr]">
         {/* Episode list */}
         <div className={`${card} h-fit max-h-[80vh] overflow-y-auto`}>
@@ -345,6 +371,7 @@ export const AdminSocialPage: React.FC = () => {
           )}
         </div>
       </div>
+      )}
     </div>
   );
 };

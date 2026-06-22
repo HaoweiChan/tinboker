@@ -77,7 +77,7 @@ Users → Cloudflare Edge (cache + DDoS) → Netcup VPS (152.53.136.182)
 ### CORS
 
 - Origins set per-environment in `docker-compose.multi.yml`. Must include `tinboker.com`, `dev.tinboker.com`, `staging.tinboker.com`.
-- **BUG-9 (medium, historical):** [`backend/src/config.py`](../../backend/src/config.py) had `trendbrief.xyz` (old domain) but not `tinboker.com`. Spot-check before infra changes. See [`../qa-report-2026-05-09.md`](../qa-report-2026-05-09.md) BUG-9.
+- **BUG-9 (medium, historical):** [`backend/src/config.py`](../../backend/src/config.py) had `trendbrief.xyz` (old domain) but not `tinboker.com`. Spot-check before infra changes.
 
 ### Monitoring
 
@@ -119,4 +119,3 @@ Users → Cloudflare Edge (cache + DDoS) → Netcup VPS (152.53.136.182)
 - Branch → env → tag workflow: [`../workflows/deploy-flow.md`](../workflows/deploy-flow.md)
 - Health check + bug repro flow: [`../workflows/qa-flow.md`](../workflows/qa-flow.md)
 - Project-wide rules (deploy don'ts, allowed read-only server commands): [`CLAUDE.md`](../../CLAUDE.md)
-- Bugs: BUG-4, BUG-9, BUG-11, INFRA-1..4 in [`../qa-report-2026-05-09.md`](../qa-report-2026-05-09.md)

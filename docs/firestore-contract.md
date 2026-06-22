@@ -45,7 +45,7 @@ This doc replaces that arrangement. It enumerates every Firestore path the platf
 **Out of scope — agents are NOT on the hook for these:**
 - Live market data: `price`, `change`, `changePercent`, `marketCap`, `volume`, `pe`, `dividendYield`, `chartData[]`. Source: FinMind (TW) and Massive API (US) via the backend's `stock_service`.
 - User state: `watchlist`, `podcast_subscriptions`, `episode_bookmarks`, `alerts`, `tag_subscriptions`, `notification_preferences`. Platform-owned writes.
-- Top Movers / sector heatmaps (currently mocked; see [qa-report-2026-05-09.md](./qa-report-2026-05-09.md) BUG-2). These come from market price feeds.
+- Top Movers / sector heatmaps (currently mocked). These come from market price feeds.
 
 **Versioning:** every agent-written document carries a `schema_version: <int>` field. This doc defines `schema_version: 3`. Bumping the integer requires updating this spec.
 
@@ -235,7 +235,7 @@ This table maps every UI surface to the subset of episode fields it actually rea
 
 These are contract cleanups tracked across platform and pipeline work.
 
-1. **Timestamp normalization — `released_at_ms` from the feed publish date.** Status: **pipeline write path implemented for new episodes**. The pipeline wires feed `datePublished` into `released_at_ms` and uses it as the creation-time fallback when Spotify is absent. Existing episodes still require the historical feed-driven backfill before the platform can safely enable `RELEASE_EPISODE_MAX_AGE_DAYS`. **Do NOT mutate `created_time` on existing episodes** (§ 6.3) — only set `released_at_ms`. See the handoff: [docs/handoffs/released-at-ms-publish-date.md](handoffs/released-at-ms-publish-date.md).
+1. **Timestamp normalization — `released_at_ms` from the feed publish date.** Status: **pipeline write path implemented for new episodes**. The pipeline wires feed `datePublished` into `released_at_ms` and uses it as the creation-time fallback when Spotify is absent. Existing episodes still require the historical feed-driven backfill before the platform can safely enable `RELEASE_EPISODE_MAX_AGE_DAYS`. **Do NOT mutate `created_time` on existing episodes** (§ 6.3) — only set `released_at_ms`.
 
 2. **Audit the `*_url` / `*_public_url` pairs.** The Episode model defines both `gs://` and HTTPS variants for each artifact. Most of the time the backend hydrates content via `episode_transformer.py` from `*_content` directly. We propose:
    - Drop the `*_public_url` half of every pair where the backend can sign GCS URLs on demand.
@@ -601,7 +601,7 @@ These came up implicitly in the agents-team message ("we'll flag anything imposs
 | Live stock price, change, market cap | FinMind API (TW), Massive API (US) | [backend/src/services/stock_service.py](../backend/src/services/stock_service.py) |
 | Chart OHLC data | Massive API + Postgres cache | Same |
 | User watchlist, subscriptions, bookmarks, alerts, preferences | Platform writes on `users/{user_id}` | [backend/src/database/user_db.py](../backend/src/database/user_db.py) |
-| Top Movers / sector heatmap | Currently mocked ([qa-report-2026-05-09.md](./qa-report-2026-05-09.md) BUG-2); future market data feed | [frontend/src/services/mocks/sectorData.ts](../frontend/src/services/mocks/sectorData.ts) |
+| Top Movers / sector heatmap | Currently mocked; future market data feed | [frontend/src/services/mocks/sectorData.ts](../frontend/src/services/mocks/sectorData.ts) |
 | Notification delivery | Platform | [backend/src/services/notification_service.py](../backend/src/services/notification_service.py) |
 | Authentication, JWT | Platform | [backend/src/services/auth_service.py](../backend/src/services/auth_service.py) |
 

@@ -1,6 +1,6 @@
 # QA flow
 
-Procedure for QA-ing an environment, reproducing the known bugs in [`../qa-report-2026-05-09.md`](../qa-report-2026-05-09.md), and using the dev-bypass token for automated browser testing. The full QA suite (every endpoint, every page, every CI check) lives in [`../agents/qa-tester.md`](../agents/qa-tester.md) — this doc is the procedural overlay: when and how to use it.
+Procedure for QA-ing an environment, reproducing the known bugs, and using the dev-bypass token for automated browser testing. The full QA suite (every endpoint, every page, every CI check) lives in [`../agents/qa-tester.md`](../agents/qa-tester.md) — this doc is the procedural overlay: when and how to use it.
 
 ## When to run
 
@@ -18,15 +18,17 @@ The leftmost column letter (`L`/`D`/`S`/`P`) matches the environment IDs at the 
 A copy-paste smoke script is in [`../agents/qa-tester.md`](../agents/qa-tester.md) §8. Save as `qa_smoke.sh`, then:
 
 ```bash
-./qa_smoke.sh https://staging-api.tinboker.com https://staging.tinboker-platform.pages.dev
+./qa_smoke.sh https://staging-api.tinboker.com https://staging.tinboker.com
 ./qa_smoke.sh https://api.tinboker.com https://tinboker.com
 ```
 
 Passes iff: `/health` healthy + Redis connected + Redis URL NOT exposed + stocks/podcasts/graphs/search-suggest return non-empty + auth correctly rejects invalid tokens + frontend + manifest load.
 
-## Reproducing the 8 known bugs
+## Known-issue regression checks
 
-Map of bug → repro test (full repro instructions are in [`../agents/qa-tester.md`](../agents/qa-tester.md) and [`../qa-report-2026-05-09.md`](../qa-report-2026-05-09.md)):
+These were the historical platform bugs — all but BUG-2 (industry heatmap stub) are resolved. The
+recipes below now serve as regression assertions: every row except BUG-2 should pass. Full context
+is in [`../agents/qa-tester.md`](../agents/qa-tester.md):
 
 | Bug | What to run | Owner doc |
 |---|---|---|
@@ -45,14 +47,19 @@ Dev and staging are gated by Google OAuth + admin email allowlist. Automated bro
 
 ### Steps
 
-1. Navigate to: `https://dev.tinboker.com/auth/dev-bypass?token=CXvkSTaZAghJF0jYidL4ii3DbgOo-Z5NVwgFLoNk05I`
-2. Wait for redirect to `/` (the page calls `POST /api/auth/dev-token` under the hood and stores the JWT in `localStorage`).
-3. Drive the app as an authenticated session.
+1. Fetch the current token from GCP Secret Manager (never paste it into docs, commits, or chat):
+   ```bash
+   gcloud secrets versions access latest --secret=DEV_BYPASS_TOKEN \
+     --project=gen-lang-client-0901363254
+   ```
+2. Navigate to `https://dev.tinboker.com/auth/dev-bypass?token=$DEV_BYPASS_TOKEN`.
+3. Wait for redirect to `/` (the page calls `POST /api/auth/dev-token` under the hood and stores the JWT in `localStorage`).
+4. Drive the app as an authenticated session.
 
 ### Constraints
 
 - **Dev environment only** — the endpoint is disabled when `ENVIRONMENT=production`.
-- **Token is not in the repo** — it lives in this doc, in [`CLAUDE.md`](../../CLAUDE.md), and in the VPS `.env`.
+- **Token is a rotating secret, not in the repo** — fetch it from GCP Secret Manager (it is also set as an env var on the VPS backend container). Never hardcode it.
 - **Don't log the URL with query string** in any persisted output.
 - See [`../agents/auth-admin.md`](../agents/auth-admin.md) "Dev bypass" for the contract.
 
@@ -73,12 +80,11 @@ After fixing one of the known bugs:
 
 1. Re-run the exact repro from the bug table above.
 2. Run the smoke script.
-3. Update [`../qa-report-2026-05-09.md`](../qa-report-2026-05-09.md) to mark the bug fixed (date + commit SHA).
+3. Record the fix (date + commit SHA) in the PR description.
 4. Add a regression test if one doesn't exist (see [`backend/AGENTS.md`](../../backend/AGENTS.md) testing pattern).
 
 ## Cross-references
 
 - Full QA suite (every endpoint + page): [`../agents/qa-tester.md`](../agents/qa-tester.md)
-- Bug catalog with file locations and fix notes: [`../qa-report-2026-05-09.md`](../qa-report-2026-05-09.md)
 - Dev bypass details: [`CLAUDE.md`](../../CLAUDE.md) "Browser MCP — Dev Environment Auth Bypass"
 - Deploy verification: [`./deploy-flow.md`](./deploy-flow.md) "Verification"

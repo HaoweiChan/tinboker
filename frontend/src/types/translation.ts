@@ -46,6 +46,7 @@ export interface TranslationCreate {
 
 // Update translation request
 export interface TranslationUpdate {
+  market?: string;
   name_en?: string;
   name_zh_tw?: string;
   translation_status?: TranslationStatus;

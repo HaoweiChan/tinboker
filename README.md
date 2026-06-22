@@ -133,14 +133,14 @@ tinboker/
 ```
 
 <details>
-<summary><strong>backend/</strong> — FastAPI platform (31 routers, 30 services)</summary>
+<summary><strong>backend/</strong> — FastAPI platform (32 routers, 38 services)</summary>
 
 ```
 backend/src/
 ├── main.py          FastAPI app & lifespan
 ├── config.py        Settings (env + GCP Secret Manager)
-├── routers/         31 API endpoint modules (stocks, search, graph, podcast, admin_*, …)
-├── services/        30 business-logic modules (stock, finmind, massive, insight, …)
+├── routers/         32 API endpoint modules (stocks, search, graph, podcast, admin_*, …)
+├── services/        38 business-logic modules (stock, finmind, massive, insight, …)
 ├── database/        ORM models & CRUD
 ├── models/ schemas/ Pydantic request/response models
 ├── auth/            Google OAuth + JWT
@@ -152,11 +152,11 @@ backend/src/
 </details>
 
 <details>
-<summary><strong>frontend/</strong> — React web UI (38 route-level pages)</summary>
+<summary><strong>frontend/</strong> — React web UI (42 route-level pages)</summary>
 
 ```
 frontend/src/
-├── pages/           38 route-level React pages
+├── pages/           42 route-level React pages
 ├── components/      Reusable UI (charts, stock, graph, financial, industry, …)
 ├── services/        API client + business logic
 ├── store/           Zustand state stores
@@ -235,13 +235,15 @@ VPS: `152.53.136.182` (Netcup RS 1000 G11, Debian 13) · reverse proxy: Caddy (a
 
 | Pipeline | Trigger | Effect |
 |----------|---------|--------|
-| `backend-ci.yml` | PR → develop/main | Lint (ruff) + pytest |
-| `backend-deploy.yml` / `backend-deploy-admin.yml` | Push → develop/main | Docker build → VPS deploy → Cloudflare purge |
+| `backend-ci.yml` | PR → develop/main | Lint (ruff) + pytest, gated by a `ci-gate` job |
+| `backend-deploy.yml` | Push → develop/main, `v*` tag | Docker build → VPS deploy → Cloudflare purge |
+| `backend-deploy-admin.yml` | Manual (`workflow_dispatch`) | Deploy the admin-dashboard image variant (optionally with Netdata) |
 | `frontend-ci.yml` | PR → develop/main | TypeScript check + ESLint |
-| `frontend-deploy.yml` | Push → develop/main | Cloudflare Pages deploy |
+| `frontend-deploy.yml` | Push → develop/main, `v*` tag | Cloudflare Pages deploy → CDN purge |
 | `pipelines-ci.yml` | PR → develop/main | Lint + pytest (uv workspace) |
 | `pipelines-deploy.yml` | Push → develop/main | Deploy pipelines services to VPS |
 | `backend-health-check.yml` | Cron (10 min) | Health check all envs |
+| `refresh-social-tokens.yml` | Cron (monthly) + manual | Refresh the Threads access token in GCP Secret Manager |
 
 Docker images: `ghcr.io/haoweichan/tinboker-backend:{tag}`. Deploys flow strictly through
 Git → PR → CI/CD — never SSH/rsync to the VPS directly. See
@@ -293,3 +295,10 @@ place:
 
 See [`CLAUDE.md`](CLAUDE.md) for agent guidelines and [`docs/infra-runbook.md`](docs/infra-runbook.md)
 for the infrastructure runbook.
+
+---
+
+## License
+
+Proprietary — all rights reserved. The code is publicly visible for reference only and is **not**
+licensed for reuse. See [`LICENSE`](LICENSE).

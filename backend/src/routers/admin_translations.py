@@ -189,7 +189,11 @@ async def update_translation(
 ):
     """Update an existing translation."""
     service = TranslationService(db)
-    translation = service.update(translation_id, data, updated_by="admin")
+    try:
+        translation = service.update(translation_id, data, updated_by="admin")
+    except ValueError as e:
+        # Market change would collide with an existing (ticker, market) row.
+        raise HTTPException(status_code=409, detail=str(e))
     if not translation:
         raise HTTPException(status_code=404, detail="Translation not found")
     return TranslationResponse.model_validate(translation)

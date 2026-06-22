@@ -98,6 +98,10 @@ class Settings(BaseSettings):
     facebook_page_access_token: Optional[str] = None
     facebook_api_base: str = "https://graph.facebook.com/v21.0"
 
+    # Bucket for ad-hoc promo media (admin "promo" composer uploads). Stored private;
+    # Meta fetches each file via a short-lived V4 signed URL at publish time.
+    promo_media_bucket: str = "graphfolio-articles"
+
     # ==================== SEO ====================
     # Public site origin — used to build episode permalinks in Threads posts and
     # the dynamic sitemap. No trailing slash.

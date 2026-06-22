@@ -34,7 +34,7 @@ def _patch_cache(monkeypatch):
         purges.append(kwargs)
         return True
 
-    monkeypatch.setattr(m, "cache_delete_pattern", fake_delete_pattern)
+    monkeypatch.setattr(m, "cache_delete_pattern_all_envs", fake_delete_pattern)
     monkeypatch.setattr(m, "purge_cdn_cache", fake_purge)
     return patterns, purges
 
@@ -68,8 +68,28 @@ async def test_invalidate_is_best_effort_and_never_raises(monkeypatch):
     async def boom_purge(**kwargs):
         raise RuntimeError("cloudflare down")
 
-    monkeypatch.setattr(m, "cache_delete_pattern", boom_pattern)
+    monkeypatch.setattr(m, "cache_delete_pattern_all_envs", boom_pattern)
     monkeypatch.setattr(m, "purge_cdn_cache", boom_purge)
 
     # Must complete without raising.
     await m._invalidate_source_caches()
+
+
+def test_env_redis_urls_targets_each_logical_db():
+    """An admin edit must purge prod (/0), staging (/1), and dev (/2) logical DBs —
+    derived from the configured Redis URL regardless of which DB it points at."""
+    from src.cache.redis_client import _env_redis_urls, _ENV_REDIS_DBS
+
+    assert _env_redis_urls("redis://redis:6379/2") == [
+        "redis://redis:6379/0",
+        "redis://redis:6379/1",
+        "redis://redis:6379/2",
+    ]
+    # Credentials in the netloc survive the DB rewrite (no password loss).
+    assert _env_redis_urls("redis://:pw@host:6379/0") == [
+        f"redis://:pw@host:6379/{db}" for db in _ENV_REDIS_DBS
+    ]
+    # A URL with no DB suffix still fans out to all envs.
+    assert _env_redis_urls("redis://host:6379") == [
+        f"redis://host:6379/{db}" for db in _ENV_REDIS_DBS
+    ]

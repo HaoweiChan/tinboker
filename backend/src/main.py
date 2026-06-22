@@ -37,8 +37,8 @@ from src.routers.comments import router as comments_router, comments_router as c
 from src.routers.articles import router as articles_router
 from src.routers.admin_articles import router as admin_articles_router
 from src.routers.admin_tags import router as admin_tags_router
-from src.routers.social import router as social_router, facebook_router
-from src.routers.seo import router as seo_router
+from src.routers.social import router as social_router, facebook_router, promo_router
+from src.routers.seo import router as seo_router, admin_router as admin_seo_router
 from src.middleware.cloudflare import CloudflareMiddleware
 
 
@@ -88,7 +88,10 @@ async def lifespan(app: FastAPI):
     # Seed missing translations (names only). Brand colors live in stock_translations
     # and are maintained through the admin/bulk endpoints, not code-side seed data.
     try:
+        from src.data.foreign_stocks import FOREIGN_STOCK_TRANSLATIONS
         from src.data.seed_data import TRANSLATIONS
+        from src.data.ticker_aliases import ALIAS_SEED
+        from src.data.tw_listings import TW_LISTINGS
         from src.data.us_stocks import US_STOCK_TRANSLATIONS
         from src.database.postgres import get_session
         from src.services.translation_service import TranslationService
@@ -100,9 +103,30 @@ async def lifespan(app: FastAPI):
             us_inserted = svc.backfill_translations(US_STOCK_TRANSLATIONS)
             if us_inserted:
                 print(f"Backfilled {us_inserted} new US stock translation(s).")
+            foreign_inserted = svc.backfill_translations(FOREIGN_STOCK_TRANSLATIONS)
+            if foreign_inserted:
+                print(f"Backfilled {foreign_inserted} new foreign (KR/…) stock translation(s).")
+            # Authoritative full TW universe from the official exchange ISIN crawl
+            # (static, version-controlled). Fills new rows + name-less stubs; approved wins.
+            tw_listing_inserted = svc.backfill_translations(TW_LISTINGS)
+            if tw_listing_inserted:
+                print(f"Backfilled {tw_listing_inserted} TW exchange listing(s).")
+            # Freshness top-up from FinMind's live registry (catches listings newer than the
+            # committed crawl); self-throttling and best-effort — never raises into startup.
+            tw_seeded = svc.seed_tw_from_finmind()
+            if tw_seeded:
+                print(f"Seeded/filled {tw_seeded} TW translation(s) from FinMind registry.")
             corrected = svc.apply_known_name_corrections()
             if corrected:
                 print(f"Corrected {corrected} mislabeled stock translation name(s).")
+            # Fix the market of legacy rows whose stored value disagrees with the ticker
+            # shape (e.g. 6-digit Korean codes once defaulted to TW). Skips approved rows.
+            reclassified = svc.reclassify_markets()
+            if reclassified:
+                print(f"Reclassified {reclassified} stock translation market(s).")
+            aliased = svc.seed_aliases(ALIAS_SEED)
+            if aliased:
+                print(f"Seeded aliases on {aliased} stock translation(s).")
             break
     except Exception as e:
         print(f"Warning: translation seed/backfill skipped: {e}")
@@ -281,22 +305,31 @@ app.include_router(recommendations_router)
 app.include_router(ticker_insights_router)
 app.include_router(analytics_router, prefix="/api/analytics", tags=["analytics"])
 app.include_router(translations_router)
-app.include_router(admin_translations_router)
 app.include_router(sources_router)
-app.include_router(admin_sources_router)
-app.include_router(admin_pipeline_router)
-app.include_router(admin_pipeline_trial_router)
-app.include_router(admin_system_router)
-app.include_router(admin_analytics_router)
 app.include_router(notifications_router)
 app.include_router(comments_router)
 app.include_router(comments_delete_router)
 app.include_router(articles_router)
-app.include_router(admin_articles_router)
-app.include_router(admin_tags_router)
-app.include_router(social_router)
-app.include_router(facebook_router)
-app.include_router(seo_router)
+app.include_router(seo_router)  # public /sitemap.xml — stays on every env
+
+# Admin dashboard is developer-only and consolidated onto the dev/staging envs. Skip
+# mounting every /api/admin/* router in production so api.tinboker.com exposes no admin
+# surface at all (and needs no email allowlist there) — all envs share one DB, so admin
+# edits made on dev still reflect in prod (see cache_delete_pattern_all_envs for the
+# cross-env cache purge that backs this).
+if not settings.is_production:
+    app.include_router(admin_translations_router)
+    app.include_router(admin_sources_router)
+    app.include_router(admin_pipeline_router)
+    app.include_router(admin_pipeline_trial_router)
+    app.include_router(admin_system_router)
+    app.include_router(admin_analytics_router)
+    app.include_router(admin_articles_router)
+    app.include_router(admin_tags_router)
+    app.include_router(social_router)       # /api/admin/threads/*
+    app.include_router(facebook_router)     # /api/admin/facebook/*
+    app.include_router(promo_router)        # /api/admin/promo/*
+    app.include_router(admin_seo_router)    # /api/admin/seo/*
 
 
 # Global exception handler

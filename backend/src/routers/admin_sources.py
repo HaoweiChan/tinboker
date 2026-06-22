@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from src.services.podcast import PodcastService
 from src.database.postgres import get_session
-from src.cache import cache_delete_pattern, purge_cdn_cache
+from src.cache import cache_delete_pattern_all_envs, purge_cdn_cache
 from src.auth.admin_auth import get_admin_access, AdminAccess
 from src.services.content_source_service import ContentSourceService
 from src.schemas.content_source import (
@@ -69,7 +69,7 @@ async def _invalidate_source_caches() -> None:
         "news:*",
     ):
         try:
-            await cache_delete_pattern(pattern)
+            await cache_delete_pattern_all_envs(pattern)
         except Exception as e:
             logger.warning("source cache: Redis invalidation failed for %s: %s", pattern, e)
 

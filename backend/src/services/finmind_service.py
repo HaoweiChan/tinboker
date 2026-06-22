@@ -461,6 +461,34 @@ class FinMindAPIService:
             logger.error(f"Error listing tickers: {e}")
             return []
     
+    def list_all_tw_stocks(self) -> List[tuple]:
+        """Yield the full TaiwanStockInfo registry as ``(stock_id, stock_name, industry)``.
+
+        Reuses the in-process TaiwanStockInfo cache (one download at most a few times a
+        day), so this is cheap to call on every boot. Filters out non-equity noise that
+        the dataset carries — warrants (認購/認售權證), indices/大盤, and any row missing a
+        stock_id or name — so the translation seed only gets real listings (stocks + ETFs).
+        """
+        # industry_category substrings that mark a row as NOT a tradable equity/ETF.
+        _EXCLUDE = ("權證", "Index", "大盤", "ETN", "受益證券")
+        out: List[tuple] = []
+        try:
+            df = self._get_stock_info_df()
+            if df is None or df.empty:
+                return out
+            for _, row in df.iterrows():
+                stock_id = str(row.get("stock_id", "")).strip()
+                name = str(row.get("stock_name", "")).strip()
+                industry = str(row.get("industry_category", "")).strip()
+                if not stock_id or not name:
+                    continue
+                if any(token in industry for token in _EXCLUDE):
+                    continue
+                out.append((stock_id, name, industry))
+        except Exception as e:
+            logger.error(f"Error listing all TW stocks: {e}")
+        return out
+
     def list_news(self, ticker: str, limit: int = 10) -> List[Dict[str, Any]]:
         """
         Get news articles for a ticker.
