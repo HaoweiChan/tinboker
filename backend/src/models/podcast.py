@@ -89,6 +89,7 @@ class Podcast(BaseModel):
     created_at: Optional[int] = Field(None, description="First episode creation timestamp (Unix milliseconds)")
     updated_at: Optional[int] = Field(None, description="Most recent episode timestamp (Unix milliseconds)")
     image_url: Optional[str] = Field(None, description="Podcast cover image URL (from most recent episode)")
+    popularity_rank: Optional[int] = Field(None, description="Channel popularity rank (1 = most popular) from Apple Podcasts TW top charts; None when the show isn't charted.")
 
     class Config:
         populate_by_name = True
