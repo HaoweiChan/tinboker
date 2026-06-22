@@ -22,6 +22,20 @@ logger = logging.getLogger(__name__)
 # calls from this host share one hourly budget (see finmind_budget.HOURLY_CAP).
 _FINMIND_BUDGET = "finmind"
 
+
+def is_tw_ticker(ticker: str) -> bool:
+    """True for a Taiwan (TWSE/TPEx) ticker — the only market FinMind serves.
+
+    TW codes are bare numeric strings of 4-5 digits ("2330", "1101"). A 6-digit numeric
+    code is Korean (KRX: "005930"); HK ("0700") / US ("AAPL") route to other providers.
+    FinMind only serves TW, so every FinMind call must be gated on this — a non-TW ticker
+    burns budget on a request that always 404s (see finmind_budget). The 6-digit rule is
+    the cheap discriminator the launch budget incidents called for; 4-digit HK codes that
+    collide with TW are rare and cost at most one not-found lookup, not a storm.
+    """
+    code = (ticker or "").split(".")[0]
+    return code.isdigit() and len(code) != 6
+
 # The TaiwanStockInfo table (the full stock-id ↔ name/industry registry) is near-static
 # — it changes at most weekly — but get_ticker_details/list_tickers re-downloaded it on
 # every cold miss, which was the single biggest FinMind-quota waster. Cache it in-process.
@@ -68,7 +82,12 @@ class FinMindAPIService:
         except ImportError:
             logger.debug("FinMind DataLoader not available, using REST API only")
         except Exception as e:
-            logger.warning(f"Failed to initialize FinMind DataLoader: {e}")
+            # The SDK's DataLoader runs nest_asyncio.apply(), which can't patch a uvloop
+            # event loop ("Can't patch loop of type uvloop.Loop") — expected under our
+            # uvicorn+uvloop server. REST covers every code path and is budget-counted, so
+            # this is benign; debug-level keeps it from spamming the logs on every construct.
+            self.dataloader = None
+            logger.debug(f"FinMind DataLoader unavailable ({e}); using REST API only.")
     
     def _check_api_key(self) -> None:
         """Check if at least one API key is configured."""
@@ -88,6 +107,14 @@ class FinMindAPIService:
         Returns the response JSON on success, or None when the budget is spent / on error.
         """
         self._check_api_key()
+
+        # FinMind only serves TW. A non-TW data_id (KR 6-digit, HK, junk) always 404s but
+        # still burns the shared hourly budget — gate it out BEFORE consume(). Datasets with
+        # no data_id (TaiwanStockInfo table download) are TW-wide and pass through.
+        data_id = params.get("data_id")
+        if data_id is not None and not is_tw_ticker(str(data_id)):
+            logger.debug("FinMind: skipping non-TW ticker %s (no FinMind coverage)", data_id)
+            return None
 
         if not finmind_budget.consume(_FINMIND_BUDGET):
             return None  # hourly budget spent — don't risk a 402 storm on the shared IP
@@ -184,6 +211,8 @@ class FinMindAPIService:
         Returns:
             Ticker details dict or None if error/not found
         """
+        if not is_tw_ticker(ticker):
+            return None  # FinMind only serves TW; don't trigger the table download for junk
         try:
             df = self._get_stock_info_df()
             if df is not None and not df.empty:
