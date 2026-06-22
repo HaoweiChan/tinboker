@@ -1,5 +1,5 @@
 import React from 'react';
-import { Trash2, CornerDownRight } from 'lucide-react';
+import { Trash2, CornerDownRight, Lock } from 'lucide-react';
 import { CommentForm } from './CommentForm';
 import type { Comment } from '@/validation/schemas';
 
@@ -67,6 +67,12 @@ const CommentItem: React.FC<CommentItemProps> = ({
           <div className="flex items-baseline gap-2 mb-0.5">
             <span className="text-sm font-semibold truncate">{comment.user_name}</span>
             <span className="text-2xs text-muted-foreground flex-shrink-0">{timeAgo(comment.created_at)}</span>
+            {comment.is_public === false && (
+              <span className="flex items-center gap-0.5 text-2xs text-muted-foreground flex-shrink-0" title="僅自己與團隊可見">
+                <Lock className="h-3 w-3" />
+                私密
+              </span>
+            )}
           </div>
           <p className="text-sm text-foreground break-words whitespace-pre-wrap">{comment.content}</p>
 
