@@ -1,8 +1,11 @@
 name: Refresh Social Tokens
 
 # Threads long-lived access tokens expire after 60 days but can be refreshed
-# (each refresh extends another 60 days). Run monthly so the token never lapses.
-# Also runnable on demand from the Actions tab.
+# (each refresh extends another 60 days). Run WEEKLY so the token never lapses: even
+# if several runs fail or are skipped, there are ~8 chances inside the 60-day window
+# (monthly left no margin — a single missed/late run can let the token expire).
+# Also runnable on demand from the Actions tab. NOTE: refresh only works while the
+# token is still valid; an already-expired token must be re-minted by hand.
 #
 # This only updates the GSM secret THREADS_ACCESS_TOKEN. The backend reads secrets
 # at startup, so the refreshed token takes effect on the next backend deploy — which
@@ -15,7 +18,7 @@ name: Refresh Social Tokens
 
 on:
   schedule:
-    - cron: '0 3 1 * *'        # 03:00 UTC on the 1st of each month
+    - cron: '0 3 * * 1'        # 03:00 UTC every Monday
   workflow_dispatch: {}
 
 permissions:

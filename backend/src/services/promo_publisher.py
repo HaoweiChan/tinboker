@@ -73,6 +73,21 @@ def plan_facebook(text: str, media: list[dict]) -> dict:
     return {"kind": "text"}
 
 
+def _meta_error_reason(exc: Exception) -> str:
+    """Map a raw Meta OAuth/Graph error to a short, actionable reason code.
+
+    - token_expired:           code 190 / "Session has expired" → re-mint the token.
+    - insufficient_permission: (#200) → token is missing a scope (e.g. Facebook
+                               comments need pages_manage_engagement).
+    """
+    s = str(exc).lower()
+    if "code': 190" in s or "session has expired" in s or "validating access token" in s:
+        return "token_expired"
+    if "(#200)" in s or "code': 200" in s or "sufficient permission" in s:
+        return "insufficient_permission"
+    return "publish_failed"
+
+
 async def _publish_threads(text: str, media: list[dict], comments: list[str], dry_run: bool) -> dict:
     service = ThreadsService()
     configured = service.is_configured
@@ -95,20 +110,27 @@ async def _publish_threads(text: str, media: list[dict], comments: list[str], dr
         else:
             media_id = await service.publish_media_carousel(plan["items"], text)
     except ThreadsError as e:
-        return {**base, "posted": False, "reason": f"publish_failed: {e}"}
+        kind = _meta_error_reason(e)
+        reason = "threads_token_expired" if kind == "token_expired" else f"publish_failed: {e}"
+        return {**base, "posted": False, "reason": reason}
     # Chain each comment as a reply to the previous one (a Threads thread). A failure
     # stops the chain but keeps the already-live root.
     reply_ids: list[str] = []
+    comment_error: Optional[str] = None
     prev = media_id
     for c in comments:
         try:
             prev = await service.publish_reply(c, reply_to_id=prev)
         except ThreadsError as e:
+            comment_error = _meta_error_reason(e)
             logger.warning("promo Threads reply failed (%d posted): %s", len(reply_ids), e)
             break
         reply_ids.append(prev)
     logger.info("Promo posted to Threads (%s, %s, %d replies)", media_id, plan["kind"], len(reply_ids))
-    return {**base, "posted": True, "media_id": media_id, "plan": plan["kind"], "posted_comments": len(reply_ids)}
+    out = {**base, "posted": True, "media_id": media_id, "plan": plan["kind"], "posted_comments": len(reply_ids)}
+    if comment_error:
+        out["comment_error"] = comment_error
+    return out
 
 
 async def _publish_facebook(text: str, media: list[dict], comments: list[str], dry_run: bool) -> dict:
@@ -133,18 +155,25 @@ async def _publish_facebook(text: str, media: list[dict], comments: list[str], d
         else:  # video
             post_id = await service.publish_video(text, plan["url"])
     except FacebookError as e:
-        return {**base, "posted": False, "reason": f"publish_failed: {e}"}
+        kind = _meta_error_reason(e)
+        reason = "fb_token_expired" if kind == "token_expired" else f"publish_failed: {e}"
+        return {**base, "posted": False, "reason": reason}
     # Post each comment on the root post. A failure stops the rest but keeps the post.
     posted_comments = 0
+    comment_error: Optional[str] = None
     for c in comments:
         try:
             await service.comment(post_id, c)
         except FacebookError as e:
+            comment_error = _meta_error_reason(e)
             logger.warning("promo FB comment failed (%d posted): %s", posted_comments, e)
             break
         posted_comments += 1
     logger.info("Promo posted to Facebook (%s, %s, %d comments)", post_id, plan["kind"], posted_comments)
-    return {**base, "posted": True, "post_id": post_id, "plan": plan["kind"], "posted_comments": posted_comments}
+    out = {**base, "posted": True, "post_id": post_id, "plan": plan["kind"], "posted_comments": posted_comments}
+    if comment_error:
+        out["comment_error"] = comment_error
+    return out
 
 
 _PUBLISHERS = {"threads": _publish_threads, "facebook": _publish_facebook}

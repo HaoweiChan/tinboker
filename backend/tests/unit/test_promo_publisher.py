@@ -10,6 +10,7 @@ from src.services.facebook_service import FACEBOOK_MAX_ALBUM
 from src.services.promo_publisher import (
     THREADS_MAX_MEDIA,
     PromoError,
+    _meta_error_reason,
     plan_facebook,
     plan_threads,
     publish_promo,
@@ -18,6 +19,15 @@ from src.services.threads_service import THREADS_MAX_CHARS
 
 IMG = {"type": "image", "url": "https://x/i.jpg"}
 VID = {"type": "video", "url": "https://x/v.mp4"}
+
+
+def test_meta_error_reason_classifies_token_and_permission_errors():
+    """The real failures we hit: Threads 190 (expired) and FB #200 (no comment perm)."""
+    expired = "Threads create carousel item failed: {'message': 'Error validating access token: Session has expired', 'code': 190}"
+    perm = "Facebook create comment failed: {'message': '(#200) You do not have sufficient permissions', 'code': 200}"
+    assert _meta_error_reason(Exception(expired)) == "token_expired"
+    assert _meta_error_reason(Exception(perm)) == "insufficient_permission"
+    assert _meta_error_reason(Exception("some other 500")) == "publish_failed"
 
 
 def test_threads_shapes():
