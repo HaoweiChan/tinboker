@@ -5,8 +5,9 @@ import logging
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, field_validator
-from src.utils.dependencies import get_current_user
+from src.utils.dependencies import get_current_user, get_optional_user
 from src.models.user import UserResponse
+from src.auth.admin_auth import is_admin_email
 from src.database.comment_db import create_comment, get_comments, get_comment_by_id, delete_comment
 
 logger = logging.getLogger(__name__)
@@ -19,6 +20,7 @@ router = APIRouter(prefix="/api/episodes", tags=["comments"])
 class CommentCreate(BaseModel):
     content: str
     parent_comment_id: Optional[str] = None
+    is_public: bool = True
 
     @field_validator("content")
     @classmethod
@@ -32,10 +34,23 @@ class CommentCreate(BaseModel):
 
 
 @router.get("/{podcast_name}/{episode_id}/comments")
-async def list_comments(podcast_name: str, episode_id: str):
-    """List all comments for an episode as a flat list (public)."""
+async def list_comments(
+    podcast_name: str,
+    episode_id: str,
+    viewer: Optional[UserResponse] = Depends(get_optional_user),
+):
+    """List comments for an episode as a flat list.
+
+    Public comments are visible to everyone; private ones only to their author
+    (or an admin).
+    """
     try:
-        comments = get_comments(podcast_name, episode_id)
+        is_admin = bool(viewer and is_admin_email(viewer.email))
+        comments = get_comments(
+            podcast_name, episode_id,
+            viewer_id=viewer.id if viewer else None,
+            is_admin=is_admin,
+        )
         return {"comments": comments, "total": len(comments)}
     except Exception as e:
         logger.error(f"Failed to fetch comments for {podcast_name}/{episode_id}: {e}")
@@ -69,6 +84,7 @@ async def post_comment(
             content=body.content,
             parent_comment_id=body.parent_comment_id,
             depth=depth,
+            is_public=body.is_public,
         )
         return comment
     except Exception as e:

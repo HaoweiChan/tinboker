@@ -29,7 +29,7 @@ export const ReportPage: React.FC = () => (
         留言可以互相回覆，一起把這個平台變得更好。
       </p>
 
-      <CommentSection podcastName={FEEDBACK_PODCAST} episodeId={FEEDBACK_THREAD} />
+      <CommentSection podcastName={FEEDBACK_PODCAST} episodeId={FEEDBACK_THREAD} allowPrivate />
     </PageContent>
   </>
 );

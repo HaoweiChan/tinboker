@@ -29,9 +29,11 @@ function buildTree(flat: Comment[]): CommentWithReplies[] {
 interface CommentSectionProps {
   podcastName: string;
   episodeId: string;
+  /** Show a public/private toggle on the top-level form (used by the feedback board). */
+  allowPrivate?: boolean;
 }
 
-export const CommentSection: React.FC<CommentSectionProps> = ({ podcastName, episodeId }) => {
+export const CommentSection: React.FC<CommentSectionProps> = ({ podcastName, episodeId, allowPrivate = false }) => {
   const user = useUser();
   const token = useAppStore((s) => s.token);
 
@@ -44,21 +46,21 @@ export const CommentSection: React.FC<CommentSectionProps> = ({ podcastName, epi
 
   const fetchComments = useCallback(async () => {
     try {
-      const result = await getEpisodeComments(podcastName, episodeId);
+      const result = await getEpisodeComments(podcastName, episodeId, 0, 20, token ?? undefined);
       setFlatComments(result.comments);
     } catch {
       if (import.meta.env.DEV) console.warn('Failed to fetch comments');
     }
-  }, [podcastName, episodeId]);
+  }, [podcastName, episodeId, token]);
 
   useEffect(() => {
     setLoading(true);
     fetchComments().finally(() => setLoading(false));
   }, [fetchComments]);
 
-  const handleSubmit = async (content: string) => {
+  const handleSubmit = async (content: string, isPublic: boolean) => {
     if (!token) return;
-    const newComment = await postComment(podcastName, episodeId, content, token);
+    const newComment = await postComment(podcastName, episodeId, content, token, undefined, isPublic);
     // Append to flat list — tree rebuilds automatically
     setFlatComments((prev) => [...prev, newComment]);
   };
@@ -97,7 +99,7 @@ export const CommentSection: React.FC<CommentSectionProps> = ({ podcastName, epi
       {/* Top-level comment form */}
       {user && token && (
         <div className="mb-5 pb-5 border-b border-border">
-          <CommentForm onSubmit={handleSubmit} />
+          <CommentForm onSubmit={handleSubmit} showVisibilityToggle={allowPrivate} />
         </div>
       )}
 

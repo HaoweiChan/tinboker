@@ -467,6 +467,7 @@ export const CommentSchema = z.object({
   created_at: z.string(),
   parent_comment_id: z.string().nullable().optional(),
   depth: z.number().default(0),
+  is_public: z.boolean().default(true),
 });
 export type Comment = z.infer<typeof CommentSchema>;
 
