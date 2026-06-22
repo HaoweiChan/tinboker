@@ -282,9 +282,13 @@ async def refresh_daily_closes(max_tracked: int = MAX_TRACKED) -> int:
     tickers = await get_tracked_tickers(max_tracked)
     if not tickers:
         return 0
-    # "Recent" = on/after the last expected trading day (yesterday, to allow for the
-    # current day not having closed yet). Skip tickers already warm.
-    since = (datetime.utcnow() - timedelta(days=4)).strftime("%Y-%m-%d")
+    # Skip a ticker only once we already hold the most recent *trading day's* close, so the
+    # latest close advances every market day. The old `today - 4 days` treated any close
+    # within 4 days as "warm", which froze the table for days (06-19/06-22 never fetched).
+    # Weekends roll back to Friday so we don't re-fetch the whole basket while markets shut.
+    # ponytail: weekday-only; a real market holiday causes a harmless re-fetch until caught up.
+    today = datetime.utcnow()
+    since = (today - timedelta(days={5: 1, 6: 2}.get(today.weekday(), 0))).strftime("%Y-%m-%d")
     loop = asyncio.get_event_loop()
 
     # Build the API clients once and reuse them across all tickers.
