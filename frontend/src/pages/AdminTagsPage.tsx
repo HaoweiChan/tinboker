@@ -23,8 +23,8 @@ function VisibilityToggle({ visible, onToggle }: { visible: boolean; onToggle: (
     <button
       onClick={onToggle}
       className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-all ${visible
-        ? 'bg-green-100 text-green-800 hover:bg-green-200 dark:bg-green-900/40 dark:text-green-300'
-        : 'bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-400'
+        ? 'bg-sentiment-bull-soft text-sentiment-bull hover:bg-sentiment-bull-soft/70'
+        : 'bg-muted text-muted-foreground hover:bg-muted/70'
       }`}
       title={visible ? 'Showing in trending — click to hide' : 'Hidden — click to show in trending'}
     >
@@ -74,9 +74,6 @@ export const AdminTagsPage: React.FC = () => {
   const handleToggleTier = async (tag: AdminTagEntry) => {
     try {
       if (tag.registered === false || tag.id == null) {
-        // Virtual tag (no registry row yet) → materialize it at the FLIPPED tier:
-        // a visible vocab tag becomes hidden; a hidden off-vocab tag becomes trending
-        // (promoting it past the vocabulary gate). Refetch so it shows as registered.
         const newTier = tag.tier === 'trending' ? 'hidden' : 'trending';
         await createAdminTag({ slug: tag.slug, display_zh: tag.display_zh, tier: newTier });
         await fetchTags();
@@ -91,7 +88,7 @@ export const AdminTagsPage: React.FC = () => {
   };
 
   const handleDelete = async (tag: AdminTagEntry) => {
-    if (tag.id == null) return; // virtual rows have no registry row to delete
+    if (tag.id == null) return;
     if (!confirm(`Delete tag "${tag.slug}" (${tag.display_zh})?`)) return;
     try {
       await deleteAdminTag(tag.id);
@@ -156,8 +153,8 @@ export const AdminTagsPage: React.FC = () => {
       {/* Header */}
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Topic Registry</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400">
+          <h1 className="text-2xl font-bold text-foreground">Topic Registry</h1>
+          <p className="text-base text-muted-foreground">
             {tags.length} topics — {trendingCount} visible · {hiddenCount} hidden
           </p>
         </div>
@@ -165,7 +162,7 @@ export const AdminTagsPage: React.FC = () => {
           <button
             onClick={handleDiscover}
             disabled={discovering}
-            className="flex items-center gap-2 rounded-md border border-blue-300 px-3 py-2 text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-50 dark:border-blue-600 dark:text-blue-300 dark:hover:bg-blue-900/20"
+            className="flex items-center gap-2 rounded-md border border-accent-info px-3 py-2 text-base text-accent-info hover:bg-accent-info-soft disabled:opacity-50"
             title="Scan Firestore for new tags with >= 3 episodes"
           >
             <Radar className={`h-4 w-4 ${discovering ? 'animate-spin' : ''}`} />
@@ -174,7 +171,7 @@ export const AdminTagsPage: React.FC = () => {
           <button
             onClick={handleSyncSectors}
             disabled={syncing}
-            className="flex items-center gap-2 rounded-md border border-purple-300 px-3 py-2 text-sm text-purple-700 hover:bg-purple-50 disabled:opacity-50 dark:border-purple-600 dark:text-purple-300 dark:hover:bg-purple-900/20"
+            className="flex items-center gap-2 rounded-md border border-border px-3 py-2 text-base text-foreground hover:bg-muted disabled:opacity-50"
             title="Sync sectors/themes from the pipeline universe (new ones added as visible)"
           >
             <Layers className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
@@ -182,14 +179,14 @@ export const AdminTagsPage: React.FC = () => {
           </button>
           <button
             onClick={fetchTags}
-            className="flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+            className="flex items-center gap-2 rounded-md border border-border px-3 py-2 text-base text-foreground hover:bg-muted"
           >
             <RefreshCw className="h-4 w-4" />
             Refresh
           </button>
           <button
             onClick={() => setShowAddRow(true)}
-            className="flex items-center gap-2 rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700"
+            className="flex items-center gap-2 rounded-md bg-accent-info px-3 py-2 text-base text-accent-info-foreground hover:bg-accent-info/90"
           >
             <Plus className="h-4 w-4" />
             Add Tag
@@ -199,9 +196,9 @@ export const AdminTagsPage: React.FC = () => {
 
       {/* Discover feedback */}
       {discoverMsg && (
-        <div className="mb-4 rounded-md border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-300">
+        <div className="mb-4 rounded-md border border-accent-info bg-accent-info-soft px-4 py-2.5 text-base text-foreground">
           {discoverMsg}
-          <button onClick={() => setDiscoverMsg('')} className="ml-2 text-blue-500 hover:text-blue-700">
+          <button onClick={() => setDiscoverMsg('')} className="ml-2 text-accent-info hover:text-accent-info/70">
             <X className="inline h-3.5 w-3.5" />
           </button>
         </div>
@@ -210,19 +207,19 @@ export const AdminTagsPage: React.FC = () => {
       {/* Filters */}
       <div className="mb-4 flex items-center gap-3">
         <div className="relative flex-1 max-w-xs">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input
             type="text"
             placeholder="Search slug or display name…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full rounded-md border border-gray-300 py-2 pl-9 pr-3 text-sm focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+            className="w-full rounded-md border border-input bg-card py-2 pl-9 pr-3 text-base text-foreground placeholder:text-muted-foreground focus:border-accent-info focus:outline-none focus:ring-1 focus:ring-accent-info"
           />
         </div>
         <select
           value={kindFilter}
           onChange={(e) => setKindFilter(e.target.value)}
-          className="rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+          className="rounded-md border border-input bg-card px-3 py-2 text-base text-foreground"
         >
           <option value="">All kinds</option>
           <option value="tag">標籤 Tags</option>
@@ -231,7 +228,7 @@ export const AdminTagsPage: React.FC = () => {
         <select
           value={tierFilter}
           onChange={(e) => setTierFilter(e.target.value)}
-          className="rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+          className="rounded-md border border-input bg-card px-3 py-2 text-base text-foreground"
         >
           <option value="">All</option>
           <option value="trending">Visible</option>
@@ -239,14 +236,14 @@ export const AdminTagsPage: React.FC = () => {
         </select>
       </div>
 
-      <p className="mb-4 -mt-1 text-xs text-gray-400">
-        Off-vocabulary tags (auto-extracted, hidden from /topics) appear only when you search — find one and toggle it to “show” to promote it.
+      <p className="mb-4 -mt-1 text-xs text-muted-foreground">
+        Off-vocabulary tags (auto-extracted, hidden from /topics) appear only when you search — find one and toggle it to "show" to promote it.
       </p>
 
       {/* Table */}
-      <div className="overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+      <div className="overflow-hidden rounded-lg border border-border">
+        <table className="w-full text-base">
+          <thead className="bg-muted text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
             <tr>
               <th className="px-4 py-3">Slug</th>
               <th className="px-4 py-3">顯示名稱</th>
@@ -256,17 +253,17 @@ export const AdminTagsPage: React.FC = () => {
               <th className="px-4 py-3 text-right">Actions</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+          <tbody className="divide-y divide-border">
             {/* Add row */}
             {showAddRow && (
-              <tr className="bg-blue-50/50 dark:bg-blue-900/10">
+              <tr className="bg-accent-info-soft">
                 <td className="px-4 py-2">
                   <input
                     type="text"
                     value={newSlug}
                     onChange={(e) => setNewSlug(e.target.value)}
                     placeholder="tag_slug"
-                    className="w-full rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                    className="w-full rounded border border-input bg-card px-2 py-1 text-base text-foreground"
                     autoFocus
                   />
                 </td>
@@ -276,24 +273,24 @@ export const AdminTagsPage: React.FC = () => {
                     value={newDisplay}
                     onChange={(e) => setNewDisplay(e.target.value)}
                     placeholder="顯示名稱"
-                    className="w-full rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                    className="w-full rounded border border-input bg-card px-2 py-1 text-base text-foreground"
                   />
                 </td>
-                <td className="px-4 py-2 text-gray-400 text-xs">標籤</td>
-                <td className="px-4 py-2 text-right text-gray-400">—</td>
-                <td className="px-4 py-2 text-gray-400 text-xs">will be visible</td>
+                <td className="px-4 py-2 text-muted-foreground text-xs">標籤</td>
+                <td className="px-4 py-2 text-right text-muted-foreground">—</td>
+                <td className="px-4 py-2 text-muted-foreground text-xs">will be visible</td>
                 <td className="px-4 py-2 text-right">
                   <div className="flex items-center justify-end gap-1.5">
                     <button
                       onClick={handleAdd}
-                      className="rounded p-1 text-green-600 hover:bg-green-100 dark:hover:bg-green-900/30"
+                      className="rounded p-1 text-sentiment-bull hover:bg-sentiment-bull-soft"
                       title="Save"
                     >
                       <Check className="h-4 w-4" />
                     </button>
                     <button
                       onClick={() => { setShowAddRow(false); setNewSlug(''); setNewDisplay(''); }}
-                      className="rounded p-1 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
+                      className="rounded p-1 text-muted-foreground hover:bg-muted"
                       title="Cancel"
                     >
                       <X className="h-4 w-4" />
@@ -305,19 +302,19 @@ export const AdminTagsPage: React.FC = () => {
 
             {loading ? (
               <tr>
-                <td colSpan={6} className="px-4 py-10 text-center text-gray-400">Loading…</td>
+                <td colSpan={6} className="px-4 py-10 text-center text-muted-foreground">Loading…</td>
               </tr>
             ) : tags.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-10 text-center text-gray-400">No tags found.</td>
+                <td colSpan={6} className="px-4 py-10 text-center text-muted-foreground">No tags found.</td>
               </tr>
             ) : (
               tags.map((tag) => {
                 const isSector = tag.kind === KIND_SECTOR;
                 const isVirtual = tag.registered === false;
                 return (
-                <tr key={`${tag.kind}:${tag.slug}`} className={`hover:bg-gray-50 dark:hover:bg-gray-800/50 ${tag.tier !== 'trending' ? 'opacity-60' : ''}`}>
-                  <td className="px-4 py-2.5 font-mono text-sm text-gray-900 dark:text-white">
+                <tr key={`${tag.kind}:${tag.slug}`} className={`hover:bg-muted/50 ${tag.tier !== 'trending' ? 'opacity-60' : ''}`}>
+                  <td className="px-4 py-2.5 font-mono text-base text-foreground">
                     <span className="inline-flex items-center gap-2">
                       {isSector && (
                         <SectorIcon
@@ -331,26 +328,26 @@ export const AdminTagsPage: React.FC = () => {
                       {tag.slug}
                     </span>
                   </td>
-                  <td className="px-4 py-2.5 text-gray-700 dark:text-gray-300">
+                  <td className="px-4 py-2.5 text-muted-foreground">
                     {tag.display_zh}
                   </td>
                   <td className="px-4 py-2.5">
                     <span className={`inline-flex rounded px-1.5 py-0.5 text-xs font-medium ${isSector
-                      ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300'
-                      : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
+                      ? 'bg-accent-info-soft text-accent-info'
+                      : 'bg-primary/15 text-primary'
                     }`}>
                       {isSector ? '產業' : '標籤'}
                     </span>
                     {isVirtual && (
                       <span
-                        className="ml-1.5 inline-flex rounded px-1.5 py-0.5 text-xs font-medium bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400"
+                        className="ml-1.5 inline-flex rounded px-1.5 py-0.5 text-xs font-medium bg-muted text-muted-foreground"
                         title="Auto-surfaced from episodes — not yet in the registry. Hide it to create a registry row."
                       >
                         auto
                       </span>
                     )}
                   </td>
-                  <td className="px-4 py-2.5 text-right font-mono text-sm tabular-nums text-gray-600 dark:text-gray-400">
+                  <td className="px-4 py-2.5 text-right font-mono text-base tabular-nums text-muted-foreground">
                     {tag.episode_count != null ? tag.episode_count.toLocaleString() : '—'}
                   </td>
                   <td className="px-4 py-2.5">
@@ -361,17 +358,17 @@ export const AdminTagsPage: React.FC = () => {
                   </td>
                   <td className="px-4 py-2.5 text-right">
                     {isSector ? (
-                      <span className="text-xs text-gray-400" title="Synced from the pipeline universe — hide it instead of deleting">
+                      <span className="text-xs text-muted-foreground" title="Synced from the pipeline universe — hide it instead of deleting">
                         synced
                       </span>
                     ) : isVirtual ? (
-                      <span className="text-xs text-gray-400" title="Auto-surfaced — hide it to create a registry row, then it can be deleted">
+                      <span className="text-xs text-muted-foreground" title="Auto-surfaced — hide it to create a registry row, then it can be deleted">
                         —
                       </span>
                     ) : (
                       <button
                         onClick={() => handleDelete(tag)}
-                        className="rounded p-1 text-gray-400 hover:bg-red-100 hover:text-red-600 dark:hover:bg-red-900/30"
+                        className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                         title="Delete tag"
                       >
                         <Trash2 className="h-4 w-4" />

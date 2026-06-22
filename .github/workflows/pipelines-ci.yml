@@ -70,7 +70,6 @@ jobs:
           LANGSMITH_API_KEY: ci-dummy
           WIKI_DATABASE_URL: postgresql://ci-dummy/dummy
           EPISODE_DATABASE_URL: postgresql://ci-dummy/dummy
-          OPENROUTER_API_KEY: ci-dummy
         run: |
           uv run pytest \
             services/podcast/tests/unit \

@@ -25,24 +25,24 @@ export const DisclaimerPage: React.FC = () => (
         <div className="w-14 h-14 rounded-full bg-muted text-muted-foreground grid place-items-center mx-auto mb-4">
           <ShieldAlert size={26} />
         </div>
-        <h1 className="text-[22px] font-semibold tracking-[-0.02em]">免責聲明</h1>
-        <p className="text-[13px] text-muted-foreground mt-1">請在使用本服務前仔細閱讀以下條款</p>
+        <h1 className="text-2xl font-semibold tracking-[-0.02em]">免責聲明</h1>
+        <p className="text-sm text-muted-foreground mt-1">請在使用本服務前仔細閱讀以下條款</p>
       </div>
       <div className="bg-card border border-border rounded-md p-6 sm:p-8 space-y-7">
-        <p className="text-[15px] font-medium leading-[1.65]">
+        <p className="text-md font-medium leading-[1.65]">
           本網站（TinBoker）所提供之所有資訊、數據、觀點與分析，僅供參考與學習用途，不構成任何形式的投資建議、要約、誘導或推薦。
         </p>
         <div className="space-y-6">
           {SECTIONS.map((s) => (
             <section key={s.title}>
-              <h3 className="text-[15px] font-semibold mb-2 flex items-center gap-2">
+              <h3 className="text-md font-semibold mb-2 flex items-center gap-2">
                 <span className="w-1 h-5 bg-foreground rounded-full" />
                 {s.title}
               </h3>
-              <p className="text-[14px] text-muted-foreground leading-[1.65]">{s.body}</p>
+              <p className="text-base text-muted-foreground leading-[1.65]">{s.body}</p>
             </section>
           ))}
-          <div className="pt-6 border-t border-border text-[12px] text-muted-foreground text-center">
+          <div className="pt-6 border-t border-border text-xs text-muted-foreground text-center">
             最後更新日期：{new Date().getFullYear()} 年 {new Date().getMonth() + 1} 月
           </div>
         </div>

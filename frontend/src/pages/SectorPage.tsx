@@ -46,7 +46,7 @@ function TimeframeToggle({ value, onChange }: { value: Timeframe; onChange: (t: 
           key={opt.key}
           type="button"
           onClick={() => onChange(opt.key)}
-          className={`px-2.5 py-1 rounded-md text-[12px] font-medium tabular-nums transition-all duration-150
+          className={`px-2.5 py-1 rounded-md text-xs font-medium tabular-nums transition-all duration-150
             ${value === opt.key
               ? 'bg-card text-foreground shadow-sm border border-border/60'
               : 'text-muted-foreground hover:text-foreground'
@@ -175,9 +175,9 @@ export const SectorPage: React.FC = () => {
             {loading ? (
               <div className="h-7 w-40 bg-muted rounded animate-pulse" />
             ) : (
-              <h1 className="text-[22px] font-semibold tracking-[-0.02em]">{titleText}</h1>
+              <h1 className="text-2xl font-semibold tracking-[-0.02em]">{titleText}</h1>
             )}
-            <p className="text-[13px] text-muted-foreground mt-1 max-w-[56ch] leading-[1.55]">
+            <p className="text-sm text-muted-foreground mt-1 max-w-[56ch] leading-[1.55]">
               {loading
                 ? '載入中…'
                 : `瀏覽所有關於「${titleText}」的 Podcast 摘要與市場討論 · ${episodes.length} 集。`}
@@ -198,7 +198,7 @@ export const SectorPage: React.FC = () => {
         ) : members.length > 0 ? (
           <div className="mb-7">
             <div className="flex items-center justify-between gap-3 mb-3">
-              <h2 className="text-[13px] font-semibold text-muted-foreground">成分股表現</h2>
+              <h2 className="text-sm font-semibold text-muted-foreground">成分股表現</h2>
               <TimeframeToggle value={timeframe} onChange={setTimeframe} />
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">
@@ -217,7 +217,7 @@ export const SectorPage: React.FC = () => {
           </div>
         ) : null}
 
-        <h2 className="text-[13px] font-semibold text-muted-foreground mb-3">相關集數</h2>
+        <h2 className="text-sm font-semibold text-muted-foreground mb-3">相關集數</h2>
         {loading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {Array.from({ length: 4 }).map((_, i) => (
@@ -225,7 +225,7 @@ export const SectorPage: React.FC = () => {
             ))}
           </div>
         ) : episodes.length === 0 ? (
-          <div className="bg-card border border-border rounded-md p-10 text-center text-[13px] text-muted-foreground">目前沒有相關 Podcast 集數。</div>
+          <div className="bg-card border border-border rounded-md p-10 text-center text-sm text-muted-foreground">目前沒有相關 Podcast 集數。</div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {episodes.map((ep) => (

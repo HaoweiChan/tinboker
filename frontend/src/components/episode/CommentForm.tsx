@@ -48,14 +48,14 @@ export const CommentForm: React.FC<CommentFormProps> = ({
         maxLength={MAX_CHARS}
         autoFocus={autoFocus}
         className={cn(
-          'w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-[13px] text-foreground',
+          'w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground',
           'placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2',
           'disabled:cursor-not-allowed disabled:opacity-50',
         )}
         disabled={submitting}
       />
       <div className="flex items-center justify-between">
-        <span className={cn('text-[11px] text-muted-foreground', trimmed.length > MAX_CHARS && 'text-destructive')}>
+        <span className={cn('text-2xs text-muted-foreground', trimmed.length > MAX_CHARS && 'text-destructive')}>
           {content.length} / {MAX_CHARS}
         </span>
         <div className="flex gap-2">

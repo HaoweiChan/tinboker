@@ -73,15 +73,15 @@ export const BulkImportDialog: React.FC<BulkImportDialogProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="w-full max-w-lg rounded-lg bg-white p-6 shadow-xl dark:bg-gray-800">
+      <div className="w-full max-w-lg rounded-lg bg-card p-6 shadow-xl">
         {/* Header */}
         <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+          <h3 className="text-xl font-semibold text-foreground">
             Bulk Import Translations
           </h3>
           <button
             onClick={handleClose}
-            className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-700"
+            className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
           >
             <X className="h-5 w-5" />
           </button>
@@ -94,7 +94,7 @@ export const BulkImportDialog: React.FC<BulkImportDialogProps> = ({
               onDrop={handleDrop}
               onDragOver={(e) => e.preventDefault()}
               onClick={() => fileInputRef.current?.click()}
-              className="mb-4 cursor-pointer rounded-lg border-2 border-dashed border-gray-300 p-8 text-center hover:border-blue-500 dark:border-gray-600 dark:hover:border-blue-400"
+              className="mb-4 cursor-pointer rounded-lg border-2 border-dashed border-border p-8 text-center hover:border-accent-info"
             >
               <input
                 ref={fileInputRef}
@@ -104,25 +104,25 @@ export const BulkImportDialog: React.FC<BulkImportDialogProps> = ({
                 className="hidden"
               />
               {file ? (
-                <div className="flex items-center justify-center gap-2 text-gray-700 dark:text-gray-300">
-                  <FileText className="h-6 w-6 text-blue-500" />
+                <div className="flex items-center justify-center gap-2 text-foreground">
+                  <FileText className="h-6 w-6 text-accent-info" />
                   <span>{file.name}</span>
                 </div>
               ) : (
                 <>
-                  <Upload className="mx-auto mb-2 h-8 w-8 text-gray-400" />
-                  <p className="text-gray-600 dark:text-gray-400">
+                  <Upload className="mx-auto mb-2 h-8 w-8 text-muted-foreground" />
+                  <p className="text-muted-foreground">
                     Drag CSV file here, or click to select
                   </p>
                 </>
               )}
             </div>
             {/* Format Help */}
-            <div className="mb-4 rounded-lg bg-gray-50 p-4 text-sm dark:bg-gray-700/50">
-              <p className="mb-2 font-medium text-gray-700 dark:text-gray-300">
+            <div className="mb-4 rounded-lg bg-muted p-4 text-base">
+              <p className="mb-2 font-medium text-foreground">
                 CSV Format:
               </p>
-              <code className="block text-xs text-gray-600 dark:text-gray-400">
+              <code className="block text-xs text-muted-foreground">
                 ticker,market,name_en,name_zh_tw
                 <br />
                 NVDA,US,NVIDIA CORP,輝達
@@ -132,7 +132,7 @@ export const BulkImportDialog: React.FC<BulkImportDialogProps> = ({
             </div>
             {/* Error */}
             {error && (
-              <div className="mb-4 flex items-center gap-2 rounded-lg bg-red-50 p-3 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
+              <div className="mb-4 flex items-center gap-2 rounded-lg bg-destructive/10 p-3 text-base text-destructive">
                 <AlertCircle className="h-4 w-4" />
                 {error}
               </div>
@@ -141,14 +141,14 @@ export const BulkImportDialog: React.FC<BulkImportDialogProps> = ({
             <div className="flex justify-end gap-3">
               <button
                 onClick={handleClose}
-                className="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+                className="rounded-md border border-border px-4 py-2 text-base text-muted-foreground hover:bg-muted"
               >
                 Cancel
               </button>
               <button
                 onClick={handleImport}
                 disabled={!file || loading}
-                className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-md bg-accent-info px-4 py-2 text-base text-accent-info-foreground hover:bg-accent-info/90 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {loading ? 'Importing...' : 'Start Import'}
               </button>
@@ -159,37 +159,37 @@ export const BulkImportDialog: React.FC<BulkImportDialogProps> = ({
             {/* Result */}
             <div className="mb-4">
               <div className="mb-4 flex items-center justify-center">
-                <div className="rounded-full bg-green-100 p-3 dark:bg-green-900/30">
-                  <Check className="h-6 w-6 text-green-600 dark:text-green-400" />
+                <div className="rounded-full bg-sentiment-bull-soft p-3">
+                  <Check className="h-6 w-6 text-sentiment-bull" />
                 </div>
               </div>
-              <p className="mb-4 text-center text-gray-700 dark:text-gray-300">
+              <p className="mb-4 text-center text-foreground">
                 Import Complete
               </p>
-              <div className="grid grid-cols-2 gap-4 rounded-lg bg-gray-50 p-4 dark:bg-gray-700/50">
+              <div className="grid grid-cols-2 gap-4 rounded-lg bg-muted p-4">
                 <div className="text-center">
-                  <div className="text-2xl font-bold text-green-600 dark:text-green-400">
+                  <div className="text-2xl font-bold text-sentiment-bull">
                     {result.imported}
                   </div>
-                  <div className="text-sm text-gray-500 dark:text-gray-400">
+                  <div className="text-base text-muted-foreground">
                     Added
                   </div>
                 </div>
                 <div className="text-center">
-                  <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+                  <div className="text-2xl font-bold text-accent-info">
                     {result.updated}
                   </div>
-                  <div className="text-sm text-gray-500 dark:text-gray-400">
+                  <div className="text-base text-muted-foreground">
                     Updated
                   </div>
                 </div>
               </div>
               {result.errors.length > 0 && (
-                <div className="mt-4 rounded-lg bg-red-50 p-3 dark:bg-red-900/20">
-                  <p className="mb-2 text-sm font-medium text-red-600 dark:text-red-400">
+                <div className="mt-4 rounded-lg bg-destructive/10 p-3">
+                  <p className="mb-2 text-base font-medium text-destructive">
                     {result.errors.length} errors:
                   </p>
-                  <ul className="max-h-32 overflow-y-auto text-xs text-red-500 dark:text-red-400">
+                  <ul className="max-h-32 overflow-y-auto text-xs text-destructive">
                     {result.errors.slice(0, 10).map((err, i) => (
                       <li key={i}>{err}</li>
                     ))}
@@ -204,7 +204,7 @@ export const BulkImportDialog: React.FC<BulkImportDialogProps> = ({
             <div className="flex justify-end">
               <button
                 onClick={handleClose}
-                className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700"
+                className="rounded-md bg-accent-info px-4 py-2 text-base text-accent-info-foreground hover:bg-accent-info/90"
               >
                 Done
               </button>

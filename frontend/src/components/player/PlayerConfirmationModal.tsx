@@ -23,17 +23,17 @@ export const PlayerConfirmationModal: React.FC = () => {
                         <AlertCircle size={24} />
                     </div>
                     <div className="space-y-2">
-                        <p className="text-slate-600 dark:text-slate-300">
+                        <p className="text-muted-foreground">
                             目前播放中：
                             <br />
-                            <span className="font-semibold text-slate-900 dark:text-slate-100">
+                            <span className="font-semibold text-foreground">
                                 {player.currentEpisodeData.title}
                             </span>
                         </p>
-                        <p className="text-slate-600 dark:text-slate-300">
+                        <p className="text-muted-foreground">
                             即將切換至：
                             <br />
-                            <span className="font-semibold text-slate-900 dark:text-slate-100">
+                            <span className="font-semibold text-foreground">
                                 {player.pendingEpisode.title}
                             </span>
                         </p>
@@ -43,13 +43,13 @@ export const PlayerConfirmationModal: React.FC = () => {
                 <div className="flex justify-end gap-3 mt-6">
                     <button
                         onClick={cancelPlay}
-                        className="px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+                        className="px-4 py-2 text-base font-medium text-muted-foreground hover:bg-muted rounded-lg transition-colors"
                     >
                         取消
                     </button>
                     <button
                         onClick={confirmPlay}
-                        className="px-4 py-2 text-sm font-medium text-white bg-accent-info hover:bg-accent-info rounded-lg transition-colors"
+                        className="px-4 py-2 text-base font-medium text-white bg-accent-info hover:bg-accent-info rounded-lg transition-colors"
                     >
                         切換播放
                     </button>

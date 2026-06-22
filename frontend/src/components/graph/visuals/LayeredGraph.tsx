@@ -173,7 +173,7 @@ const LayeredGraphInner: React.FC<LayeredGraphProps> = ({ isWidget = false, data
       {!isWidget && (
         <div className="absolute top-6 left-6 z-[2000] flex flex-col gap-3" style={{ width: 240 }}>
           <div className="p-4 rounded-xl shadow-sm backdrop-blur-sm relative" style={sharedPanelStyle}>
-            <h2 className="text-lg font-bold mb-1" style={{ color: 'var(--text-primary)' }}>{title || "Layered DAG"}</h2>
+            <h2 className="text-xl font-bold mb-1" style={{ color: 'var(--text-primary)' }}>{title || "Layered DAG"}</h2>
             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
               {description || "Multi-level dependency view."}
             </p>
@@ -187,7 +187,7 @@ const LayeredGraphInner: React.FC<LayeredGraphProps> = ({ isWidget = false, data
           </div>
           <div className="p-3 rounded-xl shadow-sm backdrop-blur-sm" style={sharedPanelStyle}>
             <div className="mb-3">
-              <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Display Mode</h3>
+              <h3 className="text-2xs font-bold text-slate-400 uppercase tracking-wider mb-2">Display Mode</h3>
               <div className="flex flex-col gap-1">
                 <GraphControlToggle
                   label="Price Chart"
@@ -211,7 +211,7 @@ const LayeredGraphInner: React.FC<LayeredGraphProps> = ({ isWidget = false, data
             </div>
             {displayMode !== DisplayMode.PRICE && (
               <div>
-                <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Node Style</h3>
+                <h3 className="text-2xs font-bold text-slate-400 uppercase tracking-wider mb-2">Node Style</h3>
                 <div className="flex flex-col gap-1">
                   <GraphControlToggle
                     label="Ghost"

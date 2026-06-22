@@ -35,24 +35,24 @@ export const AdminPage: React.FC = () => {
 
     if (!authenticated) {
         return (
-            <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+            <div className="min-h-screen bg-background">
                 <AdminLogin onSuccess={handleLoginSuccess} />
             </div>
         );
     }
 
     return (
-        <div className="flex min-h-screen bg-gray-100 dark:bg-gray-900">
+        <div className="flex min-h-screen bg-muted">
             {/* Mobile menu button */}
             <button
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                className="fixed left-4 top-4 z-50 rounded-md bg-white p-2 shadow-md dark:bg-gray-800 lg:hidden"
+                className="fixed left-4 top-4 z-50 rounded-md bg-card p-2 shadow-md lg:hidden"
                 aria-label="Toggle menu"
             >
                 {mobileMenuOpen ? (
-                    <X className="h-6 w-6 text-gray-600 dark:text-gray-300" />
+                    <X className="h-6 w-6 text-muted-foreground" />
                 ) : (
-                    <Menu className="h-6 w-6 text-gray-600 dark:text-gray-300" />
+                    <Menu className="h-6 w-6 text-muted-foreground" />
                 )}
             </button>
 

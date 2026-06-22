@@ -46,11 +46,11 @@ export const TagBoardCard: React.FC<TagBoardCardProps> = ({ tag, label }) => {
             >
               <Hash size={13} />
             </span>
-            <span className="text-[10px] font-medium text-muted-foreground bg-muted/60 px-1.5 py-0.5 rounded leading-none shrink-0">
+            <span className="text-2xs font-medium text-muted-foreground bg-muted/60 px-1.5 py-0.5 rounded leading-none shrink-0">
               標籤
             </span>
           </div>
-          <span className="text-[14px] font-semibold tracking-[-0.01em] group-hover:text-foreground/80 transition-colors leading-snug block truncate">
+          <span className="text-base font-semibold tracking-[-0.01em] group-hover:text-foreground/80 transition-colors leading-snug block truncate">
             #{label}
           </span>
         </div>
@@ -68,7 +68,7 @@ export const TagBoardCard: React.FC<TagBoardCardProps> = ({ tag, label }) => {
               className="opacity-70"
             />
           )}
-          <span className="text-[10px] text-muted-foreground font-mono tabular-nums">
+          <span className="text-2xs text-muted-foreground font-mono tabular-nums">
             {tag.scoped_count} 集
           </span>
         </div>
@@ -83,10 +83,10 @@ export const TagBoardCard: React.FC<TagBoardCardProps> = ({ tag, label }) => {
               to={`/episode/${encodeURIComponent(ep.id)}${ep.podcast_name ? `?podcast=${encodeURIComponent(ep.podcast_name)}` : ''}`}
               className="group/row flex items-center gap-3 py-2 first:pt-0 last:pb-0 -mx-1 px-1 rounded transition-colors hover:bg-muted/40"
             >
-              <span className="text-[11px] text-foreground/80 truncate flex-1 min-w-0 leading-snug group-hover/row:text-accent-info transition-colors">
+              <span className="text-2xs text-foreground/80 truncate flex-1 min-w-0 leading-snug group-hover/row:text-accent-info transition-colors">
                 {ep.title || '(無標題)'}
               </span>
-              <span className="text-[10px] text-muted-foreground truncate max-w-[40%] shrink-0 leading-none">
+              <span className="text-2xs text-muted-foreground truncate max-w-[40%] shrink-0 leading-none">
                 {ep.podcast_name}
               </span>
             </Link>

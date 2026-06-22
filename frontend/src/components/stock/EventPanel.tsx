@@ -93,7 +93,7 @@ export const EventPanel: React.FC<EventPanelProps> = ({ tickers }) => {
         onClick={() => setIsExpanded(!isExpanded)}
         className="w-full p-4 flex items-center justify-between hover:opacity-80 transition-opacity"
       >
-        <h3 className="text-lg font-semibold overlay-text">Events Timeline</h3>
+        <h3 className="text-xl font-semibold overlay-text">Events Timeline</h3>
         <svg
           className={`w-5 h-5 overlay-text-secondary transition-transform ${isExpanded ? 'rotate-180' : ''}`}
           fill="none"
@@ -108,7 +108,7 @@ export const EventPanel: React.FC<EventPanelProps> = ({ tickers }) => {
       {isExpanded && (
         <div className="max-h-64 overflow-y-auto p-4 pt-0">
           {relevantEvents.length === 0 ? (
-            <p className="overlay-text-secondary text-sm">No events found for selected stocks</p>
+            <p className="overlay-text-secondary text-base">No events found for selected stocks</p>
           ) : (
             <div className="space-y-2">
               {relevantEvents.map((event) => (
@@ -130,7 +130,7 @@ export const EventPanel: React.FC<EventPanelProps> = ({ tickers }) => {
                       
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between mb-1">
-                          <h4 className="overlay-text font-semibold text-sm truncate">{event.title}</h4>
+                          <h4 className="overlay-text font-semibold text-base truncate">{event.title}</h4>
                           <span className="text-xs overlay-text-secondary ml-2 whitespace-nowrap">
                             {formatDate(event.date)}
                           </span>

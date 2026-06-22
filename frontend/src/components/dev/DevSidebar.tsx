@@ -20,7 +20,7 @@ const NavItem: React.FC<NavItemProps> = ({ to, icon, label, collapsed, end }) =>
     to={to}
     end={end}
     className={({ isActive }) =>
-      `flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+      `flex items-center gap-3 rounded-lg px-3 py-2.5 text-base font-medium transition-colors ${
         isActive
           ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/50 dark:text-violet-300'
           : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700'
@@ -42,7 +42,7 @@ export const DevSidebar: React.FC<DevSidebarProps> = ({ collapsed, onToggle }) =
     >
       {!collapsed && (
         <div>
-          <h1 className="text-lg font-bold text-gray-900 dark:text-white">Dev Tools</h1>
+          <h1 className="text-xl font-bold text-gray-900 dark:text-white">Dev Tools</h1>
           <p className="text-xs text-gray-500 dark:text-gray-400">dev.tinboker.com only</p>
         </div>
       )}

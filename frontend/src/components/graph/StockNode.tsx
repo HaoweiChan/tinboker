@@ -182,11 +182,11 @@ export const StockNode: React.FC<StockNodeProps> = (props) => {
     // TODO: Add status to StockNodeData if needed. For now assume normal.
     const isRisk = false; 
     
-    const borderColor = isRisk ? 'border-red-400' : (selected ? 'border-indigo-500' : 'border-slate-300');
-    const bgColor = isRisk ? 'bg-red-50' : (theme === 'dark' ? 'bg-slate-900' : 'bg-white');
-    const textColor = theme === 'dark' ? 'text-slate-50' : 'text-slate-900';
-    const subTextColor = theme === 'dark' ? 'text-slate-400' : 'text-slate-500';
-    const shadow = selected ? 'shadow-md ring-2 ring-indigo-500 ring-offset-2' : 'shadow-sm hover:shadow-md';
+    const borderColor = isRisk ? 'border-destructive' : (selected ? 'border-accent-info' : 'border-border');
+    const bgColor = isRisk ? 'bg-destructive/10' : 'bg-card';
+    const textColor = 'text-foreground';
+    const subTextColor = 'text-muted-foreground';
+    const shadow = selected ? 'shadow-md ring-2 ring-accent-info ring-offset-2' : 'shadow-sm hover:shadow-md';
 
     return (
       <div 
@@ -197,10 +197,10 @@ export const StockNode: React.FC<StockNodeProps> = (props) => {
         onClick={handleClick}
       >
         {/* Handles */}
-        <Handle type="target" position={Position.Left} isConnectable={isConnectable} className="!bg-slate-400" />
-        <Handle type="source" position={Position.Right} isConnectable={isConnectable} className="!bg-slate-400" />
-        <Handle type="target" position={Position.Top} isConnectable={isConnectable} className="!bg-slate-400 !opacity-0" />
-        <Handle type="source" position={Position.Bottom} isConnectable={isConnectable} className="!bg-slate-400 !opacity-0" />
+        <Handle type="target" position={Position.Left} isConnectable={isConnectable} className="!bg-muted-foreground" />
+        <Handle type="source" position={Position.Right} isConnectable={isConnectable} className="!bg-muted-foreground" />
+        <Handle type="target" position={Position.Top} isConnectable={isConnectable} className="!bg-muted-foreground !opacity-0" />
+        <Handle type="source" position={Position.Bottom} isConnectable={isConnectable} className="!bg-muted-foreground !opacity-0" />
 
         <div className="flex justify-between items-start mb-2">
           <div>
@@ -211,7 +211,7 @@ export const StockNode: React.FC<StockNodeProps> = (props) => {
               });
               return (
                 <>
-                  <h3 className={`text-sm font-bold leading-tight ${textColor}`}>{primary}</h3>
+                  <h3 className={`text-base font-bold leading-tight ${textColor}`}>{primary}</h3>
                   {secondary && <span className={`text-xs font-mono ${subTextColor}`}>{secondary}</span>}
                 </>
               );
@@ -221,8 +221,8 @@ export const StockNode: React.FC<StockNodeProps> = (props) => {
 
         <div className="flex justify-between items-end">
           <div>
-            <div className={`text-lg font-bold tracking-tight ${textColor}`}>{formatPrice(data.price)}</div>
-            <div className={`flex items-center text-xs font-medium ${isUp ? 'text-emerald-600' : 'text-red-600'}`}>
+            <div className={`text-xl font-bold tracking-tight ${textColor}`}>{formatPrice(data.price)}</div>
+            <div className={`flex items-center text-xs font-medium ${isUp ? 'text-sentiment-bull' : 'text-sentiment-bear'}`}>
               {isUp ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
               {formatPct(data.changePct)}
             </div>
@@ -305,10 +305,10 @@ export const StockNode: React.FC<StockNodeProps> = (props) => {
       <Handle type="source" position={Position.Right} className="!opacity-0" />
       
       <span className="text-xs font-bold text-center leading-tight px-2 mb-1 truncate w-full">{getStockLabel({ ticker: data.ticker, name: data.name }).primary}</span>
-      <span className="text-sm font-mono font-bold">
+      <span className="text-base font-mono font-bold">
         {typeof value === 'string' ? value : formatLargeNumber(numericValue || 0)}
       </span>
-      <span className="text-[9px] uppercase opacity-80 font-bold tracking-wider mt-0.5">
+      <span className="text-2xs uppercase opacity-80 font-bold tracking-wider mt-0.5">
         {metric === 'marketCap' ? 'Mkt Cap' : 'Revenue'}
       </span>
     </div>

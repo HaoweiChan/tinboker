@@ -69,24 +69,24 @@ export const PipelinePromptsSection: React.FC = () => {
   if (loading) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
+    <div className="rounded-lg border border-border bg-card">
       {/* Prompt tabs */}
-      <div className="flex items-center justify-between border-b border-gray-200 px-4 pt-4 dark:border-gray-700">
+      <div className="flex items-center justify-between border-b border-border px-4 pt-4">
         <div className="flex gap-1 overflow-x-auto">
           {promptNames.map((name) => (
             <button
               key={name}
               onClick={() => selectPrompt(name)}
-              className={`whitespace-nowrap rounded-t-md px-3 py-2 text-sm font-medium transition-colors ${
+              className={`whitespace-nowrap rounded-t-md px-3 py-2 text-base font-medium transition-colors ${
                 activePrompt === name
-                  ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400'
-                  : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+                  ? 'border-b-2 border-accent-info text-accent-info'
+                  : 'text-muted-foreground hover:text-foreground'
               }`}
             >
               <FileText className="mr-1.5 inline h-3.5 w-3.5" />
@@ -97,10 +97,10 @@ export const PipelinePromptsSection: React.FC = () => {
         <button
           onClick={handleSave}
           disabled={!dirty || saving}
-          className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-all ${
+          className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-base font-medium transition-all ${
             dirty
-              ? 'bg-blue-600 text-white hover:bg-blue-700'
-              : 'cursor-not-allowed text-gray-400 dark:text-gray-600'
+              ? 'bg-accent-info text-accent-info-foreground hover:bg-accent-info/90'
+              : 'cursor-not-allowed text-muted-foreground'
           }`}
         >
           {saving ? (
@@ -123,7 +123,7 @@ export const PipelinePromptsSection: React.FC = () => {
             setDirty(e.target.value !== prompts[activePrompt]);
             setSaveSuccess(false);
           }}
-          className="h-[500px] w-full resize-y rounded-md border border-gray-200 bg-gray-50 p-4 font-mono text-sm text-gray-800 focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+          className="h-[500px] w-full resize-y rounded-md border border-input bg-muted p-4 font-mono text-base text-foreground focus:border-accent-info focus:outline-none focus:ring-1 focus:ring-accent-info"
           spellCheck={false}
         />
       </div>

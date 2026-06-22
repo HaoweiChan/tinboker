@@ -38,7 +38,7 @@ export const ArticleDetail: React.FC = () => {
       <PageContent>
         <div className="flex flex-col items-center justify-center py-20 gap-3">
           <p className="text-muted-foreground">{error || '找不到此文章'}</p>
-          <Link to="/" className="text-accent-info hover:underline text-sm">返回首頁</Link>
+          <Link to="/" className="text-accent-info hover:underline text-base">返回首頁</Link>
         </div>
       </PageContent>
     );
@@ -49,13 +49,13 @@ export const ArticleDetail: React.FC = () => {
       {/* Tags */}
       {article.tags && article.tags.length > 0 && (
         <div className="bg-card border border-border rounded-[var(--radius-md)] p-4">
-          <h4 className="text-[13px] font-semibold text-muted-foreground mb-3">標籤</h4>
+          <h4 className="text-sm font-semibold text-muted-foreground mb-3">標籤</h4>
           <div className="flex flex-wrap gap-1.5">
             {article.tags.map((tag) => (
               <Link
                 key={tag}
                 to={`/topics/${encodeURIComponent(tag)}`}
-                className="text-[12px] px-2.5 py-1 rounded-full bg-muted text-muted-foreground hover:bg-accent-info-soft hover:text-accent-info transition-colors"
+                className="text-xs px-2.5 py-1 rounded-full bg-muted text-muted-foreground hover:bg-accent-info-soft hover:text-accent-info transition-colors"
               >
                 #{tag}
               </Link>
@@ -66,13 +66,13 @@ export const ArticleDetail: React.FC = () => {
       {/* Tickers */}
       {article.tickers && article.tickers.length > 0 && (
         <div className="bg-card border border-border rounded-[var(--radius-md)] p-4">
-          <h4 className="text-[13px] font-semibold text-muted-foreground mb-3">提及個股</h4>
+          <h4 className="text-sm font-semibold text-muted-foreground mb-3">提及個股</h4>
           <div className="flex flex-col gap-1.5">
             {article.tickers.map((ticker) => (
               <Link
                 key={ticker}
                 to={`/stock/${encodeURIComponent(ticker)}`}
-                className="text-[13px] font-medium text-accent-info hover:underline"
+                className="text-sm font-medium text-accent-info hover:underline"
               >
                 {ticker}
               </Link>
@@ -83,11 +83,11 @@ export const ArticleDetail: React.FC = () => {
       {/* Key points */}
       {article.key_points && article.key_points.length > 0 && (
         <div className="bg-card border border-border rounded-[var(--radius-md)] p-4">
-          <h4 className="text-[13px] font-semibold text-muted-foreground mb-3">重點摘要</h4>
+          <h4 className="text-sm font-semibold text-muted-foreground mb-3">重點摘要</h4>
           <ul className="flex flex-col gap-2">
             {article.key_points.map((point, i) => (
-              <li key={i} className="grid grid-cols-[10px_1fr] gap-2 text-[13px] leading-[1.5]">
-                <span className="mt-[7px] h-1.5 w-1.5 rounded-full bg-emerald-500/90 shrink-0" />
+              <li key={i} className="grid grid-cols-[10px_1fr] gap-2 text-sm leading-[1.5]">
+                <span className="mt-[7px] h-1.5 w-1.5 rounded-full bg-accent-info shrink-0" />
                 <span className="text-muted-foreground">{point}</span>
               </li>
             ))}
@@ -102,7 +102,7 @@ export const ArticleDetail: React.FC = () => {
       {/* Back link */}
       <Link
         to="/articles"
-        className="inline-flex items-center gap-1 text-[13px] text-muted-foreground hover:text-foreground transition-colors mb-5"
+        className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors mb-5"
       >
         <ChevronLeft className="h-4 w-4" />
         所有文章
@@ -119,13 +119,13 @@ export const ArticleDetail: React.FC = () => {
 
       {/* Header */}
       <header className="mb-8">
-        <h1 className="text-[28px] sm:text-[32px] font-bold tracking-[-0.02em] leading-[1.25] mb-3">
+        <h1 className="text-3xl sm:text-3xl font-bold tracking-[-0.02em] leading-[1.25] mb-3">
           {article.title}
         </h1>
         {article.subtitle && (
-          <p className="text-[17px] text-muted-foreground leading-[1.5] mb-4">{article.subtitle}</p>
+          <p className="text-lg text-muted-foreground leading-[1.5] mb-4">{article.subtitle}</p>
         )}
-        <div className="flex flex-wrap items-center gap-3 text-[13px] text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
           <span className="font-medium text-foreground">{article.author_name}</span>
           {article.published_at && (
             <>

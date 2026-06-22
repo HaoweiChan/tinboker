@@ -34,7 +34,7 @@ function SortToggle({ value, onChange }: { value: SortKey; onChange: (k: SortKey
           key={opt.key}
           type="button"
           onClick={() => onChange(opt.key)}
-          className={`px-3 py-1.5 rounded-md text-[12px] font-medium transition-all duration-150
+          className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-150
             ${value === opt.key
               ? 'bg-card text-foreground shadow-sm border border-border/60'
               : 'text-muted-foreground hover:text-foreground'
@@ -156,15 +156,15 @@ export const TopicsCloud: React.FC = () => {
       <PageContent>
         {/* Page header */}
         <div className="flex items-center justify-between mb-1">
-          <h1 className="text-[22px] font-semibold tracking-[-0.02em]">話題排行</h1>
+          <h1 className="text-2xl font-semibold tracking-[-0.02em]">話題排行</h1>
           {hasData && (
-            <div className="text-[12px] text-muted-foreground font-mono tabular-nums flex items-center gap-1.5">
+            <div className="text-xs text-muted-foreground font-mono tabular-nums flex items-center gap-1.5">
               <Layers size={12} />
               <span>{sectors.length} 題材</span>
             </div>
           )}
         </div>
-        <p className="text-[13px] text-muted-foreground mb-6 max-w-[60ch]">
+        <p className="text-sm text-muted-foreground mb-6 max-w-[60ch]">
           今日最強題材焦點 — 依產業/主題聚合，顯示漲跌幅與相關個股。
         </p>
 
@@ -172,7 +172,7 @@ export const TopicsCloud: React.FC = () => {
         <div className="mb-7">
           <div className="flex items-center gap-1.5 mb-2.5">
             <Flame size={13} className="text-accent-info" />
-            <h2 className="text-[13px] font-semibold">今日漲幅最強</h2>
+            <h2 className="text-sm font-semibold">今日漲幅最強</h2>
           </div>
           <div className="flex gap-2.5 overflow-x-auto pb-1 -mx-0.5 px-0.5 scrollbar-none">
             {loading
@@ -180,7 +180,7 @@ export const TopicsCloud: React.FC = () => {
               : heroSectors.length > 0
                 ? heroSectors.map((s) => <SectorHeroCard key={s.exposure_id} sector={s} />)
                 : (
-                  <div className="flex-1 bg-card border border-border rounded-xl p-4 text-[13px] text-muted-foreground text-center">
+                  <div className="flex-1 bg-card border border-border rounded-xl p-4 text-sm text-muted-foreground text-center">
                     尚無漲跌幅資料
                   </div>
                 )
@@ -192,7 +192,7 @@ export const TopicsCloud: React.FC = () => {
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-1.5">
             <BarChart3 size={13} className="text-muted-foreground" />
-            <h2 className="text-[13px] font-semibold">題材總覽</h2>
+            <h2 className="text-sm font-semibold">題材總覽</h2>
           </div>
           <SortToggle value={sortKey} onChange={setSortKey} />
         </div>
@@ -202,7 +202,7 @@ export const TopicsCloud: React.FC = () => {
             {Array.from({ length: 6 }).map((_, i) => <BoardSkeleton key={i} />)}
           </div>
         ) : sectors.length === 0 ? (
-          <div className="bg-card border border-border rounded-xl p-10 text-center text-[13px] text-muted-foreground">
+          <div className="bg-card border border-border rounded-xl p-10 text-center text-sm text-muted-foreground">
             目前沒有題材資料。
           </div>
         ) : (
@@ -218,7 +218,7 @@ export const TopicsCloud: React.FC = () => {
           <div className="mt-9">
             <div className="flex items-center gap-1.5 mb-3">
               <Hash size={13} className="text-muted-foreground" />
-              <h2 className="text-[13px] font-semibold">熱門標籤</h2>
+              <h2 className="text-sm font-semibold">熱門標籤</h2>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {tags.map((t) => (

@@ -18,7 +18,7 @@ export const EventMovementIndicator: React.FC<EventMovementIndicatorProps> = ({
   };
 
   const getColorClass = (percent?: number): string => {
-    if (percent === undefined) return 'text-gray-400';
+    if (percent === undefined) return 'text-muted-foreground';
     return percent >= 0 ? 'text-green-500' : 'text-red-500';
   };
 
@@ -39,17 +39,17 @@ export const EventMovementIndicator: React.FC<EventMovementIndicatorProps> = ({
   };
 
   return (
-    <div className="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
+    <div className="bg-muted/50 rounded-lg p-3 border border-border">
       <div className="flex items-center justify-between mb-2">
-        <span className="text-sm font-semibold text-slate-50">{ticker}</span>
-        <span className="text-xs text-gray-400">
+        <span className="text-base font-semibold text-foreground">{ticker}</span>
+        <span className="text-xs text-muted-foreground">
           At Event: ${movement.priceAtEvent.toFixed(2)}
         </span>
       </div>
       
       <div className="grid grid-cols-3 gap-2 text-xs">
         <div className="flex flex-col items-center">
-          <span className="text-gray-400 mb-1">1 Day</span>
+          <span className="text-muted-foreground mb-1">1 Day</span>
           <div className={`flex items-center gap-1 font-semibold ${getColorClass(movement.changePercent1d)}`}>
             {getArrowIcon(movement.changePercent1d)}
             <span>{formatPercentage(movement.changePercent1d)}</span>
@@ -57,7 +57,7 @@ export const EventMovementIndicator: React.FC<EventMovementIndicatorProps> = ({
         </div>
         
         <div className="flex flex-col items-center">
-          <span className="text-gray-400 mb-1">1 Week</span>
+          <span className="text-muted-foreground mb-1">1 Week</span>
           <div className={`flex items-center gap-1 font-semibold ${getColorClass(movement.changePercent1w)}`}>
             {getArrowIcon(movement.changePercent1w)}
             <span>{formatPercentage(movement.changePercent1w)}</span>
@@ -65,7 +65,7 @@ export const EventMovementIndicator: React.FC<EventMovementIndicatorProps> = ({
         </div>
         
         <div className="flex flex-col items-center">
-          <span className="text-gray-400 mb-1">1 Month</span>
+          <span className="text-muted-foreground mb-1">1 Month</span>
           <div className={`flex items-center gap-1 font-semibold ${getColorClass(movement.changePercent1m)}`}>
             {getArrowIcon(movement.changePercent1m)}
             <span>{formatPercentage(movement.changePercent1m)}</span>

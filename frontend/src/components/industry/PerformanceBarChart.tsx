@@ -9,7 +9,7 @@ const BarGroup = ({ title, data, isDark }: { title: string, data: SectorStat[], 
     
     return (
         <div className="flex flex-col h-full">
-            <h3 className={`text-lg font-bold mb-4 uppercase tracking-wide border-b pb-2 ${isDark ? 'text-slate-200 border-slate-700' : 'text-slate-700 border-slate-300'}`}>
+            <h3 className={`text-xl font-bold mb-4 uppercase tracking-wide border-b pb-2 ${isDark ? 'text-slate-200 border-slate-700' : 'text-slate-700 border-slate-300'}`}>
                 {title}
             </h3>
             <div className="flex-1 overflow-y-auto space-y-2 pr-4">
@@ -63,7 +63,7 @@ const PerformanceBarChart: React.FC<PerformanceBarChartProps> = ({ variant = 'st
              {!isEmbedded && (
                <div className="mb-8">
                    <h1 className="text-3xl font-bold mb-2" style={{ color: 'var(--text-primary)' }}>Sector Performance</h1>
-                   <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Comparative analysis of sector rotation over time.</p>
+                   <p className="text-base" style={{ color: 'var(--text-secondary)' }}>Comparative analysis of sector rotation over time.</p>
                </div>
              )}
              

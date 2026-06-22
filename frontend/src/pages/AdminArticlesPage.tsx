@@ -45,10 +45,10 @@ const STATUS_LABELS: Record<ArticleStatus, string> = {
 };
 
 const STATUS_COLORS: Record<ArticleStatus, string> = {
-  draft: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
-  published: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300',
-  pending_review: 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300',
-  archived: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400',
+  draft: 'bg-primary/15 text-primary',
+  published: 'bg-sentiment-bull-soft text-sentiment-bull',
+  pending_review: 'bg-accent-info-soft text-accent-info',
+  archived: 'bg-muted text-muted-foreground',
 };
 
 interface EditorState {
@@ -301,16 +301,16 @@ export const AdminArticlesPage: React.FC = () => {
       <div className="mx-auto flex max-w-6xl flex-col gap-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
               TinBoker Editorial
             </p>
-            <h2 className="mt-1 text-2xl font-semibold tracking-normal text-gray-950 dark:text-white">
+            <h2 className="mt-1 text-2xl font-semibold tracking-normal text-foreground">
               文章工作台
             </h2>
           </div>
           <button
             onClick={handleNew}
-            className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-700"
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-accent-info px-4 py-2.5 text-base font-medium text-accent-info-foreground transition-colors hover:bg-accent-info/90"
           >
             <Plus className="h-4 w-4" />
             新增文章
@@ -318,96 +318,96 @@ export const AdminArticlesPage: React.FC = () => {
         </div>
 
         <div className="grid gap-3 sm:grid-cols-3">
-          <div className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-            <p className="text-xs text-gray-500 dark:text-gray-400">全部文章</p>
-            <p className="mt-2 text-2xl font-semibold text-gray-950 dark:text-white">{articles.length}</p>
+          <div className="rounded-lg border border-border bg-card p-4">
+            <p className="text-xs text-muted-foreground">全部文章</p>
+            <p className="mt-2 text-2xl font-semibold text-foreground">{articles.length}</p>
           </div>
-          <div className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-            <p className="text-xs text-gray-500 dark:text-gray-400">已發布</p>
-            <p className="mt-2 text-2xl font-semibold text-gray-950 dark:text-white">{publishedCount}</p>
+          <div className="rounded-lg border border-border bg-card p-4">
+            <p className="text-xs text-muted-foreground">已發布</p>
+            <p className="mt-2 text-2xl font-semibold text-foreground">{publishedCount}</p>
           </div>
-          <div className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-            <p className="text-xs text-gray-500 dark:text-gray-400">草稿</p>
-            <p className="mt-2 text-2xl font-semibold text-gray-950 dark:text-white">{draftCount}</p>
+          <div className="rounded-lg border border-border bg-card p-4">
+            <p className="text-xs text-muted-foreground">草稿</p>
+            <p className="mt-2 text-2xl font-semibold text-foreground">{draftCount}</p>
           </div>
         </div>
 
         {loading ? (
-          <p className="rounded-lg border border-gray-200 bg-white py-12 text-center text-gray-500 dark:border-gray-700 dark:bg-gray-800">
+          <p className="rounded-lg border border-border bg-card py-12 text-center text-muted-foreground">
             載入中...
           </p>
         ) : articles.length === 0 ? (
-          <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-gray-300 bg-white py-16 text-gray-400 dark:border-gray-700 dark:bg-gray-800">
+          <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-border bg-card py-16 text-muted-foreground">
             <FileText className="h-10 w-10 opacity-40" />
             <p>尚無文章</p>
           </div>
         ) : (
-          <div className="overflow-hidden rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
-            <table className="w-full text-sm">
+          <div className="overflow-hidden rounded-lg border border-border bg-card">
+            <table className="w-full text-base">
               <thead>
-                <tr className="border-b border-gray-200 bg-gray-50 text-left dark:border-gray-700 dark:bg-gray-900/50">
-                  <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-300">標題</th>
-                  <th className="hidden px-4 py-3 font-medium text-gray-600 dark:text-gray-300 md:table-cell">提及</th>
-                  <th className="w-24 px-4 py-3 font-medium text-gray-600 dark:text-gray-300">狀態</th>
-                  <th className="hidden w-28 px-4 py-3 font-medium text-gray-600 dark:text-gray-300 sm:table-cell">日期</th>
-                  <th className="w-32 px-4 py-3 font-medium text-gray-600 dark:text-gray-300">操作</th>
+                <tr className="border-b border-border bg-muted text-left">
+                  <th className="px-4 py-3 font-medium text-muted-foreground">標題</th>
+                  <th className="hidden px-4 py-3 font-medium text-muted-foreground md:table-cell">提及</th>
+                  <th className="w-24 px-4 py-3 font-medium text-muted-foreground">狀態</th>
+                  <th className="hidden w-28 px-4 py-3 font-medium text-muted-foreground sm:table-cell">日期</th>
+                  <th className="w-32 px-4 py-3 font-medium text-muted-foreground">操作</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+              <tbody className="divide-y divide-border">
                 {articles.map((article) => (
-                  <tr key={article.id} className="transition-colors hover:bg-gray-50 dark:hover:bg-gray-900/40">
+                  <tr key={article.id} className="transition-colors hover:bg-muted/50">
                     <td className="px-4 py-3">
-                      <div className="font-medium text-gray-950 line-clamp-1 dark:text-white">{article.title}</div>
+                      <div className="font-medium text-foreground line-clamp-1">{article.title}</div>
                       {article.subtitle && (
-                        <div className="mt-0.5 text-xs text-gray-500 line-clamp-1 dark:text-gray-400">
+                        <div className="mt-0.5 text-xs text-muted-foreground line-clamp-1">
                           {article.subtitle}
                         </div>
                       )}
                     </td>
-                    <td className="hidden px-4 py-3 text-xs text-gray-500 dark:text-gray-400 md:table-cell">
+                    <td className="hidden px-4 py-3 text-xs text-muted-foreground md:table-cell">
                       {(article.tickers || []).slice(0, 3).join(', ') || '-'}
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${statusColor(article.status)}`}>
+                      <span className={`rounded-full px-2 py-0.5 text-2xs font-medium ${statusColor(article.status)}`}>
                         {statusLabel(article.status)}
                       </span>
                     </td>
-                    <td className="hidden px-4 py-3 text-xs text-gray-500 dark:text-gray-400 sm:table-cell">
+                    <td className="hidden px-4 py-3 text-xs text-muted-foreground sm:table-cell">
                       {formatDate(article.published_at || article.created_at)}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1.5">
                         <button
                           onClick={() => void handleEdit(article.id)}
-                          className="rounded p-1.5 transition-colors hover:bg-gray-200 dark:hover:bg-gray-700"
+                          className="rounded p-1.5 transition-colors hover:bg-muted"
                           title="編輯"
                         >
-                          <Pencil className="h-4 w-4 text-gray-500" />
+                          <Pencil className="h-4 w-4 text-muted-foreground" />
                         </button>
                         {article.status === 'draft' && (
                           <button
                             onClick={() => void handlePublish(article.id)}
-                            className="rounded p-1.5 transition-colors hover:bg-emerald-100 dark:hover:bg-emerald-900/30"
+                            className="rounded p-1.5 transition-colors hover:bg-sentiment-bull-soft"
                             title="發布"
                           >
-                            <Send className="h-4 w-4 text-emerald-600" />
+                            <Send className="h-4 w-4 text-sentiment-bull" />
                           </button>
                         )}
                         {article.status === 'published' && (
                           <button
                             onClick={() => void handleUnpublish(article.id)}
-                            className="rounded p-1.5 transition-colors hover:bg-amber-100 dark:hover:bg-amber-900/30"
+                            className="rounded p-1.5 transition-colors hover:bg-primary/15"
                             title="退回草稿"
                           >
-                            <Undo2 className="h-4 w-4 text-amber-600" />
+                            <Undo2 className="h-4 w-4 text-primary" />
                           </button>
                         )}
                         <button
                           onClick={() => void handleDelete(article.id)}
-                          className="rounded p-1.5 transition-colors hover:bg-red-100 dark:hover:bg-red-900/30"
+                          className="rounded p-1.5 transition-colors hover:bg-destructive/10"
                           title="刪除"
                         >
-                          <Trash2 className="h-4 w-4 text-red-500" />
+                          <Trash2 className="h-4 w-4 text-destructive" />
                         </button>
                       </div>
                     </td>
@@ -423,26 +423,26 @@ export const AdminArticlesPage: React.FC = () => {
 
   return (
     <div className="mx-auto flex max-w-[1500px] flex-col gap-5">
-      <div className="sticky top-0 z-20 -mx-4 border-b border-gray-200 bg-gray-100/95 px-4 py-3 backdrop-blur dark:border-gray-800 dark:bg-gray-900/95 lg:-mx-6 lg:px-6">
+      <div className="sticky top-0 z-20 -mx-4 border-b border-border bg-background/95 px-4 py-3 backdrop-blur lg:-mx-6 lg:px-6">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex min-w-0 items-center gap-3">
             <button
               onClick={() => setView('list')}
-              className="rounded-lg p-2 text-gray-500 transition-colors hover:bg-white hover:text-gray-800 dark:hover:bg-gray-800 dark:hover:text-gray-100"
+              className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
               title="返回列表"
             >
               <ArrowLeft className="h-5 w-5" />
             </button>
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${statusColor(editor.status)}`}>
+                <span className={`rounded-full px-2 py-0.5 text-2xs font-medium ${statusColor(editor.status)}`}>
                   {statusLabel(editor.status)}
                 </span>
                 {editor.id && (
-                  <span className="text-xs text-gray-500 dark:text-gray-400">ID {editor.id}</span>
+                  <span className="text-xs text-muted-foreground">ID {editor.id}</span>
                 )}
               </div>
-              <p className="mt-0.5 truncate text-sm font-medium text-gray-950 dark:text-white">
+              <p className="mt-0.5 truncate text-base font-medium text-foreground">
                 {editor.title || '未命名文章'}
               </p>
             </div>
@@ -451,7 +451,7 @@ export const AdminArticlesPage: React.FC = () => {
             {editor.slug && (
               <button
                 onClick={() => void copyPublicPath()}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-2 text-base text-muted-foreground transition-colors hover:bg-muted"
               >
                 <Copy className="h-4 w-4" />
                 複製路徑
@@ -461,7 +461,7 @@ export const AdminArticlesPage: React.FC = () => {
               <button
                 onClick={() => void handleUnpublish(editor.id!)}
                 disabled={saving}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-800 transition-colors hover:bg-amber-100 disabled:opacity-50 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-300 dark:hover:bg-amber-900/50"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 px-4 py-2 text-base font-medium text-primary transition-colors hover:bg-primary/20 disabled:opacity-50"
               >
                 <Undo2 className="h-4 w-4" />
                 退回草稿
@@ -470,7 +470,7 @@ export const AdminArticlesPage: React.FC = () => {
             <button
               onClick={() => void handleSave(false)}
               disabled={saving}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 transition-colors hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-700"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-4 py-2 text-base font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50"
             >
               <Save className="h-4 w-4" />
               儲存草稿
@@ -479,7 +479,7 @@ export const AdminArticlesPage: React.FC = () => {
               <button
                 onClick={() => void handleSave(true)}
                 disabled={saving}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 rounded-lg bg-accent-info px-4 py-2 text-base font-medium text-accent-info-foreground transition-colors hover:bg-accent-info/90 disabled:opacity-50"
               >
                 <Send className="h-4 w-4" />
                 發布
@@ -491,79 +491,79 @@ export const AdminArticlesPage: React.FC = () => {
 
       <div className="flex flex-col gap-5">
         <section className="space-y-4">
-          <div className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+          <div className="rounded-lg border border-border bg-card p-4">
             <input
               type="text"
               value={editor.title}
               onChange={(e) => setField('title', e.target.value)}
               placeholder="文章標題"
-              className="w-full border-0 bg-transparent text-3xl font-semibold tracking-normal text-gray-950 outline-none placeholder:text-gray-300 dark:text-white dark:placeholder:text-gray-600"
+              className="w-full border-0 bg-transparent text-3xl font-semibold tracking-normal text-foreground outline-none placeholder:text-muted-foreground/40"
             />
             <input
               type="text"
               value={editor.subtitle}
               onChange={(e) => setField('subtitle', e.target.value)}
               placeholder="副標題"
-              className="mt-3 w-full border-0 bg-transparent text-base text-gray-600 outline-none placeholder:text-gray-300 dark:text-gray-300 dark:placeholder:text-gray-600"
+              className="mt-3 w-full border-0 bg-transparent text-lg text-muted-foreground outline-none placeholder:text-muted-foreground/40"
             />
           </div>
 
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <div>
-              <label className="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">Slug</label>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">Slug</label>
               <input
                 type="text"
                 value={editor.slug}
                 onChange={(e) => setField('slug', e.target.value)}
                 placeholder="自動產生"
-                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+                className="w-full rounded-lg border border-input bg-card px-3 py-2 text-base text-foreground outline-none focus:border-transparent focus:ring-2 focus:ring-accent-info"
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">標籤</label>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">標籤</label>
               <input
                 type="text"
                 value={editor.tags}
                 onChange={(e) => setField('tags', e.target.value)}
                 placeholder="ai-chips, semiconductor"
-                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+                className="w-full rounded-lg border border-input bg-card px-3 py-2 text-base text-foreground outline-none focus:border-transparent focus:ring-2 focus:ring-accent-info"
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">提及個股</label>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">提及個股</label>
               <input
                 type="text"
                 value={editor.tickers}
                 onChange={(e) => setField('tickers', e.target.value)}
                 placeholder="NVDA, 2330"
-                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+                className="w-full rounded-lg border border-input bg-card px-3 py-2 text-base text-foreground outline-none focus:border-transparent focus:ring-2 focus:ring-accent-info"
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">封面圖片 URL</label>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">封面圖片 URL</label>
               <input
                 type="text"
                 value={editor.cover_image_url}
                 onChange={(e) => setField('cover_image_url', e.target.value)}
                 placeholder="https://..."
-                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+                className="w-full rounded-lg border border-input bg-card px-3 py-2 text-base text-foreground outline-none focus:border-transparent focus:ring-2 focus:ring-accent-info"
               />
             </div>
           </div>
 
           <div>
-            <label className="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">重點摘要（每行一個）</label>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">重點摘要（每行一個）</label>
             <textarea
               value={editor.key_points}
               onChange={(e) => setField('key_points', e.target.value)}
               placeholder="每行一個重點"
               rows={3}
-              className="w-full resize-y rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+              className="w-full resize-y rounded-lg border border-input bg-card px-3 py-2 text-base text-foreground outline-none focus:border-transparent focus:ring-2 focus:ring-accent-info"
             />
           </div>
 
-          <div className="rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 px-3 py-2 dark:border-gray-700">
+          <div className="rounded-lg border border-border bg-card">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
               <div className="flex flex-wrap items-center gap-1.5">
                 {SNIPPETS.map((snippet) => {
                   const Icon = snippet.icon;
@@ -571,7 +571,7 @@ export const AdminArticlesPage: React.FC = () => {
                     <button
                       key={snippet.label}
                       onClick={() => insertIntoBody(snippet.text)}
-                      className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white"
+                      className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                     >
                       <Icon className="h-3.5 w-3.5" />
                       {snippet.label}
@@ -579,7 +579,7 @@ export const AdminArticlesPage: React.FC = () => {
                   );
                 })}
               </div>
-              <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
+              <div className="flex items-center gap-3 text-xs text-muted-foreground">
                 <span>{writingStats.chars.toLocaleString('zh-TW')} 字元</span>
                 <span>{writingStats.readMinutes} 分鐘</span>
                 <span>{writingStats.tags} 標籤</span>
@@ -592,18 +592,18 @@ export const AdminArticlesPage: React.FC = () => {
               onChange={(e) => setField('body_content', e.target.value)}
               placeholder="開始撰寫..."
               rows={28}
-              className="min-h-[500px] w-full resize-y border-0 bg-white px-4 py-4 font-mono text-[15px] leading-7 text-gray-900 outline-none placeholder:text-gray-300 dark:bg-gray-800 dark:text-gray-100 dark:placeholder:text-gray-600"
+              className="min-h-[500px] w-full resize-y border-0 bg-card px-4 py-4 font-mono text-md leading-7 text-foreground outline-none placeholder:text-muted-foreground/40"
             />
           </div>
         </section>
 
-        <section className="overflow-hidden rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
-          <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-gray-700">
+        <section className="overflow-hidden rounded-lg border border-border bg-card">
+          <div className="flex items-center justify-between border-b border-border px-4 py-3">
             <div className="flex items-center gap-2">
-              <Eye className="h-4 w-4 text-gray-500" />
-              <span className="text-sm font-medium text-gray-700 dark:text-gray-200">文章預覽</span>
+              <Eye className="h-4 w-4 text-muted-foreground" />
+              <span className="text-base font-medium text-foreground">文章預覽</span>
             </div>
-            <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <CheckCircle2 className="h-3.5 w-3.5" />
               {writingStats.units.toLocaleString('zh-TW')} 字
             </div>
@@ -616,19 +616,19 @@ export const AdminArticlesPage: React.FC = () => {
                 className="mb-6 max-h-[320px] w-full rounded-lg object-cover"
               />
             )}
-            <h1 className="text-[28px] font-bold leading-[1.3] tracking-normal text-gray-950 dark:text-white">
+            <h1 className="text-3xl font-bold leading-[1.3] tracking-normal text-foreground">
               {editor.title || '（無標題）'}
             </h1>
             {editor.subtitle && (
-              <p className="mt-3 text-[16px] leading-relaxed text-gray-500 dark:text-gray-400">
+              <p className="mt-3 text-lg leading-relaxed text-muted-foreground">
                 {editor.subtitle}
               </p>
             )}
-            <hr className="my-6 border-gray-200 dark:border-gray-700" />
+            <hr className="my-6 border-border" />
             {editor.body_content.trim() ? (
               <ArticleBody content={editor.body_content} />
             ) : (
-              <p className="py-12 text-center text-sm text-gray-400">尚無內容</p>
+              <p className="py-12 text-center text-base text-muted-foreground">尚無內容</p>
             )}
           </div>
         </section>

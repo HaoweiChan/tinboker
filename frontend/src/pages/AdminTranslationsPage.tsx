@@ -121,43 +121,43 @@ export const AdminTranslationsPage: React.FC = () => {
 
   if (!authenticated) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+      <div className="min-h-screen bg-background">
         <AdminLogin onSuccess={() => setAuthenticated(true)} />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+    <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="border-b border-gray-200 bg-white px-6 py-4 dark:border-gray-700 dark:bg-gray-800">
+      <header className="border-b border-border bg-card px-6 py-4">
         <div className="mx-auto flex max-w-7xl items-center justify-between">
           <div>
-            <h1 className="text-xl font-semibold text-gray-900 dark:text-white">
+            <h1 className="text-xl font-semibold text-foreground">
               股票翻譯管理
             </h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
+            <p className="text-base text-muted-foreground">
               共 {total} 筆翻譯
             </p>
           </div>
           <div className="flex items-center gap-3">
             <button
               onClick={fetchTranslations}
-              className="flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+              className="flex items-center gap-2 rounded-md border border-border px-3 py-2 text-base text-foreground hover:bg-muted"
             >
               <RefreshCw className="h-4 w-4" />
               重新整理
             </button>
             <button
               onClick={() => setShowBulkImport(true)}
-              className="flex items-center gap-2 rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700"
+              className="flex items-center gap-2 rounded-md bg-accent-info px-3 py-2 text-base text-accent-info-foreground hover:bg-accent-info/90"
             >
               <Upload className="h-4 w-4" />
               批次匯入
             </button>
             <button
               onClick={handleLogout}
-              className="flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+              className="flex items-center gap-2 rounded-md border border-border px-3 py-2 text-base text-foreground hover:bg-muted"
             >
               <LogOut className="h-4 w-4" />
               登出
@@ -188,21 +188,21 @@ export const AdminTranslationsPage: React.FC = () => {
         {/* Pagination */}
         {totalPages > 1 && (
           <div className="mt-6 flex items-center justify-between">
-            <div className="text-sm text-gray-500 dark:text-gray-400">
+            <div className="text-base text-muted-foreground">
               第 {page} 頁，共 {totalPages} 頁
             </div>
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={page === 1}
-                className="rounded-md border border-gray-300 p-2 text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+                className="rounded-md border border-border p-2 text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <ChevronLeft className="h-4 w-4" />
               </button>
               <button
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={page === totalPages}
-                className="rounded-md border border-gray-300 p-2 text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+                className="rounded-md border border-border p-2 text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <ChevronRight className="h-4 w-4" />
               </button>

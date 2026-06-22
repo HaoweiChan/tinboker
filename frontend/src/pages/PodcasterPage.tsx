@@ -146,16 +146,16 @@ export const PodcasterPage: React.FC = () => {
           <div className="flex-1 min-w-0">
             <div className="flex items-start justify-between gap-3 flex-wrap">
               <div className="min-w-0">
-                <h1 className="text-[22px] font-semibold tracking-[-0.02em] truncate">{name}</h1>
+                <h1 className="text-2xl font-semibold tracking-[-0.02em] truncate">{name}</h1>
                 <div className="flex gap-2 mt-2 flex-wrap">
-                  <span className="text-[12px] px-3 py-1 rounded-full bg-muted text-muted-foreground"><strong className="font-mono text-foreground mr-1 tabular-nums">{loading ? '…' : episodeCount.toLocaleString('en-US')}</strong>集已分析</span>
+                  <span className="text-xs px-3 py-1 rounded-full bg-muted text-muted-foreground"><strong className="font-mono text-foreground mr-1 tabular-nums">{loading ? '…' : episodeCount.toLocaleString('en-US')}</strong>集已分析</span>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => toggleSubscription(name)}
                 className={cn(
-                  'inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-[13px] font-medium transition-colors shrink-0',
+                  'inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium transition-colors shrink-0',
                   isSubscribed ? 'bg-card border border-border text-foreground hover:bg-muted' : 'bg-foreground text-background hover:opacity-90',
                 )}
               >
@@ -163,15 +163,15 @@ export const PodcasterPage: React.FC = () => {
                 {isSubscribed ? '已訂閱' : '訂閱'}
               </button>
             </div>
-            <p className="text-[13px] text-muted-foreground mt-3 max-w-[60ch] leading-[1.55]">{name} 的節目摘要 — 由 TinBoker 結構化分析關鍵重點與提及的個股。</p>
+            <p className="text-sm text-muted-foreground mt-3 max-w-[60ch] leading-[1.55]">{name} 的節目摘要 — 由 TinBoker 結構化分析關鍵重點與提及的個股。</p>
           </div>
         </div>
 
         {IS_DEV_ENV && picks.length > 0 && (
           <>
             <div className="flex items-center justify-between mb-3">
-              <h2 className="text-[13px] font-semibold text-muted-foreground">標的走勢（提及日起算）</h2>
-              <Link to="/picks" className="text-[12px] text-accent-info hover:underline">查看命中率 →</Link>
+              <h2 className="text-sm font-semibold text-muted-foreground">標的走勢（提及日起算）</h2>
+              <Link to="/picks" className="text-xs text-accent-info hover:underline">查看命中率 →</Link>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
               {picks.slice(0, 6).map((pick) => {
@@ -196,7 +196,7 @@ export const PodcasterPage: React.FC = () => {
           </>
         )}
 
-        <h2 className="text-[13px] font-semibold text-muted-foreground mb-3">最新集數</h2>
+        <h2 className="text-sm font-semibold text-muted-foreground mb-3">最新集數</h2>
         {loading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {Array.from({ length: 4 }).map((_, i) => (
@@ -204,7 +204,7 @@ export const PodcasterPage: React.FC = () => {
             ))}
           </div>
         ) : episodes.length === 0 ? (
-          <div className="bg-card border border-border rounded-md p-10 text-center text-[13px] text-muted-foreground">此節目目前沒有可顯示的集數。</div>
+          <div className="bg-card border border-border rounded-md p-10 text-center text-sm text-muted-foreground">此節目目前沒有可顯示的集數。</div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {episodes.map((ep) => (

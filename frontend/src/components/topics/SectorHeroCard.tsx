@@ -72,13 +72,13 @@ export const SectorHeroCard: React.FC<SectorHeroCardProps> = ({ sector }) => {
             size={12}
             variant="chip"
           />
-          <span className="text-[10px] font-medium text-muted-foreground bg-muted/70 px-1.5 py-0.5 rounded leading-none">
+          <span className="text-2xs font-medium text-muted-foreground bg-muted/70 px-1.5 py-0.5 rounded leading-none">
             {sector.exposure_type === 'sector' ? '產業' : sector.exposure_type === 'theme' ? '主題' : '總經'}
           </span>
         </div>
 
         {/* Sector name */}
-        <div className="text-[13px] font-semibold tracking-[-0.01em] mb-3 leading-snug group-hover:text-foreground/90 transition-colors line-clamp-2">
+        <div className="text-sm font-semibold tracking-[-0.01em] mb-3 leading-snug group-hover:text-foreground/90 transition-colors line-clamp-2">
           {sector.display_name}
         </div>
 
@@ -86,18 +86,18 @@ export const SectorHeroCard: React.FC<SectorHeroCardProps> = ({ sector }) => {
         <div className="flex items-center gap-1">
           {hasChange ? (
             <>
-              <span className={`font-mono text-[20px] font-bold tabular-nums leading-none ${trend.text}`}>
+              <span className={`font-mono text-xl font-bold tabular-nums leading-none ${trend.text}`}>
                 {sector.avg_change! >= 0 ? '+' : ''}{sector.avg_change!.toFixed(2)}%
               </span>
               <Arrow size={16} className={trend.text} />
             </>
           ) : (
-            <span className="font-mono text-[20px] font-bold tabular-nums leading-none text-muted-foreground">—</span>
+            <span className="font-mono text-xl font-bold tabular-nums leading-none text-muted-foreground">—</span>
           )}
         </div>
 
         {/* Episode count */}
-        <div className="mt-2 text-[10px] text-muted-foreground font-mono tabular-nums">
+        <div className="mt-2 text-2xs text-muted-foreground font-mono tabular-nums">
           {sector.episode_count} 集
         </div>
       </div>

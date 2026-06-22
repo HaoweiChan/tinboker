@@ -50,12 +50,12 @@ export const NetdataEmbed: React.FC<NetdataEmbedProps> = ({
 
     if (error) {
         return (
-            <div className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 p-8 dark:border-gray-600 dark:bg-gray-800/50">
-                <AlertCircle className="mb-3 h-8 w-8 text-gray-400" />
-                <p className="mb-2 text-center text-sm font-medium text-gray-600 dark:text-gray-400">
+            <div className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-border bg-muted p-8">
+                <AlertCircle className="mb-3 h-8 w-8 text-muted-foreground" />
+                <p className="mb-2 text-center text-base font-medium text-muted-foreground">
                     Netdata Not Configured
                 </p>
-                <p className="mb-4 text-center text-xs text-gray-500 dark:text-gray-500">
+                <p className="mb-4 text-center text-xs text-muted-foreground">
                     Please ensure Netdata container is running and Caddy reverse proxy is configured
                 </p>
                 <div className="flex gap-3">
@@ -64,7 +64,7 @@ export const NetdataEmbed: React.FC<NetdataEmbedProps> = ({
                             setError(false);
                             setLoading(true);
                         }}
-                        className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400"
+                        className="text-base text-accent-info hover:text-accent-info/80"
                     >
                         Retry
                     </button>
@@ -72,7 +72,7 @@ export const NetdataEmbed: React.FC<NetdataEmbedProps> = ({
                         href="https://netdata.cloud/docs/"
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="flex items-center gap-1 text-sm text-gray-600 hover:text-gray-700 dark:text-gray-400"
+                        className="flex items-center gap-1 text-base text-muted-foreground hover:text-foreground"
                     >
                         Docs <ExternalLink className="h-3 w-3" />
                     </a>
@@ -85,10 +85,10 @@ export const NetdataEmbed: React.FC<NetdataEmbedProps> = ({
         <div className="relative" style={{ minHeight: height }}>
             {/* Loading overlay */}
             {loading && (
-                <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-gray-100 dark:bg-gray-700">
+                <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-muted">
                     <div className="flex flex-col items-center gap-2">
-                        <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-500 border-t-transparent" />
-                        <span className="text-sm text-gray-500 dark:text-gray-400">
+                        <div className="h-8 w-8 animate-spin rounded-full border-4 border-accent-info border-t-transparent" />
+                        <span className="text-base text-muted-foreground">
                             Loading Netdata...
                         </span>
                     </div>
@@ -108,8 +108,8 @@ export const NetdataEmbed: React.FC<NetdataEmbedProps> = ({
             />
 
             {/* Instructions banner */}
-            <div className="mt-2 rounded-md bg-blue-50 p-3 dark:bg-blue-900/20">
-                <p className="text-xs text-blue-700 dark:text-blue-300">
+            <div className="mt-2 rounded-md bg-accent-info-soft p-3">
+                <p className="text-xs text-accent-info">
                     💡 <strong>Tip:</strong> If you see a "Welcome to Netdata" screen, click <strong>"Skip and use the dashboard anonymously"</strong> at the bottom right to view metrics.
                 </p>
             </div>
@@ -120,7 +120,7 @@ export const NetdataEmbed: React.FC<NetdataEmbedProps> = ({
                     href={baseUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
                 >
                     Open in new tab <ExternalLink className="h-3 w-3" />
                 </a>

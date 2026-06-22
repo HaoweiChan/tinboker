@@ -6,70 +6,67 @@
 
 @layer base {
   :root {
-    /* MarketNote Light Mode */
+    /* 終端機 Terminal — Light (soft-gray "paper terminal", easy on the eyes) */
 
-    /* Background: Slate 50 */
-    --background: 210 40% 98%;
-    /* Foreground: Slate 900 */
-    --foreground: 222.2 47.4% 11.2%;
+    --background: 214 16% 89%;
+    --foreground: 216 38% 14%;
 
-    /* Typography Tweaks */
-    --font-feature-settings: "rlig" 1, "calt" 1;
+    /* Typography Tweaks — tabular numerals on for the data-terminal feel */
+    --font-feature-settings: "rlig" 1, "calt" 1, "tnum" 1;
 
-    /* Card: White */
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 47.4% 11.2%;
+    --card: 210 16% 95%;
+    --card-foreground: 216 38% 14%;
 
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 47.4% 11.2%;
+    --popover: 210 16% 95%;
+    --popover-foreground: 216 38% 14%;
 
-    /* Primary is now near-black ink (not amber) — primary CTAs, active pills, logo. */
-    --primary: 222 47% 11%;
+    /* Primary = terminal amber (deepened for contrast on white) */
+    --primary: 33 92% 44%;
     --primary-foreground: 0 0% 100%;
 
-    /* Secondary / Muted / Accent: subtle slate surfaces */
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 214 13% 86%;
+    --secondary-foreground: 216 40% 12%;
 
-    --muted: 220 14% 96%;
-    --muted-foreground: 215 16% 47%;
+    --muted: 214 13% 86%;
+    --muted-foreground: 215 14% 40%;
 
-    --accent: 220 14% 96%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    --accent: 214 13% 86%;
+    --accent-foreground: 216 40% 12%;
 
     /* Destructive: Red 500 */
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive: 0 84% 55%;
+    --destructive-foreground: 0 0% 100%;
 
-    /* Border / input: light hairline (rendered at 0.5–1px) */
-    --border: 220 13% 91%;
-    --input: 220 13% 91%;
+    /* Border / input: hairline */
+    --border: 214 14% 80%;
+    --input: 214 14% 80%;
 
-    /* Ring: the chrome blue */
-    --ring: 221 83% 53%;
+    /* Ring = electric cyan */
+    --ring: 196 88% 42%;
 
-    --radius: 0.625rem;
+    /* Sharp terminal corners */
+    --radius: 0.2rem;
 
-    /* Charts — chart-1 ink, chart-2 blue, chart-3 bull, chart-4 bear, chart-5 neutral */
-    --chart-1: 222 47% 11%;
-    --chart-2: 221 83% 53%;
-    --chart-3: 152 86% 29%;
-    --chart-4: 0 67% 54%;
-    --chart-5: 215 16% 47%;
+    /* Charts — chart-1 ink, chart-2 cyan, chart-3 bull, chart-4 bear, chart-5 neutral */
+    --chart-1: 216 40% 12%;
+    --chart-2: 196 88% 40%;
+    --chart-3: 152 64% 32%;
+    --chart-4: 0 72% 50%;
+    --chart-5: 215 14% 45%;
 
-    /* === Redesign: the ONE chrome accent (info blue) — links, focus, active-filter pill === */
-    --accent-info: 221 83% 53%;            /* #2563eb */
+    /* === Accent = electric cyan — links, focus, active-filter pill === */
+    --accent-info: 196 88% 40%;
     --accent-info-foreground: 0 0% 100%;
-    --accent-info-soft: 219 100% 93%;      /* ~#dde8ff */
+    --accent-info-soft: 196 80% 92%;
 
-    /* === Redesign: LLM-derived sentiment (SEMANTIC — always green=bull / red=bear) === */
+    /* === LLM-derived sentiment (SEMANTIC — always green=bull / red=bear) === */
     /* Independent of the TW/US price-change flip in useStockTrendColor. */
-    --sentiment-bull: 152 86% 29%;         /* ~#0a8a4a */
-    --sentiment-bull-soft: 146 51% 92%;    /* ~#e2f5ea */
-    --sentiment-bear: 0 67% 54%;           /* ~#d83b3b */
-    --sentiment-bear-soft: 0 67% 95%;      /* ~#fbe7e7 */
-    --sentiment-neutral: 215 14% 40%;      /* slate-ish */
-    --sentiment-neutral-soft: 210 40% 96%;
+    --sentiment-bull: 152 64% 32%;
+    --sentiment-bull-soft: 150 50% 90%;
+    --sentiment-bear: 0 72% 50%;
+    --sentiment-bear-soft: 6 75% 95%;
+    --sentiment-neutral: 215 12% 42%;
+    --sentiment-neutral-soft: 210 20% 92%;
 
     /* Legacy token aliases */
     --bg-base: hsl(var(--background));
@@ -86,63 +83,88 @@
   }
 
   .dark {
-    /* Dark surfaces — deep slate-ink (#0f1117-ish), cards lift one notch (#161922-ish) */
-    --background: 222 22% 7%;
-    --foreground: 220 16% 92%;
+    /* 終端機 Terminal — Dark (near-black canvas, amber primary, electric-cyan accent) */
+    --background: 220 34% 4%;
+    --foreground: 210 22% 90%;
 
-    --card: 222 21% 11%;
-    --card-foreground: 220 16% 92%;
+    --card: 218 30% 7%;
+    --card-foreground: 210 22% 90%;
 
-    --popover: 222 21% 11%;
-    --popover-foreground: 220 16% 92%;
+    --popover: 218 30% 8%;
+    --popover-foreground: 210 22% 90%;
 
-    /* Primary is near-white ink in dark mode */
-    --primary: 210 40% 98%;
-    --primary-foreground: 222 47% 11%;
+    /* Primary = terminal amber (active state / key highlights) */
+    --primary: 38 96% 56%;
+    --primary-foreground: 220 40% 6%;
 
-    --secondary: 222 22% 16%;
-    --secondary-foreground: 220 16% 92%;
+    --secondary: 216 26% 12%;
+    --secondary-foreground: 210 22% 90%;
 
-    --muted: 222 22% 16%;
-    --muted-foreground: 218 12% 62%;
+    --muted: 216 26% 11%;
+    --muted-foreground: 213 15% 60%;
 
-    --accent: 222 22% 16%;
-    --accent-foreground: 220 16% 92%;
+    --accent: 216 26% 13%;
+    --accent-foreground: 210 22% 90%;
 
-    --destructive: 0 63% 50%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive: 0 80% 60%;
+    --destructive-foreground: 0 0% 100%;
 
-    --border: 222 18% 18%;
-    --input: 222 18% 18%;
+    --border: 213 28% 15%;
+    --input: 213 28% 15%;
 
-    /* Ring: the chrome blue (brighter in dark) */
-    --ring: 222 100% 68%;
+    /* Ring = electric cyan */
+    --ring: 190 92% 56%;
 
-    --chart-1: 210 40% 98%;
-    --chart-2: 222 100% 68%;
-    --chart-3: 152 56% 49%;
-    --chart-4: 0 80% 65%;
-    --chart-5: 218 12% 62%;
+    --chart-1: 38 96% 56%;
+    --chart-2: 190 92% 56%;
+    --chart-3: 145 66% 47%;
+    --chart-4: 0 80% 61%;
+    --chart-5: 213 15% 60%;
 
-    /* === Redesign: accent + sentiment (dark) === */
-    --accent-info: 222 100% 68%;           /* ~#5b8dff */
-    --accent-info-foreground: 222 47% 11%;
-    --accent-info-soft: 222 55% 22%;
+    /* === Accent = electric cyan — links, focus, active pill (dark) === */
+    --accent-info: 190 92% 56%;
+    --accent-info-foreground: 220 40% 6%;
+    --accent-info-soft: 196 70% 14%;
 
-    --sentiment-bull: 152 56% 49%;         /* ~#34c476 */
-    --sentiment-bull-soft: 152 50% 14%;
-    --sentiment-bear: 0 80% 65%;           /* ~#ef5a5a */
-    --sentiment-bear-soft: 0 45% 18%;
-    --sentiment-neutral: 215 18% 62%;
-    --sentiment-neutral-soft: 215 28% 18%;
+    --sentiment-bull: 145 66% 47%;
+    --sentiment-bull-soft: 145 55% 12%;
+    --sentiment-bear: 0 80% 61%;
+    --sentiment-bear-soft: 0 55% 16%;
+    --sentiment-neutral: 213 15% 60%;
+    --sentiment-neutral-soft: 216 24% 14%;
   }
 }
 
 @theme {
-  /* Inter for Latin/numbers, Noto Sans TC for Chinese — order matters (Inter wins Latin glyphs). */
-  --font-sans: 'Inter', 'Noto Sans TC', system-ui, -apple-system, sans-serif;
+  /* 終端機 Terminal type: JetBrains Mono for Latin/numbers, Noto Sans TC for Chinese
+     — order matters (mono wins Latin glyphs; CJK falls through to Noto Sans TC). */
+  --font-sans: 'JetBrains Mono', 'Noto Sans TC', system-ui, -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
-  --font-logo: 'Inter', 'Noto Sans TC', sans-serif;
+  --font-logo: 'JetBrains Mono', 'Noto Sans TC', sans-serif;
+
+  /* ── Type scale (single source of truth) ──────────────────────────────────
+     Every font size in the app maps to one of these 9 steps via the Tailwind
+     text-* utilities (e.g. text-sm, text-lg). To rescale the whole site, change
+     a value here — do NOT reintroduce arbitrary text-[Npx] in components.
+     Floor is 11px (text-2xs); 13px (text-sm) is the body default. */
+  --text-2xs: 0.6875rem;  /* 11px — micro-labels, badges, overlines */
+  --text-2xs--line-height: 1rem;
+  --text-xs: 0.75rem;     /* 12px — captions, secondary meta */
+  --text-xs--line-height: 1.1rem;
+  --text-sm: 0.8125rem;   /* 13px — BODY DEFAULT */
+  --text-sm--line-height: 1.25rem;
+  --text-base: 0.875rem;  /* 14px — emphasized body, inputs */
+  --text-base--line-height: 1.35rem;
+  --text-md: 0.9375rem;   /* 15px — prominent labels */
+  --text-md--line-height: 1.4rem;
+  --text-lg: 1rem;        /* 16px — list / card titles */
+  --text-lg--line-height: 1.5rem;
+  --text-xl: 1.125rem;    /* 18px — section figures */
+  --text-xl--line-height: 1.6rem;
+  --text-2xl: 1.375rem;   /* 22px — page figures / big % */
+  --text-2xl--line-height: 1.75rem;
+  --text-3xl: 1.75rem;    /* 28px — page H1 / hero */
+  --text-3xl--line-height: 2.1rem;
 
   --color-background: hsl(var(--background));
   --color-foreground: hsl(var(--foreground));
@@ -253,17 +275,18 @@
 
   body {
     @apply bg-background text-foreground;
-    /* Inter first so Latin/digits grab it; Noto Sans TC falls in for Chinese. tnum aligns numerals globally. */
-    font-family: 'Inter', 'Noto Sans TC', system-ui, sans-serif;
+    /* 終端機 Terminal: JetBrains Mono grabs Latin/digits; Noto Sans TC handles Chinese.
+       tnum + zero give the fixed-width, slashed-zero data-terminal numerals. */
+    font-family: 'JetBrains Mono', 'Noto Sans TC', system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    font-feature-settings: 'rlig' 1, 'calt' 1, 'tnum' 1;
-    letter-spacing: -0.005em;
+    font-feature-settings: 'tnum' 1, 'zero' 1, 'calt' 1;
+    letter-spacing: -0.01em;
   }
 
   h1, h2, h3 {
     @apply tracking-tight;
-    font-family: 'Inter', 'Noto Sans TC', system-ui, sans-serif;
+    font-family: 'JetBrains Mono', 'Noto Sans TC', system-ui, sans-serif;
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -314,7 +337,7 @@
      Bull/bear colors are supplied by the component so they can follow the
      user's stock price color convention. */
   .sentiment-chip {
-    @apply inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium uppercase tracking-wide;
+    @apply inline-flex items-center px-2 py-0.5 rounded-md text-2xs font-medium uppercase tracking-wide;
   }
   .sentiment-chip-bull {
     background-color: hsl(var(--sentiment-bull-soft));
@@ -331,7 +354,7 @@
 
   /* Filter pill — the toolbar pills above feeds. */
   .filter-pill {
-    @apply inline-flex items-center px-3.5 py-1.5 rounded-full text-[13px] font-medium transition-colors cursor-pointer whitespace-nowrap;
+    @apply inline-flex items-center px-3.5 py-1.5 rounded-full text-sm font-medium transition-colors cursor-pointer whitespace-nowrap;
     background-color: hsl(var(--muted));
     color: hsl(var(--foreground));
     border: 0.5px solid transparent;
@@ -346,38 +369,11 @@
   }
 
   /* Ticker row — inset row inside episode cards / detail pages.
-     Background one notch below the card; name (primary) + mono symbol (secondary). */
+     [stock identity (StockIdentity) | sentiment chip | price change %]. */
   .ticker-row {
     @apply grid items-center gap-2.5 px-2.5 py-2 rounded-md;
-    grid-template-columns: 110px 1fr auto;
+    grid-template-columns: minmax(0, 1fr) auto auto;
     background-color: hsl(var(--muted) / 0.6);
-  }
-  /* Stacked label: display name on top, raw symbol below */
-  .ticker-row-label {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-    min-width: 0;
-  }
-  .ticker-row-name {
-    font-size: 12px;
-    font-weight: 500;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  /* Secondary symbol under a name — smaller, muted, mono */
-  .ticker-row-symbol {
-    font-family: var(--font-mono);
-    font-weight: 400;
-    font-size: 10px;
-    color: hsl(var(--muted-foreground));
-  }
-  /* Solo symbol (no name) — keep original prominent styling */
-  .ticker-row-symbol--solo {
-    font-weight: 500;
-    font-size: 12px;
-    color: inherit;
   }
 
   /* Sentiment microbar — bull|neutral|bear proportions. */
@@ -654,6 +650,77 @@
   }
 
   .text-overline {
-    @apply uppercase tracking-widest text-[10px] font-semibold;
+    @apply uppercase tracking-widest text-2xs font-semibold;
+  }
+}
+
+/* ============================================================================
+   終端機 · TERMINAL — global structural treatment
+   Applied app-wide (no opt-in): every page inherits the data-terminal look.
+   Colour tokens above already recolour all semantic surfaces; this adds the
+   structural signatures — grid canvas, top keyline, squared pills, outlined chips.
+   ============================================================================ */
+@layer base {
+  /* Faint grid + scanlines on the page canvas. Shows through translucent chrome
+     (the sticky header's backdrop-blur); solid card surfaces sit cleanly on top. */
+  .dark body {
+    background-image:
+      linear-gradient(hsl(213 28% 15% / 0.5) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(213 28% 15% / 0.5) 1px, transparent 1px),
+      repeating-linear-gradient(0deg, hsl(0 0% 100% / 0.012) 0 1px, transparent 1px 3px),
+      radial-gradient(1100px 700px at 50% -10%, hsl(190 90% 30% / 0.06), transparent 60%);
+    background-size: 44px 44px, 44px 44px, 100% 3px, 100% 100%;
+    background-attachment: fixed;
+  }
+  :root:not(.dark) body {
+    background-image:
+      linear-gradient(hsl(213 20% 86% / 0.7) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(213 20% 86% / 0.7) 1px, transparent 1px);
+    background-size: 44px 44px;
+    background-attachment: fixed;
+  }
+
+  /* Amber→cyan keyline pinned to the very top of the viewport. */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0 0 auto 0;
+    height: 2px;
+    background: linear-gradient(90deg, hsl(var(--primary)), hsl(var(--accent-info)), hsl(var(--primary)));
+    opacity: 0.9;
+    z-index: 100;
+    pointer-events: none;
+  }
+}
+
+@layer components {
+  /* Filter pills: squared + uppercase; active = amber */
+  .filter-pill {
+    border-radius: 0.2rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .filter-pill[data-active="true"] {
+    background-color: hsl(var(--primary));
+    color: hsl(var(--primary-foreground));
+    border-color: hsl(var(--primary));
+  }
+
+  /* Sentiment chips: outlined terminal tags */
+  .sentiment-chip {
+    border-radius: 0.15rem;
+    letter-spacing: 0.06em;
+    border: 1px solid currentColor;
+  }
+}
+
+@layer utilities {
+  /* Accent scrollbar — electric cyan, squared */
+  .scrollbar-thin:hover::-webkit-scrollbar-thumb,
+  .scrollbar-thin.is-scrolling::-webkit-scrollbar-thumb,
+  .dark .scrollbar-thin:hover::-webkit-scrollbar-thumb,
+  .dark .scrollbar-thin.is-scrolling::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--accent-info) / 0.5) !important;
+    border-radius: 0;
   }
 }
