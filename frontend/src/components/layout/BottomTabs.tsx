@@ -18,7 +18,7 @@ const TABS: readonly Tab[] = [
   { to: '/stock', label: '個股', icon: LineChart, prefix: true },
   { to: '/picks', label: '走勢', icon: TrendingUp, prefix: true, devOnly: true },
   { to: '/topics', label: '話題', icon: Hash, prefix: true },
-  { to: '/watchlist', label: '自選', icon: Star, prefix: false },
+  { to: '/watchlist', label: '收藏', icon: Star, prefix: false },
 ];
 
 // Mirrors App.tsx route gating: dev-only tabs appear on dev.tinboker.com only.

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Home, Mic, LineChart, TrendingUp, Hash, Info, MessageSquareText, Bookmark } from 'lucide-react';
+import { Home, Mic, LineChart, TrendingUp, Hash, Info, MessageSquareText, Bookmark, Headphones, Heart, Bell } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { AppLogo } from '@/components/logo/AppLogo';
 import { useUser } from '@/store/useAppStore';
@@ -42,11 +42,11 @@ const SECTIONS: readonly NavSection[] = [
     ],
   },
   {
-    title: '我的',
+    title: '收藏',
     items: [
-      { to: '/profile?tab=podcasters', label: '訂閱節目', icon: Mic, tab: 'podcasters' },
-      { to: '/profile?tab=tickers', label: '自選個股', icon: LineChart, tab: 'tickers' },
-      { to: '/profile?tab=topics', label: '追蹤話題', icon: Hash, tab: 'topics' },
+      { to: '/profile?tab=podcasters', label: '訂閱節目', icon: Headphones, tab: 'podcasters' },
+      { to: '/profile?tab=tickers', label: '自選個股', icon: Heart, tab: 'tickers' },
+      { to: '/profile?tab=topics', label: '追蹤話題', icon: Bell, tab: 'topics' },
       { to: '/profile?tab=episodes', label: '收藏集數', icon: Bookmark, tab: 'episodes' },
     ],
   },
