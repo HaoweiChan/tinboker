@@ -7,14 +7,14 @@ and exposes it over a single HTTP API.
 
 ## Features
 
-- 📊 **Stock data**: TW + US prices, charts, key stats, ticker insights (Massive + FinMind)
-- 🕸️ **Graph visualization**: company/sector/concept relationship graphs
-- 🔍 **Search & discovery**: full-text search, autocomplete, trending tickers/tags
-- 🎙️ **Podcast & content**: episodes, podcasts, comments, news, articles
-- 🔄 **Real-time prices**: WebSocket price streaming
-- 🔐 **Auth & admin**: Google OAuth → JWT, watchlists, admin/config control plane
-- 💾 **Storage**: SQLite (dev) / PostgreSQL (staging + prod), Redis cache
-- 🧪 **Tested**: 200+ unit and integration tests (`pytest`)
+- **Stock data**: TW + US prices, charts, key stats, ticker insights (Massive + FinMind)
+- **Graph visualization**: company/sector/concept relationship graphs
+- **Search & discovery**: full-text search, autocomplete, trending tickers/tags
+- **Podcast & content**: episodes, podcasts, comments, news, articles
+- **Real-time prices**: WebSocket price streaming
+- **Auth & admin**: Google OAuth → JWT, watchlists, admin/config control plane
+- **Storage**: SQLite (dev) / PostgreSQL (staging + prod), Redis cache
+- **Tested**: 200+ unit and integration tests (`pytest`)
 
 ## Tech Stack
 
@@ -229,7 +229,7 @@ from websockets import connect
 async def test():
     async with connect('ws://localhost:5174/ws/prices') as ws:
         msg = await ws.recv()
-        print('✅ WebSocket connected!')
+        print('WebSocket connected!')
         print('Response:', json.loads(msg))
 
 asyncio.run(test())

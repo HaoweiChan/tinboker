@@ -85,7 +85,7 @@ Registered in the repo-root `.mcp.json` as `podcast_regen`:
 
 ## Persistence & cache on `commit_regen`
 
-> ⚠️ Writes to the **shared production Firestore** (`graphfolio-db`) and, by default,
+> Writes to the **shared production Firestore** (`graphfolio-db`) and, by default,
 > busts the **production** caches. Run `preview_regen` first.
 
 - **Episode doc** (Firestore merge): only the fields whose steps you completed
