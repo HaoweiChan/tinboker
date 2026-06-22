@@ -255,8 +255,8 @@ export const PicksPage: React.FC = () => {
     <>
       <SEO title="走勢 · 播客選股追蹤" description="財經 Podcaster 點名的個股，從提及當日起算的 7／30／90 天真實走勢。" />
       <PageContent>
-        <h1 className="text-[22px] font-semibold tracking-[-0.02em] mb-1.5">走勢</h1>
-        <p className="text-[13px] text-muted-foreground mb-4">
+        <h1 className="text-2xl font-semibold tracking-[-0.02em] mb-1.5">走勢</h1>
+        <p className="text-sm text-muted-foreground mb-4">
           財經 Podcaster 點名的個股，依時間排序，從提及當日起算的 7／30／90 天真實漲跌幅。
         </p>
 
@@ -297,7 +297,7 @@ export const PicksPage: React.FC = () => {
             ))}
           </div>
         ) : visibleGroups.length === 0 ? (
-          <div className="bg-card border border-border rounded-md p-10 text-center text-[13px] text-muted-foreground">
+          <div className="bg-card border border-border rounded-md p-10 text-center text-sm text-muted-foreground">
             {picks.length === 0
               ? '目前沒有可顯示的標的分析。'
               : view === 'settled'
@@ -329,7 +329,7 @@ export const PicksPage: React.FC = () => {
               );
             })}
           </div>
-          <div ref={sentinelRef} className="h-10 flex items-center justify-center text-[12px] text-muted-foreground/70 mt-2">
+          <div ref={sentinelRef} className="h-10 flex items-center justify-center text-xs text-muted-foreground/70 mt-2">
             {visibleGroups.length < sortedGroups.length ? '載入更多…' : `共 ${sortedGroups.length} 筆`}
           </div>
           </>
@@ -368,7 +368,7 @@ const ChannelFilter: React.FC<{
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-2 h-9 pl-3 pr-3 rounded-full bg-muted/60 border border-border text-[13px] font-medium hover:bg-muted transition-colors"
+        className="flex items-center gap-2 h-9 pl-3 pr-3 rounded-full bg-muted/60 border border-border text-sm font-medium hover:bg-muted transition-colors"
       >
         <Filter size={14} className="text-muted-foreground" />
         <span>{label}</span>
@@ -384,17 +384,17 @@ const ChannelFilter: React.FC<{
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="搜尋頻道…"
-              className="w-full h-9 bg-transparent text-[13px] outline-none placeholder:text-muted-foreground"
+              className="w-full h-9 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
             />
             {selected.size > 0 && (
-              <button type="button" onClick={onClear} className="text-[12px] text-accent-info hover:underline shrink-0">
+              <button type="button" onClick={onClear} className="text-xs text-accent-info hover:underline shrink-0">
                 清除
               </button>
             )}
           </div>
           <ul className="max-h-[320px] overflow-auto py-1">
             {filtered.length === 0 ? (
-              <li className="px-3 py-2.5 text-[13px] text-muted-foreground">找不到頻道</li>
+              <li className="px-3 py-2.5 text-sm text-muted-foreground">找不到頻道</li>
             ) : (
               filtered.map((c) => {
                 const checked = selected.has(c.name);
@@ -403,7 +403,7 @@ const ChannelFilter: React.FC<{
                     <button
                       type="button"
                       onClick={() => onToggle(c.name)}
-                      className="w-full flex items-center gap-2.5 px-3 py-2 text-left text-[13px] hover:bg-muted transition-colors"
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm hover:bg-muted transition-colors"
                     >
                       <span
                         className={cn(

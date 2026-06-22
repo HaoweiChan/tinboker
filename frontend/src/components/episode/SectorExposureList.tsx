@@ -36,11 +36,11 @@ const SectorExposureRow: React.FC<SectorExposureRowProps> = ({ exp, perf, loadin
         />
         <Link
           to={`/sector/${encodeURIComponent(exp.exposure_id)}`}
-          className="text-[13px] font-medium hover:underline truncate flex-1 min-w-0 leading-snug"
+          className="text-sm font-medium hover:underline truncate flex-1 min-w-0 leading-snug"
         >
           {exp.display_name}
         </Link>
-        <ChangePct value={perf?.avg_change ?? null} sizeClass="text-[12px]" skeleton={loading && !perf} />
+        <ChangePct value={perf?.avg_change ?? null} sizeClass="text-xs" skeleton={loading && !perf} />
         {hasTickers && (
           <button
             type="button"
@@ -61,9 +61,9 @@ const SectorExposureRow: React.FC<SectorExposureRowProps> = ({ exp, perf, loadin
               key={rt.ticker}
               to={`/stock/${encodeURIComponent(rt.ticker)}`}
               title={rt.name}
-              className="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded bg-muted hover:bg-muted/80 transition-colors"
+              className="inline-flex items-center gap-1 text-2xs px-1.5 py-0.5 rounded bg-muted hover:bg-muted/80 transition-colors"
             >
-              <span className="font-mono text-[10px] text-muted-foreground">{rt.ticker.replace(/\.[A-Z]+$/i, '')}</span>
+              <span className="font-mono text-2xs text-muted-foreground">{rt.ticker.replace(/\.[A-Z]+$/i, '')}</span>
               {rt.name && rt.name !== rt.ticker && <span>{rt.name}</span>}
             </Link>
           ))}

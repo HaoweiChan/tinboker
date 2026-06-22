@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { Change } from '@/components/redesign';
+import { StockIdentity } from '@/components/common/StockIdentity';
 import { SimpleSparkline } from '@/components/charts/SimpleSparkline';
 import { useStockTrendColor } from '@/hooks/useStockTrendColor';
 import type { TrailingPerf } from '@/services/api/podcasts';
@@ -33,7 +34,6 @@ export const SectorTickerCard: React.FC<SectorTickerCardProps> = ({
   loading = false,
   reason,
 }) => {
-  const bare = ticker.replace(/\.[A-Z]+$/i, '');
   const awaiting = loading && !perf;
   const value = perf ? perf[timeframe] : null;
   const series = perf?.series && perf.series.length > 1 ? perf.series : undefined;
@@ -42,23 +42,25 @@ export const SectorTickerCard: React.FC<SectorTickerCardProps> = ({
   return (
     <Link
       to={`/stock/${encodeURIComponent(ticker)}`}
-      className="group flex flex-col gap-1.5 bg-card rounded-lg p-3.5 overflow-hidden
+      className="group flex flex-col gap-2 bg-card rounded-lg p-4 overflow-hidden
                  border border-border dark:border-white/[0.08]
                  hover:border-border/80 dark:hover:border-white/[0.14]
                  shadow-[0_1px_2px_rgba(0,0,0,0.04)] dark:shadow-none transition-all duration-200"
     >
-      <div className="flex items-baseline gap-2 min-w-0">
-        <span className="font-mono text-[13px] font-semibold tabular-nums text-foreground shrink-0 group-hover:text-accent-info transition-colors">
-          {bare}
-        </span>
-        <span className="text-[12px] text-muted-foreground truncate">{name}</span>
-      </div>
+      {/* Name — the card's headline; canonical CODE + NAME (same colour, same size) */}
+      <StockIdentity
+        ticker={ticker}
+        name={name}
+        size="md"
+        codeClassName="group-hover:text-accent-info transition-colors"
+        className="gap-2"
+      />
 
       <div className="flex items-end justify-between gap-2">
         {awaiting ? (
-          <span className="inline-block h-[18px] w-16 animate-pulse bg-muted rounded" />
+          <span className="inline-block h-[26px] w-20 animate-pulse bg-muted rounded" />
         ) : (
-          <Change value={value} big />
+          <Change value={value} big className="text-2xl" />
         )}
         {series && (
           <SimpleSparkline
@@ -67,15 +69,15 @@ export const SectorTickerCard: React.FC<SectorTickerCardProps> = ({
             color={value != null ? trend.lineColor : undefined}
             smooth
             strokeWidth={1.5}
-            width={56}
-            height={22}
+            width={64}
+            height={26}
             className="shrink-0 opacity-80"
           />
         )}
       </div>
 
       {reason && (
-        <p className="text-[11px] leading-[1.5] text-muted-foreground/90 mt-0.5">
+        <p className="text-xs leading-[1.6] text-muted-foreground mt-1 pt-2.5 border-t border-border/60">
           {reason}
         </p>
       )}

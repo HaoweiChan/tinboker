@@ -72,8 +72,8 @@ export const AppLayout: React.FC = () => {
               <BracketMark size={28} />
             </Link>
             <div className="hidden sm:flex items-baseline gap-2 shrink-0">
-              <span className="text-[16px] sm:text-[18px] font-semibold tracking-[-0.01em] whitespace-nowrap">{title}</span>
-              {subtitle && <span className="hidden md:inline text-[12px] text-muted-foreground font-medium">{subtitle}</span>}
+              <span className="text-lg sm:text-xl font-semibold tracking-[-0.01em] whitespace-nowrap">{title}</span>
+              {subtitle && <span className="hidden md:inline text-xs text-muted-foreground font-medium">{subtitle}</span>}
             </div>
             <div className="flex-1 min-w-0 max-w-xl lg:mx-auto">
               <SearchDropdown />

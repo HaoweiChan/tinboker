@@ -225,7 +225,7 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
       }
       else if (effectiveSubChart === 'MACD') {
         // MACD Line
-        const macdSeries = chart.addLineSeries({ color: '#2962FF', lineWidth: 1, priceScaleId: 'macd', title: 'MACD', priceLineVisible: false });
+        const macdSeries = chart.addLineSeries({ color: '#a78bfa', lineWidth: 1, priceScaleId: 'macd', title: 'MACD', priceLineVisible: false });
         // Signal Line
         const signalSeries = chart.addLineSeries({ color: '#FF6D00', lineWidth: 1, priceScaleId: 'macd', title: 'Signal', priceLineVisible: false });
         // Histogram
@@ -270,7 +270,7 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
       }
       else if (effectiveSubChart === 'KD') {
         const kSeries = chart.addLineSeries({ color: '#ff9800', lineWidth: 1, priceScaleId: 'kd', title: 'K', priceLineVisible: false });
-        const dSeries = chart.addLineSeries({ color: '#2962ff', lineWidth: 1, priceScaleId: 'kd', title: 'D', priceLineVisible: false });
+        const dSeries = chart.addLineSeries({ color: '#a78bfa', lineWidth: 1, priceScaleId: 'kd', title: 'D', priceLineVisible: false });
         chart.priceScale('kd').applyOptions({ scaleMargins: { top: 0.75, bottom: 0 } });
 
         const input = {
@@ -364,7 +364,7 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
       }
       if (effectiveIndicators.includes('MA20')) {
         const maData = calculateSMA(sortedData as ChartDataPoint[], 20);
-        const series = chart.addLineSeries({ color: '#2962ff', lineWidth: 1, crosshairMarkerVisible: false, title: '', priceLineVisible: false });
+        const series = chart.addLineSeries({ color: '#a78bfa', lineWidth: 1, crosshairMarkerVisible: false, title: '', priceLineVisible: false });
         series.setData(maData);
         seriesMap['MA20'] = series;
       }
@@ -458,13 +458,13 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
           }
         }
 
-        // MAs (Row 2) - Orange(#ff9800), Blue(#2962ff), Cyan(#00bcd4)
+        // MAs (Row 2) - Orange(#ff9800), Blue(#a78bfa), Cyan(#00bcd4)
         let maHtml = '';
         ['MA5', 'MA20', 'MA60'].forEach(ma => {
           if (seriesMap[ma]) {
             const val = param.seriesData.get(seriesMap[ma]) as any;
             if (val) {
-              const color = ma === 'MA5' ? 'text-[#ff9800]' : ma === 'MA20' ? 'text-[#2962ff]' : 'text-[#00bcd4]';
+              const color = ma === 'MA5' ? 'text-[#ff9800]' : ma === 'MA20' ? 'text-[#a78bfa]' : 'text-[#00bcd4]';
               maHtml += `<span class="${color} mr-4">${ma} ${val.value.toFixed(2)}</span>`;
             }
           }
@@ -480,11 +480,11 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
           if (val) subHtml = `<span class="text-[#8b5cf6] ml-4">RSI ${val.value.toFixed(2)}</span>`;
         } else if (effectiveSubChart === 'MACD' && seriesMap['MACD']) {
           const val = param.seriesData.get(seriesMap['MACD']) as any;
-          if (val) subHtml = `<span class="text-[#2962FF] ml-4">MACD ${val.value.toFixed(2)}</span>`;
+          if (val) subHtml = `<span class="text-[#a78bfa] ml-4">MACD ${val.value.toFixed(2)}</span>`;
         } else if (effectiveSubChart === 'KD') {
           const kVal = seriesMap['KD_K'] ? param.seriesData.get(seriesMap['KD_K']) as any : null;
           const dVal = seriesMap['KD_D'] ? param.seriesData.get(seriesMap['KD_D']) as any : null;
-          if (kVal && dVal) subHtml = `<span class="text-[#ff9800] ml-4">K ${kVal.value.toFixed(2)}</span> <span class="text-[#2962ff] ml-2">D ${dVal.value.toFixed(2)}</span>`;
+          if (kVal && dVal) subHtml = `<span class="text-[#ff9800] ml-4">K ${kVal.value.toFixed(2)}</span> <span class="text-[#a78bfa] ml-2">D ${dVal.value.toFixed(2)}</span>`;
         } else if (effectiveSubChart === 'Bias' && seriesMap['Bias']) {
           const val = param.seriesData.get(seriesMap['Bias']) as any;
           if (val) subHtml = `<span class="text-[#e91e63] ml-4">Bias ${val.value.toFixed(2)}%</span>`;

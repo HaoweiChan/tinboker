@@ -41,7 +41,7 @@ const Toggle: React.FC<ToggleProps> = ({ checked, onChange, loading, ...rest }) 
 
 const SettingsSection: React.FC<{ icon: React.ReactNode; title: string; children: React.ReactNode }> = ({ icon, title, children }) => (
   <section className="bg-card border border-border rounded-md px-5 sm:px-6 py-5 mb-4">
-    <div className="flex items-center gap-2.5 text-[16px] font-semibold tracking-[-0.01em] mb-4">
+    <div className="flex items-center gap-2.5 text-lg font-semibold tracking-[-0.01em] mb-4">
       {icon}
       {title}
     </div>
@@ -52,8 +52,8 @@ const SettingsSection: React.FC<{ icon: React.ReactNode; title: string; children
 const SettingsRow: React.FC<{ label: string; hint: string; control: React.ReactNode; last?: boolean }> = ({ label, hint, control, last }) => (
   <div className={cn('flex items-center justify-between gap-6 py-4', !last && 'border-b border-border')}>
     <div className="min-w-0">
-      <div className="text-[14px] font-medium mb-1">{label}</div>
-      <div className="text-[12px] text-muted-foreground leading-[1.5]">{hint}</div>
+      <div className="text-base font-medium mb-1">{label}</div>
+      <div className="text-xs text-muted-foreground leading-[1.5]">{hint}</div>
     </div>
     {control}
   </div>
@@ -135,7 +135,7 @@ export const SettingsPage: React.FC = () => {
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
             </div>
           ) : !token ? (
-            <div className="text-center py-8 text-[13px] text-muted-foreground">請先登入以管理通知設定</div>
+            <div className="text-center py-8 text-sm text-muted-foreground">請先登入以管理通知設定</div>
           ) : (
             NOTIF_ROWS.map((row, i) => (
               <SettingsRow

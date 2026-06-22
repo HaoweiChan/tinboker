@@ -30,22 +30,22 @@ interface EditingCell {
 const STATUS_BADGES: Record<TranslationStatus, { label: string; className: string }> = {
   pending: {
     label: 'Pending',
-    className: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
+    className: 'bg-primary/10 text-primary',
   },
   approved: {
     label: 'Approved',
-    className: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
+    className: 'bg-sentiment-bull-soft text-sentiment-bull',
   },
   auto: {
     label: 'Auto',
-    className: 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300',
+    className: 'bg-muted text-muted-foreground',
   },
 };
 
 const inputCls =
-  'w-full rounded border border-blue-500 bg-white px-2 py-1 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white';
+  'w-full rounded border border-accent-info bg-card px-2 py-1 text-base text-foreground focus:outline-none focus:ring-2 focus:ring-accent-info';
 const thCls =
-  'px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400';
+  'px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground';
 
 export const TranslationTable: React.FC<TranslationTableProps> = ({
   translations,
@@ -115,14 +115,14 @@ export const TranslationTable: React.FC<TranslationTableProps> = ({
   if (loading && translations.length === 0) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
   if (translations.length === 0) {
     return (
-      <div className="flex h-64 items-center justify-center text-gray-500 dark:text-gray-400">
+      <div className="flex h-64 items-center justify-center text-muted-foreground">
         No translations found
       </div>
     );
@@ -133,7 +133,7 @@ export const TranslationTable: React.FC<TranslationTableProps> = ({
     const isSaving = saving === t.id && editingCell?.field === field;
     const value = field === 'name_en' ? t.name_en : t.name_zh_tw;
     const emptyCls = field === 'name_en' ? 'max-w-xs truncate' : '';
-    const filledCls = field === 'name_en' ? 'text-gray-600 dark:text-gray-300' : 'text-gray-900 dark:text-white';
+    const filledCls = field === 'name_en' ? 'text-muted-foreground' : 'text-foreground';
     if (isEditing) {
       return (
         <input
@@ -150,7 +150,7 @@ export const TranslationTable: React.FC<TranslationTableProps> = ({
     return (
       <div
         onClick={() => handleCellClick(t, field)}
-        className={`${emptyCls} cursor-pointer rounded px-2 py-1 text-sm ${value ? filledCls : 'italic text-gray-400'} hover:bg-gray-100 dark:hover:bg-gray-700`}
+        className={`${emptyCls} cursor-pointer rounded px-2 py-1 text-base ${value ? filledCls : 'italic text-muted-foreground'} hover:bg-muted`}
       >
         {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : value || 'Click to edit...'}
       </div>
@@ -158,9 +158,9 @@ export const TranslationTable: React.FC<TranslationTableProps> = ({
   };
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
-      <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-        <thead className="bg-gray-50 dark:bg-gray-800">
+    <div className="overflow-x-auto rounded-lg border border-border">
+      <table className="min-w-full divide-y divide-border">
+        <thead className="bg-muted">
           <tr>
             <th className={thCls}>Ticker</th>
             <th className={thCls}>Market</th>
@@ -177,7 +177,7 @@ export const TranslationTable: React.FC<TranslationTableProps> = ({
             <th className={thCls}>Actions</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-gray-200 bg-white dark:divide-gray-700 dark:bg-gray-900">
+        <tbody className="divide-y divide-border bg-card">
           {translations.map((translation) => {
             const isDeleting = deleting === translation.id;
             const statusBadge =
@@ -186,11 +186,11 @@ export const TranslationTable: React.FC<TranslationTableProps> = ({
               editingCell?.id === translation.id && editingCell.field === 'aliases';
             const aliases = translation.aliases || [];
             return (
-              <tr key={translation.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
-                <td className="whitespace-nowrap px-4 py-3 font-mono text-sm font-medium text-gray-900 dark:text-white">
+              <tr key={translation.id} className="hover:bg-muted/50">
+                <td className="whitespace-nowrap px-4 py-3 font-mono text-base font-medium text-foreground">
                   {translation.ticker}
                 </td>
-                <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600 dark:text-gray-300">
+                <td className="whitespace-nowrap px-4 py-3 text-base text-muted-foreground">
                   {translation.market}
                 </td>
                 <td className="px-4 py-3">{renderTextCell(translation, 'name_en')}</td>
@@ -211,7 +211,7 @@ export const TranslationTable: React.FC<TranslationTableProps> = ({
                   ) : (
                     <div
                       onClick={() => handleCellClick(translation, 'aliases')}
-                      className="flex max-w-xs cursor-pointer flex-wrap gap-1 rounded px-2 py-1 hover:bg-gray-100 dark:hover:bg-gray-700"
+                      className="flex max-w-xs cursor-pointer flex-wrap gap-1 rounded px-2 py-1 hover:bg-muted"
                       title="Click to edit (comma-separated)"
                     >
                       {saving === translation.id && editingCell?.field === 'aliases' ? (
@@ -220,13 +220,13 @@ export const TranslationTable: React.FC<TranslationTableProps> = ({
                         aliases.map((a, i) => (
                           <span
                             key={`${a}-${i}`}
-                            className="rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-700 dark:bg-gray-700 dark:text-gray-200"
+                            className="rounded bg-muted px-1.5 py-0.5 text-xs text-foreground"
                           >
                             {a}
                           </span>
                         ))
                       ) : (
-                        <span className="text-sm italic text-gray-400">Click to edit...</span>
+                        <span className="text-base italic text-muted-foreground">Click to edit...</span>
                       )}
                     </div>
                   )}
@@ -267,7 +267,7 @@ export const TranslationTable: React.FC<TranslationTableProps> = ({
                     }}
                     disabled={saving === translation.id}
                     title="Auto: show the Chinese name when present. English: force the English name even if a Chinese name exists."
-                    className="rounded border border-gray-300 bg-white px-2 py-1 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200"
+                    className="rounded border border-input bg-card px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-accent-info disabled:opacity-50"
                   >
                     {PREFERENCE_OPTIONS.map((o) => (
                       <option key={o.value} value={o.value}>
@@ -285,7 +285,7 @@ export const TranslationTable: React.FC<TranslationTableProps> = ({
                   <button
                     onClick={() => handleDelete(translation.id)}
                     disabled={isDeleting}
-                    className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-50 dark:hover:bg-red-900/20"
+                    className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
                   >
                     {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
                   </button>

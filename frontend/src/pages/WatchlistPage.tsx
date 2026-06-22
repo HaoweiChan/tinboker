@@ -166,7 +166,7 @@ export const WatchlistPage: React.FC = () => {
     <>
       <SEO title="自選" description="追蹤的節目與個股。" />
       <PageContent>
-        <h1 className="text-[22px] font-semibold tracking-[-0.02em] mb-3.5">自選</h1>
+        <h1 className="text-2xl font-semibold tracking-[-0.02em] mb-3.5">自選</h1>
         <div className="mb-[18px]">
           <Segmented
             options={[
@@ -190,7 +190,7 @@ export const WatchlistPage: React.FC = () => {
           <>
             {tab === 'podcasters' && (
               subscriptions.length === 0 ? (
-                <div className="bg-card border border-border rounded-md p-10 text-center text-[13px] text-muted-foreground">
+                <div className="bg-card border border-border rounded-md p-10 text-center text-sm text-muted-foreground">
                   尚未訂閱任何節目 — 去 <Link to="/podcaster" className="text-accent-info hover:underline">節目</Link> 頁追蹤幾個吧。
                 </div>
               ) : loadingEps ? (
@@ -200,7 +200,7 @@ export const WatchlistPage: React.FC = () => {
                   ))}
                 </div>
               ) : episodes.length === 0 ? (
-                <div className="bg-card border border-border rounded-md p-10 text-center text-[13px] text-muted-foreground">訂閱的節目目前沒有最新集數。</div>
+                <div className="bg-card border border-border rounded-md p-10 text-center text-sm text-muted-foreground">訂閱的節目目前沒有最新集數。</div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {episodes.map((ep) => (
@@ -212,7 +212,7 @@ export const WatchlistPage: React.FC = () => {
 
             {tab === 'tickers' && (
               watchlist.length === 0 ? (
-                <div className="bg-card border border-border rounded-md p-10 text-center text-[13px] text-muted-foreground">
+                <div className="bg-card border border-border rounded-md p-10 text-center text-sm text-muted-foreground">
                   尚未加入任何自選股票 — 去 <Link to="/stock" className="text-accent-info hover:underline">個股</Link> 頁加入幾檔吧。
                 </div>
               ) : (
@@ -241,7 +241,7 @@ export const WatchlistPage: React.FC = () => {
 
             {tab === 'topics' && (
               tagSubscriptions.length === 0 ? (
-                <div className="bg-card border border-border rounded-md p-10 text-center text-[13px] text-muted-foreground">
+                <div className="bg-card border border-border rounded-md p-10 text-center text-sm text-muted-foreground">
                   尚未追蹤任何話題 — 去 <Link to="/topics" className="text-accent-info hover:underline">話題</Link> 頁追蹤幾個吧。
                 </div>
               ) : (
@@ -249,7 +249,7 @@ export const WatchlistPage: React.FC = () => {
                   {tagSubscriptions.map((t) => {
                     const name = t.replace(/^#/, '');
                     return (
-                      <button key={t} type="button" onClick={() => navigate(`/topics/${encodeURIComponent(name)}`)} className="px-3.5 py-1.5 rounded-full bg-muted text-foreground text-[13px] font-medium hover:bg-accent-info-soft hover:text-accent-info transition-colors">
+                      <button key={t} type="button" onClick={() => navigate(`/topics/${encodeURIComponent(name)}`)} className="px-3.5 py-1.5 rounded-full bg-muted text-foreground text-sm font-medium hover:bg-accent-info-soft hover:text-accent-info transition-colors">
                         #{name}
                       </button>
                     );
@@ -260,7 +260,7 @@ export const WatchlistPage: React.FC = () => {
 
             {tab === 'episodes' && (
               bookmarked.length === 0 && bookmarkedIds.length === 0 ? (
-                <div className="bg-card border border-border rounded-md p-10 text-center text-[13px] text-muted-foreground">目前沒有收藏的集數。</div>
+                <div className="bg-card border border-border rounded-md p-10 text-center text-sm text-muted-foreground">目前沒有收藏的集數。</div>
               ) : bookmarked.length === 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {Array.from({ length: Math.min(bookmarkedIds.length, 4) }).map((_, i) => (

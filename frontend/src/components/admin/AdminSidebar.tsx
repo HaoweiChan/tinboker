@@ -37,9 +37,9 @@ const NavItem: React.FC<NavItemProps> = ({ to, icon, label, collapsed, end }) =>
         to={to}
         end={end}
         className={({ isActive }) =>
-            `flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${isActive
-                ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300'
-                : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700'
+            `flex items-center gap-3 rounded-lg px-3 py-2.5 text-base font-medium transition-colors ${isActive
+                ? 'bg-accent-info-soft text-accent-info'
+                : 'text-foreground hover:bg-muted'
             } ${collapsed ? 'justify-center' : ''}`
         }
         title={collapsed ? label : undefined}
@@ -55,25 +55,25 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
     onLogout,
 }) => {
     return (
-        <aside className="flex h-full flex-col border-r border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+        <aside className="flex h-full flex-col border-r border-border bg-card">
             {/* Header */}
             <div
-                className={`flex items-center border-b border-gray-200 px-4 py-4 dark:border-gray-700 ${collapsed ? 'justify-center' : 'justify-between'
+                className={`flex items-center border-b border-border px-4 py-4 ${collapsed ? 'justify-center' : 'justify-between'
                     }`}
             >
                 {!collapsed && (
                     <div>
-                        <h1 className="text-lg font-bold text-gray-900 dark:text-white">
+                        <h1 className="text-xl font-bold text-foreground">
                             Admin
                         </h1>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                        <p className="text-xs text-muted-foreground">
                             TinBoker Dashboard
                         </p>
                     </div>
                 )}
                 <button
                     onClick={onToggle}
-                    className="hidden rounded-md p-1.5 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700 lg:block"
+                    className="hidden rounded-md p-1.5 text-muted-foreground hover:bg-muted lg:block"
                     title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
                 >
                     {collapsed ? (
@@ -145,10 +145,10 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
             </nav>
 
             {/* Footer */}
-            <div className="border-t border-gray-200 p-3 dark:border-gray-700">
+            <div className="border-t border-border p-3">
                 <button
                     onClick={onLogout}
-                    className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700 ${collapsed ? 'justify-center' : ''
+                    className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-base font-medium text-foreground transition-colors hover:bg-muted ${collapsed ? 'justify-center' : ''
                         }`}
                     title={collapsed ? 'Logout' : undefined}
                 >

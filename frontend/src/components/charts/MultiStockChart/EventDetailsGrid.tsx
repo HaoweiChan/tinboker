@@ -119,8 +119,8 @@ export const EventDetailsGrid: React.FC<EventDetailsGridProps> = ({
             />
           </div>
           <div>
-            <h3 className="text-lg font-semibold overlay-text">{event.title}</h3>
-            <p className="text-sm overlay-text-secondary">{formatDate(event.date)}</p>
+            <h3 className="text-xl font-semibold overlay-text">{event.title}</h3>
+            <p className="text-base overlay-text-secondary">{formatDate(event.date)}</p>
           </div>
         </div>
         <button
@@ -134,11 +134,11 @@ export const EventDetailsGrid: React.FC<EventDetailsGridProps> = ({
         </button>
       </div>
 
-      <p className="text-sm overlay-text-secondary mb-4">{event.description}</p>
+      <p className="text-base overlay-text-secondary mb-4">{event.description}</p>
 
       {priceMovements.length > 0 && (
         <div className="border-t overlay-border pt-4">
-          <h4 className="text-sm font-semibold overlay-text mb-3">Price Impact After Event</h4>
+          <h4 className="text-base font-semibold overlay-text mb-3">Price Impact After Event</h4>
           <div className="flex flex-col gap-3 max-h-[300px] overflow-y-auto pr-2">
             {priceMovements.map((movement) => (
               <div
@@ -151,7 +151,7 @@ export const EventDetailsGrid: React.FC<EventDetailsGridProps> = ({
                     <div className="text-xs overlay-text-secondary">{movement.name}</div>
                   </div>
                   {movement.priceAtEvent && (
-                    <div className="text-sm font-medium overlay-text">
+                    <div className="text-base font-medium overlay-text">
                       ${movement.priceAtEvent.toFixed(2)}
                     </div>
                   )}
@@ -163,7 +163,7 @@ export const EventDetailsGrid: React.FC<EventDetailsGridProps> = ({
                       <span className={`font-medium ${movement.changePercent1d >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                         {formatPriceChange(movement.changePercent1d)}
                         {movement.priceAfter1d && (
-                          <span className="ml-1 overlay-text-secondary text-[10px]">
+                          <span className="ml-1 overlay-text-secondary text-2xs">
                             (${movement.priceAfter1d.toFixed(2)})
                           </span>
                         )}
@@ -176,7 +176,7 @@ export const EventDetailsGrid: React.FC<EventDetailsGridProps> = ({
                       <span className={`font-medium ${movement.changePercent1w >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                         {formatPriceChange(movement.changePercent1w)}
                         {movement.priceAfter1w && (
-                          <span className="ml-1 overlay-text-secondary text-[10px]">
+                          <span className="ml-1 overlay-text-secondary text-2xs">
                             (${movement.priceAfter1w.toFixed(2)})
                           </span>
                         )}
@@ -189,7 +189,7 @@ export const EventDetailsGrid: React.FC<EventDetailsGridProps> = ({
                       <span className={`font-medium ${movement.changePercent1m >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                         {formatPriceChange(movement.changePercent1m)}
                         {movement.priceAfter1m && (
-                          <span className="ml-1 overlay-text-secondary text-[10px]">
+                          <span className="ml-1 overlay-text-secondary text-2xs">
                             (${movement.priceAfter1m.toFixed(2)})
                           </span>
                         )}

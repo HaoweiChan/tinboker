@@ -160,7 +160,7 @@ export const SlideViewer: React.FC<SlideViewerProps> = ({
                         <div
                             key={index}
                             onClick={() => handleSlideClick(index)}
-                            className="flex-shrink-0 relative group rounded-xl overflow-hidden border shadow-sm transition-all duration-200 border-slate-200 bg-white select-none"
+                            className="flex-shrink-0 relative group rounded-xl overflow-hidden border shadow-sm transition-all duration-200 border-border bg-card select-none"
                             style={{ height: thumbnailHeight, width: thumbnailWidth }}
                         >
                             <div
@@ -180,7 +180,7 @@ export const SlideViewer: React.FC<SlideViewerProps> = ({
                             <div className="absolute inset-0 bg-black/0 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
                                 <Maximize2 className="text-white drop-shadow-md" size={32} />
                             </div>
-                            <div className="absolute bottom-2 right-2 bg-black/60 text-white text-[10px] px-2 py-0.5 rounded-full backdrop-blur-sm">
+                            <div className="absolute bottom-2 right-2 bg-black/60 text-white text-2xs px-2 py-0.5 rounded-full backdrop-blur-sm">
                                 {index + 1}
                             </div>
                         </div>

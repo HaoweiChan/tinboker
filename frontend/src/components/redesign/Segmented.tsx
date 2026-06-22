@@ -27,7 +27,7 @@ export function Segmented<T extends string>({ options, value, onChange, classNam
             aria-selected={active}
             onClick={() => onChange(opt.value)}
             className={cn(
-              'px-3.5 py-1.5 rounded-full text-[12px] font-medium transition-colors whitespace-nowrap',
+              'px-3.5 py-1.5 rounded-full text-xs font-medium transition-colors whitespace-nowrap',
               active ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
             )}
           >

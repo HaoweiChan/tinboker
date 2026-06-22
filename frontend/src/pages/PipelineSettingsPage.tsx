@@ -29,7 +29,7 @@ const ConfigValue: React.FC<{ value: unknown }> = ({ value }) => {
         {value.map((v, i) => (
           <span
             key={i}
-            className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs text-gray-700 dark:bg-gray-700 dark:text-gray-200"
+            className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground"
           >
             {String(v)}
           </span>
@@ -39,10 +39,10 @@ const ConfigValue: React.FC<{ value: unknown }> = ({ value }) => {
   }
   if (value !== null && typeof value === 'object') {
     return (
-      <div className="mt-1 space-y-1 border-l border-gray-200 pl-3 dark:border-gray-700">
+      <div className="mt-1 space-y-1 border-l border-border pl-3">
         {Object.entries(value as Record<string, unknown>).map(([k, v]) => (
           <div key={k} className="flex flex-wrap items-baseline gap-2">
-            <span className="font-mono text-xs text-gray-500 dark:text-gray-400">{k}</span>
+            <span className="font-mono text-xs text-muted-foreground">{k}</span>
             <ConfigValue value={v} />
           </div>
         ))}
@@ -50,7 +50,7 @@ const ConfigValue: React.FC<{ value: unknown }> = ({ value }) => {
     );
   }
   return (
-    <span className="font-mono text-sm text-gray-900 dark:text-white">{String(value)}</span>
+    <span className="font-mono text-base text-foreground">{String(value)}</span>
   );
 };
 
@@ -63,15 +63,15 @@ const ModelCard: React.FC<{
     onClick={onSelect}
     className={`w-full rounded-lg border p-3 text-left transition-all ${
       selected
-        ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200 dark:border-blue-400 dark:bg-blue-900/20 dark:ring-blue-800'
-        : 'border-gray-200 hover:border-gray-300 dark:border-gray-700 dark:hover:border-gray-600'
+        ? 'border-accent-info bg-accent-info-soft ring-2 ring-accent-info/30'
+        : 'border-border hover:border-border/80'
     }`}
   >
     <div className="flex items-center justify-between">
-      <span className="font-medium text-gray-900 dark:text-white">{model.label}</span>
-      {selected && <CheckCircle2 className="h-4 w-4 text-blue-500" />}
+      <span className="font-medium text-foreground">{model.label}</span>
+      {selected && <CheckCircle2 className="h-4 w-4 text-accent-info" />}
     </div>
-    <div className="mt-2 flex flex-wrap gap-3 text-xs text-gray-500 dark:text-gray-400">
+    <div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground">
       <span className="flex items-center gap-1">
         <DollarSign className="h-3 w-3" />
         {model.price_per_ep}/ep
@@ -85,7 +85,7 @@ const ModelCard: React.FC<{
         {model.speed}
       </span>
     </div>
-    <div className="mt-1 font-mono text-xs text-gray-400 dark:text-gray-500">{model.id}</div>
+    <div className="mt-1 font-mono text-xs text-muted-foreground/60">{model.id}</div>
   </button>
 );
 
@@ -177,11 +177,11 @@ export const PipelineSettingsPage: React.FC = () => {
       {/* Header */}
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="flex items-center gap-2 text-2xl font-bold text-gray-900 dark:text-white">
+          <h1 className="flex items-center gap-2 text-2xl font-bold text-foreground">
             Pipeline 設定
-            <Zap className="h-5 w-5 text-amber-500" />
+            <Zap className="h-5 w-5 text-primary" />
           </h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400">
+          <p className="text-base text-muted-foreground">
             LLM 模型與管線參數設定 · 下次執行時生效
           </p>
         </div>
@@ -191,7 +191,7 @@ export const PipelineSettingsPage: React.FC = () => {
               <button
                 onClick={fetchSettings}
                 disabled={loading}
-                className="flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+                className="flex items-center gap-2 rounded-md border border-border px-3 py-2 text-base text-muted-foreground hover:bg-muted"
               >
                 <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
                 重新整理
@@ -199,10 +199,10 @@ export const PipelineSettingsPage: React.FC = () => {
               <button
                 onClick={handleSave}
                 disabled={!dirty || saving}
-                className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-all ${
+                className={`flex items-center gap-2 rounded-md px-4 py-2 text-base font-medium transition-all ${
                   dirty
-                    ? 'bg-blue-600 text-white hover:bg-blue-700'
-                    : 'cursor-not-allowed bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-600'
+                    ? 'bg-accent-info text-accent-info-foreground hover:bg-accent-info/90'
+                    : 'cursor-not-allowed bg-muted text-muted-foreground/50'
                 }`}
               >
                 {saving ? (
@@ -220,13 +220,13 @@ export const PipelineSettingsPage: React.FC = () => {
       </div>
 
       {/* Tabs */}
-      <div className="mb-6 flex gap-1 border-b border-gray-200 dark:border-gray-700">
+      <div className="mb-6 flex gap-1 border-b border-border">
         <button
           onClick={() => setTab('models')}
-          className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium transition-colors ${
+          className={`flex items-center gap-1.5 px-4 py-2.5 text-base font-medium transition-colors ${
             tab === 'models'
-              ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400'
-              : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'
+              ? 'border-b-2 border-accent-info text-accent-info'
+              : 'text-muted-foreground hover:text-foreground'
           }`}
         >
           <Zap className="h-3.5 w-3.5" />
@@ -234,10 +234,10 @@ export const PipelineSettingsPage: React.FC = () => {
         </button>
         <button
           onClick={() => setTab('prompts')}
-          className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium transition-colors ${
+          className={`flex items-center gap-1.5 px-4 py-2.5 text-base font-medium transition-colors ${
             tab === 'prompts'
-              ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400'
-              : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'
+              ? 'border-b-2 border-accent-info text-accent-info'
+              : 'text-muted-foreground hover:text-foreground'
           }`}
         >
           <FileText className="h-3.5 w-3.5" />
@@ -245,10 +245,10 @@ export const PipelineSettingsPage: React.FC = () => {
         </button>
         <button
           onClick={() => setTab('trial')}
-          className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium transition-colors ${
+          className={`flex items-center gap-1.5 px-4 py-2.5 text-base font-medium transition-colors ${
             tab === 'trial'
-              ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400'
-              : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'
+              ? 'border-b-2 border-accent-info text-accent-info'
+              : 'text-muted-foreground hover:text-foreground'
           }`}
         >
           <Play className="h-3.5 w-3.5" />
@@ -270,23 +270,23 @@ export const PipelineSettingsPage: React.FC = () => {
         <div
           className={`mb-6 flex items-start gap-3 rounded-lg border p-4 ${
             data.meta.live
-              ? 'border-emerald-200 bg-emerald-50 dark:border-emerald-900/40 dark:bg-emerald-900/20'
-              : 'border-blue-200 bg-blue-50 dark:border-blue-900/40 dark:bg-blue-900/20'
+              ? 'border-sentiment-bull/30 bg-sentiment-bull-soft'
+              : 'border-accent-info/30 bg-accent-info-soft'
           }`}
         >
           {data.meta.live ? (
-            <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-500" />
+            <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-sentiment-bull" />
           ) : (
-            <Zap className="mt-0.5 h-5 w-5 shrink-0 text-blue-500" />
+            <Zap className="mt-0.5 h-5 w-5 shrink-0 text-accent-info" />
           )}
-          <div className={`text-sm ${data.meta.live ? 'text-emerald-800 dark:text-emerald-300' : 'text-blue-800 dark:text-blue-300'}`}>
+          <div className={`text-base ${data.meta.live ? 'text-sentiment-bull' : 'text-accent-info'}`}>
             <p className="font-medium">
               {data.meta.live
                 ? 'Live — 即時讀取管線服務'
                 : '可編輯 — 選擇模型後點擊「儲存變更」，下次管線執行時套用'}
             </p>
             {data.meta.has_overrides && (
-              <p className="mt-0.5 text-emerald-600 dark:text-emerald-400">已套用管理員自訂覆蓋設定</p>
+              <p className="mt-0.5 text-sentiment-bull">已套用管理員自訂覆蓋設定</p>
             )}
           </div>
         </div>
@@ -294,22 +294,22 @@ export const PipelineSettingsPage: React.FC = () => {
 
       {loading && !data ? (
         <div className="flex h-64 items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
       ) : data ? (
         <div className="space-y-8">
           {/* LLM Model Selection */}
-          <div className="rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900">
+          <div className="rounded-lg border border-border bg-card p-6">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">LLM 模型設定</h2>
+              <h2 className="text-xl font-semibold text-foreground">LLM 模型設定</h2>
               {availableModels.length > 0 && (
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-500">一鍵全選：</span>
+                  <span className="text-xs text-muted-foreground">一鍵全選：</span>
                   {availableModels.slice(0, 3).map((m) => (
                     <button
                       key={m.id}
                       onClick={() => setAllModels(m.id)}
-                      className="rounded border border-gray-200 px-2 py-1 text-xs text-gray-600 hover:border-blue-300 hover:bg-blue-50 dark:border-gray-700 dark:text-gray-400 dark:hover:border-blue-600 dark:hover:bg-blue-900/20"
+                      className="rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:border-accent-info hover:bg-accent-info-soft"
                     >
                       {m.label}
                     </button>
@@ -324,14 +324,14 @@ export const PipelineSettingsPage: React.FC = () => {
                 return (
                   <div key={role.key}>
                     <div className="mb-2">
-                      <span className="font-medium text-gray-800 dark:text-gray-200">
+                      <span className="font-medium text-foreground">
                         {role.label}
                       </span>
-                      <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">
+                      <span className="ml-2 text-xs text-muted-foreground">
                         {role.description}
                       </span>
                       {!currentModel && (
-                        <span className="ml-2 rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-500 dark:bg-gray-800">
+                        <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
                           使用預設
                         </span>
                       )}
@@ -358,43 +358,43 @@ export const PipelineSettingsPage: React.FC = () => {
           </div>
 
           {/* Model Benchmark */}
-          <div className="rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900">
-            <h2 className="mb-4 text-lg font-semibold text-gray-900 dark:text-white">
+          <div className="rounded-lg border border-border bg-card p-6">
+            <h2 className="mb-4 text-xl font-semibold text-foreground">
               模型效能比較
             </h2>
-            <p className="mb-3 text-xs text-gray-500 dark:text-gray-400">
+            <p className="mb-3 text-xs text-muted-foreground">
               基於 EP363 (21,162 字元, 2,152 句) 的實測數據 · 2026-06-07
             </p>
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full text-base">
                 <thead>
-                  <tr className="border-b border-gray-200 dark:border-gray-700">
-                    <th className="pb-2 text-left font-medium text-gray-500 dark:text-gray-400">模型</th>
-                    <th className="pb-2 text-right font-medium text-gray-500 dark:text-gray-400">價格 (in/out /1M)</th>
-                    <th className="pb-2 text-right font-medium text-gray-500 dark:text-gray-400">速度</th>
-                    <th className="pb-2 text-right font-medium text-gray-500 dark:text-gray-400">主題準確度</th>
-                    <th className="pb-2 text-right font-medium text-gray-500 dark:text-gray-400">每集成本</th>
-                    <th className="pb-2 text-right font-medium text-gray-500 dark:text-gray-400">vs 基準</th>
+                  <tr className="border-b border-border">
+                    <th className="pb-2 text-left font-medium text-muted-foreground">模型</th>
+                    <th className="pb-2 text-right font-medium text-muted-foreground">價格 (in/out /1M)</th>
+                    <th className="pb-2 text-right font-medium text-muted-foreground">速度</th>
+                    <th className="pb-2 text-right font-medium text-muted-foreground">主題準確度</th>
+                    <th className="pb-2 text-right font-medium text-muted-foreground">每集成本</th>
+                    <th className="pb-2 text-right font-medium text-muted-foreground">vs 基準</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                  <tr className="text-gray-900 dark:text-white">
+                <tbody className="divide-y divide-border">
+                  <tr className="text-foreground">
                     <td className="py-2 font-medium">Xiaomi MiMo-V2.5 ⭐</td>
                     <td className="py-2 text-right font-mono text-xs">$0.140 / $0.280</td>
                     <td className="py-2 text-right">79s</td>
-                    <td className="py-2 text-right font-semibold text-emerald-600">6/7</td>
+                    <td className="py-2 text-right font-semibold text-sentiment-bull">6/7</td>
                     <td className="py-2 text-right font-mono">$0.010</td>
-                    <td className="py-2 text-right text-emerald-600">-75%</td>
+                    <td className="py-2 text-right text-sentiment-bull">-75%</td>
                   </tr>
-                  <tr className="text-gray-900 dark:text-white">
+                  <tr className="text-foreground">
                     <td className="py-2 font-medium">DeepSeek V4 Flash</td>
                     <td className="py-2 text-right font-mono text-xs">$0.098 / $0.197</td>
                     <td className="py-2 text-right">170s</td>
                     <td className="py-2 text-right">5/7</td>
                     <td className="py-2 text-right font-mono">$0.007</td>
-                    <td className="py-2 text-right text-emerald-600">-82%</td>
+                    <td className="py-2 text-right text-sentiment-bull">-82%</td>
                   </tr>
-                  <tr className="text-gray-700 dark:text-gray-300">
+                  <tr className="text-muted-foreground">
                     <td className="py-2">Gemini 2.5 Flash (前基準)</td>
                     <td className="py-2 text-right font-mono text-xs">$0.300 / $2.500</td>
                     <td className="py-2 text-right">208s</td>
@@ -402,13 +402,13 @@ export const PipelineSettingsPage: React.FC = () => {
                     <td className="py-2 text-right font-mono">$0.040</td>
                     <td className="py-2 text-right">—</td>
                   </tr>
-                  <tr className="text-gray-700 dark:text-gray-300">
+                  <tr className="text-muted-foreground">
                     <td className="py-2">DeepSeek V3.2</td>
                     <td className="py-2 text-right font-mono text-xs">$0.229 / $0.343</td>
                     <td className="py-2 text-right">401s</td>
                     <td className="py-2 text-right">4/7</td>
                     <td className="py-2 text-right font-mono">$0.014</td>
-                    <td className="py-2 text-right text-emerald-600">-65%</td>
+                    <td className="py-2 text-right text-sentiment-bull">-65%</td>
                   </tr>
                 </tbody>
               </table>
@@ -416,24 +416,24 @@ export const PipelineSettingsPage: React.FC = () => {
           </div>
 
           {/* Full config (read-only) */}
-          <div className="rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900">
-            <h2 className="mb-4 text-lg font-semibold text-gray-900 dark:text-white">
+          <div className="rounded-lg border border-border bg-card p-6">
+            <h2 className="mb-4 text-xl font-semibold text-foreground">
               完整管線設定（唯讀）
             </h2>
             <div className="grid gap-4 md:grid-cols-2">
               {Object.entries(data.settings).map(([section, value]) => (
                 <div
                   key={section}
-                  className="rounded-lg border border-gray-100 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-800/50"
+                  className="rounded-lg border border-border bg-muted p-4"
                 >
-                  <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                  <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                     {section}
                   </h3>
                   <div className="space-y-1.5">
                     {value !== null && typeof value === 'object' && !Array.isArray(value) ? (
                       Object.entries(value as Record<string, unknown>).map(([k, v]) => (
                         <div key={k} className="flex flex-wrap items-baseline gap-2">
-                          <span className="font-mono text-xs text-gray-500 dark:text-gray-400">
+                          <span className="font-mono text-xs text-muted-foreground">
                             {k}
                           </span>
                           <ConfigValue value={v} />
@@ -449,7 +449,7 @@ export const PipelineSettingsPage: React.FC = () => {
           </div>
         </div>
       ) : (
-        <div className="flex h-64 items-center justify-center text-gray-500 dark:text-gray-400">
+        <div className="flex h-64 items-center justify-center text-muted-foreground">
           無法載入管線設定
         </div>
       )}

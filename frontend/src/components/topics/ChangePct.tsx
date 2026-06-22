@@ -4,7 +4,7 @@ import { useStockTrendColor } from '@/hooks/useStockTrendColor';
 
 interface ChangePctProps {
   value: number | null;
-  /** text size class, e.g. 'text-[11px]' */
+  /** text size class, e.g. 'text-2xs' */
   sizeClass?: string;
   /** extra className on the wrapper span */
   className?: string;
@@ -20,7 +20,7 @@ interface ChangePctProps {
  */
 export const ChangePct: React.FC<ChangePctProps> = ({
   value,
-  sizeClass = 'text-[11px]',
+  sizeClass = 'text-2xs',
   className = '',
   showArrow = false,
   skeleton = false,

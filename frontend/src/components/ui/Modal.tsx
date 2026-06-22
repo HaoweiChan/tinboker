@@ -45,14 +45,14 @@ export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, children, classNa
       onClick={handleOverlayClick}
     >
       <div className={cn(
-        "bg-white dark:bg-slate-900 rounded-xl shadow-xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-200 dark:border-slate-800",
+        "bg-popover rounded-xl shadow-xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200 border border-border",
         className
       )}>
-        <div className="flex items-center justify-between p-4 border-b border-slate-100 dark:border-slate-800">
-          <h2 className="text-lg font-bold text-slate-900 dark:text-slate-50">{title}</h2>
+        <div className="flex items-center justify-between p-4 border-b border-border">
+          <h2 className="text-xl font-bold text-foreground">{title}</h2>
           <button 
             onClick={onClose}
-            className="p-1 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 transition-colors"
+            className="p-1 rounded-full hover:bg-muted text-muted-foreground transition-colors"
           >
             <X size={20} />
           </button>

@@ -110,20 +110,20 @@ export const SourceFormDialog: React.FC<SourceFormDialogProps> = ({
     }
   };
 
-  const labelCls = 'block text-sm font-medium text-gray-700 dark:text-gray-300';
+  const labelCls = 'block text-base font-medium text-foreground';
   const fieldCls =
-    'mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white';
+    'mt-1 w-full rounded-md border border-input bg-card px-3 py-2 text-base text-foreground focus:border-accent-info focus:outline-none focus:ring-1 focus:ring-accent-info';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-6 shadow-xl dark:bg-gray-800">
+      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg bg-card p-6 shadow-xl">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-bold text-gray-900 dark:text-white">
+          <h2 className="text-xl font-bold text-foreground">
             {editing ? 'Edit Source' : `Add ${isPodcast ? 'Podcast' : 'News Feed'}`}
           </h2>
           <button
             onClick={onClose}
-            className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-700"
+            className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
           >
             <X className="h-5 w-5" />
           </button>
@@ -229,7 +229,7 @@ export const SourceFormDialog: React.FC<SourceFormDialogProps> = ({
                 className={fieldCls}
                 placeholder="30"
               />
-              <p className="mt-1 text-xs text-gray-400">Only ingest items newer than this</p>
+              <p className="mt-1 text-xs text-muted-foreground">Only ingest items newer than this</p>
             </div>
             <div>
               <label className={labelCls}>Max episodes</label>
@@ -241,34 +241,34 @@ export const SourceFormDialog: React.FC<SourceFormDialogProps> = ({
                 className={fieldCls}
                 placeholder="(no cap)"
               />
-              <p className="mt-1 text-xs text-gray-400">Optional safety cap per run</p>
+              <p className="mt-1 text-xs text-muted-foreground">Optional safety cap per run</p>
             </div>
           </div>
 
-          <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+          <label className="flex items-center gap-2 text-base text-foreground">
             <input
               type="checkbox"
               checked={values.active}
               onChange={(e) => set('active', e.target.checked)}
-              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              className="h-4 w-4 rounded border-input text-accent-info focus:ring-accent-info"
             />
             Active (followed by the pipeline)
           </label>
 
-          {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+          {error && <p className="text-base text-destructive">{error}</p>}
 
           <div className="flex justify-end gap-3 pt-2">
             <button
               type="button"
               onClick={onClose}
-              className="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+              className="rounded-md border border-border px-4 py-2 text-base text-foreground hover:bg-muted"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
+              className="flex items-center gap-2 rounded-md bg-accent-info px-4 py-2 text-base text-accent-info-foreground hover:bg-accent-info/90 disabled:opacity-50"
             >
               {saving && <Loader2 className="h-4 w-4 animate-spin" />}
               {editing ? 'Save' : 'Create'}

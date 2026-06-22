@@ -104,23 +104,23 @@ export const StockHoverCard: React.FC<StockHoverCardProps> = ({ symbol, children
           className="fixed z-[9999] pointer-events-none transform -translate-x-1/2 -translate-y-full"
           style={{ top: coords.top, left: coords.left }}
         >
-          <div className="mb-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl p-3 w-48 animate-in fade-in zoom-in-95 duration-200">
+          <div className="mb-2 bg-popover border border-border rounded-lg shadow-xl p-3 w-48 animate-in fade-in zoom-in-95 duration-200">
             <div className="flex justify-between items-start mb-1">
               <div>
-                <div className="font-bold text-slate-900 dark:text-slate-50 text-sm">
+                <div className="font-bold text-foreground text-base">
                   {stockData?.name || symbol}
                 </div>
-                <div className="text-xs text-slate-500 font-financial">
+                <div className="text-xs text-muted-foreground font-financial">
                   {symbol}.TW
                 </div>
               </div>
             </div>
             
             {loading ? (
-              <div className="h-6 w-20 bg-slate-100 dark:bg-slate-800 rounded animate-pulse" />
+              <div className="h-6 w-20 bg-muted rounded animate-pulse" />
             ) : (
               <div className="flex items-baseline gap-2">
-                <span className={`text-lg font-bold font-financial ${isPositive ? 'text-red-500' : 'text-green-500'}`}>
+                <span className={`text-xl font-bold font-financial ${isPositive ? 'text-red-500' : 'text-green-500'}`}>
                   {stockData?.price.toLocaleString() || '---'}
                 </span>
                 <span className={`text-xs font-medium font-financial ${isPositive ? 'text-red-500' : 'text-green-500'}`}>
@@ -130,7 +130,7 @@ export const StockHoverCard: React.FC<StockHoverCardProps> = ({ symbol, children
             )}
           </div>
           {/* Arrow */}
-          <div className="w-3 h-3 bg-white dark:bg-slate-900 border-r border-b border-slate-200 dark:border-slate-700 transform rotate-45 absolute bottom-0.5 left-1/2 -translate-x-1/2"></div>
+          <div className="w-3 h-3 bg-popover border-r border-b border-border transform rotate-45 absolute bottom-0.5 left-1/2 -translate-x-1/2"></div>
         </div>,
         document.body
       )}

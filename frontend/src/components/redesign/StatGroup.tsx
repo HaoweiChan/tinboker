@@ -38,11 +38,11 @@ export const StatGroup: React.FC<StatGroupProps> = ({ items, className }) => (
           i === 0 && 'border-l-0',
         )}
       >
-        <div className="text-[11px] text-muted-foreground mb-1.5 uppercase tracking-[0.06em] font-medium">{it.label}</div>
-        <div className={cn('font-semibold tracking-[-0.02em]', it.textValue ? 'text-[16px]' : 'font-mono tabular-nums text-[22px]')}>
+        <div className="text-2xs text-muted-foreground mb-1.5 uppercase tracking-[0.06em] font-medium">{it.label}</div>
+        <div className={cn('font-semibold tracking-[-0.02em]', it.textValue ? 'text-lg' : 'font-mono tabular-nums text-2xl')}>
           {it.value}
         </div>
-        {it.sub != null && <div className="text-[11px] text-muted-foreground mt-1">{it.sub}</div>}
+        {it.sub != null && <div className="text-2xs text-muted-foreground mt-1">{it.sub}</div>}
       </div>
     ))}
   </div>
