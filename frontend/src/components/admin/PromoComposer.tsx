@@ -8,12 +8,17 @@
  *     backend skips FB and still posts Threads); we warn up front so it's no surprise.
  */
 
-import React, { useCallback, useRef, useState } from 'react';
-import { Image as ImageIcon, Film, Send, Eye, Trash2, Upload, AlertTriangle, MessageSquare, Plus } from 'lucide-react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Image as ImageIcon, Film, Send, Eye, Trash2, Upload, AlertTriangle, MessageSquare, Plus, Save, FilePlus2 } from 'lucide-react';
 import {
   uploadPromoMedia,
   publishPromo,
+  listPromoDrafts,
+  getPromoDraft,
+  savePromoDraft,
+  deletePromoDraft,
   type PromoMedia,
+  type PromoDraftMeta,
   type PromoPublishResult,
 } from '@/services/api/adminPromo';
 
@@ -67,6 +72,79 @@ export const PromoComposer: React.FC = () => {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [drafts, setDrafts] = useState<PromoDraftMeta[]>([]);
+  const [draftId, setDraftId] = useState<number | null>(null);
+  const [draftName, setDraftName] = useState('');
+  const [savingDraft, setSavingDraft] = useState(false);
+
+  const refreshDrafts = useCallback(async () => {
+    try {
+      setDrafts(await listPromoDrafts());
+    } catch (e) {
+      console.error('[promo] drafts list failed', e);
+    }
+  }, []);
+  useEffect(() => { refreshDrafts(); }, [refreshDrafts]);
+
+  const newDraft = useCallback(() => {
+    setDraftId(null);
+    setDraftName('');
+    setText('');
+    setMedia([]);
+    setComments([]);
+    setToThreads(true);
+    setToFacebook(true);
+    setMsg(null);
+  }, []);
+
+  const loadDraft = useCallback(async (id: number) => {
+    try {
+      const d = await getPromoDraft(id);
+      setText(d.text);
+      setMedia(d.media.filter((m) => !!m.url)); // drop any media that failed to re-sign
+      setComments(d.comments);
+      setToThreads(d.platforms.includes('threads'));
+      setToFacebook(d.platforms.includes('facebook'));
+      setDraftId(d.id);
+      setDraftName(d.name);
+      setMsg(null);
+    } catch (e) {
+      console.error('[promo] load draft failed', e);
+      setMsg('載入草稿失敗，請看 console');
+    }
+  }, []);
+
+  const saveDraft = useCallback(async () => {
+    setSavingDraft(true);
+    try {
+      const platforms = [toThreads && 'threads', toFacebook && 'facebook'].filter(Boolean) as string[];
+      const saved = await savePromoDraft(
+        { name: draftName.trim() || '未命名草稿', text, media, comments, platforms },
+        draftId ?? undefined,
+      );
+      setDraftId(saved.id);
+      setDraftName(saved.name);
+      await refreshDrafts();
+      setMsg('草稿已儲存');
+    } catch (e) {
+      console.error('[promo] save draft failed', e);
+      setMsg('儲存草稿失敗，請看 console');
+    } finally {
+      setSavingDraft(false);
+    }
+  }, [draftName, text, media, comments, toThreads, toFacebook, draftId, refreshDrafts]);
+
+  const removeDraft = useCallback(async () => {
+    if (!draftId || !window.confirm('刪除這份草稿？')) return;
+    try {
+      await deletePromoDraft(draftId);
+      await refreshDrafts();
+      newDraft();
+    } catch (e) {
+      console.error('[promo] delete draft failed', e);
+      setMsg('刪除草稿失敗，請看 console');
+    }
+  }, [draftId, refreshDrafts, newDraft]);
 
   const platforms = [toThreads && 'threads', toFacebook && 'facebook'].filter(Boolean) as string[];
   const fbBlock = toFacebook ? facebookBlockReason(media) : null;
@@ -114,6 +192,57 @@ export const PromoComposer: React.FC = () => {
 
   return (
     <div className="max-w-2xl space-y-6">
+      {/* Drafts */}
+      <div className={`${card} p-4`}>
+        <div className={`${labelCls} mb-3`}>草稿 Drafts</div>
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={draftId ?? ''}
+            onChange={(e) => (e.target.value ? loadDraft(Number(e.target.value)) : newDraft())}
+            className="rounded-lg border border-input bg-card px-3 py-2 text-base text-foreground focus:border-accent-info focus:outline-none"
+          >
+            <option value="">— 載入草稿 —</option>
+            {drafts.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name}（{d.media_count} 媒體・{d.comment_count} 留言）
+              </option>
+            ))}
+          </select>
+          <input
+            type="text"
+            value={draftName}
+            onChange={(e) => setDraftName(e.target.value)}
+            placeholder="草稿名稱…"
+            className="min-w-[8rem] flex-1 rounded-lg border border-input bg-card px-3 py-2 text-base text-foreground placeholder:text-muted-foreground focus:border-accent-info focus:outline-none"
+          />
+          <button
+            onClick={saveDraft}
+            disabled={savingDraft || uploading}
+            title={draftId ? '更新這份草稿' : '另存為新草稿'}
+            className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-base font-semibold text-foreground hover:bg-muted disabled:opacity-60"
+          >
+            <Save className={`h-4 w-4 ${savingDraft ? 'animate-pulse' : ''}`} />
+            {savingDraft ? '儲存中…' : draftId ? '更新草稿' : '儲存草稿'}
+          </button>
+          <button
+            onClick={newDraft}
+            title="清空，開新草稿"
+            className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-base font-medium text-foreground hover:bg-muted"
+          >
+            <FilePlus2 className="h-4 w-4" /> 新草稿
+          </button>
+          {draftId && (
+            <button
+              onClick={removeDraft}
+              title="刪除這份草稿"
+              className="inline-flex items-center gap-2 rounded-lg border border-sentiment-bear/40 px-3 py-2 text-base font-medium text-sentiment-bear hover:bg-sentiment-bear-soft"
+            >
+              <Trash2 className="h-4 w-4" /> 刪除
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* Text */}
       <div className={`${card} p-4`}>
         <div className={`${labelCls} mb-2`}>貼文內容 Post</div>

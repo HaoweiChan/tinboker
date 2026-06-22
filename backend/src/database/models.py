@@ -259,6 +259,31 @@ class TagRegistry(Base):
         return f"<TagRegistry(slug='{self.slug}', kind='{self.kind}', tier='{self.tier}')>"
 
 
+class PromoDraft(Base):
+    """A saved draft for the admin promo cross-poster (free-form Threads/FB post).
+
+    Durable + shared across envs (all share this Postgres). ``media`` stores each item
+    as ``{type, path, filename}`` where ``path`` is the permanent ``gs://`` location —
+    NOT the 12h signed URL — so a draft's media never expires; the read path re-signs a
+    fresh URL on load. ``comments`` is a list of text-only follow-ups; ``platforms`` the
+    selected targets.
+    """
+    __tablename__ = "promo_drafts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(200), nullable=False, default="未命名草稿")
+    text = Column(Text, nullable=False, default="")
+    media = Column(JSON, nullable=False, default=list)
+    comments = Column(JSON, nullable=False, default=list)
+    platforms = Column(JSON, nullable=False, default=list)
+    updated_by = Column(String(100), nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    def __repr__(self) -> str:
+        return f"<PromoDraft(id={self.id}, name='{self.name}')>"
+
+
 class PipelineConfigOverride(Base):
     """Admin-editable pipeline config overrides.
 

@@ -21,7 +21,28 @@ export type PromoMediaType = 'image' | 'video';
 export interface PromoMedia {
   type: PromoMediaType;
   url: string;
+  /** Durable gs:// location; persisted in drafts and re-signed into `url` on load. */
+  path?: string;
   filename?: string;
+}
+
+export interface PromoDraftMeta {
+  id: number;
+  name: string;
+  updated_at: string | null;
+  media_count: number;
+  comment_count: number;
+  platforms: string[];
+}
+
+export interface PromoDraftDetail {
+  id: number;
+  name: string;
+  text: string;
+  media: PromoMedia[];
+  comments: string[];
+  platforms: string[];
+  updated_at: string | null;
 }
 
 export interface PromoPlatformResult {
@@ -51,6 +72,40 @@ export async function uploadPromoMedia(file: File): Promise<PromoMedia> {
     timeout: PROMO_TIMEOUT_MS,
   });
   return res.data;
+}
+
+/** List saved promo drafts (newest first, metadata only). */
+export async function listPromoDrafts(): Promise<PromoDraftMeta[]> {
+  const res = await apiClient.get<{ drafts: PromoDraftMeta[] }>('/api/admin/promo/drafts', adminAuthConfig());
+  return res.data.drafts;
+}
+
+/** Load one draft, with media re-signed to fresh URLs. */
+export async function getPromoDraft(id: number): Promise<PromoDraftDetail> {
+  const res = await apiClient.get<PromoDraftDetail>(`/api/admin/promo/drafts/${id}`, adminAuthConfig());
+  return res.data;
+}
+
+/** Create (no id) or overwrite (with id) a draft. Returns the saved id + name. */
+export async function savePromoDraft(
+  body: { name: string; text: string; media: PromoMedia[]; comments: string[]; platforms: string[] },
+  id?: number,
+): Promise<{ id: number; name: string }> {
+  const payload = {
+    name: body.name,
+    text: body.text,
+    media: body.media.map((m) => ({ type: m.type, url: m.url, path: m.path, filename: m.filename })),
+    comments: body.comments,
+    platforms: body.platforms,
+  };
+  const res = id
+    ? await apiClient.put<{ id: number; name: string }>(`/api/admin/promo/drafts/${id}`, payload, adminAuthConfig())
+    : await apiClient.post<{ id: number; name: string }>('/api/admin/promo/drafts', payload, adminAuthConfig());
+  return res.data;
+}
+
+export async function deletePromoDraft(id: number): Promise<void> {
+  await apiClient.delete(`/api/admin/promo/drafts/${id}`, adminAuthConfig());
 }
 
 /** Publish (or, with dryRun, plan) a promo to the selected platforms. */
