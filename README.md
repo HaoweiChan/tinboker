@@ -295,3 +295,10 @@ place:
 
 See [`CLAUDE.md`](CLAUDE.md) for agent guidelines and [`docs/infra-runbook.md`](docs/infra-runbook.md)
 for the infrastructure runbook.
+
+---
+
+## License
+
+Proprietary — all rights reserved. The code is publicly visible for reference only and is **not**
+licensed for reuse. See [`LICENSE`](LICENSE).

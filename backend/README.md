@@ -1275,8 +1275,8 @@ See the root [`CLAUDE.md`](../CLAUDE.md) and [`AGENTS.md`](AGENTS.md) for conven
 
 ## License
 
-No `LICENSE` file is present in the repository yet; usage terms are TBD. Add a root `LICENSE`
-file before treating this as openly licensed.
+Proprietary — all rights reserved. The code is publicly visible for reference only and is not
+licensed for reuse. See the root [`LICENSE`](../LICENSE).
 
 ---
 
