@@ -88,7 +88,10 @@ async def lifespan(app: FastAPI):
     # Seed missing translations (names only). Brand colors live in stock_translations
     # and are maintained through the admin/bulk endpoints, not code-side seed data.
     try:
+        from src.data.foreign_stocks import FOREIGN_STOCK_TRANSLATIONS
         from src.data.seed_data import TRANSLATIONS
+        from src.data.ticker_aliases import ALIAS_SEED
+        from src.data.tw_listings import TW_LISTINGS
         from src.data.us_stocks import US_STOCK_TRANSLATIONS
         from src.database.postgres import get_session
         from src.services.translation_service import TranslationService
@@ -100,9 +103,30 @@ async def lifespan(app: FastAPI):
             us_inserted = svc.backfill_translations(US_STOCK_TRANSLATIONS)
             if us_inserted:
                 print(f"Backfilled {us_inserted} new US stock translation(s).")
+            foreign_inserted = svc.backfill_translations(FOREIGN_STOCK_TRANSLATIONS)
+            if foreign_inserted:
+                print(f"Backfilled {foreign_inserted} new foreign (KR/…) stock translation(s).")
+            # Authoritative full TW universe from the official exchange ISIN crawl
+            # (static, version-controlled). Fills new rows + name-less stubs; approved wins.
+            tw_listing_inserted = svc.backfill_translations(TW_LISTINGS)
+            if tw_listing_inserted:
+                print(f"Backfilled {tw_listing_inserted} TW exchange listing(s).")
+            # Freshness top-up from FinMind's live registry (catches listings newer than the
+            # committed crawl); self-throttling and best-effort — never raises into startup.
+            tw_seeded = svc.seed_tw_from_finmind()
+            if tw_seeded:
+                print(f"Seeded/filled {tw_seeded} TW translation(s) from FinMind registry.")
             corrected = svc.apply_known_name_corrections()
             if corrected:
                 print(f"Corrected {corrected} mislabeled stock translation name(s).")
+            # Fix the market of legacy rows whose stored value disagrees with the ticker
+            # shape (e.g. 6-digit Korean codes once defaulted to TW). Skips approved rows.
+            reclassified = svc.reclassify_markets()
+            if reclassified:
+                print(f"Reclassified {reclassified} stock translation market(s).")
+            aliased = svc.seed_aliases(ALIAS_SEED)
+            if aliased:
+                print(f"Seeded aliases on {aliased} stock translation(s).")
             break
     except Exception as e:
         print(f"Warning: translation seed/backfill skipped: {e}")

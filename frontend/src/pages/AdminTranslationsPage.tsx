@@ -86,8 +86,21 @@ export const AdminTranslationsPage: React.FC = () => {
 
   // Handle update — accepts a partial patch; uses the server's row as the new local state.
   const handleUpdate = async (id: number, data: TranslationUpdate) => {
-    const updated = await updateTranslation(id, data);
-    setTranslations((prev) => prev.map((t) => (t.id === id ? updated : t)));
+    try {
+      const updated = await updateTranslation(id, data);
+      setTranslations((prev) => prev.map((t) => (t.id === id ? updated : t)));
+    } catch (error) {
+      const resp = (error as { response?: { status?: number; data?: { detail?: string } } })?.response;
+      if (resp?.status === 401 || resp?.status === 403) {
+        logout();
+        setAuthenticated(false);
+        return;
+      }
+      // Surface a market-collision (409) or other failure; refetch so the row reverts.
+      const detail = resp?.data?.detail || 'Update failed';
+      alert(`Could not update translation: ${detail}`);
+      fetchTranslations();
+    }
   };
 
   // Handle delete

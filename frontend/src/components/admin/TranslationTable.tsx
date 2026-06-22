@@ -12,6 +12,11 @@ const PREFERENCE_OPTIONS: { value: NamePreference; label: string }[] = [
   { value: 'en', label: 'English' },
 ];
 
+// Markets an admin can assign. Lets a misclassified row (e.g. a Korean 6-digit code
+// that landed under TW) be corrected by hand; the backend rejects a move that would
+// collide with an existing (ticker, market) row.
+const MARKET_OPTIONS = ['TW', 'US', 'KR', 'HK', 'JP'];
+
 interface TranslationTableProps {
   translations: Translation[];
   loading: boolean;
@@ -190,8 +195,33 @@ export const TranslationTable: React.FC<TranslationTableProps> = ({
                 <td className="whitespace-nowrap px-4 py-3 font-mono text-sm font-medium text-gray-900 dark:text-white">
                   {translation.ticker}
                 </td>
-                <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600 dark:text-gray-300">
-                  {translation.market}
+                <td className="whitespace-nowrap px-4 py-3">
+                  <select
+                    value={translation.market}
+                    onChange={async (e) => {
+                      const market = e.target.value;
+                      if (market === translation.market) return;
+                      setSaving(translation.id);
+                      try {
+                        await onUpdate(translation.id, { market });
+                      } finally {
+                        setSaving(null);
+                      }
+                    }}
+                    disabled={saving === translation.id}
+                    title="Market — fix a misclassified row (e.g. a Korean 6-digit code under TW)"
+                    className="rounded border border-gray-300 bg-white px-2 py-1 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200"
+                  >
+                    {/* Include the row's current market even if it's outside the standard set. */}
+                    {(MARKET_OPTIONS.includes(translation.market)
+                      ? MARKET_OPTIONS
+                      : [translation.market, ...MARKET_OPTIONS]
+                    ).map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
                 </td>
                 <td className="px-4 py-3">{renderTextCell(translation, 'name_en')}</td>
                 <td className="px-4 py-3">{renderTextCell(translation, 'name_zh_tw')}</td>

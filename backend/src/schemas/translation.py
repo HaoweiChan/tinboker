@@ -28,6 +28,10 @@ class TranslationCreate(TranslationBase):
 
 class TranslationUpdate(BaseModel):
     """Schema for updating an existing translation."""
+    market: Optional[str] = Field(
+        None, max_length=10,
+        description="Market code (TW, US, KR, HK, JP). Lets an admin fix a misclassified row."
+    )
     name_en: Optional[str] = None
     name_zh_tw: Optional[str] = None
     translation_status: Optional[Literal["pending", "approved", "auto", "unresolvable"]] = None

@@ -238,5 +238,4 @@ TRANSLATIONS: list[tuple[str, str, str | None, str | None, str]] = [
     ("WMT", "US", "Walmart", "沃爾瑪", "approved"),
     ("XOM", "US", "Exxon Mobil", "艾克森美孚", "approved"),
     ("XPEV", "US", "Xpeng", "小鵬", "approved"),
-    ("XYZZZ", "US", None, None, "pending"),
 ]
