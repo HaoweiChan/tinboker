@@ -8,6 +8,7 @@ from src.cache.redis_client import (
     cache_set,
     cache_delete,
     cache_delete_pattern,
+    cache_delete_pattern_all_envs,
 )
 from src.cache.cache_config import CACHE_TTL
 from src.cache.cdn_cache import (
@@ -33,6 +34,7 @@ __all__ = [
     "cache_set",
     "cache_delete",
     "cache_delete_pattern",
+    "cache_delete_pattern_all_envs",
     "CACHE_TTL",
     # CDN cache headers
     "CacheProfile",

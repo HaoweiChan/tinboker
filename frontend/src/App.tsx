@@ -49,6 +49,11 @@ const DesignPreview = import.meta.env.DEV ? lazy(() => import('@/pages/DesignPre
 // STAGING and PRODUCTION builds never register /dev routes so they fall through to the catch-all.
 const IS_DEV_ENV = (import.meta.env.VITE_STAGE as string) === 'DEV';
 
+// Admin dashboard is developer-only. The PRODUCTION backend mounts no /api/admin/* routes
+// (see backend main.py `if not settings.is_production`), so a prod admin page would only
+// 404. Register the routes wherever the API exists — dev + staging, i.e. non-PRODUCTION.
+const ADMIN_ENABLED = (import.meta.env.VITE_STAGE as string) !== 'PRODUCTION';
+
 function GatedApp() {
   return (
     <EnvGate>
@@ -123,17 +128,20 @@ function App() {
             <Route path="/settings" element={<SettingsPage />} />
           </Route>
 
-          {/* Admin — keeps its own layout, outside the consumer shell */}
-          <Route path="/admin" element={<AdminPage />}>
-            <Route index element={<AdminDashboardPage />} />
-            <Route path="translations" element={<TranslationsSection />} />
-            <Route path="sources" element={<SourcesSection />} />
-            <Route path="pipeline" element={<PipelineSettingsPage />} />
-            <Route path="tags" element={<AdminTagsPage />} />
-            <Route path="social" element={<AdminSocialPage />} />
-            <Route path="analytics" element={<AdminAnalyticsPage />} />
-            <Route path="articles" element={<AdminArticlesPage />} />
-          </Route>
+          {/* Admin — keeps its own layout, outside the consumer shell. Non-PRODUCTION
+              only; prod serves no /api/admin/* API, so the page would just 404. */}
+          {ADMIN_ENABLED && (
+            <Route path="/admin" element={<AdminPage />}>
+              <Route index element={<AdminDashboardPage />} />
+              <Route path="translations" element={<TranslationsSection />} />
+              <Route path="sources" element={<SourcesSection />} />
+              <Route path="pipeline" element={<PipelineSettingsPage />} />
+              <Route path="tags" element={<AdminTagsPage />} />
+              <Route path="social" element={<AdminSocialPage />} />
+              <Route path="analytics" element={<AdminAnalyticsPage />} />
+              <Route path="articles" element={<AdminArticlesPage />} />
+            </Route>
+          )}
 
           {/* Dev-only design preview (standalone, no shell) */}
           {DesignPreview && (
