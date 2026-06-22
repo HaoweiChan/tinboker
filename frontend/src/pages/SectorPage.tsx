@@ -20,6 +20,9 @@ import { useStockPriceSinceMap } from '@/hooks/useStockPriceSinceMap';
 import { useTranslationMap } from '@/hooks/useTranslationMap';
 import { SectorTickerCard, type Timeframe } from '@/components/topics/SectorTickerCard';
 import { SectorIcon } from '@/components/topics/SectorIcon';
+import { Plus, Check } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { useAppStore, useTagSubscriptions } from '@/store/useAppStore';
 
 function resolvedTickerName(t: SectorResolvedTicker, translationMap: Map<string, string>): string {
   const upper = t.ticker.toUpperCase();
@@ -152,6 +155,12 @@ export const SectorPage: React.FC = () => {
   // (or a generic label as a last resort).
   const titleText = displayName || '產業 / 主題';
 
+  // A sector is a special kind of tag — follow it by its display name so it unifies with
+  // the namesake topic (and shows up under 追蹤話題 like any other tag subscription).
+  const { toggleTagSubscription } = useAppStore();
+  const tagSubs = useTagSubscriptions();
+  const isSubscribed = !!displayName && (tagSubs.includes(displayName) || tagSubs.includes(`#${displayName}`));
+
   return (
     <>
       <SEO
@@ -183,6 +192,19 @@ export const SectorPage: React.FC = () => {
                 : `瀏覽所有關於「${titleText}」的 Podcast 摘要與市場討論 · ${episodes.length} 集。`}
             </p>
           </div>
+          {!loading && displayName && (
+            <button
+              type="button"
+              onClick={() => toggleTagSubscription(displayName)}
+              className={cn(
+                'inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium transition-colors shrink-0',
+                isSubscribed ? 'bg-card border border-border text-foreground hover:bg-muted' : 'bg-foreground text-background hover:opacity-90',
+              )}
+            >
+              {isSubscribed ? <Check size={14} /> : <Plus size={14} />}
+              {isSubscribed ? '已追蹤' : '追蹤話題'}
+            </button>
+          )}
         </div>
 
         {/* ── Constituent performance — one timeframe at a time via the toggle ── */}
