@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from src.auth.admin_auth import get_admin_access, AdminAccess
-from src.cache.redis_client import cache_delete_pattern
+from src.cache.redis_client import cache_delete_pattern_all_envs
 from src.database.models import TagRegistry
 from src.database.postgres import get_session
 from src.services.firestore_service import FirestoreService
@@ -81,10 +81,10 @@ class SyncSectorsResponse(BaseModel):
 
 
 async def _invalidate_tag_caches() -> None:
-    """Bust Redis caches that depend on tag registry data."""
+    """Bust Redis caches that depend on tag registry data (all envs share the DB)."""
     for pattern in ("tags:*",):
         try:
-            await cache_delete_pattern(pattern)
+            await cache_delete_pattern_all_envs(pattern)
         except Exception as e:
             logger.warning("tag cache: Redis invalidation failed for %s: %s", pattern, e)
 

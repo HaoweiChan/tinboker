@@ -22,6 +22,9 @@ from src.services.search_console_service import SearchConsoleService
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["seo"])
+# Admin-only SEO routes live on a separate router so main.py can skip mounting them in
+# production (the dashboard is dev-only) while /sitemap.xml stays public everywhere.
+admin_router = APIRouter(tags=["seo", "admin"])
 
 podcast_service = PodcastService()
 
@@ -93,7 +96,7 @@ async def sitemap(
     )
 
 
-@router.get("/api/admin/seo/overview")
+@admin_router.get("/api/admin/seo/overview")
 async def seo_overview(
     days: int = Query(default=28, ge=1, le=480),
     refresh: bool = Query(default=False, description="Pull live from GSC instead of cache"),
@@ -113,7 +116,7 @@ async def seo_overview(
         raise HTTPException(status_code=502, detail=f"Search Console query failed: {e}")
 
 
-@router.post("/api/admin/seo/refresh")
+@admin_router.post("/api/admin/seo/refresh")
 async def seo_refresh(
     days: int = Query(default=28, ge=1, le=480),
     _: AdminAccess = Depends(get_admin_access),

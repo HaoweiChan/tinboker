@@ -266,3 +266,46 @@ async def cache_delete_pattern(pattern: str) -> int:
             logger.warning(f"Cache delete pattern error for {pattern}: {e}")
     return 0
 
+
+# ── Cross-env (logical-DB) purge ─────────────────────────────────────────────
+# Every env's backend writes to the SAME shared Postgres but caches into its OWN
+# Redis logical DB (docker-compose.multi.yml: prod=/0, staging=/1, dev=/2). The admin
+# UI is dev-only, so an edit there only clears /2 unless we fan the purge out —
+# otherwise prod/staging serve stale until TTL.
+# ponytail: DB list mirrors the fixed 0/1/2 split in compose; widen if envs are added.
+_ENV_REDIS_DBS = (0, 1, 2)
+
+
+def _env_redis_urls(base: str) -> list:
+    """Rewrite `base` to point at each env's Redis logical DB (0/1/2)."""
+    from urllib.parse import urlparse, urlunparse
+    parsed = urlparse(base)
+    return [urlunparse(parsed._replace(path=f"/{db}")) for db in _ENV_REDIS_DBS]
+
+
+async def cache_delete_pattern_all_envs(pattern: str) -> int:
+    """Delete keys matching `pattern` in EVERY env's Redis logical DB.
+
+    All envs share one DB but cache into per-env logical DBs, so an admin edit from
+    one env must invalidate the others. Best-effort per DB; never raises.
+    """
+    base = settings.redis_connection_string
+    if not base:
+        return 0
+    deleted = 0
+    for db, url in zip(_ENV_REDIS_DBS, _env_redis_urls(base)):
+        try:
+            client = aioredis.from_url(
+                url, encoding="utf-8", decode_responses=True,
+                socket_connect_timeout=1, socket_timeout=1,
+            )
+            try:
+                keys = await client.keys(pattern)
+                if keys:
+                    deleted += await client.delete(*keys)
+            finally:
+                await client.close()
+        except Exception as e:  # never leak the url (it may carry a password)
+            logger.warning("cross-env cache purge failed for %s (db %s): %s", pattern, db, e)
+    return deleted
+

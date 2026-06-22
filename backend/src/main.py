@@ -38,7 +38,7 @@ from src.routers.articles import router as articles_router
 from src.routers.admin_articles import router as admin_articles_router
 from src.routers.admin_tags import router as admin_tags_router
 from src.routers.social import router as social_router, facebook_router
-from src.routers.seo import router as seo_router
+from src.routers.seo import router as seo_router, admin_router as admin_seo_router
 from src.middleware.cloudflare import CloudflareMiddleware
 
 
@@ -305,22 +305,30 @@ app.include_router(recommendations_router)
 app.include_router(ticker_insights_router)
 app.include_router(analytics_router, prefix="/api/analytics", tags=["analytics"])
 app.include_router(translations_router)
-app.include_router(admin_translations_router)
 app.include_router(sources_router)
-app.include_router(admin_sources_router)
-app.include_router(admin_pipeline_router)
-app.include_router(admin_pipeline_trial_router)
-app.include_router(admin_system_router)
-app.include_router(admin_analytics_router)
 app.include_router(notifications_router)
 app.include_router(comments_router)
 app.include_router(comments_delete_router)
 app.include_router(articles_router)
-app.include_router(admin_articles_router)
-app.include_router(admin_tags_router)
-app.include_router(social_router)
-app.include_router(facebook_router)
-app.include_router(seo_router)
+app.include_router(seo_router)  # public /sitemap.xml — stays on every env
+
+# Admin dashboard is developer-only and consolidated onto the dev/staging envs. Skip
+# mounting every /api/admin/* router in production so api.tinboker.com exposes no admin
+# surface at all (and needs no email allowlist there) — all envs share one DB, so admin
+# edits made on dev still reflect in prod (see cache_delete_pattern_all_envs for the
+# cross-env cache purge that backs this).
+if not settings.is_production:
+    app.include_router(admin_translations_router)
+    app.include_router(admin_sources_router)
+    app.include_router(admin_pipeline_router)
+    app.include_router(admin_pipeline_trial_router)
+    app.include_router(admin_system_router)
+    app.include_router(admin_analytics_router)
+    app.include_router(admin_articles_router)
+    app.include_router(admin_tags_router)
+    app.include_router(social_router)       # /api/admin/threads/*
+    app.include_router(facebook_router)     # /api/admin/facebook/*
+    app.include_router(admin_seo_router)    # /api/admin/seo/*
 
 
 # Global exception handler
