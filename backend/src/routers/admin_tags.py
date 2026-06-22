@@ -143,10 +143,15 @@ async def list_tags(
     sector_rows = [r for r in rows if r.kind == KIND_SECTOR]
 
     # ── Virtual tags: Firestore tags not registered anywhere (closes the loophole
-    # where an auto-surfaced tag had no admin row to hide). Visible-by-default, so
-    # only shown when not filtering to hidden and not filtering to the sector kind.
+    # where an auto-surfaced tag had no admin row to hide). The tags collection holds
+    # THOUSANDS of slugs, so we never dump them all — virtual rows are only computed
+    # when SEARCHING. To hide an auto-surfaced tag, search its slug/name, then hide it.
+    # (Default view = the bounded registry set; sector kind / hidden tier never include
+    # virtual rows since they're tag-kind and visible-by-default.)
+    VIRTUAL_CAP = 200
     virtual: list[dict] = []
-    if kind != KIND_SECTOR and tier != TIER_HIDDEN:
+    virtual_truncated = False
+    if search and kind != KIND_SECTOR and tier != TIER_HIDDEN:
         try:
             fs_slugs = await asyncio.to_thread(firestore.get_all_parent_documents, "tags")
         except Exception as e:
@@ -158,14 +163,19 @@ async def list_tags(
             normalize_tag_slug(s)
             for (s,) in db.query(TagRegistry.slug).filter(TagRegistry.kind != KIND_SECTOR).all()
         }
-        needle = search.lower() if search else None
+        needle = search.lower()
         for s in fs_slugs:
             if normalize_tag_slug(s) in registered_norm:
                 continue
             label = canonical_label(s)
-            if needle and needle not in s.lower() and needle not in label.lower():
+            if needle not in s.lower() and needle not in label.lower():
                 continue
             virtual.append({"slug": s, "display_zh": label})
+            if len(virtual) >= VIRTUAL_CAP:
+                virtual_truncated = True
+                break
+    if virtual_truncated:
+        logger.info("virtual tags: capped at %d matches for search %r", VIRTUAL_CAP, search)
 
     # Count ONLY registry tag rows (a bounded ~dozens). Virtual tags are NOT counted —
     # there can be hundreds of Firestore tags and one subcollection count each blows past
