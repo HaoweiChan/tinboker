@@ -23,7 +23,7 @@ export const IndustryAnalysis: React.FC = () => {
       <SEO title="產業 · 板塊概覽" description="標普 500 板塊地圖、泡泡圖與輪動看板。" />
       <PageContent>
         <div className="flex items-center justify-between flex-wrap gap-3 mb-[18px]">
-          <h1 className="text-[22px] font-semibold tracking-[-0.02em]">產業</h1>
+          <h1 className="text-2xl font-semibold tracking-[-0.02em]">產業</h1>
           <Segmented
             options={[
               { value: 'map', label: '市場地圖' },
@@ -37,9 +37,9 @@ export const IndustryAnalysis: React.FC = () => {
 
         <div className="bg-card border border-border rounded-md flex flex-col" style={{ height: 'calc(100vh - 180px)', minHeight: 640 }}>
           <div className="px-5 sm:px-6 py-5 border-b border-border">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">產業 · {cfg.label}</p>
-            <h2 className="text-[22px] font-semibold tracking-[-0.015em] mt-1.5">{cfg.title}</h2>
-            <p className="text-[13px] text-muted-foreground mt-1.5">{cfg.description}</p>
+            <p className="text-2xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">產業 · {cfg.label}</p>
+            <h2 className="text-2xl font-semibold tracking-[-0.015em] mt-1.5">{cfg.title}</h2>
+            <p className="text-sm text-muted-foreground mt-1.5">{cfg.description}</p>
           </div>
           <div className="flex-1 min-h-[440px] p-4">{cfg.render()}</div>
         </div>

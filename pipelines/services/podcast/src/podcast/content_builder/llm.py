@@ -82,16 +82,17 @@ _TEMPERATURE_MAP: dict[str, float] = {
 _MAX_TOKENS_MAP: dict[str, int] = {
     # Long episodes (1000+ sentences) produce a topic list whose JSON exceeded the
     # old 2048 cap — the reply truncated mid-array, failed to parse, and the episode
-    # ended up with zero events (no chapters). 4096 covers even very long shows.
-    "extractor": 4096,
+    # ended up with zero events (no chapters). 8192 covers even very long shows.
+    "extractor": 8192,
     "writer": 8192,
-    "marp_writer": 8192,
-    # Verbose models (e.g. mimo) emit ticker reasons/risks whose JSON exceeded the
-    # old 2048 cap — the reply truncated mid-string ("Unterminated string"), failed
-    # to parse, and raised, which aborted the WHOLE episode (summary included). 4096
-    # matches the extractor and comfortably fits a multi-ticker payload.
-    "ticker_extractor": 4096,
-    "key_insights_extractor": 1024,
+    "marp_writer": 16384,
+    # Verbose models emit ticker reasons/risks whose JSON, on long & ticker-dense
+    # episodes (30-40+ tickers), truncated mid-string at the old 4096 cap
+    # ("Unterminated string") — which raised and aborted the WHOLE episode (summary
+    # included), so the episode never got generated/backfilled. 16384 fits a large
+    # multi-ticker payload; deepseek-v4-pro supports the larger completion.
+    "ticker_extractor": 16384,
+    "key_insights_extractor": 2048,
 }
 
 

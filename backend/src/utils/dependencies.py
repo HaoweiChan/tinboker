@@ -34,14 +34,14 @@ def get_current_user(authorization: Optional[str] = Header(None)) -> UserRespons
             detail="Invalid authorization header format. Expected: Bearer <token>"
         )
     
-    # Verify JWT token
-    payload = verify_jwt_token(token)
+    # Verify JWT token (reject refresh tokens used as access tokens)
+    payload = verify_jwt_token(token, expected_type="access")
     if not payload:
         raise HTTPException(
             status_code=401,
             detail="Invalid or expired token"
         )
-    
+
     # Get user from database
     user = get_user_by_email(payload['email'])
     if not user:

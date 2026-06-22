@@ -21,11 +21,11 @@ export const ListRow: React.FC<ListRowProps> = ({ lead, title, subtitle, mid, tr
     <>
       {lead != null && <div className="shrink-0">{lead}</div>}
       <div className="min-w-0">
-        <div className="text-[14px] font-medium leading-[1.4] truncate">{title}</div>
-        {subtitle != null && <div className="text-[11px] text-muted-foreground mt-0.5 truncate">{subtitle}</div>}
+        <div className="text-base font-medium leading-[1.4] truncate">{title}</div>
+        {subtitle != null && <div className="text-2xs text-muted-foreground mt-0.5 truncate">{subtitle}</div>}
       </div>
       {mid != null && <div className="shrink-0">{mid}</div>}
-      {trailing != null && <div className="shrink-0 flex items-center gap-2.5 text-[12px] text-muted-foreground">{trailing}</div>}
+      {trailing != null && <div className="shrink-0 flex items-center gap-2.5 text-xs text-muted-foreground">{trailing}</div>}
     </>
   );
   const classes = cn(

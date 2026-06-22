@@ -56,7 +56,7 @@ const CommentItem: React.FC<CommentItemProps> = ({
           {comment.user_avatar ? (
             <img src={comment.user_avatar} alt={comment.user_name} className="w-full h-full object-cover" />
           ) : (
-            <span className="text-[11px] font-semibold text-muted-foreground uppercase">
+            <span className="text-2xs font-semibold text-muted-foreground uppercase">
               {comment.user_name.charAt(0)}
             </span>
           )}
@@ -65,17 +65,17 @@ const CommentItem: React.FC<CommentItemProps> = ({
         {/* Body */}
         <div className="flex-1 min-w-0">
           <div className="flex items-baseline gap-2 mb-0.5">
-            <span className="text-[13px] font-semibold truncate">{comment.user_name}</span>
-            <span className="text-[11px] text-muted-foreground flex-shrink-0">{timeAgo(comment.created_at)}</span>
+            <span className="text-sm font-semibold truncate">{comment.user_name}</span>
+            <span className="text-2xs text-muted-foreground flex-shrink-0">{timeAgo(comment.created_at)}</span>
           </div>
-          <p className="text-[13px] text-foreground break-words whitespace-pre-wrap">{comment.content}</p>
+          <p className="text-sm text-foreground break-words whitespace-pre-wrap">{comment.content}</p>
 
           {/* Actions */}
           <div className="flex items-center gap-3 mt-1.5">
             {depth < MAX_DEPTH && (
               <button
                 onClick={() => onReply?.(comment.id)}
-                className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+                className="flex items-center gap-1 text-2xs text-muted-foreground hover:text-foreground transition-colors"
               >
                 <CornerDownRight className="h-3 w-3" />
                 回覆
@@ -84,7 +84,7 @@ const CommentItem: React.FC<CommentItemProps> = ({
             {currentUserId === comment.user_id && (
               <button
                 onClick={() => onDelete(comment.id)}
-                className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-destructive transition-colors"
+                className="flex items-center gap-1 text-2xs text-muted-foreground hover:text-destructive transition-colors"
                 title="刪除留言"
               >
                 <Trash2 className="h-3 w-3" />
@@ -149,7 +149,7 @@ export const CommentList: React.FC<CommentListProps> = ({
 }) => {
   if (comments.length === 0) {
     return (
-      <p className="text-[13px] text-muted-foreground py-2">
+      <p className="text-sm text-muted-foreground py-2">
         還沒有留言，來當第一個吧！
       </p>
     );

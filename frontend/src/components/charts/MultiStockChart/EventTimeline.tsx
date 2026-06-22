@@ -107,7 +107,7 @@ export const EventTimeline: React.FC<EventTimelineProps> = ({ tickers }) => {
   if (relevantEvents.length === 0) {
     return (
       <div className="w-full p-4 border-t overlay-border">
-        <p className="text-sm overlay-text-secondary text-center">No events found for selected stocks</p>
+        <p className="text-base overlay-text-secondary text-center">No events found for selected stocks</p>
       </div>
     );
   }
@@ -115,7 +115,7 @@ export const EventTimeline: React.FC<EventTimelineProps> = ({ tickers }) => {
   return (
     <div className="w-full border-t overlay-border bg-overlay-bg">
       <div className="p-4">
-        <h3 className="text-sm font-semibold overlay-text mb-3">Events Timeline</h3>
+        <h3 className="text-base font-semibold overlay-text mb-3">Events Timeline</h3>
         <div className="flex gap-3 overflow-x-auto pb-2">
           {relevantEvents.map((event) => (
             <button

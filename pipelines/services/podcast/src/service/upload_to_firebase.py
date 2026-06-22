@@ -411,8 +411,14 @@ class FirebaseService:
         if not tags and not tickers:
             return
         
-        # Normalize tags and tickers
-        normalized_tags = [tag.lower() for tag in tags if tag]
+        # Normalize tags and tickers. Enforce the canonical vocabulary at this
+        # persistence boundary: a tag is written to the `tags` collection only if it is
+        # in the vocabulary, so LLM-hallucinated junk (off-vocab proper nouns, fund/ETF
+        # names, ticker symbols) can never re-pollute the collection regardless of which
+        # caller (ingest, regen, backfill) reaches here. Storage stays lowercased to
+        # match existing doc IDs; vocabulary membership is tested on the normalized form.
+        from src.podcast.content_builder.tag_vocabulary import canonical_tag_slug
+        normalized_tags = [tag.lower() for tag in tags if tag and canonical_tag_slug(tag)]
         normalized_tickers = [ticker.upper() for ticker in tickers if ticker]
         
         # Process tags

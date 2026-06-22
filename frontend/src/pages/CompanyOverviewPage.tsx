@@ -28,10 +28,10 @@ export const CompanyOverviewPage: React.FC<CompanyOverviewPageProps> = ({
       </Card>
 
       <Card className="w-full shadow-lg border border-border/60 bg-card/95">
-        <h3 className="text-lg font-semibold mb-3 text-foreground">
+        <h3 className="text-xl font-semibold mb-3 text-foreground">
           About
         </h3>
-        <p className="text-sm leading-relaxed text-muted-foreground">
+        <p className="text-base leading-relaxed text-muted-foreground">
           {stockData.about}
         </p>
       </Card>

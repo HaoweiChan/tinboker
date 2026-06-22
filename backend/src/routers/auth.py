@@ -5,7 +5,13 @@ from fastapi import APIRouter, HTTPException, Header
 from typing import Optional
 from src.models.user import AuthResponse
 from src.database.user_db import get_or_create_user, get_user_by_email
-from src.utils.auth import verify_google_token, verify_google_access_token, create_jwt_token, verify_jwt_token
+from src.utils.auth import (
+    verify_google_token,
+    verify_google_access_token,
+    create_jwt_token,
+    create_refresh_token,
+    verify_jwt_token,
+)
 
 router = APIRouter(prefix="/api/auth", tags=["authentication"])
 
@@ -50,14 +56,16 @@ async def google_login(request: dict):
             email_verified=google_user.get('email_verified', False)
         )
         
-        # Create JWT session token
+        # Create JWT session tokens
         jwt_token = create_jwt_token(user.id, user.email)
-        
+        refresh_token = create_refresh_token(user.id, user.email)
+
         return AuthResponse(
             user=user,
-            token=jwt_token
+            token=jwt_token,
+            refresh_token=refresh_token,
         )
-    
+
     except ValueError as e:
         raise HTTPException(
             status_code=401,
@@ -100,17 +108,17 @@ async def get_current_user(authorization: Optional[str] = Header(None)):
             detail="Invalid authorization header format. Expected: Bearer <token>"
         )
     
-    # Verify JWT token
-    payload = verify_jwt_token(token)
+    # Verify JWT token (reject refresh tokens used as access tokens)
+    payload = verify_jwt_token(token, expected_type="access")
     if not payload:
         raise HTTPException(
             status_code=401,
             detail="Invalid or expired token"
         )
-    
+
     # Get user from database
     user = get_user_by_email(payload['email'])
-    
+
     if not user:
         raise HTTPException(
             status_code=404,
@@ -172,7 +180,40 @@ async def dev_token_login(request: dict):
         email_verified=True,
     )
     jwt_token = create_jwt_token(user.id, user.email)
-    return AuthResponse(user=user, token=jwt_token)
+    refresh_token = create_refresh_token(user.id, user.email)
+    return AuthResponse(user=user, token=jwt_token, refresh_token=refresh_token)
+
+
+@router.post("/refresh", response_model=AuthResponse)
+async def refresh_token_endpoint(request: dict):
+    """
+    Exchange a valid refresh token for a fresh access token.
+
+    Request body:
+    {
+        "refresh_token": "<jwt-refresh-token>"
+    }
+
+    The frontend calls this transparently when an access token expires, so the
+    user stays logged in without re-running Google OAuth. Returns a rotated
+    refresh token alongside the new access token.
+    """
+    refresh_token = request.get("refresh_token")
+    if not refresh_token:
+        raise HTTPException(status_code=400, detail="refresh_token is required")
+
+    payload = verify_jwt_token(refresh_token, expected_type="refresh")
+    if not payload:
+        raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
+
+    user = get_user_by_email(payload["email"])
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Issue a fresh access token and rotate the refresh token.
+    new_access = create_jwt_token(user.id, user.email)
+    new_refresh = create_refresh_token(user.id, user.email)
+    return AuthResponse(user=user, token=new_access, refresh_token=new_refresh)
 
 
 @router.post("/logout")

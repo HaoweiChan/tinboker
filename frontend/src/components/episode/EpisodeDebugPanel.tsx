@@ -23,7 +23,7 @@ function Section({ label, open, onToggle, saving, onSave, children }: {
       <button
         type="button"
         onClick={onToggle}
-        className="w-full flex items-center justify-between px-4 py-2.5 text-left text-[13px] font-medium hover:bg-muted/50 transition-colors"
+        className="w-full flex items-center justify-between px-4 py-2.5 text-left text-sm font-medium hover:bg-muted/50 transition-colors"
       >
         <span className="flex items-center gap-2">
           {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
@@ -34,7 +34,7 @@ function Section({ label, open, onToggle, saving, onSave, children }: {
             type="button"
             onClick={(e) => { e.stopPropagation(); onSave(); }}
             disabled={saving}
-            className="flex items-center gap-1 px-2.5 py-1 rounded bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
+            className="flex items-center gap-1 px-2.5 py-1 rounded bg-accent-info text-accent-info-foreground text-2xs font-medium hover:bg-accent-info/90 disabled:opacity-50 transition-colors"
           >
             {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
             儲存
@@ -57,14 +57,14 @@ function TagEditor({ values, onChange }: { values: string[]; onChange: (v: strin
     <div>
       <div className="flex flex-wrap gap-1.5 mb-2">
         {values.map((v) => (
-          <span key={v} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-muted text-[12px]">
+          <span key={v} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-muted text-xs">
             {v}
             <button type="button" onClick={() => onChange(values.filter((x) => x !== v))} className="hover:text-destructive">
               <X size={11} />
             </button>
           </span>
         ))}
-        {values.length === 0 && <span className="text-[12px] text-muted-foreground">（空）</span>}
+        {values.length === 0 && <span className="text-xs text-muted-foreground">（空）</span>}
       </div>
       <div className="flex gap-1.5">
         <input
@@ -72,9 +72,9 @@ function TagEditor({ values, onChange }: { values: string[]; onChange: (v: strin
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
           placeholder="輸入後按 Enter 新增"
-          className="flex-1 px-2.5 py-1.5 border border-border rounded text-[12px] bg-background"
+          className="flex-1 px-2.5 py-1.5 border border-border rounded text-xs bg-background"
         />
-        <button type="button" onClick={add} className="px-2 py-1.5 rounded border border-border hover:bg-muted text-[12px]">
+        <button type="button" onClick={add} className="px-2 py-1.5 rounded border border-border hover:bg-muted text-xs">
           <Plus size={12} />
         </button>
       </div>
@@ -93,14 +93,14 @@ function InsightEditor({ values, onChange }: { values: string[]; onChange: (v: s
     <div>
       <ul className="space-y-1 mb-2">
         {values.map((v, i) => (
-          <li key={i} className="flex items-start gap-2 text-[12px]">
+          <li key={i} className="flex items-start gap-2 text-xs">
             <span className="flex-1 bg-muted/40 rounded px-2 py-1">{v}</span>
             <button type="button" onClick={() => onChange(values.filter((_, j) => j !== i))} className="shrink-0 mt-0.5 hover:text-destructive">
               <X size={12} />
             </button>
           </li>
         ))}
-        {values.length === 0 && <li className="text-[12px] text-muted-foreground">（空）</li>}
+        {values.length === 0 && <li className="text-xs text-muted-foreground">（空）</li>}
       </ul>
       <div className="flex gap-1.5">
         <input
@@ -108,9 +108,9 @@ function InsightEditor({ values, onChange }: { values: string[]; onChange: (v: s
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
           placeholder="新增重點"
-          className="flex-1 px-2.5 py-1.5 border border-border rounded text-[12px] bg-background"
+          className="flex-1 px-2.5 py-1.5 border border-border rounded text-xs bg-background"
         />
-        <button type="button" onClick={add} className="px-2 py-1.5 rounded border border-border hover:bg-muted text-[12px]">
+        <button type="button" onClick={add} className="px-2 py-1.5 rounded border border-border hover:bg-muted text-xs">
           <Plus size={12} />
         </button>
       </div>
@@ -183,18 +183,18 @@ export const EpisodeDebugPanel: React.FC<Props> = ({ episode, onUpdated }) => {
 
   return (
     <section className="bg-card border-2 border-dashed border-yellow-500/60 rounded-md p-4 mb-3.5">
-      <h3 className="text-[12px] font-semibold uppercase tracking-[0.08em] text-yellow-600 dark:text-yellow-400 mb-3">
+      <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-yellow-600 dark:text-yellow-400 mb-3">
         Debug Editor (dev only)
       </h3>
       {status && (
-        <div className="text-[12px] mb-2 px-2 py-1 rounded bg-muted text-muted-foreground">{status}</div>
+        <div className="text-xs mb-2 px-2 py-1 rounded bg-muted text-muted-foreground">{status}</div>
       )}
       <div className="space-y-2">
         <Section id="transcript" label="逐字稿（唯讀）" open={openSections.has('transcript')} onToggle={() => toggle('transcript')}>
           {loadingTranscript ? (
-            <div className="flex items-center gap-2 text-[12px] text-muted-foreground"><Loader2 size={14} className="animate-spin" /> 載入中…</div>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 size={14} className="animate-spin" /> 載入中…</div>
           ) : (
-            <pre className="text-[11px] leading-relaxed whitespace-pre-wrap max-h-[400px] overflow-y-auto bg-muted/30 rounded p-3">{transcript || '（無逐字稿）'}</pre>
+            <pre className="text-2xs leading-relaxed whitespace-pre-wrap max-h-[400px] overflow-y-auto bg-muted/30 rounded p-3">{transcript || '（無逐字稿）'}</pre>
           )}
         </Section>
 
@@ -203,7 +203,7 @@ export const EpisodeDebugPanel: React.FC<Props> = ({ episode, onUpdated }) => {
             value={summary}
             onChange={(e) => setSummary(e.target.value)}
             rows={12}
-            className="w-full px-3 py-2 border border-border rounded text-[12px] leading-relaxed bg-background font-mono resize-y"
+            className="w-full px-3 py-2 border border-border rounded text-xs leading-relaxed bg-background font-mono resize-y"
           />
         </Section>
 

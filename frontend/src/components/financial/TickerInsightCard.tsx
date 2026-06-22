@@ -17,9 +17,9 @@ interface TickerInsightCardProps {
 // Spec § 4.2: sentiment_score is internal-only; the 5-tier label is the wire
 // vocabulary, but for chip rendering we collapse to bull/bear/neutral.
 const SENTIMENT_CONFIG: Record<'BULLISH' | 'BEARISH' | 'NEUTRAL', { color: string; icon: typeof TrendingUp; label: string }> = {
-    BULLISH: { color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-950/30 dark:text-emerald-400', icon: TrendingUp, label: '看多' },
-    BEARISH: { color: 'text-red-500 bg-red-50 dark:bg-red-950/30 dark:text-red-400', icon: TrendingDown, label: '看空' },
-    NEUTRAL: { color: 'text-slate-600 bg-slate-100 dark:bg-slate-800 dark:text-slate-400', icon: Minus, label: '中立' },
+    BULLISH: { color: 'text-sentiment-bull bg-sentiment-bull-soft', icon: TrendingUp, label: '看多' },
+    BEARISH: { color: 'text-sentiment-bear bg-sentiment-bear-soft', icon: TrendingDown, label: '看空' },
+    NEUTRAL: { color: 'text-sentiment-neutral bg-muted', icon: Minus, label: '中立' },
 };
 
 const KNOWN_THESIS_TRANSLATIONS: Record<string, string> = {
@@ -137,25 +137,25 @@ export const TickerInsightCard: React.FC<TickerInsightCardProps> = ({ insight, e
     };
 
     return (
-        <Card className="border-l-4 border-l-emerald-500 shadow-sm hover:shadow-md transition-shadow dark:border-slate-800 dark:border-l-emerald-500">
+        <Card className="border-l-4 border-l-sentiment-bull shadow-sm hover:shadow-md transition-shadow">
             <CardHeader className="pb-3 pt-4">
                 <div className="flex justify-between items-start">
                     <div className="flex gap-3 items-center flex-wrap">
-                        <Badge variant="outline" className="text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 font-normal shrink-0">
+                        <Badge variant="outline" className="text-muted-foreground border-border font-normal shrink-0">
                             {insight.podcaster || insight.episode_id.split('_')[0] || 'Unknown Host'}
                         </Badge>
                         <Badge className={cn("px-2 py-1 flex gap-1 items-center border-0", sentiment.color)}>
                             <SentimentIcon size={14} />
                             {sentiment.label}
                         </Badge>
-                        <span className="text-sm text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                        <span className="text-base text-muted-foreground flex items-center gap-1">
                             <Calendar size={14} />
                             {formatDate(insight.podcast_launch_time)}
                         </span>
                     </div>
                 </div>
                 <div className="mt-3">
-                    <h4 className="font-bold text-lg text-slate-900 dark:text-slate-50 leading-snug">
+                    <h4 className="font-bold text-xl text-foreground leading-snug">
                         {displayThesis}
                     </h4>
                 </div>
@@ -168,7 +168,7 @@ export const TickerInsightCard: React.FC<TickerInsightCardProps> = ({ insight, e
                         variant="ghost"
                         size="sm"
                         onClick={() => setExpanded(!expanded)}
-                        className="text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200 h-8 text-xs"
+                        className="text-muted-foreground hover:text-foreground h-8 text-xs"
                     >
                         {expanded ? '收起詳情' : '查看分析邏輯'}
                         {expanded ? <ChevronUp size={14} className="ml-1" /> : <ChevronDown size={14} className="ml-1" />}
@@ -179,8 +179,8 @@ export const TickerInsightCard: React.FC<TickerInsightCardProps> = ({ insight, e
                     <div className="mt-2 space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
                         {/* Reasons Section */}
                         {displayReasons.length > 0 && (
-                            <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-3">
-                                <h5 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+                            <div className="bg-muted rounded-lg p-3">
+                                <h5 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">
                                     投資理由
                                 </h5>
                                 <ul className="space-y-3">
@@ -188,10 +188,10 @@ export const TickerInsightCard: React.FC<TickerInsightCardProps> = ({ insight, e
                                         <li key={idx} className="group">
                                             <div className="flex justify-between items-start gap-2">
                                                 <div>
-                                                    <span className="font-semibold text-slate-800 dark:text-slate-200 block text-sm">
+                                                    <span className="font-semibold text-foreground block text-base">
                                                         {reason.title}
                                                     </span>
-                                                    <p className="text-sm text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">
+                                                    <p className="text-base text-muted-foreground mt-1 leading-relaxed">
                                                         {reason.description}
                                                     </p>
                                                 </div>
@@ -199,7 +199,7 @@ export const TickerInsightCard: React.FC<TickerInsightCardProps> = ({ insight, e
                                                     <Button
                                                         variant="ghost"
                                                         size="sm"
-                                                        className="text-xs text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 opacity-80 group-hover:opacity-100 transition-opacity shrink-0 flex items-center gap-1"
+                                                        className="text-xs text-sentiment-bull hover:bg-sentiment-bull-soft opacity-80 group-hover:opacity-100 transition-opacity shrink-0 flex items-center gap-1"
                                                         onClick={() => handlePlay(reason.start_time)}
                                                         title="跳轉至音檔"
                                                     >
@@ -216,8 +216,8 @@ export const TickerInsightCard: React.FC<TickerInsightCardProps> = ({ insight, e
 
                         {/* Risks Section */}
                         {displayRisks.length > 0 && (
-                            <div className="bg-red-50/50 dark:bg-red-950/10 rounded-lg p-3 border border-red-100 dark:border-red-900/20">
-                                <h5 className="text-xs font-bold text-red-500/80 uppercase tracking-wider mb-2">
+                            <div className="bg-sentiment-bear-soft/50 rounded-lg p-3 border border-sentiment-bear/20">
+                                <h5 className="text-xs font-bold text-sentiment-bear/80 uppercase tracking-wider mb-2">
                                     風險提示
                                 </h5>
                                 <ul className="space-y-3">
@@ -226,19 +226,19 @@ export const TickerInsightCard: React.FC<TickerInsightCardProps> = ({ insight, e
                                             <div className="flex justify-between items-start gap-2">
                                                 <div>
                                                     <div className="flex items-center gap-2">
-                                                        <span className="font-semibold text-slate-800 dark:text-slate-200 block text-sm">
+                                                        <span className="font-semibold text-foreground block text-base">
                                                             {risk.title}
                                                         </span>
                                                         {risk.severity && (
                                                             <span className={cn(
-                                                                "text-[10px] px-1.5 py-0.5 rounded uppercase font-bold",
-                                                                risk.severity === 'HIGH' ? "bg-red-100 text-red-700" : "bg-orange-100 text-orange-700"
+                                                                "text-2xs px-1.5 py-0.5 rounded uppercase font-bold",
+                                                                risk.severity === 'HIGH' ? "bg-destructive/15 text-destructive" : "bg-sentiment-bear-soft text-sentiment-bear"
                                                             )}>
                                                                 {SEVERITY_LABELS[risk.severity] ?? risk.severity}
                                                             </span>
                                                         )}
                                                     </div>
-                                                    <p className="text-sm text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">
+                                                    <p className="text-base text-muted-foreground mt-1 leading-relaxed">
                                                         {risk.description}
                                                     </p>
                                                 </div>
@@ -246,7 +246,7 @@ export const TickerInsightCard: React.FC<TickerInsightCardProps> = ({ insight, e
                                                     <Button
                                                         variant="ghost"
                                                         size="sm"
-                                                        className="text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 opacity-80 group-hover:opacity-100 transition-opacity shrink-0 flex items-center gap-1"
+                                                        className="text-xs text-sentiment-bear hover:bg-sentiment-bear-soft opacity-80 group-hover:opacity-100 transition-opacity shrink-0 flex items-center gap-1"
                                                         onClick={() => handlePlay(risk.start_time)}
                                                         title="跳轉至音檔"
                                                     >

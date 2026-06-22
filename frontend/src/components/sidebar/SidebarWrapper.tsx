@@ -39,7 +39,7 @@ export const SidebarWrapper: React.FC<SidebarWrapperProps> = ({
               )}
               {subtitle && (
                 <p
-                  className="text-sm mt-1"
+                  className="text-base mt-1"
                   style={{ color: 'var(--text-muted)' }}
                 >
                   {subtitle}
@@ -53,7 +53,7 @@ export const SidebarWrapper: React.FC<SidebarWrapperProps> = ({
             {onClose && (
               <button
                 onClick={onClose}
-                className="p-1.5 rounded-lg transition-colors hover:bg-gray-200 dark:hover:bg-gray-700"
+                className="p-1.5 rounded-lg transition-colors hover:bg-muted"
                 style={{ color: 'var(--text-secondary)' }}
                 aria-label="關閉面板"
               >

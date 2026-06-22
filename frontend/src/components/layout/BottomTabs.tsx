@@ -18,7 +18,7 @@ const TABS: readonly Tab[] = [
   { to: '/stock', label: '個股', icon: LineChart, prefix: true },
   { to: '/picks', label: '走勢', icon: TrendingUp, prefix: true, devOnly: true },
   { to: '/topics', label: '話題', icon: Hash, prefix: true },
-  { to: '/watchlist', label: '自選', icon: Star, prefix: false },
+  { to: '/watchlist', label: '收藏', icon: Star, prefix: false },
 ];
 
 // Mirrors App.tsx route gating: dev-only tabs appear on dev.tinboker.com only.
@@ -48,7 +48,7 @@ export const BottomTabs: React.FC = () => {
               key={t.to}
               to={t.to}
               aria-current={on ? 'page' : undefined}
-              className={cn('flex flex-col items-center gap-0.5 py-2 text-[10px]', on ? 'text-foreground' : 'text-muted-foreground')}
+              className={cn('flex flex-col items-center gap-0.5 py-2 text-2xs', on ? 'text-foreground' : 'text-muted-foreground')}
             >
               <Icon size={22} />
               <span>{t.label}</span>

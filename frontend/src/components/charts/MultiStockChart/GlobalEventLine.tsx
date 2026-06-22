@@ -42,7 +42,7 @@ export const GlobalEventLine: React.FC<GlobalEventLineProps> = ({ x, visible, ev
           }}
         >
           <div className="bg-overlay-bg/90 backdrop-blur-sm px-3 py-1.5 rounded border overlay-border shadow-lg">
-            <span className="text-sm font-medium overlay-text whitespace-nowrap">
+            <span className="text-base font-medium overlay-text whitespace-nowrap">
               {event.title}
             </span>
           </div>

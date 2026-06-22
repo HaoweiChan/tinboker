@@ -24,8 +24,8 @@ export const DevBypass: React.FC = () => {
     apiClient
       .post('/api/auth/dev-token', { token })
       .then((res) => {
-        const { user, token: jwt } = res.data;
-        login(user, jwt);
+        const { user, token: jwt, refresh_token } = res.data;
+        login(user, jwt, refresh_token);
         setStatus('success');
       })
       .catch((err) => {
@@ -39,10 +39,10 @@ export const DevBypass: React.FC = () => {
   return (
     <div className="min-h-screen bg-background flex items-center justify-center">
       {status === 'loading' && (
-        <p className="text-[13px] text-muted-foreground">Authenticating…</p>
+        <p className="text-sm text-muted-foreground">Authenticating…</p>
       )}
       {status === 'error' && (
-        <p className="text-[13px] text-destructive">Dev bypass failed: {errorMsg}</p>
+        <p className="text-sm text-destructive">Dev bypass failed: {errorMsg}</p>
       )}
     </div>
   );

@@ -72,7 +72,7 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({ variant = 'standa
 
   const legendContent = (
     <div className="flex flex-col items-end gap-1">
-      <div className="flex justify-between w-48 text-[10px] uppercase tracking-wider" style={legendTextColor}>
+      <div className="flex justify-between w-48 text-2xs uppercase tracking-wider" style={legendTextColor}>
          <span>Return %</span>
          <span>Market Cap</span>
       </div>
@@ -93,7 +93,7 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({ variant = 'standa
         <div className="px-8 py-6 flex justify-between items-end border-b transition-colors" style={headerSurfaceStyle}>
           <div>
             <h1 className="text-3xl font-bold mb-1" style={{ color: 'var(--text-primary)' }}>Sector Performance</h1>
-            <div className="flex gap-2 text-sm" style={{ color: 'var(--text-muted)' }}>
+            <div className="flex gap-2 text-base" style={{ color: 'var(--text-muted)' }}>
               <span className="text-indigo-500 hover:underline cursor-pointer">Home</span> 
               <span>/</span>
               <span>Industry</span>
@@ -213,7 +213,7 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({ variant = 'standa
                           style={{ backgroundColor: 'var(--bg-surface)', borderColor: 'var(--border-default)' }}
                         >
                            <h3 className="text-xl font-bold mb-2" style={{ color: 'var(--text-primary)' }}>{s.label}</h3>
-                           <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm">
+                           <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-base">
                               <span style={{ color: 'var(--text-muted)' }}>Market Cap</span>
                               <span className="text-right font-mono" style={{ color: 'var(--text-secondary)' }}>{s.marketCap}T</span>
                               
@@ -259,7 +259,7 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({ variant = 'standa
                           boxShadow: `0 0 10px ${visuals.glow}`,
                         }}
                       />
-                      <span className={`text-sm truncate flex-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>{item.label}</span>
+                      <span className={`text-base truncate flex-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>{item.label}</span>
                       <span className={`text-xs font-mono ${(item.returnRate || 0) > 0 ? 'text-emerald-500' : 'text-red-500'}`}>
                           {item.returnRate || 0}%
                       </span>

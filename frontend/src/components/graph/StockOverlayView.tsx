@@ -138,7 +138,7 @@ export const StockOverlayView: React.FC = () => {
             <select
               value={overlayTimeframe}
               onChange={(e) => setOverlayTimeframe(e.target.value as TimeframeOption)}
-              className="overlay-btn px-3 py-2 rounded-lg text-sm font-medium overlay-text cursor-pointer transition-all"
+              className="overlay-btn px-3 py-2 rounded-lg text-base font-medium overlay-text cursor-pointer transition-all"
             >
               {timeframeOptions.map((tf) => (
                 <option key={tf} value={tf}>{tf}</option>

@@ -16,7 +16,7 @@ export const SentimentChip: React.FC<SentimentChipProps> = ({ sentiment, bare = 
   const d = getSentimentDisplay(sentiment, stockColorMode);
   if (!d) return null;
   if (bare) {
-    return <span className={cn('text-[11px] font-medium uppercase tracking-wide', d.toneClass, className)}>{d.label}</span>;
+    return <span className={cn('text-2xs font-medium uppercase tracking-wide', d.toneClass, className)}>{d.label}</span>;
   }
   return <span className={cn(d.chipClass, className)}>{d.label}</span>;
 };

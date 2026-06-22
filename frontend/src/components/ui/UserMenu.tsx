@@ -45,13 +45,13 @@ export const UserMenu: React.FC = () => {
   // Show a placeholder while auth is being validated to prevent flicker
   if (!isAuthReady) {
     return (
-      <div className="w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-700 animate-pulse" />
+      <div className="w-10 h-10 rounded-full bg-muted animate-pulse" />
     );
   }
 
   if (!user) {
     return (
-      <LoginButton className="text-sm font-bold text-slate-600 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-300 dark:hover:text-white px-4 py-2 rounded-lg dark:hover:bg-slate-800 transition">
+      <LoginButton className="text-base font-bold text-muted-foreground hover:text-foreground hover:bg-muted px-4 py-2 rounded-lg transition">
         登入
       </LoginButton>
     );
@@ -62,37 +62,37 @@ export const UserMenu: React.FC = () => {
       {/* Avatar Button */}
       <button 
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center justify-center w-10 h-10 rounded-full bg-gradient-to-tr from-accent-info to-purple-600 border-2 border-slate-200 dark:border-slate-700 hover:opacity-90 transition shadow-lg overflow-hidden"
+        className="flex items-center justify-center w-10 h-10 rounded-full bg-accent-info border-2 border-border hover:opacity-90 transition shadow-lg overflow-hidden"
         aria-label="User Menu"
       >
         {user.avatar ? (
           <img src={user.avatar} alt={`Avatar of ${user.name}`} className="w-full h-full object-cover" loading="lazy" />
         ) : (
-          <span className="text-slate-50 font-financial font-bold text-sm">{user.initials || user.name.charAt(0)}</span>
+          <span className="text-accent-info-foreground font-financial font-bold text-base">{user.initials || user.name.charAt(0)}</span>
         )}
       </button>
 
       {/* Dropdown Menu */}
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-64 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-xl overflow-hidden z-50">
+        <div className="absolute right-0 mt-2 w-64 rounded-xl bg-card border border-border shadow-xl overflow-hidden z-50">
           {/* User Info */}
-          <div className="p-4 border-b border-slate-200 dark:border-slate-700">
-            <div className="font-bold text-slate-900 dark:text-slate-50 text-lg">{user.name}</div>
-            <div className="text-slate-500 dark:text-slate-400 text-sm">{user.email}</div>
+          <div className="p-4 border-b border-border">
+            <div className="font-bold text-foreground text-xl">{user.name}</div>
+            <div className="text-muted-foreground text-base">{user.email}</div>
           </div>
 
           {/* Menu Items */}
           <div className="py-2">
             <button
               onClick={() => handleNavigation('/profile')}
-              className="w-full flex items-center gap-3 px-4 py-3 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-white transition-colors"
+              className="w-full flex items-center gap-3 px-4 py-3 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
             >
               <User size={18} />
               <span>個人檔案</span>
             </button>
             <button
               onClick={() => handleNavigation('/settings')}
-              className="w-full flex items-center gap-3 px-4 py-3 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-white transition-colors"
+              className="w-full flex items-center gap-3 px-4 py-3 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
             >
               <Settings size={18} />
               <span>帳號設定</span>
@@ -102,17 +102,17 @@ export const UserMenu: React.FC = () => {
           {/* Support — surfaces sidebar's 支援 group for mobile (where the
               desktop sidebar isn't visible). Same items show on desktop too;
               the small redundancy with the sidebar makes them more findable. */}
-          <div className="border-t border-slate-200 dark:border-slate-700 py-2">
+          <div className="border-t border-border py-2">
             <button
               onClick={() => handleNavigation('/report')}
-              className="w-full flex items-center gap-3 px-4 py-3 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-white transition-colors"
+              className="w-full flex items-center gap-3 px-4 py-3 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
             >
               <MessageSquareText size={18} />
               <span>意見回饋</span>
             </button>
             <button
               onClick={() => handleNavigation('/about')}
-              className="w-full flex items-center gap-3 px-4 py-3 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-white transition-colors"
+              className="w-full flex items-center gap-3 px-4 py-3 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
             >
               <Info size={18} />
               <span>關於</span>
@@ -120,10 +120,10 @@ export const UserMenu: React.FC = () => {
           </div>
 
           {/* Logout */}
-          <div className="border-t border-slate-200 dark:border-slate-700 py-2">
+          <div className="border-t border-border py-2">
             <button
               onClick={handleLogout}
-              className="w-full flex items-center gap-3 px-4 py-3 text-red-500 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-red-600 dark:hover:text-red-300 transition-colors"
+              className="w-full flex items-center gap-3 px-4 py-3 text-destructive hover:bg-muted hover:text-destructive transition-colors"
             >
               <LogOut size={18} />
               <span>登出</span>

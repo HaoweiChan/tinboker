@@ -75,22 +75,22 @@ export const PipelineTrialSection: React.FC<Props> = ({ availableModels }) => {
   return (
     <div className="space-y-6">
       {/* Run controls */}
-      <div className="rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900">
-        <h3 className="mb-4 text-lg font-semibold text-gray-900 dark:text-white">
+      <div className="rounded-lg border border-border bg-card p-6">
+        <h3 className="mb-4 text-xl font-semibold text-foreground">
           Trial Run — 模型測試
         </h3>
-        <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
+        <p className="mb-4 text-base text-muted-foreground">
           選擇模型和角色，對隨機集數執行一次 LLM 呼叫以預覽輸出品質
         </p>
         <div className="flex flex-wrap items-end gap-4">
           <div>
-            <label className="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">
               模型
             </label>
             <select
               value={selectedModel}
               onChange={(e) => setSelectedModel(e.target.value)}
-              className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+              className="rounded-md border border-input bg-card px-3 py-2 text-base text-foreground"
             >
               {availableModels.map((m) => (
                 <option key={m.id} value={m.id}>
@@ -100,13 +100,13 @@ export const PipelineTrialSection: React.FC<Props> = ({ availableModels }) => {
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">
               角色
             </label>
             <select
               value={selectedRole}
               onChange={(e) => setSelectedRole(e.target.value)}
-              className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+              className="rounded-md border border-input bg-card px-3 py-2 text-base text-foreground"
             >
               {ROLES.map((r) => (
                 <option key={r.id} value={r.id}>
@@ -118,7 +118,7 @@ export const PipelineTrialSection: React.FC<Props> = ({ availableModels }) => {
           <button
             onClick={handleRun}
             disabled={running || !selectedModel}
-            className="flex items-center gap-2 rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex items-center gap-2 rounded-md bg-sentiment-bull px-4 py-2 text-base font-medium text-primary-foreground hover:bg-sentiment-bull/90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {running ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -132,9 +132,9 @@ export const PipelineTrialSection: React.FC<Props> = ({ availableModels }) => {
 
       {/* Results */}
       {runs.length > 0 && (
-        <div className="rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900">
+        <div className="rounded-lg border border-border bg-card p-6">
           <div className="mb-4 flex items-center justify-between">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+            <h3 className="text-xl font-semibold text-foreground">
               測試結果 ({runs.length})
             </h3>
             {runs.length > 3 && (
@@ -145,7 +145,7 @@ export const PipelineTrialSection: React.FC<Props> = ({ availableModels }) => {
                     setRuns([]);
                   }
                 }}
-                className="text-xs text-red-500 hover:text-red-700"
+                className="text-xs text-destructive hover:text-destructive/70"
               >
                 清除全部
               </button>
@@ -155,11 +155,11 @@ export const PipelineTrialSection: React.FC<Props> = ({ availableModels }) => {
             {runs.map((run) => (
               <div
                 key={run.run_id}
-                className="rounded-lg border border-gray-100 dark:border-gray-800"
+                className="rounded-lg border border-border"
               >
                 {/* Run header */}
                 <div
-                  className="flex cursor-pointer items-center justify-between p-3 hover:bg-gray-50 dark:hover:bg-gray-800/50"
+                  className="flex cursor-pointer items-center justify-between p-3 hover:bg-muted/50"
                   onClick={() =>
                     setExpandedRun(expandedRun === run.run_id ? null : run.run_id)
                   }
@@ -167,23 +167,23 @@ export const PipelineTrialSection: React.FC<Props> = ({ availableModels }) => {
                   <div className="flex items-center gap-3">
                     <span
                       className={`inline-block h-2 w-2 rounded-full ${
-                        run.error ? 'bg-red-500' : 'bg-emerald-500'
+                        run.error ? 'bg-destructive' : 'bg-sentiment-bull'
                       }`}
                     />
-                    <span className="font-medium text-gray-800 dark:text-gray-200">
+                    <span className="font-medium text-foreground">
                       {modelLabel(run.model_id)}
                     </span>
-                    <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-500 dark:bg-gray-800">
+                    <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
                       {ROLES.find((r) => r.id === run.role)?.label || run.role}
                     </span>
                     {run.episode_title && (
-                      <span className="max-w-[200px] truncate text-xs text-gray-400">
+                      <span className="max-w-[200px] truncate text-xs text-muted-foreground">
                         {run.episode_title}
                       </span>
                     )}
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className="flex items-center gap-1 text-xs text-gray-500">
+                    <span className="flex items-center gap-1 text-xs text-muted-foreground">
                       <Clock className="h-3 w-3" />
                       {run.elapsed_ms ? `${(run.elapsed_ms / 1000).toFixed(1)}s` : '—'}
                     </span>
@@ -192,7 +192,7 @@ export const PipelineTrialSection: React.FC<Props> = ({ availableModels }) => {
                         e.stopPropagation();
                         handleDelete(run.run_id);
                       }}
-                      className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-900/20"
+                      className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
@@ -201,9 +201,9 @@ export const PipelineTrialSection: React.FC<Props> = ({ availableModels }) => {
 
                 {/* Expanded content */}
                 {expandedRun === run.run_id && (
-                  <div className="border-t border-gray-100 p-4 dark:border-gray-800">
+                  <div className="border-t border-border p-4">
                     {run.error ? (
-                      <pre className="rounded bg-red-50 p-3 text-xs text-red-700 dark:bg-red-900/20 dark:text-red-300">
+                      <pre className="rounded bg-destructive/10 p-3 text-xs text-destructive">
                         {run.error}
                       </pre>
                     ) : run.output ? (
@@ -215,9 +215,9 @@ export const PipelineTrialSection: React.FC<Props> = ({ availableModels }) => {
                               (slide, i) => (
                                 <div
                                   key={i}
-                                  className="rounded-lg border border-gray-700 bg-[#0e1014] p-4"
+                                  className="rounded-lg border border-border bg-[#0e1014] p-4"
                                 >
-                                  <h4 className="mb-2 font-bold text-white">
+                                  <h4 className="mb-2 font-bold text-foreground">
                                     {slide.heading as string}
                                   </h4>
                                   {Array.isArray(slide.bullet_points) && (
@@ -225,7 +225,7 @@ export const PipelineTrialSection: React.FC<Props> = ({ availableModels }) => {
                                       {(slide.bullet_points as string[]).map((bp, j) => (
                                         <li
                                           key={j}
-                                          className="border-l-2 border-blue-500 pl-2 text-xs text-gray-300"
+                                          className="border-l-2 border-accent-info pl-2 text-xs text-muted-foreground"
                                         >
                                           {bp}
                                         </li>
@@ -239,24 +239,24 @@ export const PipelineTrialSection: React.FC<Props> = ({ availableModels }) => {
                         )}
                         {/* Generic JSON output for other roles */}
                         {run.role !== 'marp_writer' && (
-                          <pre className="max-h-[400px] overflow-auto rounded bg-gray-50 p-3 font-mono text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                          <pre className="max-h-[400px] overflow-auto rounded bg-muted p-3 font-mono text-xs text-foreground">
                             {JSON.stringify(run.output, null, 2)}
                           </pre>
                         )}
                         {/* Raw JSON toggle for marp_writer too */}
                         {run.role === 'marp_writer' && (
                           <details className="mt-2">
-                            <summary className="cursor-pointer text-xs text-gray-500">
+                            <summary className="cursor-pointer text-xs text-muted-foreground">
                               顯示原始 JSON
                             </summary>
-                            <pre className="mt-2 max-h-[300px] overflow-auto rounded bg-gray-50 p-3 font-mono text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                            <pre className="mt-2 max-h-[300px] overflow-auto rounded bg-muted p-3 font-mono text-xs text-foreground">
                               {JSON.stringify(run.output, null, 2)}
                             </pre>
                           </details>
                         )}
                       </div>
                     ) : (
-                      <p className="text-sm text-gray-500">無輸出</p>
+                      <p className="text-base text-muted-foreground">無輸出</p>
                     )}
                   </div>
                 )}

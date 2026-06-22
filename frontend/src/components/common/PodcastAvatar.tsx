@@ -17,9 +17,9 @@ export const PodcastAvatar: React.FC<PodcastAvatarProps> = ({ name, src, size = 
 
     const sizeClasses = {
         sm: 'w-8 h-8 text-xs',
-        md: 'w-10 h-10 text-sm',
-        lg: 'w-12 h-12 text-base',
-        xl: 'w-16 h-16 text-lg',
+        md: 'w-10 h-10 text-base',
+        lg: 'w-12 h-12 text-lg',
+        xl: 'w-16 h-16 text-xl',
     };
 
     if (!src || imageError) {
@@ -42,7 +42,7 @@ export const PodcastAvatar: React.FC<PodcastAvatarProps> = ({ name, src, size = 
             src={src}
             alt={name}
             className={cn(
-                'rounded-lg object-cover flex-shrink-0 bg-slate-100',
+                'rounded-lg object-cover flex-shrink-0 bg-muted',
                 sizeClasses[size],
                 className
             )}

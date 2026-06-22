@@ -7,6 +7,7 @@
 
 import axios from 'axios';
 import type { AxiosInstance, AxiosError, AxiosRequestConfig } from 'axios';
+import { toast } from 'sonner';
 
 
 
@@ -175,6 +176,57 @@ export const initializeApiUrl = async (): Promise<string> => {
   return getBaseURL();
 };
 
+// --- Silent token refresh ---------------------------------------------------
+// When an authenticated request 401s because the short-lived access token
+// expired, we transparently exchange the long-lived refresh token for a fresh
+// access token and retry the original request, so the user is never bounced to
+// a re-login. Concurrent 401s share a single in-flight refresh (single-flight)
+// to avoid a refresh stampede.
+
+// Auth endpoints where a 401 means "bad credentials", not "expired access
+// token" — refreshing there would loop or mask a real failure.
+const NO_REFRESH_PATHS = ['/api/auth/refresh', '/api/auth/google', '/api/auth/dev-token', '/api/auth/logout'];
+
+let refreshPromise: Promise<string | null> | null = null;
+
+// Perform the refresh exchange. Uses a bare axios call (not apiClient) so it
+// never re-enters this interceptor. Returns the new access token, or null if
+// refresh is impossible (no/expired refresh token).
+const performTokenRefresh = async (): Promise<string | null> => {
+  // Lazy import avoids a static import cycle (store → userApi → client → store).
+  const { useAppStore } = await import('@/store/useAppStore');
+  const refreshToken = useAppStore.getState().refreshToken;
+  if (!refreshToken) return null;
+
+  try {
+    const response = await axios.post(
+      `${getBaseURL()}/api/auth/refresh`,
+      { refresh_token: refreshToken },
+      { headers: { 'Content-Type': 'application/json' }, timeout: 15000 },
+    );
+    const newToken: string | undefined = response.data?.token;
+    const newRefresh: string | undefined = response.data?.refresh_token;
+    if (!newToken) return null;
+    useAppStore.setState({
+      token: newToken,
+      ...(newRefresh ? { refreshToken: newRefresh } : {}),
+    });
+    return newToken;
+  } catch {
+    return null;
+  }
+};
+
+// Single-flight wrapper around performTokenRefresh.
+const refreshAccessToken = (): Promise<string | null> => {
+  if (!refreshPromise) {
+    refreshPromise = performTokenRefresh().finally(() => {
+      refreshPromise = null;
+    });
+  }
+  return refreshPromise;
+};
+
 // Create axios instance with default configuration
 const createApiClient = (): AxiosInstance => {
   const client = axios.create({
@@ -223,7 +275,7 @@ const createApiClient = (): AxiosInstance => {
       }
       return response;
     },
-    (error: AxiosError) => {
+    async (error: AxiosError) => {
       // Check for silent mode (suppress error logging)
       // We check config headers or a custom config property if we cast it
       const isSilent = (error.config?.headers as any)?.['X-Silent-Error'] === 'true' || (error.config as any)?.silent === true;
@@ -248,6 +300,39 @@ const createApiClient = (): AxiosInstance => {
           hasResponse: !!error.response,
           hasRequest: !!error.request,
         });
+      }
+
+      // Handle expired access token: try a silent refresh, then replay the
+      // original request once. If refresh fails, the refresh token is gone or
+      // expired too — clear the session and prompt re-login.
+      const originalRequest = error.config as (AxiosRequestConfig & { _retry?: boolean }) | undefined;
+      const requestUrl = originalRequest?.url ?? '';
+      const isRefreshable =
+        error.response?.status === 401 &&
+        !!originalRequest &&
+        !originalRequest._retry &&
+        !NO_REFRESH_PATHS.some((p) => requestUrl.includes(p));
+
+      if (isRefreshable && originalRequest) {
+        originalRequest._retry = true;
+        const newToken = await refreshAccessToken();
+        if (newToken) {
+          originalRequest.headers = {
+            ...(originalRequest.headers as Record<string, string> | undefined),
+            Authorization: `Bearer ${newToken}`,
+          };
+          return apiClient(originalRequest);
+        }
+
+        // Refresh failed — only force logout if we actually held a session.
+        const { useAppStore } = await import('@/store/useAppStore');
+        if (useAppStore.getState().token) {
+          useAppStore.getState().logout();
+          toast.error('登入已過期，請重新登入', {
+            action: { label: '重新登入', onClick: () => { window.location.href = '/'; } },
+          });
+        }
+        return Promise.reject(error);
       }
 
       // Handle network errors (CORS, connection refused, etc.)

@@ -22,7 +22,7 @@ export const Change: React.FC<ChangeProps> = ({ value, big = false, className })
     <span
       className={cn(
         'font-mono tabular-nums font-medium',
-        big ? 'text-[18px]' : 'text-[13px]',
+        big ? 'text-xl' : 'text-sm',
         has ? trend.text : 'text-muted-foreground',
         className,
       )}

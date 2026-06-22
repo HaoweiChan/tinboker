@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Home, Mic, LineChart, TrendingUp, Hash, Info, MessageSquareText, Bookmark } from 'lucide-react';
+import { Home, Mic, LineChart, TrendingUp, Hash, Info, MessageSquareText, Bookmark, Headphones, Heart, Bell } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { AppLogo } from '@/components/logo/AppLogo';
 import { useUser } from '@/store/useAppStore';
@@ -42,11 +42,11 @@ const SECTIONS: readonly NavSection[] = [
     ],
   },
   {
-    title: '我的',
+    title: '收藏',
     items: [
-      { to: '/profile?tab=podcasters', label: '訂閱節目', icon: Mic, tab: 'podcasters' },
-      { to: '/profile?tab=tickers', label: '自選個股', icon: LineChart, tab: 'tickers' },
-      { to: '/profile?tab=topics', label: '追蹤話題', icon: Hash, tab: 'topics' },
+      { to: '/profile?tab=podcasters', label: '訂閱節目', icon: Headphones, tab: 'podcasters' },
+      { to: '/profile?tab=tickers', label: '自選個股', icon: Heart, tab: 'tickers' },
+      { to: '/profile?tab=topics', label: '追蹤話題', icon: Bell, tab: 'topics' },
       { to: '/profile?tab=episodes', label: '收藏集數', icon: Bookmark, tab: 'episodes' },
     ],
   },
@@ -87,7 +87,7 @@ export const Sidebar: React.FC = () => {
         aria-current={active ? 'page' : undefined}
         title={!expanded ? item.label : undefined}
         className={cn(
-          'flex items-center gap-3.5 px-2.5 py-2.5 rounded-lg text-[14px] font-medium transition-colors',
+          'flex items-center gap-3.5 px-2.5 py-2.5 rounded-lg text-base font-medium transition-colors',
           !expanded && 'justify-center px-0',
           active ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground',
         )}
@@ -132,7 +132,7 @@ export const Sidebar: React.FC = () => {
         {SECTIONS.map((section) => (
           <div key={section.title}>
             {expanded ? (
-              <div className="text-[10px] font-semibold tracking-[0.09em] uppercase text-muted-foreground/80 px-2.5 pt-6 pb-2">
+              <div className="text-2xs font-semibold tracking-[0.09em] uppercase text-muted-foreground/80 px-2.5 pt-6 pb-2">
                 {section.title}
               </div>
             ) : (
@@ -155,7 +155,7 @@ export const Sidebar: React.FC = () => {
                 expanded ? 'px-1.5 py-1' : 'justify-center px-0 py-1',
               )}
             >
-              <span className="w-7 h-7 rounded-full overflow-hidden grid place-items-center text-[11px] font-semibold text-white shrink-0 bg-accent-info">
+              <span className="w-7 h-7 rounded-full overflow-hidden grid place-items-center text-2xs font-semibold text-white shrink-0 bg-accent-info">
                 {user.avatar ? (
                   <img
                     src={user.avatar}
@@ -169,19 +169,19 @@ export const Sidebar: React.FC = () => {
               </span>
               {expanded && (
                 <span className="min-w-0">
-                  <span className="block text-[13px] font-medium truncate">{user.name || '使用者'}</span>
-                  <span className="block text-[11px] text-muted-foreground truncate">{user.email}</span>
+                  <span className="block text-sm font-medium truncate">{user.name || '使用者'}</span>
+                  <span className="block text-2xs text-muted-foreground truncate">{user.email}</span>
                 </span>
               )}
             </Link>
           ) : (
-            expanded && <span className="block px-1.5 text-[12px] text-muted-foreground">尚未登入</span>
+            expanded && <span className="block px-1.5 text-xs text-muted-foreground">尚未登入</span>
           )}
         </div>
 
         {/* App version */}
         {expanded && (
-          <div className="px-2.5 pt-3 text-[10px] text-muted-foreground/50 tracking-wide tabular-nums">
+          <div className="px-2.5 pt-3 text-2xs text-muted-foreground/50 tracking-wide tabular-nums">
             {__APP_VERSION__}
           </div>
         )}

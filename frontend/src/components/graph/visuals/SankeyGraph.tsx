@@ -149,7 +149,7 @@ const SankeyGraph: React.FC<SankeyGraphProps> = ({ isWidget = false, data, title
         <div className="mb-6">
           <p className="text-xs uppercase tracking-[0.3em] text-brand-yellow">Capital Flow</p>
           <h2 className="text-2xl font-bold">{title || "D. Investment Portfolio (Sankey)"}</h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400">
+          <p className="text-base text-slate-500 dark:text-slate-400">
             {description || "Visualizing capital allocation magnitude. Line width equals investment size."}
           </p>
         </div>
@@ -188,8 +188,8 @@ const SankeyGraph: React.FC<SankeyGraphProps> = ({ isWidget = false, data, title
             }}
             nodeTooltip={({ node }) => (
               <div className="max-w-xs space-y-1">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">Node</p>
-                <p className="text-sm font-bold">{String(node.id)}</p>
+                <p className="text-2xs font-semibold uppercase tracking-[0.2em] text-slate-400">Node</p>
+                <p className="text-base font-bold">{String(node.id)}</p>
                 <p className="text-xs text-slate-500 dark:text-slate-400">{Math.round(Number(node.value))} allocation points</p>
               </div>
             )}
@@ -216,8 +216,8 @@ const SankeyGraph: React.FC<SankeyGraphProps> = ({ isWidget = false, data, title
           >
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">Node Overview</p>
-                <h3 className="text-lg font-bold mt-1">{activeNode.id}</h3>
+                <p className="text-2xs font-semibold uppercase tracking-[0.2em] text-slate-400">Node Overview</p>
+                <h3 className="text-xl font-bold mt-1">{activeNode.id}</h3>
                 <div className="mt-1 flex items-center gap-2">
                   <span className={`px-2 py-0.5 rounded-md text-xs font-mono ${symbolBadgeClass}`}>
                     {getTicker(activeNode.id, activeNode)}
@@ -238,14 +238,14 @@ const SankeyGraph: React.FC<SankeyGraphProps> = ({ isWidget = false, data, title
             </div>
             
             {/* Simplified dynamic content since hardcoded profiles are removed */}
-            <p className={`mt-4 text-sm ${overviewCopyClass}`}>
+            <p className={`mt-4 text-base ${overviewCopyClass}`}>
                {activeNode.overview || `Investment flow analysis for ${activeNode.id}.`}
             </p>
             
             <button
               type="button"
               onClick={handleNavigate}
-              className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-slate-50 shadow-lg hover:bg-indigo-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+              className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-4 py-2 text-base font-semibold text-slate-50 shadow-lg hover:bg-indigo-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
             >
               Dashboard
               <ArrowUpRight size={16} />

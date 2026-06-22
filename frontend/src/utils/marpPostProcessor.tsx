@@ -74,7 +74,7 @@ export const PostProcessedSlide: React.FC<PostProcessedSlideProps> = ({
                 navigate(`/stock/${symbol}`);
               }
             }}
-            className="inline text-amber-600 dark:text-amber-400 font-medium cursor-pointer hover:underline transition-all"
+            className="inline text-primary font-medium cursor-pointer hover:underline transition-all"
           >
             {textContent}
           </StockHoverCard>
@@ -101,7 +101,7 @@ export const PostProcessedSlide: React.FC<PostProcessedSlideProps> = ({
                 navigate(`/tag/${encodeURIComponent(tag)}`);
               }
             }}
-            className="inline-flex mx-1 px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 text-xs font-semibold cursor-pointer hover:bg-indigo-200 dark:hover:bg-indigo-500/30 transition-colors border border-indigo-200 dark:border-indigo-500/30 align-middle"
+            className="inline-flex mx-1 px-2 py-0.5 rounded-full bg-accent-info-soft text-accent-info text-xs font-semibold cursor-pointer hover:bg-accent-info/25 transition-colors border border-accent-info/30 align-middle"
           >
             {textContent}
           </span>
@@ -139,7 +139,7 @@ export const PostProcessedSlide: React.FC<PostProcessedSlideProps> = ({
                 }
               }
             }}
-            className="inline-flex mx-1 ml-2 px-2.5 py-0.5 rounded-full border border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400 text-xs font-financial cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-50 transition-colors items-center gap-1 align-middle translate-y-[-3px]"
+            className="inline-flex mx-1 ml-2 px-2.5 py-0.5 rounded-full border border-border text-muted-foreground text-xs font-financial cursor-pointer hover:bg-muted hover:text-foreground transition-colors items-center gap-1 align-middle translate-y-[-3px]"
             title={`跳轉至 ${textContent}`}
           >
             <Play size={10} className="fill-current" />

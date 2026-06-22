@@ -23,17 +23,17 @@ const ArticleCard: React.FC<{ article: ArticleListItem }> = ({ article }) => (
         loading="lazy"
       />
     )}
-    <h3 className="text-[16px] font-medium leading-[1.35] tracking-[-0.005em] mb-2 text-foreground line-clamp-2">
+    <h3 className="text-lg font-medium leading-[1.35] tracking-[-0.005em] mb-2 text-foreground line-clamp-2">
       {article.title}
     </h3>
     {article.subtitle && (
-      <p className="text-[13px] text-muted-foreground mb-2 line-clamp-2">{article.subtitle}</p>
+      <p className="text-sm text-muted-foreground mb-2 line-clamp-2">{article.subtitle}</p>
     )}
     {article.key_points && article.key_points.length > 0 && (
-      <ul className="grid gap-1 text-[13px] leading-[1.5] text-muted-foreground mb-3">
+      <ul className="grid gap-1 text-sm leading-[1.5] text-muted-foreground mb-3">
         {article.key_points.slice(0, 2).map((point, i) => (
           <li key={i} className="grid grid-cols-[10px_1fr] gap-2">
-            <span className="mt-[7px] h-1.5 w-1.5 rounded-full bg-emerald-500/90 shrink-0" />
+            <span className="mt-[7px] h-1.5 w-1.5 rounded-full bg-accent-info shrink-0" />
             <span className="line-clamp-1">{point}</span>
           </li>
         ))}
@@ -42,13 +42,13 @@ const ArticleCard: React.FC<{ article: ArticleListItem }> = ({ article }) => (
     {article.tags && article.tags.length > 0 && (
       <div className="flex gap-1.5 flex-wrap mb-3">
         {article.tags.slice(0, 4).map((tag) => (
-          <span key={tag} className="text-[11px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+          <span key={tag} className="text-2xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
             #{tag}
           </span>
         ))}
       </div>
     )}
-    <div className="flex items-center gap-2.5 pt-2.5 border-t border-border text-[12px] text-muted-foreground">
+    <div className="flex items-center gap-2.5 pt-2.5 border-t border-border text-xs text-muted-foreground">
       <span>{article.author_name}</span>
       {article.published_at && (
         <>
@@ -83,8 +83,8 @@ export const ArticleList: React.FC = () => {
   return (
     <PageContent>
       <header className="mb-6">
-        <h1 className="text-[24px] sm:text-[28px] font-bold tracking-[-0.02em]">文章</h1>
-        <p className="text-[14px] text-muted-foreground mt-1">深度分析與市場觀察</p>
+        <h1 className="text-2xl sm:text-3xl font-bold tracking-[-0.02em]">文章</h1>
+        <p className="text-base text-muted-foreground mt-1">深度分析與市場觀察</p>
       </header>
 
       {loading ? (

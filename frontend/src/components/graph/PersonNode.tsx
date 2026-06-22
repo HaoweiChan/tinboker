@@ -23,7 +23,7 @@ const PersonNode = ({ data }: NodeProps<CompanyData>) => {
       
       <div className="flex flex-col">
         <span className="text-xs font-bold leading-none">{data.label}</span>
-        <span className="text-[8px] opacity-70 uppercase tracking-wide leading-none mt-0.5">
+        <span className="text-2xs opacity-70 uppercase tracking-wide leading-none mt-0.5">
           {isInvestor ? 'Global Investor' : 'Board Member'}
         </span>
       </div>

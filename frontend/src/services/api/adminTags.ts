@@ -12,11 +12,14 @@ function adminAuthConfig() {
 }
 
 export interface AdminTagEntry {
-  id: number;
+  /** null for VIRTUAL rows — auto-surfaced tags not yet in the registry. */
+  id: number | null;
   slug: string;
   display_zh: string;
   tier: string;
   kind: string;
+  /** false = virtual (no registry row); hiding it creates the row. */
+  registered?: boolean;
   exposure_id?: string | null;
   icon_id?: string | null;
   color_hex?: string | null;

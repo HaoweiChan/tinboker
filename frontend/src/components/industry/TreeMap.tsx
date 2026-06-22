@@ -70,7 +70,7 @@ const Tooltip = ({ item, position, isDark }: { item: TreeMapItem, position: { x:
                  <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-0.5">
                      {item.ticker ? 'Stock' : 'Sector'}
                  </div>
-                 <h3 className={`font-bold text-sm leading-tight ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>{item.name}</h3>
+                 <h3 className={`font-bold text-base leading-tight ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>{item.name}</h3>
             </div>
 
             {/* Body */}
@@ -78,7 +78,7 @@ const Tooltip = ({ item, position, isDark }: { item: TreeMapItem, position: { x:
                  <div className="flex items-center justify-between text-white mb-2">
                      <span className="text-2xl font-bold">{item.ticker || 'IDX'}</span>
                      <div className="text-right">
-                         <div className="text-lg font-bold leading-none">{item.change > 0 ? '+' : ''}{item.change.toFixed(2)}%</div>
+                         <div className="text-xl font-bold leading-none">{item.change > 0 ? '+' : ''}{item.change.toFixed(2)}%</div>
                          <div className="text-xs opacity-80">{item.price ? `$${item.price}` : ''}</div>
                      </div>
                  </div>
@@ -140,12 +140,12 @@ const TreeMapTile: React.FC<TreeMapTileProps> = ({
                 onMouseLeave={onLeave}
             >
                 <div className="absolute inset-0 flex flex-col items-center justify-center p-1 text-center">
-                    <span className="text-white font-bold text-sm drop-shadow-md leading-none truncate w-full">
+                    <span className="text-white font-bold text-base drop-shadow-md leading-none truncate w-full">
                         {item.ticker}
                     </span>
                     {/* Only show percent if box is big enough */}
                     {item.value > 200 && (
-                        <span className="text-white text-[10px] font-medium drop-shadow-md mt-0.5">
+                        <span className="text-white text-2xs font-medium drop-shadow-md mt-0.5">
                             {item.change > 0 ? '+' : ''}{item.change.toFixed(2)}%
                         </span>
                     )}
@@ -166,7 +166,7 @@ const TreeMapTile: React.FC<TreeMapTileProps> = ({
         >
             {/* Header for Sector/Industry */}
             <div className={`border-b px-2 py-1 ${isDark ? 'bg-slate-800 border-white/10' : 'bg-slate-50 border-slate-200'}`}>
-                <span className={`text-[10px] font-bold uppercase tracking-wider truncate block ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
+                <span className={`text-2xs font-bold uppercase tracking-wider truncate block ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
                     {item.name}
                 </span>
             </div>

@@ -66,6 +66,7 @@ export const GoogleLoginButton: React.FC<GoogleLoginButtonProps> = ({ className,
               .slice(0, 2),
           },
           appToken,
+          authResponse.refresh_token,
         );
 
         useAppStore.setState({

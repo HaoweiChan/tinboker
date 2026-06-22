@@ -34,7 +34,7 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({ items, className = '' 
         </script>
       </Helmet>
 
-      <nav aria-label="Breadcrumb" className={`text-sm text-slate-500 dark:text-slate-400 min-w-0 ${className}`}>
+      <nav aria-label="Breadcrumb" className={`text-base text-muted-foreground min-w-0 ${className}`}>
         <ol className="flex items-center flex-nowrap gap-1 md:gap-2 min-w-0 w-full whitespace-nowrap !m-0 !p-0">
           {/* Home Link */}
           <li className="flex items-center flex-shrink-0 !m-0 !p-0">
@@ -53,7 +53,7 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({ items, className = '' 
 
             return (
               <li key={index} className={`flex items-center !m-0 !p-0 ${isLast ? 'flex-1 min-w-0' : 'flex-shrink-0'}`}>
-                <ChevronRight size={14} className="text-slate-400 dark:text-slate-600 mx-1 flex-shrink-0" />
+                <ChevronRight size={14} className="text-muted-foreground mx-1 flex-shrink-0" />
                 {item.href && !isLast ? (
                   <Link
                     to={item.href}
@@ -63,7 +63,7 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({ items, className = '' 
                   </Link>
                 ) : (
                   <span
-                    className={`font-medium truncate block flex-1 min-w-0 ${isLast ? 'text-slate-900 dark:text-slate-200' : ''}`}
+                    className={`font-medium truncate block flex-1 min-w-0 ${isLast ? 'text-foreground' : ''}`}
                     aria-current={isLast ? 'page' : undefined}
                     title={item.label}
                   >

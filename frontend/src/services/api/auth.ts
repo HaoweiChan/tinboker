@@ -18,6 +18,7 @@ export interface AuthResponse {
     tag_subscriptions?: string[];
   };
   token: string;
+  refresh_token?: string;
 }
 
 export const authApi = {

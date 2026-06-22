@@ -273,7 +273,7 @@ export const PriceChart: React.FC<PriceChartProps> = ({ data, ticker }) => {
           className="absolute left-4 top-3 z-10 text-xs font-semibold pointer-events-none select-none space-y-0.5"
         />
         {!formattedData.length && (
-          <div className="absolute inset-0 flex items-center justify-center text-sm text-foreground/70">
+          <div className="absolute inset-0 flex items-center justify-center text-base text-foreground/70">
             No price data available
           </div>
         )}
