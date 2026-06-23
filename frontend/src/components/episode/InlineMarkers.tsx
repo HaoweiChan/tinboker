@@ -1,5 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import { normalizeCjkMarkerSpacing } from '@/utils/summaryParser';
 
 /** Inline link markers the agents pipeline emits inside summaries / insights:
  *    [label](#ticker:SYMBOL) -> stock page link
@@ -12,6 +13,7 @@ const LINK_CLASS = 'text-accent-info hover:underline font-medium';
 
 export const MentionText: React.FC<{ text: string }> = ({ text }) => {
   if (!text) return null;
+  text = normalizeCjkMarkerSpacing(text);
   const parts: React.ReactNode[] = [];
   const re = new RegExp(MARKDOWN_LINK);
   let last = 0;

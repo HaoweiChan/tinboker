@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Link } from 'react-router-dom';
 import { isRealTimeMarker } from '@/utils/parseTimestampedSections';
+import { normalizeCjkMarkerSpacing } from '@/utils/summaryParser';
 
 /** Render an episode summary as structured markdown, preserving heading levels and
  *  paragraphs, and turning the agents pipeline's inline markers into rich elements:
@@ -32,12 +33,14 @@ export const SummaryMarkdown: React.FC<SummaryMarkdownProps> = ({ content, onSee
   // (with the formatted time as the label) — then the custom anchor renderer below
   // turns them into clickable badges.
   const prepared = useMemo(
-    () => (content || '').replace(/\s*\(#time:(\d+)\)/g, (_match, ms) => {
-      // Drop ordinal/placeholder markers (the legacy writer-LLM bug) so they don't
-      // render as bogus 00:00 badges; keep real offsets as clickable links.
-      if (!isRealTimeMarker(Number(ms))) return '';
-      return ` [${formatTimestamp(Number(ms))}](#time:${ms})`;
-    }),
+    () => normalizeCjkMarkerSpacing(
+      (content || '').replace(/\s*\(#time:(\d+)\)/g, (_match, ms) => {
+        // Drop ordinal/placeholder markers (the legacy writer-LLM bug) so they don't
+        // render as bogus 00:00 badges; keep real offsets as clickable links.
+        if (!isRealTimeMarker(Number(ms))) return '';
+        return ` [${formatTimestamp(Number(ms))}](#time:${ms})`;
+      }),
+    ),
     [content],
   );
 
