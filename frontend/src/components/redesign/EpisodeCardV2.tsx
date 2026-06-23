@@ -75,7 +75,7 @@ export const EpisodeCardV2: React.FC<EpisodeCardV2Props> = ({
         ) : (
           <PodMark label={podcasterInitial} kind={highlight ? 'solid' : podcasterKind} size={28} />
         )}
-        <div className="min-w-0 flex-1 text-sm truncate">
+        <div className="min-w-0 flex-1 text-base truncate">
           <span className="font-semibold text-foreground">{podcasterName}</span>
           <span className="text-muted-foreground ml-1.5">
             {episodeNumber ? `${episodeNumber} · ` : ''}
@@ -93,11 +93,11 @@ export const EpisodeCardV2: React.FC<EpisodeCardV2Props> = ({
       </div>
 
       {/* Title */}
-      <h3 className="text-lg font-medium leading-[1.35] tracking-[-0.005em] mb-2 text-foreground line-clamp-2">{title}</h3>
+      <h3 className="text-xl font-medium leading-[1.35] tracking-[-0.005em] mb-2 text-foreground line-clamp-2">{title}</h3>
 
       {/* Essence — precomputed key-insight bullets, else the plain teaser */}
       {keyInsights && keyInsights.length > 0 ? (
-        <ul className="grid gap-1 text-sm leading-[1.5] text-muted-foreground mb-3.5">
+        <ul className="grid gap-1 text-base leading-[1.5] text-muted-foreground mb-3.5">
           {keyInsights.slice(0, 3).map((insight, i) => (
             <li key={i} className="grid grid-cols-[10px_1fr] gap-2">
               <span className="mt-[7px] h-1.5 w-1.5 rounded-full bg-accent-info shrink-0" />
@@ -106,7 +106,7 @@ export const EpisodeCardV2: React.FC<EpisodeCardV2Props> = ({
           ))}
         </ul>
       ) : (
-        summary && <p className="text-sm leading-[1.55] text-muted-foreground mb-3.5 line-clamp-2">{summary}</p>
+        summary && <p className="text-base leading-[1.55] text-muted-foreground mb-3.5 line-clamp-2">{summary}</p>
       )}
 
       {/* Ticker rows */}

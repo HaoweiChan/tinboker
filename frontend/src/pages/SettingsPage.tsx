@@ -72,6 +72,8 @@ export const SettingsPage: React.FC = () => {
   const setTheme = useAppStore((s) => s.setTheme);
   const stockColorMode = useStockColorMode();
   const setStockColorMode = useSetStockColorMode();
+  const fontSize = useAppStore((s) => s.fontSize);
+  const setFontSize = useAppStore((s) => s.setFontSize);
 
   const [prefs, setPrefs] = useState<NotificationPreferences>({ new_episodes: true, stock_mentions: true, price_alerts: true, daily_digest: false });
   const [loadingPrefs, setLoadingPrefs] = useState(false);
@@ -121,6 +123,24 @@ export const SettingsPage: React.FC = () => {
             label="深色模式"
             hint="切換介面為深色背景顯示。"
             control={<Toggle checked={theme === 'dark'} onChange={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label="深色模式" />}
+          />
+          <SettingsRow
+            label="字體大小"
+            hint="調整全站文字大小。"
+            control={
+              <div className="flex gap-1">
+                {(['sm', 'base', 'lg'] as const).map((s, i) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setFontSize(s)}
+                    className={cn('px-3 py-1.5 rounded text-sm font-medium transition-colors border', fontSize === s ? 'bg-foreground text-background border-foreground' : 'bg-muted text-muted-foreground border-border hover:border-foreground/30')}
+                  >
+                    {['小', '中', '大'][i]}
+                  </button>
+                ))}
+              </div>
+            }
             last
           />
         </SettingsSection>
