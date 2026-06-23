@@ -38,6 +38,7 @@ import { DevBypass } from '@/pages/DevBypass';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { GlobalPlayer } from '@/components/player/GlobalPlayer';
 import { PlayerConfirmationModal } from '@/components/player/PlayerConfirmationModal';
+import { useEffect } from 'react';
 import { useAuthInit } from '@/hooks/useAuthInit';
 import { useAppStore } from '@/store/useAppStore';
 import { EnvGate } from '@/components/auth/EnvGate';
@@ -68,6 +69,10 @@ function App() {
   // Validate stored auth token on app initialization
   useAuthInit();
   const theme = useAppStore((state) => state.theme);
+  const fontSize = useAppStore((state) => state.fontSize);
+  useEffect(() => {
+    document.documentElement.style.fontSize = { sm: '14px', base: '16px', lg: '18px' }[fontSize ?? 'base'];
+  }, [fontSize]);
 
   return (
     <BrowserRouter>
