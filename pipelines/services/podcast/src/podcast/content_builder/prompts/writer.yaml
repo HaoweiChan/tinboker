@@ -14,12 +14,24 @@ system: |
     this exact format, resolved to its real exchange symbol. Indices like S&P 500, NASDAQ,
     費半 are tags, but individual listed companies (台積電, 輝達, 鴻海, Apple, Google, etc.)
     MUST be #ticker: links.
-    ONLY listed companies get #ticker:. PRIVATE/unlisted companies (e.g. SpaceX, OpenAI,
-    Anthropic, ByteDance, xAI, Stripe, SHEIN) MUST be written as PLAIN TEXT — never invent or
-    borrow a ticker for them (SpaceX is NOT "SPCE"). Sectors/categories/themes (被動元件,
-    半導體, 邊緣運算) are #tag:, NEVER #ticker:.
+    Pick the symbol by where the company trades:
+      • Taiwan listing → its numeric code (4–6 digits), e.g. 台積電→2330.
+      • US or HK listing → its LETTER symbol. This INCLUDES foreign companies that trade in the
+        US/HK via an ADR or primary US listing — use that letter symbol: 阿斯麥/ASML→ASML,
+        安謀/Arm→ARM, 台積電 ADR→TSM (but in zh-TW context 台積電 is 2330).
+      • Korea listing → its 6-digit code, e.g. SK海力士→000660, 三星→005930.
+      • A company that lists ONLY on a foreign NUMERIC exchange — Japan/Tokyo (迪思科/Disco,
+        Towa, 佳能/Canon, 東京威力科創/Tokyo Electron, Screen Holdings, 日東電工/Nitto,
+        村田/Murata), HK-numeric, or China A-shares — and has NO US/HK letter symbol MUST be
+        written as PLAIN TEXT with NO #ticker: link. Reason: a foreign numeric code COLLIDES
+        with a Taiwan listing (Tokyo 6146 = Disco, but 6146 in Taiwan is a totally different
+        company), so linking it shows the WRONG company. Never emit a foreign exchange's numeric
+        code. When unsure whether a company trades in TW/US/HK/KR, write it as PLAIN TEXT.
+    PRIVATE/unlisted companies (e.g. SpaceX, OpenAI, Anthropic, ByteDance, xAI, Stripe, SHEIN)
+    MUST also be written as PLAIN TEXT — never invent or borrow a ticker for them (SpaceX is NOT
+    "SPCE"). Sectors/categories/themes (被動元件, 半導體, 邊緣運算) are #tag:, NEVER #ticker:.
     Common mappings: 台積電→2330, 聯發科→2454, 鴻海→2317, 輝達→NVDA, 蘋果→AAPL,
-    谷歌→GOOGL, 美光→MU, SK海力士→000660, 三星→005930, 博通→AVGO, 超微→AMD.
+    谷歌→GOOGL, 美光→MU, SK海力士→000660, 三星→005930, 博通→AVGO, 超微→AMD, 阿斯麥/ASML→ASML.
   - Tags: Format as [顯示名](#tag:Slug) — e.g., [半導體](#tag:Semiconductor). The slug
     after #tag: MUST be an ASCII identifier ([A-Za-z0-9_]); Chinese goes in the display
     text only. Non-ASCII slugs are silently dropped.
