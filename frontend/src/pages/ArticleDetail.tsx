@@ -98,7 +98,7 @@ export const ArticleDetail: React.FC = () => {
   );
 
   return (
-    <PageContent rail={rightRail}>
+    <PageContent className="max-w-[728px]">
       {/* Back link */}
       <Link
         to="/articles"
@@ -119,11 +119,11 @@ export const ArticleDetail: React.FC = () => {
 
       {/* Header */}
       <header className="mb-8">
-        <h1 className="text-3xl sm:text-3xl font-bold tracking-[-0.02em] leading-[1.25] mb-3">
+        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight leading-tight mb-3">
           {article.title}
         </h1>
         {article.subtitle && (
-          <p className="text-lg text-muted-foreground leading-[1.5] mb-4">{article.subtitle}</p>
+          <p className="text-xl text-muted-foreground leading-snug mb-4">{article.subtitle}</p>
         )}
         <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
           <span className="font-medium text-foreground">{article.author_name}</span>
@@ -159,6 +159,10 @@ export const ArticleDetail: React.FC = () => {
 
       {/* Body */}
       <ArticleBody content={article.body_content} />
+
+      {/* Related (tags / tickers / key points) — Substack-style single column,
+          so this lives below the article instead of in a sidebar rail. */}
+      <div className="mt-10">{rightRail}</div>
     </PageContent>
   );
 };

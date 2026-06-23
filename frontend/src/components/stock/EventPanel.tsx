@@ -130,7 +130,7 @@ export const EventPanel: React.FC<EventPanelProps> = ({ tickers }) => {
                       
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between mb-1">
-                          <h4 className="overlay-text font-semibold text-base truncate">{event.title}</h4>
+                          <h4 className="overlay-text font-semibold text-lg truncate">{event.title}</h4>
                           <span className="text-xs overlay-text-secondary ml-2 whitespace-nowrap">
                             {formatDate(event.date)}
                           </span>
@@ -142,7 +142,7 @@ export const EventPanel: React.FC<EventPanelProps> = ({ tickers }) => {
                           {event.relatedTickers.map((ticker) => (
                             <span
                               key={ticker}
-                              className="px-2 py-0.5 overlay-tag text-xs rounded"
+                              className="px-2 py-0.5 overlay-tag text-2xs rounded"
                             >
                               {ticker}
                             </span>

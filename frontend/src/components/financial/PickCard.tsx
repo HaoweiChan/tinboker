@@ -146,7 +146,7 @@ export const PickCard: React.FC<PickCardProps> = ({
 
       {/* Thesis + expand toggle */}
       {pick.bluf_thesis && (
-        <p className={cn('text-sm text-muted-foreground leading-relaxed mt-2', !expanded && 'line-clamp-2')}>
+        <p className={cn('text-base text-muted-foreground leading-relaxed mt-2', !expanded && 'line-clamp-2')}>
           {pick.bluf_thesis}
         </p>
       )}

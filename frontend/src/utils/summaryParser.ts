@@ -1,4 +1,21 @@
 
+// The agents pipeline pads terms with ASCII spaces — sometimes as markdown markers
+// ("對 [經濟衰退](#tag:x) 的", in summaries) and sometimes as plain prose ("對 經濟衰退 的",
+// in key-insight cards). Natural in markdown, but the spaces read as odd gaps in CJK
+// prose. Strip a space when both sides are CJK (incl. one hugging a CJK-labelled
+// marker). Spaces around Latin labels (AI, SpaceX, HBM) are left alone on purpose —
+// that CJK↔Latin gap is correct typography.
+const CJK = '\\u4e00-\\u9fff\\u3000-\\u303f\\uff00-\\uffef';
+const LEADING = new RegExp(`([${CJK}])[ \\t]+(\\[[${CJK}])`, 'g');
+const TRAILING = new RegExp(`([${CJK}]\\]\\([^)]*\\))[ \\t]+([${CJK}])`, 'g');
+// Lookahead keeps the trailing CJK char unconsumed so runs like "甲 乙 丙" fully collapse.
+const BETWEEN = new RegExp(`([${CJK}])[ \\t]+(?=[${CJK}])`, 'g');
+
+export function normalizeCjkMarkerSpacing(text: string): string {
+  if (!text) return text;
+  return text.replace(LEADING, '$1$2').replace(TRAILING, '$1$2').replace(BETWEEN, '$1');
+}
+
 /**
  * Interface for parsed summary points
  */

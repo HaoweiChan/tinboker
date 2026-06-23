@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Link } from 'react-router-dom';
 import { isRealTimeMarker } from '@/utils/parseTimestampedSections';
+import { normalizeCjkMarkerSpacing } from '@/utils/summaryParser';
 
 /** Render an episode summary as structured markdown, preserving heading levels and
  *  paragraphs, and turning the agents pipeline's inline markers into rich elements:
@@ -32,46 +33,48 @@ export const SummaryMarkdown: React.FC<SummaryMarkdownProps> = ({ content, onSee
   // (with the formatted time as the label) — then the custom anchor renderer below
   // turns them into clickable badges.
   const prepared = useMemo(
-    () => (content || '').replace(/\s*\(#time:(\d+)\)/g, (_match, ms) => {
-      // Drop ordinal/placeholder markers (the legacy writer-LLM bug) so they don't
-      // render as bogus 00:00 badges; keep real offsets as clickable links.
-      if (!isRealTimeMarker(Number(ms))) return '';
-      return ` [${formatTimestamp(Number(ms))}](#time:${ms})`;
-    }),
+    () => normalizeCjkMarkerSpacing(
+      (content || '').replace(/\s*\(#time:(\d+)\)/g, (_match, ms) => {
+        // Drop ordinal/placeholder markers (the legacy writer-LLM bug) so they don't
+        // render as bogus 00:00 badges; keep real offsets as clickable links.
+        if (!isRealTimeMarker(Number(ms))) return '';
+        return ` [${formatTimestamp(Number(ms))}](#time:${ms})`;
+      }),
+    ),
     [content],
   );
 
   if (!prepared.trim()) return null;
 
   return (
-    <div className="text-lg leading-[1.85] text-foreground/90">
+    <div className="text-xl leading-relaxed text-foreground">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
           h1: ({ children }) => (
-            <h2 className="text-2xl sm:text-3xl font-semibold tracking-[-0.01em] leading-[1.35] mt-7 first:mt-0 mb-3">{children}</h2>
+            <h2 className="text-3xl font-bold tracking-tight leading-tight mt-10 first:mt-0 mb-3">{children}</h2>
           ),
           // No flex here: flex makes each child (ticker link, title text, time badge)
           // an atomic item, so a long title wraps the leading ticker name onto its own
           // line. Plain inline flow lets "台積電 加速CoWoS…" read as one heading.
           h2: ({ children }) => (
-            <h3 className="text-xl sm:text-2xl font-semibold leading-[1.4] mt-6 mb-2.5">{children}</h3>
+            <h3 className="text-2xl font-bold tracking-tight leading-tight mt-8 mb-2">{children}</h3>
           ),
           h3: ({ children }) => (
-            <h4 className="text-lg sm:text-xl font-semibold text-foreground/95 mt-5 mb-2">{children}</h4>
+            <h4 className="text-xl font-semibold leading-snug text-foreground mt-7 mb-2">{children}</h4>
           ),
           h4: ({ children }) => (
-            <h5 className="text-base sm:text-lg font-semibold text-foreground/90 mt-4 mb-1.5">{children}</h5>
+            <h5 className="text-lg font-semibold text-foreground/90 mt-5 mb-1">{children}</h5>
           ),
-          p: ({ children }) => <p className="mb-3.5 last:mb-0">{children}</p>,
-          ul: ({ children }) => <ul className="list-disc pl-5 mb-3.5 flex flex-col gap-1.5">{children}</ul>,
-          ol: ({ children }) => <ol className="list-decimal pl-5 mb-3.5 flex flex-col gap-1.5">{children}</ol>,
-          li: ({ children }) => <li className="leading-[1.75] pl-0.5">{children}</li>,
+          p: ({ children }) => <p className="mb-5 last:mb-0">{children}</p>,
+          ul: ({ children }) => <ul className="list-disc pl-6 mb-5 flex flex-col gap-2">{children}</ul>,
+          ol: ({ children }) => <ol className="list-decimal pl-6 mb-5 flex flex-col gap-2">{children}</ol>,
+          li: ({ children }) => <li className="leading-relaxed pl-1">{children}</li>,
           strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
           blockquote: ({ children }) => (
-            <blockquote className="border-l-[3px] border-primary pl-3.5 my-3.5 text-muted-foreground">{children}</blockquote>
+            <blockquote className="border-l-[3px] border-border pl-5 my-5 text-foreground/70 italic">{children}</blockquote>
           ),
-          hr: () => <hr className="my-5 border-border" />,
+          hr: () => <hr className="my-8 border-border" />,
           a: ({ href, children }) => {
             const h = (href || '').trim();
             if (h.startsWith('#ticker:')) {

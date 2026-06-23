@@ -186,7 +186,7 @@ export const SectorPage: React.FC = () => {
             ) : (
               <h1 className="text-2xl font-semibold tracking-[-0.02em]">{titleText}</h1>
             )}
-            <p className="text-sm text-muted-foreground mt-1 max-w-[56ch] leading-[1.55]">
+            <p className="text-base text-muted-foreground mt-1 max-w-[56ch] leading-[1.55]">
               {loading
                 ? '載入中…'
                 : `瀏覽所有關於「${titleText}」的 Podcast 摘要與市場討論 · ${episodes.length} 集。`}

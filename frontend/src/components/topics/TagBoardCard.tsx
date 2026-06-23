@@ -50,7 +50,7 @@ export const TagBoardCard: React.FC<TagBoardCardProps> = ({ tag, label }) => {
               標籤
             </span>
           </div>
-          <span className="text-base font-semibold tracking-[-0.01em] group-hover:text-foreground/80 transition-colors leading-snug block truncate">
+          <span className="text-lg font-semibold tracking-[-0.01em] group-hover:text-foreground/80 transition-colors leading-snug block truncate">
             #{label}
           </span>
         </div>
@@ -68,7 +68,7 @@ export const TagBoardCard: React.FC<TagBoardCardProps> = ({ tag, label }) => {
               className="opacity-70"
             />
           )}
-          <span className="text-2xs text-muted-foreground font-mono tabular-nums">
+          <span className="text-xs text-muted-foreground font-mono tabular-nums">
             {tag.scoped_count} 集
           </span>
         </div>

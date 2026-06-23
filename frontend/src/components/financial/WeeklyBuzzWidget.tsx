@@ -101,7 +101,7 @@ export const WeeklyBuzzWidget: React.FC<WeeklyBuzzWidgetProps> = ({ className, i
                 </ul>
                 {isMobile && (
                     <div className="p-4 border-t border-border">
-                        <Button variant="outline" className="w-full text-xs h-9">
+                        <Button variant="outline" className="w-full text-base h-9">
                             查看完整排行
                         </Button>
                     </div>

@@ -58,11 +58,13 @@ interface AppState {
   tagSubscriptions: string[];
   episodeBookmarks: string[];
   stockColorMode: 'TW' | 'US';
+  fontSize: 'sm' | 'base' | 'lg';
   useMockData: boolean;
 
   // Theme actions
   toggleTheme: () => void;
   setTheme: (theme: 'dark' | 'light') => void;
+  setFontSize: (size: 'sm' | 'base' | 'lg') => void;
 
   // Auth actions
   login: (user: User, token: string, refreshToken?: string) => void;
@@ -136,6 +138,7 @@ export const useAppStore = create<AppState>()(
       tagSubscriptions: [],
       episodeBookmarks: [],
       stockColorMode: 'TW',
+      fontSize: 'base',
       useMockData: false,
 
       toggleTheme: () =>
@@ -153,6 +156,14 @@ export const useAppStore = create<AppState>()(
             document.documentElement.classList.toggle('dark', theme === 'dark');
           }
           return { theme };
+        }),
+
+      setFontSize: (size) =>
+        set(() => {
+          if (typeof document !== 'undefined') {
+            document.documentElement.style.fontSize = { sm: '15px', base: '17px', lg: '19px' }[size];
+          }
+          return { fontSize: size };
         }),
 
       // refreshToken is only overwritten when explicitly provided, so callers

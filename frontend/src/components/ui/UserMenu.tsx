@@ -78,7 +78,7 @@ export const UserMenu: React.FC = () => {
           {/* User Info */}
           <div className="p-4 border-b border-border">
             <div className="font-bold text-foreground text-xl">{user.name}</div>
-            <div className="text-muted-foreground text-base">{user.email}</div>
+            <div className="text-muted-foreground text-xs">{user.email}</div>
           </div>
 
           {/* Menu Items */}

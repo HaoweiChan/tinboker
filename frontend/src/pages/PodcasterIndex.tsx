@@ -57,7 +57,7 @@ export const PodcasterIndex: React.FC = () => {
             </div>
           )}
         </div>
-        <p className="text-sm text-muted-foreground max-w-[60ch] mb-4">TinBoker 持續結構化的中文財經 podcast。點任一節目進入完整集數列表與情緒分析。</p>
+        <p className="text-base text-muted-foreground max-w-[60ch] mb-4">TinBoker 持續結構化的中文財經 podcast。點任一節目進入完整集數列表與情緒分析。</p>
 
         <div className="flex gap-2.5 items-center mb-4 flex-wrap">
           <label className="flex items-center gap-2 flex-1 min-w-[200px] bg-card border border-border rounded-md px-3 py-2">
@@ -85,12 +85,12 @@ export const PodcasterIndex: React.FC = () => {
                   <PodMark label={(p.name || '?').charAt(0)} kind="mute" size={48} />
                 )}
                 <div className="min-w-0 flex-1">
-                  <div className="text-md font-semibold tracking-[-0.01em] truncate">{p.name}</div>
+                  <div className="text-lg font-semibold tracking-[-0.01em] truncate">{p.name}</div>
                   <div className="text-2xs text-muted-foreground font-mono tabular-nums mt-1">{(p.episode_count || 0).toLocaleString('en-US')} 集已分析</div>
                 </div>
                 {p.popularity_rank != null && (
                   <div
-                    className={`shrink-0 font-mono tabular-nums font-medium text-sm leading-none px-2 py-1 rounded border ${
+                    className={`shrink-0 font-mono tabular-nums font-medium text-xs leading-none px-2 py-1 rounded border ${
                       p.popularity_rank <= 3
                         ? 'border-primary/50 text-primary bg-primary/10'
                         : 'border-border text-muted-foreground'
