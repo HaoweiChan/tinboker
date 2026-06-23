@@ -104,7 +104,7 @@ _STEP_HINT = {
     STEP_KEY_INSIGHTS: "Extract 3-8 plain-text zh-TW key insights from the summary. Return {\"key_insights\": [...]} (most important first, no markdown/links).",
     STEP_TICKER: "Extract ticker sentiment. Return {\"ticker_recommendations\": [{ticker, sentiment, sentiment_score, time_horizon, bluf_thesis, reasons, risks}, ...]} (keep the legacy key name).",
     STEP_MARP: "Generate episode slide data. Return {title, slides:[{heading, bullet_points, start_time, slide_notes}, ...]}.",
-    STEP_TICKER_MARP: "Generate ticker-insight slide data. Return {title, slides:[...]} as for marp_writer.",
+    STEP_TICKER_MARP: "Rebuild the ticker deck (overview grid + focus analysis). Built deterministically from the ticker step — submit {} to trigger; any slide data is ignored.",
 }
 
 
@@ -328,7 +328,10 @@ def _apply(step: str, output: Any, state: dict[str, Any]) -> list[str]:
         state.update(marp_writer.postprocess(output, state))
         state.update(convert_marp(state))
     elif step == STEP_TICKER_MARP:
-        state["ticker_marp_slides"] = output
+        # The ticker deck is now built deterministically from ticker_insights (set by
+        # the ticker step) — the agent's submitted slides are ignored; this step just
+        # triggers the rebuild. ponytail: kept as a step so in-flight regen states and
+        # the MCP contract stay valid; could be retired from the step graph later.
         state.update(convert_marp_ticker(state))
     else:  # pragma: no cover - guarded by _normalize_step
         raise RegenError(f"Unknown step '{step}'")

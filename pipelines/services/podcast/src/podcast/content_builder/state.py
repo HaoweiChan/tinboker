@@ -157,9 +157,9 @@ class PipelineState(TypedDict, total=False):
     # {"post": str, "comments": [{"heading": str, "text": str}, ...]}
     social_thread: dict[str, Any]
 
-    # Ticker insights (parallel branch)
+    # Ticker insights (parallel branch). The ticker deck is built deterministically
+    # from ticker_insights (overview grid + focus-analysis cards) — no LLM slide step.
     ticker_insights: dict[str, Any]
-    ticker_marp_slides: dict[str, Any]
     ticker_marp_markdown: str
 
     # Deterministic broad market exposure metadata (NOT direct ticker mentions).

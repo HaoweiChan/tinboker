@@ -207,8 +207,12 @@ STEP_OUTPUT: dict[str, dict[str, Any]] = {
         },
     },
 }
-# The two marp steps share one prompt/shape.
-STEP_OUTPUT["ticker_marp_writer"] = STEP_OUTPUT["marp_writer"]
+# The ticker deck is built deterministically from the ticker step — this step is a
+# trigger, so its submitted output is ignored (any shape, including {}, is accepted).
+STEP_OUTPUT["ticker_marp_writer"] = {
+    "schema": {"type": "object", "description": "ignored — submit {} to rebuild the ticker deck"},
+    "example": {},
+}
 
 
 def _is_list_of_objects(v: Any) -> bool:
@@ -268,8 +272,9 @@ def validate_output(step: str, output: Any) -> list[str]:
                     errors.append(f'ticker_extractor: ticker_recommendations[{i}] missing "ticker".')
                     break
 
-    elif step in ("marp_writer", "ticker_marp_writer"):
+    elif step == "marp_writer":
         if not isinstance(output, dict) or not _is_list_of_objects(output.get("slides")):
             errors.append(f'{step}: expected {{title, slides: [{{heading, bullet_points, ...}}]}}.')
+    # ticker_marp_writer output is ignored (deck built deterministically) — accept anything.
 
     return errors

@@ -38,3 +38,6 @@ out/
 
 # oh-my-claudecode local state (per-machine; not shared)
 .omc/
+
+# Local Marp deck preview renders (scratch; regenerate via card_deck)
+marp-examples/
