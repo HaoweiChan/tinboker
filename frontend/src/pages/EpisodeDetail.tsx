@@ -361,7 +361,7 @@ export const EpisodeDetail: React.FC = () => {
                 <div className="flex min-w-0 flex-1 items-center gap-3.5">
                   <PodcastAvatar name={name} src={podcasterImageUrl} size="md" className="rounded-[9px] shrink-0" />
                   <div className="min-w-0 flex-1">
-                    <Link to={`/podcaster/${encodeURIComponent(name)}`} className="block text-base font-medium leading-snug break-keep hover:underline">{name}</Link>
+                    <Link to={`/podcaster/${encodeURIComponent(name)}`} className="block text-lg font-medium leading-snug break-keep hover:underline">{name}</Link>
                     <div className="text-xs text-muted-foreground">
                       {episode.episode_number != null ? `EP ${episode.episode_number} · ` : ''}
                       {timeAgo(episode.released_at_ms ?? episode.spotify_release_date, episode.created_time)}
@@ -398,17 +398,17 @@ export const EpisodeDetail: React.FC = () => {
                   )}
                 </div>
               </div>
-              <h1 className="text-2xl sm:text-3xl font-semibold tracking-[-0.015em] leading-[1.3]">{title}</h1>
+              <h1 className="text-2xl font-semibold tracking-[-0.015em] leading-[1.3]">{title}</h1>
               {((episode.tags?.length ?? 0) > 0 || (episode.sector_exposures?.length ?? 0) > 0) && (
                 <div className="flex gap-1.5 flex-wrap mt-3">
                   {episode.tags?.slice(0, MAX_HERO_TAGS).map((t) => (
-                    <Link key={t} to={`/topics/${encodeURIComponent(t)}`} className="text-xs px-2.5 py-0.5 rounded-full bg-primary/15 text-primary font-medium hover:bg-primary/25 transition-colors">#{tagLabelFor(t, tagLabels)}</Link>
+                    <Link key={t} to={`/topics/${encodeURIComponent(t)}`} className="text-2xs px-2.5 py-0.5 rounded-full bg-primary/15 text-primary font-medium hover:bg-primary/25 transition-colors">#{tagLabelFor(t, tagLabels)}</Link>
                   ))}
                   {/* Sectors render in the same row, distinguished by the blue tint + their
                       own /sector route — a sector is a kind of topic, but ticker-backed.
                       Deduped by exposure_id: an episode tags the same sector once per section. */}
                   {heroSectors.map((exp) => (
-                    <Link key={exp.exposure_id} to={`/sector/${encodeURIComponent(exp.exposure_id)}`} className="text-xs px-2.5 py-0.5 rounded-full bg-accent-info-soft text-accent-info font-medium hover:bg-accent-info/25 transition-colors">#{exp.display_name}</Link>
+                    <Link key={exp.exposure_id} to={`/sector/${encodeURIComponent(exp.exposure_id)}`} className="text-2xs px-2.5 py-0.5 rounded-full bg-accent-info-soft text-accent-info font-medium hover:bg-accent-info/25 transition-colors">#{exp.display_name}</Link>
                   ))}
                 </div>
               )}
@@ -418,7 +418,7 @@ export const EpisodeDetail: React.FC = () => {
 
             {IS_DEV && episode.marp_markdown_content && (
               <section className="bg-card border border-border rounded-md p-5 sm:p-6 mb-3.5">
-                <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground mb-3.5">投影片</h3>
+                <h3 className="text-base font-semibold text-muted-foreground mb-3.5">投影片</h3>
                 <SlideViewer
                   content={episode.marp_markdown_content}
                   onTickerClick={(symbol) => navigate(`/stock/${encodeURIComponent(symbol)}`)}
@@ -434,8 +434,8 @@ export const EpisodeDetail: React.FC = () => {
 
             {/* 摘要 — full structured summary (headings, paragraphs, ticker/tag/time markers) */}
             {(episode.modified_summary_content || episode.summary_content) && (
-              <section className="bg-card border border-border rounded-md p-5 sm:p-6 mb-3.5">
-                <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground mb-3.5">摘要</h3>
+              <section className="mb-3.5 sm:bg-card sm:border sm:border-border sm:rounded-md sm:p-6">
+                <h3 className="text-base font-semibold text-muted-foreground mb-3.5">摘要</h3>
                 <SummaryMarkdown content={episode.modified_summary_content || episode.summary_content || ''} onSeek={requestSeek} />
               </section>
             )}
@@ -443,7 +443,7 @@ export const EpisodeDetail: React.FC = () => {
             {/* 提及股票 — mobile fallback; desktop uses the right rail. */}
             {tickers.length > 0 && (
               <section className="xl:hidden bg-card border border-border rounded-md p-5 sm:p-6 mb-3.5">
-                <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground mb-3.5">提及股票</h3>
+                <h3 className="text-base font-semibold text-muted-foreground mb-3.5">提及股票</h3>
                 <div className="flex flex-col gap-1.5">
                   {tickers.map((t) => (
                     <TickerRow key={t.symbol} ticker={t} onClick={() => navigate(`/stock/${encodeURIComponent(t.symbol)}`)} />
@@ -455,7 +455,7 @@ export const EpisodeDetail: React.FC = () => {
             {/* 產業 / 主題曝險 — mobile fallback; desktop uses the right rail. */}
             {(episode.sector_exposures?.length ?? 0) > 0 && (
               <section className="xl:hidden bg-card border border-border rounded-md p-5 sm:p-6 mb-3.5">
-                <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground mb-3.5">提及產業</h3>
+                <h3 className="text-base font-semibold text-muted-foreground mb-3.5">提及產業</h3>
                 <SectorExposureList
                   exposures={episode.sector_exposures!}
                   perfMap={sectorPerf}

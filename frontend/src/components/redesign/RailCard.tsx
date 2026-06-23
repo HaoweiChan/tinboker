@@ -13,7 +13,7 @@ interface RailCardProps {
 export const RailCard: React.FC<RailCardProps> = ({ title, sub, children, className }) => (
   <section className={cn('bg-card border border-border rounded-[var(--radius-md)] p-4', className)}>
     <div className="flex items-baseline justify-between mb-3">
-      <div className="text-sm font-semibold tracking-[-0.005em]">{title}</div>
+      <div className="text-lg font-semibold tracking-[-0.005em]">{title}</div>
       {sub != null && <div className="text-2xs text-muted-foreground">{sub}</div>}
     </div>
     {children}

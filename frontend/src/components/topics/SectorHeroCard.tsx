@@ -67,7 +67,7 @@ export const SectorHeroCard: React.FC<SectorHeroCardProps> = ({ sector }) => {
         </div>
 
         {/* Episode count */}
-        <div className="mt-2 text-2xs text-muted-foreground font-mono tabular-nums">
+        <div className="mt-2 text-xs text-muted-foreground font-mono tabular-nums">
           {sector.episode_count} 集
         </div>
       </div>

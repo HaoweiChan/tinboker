@@ -233,7 +233,7 @@ export const ProfilePage: React.FC = () => {
                 <div className="w-[72px] h-[72px] rounded-full grid place-items-center text-white text-2xl font-semibold bg-accent-info shrink-0">{initials(userInfo.name)}</div>
               )}
               <div className="min-w-0">
-                <h1 className="text-xl font-semibold tracking-[-0.01em]">{userInfo.name}</h1>
+                <h1 className="text-2xl font-semibold tracking-[-0.01em]">{userInfo.name}</h1>
                 <div className="text-sm text-muted-foreground mt-0.5">{userInfo.email}</div>
                 <div className="flex gap-4 mt-2.5 text-xs text-muted-foreground">
                   <span><strong className="text-foreground font-mono mr-1 tabular-nums">{podcasters.length || podcastSubs.length}</strong>追蹤節目</span>
@@ -287,7 +287,7 @@ export const ProfilePage: React.FC = () => {
                 <button key={p.id || p.name} type="button" onClick={() => navigate(`/podcaster/${encodeURIComponent(p.name)}`)} className="flex items-center gap-3 bg-card border border-border rounded-md p-4 text-left transition-colors hover:border-foreground/25">
                   {p.image_url ? <img src={p.image_url} alt="" className="w-10 h-10 rounded-[9px] object-cover shrink-0" /> : <PodMark label={(p.name || '?').charAt(0)} kind="mute" size={40} />}
                   <div className="min-w-0">
-                    <div className="text-base font-semibold truncate">{p.name}</div>
+                    <div className="text-lg font-semibold truncate">{p.name}</div>
                     <div className="text-2xs text-muted-foreground font-mono tabular-nums">{p.episode_count ?? '—'} 集</div>
                   </div>
                 </button>

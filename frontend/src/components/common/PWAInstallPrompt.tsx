@@ -26,10 +26,10 @@ function isStandalone(): boolean {
 
 const Step: React.FC<{ step: number; icon: React.ReactNode; text: string }> = ({ step, icon, text }) => (
   <div className="flex items-start gap-3 py-3">
-    <div className="flex items-center justify-center w-7 h-7 rounded-full bg-accent-info/15 text-accent-info text-xs font-bold shrink-0">
+    <div className="flex items-center justify-center w-7 h-7 rounded-full bg-accent-info/15 text-accent-info text-2xs font-bold shrink-0">
       {step}
     </div>
-    <div className="flex items-center gap-2 min-w-0 text-sm leading-[1.6] text-foreground">
+    <div className="flex items-center gap-2 min-w-0 text-base leading-[1.6] text-foreground">
       <span className="shrink-0 text-muted-foreground">{icon}</span>
       <span>{text}</span>
     </div>
@@ -68,7 +68,7 @@ export const PWAInstallSection: React.FC = () => {
 
   if (installed) {
     return (
-      <div className="flex items-center gap-3 py-4 text-sm text-muted-foreground">
+      <div className="flex items-center gap-3 py-4 text-base text-muted-foreground">
         <div className="grid place-items-center w-8 h-8 rounded-full bg-sentiment-bull-soft text-sentiment-bull">
           <Check size={16} />
         </div>
@@ -80,7 +80,7 @@ export const PWAInstallSection: React.FC = () => {
   if (deferredPrompt) {
     return (
       <div className="space-y-3 py-2">
-        <p className="text-sm text-muted-foreground leading-[1.6]">
+        <p className="text-base text-muted-foreground leading-[1.6]">
           將聽播客加入主畫面，享受全螢幕瀏覽、離線快取、更快的載入速度。
         </p>
         <button
@@ -88,7 +88,7 @@ export const PWAInstallSection: React.FC = () => {
           onClick={handleNativeInstall}
           disabled={installing}
           className={cn(
-            'inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors',
+            'inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-base font-semibold transition-colors',
             'bg-accent-info text-accent-info-foreground hover:opacity-90',
             installing && 'opacity-60 cursor-not-allowed',
           )}
@@ -103,7 +103,7 @@ export const PWAInstallSection: React.FC = () => {
   if (platform === 'ios') {
     return (
       <div className="space-y-1 py-2">
-        <p className="text-sm text-muted-foreground leading-[1.6] mb-2">
+        <p className="text-base text-muted-foreground leading-[1.6] mb-2">
           在 Safari 中將聽播客加入主畫面，即可像原生 App 一樣使用。
         </p>
         <Step step={1} icon={<Share size={15} />} text="點擊 Safari 底部的「分享」按鈕" />
@@ -119,7 +119,7 @@ export const PWAInstallSection: React.FC = () => {
   if (platform === 'android') {
     return (
       <div className="space-y-1 py-2">
-        <p className="text-sm text-muted-foreground leading-[1.6] mb-2">
+        <p className="text-base text-muted-foreground leading-[1.6] mb-2">
           在 Chrome 中將聽播客加入主畫面，享受全螢幕體驗。
         </p>
         <Step step={1} icon={<MoreVertical size={15} />} text="點擊 Chrome 右上角的「更多選項」(三個點)" />
@@ -132,7 +132,7 @@ export const PWAInstallSection: React.FC = () => {
   if (platform === 'desktop-chromium') {
     return (
       <div className="space-y-1 py-2">
-        <p className="text-sm text-muted-foreground leading-[1.6] mb-2">
+        <p className="text-base text-muted-foreground leading-[1.6] mb-2">
           在電腦版 Chrome / Edge 中安裝聽播客桌面 App。
         </p>
         <Step step={1} icon={<Download size={15} />} text="點擊網址列右側的安裝圖示 (⊕)" />
@@ -146,7 +146,7 @@ export const PWAInstallSection: React.FC = () => {
 
   return (
     <div className="py-2">
-      <p className="text-sm text-muted-foreground leading-[1.6]">
+      <p className="text-base text-muted-foreground leading-[1.6]">
         您的瀏覽器可能不支援 PWA 安裝。請使用 Chrome、Safari 或 Edge 瀏覽器開啟此網站。
       </p>
     </div>
@@ -216,7 +216,7 @@ export const PWAInstallBanner: React.FC = () => {
               <BracketMark size={24} className="text-[#f1ead8]" />
             </div>
             <div className="min-w-0 flex-1">
-              <div className="text-base font-semibold text-foreground">安裝聽播客 App</div>
+              <div className="text-lg font-semibold text-foreground">安裝聽播客 App</div>
               <p className="text-xs text-muted-foreground leading-[1.5] mt-0.5">
                 加入主畫面，享受更流暢的體驗
               </p>
@@ -232,7 +232,7 @@ export const PWAInstallBanner: React.FC = () => {
           </div>
         ) : (
           <div className="p-4 pt-3">
-            <div className="text-base font-semibold text-foreground mb-2">在 Safari 中安裝</div>
+            <div className="text-lg font-semibold text-foreground mb-2">在 Safari 中安裝</div>
             <Step step={1} icon={<Share size={14} />} text="點擊底部「分享」按鈕" />
             <Step step={2} icon={<Plus size={14} />} text="選擇「加入主畫面」" />
             <Step step={3} icon={<Check size={14} />} text="點擊「新增」" />

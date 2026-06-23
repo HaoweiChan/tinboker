@@ -84,14 +84,14 @@ export const CommentSection: React.FC<CommentSectionProps> = ({ podcastName, epi
 
   return (
     <section className="bg-card border border-border rounded-md p-5 sm:p-6">
-      <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground mb-4">
-        留言 {total > 0 && <span className="normal-case">({total})</span>}
+      <h3 className="text-base font-semibold text-muted-foreground mb-4">
+        留言 {total > 0 && <span>({total})</span>}
       </h3>
 
       {/* Login gate */}
       {!user && (
         <div className="flex flex-col items-start gap-3 mb-5 pb-5 border-b border-border">
-          <p className="text-sm text-muted-foreground">登入後即可加入討論</p>
+          <p className="text-base text-muted-foreground">登入後即可加入討論</p>
           <LoginButton />
         </div>
       )}
@@ -105,7 +105,7 @@ export const CommentSection: React.FC<CommentSectionProps> = ({ podcastName, epi
 
       {/* Comment tree */}
       {loading ? (
-        <p className="text-sm text-muted-foreground">載入留言中…</p>
+        <p className="text-base text-muted-foreground">載入留言中…</p>
       ) : (
         <CommentList
           comments={tree}

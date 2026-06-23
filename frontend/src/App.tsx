@@ -71,7 +71,7 @@ function App() {
   const theme = useAppStore((state) => state.theme);
   const fontSize = useAppStore((state) => state.fontSize);
   useEffect(() => {
-    document.documentElement.style.fontSize = { sm: '16px', base: '18px', lg: '20px' }[fontSize ?? 'base'];
+    document.documentElement.style.fontSize = { sm: '15px', base: '17px', lg: '19px' }[fontSize ?? 'base'];
   }, [fontSize]);
 
   return (

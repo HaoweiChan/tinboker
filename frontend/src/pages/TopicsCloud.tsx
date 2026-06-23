@@ -164,7 +164,7 @@ export const TopicsCloud: React.FC = () => {
             </div>
           )}
         </div>
-        <p className="text-sm text-muted-foreground mb-6 max-w-[60ch]">
+        <p className="text-base text-muted-foreground mb-6 max-w-[60ch]">
           今日最強題材焦點 — 依產業/主題聚合，顯示漲跌幅與相關個股。
         </p>
 

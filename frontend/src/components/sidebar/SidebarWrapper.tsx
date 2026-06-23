@@ -31,7 +31,7 @@ export const SidebarWrapper: React.FC<SidebarWrapperProps> = ({
             <div>
               {title && (
                 <h1
-                  className="text-xl font-semibold md:text-2xl"
+                  className="text-2xl font-semibold md:text-2xl"
                   style={{ color: 'var(--text-primary)' }}
                 >
                   {title}
