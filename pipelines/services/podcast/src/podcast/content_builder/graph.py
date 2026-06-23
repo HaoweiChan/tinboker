@@ -104,10 +104,12 @@ def build_graph() -> StateGraph:
     # Marp branch
     graph.add_edge("write_marp_slides", "convert_marp")
 
-    # Join: social cards need BOTH the marp slides and the key insights, so
-    # build_social_cards waits on both branches (LangGraph fan-in) before END.
+    # Join: the unified carousel needs the marp slides, the key insights AND the
+    # ticker insights (for the overview grid + analysis cards), so build_social_cards
+    # fans in on all three branches before it runs.
     graph.add_edge("extract_key_insights", "build_social_cards")
     graph.add_edge("convert_marp", "build_social_cards")
+    graph.add_edge("extract_tickers", "build_social_cards")
     # Social copy reads the assembled cards + summary, then ends the branch.
     graph.add_edge("build_social_cards", "write_social_copy")
     graph.add_edge("write_social_copy", END)

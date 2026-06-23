@@ -89,6 +89,33 @@ def test_missing_timestamp_leaves_bullets_unstamped():
     assert cards[1]["start_time_ms"] is None
 
 
+# --- unified carousel: cover → ticker_table → themes → analysis ------------
+
+def test_build_social_cards_merges_ticker_deck():
+    state = {
+        "episode_title": "EP", "key_insights": ["洞見"],
+        "marp_slides": {"title": "T", "slides": [
+            {"heading": "主題A", "bullet_points": ["a"], "start_time": 1000},
+            {"heading": "主題B", "bullet_points": ["b"], "start_time": 2000},
+        ]},
+        "ticker_insights": {"ticker_insights": [
+            {"ticker": "2330", "sentiment_score": 0.85, "risks": [{"severity": "HIGH"}],
+             "reasons": [{"title": "AI 需求", "description": "拉貨。", "start_time": 5000}]},
+        ]},
+    }
+    kinds = [c["kind"] for c in sc.build_social_cards(state)["social_cards"]]
+    # cover first, ticker overview next, then episode themes, analysis last.
+    assert kinds == ["cover", "ticker_table", "theme", "theme", "analysis"]
+
+
+def test_build_social_cards_without_tickers_is_cover_plus_themes():
+    state = {"episode_title": "EP", "key_insights": ["洞見"],
+             "marp_slides": {"title": "T", "slides": [
+                 {"heading": "H", "bullet_points": ["a"], "start_time": 1000}]}}
+    kinds = [c["kind"] for c in sc.build_social_cards(state)["social_cards"]]
+    assert kinds == ["cover", "theme"]   # unchanged when no ticker_insights
+
+
 # --- cards_from_ticker_insights (deterministic ticker deck) ----------------
 
 def _insight(ticker, score, *, reasons=None, risks=None):

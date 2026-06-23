@@ -239,16 +239,28 @@ def cards_from_ticker_insights(
 
 
 def build_social_cards(state: PipelineState) -> dict[str, Any]:
-    """Join node: build ``social_cards`` from ``marp_slides`` + ``key_insights``."""
-    cards = cards_from_marp_slides(
-        state.get("marp_slides") or {},
-        state.get("key_insights") or [],
-        (state.get("episode_title") or ""),
+    """Join node: assemble the unified Threads carousel deck.
+
+    ONE card set drives both the carousel and the on-page deck — the same
+    templates everywhere, no second pipeline. Order: cover → ticker overview grid
+    → episode theme cards → focus-analysis cards, capped at ``MAX_CARDS``. The
+    ticker_table + analysis cards come from the same deterministic builder the
+    ticker deck uses (``cards_from_ticker_insights``).
+    """
+    title = state.get("episode_title") or ""
+    base = cards_from_marp_slides(
+        state.get("marp_slides") or {}, state.get("key_insights") or [], title,
     )
 
     # Nothing postable (no insights and no theme cards) → empty so the platform skips
     # cleanly instead of posting a blank cover.
-    if len(cards) == 1 and not cards[0]["bullets"]:
+    if len(base) == 1 and not base[0]["bullets"]:
         return {"social_cards": []}
 
-    return {"social_cards": cards}
+    cover, themes = base[0], base[1:]
+    ticker_cards = cards_from_ticker_insights(state.get("ticker_insights") or {}, title)
+    tables = [c for c in ticker_cards if c.get("kind") == "ticker_table"]
+    analyses = [c for c in ticker_cards if c.get("kind") == "analysis"]
+
+    merged = [cover, *tables, *themes, *analyses][:MAX_CARDS]
+    return {"social_cards": merged}
