@@ -92,7 +92,11 @@ async def batch_translations(
     Built for localizing a symbol-only list like an episode's related_tickers.
     """
     response.headers["Cache-Control"] = "public, max-age=300"
-    ticker_list = [t for t in tickers.split(",")][:100]
+    # ponytail: cap at 500 (was 100) — the homepage feed requests every related_ticker
+    # across ~60 episodes (158+ and growing). At 100, the alphabetically-last symbols
+    # (all US tickers, since numeric TW/KR codes sort first) got truncated and rendered
+    # name-less. 500 is a safe IN-clause bound; raise if a single page ever exceeds it.
+    ticker_list = [t for t in tickers.split(",")][:500]
     service = TranslationService(db)
     rows = service.get_by_tickers(ticker_list, market)
     return TranslationSearchResponse(
