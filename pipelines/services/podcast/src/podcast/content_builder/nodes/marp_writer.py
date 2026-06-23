@@ -1,9 +1,10 @@
 """Marp writer node: generates structured slide data from clustered events.
 
-The ``marp_writer`` prompt is used twice in the graph: once on the episode's
-``clustered_events`` (this node) and once on the ``ticker_insights`` payload
-(``graph._write_ticker_marp``). Both go through ``build_messages_from_events`` so
-the agent-backed regeneration path renders byte-identical prompts.
+Drives the episode deck only (``clustered_events`` → cover + theme cards). The
+ticker deck is no longer LLM-written — it is built deterministically from
+``ticker_insights`` (see ``nodes.social_cards_builder.cards_from_ticker_insights``).
+``build_messages_from_events`` stays generic so the agent-backed regeneration path
+renders a byte-identical prompt for the episode deck.
 """
 
 import json

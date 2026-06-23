@@ -16,13 +16,13 @@ Graph topology (mirrors the original Dify workflow):
  consolidate_chapters  write_marp_slides  extract_tickers
       │                    │                  │
       ▼                    ▼                  ▼
-  write_article        convert_marp       write_ticker_marp
-      │                    │                  │
-      ▼                    ▼                  ▼
-  transform_md           END            convert_ticker_marp
-      │                                       │
-      ▼                                       ▼
- extract_key_insights                        END
+  write_article        convert_marp     convert_marp_ticker ──► END
+      │                    │             (deterministic deck
+      ▼                    ▼              from ticker_insights)
+  transform_md           END
+      │
+      ▼
+ extract_key_insights
       │
       ▼
      END
@@ -56,21 +56,6 @@ from .nodes.writer import write_article
 from .state import PipelineState
 
 
-def _write_ticker_marp(state: PipelineState) -> dict[str, Any]:
-    """Generate Marp slides specifically for ticker insights."""
-    from .llm import invoke_json
-    from .nodes.marp_writer import build_messages_from_events
-
-    messages = build_messages_from_events(
-        state.get("ticker_insights", {}),
-        state.get("source", "Podcast"),
-        state.get("episode_title", "Episode"),
-    )
-    result = invoke_json("marp_writer", messages)
-
-    return {"ticker_marp_slides": result}
-
-
 def build_graph() -> StateGraph:
     """Construct and compile the content generation LangGraph."""
     graph = StateGraph(PipelineState)
@@ -90,7 +75,6 @@ def build_graph() -> StateGraph:
     graph.add_node("write_social_copy", write_social_copy)
     graph.add_node("derive_sector_exposures", derive_sector_exposures)
     graph.add_node("extract_tickers", extract_tickers)
-    graph.add_node("write_ticker_marp", _write_ticker_marp)
     graph.add_node("convert_marp_ticker", convert_marp_ticker)
 
     # Entry point
@@ -120,10 +104,12 @@ def build_graph() -> StateGraph:
     # Marp branch
     graph.add_edge("write_marp_slides", "convert_marp")
 
-    # Join: social cards need BOTH the marp slides and the key insights, so
-    # build_social_cards waits on both branches (LangGraph fan-in) before END.
+    # Join: the unified carousel needs the marp slides, the key insights AND the
+    # ticker insights (for the overview grid + analysis cards), so build_social_cards
+    # fans in on all three branches before it runs.
     graph.add_edge("extract_key_insights", "build_social_cards")
     graph.add_edge("convert_marp", "build_social_cards")
+    graph.add_edge("extract_tickers", "build_social_cards")
     # Social copy reads the assembled cards + summary, then ends the branch.
     graph.add_edge("build_social_cards", "write_social_copy")
     graph.add_edge("write_social_copy", END)
@@ -131,9 +117,9 @@ def build_graph() -> StateGraph:
     # Deterministic exposure branch (separate from direct ticker extraction).
     graph.add_edge("derive_sector_exposures", END)
 
-    # Ticker branch
-    graph.add_edge("extract_tickers", "write_ticker_marp")
-    graph.add_edge("write_ticker_marp", "convert_marp_ticker")
+    # Ticker branch — the deck is now built deterministically from ticker_insights
+    # (overview grid + focus-analysis cards), so no LLM marp step in between.
+    graph.add_edge("extract_tickers", "convert_marp_ticker")
     graph.add_edge("convert_marp_ticker", END)
 
     return graph.compile()

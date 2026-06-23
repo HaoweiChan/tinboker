@@ -16,6 +16,8 @@ import html
 import re
 from typing import Any, Optional
 
+from .brand_logo import LOGO_DATA_URI
+
 # tinboker.com dark palette (from frontend/src/index.css .dark tokens)
 BG = "#0f1117"        # --background  222 22% 7%
 SURFACE = "#161a22"   # --card        222 21% 11%
@@ -56,9 +58,14 @@ section {{
   padding: 84px 88px 104px; margin: 0;
   letter-spacing: .2px;
 }}
-section::after {{
+/* Brand watermark, bottom-right: ONE ::before lockup — logo mark (left,
+   as background) + wordmark text. marp-core reserves section::after for its
+   pagination counter, so a brand ::after gets overridden; ::before is free. */
+section::before {{
   content: "{_BRAND}";
-  position: absolute; right: 64px; bottom: 56px;
+  position: absolute; right: 64px; bottom: 52px;
+  height: 40px; line-height: 40px; padding-left: 52px;
+  background: url("{LOGO_DATA_URI}") left center / 40px 40px no-repeat;
   font-size: 24px; font-weight: 600; color: {MUTED}; letter-spacing: 1px;
 }}
 /* ---- Cover ---- */
@@ -85,6 +92,48 @@ section.theme li {{
 }}
 section.theme li::before {{ content: "▍"; position: absolute; left: 0; top: 2px; color: {accent}; font-size: 34px; }}
 section.theme .ts {{ color: {accent}; font-weight: 700; font-size: .82em; white-space: nowrap; }}
+/* ---- Sentiment badges (5-tier enum → low-noise chip, dark surface) ---- */
+.badge {{ display: inline-block; padding: 7px 22px; border-radius: 8px;
+  font-size: 28px; font-weight: 800; letter-spacing: 1.5px; white-space: nowrap; }}
+.sent-bull {{ color: #4ade80; background: rgba(74,222,128,.14); }}
+.sent-neutral {{ color: {ACCENT_YELLOW[0]}; background: rgba(255,210,63,.16); }}
+.sent-bear {{ color: #f87171; background: rgba(244,113,113,.15); }}
+/* ---- Ticker-table card (financial-terminal grid) ---- */
+section.ticker-table h2 {{
+  font-size: 50px; font-weight: 800; margin: 0 0 40px; color: {TEXT};
+  padding-left: 22px; border-left: 12px solid {accent};
+}}
+section.ticker-table .rows {{ display: flex; flex-direction: column; border-top: 1px solid {BORDER}; }}
+section.ticker-table .row {{
+  display: flex; align-items: center; gap: 22px;
+  padding: 22px 6px; border-bottom: 1px solid {BORDER};
+}}
+section.ticker-table .grp {{
+  flex: 0 0 132px; font-size: 26px; font-weight: 700; color: {MUTED};
+  letter-spacing: 1px;
+}}
+section.ticker-table .name {{ flex: 1 1 auto; font-size: 38px; font-weight: 600; color: {TEXT}; }}
+section.ticker-table .name .code {{ color: {MUTED}; font-weight: 500; font-size: .8em; margin-left: 10px; }}
+section.ticker-table .risk {{ flex: 0 0 168px; text-align: right; font-size: 28px; color: {SOFT}; }}
+section.ticker-table .risk b {{ color: {accent}; font-weight: 800; }}
+/* ---- Analysis card (notched fieldset, deterministic — no <fieldset>) ---- */
+section.analysis h2 {{ font-size: 46px; font-weight: 800; margin: 0 0 36px; color: {TEXT}; }}
+section.analysis .card {{
+  position: relative; border: 1px solid {accent}; border-radius: 14px;
+  padding: 52px 40px 40px; margin-top: 18px;
+}}
+section.analysis .fl-label {{
+  position: absolute; top: 0; left: 32px; transform: translateY(-50%);
+  background: {BG}; padding: 0 16px;
+  font-size: 27px; font-weight: 800; letter-spacing: 1px; color: {accent};
+}}
+section.analysis .lead {{ font-size: 40px; font-weight: 800; line-height: 1.45; color: {TEXT}; margin: 0 0 24px; }}
+section.analysis .lead .src {{
+  font-size: .62em; font-weight: 700; color: {MUTED}; margin-left: 14px;
+  background: {SURFACE}; padding: 4px 12px; border-radius: 6px; white-space: nowrap;
+}}
+section.analysis .body {{ font-size: 35px; line-height: 1.62; font-weight: 500; color: {SOFT}; margin: 0; }}
+section.analysis .meta {{ margin-top: 36px; }}
 """.strip()
 
 
@@ -130,6 +179,73 @@ def _theme_slide(card: dict) -> str:
     return "\n".join(parts)
 
 
+def _badge(card: dict) -> str:
+    """Render a sentiment chip from a card's ``sentiment`` text + ``sentiment_class``."""
+    text = (card.get("sentiment") or "").strip()
+    if not text:
+        return ""
+    cls = card.get("sentiment_class") or "sent-neutral"
+    return f'<span class="badge {html.escape(cls)}">{html.escape(text)}</span>'
+
+
+def _ticker_table_slide(card: dict) -> str:
+    """Render a mentioned-ticker overview grid (one row per ticker)."""
+    heading = html.escape((card.get("title") or "本期提及標的").strip())
+    rows = []
+    for r in card.get("rows") or []:
+        grp = html.escape((r.get("group") or "").strip())
+        name = html.escape((r.get("name") or "").strip())
+        code = html.escape((r.get("code") or "").strip())
+        risk = html.escape((r.get("risk") or "—").strip())
+        badge = _badge(r)
+        code_html = f'<span class="code">{code}</span>' if code else ""
+        rows.append(
+            '<div class="row">'
+            f'<span class="grp">{grp}</span>'
+            f'<span class="name">{name}{code_html}</span>'
+            f'{badge}'
+            f'<span class="risk">風險 <b>{risk}</b></span>'
+            "</div>"
+        )
+    return "\n".join([
+        "<!-- _class: ticker-table -->", "", f"## {heading}", "",
+        '<div class="rows">', *rows, "</div>",
+    ])
+
+
+def _analysis_slide(card: dict) -> str:
+    """Render a single-focus analysis card: notched label + lead + body + source."""
+    heading = html.escape((card.get("title") or "").strip())
+    focus = html.escape((card.get("focus") or "").strip())
+    lead = html.escape((card.get("lead") or "").strip())
+    body = html.escape((card.get("body") or "").strip())
+    source = html.escape((card.get("source") or "").strip())
+    src_html = f'<span class="src">{source}</span>' if source else ""
+    badge = _badge(card)
+    return "\n".join([
+        "<!-- _class: analysis -->", "",
+        f"## {heading}" if heading else "##", "",
+        '<div class="card">',
+        f'<div class="fl-label">標的聚焦：{focus}</div>' if focus else "",
+        f'<p class="lead">{lead}{src_html}</p>',
+        f'<p class="body">{body}</p>',
+        f'<div class="meta">{badge}</div>' if badge else "",
+        "</div>",
+    ])
+
+
+_SLIDE_RENDERERS = {"ticker_table": _ticker_table_slide, "analysis": _analysis_slide}
+
+
+def _render_slide(card: dict, show_name: str, date_str: str) -> str:
+    """Render one card to its slide markdown, dispatching on ``kind``."""
+    kind = card.get("kind")
+    if kind == "cover":
+        return _cover_slide(card, show_name, date_str)
+    renderer = _SLIDE_RENDERERS.get(kind)
+    return renderer(card) if renderer else _theme_slide(card)
+
+
 def build_card_deck_markdown(
     cards: list[dict[str, Any]],
     show_name: Optional[str] = None,
@@ -143,11 +259,7 @@ def build_card_deck_markdown(
         "---", "marp: true", f"theme: {THEME_NAME}", "size: 1:1", "paginate: false",
         'header: ""', 'footer: ""', "---", "",
     ]
-    slides = [
-        _cover_slide(c, show_name or "", date_str or "") if c.get("kind") == "cover"
-        else _theme_slide(c)
-        for c in cards
-    ]
+    slides = [_render_slide(c, show_name or "", date_str or "") for c in cards]
     return "\n".join(front) + "\n" + "\n\n---\n\n".join(slides) + "\n"
 
 
@@ -201,9 +313,5 @@ def build_inline_deck_markdown(
         "paginate: false", 'header: ""', 'footer: ""', "---", "",
         f"<style>\n{css}\n</style>", "",
     ]
-    slides = [
-        _cover_slide(c, show_name or "", date_str or "") if c.get("kind") == "cover"
-        else _theme_slide(c)
-        for c in cards
-    ]
+    slides = [_render_slide(c, show_name or "", date_str or "") for c in cards]
     return "\n".join(front) + "\n" + "\n\n---\n\n".join(slides) + "\n"

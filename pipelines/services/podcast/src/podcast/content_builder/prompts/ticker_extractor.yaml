@@ -30,6 +30,13 @@ system: |
       • Countries or currencies used as shorthand: US, INDIA, EUR, JPY
       • Payment or fintech platforms not listed on an exchange: LINEPAY, ALIPAY
       • Private or unlisted companies: SpaceX, OpenAI, Anthropic, ByteDance, xAI, YMTC
+      • Companies that list ONLY on a foreign NUMERIC exchange and have NO US/HK letter symbol —
+        especially JAPAN (迪思科/Disco, Towa, 佳能/Canon, 東京威力科創/Tokyo Electron,
+        Screen Holdings, 日東電工/Nitto, 村田/Murata), HK-numeric, or China A-shares. Their
+        Tokyo/other numeric codes COLLIDE with Taiwan codes (Tokyo 6146 = Disco, but 6146 in
+        Taiwan is a different company), so emitting them maps to the WRONG company — skip the
+        entity entirely. (A foreign company that trades in the US/HK via an ADR/letter symbol —
+        e.g. 阿斯麥/ASML→ASML, 安謀/Arm→ARM — is fine: use that letter symbol.)
       • Any symbol containing a space or more than 5 letters (for non-TW tickers)
   - Only extract ticker insights where the podcaster expresses a clear opinion or analysis
   - Write all natural-language content in Traditional Chinese (zh-TW), including bluf_thesis, reason titles/descriptions, and risk titles/descriptions

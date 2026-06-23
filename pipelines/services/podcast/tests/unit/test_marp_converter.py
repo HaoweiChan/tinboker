@@ -72,14 +72,24 @@ def test_convert_marp_empty_when_no_content():
     assert convert_marp({"marp_slides": {}})["marp_markdown"] == ""
 
 
-def test_convert_marp_ticker_uses_blue_accent_and_size():
+def test_convert_marp_ticker_builds_deterministic_deck():
+    # The ticker deck is built straight from ticker_insights (no LLM slides) —
+    # an overview grid + focus-analysis cards, blue accent, wide size.
     md = convert_marp_ticker({
-        "ticker_marp_slides": {"title": "T", "slides": [
-            {"heading": "h", "bullet_points": ["b [00:10]"], "start_time": 10000},
+        "ticker_insights": {"ticker_insights": [
+            {"ticker": "2330", "sentiment_score": 0.85,
+             "risks": [{"severity": "MEDIUM"}],
+             "reasons": [{"title": "AI 需求", "description": "資料中心拉貨。", "start_time": 10000}]},
         ]},
         "source": "股癌",
     })["ticker_marp_markdown"]
-    assert "#5b8dff" in md          # ACCENT_BLUE
+    assert "#5b8dff" in md                          # ACCENT_BLUE
     assert "theme: tinboker-cards" in md
     assert re.search(r"size:\s*wide", md)           # named size the theme declares
     assert "width: 1240px; height: 780px;" in md
+    assert "_class: ticker-table" in md and "_class: analysis" in md
+    assert "標的聚焦：台積電 2330" in md             # registry-resolved name
+
+
+def test_convert_marp_ticker_empty_when_no_insights():
+    assert convert_marp_ticker({"ticker_insights": {}})["ticker_marp_markdown"] == ""
