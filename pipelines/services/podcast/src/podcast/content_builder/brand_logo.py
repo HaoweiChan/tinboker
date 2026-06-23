@@ -1,0 +1,18 @@
+"""TinBoker brand mark as a base64 PNG data-URI, for the Marp card watermark.
+
+Baked at commit time (not fetched at render) so the inline deck CSS is
+self-contained and works in BOTH render paths — marp-cli (headless Chromium,
+no network) and the in-browser marp-core — with no external asset dependency.
+
+Source: frontend/public/brand/tinboker-square-dark-512.png, downsampled to 64x64
+(the watermark renders at ~32-48px on the 1080 canvas, so higher res is wasted
+payload). Regenerate after a logo change:
+
+    sips -Z 64 frontend/public/brand/tinboker-square-dark-512.png --out /tmp/l.png
+    printf 'data:image/png;base64,%s' "$(base64 -i /tmp/l.png | tr -d '\n')"
+"""
+
+# ponytail: 64px mark, ~2KB; bump the sips size only if the watermark looks soft.
+LOGO_DATA_URI = (
+    "data:image/png;base64,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"
+)

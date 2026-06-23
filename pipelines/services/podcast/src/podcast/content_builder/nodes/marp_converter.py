@@ -13,7 +13,7 @@ from typing import Any, Optional
 
 from ..card_deck import build_inline_deck_markdown
 from ..state import PipelineState
-from .social_cards_builder import cards_from_marp_slides
+from .social_cards_builder import cards_from_marp_slides, cards_from_ticker_insights
 
 
 def _date_str(state: PipelineState) -> str:
@@ -46,13 +46,23 @@ def convert_marp(state: PipelineState) -> dict[str, Any]:
 
 
 def convert_marp_ticker(state: PipelineState) -> dict[str, Any]:
-    """Convert ticker marp slides to branded (inline-themed) Marp markdown."""
-    cards = cards_from_marp_slides(
-        state.get("ticker_marp_slides") or {},
-        [],
+    """Build the ticker deck (overview grid + focus analysis) straight from ticker_insights.
+
+    Deterministic — no LLM. These cards carry no cover/bullets, so the cover-guard
+    in ``_render`` doesn't apply; emit whenever there is at least one card.
+    """
+    cards = cards_from_ticker_insights(
+        state.get("ticker_insights") or {},
         state.get("episode_title") or "",
     )
-    return {"ticker_marp_markdown": _render(state, cards, content_type="article", size="1240x780")}
+    if not cards:
+        return {"ticker_marp_markdown": ""}
+    show_name = (state.get("source") or state.get("podcast_name") or "").strip()
+    markdown = build_inline_deck_markdown(
+        cards, show_name=show_name, date_str=_date_str(state),
+        content_type="article", size="1240x780",
+    )
+    return {"ticker_marp_markdown": markdown}
 
 
 def _render(state: PipelineState, cards: list[dict], content_type: str, size: str) -> str:

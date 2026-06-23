@@ -89,6 +89,57 @@ def test_missing_timestamp_leaves_bullets_unstamped():
     assert cards[1]["start_time_ms"] is None
 
 
+# --- cards_from_ticker_insights (deterministic ticker deck) ----------------
+
+def _insight(ticker, score, *, reasons=None, risks=None):
+    return {"ticker": ticker, "sentiment_score": score,
+            "reasons": reasons or [], "risks": risks or []}
+
+
+def test_sentiment_enum_maps_to_exact_badge_and_zh():
+    # score → 5-tier label → (zh chip, css class). Both bull tiers → 看多, etc.
+    cases = [(0.95, "看多", "sent-bull"), (0.70, "看多", "sent-bull"),
+             (0.50, "觀望", "sent-neutral"),
+             (0.30, "看空", "sent-bear"), (0.05, "看空", "sent-bear")]
+    for score, zh, cls in cases:
+        text, klass = sc._sentiment_badge(score)
+        assert (text, klass) == (zh, cls), f"{score} → {text}/{klass}"
+
+
+def test_risk_factor_takes_worst_severity():
+    assert sc._risk_factor([{"severity": "LOW"}, {"severity": "HIGH"}]) == "高"
+    assert sc._risk_factor([{"severity": "medium"}]) == "中"
+    assert sc._risk_factor([]) == "—"
+
+
+def test_analysis_card_pulls_from_top_reason():
+    cards = sc.cards_from_ticker_insights({"ticker_insights": [
+        _insight("NVDA", 0.8, reasons=[
+            {"title": "板電升級", "description": "用量幾何成長。", "start_time": 60000}]),
+    ]})
+    a = next(c for c in cards if c["kind"] == "analysis")
+    assert a["lead"] == "板電升級"
+    assert a["body"] == "用量幾何成長。"
+    assert a["source"] == "[01:00]"
+    assert (a["sentiment"], a["sentiment_class"]) == ("看多", "sent-bull")
+
+
+def test_ticker_table_paginates_and_caps_with_warning(caplog):
+    import logging
+    insights = [_insight(str(2300 + i), 0.7) for i in range(18)]   # >15 tickers
+    with caplog.at_level(logging.WARNING):
+        cards = sc.cards_from_ticker_insights({"ticker_insights": insights})
+    tables = [c for c in cards if c["kind"] == "ticker_table"]
+    assert len(tables) == sc.MAX_TABLE_CARDS == 2                  # hard ceiling
+    assert sum(len(t["rows"]) for t in tables) == sc.ROWS_PER_TABLE * 2 == 14
+    assert "dropping 4" in caplog.text                             # 18 - 14, not silent
+
+
+def test_ticker_insights_empty_returns_no_cards():
+    assert sc.cards_from_ticker_insights({}) == []
+    assert sc.cards_from_ticker_insights(None) == []
+
+
 # --- persistence + graph wiring --------------------------------------------
 
 def _episode(**kw) -> PodcastEpisode:
