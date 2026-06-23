@@ -161,7 +161,7 @@ export const useAppStore = create<AppState>()(
       setFontSize: (size) =>
         set(() => {
           if (typeof document !== 'undefined') {
-            document.documentElement.style.fontSize = { sm: '14px', base: '16px', lg: '18px' }[size];
+            document.documentElement.style.fontSize = { sm: '16px', base: '18px', lg: '20px' }[size];
           }
           return { fontSize: size };
         }),
