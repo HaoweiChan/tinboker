@@ -1,4 +1,18 @@
 
+// The agents pipeline emits inline tag/ticker markers padded with ASCII spaces,
+// e.g. "對 [經濟衰退](#tag:x) 的" — natural in markdown, but those spaces read as
+// odd gaps in CJK prose. Strip a space sitting between a CJK char and a
+// CJK-labelled marker (either side). Spaces around Latin labels (AI, SpaceX, HBM)
+// are left alone on purpose — that CJK↔Latin gap is correct typography.
+const CJK = '\\u4e00-\\u9fff\\u3000-\\u303f\\uff00-\\uffef';
+const LEADING = new RegExp(`([${CJK}])[ \\t]+(\\[[${CJK}])`, 'g');
+const TRAILING = new RegExp(`([${CJK}]\\]\\([^)]*\\))[ \\t]+([${CJK}])`, 'g');
+
+export function normalizeCjkMarkerSpacing(text: string): string {
+  if (!text) return text;
+  return text.replace(LEADING, '$1$2').replace(TRAILING, '$1$2');
+}
+
 /**
  * Interface for parsed summary points
  */
