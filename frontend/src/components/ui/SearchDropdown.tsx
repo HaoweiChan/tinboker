@@ -272,7 +272,7 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = () => {
                   <button
                     key={idx}
                     onClick={() => handleRecentClick(query)}
-                    className="px-2.5 py-1 bg-muted hover:bg-muted/80 rounded-full text-xs text-foreground transition-colors"
+                    className="px-2.5 py-1 bg-muted hover:bg-muted/80 rounded-full text-2xs text-foreground transition-colors"
                   >
                     {query}
                   </button>
@@ -338,7 +338,7 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = () => {
                   </h3>
                   <div className="flex flex-wrap gap-1.5">
                     {popularData.tags.map((item) => (
-                      <button key={item.id} onClick={() => handlePopularItemClick(item)} className="px-2.5 py-1 bg-accent-info-soft text-accent-info rounded-full text-xs font-medium hover:opacity-80 transition-opacity">
+                      <button key={item.id} onClick={() => handlePopularItemClick(item)} className="px-2.5 py-1 bg-accent-info-soft text-accent-info rounded-full text-2xs font-medium hover:opacity-80 transition-opacity">
                         #{item.title}
                       </button>
                     ))}

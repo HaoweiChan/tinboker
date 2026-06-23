@@ -62,7 +62,7 @@ const PerformanceBarChart: React.FC<PerformanceBarChartProps> = ({ variant = 'st
         <div className={containerClasses} style={wrapperStyle}>
              {!isEmbedded && (
                <div className="mb-8">
-                   <h1 className="text-3xl font-bold mb-2" style={{ color: 'var(--text-primary)' }}>Sector Performance</h1>
+                   <h1 className="text-2xl font-bold mb-2" style={{ color: 'var(--text-primary)' }}>Sector Performance</h1>
                    <p className="text-base" style={{ color: 'var(--text-secondary)' }}>Comparative analysis of sector rotation over time.</p>
                </div>
              )}

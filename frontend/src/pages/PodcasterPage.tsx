@@ -163,7 +163,7 @@ export const PodcasterPage: React.FC = () => {
                 {isSubscribed ? '已訂閱' : '訂閱'}
               </button>
             </div>
-            <p className="text-sm text-muted-foreground mt-3 max-w-[60ch] leading-[1.55]">{name} 的節目摘要 — 由 TinBoker 結構化分析關鍵重點與提及的個股。</p>
+            <p className="text-base text-muted-foreground mt-3 max-w-[60ch] leading-[1.55]">{name} 的節目摘要 — 由 TinBoker 結構化分析關鍵重點與提及的個股。</p>
           </div>
         </div>
 

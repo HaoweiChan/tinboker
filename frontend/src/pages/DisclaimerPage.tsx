@@ -35,7 +35,7 @@ export const DisclaimerPage: React.FC = () => (
         <div className="space-y-6">
           {SECTIONS.map((s) => (
             <section key={s.title}>
-              <h3 className="text-md font-semibold mb-2 flex items-center gap-2">
+              <h3 className="text-lg font-semibold mb-2 flex items-center gap-2">
                 <span className="w-1 h-5 bg-foreground rounded-full" />
                 {s.title}
               </h3>

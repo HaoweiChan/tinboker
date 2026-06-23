@@ -148,7 +148,7 @@ export const TickerInsightCard: React.FC<TickerInsightCardProps> = ({ insight, e
                             <SentimentIcon size={14} />
                             {sentiment.label}
                         </Badge>
-                        <span className="text-base text-muted-foreground flex items-center gap-1">
+                        <span className="text-xs text-muted-foreground flex items-center gap-1">
                             <Calendar size={14} />
                             {formatDate(insight.podcast_launch_time)}
                         </span>

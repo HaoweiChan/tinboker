@@ -44,7 +44,7 @@ const MainChart: React.FC<MainChartProps> = ({ isDark, index, timeframe }) => {
     <div className="flex flex-col w-full h-full">
       <div>
         <div className="flex items-center gap-3 flex-wrap">
-          <div className={`text-xs font-bold px-2 py-1 rounded ${pillClasses}`}>{index.label}</div>
+          <div className={`text-2xs font-bold px-2 py-1 rounded ${pillClasses}`}>{index.label}</div>
           <h2 className="text-3xl font-bold tracking-tight text-foreground">{index.value}</h2>
           <span className={`${changeColor} font-mono text-xl flex items-center gap-1`}>
             {React.createElement(changeIcon, { size: 20 })}

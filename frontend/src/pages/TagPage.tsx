@@ -104,7 +104,7 @@ export const TagPage: React.FC = () => {
             <div className="flex items-start justify-between gap-3 flex-wrap">
               <div className="min-w-0">
                 <h1 className="text-2xl font-semibold tracking-[-0.02em]">#{displayLabel}</h1>
-                <p className="text-sm text-muted-foreground mt-1 max-w-[56ch] leading-[1.55]">
+                <p className="text-base text-muted-foreground mt-1 max-w-[56ch] leading-[1.55]">
                   瀏覽所有關於「{displayLabel}」的 Podcast 摘要與市場討論{loading ? '' : ` · ${episodes.length} 集`}。
                 </p>
               </div>

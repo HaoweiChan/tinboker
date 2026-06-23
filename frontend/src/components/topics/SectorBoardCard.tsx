@@ -124,7 +124,7 @@ export const SectorBoardCard: React.FC<SectorBoardCardProps> = ({ sector }) => {
             showArrow
             skeleton={false}
           />
-          <span className="text-2xs text-muted-foreground font-mono tabular-nums">
+          <span className="text-xs text-muted-foreground font-mono tabular-nums">
             {sector.episode_count} 集
           </span>
         </div>

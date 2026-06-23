@@ -184,7 +184,7 @@ export function PWAUpdatePrompt() {
           <ArrowUpCircle size={18} />
         </div>
         <div className="min-w-0 flex-1">
-          <div className="text-sm font-semibold text-foreground">有新版本可用</div>
+          <div className="text-lg font-semibold text-foreground">有新版本可用</div>
           <p className="mt-0.5 text-xs leading-[1.5] text-muted-foreground">
             重新整理以載入最新內容與修正。
           </p>

@@ -74,7 +74,7 @@ const CommentItem: React.FC<CommentItemProps> = ({
               </span>
             )}
           </div>
-          <p className="text-sm text-foreground break-words whitespace-pre-wrap">{comment.content}</p>
+          <p className="text-base text-foreground break-words whitespace-pre-wrap">{comment.content}</p>
 
           {/* Actions */}
           <div className="flex items-center gap-3 mt-1.5">
@@ -155,7 +155,7 @@ export const CommentList: React.FC<CommentListProps> = ({
 }) => {
   if (comments.length === 0) {
     return (
-      <p className="text-sm text-muted-foreground py-2">
+      <p className="text-base text-muted-foreground py-2">
         還沒有留言，來當第一個吧！
       </p>
     );

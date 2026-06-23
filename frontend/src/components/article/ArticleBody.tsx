@@ -24,7 +24,7 @@ const FigureImage: React.FC<{
   const [errored, setErrored] = useState(false);
   if (!src || errored) return null;
   return (
-    <figure className="my-6">
+    <figure className="my-8">
       <img
         src={src}
         alt={alt || ''}
@@ -34,7 +34,7 @@ const FigureImage: React.FC<{
         className="w-full rounded-lg object-cover max-h-[520px]"
       />
       {title && (
-        <figcaption className="mt-2 text-center text-sm text-muted-foreground">
+        <figcaption className="mt-2 text-center text-xs text-muted-foreground">
           {title}
         </figcaption>
       )}
@@ -45,28 +45,31 @@ const FigureImage: React.FC<{
 export const ArticleBody: React.FC<ArticleBodyProps> = ({ content }) => {
   if (!content?.trim()) return null;
 
+  // ponytail: Substack-style reading layout — sizes & spacing map to the nearest
+  // scale tokens (text-xl≈19px body, text-2xl/3xl headings) + standard Tailwind
+  // spacing, so it stays on the design scale and tracks the 小/中/大 setting.
   return (
-    <div className="prose-article text-md leading-[1.8] text-foreground/90">
+    <div className="prose-article text-xl leading-relaxed text-foreground">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
           h1: ({ children }) => (
-            <h2 className="text-2xl sm:text-3xl font-bold tracking-[-0.02em] leading-[1.3] mt-10 first:mt-0 mb-4">
+            <h2 className="text-3xl font-bold tracking-tight leading-tight mt-10 first:mt-0 mb-3">
               {children}
             </h2>
           ),
           h2: ({ children }) => (
-            <h3 className="text-xl sm:text-2xl font-semibold tracking-[-0.01em] leading-[1.35] mt-8 mb-3">
+            <h3 className="text-2xl font-bold tracking-tight leading-tight mt-8 mb-2">
               {children}
             </h3>
           ),
           h3: ({ children }) => (
-            <h4 className="text-lg font-semibold text-foreground/95 mt-6 mb-2">
+            <h4 className="text-xl font-semibold leading-snug text-foreground mt-7 mb-2">
               {children}
             </h4>
           ),
           h4: ({ children }) => (
-            <h5 className="text-md font-semibold text-foreground/90 mt-5 mb-1.5">
+            <h5 className="text-lg font-semibold text-foreground/90 mt-5 mb-1">
               {children}
             </h5>
           ),
@@ -80,21 +83,21 @@ export const ArticleBody: React.FC<ArticleBodyProps> = ({ content }) => {
             ) {
               return <>{children}</>;
             }
-            return <p className="mb-4 last:mb-0">{children}</p>;
+            return <p className="mb-5 last:mb-0">{children}</p>;
           },
           img: ({ src, alt, title }) => (
             <FigureImage src={src} alt={alt} title={title} />
           ),
           ul: ({ children }) => (
-            <ul className="list-disc pl-5 mb-4 flex flex-col gap-1.5">{children}</ul>
+            <ul className="list-disc pl-6 mb-5 flex flex-col gap-2">{children}</ul>
           ),
           ol: ({ children }) => (
-            <ol className="list-decimal pl-5 mb-4 flex flex-col gap-1.5">{children}</ol>
+            <ol className="list-decimal pl-6 mb-5 flex flex-col gap-2">{children}</ol>
           ),
-          li: ({ children }) => <li className="leading-[1.7] pl-0.5">{children}</li>,
+          li: ({ children }) => <li className="leading-relaxed pl-1">{children}</li>,
           strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
           blockquote: ({ children }) => (
-            <blockquote className="border-l-3 border-primary/40 pl-4 my-5 text-muted-foreground italic">
+            <blockquote className="border-l-[3px] border-border pl-5 my-5 text-foreground/70 italic">
               {children}
             </blockquote>
           ),

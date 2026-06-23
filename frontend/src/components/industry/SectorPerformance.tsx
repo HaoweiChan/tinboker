@@ -92,7 +92,7 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({ variant = 'standa
       {!isEmbedded && (
         <div className="px-8 py-6 flex justify-between items-end border-b transition-colors" style={headerSurfaceStyle}>
           <div>
-            <h1 className="text-3xl font-bold mb-1" style={{ color: 'var(--text-primary)' }}>Sector Performance</h1>
+            <h1 className="text-2xl font-bold mb-1" style={{ color: 'var(--text-primary)' }}>Sector Performance</h1>
             <div className="flex gap-2 text-base" style={{ color: 'var(--text-muted)' }}>
               <span className="text-indigo-500 hover:underline cursor-pointer">Home</span> 
               <span>/</span>
