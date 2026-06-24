@@ -38,12 +38,14 @@ export interface ChangelogEntry {
 //   docs/workflows/deploy-flow.md § "In-app changelog (What's new)".
 export const CHANGELOG: ChangelogEntry[] = [
   {
-    version: '0.4.7',
+    version: '0.5.5',
     date: '2026-06',
     items: [
-      '新增新手導覽，帶你快速認識 TinBoker',
-      '個股、話題、集數與文章頁面改為登入後檢視',
-      '發佈新版本時會顯示更新內容',
+      '新增新手導覽，第一次使用也能快速上手',
+      '個股、話題、集數與文章頁面登入後即可檢視，並能追蹤自選與訂閱',
+      '返回首頁時內容立即顯示，不再閃爍重新載入',
+      '集數摘要在電腦版的字級與排版更好讀',
+      '改版後會用更新公告告訴你有哪些新功能',
     ],
   },
 ];
