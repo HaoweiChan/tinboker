@@ -420,6 +420,20 @@ class FirestoreService:
         except Exception as e:
             raise Exception(f"Failed to get parent documents from Firestore: {e}") from e
     
+    def count_collection(self, collection: str) -> int:
+        """Count documents in a top-level collection via the server-side aggregation.
+
+        Billed as ~1 read per 1000 counted docs (not one read per doc), so cheap.
+        """
+        if self._disabled or not self.db:
+            return 0
+        try:
+            result = self.db.collection(collection).count().get()
+            # Aggregation returns [[AggregationResult]]; .value holds the count.
+            return int(result[0][0].value)
+        except Exception as e:
+            raise Exception(f"Failed to count collection '{collection}': {e}") from e
+
     def count_subcollection_documents(
         self,
         collection: str,

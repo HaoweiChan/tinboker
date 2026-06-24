@@ -27,17 +27,23 @@ import {
     Facebook,
     ThumbsUp,
     MousePointerClick,
+    Mic,
+    Star,
+    Bookmark,
+    UserPlus,
 } from 'lucide-react';
 import {
     getCloudflareOverview,
     getSeoOverview,
     getThreadsInsights,
     getFacebookInsights,
+    getMemberAnalytics,
     type CloudflareOverview,
     type SeoOverview,
     type SeoRow,
     type ThreadsInsights,
     type FacebookInsights,
+    type MemberAnalytics,
 } from '@/services/api/adminAnalytics';
 
 // ── formatting helpers ─────────────────────────────────────────────────────
@@ -137,6 +143,40 @@ const SeoTable: React.FC<{ title: string; rows: SeoRow[]; isPage?: boolean }> = 
     </div>
 );
 
+// Top-N ranked list of saved-interest items (label + count), with a relative bar.
+const RankList: React.FC<{
+    icon: React.ReactNode;
+    title: string;
+    rows: { label: string; count: number }[];
+}> = ({ icon, title, rows }) => {
+    const max = rows.reduce((m, r) => Math.max(m, r.count), 0) || 1;
+    return (
+        <div>
+            <h4 className="mb-2 flex items-center gap-2 text-base font-semibold text-foreground">
+                {icon} {title}
+            </h4>
+            <div className="rounded-lg border border-border">
+                {rows.length === 0 ? (
+                    <div className="px-3 py-4 text-center text-base text-muted-foreground">No saves yet</div>
+                ) : (
+                    rows.map((r, i) => (
+                        <div key={i} className="flex items-center gap-3 border-b border-border px-3 py-2 last:border-0">
+                            <span className="w-5 text-right text-xs tabular-nums text-muted-foreground">{i + 1}</span>
+                            <div className="min-w-0 flex-1">
+                                <div className="truncate text-base text-foreground" title={r.label}>{r.label}</div>
+                                <div className="mt-1 h-1.5 rounded-full bg-muted">
+                                    <div className="h-1.5 rounded-full bg-accent-info" style={{ width: `${(r.count / max) * 100}%` }} />
+                                </div>
+                            </div>
+                            <span className="text-base font-semibold tabular-nums text-foreground">{r.count}</span>
+                        </div>
+                    ))
+                )}
+            </div>
+        </div>
+    );
+};
+
 const SectionCard: React.FC<{
     icon: React.ReactNode;
     title: string;
@@ -183,21 +223,24 @@ export const AdminAnalyticsPage: React.FC = () => {
     const [seo, setSeo] = useState<SeoOverview | null>(null);
     const [threads, setThreads] = useState<ThreadsInsights | null>(null);
     const [fb, setFb] = useState<FacebookInsights | null>(null);
+    const [members, setMembers] = useState<MemberAnalytics | null>(null);
     const [loading, setLoading] = useState(true);
 
     const load = useCallback(async () => {
         setLoading(true);
         // Independent sources — settle each on its own so one failure never blanks the page.
-        const [cfRes, seoRes, thRes, fbRes] = await Promise.allSettled([
+        const [cfRes, seoRes, thRes, fbRes, memRes] = await Promise.allSettled([
             getCloudflareOverview(7),
             getSeoOverview(28),
             getThreadsInsights(28, 5),
             getFacebookInsights(28),
+            getMemberAnalytics(10),
         ]);
         if (cfRes.status === 'fulfilled') setCf(cfRes.value);
         if (seoRes.status === 'fulfilled') setSeo(seoRes.value);
         if (thRes.status === 'fulfilled') setThreads(thRes.value);
         if (fbRes.status === 'fulfilled') setFb(fbRes.value);
+        if (memRes.status === 'fulfilled') setMembers(memRes.value);
         setLoading(false);
     }, []);
 
@@ -227,6 +270,63 @@ export const AdminAnalyticsPage: React.FC = () => {
                     Refresh
                 </button>
             </div>
+
+            {/* Registered members (first-party saved-interest) */}
+            <SectionCard
+                icon={<Users className="h-5 w-5 text-sentiment-bull" />}
+                title="Members"
+                subtitle="What our registered members save & follow — first-party signal GA4 can't see. For sessions, retention & visit frequency, use the GA4 reports below."
+            >
+                <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                    <Stat icon={<Users className="h-4 w-4" />} label="Total Members" value={fmt(members?.total_users)} />
+                    <Stat
+                        icon={<UserPlus className="h-4 w-4" />}
+                        label="New (8 wks)"
+                        value={fmt(members?.signups.reduce((s, w) => s + w.count, 0))}
+                    />
+                    <div className="rounded-xl border border-border bg-card p-4 sm:col-span-2">
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                            <TrendingUp className="h-4 w-4" />
+                            <span className="text-xs font-medium uppercase tracking-wide">Signups / week</span>
+                        </div>
+                        <div className="mt-3 flex items-end gap-1" style={{ height: 40 }}>
+                            {(members?.signups || []).map((w) => {
+                                const peak = Math.max(1, ...(members?.signups || []).map((x) => x.count));
+                                return (
+                                    <div
+                                        key={w.week}
+                                        className="flex-1 rounded-t bg-accent-info"
+                                        style={{ height: `${Math.max(4, (w.count / peak) * 100)}%` }}
+                                        title={`${w.week}: ${w.count}`}
+                                    />
+                                );
+                            })}
+                        </div>
+                    </div>
+                </div>
+                <div className="mt-6 grid gap-6 lg:grid-cols-2">
+                    <RankList
+                        icon={<Mic className="h-4 w-4 text-muted-foreground" />}
+                        title="Top Podcasters (subscribed)"
+                        rows={(members?.top_podcasters || []).map((r) => ({ label: r.name, count: r.count }))}
+                    />
+                    <RankList
+                        icon={<Star className="h-4 w-4 text-muted-foreground" />}
+                        title="Top Tickers (watchlisted)"
+                        rows={(members?.top_tickers || []).map((r) => ({ label: r.ticker, count: r.count }))}
+                    />
+                    <RankList
+                        icon={<Hash className="h-4 w-4 text-muted-foreground" />}
+                        title="Top Tags (followed)"
+                        rows={(members?.top_tags || []).map((r) => ({ label: r.label, count: r.count }))}
+                    />
+                    <RankList
+                        icon={<Bookmark className="h-4 w-4 text-muted-foreground" />}
+                        title="Top Episodes (bookmarked)"
+                        rows={(members?.top_episodes || []).map((r) => ({ label: r.title, count: r.count }))}
+                    />
+                </div>
+            </SectionCard>
 
             {/* Cloudflare traffic */}
             <SectionCard

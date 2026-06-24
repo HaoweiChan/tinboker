@@ -3,8 +3,8 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Activity, Database, Server, Cpu, RefreshCw, AlertCircle } from 'lucide-react';
-import { getSystemStatus } from '@/services/api/system';
+import { Activity, Database, Server, Cpu, RefreshCw, AlertCircle, Users } from 'lucide-react';
+import { getSystemStatus, getUserCount } from '@/services/api/system';
 import { StatusCard } from '@/components/admin/StatusCard';
 import { NetdataEmbed } from '@/components/admin/NetdataEmbed';
 import type { SystemStatusResponse } from '@/types/system';
@@ -14,6 +14,7 @@ export const AdminDashboardPage: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+    const [userCount, setUserCount] = useState<number | null>(null);
 
     const fetchStatus = useCallback(async () => {
         try {
@@ -22,8 +23,8 @@ export const AdminDashboardPage: React.FC = () => {
             const data = await getSystemStatus();
             setStatus(data);
             setLastUpdated(new Date());
-        } catch (err: any) {
-            setError(err.message || 'Failed to fetch system status');
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to fetch system status');
         } finally {
             setLoading(false);
         }
@@ -35,6 +36,11 @@ export const AdminDashboardPage: React.FC = () => {
         const interval = setInterval(fetchStatus, 30000);
         return () => clearInterval(interval);
     }, [fetchStatus]);
+
+    // User count is server-cached (5 min) — fetch once on mount, not on the 30s poll.
+    useEffect(() => {
+        getUserCount().then(setUserCount).catch(() => setUserCount(null));
+    }, []);
 
     const formatUptime = (seconds: number): string => {
         const days = Math.floor(seconds / 86400);
@@ -85,6 +91,15 @@ export const AdminDashboardPage: React.FC = () => {
 
             {/* Status cards */}
             <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <StatusCard
+                    title="Registered Users"
+                    icon={<Users className="h-5 w-5" />}
+                    status="healthy"
+                    value={userCount != null ? userCount.toLocaleString() : '--'}
+                    subtitle="會員總數"
+                    color="green"
+                    loading={userCount == null}
+                />
                 <StatusCard
                     title="Backend"
                     icon={<Server className="h-5 w-5" />}
