@@ -105,6 +105,10 @@ class SummarizeService:
                     ticker_insights = api_result.get("ticker_insights")
                     ticker_marp_markdown = api_result.get("ticker_marp_markdown")
                     key_insights = api_result.get("key_insights")
+                    # Cover+theme card deck the next step renders to PNGs and the
+                    # platform posts as the Threads/FB carousel. Must be carried
+                    # through or social_cards never reaches Firestore.
+                    social_cards = api_result.get("social_cards") or []
                     sector_exposures = api_result.get("sector_exposures") or []
                     unresolved_market_trends = api_result.get("unresolved_market_trends") or []
                     sector_exposure_ids = api_result.get("sector_exposure_ids") or []
@@ -125,6 +129,7 @@ class SummarizeService:
                     ticker_insights = None
                     ticker_marp_markdown = None
                     key_insights = None
+                    social_cards = []
                     sector_exposures = []
                     unresolved_market_trends = []
                     sector_exposure_ids = []
@@ -152,6 +157,10 @@ class SummarizeService:
                     # Firestore assembly path deterministically fills sparse
                     # extractor output from the summary markdown before write.
                     'key_insights': key_insights or [],
+                    # Ordered cover+theme cards → rendered to PNGs (render_social_cards)
+                    # → posted as the Threads/FB carousel. Empty list when the graph
+                    # produced none, so the platform cleanly falls back to a text post.
+                    'social_cards': social_cards,
                     # Broad sector/theme exposure metadata. These are intentionally
                     # separate from related_tickers and ticker_insights so inferred
                     # baskets never trigger direct-mention behavior.
