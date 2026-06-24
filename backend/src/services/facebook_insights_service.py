@@ -87,6 +87,7 @@ class FacebookInsightsService:
         fans: Optional[int] = None
         followers: Optional[int] = None
         metrics: dict[str, int] = {}
+        series: list[dict] = []
         detail: Optional[str] = None
 
         try:
@@ -111,9 +112,22 @@ class FacebookInsightsService:
                         {"metric": ",".join(PAGE_DAILY_METRICS), "period": "day",
                          "since": since, "until": until},
                     )
+                    series_by_date: dict[str, dict] = {}
                     for item in (payload.get("data") or []):
-                        if item.get("name"):
-                            metrics[item["name"]] = self._sum_metric(item)
+                        name = item.get("name")
+                        if not name:
+                            continue
+                        metrics[name] = self._sum_metric(item)
+                        for v in item.get("values", []) or []:
+                            day = ((v or {}).get("end_time") or "")[:10]
+                            if not day:
+                                continue
+                            row = series_by_date.setdefault(day, {"date": day})
+                            try:
+                                row[name] = int((v or {}).get("value", 0) or 0)
+                            except (TypeError, ValueError):
+                                row[name] = 0
+                    series = [series_by_date[k] for k in sorted(series_by_date)]
                 except Exception as e:
                     detail = detail or f"Insights failed: {e}"
                     logger.warning("Facebook page insights failed: %s", e)
@@ -129,5 +143,6 @@ class FacebookInsightsService:
             "fans": fans,
             "followers": followers,
             "metrics": metrics,
+            "series": series,
             **({"detail": detail} if detail and not available else {}),
         }

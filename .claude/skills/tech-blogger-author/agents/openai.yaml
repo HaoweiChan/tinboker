@@ -1,0 +1,7 @@
+interface:
+  display_name: "Tech Blogger Author"
+  short_description: "De-identified zh-TW architecture blog writer"
+  default_prompt: "Use $tech-blogger-author to turn this implementation detail into a de-identified Traditional Chinese technical blog post."
+
+policy:
+  allow_implicit_invocation: true

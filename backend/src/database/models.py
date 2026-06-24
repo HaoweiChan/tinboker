@@ -259,6 +259,27 @@ class TagRegistry(Base):
         return f"<TagRegistry(slug='{self.slug}', kind='{self.kind}', tier='{self.tier}')>"
 
 
+class AnalyticsSnapshot(Base):
+    """Daily point-in-time audience snapshot, for follower/fan growth charts.
+
+    Meta's APIs return only the *current* follower/fan count (no history), so we record
+    them once a day (cron → POST /api/admin/analytics/snapshot) and chart the
+    accumulation. One row per UTC day (``day`` unique, upserted). Shared across envs
+    (one Postgres), so it doesn't matter which env's cron writes it.
+    """
+    __tablename__ = "analytics_snapshots"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    day = Column(String(10), nullable=False, unique=True, index=True)  # YYYY-MM-DD (UTC)
+    threads_followers = Column(Integer, nullable=True)
+    fb_followers = Column(Integer, nullable=True)
+    fb_fans = Column(Integer, nullable=True)
+    captured_at = Column(DateTime, default=datetime.utcnow)
+
+    def __repr__(self) -> str:
+        return f"<AnalyticsSnapshot(day={self.day}, th={self.threads_followers}, fb={self.fb_followers})>"
+
+
 class PromoDraft(Base):
     """A saved draft for the admin promo cross-poster (free-form Threads/FB post).
 

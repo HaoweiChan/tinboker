@@ -1,5 +1,5 @@
 """
-Admin Analytics API - Fetches live traffic analytics from Cloudflare.
+Admin Analytics API - live traffic (Cloudflare) + daily audience-growth snapshots.
 """
 import asyncio
 import json
@@ -10,11 +10,14 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from src.auth.admin_auth import AdminAccess, get_admin_access
+from src.auth.admin_auth import AdminAccess, get_admin_access, get_social_access
 from src.cache.redis_client import cache_get, cache_set
+from src.database.models import AnalyticsSnapshot
 from src.database.postgres import get_session
 from src.services.cloudflare_analytics_service import CloudflareAnalyticsService
+from src.services.facebook_insights_service import FacebookInsightsService
 from src.services.firestore_service import FirestoreService
+from src.services.threads_insights_service import ThreadsInsightsService
 from src.tag_registry import canonical_label, display_map
 
 router = APIRouter(prefix="/api/admin/analytics", tags=["admin-analytics"])
@@ -109,6 +112,15 @@ async def get_member_analytics(
     return payload
 
 
+def _snapshot_dict(r: AnalyticsSnapshot) -> dict:
+    return {
+        "day": r.day,
+        "threads_followers": r.threads_followers,
+        "fb_followers": r.fb_followers,
+        "fb_fans": r.fb_fans,
+    }
+
+
 @router.get("/overview")
 async def get_analytics_overview(
     days: int = Query(default=7, ge=1, le=90),
@@ -133,3 +145,52 @@ async def get_analytics_overview(
             "googleAnalytics": "https://analytics.google.com",
         },
     }
+
+
+@router.post("/snapshot")
+async def record_snapshot(
+    _: AdminAccess = Depends(get_social_access),
+    db: Session = Depends(get_session),
+):
+    """Record today's Threads/Facebook follower + fan counts (one row per UTC day).
+
+    Auth accepts the TINBOKER_SOCIAL_TOKEN service token so a daily cron can call it.
+    Idempotent per day (upsert); a transient null count never clobbers a good value.
+    """
+    th = await ThreadsInsightsService().account_summary(days=1)
+    fb = await FacebookInsightsService().account_summary(days=1)
+    day = datetime.now(timezone.utc).date().isoformat()
+
+    row = db.query(AnalyticsSnapshot).filter(AnalyticsSnapshot.day == day).first()
+    if row is None:
+        row = AnalyticsSnapshot(day=day)
+        db.add(row)
+    if th.get("followers") is not None:
+        row.threads_followers = th["followers"]
+    if fb.get("followers") is not None:
+        row.fb_followers = fb["followers"]
+    if fb.get("fans") is not None:
+        row.fb_fans = fb["fans"]
+    row.captured_at = datetime.utcnow()
+    db.commit()
+    db.refresh(row)
+    logger.info("analytics snapshot %s: th=%s fb=%s fans=%s",
+                row.day, row.threads_followers, row.fb_followers, row.fb_fans)
+    return _snapshot_dict(row)
+
+
+@router.get("/history")
+def get_analytics_history(
+    days: int = Query(default=90, ge=1, le=365),
+    admin: AdminAccess = Depends(get_admin_access),
+    db: Session = Depends(get_session),
+):
+    """Daily audience snapshots over ``days`` (oldest first) for the growth chart."""
+    cutoff = (datetime.now(timezone.utc).date() - timedelta(days=days)).isoformat()
+    rows = (
+        db.query(AnalyticsSnapshot)
+        .filter(AnalyticsSnapshot.day >= cutoff)
+        .order_by(AnalyticsSnapshot.day.asc())
+        .all()
+    )
+    return {"snapshots": [_snapshot_dict(r) for r in rows]}

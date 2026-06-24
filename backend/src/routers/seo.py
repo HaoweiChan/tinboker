@@ -107,9 +107,12 @@ async def seo_overview(
     if not svc.is_configured:
         return {"configured": False, "detail": "Set GSC_SITE_URL to enable SEO monitoring."}
     try:
-        data = await svc.refresh_cache(days=days) if refresh else (
-            SearchConsoleService.get_cached() or await svc.refresh_cache(days=days)
-        )
+        cached = None if refresh else SearchConsoleService.get_cached()
+        # Force a refresh when the cache predates the per-day ``series`` field, so the
+        # trend chart populates on first load after deploy without a manual refresh.
+        if cached is not None and "series" not in cached:
+            cached = None
+        data = cached or await svc.refresh_cache(days=days)
         return {"configured": True, **data}
     except Exception as e:
         logger.exception("GSC overview failed")

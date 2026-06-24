@@ -41,3 +41,6 @@ out/
 
 # Local Marp deck preview renders (scratch; regenerate via card_deck)
 marp-examples/
+
+# Local technical blog drafts
+tech-blogs/
