@@ -93,7 +93,7 @@ export const EpisodeCardV2: React.FC<EpisodeCardV2Props> = ({
       </div>
 
       {/* Title */}
-      <h3 className="text-xl font-medium leading-[1.35] tracking-[-0.005em] mb-2 text-foreground line-clamp-2">{title}</h3>
+      <h3 className="text-xl font-medium leading-[1.35] tracking-[-0.005em] mb-4 text-foreground line-clamp-2">{title}</h3>
 
       {/* Essence — precomputed key-insight bullets, else the plain teaser */}
       {keyInsights && keyInsights.length > 0 ? (
@@ -111,7 +111,7 @@ export const EpisodeCardV2: React.FC<EpisodeCardV2Props> = ({
 
       {/* Ticker rows */}
       {tickers && tickers.length > 0 && (
-        <div className="flex flex-col gap-1.5 mb-3">
+        <div className="ticker-list flex flex-col gap-1.5 mb-3">
           {tickers.slice(0, 4).map((t) => (
             <TickerRow key={t.symbol} ticker={t} />
           ))}

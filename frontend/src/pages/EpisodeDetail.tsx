@@ -323,7 +323,7 @@ export const EpisodeDetail: React.FC = () => {
               {tickers.length > 0 && (
                 <section aria-labelledby="episode-rail-tickers">
                   <h4 id="episode-rail-tickers" className="text-2xs font-semibold tracking-[0.08em] uppercase text-muted-foreground px-2 mb-2">提及股票</h4>
-                  <div className="flex flex-col gap-1.5">
+                  <div className="ticker-list flex flex-col gap-1.5">
                     {tickers.map((t) => (
                       <TickerRow key={t.symbol} ticker={t} onClick={() => navigate(`/stock/${encodeURIComponent(t.symbol)}`)} />
                     ))}
@@ -444,7 +444,7 @@ export const EpisodeDetail: React.FC = () => {
             {tickers.length > 0 && (
               <section className="xl:hidden bg-card border border-border rounded-md p-5 sm:p-6 mb-3.5">
                 <h3 className="text-base font-semibold text-muted-foreground mb-3.5">提及股票</h3>
-                <div className="flex flex-col gap-1.5">
+                <div className="ticker-list flex flex-col gap-1.5">
                   {tickers.map((t) => (
                     <TickerRow key={t.symbol} ticker={t} onClick={() => navigate(`/stock/${encodeURIComponent(t.symbol)}`)} />
                   ))}

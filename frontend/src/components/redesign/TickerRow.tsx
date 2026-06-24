@@ -30,7 +30,9 @@ export const TickerRow: React.FC<TickerRowProps> = ({ ticker, onClick, className
       className={cn('ticker-row w-full text-left', interactive && 'hover:bg-muted transition-colors', className)}
     >
       <StockIdentity ticker={ticker.symbol} name={ticker.name} size="sm" className="min-w-0" />
-      {ticker.sentiment ? <SentimentChip sentiment={ticker.sentiment} className="w-full justify-start" /> : <span />}
+      {/* Chip column is reserved even when empty (no/neutral sentiment renders nothing)
+          so the price column never shifts. */}
+      <span className="justify-self-start">{ticker.sentiment && <SentimentChip sentiment={ticker.sentiment} />}</span>
       <span className="flex items-baseline gap-1.5 justify-end">
         <Change value={ticker.changePercent} />
         {ticker.sinceLabel && (

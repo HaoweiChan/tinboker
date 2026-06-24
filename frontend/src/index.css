@@ -337,7 +337,7 @@
      Bull/bear colors are supplied by the component so they can follow the
      user's stock price color convention. */
   .sentiment-chip {
-    @apply inline-flex items-center px-2 py-0.5 rounded-md text-2xs font-medium uppercase tracking-wide;
+    @apply inline-flex items-center whitespace-nowrap px-2 py-0.5 rounded-md text-2xs font-medium uppercase tracking-wide;
   }
   .sentiment-chip-bull {
     background-color: hsl(var(--sentiment-bull-soft));
@@ -368,16 +368,24 @@
     border-color: hsl(var(--foreground));
   }
 
+  /* The list wrapper is a size container so each row adapts to ITS list's width
+     (wide episode card vs the ~320px right rail), not the viewport. */
+  .ticker-list { container-type: inline-size; }
+
   /* Ticker row — inset row inside episode cards / detail pages.
-     [stock identity (StockIdentity) | sentiment chip | price change %]. */
+     [stock identity | sentiment chip slot | price change % (right-aligned)]. */
   .ticker-row {
     @apply grid items-center gap-2.5 px-2.5 py-2 rounded-md;
-    /* fixed identity | flexible sentiment capsule | auto price (right-aligned).
-       Identity is fixed-width so the capsules share one left edge; the capsule flexes
-       to fill the row and extends right toward the price (or the em-dash when there's
-       no price), instead of stopping mid-row as a floating fixed-width box. */
-    grid-template-columns: 7.5rem minmax(0, 1fr) auto;
+    /* Compact default for narrow lists (the rail): identity flexes & truncates;
+       chip and price are content-sized so the price can NEVER overflow onto the
+       chip. The 1fr identity eats the slack, so prices stay pinned to the right. */
+    grid-template-columns: minmax(0, 1fr) auto auto;
     background-color: hsl(var(--muted) / 0.6);
+  }
+  /* Roomy lists (episode card): fixed identity + chip slot so every capsule lands
+     on one vertical line; price flexes and right-aligns. */
+  @container (min-width: 360px) {
+    .ticker-row { grid-template-columns: 9rem 3.5rem minmax(0, 1fr); }
   }
 
   /* Sentiment microbar — bull|neutral|bear proportions. */
