@@ -29,8 +29,39 @@ Branch conventions:
 5. When dev is stable, open `develop → main`.
 6. Merge to `main` → auto-deploys to staging.
 7. Verify on staging.
-8. Cut release: `git tag v1.x.0 && git push --tags`.
-9. Tag push → auto-deploys to `tinboker.com` + `api.tinboker.com`.
+8. **Update the in-app "What's new" changelog** for the version you're about to cut — see [In-app changelog](#in-app-changelog-whats-new). Commit it to `main` before tagging so prod ships with it.
+9. Cut release: `git tag v1.x.0 && git push --tags`.
+10. Tag push → auto-deploys to `tinboker.com` + `api.tinboker.com`.
+
+## In-app changelog (What's new)
+
+Returning users see a one-time "更新內容" modal after a release. It is driven by a
+single typed array — [`frontend/src/lib/onboarding.ts`](../../frontend/src/lib/onboarding.ts) →
+`CHANGELOG` (newest entry first). The modal shows `CHANGELOG[0]` once to anyone whose
+last-seen version differs.
+
+**Releasing? Prepend one entry. The text must read like a product release note — NOT a git log.**
+
+1. See what actually shipped since the last release:
+   ```bash
+   git log --oneline "$(git describe --tags --abbrev=0)"..HEAD
+   ```
+2. Translate the commits into **2–5 user-facing zh-TW bullets**. Rules:
+   - Describe what the **user** can now see or do — never how it was built.
+   - **No engineering wording**: no file/function names, PR numbers, "refactor", "bump",
+     "fix race condition", internal service names, env/flags, etc.
+   - Drop purely-internal commits entirely (CI, deps, infra, test-only) — if a release is
+     all plumbing, it gets **no** entry.
+   - Voice: friendly, concrete, benefit-first. e.g. ✅「個股頁新增情緒走勢圖」 / ❌「重構 ticker_insights 快取」.
+3. Prepend the entry; `version` = the tag you're cutting **without the `v`** (e.g. `'0.5.0'`),
+   `date` = `'YYYY-MM'`:
+   ```ts
+   export const CHANGELOG: ChangelogEntry[] = [
+     { version: '0.5.0', date: '2026-07', items: ['…', '…'] },
+     // …older entries stay below, untouched
+   ];
+   ```
+4. `npm run build` to confirm it still type-checks, then commit on `main` before tagging.
 
 ## Hotfix pipeline
 
@@ -107,6 +138,7 @@ Before opening or merging a `develop → main` PR:
 - [ ] No new `time.sleep()` in async code (per [`CLAUDE.md`](../../CLAUDE.md) "Do Not")
 - [ ] No new `@app.on_event("startup")` — use the lifespan pattern
 - [ ] Search/heatmap/Zod regressions checked (BUG-1, BUG-2, BUG-5)
+- [ ] In-app `CHANGELOG` updated for this release if it has user-facing changes (see [In-app changelog](#in-app-changelog-whats-new))
 - [ ] CORS still includes `tinboker.com`, `dev.tinboker.com`, `staging.tinboker.com` (BUG-9 history)
 
 ## Cross-references
