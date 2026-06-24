@@ -63,9 +63,11 @@ const getBaseURL = (): string => {
     return envUrl;
   }
 
-  // Development: use Vite proxy (empty base URL = same origin → proxy handles /api)
+  // No explicit URL in dev → talk to the shared dev backend, so a fresh
+  // checkout/worktree "just works" (`npm run dev`) with no env file. To use a
+  // LOCAL backend instead, set VITE_API_BASE_URL=http://localhost:5174 in .env.local.
   if (!import.meta.env.PROD) {
-    cachedApiUrl = 'http://localhost:5174';
+    cachedApiUrl = 'https://dev-api.tinboker.com';
     return cachedApiUrl;
   }
 
