@@ -67,6 +67,12 @@ export interface PublishPlatformResult {
   reason?: string;
   url?: string;
   error?: string;
+  // Present on a successful publish — used to link straight to the live post.
+  post_id?: string;          // Facebook single-post path: {page}_{post}
+  root_post_id?: string;     // Facebook thread/album path: {page}_{post}
+  root_media_id?: string;    // Threads carousel/root media id
+  reply_count?: number;      // Threads replies posted
+  comment_count?: number;    // Facebook comments posted
 }
 
 export interface PublishResult {
