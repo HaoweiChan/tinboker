@@ -75,6 +75,35 @@ def link_comment(episode_id: str) -> str:
     return f"▶ 完整重點：{episode_url(episode_id)}"
 
 
+RASTER_IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".webp", ".gif")
+
+
+def _is_raster(url: Optional[str]) -> bool:
+    """True for image URLs Meta can actually ingest. Threads/IG and the FB photo
+    endpoints reject SVG (and other vector formats) with a media-download error, so a
+    non-raster image must be dropped or the whole post hard-fails. Currently the only
+    episode image is an SVG summary card, so this degrades posts to text-only until a
+    raster (PNG/JPEG) card render exists."""
+    if not url:
+        return False
+    return url.lower().split("?")[0].endswith(RASTER_IMAGE_EXTS)
+
+
+def _has_human_thread(episode: Any) -> bool:
+    """True when an operator authored social copy (post or comments). Such episodes
+    publish via the thread composer even without rendered cards, so the hand-written
+    copy + link comment go out and the publish matches the admin preview."""
+    t = _field(episode, "social_thread")
+    if not isinstance(t, dict):
+        return False
+    if (t.get("post") or "").strip():
+        return True
+    return any(
+        ((c.get("text") if isinstance(c, dict) else c) or "").strip()
+        for c in (t.get("comments") or [])
+    )
+
+
 def compose_post(episode: Any, *, count_line: str = "", with_link: bool = True) -> dict:
     """Build a Threads post draft from an episode. Always <= THREADS_MAX_CHARS chars.
 
@@ -89,6 +118,8 @@ def compose_post(episode: Any, *, count_line: str = "", with_link: bool = True) 
     podcast_name = (_field(episode, "podcast_name") or "").strip()
     insights = [s.strip() for s in (_field(episode, "key_insights") or []) if s and s.strip()]
     image_url = _field(episode, "summary_image_public_url") or None
+    if not _is_raster(image_url):
+        image_url = None  # Meta can't ingest SVG — post text-only rather than hard-fail
 
     url = episode_url(episode_id)
     link_line = f"\n\n{link_comment(episode_id)}" if with_link else ""
@@ -152,7 +183,8 @@ def compose_thread(episode: Any) -> dict:
     """
     episode_id = _field(episode, "id") or _field(episode, "episode_id") or ""
     cards = [c for c in (_field(episode, "social_cards") or []) if isinstance(c, dict)]
-    image_urls = [c["image_url"] for c in cards if c.get("image_url")][:MAX_CARDS]
+    # Drop non-raster (SVG) card images — Meta rejects them; better a text post than a hard fail.
+    image_urls = [c["image_url"] for c in cards if _is_raster(c.get("image_url"))][:MAX_CARDS]
     theme_cards = [c for c in cards if c.get("kind") == "theme"]
     count_line = f"⬇️ {len(theme_cards)} 個重點整理" if theme_cards else ""
 
@@ -320,9 +352,10 @@ async def publish_recent(
             skipped.append({"episode_id": episode_id, "reason": "no_postable_content"})
             continue
 
-        # Prefer the full thread (carousel + reply chain) when the episode has rendered
-        # cards; otherwise fall back to a single text/image post (legacy episodes).
-        if has_cards:
+        # Use the full thread (carousel + reply chain) when the episode has rendered
+        # cards OR hand-authored social copy; otherwise fall back to a single text/image
+        # post (legacy episodes with neither).
+        if has_cards or _has_human_thread(episode):
             thread = compose_thread(episode)
             if effective_dry_run:
                 posted.append({
@@ -388,7 +421,7 @@ async def publish_episode(episode: Any, dry_run: bool = True) -> dict:
     if not (has_cards or _field(episode, "key_insights") or _field(episode, "episode_title")):
         return {**base, "posted": False, "reason": "no_postable_content"}
 
-    if has_cards:
+    if has_cards or _has_human_thread(episode):
         thread = compose_thread(episode)
         if effective_dry_run:
             return {**base, "posted": False, "reason": "dry_run", "url": thread["url"],
