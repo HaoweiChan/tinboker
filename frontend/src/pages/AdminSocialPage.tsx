@@ -367,6 +367,43 @@ export const AdminSocialPage: React.FC = () => {
                   : <div className="text-base text-muted-foreground">這集還沒有 marp 投影片</div>}
               </div>
 
+              {/* Actual PNGs that will be posted (rendered by the pipeline, stored in GCS).
+                  Empty for older episodes processed before card rendering — they post text-only. */}
+              <div className={`${card} p-4`}>
+                <div className={`${label} mb-2 flex items-center gap-1.5`}>
+                  <ImageIcon className="h-3.5 w-3.5" /> 卡片圖 PNG（實際發佈）
+                </div>
+                {bundle.composed.image_urls.length ? (
+                  <>
+                    <p className="mb-3 text-xs text-muted-foreground">
+                      {bundle.composed.image_urls.length} 張 — 這就是發佈時會帶上的輪播圖。點圖可開啟原圖下載。
+                    </p>
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                      {bundle.composed.image_urls.map((url, i) => (
+                        <a
+                          key={i}
+                          href={url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          download
+                          className="group relative block overflow-hidden rounded-lg border border-border hover:border-accent-info"
+                          title={`卡片 ${i + 1} — 點擊開啟原圖`}
+                        >
+                          <img src={url} alt={`card ${i + 1}`} loading="lazy" className="aspect-square w-full bg-muted object-cover" />
+                          <span className="absolute bottom-1 right-1 rounded bg-background/80 px-1.5 py-0.5 text-xs text-foreground">
+                            {i + 1}
+                          </span>
+                        </a>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-base text-muted-foreground">
+                    這集沒有卡片圖 PNG（舊集數，發佈時為純文字）。新處理的集數會自動產生卡片圖。
+                  </div>
+                )}
+              </div>
+
               {/* Post */}
               <div className={`${card} p-4`}>
                 <div className={`${label} mb-2`}>主貼文 Post</div>
