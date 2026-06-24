@@ -38,15 +38,16 @@ def temp_db(tmp_path, monkeypatch):
 
 # ── compose_post ─────────────────────────────────────────────────────
 
-def test_compose_post_includes_link_insights_and_hashtags():
+def test_compose_post_includes_link_and_insights_no_hashtags():
     ep = _ep("EP200", insights=["台積電法說會優於預期", "AI 需求續強"], tickers=["2330", "NVDA"])
     draft = threads_publisher.compose_post(ep)
 
     assert draft["episode_id"] == "EP200"
+    # Standalone single-post path keeps the link in the body (no comment channel).
     assert "tinboker.com/episode/EP200" in draft["text"]
     assert "台積電法說會優於預期" in draft["text"]
-    assert "#2330" in draft["text"] and "#NVDA" in draft["text"]
-    assert "#台股" in draft["text"]
+    # No auto hashtags anywhere.
+    assert "#" not in draft["text"]
     assert draft["image_url"] == "https://cdn.tinboker.com/EP200.png"
 
 
@@ -171,9 +172,12 @@ def test_compose_thread_carousel_images_and_replies():
     draft = threads_publisher.compose_thread(_ep_cards("EP600", _cards()))
     assert draft["image_urls"] == ["https://c/0.png", "https://c/1.png", "https://c/2.png"]
     assert "2 個重點整理" in draft["main_text"]
-    assert "tinboker.com/episode/EP600" in draft["main_text"]
-    assert [r["text"].splitlines()[0] for r in draft["replies"]] == ["【主題A】", "【主題B】"]
-    assert "重點1 [01:07]" in draft["replies"][0]["text"]
+    # Link is no longer in the post body — it's the first comment.
+    assert "tinboker.com/episode/EP600" not in draft["main_text"]
+    assert "#" not in draft["main_text"]
+    assert draft["replies"][0]["text"] == "▶ 完整重點：" + threads_publisher.episode_url("EP600")
+    assert [r["text"].splitlines()[0] for r in draft["replies"][1:]] == ["【主題A】", "【主題B】"]
+    assert "重點1 [01:07]" in draft["replies"][1]["text"]
     assert all(len(r["text"]) <= THREADS_MAX_CHARS for r in draft["replies"])
 
 
@@ -195,16 +199,17 @@ def test_compose_thread_prefers_human_social_thread():
         ],
     }
     draft = threads_publisher.compose_thread(ep)
-    # Human post is used as the body, with the link + hashtags tail appended.
+    # Human post is the body — no link, no hashtags (link goes in the first comment).
     assert draft["main_text"].startswith("這集聊台積電跟離散元件")
-    assert "tinboker.com/episode/EP610" in draft["main_text"]
-    assert "#2330" in draft["main_text"]
-    # Replies are the human comments verbatim — no 【title】 / bullet scaffolding.
-    assert [r["text"] for r in draft["replies"]] == [
+    assert "tinboker.com/episode/EP610" not in draft["main_text"]
+    assert "#" not in draft["main_text"]
+    # First comment is the permalink; then the human comments verbatim (no scaffolding).
+    assert draft["replies"][0]["text"] == "▶ 完整重點：" + threads_publisher.episode_url("EP610")
+    assert [r["text"] for r in draft["replies"][1:]] == [
         "題材輪動很快，籌碼要顧好。",
         "離散元件的缺口慢慢養出來。",
     ]
-    assert "【" not in draft["replies"][0]["text"]
+    assert "【" not in draft["replies"][1]["text"]
     # Images still come from the cards.
     assert draft["image_urls"] == ["https://c/0.png", "https://c/1.png", "https://c/2.png"]
 
@@ -213,8 +218,9 @@ def test_compose_thread_falls_back_when_social_thread_empty():
     ep = _ep_cards("EP611", _cards())
     ep.social_thread = {"post": "", "comments": []}
     draft = threads_publisher.compose_thread(ep)
-    # Empty thread → mechanical 【title】 + bullets compose.
-    assert [r["text"].splitlines()[0] for r in draft["replies"]] == ["【主題A】", "【主題B】"]
+    # Empty thread → link comment first, then mechanical 【title】 + bullets compose.
+    assert draft["replies"][0]["text"].startswith("▶ 完整重點：")
+    assert [r["text"].splitlines()[0] for r in draft["replies"][1:]] == ["【主題A】", "【主題B】"]
 
 
 @pytest.mark.asyncio
@@ -224,11 +230,13 @@ async def test_publish_thread_carousel_then_reply_chain():
     res = await threads_publisher.publish_thread(fake, draft)
 
     assert res["root_media_id"] == "root1"
-    assert res["reply_count"] == 2 and res["image_count"] == 3
+    # 3 replies now: the link comment + the 2 theme cards.
+    assert res["reply_count"] == 3 and res["image_count"] == 3
     # carousel first, then replies threaded to the previous post id.
     assert fake.calls[0] == ("carousel", ("https://c/0.png", "https://c/1.png", "https://c/2.png"))
-    assert fake.calls[1][:2] == ("reply", "root1")     # reply 1 → carousel root
-    assert fake.calls[2][:2] == ("reply", "reply2")    # reply 2 → reply 1
+    assert fake.calls[1][:2] == ("reply", "root1")     # link comment → carousel root
+    assert fake.calls[2][:2] == ("reply", "reply2")    # theme A → link comment
+    assert fake.calls[3][:2] == ("reply", "reply3")    # theme B → theme A
 
 
 @pytest.mark.asyncio
@@ -237,7 +245,10 @@ async def test_publish_thread_single_image_when_cover_only():
     draft = threads_publisher.compose_thread(_ep_cards("EP602", [_cards()[0]]))  # cover only
     res = await threads_publisher.publish_thread(fake, draft)
     assert fake.calls[0][0] == "single"   # 1 image → not a carousel
-    assert res["reply_count"] == 0
+    # No theme cards, but the link comment is still posted.
+    assert res["reply_count"] == 1
+    assert fake.calls[1][:2] == ("reply", "root1")
+    assert fake.calls[1][2].startswith("▶ 完整重點：")
 
 
 @pytest.mark.asyncio
@@ -252,10 +263,10 @@ async def test_publish_recent_thread_path_records_root_and_replies(temp_db, monk
     result = await threads_publisher.publish_recent(limit=5, dry_run=False)
     assert result["posted_count"] == 1
     assert result["posted"][0]["root_media_id"] == "root1"
-    assert result["posted"][0]["reply_count"] == 2
+    assert result["posted"][0]["reply_count"] == 3  # link comment + 2 theme cards
     row = threads_publisher.list_posted()[0]
     assert row["episode_id"] == "EP700" and row["media_id"] == "root1"
-    assert row["reply_ids"] == ["reply2", "reply3"]
+    assert row["reply_ids"] == ["reply2", "reply3", "reply4"]
 
     # Idempotent: a second run skips the already-posted episode.
     again = await threads_publisher.publish_recent(limit=5, dry_run=False)
@@ -289,7 +300,7 @@ async def test_publish_episode_publishes_and_is_idempotent(temp_db, monkeypatch)
     res = await threads_publisher.publish_episode(_ep_cards("EP801", _cards()), dry_run=False)
     assert res["posted"] is True
     assert res["root_media_id"] == "root1"
-    assert res["reply_count"] == 2
+    assert res["reply_count"] == 3  # link comment + 2 theme cards
     assert threads_publisher.already_posted("EP801") is True
 
     # Second publish of the same episode is a no-op skip (idempotent).
