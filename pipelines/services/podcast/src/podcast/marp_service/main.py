@@ -125,7 +125,10 @@ def render_to_png():
                 theme_path = os.path.join(workdir, 'theme.css')
                 with open(theme_path, 'w', encoding='utf-8') as f:
                     f.write(data['theme_css'])
-                cmd[1:1] = ['--theme-set', theme_path]
+                # Insert AFTER the input file (index 2), not before it: --theme-set is a
+                # greedy array option, so `marp --theme-set theme.css deck.md` swallows
+                # deck.md as a second theme file → no input → marp prints help, 0 images.
+                cmd[2:2] = ['--theme-set', theme_path]
 
             logger.info("Rendering Marp deck to PNGs")
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
