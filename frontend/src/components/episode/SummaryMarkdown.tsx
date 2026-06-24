@@ -47,7 +47,7 @@ export const SummaryMarkdown: React.FC<SummaryMarkdownProps> = ({ content, onSee
   if (!prepared.trim()) return null;
 
   return (
-    <div className="text-xl leading-relaxed text-foreground">
+    <div className="text-xl leading-relaxed md:leading-[1.9] text-foreground">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
@@ -66,10 +66,10 @@ export const SummaryMarkdown: React.FC<SummaryMarkdownProps> = ({ content, onSee
           h4: ({ children }) => (
             <h5 className="text-lg font-semibold text-foreground/90 mt-5 mb-1">{children}</h5>
           ),
-          p: ({ children }) => <p className="mb-5 last:mb-0">{children}</p>,
+          p: ({ children }) => <p className="mb-5 md:mb-7 last:mb-0">{children}</p>,
           ul: ({ children }) => <ul className="list-disc pl-6 mb-5 flex flex-col gap-2">{children}</ul>,
           ol: ({ children }) => <ol className="list-decimal pl-6 mb-5 flex flex-col gap-2">{children}</ol>,
-          li: ({ children }) => <li className="leading-relaxed pl-1">{children}</li>,
+          li: ({ children }) => <li className="leading-relaxed md:leading-[1.9] pl-1">{children}</li>,
           strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
           blockquote: ({ children }) => (
             <blockquote className="border-l-[3px] border-border pl-5 my-5 text-foreground/70 italic">{children}</blockquote>

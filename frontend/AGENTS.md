@@ -5,6 +5,42 @@ Domain-specific guidelines for AI agents working in `frontend/`. For project-wid
 
 ---
 
+## Local Preview — ALWAYS run after a UI/UX change
+
+After any UI/UX edit, host the frontend locally against the **dev backend** so the user can
+see it. Do this every time — don't just report the diff.
+
+```bash
+cd frontend
+npm run dev -- --port 5173 --strictPort   # vite --mode dev → .env.dev(.local) → https://dev-api.tinboker.com
+```
+
+Log in with an admin Google account — dev-api is OAuth-gated.
+
+**MUST be port 5173.** dev-api's CORS allowlist only includes `http://localhost:5173`. If
+5173 is taken, Vite silently jumps to 5174 and the browser gets CORS-blocked → **episodes/API
+come back empty with no obvious error**. So pin it with `--port 5173 --strictPort` and free
+5173 first if another dev server (e.g. the primary checkout's) holds it:
+`kill $(lsof -nP -iTCP:5173 -sTCP:LISTEN -t)`.
+
+**Working in a git worktree** (no `node_modules` / no env files there)? Wire it up once
+without a full reinstall — symlink deps from the primary checkout and copy the gitignored
+dev env files (copying `.env*` to run is fine; never commit them):
+
+```bash
+cd frontend
+ln -sfn ../../../frontend/node_modules node_modules        # adjust depth to reach primary checkout's frontend/
+cp ../../../frontend/.env.dev ../../../frontend/.env.dev.local .
+npm run dev
+```
+
+Env precedence (Vite, mode `dev`): `.env.dev.local` > `.env.local` > `.env.dev`. The
+mode-specific `.env.dev.local` holds `VITE_API_BASE_URL=https://dev-api.tinboker.com`, so it
+wins over any localhost value in `.env.local`. To point at a **local** backend instead, run
+plain `npm run dev -- --mode local` only if you have the backend up on :5174.
+
+---
+
 ## UI Conventions
 
 ### No Emoji Icons
