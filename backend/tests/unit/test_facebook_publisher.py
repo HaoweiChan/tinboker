@@ -73,10 +73,12 @@ async def test_publish_thread_album_then_comments():
     draft = facebook_thread()
     res = await fbp.publish_thread(fake, draft)
     assert res["root_post_id"] == "post1"
-    assert res["image_count"] == 3 and res["comment_count"] == 2
-    # An album for the carousel images, then one comment per theme card.
+    # 3 comments: the link comment + one per theme card.
+    assert res["image_count"] == 3 and res["comment_count"] == 3
+    # An album for the carousel images, then the link comment + one per theme card.
     assert fake.calls[0] == ("album", ("https://c/0.png", "https://c/1.png", "https://c/2.png"))
-    assert [c[0] for c in fake.calls[1:]] == ["comment", "comment"]
+    assert [c[0] for c in fake.calls[1:]] == ["comment", "comment", "comment"]
+    assert fake.calls[1][2].startswith("▶ 完整重點：")  # first comment is the permalink
     # Comments hang off the root post (FB is flat, unlike the Threads reply chain).
     assert all(c[1] == "post1" for c in fake.calls[1:])
 
@@ -157,7 +159,7 @@ async def test_publish_episode_publishes_and_is_idempotent(temp_db, monkeypatch)
 
     res = await fbp.publish_episode(_ep("EP801"), dry_run=False)
     assert res["posted"] is True
-    assert res["comment_count"] == 2
+    assert res["comment_count"] == 3  # link comment + 2 theme cards
     assert fake.calls[0][0] == "album"
     assert fbp.already_posted("EP801") is True
 

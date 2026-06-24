@@ -21,6 +21,7 @@ from src.database.db import get_connection
 from src.services.facebook_service import FacebookError, FacebookService
 from src.services.threads_publisher import (
     _field,
+    _has_human_thread,
     _release_ms,
     compose_post,
     compose_thread,
@@ -170,7 +171,7 @@ async def publish_recent(
             skipped.append({"episode_id": episode_id, "reason": "no_postable_content"})
             continue
 
-        if has_cards:
+        if has_cards or _has_human_thread(episode):
             thread = compose_thread(episode)
             if effective_dry_run:
                 posted.append({
@@ -237,7 +238,7 @@ async def publish_episode(episode, dry_run: bool = True) -> dict:
     if not (has_cards or _field(episode, "key_insights") or _field(episode, "episode_title")):
         return {**base, "posted": False, "reason": "no_postable_content"}
 
-    if has_cards:
+    if has_cards or _has_human_thread(episode):
         thread = compose_thread(episode)
         if effective_dry_run:
             return {**base, "posted": False, "reason": "dry_run", "url": thread["url"],

@@ -48,7 +48,8 @@ export function getSentimentDisplay(sentiment: Sentiment, stockColorMode: StockC
     case 'BEARISH':
       return { label: '看空', short: '空', ...directionalClasses(s, stockColorMode) };
     case 'NEUTRAL':
-      return { label: '中性', short: '中', chipClass: 'sentiment-chip sentiment-chip-neutral', toneClass: 'text-sentiment-neutral' };
+      // Neutral carries no signal — render no chip (same as unknown sentiment).
+      return null;
   }
 }
 

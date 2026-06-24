@@ -5,6 +5,33 @@ Domain-specific guidelines for AI agents working in `frontend/`. For project-wid
 
 ---
 
+## Local Preview — ALWAYS run after a UI/UX change
+
+After any UI/UX edit, host the frontend locally against the **dev backend** so the user can
+see it. Do this every time — don't just report the diff.
+
+```bash
+cd frontend
+npm run dev -- --port 5173 --strictPort
+```
+
+No env file needed — with no `VITE_API_BASE_URL` set, dev mode defaults to the shared dev
+backend (`https://dev-api.tinboker.com`); see `src/services/api/client.ts` `getBaseURL`. This
+works in any fresh clone/worktree. Log in with an admin Google account — dev-api is OAuth-gated.
+
+**MUST be port 5173.** dev-api's CORS allowlist only includes `http://localhost:5173`. If
+5173 is taken, Vite silently jumps to 5174 and the browser gets CORS-blocked → **episodes/API
+come back empty with no obvious error**. So pin it with `--port 5173 --strictPort` and free
+5173 first if another dev server holds it: `kill $(lsof -nP -iTCP:5173 -sTCP:LISTEN -t)`.
+
+**In a git worktree with no `node_modules`?** Symlink deps from the primary checkout instead
+of a full reinstall: `ln -sfn ../../../frontend/node_modules node_modules` (adjust depth).
+
+To point at a **local** backend instead, put `VITE_API_BASE_URL=http://localhost:5174` in a
+gitignored `frontend/.env.local` (never commit env files).
+
+---
+
 ## UI Conventions
 
 ### No Emoji Icons

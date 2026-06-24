@@ -22,3 +22,14 @@ export async function getSystemStatus(): Promise<SystemStatusResponse> {
     );
     return response.data;
 }
+
+/**
+ * Get the total number of registered users.
+ */
+export async function getUserCount(): Promise<number> {
+    const response = await apiClient.get<{ count: number }>(
+        '/api/admin/system/user-count',
+        adminAuthConfig()
+    );
+    return response.data.count;
+}

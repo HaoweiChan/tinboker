@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { RefreshCw, Save, Check, MessageSquare, Image as ImageIcon, Eye, Wand2, Send } from 'lucide-react';
+import { RefreshCw, Save, Check, MessageSquare, Image as ImageIcon, Eye, Wand2, Send, AlertCircle, ExternalLink } from 'lucide-react';
 import { SlideViewer } from '@/components/common/SlideViewer';
 import { PromoComposer } from '@/components/admin/PromoComposer';
 import {
@@ -19,23 +19,40 @@ import {
   type SocialEpisodeBundle,
   type SocialComment,
   type PublishResult,
+  type PublishPlatformResult,
 } from '@/services/api/adminSocial';
 
 const PLATFORM_LABELS: Record<string, string> = { threads: 'Threads', facebook: 'Facebook' };
 
-/** Turn the per-platform publish result into a short zh-TW summary for the operator. */
-function summarizePublish(result: PublishResult): string {
-  return Object.entries(result.platforms)
-    .map(([name, r]) => {
-      const label = PLATFORM_LABELS[name] || name;
-      if (r.error) return `${label}：錯誤（${r.error}）`;
-      if (r.posted) return `${label}：✅ 已發佈`;
-      if (r.reason === 'already_posted') return `${label}：已發佈過（略過）`;
-      if (r.dry_run && r.configured === false) return `${label}：未發佈（尚未設定金鑰）`;
-      if (r.reason === 'no_postable_content') return `${label}：沒有可發佈內容`;
-      return `${label}：未發佈（${r.reason || '未知'}）`;
-    })
-    .join('　');
+/** Map a raw backend reason/error to an actionable zh-TW hint. */
+function friendlyReason(raw?: string): string {
+  const s = raw || '未知錯誤';
+  if (/svg|media|download|requirements|不符/i.test(s))
+    return '圖片格式不支援（卡片為 SVG，平台只接受 PNG/JPEG）— 改以純文字發佈';
+  if (/190|session has expired|token|expired/i.test(s)) return '存取權杖失效，請更新金鑰';
+  if (/#?200|permission|publish_actions/i.test(s)) return '權限不足（需要粉專貼文／留言權限）';
+  return s;
+}
+
+/** Human-readable one-liner for a single platform's publish outcome. */
+function platformStatusText(r: PublishPlatformResult): string {
+  if (r.posted) {
+    const n = r.reply_count ?? r.comment_count;
+    return n != null ? `已發佈（含 ${n} 則留言）` : '已發佈';
+  }
+  if (r.reason === 'already_posted') return '先前已發佈過，略過';
+  if (r.reason === 'no_postable_content') return '沒有可發佈內容';
+  if (r.dry_run && r.configured === false) return '尚未設定金鑰，未發佈';
+  return `發佈失敗：${friendlyReason(r.reason || r.error)}`;
+}
+
+/** Public URL of the live post, when the platform returned an id we can link to. */
+function platformPostUrl(name: string, r: PublishPlatformResult): string | null {
+  if (!r.posted) return null;
+  const fbId = r.post_id || r.root_post_id;
+  if (name === 'facebook' && fbId) return `https://www.facebook.com/${fbId}`;
+  // Threads exposes only a media id (no public permalink without an extra API call) — skip.
+  return null;
 }
 
 function fmtDate(ms: number): string {
@@ -59,7 +76,8 @@ export const AdminSocialPage: React.FC = () => {
   const [saved, setSaved] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [publishing, setPublishing] = useState(false);
-  const [publishMsg, setPublishMsg] = useState<string | null>(null);
+  const [publishResult, setPublishResult] = useState<PublishResult | null>(null);
+  const [publishError, setPublishError] = useState<string | null>(null);
   const [showComposed, setShowComposed] = useState(false);
   const [tab, setTab] = useState<'episodes' | 'promo'>('episodes');
 
@@ -80,7 +98,8 @@ export const AdminSocialPage: React.FC = () => {
     setSelectedId(id);
     setLoadingBundle(true);
     setSaved(false);
-    setPublishMsg(null);
+    setPublishResult(null);
+    setPublishError(null);
     try {
       const b = await getSocialEpisode(id);
       setBundle(b);
@@ -117,7 +136,8 @@ export const AdminSocialPage: React.FC = () => {
     if (bundle?.has_copy && !window.confirm('重新生成會覆蓋目前文案，確定嗎？')) return;
     setGenerating(true);
     setSaved(false);
-    setPublishMsg(null);
+    setPublishResult(null);
+    setPublishError(null);
     try {
       const { post: newPost, comments: newComments } = await generateSocialEpisode(selectedId);
       // Re-read the bundle so the editor + 發佈預覽 reflect the freshly persisted copy.
@@ -138,14 +158,15 @@ export const AdminSocialPage: React.FC = () => {
     if (!selectedId) return;
     if (!window.confirm('確定發佈到 Threads + Facebook？\n（會先儲存目前文案，再實際貼文）')) return;
     setPublishing(true);
-    setPublishMsg(null);
+    setPublishResult(null);
+    setPublishError(null);
     try {
       // Publish posts the SERVER-stored copy, so persist the editor first to avoid
       // posting stale text.
       await saveSocialEpisode(selectedId, { post, comments });
       setSaved(true);
       const result = await publishSocialEpisode(selectedId, { dryRun: false, platforms: 'threads,facebook' });
-      setPublishMsg(summarizePublish(result));
+      setPublishResult(result);
       // Reflect freshly-posted status in the list + editor badges.
       await selectEpisode(selectedId);
       setEpisodes((prev) => prev.map((e) =>
@@ -155,7 +176,7 @@ export const AdminSocialPage: React.FC = () => {
           : e));
     } catch (e) {
       console.error('[social] publish failed', e);
-      setPublishMsg('發佈失敗，請看 console');
+      setPublishError('發佈請求失敗（網路或伺服器錯誤），請看 console。');
     } finally {
       setPublishing(false);
     }
@@ -294,9 +315,45 @@ export const AdminSocialPage: React.FC = () => {
                 </div>
               </div>
 
-              {publishMsg && (
-                <div className="rounded-lg border border-primary/40 bg-primary/10 px-4 py-2 text-base text-foreground">
-                  {publishMsg}
+              {publishError && (
+                <div className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-base text-destructive">
+                  <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                  <span>{publishError}</span>
+                </div>
+              )}
+
+              {publishResult && (
+                <div className="space-y-2 rounded-lg border border-border bg-card px-4 py-3">
+                  <div className={label}>發佈結果</div>
+                  {Object.entries(publishResult.platforms).map(([name, r]) => {
+                    const ok = !!r.posted;
+                    const postUrl = platformPostUrl(name, r);
+                    return (
+                      <div key={name} className="flex items-start gap-2 text-base">
+                        {ok ? (
+                          <Check className="mt-0.5 h-4 w-4 flex-shrink-0 text-sentiment-bull" />
+                        ) : (
+                          <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-destructive" />
+                        )}
+                        <span className="font-semibold text-foreground">
+                          {PLATFORM_LABELS[name] || name}
+                        </span>
+                        <span className={ok ? 'text-sentiment-bull' : 'text-destructive'}>
+                          {platformStatusText(r)}
+                        </span>
+                        {postUrl && (
+                          <a
+                            href={postUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-accent-info hover:underline"
+                          >
+                            查看貼文 <ExternalLink className="h-3.5 w-3.5" />
+                          </a>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 
@@ -308,6 +365,43 @@ export const AdminSocialPage: React.FC = () => {
                 {bundle.marp_markdown
                   ? <SlideViewer content={bundle.marp_markdown} />
                   : <div className="text-base text-muted-foreground">這集還沒有 marp 投影片</div>}
+              </div>
+
+              {/* Actual PNGs that will be posted (rendered by the pipeline, stored in GCS).
+                  Empty for older episodes processed before card rendering — they post text-only. */}
+              <div className={`${card} p-4`}>
+                <div className={`${label} mb-2 flex items-center gap-1.5`}>
+                  <ImageIcon className="h-3.5 w-3.5" /> 卡片圖 PNG（實際發佈）
+                </div>
+                {bundle.composed.image_urls.length ? (
+                  <>
+                    <p className="mb-3 text-xs text-muted-foreground">
+                      {bundle.composed.image_urls.length} 張 — 這就是發佈時會帶上的輪播圖。點圖可開啟原圖下載。
+                    </p>
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                      {bundle.composed.image_urls.map((url, i) => (
+                        <a
+                          key={i}
+                          href={url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          download
+                          className="group relative block overflow-hidden rounded-lg border border-border hover:border-accent-info"
+                          title={`卡片 ${i + 1} — 點擊開啟原圖`}
+                        >
+                          <img src={url} alt={`card ${i + 1}`} loading="lazy" className="aspect-square w-full bg-muted object-cover" />
+                          <span className="absolute bottom-1 right-1 rounded bg-background/80 px-1.5 py-0.5 text-xs text-foreground">
+                            {i + 1}
+                          </span>
+                        </a>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-base text-muted-foreground">
+                    這集沒有卡片圖 PNG（舊集數，發佈時為純文字）。新處理的集數會自動產生卡片圖。
+                  </div>
+                )}
               </div>
 
               {/* Post */}

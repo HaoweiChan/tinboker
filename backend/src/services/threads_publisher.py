@@ -29,9 +29,7 @@ logger = logging.getLogger(__name__)
 
 podcast_service = PodcastService()
 
-BRAND_HASHTAGS = ["台股", "投資理財", "財經"]
 MAX_INSIGHTS = 3
-MAX_TICKER_TAGS = 4
 MAX_CARDS = 20  # Threads carousel hard limit (cover + up to 19 themes)
 
 
@@ -71,38 +69,66 @@ def episode_url(episode_id: str) -> str:
     return f"{settings.site_url.rstrip('/')}/episode/{episode_id}"
 
 
-def _hashtags(related_tickers: list[str]) -> str:
-    tags = list(BRAND_HASHTAGS)
-    for sym in (related_tickers or [])[:MAX_TICKER_TAGS]:
-        sym = (sym or "").strip().replace(" ", "")
-        if sym:
-            tags.append(sym)
-    return " ".join(f"#{t}" for t in tags)
+def link_comment(episode_id: str) -> str:
+    """The episode permalink, posted as the FIRST comment (not in the post body) so
+    the link doesn't suppress organic reach and lives where it helps SEO."""
+    return f"▶ 完整重點：{episode_url(episode_id)}"
 
 
-def compose_post(episode: Any, *, count_line: str = "") -> dict:
+RASTER_IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".webp", ".gif")
+
+
+def _is_raster(url: Optional[str]) -> bool:
+    """True for image URLs Meta can actually ingest. Threads/IG and the FB photo
+    endpoints reject SVG (and other vector formats) with a media-download error, so a
+    non-raster image must be dropped or the whole post hard-fails. Currently the only
+    episode image is an SVG summary card, so this degrades posts to text-only until a
+    raster (PNG/JPEG) card render exists."""
+    if not url:
+        return False
+    return url.lower().split("?")[0].endswith(RASTER_IMAGE_EXTS)
+
+
+def _has_human_thread(episode: Any) -> bool:
+    """True when an operator authored social copy (post or comments). Such episodes
+    publish via the thread composer even without rendered cards, so the hand-written
+    copy + link comment go out and the publish matches the admin preview."""
+    t = _field(episode, "social_thread")
+    if not isinstance(t, dict):
+        return False
+    if (t.get("post") or "").strip():
+        return True
+    return any(
+        ((c.get("text") if isinstance(c, dict) else c) or "").strip()
+        for c in (t.get("comments") or [])
+    )
+
+
+def compose_post(episode: Any, *, count_line: str = "", with_link: bool = True) -> dict:
     """Build a Threads post draft from an episode. Always <= THREADS_MAX_CHARS chars.
 
-    ``count_line`` (e.g. "⬇️ 7 個重點整理") is reserved in the budget and placed before
-    the hashtags/link — used as the carousel caption to signal the thread below.
-    Returns ``{episode_id, text, image_url, url}``.
+    ``count_line`` (e.g. "⬇️ 7 個重點整理") is reserved in the budget and placed at the
+    end — used as the carousel caption to signal the thread below. No hashtags are
+    added. ``with_link`` keeps the permalink in the body for the standalone single-post
+    path (no comment channel); the thread path passes ``with_link=False`` and posts the
+    link as the first comment instead. Returns ``{episode_id, text, image_url, url}``.
     """
     episode_id = _field(episode, "id") or _field(episode, "episode_id") or ""
     title = (_field(episode, "episode_title") or "").strip()
     podcast_name = (_field(episode, "podcast_name") or "").strip()
     insights = [s.strip() for s in (_field(episode, "key_insights") or []) if s and s.strip()]
-    tickers = _field(episode, "related_tickers") or []
     image_url = _field(episode, "summary_image_public_url") or None
+    if not _is_raster(image_url):
+        image_url = None  # Meta can't ingest SVG — post text-only rather than hard-fail
 
     url = episode_url(episode_id)
-    link_line = f"\n\n▶ 完整重點：{url}"
-    tag_line = f"\n\n{_hashtags(tickers)}"
+    link_line = f"\n\n{link_comment(episode_id)}" if with_link else ""
     count_seg = f"\n\n{count_line}" if count_line else ""
 
     header = "｜".join(p for p in (podcast_name, title) if p) or title or podcast_name
 
-    # Fixed tail (count + link + hashtags) is reserved first; insights fill what remains.
-    budget = THREADS_MAX_CHARS - len(link_line) - len(tag_line) - len(count_seg)
+    # Fixed tail (count + optional link) is reserved first; insights fill what remains.
+    budget = THREADS_MAX_CHARS - len(link_line) - len(count_seg)
     body = header[:budget] if header else ""
 
     for insight in insights[:MAX_INSIGHTS]:
@@ -116,7 +142,7 @@ def compose_post(episode: Any, *, count_line: str = "") -> dict:
         # No header and no insight fit — fall back to a trimmed header/title.
         body = (header or title or podcast_name)[: max(0, budget - 1)].rstrip()
 
-    text = f"{body}{count_seg}{tag_line}{link_line}"
+    text = f"{body}{count_seg}{link_line}"
     if len(text) > THREADS_MAX_CHARS:  # defensive; should not trigger given the budget
         text = text[: THREADS_MAX_CHARS - len(link_line)].rstrip() + link_line
 
@@ -136,18 +162,13 @@ def _compose_reply(title: str, bullets: list[str]) -> str:
 
 
 def _finalize_post_text(episode: Any, body: str, count_line: str = "") -> str:
-    """Append the fixed tail (count line + ticker hashtags + permalink) to a body,
-    clamping to THREADS_MAX_CHARS. Used for the human-authored grand-summary post."""
-    episode_id = _field(episode, "id") or _field(episode, "episode_id") or ""
-    link_line = f"\n\n▶ 完整重點：{episode_url(episode_id)}"
-    tag_line = f"\n\n{_hashtags(_field(episode, 'related_tickers') or [])}"
+    """Clamp the human-authored grand-summary post to THREADS_MAX_CHARS, appending only
+    the count line. No hashtags and no permalink — the permalink goes in the first
+    comment (see ``compose_thread``)."""
     count_seg = f"\n\n{count_line}" if count_line else ""
-    budget = THREADS_MAX_CHARS - len(link_line) - len(tag_line) - len(count_seg)
+    budget = THREADS_MAX_CHARS - len(count_seg)
     body = (body or "").strip()[:max(0, budget)].rstrip()
-    text = f"{body}{count_seg}{tag_line}{link_line}"
-    if len(text) > THREADS_MAX_CHARS:
-        text = text[: THREADS_MAX_CHARS - len(link_line)].rstrip() + link_line
-    return text
+    return f"{body}{count_seg}"
 
 
 def compose_thread(episode: Any) -> dict:
@@ -162,7 +183,8 @@ def compose_thread(episode: Any) -> dict:
     """
     episode_id = _field(episode, "id") or _field(episode, "episode_id") or ""
     cards = [c for c in (_field(episode, "social_cards") or []) if isinstance(c, dict)]
-    image_urls = [c["image_url"] for c in cards if c.get("image_url")][:MAX_CARDS]
+    # Drop non-raster (SVG) card images — Meta rejects them; better a text post than a hard fail.
+    image_urls = [c["image_url"] for c in cards if _is_raster(c.get("image_url"))][:MAX_CARDS]
     theme_cards = [c for c in cards if c.get("kind") == "theme"]
     count_line = f"⬇️ {len(theme_cards)} 個重點整理" if theme_cards else ""
 
@@ -178,7 +200,7 @@ def compose_thread(episode: Any) -> dict:
     if human_post:
         main_text = _finalize_post_text(episode, human_post, count_line)
     else:
-        main_text = compose_post(episode, count_line=count_line)["text"]
+        main_text = compose_post(episode, count_line=count_line, with_link=False)["text"]
 
     replies: list[dict] = []
     if human_comments:
@@ -189,6 +211,10 @@ def compose_thread(episode: Any) -> dict:
             text = _compose_reply((card.get("title") or "").strip(), bullets)
             if text:
                 replies.append({"text": text})
+
+    # Permalink as the FIRST comment (link-in-first-comment) — keeps it out of the
+    # post body so reach isn't suppressed and the link still gets indexed.
+    replies.insert(0, {"text": link_comment(episode_id)})
 
     return {
         "episode_id": episode_id,
@@ -326,9 +352,10 @@ async def publish_recent(
             skipped.append({"episode_id": episode_id, "reason": "no_postable_content"})
             continue
 
-        # Prefer the full thread (carousel + reply chain) when the episode has rendered
-        # cards; otherwise fall back to a single text/image post (legacy episodes).
-        if has_cards:
+        # Use the full thread (carousel + reply chain) when the episode has rendered
+        # cards OR hand-authored social copy; otherwise fall back to a single text/image
+        # post (legacy episodes with neither).
+        if has_cards or _has_human_thread(episode):
             thread = compose_thread(episode)
             if effective_dry_run:
                 posted.append({
@@ -394,7 +421,7 @@ async def publish_episode(episode: Any, dry_run: bool = True) -> dict:
     if not (has_cards or _field(episode, "key_insights") or _field(episode, "episode_title")):
         return {**base, "posted": False, "reason": "no_postable_content"}
 
-    if has_cards:
+    if has_cards or _has_human_thread(episode):
         thread = compose_thread(episode)
         if effective_dry_run:
             return {**base, "posted": False, "reason": "dry_run", "url": thread["url"],

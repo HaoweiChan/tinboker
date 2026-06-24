@@ -15,6 +15,12 @@ import { useEpisodeSentimentMap } from '@/hooks/useEpisodeSentimentMap';
 const FILTERS = ['最新', '熱門', '追蹤'] as const;
 type Filter = (typeof FILTERS)[number];
 
+// Session snapshot of the last successful feed so returning to "/" paints instantly
+// (no skeleton flash) and revalidates in the background. Mirrors the module-level
+// caches in useStockPriceMap / useEpisodeSentimentMap / fetchWithFallback.
+// ponytail: in-memory only; SWR self-heals, no persistence needed.
+let homeSnapshot: { episodes: ApiEpisode[]; podcasts: Podcast[] } | null = null;
+
 function CardSkeleton() {
   return (
     <div className="bg-card border border-border rounded-md p-4 animate-pulse">
@@ -31,9 +37,9 @@ function CardSkeleton() {
 }
 
 export const HomeFeed: React.FC = () => {
-  const [episodes, setEpisodes] = useState<ApiEpisode[]>([]);
-  const [podcasts, setPodcasts] = useState<Podcast[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [episodes, setEpisodes] = useState<ApiEpisode[]>(() => homeSnapshot?.episodes ?? []);
+  const [podcasts, setPodcasts] = useState<Podcast[]>(() => homeSnapshot?.podcasts ?? []);
+  const [loading, setLoading] = useState(() => !homeSnapshot);
   const [filter, setFilter] = useState<Filter>('最新');
   const subscriptions = useSubscriptions();
   const episodeBookmarks = useEpisodeBookmarks();
@@ -58,8 +64,9 @@ export const HomeFeed: React.FC = () => {
 
   useEffect(() => {
     let alive = true;
+    // No setLoading(true) here: a warm return paints from homeSnapshot and revalidates
+    // silently. The skeleton only shows on a cold start (loading inits to !homeSnapshot).
     (async () => {
-      setLoading(true);
       const [data, podcastList] = await Promise.all([
         fetchWithFallback<ApiEpisode[]>(
           () => getRecentEpisodes({ limit: 60, sortBy: 'released_at_ms', order: 'desc', includeContent: false }),
@@ -73,8 +80,11 @@ export const HomeFeed: React.FC = () => {
         ).catch(() => [] as Podcast[]),
       ]);
       if (!alive) return;
-      setEpisodes(Array.isArray(data) ? data : []);
-      setPodcasts(Array.isArray(podcastList) ? podcastList : []);
+      const eps = Array.isArray(data) ? data : [];
+      const pods = Array.isArray(podcastList) ? podcastList : [];
+      setEpisodes(eps);
+      setPodcasts(pods);
+      if (eps.length || pods.length) homeSnapshot = { episodes: eps, podcasts: pods };
       setLoading(false);
     })();
     return () => {

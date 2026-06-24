@@ -36,6 +36,7 @@ import { DevPodcasterListPage } from '@/pages/DevPodcasterListPage';
 import { DevTranslationsPage } from '@/pages/DevTranslationsPage';
 import { DevBypass } from '@/pages/DevBypass';
 import { AppLayout } from '@/components/layout/AppLayout';
+import { RequireLogin } from '@/components/auth/RequireLogin';
 import { GlobalPlayer } from '@/components/player/GlobalPlayer';
 import { PlayerConfirmationModal } from '@/components/player/PlayerConfirmationModal';
 import { useEffect } from 'react';
@@ -97,40 +98,37 @@ function App() {
 
           {/* Consumer app — wrapped in the sidebar + header shell */}
           <Route element={<AppLayout />}>
+            {/* Public — browsable without login (home, podcaster, stock index,
+                static pages) so visitors + crawlers have an entry point. */}
             <Route path="/" element={<HomeFeed />} />
-
-            {/* Redesigned list / cloud pages */}
             <Route path="/podcaster" element={<PodcasterIndex />} />
+            <Route path="/podcaster/:id" element={<PodcasterPage />} />
             <Route path="/stock" element={<StockIndex />} />
-            <Route path="/topics" element={<TopicsCloud />} />
-            <Route path="/watchlist" element={<WatchlistPage />} />
+            <Route path="/sector/:exposureId" element={<SectorPage />} />
+            <Route path="/news/:id" element={<NewsRedirect />} />
             {/* /picks (走勢) — dev-only while unstable; excluded from the release.
                 STAGING/PRODUCTION don't register it, so a direct URL falls through
                 to the catch-all → home. */}
             {IS_DEV_ENV && <Route path="/picks" element={<PicksPage />} />}
-
-            {/* Single-instance / content pages */}
-            <Route path="/stock/:ticker" element={<StockDashboard />} />
-            <Route path="/podcaster/:id" element={<PodcasterPage />} />
-            <Route path="/topics/:tag" element={<TagPage />} />
-            <Route path="/tag/:tag" element={<TagPage />} />
-            <Route path="/sector/:exposureId" element={<SectorPage />} />
-            <Route path="/episode/:id" element={<EpisodeDetail />} />
-            <Route path="/news/:id" element={<NewsRedirect />} />
-            <Route path="/articles" element={<ArticleList />} />
-            <Route path="/article/:slug" element={<ArticleDetail />} />
-
-            {/* /industry hidden for launch — rendered fabricated sector data
-                (mocks/sectorData.ts). Falls through to the catch-all redirect.
-                Page + components retained for future real-data wiring. */}
             <Route path="/about" element={<About />} />
             <Route path="/contact" element={<ContactPage />} />
             <Route path="/disclaimer" element={<DisclaimerPage />} />
             <Route path="/report" element={<ReportPage />} />
 
-            {/* User */}
-            <Route path="/profile" element={<ProfilePage />} />
-            <Route path="/settings" element={<SettingsPage />} />
+            {/* Login-gated — force registration to view (RequireLogin shows a
+                login prompt instead of the page when logged out). */}
+            <Route element={<RequireLogin />}>
+              <Route path="/stock/:ticker" element={<StockDashboard />} />
+              <Route path="/topics" element={<TopicsCloud />} />
+              <Route path="/topics/:tag" element={<TagPage />} />
+              <Route path="/tag/:tag" element={<TagPage />} />
+              <Route path="/episode/:id" element={<EpisodeDetail />} />
+              <Route path="/articles" element={<ArticleList />} />
+              <Route path="/article/:slug" element={<ArticleDetail />} />
+              <Route path="/watchlist" element={<WatchlistPage />} />
+              <Route path="/profile" element={<ProfilePage />} />
+              <Route path="/settings" element={<SettingsPage />} />
+            </Route>
           </Route>
 
           {/* Admin — keeps its own layout, outside the consumer shell. Non-PRODUCTION

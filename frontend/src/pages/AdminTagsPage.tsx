@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, RefreshCw, Search, Trash2, Check, X, Eye, EyeOff, Radar, Layers } from 'lucide-react';
+import { Plus, RefreshCw, Search, Trash2, Check, X, Eye, EyeOff, Radar, Layers, Pencil } from 'lucide-react';
 import {
   listAdminTags,
   createAdminTag,
@@ -47,6 +47,8 @@ export const AdminTagsPage: React.FC = () => {
   const [discovering, setDiscovering] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [discoverMsg, setDiscoverMsg] = useState('');
+  const [editKey, setEditKey] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState('');
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search), 300);
@@ -84,6 +86,25 @@ export const AdminTagsPage: React.FC = () => {
       setTags((prev) => prev.map((t) => (t.id === tag.id ? { ...t, ...updated } : t)));
     } catch (err) {
       console.error('Failed to update tier:', err);
+    }
+  };
+
+  const handleSaveDisplay = async (tag: AdminTagEntry) => {
+    const value = editValue.trim();
+    if (!value || value === tag.display_zh) { setEditKey(null); return; }
+    try {
+      // Virtual rows (no registry id) get a real row created, mirroring the toggle.
+      if (tag.registered === false || tag.id == null) {
+        await createAdminTag({ slug: tag.slug, display_zh: value, tier: tag.tier });
+        await fetchTags();
+      } else {
+        const updated = await updateAdminTag(tag.id, { display_zh: value });
+        setTags((prev) => prev.map((t) => (t.id === tag.id ? { ...t, ...updated } : t)));
+      }
+    } catch (err) {
+      console.error('Failed to update display name:', err);
+    } finally {
+      setEditKey(null);
     }
   };
 
@@ -329,7 +350,39 @@ export const AdminTagsPage: React.FC = () => {
                     </span>
                   </td>
                   <td className="px-4 py-2.5 text-muted-foreground">
-                    {tag.display_zh}
+                    {editKey === `${tag.kind}:${tag.slug}` ? (
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="text"
+                          value={editValue}
+                          onChange={(e) => setEditValue(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleSaveDisplay(tag);
+                            if (e.key === 'Escape') setEditKey(null);
+                          }}
+                          className="w-full rounded border border-input bg-card px-2 py-1 text-base text-foreground"
+                          autoFocus
+                        />
+                        <button onClick={() => handleSaveDisplay(tag)} className="rounded p-1 text-sentiment-bull hover:bg-sentiment-bull-soft" title="Save">
+                          <Check className="h-4 w-4" />
+                        </button>
+                        <button onClick={() => setEditKey(null)} className="rounded p-1 text-muted-foreground hover:bg-muted" title="Cancel">
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ) : isSector ? (
+                      // Sector labels come from the pipeline universe — a re-sync overwrites them, so don't edit here.
+                      tag.display_zh
+                    ) : (
+                      <button
+                        onClick={() => { setEditKey(`${tag.kind}:${tag.slug}`); setEditValue(tag.display_zh); }}
+                        className="group inline-flex items-center gap-1.5 text-left hover:text-foreground"
+                        title="Click to edit display name"
+                      >
+                        {tag.display_zh}
+                        <Pencil className="h-3 w-3 opacity-0 transition-opacity group-hover:opacity-60" />
+                      </button>
+                    )}
                   </td>
                   <td className="px-4 py-2.5">
                     <span className={`inline-flex rounded px-1.5 py-0.5 text-xs font-medium ${isSector

@@ -107,3 +107,21 @@ export async function getFacebookInsights(days = 28): Promise<FacebookInsights> 
     });
     return res.data;
 }
+
+// ── Registered-member analytics (first-party, from the users collection) ─────
+export interface MemberAnalytics {
+    total_users: number;
+    signups: { week: string; count: number }[];
+    top_podcasters: { name: string; count: number }[];
+    top_tags: { slug: string; label: string; count: number }[];
+    top_tickers: { ticker: string; count: number }[];
+    top_episodes: { episode_id: string; title: string; count: number }[];
+}
+
+export async function getMemberAnalytics(top = 10): Promise<MemberAnalytics> {
+    const res = await apiClient.get<MemberAnalytics>('/api/admin/analytics/members', {
+        ...adminAuthConfig(),
+        params: { top },
+    });
+    return res.data;
+}
