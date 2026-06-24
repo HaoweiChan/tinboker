@@ -67,6 +67,14 @@ def test_compose_post_with_no_insights_falls_back_to_header():
     assert "tinboker.com/episode/EP202" in draft["text"]
 
 
+def test_compose_post_drops_svg_image():
+    # Meta can't ingest SVG — the draft must degrade to text-only, not carry the SVG.
+    ep = _ep("EP210", insights=["重點"])
+    ep.summary_image_public_url = "https://x/EP210.svg"
+    draft = threads_publisher.compose_post(ep)
+    assert draft["image_url"] is None
+
+
 # ── idempotency ledger ───────────────────────────────────────────────
 
 def test_ledger_record_and_list(temp_db):
@@ -181,6 +189,15 @@ def test_compose_thread_carousel_images_and_replies():
     assert all(len(r["text"]) <= THREADS_MAX_CHARS for r in draft["replies"])
 
 
+def test_compose_thread_drops_svg_card_images():
+    cards = [
+        {"kind": "cover", "image_url": "https://c/0.svg"},
+        {"kind": "theme", "title": "A", "bullets": ["x"], "image_url": "https://c/1.png"},
+    ]
+    draft = threads_publisher.compose_thread(_ep_cards("EP620", cards))
+    assert draft["image_urls"] == ["https://c/1.png"]  # .svg dropped
+
+
 def test_compose_reply_clamps_and_keeps_whole_bullets():
     long = ["超長重點" * 60, "第二點 [09:99]"]
     text = threads_publisher._compose_reply("標題", long)
@@ -288,6 +305,19 @@ async def test_publish_episode_dry_run_when_unconfigured(temp_db, monkeypatch):
     assert res["posted"] is False
     assert res["reason"] == "dry_run"
     assert threads_publisher.already_posted("EP800") is False  # dry-run never records
+
+
+@pytest.mark.asyncio
+async def test_publish_episode_uses_thread_when_human_copy_without_cards(temp_db):
+    # Episode has hand-authored social copy but NO rendered cards: it must publish via
+    # the thread composer (human post + link comment + comments), not the mechanical
+    # single-post path. Unconfigured creds force dry-run; we assert which composer ran.
+    ep = _ep("EP630", insights=["機械重點"])
+    ep.social_thread = {"post": "人工總結", "comments": [{"text": "留言一"}]}
+    res = await threads_publisher.publish_episode(ep, dry_run=True)
+    assert res["reason"] == "dry_run"
+    assert res["main_text"].startswith("人工總結")  # human copy, not the key_insights body
+    assert res["reply_count"] == 2  # link comment + 1 human comment
 
 
 @pytest.mark.asyncio
