@@ -11,6 +11,7 @@ class NotificationType(str, Enum):
     """Types of notifications"""
     NEW_EPISODE = "new_episode"
     STOCK_MENTION = "stock_mention"
+    TOPIC_MENTION = "topic_mention"
     PRICE_ALERT = "price_alert"
 
 
