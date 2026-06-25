@@ -9,7 +9,7 @@
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Image as ImageIcon, Film, Send, Eye, Trash2, Upload, AlertTriangle, MessageSquare, Plus, Save, FilePlus2 } from 'lucide-react';
+import { Image as ImageIcon, Film, Send, Eye, Trash2, Upload, AlertTriangle, MessageSquare, Plus, Save, FilePlus2, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import {
   uploadPromoMedia,
   publishPromo,
@@ -82,6 +82,7 @@ export const PromoComposer: React.FC = () => {
   const [draftId, setDraftId] = useState<number | null>(null);
   const [draftName, setDraftName] = useState('');
   const [savingDraft, setSavingDraft] = useState(false);
+  const [preview, setPreview] = useState<PromoMedia | null>(null);
 
   const refreshDrafts = useCallback(async () => {
     try {
@@ -180,6 +181,14 @@ export const PromoComposer: React.FC = () => {
   }, []);
 
   const removeMedia = (url: string) => setMedia((prev) => prev.filter((m) => m.url !== url));
+
+  const swapMedia = (i: number, j: number) =>
+    setMedia((prev) => {
+      if (j < 0 || j >= prev.length) return prev;
+      const next = [...prev];
+      [next[i], next[j]] = [next[j], next[i]];
+      return next;
+    });
 
   const run = useCallback(async (dryRun: boolean) => {
     if (!dryRun && !window.confirm(`確定發佈到 ${platforms.map((p) => PLATFORM_LABELS[p]).join(' + ')}？`)) return;
@@ -290,16 +299,23 @@ export const PromoComposer: React.FC = () => {
           <div className="text-base text-muted-foreground">尚未加入任何媒體（純文字貼文也可以）</div>
         ) : (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            {media.map((m) => (
+            {media.map((m, i) => (
               <div key={m.url} className="relative overflow-hidden rounded-lg border border-border bg-muted">
-                {m.type === 'image' ? (
-                  <img src={m.url} alt={m.filename || ''} className="h-28 w-full object-cover" />
-                ) : (
-                  <video src={m.url} className="h-28 w-full object-cover" muted />
-                )}
+                <button
+                  type="button"
+                  onClick={() => setPreview(m)}
+                  title="點擊放大檢視"
+                  className="block w-full"
+                >
+                  {m.type === 'image' ? (
+                    <img src={m.url} alt={m.filename || ''} className="h-28 w-full object-cover" />
+                  ) : (
+                    <video src={m.url} className="h-28 w-full object-cover" muted />
+                  )}
+                </button>
                 <div className="absolute left-1 top-1 inline-flex items-center gap-1 rounded bg-black/60 px-1.5 py-0.5 text-2xs font-medium text-white">
                   {m.type === 'image' ? <ImageIcon className="h-3 w-3" /> : <Film className="h-3 w-3" />}
-                  {m.type === 'image' ? '圖片' : '影片'}
+                  {i + 1}
                 </div>
                 <button
                   onClick={() => removeMedia(m.url)}
@@ -308,6 +324,24 @@ export const PromoComposer: React.FC = () => {
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
+                <div className="absolute inset-x-1 bottom-1 flex justify-between">
+                  <button
+                    onClick={() => swapMedia(i, i - 1)}
+                    disabled={i === 0}
+                    title="往前移"
+                    className="rounded bg-black/60 p-1 text-white hover:bg-black/80 disabled:opacity-30"
+                  >
+                    <ChevronLeft className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    onClick={() => swapMedia(i, i + 1)}
+                    disabled={i === media.length - 1}
+                    title="往後移"
+                    className="rounded bg-black/60 p-1 text-white hover:bg-black/80 disabled:opacity-30"
+                  >
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -409,6 +443,27 @@ export const PromoComposer: React.FC = () => {
       {msg && (
         <div className="rounded-lg border border-primary/40 bg-primary/10 px-4 py-2 text-base text-foreground">
           {msg}
+        </div>
+      )}
+
+      {/* Click-to-enlarge lightbox */}
+      {preview && (
+        <div
+          onClick={() => setPreview(null)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+        >
+          <button
+            onClick={() => setPreview(null)}
+            title="關閉"
+            className="absolute right-4 top-4 rounded-full bg-black/60 p-2 text-white hover:bg-black/80"
+          >
+            <X className="h-5 w-5" />
+          </button>
+          {preview.type === 'image' ? (
+            <img onClick={(e) => e.stopPropagation()} src={preview.url} alt={preview.filename || ''} className="max-h-full max-w-full rounded-lg object-contain" />
+          ) : (
+            <video onClick={(e) => e.stopPropagation()} src={preview.url} controls autoPlay className="max-h-full max-w-full rounded-lg" />
+          )}
         </div>
       )}
     </div>

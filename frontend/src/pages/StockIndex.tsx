@@ -156,7 +156,7 @@ export const StockIndex: React.FC = () => {
                   <span className="min-w-0 flex items-center gap-2.5">
                     <TickerAvatar ticker={r.ticker} brandColor={summary?.brand_color} />
                     <span className="min-w-0 flex items-center gap-1.5">
-                      <StockIdentity ticker={r.ticker} name={summary?.name ?? r.name} size="md" />
+                      <StockIdentity ticker={r.ticker} name={summary?.name ?? r.name} size="md" hideCode />
                       <span className={`text-2xs px-1.5 py-0.5 rounded font-mono font-semibold shrink-0 ${badge.cls}`}>{badge.label}</span>
                     </span>
                   </span>

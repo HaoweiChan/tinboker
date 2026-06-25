@@ -14,6 +14,7 @@ before ``upload_to_firestore``.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import urllib.request
@@ -116,8 +117,17 @@ def render_social_cards(
             continue
         if ok and url:
             blob = url.replace(f"gs://{bucket}/", "") if bucket else url
-            cards[i]["image_url"] = svc.generate_public_url(blob)
-            uploaded += 1
+            public_url = svc.generate_public_url(blob)
+            if public_url:
+                # Cache-bust: the PNG path (``…/{i}.png``) is reused on every reprocess,
+                # but GCS serves it ``public, max-age=3600`` — so an overwrite stays
+                # masked behind the edge/browser cache for up to an hour. A content-hash
+                # query makes the URL change iff the card changes; unchanged cards keep
+                # their URL (and the cache). ``_is_raster`` strips the query, so Threads/
+                # FB publishing is unaffected.
+                ver = hashlib.md5(b64.encode("utf-8")).hexdigest()[:10]
+                cards[i]["image_url"] = f"{public_url}?v={ver}"
+                uploaded += 1
 
     if uploaded:
         print(f"  ✓ Rendered + uploaded {uploaded} social card image(s)")

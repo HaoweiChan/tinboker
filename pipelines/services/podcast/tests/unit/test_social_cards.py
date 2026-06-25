@@ -69,11 +69,12 @@ def test_bulletless_slide_is_skipped():
     assert cards[1]["title"] == "真主題"
 
 
-def test_caps_at_twenty_cards():
+def test_theme_cards_capped():
     slides = [{"heading": f"主題{i}", "bullet_points": [f"點{i}"], "start_time": i * 1000}
               for i in range(40)]
     cards = sc.build_social_cards(_state({"title": "T", "slides": slides}, ["洞見"]))["social_cards"]
-    assert len(cards) == sc.MAX_CARDS == 20
+    themes = [c for c in cards if c["kind"] == "theme"]
+    assert len(themes) == sc.MAX_THEME_CARDS == 4   # bulk capped to keep the deck tight
 
 
 def test_empty_when_no_insights_and_no_themes():
@@ -89,7 +90,7 @@ def test_missing_timestamp_leaves_bullets_unstamped():
     assert cards[1]["start_time_ms"] is None
 
 
-# --- unified carousel: cover → ticker_table → themes → analysis ------------
+# --- unified carousel: cover → ticker_table → themes → focus_list ----------
 
 def test_build_social_cards_merges_ticker_deck():
     state = {
@@ -104,8 +105,8 @@ def test_build_social_cards_merges_ticker_deck():
         ]},
     }
     kinds = [c["kind"] for c in sc.build_social_cards(state)["social_cards"]]
-    # cover first, ticker overview next, then episode themes, analysis last.
-    assert kinds == ["cover", "ticker_table", "theme", "theme", "analysis"]
+    # cover first, ticker overview next, then episode themes, aggregated focus last.
+    assert kinds == ["cover", "ticker_table", "theme", "theme", "focus_list"]
 
 
 def test_build_social_cards_without_tickers_is_cover_plus_themes():
@@ -139,27 +140,36 @@ def test_risk_factor_takes_worst_severity():
     assert sc._risk_factor([]) == "—"
 
 
-def test_analysis_card_pulls_from_top_reason():
+def test_focus_list_item_pulls_from_top_reason():
     cards = sc.cards_from_ticker_insights({"ticker_insights": [
         _insight("NVDA", 0.8, reasons=[
             {"title": "板電升級", "description": "用量幾何成長。", "start_time": 60000}]),
     ]})
-    a = next(c for c in cards if c["kind"] == "analysis")
-    assert a["lead"] == "板電升級"
-    assert a["body"] == "用量幾何成長。"
-    assert a["source"] == "[01:00]"
-    assert (a["sentiment"], a["sentiment_class"]) == ("看多", "sent-bull")
+    fl = next(c for c in cards if c["kind"] == "focus_list")
+    it = fl["items"][0]
+    assert it["lead"] == "用量幾何成長。"          # description leads, title is fallback
+    assert it["source"] == "[01:00]"
+    assert (it["sentiment"], it["sentiment_class"]) == ("看多", "sent-bull")
+
+
+def test_focus_list_batches_three_per_card_capped():
+    insights = [_insight(f"T{i}", 0.9, reasons=[{"description": f"理由{i}", "start_time": 0}])
+                for i in range(8)]
+    cards = sc.cards_from_ticker_insights({"ticker_insights": insights})
+    focus = [c for c in cards if c["kind"] == "focus_list"]
+    assert len(focus) == sc.MAX_FOCUS_CARDS == 2                   # 8 tickers → 2 slides
+    assert all(len(c["items"]) <= sc.FOCUS_PER_CARD == 3 for c in focus)
 
 
 def test_ticker_table_paginates_and_caps_with_warning(caplog):
     import logging
-    insights = [_insight(str(2300 + i), 0.7) for i in range(18)]   # >15 tickers
+    insights = [_insight(str(2300 + i), 0.7) for i in range(18)]   # >10 tickers
     with caplog.at_level(logging.WARNING):
         cards = sc.cards_from_ticker_insights({"ticker_insights": insights})
     tables = [c for c in cards if c["kind"] == "ticker_table"]
-    assert len(tables) == sc.MAX_TABLE_CARDS == 2                  # hard ceiling
-    assert sum(len(t["rows"]) for t in tables) == sc.ROWS_PER_TABLE * 2 == 14
-    assert "dropping 4" in caplog.text                             # 18 - 14, not silent
+    assert len(tables) == sc.MAX_TABLE_CARDS == 1                  # single overview table
+    assert sum(len(t["rows"]) for t in tables) == sc.ROWS_PER_TABLE == 8
+    assert "dropping 10" in caplog.text                           # 18 - 8, not silent
 
 
 def test_ticker_insights_empty_returns_no_cards():

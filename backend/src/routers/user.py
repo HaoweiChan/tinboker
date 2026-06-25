@@ -2,7 +2,7 @@
 User-specific routes for subscriptions and preferences
 """
 from fastapi import APIRouter, HTTPException, Depends
-from src.models.user import UserResponse, NotificationPreferences, UpdateNotificationPreferencesRequest
+from src.models.user import UserResponse, NotificationPreferences, UpdateNotificationPreferencesRequest, UpdateProfileRequest
 from src.utils.dependencies import get_current_user
 from src.database.user_db import (
     get_user_subscriptions,
@@ -11,10 +11,42 @@ from src.database.user_db import (
     toggle_episode_bookmark,
     toggle_tag_subscription,
     update_notification_preferences,
-    get_notification_preferences
+    get_notification_preferences,
+    update_user,
 )
 
 router = APIRouter(prefix="/api/user", tags=["user"])
+
+
+@router.patch("/me", response_model=UserResponse)
+async def update_my_profile(
+    req: UpdateProfileRequest,
+    user: UserResponse = Depends(get_current_user),
+):
+    """Update the current user's display name and/or avatar. Both fields are optional;
+    omitted fields are left unchanged. New comments pick up the new identity; existing
+    comments keep the snapshot taken when they were posted."""
+    name = req.name.strip() if req.name is not None else None
+    if name is not None and not (1 <= len(name) <= 40):
+        raise HTTPException(status_code=400, detail="名稱長度需為 1–40 字")
+
+    avatar = req.avatar
+    if avatar is not None:
+        avatar = avatar.strip()
+        # Only allow https URLs or inline image data URIs — never javascript:/other schemes.
+        if avatar and not (avatar.startswith("https://") or avatar.startswith("data:image/")):
+            raise HTTPException(status_code=400, detail="頭像格式不支援")
+        # ~300KB cap on the data URI — the client resizes to a small square before sending.
+        if len(avatar) > 400_000:
+            raise HTTPException(status_code=400, detail="頭像檔案過大")
+
+    if name is None and avatar is None:
+        return user
+
+    updated = update_user(user.google_id, name=name, avatar=avatar)
+    if not updated:
+        raise HTTPException(status_code=404, detail="User not found")
+    return updated
 
 
 @router.get("/watchlist")

@@ -128,6 +128,22 @@ export async function generateSocialEpisode(
 }
 
 /**
+ * Render the episode's Marp deck to per-slide card PNGs on demand (stored to GCS,
+ * URLs written onto social_cards). Cards aren't pre-rendered per episode anymore;
+ * this is triggered from the admin "產生卡片圖" button. Returns the image URLs.
+ */
+export async function renderSocialCards(
+  episodeId: string,
+): Promise<{ episode_id: string; image_urls: (string | null)[] }> {
+  const res = await apiClient.post<{ episode_id: string; image_urls: (string | null)[] }>(
+    `/api/admin/threads/episodes/${encodeURIComponent(episodeId)}/render-cards`,
+    null,
+    { ...adminAuthConfig(), timeout: LLM_REQUEST_TIMEOUT_MS },
+  );
+  return res.data;
+}
+
+/**
  * Publish one episode's saved copy to the given platforms. Dry-run by default
  * (composes without posting); pass dryRun=false to actually post.
  */

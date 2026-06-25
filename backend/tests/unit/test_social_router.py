@@ -62,3 +62,80 @@ def test_posted_status_reads_both_ledgers(monkeypatch):
     monkeypatch.setattr(social.threads_publisher, "already_posted", lambda eid: eid == "EPX")
     monkeypatch.setattr(social.facebook_publisher, "already_posted", lambda eid: False)
     assert social._posted_status("EPX") == {"threads": True, "facebook": False}
+
+
+# --- on-demand card render (PodcastService.render_social_card_pngs) -----------
+
+import hashlib
+from types import SimpleNamespace
+
+from src.services.podcast import PodcastService
+
+_DECK = "---\nmarp: true\n---\n<style>\nsection{x:1}\n</style>\n\n# A\n\n---\n\n## B\n"
+
+
+def _svc(monkeypatch, *, images, cards, deck=_DECK):
+    """A PodcastService with all I/O stubbed; returns (svc, sink) where sink
+    collects the social_cards written back to Firestore."""
+    svc = object.__new__(PodcastService)  # skip __init__ (no GCP/Firestore needed)
+    sink: dict = {}
+
+    ep = SimpleNamespace(id="EP1", podcast_name="股癌", marp_markdown_content=deck, social_cards=cards)
+
+    async def _get_admin(eid, *a, **k):
+        return ep
+    svc.get_episode_admin = _get_admin
+    svc.firestore_service = SimpleNamespace(
+        get_document=lambda col, eid: {"social_cards": [dict(c) for c in cards]},
+        set_document=lambda col, eid, data, merge: sink.update(data),
+    )
+
+    async def _upload(bucket, path, data, ctype):
+        return f"https://cdn/{path}"
+    svc.gcs = SimpleNamespace(upload_bytes_public=_upload)
+
+    async def _noop(*a, **k):
+        return None
+    svc._invalidate_episode_cache = _noop
+    svc._purge_api_host_cdn = _noop
+
+    class _Resp:
+        def raise_for_status(self): pass
+        def json(self): return {"success": True, "images": images}
+
+    class _Client:
+        def __init__(self, *a, **k): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+        async def post(self, *a, **k): return _Resp()
+
+    monkeypatch.setattr("src.services.podcast.httpx.AsyncClient", _Client)
+    return svc, sink
+
+
+@pytest.mark.asyncio
+async def test_render_cards_stamps_cachebusted_urls_in_order(monkeypatch):
+    cards = [{"kind": "cover"}, {"kind": "theme"}]
+    svc, sink = _svc(monkeypatch, images=["IMG0", "IMG1"], cards=cards)
+    await svc.render_social_card_pngs("EP1")
+    written = sink["social_cards"]
+    assert written[0]["image_url"] == f"https://cdn/social_cards/EP1/0.png?v={hashlib.md5(b'IMG0').hexdigest()[:10]}"
+    assert written[1]["image_url"] == f"https://cdn/social_cards/EP1/1.png?v={hashlib.md5(b'IMG1').hexdigest()[:10]}"
+
+
+@pytest.mark.asyncio
+async def test_render_cards_refuses_count_mismatch(monkeypatch):
+    # One PNG for two cards must NOT desync the carousel — hard error, no write.
+    svc, sink = _svc(monkeypatch, images=["IMG0"], cards=[{"kind": "cover"}, {"kind": "theme"}])
+    with pytest.raises(HTTPException) as e:
+        await svc.render_social_card_pngs("EP1")
+    assert e.value.status_code == 500
+    assert sink == {}
+
+
+@pytest.mark.asyncio
+async def test_render_cards_requires_inline_theme(monkeypatch):
+    svc, _ = _svc(monkeypatch, images=["IMG0"], cards=[{"kind": "cover"}], deck="# no style block")
+    with pytest.raises(HTTPException) as e:
+        await svc.render_social_card_pngs("EP1")
+    assert e.value.status_code == 409

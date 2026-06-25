@@ -317,7 +317,14 @@ class Settings(BaseSettings):
         default="http://152.53.136.182:8003",
         validation_alias="NETCUP_IP"
     )
-    
+
+    # Marp render service (Flask, co-located on the VPS) — renders social-card PNGs
+    # on demand (admin button + auto-on-publish) instead of pre-rendering every episode.
+    marp_service_url: str = Field(
+        default="http://localhost:5004",
+        validation_alias="MARP_SERVICE_URL",
+    )
+
     model_config = SettingsConfigDict(
         # Load from .env file
         env_file=".env",

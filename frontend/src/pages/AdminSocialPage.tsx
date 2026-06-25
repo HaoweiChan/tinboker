@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { RefreshCw, Save, Check, MessageSquare, Image as ImageIcon, Eye, Wand2, Send, AlertCircle, ExternalLink } from 'lucide-react';
+import { RefreshCw, Save, Check, MessageSquare, Image as ImageIcon, Eye, Wand2, Send, AlertCircle, ExternalLink, Plus, Trash2 } from 'lucide-react';
 import { SlideViewer } from '@/components/common/SlideViewer';
 import { PromoComposer } from '@/components/admin/PromoComposer';
 import {
@@ -14,6 +14,7 @@ import {
   getSocialEpisode,
   saveSocialEpisode,
   generateSocialEpisode,
+  renderSocialCards,
   publishSocialEpisode,
   type SocialEpisodeListItem,
   type SocialEpisodeBundle,
@@ -75,6 +76,7 @@ export const AdminSocialPage: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [rendering, setRendering] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [publishResult, setPublishResult] = useState<PublishResult | null>(null);
   const [publishError, setPublishError] = useState<string | null>(null);
@@ -154,6 +156,22 @@ export const AdminSocialPage: React.FC = () => {
     }
   }, [selectedId, bundle, selectEpisode]);
 
+  const handleRenderCards = useCallback(async () => {
+    if (!selectedId) return;
+    setRendering(true);
+    try {
+      await renderSocialCards(selectedId);
+      await selectEpisode(selectedId); // re-read so the PNG grid shows the fresh cards
+      setEpisodes((prev) => prev.map((e) =>
+        e.episode_id === selectedId ? { ...e, has_images: true } : e));
+    } catch (e) {
+      console.error('[social] render cards failed', e);
+      alert('產生卡片圖失敗，請看 console');
+    } finally {
+      setRendering(false);
+    }
+  }, [selectedId, selectEpisode]);
+
   const handlePublish = useCallback(async () => {
     if (!selectedId) return;
     if (!window.confirm('確定發佈到 Threads + Facebook？\n（會先儲存目前文案，再實際貼文）')) return;
@@ -184,6 +202,16 @@ export const AdminSocialPage: React.FC = () => {
 
   const updateComment = (i: number, text: string) => {
     setComments((prev) => prev.map((c, idx) => (idx === i ? { ...c, text } : c)));
+    setSaved(false);
+  };
+
+  const removeComment = (i: number) => {
+    setComments((prev) => prev.filter((_, idx) => idx !== i));
+    setSaved(false);
+  };
+
+  const addComment = () => {
+    setComments((prev) => [...prev, { heading: '', text: '' }]);
     setSaved(false);
   };
 
@@ -370,8 +398,19 @@ export const AdminSocialPage: React.FC = () => {
               {/* Actual PNGs that will be posted (rendered by the pipeline, stored in GCS).
                   Empty for older episodes processed before card rendering — they post text-only. */}
               <div className={`${card} p-4`}>
-                <div className={`${label} mb-2 flex items-center gap-1.5`}>
-                  <ImageIcon className="h-3.5 w-3.5" /> 卡片圖 PNG（實際發佈）
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <div className={`${label} flex items-center gap-1.5`}>
+                    <ImageIcon className="h-3.5 w-3.5" /> 卡片圖 PNG（實際發佈）
+                  </div>
+                  <button
+                    onClick={handleRenderCards}
+                    disabled={rendering || generating || saving || publishing}
+                    title="從卡片圖（Marp）渲染 PNG 並儲存（發佈時也會自動產生）"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-base font-medium text-foreground hover:bg-muted disabled:opacity-60"
+                  >
+                    <ImageIcon className={`h-4 w-4 ${rendering ? 'animate-pulse' : ''}`} />
+                    {rendering ? '產生中…' : bundle.composed.image_urls.length ? '重新產生卡片圖' : '產生卡片圖'}
+                  </button>
                 </div>
                 {bundle.composed.image_urls.length ? (
                   <>
@@ -399,7 +438,7 @@ export const AdminSocialPage: React.FC = () => {
                   </>
                 ) : (
                   <div className="text-base text-muted-foreground">
-                    這集沒有卡片圖 PNG（舊集數，發佈時為純文字）。新處理的集數會自動產生卡片圖。
+                    還沒產生卡片圖 PNG。按上方「產生卡片圖」即可從卡片圖（Marp）渲染並儲存；發佈時也會自動產生。
                   </div>
                 )}
               </div>
@@ -419,12 +458,29 @@ export const AdminSocialPage: React.FC = () => {
 
               {/* Comments */}
               <div className="space-y-3">
-                <div className={label}>留言 Comments（每張主題卡片一則）</div>
+                <div className="flex items-center justify-between">
+                  <div className={label}>留言 Comments（每張主題卡片一則）</div>
+                  <button
+                    onClick={addComment}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-base font-medium text-foreground hover:bg-muted"
+                  >
+                    <Plus className="h-4 w-4" /> 新增留言
+                  </button>
+                </div>
                 {comments.map((c, i) => (
                   <div key={i} className={`${card} p-4`}>
-                    <div className="mb-2 flex items-center gap-2 text-base font-medium text-foreground">
-                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">{i + 1}</span>
-                      {c.heading || bundle.theme_cards[i]?.heading || `留言 ${i + 1}`}
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <div className="flex min-w-0 items-center gap-2 text-base font-medium text-foreground">
+                        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">{i + 1}</span>
+                        <span className="line-clamp-1">{c.heading || bundle.theme_cards[i]?.heading || `留言 ${i + 1}`}</span>
+                      </div>
+                      <button
+                        onClick={() => removeComment(i)}
+                        title="刪除留言"
+                        className="shrink-0 text-muted-foreground hover:text-sentiment-bear"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
                     </div>
                     {bundle.theme_cards[i]?.bullets?.length ? (
                       <ul className="mb-2 space-y-0.5 text-xs text-muted-foreground">
