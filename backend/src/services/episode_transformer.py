@@ -184,6 +184,7 @@ class EpisodeTransformer:
             summary_image=episode_dict.get('summary_image', ''),
             related_tickers=episode_dict.get('related_tickers', []),
             tags=all_tags,
+            skipped_segments=episode_dict.get('skipped_segments', []) or [],
             sector_exposures=episode_dict.get('sector_exposures', []) or [],
             unresolved_market_trends=episode_dict.get('unresolved_market_trends', []) or [],
             sector_exposure_ids=episode_dict.get('sector_exposure_ids', []) or [],

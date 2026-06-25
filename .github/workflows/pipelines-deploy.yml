@@ -116,16 +116,14 @@ jobs:
             RestartSec=5
             Environment=PORT=8003
             Environment=GOOGLE_APPLICATION_CREDENTIALS=/root/tinboker/pipelines/services/podcast/gcp-service-account.json
-            # content_builder LLM model overrides — MUST match run_nightly.sh, else the
-            # in-process episode watcher summarizes with the code-default model
-            # (openrouter:xiaomi/mimo-v2.5), which has been returning unparseable JSON and
-            # falling back to the placeholder summarizer (no #ticker: markers -> validation
-            # fails). Keeping these in sync makes watcher-ingested episodes match nightly ones.
-            Environment=EXTRACTOR_MODEL=gemini-2.5-flash-lite
-            Environment=TICKER_EXTRACTOR_MODEL=gemini-2.5-flash-lite
-            Environment=WRITER_MODEL=gemini-2.5-flash
-            Environment=MARP_WRITER_MODEL=gemini-2.5-flash
-            Environment=KEY_INSIGHTS_EXTRACTOR_MODEL=gemini-2.5-flash
+            # content_builder LLM model — ONE switch var for every role (extractor,
+            # writer, marp, ticker, key-insights). No per-role model names are pinned
+            # here; to switch models change just this line (or the admin config plane,
+            # which overrides it without a redeploy). The weak per-role gemini pins
+            # that used to live here mislabelled long chitchat (e.g. a red-wine tangent)
+            # as "analysis", so the segment filter kept it — deepseek-v4-pro types it
+            # correctly. A per-role override is still possible via e.g. WRITER_MODEL=.
+            Environment=PIPELINE_LLM_MODEL=openrouter:deepseek/deepseek-v4-pro
             # Use the platform source-of-truth show list (same as run_nightly.sh).
             Environment=TINBOKER_PLATFORM_API_URL=https://api.tinboker.com
 

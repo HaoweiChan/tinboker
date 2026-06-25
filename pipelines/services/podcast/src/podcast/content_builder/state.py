@@ -122,6 +122,12 @@ class PipelineState(TypedDict, total=False):
     # After clustering
     clustered_events: list[ClusteredEvent]
 
+    # Segments the policy router DROPPED from the summary (sponsor/intro/outro/
+    # chitchat/non-substantive qa), kept only as timing+label so the player can
+    # show "skippable" chips. Lean records: {segment_type, label, section_topic,
+    # start, end} — no sentences. See nodes/clusterer.py ``_skip_entry``.
+    skipped_segments: list[dict[str, Any]]
+
     # After chapter consolidation — fine clustered_events merged into a small,
     # length-scaled set of reader-facing chapters. Only the writer + markdown
     # timestamp anchoring read this; ticker/sector/slide nodes keep using the

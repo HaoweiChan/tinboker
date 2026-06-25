@@ -62,6 +62,15 @@ export interface UnresolvedMarketTrend {
   confidence: number;
 }
 
+/** A non-financial segment dropped from the summary, kept for player "skip" chips. */
+export interface SkippedSegment {
+  segment_type: string;        // sponsor | intro | outro | chitchat | qa
+  label: string;               // zh-TW category label, e.g. "業配 / 廣告"
+  section_topic: string;       // the extractor's detail, e.g. "全聯紅酒品飲心得"
+  start: number;               // ms
+  end: number;                 // ms
+}
+
 export interface Episode {
   id: string;
   podcast_name: string;
@@ -76,6 +85,7 @@ export interface Episode {
   summary_image_public_url?: string | null;
   related_tickers: string[];
   tags?: string[];
+  skipped_segments?: SkippedSegment[];
   sector_exposures?: SectorExposure[];
   unresolved_market_trends?: UnresolvedMarketTrend[];
   sector_exposure_ids?: string[];

@@ -2,7 +2,7 @@ import React from 'react';
 import { usePlayerStore } from '@/store/usePlayerStore';
 import { SpotifyEmbed, type SpotifyEmbedRef } from '@/components/podcast/SpotifyEmbed';
 import { AudioEmbed } from '@/components/player/AudioEmbed';
-import { X, ChevronDown, ChevronUp, Play, Pause, Clock, RotateCcw, RotateCw } from 'lucide-react';
+import { X, ChevronDown, ChevronUp, Play, Pause, Clock, RotateCcw, RotateCw, SkipForward } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export const GlobalPlayer: React.FC = () => {
@@ -104,7 +104,8 @@ export const GlobalPlayer: React.FC = () => {
         : 0;
 
     const sections = player.currentEpisodeData.timestampedSections || [];
-    const currentSection = [...sections].reverse().find(s => s.timestampSeconds <= playbackState.position);
+    // Only real chapters track "current"; skip chips never become the active section.
+    const currentSection = [...sections].reverse().find(s => !s.skippable && s.timestampSeconds <= playbackState.position);
 
     return (
         <div className="fixed left-0 right-0 bottom-14 lg:bottom-0 z-[80] shadow-[0_-8px_30px_rgba(0,0,0,0.35)]">
@@ -127,24 +128,35 @@ export const GlobalPlayer: React.FC = () => {
                             {sections.length > 0 ? (
                                 <div className="space-y-1">
                                     {sections.map((section, index) => {
-                                        const isActive = currentSection?.timestampSeconds === section.timestampSeconds;
+                                        // Skippable segment: clicking jumps PAST it (to its end), and the
+                                        // row reads muted with a skip icon so a listener can bypass a
+                                        // sponsor read / life-story tangent without it being a "chapter".
+                                        const skippable = !!section.skippable;
+                                        const isActive = !skippable && currentSection?.timestampSeconds === section.timestampSeconds;
+                                        const seekTarget = skippable ? (section.endSeconds ?? section.timestampSeconds) : section.timestampSeconds;
                                         return (
                                             <button
                                                 key={`${section.timestampSeconds}-${index}`}
-                                                onClick={() => handleSectionClick(section.timestampSeconds)}
+                                                onClick={() => handleSectionClick(seekTarget)}
+                                                title={skippable ? `略過此段（跳至 ${section.title}）` : undefined}
                                                 className={cn(
                                                     "w-full flex items-start gap-3 px-3 py-2.5 rounded-md text-left transition-colors cursor-pointer group",
                                                     isActive
                                                         ? "bg-accent-info-soft"
-                                                        : "hover:bg-muted"
+                                                        : skippable
+                                                            ? "opacity-60 hover:opacity-100 hover:bg-muted/60"
+                                                            : "hover:bg-muted"
                                                 )}
                                             >
                                                 <span className={cn(
-                                                    "flex-shrink-0 px-2 py-0.5 rounded text-xs font-mono tabular-nums font-medium",
+                                                    "flex-shrink-0 px-2 py-0.5 rounded text-xs font-mono tabular-nums font-medium inline-flex items-center gap-1",
                                                     isActive
                                                         ? "bg-accent-info text-white"
-                                                        : "bg-muted text-muted-foreground group-hover:bg-accent-info-soft group-hover:text-accent-info"
+                                                        : skippable
+                                                            ? "bg-transparent border border-dashed border-border text-muted-foreground"
+                                                            : "bg-muted text-muted-foreground group-hover:bg-accent-info-soft group-hover:text-accent-info"
                                                 )}>
+                                                    {skippable && <SkipForward size={11} />}
                                                     {section.formattedTime}
                                                 </span>
                                                 <div className="flex-1 min-w-0">
@@ -152,13 +164,18 @@ export const GlobalPlayer: React.FC = () => {
                                                         "block text-sm leading-relaxed",
                                                         isActive
                                                             ? "text-accent-info font-semibold"
-                                                            : "text-foreground/80"
+                                                            : skippable
+                                                                ? "text-muted-foreground italic"
+                                                                : "text-foreground/80"
                                                     )}>
                                                         {section.title}
                                                     </span>
                                                 </div>
                                                 {isActive && (
                                                     <span className="flex-shrink-0 w-2 h-2 mt-1.5 rounded-full bg-accent-info animate-pulse" />
+                                                )}
+                                                {skippable && (
+                                                    <span className="flex-shrink-0 text-2xs text-muted-foreground/80 mt-1 uppercase tracking-wide">略過</span>
                                                 )}
                                             </button>
                                         );
@@ -261,6 +278,7 @@ export const GlobalPlayer: React.FC = () => {
                                             style={{ width: `${progress}%` }}
                                         />
                                         {playbackState.duration > 0 && sections.map((section, index) => {
+                                            if (section.skippable) return null;  // skip chips aren't progress-bar chapter markers
                                             const markerPosition = (section.timestampSeconds / playbackState.duration) * 100;
                                             const isCurrentSection = currentSection?.timestampSeconds === section.timestampSeconds;
                                             return (

@@ -10,7 +10,7 @@ import { getEpisodeById, getEpisodeByIdOnly, getEpisodeAudioUrl, getPodcastByNam
 import { getSectorBoard, type SectorBoardItem } from '@/services/api/podcasts';
 import { SectorExposureList } from '@/components/episode/SectorExposureList';
 import { fetchWithFallback } from '@/services/api/migration';
-import { parseSummaryTopicSections, parseTimestampedSections, type TimestampedSection } from '@/utils/parseTimestampedSections';
+import { parseSummaryTopicSections, parseTimestampedSections, skippableSectionsFromSegments, type TimestampedSection } from '@/utils/parseTimestampedSections';
 import { usePlayerStore } from '@/store/usePlayerStore';
 import { useAppStore, useEpisodeBookmarks } from '@/store/useAppStore';
 import { CommentSection } from '@/components/episode/CommentSection';
@@ -198,9 +198,19 @@ export const EpisodeDetail: React.FC = () => {
   // fragments instead of topic boundaries. An episode with no topic timestamps
   // (e.g. a non-financial episode that produced no clustered topics) shows no
   // chapters rather than transcript noise.
+  // Non-financial segments (sponsor, life-story chitchat, …) the pipeline dropped
+  // from the summary — surfaced as muted "skip past" chips, interleaved by time.
+  const skippableSections = useMemo<TimestampedSection[]>(
+    () => skippableSectionsFromSegments(episode?.skipped_segments),
+    [episode],
+  );
   const playerSections = useMemo<TimestampedSection[]>(
-    () => (summarySections.length ? summarySections : chapters),
-    [summarySections, chapters],
+    () => {
+      const base = summarySections.length ? summarySections : chapters;
+      if (!skippableSections.length) return base;
+      return [...base, ...skippableSections].sort((a, b) => a.timestampSeconds - b.timestampSeconds);
+    },
+    [summarySections, chapters, skippableSections],
   );
   const tickerSymbols = useMemo(() => (Array.isArray(episode?.related_tickers) ? episode!.related_tickers.slice(0, 8) : []), [episode]);
   const priceMap = useStockPriceMap(tickerSymbols);
@@ -256,8 +266,9 @@ export const EpisodeDetail: React.FC = () => {
     if (canonicalUrl) data.url = canonicalUrl;
     if (seoImage) data.image = seoImage;
     if (episode.released_at_ms) data.datePublished = new Date(episode.released_at_ms).toISOString();
-    if (sections.length) {
-      data.hasPart = sections.map((s) => ({
+    const contentSections = sections.filter((s) => !s.skippable);
+    if (contentSections.length) {
+      data.hasPart = contentSections.map((s) => ({
         '@type': 'Clip',
         name: s.title,
         startOffset: s.timestampSeconds,
