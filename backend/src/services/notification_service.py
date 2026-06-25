@@ -22,6 +22,17 @@ def _get_firestore_service() -> FirestoreService:
     return _firestore_service
 
 
+def _pref_enabled(user_doc, pref_key: str) -> bool:
+    """Whether the user has this notification category enabled (default on).
+
+    The toggle lives inline on the user doc (notification_preferences), already loaded
+    by the subscription query, so this is a free check — no extra Firestore read.
+    Tag/topic follows have no toggle: subscribing to the tag IS the opt-in.
+    """
+    prefs = (user_doc.to_dict() or {}).get("notification_preferences", {})
+    return prefs.get(pref_key, True)
+
+
 def create_user_notification(
     user_id: str,
     notification_type: NotificationType,
@@ -78,6 +89,8 @@ def notify_new_episode(
             .stream()
 
         for user_doc in users_docs:
+            if not _pref_enabled(user_doc, "new_episodes"):
+                continue
             user_id = user_doc.id
             notification = create_user_notification(
                 user_id=user_id,
@@ -125,12 +138,16 @@ def notify_stock_mention(
             .where("watchlist", "array_contains", ticker) \
             .stream()
 
+        # Avoid an ugly "2330 (2330)" when no display name is known (producer passes ticker).
+        label = f"{stock_name} ({ticker})" if stock_name and stock_name != ticker else ticker
         for user_doc in users_docs:
+            if not _pref_enabled(user_doc, "stock_mentions"):
+                continue
             user_id = user_doc.id
             notification = create_user_notification(
                 user_id=user_id,
                 notification_type=NotificationType.STOCK_MENTION,
-                title=f"{stock_name} ({ticker}) 被 Podcast 提及",
+                title=f"{label} 被 Podcast 提及",
                 body=f"{podcast_name} 在最新一集中分析了此標的",
                 data={
                     "ticker": ticker,
@@ -143,6 +160,49 @@ def notify_stock_mention(
 
     except Exception as e:
         print(f"[NotificationService] Error creating stock mention notifications: {e}")
+
+    return created_notifications
+
+
+def notify_topic_mention(
+    tag: str,
+    episode_id: str,
+    podcast_name: str,
+    episode_title: str
+) -> List[NotificationResponse]:
+    """
+    Create notifications for users who follow a tag/topic when it appears in a new episode.
+
+    Subscribing to the tag is itself the opt-in, so there is no separate preference toggle.
+
+    Returns:
+        List of created notifications
+    """
+    firestore = _get_firestore_service()
+    created_notifications = []
+
+    try:
+        users_docs = firestore.db.collection("users") \
+            .where("tag_subscriptions", "array_contains", tag) \
+            .stream()
+
+        for user_doc in users_docs:
+            user_id = user_doc.id
+            notification = create_user_notification(
+                user_id=user_id,
+                notification_type=NotificationType.TOPIC_MENTION,
+                title=f"關注主題「{tag}」有新內容",
+                body=f"{podcast_name}：{episode_title}",
+                data={
+                    "tag": tag,
+                    "episode_id": episode_id,
+                    "podcast_name": podcast_name
+                }
+            )
+            created_notifications.append(notification)
+
+    except Exception as e:
+        print(f"[NotificationService] Error creating topic mention notifications: {e}")
 
     return created_notifications
 
