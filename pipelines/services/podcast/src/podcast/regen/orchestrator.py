@@ -422,7 +422,6 @@ def _assemble(draft: dict[str, Any]) -> dict[str, Any]:
             "unresolved_market_trends",
             "sector_exposure_ids",
             "sector_ids",
-            "theme_ids",
             "unresolved_market_trend_ids",
         ):
             payload[field] = state.get(field, [])

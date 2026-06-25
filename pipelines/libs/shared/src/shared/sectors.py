@@ -260,20 +260,22 @@ def find_unresolved_market_trends(
 
 
 def flatten_exposure_ids(sector_exposures: Iterable[dict[str, Any]]) -> dict[str, list[str]]:
+    """Flat, Firestore-queryable id arrays for an episode's exposures.
+
+    Themes and sectors are one ``sector_`` namespace, so a theme's base id is a
+    sector id too — everything lands in ``sector_ids`` (no separate ``theme_ids``).
+    """
     exposure_ids: set[str] = set()
     sector_ids: set[str] = set()
-    theme_ids: set[str] = set()
     for item in sector_exposures or []:
         if item.get("exposure_id"):
             exposure_ids.add(str(item["exposure_id"]))
-        if item.get("sector_id"):
-            sector_ids.add(str(item["sector_id"]))
-        if item.get("theme_id"):
-            theme_ids.add(str(item["theme_id"]))
+        base = item.get("sector_id") or item.get("theme_id")
+        if base:
+            sector_ids.add(str(base))
     return {
         "sector_exposure_ids": sorted(exposure_ids),
         "sector_ids": sorted(sector_ids),
-        "theme_ids": sorted(theme_ids),
     }
 
 
