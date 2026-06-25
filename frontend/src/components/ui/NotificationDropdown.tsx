@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Bell, TrendingUp, Mic, AlertTriangle, X, Loader2 } from 'lucide-react';
+import { Bell, TrendingUp, Mic, AlertTriangle, Hash, X, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { notificationsApi, type AppNotification } from '@/services/api/notifications';
 import { useAppStore } from '@/store/useAppStore';
@@ -7,7 +7,7 @@ import { formatDate } from '@/lib/date';
 
 interface DisplayNotification {
   id: string;
-  type: 'new_episode' | 'stock_mention' | 'price_alert';
+  type: 'new_episode' | 'stock_mention' | 'topic_mention' | 'price_alert';
   title: string;
   description: string;
   time: string;
@@ -161,6 +161,8 @@ export const NotificationDropdown: React.FC = () => {
         return <Mic size={16} className="text-accent-info" />;
       case 'stock_mention':
         return <TrendingUp size={16} className="text-accent-info" />;
+      case 'topic_mention':
+        return <Hash size={16} className="text-accent-info" />;
       case 'price_alert':
         return <AlertTriangle size={16} className="text-destructive" />;
     }

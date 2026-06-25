@@ -131,6 +131,17 @@ export const PipelineSettingsPage: React.FC = () => {
     return (llmOverrides[roleKey] as string) || '';
   };
 
+  // The live resolved model for a role (from /api/config -> content_builder.llm),
+  // shown when no override is set so the operator sees the ACTUAL default, not just
+  // "使用預設". This is what surfaces model drift instead of hiding it.
+  const getEffectiveModelForRole = (roleKey: string): string => {
+    const llm = ((data?.settings as Record<string, unknown> | undefined)?.llm || {}) as Record<string, unknown>;
+    return (llm[roleKey] as string) || '';
+  };
+
+  const labelForModelId = (id: string): string =>
+    availableModels.find((m) => m.id === id)?.label || id.replace(/^openrouter:/, '');
+
   const setModelForRole = (roleKey: string, modelId: string) => {
     const llmOverrides = ((overrides.llm || {}) as Record<string, unknown>);
     const newLlm = { ...llmOverrides, [roleKey]: modelId || undefined };
@@ -321,6 +332,7 @@ export const PipelineSettingsPage: React.FC = () => {
             <div className="space-y-6">
               {LLM_ROLES.map((role) => {
                 const currentModel = getModelForRole(role.key);
+                const effectiveModel = getEffectiveModelForRole(role.key);
                 return (
                   <div key={role.key}>
                     <div className="mb-2">
@@ -332,7 +344,7 @@ export const PipelineSettingsPage: React.FC = () => {
                       </span>
                       {!currentModel && (
                         <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-                          使用預設
+                          使用預設{effectiveModel ? `（${labelForModelId(effectiveModel)}）` : ''}
                         </span>
                       )}
                     </div>

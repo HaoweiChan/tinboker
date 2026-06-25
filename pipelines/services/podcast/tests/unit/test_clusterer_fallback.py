@@ -97,3 +97,32 @@ def test_safety_net_never_surfaces_only_ads():
 
 def test_empty_events_yields_empty():
     assert cluster_sentences({"sentences": _sentences(3), "events": []})["clustered_events"] == []
+
+
+def test_dropped_segments_surface_as_skippable_with_timing_and_label():
+    """Dropped segments are kept (lean, no sentences) so the player can offer skip chips."""
+    state = {"sentences": _sentences(9), "events": [
+        _ev("業配：某保健食品", 0, 2, "sponsor"),
+        _ev("全聯紅酒品飲心得", 3, 5, "chitchat"),
+        _ev("台積電法說會解析", 6, 8, "analysis"),
+    ]}
+    out = cluster_sentences(state)
+    assert [c["section_topic"] for c in out["clustered_events"]] == ["台積電法說會解析"]
+    skip = out["skipped_segments"]
+    assert [s["segment_type"] for s in skip] == ["sponsor", "chitchat"]
+    wine = skip[1]
+    assert wine["label"] == "生活閒聊"          # zh-TW category for the chip
+    assert wine["start"] == 3000 and wine["end"] == 5900  # real timing to seek to
+    assert "sentences" not in wine               # lean record, no transcript payload
+
+
+def test_safety_net_only_marks_ads_skippable():
+    """When the policy drops everything and the net resurfaces content as chapters,
+    only the ads/intro/outro remain skippable (the rest became real chapters)."""
+    state = {"sentences": _sentences(6), "events": [
+        _ev("業配廣告", 0, 2, "sponsor"),
+        _ev("主持人閒聊", 3, 5, "chitchat"),
+    ]}
+    out = cluster_sentences(state)
+    assert [c["section_topic"] for c in out["clustered_events"]] == ["主持人閒聊"]
+    assert [s["segment_type"] for s in out["skipped_segments"]] == ["sponsor"]

@@ -234,6 +234,19 @@ async def lifespan(app: FastAPI):
 
     asyncio.create_task(_sync_sectors_bg())
 
+    # Producer for in-app notifications: poll the recent-episodes feed every ~10 min (the
+    # ingestion cadence) and fan out NEW_EPISODE / STOCK_MENTION / TOPIC_MENTION to the
+    # users who subscribe to the podcaster / watch a mentioned ticker / follow a tag.
+    # Off the request path; must not block startup.
+    async def _notify_bg():
+        try:
+            from src.services.notification_producer import run_periodic_notifications
+            await run_periodic_notifications(interval_seconds=600.0)
+        except Exception as e:
+            print(f"Warning: notification producer stopped: {e}")
+
+    asyncio.create_task(_notify_bg())
+
     yield
 
     # --- Shutdown ---

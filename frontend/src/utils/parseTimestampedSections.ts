@@ -4,6 +4,46 @@ export interface TimestampedSection {
     title: string;
     timestampSeconds: number;
     formattedTime: string;
+    // A non-financial segment the pipeline dropped from the summary (sponsor,
+    // life-story chitchat, …). Rendered muted in the chapter list; clicking jumps
+    // PAST it to `endSeconds`. Absent/false on real chapters.
+    skippable?: boolean;
+    endSeconds?: number;
+}
+
+/** One pipeline ``skipped_segments`` record (timing in ms). */
+export interface SkippedSegmentInput {
+    segment_type?: string;
+    label?: string;
+    section_topic?: string;
+    start?: number; // ms
+    end?: number;   // ms
+}
+
+/**
+ * Build muted "skippable" chapter rows from the pipeline's skipped_segments, so a
+ * listener can jump past a sponsor read or a life-story tangent. Click target is
+ * the segment END (skip past); the badge shows its START so it sits in timeline order.
+ */
+export function skippableSectionsFromSegments(
+    segments?: SkippedSegmentInput[] | null,
+): TimestampedSection[] {
+    if (!segments?.length) return [];
+    return segments
+        .filter((s) => Number.isFinite(s.start) && Number.isFinite(s.end) && Number(s.end) > Number(s.start))
+        .map((s) => {
+            const startSec = Math.floor(Number(s.start) / 1000);
+            const endSec = Math.floor(Number(s.end) / 1000);
+            const label = (s.label || '可略過').trim();
+            const topic = (s.section_topic || '').trim();
+            return {
+                title: topic ? `${label}：${topic}` : label,
+                timestampSeconds: startSec,
+                formattedTime: formatTimeFromMs(Number(s.start)),
+                skippable: true,
+                endSeconds: Math.max(endSec, startSec + 1),
+            };
+        });
 }
 
 interface SummaryHeading {
