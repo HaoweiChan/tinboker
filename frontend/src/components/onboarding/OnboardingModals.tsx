@@ -4,6 +4,7 @@ import { X, ArrowRight, ArrowLeft, TrendingUp, Hash, Sparkles } from 'lucide-rea
 import { useAppStore } from '@/store/useAppStore';
 import { BracketMark } from '@/components/logo/AppLogo';
 import { GoogleLoginButton } from '@/components/auth/GoogleLoginButton';
+import { DisplayPreferences } from '@/components/onboarding/DisplayPreferences';
 import {
   CHANGELOG,
   hasSeenOnboarding,
@@ -222,7 +223,15 @@ function HeroSector() {
   );
 }
 
-const SLIDES = [
+interface Slide {
+  label: string;
+  title: string;
+  body: string;
+  Visual?: React.FC;
+  prefs?: boolean;
+}
+
+const SLIDES: Slide[] = [
   {
     label: 'tinboker — 歡迎',
     Visual: HeroWelcome,
@@ -246,6 +255,12 @@ const SLIDES = [
     Visual: HeroEpisode,
     title: '結構化集數摘要',
     body: '每集節目都拆解成關鍵重點與片段，登入後還能追蹤自選個股、訂閱節目並收藏集數。',
+  },
+  {
+    label: 'tinboker — 顯示設定',
+    title: '個人化你的顯示',
+    body: '選擇最適合你的顯示方式，之後可隨時在「設定」中調整。',
+    prefs: true,
   },
 ];
 
@@ -294,7 +309,7 @@ export const OnboardingModals: React.FC = () => {
     };
     return (
       <Shell label={slide.label} onClose={close}>
-        <slide.Visual />
+        {slide.Visual && <slide.Visual />}
         <div className="p-5 space-y-4">
           <h2 className="text-lg font-bold text-foreground" style={{ fontFamily: "'Noto Sans TC', sans-serif" }}>
             {slide.title}
@@ -305,6 +320,7 @@ export const OnboardingModals: React.FC = () => {
           >
             {slide.body}
           </p>
+          {slide.prefs && <DisplayPreferences />}
           <div className="flex items-center justify-between gap-3 pt-1">
             <div className="flex items-center gap-3">
               <div className="flex gap-1.5">
