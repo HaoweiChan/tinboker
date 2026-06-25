@@ -59,13 +59,23 @@ VISUALS: dict[str, dict[str, str]] = {
     "sector_steel":                  {"icon_id": "factory",       "color_hex": "#94A3B8"},
     "sector_tourism":                {"icon_id": "plane",         "color_hex": "#F43F5E"},
     # ── Themes ───────────────────────────────────────────────────────────
-    "theme_ai_server":               {"icon_id": "server",        "color_hex": "#8B5CF6"},
-    "theme_liquid_cooling":          {"icon_id": "droplets",      "color_hex": "#38BDF8"},
-    "theme_silicon_photonics":       {"icon_id": "radio",         "color_hex": "#0EA5E9"},
-    "theme_power_semiconductor":     {"icon_id": "zap",           "color_hex": "#EAB308"},
-    "theme_robotics":                {"icon_id": "bot",           "color_hex": "#06B6D4"},
-    "theme_silicon_ip":              {"icon_id": "file-code",     "color_hex": "#EC4899"},
-    "theme_advanced_packaging":      {"icon_id": "package",       "color_hex": "#D946EF"},
+    "sector_ai_server":               {"icon_id": "server",        "color_hex": "#8B5CF6"},
+    "sector_liquid_cooling":          {"icon_id": "droplets",      "color_hex": "#38BDF8"},
+    "sector_silicon_photonics":       {"icon_id": "radio",         "color_hex": "#0EA5E9"},
+    "sector_power_semiconductor":     {"icon_id": "zap",           "color_hex": "#EAB308"},
+    "sector_robotics":                {"icon_id": "bot",           "color_hex": "#06B6D4"},
+    "sector_silicon_ip":              {"icon_id": "file-code",     "color_hex": "#EC4899"},
+    "sector_advanced_packaging":      {"icon_id": "package",       "color_hex": "#D946EF"},
+    "sector_ai_software":             {"icon_id": "brain",         "color_hex": "#7C3AED"},
+    "sector_cryptocurrency":          {"icon_id": "bitcoin",       "color_hex": "#F59E0B"},
+    "sector_electric_vehicle":        {"icon_id": "car",           "color_hex": "#22C55E"},
+    "sector_cybersecurity":           {"icon_id": "shield",        "color_hex": "#EF4444"},
+    "sector_defense_aerospace":       {"icon_id": "rocket",        "color_hex": "#64748B"},
+    "sector_energy":                  {"icon_id": "flame",         "color_hex": "#F97316"},
+    "sector_software_saas":           {"icon_id": "code",          "color_hex": "#3B82F6"},
+    "sector_fintech":                 {"icon_id": "credit-card",   "color_hex": "#14B8A6"},
+    "sector_precious_metals":         {"icon_id": "gem",           "color_hex": "#CA8A04"},
+    "sector_ecommerce":               {"icon_id": "shopping-cart", "color_hex": "#EC4899"},
 }
 
 
@@ -101,7 +111,7 @@ def main() -> int:
             stamped += 1
 
     for theme in themes_doc.get("themes") or []:
-        v = VISUALS.get(f"theme_{theme.get('theme_id')}")
+        v = VISUALS.get(f"sector_{theme.get('theme_id')}")
         if v:
             theme["icon_id"] = v["icon_id"]
             theme["color_hex"] = v["color_hex"]

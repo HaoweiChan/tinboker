@@ -293,7 +293,6 @@ def create_episode_object(
         unresolved_market_trends=summary_result.get('unresolved_market_trends', []) if summary_result else [],
         sector_exposure_ids=summary_result.get('sector_exposure_ids', []) if summary_result else [],
         sector_ids=summary_result.get('sector_ids', []) if summary_result else [],
-        theme_ids=summary_result.get('theme_ids', []) if summary_result else [],
         unresolved_market_trend_ids=summary_result.get('unresolved_market_trend_ids', []) if summary_result else [],
         created_time=created_time,
         feed_date_published_ms=feed_date_published_ms,

@@ -113,7 +113,6 @@ class SummarizeService:
                     unresolved_market_trends = api_result.get("unresolved_market_trends") or []
                     sector_exposure_ids = api_result.get("sector_exposure_ids") or []
                     sector_ids = api_result.get("sector_ids") or []
-                    theme_ids = api_result.get("theme_ids") or []
                     unresolved_market_trend_ids = api_result.get("unresolved_market_trend_ids") or []
                     # Canonical tags/related_tickers from the pipeline's
                     # derive_tags_tickers node (single source of truth; the consumer
@@ -134,7 +133,6 @@ class SummarizeService:
                     unresolved_market_trends = []
                     sector_exposure_ids = []
                     sector_ids = []
-                    theme_ids = []
                     unresolved_market_trend_ids = []
                     cb_tags = None
                     cb_related_tickers = None
@@ -168,7 +166,6 @@ class SummarizeService:
                     'unresolved_market_trends': unresolved_market_trends,
                     'sector_exposure_ids': sector_exposure_ids,
                     'sector_ids': sector_ids,
-                    'theme_ids': theme_ids,
                     'unresolved_market_trend_ids': unresolved_market_trend_ids,
                 }
                 # Surface the pipeline's canonical tags so the consumer prefers them

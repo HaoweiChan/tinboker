@@ -106,6 +106,20 @@ def normalize_tag_slug(slug: str) -> str:
     return re.sub(r"[^a-z0-9]", "", (slug or "").lower())
 
 
+def normalize_exposure_id(exposure_id: str | None) -> str:
+    """Canonical exposure id — themes and sectors share one ``sector_`` namespace.
+
+    Legacy curated themes were keyed ``theme_<id>``; they are one concept ("a sector")
+    to the user, so both collapse to ``sector_<id>``. Apply when grouping episode
+    ``sector_exposures`` so pre-migration data (still ``theme_<id>``) folds into the
+    same board entry as the unified universe. Mirror of
+    ``pipelines/.../shared/sectors.py::normalize_exposure_id`` and the frontend
+    ``SectorIcon.tsx::normalizeExposureId``.
+    """
+    s = str(exposure_id or "")
+    return "sector_" + s[len("theme_"):] if s.startswith("theme_") else s
+
+
 def canonical_label(slug: str) -> str:
     """zh-TW display for a tag slug from the canonical vocabulary, else the slug itself.
 

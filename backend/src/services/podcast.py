@@ -13,6 +13,7 @@ from src.schemas.search import SearchResultItem
 from src.tag_registry import (
     canonical_tag_slugs,
     hidden_tag_slugs,
+    normalize_exposure_id,
     normalize_tag_slug,
     trending_slugs,
 )
@@ -1226,7 +1227,7 @@ class PodcastService:
             if cutoff is not None and self._dict_release_ms(doc) < cutoff:
                 continue
             for entry in doc.get("sector_exposures") or []:
-                eid = entry.get("exposure_id") or ""
+                eid = normalize_exposure_id(entry.get("exposure_id"))
                 if not eid or eid in EXCLUDED_EXPOSURE_IDS:
                     continue
                 counts[eid] = counts.get(eid, 0) + 1
@@ -1391,7 +1392,7 @@ class PodcastService:
             if cutoff is not None and self._dict_release_ms(doc) < cutoff:
                 continue
             for entry in doc.get("sector_exposures") or []:
-                eid = entry.get("exposure_id") or ""
+                eid = normalize_exposure_id(entry.get("exposure_id"))
                 if not eid or eid in EXCLUDED_EXPOSURE_IDS:
                     continue
                 counts[eid] = counts.get(eid, 0) + 1

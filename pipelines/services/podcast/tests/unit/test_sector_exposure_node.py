@@ -23,5 +23,5 @@ def test_node_derives_exposures_without_polluting_related_tickers():
     assert "sector_exposures" in out
     assert "related_tickers" not in out
     assert "ticker_insights" not in out
-    assert {"theme_ai_server", "sector_semiconductor"} <= set(out["sector_exposure_ids"])
+    assert {"sector_ai_server", "sector_semiconductor"} <= set(out["sector_exposure_ids"])
     assert "cpo" in out["unresolved_market_trend_ids"]
