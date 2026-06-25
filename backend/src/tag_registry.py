@@ -221,8 +221,33 @@ def sync_sectors(db: Session, sectors: list[dict]) -> int:
                 color_hex=color_hex,
             ))
             new_count += 1
+
+    # Self-heal the theme_ -> sector_ unification: drop superseded ``theme_<id>`` sector
+    # rows once their ``sector_<id>`` equivalent exists, carrying any admin 'hidden'
+    # curation onto the survivor. Idempotent — a no-op once the rename has settled.
+    synced_ids = {str(s.get("exposure_id") or "") for s in sectors}
+    db.flush()  # make rows added above queryable for the survivor lookup
+    removed = 0
+    for row in [r for r in by_exposure.values() if str(r.exposure_id or "").startswith("theme_")]:
+        target = normalize_exposure_id(row.exposure_id)
+        if target not in synced_ids:
+            continue  # the exposure is gone from the universe entirely; leave it
+        if row.tier == TIER_HIDDEN:
+            survivor = (
+                db.query(TagRegistry)
+                .filter(TagRegistry.kind == KIND_SECTOR, TagRegistry.exposure_id == target)
+                .first()
+            )
+            if survivor is not None and survivor.tier != TIER_HIDDEN:
+                survivor.tier = TIER_HIDDEN
+        db.delete(row)
+        removed += 1
+
     db.commit()
-    logger.info("Synced sectors: %d new, %d refreshed", new_count, len(sectors) - new_count)
+    logger.info(
+        "Synced sectors: %d new, %d refreshed, %d legacy theme_ rows removed",
+        new_count, len(sectors) - new_count, removed,
+    )
     return new_count
 
 

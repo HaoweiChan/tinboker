@@ -121,3 +121,22 @@ def test_hidden_tag_slugs_normalized_and_tag_only(session):
     assert "supplychain" in hidden          # normalized (strips case + underscore)
     assert "ai" not in hidden               # visible tag not hidden
     assert "sectorsemiconductor" not in hidden  # sectors are not tag-kind
+
+
+def test_sync_self_heals_legacy_theme_rows(session):
+    """A legacy theme_<id> sector row is dropped once sector_<id> is synced, and an
+    admin 'hidden' curation carries onto the survivor."""
+    # Pre-existing legacy row: admin had HIDDEN the old theme exposure.
+    session.add(TagRegistry(
+        slug="theme_ai_server", display_zh="AI 伺服器", tier=TIER_HIDDEN,
+        kind=KIND_SECTOR, exposure_id="theme_ai_server",
+    ))
+    session.commit()
+
+    sync_sectors(session, [_sector("sector_ai_server", "AI 伺服器")])
+
+    rows = session.query(TagRegistry).filter(TagRegistry.kind == KIND_SECTOR).all()
+    ids = {r.exposure_id for r in rows}
+    assert ids == {"sector_ai_server"}              # theme_ orphan removed
+    survivor = next(r for r in rows if r.exposure_id == "sector_ai_server")
+    assert survivor.tier == TIER_HIDDEN              # admin hide preserved
