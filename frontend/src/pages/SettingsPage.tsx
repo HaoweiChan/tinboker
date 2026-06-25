@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Sun, Bell, Loader2, Smartphone } from 'lucide-react';
+import { Sun, Bell, Loader2, Smartphone, User as UserIcon, Camera } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { SEO } from '@/components/common/SEO';
@@ -7,7 +7,18 @@ import { PageContent } from '@/components/layout/PageContent';
 import { PWAInstallSection } from '@/components/common/PWAInstallPrompt';
 import { useStockColorMode, useSetStockColorMode } from '@/hooks/useStockTrendColor';
 import { useAppStore } from '@/store/useAppStore';
+import { userApi } from '@/services/api/user';
 import { userSettingsApi, type NotificationPreferences } from '@/services/api/userSettings';
+import { Modal } from '@/components/ui/Modal';
+import { AvatarCropper } from '@/components/common/AvatarCropper';
+
+// Reject absurd source files before decoding (the cropper bounds the *output* size, but a
+// huge source still has to be loaded into memory first).
+const MAX_AVATAR_SOURCE_BYTES = 12 * 1024 * 1024; // 12 MB
+
+function initials(name?: string): string {
+  return (name || '?').split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase();
+}
 
 interface ToggleProps {
   checked: boolean;
@@ -68,12 +79,60 @@ const NOTIF_ROWS: { key: keyof NotificationPreferences; label: string; hint: str
 
 export const SettingsPage: React.FC = () => {
   const token = useAppStore((s) => s.token);
+  const user = useAppStore((s) => s.user);
+  const updateUser = useAppStore((s) => s.updateUser);
   const theme = useAppStore((s) => s.theme);
   const setTheme = useAppStore((s) => s.setTheme);
   const stockColorMode = useStockColorMode();
   const setStockColorMode = useSetStockColorMode();
   const fontSize = useAppStore((s) => s.fontSize);
   const setFontSize = useAppStore((s) => s.setFontSize);
+
+  // Profile (display name + avatar) — seeded from the store, saved via PATCH /api/user/me.
+  const [name, setName] = useState('');
+  const [avatar, setAvatar] = useState<string | undefined>(undefined);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [cropFile, setCropFile] = useState<File | null>(null);
+  useEffect(() => {
+    setName(user?.name ?? '');
+    setAvatar(user?.avatar || undefined);
+    // Re-seed only when the logged-in identity changes — not on every name/avatar edit,
+    // which would clobber in-progress input.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
+  const profileDirty = !!user && (name.trim() !== (user.name ?? '') || (avatar || '') !== (user.avatar || ''));
+  const pickAvatar = (file?: File) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      toast.error('請選擇圖片檔');
+      return;
+    }
+    if (file.size > MAX_AVATAR_SOURCE_BYTES) {
+      toast.error('圖片過大（上限 12MB）');
+      return;
+    }
+    setCropFile(file);
+  };
+  const saveProfile = async () => {
+    const n = name.trim();
+    if (n.length < 1 || n.length > 40) {
+      toast.error('名稱長度需為 1–40 字');
+      return;
+    }
+    setSavingProfile(true);
+    try {
+      const patch: { name?: string; avatar?: string } = {};
+      if (n !== user?.name) patch.name = n;
+      if ((avatar || '') !== (user?.avatar || '')) patch.avatar = avatar ?? '';
+      const updated = await userApi.updateProfile(patch);
+      updateUser({ name: updated.name, avatar: updated.avatar });
+      toast.success('個人檔案已更新');
+    } catch {
+      toast.error('更新失敗，請稍後再試');
+    } finally {
+      setSavingProfile(false);
+    }
+  };
 
   const [prefs, setPrefs] = useState<NotificationPreferences>({ new_episodes: true, stock_mentions: true, price_alerts: true, daily_digest: false });
   const [loadingPrefs, setLoadingPrefs] = useState(false);
@@ -113,6 +172,49 @@ export const SettingsPage: React.FC = () => {
     <>
       <SEO title="帳號設定" description="顯示、通知與偏好設定。" />
       <PageContent className="max-w-[680px]">
+        <SettingsSection icon={<UserIcon size={18} />} title="個人檔案">
+          {!token ? (
+            <div className="text-center py-8 text-sm text-muted-foreground">請先登入以編輯個人檔案</div>
+          ) : (
+            <div className="flex items-center gap-5 flex-wrap">
+              <label className="relative cursor-pointer shrink-0 group">
+                {avatar ? (
+                  <img src={avatar} alt="" className="w-[72px] h-[72px] rounded-full object-cover" />
+                ) : (
+                  <div className="w-[72px] h-[72px] rounded-full grid place-items-center text-white text-2xl font-semibold bg-accent-info">{initials(name)}</div>
+                )}
+                <span className="absolute inset-0 rounded-full bg-black/45 grid place-items-center opacity-0 group-hover:opacity-100 transition-opacity">
+                  <Camera size={20} className="text-white" />
+                </span>
+                <input type="file" accept="image/*" className="hidden" onChange={(e) => { pickAvatar(e.target.files?.[0]); e.target.value = ''; }} />
+              </label>
+
+              <div className="flex-1 min-w-[200px]">
+                <label className="block text-xs text-muted-foreground mb-1.5">顯示名稱</label>
+                <input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  maxLength={40}
+                  placeholder="你的名稱"
+                  className="w-full bg-muted rounded-md px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-accent-info"
+                />
+                {avatar && (
+                  <button type="button" onClick={() => setAvatar(undefined)} className="mt-2 text-xs text-accent-info hover:underline">移除頭像</button>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={saveProfile}
+                disabled={!profileDirty || savingProfile}
+                className="px-4 py-2 rounded-full text-sm font-medium bg-foreground text-background hover:opacity-90 disabled:opacity-40 transition-opacity"
+              >
+                {savingProfile ? '儲存中…' : '儲存'}
+              </button>
+            </div>
+          )}
+        </SettingsSection>
+
         <SettingsSection icon={<Sun size={18} />} title="顯示設定">
           <SettingsRow
             label="美股/國際模式 (綠漲紅跌)"
@@ -169,6 +271,16 @@ export const SettingsPage: React.FC = () => {
           )}
         </SettingsSection>
       </PageContent>
+
+      <Modal isOpen={!!cropFile} onClose={() => setCropFile(null)} title="調整頭像">
+        {cropFile && (
+          <AvatarCropper
+            file={cropFile}
+            onCancel={() => setCropFile(null)}
+            onDone={(uri) => { setAvatar(uri); setCropFile(null); }}
+          />
+        )}
+      </Modal>
     </>
   );
 };

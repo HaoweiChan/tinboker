@@ -1,7 +1,20 @@
 import { apiClient } from './client';
 import { useAppStore } from '@/store/useAppStore';
+import type { AuthResponse } from './auth';
 
 export const userApi = {
+  // Profile — update display name and/or avatar (omit a field to leave it unchanged).
+  updateProfile: async (patch: { name?: string; avatar?: string }): Promise<AuthResponse['user']> => {
+    const token = useAppStore.getState().token;
+    if (!token) throw new Error('Not authenticated');
+    const response = await apiClient.patch<AuthResponse['user']>(
+      '/api/user/me',
+      patch,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    return response.data;
+  },
+
   // Watchlist
   getWatchlist: async (): Promise<string[]> => {
     const token = useAppStore.getState().token;

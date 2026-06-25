@@ -13,10 +13,10 @@ interface TickerAvatarProps {
  */
 export function TickerAvatar({ ticker, brandColor, className }: TickerAvatarProps) {
   const bg = brandColor || getAvatarColor(ticker);
-  // Strip exchange suffix for display: "2330.TW" → "2330", "BRK.B" → "BRK.B"
-  const label = ticker.includes('.') && /^\d/.test(ticker)
-    ? ticker.split('.')[0]
-    : ticker.split('.')[0].slice(0, 4);
+  // Numeric tickers (TW/JP/KR) carry an exchange suffix to strip: "2330.TW" → "2330",
+  // "005930.KS" → "005930". Letter tickers keep their class suffix: "BRK.B" stays.
+  // Never truncate — the chip widens to fit (JP/KR 6-digit, US 5-letter like GOOGL).
+  const label = /^\d/.test(ticker) ? ticker.split('.')[0] : ticker;
 
   return (
     <span
@@ -24,7 +24,7 @@ export function TickerAvatar({ ticker, brandColor, className }: TickerAvatarProp
         'inline-flex items-center justify-center rounded text-white font-bold font-mono text-2xs tracking-tight select-none shrink-0',
         className,
       )}
-      style={{ backgroundColor: bg, minWidth: '2.75rem', height: '1.5rem', padding: '0 0.25rem' }}
+      style={{ backgroundColor: bg, minWidth: '2.75rem', height: '1.5rem', padding: '0 0.3rem' }}
     >
       {label}
     </span>

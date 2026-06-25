@@ -1,15 +1,24 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Search, Star, ChevronRight } from 'lucide-react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Search, Star, ChevronRight, Layers, Hash } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
 import { Modal } from '@/components/ui/Modal';
-import { EpisodeCardV2, ListRow, PodMark } from '@/components/redesign';
+import { EpisodeCardV2, PodMark, SentimentChip } from '@/components/redesign';
+import { inferStockMarket } from '@/utils/stockDisplay';
 import { apiEpisodeToCardV2 } from '@/components/redesign/episodeAdapter';
 import { StockIdentity } from '@/components/common/StockIdentity';
+import { TickerAvatar } from '@/components/common/TickerAvatar';
+import { TagBoardCard } from '@/components/topics/TagBoardCard';
+import { SectorBoardCard } from '@/components/topics/SectorBoardCard';
 import { useAppStore } from '@/store/useAppStore';
 import { useStockPriceMap } from '@/hooks/useStockPriceMap';
 import { useStockPriceSinceMap } from '@/hooks/useStockPriceSinceMap';
+import { useStockSummaries } from '@/hooks/useStockSummaries';
+import { useTagLabels, tagLabelFor } from '@/hooks/useTagLabels';
+import { getTrendingTags, getSectorBoard, getRecentBuzz, type TrendingTag, type SectorBoardItem } from '@/services/api/podcasts';
+import type { SentimentLabel, TickerTrending } from '@/services/types';
+import type { Sentiment } from '@/lib/sentiment';
 import {
   getSortedStocks,
   getPodcastByName,
@@ -27,6 +36,19 @@ const VALID_TABS: readonly Tab[] = ['podcasters', 'tickers', 'topics', 'episodes
 interface StockRow {
   symbol: string;
   name: string;
+}
+
+// Short market badge per row — mirrors the /stock page table.
+const MARKET_BADGE: Record<ReturnType<typeof inferStockMarket>, { label: string; cls: string }> = {
+  TW: { label: 'TW', cls: 'bg-sentiment-bull-soft text-sentiment-bull' },
+  US: { label: 'US', cls: 'bg-accent-info-soft text-accent-info' },
+  KR: { label: 'KR', cls: 'bg-muted text-muted-foreground' },
+};
+
+function labelToSentiment(label: SentimentLabel): Sentiment {
+  if (label === 'STRONG_BULLISH' || label === 'BULLISH') return 'BULLISH';
+  if (label === 'STRONG_BEARISH' || label === 'BEARISH') return 'BEARISH';
+  return 'NEUTRAL';
 }
 
 function formatJoin(createdAt?: string): string {
@@ -54,8 +76,10 @@ export const ProfilePage: React.FC = () => {
   const [episodeBookmarks, setEpisodeBookmarks] = useState<string[]>([]);
   const [tagSubs, setTagSubs] = useState<string[]>([]);
 
-  const [stockRows, setStockRows] = useState<StockRow[]>([]);
   const [podcasters, setPodcasters] = useState<Podcast[]>([]);
+  const [trendingTags, setTrendingTags] = useState<TrendingTag[]>([]);
+  const [sectorBoard, setSectorBoard] = useState<SectorBoardItem[]>([]);
+  const tagLabels = useTagLabels();
   const [bookmarked, setBookmarked] = useState<ApiEpisode[]>([]);
   const episodeTickers = useMemo(() => bookmarked.flatMap((ep) => ep.related_tickers ?? []), [bookmarked]);
   const priceMap = useStockPriceMap(episodeTickers);
@@ -125,29 +149,58 @@ export const ProfilePage: React.FC = () => {
 
   const effectiveWatchlist = useMemo(() => (userInfo?.watchlist !== undefined ? userInfo.watchlist || [] : token ? apiWatchlist : watchlist), [userInfo, token, apiWatchlist, watchlist]);
 
-  // Hydrate watchlist tickers → names (best effort).
+  // Stock display metadata (name, brand color, logo) — same source the /stock page uses.
+  const summaries = useStockSummaries(effectiveWatchlist);
+
+  // 提及 (mention count) + 情緒 (sentiment) per ticker — same buzz feed the /stock page uses.
+  // Tickers not mentioned in the last 30 days simply have no entry (columns left blank).
+  const [buzzMap, setBuzzMap] = useState<Map<string, TickerTrending>>(new Map());
   useEffect(() => {
     if (effectiveWatchlist.length === 0) {
-      setStockRows([]);
+      setBuzzMap(new Map());
       return;
     }
     let alive = true;
-    fetchWithFallback<unknown[]>(() => getSortedStocks({ limit: 500 }), [], 'getSortedStocks:profile')
-      .catch(() => [] as unknown[])
-      .then((all) => {
-        if (!alive) return;
-        const nameOf = new Map<string, string>();
-        for (const s of Array.isArray(all) ? all : []) {
-          const o = s as { ticker?: string; symbol?: string; name?: string };
-          const t = o.ticker || o.symbol;
-          if (t) nameOf.set(t.toUpperCase().split('.')[0], o.name || t);
-        }
-        setStockRows(effectiveWatchlist.map((sym) => ({ symbol: sym, name: nameOf.get(sym.toUpperCase().split('.')[0]) || sym })));
-      });
+    getRecentBuzz({ days: 30, limit: 200 }).then((b) => {
+      if (alive) setBuzzMap(new Map((b.tickers ?? []).map((t) => [t.ticker, t])));
+    }).catch(() => {});
     return () => {
       alive = false;
     };
   }, [effectiveWatchlist]);
+
+  // 追蹤話題 mixes two kinds of subscription: free-form tags (stored by slug, live on
+  // /topics) and sectors (stored by display name, live on /sector). They render with
+  // different cards and route to different pages, so resolve both sources and match.
+  useEffect(() => {
+    if (tagSubs.length === 0) {
+      setTrendingTags([]);
+      setSectorBoard([]);
+      return;
+    }
+    let alive = true;
+    getTrendingTags().then((res) => { if (alive) setTrendingTags(res.tags); }).catch(() => {});
+    getSectorBoard().then((s) => { if (alive) setSectorBoard(s); }).catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [tagSubs]);
+
+  // Sectors and tags are different things on the topics page (different cards, different
+  // routes), so split the subscriptions the same way instead of mixing them in one grid.
+  const { subscribedSectors, subscribedTags } = useMemo(() => {
+    const sectorByName = new Map(sectorBoard.map((s) => [s.display_name, s]));
+    const tagById = new Map(trendingTags.map((t) => [t.id, t]));
+    const sectors: SectorBoardItem[] = [];
+    const tags: TrendingTag[] = [];
+    for (const sub of tagSubs) {
+      const name = sub.replace(/^#/, '');
+      const sector = sectorByName.get(name);
+      if (sector) sectors.push(sector);
+      else tags.push(tagById.get(name) ?? { id: name, name, scoped_count: 0, weekly_counts: [], recent_episodes: [] });
+    }
+    return { subscribedSectors: sectors, subscribedTags: tags };
+  }, [tagSubs, trendingTags, sectorBoard]);
 
   useEffect(() => {
     if (podcastSubs.length === 0) {
@@ -175,7 +228,9 @@ export const ProfilePage: React.FC = () => {
         return fetchWithFallback<ApiEpisode | null>(() => getEpisodeById(podcastName, rest.join('_')), null, `getEpisodeById:${bookmarkId}`).catch(() => null);
       }),
     ).then((arr) => {
-      if (alive) setBookmarked(arr.filter((e): e is ApiEpisode => e != null));
+      if (!alive) return;
+      const epTime = (e: ApiEpisode) => e.released_at_ms ?? e.created_time ?? 0;
+      setBookmarked(arr.filter((e): e is ApiEpisode => e != null).sort((a, b) => epTime(b) - epTime(a)));
     });
     return () => {
       alive = false;
@@ -206,7 +261,7 @@ export const ProfilePage: React.FC = () => {
 
   const TABS: { id: Tab; label: string }[] = [
     { id: 'podcasters', label: `訂閱節目 ${podcasters.length || podcastSubs.length}` },
-    { id: 'tickers', label: `自選股票 ${stockRows.length || effectiveWatchlist.length}` },
+    { id: 'tickers', label: `自選股票 ${effectiveWatchlist.length}` },
     { id: 'topics', label: `追蹤話題 ${tagSubs.length}` },
     { id: 'episodes', label: `收藏集數 ${bookmarked.length || episodeBookmarks.length}` },
   ];
@@ -237,7 +292,7 @@ export const ProfilePage: React.FC = () => {
                 <div className="text-sm text-muted-foreground mt-0.5">{userInfo.email}</div>
                 <div className="flex gap-4 mt-2.5 text-xs text-muted-foreground">
                   <span><strong className="text-foreground font-mono mr-1 tabular-nums">{podcasters.length || podcastSubs.length}</strong>追蹤節目</span>
-                  <span><strong className="text-foreground font-mono mr-1 tabular-nums">{stockRows.length || effectiveWatchlist.length}</strong>自選股</span>
+                  <span><strong className="text-foreground font-mono mr-1 tabular-nums">{effectiveWatchlist.length}</strong>自選股</span>
                   <span><strong className="text-foreground font-mono mr-1 tabular-nums">{bookmarked.length || episodeBookmarks.length}</strong>收藏集數</span>
                   {formatJoin(userInfo.created_at) && <span>· {formatJoin(userInfo.created_at)}</span>}
                 </div>
@@ -250,7 +305,7 @@ export const ProfilePage: React.FC = () => {
                 <div className="text-sm text-muted-foreground">已登入</div>
                 <div className="flex gap-4 mt-2.5 text-xs text-muted-foreground">
                   <span><strong className="text-foreground font-mono mr-1 tabular-nums">{podcasters.length || podcastSubs.length}</strong>追蹤節目</span>
-                  <span><strong className="text-foreground font-mono mr-1 tabular-nums">{stockRows.length || effectiveWatchlist.length}</strong>自選股</span>
+                  <span><strong className="text-foreground font-mono mr-1 tabular-nums">{effectiveWatchlist.length}</strong>自選股</span>
                   <span><strong className="text-foreground font-mono mr-1 tabular-nums">{bookmarked.length || episodeBookmarks.length}</strong>收藏集數</span>
                 </div>
               </div>
@@ -298,18 +353,41 @@ export const ProfilePage: React.FC = () => {
 
         {tab === 'tickers' && (
           <>
-            {stockRows.length === 0 ? (
+            {effectiveWatchlist.length === 0 ? (
               <div className="bg-card border border-border rounded-md p-10 text-center text-sm text-muted-foreground">尚未加入任何自選標的。</div>
             ) : (
-              <div className="space-y-1.5">
-                {stockRows.map((r) => (
-                  <ListRow
-                    key={r.symbol}
-                    title={<StockIdentity ticker={r.symbol} name={r.name} size="sm" />}
-                    href={`/stock/${encodeURIComponent(r.symbol)}`}
-                    trailing={<ChevronRight size={14} />}
-                  />
-                ))}
+              <div className="bg-card border border-border rounded-md overflow-hidden">
+                <div className="grid grid-cols-[1fr_52px_60px_22px] gap-2.5 items-center px-4 py-2.5 text-2xs font-medium text-muted-foreground uppercase tracking-[0.04em] border-b border-border font-mono">
+                  <span>個股</span>
+                  <span className="text-right">提及</span>
+                  <span className="text-right">情緒</span>
+                  <span />
+                </div>
+                {effectiveWatchlist.map((sym) => {
+                  const summary = summaries[sym];
+                  const buzz = buzzMap.get(sym) ?? buzzMap.get(sym.split('.')[0]);
+                  const badge = MARKET_BADGE[inferStockMarket(sym)];
+                  return (
+                    <Link
+                      key={sym}
+                      to={`/stock/${encodeURIComponent(sym)}`}
+                      className="grid grid-cols-[1fr_52px_60px_22px] gap-2.5 items-center px-4 py-3.5 border-b border-border last:border-b-0 hover:bg-muted transition-colors"
+                    >
+                      <span className="min-w-0 flex items-center gap-2.5">
+                        <TickerAvatar ticker={sym} brandColor={summary?.brand_color} />
+                        <span className="min-w-0 flex items-center gap-1.5">
+                          <StockIdentity ticker={sym} name={summary?.name} size="md" hideCode />
+                          <span className={`text-2xs px-1.5 py-0.5 rounded font-mono font-semibold shrink-0 ${badge.cls}`}>{badge.label}</span>
+                        </span>
+                      </span>
+                      <span className="font-mono text-md tabular-nums text-right">{buzz?.count ?? ''}</span>
+                      <span className="text-right">
+                        {buzz && <SentimentChip sentiment={labelToSentiment(buzz.sentiment_label)} bare />}
+                      </span>
+                      <ChevronRight size={14} className="text-muted-foreground" />
+                    </Link>
+                  );
+                })}
               </div>
             )}
             <button type="button" onClick={() => setSearchOpen(true)} className="mt-3 w-full border border-dashed border-border rounded-md py-6 text-sm text-muted-foreground hover:border-foreground/30 hover:text-foreground transition-colors">+ 新增自選</button>
@@ -320,15 +398,33 @@ export const ProfilePage: React.FC = () => {
           tagSubs.length === 0 ? (
             <div className="bg-card border border-border rounded-md p-10 text-center text-sm text-muted-foreground">尚未追蹤任何話題。</div>
           ) : (
-            <div className="flex flex-wrap gap-2">
-              {tagSubs.map((t) => {
-                const name = t.replace(/^#/, '');
-                return (
-                  <button key={t} type="button" onClick={() => navigate(`/topics/${encodeURIComponent(name)}`)} className="px-3.5 py-1.5 rounded-full bg-muted text-foreground text-sm font-medium hover:bg-accent-info-soft hover:text-accent-info transition-colors">
-                    #{name}
-                  </button>
-                );
-              })}
+            <div className="space-y-8">
+              {subscribedSectors.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-1.5 mb-3">
+                    <Layers size={13} className="text-muted-foreground" />
+                    <h2 className="text-sm font-semibold">產業 / 主題</h2>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {subscribedSectors.map((s) => (
+                      <SectorBoardCard key={s.exposure_id} sector={s} />
+                    ))}
+                  </div>
+                </div>
+              )}
+              {subscribedTags.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-1.5 mb-3">
+                    <Hash size={13} className="text-muted-foreground" />
+                    <h2 className="text-sm font-semibold">標籤</h2>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {subscribedTags.map((t) => (
+                      <TagBoardCard key={t.id} tag={t} label={tagLabelFor(t.id, tagLabels)} />
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )
         )}
