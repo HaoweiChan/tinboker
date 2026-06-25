@@ -28,7 +28,6 @@ _SERVICE_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_SERVICE_ROOT))
 
 from google.cloud import firestore  # noqa: E402
-
 from shared.sectors import (  # noqa: E402
     flatten_exposure_ids,
     flatten_unresolved_trend_ids,
