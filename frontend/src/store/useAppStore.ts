@@ -434,6 +434,7 @@ export const useAppStore = create<AppState>()(
         tagSubscriptions: state.tagSubscriptions,
         episodeBookmarks: state.episodeBookmarks,
         stockColorMode: state.stockColorMode,
+        fontSize: state.fontSize,
         useMockData: state.useMockData,
         recentSearches: state.recentSearches,
       }),
