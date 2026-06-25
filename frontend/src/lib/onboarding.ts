@@ -38,6 +38,17 @@ export interface ChangelogEntry {
 //   docs/workflows/deploy-flow.md § "In-app changelog (What's new)".
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.6.0',
+    date: '2026-06',
+    items: [
+      '有新集數或新聞時主動通知你，不錯過任何更新',
+      '個人檔案改版：追蹤的話題分成「產業」與「標籤」，自選股顯示提及次數與看多／看空情緒',
+      '收藏的集數依最新時間排序，也能編輯顯示名稱與大頭貼',
+      '播放器標出可略過的片段（贊助、閒聊），直接聽重點',
+      '歡迎畫面就能設定顯示偏好，第一次使用更順手',
+    ],
+  },
+  {
     version: '0.5.5',
     date: '2026-06',
     items: [

@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronRight } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
-import { EpisodeCardV2, ListRow } from '@/components/redesign';
+import { EpisodeCardV2 } from '@/components/redesign';
 import { apiEpisodeToCardV2 } from '@/components/redesign/episodeAdapter';
+import { SubscribedTickers } from '@/components/profile/SubscribedTickers';
+import { SubscribedTopics } from '@/components/profile/SubscribedTopics';
 import { getPodcastEpisodes, getSortedPodcasts, getEpisodeById, type Episode as ApiEpisode, type Podcast } from '@/services/api/podcasts';
 import { fetchWithFallback } from '@/services/api/migration';
 import { userApi } from '@/services/api/user';
@@ -13,15 +14,10 @@ import { useStockPriceMap } from '@/hooks/useStockPriceMap';
 import { useStockPriceSinceMap } from '@/hooks/useStockPriceSinceMap';
 import { useTranslationMap } from '@/hooks/useTranslationMap';
 import { useEpisodeSentimentMap } from '@/hooks/useEpisodeSentimentMap';
-import { useStockSummaries } from '@/hooks/useStockSummaries';
-import { StockIdentity } from '@/components/common/StockIdentity';
-import { Link } from 'react-router-dom';
-import { TickerAvatar } from '@/components/common/TickerAvatar';
 
 type Tab = 'podcasters' | 'tickers' | 'topics' | 'episodes';
 
 export const WatchlistPage: React.FC = () => {
-  const navigate = useNavigate();
   const token = useAppStore((s) => s.token);
   const localSubscriptions = useSubscriptions();
   const localWatchlist = useWatchlist();
@@ -151,13 +147,14 @@ export const WatchlistPage: React.FC = () => {
         ).catch(() => null);
       }),
     ).then((arr) => {
-      if (alive) setBookmarked(arr.filter((e): e is ApiEpisode => e != null));
+      if (!alive) return;
+      const epTime = (e: ApiEpisode) => e.released_at_ms ?? e.created_time ?? 0;
+      setBookmarked(arr.filter((e): e is ApiEpisode => e != null).sort((a, b) => epTime(b) - epTime(a)));
     });
     return () => { alive = false; };
   }, [bookmarkedIds]);
 
   const sortedWatchlist = useMemo(() => [...watchlist], [watchlist]);
-  const summaries = useStockSummaries(sortedWatchlist);
 
   // Show loading state while server data is being fetched for logged-in users
   const isLoading = token && !serverLoaded;
@@ -222,20 +219,7 @@ export const WatchlistPage: React.FC = () => {
                   尚未加入任何自選股票 — 去 <Link to="/stock" className="text-accent-info hover:underline">個股</Link> 頁加入幾檔吧。
                 </div>
               ) : (
-                <div className="space-y-1.5">
-                  {sortedWatchlist.map((sym) => {
-                    const summary = summaries[sym];
-                    return (
-                      <ListRow
-                        key={sym}
-                        lead={<TickerAvatar ticker={sym} brandColor={summary?.brand_color} />}
-                        title={<StockIdentity ticker={sym} name={summary?.name} size="sm" />}
-                        href={`/stock/${encodeURIComponent(sym)}`}
-                        trailing={<ChevronRight size={14} />}
-                      />
-                    );
-                  })}
-                </div>
+                <SubscribedTickers tickers={sortedWatchlist} />
               )
             )}
 
@@ -245,16 +229,7 @@ export const WatchlistPage: React.FC = () => {
                   尚未追蹤任何話題 — 去 <Link to="/topics" className="text-accent-info hover:underline">話題</Link> 頁追蹤幾個吧。
                 </div>
               ) : (
-                <div className="flex flex-wrap gap-2">
-                  {tagSubscriptions.map((t) => {
-                    const name = t.replace(/^#/, '');
-                    return (
-                      <button key={t} type="button" onClick={() => navigate(`/topics/${encodeURIComponent(name)}`)} className="px-3.5 py-1.5 rounded-full bg-muted text-foreground text-sm font-medium hover:bg-accent-info-soft hover:text-accent-info transition-colors">
-                        #{name}
-                      </button>
-                    );
-                  })}
-                </div>
+                <SubscribedTopics tagSubs={tagSubscriptions} />
               )
             )}
 
