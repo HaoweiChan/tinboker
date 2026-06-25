@@ -8,6 +8,9 @@ interface StockIdentityProps {
   name?: string | null;
   /** Size step on the shared type scale. Default 'sm' (body). */
   size?: 'sm' | 'md' | 'lg';
+  /** Hide the ticker code when a name exists — use where a TickerAvatar chip already
+   *  shows the code. Falls back to the code if there's no name (so it's never blank). */
+  hideCode?: boolean;
   /** Extra classes applied to the code span only (e.g. a group-hover color). */
   codeClassName?: string;
   className?: string;
@@ -29,17 +32,21 @@ export const StockIdentity: React.FC<StockIdentityProps> = ({
   ticker,
   name,
   size = 'sm',
+  hideCode,
   codeClassName,
   className,
 }) => {
   const code = ticker.replace(/\.[A-Z]+$/i, '');
   const showName = !!name && name !== code && name !== ticker;
+  const showCode = !(hideCode && showName);
   const sz = SIZE[size];
   return (
     <span className={cn('inline-flex items-baseline gap-1.5 min-w-0', className)}>
-      <span className={cn('font-mono font-semibold tabular-nums text-foreground shrink-0', sz, codeClassName)}>
-        {code}
-      </span>
+      {showCode && (
+        <span className={cn('font-mono font-semibold tabular-nums text-foreground shrink-0', sz, codeClassName)}>
+          {code}
+        </span>
+      )}
       {showName && <span className={cn('font-medium text-foreground truncate', sz)}>{name}</span>}
     </span>
   );

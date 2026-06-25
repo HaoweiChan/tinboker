@@ -68,6 +68,7 @@ interface AppState {
 
   // Auth actions
   login: (user: User, token: string, refreshToken?: string) => void;
+  updateUser: (patch: Partial<User>) => void;
   logout: () => void;
   setAuthReady: (ready: boolean) => void;
 
@@ -175,6 +176,7 @@ export const useAppStore = create<AppState>()(
           token,
           refreshToken: refreshToken !== undefined ? refreshToken : state.refreshToken,
         })),
+      updateUser: (patch) => set((state) => ({ user: state.user ? { ...state.user, ...patch } : state.user })),
       logout: () => set(() => ({ user: null, token: null, refreshToken: null })),
       setAuthReady: (ready) => set(() => ({ isAuthReady: ready })),
 

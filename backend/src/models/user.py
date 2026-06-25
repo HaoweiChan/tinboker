@@ -46,6 +46,13 @@ class UserResponse(UserBase):
         from_attributes = True
 
 
+class UpdateProfileRequest(BaseModel):
+    """Request to update the current user's editable profile fields."""
+    name: Optional[str] = None
+    # Either an https URL or a small `data:image/...` URI (client resizes before upload).
+    avatar: Optional[str] = None
+
+
 class UpdateNotificationPreferencesRequest(BaseModel):
     """Request to update notification preferences"""
     new_episodes: Optional[bool] = None
