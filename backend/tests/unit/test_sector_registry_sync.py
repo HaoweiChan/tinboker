@@ -46,7 +46,7 @@ def _sector(exposure_id, display_name, icon_id="cpu", color_hex="#3B82F6"):
 def test_sync_inserts_new_sectors_as_visible(session):
     sectors = [
         _sector("sector_semiconductor", "半導體"),
-        _sector("theme_ai_server", "AI 伺服器"),
+        _sector("sector_ai_server", "AI 伺服器"),
     ]
     new_count = sync_sectors(session, sectors)
     assert new_count == 2

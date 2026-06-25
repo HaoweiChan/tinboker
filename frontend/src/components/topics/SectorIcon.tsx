@@ -19,6 +19,16 @@ import {
   Plane,
   Wrench,
   Droplets,
+  Brain,
+  Bitcoin,
+  Car,
+  Shield,
+  Rocket,
+  Flame,
+  Code,
+  CreditCard,
+  Gem,
+  ShoppingCart,
   Hash,
   type LucideIcon,
 } from 'lucide-react';
@@ -45,6 +55,16 @@ const ICON_REGISTRY: Record<string, LucideIcon> = {
   plane: Plane,
   wrench: Wrench,
   droplets: Droplets,
+  brain: Brain,
+  bitcoin: Bitcoin,
+  car: Car,
+  shield: Shield,
+  rocket: Rocket,
+  flame: Flame,
+  code: Code,
+  'credit-card': CreditCard,
+  gem: Gem,
+  'shopping-cart': ShoppingCart,
   hash: Hash,
 };
 
@@ -55,22 +75,22 @@ const ICON_MAP: Record<string, LucideIcon> = {
   sector_financials: Landmark,
   sector_shipping: Ship,
   sector_memory: MemoryStick,
-  theme_ai_server: Server,
-  theme_robotics: Bot,
+  sector_ai_server: Server,
+  sector_robotics: Bot,
   sector_passive_components: CircuitBoard,
-  theme_power_semiconductor: Zap,
-  theme_silicon_photonics: Radio,
+  sector_power_semiconductor: Zap,
+  sector_silicon_photonics: Radio,
   sector_heavy_electrical: Plug,
   sector_networking: Network,
   sector_pcb_substrate: CircuitBoard,
-  theme_silicon_ip: FileCode,
-  theme_advanced_packaging: Package,
+  sector_silicon_ip: FileCode,
+  sector_advanced_packaging: Package,
   sector_biotech: FlaskConical,
   sector_bicycle: Bike,
   sector_steel: Factory,
   sector_tourism: Plane,
   sector_semiconductor_equipment: Wrench,
-  theme_liquid_cooling: Droplets,
+  sector_liquid_cooling: Droplets,
 };
 
 const COLOR_MAP: Record<string, string> = {
@@ -78,22 +98,22 @@ const COLOR_MAP: Record<string, string> = {
   sector_financials: '#F59E0B',
   sector_shipping: '#14B8A6',
   sector_memory: '#EF4444',
-  theme_ai_server: '#8B5CF6',
-  theme_robotics: '#06B6D4',
+  sector_ai_server: '#8B5CF6',
+  sector_robotics: '#06B6D4',
   sector_passive_components: '#10B981',
-  theme_power_semiconductor: '#EAB308',
-  theme_silicon_photonics: '#0EA5E9',
+  sector_power_semiconductor: '#EAB308',
+  sector_silicon_photonics: '#0EA5E9',
   sector_heavy_electrical: '#F97316',
   sector_networking: '#6366F1',
   sector_pcb_substrate: '#A855F7',
-  theme_silicon_ip: '#EC4899',
-  theme_advanced_packaging: '#D946EF',
+  sector_silicon_ip: '#EC4899',
+  sector_advanced_packaging: '#D946EF',
   sector_biotech: '#22C55E',
   sector_bicycle: '#84CC16',
   sector_steel: '#94A3B8',
   sector_tourism: '#F43F5E',
   sector_semiconductor_equipment: '#2DD4BF',
-  theme_liquid_cooling: '#38BDF8',
+  sector_liquid_cooling: '#38BDF8',
 };
 
 function hashHue(s: string): number {
@@ -102,15 +122,23 @@ function hashHue(s: string): number {
   return h % 360;
 }
 
+// Themes and sectors are one ``sector_`` namespace; collapse legacy ``theme_<id>``
+// exposure ids (pre-migration episode data / stale cache) so the fallback maps and
+// hashed-hue stay stable across the rename. Keep in sync with shared.sectors.normalize_exposure_id.
+function normalizeExposureId(exposureId: string): string {
+  return exposureId?.startsWith('theme_') ? `sector_${exposureId.slice('theme_'.length)}` : exposureId;
+}
+
 /** Resolve a lucide component: API icon_id → exposure_id fallback → Hash. */
 function resolveIcon(exposureId: string, iconId?: string | null): LucideIcon {
   if (iconId && ICON_REGISTRY[iconId]) return ICON_REGISTRY[iconId];
-  return ICON_MAP[exposureId] ?? Hash;
+  return ICON_MAP[normalizeExposureId(exposureId)] ?? Hash;
 }
 
 /** Resolve an accent color: API color_hex → exposure_id fallback → hashed hue. */
 export function sectorColor(exposureId: string, colorHex?: string | null): string {
-  return colorHex || COLOR_MAP[exposureId] || `hsl(${hashHue(exposureId || 'topic')} 64% 56%)`;
+  const id = normalizeExposureId(exposureId || 'topic');
+  return colorHex || COLOR_MAP[id] || `hsl(${hashHue(id)} 64% 56%)`;
 }
 
 interface SectorIconProps {

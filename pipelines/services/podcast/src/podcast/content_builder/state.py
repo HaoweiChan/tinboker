@@ -173,7 +173,6 @@ class PipelineState(TypedDict, total=False):
     unresolved_market_trends: list[UnresolvedMarketTrend]
     sector_exposure_ids: list[str]
     sector_ids: list[str]
-    theme_ids: list[str]
     unresolved_market_trend_ids: list[str]
 
     # Error tracking

@@ -51,32 +51,72 @@
     "icon_id": "plane",
     "color_hex": "#F43F5E"
   },
-  "theme_ai_server": {
+  "sector_ai_server": {
     "icon_id": "server",
     "color_hex": "#8B5CF6"
   },
-  "theme_liquid_cooling": {
+  "sector_liquid_cooling": {
     "icon_id": "droplets",
     "color_hex": "#38BDF8"
   },
-  "theme_silicon_photonics": {
+  "sector_silicon_photonics": {
     "icon_id": "radio",
     "color_hex": "#0EA5E9"
   },
-  "theme_power_semiconductor": {
+  "sector_power_semiconductor": {
     "icon_id": "zap",
     "color_hex": "#EAB308"
   },
-  "theme_robotics": {
+  "sector_robotics": {
     "icon_id": "bot",
     "color_hex": "#06B6D4"
   },
-  "theme_silicon_ip": {
+  "sector_silicon_ip": {
     "icon_id": "file-code",
     "color_hex": "#EC4899"
   },
-  "theme_advanced_packaging": {
+  "sector_advanced_packaging": {
     "icon_id": "package",
     "color_hex": "#D946EF"
+  },
+  "sector_ai_software": {
+    "icon_id": "brain",
+    "color_hex": "#7C3AED"
+  },
+  "sector_cryptocurrency": {
+    "icon_id": "bitcoin",
+    "color_hex": "#F59E0B"
+  },
+  "sector_electric_vehicle": {
+    "icon_id": "car",
+    "color_hex": "#22C55E"
+  },
+  "sector_cybersecurity": {
+    "icon_id": "shield",
+    "color_hex": "#EF4444"
+  },
+  "sector_defense_aerospace": {
+    "icon_id": "rocket",
+    "color_hex": "#64748B"
+  },
+  "sector_energy": {
+    "icon_id": "flame",
+    "color_hex": "#F97316"
+  },
+  "sector_software_saas": {
+    "icon_id": "code",
+    "color_hex": "#3B82F6"
+  },
+  "sector_fintech": {
+    "icon_id": "credit-card",
+    "color_hex": "#14B8A6"
+  },
+  "sector_precious_metals": {
+    "icon_id": "gem",
+    "color_hex": "#CA8A04"
+  },
+  "sector_ecommerce": {
+    "icon_id": "shopping-cart",
+    "color_hex": "#EC4899"
   }
 }

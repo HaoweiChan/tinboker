@@ -53,8 +53,7 @@ class PodcastEpisode:
     sector_exposures: List[Dict] = field(default_factory=list)  # Broad sector/theme exposure metadata
     unresolved_market_trends: List[Dict] = field(default_factory=list)  # Demand-driven curation candidates
     sector_exposure_ids: List[str] = field(default_factory=list)
-    sector_ids: List[str] = field(default_factory=list)
-    theme_ids: List[str] = field(default_factory=list)
+    sector_ids: List[str] = field(default_factory=list)  # base ids of all exposures (themes + sectors)
     unresolved_market_trend_ids: List[str] = field(default_factory=list)
     created_time: datetime = field(default_factory=datetime.now)  # Timestamp
     number_click: int = 0  # Number of clicks
@@ -192,7 +191,6 @@ class PodcastEpisode:
         result['unresolved_market_trends'] = self.unresolved_market_trends
         result['sector_exposure_ids'] = self.sector_exposure_ids
         result['sector_ids'] = self.sector_ids
-        result['theme_ids'] = self.theme_ids
         result['unresolved_market_trend_ids'] = self.unresolved_market_trend_ids
 
         # Add public URLs if they exist
@@ -300,8 +298,8 @@ class PodcastEpisode:
             sector_exposures=data.get('sector_exposures', []),
             unresolved_market_trends=data.get('unresolved_market_trends', []),
             sector_exposure_ids=data.get('sector_exposure_ids', []),
-            sector_ids=data.get('sector_ids', []),
-            theme_ids=data.get('theme_ids', []),
+            # Fold any legacy theme_ids into sector_ids when reading old docs.
+            sector_ids=sorted(set(data.get('sector_ids') or []) | set(data.get('theme_ids') or [])),
             unresolved_market_trend_ids=data.get('unresolved_market_trend_ids', []),
             created_time=created_time,
             number_click=data.get('number_click', 0),

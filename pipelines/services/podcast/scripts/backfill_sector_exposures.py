@@ -27,6 +27,7 @@ from typing import Any
 _SERVICE_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_SERVICE_ROOT))
 
+from google.cloud import firestore  # noqa: E402
 from shared.sectors import (  # noqa: E402
     flatten_exposure_ids,
     flatten_unresolved_trend_ids,
@@ -59,6 +60,8 @@ def build_update(ep: dict[str, Any]) -> dict[str, Any] | None:
         "unresolved_market_trends": unresolved,
         **flat,
         "unresolved_market_trend_ids": flatten_unresolved_trend_ids(unresolved),
+        # Unified namespace: purge the retired flat theme_ids index (folded into sector_ids).
+        "theme_ids": firestore.DELETE_FIELD,
     }
 
 

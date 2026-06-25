@@ -27,6 +27,10 @@ export function markOnboardingSeen(): void {
 }
 
 export interface ChangelogEntry {
+  /** Gating key only — bump it (vs the previous entry) to make returning users see
+   *  this entry once. It is NOT shown to users: the popup badge displays the live
+   *  build version (VITE_RELEASE_VERSION, the git tag), so it can't drift from the
+   *  deployed release. Just keep it unique + newer than the last entry. */
   version: string;
   date: string;
   items: string[];

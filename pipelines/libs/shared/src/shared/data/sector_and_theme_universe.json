@@ -350,450 +350,6 @@
       "color_hex": "#14B8A6"
     },
     {
-      "exposure_id": "theme_ai_server",
-      "exposure_type": "theme",
-      "sector_id": null,
-      "theme_id": "ai_server",
-      "display_name": "AI 伺服器",
-      "aliases": [
-        "AI 伺服器",
-        "AI server",
-        "AI servers",
-        "ai server supply chain",
-        "AI 供應鏈"
-      ],
-      "members": [
-        {
-          "ticker": "2382",
-          "name": "廣達",
-          "name_en": "Quanta",
-          "market": "TW",
-          "source": "curated",
-          "rank": 1,
-          "reason": "領先的AI伺服器ODM廠商，為全球資料中心提供高效能運算解決方案。"
-        },
-        {
-          "ticker": "6669",
-          "name": "緯穎",
-          "name_en": "Wiwynn",
-          "market": "TW",
-          "source": "curated",
-          "rank": 2,
-          "reason": "專注於雲端及AI伺服器解決方案，直接供應大型資料中心客戶。"
-        },
-        {
-          "ticker": "NVDA",
-          "name": "輝達",
-          "name_en": "NVIDIA",
-          "market": "US",
-          "source": "curated",
-          "rank": 3,
-          "reason": "提供AI運算核心的GPU與CUDA平台，是AI伺服器不可或缺的關鍵技術。"
-        },
-        {
-          "ticker": "SMCI",
-          "name": "Supermicro",
-          "name_en": "Super Micro Computer",
-          "market": "US",
-          "source": "curated",
-          "rank": 4,
-          "reason": "供應全方位的AI伺服器系統，以機架式整合與液冷技術聞名。"
-        },
-        {
-          "ticker": "3231",
-          "name": "緯創",
-          "market": "TW",
-          "source": "websearch",
-          "rank": 5,
-          "reason": "重要的AI伺服器ODM製造商，負責組裝與生產高效能運算設備。"
-        },
-        {
-          "ticker": "2317",
-          "name": "鴻海",
-          "market": "TW",
-          "source": "websearch",
-          "rank": 6,
-          "reason": "全球電子製造龍頭，積極投入AI伺服器組裝與相關零組件生產。"
-        },
-        {
-          "ticker": "2356",
-          "name": "英業達",
-          "market": "TW",
-          "source": "websearch",
-          "rank": 7,
-          "reason": "領先的伺服器ODM廠，積極開發與製造AI伺服器產品線。"
-        },
-        {
-          "ticker": "2376",
-          "name": "技嘉",
-          "market": "TW",
-          "source": "websearch",
-          "rank": 8,
-          "reason": "提供高效能AI伺服器與工作站，包含GPU加速運算系統。"
-        },
-        {
-          "ticker": "3017",
-          "name": "奇鋐",
-          "market": "TW",
-          "source": "websearch",
-          "rank": 9,
-          "reason": "供應先進的散熱解決方案，對於高功耗AI伺服器運作至關重要。"
-        },
-        {
-          "ticker": "3324",
-          "name": "雙鴻",
-          "market": "TW",
-          "source": "websearch",
-          "rank": 10,
-          "reason": "專業散熱模組供應商，提供AI伺服器所需的液冷與氣冷散熱技術。"
-        },
-        {
-          "ticker": "2308",
-          "name": "台達電",
-          "market": "TW",
-          "source": "websearch",
-          "rank": 11,
-          "reason": "提供AI伺服器關鍵的電源供應器與散熱風扇等基礎設施。"
-        },
-        {
-          "ticker": "3706",
-          "name": "神達",
-          "market": "TW",
-          "source": "websearch",
-          "rank": 12,
-          "reason": "投入伺服器與儲存解決方案，包含AI就緒平台與機架整合服務。"
-        }
-      ],
-      "icon_id": "server",
-      "color_hex": "#8B5CF6"
-    },
-    {
-      "exposure_id": "theme_liquid_cooling",
-      "exposure_type": "theme",
-      "sector_id": null,
-      "theme_id": "liquid_cooling",
-      "display_name": "液冷",
-      "aliases": [
-        "液冷",
-        "水冷",
-        "liquid cooling",
-        "direct liquid cooling"
-      ],
-      "members": [
-        {
-          "ticker": "3017",
-          "name": "奇鋐",
-          "name_en": "AVC",
-          "market": "TW",
-          "source": "curated",
-          "rank": 1,
-          "reason": "提供伺服器液冷散熱解決方案，涵蓋冷板、水冷分配單元與機櫃，為液冷系統關鍵供應商。"
-        },
-        {
-          "ticker": "3324",
-          "name": "雙鴻",
-          "name_en": "Auras",
-          "market": "TW",
-          "source": "curated",
-          "rank": 2,
-          "reason": "專注於伺服器液冷散熱產品，提供冷板、CDU 與水冷背門，為液冷系統重要供應商。"
-        },
-        {
-          "ticker": "3653",
-          "name": "健策",
-          "name_en": "Jentech",
-          "market": "TW",
-          "source": "curated",
-          "rank": 3,
-          "reason": "生產精密均熱片與水冷板等關鍵零組件，為液冷散熱系統提供高效導熱解決方案。"
-        },
-        {
-          "ticker": "2308",
-          "name": "台達電",
-          "market": "TW",
-          "source": "websearch",
-          "rank": 4,
-          "reason": "提供資料中心液冷基礎設施、電源供應器及散熱風扇，為液冷系統整合方案供應商。"
-        },
-        {
-          "ticker": "6125",
-          "name": "廣運",
-          "market": "TW",
-          "source": "websearch",
-          "rank": 5,
-          "reason": "提供浸沒式液冷散熱解決方案，包含整機櫃與相關設備，積極切入資料中心液冷市場。"
-        },
-        {
-          "ticker": "3483",
-          "name": "力致",
-          "market": "TW",
-          "source": "websearch",
-          "rank": 6,
-          "reason": "開發伺服器液冷散熱模組與水冷板，為高效能運算提供關鍵液冷散熱解決方案。"
-        },
-        {
-          "ticker": "2421",
-          "name": "建準",
-          "market": "TW",
-          "source": "websearch",
-          "rank": 7,
-          "reason": "提供液冷系統中關鍵的幫浦與風扇，協助熱能傳導與散熱，提升系統效率。"
-        },
-        {
-          "ticker": "6230",
-          "name": "尼得科超眾",
-          "market": "TW",
-          "source": "websearch",
-          "rank": 8,
-          "reason": "積極投入伺服器液冷散熱模組與水冷板的研發與生產，為高效能運算提供方案。"
-        },
-        {
-          "ticker": "8996",
-          "name": "高力",
-          "market": "TW",
-          "source": "websearch",
-          "rank": 9,
-          "reason": "提供高效能板式熱交換器，為液冷系統中的熱能交換核心元件，確保散熱效率。"
-        }
-      ],
-      "icon_id": "droplets",
-      "color_hex": "#38BDF8"
-    },
-    {
-      "exposure_id": "theme_silicon_photonics",
-      "exposure_type": "theme",
-      "sector_id": null,
-      "theme_id": "silicon_photonics",
-      "display_name": "矽光子",
-      "aliases": [
-        "矽光子",
-        "光通訊",
-        "silicon photonics",
-        "optical interconnect",
-        "co-packaged optics"
-      ],
-      "members": [
-        {
-          "ticker": "3081",
-          "name": "聯亞",
-          "name_en": "LandMark Optoelectronics",
-          "market": "TW",
-          "source": "curated",
-          "rank": 1,
-          "reason": "提供矽光子磊晶片與光通訊雷射二極體，是關鍵上游材料供應商。"
-        },
-        {
-          "ticker": "3450",
-          "name": "聯鈞",
-          "name_en": "ELaser",
-          "market": "TW",
-          "source": "curated",
-          "rank": 2,
-          "reason": "專注於光通訊次模組封裝，為矽光子模組提供關鍵的封裝整合服務。"
-        },
-        {
-          "ticker": "AOI",
-          "name": "應用光電",
-          "name_en": "Applied Optoelectronics",
-          "market": "US",
-          "source": "curated",
-          "rank": 3,
-          "reason": "生產光收發模組，其產品廣泛應用於資料中心與光纖到府，支援矽光子技術。"
-        },
-        {
-          "ticker": "LITE",
-          "name": "Lumentum",
-          "name_en": "Lumentum Holdings",
-          "market": "US",
-          "source": "curated",
-          "rank": 4,
-          "reason": "提供光通訊元件與模組，包括雷射與光學次系統，是矽光子應用的重要供應商。"
-        },
-        {
-          "ticker": "COHR",
-          "name": "高意",
-          "name_en": "Coherent",
-          "market": "US",
-          "source": "curated",
-          "rank": 5,
-          "reason": "供應光通訊元件、雷射與光學材料，其技術與產品是矽光子發展的基石。"
-        },
-        {
-          "ticker": "3363",
-          "name": "上詮",
-          "market": "TW",
-          "source": "websearch",
-          "rank": 6,
-          "reason": "研發與製造光纖被動元件及光收發模組，為矽光子傳輸提供基礎設施。"
-        },
-        {
-          "ticker": "6442",
-          "name": "光聖",
-          "market": "TW",
-          "source": "websearch",
-          "rank": 7,
-          "reason": "生產光纖連接器與光被動元件，是矽光子模組與系統間連接的關鍵。"
-        },
-        {
-          "ticker": "4979",
-          "name": "華星光",
-          "market": "TW",
-          "source": "websearch",
-          "rank": 8,
-          "reason": "專精於光收發模組的設計與製造，產品應用於資料中心與電信網路，支援矽光子技術。"
-        },
-        {
-          "ticker": "3163",
-          "name": "波若威",
-          "market": "TW",
-          "source": "websearch",
-          "rank": 9,
-          "reason": "提供光纖被動元件與光通訊模組，其產品在矽光子網路中扮演重要角色。"
-        },
-        {
-          "ticker": "4977",
-          "name": "眾達-KY",
-          "market": "TW",
-          "source": "websearch",
-          "rank": 10,
-          "reason": "研發高速光收發模組，廣泛應用於資料中心與雲端運算，是矽光子技術的實踐者。"
-        },
-        {
-          "ticker": "3234",
-          "name": "光環",
-          "market": "TW",
-          "source": "websearch",
-          "rank": 11,
-          "reason": "供應光通訊主動元件，如雷射二極體與檢光器，為矽光子模組提供核心元件。"
-        }
-      ],
-      "icon_id": "radio",
-      "color_hex": "#0EA5E9"
-    },
-    {
-      "exposure_id": "theme_power_semiconductor",
-      "exposure_type": "theme",
-      "sector_id": null,
-      "theme_id": "power_semiconductor",
-      "display_name": "功率半導體",
-      "aliases": [
-        "功率半導體",
-        "功率元件",
-        "功率 IC",
-        "第三代半導體",
-        "碳化矽",
-        "氮化鎵",
-        "power semiconductor",
-        "power semiconductors",
-        "silicon carbide",
-        "gallium nitride"
-      ],
-      "members": [
-        {
-          "ticker": "2342",
-          "name": "茂矽",
-          "market": "TW",
-          "source": "curated",
-          "rank": 1,
-          "name_en": "Mosel Vitelic",
-          "reason": "主要生產MOSFET、IGBT等功率元件，廣泛應用於電源管理。"
-        },
-        {
-          "ticker": "2481",
-          "name": "強茂",
-          "market": "TW",
-          "source": "curated",
-          "rank": 2,
-          "reason": "專業二極體製造商，產品涵蓋蕭特基二極體、整流二極體及TVS，是功率半導體重要供應商。"
-        },
-        {
-          "ticker": "3707",
-          "name": "漢磊科技",
-          "market": "TW",
-          "source": "curated",
-          "rank": 3,
-          "name_en": "Episil-Precision",
-          "reason": "專注於功率半導體晶圓代工，提供高壓製程技術，是碳化矽（SiC）功率元件的關鍵製造商。"
-        },
-        {
-          "ticker": "ON",
-          "name": "安森美",
-          "market": "US",
-          "source": "curated",
-          "rank": 4,
-          "name_en": "ON Semiconductor",
-          "reason": "全球領先的功率半導體供應商，提供廣泛的電源管理、類比、感測器及SiC解決方案。"
-        },
-        {
-          "ticker": "WOLF",
-          "name": "Wolfspeed",
-          "market": "US",
-          "source": "curated",
-          "rank": 5,
-          "name_en": "Wolfspeed",
-          "reason": "碳化矽（SiC）技術的全球領導者，提供SiC晶圓、功率元件及射頻元件，應用於電動車與再生能源。"
-        },
-        {
-          "ticker": "5425",
-          "name": "台半",
-          "market": "TW",
-          "source": "websearch",
-          "rank": 6,
-          "reason": "專業二極體製造商，產品線包含蕭特基、整流二極體及TVS，廣泛應用於車用與工業領域。"
-        },
-        {
-          "ticker": "3675",
-          "name": "德微",
-          "market": "TW",
-          "source": "websearch",
-          "rank": 7,
-          "reason": "專注於二極體、整流器及蕭特基二極體等功率元件的設計與製造，是車用電子重要供應商。"
-        },
-        {
-          "ticker": "8255",
-          "name": "朋程",
-          "market": "TW",
-          "source": "websearch",
-          "rank": 8,
-          "reason": "主要生產車用整流二極體，是全球車用發電機二極體的主要供應商之一。"
-        },
-        {
-          "ticker": "6435",
-          "name": "大中",
-          "market": "TW",
-          "source": "websearch",
-          "rank": 9,
-          "reason": "專業功率元件設計公司，主要產品為MOSFET，廣泛應用於電源供應器及馬達控制。"
-        },
-        {
-          "ticker": "8261",
-          "name": "富鼎",
-          "market": "TW",
-          "source": "websearch",
-          "rank": 10,
-          "reason": "台灣功率半導體設計公司，專精於MOSFET、IGBT等功率元件，應用於消費性電子及工業。"
-        },
-        {
-          "ticker": "5299",
-          "name": "杰力",
-          "market": "TW",
-          "source": "websearch",
-          "rank": 11,
-          "reason": "專注於功率半導體元件設計，主要產品為MOSFET，應用於筆記型電腦、主機板及電源供應器。"
-        },
-        {
-          "ticker": "3016",
-          "name": "嘉晶",
-          "market": "TW",
-          "source": "websearch",
-          "rank": 12,
-          "reason": "專業半導體矽晶圓製造商，提供磊晶圓產品，是功率半導體元件的關鍵上游材料供應商。"
-        }
-      ],
-      "icon_id": "zap",
-      "color_hex": "#EAB308"
-    },
-    {
       "exposure_id": "sector_heavy_electrical",
       "exposure_type": "sector",
       "sector_id": "heavy_electrical",
@@ -1203,118 +759,6 @@
       "color_hex": "#6366F1"
     },
     {
-      "exposure_id": "theme_robotics",
-      "exposure_type": "theme",
-      "sector_id": null,
-      "theme_id": "robotics",
-      "display_name": "機器人",
-      "aliases": [
-        "機器人",
-        "人形機器人",
-        "工業機器人",
-        "工廠自動化",
-        "自動化",
-        "robot",
-        "robotics",
-        "humanoid"
-      ],
-      "members": [
-        {
-          "ticker": "2049",
-          "name": "上銀",
-          "market": "TW",
-          "source": "curated",
-          "rank": 1,
-          "name_en": "Hiwin Technologies",
-          "reason": "台灣線性傳動元件領導廠，提供機器人關鍵的滾珠螺桿、線性滑軌與工業機器人本體。"
-        },
-        {
-          "ticker": "1590",
-          "name": "亞德客-KY",
-          "market": "TW",
-          "source": "curated",
-          "rank": 2,
-          "name_en": "Airtac International Group",
-          "reason": "氣動元件製造商，其氣缸、閥類等產品廣泛應用於工業自動化設備與機器人。"
-        },
-        {
-          "ticker": "2359",
-          "name": "所羅門",
-          "market": "TW",
-          "source": "curated",
-          "rank": 3,
-          "name_en": "Solomon Technology",
-          "reason": "專精於AI視覺與機器人應用，提供3D視覺系統與AI視覺軟體，賦予機器人智慧辨識能力。"
-        },
-        {
-          "ticker": "1536",
-          "name": "和大",
-          "market": "TW",
-          "source": "websearch",
-          "rank": 4,
-          "reason": "電動車齒輪供應商，其精密齒輪技術亦可應用於機器人的傳動系統。"
-        },
-        {
-          "ticker": "1597",
-          "name": "直得",
-          "market": "TW",
-          "source": "websearch",
-          "rank": 5,
-          "reason": "專業生產微型線性滑軌與線性馬達，為小型化、高精度機器人提供關鍵零組件。"
-        },
-        {
-          "ticker": "4540",
-          "name": "全球傳動",
-          "market": "TW",
-          "source": "websearch",
-          "rank": 6,
-          "reason": "提供滾珠螺桿、線性滑軌、線性模組等傳動元件，為機器人運動控制核心。"
-        },
-        {
-          "ticker": "4576",
-          "name": "大銀微系統",
-          "market": "TW",
-          "source": "websearch",
-          "rank": 7,
-          "reason": "專注於運動控制與驅動器，提供機器人高精度、高效率的運動控制解決方案。"
-        },
-        {
-          "ticker": "4583",
-          "name": "台灣精銳",
-          "market": "TW",
-          "source": "websearch",
-          "rank": 8,
-          "reason": "行星式減速機領導廠，其精密減速機是工業機器人關節傳動的關鍵零組件。"
-        },
-        {
-          "ticker": "7750",
-          "name": "新代",
-          "market": "TW",
-          "source": "websearch",
-          "rank": 9,
-          "reason": "數控系統與機器人控制器供應商，提供機器人運動控制與人機介面整合方案。"
-        },
-        {
-          "ticker": "8374",
-          "name": "羅昇",
-          "market": "TW",
-          "source": "websearch",
-          "rank": 10,
-          "reason": "代理銷售自動化控制元件與機器人相關產品，提供整合性自動化解決方案。"
-        },
-        {
-          "ticker": "6188",
-          "name": "廣明",
-          "market": "TW",
-          "source": "websearch",
-          "rank": 11,
-          "reason": "旗下達明機器人（Techman Robot）為全球第二大協作型機器人品牌，提供智慧自動化解決方案。"
-        }
-      ],
-      "icon_id": "bot",
-      "color_hex": "#06B6D4"
-    },
-    {
       "exposure_id": "sector_financials",
       "exposure_type": "sector",
       "sector_id": "financials",
@@ -1551,202 +995,6 @@
       ],
       "icon_id": "wrench",
       "color_hex": "#2DD4BF"
-    },
-    {
-      "exposure_id": "theme_silicon_ip",
-      "exposure_type": "theme",
-      "sector_id": null,
-      "theme_id": "silicon_ip",
-      "display_name": "矽智財",
-      "aliases": [
-        "矽智財",
-        "矽智財股",
-        "silicon ip",
-        "semiconductor ip",
-        "設計服務",
-        "design service"
-      ],
-      "members": [
-        {
-          "ticker": "3443",
-          "name": "創意",
-          "market": "TW",
-          "source": "curated",
-          "rank": 1,
-          "name_en": "Global Unichip",
-          "reason": "提供高速傳輸介面與特殊應用晶片（ASIC）設計服務，並授權其先進製程矽智財。"
-        },
-        {
-          "ticker": "3035",
-          "name": "智原",
-          "market": "TW",
-          "source": "curated",
-          "rank": 2,
-          "name_en": "Faraday Technology",
-          "reason": "專注於提供完整的特殊應用晶片（ASIC）設計服務與豐富的基礎元件矽智財解決方案。"
-        },
-        {
-          "ticker": "3529",
-          "name": "力旺",
-          "market": "TW",
-          "source": "curated",
-          "rank": 3,
-          "name_en": "eMemory Technology",
-          "reason": "獨家提供嵌入式非揮發性記憶體（eNVM）矽智財，廣泛應用於各類晶片設計。"
-        },
-        {
-          "ticker": "6643",
-          "name": "M31",
-          "market": "TW",
-          "source": "curated",
-          "rank": 4,
-          "name_en": "M31 Technology",
-          "reason": "專業開發高速傳輸介面矽智財（IP）與基礎元件IP，支援先進製程技術。"
-        },
-        {
-          "ticker": "3661",
-          "name": "世芯-KY",
-          "market": "TW",
-          "source": "websearch",
-          "rank": 5,
-          "reason": "為人工智慧與高效能運算領域提供客製化特殊應用晶片（ASIC）設計服務及相關矽智財。"
-        },
-        {
-          "ticker": "6533",
-          "name": "晶心科",
-          "market": "TW",
-          "source": "websearch",
-          "rank": 6,
-          "reason": "專注於開發與授權高效能、低功耗的32/64位元CPU處理器核心矽智財（IP）。"
-        },
-        {
-          "ticker": "6531",
-          "name": "愛普",
-          "market": "TW",
-          "source": "websearch",
-          "rank": 7,
-          "reason": "提供客製化記憶體解決方案與相關矽智財，特別是應用於AI與高效能運算領域。"
-        }
-      ],
-      "icon_id": "file-code",
-      "color_hex": "#EC4899"
-    },
-    {
-      "exposure_id": "theme_advanced_packaging",
-      "exposure_type": "theme",
-      "sector_id": null,
-      "theme_id": "advanced_packaging",
-      "display_name": "先進封裝",
-      "aliases": [
-        "先進封裝",
-        "cowos",
-        "封測",
-        "封裝測試",
-        "advanced packaging",
-        "chip packaging"
-      ],
-      "members": [
-        {
-          "ticker": "3711",
-          "name": "日月光投控",
-          "market": "TW",
-          "source": "curated",
-          "rank": 1,
-          "name_en": "ASE Technology",
-          "reason": "全球最大半導體封測代工廠，提供多種先進封裝技術，如扇出型與系統級封裝。"
-        },
-        {
-          "ticker": "2449",
-          "name": "京元電子",
-          "market": "TW",
-          "source": "curated",
-          "rank": 2,
-          "name_en": "King Yuan Electronics",
-          "reason": "提供晶圓測試與成品測試服務，為先進封裝製程中的關鍵品質驗證環節。"
-        },
-        {
-          "ticker": "3374",
-          "name": "精材",
-          "market": "TW",
-          "source": "curated",
-          "rank": 3,
-          "reason": "專注於晶圓級尺寸封裝 (WLCSP) 與晶圓級測試，是先進封裝領域的重要供應商。"
-        },
-        {
-          "ticker": "6239",
-          "name": "力成",
-          "market": "TW",
-          "source": "websearch",
-          "rank": 4,
-          "reason": "提供記憶體與邏輯IC封裝測試服務，積極投入高頻寬記憶體等先進封裝技術。"
-        },
-        {
-          "ticker": "6510",
-          "name": "精測",
-          "market": "TW",
-          "source": "websearch",
-          "rank": 5,
-          "reason": "研發並製造高階探針卡，用於先進封裝製程中的晶圓測試與IC測試。"
-        },
-        {
-          "ticker": "6223",
-          "name": "旺矽",
-          "market": "TW",
-          "source": "websearch",
-          "rank": 6,
-          "reason": "提供探針卡、測試座及自動化測試設備，支援先進封裝的測試需求。"
-        },
-        {
-          "ticker": "6515",
-          "name": "穎崴",
-          "market": "TW",
-          "source": "websearch",
-          "rank": 7,
-          "reason": "專業於高階測試座與探針卡，為先進封裝IC提供高效能測試解決方案。"
-        },
-        {
-          "ticker": "6451",
-          "name": "訊芯-KY",
-          "market": "TW",
-          "source": "websearch",
-          "rank": 8,
-          "reason": "專注於光通訊模組與系統級封裝 (SiP) 產品，應用於高速資料傳輸。"
-        },
-        {
-          "ticker": "8150",
-          "name": "南茂",
-          "market": "TW",
-          "source": "websearch",
-          "rank": 9,
-          "reason": "提供記憶體與LCD驅動IC的封裝測試服務，涵蓋多種先進封裝技術。"
-        },
-        {
-          "ticker": "6257",
-          "name": "矽格",
-          "market": "TW",
-          "source": "websearch",
-          "rank": 10,
-          "reason": "提供IC測試服務，特別在邏輯、混合訊號與記憶體IC的先進封裝測試領域。"
-        },
-        {
-          "ticker": "6271",
-          "name": "同欣電",
-          "market": "TW",
-          "source": "websearch",
-          "rank": 11,
-          "reason": "專精於陶瓷基板與影像感測元件封裝，應用於高階光電與車用電子。"
-        },
-        {
-          "ticker": "6147",
-          "name": "頎邦",
-          "market": "TW",
-          "source": "websearch",
-          "rank": 12,
-          "reason": "專業於驅動IC封裝與測試，提供捲帶式薄膜覆晶 (COF) 等先進封裝解決方案。"
-        }
-      ],
-      "icon_id": "package",
-      "color_hex": "#D946EF"
     },
     {
       "exposure_id": "sector_biotech",
@@ -2032,6 +1280,972 @@
       ],
       "icon_id": "plane",
       "color_hex": "#F43F5E"
+    },
+    {
+      "exposure_id": "sector_ai_server",
+      "exposure_type": "theme",
+      "sector_id": null,
+      "theme_id": "ai_server",
+      "display_name": "AI 伺服器",
+      "aliases": [
+        "AI 伺服器",
+        "AI server",
+        "AI servers",
+        "ai server supply chain",
+        "AI 供應鏈"
+      ],
+      "members": [
+        {
+          "ticker": "2382",
+          "name": "廣達",
+          "name_en": "Quanta",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1
+        },
+        {
+          "ticker": "6669",
+          "name": "緯穎",
+          "name_en": "Wiwynn",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2
+        },
+        {
+          "ticker": "NVDA",
+          "name": "輝達",
+          "name_en": "NVIDIA",
+          "market": "US",
+          "source": "curated",
+          "rank": 3
+        },
+        {
+          "ticker": "SMCI",
+          "name": "Supermicro",
+          "name_en": "Super Micro Computer",
+          "market": "US",
+          "source": "curated",
+          "rank": 4
+        }
+      ],
+      "icon_id": "server",
+      "color_hex": "#8B5CF6"
+    },
+    {
+      "exposure_id": "sector_liquid_cooling",
+      "exposure_type": "theme",
+      "sector_id": null,
+      "theme_id": "liquid_cooling",
+      "display_name": "液冷",
+      "aliases": [
+        "液冷",
+        "水冷",
+        "liquid cooling",
+        "direct liquid cooling"
+      ],
+      "members": [
+        {
+          "ticker": "3017",
+          "name": "奇鋐",
+          "name_en": "AVC",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1
+        },
+        {
+          "ticker": "3324",
+          "name": "雙鴻",
+          "name_en": "Auras",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2
+        },
+        {
+          "ticker": "3653",
+          "name": "健策",
+          "name_en": "Jentech",
+          "market": "TW",
+          "source": "curated",
+          "rank": 3
+        }
+      ],
+      "icon_id": "droplets",
+      "color_hex": "#38BDF8"
+    },
+    {
+      "exposure_id": "sector_silicon_photonics",
+      "exposure_type": "theme",
+      "sector_id": null,
+      "theme_id": "silicon_photonics",
+      "display_name": "矽光子",
+      "aliases": [
+        "矽光子",
+        "光通訊",
+        "silicon photonics",
+        "optical interconnect",
+        "co-packaged optics"
+      ],
+      "members": [
+        {
+          "ticker": "3081",
+          "name": "聯亞",
+          "name_en": "LandMark Optoelectronics",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1
+        },
+        {
+          "ticker": "3450",
+          "name": "聯鈞",
+          "name_en": "ELaser",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2
+        },
+        {
+          "ticker": "AOI",
+          "name": "應用光電",
+          "name_en": "Applied Optoelectronics",
+          "market": "US",
+          "source": "curated",
+          "rank": 3
+        },
+        {
+          "ticker": "LITE",
+          "name": "Lumentum",
+          "name_en": "Lumentum Holdings",
+          "market": "US",
+          "source": "curated",
+          "rank": 4
+        },
+        {
+          "ticker": "COHR",
+          "name": "高意",
+          "name_en": "Coherent",
+          "market": "US",
+          "source": "curated",
+          "rank": 5
+        }
+      ],
+      "icon_id": "radio",
+      "color_hex": "#0EA5E9"
+    },
+    {
+      "exposure_id": "sector_power_semiconductor",
+      "exposure_type": "theme",
+      "sector_id": null,
+      "theme_id": "power_semiconductor",
+      "display_name": "功率半導體",
+      "aliases": [
+        "功率半導體",
+        "功率元件",
+        "功率 IC",
+        "第三代半導體",
+        "碳化矽",
+        "氮化鎵",
+        "power semiconductor",
+        "power semiconductors",
+        "silicon carbide",
+        "gallium nitride"
+      ],
+      "members": [
+        {
+          "ticker": "2342",
+          "name": "茂矽",
+          "name_en": "Mosel Vitelic",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1
+        },
+        {
+          "ticker": "2481",
+          "name": "強茂",
+          "name_en": "2481",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2
+        },
+        {
+          "ticker": "3707",
+          "name": "漢磊科技",
+          "name_en": "Episil-Precision",
+          "market": "TW",
+          "source": "curated",
+          "rank": 3
+        },
+        {
+          "ticker": "ON",
+          "name": "安森美",
+          "name_en": "ON Semiconductor",
+          "market": "US",
+          "source": "curated",
+          "rank": 4
+        },
+        {
+          "ticker": "WOLF",
+          "name": "Wolfspeed",
+          "name_en": "Wolfspeed",
+          "market": "US",
+          "source": "curated",
+          "rank": 5
+        }
+      ],
+      "icon_id": "zap",
+      "color_hex": "#EAB308"
+    },
+    {
+      "exposure_id": "sector_robotics",
+      "exposure_type": "theme",
+      "sector_id": null,
+      "theme_id": "robotics",
+      "display_name": "機器人",
+      "aliases": [
+        "機器人",
+        "人形機器人",
+        "工業機器人",
+        "工廠自動化",
+        "自動化",
+        "robot",
+        "robotics",
+        "humanoid"
+      ],
+      "members": [
+        {
+          "ticker": "2049",
+          "name": "上銀",
+          "name_en": "Hiwin Technologies",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1
+        },
+        {
+          "ticker": "1590",
+          "name": "亞德客-KY",
+          "name_en": "Airtac International Group",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2
+        },
+        {
+          "ticker": "2359",
+          "name": "所羅門",
+          "name_en": "Solomon Technology",
+          "market": "TW",
+          "source": "curated",
+          "rank": 3
+        }
+      ],
+      "icon_id": "bot",
+      "color_hex": "#06B6D4"
+    },
+    {
+      "exposure_id": "sector_silicon_ip",
+      "exposure_type": "theme",
+      "sector_id": null,
+      "theme_id": "silicon_ip",
+      "display_name": "矽智財",
+      "aliases": [
+        "矽智財",
+        "矽智財股",
+        "silicon ip",
+        "semiconductor ip",
+        "設計服務",
+        "design service"
+      ],
+      "members": [
+        {
+          "ticker": "3443",
+          "name": "創意",
+          "name_en": "Global Unichip",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1
+        },
+        {
+          "ticker": "3035",
+          "name": "智原",
+          "name_en": "Faraday Technology",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2
+        },
+        {
+          "ticker": "3529",
+          "name": "力旺",
+          "name_en": "eMemory Technology",
+          "market": "TW",
+          "source": "curated",
+          "rank": 3
+        },
+        {
+          "ticker": "6643",
+          "name": "M31",
+          "name_en": "M31 Technology",
+          "market": "TW",
+          "source": "curated",
+          "rank": 4
+        }
+      ],
+      "icon_id": "file-code",
+      "color_hex": "#EC4899"
+    },
+    {
+      "exposure_id": "sector_advanced_packaging",
+      "exposure_type": "theme",
+      "sector_id": null,
+      "theme_id": "advanced_packaging",
+      "display_name": "先進封裝",
+      "aliases": [
+        "先進封裝",
+        "cowos",
+        "封測",
+        "封測代工",
+        "osat",
+        "封裝測試",
+        "advanced packaging",
+        "chip packaging"
+      ],
+      "members": [
+        {
+          "ticker": "3711",
+          "name": "日月光投控",
+          "name_en": "ASE Technology",
+          "market": "TW",
+          "source": "curated",
+          "rank": 1
+        },
+        {
+          "ticker": "2449",
+          "name": "京元電子",
+          "name_en": "King Yuan Electronics",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2
+        },
+        {
+          "ticker": "3374",
+          "name": "精材",
+          "name_en": "3374",
+          "market": "TW",
+          "source": "curated",
+          "rank": 3
+        }
+      ],
+      "icon_id": "package",
+      "color_hex": "#D946EF"
+    },
+    {
+      "exposure_id": "sector_ai_software",
+      "exposure_type": "theme",
+      "sector_id": null,
+      "theme_id": "ai_software",
+      "display_name": "AI 應用",
+      "aliases": [
+        "生成式 AI",
+        "生成式人工智慧",
+        "人工智慧",
+        "AI 應用",
+        "AI 軟體",
+        "大型語言模型",
+        "OpenAI",
+        "ChatGPT",
+        "generative ai",
+        "large language model",
+        "llm",
+        "ai agent"
+      ],
+      "members": [
+        {
+          "ticker": "NVDA",
+          "name": "輝達",
+          "name_en": "NVIDIA",
+          "market": "US",
+          "source": "curated",
+          "rank": 1
+        },
+        {
+          "ticker": "MSFT",
+          "name": "微軟",
+          "name_en": "Microsoft",
+          "market": "US",
+          "source": "curated",
+          "rank": 2
+        },
+        {
+          "ticker": "GOOGL",
+          "name": "Alphabet",
+          "name_en": "Alphabet",
+          "market": "US",
+          "source": "curated",
+          "rank": 3
+        },
+        {
+          "ticker": "META",
+          "name": "Meta",
+          "name_en": "Meta Platforms",
+          "market": "US",
+          "source": "curated",
+          "rank": 4
+        },
+        {
+          "ticker": "PLTR",
+          "name": "Palantir",
+          "name_en": "Palantir Technologies",
+          "market": "US",
+          "source": "curated",
+          "rank": 5
+        },
+        {
+          "ticker": "AMD",
+          "name": "超微",
+          "name_en": "Advanced Micro Devices",
+          "market": "US",
+          "source": "curated",
+          "rank": 6
+        }
+      ],
+      "icon_id": "brain",
+      "color_hex": "#7C3AED"
+    },
+    {
+      "exposure_id": "sector_cryptocurrency",
+      "exposure_type": "theme",
+      "sector_id": null,
+      "theme_id": "cryptocurrency",
+      "display_name": "加密貨幣",
+      "aliases": [
+        "加密貨幣",
+        "比特幣",
+        "區塊鏈",
+        "以太坊",
+        "數位資產",
+        "虛擬貨幣",
+        "bitcoin",
+        "cryptocurrency",
+        "crypto",
+        "blockchain",
+        "ethereum",
+        "stablecoin",
+        "穩定幣"
+      ],
+      "members": [
+        {
+          "ticker": "COIN",
+          "name": "Coinbase",
+          "name_en": "Coinbase Global",
+          "market": "US",
+          "source": "curated",
+          "rank": 1
+        },
+        {
+          "ticker": "MSTR",
+          "name": "Strategy",
+          "name_en": "Strategy (MicroStrategy)",
+          "market": "US",
+          "source": "curated",
+          "rank": 2
+        },
+        {
+          "ticker": "MARA",
+          "name": "MARA",
+          "name_en": "MARA Holdings",
+          "market": "US",
+          "source": "curated",
+          "rank": 3
+        },
+        {
+          "ticker": "RIOT",
+          "name": "Riot Platforms",
+          "name_en": "Riot Platforms",
+          "market": "US",
+          "source": "curated",
+          "rank": 4
+        },
+        {
+          "ticker": "HOOD",
+          "name": "Robinhood",
+          "name_en": "Robinhood Markets",
+          "market": "US",
+          "source": "curated",
+          "rank": 5
+        }
+      ],
+      "icon_id": "bitcoin",
+      "color_hex": "#F59E0B"
+    },
+    {
+      "exposure_id": "sector_electric_vehicle",
+      "exposure_type": "theme",
+      "sector_id": null,
+      "theme_id": "electric_vehicle",
+      "display_name": "電動車",
+      "aliases": [
+        "電動車",
+        "電池",
+        "鋰電池",
+        "充電樁",
+        "特斯拉",
+        "自動駕駛",
+        "electric vehicle",
+        "electric vehicles",
+        "ev",
+        "battery",
+        "autonomous driving"
+      ],
+      "members": [
+        {
+          "ticker": "TSLA",
+          "name": "特斯拉",
+          "name_en": "Tesla",
+          "market": "US",
+          "source": "curated",
+          "rank": 1
+        },
+        {
+          "ticker": "2308",
+          "name": "台達電",
+          "name_en": "Delta Electronics",
+          "market": "TW",
+          "source": "curated",
+          "rank": 2
+        },
+        {
+          "ticker": "1536",
+          "name": "和大",
+          "name_en": "Hota Industrial",
+          "market": "TW",
+          "source": "curated",
+          "rank": 3
+        },
+        {
+          "ticker": "RIVN",
+          "name": "Rivian",
+          "name_en": "Rivian Automotive",
+          "market": "US",
+          "source": "curated",
+          "rank": 4
+        },
+        {
+          "ticker": "6515",
+          "name": "穎崴",
+          "name_en": "WinWay Technology",
+          "market": "TW",
+          "source": "curated",
+          "rank": 5
+        }
+      ],
+      "icon_id": "car",
+      "color_hex": "#22C55E"
+    },
+    {
+      "exposure_id": "sector_cybersecurity",
+      "exposure_type": "theme",
+      "sector_id": null,
+      "theme_id": "cybersecurity",
+      "display_name": "資安",
+      "aliases": [
+        "資安",
+        "網路安全",
+        "資訊安全",
+        "cybersecurity",
+        "cyber security",
+        "network security",
+        "零信任",
+        "zero trust"
+      ],
+      "members": [
+        {
+          "ticker": "CRWD",
+          "name": "CrowdStrike",
+          "name_en": "CrowdStrike Holdings",
+          "market": "US",
+          "source": "curated",
+          "rank": 1
+        },
+        {
+          "ticker": "PANW",
+          "name": "Palo Alto Networks",
+          "name_en": "Palo Alto Networks",
+          "market": "US",
+          "source": "curated",
+          "rank": 2
+        },
+        {
+          "ticker": "ZS",
+          "name": "Zscaler",
+          "name_en": "Zscaler",
+          "market": "US",
+          "source": "curated",
+          "rank": 3
+        },
+        {
+          "ticker": "FTNT",
+          "name": "Fortinet",
+          "name_en": "Fortinet",
+          "market": "US",
+          "source": "curated",
+          "rank": 4
+        },
+        {
+          "ticker": "S",
+          "name": "SentinelOne",
+          "name_en": "SentinelOne",
+          "market": "US",
+          "source": "curated",
+          "rank": 5
+        }
+      ],
+      "icon_id": "shield",
+      "color_hex": "#EF4444"
+    },
+    {
+      "exposure_id": "sector_defense_aerospace",
+      "exposure_type": "theme",
+      "sector_id": null,
+      "theme_id": "defense_aerospace",
+      "display_name": "國防航太",
+      "aliases": [
+        "國防",
+        "軍工",
+        "航太",
+        "軍火",
+        "國防工業",
+        "低軌衛星",
+        "衛星",
+        "星鏈",
+        "defense",
+        "aerospace",
+        "spacex",
+        "starlink",
+        "satellite"
+      ],
+      "members": [
+        {
+          "ticker": "LMT",
+          "name": "洛克希德馬丁",
+          "name_en": "Lockheed Martin",
+          "market": "US",
+          "source": "curated",
+          "rank": 1
+        },
+        {
+          "ticker": "RTX",
+          "name": "雷神技術",
+          "name_en": "RTX Corporation",
+          "market": "US",
+          "source": "curated",
+          "rank": 2
+        },
+        {
+          "ticker": "2634",
+          "name": "漢翔",
+          "name_en": "Aerospace Industrial Development",
+          "market": "TW",
+          "source": "curated",
+          "rank": 3
+        },
+        {
+          "ticker": "NOC",
+          "name": "諾斯洛普格拉曼",
+          "name_en": "Northrop Grumman",
+          "market": "US",
+          "source": "curated",
+          "rank": 4
+        },
+        {
+          "ticker": "RKLB",
+          "name": "Rocket Lab",
+          "name_en": "Rocket Lab",
+          "market": "US",
+          "source": "curated",
+          "rank": 5
+        }
+      ],
+      "icon_id": "rocket",
+      "color_hex": "#64748B"
+    },
+    {
+      "exposure_id": "sector_energy",
+      "exposure_type": "theme",
+      "sector_id": null,
+      "theme_id": "energy",
+      "display_name": "能源",
+      "aliases": [
+        "能源",
+        "石油",
+        "原油",
+        "天然氣",
+        "油價",
+        "頁岩油",
+        "oil",
+        "energy",
+        "crude oil",
+        "natural gas"
+      ],
+      "members": [
+        {
+          "ticker": "XOM",
+          "name": "埃克森美孚",
+          "name_en": "Exxon Mobil",
+          "market": "US",
+          "source": "curated",
+          "rank": 1
+        },
+        {
+          "ticker": "CVX",
+          "name": "雪佛龍",
+          "name_en": "Chevron",
+          "market": "US",
+          "source": "curated",
+          "rank": 2
+        },
+        {
+          "ticker": "6505",
+          "name": "台塑化",
+          "name_en": "Formosa Petrochemical",
+          "market": "TW",
+          "source": "curated",
+          "rank": 3
+        },
+        {
+          "ticker": "COP",
+          "name": "康菲",
+          "name_en": "ConocoPhillips",
+          "market": "US",
+          "source": "curated",
+          "rank": 4
+        }
+      ],
+      "icon_id": "flame",
+      "color_hex": "#F97316"
+    },
+    {
+      "exposure_id": "sector_software_saas",
+      "exposure_type": "theme",
+      "sector_id": null,
+      "theme_id": "software_saas",
+      "display_name": "軟體服務",
+      "aliases": [
+        "軟體服務",
+        "雲端軟體",
+        "企業軟體",
+        "訂閱制軟體",
+        "saas",
+        "software as a service",
+        "enterprise software",
+        "cloud software"
+      ],
+      "members": [
+        {
+          "ticker": "CRM",
+          "name": "Salesforce",
+          "name_en": "Salesforce",
+          "market": "US",
+          "source": "curated",
+          "rank": 1
+        },
+        {
+          "ticker": "NOW",
+          "name": "ServiceNow",
+          "name_en": "ServiceNow",
+          "market": "US",
+          "source": "curated",
+          "rank": 2
+        },
+        {
+          "ticker": "ADBE",
+          "name": "Adobe",
+          "name_en": "Adobe",
+          "market": "US",
+          "source": "curated",
+          "rank": 3
+        },
+        {
+          "ticker": "ORCL",
+          "name": "甲骨文",
+          "name_en": "Oracle",
+          "market": "US",
+          "source": "curated",
+          "rank": 4
+        },
+        {
+          "ticker": "SNOW",
+          "name": "Snowflake",
+          "name_en": "Snowflake",
+          "market": "US",
+          "source": "curated",
+          "rank": 5
+        }
+      ],
+      "icon_id": "code",
+      "color_hex": "#3B82F6"
+    },
+    {
+      "exposure_id": "sector_fintech",
+      "exposure_type": "theme",
+      "sector_id": null,
+      "theme_id": "fintech",
+      "display_name": "金融科技",
+      "aliases": [
+        "金融科技",
+        "數位支付",
+        "行動支付",
+        "電子支付",
+        "fintech",
+        "payment",
+        "digital payment"
+      ],
+      "members": [
+        {
+          "ticker": "V",
+          "name": "Visa",
+          "name_en": "Visa",
+          "market": "US",
+          "source": "curated",
+          "rank": 1
+        },
+        {
+          "ticker": "MA",
+          "name": "Mastercard",
+          "name_en": "Mastercard",
+          "market": "US",
+          "source": "curated",
+          "rank": 2
+        },
+        {
+          "ticker": "PYPL",
+          "name": "PayPal",
+          "name_en": "PayPal Holdings",
+          "market": "US",
+          "source": "curated",
+          "rank": 3
+        },
+        {
+          "ticker": "SOFI",
+          "name": "SoFi",
+          "name_en": "SoFi Technologies",
+          "market": "US",
+          "source": "curated",
+          "rank": 4
+        }
+      ],
+      "icon_id": "credit-card",
+      "color_hex": "#14B8A6"
+    },
+    {
+      "exposure_id": "sector_precious_metals",
+      "exposure_type": "theme",
+      "sector_id": null,
+      "theme_id": "precious_metals",
+      "display_name": "貴金屬",
+      "aliases": [
+        "黃金",
+        "貴金屬",
+        "白銀",
+        "金價",
+        "避險資產",
+        "gold",
+        "silver",
+        "precious metals"
+      ],
+      "members": [
+        {
+          "ticker": "GLD",
+          "name": "SPDR 黃金 ETF",
+          "name_en": "SPDR Gold Shares",
+          "market": "US",
+          "source": "curated",
+          "rank": 1
+        },
+        {
+          "ticker": "NEM",
+          "name": "紐曼礦業",
+          "name_en": "Newmont",
+          "market": "US",
+          "source": "curated",
+          "rank": 2
+        },
+        {
+          "ticker": "GOLD",
+          "name": "巴里克黃金",
+          "name_en": "Barrick Gold",
+          "market": "US",
+          "source": "curated",
+          "rank": 3
+        },
+        {
+          "ticker": "AEM",
+          "name": "Agnico Eagle",
+          "name_en": "Agnico Eagle Mines",
+          "market": "US",
+          "source": "curated",
+          "rank": 4
+        }
+      ],
+      "icon_id": "gem",
+      "color_hex": "#CA8A04"
+    },
+    {
+      "exposure_id": "sector_ecommerce",
+      "exposure_type": "theme",
+      "sector_id": null,
+      "theme_id": "ecommerce",
+      "display_name": "電商平台",
+      "aliases": [
+        "電商",
+        "電子商務",
+        "網路平台",
+        "串流",
+        "社群媒體",
+        "e-commerce",
+        "ecommerce",
+        "streaming",
+        "internet platform"
+      ],
+      "members": [
+        {
+          "ticker": "AMZN",
+          "name": "亞馬遜",
+          "name_en": "Amazon",
+          "market": "US",
+          "source": "curated",
+          "rank": 1
+        },
+        {
+          "ticker": "NFLX",
+          "name": "Netflix",
+          "name_en": "Netflix",
+          "market": "US",
+          "source": "curated",
+          "rank": 2
+        },
+        {
+          "ticker": "BABA",
+          "name": "阿里巴巴",
+          "name_en": "Alibaba Group",
+          "market": "US",
+          "source": "curated",
+          "rank": 3
+        },
+        {
+          "ticker": "PDD",
+          "name": "拼多多",
+          "name_en": "PDD Holdings",
+          "market": "US",
+          "source": "curated",
+          "rank": 4
+        },
+        {
+          "ticker": "SHOP",
+          "name": "Shopify",
+          "name_en": "Shopify",
+          "market": "US",
+          "source": "curated",
+          "rank": 5
+        }
+      ],
+      "icon_id": "shopping-cart",
+      "color_hex": "#EC4899"
     }
   ]
 }

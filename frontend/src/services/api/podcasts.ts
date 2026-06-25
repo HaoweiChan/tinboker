@@ -90,7 +90,6 @@ export interface Episode {
   unresolved_market_trends?: UnresolvedMarketTrend[];
   sector_exposure_ids?: string[];
   sector_ids?: string[];
-  theme_ids?: string[];
   unresolved_market_trend_ids?: string[];
   created_time: number;
   /** True publish time (Unix ms), agents-written from the feed. Prefer over

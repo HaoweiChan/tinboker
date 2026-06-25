@@ -179,6 +179,5 @@ def run_pipeline(
         "unresolved_market_trends": result.get("unresolved_market_trends", []),
         "sector_exposure_ids": result.get("sector_exposure_ids", []),
         "sector_ids": result.get("sector_ids", []),
-        "theme_ids": result.get("theme_ids", []),
         "unresolved_market_trend_ids": result.get("unresolved_market_trend_ids", []),
     }
