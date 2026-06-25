@@ -69,7 +69,8 @@ def test_happy_path_joins_public_urls_in_order(monkeypatch):
     # Each URL carries a content-hash ?v= cache-buster (GCS reuses the path on
     # reprocess; the query changes iff the PNG bytes change).
     import hashlib
-    ver = lambda b64: hashlib.md5(b64.encode("utf-8")).hexdigest()[:10]
+    def ver(b64):
+        return hashlib.md5(b64.encode("utf-8")).hexdigest()[:10]
     assert [c["image_url"] for c in cards] == [
         f"https://cdn.tinboker.com/social_cards/EP1/0.png?v={ver('A')}",
         f"https://cdn.tinboker.com/social_cards/EP1/1.png?v={ver('B')}",
