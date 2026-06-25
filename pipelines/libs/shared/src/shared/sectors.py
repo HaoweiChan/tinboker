@@ -172,12 +172,25 @@ def find_exposure_matches(text: str) -> list[ExposureMatch]:
     return matches
 
 
+def normalize_exposure_id(exposure_id: str | None) -> str:
+    """Canonical exposure id: themes and sectors share one ``sector_`` namespace.
+
+    Curated themes were historically keyed ``theme_<id>`` and official sectors
+    ``sector_<id>`` — but they are one concept ("a sector") to the user, so both
+    collapse to ``sector_<id>``. Apply at every read/display boundary so that
+    pre-migration episode data still keyed ``theme_<id>`` reconciles with the
+    unified universe without a hard dependency on the backfill having run.
+    """
+    s = str(exposure_id or "")
+    return "sector_" + s[len("theme_"):] if s.startswith("theme_") else s
+
+
 def _exposure_payload(match: ExposureMatch, *, max_tickers: int | None = None) -> dict[str, Any]:
     exposure = match.exposure
     cap = max_tickers or _universe()["max_tickers"]
     members = exposure.get("members") or []
     return {
-        "exposure_id": exposure.get("exposure_id"),
+        "exposure_id": normalize_exposure_id(exposure.get("exposure_id")),
         "exposure_type": exposure.get("exposure_type"),
         "sector_id": exposure.get("sector_id"),
         "theme_id": exposure.get("theme_id"),

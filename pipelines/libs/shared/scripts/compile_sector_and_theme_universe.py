@@ -55,7 +55,9 @@ def _theme_entry(theme: dict[str, Any], tickers: dict[str, Any]) -> dict[str, An
         members.append(member)
     theme_id = str(theme["theme_id"])
     entry = {
-        "exposure_id": f"theme_{theme_id}",
+        # Unified ``sector_`` namespace — curated themes and official sectors are one
+        # concept to the user. ``exposure_type`` still records the provenance.
+        "exposure_id": f"sector_{theme_id}",
         "exposure_type": "theme",
         "sector_id": None,
         "theme_id": theme_id,

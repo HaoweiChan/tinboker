@@ -1282,7 +1282,7 @@
       "color_hex": "#F43F5E"
     },
     {
-      "exposure_id": "theme_ai_server",
+      "exposure_id": "sector_ai_server",
       "exposure_type": "theme",
       "sector_id": null,
       "theme_id": "ai_server",
@@ -1332,7 +1332,7 @@
       "color_hex": "#8B5CF6"
     },
     {
-      "exposure_id": "theme_liquid_cooling",
+      "exposure_id": "sector_liquid_cooling",
       "exposure_type": "theme",
       "sector_id": null,
       "theme_id": "liquid_cooling",
@@ -1373,7 +1373,7 @@
       "color_hex": "#38BDF8"
     },
     {
-      "exposure_id": "theme_silicon_photonics",
+      "exposure_id": "sector_silicon_photonics",
       "exposure_type": "theme",
       "sector_id": null,
       "theme_id": "silicon_photonics",
@@ -1431,7 +1431,7 @@
       "color_hex": "#0EA5E9"
     },
     {
-      "exposure_id": "theme_power_semiconductor",
+      "exposure_id": "sector_power_semiconductor",
       "exposure_type": "theme",
       "sector_id": null,
       "theme_id": "power_semiconductor",
@@ -1494,7 +1494,7 @@
       "color_hex": "#EAB308"
     },
     {
-      "exposure_id": "theme_robotics",
+      "exposure_id": "sector_robotics",
       "exposure_type": "theme",
       "sector_id": null,
       "theme_id": "robotics",
@@ -1539,7 +1539,7 @@
       "color_hex": "#06B6D4"
     },
     {
-      "exposure_id": "theme_silicon_ip",
+      "exposure_id": "sector_silicon_ip",
       "exposure_type": "theme",
       "sector_id": null,
       "theme_id": "silicon_ip",
@@ -1590,7 +1590,7 @@
       "color_hex": "#EC4899"
     },
     {
-      "exposure_id": "theme_advanced_packaging",
+      "exposure_id": "sector_advanced_packaging",
       "exposure_type": "theme",
       "sector_id": null,
       "theme_id": "advanced_packaging",
@@ -1635,7 +1635,7 @@
       "color_hex": "#D946EF"
     },
     {
-      "exposure_id": "theme_ai_software",
+      "exposure_id": "sector_ai_software",
       "exposure_type": "theme",
       "sector_id": null,
       "theme_id": "ai_software",
@@ -1708,7 +1708,7 @@
       "color_hex": "#7C3AED"
     },
     {
-      "exposure_id": "theme_cryptocurrency",
+      "exposure_id": "sector_cryptocurrency",
       "exposure_type": "theme",
       "sector_id": null,
       "theme_id": "cryptocurrency",
@@ -1774,7 +1774,7 @@
       "color_hex": "#F59E0B"
     },
     {
-      "exposure_id": "theme_electric_vehicle",
+      "exposure_id": "sector_electric_vehicle",
       "exposure_type": "theme",
       "sector_id": null,
       "theme_id": "electric_vehicle",
@@ -1838,7 +1838,7 @@
       "color_hex": "#22C55E"
     },
     {
-      "exposure_id": "theme_cybersecurity",
+      "exposure_id": "sector_cybersecurity",
       "exposure_type": "theme",
       "sector_id": null,
       "theme_id": "cybersecurity",
@@ -1899,7 +1899,7 @@
       "color_hex": "#EF4444"
     },
     {
-      "exposure_id": "theme_defense_aerospace",
+      "exposure_id": "sector_defense_aerospace",
       "exposure_type": "theme",
       "sector_id": null,
       "theme_id": "defense_aerospace",
@@ -1965,7 +1965,7 @@
       "color_hex": "#64748B"
     },
     {
-      "exposure_id": "theme_energy",
+      "exposure_id": "sector_energy",
       "exposure_type": "theme",
       "sector_id": null,
       "theme_id": "energy",
@@ -2020,7 +2020,7 @@
       "color_hex": "#F97316"
     },
     {
-      "exposure_id": "theme_software_saas",
+      "exposure_id": "sector_software_saas",
       "exposure_type": "theme",
       "sector_id": null,
       "theme_id": "software_saas",
@@ -2081,7 +2081,7 @@
       "color_hex": "#3B82F6"
     },
     {
-      "exposure_id": "theme_fintech",
+      "exposure_id": "sector_fintech",
       "exposure_type": "theme",
       "sector_id": null,
       "theme_id": "fintech",
@@ -2133,7 +2133,7 @@
       "color_hex": "#14B8A6"
     },
     {
-      "exposure_id": "theme_precious_metals",
+      "exposure_id": "sector_precious_metals",
       "exposure_type": "theme",
       "sector_id": null,
       "theme_id": "precious_metals",
@@ -2186,7 +2186,7 @@
       "color_hex": "#CA8A04"
     },
     {
-      "exposure_id": "theme_ecommerce",
+      "exposure_id": "sector_ecommerce",
       "exposure_type": "theme",
       "sector_id": null,
       "theme_id": "ecommerce",
