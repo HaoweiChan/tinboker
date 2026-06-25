@@ -14,6 +14,14 @@ import {
   type ChangelogEntry,
 } from '@/lib/onboarding';
 
+// Real deployed build identifier, injected at build time by CI (frontend-deploy.yml):
+// the git tag for prod ("v0.6.2"), "staging-<sha>" on staging. The changelog badge
+// shows THIS so it always matches the running build — never a hand-typed number that
+// drifts. Gating (unseenChangelog) still keys off entry.version, so changing the
+// display doesn't re-nag anyone. Falls back to the entry version for local dev builds
+// where the var isn't injected.
+const BUILD_VERSION = import.meta.env.VITE_RELEASE_VERSION as string | undefined;
+
 /* ── Terminal-window shell ──────────────────────────────────────────────────
    Purpose-built (not the generic <Modal>) so we control the full terminal
    aesthetic: title bar, hero visual, sharp corners, mono type. */
@@ -389,7 +397,7 @@ export const OnboardingModals: React.FC = () => {
               新版本上線
             </h2>
             <span className="ml-auto px-2 py-0.5 rounded-full text-2xs font-bold bg-primary text-primary-foreground tabular-nums">
-              v{entry.version}
+              {BUILD_VERSION || `v${entry.version}`}
             </span>
           </div>
           <ul className="space-y-2">

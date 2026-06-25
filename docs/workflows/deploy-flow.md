@@ -53,8 +53,11 @@ last-seen version differs.
    - Drop purely-internal commits entirely (CI, deps, infra, test-only) — if a release is
      all plumbing, it gets **no** entry.
    - Voice: friendly, concrete, benefit-first. e.g. ✅「個股頁新增情緒走勢圖」 / ❌「重構 ticker_insights 快取」.
-3. Prepend the entry; `version` = the tag you're cutting **without the `v`** (e.g. `'0.5.0'`),
-   `date` = `'YYYY-MM'`:
+3. Prepend the entry. `version` is a **gating key only — it is never shown to users**; the
+   modal badge displays the live build version (`VITE_RELEASE_VERSION`, the git tag injected
+   by CI), so it can't drift from the deployed release. Just make `version` newer than the
+   previous entry — matching the tag you're cutting **without the `v`** (e.g. `'0.5.0'`) is the
+   convention, but it doesn't need to be exact. `date` = `'YYYY-MM'`:
    ```ts
    export const CHANGELOG: ChangelogEntry[] = [
      { version: '0.5.0', date: '2026-07', items: ['…', '…'] },
