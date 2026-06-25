@@ -66,6 +66,16 @@ VISUALS: dict[str, dict[str, str]] = {
     "theme_robotics":                {"icon_id": "bot",           "color_hex": "#06B6D4"},
     "theme_silicon_ip":              {"icon_id": "file-code",     "color_hex": "#EC4899"},
     "theme_advanced_packaging":      {"icon_id": "package",       "color_hex": "#D946EF"},
+    "theme_ai_software":             {"icon_id": "brain",         "color_hex": "#7C3AED"},
+    "theme_cryptocurrency":          {"icon_id": "bitcoin",       "color_hex": "#F59E0B"},
+    "theme_electric_vehicle":        {"icon_id": "car",           "color_hex": "#22C55E"},
+    "theme_cybersecurity":           {"icon_id": "shield",        "color_hex": "#EF4444"},
+    "theme_defense_aerospace":       {"icon_id": "rocket",        "color_hex": "#64748B"},
+    "theme_energy":                  {"icon_id": "flame",         "color_hex": "#F97316"},
+    "theme_software_saas":           {"icon_id": "code",          "color_hex": "#3B82F6"},
+    "theme_fintech":                 {"icon_id": "credit-card",   "color_hex": "#14B8A6"},
+    "theme_precious_metals":         {"icon_id": "gem",           "color_hex": "#CA8A04"},
+    "theme_ecommerce":               {"icon_id": "shopping-cart", "color_hex": "#EC4899"},
 }
 
 
