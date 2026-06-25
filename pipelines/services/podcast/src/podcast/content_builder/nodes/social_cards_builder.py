@@ -23,13 +23,21 @@ from ..state import PipelineState
 
 logger = logging.getLogger(__name__)
 
-# Threads carousels accept at most 20 items, so cap at cover + 19 themes.
+# Threads carousels accept at most 20 items; we stay well under to keep decks tight.
 MAX_CARDS = 20
 
-# Ticker-overview grid: rows per card + hard ceiling on table cards so an episode
-# with a long ticker rotation can't cascade into an endless run of grid slides.
-ROWS_PER_TABLE = 7
-MAX_TABLE_CARDS = 2
+# Deck budget — hard cap ~8 slides: cover(1) + ticker table(≤1) + themes(≤4) +
+# focus-list(≤2). Themes are the variable bulk (LLM-decided), so they get the cap.
+MAX_THEME_CARDS = 4
+
+# Ticker-overview grid: rows per card + a single table card (most episodes fit one).
+# 8 rows is the most that clears the bottom brand watermark on the 1080² canvas.
+ROWS_PER_TABLE = 8
+MAX_TABLE_CARDS = 1
+
+# Aggregated 產業焦點: tickers per focus-list slide + how many such slides.
+FOCUS_PER_CARD = 3
+MAX_FOCUS_CARDS = 2
 
 # Sentiment enum → (zh-TW chip text, CSS class). Both bullish tiers collapse to
 # 看多, both bearish to 看空; NEUTRAL is 觀望. Classes match card_deck.py badges.
@@ -167,27 +175,27 @@ def _ticker_row(insight: dict[str, Any]) -> Optional[dict[str, str]]:
     }
 
 
-def _analysis_card(insight: dict[str, Any]) -> Optional[dict[str, Any]]:
-    """Build one focus-analysis card from a ticker's top reason (deterministic)."""
+def _focus_item(insight: dict[str, Any]) -> Optional[dict[str, Any]]:
+    """Build one 產業焦點 list item (name + badge + one-liner) from a ticker's top reason."""
     ticker = str(insight.get("ticker", "")).strip()
     reasons = [r for r in (insight.get("reasons") or []) if isinstance(r, dict)]
-    if not ticker or not reasons:
+    if not ticker:
         return None
     name, code = _ticker_name_code(ticker)
-    top = reasons[0]
-    lead = str(top.get("title", "")).strip()
-    body = str(top.get("description", "")).strip() or str(insight.get("bluf_thesis", "")).strip()
-    if not lead and not body:
+    top = reasons[0] if reasons else {}
+    lead = (
+        str(top.get("description", "")).strip()
+        or str(top.get("title", "")).strip()
+        or str(insight.get("bluf_thesis", "")).strip()
+    )
+    if not lead:
         return None
     sentiment, sentiment_class = _sentiment_badge(insight.get("sentiment_score"))
     return {
-        "kind": "analysis",
-        "title": "產業焦點",
-        "focus": f"{name} {code}".strip(),
-        "lead": lead or body, "body": body if lead else "",
+        "name": name, "code": code, "lead": lead,
         "source": format_timestamp(top.get("start_time")),
         "sentiment": sentiment, "sentiment_class": sentiment_class,
-        "start_time_ms": top.get("start_time"), "image_url": None,
+        "start_time_ms": top.get("start_time"),
     }
 
 
@@ -222,45 +230,48 @@ def cards_from_ticker_insights(
                 "start_time_ms": None, "image_url": None,
             })
 
-    # Focus-analysis cards: strongest-conviction tickers first (furthest from 0.5).
+    # Aggregated 產業焦點: strongest-conviction tickers first (furthest from 0.5),
+    # batched FOCUS_PER_CARD per slide, capped at MAX_FOCUS_CARDS slides.
     def _conviction(i: dict[str, Any]) -> float:
         try:
             return abs(float(i.get("sentiment_score", 0.5)) - 0.5)
         except (TypeError, ValueError):
             return 0.0
 
-    for insight in sorted(insights, key=_conviction, reverse=True):
-        card = _analysis_card(insight)
-        if card:
-            cards.append(card)
-        if len(cards) >= MAX_CARDS:
-            break
+    items = [it for it in (_focus_item(i) for i in sorted(insights, key=_conviction, reverse=True)) if it]
+    items = items[: FOCUS_PER_CARD * MAX_FOCUS_CARDS]
+    for start in range(0, len(items), FOCUS_PER_CARD):
+        cards.append({
+            "kind": "focus_list", "title": "產業焦點",
+            "items": items[start:start + FOCUS_PER_CARD],
+            "start_time_ms": None, "image_url": None,
+        })
     return cards
 
 
-def build_social_cards(state: PipelineState) -> dict[str, Any]:
-    """Join node: assemble the unified Threads carousel deck.
+def assemble_social_cards(state: PipelineState) -> list[dict[str, Any]]:
+    """Assemble the unified deck (≤~8 slides) shared by the PNG carousel and the
+    on-page episode Marp — so the two are byte-for-byte the same card set.
 
-    ONE card set drives both the carousel and the on-page deck — the same
-    templates everywhere, no second pipeline. Order: cover → ticker overview grid
-    → episode theme cards → focus-analysis cards, capped at ``MAX_CARDS``. The
-    ticker_table + analysis cards come from the same deterministic builder the
-    ticker deck uses (``cards_from_ticker_insights``).
+    Order: cover → ticker overview grid → episode theme cards (capped at
+    ``MAX_THEME_CARDS``) → aggregated 產業焦點 focus-list cards. Returns ``[]`` when
+    there is nothing postable, so callers skip a blank cover.
     """
     title = state.get("episode_title") or ""
     base = cards_from_marp_slides(
         state.get("marp_slides") or {}, state.get("key_insights") or [], title,
     )
-
-    # Nothing postable (no insights and no theme cards) → empty so the platform skips
-    # cleanly instead of posting a blank cover.
     if len(base) == 1 and not base[0]["bullets"]:
-        return {"social_cards": []}
+        return []
 
-    cover, themes = base[0], base[1:]
+    cover, themes = base[0], base[1:MAX_THEME_CARDS + 1]
     ticker_cards = cards_from_ticker_insights(state.get("ticker_insights") or {}, title)
     tables = [c for c in ticker_cards if c.get("kind") == "ticker_table"]
-    analyses = [c for c in ticker_cards if c.get("kind") == "analysis"]
+    focus = [c for c in ticker_cards if c.get("kind") == "focus_list"]
 
-    merged = [cover, *tables, *themes, *analyses][:MAX_CARDS]
-    return {"social_cards": merged}
+    return [cover, *tables, *themes, *focus][:MAX_CARDS]
+
+
+def build_social_cards(state: PipelineState) -> dict[str, Any]:
+    """Join node: the unified deck for the Threads carousel + on-page episode deck."""
+    return {"social_cards": assemble_social_cards(state)}

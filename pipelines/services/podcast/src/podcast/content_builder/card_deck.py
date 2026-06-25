@@ -134,6 +134,24 @@ section.analysis .lead .src {{
 }}
 section.analysis .body {{ font-size: 35px; line-height: 1.62; font-weight: 500; color: {SOFT}; margin: 0; }}
 section.analysis .meta {{ margin-top: 36px; }}
+/* ---- Focus list (aggregated 產業焦點 — several tickers per slide) ---- */
+section.focus-list h2 {{
+  font-size: 50px; font-weight: 800; margin: 0 0 30px; color: {TEXT};
+  padding-left: 22px; border-left: 12px solid {accent};
+}}
+section.focus-list .flist {{ display: flex; flex-direction: column; }}
+section.focus-list .fitem {{ padding: 26px 0; border-bottom: 1px solid {BORDER}; }}
+section.focus-list .fitem:first-child {{ border-top: 1px solid {BORDER}; }}
+section.focus-list .fhead {{ display: flex; align-items: center; gap: 18px; margin-bottom: 14px; }}
+section.focus-list .fname {{ font-size: 38px; font-weight: 800; color: {TEXT}; }}
+section.focus-list .fhead .src {{
+  margin-left: auto; font-size: 24px; font-weight: 700; color: {MUTED};
+  background: {SURFACE}; padding: 4px 14px; border-radius: 6px; white-space: nowrap;
+}}
+section.focus-list .flead {{
+  font-size: 33px; line-height: 1.5; font-weight: 500; color: {SOFT}; margin: 0;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}}
 """.strip()
 
 
@@ -157,7 +175,9 @@ def _wrap_timestamp(bullet: str) -> str:
 
 
 def _cover_slide(card: dict, show_name: str, date_str: str) -> str:
-    title = html.escape((card.get("title") or show_name or "").strip())
+    # Show name wins: the LLM marp deck title hallucinates famous brands (e.g. 股癌)
+    # for unrelated shows, so the cover must use the deterministic podcast name.
+    title = html.escape((show_name or card.get("title") or "").strip())
     bullets = [b for b in (card.get("bullets") or []) if b and b.strip()]
     hook = html.escape("，".join(b.strip().rstrip("。") for b in bullets[:3]))
     if hook:
@@ -234,7 +254,35 @@ def _analysis_slide(card: dict) -> str:
     ])
 
 
-_SLIDE_RENDERERS = {"ticker_table": _ticker_table_slide, "analysis": _analysis_slide}
+def _focus_list_slide(card: dict) -> str:
+    """Render an aggregated 產業焦點 card: several tickers (name + badge + one-liner)."""
+    heading = html.escape((card.get("title") or "產業焦點").strip())
+    items = []
+    for it in card.get("items") or []:
+        name = html.escape((it.get("name") or "").strip())
+        code = html.escape((it.get("code") or "").strip())
+        lead = html.escape((it.get("lead") or "").strip())
+        source = html.escape((it.get("source") or "").strip())
+        name_html = f'{name} <span class="code">{code}</span>' if code else name
+        badge = _badge(it)
+        src_html = f'<span class="src">{source}</span>' if source else ""
+        items.append(
+            '<div class="fitem">'
+            f'<div class="fhead"><span class="fname">{name_html}</span>{badge}{src_html}</div>'
+            f'<p class="flead">{lead}</p>'
+            "</div>"
+        )
+    return "\n".join([
+        "<!-- _class: focus-list -->", "", f"## {heading}", "",
+        '<div class="flist">', *items, "</div>",
+    ])
+
+
+_SLIDE_RENDERERS = {
+    "ticker_table": _ticker_table_slide,
+    "analysis": _analysis_slide,
+    "focus_list": _focus_list_slide,
+}
 
 
 def _render_slide(card: dict, show_name: str, date_str: str) -> str:

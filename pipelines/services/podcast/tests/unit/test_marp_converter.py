@@ -74,7 +74,7 @@ def test_convert_marp_empty_when_no_content():
 
 def test_convert_marp_ticker_builds_deterministic_deck():
     # The ticker deck is built straight from ticker_insights (no LLM slides) —
-    # an overview grid + focus-analysis cards, blue accent, wide size.
+    # an overview grid + aggregated focus-list cards, blue accent, wide size.
     md = convert_marp_ticker({
         "ticker_insights": {"ticker_insights": [
             {"ticker": "2330", "sentiment_score": 0.85,
@@ -87,8 +87,8 @@ def test_convert_marp_ticker_builds_deterministic_deck():
     assert "theme: tinboker-cards" in md
     assert re.search(r"size:\s*wide", md)           # named size the theme declares
     assert "width: 1240px; height: 780px;" in md
-    assert "_class: ticker-table" in md and "_class: analysis" in md
-    assert "標的聚焦：台積電 2330" in md             # registry-resolved name
+    assert "_class: ticker-table" in md and "_class: focus-list" in md
+    assert "台積電 <span class=\"code\">2330</span>" in md   # registry-resolved name + code
 
 
 def test_convert_marp_ticker_empty_when_no_insights():
