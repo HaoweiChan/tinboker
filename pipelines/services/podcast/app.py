@@ -2,11 +2,9 @@
 
 import logging
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from shared.config import load_yaml_config
 
 # Pull secrets from Google Secret Manager into os.environ before any
 # router/service module that calls os.getenv() at import time.
@@ -101,10 +99,15 @@ async def health():
 
 @app.get("/api/config")
 async def get_config():
-    """Read-only: the effective podcast pipeline configuration (configs/default.yaml).
+    """Read-only: the live, resolved pipeline LLM configuration.
 
-    Non-secret deployment constants only — secrets come from GSM, never this file.
-    Consumed by the platform admin Pipeline Settings page.
+    Reports the models that will ACTUALLY run — resolved by ``content_builder.llm``
+    (DB override > per-role env > ``PIPELINE_LLM_MODEL``), not a static file — so the
+    platform admin Pipeline Settings page can never drift from reality. Secret-free.
     """
-    cfg = load_yaml_config(Path(__file__).parent / "configs" / "default.yaml")
-    return {"source": "services/podcast/configs/default.yaml", "settings": cfg}
+    from src.podcast.content_builder.llm import effective_llm_config
+
+    return {
+        "source": "content_builder/llm.py (live, resolved)",
+        "settings": {"llm": effective_llm_config()},
+    }

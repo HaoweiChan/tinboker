@@ -25,6 +25,29 @@ _SUBSTANTIVE_ONLY = "substantive_only"
 # surfacing an ad/intro as a chapter is the exact bug we are preventing.
 _FALLBACK_DROP_TYPES = {"sponsor", "intro", "outro"}
 
+# Human zh-TW category label for a dropped segment, shown on the "skippable" chip
+# in the playback list (so a listener can jump past a sponsor read or a life-story
+# tangent). The extractor's free-text section_topic rides along as the detail.
+_SKIP_LABELS = {
+    "sponsor": "業配 / 廣告",
+    "intro": "開場",
+    "outro": "結尾",
+    "chitchat": "生活閒聊",
+    "qa": "聽眾來信",
+}
+
+
+def _skip_entry(event: dict, built: dict) -> dict:
+    """A lean skippable-segment record (no sentences) for the playback list."""
+    seg = event.get("segment_type") or "unknown"
+    return {
+        "segment_type": seg,
+        "label": _SKIP_LABELS.get(seg, "其他"),
+        "section_topic": built["section_topic"],
+        "start": built["start"],
+        "end": built["end"],
+    }
+
 
 def _build_clustered(event: dict, sentences_list: list) -> dict | None:
     """Attach the real sentence-level start/end (ms) for one extractor event."""
@@ -85,19 +108,29 @@ def cluster_sentences(state: PipelineState) -> dict[str, Any]:
     policy = _policy(state)
 
     kept: list[dict] = []
+    skipped: list[dict] = []
     for event in events:
-        if not _keeps(event, policy):
-            continue
         built = _build_clustered(event, sentences_list)
-        if built is not None:
+        if built is None:
+            continue
+        if _keeps(event, policy):
             kept.append(built)
+        else:
+            # Dropped from the summary, but keep its timing so the player can offer
+            # a "skip this" chip (sponsor, life-story chitchat, non-substantive Q&A).
+            skipped.append(_skip_entry(event, built))
 
     if not kept:
+        # The extractor mis-typed everything: keep all timed non-ad events as chapters,
+        # and surface only ads as skippable (everything else became real content).
+        skipped = []
         for event in events:
-            if (event.get("segment_type") or "unknown") in _FALLBACK_DROP_TYPES:
-                continue
             built = _build_clustered(event, sentences_list)
-            if built is not None:
+            if built is None:
+                continue
+            if (event.get("segment_type") or "unknown") in _FALLBACK_DROP_TYPES:
+                skipped.append(_skip_entry(event, built))
+            else:
                 kept.append(built)
 
-    return {"clustered_events": kept}
+    return {"clustered_events": kept, "skipped_segments": skipped}

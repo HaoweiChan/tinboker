@@ -16,6 +16,7 @@ class Episode(BaseModel):
     summary_image: Optional[str] = Field(None, description="Summary SVG image")
     related_tickers: List[str] = Field(default_factory=list, description="Related stock tickers")
     tags: List[str] = Field(default_factory=list, description="Topic tags")
+    skipped_segments: List[dict] = Field(default_factory=list, description="Non-financial segments dropped from the summary (sponsor/intro/outro/chitchat/non-substantive Q&A), kept as {segment_type, label, section_topic, start, end} ms so the player can offer skip chips")
     sector_exposures: List[dict] = Field(default_factory=list, description="Broad sector/theme exposure metadata; separate from direct ticker mentions")
     unresolved_market_trends: List[dict] = Field(default_factory=list, description="Unmapped recurring market concepts for demand-driven curation")
     sector_exposure_ids: List[str] = Field(default_factory=list, description="Flat Firestore-queryable sector/theme exposure IDs")

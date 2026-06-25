@@ -417,6 +417,7 @@ def _assemble(draft: dict[str, Any]) -> dict[str, Any]:
     if STEP_EXTRACTOR in completed:
         payload["events_markdown"] = state.get("events_markdown", "")
         for field in (
+            "skipped_segments",
             "sector_exposures",
             "unresolved_market_trends",
             "sector_exposure_ids",

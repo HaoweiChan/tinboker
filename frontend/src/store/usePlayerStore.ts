@@ -6,6 +6,8 @@ interface TimestampedSection {
   title: string;
   timestampSeconds: number;
   formattedTime: string;
+  skippable?: boolean;   // muted "skip past" chip (sponsor/chitchat/…)
+  endSeconds?: number;   // skip target for a skippable segment
 }
 
 interface EpisodeData {

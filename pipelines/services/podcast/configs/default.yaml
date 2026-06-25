@@ -10,8 +10,6 @@ preprocessor:
   mark_segments: true           # Enable segment hint detection
   enable_event_blocks: true     # Enable event block segmentation
   block_coverage_threshold: 0.8 # Minimum % of transcript covered by blocks
-  segmentation_model: gemini-2.0-flash    # LLM model for event block segmentation
-  segmentation_temperature: 0.0 # Temperature for segmentation (deterministic)
   min_block_confidence: 0.6     # Minimum confidence to include a block
   allow_block_overlap: true     # Allow blocks to overlap
 
@@ -66,12 +64,10 @@ llm:
   extractor_model: gemini-2.0-flash # gpt-5-mini | gemini-2.0-flash | gpt-4o | claude-3.7-sonnet | gemini-2.5-flash | gemini-2.5-pro
   researcher_model: gemini-2.0-flash
   writer_model: gemini-3-pro-preview # gemini-2.0-flash
-  segmentation_model: gemini-2.5-pro  # Model for event block segmentation
   temperatures:
     extractor: 0.1              # Deterministic extraction
     researcher: 0.0             # Factual retrieval
     writer: 0.4                 # Some creativity in phrasing
-    segmentation: 0.0           # Deterministic segmentation
   token_limits:
     extractor_input: 100000
     extractor_output: 16000

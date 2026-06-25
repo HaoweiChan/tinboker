@@ -19,8 +19,6 @@ PIPELINE_SETTINGS: dict = {
         "mark_segments": True,
         "enable_event_blocks": True,
         "block_coverage_threshold": 0.8,
-        "segmentation_model": "gemini-2.0-flash",
-        "segmentation_temperature": 0.0,
         "min_block_confidence": 0.6,
         "allow_block_overlap": True,
     },
@@ -61,14 +59,17 @@ PIPELINE_SETTINGS: dict = {
         },
     },
     "llm": {
+        # Model is now a single switch var (PIPELINE_LLM_MODEL) resolved in
+        # pipelines/.../content_builder/llm.py: DB override > per-role env > PIPELINE_LLM_MODEL.
+        # These per-role values mirror that default so the admin display matches reality
+        # (and so saving them as overrides can't silently downgrade the live model).
         "default_provider": "openrouter",
-        "default_model": "openrouter:xiaomi/mimo-v2.5",
-        "extractor_model": "openrouter:xiaomi/mimo-v2.5",
-        "writer_model": "openrouter:xiaomi/mimo-v2.5",
-        "marp_writer_model": "openrouter:xiaomi/mimo-v2.5",
-        "ticker_extractor_model": "openrouter:xiaomi/mimo-v2.5",
-        "key_insights_extractor_model": "openrouter:xiaomi/mimo-v2.5",
-        "segmentation_model": "gemini-2.5-pro",
+        "default_model": "openrouter:deepseek/deepseek-v4-pro",
+        "extractor_model": "openrouter:deepseek/deepseek-v4-pro",
+        "writer_model": "openrouter:deepseek/deepseek-v4-pro",
+        "marp_writer_model": "openrouter:deepseek/deepseek-v4-pro",
+        "ticker_extractor_model": "openrouter:deepseek/deepseek-v4-pro",
+        "key_insights_extractor_model": "openrouter:deepseek/deepseek-v4-pro",
         "temperatures": {"extractor": 0.1, "writer": 0.4, "marp_writer": 0.4, "ticker_extractor": 0.1, "key_insights_extractor": 0.3},
         "token_limits": {
             "extractor_input": 100000,
@@ -93,9 +94,11 @@ PIPELINE_SETTINGS: dict = {
 SNAPSHOT_META: dict = {
     "source": "pipelines/services/podcast/src/podcast/content_builder/llm.py",
     "snapshot_of_commit": "HEAD",
-    "snapshot_date": "2026-06-08",
+    "snapshot_date": "2026-06-25",
     "read_only": False,
     "note": (
-        "Defaults from code. Admin overrides (if any) are merged on top."
+        "Defaults from code. Admin overrides (if any) are merged on top. "
+        "Model is a single switch var (PIPELINE_LLM_MODEL); per-role llm.*_model "
+        "values here mirror the deepseek-v4-pro default for display parity."
     ),
 }

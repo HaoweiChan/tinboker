@@ -1,18 +1,23 @@
 """LLM configuration and prompt loading utilities.
 
 All roles run on OpenRouter (``OPENROUTER_API_KEY`` required).
-Default model: ``deepseek/deepseek-v4-pro`` (via ``openrouter:`` prefix).
 Hidden reasoning is disabled for every call so structured-JSON outputs cannot
 be truncated mid-array by a reasoning budget (reasoning-capable models like
 deepseek-v4-flash ignore the field gracefully).
 
-Per-role models are configured via env vars (``EXTRACTOR_MODEL``, ``WRITER_MODEL``,
-``MARP_WRITER_MODEL``, ``TICKER_EXTRACTOR_MODEL``). Prefix any model id with
-``openrouter:`` to select it; a bare model name (no prefix) is also passed to
-OpenRouter as-is.
+Model selection is **entirely config-driven — no model name is hardcoded here**,
+so switching models is a one-var change with no code edit. For each role the model
+id is resolved by this precedence:
 
-Admin overrides from the platform DB (``pipeline_config_overrides`` table) take
-precedence over env vars when available. The pipeline reads them once at import time.
+  1. DB override  — ``pipeline_config_overrides`` (admin config plane), per role
+  2. per-role env — ``EXTRACTOR_MODEL`` / ``WRITER_MODEL`` / ``MARP_WRITER_MODEL`` /
+     ``TICKER_EXTRACTOR_MODEL`` / ``KEY_INSIGHTS_EXTRACTOR_MODEL`` / ``SOCIAL_COPY_WRITER_MODEL``
+  3. global env   — ``PIPELINE_LLM_MODEL`` (one switch for every role)
+
+If none is set the pipeline fails loud (``_model_name`` raises) rather than
+silently picking a model. Prefix any id with ``openrouter:`` to select it; a bare
+model name is forwarded to OpenRouter as-is. The DB overrides are read once at
+import time.
 """
 
 from __future__ import annotations
@@ -32,9 +37,19 @@ _PROMPTS_DIR = Path(__file__).parent / "prompts"
 _MAX_RETRIES = 2
 _log = logging.getLogger(__name__)
 
-_DEFAULT_MODEL = "openrouter:deepseek/deepseek-v4-pro"
+_GLOBAL_MODEL_ENV = "PIPELINE_LLM_MODEL"  # one var to switch every role at once
 _OPENROUTER_PREFIX = "openrouter:"
 _OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+
+# role -> the per-role env var that overrides the global PIPELINE_LLM_MODEL.
+_ROLE_ENV: dict[str, str] = {
+    "extractor": "EXTRACTOR_MODEL",
+    "writer": "WRITER_MODEL",
+    "marp_writer": "MARP_WRITER_MODEL",
+    "ticker_extractor": "TICKER_EXTRACTOR_MODEL",
+    "key_insights_extractor": "KEY_INSIGHTS_EXTRACTOR_MODEL",
+    "social_copy_writer": "SOCIAL_COPY_WRITER_MODEL",
+}
 
 
 def _load_db_overrides() -> dict[str, Any]:
@@ -62,14 +77,19 @@ def _load_db_overrides() -> dict[str, Any]:
 _DB_OVERRIDES = _load_db_overrides()
 _LLM_OVERRIDES = _DB_OVERRIDES.get("llm", {})
 
-_MODEL_MAP: dict[str, str] = {
-    "extractor": _LLM_OVERRIDES.get("extractor_model") or os.getenv("EXTRACTOR_MODEL", _DEFAULT_MODEL),
-    "writer": _LLM_OVERRIDES.get("writer_model") or os.getenv("WRITER_MODEL", _DEFAULT_MODEL),
-    "marp_writer": _LLM_OVERRIDES.get("marp_writer_model") or os.getenv("MARP_WRITER_MODEL", _DEFAULT_MODEL),
-    "ticker_extractor": _LLM_OVERRIDES.get("ticker_extractor_model") or os.getenv("TICKER_EXTRACTOR_MODEL", _DEFAULT_MODEL),
-    "key_insights_extractor": _LLM_OVERRIDES.get("key_insights_extractor_model") or os.getenv("KEY_INSIGHTS_EXTRACTOR_MODEL", _DEFAULT_MODEL),
-    "social_copy_writer": _LLM_OVERRIDES.get("social_copy_writer_model") or os.getenv("SOCIAL_COPY_WRITER_MODEL", _DEFAULT_MODEL),
-}
+def _resolve_model(role: str) -> str | None:
+    """Resolve a role's model id from config, or None if nothing is configured.
+
+    DB override > per-role env > global ``PIPELINE_LLM_MODEL``. Re-read live (not
+    cached) so a var set after import — e.g. by ``secrets_bootstrap`` — is still
+    picked up.
+    """
+    return (
+        _LLM_OVERRIDES.get(f"{role}_model")
+        or os.getenv(_ROLE_ENV.get(role, ""))
+        or os.getenv(_GLOBAL_MODEL_ENV)
+        or None
+    )
 
 _TEMPERATURE_MAP: dict[str, float] = {
     "extractor": _LLM_OVERRIDES.get("temperatures", {}).get("extractor", 0.1),
@@ -105,7 +125,50 @@ def load_prompt(name: str) -> dict[str, str]:
 
 
 def _model_name(role: str) -> str:
-    return _MODEL_MAP.get(role, _DEFAULT_MODEL)
+    model = _resolve_model(role)
+    if not model:
+        env = _ROLE_ENV.get(role, role.upper() + "_MODEL")
+        raise RuntimeError(
+            f"No LLM model configured for role '{role}'. Set {_GLOBAL_MODEL_ENV} "
+            f"(applies to all roles) or {env} (this role only) — "
+            f"e.g. {_GLOBAL_MODEL_ENV}=openrouter:<provider>/<model>."
+        )
+    return model
+
+
+def _model_source(role: str) -> str:
+    """Which config layer supplied this role's model — for admin visibility into drift.
+
+    Returns the DB override, the per-role env var name, the global var name, or
+    "unset", mirroring the precedence in ``_resolve_model``.
+    """
+    if _LLM_OVERRIDES.get(f"{role}_model"):
+        return "db_override"
+    if os.getenv(_ROLE_ENV.get(role, "")):
+        return _ROLE_ENV[role]
+    if os.getenv(_GLOBAL_MODEL_ENV):
+        return _GLOBAL_MODEL_ENV
+    return "unset"
+
+
+def effective_llm_config() -> dict[str, Any]:
+    """The live, resolved LLM config — the single source of truth for which models
+    actually run. Flat ``<role>_model`` keys so it merges with the admin override
+    shape; models resolve via ``_resolve_model`` (DB override > per-role env >
+    ``PIPELINE_LLM_MODEL``). ``model_sources`` reports where each came from.
+
+    Read-only and secret-free — safe to surface on the admin ``/api/config`` endpoint
+    so the Pipeline Settings page reflects reality instead of a static file.
+    """
+    cfg: dict[str, Any] = {"default_provider": "openrouter"}
+    for role in _ROLE_ENV:
+        cfg[f"{role}_model"] = _resolve_model(role)
+    cfg["temperatures"] = dict(_TEMPERATURE_MAP)
+    cfg["token_limits"] = dict(_MAX_TOKENS_MAP)
+    cfg["model_sources"] = {role: _model_source(role) for role in _ROLE_ENV}
+    cfg["global_model_env"] = _GLOBAL_MODEL_ENV
+    cfg["global_model"] = os.getenv(_GLOBAL_MODEL_ENV)
+    return cfg
 
 
 def _is_openrouter(model: str) -> bool:
