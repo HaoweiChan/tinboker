@@ -1746,6 +1746,76 @@ class PodcastService:
             logger.error(f"Failed to set social_thread for {episode_id}: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to save social thread: {str(e)}")
 
+    async def render_social_card_pngs(self, episode_id: str) -> Episode:
+        """Render the episode's unified Marp deck to per-slide PNGs on demand,
+        upload them public, and stamp ``social_cards[i].image_url``.
+
+        Replaces the pipeline's per-episode pre-render: only episodes you actually
+        post (admin button / auto-on-publish) pay the render + storage cost. The
+        deck and the cards come from the same builder, so slide ``i`` == card ``i``.
+        """
+        import base64
+        import hashlib
+        import re
+
+        from fastapi import HTTPException
+
+        episode = await self.get_episode_admin(episode_id)
+        if not episode:
+            raise HTTPException(status_code=404, detail=f"Episode {episode_id} not found")
+        deck = (getattr(episode, "marp_markdown_content", "") or "").strip()
+        if not deck:
+            raise HTTPException(status_code=409, detail="Episode has no Marp deck to render")
+        style = re.search(r"<style>(.*?)</style>", deck, re.DOTALL)
+        if not style:
+            raise HTTPException(status_code=409, detail="Marp deck has no inline theme — reprocess the episode")
+        theme_css = style.group(1)
+
+        # Mutate + persist the raw Firestore card list (image_url is the only change).
+        raw = self.firestore_service.get_document("episodes", episode_id) or {}
+        cards = [c for c in (raw.get("social_cards") or []) if isinstance(c, dict)]
+        if not cards:
+            raise HTTPException(status_code=409, detail="Episode has no social_cards")
+
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(150.0, connect=5.0)) as client:
+                resp = await client.post(
+                    f"{settings.marp_service_url.rstrip('/')}/render-png",
+                    json={"markdown": deck, "theme_css": theme_css},
+                )
+            resp.raise_for_status()
+            payload = resp.json()
+        except httpx.HTTPError as e:
+            logger.warning("marp render-png unreachable for %s: %r", episode_id, e)
+            raise HTTPException(status_code=502, detail=f"Marp render service unreachable: {e!r}")
+        if not payload.get("success"):
+            raise HTTPException(status_code=502, detail=f"Marp render failed: {payload.get('error')}")
+
+        images = payload.get("images") or []
+        # Index alignment is load-bearing (card i ↔ slide i ↔ reply i); refuse to desync.
+        if len(images) != len(cards):
+            raise HTTPException(
+                status_code=500,
+                detail=f"Render produced {len(images)} PNG(s) for {len(cards)} cards",
+            )
+
+        bucket = settings.promo_media_bucket
+        for i, b64 in enumerate(images):
+            url = await self.gcs.upload_bytes_public(
+                bucket, f"social_cards/{episode_id}/{i}.png", base64.b64decode(b64), "image/png"
+            )
+            # Content-hash cache-buster: the path is reused per render, but GCS serves
+            # it with a 1h public cache — the query changes iff the PNG bytes change.
+            ver = hashlib.md5(b64.encode("utf-8")).hexdigest()[:10]
+            cards[i]["image_url"] = f"{url}?v={ver}"
+
+        await asyncio.to_thread(
+            self.firestore_service.set_document, "episodes", episode_id, {"social_cards": cards}, True
+        )
+        await self._invalidate_episode_cache(episode.podcast_name, episode_id)
+        await self._purge_api_host_cdn()
+        return (await self.get_episode_admin(episode_id)) or episode
+
     async def _invalidate_episode_cache(self, podcast_name: str, episode_id: str):
         """Invalidate all caches related to an episode"""
         await cache_delete(f"podcast:{podcast_name}:episode:{episode_id}")

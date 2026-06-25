@@ -236,6 +236,30 @@ class GCSContentService:
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(_GCS_EXECUTOR, _upload_sync)
 
+    async def upload_bytes_public(
+        self, bucket_name: str, blob_path: str, data: bytes, content_type: str
+    ) -> str:
+        """Upload bytes and grant allUsers:READER; return the stable public https URL.
+
+        Used for social-card PNGs that Threads/FB fetch directly and the admin page
+        embeds — they need a persistent public URL, not an expiring signed one.
+        """
+        client = self.get_client()
+        if not client:
+            raise RuntimeError("GCS client not available")
+
+        def _upload_sync() -> str:
+            blob = client.bucket(bucket_name).blob(blob_path)
+            blob.upload_from_string(data, content_type=content_type)
+            try:
+                blob.make_public()
+            except Exception as e:  # noqa: BLE001 — non-fatal; bucket may already be public
+                logger.warning("Could not make %s public: %s", blob_path, e)
+            return f"https://storage.googleapis.com/{bucket_name}/{blob_path}"
+
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(_GCS_EXECUTOR, _upload_sync)
+
     async def delete_blob(self, bucket_name: str, blob_path: str) -> None:
         """Delete a GCS blob if it exists"""
         client = self.get_client()

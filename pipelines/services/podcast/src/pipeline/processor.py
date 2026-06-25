@@ -4,6 +4,7 @@ Episode Processor
 This module contains the EpisodeProcessor class that orchestrates all processing steps.
 """
 
+import os
 from typing import Dict
 
 from src.models.podcast_models import PodcastEpisode
@@ -130,9 +131,14 @@ class EpisodeProcessor:
             # Step 4: Upload to GCS
             upload_to_gcs(self.config, self.services, episode_data)
 
-            # Step 4b: Render + upload social cards (best-effort); enriches social_cards
-            # with image_urls before they're persisted to Firestore below.
-            render_social_cards(self.config, self.services, episode_data)
+            # Step 4b: Render + upload social-card PNGs — ONLY when auto-publish is on
+            # (its only consumer). In the default manual flow the brand reviews each
+            # episode on the admin Social page, where the platform renders the PNGs on
+            # demand ("產生卡片圖" button / auto-on-publish) — so we don't pre-render +
+            # store cards for every episode that never gets posted. The social_cards
+            # DATA + marp_markdown are always built (cheap) and drive the admin preview.
+            if os.environ.get("SOCIAL_AUTOPUBLISH", "").strip().lower() in ("1", "true", "yes", "on"):
+                render_social_cards(self.config, self.services, episode_data)
 
             # Step 5: Upload to Firestore
             upload_to_firestore(self.config, self.services, episode_data)

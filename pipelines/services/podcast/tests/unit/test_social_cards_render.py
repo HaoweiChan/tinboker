@@ -66,10 +66,14 @@ def test_happy_path_joins_public_urls_in_order(monkeypatch):
     cards = _cards(2)
     scr.render_social_cards(_cfg(), _services(up), _ep(cards))
 
+    # Each URL carries a content-hash ?v= cache-buster (GCS reuses the path on
+    # reprocess; the query changes iff the PNG bytes change).
+    import hashlib
+    ver = lambda b64: hashlib.md5(b64.encode("utf-8")).hexdigest()[:10]
     assert [c["image_url"] for c in cards] == [
-        "https://cdn.tinboker.com/social_cards/EP1/0.png",
-        "https://cdn.tinboker.com/social_cards/EP1/1.png",
-        "https://cdn.tinboker.com/social_cards/EP1/2.png",
+        f"https://cdn.tinboker.com/social_cards/EP1/0.png?v={ver('A')}",
+        f"https://cdn.tinboker.com/social_cards/EP1/1.png?v={ver('B')}",
+        f"https://cdn.tinboker.com/social_cards/EP1/2.png?v={ver('C')}",
     ]
     # Index-aware sub-path so the N PNGs don't collide.
     assert up.calls == [("social_cards", "EP1/0", "png"),

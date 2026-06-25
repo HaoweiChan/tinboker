@@ -287,6 +287,23 @@ async def generate_social_episode(
     }
 
 
+@router.post("/episodes/{episode_id}/render-cards")
+async def render_social_cards(
+    episode_id: str,
+    _: AdminAccess = Depends(get_social_access),
+):
+    """Render the episode's Marp deck to per-slide PNGs on demand (admin button).
+
+    Cards are rendered + stored only when needed (this button or publish), not for
+    every episode in the pipeline. Returns the refreshed image URLs in slide order.
+    """
+    episode = await podcast_service.render_social_card_pngs(episode_id)
+    return {
+        "episode_id": episode.id,
+        "image_urls": [c.get("image_url") for c in (getattr(episode, "social_cards", None) or [])],
+    }
+
+
 @router.post("/episodes/{episode_id}/publish")
 async def publish_social_episode(
     episode_id: str,
@@ -307,6 +324,16 @@ async def publish_social_episode(
     episode = await podcast_service.get_episode_admin(episode_id)
     if not episode:
         raise HTTPException(status_code=404, detail=f"Episode {episode_id} not found")
+
+    # Auto-render the card PNGs if a real post is requested and none exist yet, so
+    # publishing can't silently fall back to a text-only post. Best-effort: a render
+    # failure (e.g. marp service down) still lets text-only publishing proceed.
+    cards = getattr(episode, "social_cards", None) or []
+    if not dry_run and cards and not any(c.get("image_url") for c in cards):
+        try:
+            episode = await podcast_service.render_social_card_pngs(episode_id)
+        except Exception as e:  # noqa: BLE001 — fall back to whatever publish can post
+            logger.warning("auto-render before publish failed for %s: %r", episode_id, e)
 
     results = {}
     for name in selected:
