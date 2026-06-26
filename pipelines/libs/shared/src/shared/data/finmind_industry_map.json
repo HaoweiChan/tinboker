@@ -1,0 +1,15 @@
+{
+  "_comment": "FinMind TaiwanStockInfo.industry_category -> our sector exposure_id. ONLY clean, homogeneous categories are mapped. EXCLUDED on purpose: '電子工業' (legacy broad bucket — 265 stocks incl. 聯發科/瑞昱/日月光/中華電/鴻海 are mis-lumped here, too heterogeneous to map) and '電子零組件業' (mixes connectors/passives/PCB). The finer electronics sectors (被動元件, PCB/載板, 記憶體, 半導體設備, 重電, 自行車) have no clean FinMind category and stay curated. 半導體業 auto-fill is intentionally PARTIAL — semis tagged '電子工業' (e.g. 聯發科) are covered by curated/issuer_etf members instead. See pipelines/libs/shared/scripts/refresh_industry_members.py.",
+  "map": {
+    "半導體業": "sector_semiconductor",
+    "航運業": "sector_shipping",
+    "金融保險": "sector_financials",
+    "金融保險業": "sector_financials",
+    "金融業": "sector_financials",
+    "鋼鐵工業": "sector_steel",
+    "生技醫療業": "sector_biotech",
+    "觀光餐旅": "sector_tourism",
+    "觀光事業": "sector_tourism",
+    "通信網路業": "sector_networking"
+  }
+}
