@@ -142,8 +142,9 @@ def _insight(ticker, score, *, reasons=None, risks=None):
 
 def test_sentiment_enum_maps_to_exact_badge_and_zh():
     # score → 5-tier label → (zh chip, css class). Both bull tiers → 看多, etc.
+    # NEUTRAL renders no chip (low-signal 觀望 is suppressed).
     cases = [(0.95, "看多", "sent-bull"), (0.70, "看多", "sent-bull"),
-             (0.50, "觀望", "sent-neutral"),
+             (0.50, "", ""),
              (0.30, "看空", "sent-bear"), (0.05, "看空", "sent-bear")]
     for score, zh, cls in cases:
         text, klass = sc._sentiment_badge(score)
