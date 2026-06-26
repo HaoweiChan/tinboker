@@ -572,6 +572,23 @@ export async function getSectorBoard(): Promise<SectorBoardItem[]> {
   return Array.isArray(d.sectors) ? d.sectors : [];
 }
 
+/** Industry (exposure_type='sector') performance for the /topics 產業 bubble chart.
+ *  market_cap_twd is aggregate constituent market cap in NT$ (TW-only via FinMind). */
+export interface IndustryPerformanceItem {
+  exposure_id: string;
+  display_name: string;
+  color_hex?: string | null;
+  market_cap_twd: number | null;
+  return_pct: number | null;
+  episode_count: number;
+}
+
+export async function getIndustryPerformance(): Promise<IndustryPerformanceItem[]> {
+  const response = await apiClient.get('/api/sectors/industry-performance');
+  const d = response.data ?? {};
+  return Array.isArray(d.industries) ? d.industries : [];
+}
+
 /** Trailing close-to-close performance for a ticker over fixed windows. */
 export interface TrailingPerf {
   price: number | null;

@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { Play, Pause, Info } from 'lucide-react';
 import { getSectorBubbleData } from '@/services/mocks';
+import type { SectorBubbleData } from '@/services/mocks/types';
 import { useAppStore } from '@/store/useAppStore';
 import { getIndustryColor } from '@/utils/industryColors';
 
@@ -33,10 +34,13 @@ const getBubbleVisuals = (label: string, returnRate: number, isDark: boolean) =>
 
 interface SectorPerformanceProps {
   variant?: 'standalone' | 'embedded';
+  /** Live industry data (marketCap in 兆, returnRate in %, volume = discussion count).
+   *  When omitted, falls back to mock data. */
+  data?: SectorBubbleData[];
 }
 
-const SectorPerformance: React.FC<SectorPerformanceProps> = ({ variant = 'standalone' }) => {
-  const rawData = useMemo(() => getSectorBubbleData(), []);
+const SectorPerformance: React.FC<SectorPerformanceProps> = ({ variant = 'standalone', data }) => {
+  const rawData = useMemo<SectorBubbleData[]>(() => data ?? getSectorBubbleData(), [data]);
   const [selectedSectorId, setSelectedSectorId] = useState<string | null>(null);
   const [timeValue] = useState(100); 
   const { theme } = useAppStore();
@@ -50,14 +54,25 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({ variant = 'standa
   const graphWidth = width - padding.left - padding.right;
   const graphHeight = height - padding.top - padding.bottom;
 
-  // Scales
-  const xMax = 14; // 14 Trillion
-  const yMax = 45; // 45%
-  const yMin = -5; // -5%
+  // Scales — derived from the data so live numbers (兆 NTD market caps, small daily
+  // returns) and the mock both render sensibly without hardcoded bounds.
+  const maxCap = Math.max(1, ...rawData.map((d) => d.marketCap ?? 0));
+  const xMax = maxCap * 1.1;
+  const returns = rawData.map((d) => d.returnRate ?? 0);
+  const rawYMax = Math.max(1, ...returns);
+  const rawYMin = Math.min(0, ...returns);
+  const yPad = Math.max(1, (rawYMax - rawYMin) * 0.15);
+  const yMax = rawYMax + yPad;
+  const yMin = rawYMin - yPad;
+  const maxVol = Math.max(1, ...rawData.map((d) => d.volume ?? 0));
 
   const xScale = (val: number) => (val / xMax) * graphWidth;
   const yScale = (val: number) => graphHeight - ((val - yMin) / (yMax - yMin)) * graphHeight;
-  const rScale = (vol: number) => Math.sqrt(vol) * 5; // Size of bubble
+  const rScale = (vol: number) => 6 + Math.sqrt(vol / maxVol) * 26; // bounded 6..32px
+
+  const niceNum = (n: number) => (n >= 10 ? Math.round(n) : +n.toFixed(1));
+  const xTicks = Array.from({ length: 6 }, (_, i) => niceNum((xMax * (i + 1)) / 6));
+  const yTicks = Array.from({ length: 7 }, (_, i) => niceNum(yMin + ((yMax - yMin) * i) / 6));
 
   const containerClasses = ['w-full h-full flex flex-col overflow-hidden', isEmbedded ? '' : 'transition-colors duration-300']
     .filter(Boolean)
@@ -73,8 +88,8 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({ variant = 'standa
   const legendContent = (
     <div className="flex flex-col items-end gap-1">
       <div className="flex justify-between w-48 text-2xs uppercase tracking-wider" style={legendTextColor}>
-         <span>Return %</span>
-         <span>Market Cap</span>
+         <span>漲跌 %</span>
+         <span>市值</span>
       </div>
       <div className="flex items-center gap-3">
         <div className="w-32 h-2 rounded-full bg-gradient-to-r from-red-400 via-slate-300 to-green-400" />
@@ -124,7 +139,7 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({ variant = 'standa
                  <g transform={`translate(${padding.left}, ${padding.top})`}>
                     
                     {/* Grid Lines Y */}
-                    {[0, 10, 20, 30, 40].map(tick => {
+                    {yTicks.map((tick) => {
                         const y = yScale(tick);
                         return (
                           <g key={tick}>
@@ -137,22 +152,22 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({ variant = 'standa
                     <line x1={0} y1={yScale(0)} x2={graphWidth} y2={yScale(0)} stroke="#94a3b8" strokeWidth="1" />
 
                     {/* Grid Lines X */}
-                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14].map(tick => {
+                    {xTicks.map((tick) => {
                         const x = xScale(tick);
                         return (
                           <g key={tick}>
                             <line x1={x} y1={0} x2={x} y2={graphHeight} stroke={isDark ? '#334155' : '#e2e8f0'} strokeDasharray="4 4" />
-                            <text x={x} y={graphHeight + 20} textAnchor="middle" fill="#94a3b8" fontSize="10">{tick}T</text>
+                            <text x={x} y={graphHeight + 20} textAnchor="middle" fill="#94a3b8" fontSize="10">{tick}兆</text>
                           </g>
                         );
                     })}
 
                     {/* Axis Labels */}
                     <text x={-40} y={graphHeight/2} transform={`rotate(-90, -40, ${graphHeight/2})`} textAnchor="middle" fill="#64748b" fontSize="12" fontWeight="bold">
-                        Recent 60-Day Return
+                        近期漲跌 %
                     </text>
                     <text x={graphWidth - 20} y={graphHeight + 40} textAnchor="end" fill="#64748b" fontSize="12" fontWeight="bold">
-                        X-Axis: Market Cap (Trillion)
+                        市值（兆 NTD）
                     </text>
 
 
@@ -214,16 +229,16 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({ variant = 'standa
                         >
                            <h3 className="text-xl font-bold mb-2" style={{ color: 'var(--text-primary)' }}>{s.label}</h3>
                            <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-base">
-                              <span style={{ color: 'var(--text-muted)' }}>Market Cap</span>
-                              <span className="text-right font-mono" style={{ color: 'var(--text-secondary)' }}>{s.marketCap}T</span>
-                              
-                              <span style={{ color: 'var(--text-muted)' }}>Return (60d)</span>
+                              <span style={{ color: 'var(--text-muted)' }}>市值</span>
+                              <span className="text-right font-mono" style={{ color: 'var(--text-secondary)' }}>{s.marketCap}兆</span>
+
+                              <span style={{ color: 'var(--text-muted)' }}>漲跌</span>
                               <span className={`text-right font-mono font-bold ${(s.returnRate || 0) > 0 ? 'text-emerald-500' : 'text-red-500'}`}>
                                 {(s.returnRate || 0) > 0 ? '+' : ''}{s.returnRate || 0}%
                               </span>
-                              
-                              <span style={{ color: 'var(--text-muted)' }}>Volume</span>
-                              <span className="text-right font-mono" style={{ color: 'var(--text-secondary)' }}>{s.volume}M</span>
+
+                              <span style={{ color: 'var(--text-muted)' }}>討論度</span>
+                              <span className="text-right font-mono" style={{ color: 'var(--text-secondary)' }}>{s.volume}</span>
                            </div>
                         </div>
                       )
@@ -236,7 +251,7 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({ variant = 'standa
         {/* Right Sidebar: Selection List */}
         <div className="w-64 border-l flex flex-col transition-colors" style={sidebarStyle}>
             <div className="p-4 border-b flex justify-between items-center" style={{ borderColor: 'var(--border-default)' }}>
-               <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Sort By 60D Return</span>
+               <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">依漲跌排序</span>
                <Info size={14} className="text-slate-400" />
             </div>
             <div className="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar">
@@ -270,7 +285,8 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({ variant = 'standa
         </div>
       </div>
 
-      {/* Bottom Controls (Slider) */}
+      {/* Bottom Controls (Slider) — mock playback; hidden for live data */}
+      {!data && (
       <div className="h-16 border-t px-8 flex items-center gap-6 transition-colors" style={headerSurfaceStyle}>
          <button className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-300' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}`}>
             {timeValue < 100 ? <Play size={18} fill="currentColor" /> : <Pause size={18} fill="currentColor" />}
@@ -294,6 +310,7 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({ variant = 'standa
             LIVE DATA
          </div>
       </div>
+      )}
 
     </div>
   );

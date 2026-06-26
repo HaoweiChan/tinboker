@@ -105,3 +105,29 @@ export async function syncSectors(): Promise<SyncSectorsResponse> {
   );
   return response.data;
 }
+
+// ── Theme discovery queue (emerging concepts not yet in the universe) ─────────
+
+export interface ThemeCandidateExample {
+  episode_title: string;
+  context: string;
+}
+
+export interface ThemeCandidate {
+  normalized_text: string;
+  mention_text: string;
+  count: number;
+  examples: ThemeCandidateExample[];
+}
+
+interface ThemeCandidatesResponse {
+  candidates: ThemeCandidate[];
+}
+
+export async function getThemeCandidates(threshold = 3, limit = 40): Promise<ThemeCandidate[]> {
+  const response = await apiClient.get<ThemeCandidatesResponse>(
+    '/api/admin/sectors/theme-candidates',
+    { params: { threshold, limit }, ...adminAuthConfig() },
+  );
+  return response.data.candidates ?? [];
+}
