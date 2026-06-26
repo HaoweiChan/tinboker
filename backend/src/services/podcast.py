@@ -884,7 +884,7 @@ class PodcastService:
         (not recency/zh-TW-scoped — the per-episode `tags` field is empty so a
         scoped count isn't available cheaply).
         """
-        cache_key = "tags:topics:v3"
+        cache_key = "tags:topics:v4"
         cached = await cache_get(cache_key)
         if cached:
             try:
@@ -906,7 +906,20 @@ class PodcastService:
                 return {"id": tid, "name": tid, "episode_count": count} if count and count > 0 else None
 
             counted = await asyncio.gather(*[_count(t) for t in self._get_topic_tags()])
-            result = sorted([r for r in counted if r], key=lambda x: x["episode_count"], reverse=True)
+            # Collapse fragmented spellings (ai_applications / aiapplications / AI) by
+            # normalized slug so each concept appears once, summing their episode counts.
+            # The id becomes the normalized slug — the canonical key the frontend looks up
+            # its zh-TW label by and that get_episodes_by_tag resolves.
+            merged: dict[str, dict] = {}
+            for r in counted:
+                if not r:
+                    continue
+                key = normalize_tag_slug(r["id"])
+                if key in merged:
+                    merged[key]["episode_count"] += r["episode_count"]
+                else:
+                    merged[key] = {"id": key, "name": key, "episode_count": r["episode_count"]}
+            result = sorted(merged.values(), key=lambda x: x["episode_count"], reverse=True)
             try:
                 await cache_set(cache_key, json.dumps(result), 3600)
             except Exception:
@@ -927,7 +940,7 @@ class PodcastService:
             fetch_limit = max((limit + offset) * 5, 100) if scoping_active else (limit + offset)
             episode_refs = await asyncio.to_thread(
                 self.firestore_service.get_subcollection_documents,
-                collection="tags", parent_doc_id=tag.lower(),
+                collection="tags", parent_doc_id=normalize_tag_slug(tag),
                 subcollection="episodes", order_by="created_time",
                 direction="DESCENDING", limit=fetch_limit,
             )
