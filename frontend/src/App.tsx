@@ -115,16 +115,19 @@ function App() {
             <Route path="/disclaimer" element={<DisclaimerPage />} />
             <Route path="/report" element={<ReportPage />} />
 
-            {/* Login-gated — force registration to view (RequireLogin shows a
-                login prompt instead of the page when logged out). */}
+            {/* Public content — browsable without login so visitors + crawlers
+                can read it (soft wall). Personalized actions (bookmark, watchlist,
+                comment) prompt login on click via useRequireAuth(). */}
+            <Route path="/stock/:ticker" element={<StockDashboard />} />
+            <Route path="/topics" element={<TopicsCloud />} />
+            <Route path="/topics/:tag" element={<TagPage />} />
+            <Route path="/tag/:tag" element={<TagPage />} />
+            <Route path="/episode/:id" element={<EpisodeDetail />} />
+            <Route path="/articles" element={<ArticleList />} />
+            <Route path="/article/:slug" element={<ArticleDetail />} />
+
+            {/* Login-gated — personal surfaces with nothing to show logged out. */}
             <Route element={<RequireLogin />}>
-              <Route path="/stock/:ticker" element={<StockDashboard />} />
-              <Route path="/topics" element={<TopicsCloud />} />
-              <Route path="/topics/:tag" element={<TagPage />} />
-              <Route path="/tag/:tag" element={<TagPage />} />
-              <Route path="/episode/:id" element={<EpisodeDetail />} />
-              <Route path="/articles" element={<ArticleList />} />
-              <Route path="/article/:slug" element={<ArticleDetail />} />
               <Route path="/watchlist" element={<WatchlistPage />} />
               <Route path="/profile" element={<ProfilePage />} />
               <Route path="/settings" element={<SettingsPage />} />
