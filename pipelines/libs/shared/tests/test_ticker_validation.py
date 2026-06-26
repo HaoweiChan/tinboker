@@ -14,6 +14,7 @@ from shared.tickers import is_valid_ticker_symbol, valid_tickers
     "NVDA", "AVGO", "RKLB", "CRM", "NOW", "SNOW", "INTC", "TSM",  # US listings
     "BRK.B",                                   # US with share class
     "SPCE",                                    # a REAL ticker (Virgin Galactic) — kept
+    "SPCX",                                    # SpaceX — real Nasdaq listing since 2026-06
 ])
 def test_real_listings_are_valid(sym):
     assert is_valid_ticker_symbol(sym)
@@ -21,7 +22,7 @@ def test_real_listings_are_valid(sym):
 
 @pytest.mark.parametrize("sym", [
     "OPENAI", "ANTHROPIC",                     # too long for a US symbol
-    "ANTHR", "SPCX",                           # private-company hallucinations (denylist)
+    "ANTHR",                                   # private-company hallucination (denylist)
     "JPOW", "POWELL", "YELLEN", "MUSK", "BUFFETT",  # people — esp. Jerome Powell
     "N", "X", "A",                             # bare single letters (transcription fragments)
     "FED", "FOMC", "VIX", "DXY", "LIBOR",      # macro / index / policy abbreviations
@@ -58,4 +59,4 @@ def test_cleans_observed_related_tickers():
 def test_cleans_observed_insight_tickers():
     raw = ["ANTHROPIC", "ASTS", "EDGE COMPUTING相關類股", "ESTAR LABS", "FLY",
            "RKLB", "SPCX", "TSLA", "臺股", "衛星/火箭相關類股 (台股)", "被動元件"]
-    assert valid_tickers(raw) == ["ASTS", "FLY", "RKLB", "TSLA"]
+    assert valid_tickers(raw) == ["ASTS", "FLY", "RKLB", "SPCX", "TSLA"]

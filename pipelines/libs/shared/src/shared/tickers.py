@@ -142,7 +142,9 @@ _NON_SYMBOL_WORDS = frozenset({
 # misusing it for SpaceX is a prompt problem, not a symbol-validity one.)
 _NON_TICKERS = frozenset({
     # Private companies / wrong-or-junk symbols with no price data.
-    "ANTHR", "ANTHROPIC", "OPENAI", "OAI", "SPACEX", "SPCX", "SPACE",
+    # (SPCX/SPACEX removed — SpaceX IPO'd on Nasdaq as SPCX 2026-06; it is now a real,
+    # priced listing in the registry as type=company.)
+    "ANTHR", "ANTHROPIC", "OPENAI", "OAI", "SPACE",
     "BYTEDANCE", "DEEPSEEK", "XAI", "GRK", "GROK", "STRIPE", "SHEIN",
     "TSMC", "WD", "GIGA", "ASE",
     # People — surnames / nicknames (the >5-letter ones are already rejected by the

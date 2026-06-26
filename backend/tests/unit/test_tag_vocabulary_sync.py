@@ -97,6 +97,35 @@ def test_registry_snapshot_dedupes_canonical_and_db_by_normalized_slug():
     assert matches[0]["tier"] == "trending"  # DB tier wins
 
 
+def test_registry_snapshot_canonical_label_wins_over_stale_db_label():
+    """A vocab edit (IPO→IPO) must override a row auto-registered with the old label."""
+    from src.tag_registry import normalize_tag_slug, registry_snapshot
+
+    rows = [SimpleNamespace(slug="IPO", display_zh="首次公開發行", tier="trending")]
+    snap = {normalize_tag_slug(e["slug"]): e for e in registry_snapshot(_FakeDb(rows))}
+    assert snap[normalize_tag_slug("IPO")]["display_zh"] == "IPO"
+
+
+class _FilterDb:
+    """Stand-in for the session ``hidden_tag_slugs`` uses (``.query().filter().all()``)."""
+
+    def __init__(self, slugs):
+        self._slugs = slugs
+
+    def query(self, *_a, **_k):
+        rows = [(s,) for s in self._slugs]
+        return SimpleNamespace(filter=lambda *a, **k: SimpleNamespace(all=lambda: rows))
+
+
+def test_hidden_offvocab_slugs_excludes_canonical():
+    """Off-vocab hidden junk is returned; in-vocab tags stay on episode pages."""
+    from src.tag_registry import hidden_offvocab_slugs, normalize_tag_slug
+
+    out = hidden_offvocab_slugs(_FilterDb(["TaiwanStocks", "Memory"]))
+    assert normalize_tag_slug("TaiwanStocks") in out  # off-vocab junk → filtered
+    assert normalize_tag_slug("Memory") not in out    # canonical topic → kept
+
+
 def test_normalize_has_no_conflicting_collisions():
     """No two source slugs normalize to the same key with DIFFERENT labels.
 

@@ -14,8 +14,11 @@ import { getTagRegistry } from '@/services/api/podcasts';
 type Labels = Record<string, string>;
 
 let cache: Labels | null = null;
+let hiddenCache: Set<string> | null = null;
 let inflight: Promise<Labels> | null = null;
 const subscribers = new Set<(labels: Labels) => void>();
+const hiddenSubscribers = new Set<(hidden: Set<string>) => void>();
+const EMPTY_HIDDEN: Set<string> = new Set();
 
 /**
  * Canonical lookup key for a tag slug — MUST match the backend + pipeline impls
@@ -38,11 +41,14 @@ function load(): Promise<Labels> {
           if (entry.slug && entry.display_zh) labels[normalizeTagSlug(entry.slug)] = entry.display_zh;
         }
         cache = labels;
+        hiddenCache = new Set((res.hidden_slugs ?? []).map(normalizeTagSlug));
         subscribers.forEach((fn) => fn(labels));
+        hiddenSubscribers.forEach((fn) => fn(hiddenCache!));
         return labels;
       })
       .catch(() => {
         cache = {};
+        hiddenCache = new Set();
         return cache;
       });
   }
@@ -74,4 +80,26 @@ export function useTagLabels(): Labels {
     };
   }, []);
   return labels;
+}
+
+/** Subscribe to the set of admin-hidden off-vocab tag slugs (normalized). */
+export function useHiddenTagSlugs(): Set<string> {
+  const [hidden, setHidden] = useState<Set<string>>(hiddenCache ?? EMPTY_HIDDEN);
+  useEffect(() => {
+    if (hiddenCache) {
+      setHidden(hiddenCache);
+      return;
+    }
+    let alive = true;
+    const fn = (h: Set<string>) => {
+      if (alive) setHidden(h);
+    };
+    hiddenSubscribers.add(fn);
+    load();
+    return () => {
+      alive = false;
+      hiddenSubscribers.delete(fn);
+    };
+  }, []);
+  return hidden;
 }
