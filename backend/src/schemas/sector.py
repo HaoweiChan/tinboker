@@ -64,3 +64,18 @@ class SectorBoardItem(BaseModel):
 
 class SectorBoardResponse(BaseModel):
     sectors: List[SectorBoardItem]
+
+
+# ── Industry performance (bubble chart, /topics 產業 tab) ─────────────────────
+
+class IndustryPerformanceItem(BaseModel):
+    exposure_id: str
+    display_name: str
+    color_hex: Optional[str] = None
+    market_cap_twd: Optional[float] = None  # aggregate constituent market cap (NT$)
+    return_pct: Optional[float] = None       # avg member daily % change
+    episode_count: int = 0
+
+
+class IndustryPerformanceResponse(BaseModel):
+    industries: List[IndustryPerformanceItem]
