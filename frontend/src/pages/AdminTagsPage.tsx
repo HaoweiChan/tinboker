@@ -3,8 +3,8 @@
  * discover new tags from Firestore, add/delete.
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, RefreshCw, Search, Trash2, Check, X, Eye, EyeOff, Radar, Layers, Pencil } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { Plus, RefreshCw, Search, Trash2, Check, X, Eye, EyeOff, Radar, Layers, Pencil, ChevronUp, ChevronDown } from 'lucide-react';
 import {
   listAdminTags,
   createAdminTag,
@@ -72,6 +72,23 @@ export const AdminTagsPage: React.FC = () => {
   }, [tierFilter, kindFilter, debouncedSearch]);
 
   useEffect(() => { fetchTags(); }, [fetchTags]);
+
+  // Episodes column sort: off (registered-first default) -> desc -> asc -> off.
+  const [episodeSort, setEpisodeSort] = useState<'desc' | 'asc' | null>(null);
+  const toggleEpisodeSort = () =>
+    setEpisodeSort((s) => (s === null ? 'desc' : s === 'desc' ? 'asc' : null));
+  const displayTags = useMemo(() => {
+    if (!episodeSort) return tags;
+    const dir = episodeSort === 'asc' ? 1 : -1;
+    return [...tags].sort((a, b) => {
+      const av = a.episode_count, bv = b.episode_count;
+      // Uncounted (virtual "—") rows always sort to the bottom.
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      return (av - bv) * dir;
+    });
+  }, [tags, episodeSort]);
 
   const handleToggleTier = async (tag: AdminTagEntry) => {
     try {
@@ -269,7 +286,18 @@ export const AdminTagsPage: React.FC = () => {
               <th className="px-4 py-3">Slug</th>
               <th className="px-4 py-3">顯示名稱</th>
               <th className="px-4 py-3">Kind</th>
-              <th className="px-4 py-3 text-right">Episodes</th>
+              <th className="px-4 py-3 text-right">
+                <button
+                  type="button"
+                  onClick={toggleEpisodeSort}
+                  className="ml-auto inline-flex items-center gap-1 hover:text-foreground"
+                  title="Sort by episode count"
+                >
+                  Episodes
+                  {episodeSort === 'desc' && <ChevronDown className="h-3 w-3" />}
+                  {episodeSort === 'asc' && <ChevronUp className="h-3 w-3" />}
+                </button>
+              </th>
               <th className="px-4 py-3">Visibility</th>
               <th className="px-4 py-3 text-right">Actions</th>
             </tr>
@@ -330,7 +358,7 @@ export const AdminTagsPage: React.FC = () => {
                 <td colSpan={6} className="px-4 py-10 text-center text-muted-foreground">No tags found.</td>
               </tr>
             ) : (
-              tags.map((tag) => {
+              displayTags.map((tag) => {
                 const isSector = tag.kind === KIND_SECTOR;
                 const isVirtual = tag.registered === false;
                 return (
