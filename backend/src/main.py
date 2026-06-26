@@ -149,15 +149,17 @@ async def lifespan(app: FastAPI):
         print("ERROR: content source seed FAILED — release allowlist will be empty:")
         traceback.print_exc()
 
-    # Seed tag registry (insert-only when table is empty).
+    # Seed tag registry (insert-only when table is empty), then self-heal any
+    # duplicate case/separator tag rows (ai/AI) onto one canonical normalized row.
     try:
         from src.database.postgres import get_session as _gs
-        from src.tag_registry import seed_if_empty
+        from src.tag_registry import consolidate_tag_registry, seed_if_empty
         for session in _gs():
             seed_if_empty(session)
+            consolidate_tag_registry(session)
             break
     except Exception as e:
-        print(f"Warning: tag registry seed skipped: {e}")
+        print(f"Warning: tag registry seed/consolidate skipped: {e}")
 
     # Backfill podcast cover art (Spotify oEmbed) in the background — best-effort,
     # must NOT block startup/health (external HTTP).

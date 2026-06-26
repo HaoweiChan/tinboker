@@ -166,19 +166,68 @@ def auto_register(db: Session, slugs: list[str], min_episodes: int = 3) -> int:
     Called with Firestore tag slugs that have at least *min_episodes* episodes.
     Slugs already in the registry are silently skipped.
     """
-    existing = {r[0] for r in db.query(TagRegistry.slug).all()}
-    new_slugs = [s for s in slugs if s not in existing]
+    # Store + compare on the NORMALIZED slug so case/separator variants (AI vs ai,
+    # ai_chip vs aichip) can never create duplicate rows.
+    existing = {normalize_tag_slug(r[0]) for r in db.query(TagRegistry.slug).all()}
+    seen: set[str] = set()
+    new_slugs: list[str] = []
+    for s in slugs:
+        n = normalize_tag_slug(s)
+        if n and n not in existing and n not in seen:
+            seen.add(n)
+            new_slugs.append(n)
     if not new_slugs:
         return 0
-    for slug in new_slugs:
+    for slug in new_slugs:  # already normalized
         # Seed the curated zh-TW label when the slug is in the canonical vocabulary,
         # so auto-discovered tags render in Chinese immediately instead of as their
         # raw English slug (and so the DB row can never mask the canonical label).
-        display_zh = _CANONICAL_DISPLAY.get(normalize_tag_slug(slug), slug)
+        display_zh = _CANONICAL_DISPLAY.get(slug, slug)
         db.add(TagRegistry(slug=slug, display_zh=display_zh, tier=TIER_HIDDEN))
     db.commit()
     logger.info("Auto-registered %d new tags as hidden", len(new_slugs))
     return len(new_slugs)
+
+
+def consolidate_tag_registry(db: Session) -> int:
+    """Merge duplicate kind='tag' rows that share a normalized slug onto ONE canonical
+    row (slug = normalized), carrying any 'hidden' curation and the best zh-TW label.
+
+    Self-heals case/separator duplicates (ai/AI, ai_chip/aichip) and drops CJK-only
+    slugs that normalize to an empty key. Runs on backend startup; idempotent — a no-op
+    once the registry is canonical. Mirrors the sector self-heal in sync_sectors.
+    """
+    rows = db.query(TagRegistry).filter(TagRegistry.kind == KIND_TAG).all()
+    groups: dict[str, list[TagRegistry]] = {}
+    for r in rows:
+        groups.setdefault(normalize_tag_slug(r.slug), []).append(r)
+
+    removed = 0
+    for norm, grp in groups.items():
+        if not norm:  # un-normalizable (CJK-only) slug — never a valid tag key
+            for r in grp:
+                db.delete(r)
+                removed += 1
+            continue
+        if len(grp) == 1 and grp[0].slug == norm:
+            continue  # already canonical
+        survivor = next((r for r in grp if r.slug == norm), grp[0])
+        any_hidden = any(r.tier == TIER_HIDDEN for r in grp)
+        better_label = next((r.display_zh for r in grp if r.display_zh and r.display_zh != r.slug), None)
+        for r in grp:
+            if r is not survivor:
+                db.delete(r)
+                removed += 1
+        db.flush()  # release duplicate slugs (unique index) before renaming the survivor
+        survivor.slug = norm
+        if any_hidden:
+            survivor.tier = TIER_HIDDEN
+        if better_label:
+            survivor.display_zh = better_label
+    db.commit()
+    if removed:
+        logger.info("Consolidated tag registry: removed %d duplicate/junk rows", removed)
+    return removed
 
 
 def sync_sectors(db: Session, sectors: list[dict]) -> int:
