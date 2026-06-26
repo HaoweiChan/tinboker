@@ -38,13 +38,16 @@ import {
     getThreadsInsights,
     getFacebookInsights,
     getMemberAnalytics,
+    getAnalyticsHistory,
     type CloudflareOverview,
     type SeoOverview,
     type SeoRow,
     type ThreadsInsights,
     type FacebookInsights,
     type MemberAnalytics,
+    type AnalyticsSnapshot,
 } from '@/services/api/adminAnalytics';
+import { TrendChart, type TrendPoint } from '@/components/admin/TrendChart';
 
 // ── formatting helpers ─────────────────────────────────────────────────────
 const nf = new Intl.NumberFormat('en-US');
@@ -74,6 +77,20 @@ const Stat: React.FC<{ icon: React.ReactNode; label: string; value: string }> = 
             <span className="text-xs font-medium uppercase tracking-wide">{label}</span>
         </div>
         <div className="mt-2 text-2xl font-bold text-foreground">{value}</div>
+    </div>
+);
+
+// Build chart points from a per-day series row list; x is MM-DD for a compact axis.
+const ptsFrom = (rows: Array<Record<string, unknown>> | undefined, key: string): TrendPoint[] =>
+    (rows || []).map((r) => ({
+        x: String(r.date || '').slice(5),
+        y: Number(r[key] ?? 0) || 0,
+    }));
+
+const ChartBox: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
+    <div className="rounded-xl border border-border bg-card p-4">
+        <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">{title}</div>
+        {children}
     </div>
 );
 
@@ -224,23 +241,26 @@ export const AdminAnalyticsPage: React.FC = () => {
     const [threads, setThreads] = useState<ThreadsInsights | null>(null);
     const [fb, setFb] = useState<FacebookInsights | null>(null);
     const [members, setMembers] = useState<MemberAnalytics | null>(null);
+    const [history, setHistory] = useState<AnalyticsSnapshot[]>([]);
     const [loading, setLoading] = useState(true);
 
     const load = useCallback(async () => {
         setLoading(true);
         // Independent sources — settle each on its own so one failure never blanks the page.
-        const [cfRes, seoRes, thRes, fbRes, memRes] = await Promise.allSettled([
-            getCloudflareOverview(7),
+        const [cfRes, seoRes, thRes, fbRes, memRes, histRes] = await Promise.allSettled([
+            getCloudflareOverview(28),
             getSeoOverview(28),
             getThreadsInsights(28, 5),
             getFacebookInsights(28),
             getMemberAnalytics(10),
+            getAnalyticsHistory(90),
         ]);
         if (cfRes.status === 'fulfilled') setCf(cfRes.value);
         if (seoRes.status === 'fulfilled') setSeo(seoRes.value);
         if (thRes.status === 'fulfilled') setThreads(thRes.value);
         if (fbRes.status === 'fulfilled') setFb(fbRes.value);
         if (memRes.status === 'fulfilled') setMembers(memRes.value);
+        if (histRes.status === 'fulfilled') setHistory(histRes.value);
         setLoading(false);
     }, []);
 
@@ -345,6 +365,19 @@ export const AdminAnalyticsPage: React.FC = () => {
                             <Stat icon={<Users className="h-4 w-4" />} label="Visits" value={fmt(cf.totals.uniques)} />
                             <Stat icon={<Server className="h-4 w-4" />} label="Requests" value={fmt(cf.totals.requests)} />
                         </div>
+                        {cf.series && cf.series.length >= 2 && (
+                            <div className="mt-4 grid gap-4 sm:grid-cols-3">
+                                <ChartBox title="Page Views">
+                                    <TrendChart series={[{ name: 'Page Views', colorClass: 'text-accent-info', points: ptsFrom(cf.series, 'pageViews') }]} />
+                                </ChartBox>
+                                <ChartBox title="Visits">
+                                    <TrendChart series={[{ name: 'Visits', colorClass: 'text-sentiment-bull', points: ptsFrom(cf.series, 'uniques') }]} />
+                                </ChartBox>
+                                <ChartBox title="Requests">
+                                    <TrendChart series={[{ name: 'Requests', colorClass: 'text-primary', points: ptsFrom(cf.series, 'requests') }]} />
+                                </ChartBox>
+                            </div>
+                        )}
                         <div className="mt-4 flex justify-end">
                             <a
                                 href={cf.dashboards.cloudflare}
@@ -385,6 +418,16 @@ export const AdminAnalyticsPage: React.FC = () => {
                             <Stat icon={<Eye className="h-4 w-4" />} label="Impressions" value={fmt(seo.totals.impressions)} />
                             <Stat icon={<Hash className="h-4 w-4" />} label="Avg CTR" value={pct(seo.totals.ctr)} />
                         </div>
+                        {seo.series && seo.series.length >= 2 && (
+                            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                                <ChartBox title="Clicks">
+                                    <TrendChart series={[{ name: 'Clicks', colorClass: 'text-accent-info', points: ptsFrom(seo.series, 'clicks') }]} />
+                                </ChartBox>
+                                <ChartBox title="Impressions">
+                                    <TrendChart series={[{ name: 'Impressions', colorClass: 'text-primary', points: ptsFrom(seo.series, 'impressions') }]} />
+                                </ChartBox>
+                            </div>
+                        )}
                         <div className="mt-6 grid gap-6 lg:grid-cols-2">
                             <SeoTable title="Top Search Queries" rows={seo.top_queries || []} />
                             <SeoTable title="Top Pages" rows={seo.top_pages || []} isPage />
@@ -507,7 +550,18 @@ export const AdminAnalyticsPage: React.FC = () => {
                         <Stat icon={<Heart className="h-4 w-4" />} label="Engagements" value={fmt(fm.page_post_engagements)} />
                         <Stat icon={<MousePointerClick className="h-4 w-4" />} label="Actions" value={fmt(fm.page_total_actions)} />
                     </div>
-                ) : (
+                ) : null}
+                {fb?.available && fb.series && fb.series.length >= 2 && (
+                    <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                        <ChartBox title="Page Views">
+                            <TrendChart series={[{ name: 'Page Views', colorClass: 'text-accent-info', points: ptsFrom(fb.series, 'page_views_total') }]} />
+                        </ChartBox>
+                        <ChartBox title="Engagements">
+                            <TrendChart series={[{ name: 'Engagements', colorClass: 'text-sentiment-bull', points: ptsFrom(fb.series, 'page_post_engagements') }]} />
+                        </ChartBox>
+                    </div>
+                )}
+                {!fb?.available && (
                     <NotConnected
                         detail={
                             fb?.detail ||
@@ -519,6 +573,29 @@ export const AdminAnalyticsPage: React.FC = () => {
                         cta="Open Meta Business Suite"
                     />
                 )}
+            </SectionCard>
+
+            {/* Audience growth (daily snapshots) */}
+            <SectionCard
+                icon={<TrendingUp className="h-5 w-5 text-sentiment-bull" />}
+                title="Audience Growth"
+                subtitle="Daily follower snapshots · last 90 days"
+            >
+                <div className="mt-4">
+                    <TrendChart
+                        height={140}
+                        series={[
+                            { name: 'Threads 粉絲', colorClass: 'text-accent-info', points: history.map((s) => ({ x: s.day.slice(5), y: s.threads_followers ?? 0 })) },
+                            { name: 'Facebook 粉絲', colorClass: 'text-primary', points: history.map((s) => ({ x: s.day.slice(5), y: s.fb_followers ?? 0 })) },
+                            { name: 'FB 按讚', colorClass: 'text-sentiment-bull', points: history.map((s) => ({ x: s.day.slice(5), y: s.fb_fans ?? 0 })) },
+                        ]}
+                    />
+                    {history.length < 2 && (
+                        <p className="mt-2 text-xs text-muted-foreground">
+                            每天自動記錄一次粉絲數，累積後即可看出成長曲線（剛啟用時為空）。
+                        </p>
+                    )}
+                </div>
             </SectionCard>
 
             {/* External dashboards */}

@@ -47,6 +47,7 @@ export interface SeoOverview {
     site_url?: string;
     range?: { start: string; end: string; days: number };
     totals?: { clicks: number; impressions: number; ctr: number };
+    series?: { date: string; clicks: number; impressions: number }[];
     top_queries?: SeoRow[];
     top_pages?: SeoRow[];
     fetched_at?: string;
@@ -98,6 +99,7 @@ export interface FacebookInsights {
     fans?: number | null;
     followers?: number | null;
     metrics?: Record<string, number>;
+    series?: { date: string; [metric: string]: string | number }[];
 }
 
 export async function getFacebookInsights(days = 28): Promise<FacebookInsights> {
@@ -124,4 +126,20 @@ export async function getMemberAnalytics(top = 10): Promise<MemberAnalytics> {
         params: { top },
     });
     return res.data;
+}
+
+// ── Audience-growth snapshots (daily Threads/FB follower + fan counts) ───────
+export interface AnalyticsSnapshot {
+    day: string;
+    threads_followers: number | null;
+    fb_followers: number | null;
+    fb_fans: number | null;
+}
+
+export async function getAnalyticsHistory(days = 90): Promise<AnalyticsSnapshot[]> {
+    const res = await apiClient.get<{ snapshots: AnalyticsSnapshot[] }>('/api/admin/analytics/history', {
+        ...adminAuthConfig(),
+        params: { days },
+    });
+    return res.data.snapshots;
 }

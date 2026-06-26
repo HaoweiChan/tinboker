@@ -147,12 +147,20 @@ def _insight_rows(ticker_insights: Optional[dict[str, Any]]) -> list[dict[str, A
 
 
 def _sentiment_badge(score: Any) -> tuple[str, str]:
-    """Map a 0–1 sentiment score → (zh-TW chip text, CSS class) via the 5-tier label."""
+    """Map a 0–1 sentiment score → (zh-TW chip text, CSS class) via the 5-tier label.
+
+    NEUTRAL (觀望) renders no chip: it's low-signal and clutters the grid/focus
+    cards. The ticker still appears in the overview, just without a wishy-washy
+    觀望 label — only 看多/看空 earn a chip.
+    """
     try:
         label = score_to_label(float(score))
     except (TypeError, ValueError):
         label = "NEUTRAL"
-    return _SENTIMENT_BADGE.get(label, _SENTIMENT_BADGE["NEUTRAL"])
+    text, cls = _SENTIMENT_BADGE.get(label, ("", ""))
+    if cls == "sent-neutral":
+        return "", ""
+    return text, cls
 
 
 def _risk_factor(risks: Any) -> str:
