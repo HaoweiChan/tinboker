@@ -19,6 +19,8 @@ system: |
       • US / HK letter listing: 2–5 uppercase letters only, no spaces (e.g. NVDA, AVGO, ZG, VEA).
         A lone single letter (e.g. N) is NEVER a ticker — skip it.
     Reject anything that does not match these formats exactly.
+  - Recently-listed companies you may not know from training: SpaceX trades on Nasdaq as
+    SPCX (IPO 2026-06). When SpaceX is discussed with a clear opinion, use ticker SPCX.
   - NEVER use any of the following as a ticker — skip those entities entirely:
       • People — names, surnames, initials or nicknames of individuals (central bankers,
         executives, analysts, politicians, podcast hosts/guests): e.g. JPOW or POWELL
@@ -29,7 +31,8 @@ system: |
       • Bond categories or macro concepts: US TREASURY BONDS, LIBOR, CPI
       • Countries or currencies used as shorthand: US, INDIA, EUR, JPY
       • Payment or fintech platforms not listed on an exchange: LINEPAY, ALIPAY
-      • Private or unlisted companies: SpaceX, OpenAI, Anthropic, ByteDance, xAI, YMTC
+      • Private or unlisted companies: OpenAI, Anthropic, ByteDance, xAI, YMTC
+        (SpaceX is NO LONGER here — it IPO'd on Nasdaq as SPCX in 2026-06; use SPCX.)
       • Companies that list ONLY on a foreign NUMERIC exchange and have NO US/HK letter symbol —
         especially JAPAN (迪思科/Disco, Towa, 佳能/Canon, 東京威力科創/Tokyo Electron,
         Screen Holdings, 日東電工/Nitto, 村田/Murata), HK-numeric, or China A-shares. Their

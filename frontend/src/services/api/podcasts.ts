@@ -392,12 +392,17 @@ export interface TagRegistryEntry {
 
 export interface TagRegistryResponse {
   tags: TagRegistryEntry[];
+  /** Normalized slugs of admin-hidden off-vocab tags — dropped from episode tag chips. */
+  hidden_slugs: string[];
 }
 
 export async function getTagRegistry(): Promise<TagRegistryResponse> {
   const response = await apiClient.get('/api/tags/registry');
   const d = response.data ?? {};
-  return { tags: Array.isArray(d.tags) ? d.tags : [] };
+  return {
+    tags: Array.isArray(d.tags) ? d.tags : [],
+    hidden_slugs: Array.isArray(d.hidden_slugs) ? d.hidden_slugs : [],
+  };
 }
 
 export async function getTags(): Promise<TagsResponse> {

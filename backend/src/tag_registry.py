@@ -315,6 +315,19 @@ def hidden_tag_slugs(db: Session) -> set[str]:
     return {normalize_tag_slug(r[0]) for r in rows if r[0]}
 
 
+def hidden_offvocab_slugs(db: Session) -> set[str]:
+    """NORMALIZED slugs of admin-hidden tags that are NOT in the canonical vocabulary.
+
+    Off-vocabulary junk an episode may still carry (e.g. an LLM-emitted ``TaiwanStocks``
+    duplicating the curated 台股/``TWStocks``) that the admin has hidden. The episode hero
+    filters its tag chips against this set so a hidden junk tag stops surfacing there.
+    In-vocab tags are excluded on purpose — a real topic stays on episode pages even when
+    an auto-discover run parked it at tier='hidden'; its TRENDING visibility is curated
+    separately.
+    """
+    return hidden_tag_slugs(db) - canonical_tag_slugs()
+
+
 def hidden_sector_exposure_ids(db: Session) -> set[str]:
     """Exposure IDs of sectors the admin has HIDDEN — excluded from the public board.
 
@@ -357,14 +370,14 @@ def registry_snapshot(db: Session) -> list[dict]:
     return the FULL label catalogue — the canonical extraction vocabulary plus
     every DB row (all tiers) — so any agent-emitted tag renders in zh-TW across
     the site (episode hero, topic pages, episode cards), not just the curated
-    trending subset. DB rows win over the canonical baseline (admin curation
-    overrides) and carry their real tier.
+    trending subset. A DB row contributes its real TIER; for the DISPLAY label the
+    canonical vocabulary is authoritative (in-vocab tags have no admin rename UI, and
+    an auto-registered row must never freeze a label across a later vocab edit). Off-
+    vocab tags — not in the vocabulary — take their label from the DB row.
 
     Entries are keyed by the NORMALIZED slug so the catalogue and the DB never
     emit two rows that the frontend would collapse to the same lookup key (e.g.
     canonical ``SupplyChain`` vs. DB ``supply_chain`` → both ``supplychain``).
-    A DB row whose ``display_zh`` is just its own slug is an auto-registered
-    English placeholder; it must NOT mask a curated canonical label.
     """
     by_norm: dict[str, dict] = {
         norm_slug: {"slug": norm_slug, "display_zh": zh, "tier": TIER_HIDDEN}
@@ -378,7 +391,11 @@ def registry_snapshot(db: Session) -> list[dict]:
             continue
         norm = normalize_tag_slug(r.slug)
         canonical_zh = _CANONICAL_DISPLAY.get(norm)
-        is_placeholder = normalize_tag_slug(r.display_zh) == norm
-        display_zh = canonical_zh if (is_placeholder and canonical_zh) else r.display_zh
+        # Canonical (vocabulary) label is authoritative for in-vocab tags; the DB row only
+        # contributes its tier (there is no admin rename UI for canonical tags). This also
+        # un-freezes the label for tags auto-registered before a vocab edit — e.g. an old
+        # "IPO"→"首次公開發行" row now renders the updated "IPO" with no data backfill.
+        # Off-vocab tags keep their DB display_zh (the only place their label can come from).
+        display_zh = canonical_zh if canonical_zh else r.display_zh
         by_norm[norm] = {"slug": r.slug, "display_zh": display_zh, "tier": r.tier}
     return [by_norm[k] for k in sorted(by_norm)]
