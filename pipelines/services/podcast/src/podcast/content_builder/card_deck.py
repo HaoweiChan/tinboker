@@ -55,7 +55,9 @@ section {{
   display: flex; flex-direction: column; justify-content: flex-start;
   background: {BG}; color: {TEXT};
   font-family: {_FONT};
-  padding: 84px 88px 104px; margin: 0;
+  /* Bottom padding reserves the watermark band (it sits ~52–92px from the bottom),
+     so bounded+clipped content can never run under the logo. */
+  padding: 84px 88px 132px; margin: 0;
   letter-spacing: .2px;
 }}
 /* Brand watermark, bottom-right: ONE ::before lockup — logo mark (left,
@@ -80,16 +82,19 @@ section.cover .rule {{ width: 132px; height: 10px; background: {accent}; border-
 section.cover .hook {{ font-size: 40px; line-height: 1.6; font-weight: 500; color: {SOFT}; }}
 /* ---- Theme card ---- */
 section.theme h2 {{
-  font-size: 52px; font-weight: 800; line-height: 1.3; margin: 0 0 44px; color: {TEXT};
-  padding: 20px 28px 20px 26px;
+  font-size: 52px; font-weight: 800; line-height: 1.3; margin: 0 0 36px; color: {TEXT};
+  padding: 20px 28px 20px 26px; flex: 0 0 auto;
   border-left: 12px solid {accent};
   background: linear-gradient(90deg, {accent_soft}, rgba(0,0,0,0));
 }}
-section.theme ul {{ list-style: none; padding: 0; margin: 0; }}
+/* Bound the bullet list to the space left after the heading and clip any overflow,
+   so a dense card never spills into the watermark band (it clips cleanly instead). */
+section.theme ul {{ list-style: none; padding: 0; margin: 0; flex: 1 1 auto; min-height: 0; overflow: hidden; }}
 section.theme li {{
-  position: relative; padding-left: 40px; margin-bottom: 34px;
-  font-size: 37px; line-height: 1.62; font-weight: 500; color: {SOFT};
+  position: relative; padding-left: 40px; margin-bottom: 26px;
+  font-size: 37px; line-height: 1.52; font-weight: 500; color: {SOFT};
 }}
+section.theme li:last-child {{ margin-bottom: 0; }}
 section.theme li::before {{ content: "▍"; position: absolute; left: 0; top: 2px; color: {accent}; font-size: 34px; }}
 section.theme .ts {{ color: {accent}; font-weight: 700; font-size: .82em; white-space: nowrap; }}
 /* ---- Sentiment badges (5-tier enum → low-noise chip, dark surface) ---- */
