@@ -55,6 +55,22 @@ def test_cover_then_theme_cards_with_timestamp_on_last_bullet():
     assert all(c["image_url"] is None for c in cards)               # filled later by upload step
 
 
+def test_cover_duplicate_memo_slide_is_dropped():
+    # The marp_writer sometimes echoes the cover as a "PODCAST MEMO" slide carrying a
+    # hallucinated show name (e.g. 股癌); it must never become a theme card.
+    state = _state(
+        {"title": "T", "slides": [
+            {"heading": "PODCAST MEMO", "bullet_points": ["PODCAST MEMO", "股癌", "2026.06.26"], "start_time": 0},
+            {"heading": "真主題", "bullet_points": ["重點"], "start_time": 1000},
+        ]},
+        ["洞見"],
+    )
+    cards = sc.build_social_cards(state)["social_cards"]
+    assert [c["kind"] for c in cards] == ["cover", "theme"]
+    assert cards[1]["title"] == "真主題"
+    assert all("股癌" not in b for c in cards for b in c.get("bullets", []))
+
+
 def test_bulletless_slide_is_skipped():
     # A Marp title slide (no bullets) must not become a card — it would desync indices.
     state = _state(
