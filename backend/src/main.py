@@ -249,6 +249,16 @@ async def lifespan(app: FastAPI):
 
     asyncio.create_task(_notify_bg())
 
+    # Process scheduled social media posts. Runs every 60 seconds.
+    async def _scheduled_posts_bg():
+        try:
+            from src.services.scheduled_social_worker import run_periodic_scheduled_posts
+            await run_periodic_scheduled_posts(interval_seconds=60.0)
+        except Exception as e:
+            print(f"Warning: scheduled posts worker stopped: {e}")
+
+    asyncio.create_task(_scheduled_posts_bg())
+
     yield
 
     # --- Shutdown ---
