@@ -45,7 +45,7 @@ def test_cover_then_theme_cards_with_timestamp_on_last_bullet():
     )
     cards = sc.build_social_cards(state)["social_cards"]
 
-    assert cards[0] == {"kind": "cover", "title": "本集重點",
+    assert cards[0] == {"kind": "cover", "title": "本集重點", "subtitle": "EP",
                         "bullets": ["台積電優於預期", "AI 續強"], "start_time_ms": None, "image_url": None}
     assert cards[1]["kind"] == "theme"
     assert cards[1]["title"] == "台積電法說會"

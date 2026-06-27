@@ -153,7 +153,7 @@ export const SectorPage: React.FC = () => {
   // Never flash the raw exposure id (e.g. "sector_passive_components") while the
   // request is in flight or if it fails — show a skeleton, then the resolved name
   // (or a generic label as a last resort).
-  const titleText = displayName || '產業 / 主題';
+  const titleText = displayName || '產業 / 題材';
 
   // A sector is a special kind of tag — follow it by its display name so it unifies with
   // the namesake topic (and shows up under 追蹤話題 like any other tag subscription).
@@ -165,7 +165,7 @@ export const SectorPage: React.FC = () => {
     <>
       <SEO
         title={titleText}
-        description={`所有關於「${titleText}」產業 / 主題的 Podcast 摘要與市場討論。`}
+        description={`所有關於「${titleText}」產業 / 題材的 Podcast 摘要與市場討論。`}
       />
       <PageContent>
         <div className="flex items-start gap-5 bg-card border border-border rounded-md p-5 sm:p-6 mb-[18px]">

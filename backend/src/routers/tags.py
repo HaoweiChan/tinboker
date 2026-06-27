@@ -10,6 +10,8 @@ from src.schemas.sector import (
     EpisodesBySectorResponse,
     IndustryPerformanceItem,
     IndustryPerformanceResponse,
+    ThemePerformanceItem,
+    ThemePerformanceResponse,
     SectorBoardItem,
     SectorBoardMember,
     SectorBoardResponse,
@@ -207,6 +209,27 @@ async def get_industry_performance(db: Session = Depends(get_session)):
         raise HTTPException(status_code=500, detail=f"Error fetching industry performance: {str(e)}")
 
 
+@router.get("/sectors/theme-performance", response_model=ThemePerformanceResponse)
+async def get_theme_performance(db: Session = Depends(get_session)):
+    """Theme (exposure_type='theme') performance for the /topics 題材 bubble chart.
+
+    Theme-appropriate dimensions: discussion volume (episode_count), average member daily
+    % change, and aggregate constituent daily trading value (TW-only via FinMind) as the
+    bubble size. Admin-hidden exposures are excluded.
+    """
+    try:
+        items = await podcast_service.theme_performance()
+        hidden = hidden_sector_exposure_ids(db)
+        return ThemePerformanceResponse(
+            themes=[
+                ThemePerformanceItem(**i) for i in items
+                if i.get("exposure_id") not in hidden
+            ]
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching theme performance: {str(e)}")
+
+
 @router.get("/episodes/by-sector/{exposure_id}", response_model=EpisodesBySectorResponse)
 async def get_episodes_by_sector(
     exposure_id: str = Path(..., description="Sector or theme exposure ID (e.g. 'sector_passive_components')"),
@@ -227,6 +250,8 @@ async def get_episodes_by_sector(
             exposure_id=result["exposure_id"],
             display_name=result["display_name"],
             exposure_type=result["exposure_type"],
+            icon_id=result.get("icon_id"),
+            color_hex=result.get("color_hex"),
             resolved_tickers=[SectorResolvedTicker(**t) for t in result["resolved_tickers"]],
             episodes=result["episodes"],
             total=result["total"],

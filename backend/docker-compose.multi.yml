@@ -33,6 +33,11 @@ services:
       FIRESTORE_DATABASE_ID: graphfolio-db
       RELEASE_EPISODE_MAX_AGE_DAYS: "60"
       CORS_ORIGINS: '["https://tinboker.com","https://www.tinboker.com"]'
+      # Marp render service runs as separate infra on its own docker network, only
+      # reachable via its host-published :5004 — so go through the host gateway.
+      MARP_SERVICE_URL: http://host.docker.internal:5004
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./gcp-service-account.json:/app/gcp-service-account.json:ro
     depends_on:
@@ -70,6 +75,9 @@ services:
       FIRESTORE_DATABASE_ID: graphfolio-db
       RELEASE_EPISODE_MAX_AGE_DAYS: "60"
       CORS_ORIGINS: '["https://dev.tinboker.com","http://localhost:5173","http://localhost:3000"]'
+      MARP_SERVICE_URL: http://host.docker.internal:5004
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./gcp-service-account.json:/app/gcp-service-account.json:ro
     depends_on:
@@ -107,6 +115,9 @@ services:
       FIRESTORE_DATABASE_ID: graphfolio-db
       RELEASE_EPISODE_MAX_AGE_DAYS: "60"
       CORS_ORIGINS: '["https://tinboker.com","https://dev.tinboker.com","https://staging.tinboker.com","http://localhost:5173","http://localhost:3000"]'
+      MARP_SERVICE_URL: http://host.docker.internal:5004
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./gcp-service-account.json:/app/gcp-service-account.json:ro
     depends_on:
