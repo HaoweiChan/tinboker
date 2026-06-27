@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import { AuthRequiredError } from '@/hooks/useRequireAuth';
 import { cn } from '@/lib/utils';
 
 const MAX_CHARS = 500;
@@ -36,7 +37,9 @@ export const CommentForm: React.FC<CommentFormProps> = ({
       await onSubmit(trimmed, isPublic);
       setContent('');
       setIsPublic(true);
-    } catch {
+    } catch (e) {
+      // Login required: the prompt is already open; keep the typed text.
+      if (e instanceof AuthRequiredError) return;
       toast.error('留言失敗，請稍後再試。');
     } finally {
       setSubmitting(false);

@@ -164,7 +164,7 @@ export const Sidebar: React.FC = () => {
                     loading="lazy"
                   />
                 ) : (
-                  (user.initials || user.name || user.email || '?').charAt(0).toUpperCase()
+                  (user?.initials || user?.name || user?.email || '?').charAt(0).toUpperCase()
                 )}
               </span>
               {expanded && (

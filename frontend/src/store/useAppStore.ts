@@ -30,6 +30,7 @@ interface AppState {
   token: string | null;
   refreshToken: string | null;
   isAuthReady: boolean;
+  loginPromptOpen: boolean;
 
   // Graph visualization
   selectedConcept: string | null;
@@ -71,6 +72,8 @@ interface AppState {
   updateUser: (patch: Partial<User>) => void;
   logout: () => void;
   setAuthReady: (ready: boolean) => void;
+  openLoginPrompt: () => void;
+  closeLoginPrompt: () => void;
 
   // User preference actions
   toggleWatchlist: (ticker: string) => Promise<void>;
@@ -119,6 +122,7 @@ export const useAppStore = create<AppState>()(
       token: null,
       refreshToken: null,
       isAuthReady: false,
+      loginPromptOpen: false,
       selectedConcept: null,
       selectedCompany: null,
       nodeDisplayMode: 'default',
@@ -179,6 +183,8 @@ export const useAppStore = create<AppState>()(
       updateUser: (patch) => set((state) => ({ user: state.user ? { ...state.user, ...patch } : state.user })),
       logout: () => set(() => ({ user: null, token: null, refreshToken: null })),
       setAuthReady: (ready) => set(() => ({ isAuthReady: ready })),
+      openLoginPrompt: () => set(() => ({ loginPromptOpen: true })),
+      closeLoginPrompt: () => set(() => ({ loginPromptOpen: false })),
 
       toggleWatchlist: async (ticker) => {
         const { token, isAuthReady } = useAppStore.getState();

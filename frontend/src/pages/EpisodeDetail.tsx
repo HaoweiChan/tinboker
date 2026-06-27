@@ -14,6 +14,7 @@ import { parseSummaryTopicSections, parseTimestampedSections, skippableSectionsF
 import { usePlayerStore } from '@/store/usePlayerStore';
 import { useAppStore, useEpisodeBookmarks } from '@/store/useAppStore';
 import { CommentSection } from '@/components/episode/CommentSection';
+import { useRequireAuth } from '@/hooks/useRequireAuth';
 import { useStockPriceMap } from '@/hooks/useStockPriceMap';
 import { useStockPriceSinceMap, isRecentEpisode } from '@/hooks/useStockPriceSinceMap';
 import { useTranslationMap } from '@/hooks/useTranslationMap';
@@ -111,6 +112,7 @@ export const EpisodeDetail: React.FC = () => {
   const podcastName = searchParams.get('podcast') || '';
   const { playEpisode, requestSeek } = usePlayerStore();
   const { toggleEpisodeBookmark } = useAppStore();
+  const { guard } = useRequireAuth();
   const episodeBookmarks = useEpisodeBookmarks();
   const tagLabels = useTagLabels();
   const hiddenTagSlugs = useHiddenTagSlugs();
@@ -307,7 +309,7 @@ export const EpisodeDetail: React.FC = () => {
 
   const onBookmark = () => {
     if (!episode) return;
-    toggleEpisodeBookmark(episode.podcast_name, episode.id);
+    guard(() => toggleEpisodeBookmark(episode.podcast_name, episode.id));
   };
 
   const onShare = async () => {

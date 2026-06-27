@@ -8,6 +8,7 @@ import { apiEpisodeToCardV2 } from '@/components/redesign/episodeAdapter';
 import { TickerInsightCard } from '@/components/financial/TickerInsightCard';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/store/useAppStore';
+import { useRequireAuth } from '@/hooks/useRequireAuth';
 import { useStockTrendColor } from '@/hooks/useStockTrendColor';
 import { aggregateSentiment, dominantSentiment, normalizeSentiment, type SentimentBreakdown } from '@/lib/sentiment';
 import { getStockByTicker, getEpisodesByTicker, type Episode as ApiEpisode } from '@/services/api';
@@ -39,6 +40,7 @@ const StockHeaderCard: React.FC<{ symbol: string }> = ({ symbol }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const { watchlist, toggleWatchlist, theme } = useAppStore();
+  const { guard } = useRequireAuth();
   const [timeframe, setTimeframe] = useState<TimeframeOption>('1D');
   const [activeIndicators, setActiveIndicators] = useState<string[]>(['MA5', 'MA20', 'MA60']);
   const [subChart, setSubChart] = useState<string>('Volume');
@@ -217,7 +219,7 @@ const StockHeaderCard: React.FC<{ symbol: string }> = ({ symbol }) => {
         </div>
         <button
           type="button"
-          onClick={() => toggleWatchlist(symbol)}
+          onClick={() => guard(() => toggleWatchlist(symbol))}
           className={cn(
             'inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium transition-colors shrink-0',
             isWatchlisted ? 'bg-card border border-border text-foreground hover:bg-muted' : 'bg-foreground text-background hover:opacity-90',
