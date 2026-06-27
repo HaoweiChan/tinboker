@@ -320,3 +320,35 @@ class PipelineConfigOverride(Base):
     updated_by = Column(String(100), nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ScheduledSocialPost(Base):
+    """
+    A scheduled social media post (either an episode publish or a free-form promo).
+    """
+    __tablename__ = "scheduled_social_posts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    post_type = Column(String(50), nullable=False)  # "episode" | "promo"
+    episode_id = Column(String(255), nullable=True)  # for episode posts
+
+    # Post content snapshot
+    text = Column(Text, nullable=False, default="")
+    media = Column(JSON, nullable=False, default=list)  # [{type, path, filename, url}]
+    comments = Column(JSON, nullable=False, default=list)  # for promo: [str], for episode: [{heading, text}]
+    platforms = Column(JSON, nullable=False, default=list)  # ["threads", "facebook"]
+
+    # Scheduling & status
+    scheduled_for = Column(DateTime, nullable=False, index=True)
+    status = Column(String(20), nullable=False, default="pending", index=True)  # "pending", "processing", "posted", "failed"
+    error_message = Column(Text, nullable=True)
+    posted_at = Column(DateTime, nullable=True)
+    published_results = Column(JSON, nullable=True)  # response log from Meta APIs
+
+    created_by = Column(String(100), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self) -> str:
+        return f"<ScheduledSocialPost(id={self.id}, type='{self.post_type}', status='{self.status}', scheduled_for='{self.scheduled_for}')>"
+

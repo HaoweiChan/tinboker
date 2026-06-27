@@ -9,7 +9,7 @@
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Image as ImageIcon, Film, Send, Eye, Trash2, Upload, AlertTriangle, MessageSquare, Plus, Save, FilePlus2, ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { Image as ImageIcon, Film, Send, Eye, Trash2, Upload, AlertTriangle, MessageSquare, Plus, Save, FilePlus2, ChevronLeft, ChevronRight, X, Clock } from 'lucide-react';
 import {
   uploadPromoMedia,
   publishPromo,
@@ -21,6 +21,7 @@ import {
   type PromoDraftMeta,
   type PromoPublishResult,
 } from '@/services/api/adminPromo';
+import { schedulePost } from '@/services/api/adminSocial';
 
 const THREADS_MAX_CHARS = 500;
 const THREADS_MAX_MEDIA = 20;
@@ -68,7 +69,11 @@ function summarize(result: PromoPublishResult): string {
     .join('　');
 }
 
-export const PromoComposer: React.FC = () => {
+export interface PromoComposerProps {
+  onScheduled?: () => void;
+}
+
+export const PromoComposer: React.FC<PromoComposerProps> = ({ onScheduled }) => {
   const [text, setText] = useState('');
   const [media, setMedia] = useState<PromoMedia[]>([]);
   const [comments, setComments] = useState<string[]>([]);
@@ -83,6 +88,37 @@ export const PromoComposer: React.FC = () => {
   const [draftName, setDraftName] = useState('');
   const [savingDraft, setSavingDraft] = useState(false);
   const [preview, setPreview] = useState<PromoMedia | null>(null);
+
+  const [scheduling, setScheduling] = useState(false);
+  const [scheduleTime, setScheduleTime] = useState('');
+
+  const handleSchedule = useCallback(async () => {
+    if (!scheduleTime) return;
+    setScheduling(true);
+    setMsg(null);
+    try {
+      const targetTime = new Date(scheduleTime).toISOString();
+      const selectedPlatforms = [toThreads && 'threads', toFacebook && 'facebook'].filter(Boolean) as string[];
+      await schedulePost({
+        post_type: 'promo',
+        text,
+        media,
+        comments,
+        platforms: selectedPlatforms,
+        scheduled_for: targetTime,
+      });
+      alert('排程成功！');
+      setScheduleTime('');
+      if (onScheduled) {
+        onScheduled();
+      }
+    } catch (e) {
+      console.error('[promo] schedule failed', e);
+      alert('排程失敗，請看 console');
+    } finally {
+      setScheduling(false);
+    }
+  }, [text, media, comments, toThreads, toFacebook, scheduleTime, onScheduled]);
 
   const refreshDrafts = useCallback(async () => {
     try {
@@ -421,23 +457,44 @@ export const PromoComposer: React.FC = () => {
       </div>
 
       {/* Actions */}
-      <div className="flex flex-wrap items-center gap-3">
-        <button
-          onClick={() => run(true)}
-          disabled={!canSubmit}
-          title="不實際發佈，只檢查每個平台會怎麼貼"
-          className="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-base font-semibold text-foreground hover:bg-muted disabled:opacity-60"
-        >
-          <Eye className="h-4 w-4" /> 預覽
-        </button>
-        <button
-          onClick={() => run(false)}
-          disabled={!canSubmit}
-          className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2 text-base font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
-        >
-          <Send className={`h-4 w-4 ${busy ? 'animate-pulse' : ''}`} />
-          {busy ? '處理中…' : '發佈'}
-        </button>
+      <div className="flex flex-wrap items-center gap-4">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => run(true)}
+            disabled={!canSubmit || busy || scheduling}
+            title="不實際發佈，只檢查每個平台會怎麼貼"
+            className="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-base font-semibold text-foreground hover:bg-muted disabled:opacity-60"
+          >
+            <Eye className="h-4 w-4" /> 預覽
+          </button>
+          <button
+            onClick={() => run(false)}
+            disabled={!canSubmit || busy || scheduling}
+            className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2 text-base font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+          >
+            <Send className={`h-4 w-4 ${busy ? 'animate-pulse' : ''}`} />
+            {busy ? '處理中…' : '發佈'}
+          </button>
+        </div>
+
+        {/* Scheduling Controls */}
+        <div className="flex items-center gap-2 border-l border-border pl-4">
+          <input
+            type="datetime-local"
+            value={scheduleTime}
+            onChange={(e) => setScheduleTime(e.target.value)}
+            className="rounded-lg border border-input bg-card px-2 py-1.5 text-base text-foreground focus:border-accent-info focus:outline-none"
+          />
+          <button
+            onClick={handleSchedule}
+            disabled={!canSubmit || !scheduleTime || scheduling || busy}
+            title="設定日期時間後排程發佈"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-primary px-3 py-2 text-base font-semibold text-primary hover:bg-primary/10 disabled:opacity-60"
+          >
+            <Clock className="h-4 w-4" />
+            {scheduling ? '排程中…' : '排程發佈'}
+          </button>
+        </div>
       </div>
 
       {msg && (
