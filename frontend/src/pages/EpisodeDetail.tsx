@@ -14,10 +14,11 @@ import { parseSummaryTopicSections, parseTimestampedSections, skippableSectionsF
 import { usePlayerStore } from '@/store/usePlayerStore';
 import { useAppStore, useEpisodeBookmarks } from '@/store/useAppStore';
 import { CommentSection } from '@/components/episode/CommentSection';
+import { useRequireAuth } from '@/hooks/useRequireAuth';
 import { useStockPriceMap } from '@/hooks/useStockPriceMap';
 import { useStockPriceSinceMap, isRecentEpisode } from '@/hooks/useStockPriceSinceMap';
 import { useTranslationMap } from '@/hooks/useTranslationMap';
-import { useTagLabels, tagLabelFor } from '@/hooks/useTagLabels';
+import { useTagLabels, useHiddenTagSlugs, tagLabelFor, normalizeTagSlug } from '@/hooks/useTagLabels';
 import { useEpisodeSentimentMap } from '@/hooks/useEpisodeSentimentMap';
 import { EpisodeInsightCard, type EpisodeInsight } from '@/components/episode/EpisodeInsightCard';
 import { SummaryMarkdown } from '@/components/episode/SummaryMarkdown';
@@ -111,8 +112,10 @@ export const EpisodeDetail: React.FC = () => {
   const podcastName = searchParams.get('podcast') || '';
   const { playEpisode, requestSeek } = usePlayerStore();
   const { toggleEpisodeBookmark } = useAppStore();
+  const { guard } = useRequireAuth();
   const episodeBookmarks = useEpisodeBookmarks();
   const tagLabels = useTagLabels();
+  const hiddenTagSlugs = useHiddenTagSlugs();
 
   const [episode, setEpisode] = useState<ApiEpisode | null>(null);
   const [podcastImageUrl, setPodcastImageUrl] = useState<string | null>(null);
@@ -244,6 +247,12 @@ export const EpisodeDetail: React.FC = () => {
     [episode],
   );
 
+  // Drop admin-hidden off-vocab tags (e.g. a junk "TaiwanStocks") from the hero chips.
+  const heroTags = useMemo(
+    () => (episode?.tags ?? []).filter((t) => !hiddenTagSlugs.has(normalizeTagSlug(t))),
+    [episode, hiddenTagSlugs],
+  );
+
   const title = episode?.episode_title || (episode?.episode_number != null ? `EP ${episode.episode_number}` : '集數摘要');
   const name = episode?.podcast_name || podcastName || '節目';
   const episodeInsight = useMemo(() => episodeInsightFrom(episode, title), [episode, title]);
@@ -300,7 +309,7 @@ export const EpisodeDetail: React.FC = () => {
 
   const onBookmark = () => {
     if (!episode) return;
-    toggleEpisodeBookmark(episode.podcast_name, episode.id);
+    guard(() => toggleEpisodeBookmark(episode.podcast_name, episode.id));
   };
 
   const onShare = async () => {
@@ -410,9 +419,9 @@ export const EpisodeDetail: React.FC = () => {
                 </div>
               </div>
               <h1 className="text-2xl font-semibold tracking-[-0.015em] leading-[1.3]">{title}</h1>
-              {((episode.tags?.length ?? 0) > 0 || (episode.sector_exposures?.length ?? 0) > 0) && (
+              {(heroTags.length > 0 || (episode.sector_exposures?.length ?? 0) > 0) && (
                 <div className="flex gap-1.5 flex-wrap mt-3">
-                  {episode.tags?.slice(0, MAX_HERO_TAGS).map((t) => (
+                  {heroTags.slice(0, MAX_HERO_TAGS).map((t) => (
                     <Link key={t} to={`/topics/${encodeURIComponent(t)}`} className="text-2xs px-2.5 py-0.5 rounded-full bg-primary/15 text-primary font-medium hover:bg-primary/25 transition-colors">#{tagLabelFor(t, tagLabels)}</Link>
                   ))}
                   {/* Sectors render in the same row, distinguished by the blue tint + their

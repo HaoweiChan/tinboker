@@ -87,6 +87,7 @@ class FacebookInsightsService:
         fans: Optional[int] = None
         followers: Optional[int] = None
         metrics: dict[str, int] = {}
+        series: list[dict] = []
         detail: Optional[str] = None
 
         try:
@@ -111,9 +112,30 @@ class FacebookInsightsService:
                         {"metric": ",".join(PAGE_DAILY_METRICS), "period": "day",
                          "since": since, "until": until},
                     )
+                    series_by_date: dict[str, dict] = {}
                     for item in (payload.get("data") or []):
-                        if item.get("name"):
-                            metrics[item["name"]] = self._sum_metric(item)
+                        metric_name = item.get("name")  # not `name` — that's the Page name
+                        if not metric_name:
+                            continue
+                        metrics[metric_name] = self._sum_metric(item)
+                        for v in item.get("values", []) or []:
+                            day = ((v or {}).get("end_time") or "")[:10]
+                            if not day:
+                                continue
+                            row = series_by_date.setdefault(day, {"date": day})
+                            try:
+                                row[metric_name] = int((v or {}).get("value", 0) or 0)
+                            except (TypeError, ValueError):
+                                row[metric_name] = 0
+                    series = [series_by_date[k] for k in sorted(series_by_date)]
+                    # The call succeeded. Facebook omits a metric from the response
+                    # when there was zero activity in the window (common for a new or
+                    # low-traffic page) — that's a real 0, not "unavailable". Default
+                    # the requested metrics to 0 so the UI shows 0 instead of "—".
+                    # (Only here, inside the success path — a failed call below leaves
+                    # metrics empty so the UI correctly shows "—" + a detail reason.)
+                    for requested in PAGE_DAILY_METRICS:
+                        metrics.setdefault(requested, 0)
                 except Exception as e:
                     detail = detail or f"Insights failed: {e}"
                     logger.warning("Facebook page insights failed: %s", e)
@@ -129,5 +151,6 @@ class FacebookInsightsService:
             "fans": fans,
             "followers": followers,
             "metrics": metrics,
+            "series": series,
             **({"detail": detail} if detail and not available else {}),
         }

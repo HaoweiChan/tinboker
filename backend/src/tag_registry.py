@@ -166,19 +166,68 @@ def auto_register(db: Session, slugs: list[str], min_episodes: int = 3) -> int:
     Called with Firestore tag slugs that have at least *min_episodes* episodes.
     Slugs already in the registry are silently skipped.
     """
-    existing = {r[0] for r in db.query(TagRegistry.slug).all()}
-    new_slugs = [s for s in slugs if s not in existing]
+    # Store + compare on the NORMALIZED slug so case/separator variants (AI vs ai,
+    # ai_chip vs aichip) can never create duplicate rows.
+    existing = {normalize_tag_slug(r[0]) for r in db.query(TagRegistry.slug).all()}
+    seen: set[str] = set()
+    new_slugs: list[str] = []
+    for s in slugs:
+        n = normalize_tag_slug(s)
+        if n and n not in existing and n not in seen:
+            seen.add(n)
+            new_slugs.append(n)
     if not new_slugs:
         return 0
-    for slug in new_slugs:
+    for slug in new_slugs:  # already normalized
         # Seed the curated zh-TW label when the slug is in the canonical vocabulary,
         # so auto-discovered tags render in Chinese immediately instead of as their
         # raw English slug (and so the DB row can never mask the canonical label).
-        display_zh = _CANONICAL_DISPLAY.get(normalize_tag_slug(slug), slug)
+        display_zh = _CANONICAL_DISPLAY.get(slug, slug)
         db.add(TagRegistry(slug=slug, display_zh=display_zh, tier=TIER_HIDDEN))
     db.commit()
     logger.info("Auto-registered %d new tags as hidden", len(new_slugs))
     return len(new_slugs)
+
+
+def consolidate_tag_registry(db: Session) -> int:
+    """Merge duplicate kind='tag' rows that share a normalized slug onto ONE canonical
+    row (slug = normalized), carrying any 'hidden' curation and the best zh-TW label.
+
+    Self-heals case/separator duplicates (ai/AI, ai_chip/aichip) and drops CJK-only
+    slugs that normalize to an empty key. Runs on backend startup; idempotent — a no-op
+    once the registry is canonical. Mirrors the sector self-heal in sync_sectors.
+    """
+    rows = db.query(TagRegistry).filter(TagRegistry.kind == KIND_TAG).all()
+    groups: dict[str, list[TagRegistry]] = {}
+    for r in rows:
+        groups.setdefault(normalize_tag_slug(r.slug), []).append(r)
+
+    removed = 0
+    for norm, grp in groups.items():
+        if not norm:  # un-normalizable (CJK-only) slug — never a valid tag key
+            for r in grp:
+                db.delete(r)
+                removed += 1
+            continue
+        if len(grp) == 1 and grp[0].slug == norm:
+            continue  # already canonical
+        survivor = next((r for r in grp if r.slug == norm), grp[0])
+        any_hidden = any(r.tier == TIER_HIDDEN for r in grp)
+        better_label = next((r.display_zh for r in grp if r.display_zh and r.display_zh != r.slug), None)
+        for r in grp:
+            if r is not survivor:
+                db.delete(r)
+                removed += 1
+        db.flush()  # release duplicate slugs (unique index) before renaming the survivor
+        survivor.slug = norm
+        if any_hidden:
+            survivor.tier = TIER_HIDDEN
+        if better_label:
+            survivor.display_zh = better_label
+    db.commit()
+    if removed:
+        logger.info("Consolidated tag registry: removed %d duplicate/junk rows", removed)
+    return removed
 
 
 def sync_sectors(db: Session, sectors: list[dict]) -> int:
@@ -221,8 +270,33 @@ def sync_sectors(db: Session, sectors: list[dict]) -> int:
                 color_hex=color_hex,
             ))
             new_count += 1
+
+    # Self-heal the theme_ -> sector_ unification: drop superseded ``theme_<id>`` sector
+    # rows once their ``sector_<id>`` equivalent exists, carrying any admin 'hidden'
+    # curation onto the survivor. Idempotent — a no-op once the rename has settled.
+    synced_ids = {str(s.get("exposure_id") or "") for s in sectors}
+    db.flush()  # make rows added above queryable for the survivor lookup
+    removed = 0
+    for row in [r for r in by_exposure.values() if str(r.exposure_id or "").startswith("theme_")]:
+        target = normalize_exposure_id(row.exposure_id)
+        if target not in synced_ids:
+            continue  # the exposure is gone from the universe entirely; leave it
+        if row.tier == TIER_HIDDEN:
+            survivor = (
+                db.query(TagRegistry)
+                .filter(TagRegistry.kind == KIND_SECTOR, TagRegistry.exposure_id == target)
+                .first()
+            )
+            if survivor is not None and survivor.tier != TIER_HIDDEN:
+                survivor.tier = TIER_HIDDEN
+        db.delete(row)
+        removed += 1
+
     db.commit()
-    logger.info("Synced sectors: %d new, %d refreshed", new_count, len(sectors) - new_count)
+    logger.info(
+        "Synced sectors: %d new, %d refreshed, %d legacy theme_ rows removed",
+        new_count, len(sectors) - new_count, removed,
+    )
     return new_count
 
 
@@ -239,6 +313,19 @@ def hidden_tag_slugs(db: Session) -> set[str]:
         .all()
     )
     return {normalize_tag_slug(r[0]) for r in rows if r[0]}
+
+
+def hidden_offvocab_slugs(db: Session) -> set[str]:
+    """NORMALIZED slugs of admin-hidden tags that are NOT in the canonical vocabulary.
+
+    Off-vocabulary junk an episode may still carry (e.g. an LLM-emitted ``TaiwanStocks``
+    duplicating the curated 台股/``TWStocks``) that the admin has hidden. The episode hero
+    filters its tag chips against this set so a hidden junk tag stops surfacing there.
+    In-vocab tags are excluded on purpose — a real topic stays on episode pages even when
+    an auto-discover run parked it at tier='hidden'; its TRENDING visibility is curated
+    separately.
+    """
+    return hidden_tag_slugs(db) - canonical_tag_slugs()
 
 
 def hidden_sector_exposure_ids(db: Session) -> set[str]:
@@ -283,14 +370,14 @@ def registry_snapshot(db: Session) -> list[dict]:
     return the FULL label catalogue — the canonical extraction vocabulary plus
     every DB row (all tiers) — so any agent-emitted tag renders in zh-TW across
     the site (episode hero, topic pages, episode cards), not just the curated
-    trending subset. DB rows win over the canonical baseline (admin curation
-    overrides) and carry their real tier.
+    trending subset. A DB row contributes its real TIER; for the DISPLAY label the
+    canonical vocabulary is authoritative (in-vocab tags have no admin rename UI, and
+    an auto-registered row must never freeze a label across a later vocab edit). Off-
+    vocab tags — not in the vocabulary — take their label from the DB row.
 
     Entries are keyed by the NORMALIZED slug so the catalogue and the DB never
     emit two rows that the frontend would collapse to the same lookup key (e.g.
     canonical ``SupplyChain`` vs. DB ``supply_chain`` → both ``supplychain``).
-    A DB row whose ``display_zh`` is just its own slug is an auto-registered
-    English placeholder; it must NOT mask a curated canonical label.
     """
     by_norm: dict[str, dict] = {
         norm_slug: {"slug": norm_slug, "display_zh": zh, "tier": TIER_HIDDEN}
@@ -304,7 +391,11 @@ def registry_snapshot(db: Session) -> list[dict]:
             continue
         norm = normalize_tag_slug(r.slug)
         canonical_zh = _CANONICAL_DISPLAY.get(norm)
-        is_placeholder = normalize_tag_slug(r.display_zh) == norm
-        display_zh = canonical_zh if (is_placeholder and canonical_zh) else r.display_zh
+        # Canonical (vocabulary) label is authoritative for in-vocab tags; the DB row only
+        # contributes its tier (there is no admin rename UI for canonical tags). This also
+        # un-freezes the label for tags auto-registered before a vocab edit — e.g. an old
+        # "IPO"→"首次公開發行" row now renders the updated "IPO" with no data backfill.
+        # Off-vocab tags keep their DB display_zh (the only place their label can come from).
+        display_zh = canonical_zh if canonical_zh else r.display_zh
         by_norm[norm] = {"slug": r.slug, "display_zh": display_zh, "tier": r.tier}
     return [by_norm[k] for k in sorted(by_norm)]

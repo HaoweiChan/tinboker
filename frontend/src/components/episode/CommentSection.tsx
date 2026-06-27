@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { useUser, useAppStore } from '@/store/useAppStore';
-import { LoginButton } from '@/components/auth/LoginButton';
+import { useRequireAuth } from '@/hooks/useRequireAuth';
 import { CommentForm } from './CommentForm';
 import { CommentList, type CommentWithReplies } from './CommentList';
 import { getEpisodeComments, postComment, deleteComment } from '@/services/api/comments';
@@ -36,6 +36,7 @@ interface CommentSectionProps {
 export const CommentSection: React.FC<CommentSectionProps> = ({ podcastName, episodeId, allowPrivate = false }) => {
   const user = useUser();
   const token = useAppStore((s) => s.token);
+  const { guard, ensure } = useRequireAuth();
 
   const [flatComments, setFlatComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -58,29 +59,39 @@ export const CommentSection: React.FC<CommentSectionProps> = ({ podcastName, epi
     fetchComments().finally(() => setLoading(false));
   }, [fetchComments]);
 
+  // ensure() opens the login prompt and throws when logged out, so the form
+  // keeps the user's typed text instead of clearing it on a failed submit.
   const handleSubmit = async (content: string, isPublic: boolean) => {
-    if (!token) return;
-    const newComment = await postComment(podcastName, episodeId, content, token, undefined, isPublic);
+    ensure();
+    const t = useAppStore.getState().token;
+    if (!t) return;
+    const newComment = await postComment(podcastName, episodeId, content, t, undefined, isPublic);
     // Append to flat list — tree rebuilds automatically
     setFlatComments((prev) => [...prev, newComment]);
   };
 
   const handleSubmitReply = async (content: string, parentId: string) => {
-    if (!token) return;
-    const newComment = await postComment(podcastName, episodeId, content, token, parentId);
+    ensure();
+    const t = useAppStore.getState().token;
+    if (!t) return;
+    const newComment = await postComment(podcastName, episodeId, content, t, parentId);
     setFlatComments((prev) => [...prev, newComment]);
     setReplyingTo(null);
   };
 
-  const handleDelete = async (commentId: string) => {
-    if (!token) return;
-    try {
-      await deleteComment(commentId, token);
-      setFlatComments((prev) => prev.filter((c) => c.id !== commentId));
-    } catch {
-      toast.error('刪除失敗，請稍後再試。');
-    }
-  };
+  // Delete is only surfaced on the user's own comments (logged-in), but guard
+  // anyway as defense-in-depth.
+  const handleDelete = (commentId: string) =>
+    guard(async () => {
+      const t = useAppStore.getState().token;
+      if (!t) return;
+      try {
+        await deleteComment(commentId, t);
+        setFlatComments((prev) => prev.filter((c) => c.id !== commentId));
+      } catch {
+        toast.error('刪除失敗，請稍後再試。');
+      }
+    });
 
   return (
     <section className="bg-card border border-border rounded-md p-5 sm:p-6">
@@ -88,20 +99,11 @@ export const CommentSection: React.FC<CommentSectionProps> = ({ podcastName, epi
         留言 {total > 0 && <span>({total})</span>}
       </h3>
 
-      {/* Login gate */}
-      {!user && (
-        <div className="flex flex-col items-start gap-3 mb-5 pb-5 border-b border-border">
-          <p className="text-base text-muted-foreground">登入後即可加入討論</p>
-          <LoginButton />
-        </div>
-      )}
-
-      {/* Top-level comment form */}
-      {user && token && (
-        <div className="mb-5 pb-5 border-b border-border">
-          <CommentForm onSubmit={handleSubmit} showVisibilityToggle={allowPrivate} />
-        </div>
-      )}
+      {/* Top-level comment form — visible to everyone; submitting while logged
+          out opens the login prompt and keeps the typed text. */}
+      <div className="mb-5 pb-5 border-b border-border">
+        <CommentForm onSubmit={handleSubmit} showVisibilityToggle={allowPrivate} />
+      </div>
 
       {/* Comment tree */}
       {loading ? (

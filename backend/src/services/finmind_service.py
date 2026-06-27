@@ -518,6 +518,32 @@ class FinMindAPIService:
             logger.error(f"Error listing all TW stocks: {e}")
         return out
 
+    def get_tw_market_caps(self) -> Dict[str, float]:
+        """Return ``{stock_id: latest market value in NT$}`` for all TW stocks.
+
+        One bulk ``TaiwanStockMarketValue`` download (no data_id → TW-wide, passes the
+        per-ticker gate in ``_make_request``). Used by the industry-performance board and
+        daily-cached by the caller. Returns ``{}`` when FinMind is unavailable so callers
+        degrade gracefully.
+        """
+        from datetime import date, timedelta
+        start = (date.today() - timedelta(days=10)).isoformat()
+        data = self._make_request(
+            {"dataset": "TaiwanStockMarketValue", "start_date": start}, timeout=60
+        )
+        if not data:
+            return {}
+        latest: Dict[str, tuple] = {}
+        for row in data.get("data") or []:
+            sid = str(row.get("stock_id", "")).strip()
+            mv = row.get("market_value")
+            d = str(row.get("date", ""))
+            if not sid or not mv:
+                continue
+            if sid not in latest or d > latest[sid][0]:
+                latest[sid] = (d, float(mv))
+        return {sid: v for sid, (_, v) in latest.items()}
+
     def list_news(self, ticker: str, limit: int = 10) -> List[Dict[str, Any]]:
         """
         Get news articles for a ticker.

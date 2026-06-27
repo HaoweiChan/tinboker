@@ -30,3 +30,6 @@ mcp.json
 .env
 .env.local
 .env.production
+
+# Cloudflare wrangler local dev cache
+.wrangler/

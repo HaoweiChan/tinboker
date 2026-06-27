@@ -1,0 +1,40 @@
+name: Snapshot Social Metrics
+
+# Meta's Graph APIs only return the CURRENT follower/fan count (no history), so to
+# chart audience growth we record a daily snapshot. This calls the dev backend's
+# POST /api/admin/analytics/snapshot (service-token auth); it writes to the shared
+# Postgres, so it's the same data every env reads. A missed day just leaves a gap in
+# the chart — harmless. Runnable on demand from the Actions tab.
+
+on:
+  schedule:
+    - cron: '0 4 * * *'        # 04:00 UTC daily
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  GCP_PROJECT_ID: gen-lang-client-0901363254
+  SNAPSHOT_URL: https://dev-api.tinboker.com/api/admin/analytics/snapshot
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Record snapshot
+        run: |
+          TOKEN=$(gcloud secrets versions access latest --secret=TINBOKER_SOCIAL_TOKEN --project="$GCP_PROJECT_ID")
+          if [ -z "$TOKEN" ]; then echo "::error::TINBOKER_SOCIAL_TOKEN not set in GSM"; exit 1; fi
+          code=$(curl -s -o /tmp/resp.json -w '%{http_code}' -X POST "$SNAPSHOT_URL" -H "Authorization: Bearer $TOKEN")
+          echo "HTTP $code"; cat /tmp/resp.json; echo
+          [ "$code" = "200" ] || { echo "::error::snapshot failed ($code)"; exit 1; }

@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 from src.database.postgres import get_session
 from src.schemas.sector import (
     EpisodesBySectorResponse,
+    IndustryPerformanceItem,
+    IndustryPerformanceResponse,
     SectorBoardItem,
     SectorBoardMember,
     SectorBoardResponse,
@@ -17,7 +19,12 @@ from src.schemas.sector import (
 )
 from src.services.podcast import PodcastService
 from src.services.translation_discovery import schedule_ticker_discovery
-from src.tag_registry import hidden_sector_exposure_ids, registry_snapshot, seed_if_empty
+from src.tag_registry import (
+    hidden_offvocab_slugs,
+    hidden_sector_exposure_ids,
+    registry_snapshot,
+    seed_if_empty,
+)
 
 router = APIRouter(prefix="/api", tags=["tags"])
 
@@ -42,6 +49,9 @@ class TagRegistryEntry(BaseModel):
 
 class TagRegistryResponse(BaseModel):
     tags: List[TagRegistryEntry]
+    # Normalized slugs of admin-hidden OFF-VOCAB tags. The frontend drops these from
+    # episode tag chips so a hidden junk tag (e.g. "TaiwanStocks") stops surfacing there.
+    hidden_slugs: List[str] = []
 
 
 class EpisodePreview(BaseModel):
@@ -79,7 +89,8 @@ async def get_tag_registry(db: Session = Depends(get_session)):
     """
     seed_if_empty(db)
     return TagRegistryResponse(
-        tags=[TagRegistryEntry(**e) for e in registry_snapshot(db)]
+        tags=[TagRegistryEntry(**e) for e in registry_snapshot(db)],
+        hidden_slugs=sorted(hidden_offvocab_slugs(db)),
     )
 
 
@@ -173,6 +184,27 @@ async def get_sector_board(db: Session = Depends(get_session)):
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching sector board: {str(e)}")
+
+
+@router.get("/sectors/industry-performance", response_model=IndustryPerformanceResponse)
+async def get_industry_performance(db: Session = Depends(get_session)):
+    """Industry (exposure_type='sector') performance for the /topics 產業 bubble chart.
+
+    Each row carries aggregate constituent market cap (NT$, TW-only via FinMind), the
+    members' average daily % change, and episode count. Admin-hidden sectors are excluded
+    (cheap per-request filter, same as the board).
+    """
+    try:
+        items = await podcast_service.industry_performance()
+        hidden = hidden_sector_exposure_ids(db)
+        return IndustryPerformanceResponse(
+            industries=[
+                IndustryPerformanceItem(**i) for i in items
+                if i.get("exposure_id") not in hidden
+            ]
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching industry performance: {str(e)}")
 
 
 @router.get("/episodes/by-sector/{exposure_id}", response_model=EpisodesBySectorResponse)

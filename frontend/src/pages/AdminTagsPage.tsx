@@ -3,8 +3,8 @@
  * discover new tags from Firestore, add/delete.
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, RefreshCw, Search, Trash2, Check, X, Eye, EyeOff, Radar, Layers, Pencil } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { Plus, RefreshCw, Search, Trash2, Check, X, Eye, EyeOff, Radar, Layers, Pencil, Lightbulb, ChevronUp, ChevronDown } from 'lucide-react';
 import {
   listAdminTags,
   createAdminTag,
@@ -12,7 +12,9 @@ import {
   deleteAdminTag,
   discoverTags,
   syncSectors,
+  getThemeCandidates,
   type AdminTagEntry,
+  type ThemeCandidate,
 } from '@/services/api/adminTags';
 import { SectorIcon } from '@/components/topics/SectorIcon';
 
@@ -49,6 +51,12 @@ export const AdminTagsPage: React.FC = () => {
   const [discoverMsg, setDiscoverMsg] = useState('');
   const [editKey, setEditKey] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
+  // Theme discovery queue (lazy: scans Firestore, so only load when opened)
+  const [candidatesOpen, setCandidatesOpen] = useState(false);
+  const [candidates, setCandidates] = useState<ThemeCandidate[]>([]);
+  const [candidatesLoading, setCandidatesLoading] = useState(false);
+  const [candidatesLoaded, setCandidatesLoaded] = useState(false);
+  const [expandedTerm, setExpandedTerm] = useState<string | null>(null);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search), 300);
@@ -72,6 +80,23 @@ export const AdminTagsPage: React.FC = () => {
   }, [tierFilter, kindFilter, debouncedSearch]);
 
   useEffect(() => { fetchTags(); }, [fetchTags]);
+
+  // Episodes column sort: off (registered-first default) -> desc -> asc -> off.
+  const [episodeSort, setEpisodeSort] = useState<'desc' | 'asc' | null>(null);
+  const toggleEpisodeSort = () =>
+    setEpisodeSort((s) => (s === null ? 'desc' : s === 'desc' ? 'asc' : null));
+  const displayTags = useMemo(() => {
+    if (!episodeSort) return tags;
+    const dir = episodeSort === 'asc' ? 1 : -1;
+    return [...tags].sort((a, b) => {
+      const av = a.episode_count, bv = b.episode_count;
+      // Uncounted (virtual "—") rows always sort to the bottom.
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      return (av - bv) * dir;
+    });
+  }, [tags, episodeSort]);
 
   const handleToggleTier = async (tag: AdminTagEntry) => {
     try {
@@ -166,6 +191,24 @@ export const AdminTagsPage: React.FC = () => {
     }
   };
 
+  const loadCandidates = useCallback(async () => {
+    setCandidatesLoading(true);
+    try {
+      setCandidates(await getThemeCandidates(3, 40));
+      setCandidatesLoaded(true);
+    } catch (err) {
+      console.error('Failed to fetch theme candidates:', err);
+    } finally {
+      setCandidatesLoading(false);
+    }
+  }, []);
+
+  const toggleCandidates = () => {
+    const next = !candidatesOpen;
+    setCandidatesOpen(next);
+    if (next && !candidatesLoaded) loadCandidates();
+  };
+
   const trendingCount = tags.filter((t) => t.tier === 'trending').length;
   const hiddenCount = tags.filter((t) => t.tier !== 'trending').length;
 
@@ -225,6 +268,75 @@ export const AdminTagsPage: React.FC = () => {
         </div>
       )}
 
+      {/* Theme discovery queue — emerging concepts not yet curated */}
+      <div className="mb-4 rounded-lg border border-border bg-card">
+        <button
+          onClick={toggleCandidates}
+          className="flex w-full items-center justify-between px-4 py-3 text-left"
+        >
+          <span className="flex flex-wrap items-center gap-2 text-base font-medium text-foreground">
+            <Lightbulb className="h-4 w-4 text-accent-info" />
+            題材探勘
+            <span className="text-xs font-normal text-muted-foreground">
+              播客中反覆出現、但尚未收錄為題材的新興概念
+            </span>
+          </span>
+          {candidatesOpen
+            ? <ChevronUp className="h-4 w-4 shrink-0 text-muted-foreground" />
+            : <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />}
+        </button>
+        {candidatesOpen && (
+          <div className="border-t border-border px-4 py-3">
+            {candidatesLoading ? (
+              <p className="py-4 text-center text-sm text-muted-foreground">掃描集數中…</p>
+            ) : candidates.length === 0 ? (
+              <p className="py-4 text-center text-sm text-muted-foreground">目前沒有達到門檻的新題材候選。</p>
+            ) : (
+              <>
+                <p className="mb-3 text-xs text-muted-foreground">
+                  要收錄候選題材，請在 <code className="rounded bg-muted px-1">curated_themes.json</code> 新增條目後重新編譯 — 此處僅供探勘。
+                </p>
+                <ul className="divide-y divide-border">
+                  {candidates.map((c) => {
+                    const open = expandedTerm === c.normalized_text;
+                    return (
+                      <li key={c.normalized_text} className="py-2">
+                        <button
+                          onClick={() => setExpandedTerm(open ? null : c.normalized_text)}
+                          className="flex w-full items-center justify-between text-left"
+                        >
+                          <span className="flex items-center gap-2">
+                            <span className="font-mono text-base text-foreground">{c.mention_text}</span>
+                            <span className="rounded-full bg-accent-info-soft px-2 py-0.5 text-xs font-medium text-accent-info">
+                              {c.count} 集
+                            </span>
+                          </span>
+                          {c.examples.length > 0 && (
+                            open
+                              ? <ChevronUp className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                              : <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                          )}
+                        </button>
+                        {open && c.examples.length > 0 && (
+                          <ul className="mt-2 space-y-1.5 pl-1">
+                            {c.examples.map((ex, i) => (
+                              <li key={i} className="text-xs text-muted-foreground">
+                                <span className="font-medium text-foreground/80">{ex.episode_title || '（無標題）'}</span>
+                                {ex.context && <span className="ml-1.5 opacity-80">— {ex.context}</span>}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Filters */}
       <div className="mb-4 flex items-center gap-3">
         <div className="relative flex-1 max-w-xs">
@@ -269,7 +381,18 @@ export const AdminTagsPage: React.FC = () => {
               <th className="px-4 py-3">Slug</th>
               <th className="px-4 py-3">顯示名稱</th>
               <th className="px-4 py-3">Kind</th>
-              <th className="px-4 py-3 text-right">Episodes</th>
+              <th className="px-4 py-3 text-right">
+                <button
+                  type="button"
+                  onClick={toggleEpisodeSort}
+                  className="ml-auto inline-flex items-center gap-1 hover:text-foreground"
+                  title="Sort by episode count"
+                >
+                  Episodes
+                  {episodeSort === 'desc' && <ChevronDown className="h-3 w-3" />}
+                  {episodeSort === 'asc' && <ChevronUp className="h-3 w-3" />}
+                </button>
+              </th>
               <th className="px-4 py-3">Visibility</th>
               <th className="px-4 py-3 text-right">Actions</th>
             </tr>
@@ -330,7 +453,7 @@ export const AdminTagsPage: React.FC = () => {
                 <td colSpan={6} className="px-4 py-10 text-center text-muted-foreground">No tags found.</td>
               </tr>
             ) : (
-              tags.map((tag) => {
+              displayTags.map((tag) => {
                 const isSector = tag.kind === KIND_SECTOR;
                 const isVirtual = tag.registered === false;
                 return (

@@ -55,6 +55,10 @@ _SEVERITY_ZH = {"HIGH": "高", "MEDIUM": "中", "LOW": "低"}
 # (the marp_writer prompt asks for a timestamp at the end of each point).
 _HAS_TRAILING_TS = re.compile(r"\[\d{1,2}:\d{2}(?::\d{2})?\]\s*$")
 
+# The cover slide's label (see card_deck._cover_slide). The marp_writer occasionally
+# echoes it back as a whole extra slide — matched here (casefolded) to drop it.
+_COVER_LABEL = "podcast memo"
+
 
 def format_timestamp(ms: Optional[int]) -> str:
     """Format a millisecond offset as ``[MM:SS]`` (or ``[HH:MM:SS]``); ``""`` if unknown."""
@@ -102,6 +106,13 @@ def cards_from_marp_slides(
     }]
 
     for slide in marp.get("slides", []):
+        heading = (slide.get("heading") or "").strip()
+        # The marp_writer sometimes emits a cover-DUPLICATE intro slide titled
+        # "PODCAST MEMO" (the cover label), carrying a hallucinated show name (e.g.
+        # 股癌) in its bullets. It's not a real theme — drop it so it never surfaces
+        # as a card. The actual cover is built separately above from the show name.
+        if heading.casefold() == _COVER_LABEL:
+            continue
         bullets = [b.strip() for b in (slide.get("bullet_points") or []) if b and str(b).strip()]
         # Skip bulletless slides (e.g. a Marp title slide) — an empty card would
         # desync the carousel↔reply indices on the platform side.
@@ -113,7 +124,7 @@ def cards_from_marp_slides(
             bullets = bullets[:-1] + [f"{bullets[-1]} {stamp}"]
         cards.append({
             "kind": "theme",
-            "title": (slide.get("heading") or "").strip(),
+            "title": heading,
             "bullets": bullets,
             "start_time_ms": start_ms,
             "image_url": None,
@@ -136,12 +147,20 @@ def _insight_rows(ticker_insights: Optional[dict[str, Any]]) -> list[dict[str, A
 
 
 def _sentiment_badge(score: Any) -> tuple[str, str]:
-    """Map a 0–1 sentiment score → (zh-TW chip text, CSS class) via the 5-tier label."""
+    """Map a 0–1 sentiment score → (zh-TW chip text, CSS class) via the 5-tier label.
+
+    NEUTRAL (觀望) renders no chip: it's low-signal and clutters the grid/focus
+    cards. The ticker still appears in the overview, just without a wishy-washy
+    觀望 label — only 看多/看空 earn a chip.
+    """
     try:
         label = score_to_label(float(score))
     except (TypeError, ValueError):
         label = "NEUTRAL"
-    return _SENTIMENT_BADGE.get(label, _SENTIMENT_BADGE["NEUTRAL"])
+    text, cls = _SENTIMENT_BADGE.get(label, ("", ""))
+    if cls == "sent-neutral":
+        return "", ""
+    return text, cls
 
 
 def _risk_factor(risks: Any) -> str:

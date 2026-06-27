@@ -415,10 +415,15 @@ class FirebaseService:
         # persistence boundary: a tag is written to the `tags` collection only if it is
         # in the vocabulary, so LLM-hallucinated junk (off-vocab proper nouns, fund/ETF
         # names, ticker symbols) can never re-pollute the collection regardless of which
-        # caller (ingest, regen, backfill) reaches here. Storage stays lowercased to
-        # match existing doc IDs; vocabulary membership is tested on the normalized form.
-        from src.podcast.content_builder.tag_vocabulary import canonical_tag_slug
-        normalized_tags = [tag.lower() for tag in tags if tag and canonical_tag_slug(tag)]
+        # caller (ingest, regen, backfill) reaches here. The doc id is the NORMALIZED
+        # slug (lowercased, separators stripped) so spellings like ``ai_supply_chain``
+        # and ``aisupplychain`` can never fragment into two docs; membership is tested
+        # on that same normalized form.
+        from src.podcast.content_builder.tag_vocabulary import (
+            canonical_tag_slug,
+            normalize_tag_slug,
+        )
+        normalized_tags = sorted({normalize_tag_slug(tag) for tag in tags if tag and canonical_tag_slug(tag)})
         normalized_tickers = [ticker.upper() for ticker in tickers if ticker]
         
         # Process tags

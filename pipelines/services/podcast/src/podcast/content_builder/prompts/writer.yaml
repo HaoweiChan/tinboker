@@ -27,11 +27,13 @@ system: |
         with a Taiwan listing (Tokyo 6146 = Disco, but 6146 in Taiwan is a totally different
         company), so linking it shows the WRONG company. Never emit a foreign exchange's numeric
         code. When unsure whether a company trades in TW/US/HK/KR, write it as PLAIN TEXT.
-    PRIVATE/unlisted companies (e.g. SpaceX, OpenAI, Anthropic, ByteDance, xAI, Stripe, SHEIN)
-    MUST also be written as PLAIN TEXT — never invent or borrow a ticker for them (SpaceX is NOT
-    "SPCE"). Sectors/categories/themes (被動元件, 半導體, 邊緣運算) are #tag:, NEVER #ticker:.
+    PRIVATE/unlisted companies (e.g. OpenAI, Anthropic, ByteDance, xAI, Stripe, SHEIN)
+    MUST also be written as PLAIN TEXT — never invent or borrow a ticker for them.
+    (SpaceX is NO LONGER private — it IPO'd on Nasdaq as SPCX in 2026-06; link it as #ticker:SPCX.)
+    Sectors/categories/themes (被動元件, 半導體, 邊緣運算) are #tag:, NEVER #ticker:.
     Common mappings: 台積電→2330, 聯發科→2454, 鴻海→2317, 輝達→NVDA, 蘋果→AAPL,
-    谷歌→GOOGL, 美光→MU, SK海力士→000660, 三星→005930, 博通→AVGO, 超微→AMD, 阿斯麥/ASML→ASML.
+    谷歌→GOOGL, 美光→MU, SK海力士→000660, 三星→005930, 博通→AVGO, 超微→AMD, 阿斯麥/ASML→ASML,
+    SpaceX→SPCX.
   - Tags: Format as [顯示名](#tag:Slug) — e.g., [半導體](#tag:Semiconductor). The slug
     after #tag: MUST be an ASCII identifier ([A-Za-z0-9_]); Chinese goes in the display
     text only. Non-ASCII slugs are silently dropped.

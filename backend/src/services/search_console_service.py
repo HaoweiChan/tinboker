@@ -100,6 +100,19 @@ class SearchConsoleService:
         impressions = sum(r.get("impressions", 0) for r in totals_rows)
         ctr = (clicks / impressions) if impressions else 0.0
 
+        # Per-day series for the trend chart (the date rows were already fetched above).
+        series = sorted(
+            (
+                {
+                    "date": (r.get("keys") or [None])[0],
+                    "clicks": int(r.get("clicks", 0) or 0),
+                    "impressions": int(r.get("impressions", 0) or 0),
+                }
+                for r in totals_rows
+            ),
+            key=lambda x: x["date"] or "",
+        )
+
         queries = await self.query(start_s, end_s, dimensions=["query"], row_limit=25)
         pages = await self.query(start_s, end_s, dimensions=["page"], row_limit=25)
 
@@ -111,6 +124,7 @@ class SearchConsoleService:
                 "impressions": impressions,
                 "ctr": round(ctr, 4),
             },
+            "series": series,
             "top_queries": [_row(r) for r in queries],
             "top_pages": [_row(r) for r in pages],
             "fetched_at": datetime.utcnow().isoformat() + "Z",
