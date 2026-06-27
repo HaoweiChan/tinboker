@@ -33,3 +33,18 @@ def test_tiers_match_css():
     for suffix, *_ in cd._THEME_TIERS:
         if suffix:
             assert f"section.theme.{suffix} li" in cd.CARD_THEME_CSS
+
+
+def test_cover_renders_show_name_and_episode_subtitle():
+    md = cd._cover_slide(
+        {"kind": "cover", "title": "股癌", "subtitle": "2026/6/27 蘋果漲價潮", "bullets": ["重點一", "重點二"]},
+        show_name="財經一路發", date_str="2026.06.27",
+    )
+    assert "# 財經一路發" in md                              # H1 = deterministic show name
+    assert '<div class="subtitle">2026/6/27 蘋果漲價潮</div>' in md  # episode title as subtitle
+    assert "股癌" not in md                                  # never echo the hallucinated marp title
+
+
+def test_cover_without_subtitle_omits_div():
+    md = cd._cover_slide({"kind": "cover", "subtitle": "", "bullets": []}, show_name="某節目", date_str="")
+    assert 'class="subtitle"' not in md

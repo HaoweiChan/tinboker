@@ -77,6 +77,10 @@ section.cover .label {{
   color: {accent}; text-transform: uppercase; margin-bottom: 28px;
 }}
 section.cover h1 {{ font-size: 132px; font-weight: 900; line-height: 1.04; margin: 0 0 18px; color: {TEXT}; }}
+section.cover .subtitle {{
+  font-size: 46px; font-weight: 600; line-height: 1.34; color: {SOFT}; margin: 6px 0 30px;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}}
 section.cover .date {{ font-size: 34px; color: {MUTED}; margin-bottom: 36px; }}
 section.cover .rule {{ width: 132px; height: 10px; background: {accent}; border-radius: 6px; margin-bottom: 40px; }}
 section.cover .hook {{ font-size: 40px; line-height: 1.6; font-weight: 500; color: {SOFT}; }}
@@ -195,7 +199,10 @@ def _cover_slide(card: dict, show_name: str, date_str: str) -> str:
     hook = html.escape("，".join(b.strip().rstrip("。") for b in bullets[:3]))
     if hook:
         hook += "。"
+    subtitle = html.escape((card.get("subtitle") or "").strip())
     lines = ["<!-- _class: cover -->", "", '<div class="label">Podcast Memo</div>', "", f"# {title}", ""]
+    if subtitle:
+        lines.append(f'<div class="subtitle">{subtitle}</div>')
     if date_str:
         lines.append(f'<div class="date">{html.escape(date_str)}</div>')
     lines.append('<div class="rule"></div>')
