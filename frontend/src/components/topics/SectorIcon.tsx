@@ -130,7 +130,7 @@ function normalizeExposureId(exposureId: string): string {
 }
 
 /** Resolve a lucide component: API icon_id → exposure_id fallback → Hash. */
-function resolveIcon(exposureId: string, iconId?: string | null): LucideIcon {
+export function resolveIcon(exposureId: string, iconId?: string | null): LucideIcon {
   if (iconId && ICON_REGISTRY[iconId]) return ICON_REGISTRY[iconId];
   return ICON_MAP[normalizeExposureId(exposureId)] ?? Hash;
 }
