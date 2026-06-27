@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useRef, useEffect } from 'react';
 import type { CSSProperties } from 'react';
 import { Play, Pause, Info } from 'lucide-react';
 import { getSectorBubbleData } from '@/services/mocks';
@@ -57,10 +57,26 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({
 }) => {
   const rawData = useMemo<SectorBubbleData[]>(() => data ?? getSectorBubbleData(), [data]);
   const [selectedSectorId, setSelectedSectorId] = useState<string | null>(null);
-  const [timeValue] = useState(100); 
+  const [hoveredSectorId, setHoveredSectorId] = useState<string | null>(null);
+  const [timeValue] = useState(100);
   const { theme } = useAppStore();
   const isDark = theme === 'dark';
   const isEmbedded = variant === 'embedded';
+
+  // Track the chart panel's pixel size so the hover tooltip (an HTML overlay) can be
+  // placed at the bubble's pixel position — readable at any SVG scale, unlike in-SVG text.
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [panel, setPanel] = useState({ w: 0, h: 0 });
+  useEffect(() => {
+    const el = panelRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(([e]) => {
+      const { width, height } = e.contentRect;
+      setPanel({ w: width, h: height });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   // Chart Dimensions
   const width = 1000;
@@ -139,12 +155,13 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({
         </div>
       )}
 
-      {/* Main Content */}
-      <div className="flex flex-1 overflow-hidden">
-        
+      {/* Main Content — chart on top of the list on mobile, side-by-side on desktop */}
+      <div className="flex flex-1 overflow-hidden min-h-0 flex-col md:flex-row">
+
         {/* Chart Area */}
-        <div className="flex-1 relative p-4">
+        <div className="flex-1 min-h-0 relative p-3 sm:p-4">
            <div
+             ref={panelRef}
              className="w-full h-full relative border rounded-lg overflow-hidden shadow-sm transition-colors"
              style={chartPanelStyle}
            >
@@ -191,29 +208,29 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({
                       const x = xScale(item.marketCap || 0);
                       const y = yScale(item.returnRate || 0);
                       const r = rScale(item.volume || 10);
-                      const isSelected = selectedSectorId === item.id;
+                      const activeId = hoveredSectorId ?? selectedSectorId;
+                      const isActive = activeId === item.id;
                       const visuals = getBubbleVisuals(item.label || '', item.returnRate || 0, isDark);
-                      
-                      // Determine text color based on bubble size/theme if inside bubble, or use contrast
-                      // For simplicity, we use dark text for bright bubbles or fallback
-                      
+
                       return (
-                         <g 
-                            key={item.id} 
+                         <g
+                            key={item.id}
                             transform={`translate(${x}, ${y})`}
-                            className="transition-all duration-500 cursor-pointer group"
-                            onClick={() => setSelectedSectorId(item.id)}
-                            style={{ opacity: selectedSectorId && !isSelected ? 0.3 : 1 }}
+                            className="transition-all duration-300 cursor-pointer group"
+                            onMouseEnter={() => setHoveredSectorId(item.id)}
+                            onMouseLeave={() => setHoveredSectorId(null)}
+                            onClick={() => setSelectedSectorId(item.id === selectedSectorId ? null : item.id)}
+                            style={{ opacity: activeId && !isActive ? 0.3 : 1 }}
                          >
-                            <circle 
-                              r={r} 
+                            <circle
+                              r={r}
                               fill={visuals.fill}
-                              stroke={isSelected ? (isDark ? '#fff' : '#0f172a') : visuals.baseColor}
-                              strokeWidth={isSelected ? 2 : 1.5}
+                              stroke={isActive ? (isDark ? '#fff' : '#0f172a') : visuals.baseColor}
+                              strokeWidth={isActive ? 2 : 1.5}
                               style={{ filter: `drop-shadow(0 12px 24px ${visuals.glow})` }}
                             />
                             {/* Label */}
-                            {(r > 20 || isSelected) && (
+                            {(r > 20 || isActive) && (
                                 <text 
                                   textAnchor="middle" 
                                   dy={-r - 5} 
@@ -232,39 +249,55 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({
                  </g>
               </svg>
 
-              {/* Tooltip / Info Overlay */}
-              <div className="absolute top-4 left-4">
-                  {selectedSectorId && (() => {
-                      const s = rawData.find(i => i.id === selectedSectorId);
-                      if (!s) return null;
-                      return (
-                        <div
-                          className="backdrop-blur border p-4 rounded-lg shadow-xl"
-                          style={{ backgroundColor: 'var(--bg-surface)', borderColor: 'var(--border-default)' }}
-                        >
-                           <h3 className="text-xl font-bold mb-2" style={{ color: 'var(--text-primary)' }}>{s.label}</h3>
-                           <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-base">
-                              <span style={{ color: 'var(--text-muted)' }}>{xTooltipLabel}</span>
-                              <span className="text-right font-mono" style={{ color: 'var(--text-secondary)' }}>{s.marketCap}{xTickSuffix}</span>
+              {/* Hover/tap info — anchored at the bubble's pixel position (computed from the
+                  panel size + preserveAspectRatio='meet' letterboxing). */}
+              {(() => {
+                  const activeId = hoveredSectorId ?? selectedSectorId;
+                  if (!activeId || !panel.w || !panel.h) return null;
+                  const s = rawData.find((i) => i.id === activeId);
+                  if (!s) return null;
+                  const scale = Math.min(panel.w / width, panel.h / height);
+                  const ox = (panel.w - width * scale) / 2;
+                  const oy = (panel.h - height * scale) / 2;
+                  const px = ox + (padding.left + xScale(s.marketCap || 0)) * scale;
+                  const py = oy + (padding.top + yScale(s.returnRate || 0)) * scale;
+                  const CARD_W = 168;
+                  const flipX = px + 14 + CARD_W > panel.w;
+                  const left = flipX ? px - 14 - CARD_W : px + 14;
+                  return (
+                    <div
+                      className="absolute z-10 pointer-events-none backdrop-blur border p-3 rounded-lg shadow-xl"
+                      style={{
+                        left: Math.max(4, Math.min(left, panel.w - CARD_W - 4)),
+                        top: py,
+                        width: CARD_W,
+                        transform: 'translateY(-50%)',
+                        backgroundColor: 'var(--bg-surface)',
+                        borderColor: 'var(--border-default)',
+                      }}
+                    >
+                       <h3 className="text-sm font-bold mb-1.5 truncate" style={{ color: 'var(--text-primary)' }}>{s.label}</h3>
+                       <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+                          <span style={{ color: 'var(--text-muted)' }}>{xTooltipLabel}</span>
+                          <span className="text-right font-mono" style={{ color: 'var(--text-secondary)' }}>{s.marketCap}{xTickSuffix}</span>
 
-                              <span style={{ color: 'var(--text-muted)' }}>漲跌</span>
-                              <span className={`text-right font-mono font-bold ${(s.returnRate || 0) > 0 ? 'text-emerald-500' : 'text-red-500'}`}>
-                                {(s.returnRate || 0) > 0 ? '+' : ''}{s.returnRate || 0}%
-                              </span>
+                          <span style={{ color: 'var(--text-muted)' }}>漲跌</span>
+                          <span className={`text-right font-mono font-bold ${(s.returnRate || 0) > 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                            {(s.returnRate || 0) > 0 ? '+' : ''}{s.returnRate || 0}%
+                          </span>
 
-                              <span style={{ color: 'var(--text-muted)' }}>{radiusTooltipLabel}</span>
-                              <span className="text-right font-mono" style={{ color: 'var(--text-secondary)' }}>{s.volume}{radiusTooltipSuffix}</span>
-                           </div>
-                        </div>
-                      )
-                  })()}
-              </div>
+                          <span style={{ color: 'var(--text-muted)' }}>{radiusTooltipLabel}</span>
+                          <span className="text-right font-mono" style={{ color: 'var(--text-secondary)' }}>{s.volume}{radiusTooltipSuffix}</span>
+                       </div>
+                    </div>
+                  );
+              })()}
 
            </div>
         </div>
 
-        {/* Right Sidebar: Selection List */}
-        <div className="w-64 border-l flex flex-col transition-colors" style={sidebarStyle}>
+        {/* Selection list — below the chart on mobile, right sidebar on desktop */}
+        <div className="w-full md:w-64 h-[42%] md:h-auto shrink-0 border-t md:border-t-0 md:border-l flex flex-col min-h-0 transition-colors" style={sidebarStyle}>
             <div className="p-4 border-b flex justify-between items-center" style={{ borderColor: 'var(--border-default)' }}>
                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">依漲跌排序</span>
                <Info size={14} className="text-slate-400" />
@@ -273,11 +306,13 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({
                {[...rawData].sort((a,b) => (b.returnRate || 0) - (a.returnRate || 0)).map(item => {
                  const visuals = getBubbleVisuals(item.label || '', item.returnRate || 0, isDark);
                  return (
-                   <div 
+                   <div
                       key={item.id}
                       onClick={() => setSelectedSectorId(item.id === selectedSectorId ? null : item.id)}
+                      onMouseEnter={() => setHoveredSectorId(item.id)}
+                      onMouseLeave={() => setHoveredSectorId(null)}
                       className={`flex items-center gap-3 p-2 rounded cursor-pointer transition-colors ${
-                          selectedSectorId === item.id 
+                          (hoveredSectorId ?? selectedSectorId) === item.id
                               ? (isDark ? 'bg-indigo-900/30 border border-indigo-800' : 'bg-indigo-50 border border-indigo-100')
                               : (isDark ? 'hover:bg-slate-800 border border-transparent' : 'hover:bg-white border border-transparent')
                       }`}
