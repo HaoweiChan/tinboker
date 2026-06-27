@@ -1474,9 +1474,14 @@ class PodcastService:
 
     # ── Theme discovery (admin curation queue) ────────────────────────────────
     _THEME_SCAN_FIELDS = [
-        "unresolved_market_trends", "podcast_name", "episode_title", "title",
-        "retracted_at", "released_at_ms", "spotify_release_date", "created_time",
+        "unresolved_market_trends", "related_tickers", "podcast_name", "episode_title",
+        "title", "retracted_at", "released_at_ms", "spotify_release_date", "created_time",
     ]
+    # Indices / breadth gauges the writer emits as "trends" — never curatable themes.
+    _THEME_INDEX_STOPWORDS = frozenset({
+        "SP500", "SPX", "DJI", "DJIA", "IXIC", "NDX", "RUT", "SOX", "SOXX", "VIX",
+        "NASDAQ", "DOW", "NIKKEI", "TWSE", "TAIEX", "TWII",
+    })
 
     async def theme_candidates(self, *, threshold: int = 3, limit: int = 40) -> list[dict]:
         """Rank emerging theme candidates from episodes' ``unresolved_market_trends``.
@@ -1485,8 +1490,11 @@ class PodcastService:
         map to any curated exposure — by construction NOT yet in the universe. Aggregated
         across in-scope episodes (same release scoping as the board) so an admin can
         promote recurring ones into curated_themes.json. Cached; full projected scan on miss.
+
+        Ticker symbols the writer mis-files as "trends" (NVDA, AAPL, …) and index gauges
+        (SP500, VIX, …) are dropped — those are stocks/indices, not curatable themes.
         """
-        cache_key = f"sectors:theme_candidates:v1:{threshold}:{limit}:{self._scope_tag()}"
+        cache_key = f"sectors:theme_candidates:v2:{threshold}:{limit}:{self._scope_tag()}"
         cached = await cache_get(cache_key)
         if cached:
             try:
@@ -1504,6 +1512,16 @@ class PodcastService:
             )
         except Exception as e:
             raise Exception(f"Failed to scan episodes for theme candidates: {e}") from e
+
+        # Real tickers the pipeline emitted ANYWHERE (any episode, scope-independent) — the
+        # canonical "this is a stock, not a theme" set. The writer sometimes also drops a
+        # ticker into unresolved_market_trends; filtering candidates against this removes them.
+        tickers: set[str] = set()
+        for doc in docs:
+            for tk in doc.get("related_tickers") or []:
+                sym = str(tk).split(".")[0].strip().upper()
+                if sym:
+                    tickers.add(sym)
 
         agg: dict[str, dict] = {}
         for doc in docs:
@@ -1530,7 +1548,17 @@ class PodcastService:
                         "context": (t.get("context") or "")[:200],
                     })
 
-        candidates = [b for b in agg.values() if b["count"] >= threshold]
+        def _is_ticker_or_index(b: dict) -> bool:
+            for sym in (b["mention_text"], b["normalized_text"]):
+                u = str(sym).strip().upper()
+                if u in tickers or u in self._THEME_INDEX_STOPWORDS:
+                    return True
+            return False
+
+        candidates = [
+            b for b in agg.values()
+            if b["count"] >= threshold and not _is_ticker_or_index(b)
+        ]
         candidates.sort(key=lambda x: (-x["count"], x["normalized_text"]))
         candidates = candidates[:limit]
         await cache_set(cache_key, json.dumps(candidates), CACHE_TTL["podcast_episodes"])
