@@ -589,6 +589,24 @@ export async function getIndustryPerformance(): Promise<IndustryPerformanceItem[
   return Array.isArray(d.industries) ? d.industries : [];
 }
 
+/** Theme (exposure_type='theme') performance for the /topics 題材 bubble chart.
+ *  Themes use hotness + money-flow dimensions: X = episode_count, Y = return_pct,
+ *  bubble = trading_value_twd (aggregate constituent daily trade value, NT$, TW-only). */
+export interface ThemePerformanceItem {
+  exposure_id: string;
+  display_name: string;
+  color_hex?: string | null;
+  episode_count: number;
+  return_pct: number | null;
+  trading_value_twd: number | null;
+}
+
+export async function getThemePerformance(): Promise<ThemePerformanceItem[]> {
+  const response = await apiClient.get('/api/sectors/theme-performance');
+  const d = response.data ?? {};
+  return Array.isArray(d.themes) ? d.themes : [];
+}
+
 /** Trailing close-to-close performance for a ticker over fixed windows. */
 export interface TrailingPerf {
   price: number | null;
