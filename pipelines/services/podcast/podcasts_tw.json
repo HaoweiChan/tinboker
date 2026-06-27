@@ -75,7 +75,7 @@
     "limit": 10,
     "lookback_days": 60,
     "max_episodes": 20,
-    "spotify_show_link": "https://open.spotify.com/show/0s12J0F8Z6tQ0c7m7u7I0X",
+    "spotify_show_link": "https://open.spotify.com/show/36S9s4P2x93o11w4t6s04t",
     "transcript_option": {
       "transcript_service": "groq",
       "model": "whisper-large-v3"
@@ -87,7 +87,7 @@
     "limit": 10,
     "lookback_days": 60,
     "max_episodes": 20,
-    "spotify_show_link": "https://open.spotify.com/show/3k3w5o9B5l6n4E8o4n5n8I",
+    "spotify_show_link": "https://open.spotify.com/show/7nZ5g4M8L9G2fXz1k4JpQW",
     "transcript_option": {
       "transcript_service": "groq",
       "model": "whisper-large-v3"

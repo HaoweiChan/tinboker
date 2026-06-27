@@ -119,6 +119,7 @@ class ContentSourceService:
             region=data.region.upper() if data.region else None,
             language=data.language,
             spotify_url=data.spotify_url,
+            cover_image_url=data.cover_image_url,
             lookback_days=data.lookback_days,
             max_episodes=data.max_episodes,
             transcript_service=data.transcript_service,
