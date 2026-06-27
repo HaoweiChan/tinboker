@@ -52,7 +52,7 @@ export const SubscribedTopics: React.FC<{ tagSubs: string[] }> = ({ tagSubs }) =
         <div>
           <div className="flex items-center gap-1.5 mb-3">
             <Layers size={13} className="text-muted-foreground" />
-            <h2 className="text-sm font-semibold">產業 / 主題</h2>
+            <h2 className="text-sm font-semibold">產業 / 題材</h2>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {subscribedSectors.map((s) => (

@@ -21,6 +21,8 @@ export interface AdminTagEntry {
   /** false = virtual (no registry row); hiding it creates the row. */
   registered?: boolean;
   exposure_id?: string | null;
+  /** 'sector' (industry) | 'theme' for sector-kind rows; absent for plain tags. */
+  exposure_type?: string | null;
   icon_id?: string | null;
   color_hex?: string | null;
   episode_count?: number | null;
