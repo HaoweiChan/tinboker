@@ -560,6 +560,7 @@ export interface SectorBoardItem {
   icon_id?: string | null;   // lucide icon name from the compiled universe
   color_hex?: string | null; // accent color
   episode_count: number;
+  heat?: number | null; // recency-weighted discussion (Σ 0.5^(age/H))
   avg_change: number | null;
   hotness: number;
   members: SectorBoardMember[];
@@ -597,6 +598,7 @@ export interface ThemePerformanceItem {
   display_name: string;
   color_hex?: string | null;
   episode_count: number;
+  heat: number | null; // recency-weighted discussion (X axis)
   return_pct: number | null;
   trading_value_twd: number | null;
 }

@@ -56,6 +56,7 @@ class SectorBoardItem(BaseModel):
     icon_id: Optional[str] = None
     color_hex: Optional[str] = None
     episode_count: int
+    heat: Optional[float] = None  # recency-weighted discussion (Σ 0.5^(age_days/H))
     avg_change: Optional[float] = None
     hotness: float
     members: List[SectorBoardMember]
@@ -90,6 +91,7 @@ class ThemePerformanceItem(BaseModel):
     display_name: str
     color_hex: Optional[str] = None
     episode_count: int = 0
+    heat: Optional[float] = None               # recency-weighted discussion (X axis)
     return_pct: Optional[float] = None         # avg member daily % change
     trading_value_twd: Optional[float] = None  # aggregate constituent daily trade value (NT$)
 

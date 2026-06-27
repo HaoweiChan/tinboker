@@ -142,6 +142,7 @@ export interface SectorBubbleData {
   return: number;
   returnRate?: number;
   volume?: number;
+  subLabel?: string; // optional muted line in the hover card (e.g. raw episode count)
 }
 
 export interface SectorStat {
