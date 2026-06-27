@@ -42,6 +42,7 @@ interface SectorPerformanceProps {
   xAxisLabel?: string;
   xTickSuffix?: string;
   xTooltipLabel?: string;
+  yAxisLabel?: string;
   radiusTooltipLabel?: string;
   radiusTooltipSuffix?: string;
 }
@@ -52,6 +53,7 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({
   xAxisLabel = '市值（兆 NTD）',
   xTickSuffix = '兆',
   xTooltipLabel = '市值',
+  yAxisLabel = '近期漲跌 %',
   radiusTooltipLabel = '討論度',
   radiusTooltipSuffix = '',
 }) => {
@@ -176,7 +178,7 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({
                         return (
                           <g key={tick}>
                             <line x1={0} y1={y} x2={graphWidth} y2={y} stroke={isDark ? '#334155' : '#e2e8f0'} strokeDasharray="4 4" />
-                            <text x={-10} y={y} dy={4} textAnchor="end" fill="#94a3b8" fontSize="10">{tick}%</text>
+                            <text x={-10} y={y} dy={4} textAnchor="end" fill="#94a3b8" fontSize="16">{tick}%</text>
                           </g>
                         );
                     })}
@@ -189,16 +191,16 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({
                         return (
                           <g key={tick}>
                             <line x1={x} y1={0} x2={x} y2={graphHeight} stroke={isDark ? '#334155' : '#e2e8f0'} strokeDasharray="4 4" />
-                            <text x={x} y={graphHeight + 20} textAnchor="middle" fill="#94a3b8" fontSize="10">{tick}{xTickSuffix}</text>
+                            <text x={x} y={graphHeight + 22} textAnchor="middle" fill="#94a3b8" fontSize="16">{tick}{xTickSuffix}</text>
                           </g>
                         );
                     })}
 
                     {/* Axis Labels */}
-                    <text x={-40} y={graphHeight/2} transform={`rotate(-90, -40, ${graphHeight/2})`} textAnchor="middle" fill="#64748b" fontSize="12" fontWeight="bold">
-                        近期漲跌 %
+                    <text x={-46} y={graphHeight/2} transform={`rotate(-90, -46, ${graphHeight/2})`} textAnchor="middle" fill="#64748b" fontSize="24" fontWeight="bold">
+                        {yAxisLabel}
                     </text>
-                    <text x={graphWidth - 20} y={graphHeight + 40} textAnchor="end" fill="#64748b" fontSize="12" fontWeight="bold">
+                    <text x={graphWidth - 20} y={graphHeight + 48} textAnchor="end" fill="#64748b" fontSize="24" fontWeight="bold">
                         {xAxisLabel}
                     </text>
 
@@ -235,7 +237,7 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({
                                   textAnchor="middle" 
                                   dy={-r - 5} 
                                   fill={isDark ? '#e2e8f0' : '#334155'} 
-                                  fontSize="12" 
+                                  fontSize="18" 
                                   fontWeight="bold"
                                   className="pointer-events-none"
                                 >
