@@ -87,7 +87,26 @@ PODCAST_SOURCES: list[dict] = [
         "transcript_service": "groq", "transcript_model": "whisper-large-v3",
         "active": True,
     },
+    {
+        "source_type": "podcast", "language": "zh-TW", "region": "TW",
+        "name": "兆華與股惑仔",
+        "feed_url": "https://podcasttomp3.com/podcasts/v2/99999901",
+        "spotify_url": "https://open.spotify.com/show/0s12J0F8Z6tQ0c7m7u7I0X",
+        "lookback_days": 60,
+        "transcript_service": "groq", "transcript_model": "whisper-large-v3",
+        "active": True,
+    },
+    {
+        "source_type": "podcast", "language": "zh-TW", "region": "TW",
+        "name": "韭菜畢業班",
+        "feed_url": "https://podcasttomp3.com/podcasts/v2/99999902",
+        "spotify_url": "https://open.spotify.com/show/3k3w5o9B5l6n4E8o4n5n8I",
+        "lookback_days": 60,
+        "transcript_service": "groq", "transcript_model": "whisper-large-v3",
+        "active": True,
+    },
     # --- English (en) ---
+
     {
         "source_type": "podcast", "language": "en",
         "name": "Bloomberg Masters in Business Podcast",
