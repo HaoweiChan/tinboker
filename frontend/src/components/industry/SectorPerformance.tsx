@@ -80,10 +80,11 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({
     return () => ro.disconnect();
   }, []);
 
-  // Chart Dimensions
+  // Chart Dimensions — generous left/bottom padding so the rotated Y title and the X title
+  // sit clear of the tick labels (the cramped 60px gutter made them collide).
   const width = 1000;
   const height = 500;
-  const padding = { top: 40, right: 60, bottom: 60, left: 60 };
+  const padding = { top: 30, right: 40, bottom: 78, left: 96 };
   const graphWidth = width - padding.left - padding.right;
   const graphHeight = height - padding.top - padding.bottom;
 
@@ -197,10 +198,10 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({
                     })}
 
                     {/* Axis Labels */}
-                    <text x={-46} y={graphHeight/2} transform={`rotate(-90, -46, ${graphHeight/2})`} textAnchor="middle" fill="#64748b" fontSize="24" fontWeight="bold">
+                    <text x={-74} y={graphHeight/2} transform={`rotate(-90, -74, ${graphHeight/2})`} textAnchor="middle" fill="#94a3b8" fontSize="19" fontWeight="600">
                         {yAxisLabel}
                     </text>
-                    <text x={graphWidth - 20} y={graphHeight + 48} textAnchor="end" fill="#64748b" fontSize="24" fontWeight="bold">
+                    <text x={graphWidth/2} y={graphHeight + 62} textAnchor="middle" fill="#94a3b8" fontSize="19" fontWeight="600">
                         {xAxisLabel}
                     </text>
 
