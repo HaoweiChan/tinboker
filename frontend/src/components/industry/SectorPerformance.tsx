@@ -276,8 +276,11 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({
                         borderColor: 'var(--border-default)',
                       }}
                     >
-                       <h3 className="text-sm font-bold mb-1.5 truncate" style={{ color: 'var(--text-primary)' }}>{s.label}</h3>
-                       <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+                       <h3 className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{s.label}</h3>
+                       {s.subLabel && (
+                         <div className="text-2xs mb-1.5" style={{ color: 'var(--text-muted)' }}>{s.subLabel}</div>
+                       )}
+                       <div className={`grid grid-cols-2 gap-x-3 gap-y-1 text-xs ${s.subLabel ? '' : 'mt-1.5'}`}>
                           <span style={{ color: 'var(--text-muted)' }}>{xTooltipLabel}</span>
                           <span className="text-right font-mono" style={{ color: 'var(--text-secondary)' }}>{s.marketCap}{xTickSuffix}</span>
 

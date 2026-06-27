@@ -1227,8 +1227,14 @@ class PodcastService:
         except Exception as e:
             raise Exception(f"Failed to scan episodes for sector board: {e}") from e
 
-        # Tally per sector: episode count, first-seen meta, union of tickers (cap 12)
+        # Tally per sector: episode count, recency-weighted "heat", first-seen meta, tickers.
+        # heat = Σ 0.5^(age_days / H): a mention today weighs 1.0, H days ago 0.5, etc. — so
+        # the theme board's X axis reflects *recent* discussion, not a flat window count.
+        import time
+        now_ms = int(time.time() * 1000)
+        HALF_LIFE_DAYS = 7.0
         counts: dict[str, int] = {}
+        heat: dict[str, float] = {}      # exposure_id -> recency-weighted discussion heat
         meta: dict[str, dict] = {}       # exposure_id -> {display_name, exposure_type}
         ticker_map: dict[str, dict[str, str]] = {}  # exposure_id -> {ticker: first-seen name}
 
@@ -1237,13 +1243,17 @@ class PodcastService:
                 continue
             if allowed is not None and doc.get("podcast_name") not in allowed:
                 continue
-            if cutoff is not None and self._dict_release_ms(doc) < cutoff:
+            rel_ms = self._dict_release_ms(doc)
+            if cutoff is not None and rel_ms < cutoff:
                 continue
+            age_days = max(0.0, (now_ms - rel_ms) / 86_400_000.0)
+            weight = 0.5 ** (age_days / HALF_LIFE_DAYS)
             for entry in doc.get("sector_exposures") or []:
                 eid = normalize_exposure_id(entry.get("exposure_id"))
                 if not eid or eid in EXCLUDED_EXPOSURE_IDS:
                     continue
                 counts[eid] = counts.get(eid, 0) + 1
+                heat[eid] = heat.get(eid, 0.0) + weight
                 if eid not in meta:
                     meta[eid] = {
                         "display_name": entry.get("display_name") or eid,
@@ -1321,6 +1331,7 @@ class PodcastService:
                 "icon_id": visual.get("icon_id"),
                 "color_hex": visual.get("color_hex"),
                 "episode_count": count,
+                "heat": round(heat.get(eid, 0.0), 2),
                 "avg_change": avg_change,
                 "members": members,
                 "series": sector_series,
@@ -1454,10 +1465,11 @@ class PodcastService:
                 "display_name": s["display_name"],
                 "color_hex": s.get("color_hex"),
                 "episode_count": s.get("episode_count", 0),
+                "heat": s.get("heat"),  # recency-weighted discussion (X axis)
                 "return_pct": s.get("avg_change"),
                 "trading_value_twd": total_tv or None,
             })
-        out.sort(key=lambda x: (x["episode_count"], x["trading_value_twd"] or 0.0), reverse=True)
+        out.sort(key=lambda x: ((x["heat"] or 0.0), x["episode_count"]), reverse=True)
         return out
 
     # ── Theme discovery (admin curation queue) ────────────────────────────────

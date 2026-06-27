@@ -207,8 +207,10 @@ export const TopicsCloud: React.FC = () => {
         id: t.exposure_id,
         name: t.display_name,
         label: t.display_name,
-        value: t.episode_count,
-        marketCap: t.episode_count,
+        value: t.heat ?? 0,
+        // X = recency-weighted 討論熱度 (time-decay, 7d half-life); raw count → sub-line.
+        marketCap: t.heat != null ? +t.heat.toFixed(1) : 0,
+        subLabel: `${t.episode_count} 集討論`,
         return: t.return_pct ?? 0,
         returnRate: t.return_pct != null ? +t.return_pct.toFixed(2) : 0,
         volume: t.trading_value_twd ? +(t.trading_value_twd / 1e8).toFixed(0) : 0,
@@ -297,9 +299,9 @@ export const TopicsCloud: React.FC = () => {
                 <SectorPerformance
                   variant="embedded"
                   data={themeBubbles}
-                  xAxisLabel="討論熱度（集數）"
+                  xAxisLabel="討論熱度（近 7 日加權）"
                   xTickSuffix=""
-                  xTooltipLabel="討論集數"
+                  xTooltipLabel="討論熱度"
                   radiusTooltipLabel="今日成交值"
                   radiusTooltipSuffix=" 億"
                 />
