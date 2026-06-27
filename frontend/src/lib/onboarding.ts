@@ -42,6 +42,15 @@ export interface ChangelogEntry {
 //   docs/workflows/deploy-flow.md § "In-app changelog (What's new)".
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.6.3',
+    date: '2026-06',
+    items: [
+      '「題材探索」氣泡圖全新改版：支援 1/7/30/90 天時間區間切換與互動提示，並以最新熱度指標排序，尋找熱門題材更直覺。',
+      '新增收錄熱門 Podcast 節目「兆華與股惑仔」與「韭菜畢業班」，並修復部分節目的 Spotify 連結與封面顯示。',
+      '優化社群分享字卡：封面新增單集標題副標題，並修復了字卡生成與文字重疊問題。',
+    ],
+  },
+  {
     version: '0.6.0',
     date: '2026-06',
     items: [
