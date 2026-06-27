@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Flame, BarChart3, Layers, Hash } from 'lucide-react';
+import { Flame, BarChart3, Layers, Hash, Info } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
 import { Segmented } from '@/components/redesign/Segmented';
@@ -221,7 +221,14 @@ export const TopicsCloud: React.FC = () => {
         </p>
 
         {/* Tabs */}
-        <Segmented options={TAB_OPTIONS} value={tab} onChange={(v) => setTab(v as TabKey)} className="mb-6" />
+        <Segmented options={TAB_OPTIONS} value={tab} onChange={(v) => setTab(v as TabKey)} className="mb-3" />
+
+        {/* Data-freshness disclaimer: prices come from the last *completed* daily bar,
+            not live ticks — so before today's close the figures may be the prior day's. */}
+        <p className="mb-6 flex items-start gap-1.5 text-xs text-muted-foreground">
+          <Info size={12} className="mt-0.5 shrink-0" />
+          <span>漲跌與市值採用最近一個<strong className="font-medium text-foreground/80">完整交易日</strong>的收盤資料，非即時報價；當日尚未收盤結算前，可能顯示前一交易日數據。</span>
+        </p>
 
         {tab === 'industry' ? (
           <>
