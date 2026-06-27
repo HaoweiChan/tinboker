@@ -79,3 +79,20 @@ class IndustryPerformanceItem(BaseModel):
 
 class IndustryPerformanceResponse(BaseModel):
     industries: List[IndustryPerformanceItem]
+
+
+# ── Theme performance (bubble chart, /topics 題材 tab) ────────────────────────
+# Themes use hotness + money-flow dimensions, not market cap: X = discussion volume,
+# Y = avg % change, bubble size = aggregate constituent daily trading value.
+
+class ThemePerformanceItem(BaseModel):
+    exposure_id: str
+    display_name: str
+    color_hex: Optional[str] = None
+    episode_count: int = 0
+    return_pct: Optional[float] = None         # avg member daily % change
+    trading_value_twd: Optional[float] = None  # aggregate constituent daily trade value (NT$)
+
+
+class ThemePerformanceResponse(BaseModel):
+    themes: List[ThemePerformanceItem]

@@ -1414,6 +1414,52 @@ class PodcastService:
         out.sort(key=lambda x: (x["market_cap_twd"] or 0.0), reverse=True)
         return out
 
+    async def _tw_trading_values_cached(self) -> dict[str, float]:
+        """``{stock_id: latest daily trading value NT$}`` for all TW stocks, daily-cached."""
+        cache_key = "sectors:tw_trading_values:v1"
+        cached = await cache_get(cache_key)
+        if cached:
+            try:
+                return json.loads(cached)
+            except Exception:
+                pass
+        vals = await asyncio.to_thread(self._finmind().get_tw_trading_values)
+        if vals:
+            await cache_set(cache_key, json.dumps(vals), CACHE_TTL["stock_ohlcv"])  # 1 day
+        return vals or {}
+
+    async def theme_performance(self) -> list[dict]:
+        """Bubble-chart rows for the /topics 題材 tab: theme (exposure_type='theme') board
+        items, mapped to theme-appropriate dimensions.
+
+        Themes are curated/corpus-discovered concepts, not official baskets, so market cap
+        is the wrong size metric (the user watches hotness + money flow). The chart maps:
+        X = discussion volume (episode_count), Y = avg member % change, bubble = aggregate
+        constituent daily trading value (TW-only via FinMind; US members contribute 0, and
+        the bounded radius keeps US-heavy themes visible).
+        """
+        board = await self.sector_board()
+        themes = [s for s in board if s.get("exposure_type") == "theme"]
+        if not themes:
+            return []
+        tvals = await self._tw_trading_values_cached()
+        out: list[dict] = []
+        for s in themes:
+            total_tv = sum(
+                tvals.get((m.get("ticker") or "").strip(), 0.0)
+                for m in s.get("members") or []
+            )
+            out.append({
+                "exposure_id": s["exposure_id"],
+                "display_name": s["display_name"],
+                "color_hex": s.get("color_hex"),
+                "episode_count": s.get("episode_count", 0),
+                "return_pct": s.get("avg_change"),
+                "trading_value_twd": total_tv or None,
+            })
+        out.sort(key=lambda x: (x["episode_count"], x["trading_value_twd"] or 0.0), reverse=True)
+        return out
+
     # ── Theme discovery (admin curation queue) ────────────────────────────────
     _THEME_SCAN_FIELDS = [
         "unresolved_market_trends", "podcast_name", "episode_title", "title",
