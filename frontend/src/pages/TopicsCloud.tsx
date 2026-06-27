@@ -10,9 +10,11 @@ import { TagBoardCard } from '@/components/topics/TagBoardCard';
 import {
   getSectorBoard,
   getIndustryPerformance,
+  getThemePerformance,
   getTrendingTags,
   type SectorBoardItem,
   type IndustryPerformanceItem,
+  type ThemePerformanceItem,
   type TrendingTag,
 } from '@/services/api/podcasts';
 import type { SectorBubbleData } from '@/services/mocks/types';
@@ -113,8 +115,10 @@ export const TopicsCloud: React.FC = () => {
   const [tab, setTab] = useState<TabKey>('theme');
   const [sectors, setSectors] = useState<SectorBoardItem[]>([]);
   const [industries, setIndustries] = useState<IndustryPerformanceItem[]>([]);
+  const [themes, setThemes] = useState<ThemePerformanceItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [industryLoading, setIndustryLoading] = useState(true);
+  const [themeLoading, setThemeLoading] = useState(true);
   const [sortKey, setSortKey] = useState<SortKey>('hotness');
   const [tags, setTags] = useState<TrendingTag[]>([]);
   const tagLabels = useTagLabels();
@@ -144,6 +148,18 @@ export const TopicsCloud: React.FC = () => {
       if (!alive) return;
       setIndustries(res);
       setIndustryLoading(false);
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  // Theme performance (bubble chart) — discussion volume × return, sized by trade value
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const res = await getThemePerformance().catch(() => [] as ThemePerformanceItem[]);
+      if (!alive) return;
+      setThemes(res);
+      setThemeLoading(false);
     })();
     return () => { alive = false; };
   }, []);
@@ -182,6 +198,22 @@ export const TopicsCloud: React.FC = () => {
         volume: i.episode_count,
       })),
     [industries],
+  );
+
+  // Theme bubble: X = discussion (episodes), Y = return %, size = today's trade value (億).
+  const themeBubbles = useMemo<SectorBubbleData[]>(
+    () =>
+      themes.map((t) => ({
+        id: t.exposure_id,
+        name: t.display_name,
+        label: t.display_name,
+        value: t.episode_count,
+        marketCap: t.episode_count,
+        return: t.return_pct ?? 0,
+        returnRate: t.return_pct != null ? +t.return_pct.toFixed(2) : 0,
+        volume: t.trading_value_twd ? +(t.trading_value_twd / 1e8).toFixed(0) : 0,
+      })),
+    [themes],
   );
 
   // Theme tab hero strip: top theme gainers
@@ -260,6 +292,30 @@ export const TopicsCloud: React.FC = () => {
           </>
         ) : (
           <>
+            {/* ── BUBBLE CHART (討論熱度 × 漲跌, sized by 成交值) ───────── */}
+            <div
+              className="mb-7 rounded-xl border border-border bg-card overflow-hidden"
+              style={{ height: 520 }}
+            >
+              {themeLoading ? (
+                <div className="w-full h-full animate-pulse bg-muted/30" />
+              ) : themeBubbles.length > 0 ? (
+                <SectorPerformance
+                  variant="embedded"
+                  data={themeBubbles}
+                  xAxisLabel="討論熱度（集數）"
+                  xTickSuffix=""
+                  xTooltipLabel="討論集數"
+                  radiusTooltipLabel="今日成交值"
+                  radiusTooltipSuffix=" 億"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-sm text-muted-foreground">
+                  尚無題材熱度資料
+                </div>
+              )}
+            </div>
+
             {/* ── HERO STRIP ───────────────────────────────────────── */}
             <div className="mb-7">
               <div className="flex items-center gap-1.5 mb-2.5">
