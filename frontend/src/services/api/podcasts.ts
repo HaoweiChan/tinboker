@@ -165,7 +165,7 @@ export async function getSortedPodcasts(options?: {
   limit?: number;
   offset?: number;
 }): Promise<Podcast[]> {
-  const params: Record<string, any> = {};
+  const params: Record<string, string | number> = {};
   if (options?.sortBy) params.sort_by = options.sortBy;
   if (options?.order) params.order = options.order;
   if (options?.limit) params.limit = options.limit;
@@ -189,7 +189,7 @@ export async function getPodcastEpisodes(
     includeContent?: boolean;
   }
 ): Promise<Episode[]> {
-  const params: Record<string, any> = {};
+  const params: Record<string, string | number | boolean> = {};
   if (options?.sortBy) params.sort_by = options.sortBy;
   if (options?.order) params.order = options.order;
   if (options?.limit) params.limit = options.limit;
@@ -236,7 +236,7 @@ export async function getEpisodesByTicker(
   ticker: string,
   options?: { limit?: number; offset?: number; sortBy?: string; order?: 'asc' | 'desc'; includeContent?: boolean }
 ): Promise<Episode[]> {
-  const params: Record<string, any> = {};
+  const params: Record<string, string | number | boolean> = {};
   if (options?.limit) params.limit = options.limit;
   if (options?.offset) params.offset = options.offset;
   if (options?.sortBy) params.sort_by = options.sortBy;
@@ -421,8 +421,8 @@ export async function getEpisodesByTag(
   limit: number = 50,
   offset: number = 0,
   includeContent?: boolean
-): Promise<any> {
-  const params: Record<string, any> = { limit, offset };
+): Promise<EpisodesByTagResponse> {
+  const params: Record<string, string | number | boolean> = { limit, offset };
   if (includeContent !== undefined) params.include_content = includeContent;
   const response = await apiClient.get(`/api/episodes/by-tag/${encodeURIComponent(tag)}`, { params });
   return response.data;
@@ -436,7 +436,7 @@ export async function getRecentEpisodes(options?: {
   order?: 'asc' | 'desc';
   includeContent?: boolean;
 }): Promise<Episode[]> {
-  const params: Record<string, any> = {};
+  const params: Record<string, string | number | boolean> = {};
   if (options?.limit) params.limit = options.limit;
   if (options?.offset) params.offset = options.offset;
   if (options?.podcastName) params.podcast_name = options.podcastName;
