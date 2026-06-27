@@ -47,6 +47,9 @@ class TagEntryResponse(BaseModel):
     kind: str = KIND_TAG
     registered: bool = True
     exposure_id: Optional[str] = None
+    # 'sector' (industry) vs 'theme' for sector-kind rows; None for plain tags. Lets the
+    # admin table distinguish 產業 from 題材 even though both share kind='sector'.
+    exposure_type: Optional[str] = None
     icon_id: Optional[str] = None
     color_hex: Optional[str] = None
     episode_count: Optional[int] = None
@@ -195,11 +198,15 @@ async def list_tags(
     # the gateway timeout (caused a 524). Virtual rows show episode_count=None ("—").
     tag_counts = await _count_episodes_for_slugs([r.slug for r in tag_rows]) if tag_rows else {}
     sector_counts: dict[str, int] = {}
+    sector_types: dict[str, str] = {}
     if sector_rows:
         try:
             sectors = await podcast_service.list_sectors()
             sector_counts = {
                 s["exposure_id"]: s.get("count", 0) for s in sectors if s.get("exposure_id")
+            }
+            sector_types = {
+                s["exposure_id"]: s.get("exposure_type") for s in sectors if s.get("exposure_id")
             }
         except Exception as e:
             logger.warning("sector counts: list_sectors failed: %s", e)
@@ -213,6 +220,7 @@ async def list_tags(
         TagEntryResponse(
             id=r.id, slug=r.slug, display_zh=r.display_zh,
             tier=r.tier, kind=r.kind, registered=True, exposure_id=r.exposure_id,
+            exposure_type=sector_types.get(r.exposure_id or "") if r.kind == KIND_SECTOR else None,
             icon_id=r.icon_id, color_hex=r.color_hex,
             episode_count=_count_for(r), updated_by=r.updated_by,
         )

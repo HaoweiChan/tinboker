@@ -25,8 +25,8 @@ type TabKey = 'industry' | 'theme';
 type SortKey = 'hotness' | 'avg_change' | 'episode_count';
 
 const TAB_OPTIONS = [
-  { value: 'industry' as const, label: '產業' },
   { value: 'theme' as const, label: '題材' },
+  { value: 'industry' as const, label: '產業' },
 ];
 
 const SORT_OPTIONS: { key: SortKey; label: string }[] = [
@@ -110,7 +110,7 @@ function sortBoard(items: SectorBoardItem[], sortKey: SortKey): SectorBoardItem[
 // ── Main page ──────────────────────────────────────────────────────────────
 
 export const TopicsCloud: React.FC = () => {
-  const [tab, setTab] = useState<TabKey>('industry');
+  const [tab, setTab] = useState<TabKey>('theme');
   const [sectors, setSectors] = useState<SectorBoardItem[]>([]);
   const [industries, setIndustries] = useState<IndustryPerformanceItem[]>([]);
   const [loading, setLoading] = useState(true);

@@ -512,7 +512,7 @@ export const AdminTagsPage: React.FC = () => {
                       ? 'bg-accent-info-soft text-accent-info'
                       : 'bg-primary/15 text-primary'
                     }`}>
-                      {isSector ? '產業' : '標籤'}
+                      {isSector ? (tag.exposure_type === 'theme' ? '題材' : '產業') : '標籤'}
                     </span>
                     {isVirtual && (
                       <span

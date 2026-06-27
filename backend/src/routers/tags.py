@@ -227,6 +227,8 @@ async def get_episodes_by_sector(
             exposure_id=result["exposure_id"],
             display_name=result["display_name"],
             exposure_type=result["exposure_type"],
+            icon_id=result.get("icon_id"),
+            color_hex=result.get("color_hex"),
             resolved_tickers=[SectorResolvedTicker(**t) for t in result["resolved_tickers"]],
             episodes=result["episodes"],
             total=result["total"],
