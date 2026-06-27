@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 from src.database.postgres import get_session
 from src.schemas.sector import (
     EpisodesBySectorResponse,
+    IndustryPerformanceItem,
+    IndustryPerformanceResponse,
     SectorBoardItem,
     SectorBoardMember,
     SectorBoardResponse,
@@ -182,6 +184,27 @@ async def get_sector_board(db: Session = Depends(get_session)):
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching sector board: {str(e)}")
+
+
+@router.get("/sectors/industry-performance", response_model=IndustryPerformanceResponse)
+async def get_industry_performance(db: Session = Depends(get_session)):
+    """Industry (exposure_type='sector') performance for the /topics 產業 bubble chart.
+
+    Each row carries aggregate constituent market cap (NT$, TW-only via FinMind), the
+    members' average daily % change, and episode count. Admin-hidden sectors are excluded
+    (cheap per-request filter, same as the board).
+    """
+    try:
+        items = await podcast_service.industry_performance()
+        hidden = hidden_sector_exposure_ids(db)
+        return IndustryPerformanceResponse(
+            industries=[
+                IndustryPerformanceItem(**i) for i in items
+                if i.get("exposure_id") not in hidden
+            ]
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching industry performance: {str(e)}")
 
 
 @router.get("/episodes/by-sector/{exposure_id}", response_model=EpisodesBySectorResponse)

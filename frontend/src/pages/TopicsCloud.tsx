@@ -1,24 +1,33 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Flame, BarChart3, Layers, Hash } from 'lucide-react';
+import { Flame, BarChart3, Layers, Hash, Info } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
+import { Segmented } from '@/components/redesign/Segmented';
+import SectorPerformance from '@/components/industry/SectorPerformance';
 import { SectorHeroCard } from '@/components/topics/SectorHeroCard';
 import { SectorBoardCard } from '@/components/topics/SectorBoardCard';
 import { TagBoardCard } from '@/components/topics/TagBoardCard';
 import {
   getSectorBoard,
+  getIndustryPerformance,
   getTrendingTags,
   type SectorBoardItem,
+  type IndustryPerformanceItem,
   type TrendingTag,
 } from '@/services/api/podcasts';
+import type { SectorBubbleData } from '@/services/mocks/types';
 import { fetchWithFallback } from '@/services/api/migration';
 import { useTagLabels, tagLabelFor } from '@/hooks/useTagLabels';
 
-// ── Sort types ─────────────────────────────────────────────────────────────
+// ── Tab + sort types ─────────────────────────────────────────────────────────
 
+type TabKey = 'industry' | 'theme';
 type SortKey = 'hotness' | 'avg_change' | 'episode_count';
 
-// ── Sort toggle ────────────────────────────────────────────────────────────
+const TAB_OPTIONS = [
+  { value: 'industry' as const, label: '產業' },
+  { value: 'theme' as const, label: '題材' },
+];
 
 const SORT_OPTIONS: { key: SortKey; label: string }[] = [
   { key: 'hotness', label: '綜合熱度' },
@@ -90,15 +99,27 @@ function BoardSkeleton() {
   );
 }
 
+function sortBoard(items: SectorBoardItem[], sortKey: SortKey): SectorBoardItem[] {
+  return [...items].sort((a, b) => {
+    if (sortKey === 'hotness') return (b.hotness ?? 0) - (a.hotness ?? 0);
+    if (sortKey === 'avg_change') return (b.avg_change ?? -Infinity) - (a.avg_change ?? -Infinity);
+    return (b.episode_count ?? 0) - (a.episode_count ?? 0);
+  });
+}
+
 // ── Main page ──────────────────────────────────────────────────────────────
 
 export const TopicsCloud: React.FC = () => {
+  const [tab, setTab] = useState<TabKey>('industry');
   const [sectors, setSectors] = useState<SectorBoardItem[]>([]);
+  const [industries, setIndustries] = useState<IndustryPerformanceItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [industryLoading, setIndustryLoading] = useState(true);
   const [sortKey, setSortKey] = useState<SortKey>('hotness');
   const [tags, setTags] = useState<TrendingTag[]>([]);
   const tagLabels = useTagLabels();
 
+  // Board (both tabs filter this by exposure_type)
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -115,7 +136,19 @@ export const TopicsCloud: React.FC = () => {
     return () => { alive = false; };
   }, []);
 
-  // Trending tags for the secondary section (free-form topics, no price data).
+  // Industry performance (bubble chart) — FinMind-driven market cap + return
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const res = await getIndustryPerformance().catch(() => [] as IndustryPerformanceItem[]);
+      if (!alive) return;
+      setIndustries(res);
+      setIndustryLoading(false);
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  // Trending tags (free-form topics, shown on the 題材 tab)
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -126,26 +159,43 @@ export const TopicsCloud: React.FC = () => {
     return () => { alive = false; };
   }, []);
 
-  // Top gainers for hero strip: sorted by avg_change desc, up to 5
-  const heroSectors = useMemo(() => {
-    return [...sectors]
-      .filter((s) => s.avg_change != null && Number.isFinite(s.avg_change))
-      .sort((a, b) => (b.avg_change ?? -Infinity) - (a.avg_change ?? -Infinity))
-      .slice(0, 5);
-  }, [sectors]);
+  const industryBoard = useMemo(
+    () => sectors.filter((s) => s.exposure_type === 'sector'),
+    [sectors],
+  );
+  const themeBoard = useMemo(
+    () => sectors.filter((s) => s.exposure_type === 'theme'),
+    [sectors],
+  );
 
-  // Board sorted by toggle
-  const sortedSectors = useMemo(() => {
-    return [...sectors].sort((a, b) => {
-      if (sortKey === 'hotness') return (b.hotness ?? 0) - (a.hotness ?? 0);
-      if (sortKey === 'avg_change') {
-        return (b.avg_change ?? -Infinity) - (a.avg_change ?? -Infinity);
-      }
-      return (b.episode_count ?? 0) - (a.episode_count ?? 0);
-    });
-  }, [sectors, sortKey]);
+  // Bubble-chart shape: market cap NT$ → 兆, daily avg_change → return, episodes → size.
+  const industryBubbles = useMemo<SectorBubbleData[]>(
+    () =>
+      industries.map((i) => ({
+        id: i.exposure_id,
+        name: i.display_name,
+        label: i.display_name,
+        value: i.market_cap_twd ? i.market_cap_twd / 1e12 : 0,
+        marketCap: i.market_cap_twd ? +(i.market_cap_twd / 1e12).toFixed(1) : 0,
+        return: i.return_pct ?? 0,
+        returnRate: i.return_pct != null ? +i.return_pct.toFixed(2) : 0,
+        volume: i.episode_count,
+      })),
+    [industries],
+  );
 
-  const hasData = !loading && sectors.length > 0;
+  // Theme tab hero strip: top theme gainers
+  const heroThemes = useMemo(
+    () =>
+      [...themeBoard]
+        .filter((s) => s.avg_change != null && Number.isFinite(s.avg_change))
+        .sort((a, b) => (b.avg_change ?? -Infinity) - (a.avg_change ?? -Infinity))
+        .slice(0, 5),
+    [themeBoard],
+  );
+
+  const visibleBoard = tab === 'industry' ? industryBoard : themeBoard;
+  const sortedBoard = useMemo(() => sortBoard(visibleBoard, sortKey), [visibleBoard, sortKey]);
 
   return (
     <>
@@ -157,77 +207,129 @@ export const TopicsCloud: React.FC = () => {
         {/* Page header */}
         <div className="flex items-center justify-between mb-1">
           <h1 className="text-2xl font-semibold tracking-[-0.02em]">話題排行</h1>
-          {hasData && (
+          {!loading && sectors.length > 0 && (
             <div className="text-xs text-muted-foreground font-mono tabular-nums flex items-center gap-1.5">
               <Layers size={12} />
-              <span>{sectors.length} 題材</span>
+              <span>{visibleBoard.length} {tab === 'industry' ? '產業' : '題材'}</span>
             </div>
           )}
         </div>
-        <p className="text-base text-muted-foreground mb-6 max-w-[60ch]">
-          今日最強題材焦點 — 依產業/主題聚合，顯示漲跌幅與相關個股。
+        <p className="text-base text-muted-foreground mb-5 max-w-[60ch]">
+          {tab === 'industry'
+            ? '台股產業地圖 — 市值與近期漲跌，依產業別聚合。'
+            : '今日最強題材焦點 — 短線概念聚合，顯示漲跌幅與相關個股。'}
         </p>
 
-        {/* ── HERO STRIP ──────────────────────────────────────────── */}
-        <div className="mb-7">
-          <div className="flex items-center gap-1.5 mb-2.5">
-            <Flame size={13} className="text-accent-info" />
-            <h2 className="text-sm font-semibold">今日漲幅最強</h2>
-          </div>
-          <div className="flex gap-2.5 overflow-x-auto pb-1 -mx-0.5 px-0.5 scrollbar-none">
-            {loading
-              ? Array.from({ length: 5 }).map((_, i) => <HeroSkeleton key={i} />)
-              : heroSectors.length > 0
-                ? heroSectors.map((s) => <SectorHeroCard key={s.exposure_id} sector={s} />)
-                : (
-                  <div className="flex-1 bg-card border border-border rounded-xl p-4 text-sm text-muted-foreground text-center">
-                    尚無漲跌幅資料
-                  </div>
-                )
-            }
-          </div>
-        </div>
+        {/* Tabs */}
+        <Segmented options={TAB_OPTIONS} value={tab} onChange={(v) => setTab(v as TabKey)} className="mb-3" />
 
-        {/* ── BOARD ───────────────────────────────────────────────── */}
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-1.5">
-            <BarChart3 size={13} className="text-muted-foreground" />
-            <h2 className="text-sm font-semibold">題材總覽</h2>
-          </div>
-          <SortToggle value={sortKey} onChange={setSortKey} />
-        </div>
+        {/* Data-freshness disclaimer: prices come from the last *completed* daily bar,
+            not live ticks — so before today's close the figures may be the prior day's. */}
+        <p className="mb-6 flex items-start gap-1.5 text-xs text-muted-foreground">
+          <Info size={12} className="mt-0.5 shrink-0" />
+          <span>漲跌與市值採用最近一個<strong className="font-medium text-foreground/80">完整交易日</strong>的收盤資料，非即時報價；當日尚未收盤結算前，可能顯示前一交易日數據。</span>
+        </p>
 
-        {loading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {Array.from({ length: 6 }).map((_, i) => <BoardSkeleton key={i} />)}
-          </div>
-        ) : sectors.length === 0 ? (
-          <div className="bg-card border border-border rounded-xl p-10 text-center text-sm text-muted-foreground">
-            目前沒有題材資料。
-          </div>
+        {tab === 'industry' ? (
+          <>
+            {/* ── BUBBLE CHART ─────────────────────────────────────── */}
+            <div
+              className="mb-7 rounded-xl border border-border bg-card overflow-hidden"
+              style={{ height: 520 }}
+            >
+              {industryLoading ? (
+                <div className="w-full h-full animate-pulse bg-muted/30" />
+              ) : industryBubbles.length > 0 ? (
+                <SectorPerformance variant="embedded" data={industryBubbles} />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-sm text-muted-foreground">
+                  尚無產業市值資料
+                </div>
+              )}
+            </div>
+
+            {/* ── INDUSTRY BOARD ───────────────────────────────────── */}
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-1.5">
+                <BarChart3 size={13} className="text-muted-foreground" />
+                <h2 className="text-sm font-semibold">產業總覽</h2>
+              </div>
+              <SortToggle value={sortKey} onChange={setSortKey} />
+            </div>
+            <BoardGrid loading={loading} items={sortedBoard} empty="目前沒有產業資料。" />
+          </>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {sortedSectors.map((s) => (
-              <SectorBoardCard key={s.exposure_id} sector={s} />
-            ))}
-          </div>
-        )}
+          <>
+            {/* ── HERO STRIP ───────────────────────────────────────── */}
+            <div className="mb-7">
+              <div className="flex items-center gap-1.5 mb-2.5">
+                <Flame size={13} className="text-accent-info" />
+                <h2 className="text-sm font-semibold">今日漲幅最強</h2>
+              </div>
+              <div className="flex gap-2.5 overflow-x-auto pb-1 -mx-0.5 px-0.5 scrollbar-none">
+                {loading
+                  ? Array.from({ length: 5 }).map((_, i) => <HeroSkeleton key={i} />)
+                  : heroThemes.length > 0
+                    ? heroThemes.map((s) => <SectorHeroCard key={s.exposure_id} sector={s} />)
+                    : (
+                      <div className="flex-1 bg-card border border-border rounded-xl p-4 text-sm text-muted-foreground text-center">
+                        尚無漲跌幅資料
+                      </div>
+                    )}
+              </div>
+            </div>
 
-        {/* ── TAGS ────────────────────────────────────────────────── */}
-        {tags.length > 0 && (
-          <div className="mt-9">
-            <div className="flex items-center gap-1.5 mb-3">
-              <Hash size={13} className="text-muted-foreground" />
-              <h2 className="text-sm font-semibold">熱門標籤</h2>
+            {/* ── THEME BOARD ──────────────────────────────────────── */}
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-1.5">
+                <BarChart3 size={13} className="text-muted-foreground" />
+                <h2 className="text-sm font-semibold">題材總覽</h2>
+              </div>
+              <SortToggle value={sortKey} onChange={setSortKey} />
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {tags.map((t) => (
-                <TagBoardCard key={t.id} tag={t} label={tagLabelFor(t.id, tagLabels)} />
-              ))}
-            </div>
-          </div>
+            <BoardGrid loading={loading} items={sortedBoard} empty="目前沒有題材資料。" />
+
+            {/* ── TAGS ─────────────────────────────────────────────── */}
+            {tags.length > 0 && (
+              <div className="mt-9">
+                <div className="flex items-center gap-1.5 mb-3">
+                  <Hash size={13} className="text-muted-foreground" />
+                  <h2 className="text-sm font-semibold">熱門標籤</h2>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {tags.map((t) => (
+                    <TagBoardCard key={t.id} tag={t} label={tagLabelFor(t.id, tagLabels)} />
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
         )}
       </PageContent>
     </>
   );
 };
+
+function BoardGrid({ loading, items, empty }: { loading: boolean; items: SectorBoardItem[]; empty: string }) {
+  if (loading) {
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {Array.from({ length: 6 }).map((_, i) => <BoardSkeleton key={i} />)}
+      </div>
+    );
+  }
+  if (items.length === 0) {
+    return (
+      <div className="bg-card border border-border rounded-xl p-10 text-center text-sm text-muted-foreground">
+        {empty}
+      </div>
+    );
+  }
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      {items.map((s) => (
+        <SectorBoardCard key={s.exposure_id} sector={s} />
+      ))}
+    </div>
+  );
+}

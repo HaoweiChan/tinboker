@@ -1,0 +1,95 @@
+name: Refresh Industry Sectors
+
+# Weekly refresh of the FinMind-sourced INDUSTRY (exposure_type='sector') members
+# in the offline sector/theme universe artifact. Industries change rarely, so weekly
+# is ample; runs on demand from the Actions tab too.
+#
+# Pipeline (all in pipelines/, a uv workspace):
+#   refresh_industry_members.py --apply   # FinMind industry_category + market cap → members
+#   compile_sector_and_theme_universe.py  # rebuild themes (preserves sector entries)
+#   generate_sector_visuals.py  --apply   # icon/color (deterministic) + backend mirror
+#   generate_sector_reasons.py  --apply   # one-line zh-TW reasons for NEW members only (LLM)
+#
+# Secrets (FINMIND_API_KEY, OPENROUTER_API_KEY) are read from GCP Secret Manager by the
+# scripts' _secret() fallback once gcloud is authed — same pattern as refresh-social-tokens.
+#
+# Output is committed via a PR into develop (GitOps: the artifact is the source of truth,
+# read offline at runtime — never written directly to prod storage). Merge follows the
+# normal develop→main→tag release flow. New episodes pick up new membership automatically;
+# run backfill_sector_exposures.py separately for immediate effect on existing episodes.
+
+on:
+  schedule:
+    - cron: '0 4 * * 1'        # 04:00 UTC every Monday (after refresh-social-tokens at 03:00)
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
+env:
+  GCP_PROJECT_ID: gen-lang-client-0901363254
+
+jobs:
+  refresh-sectors:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: pipelines
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Install dependencies
+        run: uv sync --all-packages --all-extras
+
+      - name: Refresh industry members from FinMind
+        run: uv run --package tinboker-shared python libs/shared/scripts/refresh_industry_members.py --apply
+
+      - name: Recompile universe (refresh curated themes, preserve sectors)
+        run: uv run --package tinboker-shared python libs/shared/scripts/compile_sector_and_theme_universe.py
+
+      - name: Regenerate sector visuals + backend mirror
+        run: uv run --package tinboker-shared python libs/shared/scripts/generate_sector_visuals.py --apply
+
+      - name: Author reasons for new members (incremental)
+        run: uv run --package tinboker-shared python libs/shared/scripts/generate_sector_reasons.py --apply
+
+      - name: Open PR with refreshed universe
+        uses: peter-evans/create-pull-request@v6
+        with:
+          base: develop
+          branch: automation/refresh-sectors
+          commit-message: "chore(sectors): weekly FinMind industry-member refresh"
+          title: "chore(sectors): weekly FinMind industry-member refresh"
+          body: |
+            Automated weekly refresh of industry (`exposure_type='sector'`) members from
+            FinMind (`TaiwanStockInfo.industry_category` + `TaiwanStockMarketValue`).
+
+            - Curated members preserved and ranked first; FinMind adds market-cap-ranked breadth.
+            - Only clean TWSE categories auto-fill; finer electronics sectors stay curated.
+            - `tickers.json` sector labels synced non-regressingly (no `電子工業` downgrades).
+
+            Review the member diffs, then merge to deploy to dev. For immediate effect on
+            existing episodes, run `backfill_sector_exposures.py --commit` after merge.
+          delete-branch: true
+          add-paths: |
+            pipelines/libs/shared/src/shared/data/sector_and_theme_universe.json
+            pipelines/libs/shared/src/shared/data/tickers.json
+            pipelines/libs/shared/src/shared/data/curated_themes.json
+            backend/src/data/sector_visuals.json
+            backend/src/data/sector_reasons.json
