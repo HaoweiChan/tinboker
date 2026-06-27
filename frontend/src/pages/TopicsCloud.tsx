@@ -437,22 +437,22 @@ export const TopicsCloud: React.FC = () => {
               <SortToggle value={sortKey} onChange={setSortKey} />
             </div>
             <BoardGrid loading={loading} items={sortedBoard} empty="目前沒有題材資料。" />
-
-            {/* ── TAGS ─────────────────────────────────────────────── */}
-            {tags.length > 0 && (
-              <div className="mt-9">
-                <div className="flex items-center gap-1.5 mb-3">
-                  <Hash size={13} className="text-muted-foreground" />
-                  <h2 className="text-sm font-semibold">熱門標籤</h2>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {tags.map((t) => (
-                    <TagBoardCard key={t.id} tag={t} label={tagLabelFor(t.id, tagLabels)} />
-                  ))}
-                </div>
-              </div>
-            )}
           </>
+        )}
+
+        {/* ── TAGS (shown under both tabs) ──────────────────────────── */}
+        {tags.length > 0 && (
+          <div className="mt-9">
+            <div className="flex items-center gap-1.5 mb-3">
+              <Hash size={13} className="text-muted-foreground" />
+              <h2 className="text-sm font-semibold">熱門標籤</h2>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {tags.map((t) => (
+                <TagBoardCard key={t.id} tag={t} label={tagLabelFor(t.id, tagLabels)} />
+              ))}
+            </div>
+          </div>
         )}
       </PageContent>
     </>
