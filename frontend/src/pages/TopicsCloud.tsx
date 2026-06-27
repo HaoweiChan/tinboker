@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Flame, BarChart3, Layers, Hash, Info } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
@@ -123,6 +124,8 @@ function sortBoard(items: SectorBoardItem[], sortKey: SortKey): SectorBoardItem[
 // ── Main page ──────────────────────────────────────────────────────────────
 
 export const TopicsCloud: React.FC = () => {
+  const navigate = useNavigate();
+  const openExposure = (id: string) => navigate(`/sector/${encodeURIComponent(id)}`);
   const [tab, setTab] = useState<TabKey>('theme');
   const [sectors, setSectors] = useState<SectorBoardItem[]>([]);
   const [industries, setIndustries] = useState<IndustryPerformanceItem[]>([]);
@@ -205,6 +208,13 @@ export const TopicsCloud: React.FC = () => {
     return m;
   }, [sectors]);
 
+  // exposure_id → lucide icon name (from the board), to draw an icon inside each bubble.
+  const iconByExposure = useMemo(() => {
+    const m: Record<string, string | null | undefined> = {};
+    for (const s of sectors) m[s.exposure_id] = s.icon_id;
+    return m;
+  }, [sectors]);
+
   // Fetch trailing 1/7/30/90D returns for every board constituent (chunked — the endpoint
   // caps at 60 tickers/call), so the TF toggle re-plots Y client-side with no refetch.
   useEffect(() => {
@@ -237,6 +247,27 @@ export const TopicsCloud: React.FC = () => {
   const tfLabel = TF_OPTIONS.find((o) => o.value === tf)?.label ?? '';
   const yAxisLabel = `近期漲跌 %（${tfLabel}）`;
 
+  // Timeframe toggle rendered inside each chart card (top-left of the legend bar).
+  const tfToggle = (
+    <div className="flex shrink-0 items-center gap-0.5 whitespace-nowrap text-2xs">
+      <span className="mr-1 hidden text-muted-foreground/60 min-[420px]:inline">漲跌期間</span>
+      {TF_OPTIONS.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          onClick={() => setTf(o.value as TF)}
+          className={`shrink-0 whitespace-nowrap rounded px-1.5 py-0.5 transition-colors ${
+            tf === o.value
+              ? 'bg-primary/15 font-semibold text-primary'
+              : 'text-muted-foreground/70 hover:text-foreground'
+          }`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+
   // Bubble-chart shape: market cap NT$ → 兆, daily avg_change → return, episodes → size.
   const industryBubbles = useMemo<SectorBubbleData[]>(
     () =>
@@ -244,13 +275,14 @@ export const TopicsCloud: React.FC = () => {
         id: i.exposure_id,
         name: i.display_name,
         label: i.display_name,
+        icon_id: iconByExposure[i.exposure_id],
         value: i.market_cap_twd ? i.market_cap_twd / 1e12 : 0,
         marketCap: i.market_cap_twd ? +(i.market_cap_twd / 1e12).toFixed(1) : 0,
         return: memberReturn(i.exposure_id, i.return_pct),
         returnRate: memberReturn(i.exposure_id, i.return_pct),
         volume: i.episode_count,
       })),
-    [industries, memberReturn],
+    [industries, memberReturn, iconByExposure],
   );
 
   // Theme bubble: X = discussion (episodes), Y = return %, size = today's trade value (億).
@@ -260,6 +292,7 @@ export const TopicsCloud: React.FC = () => {
         id: t.exposure_id,
         name: t.display_name,
         label: t.display_name,
+        icon_id: iconByExposure[t.exposure_id],
         value: t.heat ?? 0,
         // X = recency-weighted 討論熱度 (time-decay, 7d half-life); raw count → sub-line.
         marketCap: t.heat != null ? +t.heat.toFixed(1) : 0,
@@ -268,7 +301,7 @@ export const TopicsCloud: React.FC = () => {
         returnRate: memberReturn(t.exposure_id, t.return_pct),
         volume: t.trading_value_twd ? +(t.trading_value_twd / 1e8).toFixed(0) : 0,
       })),
-    [themes, memberReturn],
+    [themes, memberReturn, iconByExposure],
   );
 
   // Theme tab hero strip: top theme gainers
@@ -320,15 +353,18 @@ export const TopicsCloud: React.FC = () => {
         {tab === 'industry' ? (
           <>
             {/* ── BUBBLE CHART ─────────────────────────────────────── */}
-            <div className="mb-2 flex items-center justify-end gap-2">
-              <span className="text-xs text-muted-foreground">漲跌期間</span>
-              <Segmented options={TF_OPTIONS} value={tf} onChange={(v) => setTf(v as TF)} />
-            </div>
-            <div className="mb-7 rounded-xl border border-border bg-card overflow-hidden h-[600px] md:h-[520px]">
+            <div className="mb-7 rounded-xl border border-border bg-card overflow-hidden md:h-[520px]">
               {industryLoading ? (
                 <div className="w-full h-full animate-pulse bg-muted/30" />
               ) : industryBubbles.length > 0 ? (
-                <SectorPerformance variant="embedded" data={industryBubbles} yAxisLabel={yAxisLabel} />
+                <SectorPerformance
+                  variant="embedded"
+                  data={industryBubbles}
+                  yAxisLabel={yAxisLabel}
+                  headerLeft={tfToggle}
+                  onSelectExposure={openExposure}
+                  xHelp="X 軸：市值（成分股總市值加總，台股 FinMind）；Y 軸：近期漲跌；泡泡大小：相關 Podcast 集數（討論度）；顏色：產業別。"
+                />
               ) : (
                 <div className="w-full h-full flex items-center justify-center text-sm text-muted-foreground">
                   尚無產業市值資料
@@ -349,11 +385,7 @@ export const TopicsCloud: React.FC = () => {
         ) : (
           <>
             {/* ── BUBBLE CHART (討論熱度 × 漲跌, sized by 成交值) ───────── */}
-            <div className="mb-2 flex items-center justify-end gap-2">
-              <span className="text-xs text-muted-foreground">漲跌期間</span>
-              <Segmented options={TF_OPTIONS} value={tf} onChange={(v) => setTf(v as TF)} />
-            </div>
-            <div className="mb-7 rounded-xl border border-border bg-card overflow-hidden h-[600px] md:h-[520px]">
+            <div className="mb-7 rounded-xl border border-border bg-card overflow-hidden md:h-[520px]">
               {themeLoading ? (
                 <div className="w-full h-full animate-pulse bg-muted/30" />
               ) : themeBubbles.length > 0 ? (
@@ -363,7 +395,10 @@ export const TopicsCloud: React.FC = () => {
                   xAxisLabel="討論熱度（近 7 日加權）"
                   xTickSuffix=""
                   xTooltipLabel="討論熱度"
+                  xHelp="X 軸：討論熱度（近 7 日 Podcast 提及加權，半衰期 7 天，越近期權重越高）；Y 軸：近期漲跌；泡泡大小：當日成交值；顏色：題材別。"
                   yAxisLabel={yAxisLabel}
+                  headerLeft={tfToggle}
+                  onSelectExposure={openExposure}
                   radiusTooltipLabel="今日成交值"
                   radiusTooltipSuffix=" 億"
                 />
