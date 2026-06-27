@@ -265,10 +265,7 @@ export const TopicsCloud: React.FC = () => {
         {tab === 'industry' ? (
           <>
             {/* ── BUBBLE CHART ─────────────────────────────────────── */}
-            <div
-              className="mb-7 rounded-xl border border-border bg-card overflow-hidden"
-              style={{ height: 520 }}
-            >
+            <div className="mb-7 rounded-xl border border-border bg-card overflow-hidden h-[600px] md:h-[520px]">
               {industryLoading ? (
                 <div className="w-full h-full animate-pulse bg-muted/30" />
               ) : industryBubbles.length > 0 ? (
@@ -293,10 +290,7 @@ export const TopicsCloud: React.FC = () => {
         ) : (
           <>
             {/* ── BUBBLE CHART (討論熱度 × 漲跌, sized by 成交值) ───────── */}
-            <div
-              className="mb-7 rounded-xl border border-border bg-card overflow-hidden"
-              style={{ height: 520 }}
-            >
+            <div className="mb-7 rounded-xl border border-border bg-card overflow-hidden h-[600px] md:h-[520px]">
               {themeLoading ? (
                 <div className="w-full h-full animate-pulse bg-muted/30" />
               ) : themeBubbles.length > 0 ? (
