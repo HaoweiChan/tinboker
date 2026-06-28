@@ -34,6 +34,11 @@ async def get_admin_access(
     """
     FastAPI dependency: accepts a regular user JWT (from Google OAuth).
     Grants access if the user's email is in the ADMIN_EMAILS whitelist (GSM).
+
+    Returns:
+    - 401 when the token is missing, invalid, or expired (so the frontend can
+      silently refresh the access token via its 401 interceptor).
+    - 403 when the token is valid but the email is not in the admin allowlist.
     """
     try:
         from src.utils.auth import verify_jwt_token
@@ -41,12 +46,21 @@ async def get_admin_access(
         if user_data and "email" in user_data:
             email = user_data["email"]
             if is_admin_email(email):
-                return AdminAccess(email=email, user_id=user_data.get("user_id"))
+                return AdminAccess(email=email, user_id=user_data.get("sub"))
+            # Valid JWT, but not an admin email → 403 (the right status; no refresh will help).
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Admin access required. Sign in with a whitelisted Google account.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.debug(f"Token verification failed: {e}")
+    # Token missing / invalid / expired → 401 so the browser can refresh.
     raise HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN,
-        detail="Admin access required. Sign in with a whitelisted Google account.",
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid or expired token. Please re-authenticate.",
         headers={"WWW-Authenticate": "Bearer"},
     )
 
@@ -68,8 +82,10 @@ async def get_translation_access(
     try:
         from src.utils.auth import verify_jwt_token
         user_data = verify_jwt_token(token)
-        if user_data and "email" in user_data and is_admin_email(user_data["email"]):
-            return AdminAccess(email=user_data["email"], user_id=user_data.get("user_id"))
+        if user_data and "email" in user_data:
+            if is_admin_email(user_data["email"]):
+                return AdminAccess(email=user_data["email"], user_id=user_data.get("sub"))
+            # Valid token but not admin/service → fall through to service-token check.
     except Exception as e:
         logger.debug(f"Token verification failed: {e}")
 
@@ -102,8 +118,9 @@ async def get_content_write_access(
     try:
         from src.utils.auth import verify_jwt_token
         user_data = verify_jwt_token(token)
-        if user_data and "email" in user_data and is_admin_email(user_data["email"]):
-            return AdminAccess(email=user_data["email"], user_id=user_data.get("user_id"))
+        if user_data and "email" in user_data:
+            if is_admin_email(user_data["email"]):
+                return AdminAccess(email=user_data["email"], user_id=user_data.get("sub"))
     except Exception as e:
         logger.debug(f"Token verification failed: {e}")
 
@@ -132,8 +149,9 @@ async def get_article_author_access(
     try:
         from src.utils.auth import verify_jwt_token
         user_data = verify_jwt_token(token)
-        if user_data and "email" in user_data and is_admin_email(user_data["email"]):
-            return AdminAccess(email=user_data["email"], user_id=user_data.get("user_id"))
+        if user_data and "email" in user_data:
+            if is_admin_email(user_data["email"]):
+                return AdminAccess(email=user_data["email"], user_id=user_data.get("sub"))
     except Exception as e:
         logger.debug(f"Token verification failed: {e}")
 
@@ -163,8 +181,9 @@ async def get_social_access(
     try:
         from src.utils.auth import verify_jwt_token
         user_data = verify_jwt_token(token)
-        if user_data and "email" in user_data and is_admin_email(user_data["email"]):
-            return AdminAccess(email=user_data["email"], user_id=user_data.get("user_id"))
+        if user_data and "email" in user_data:
+            if is_admin_email(user_data["email"]):
+                return AdminAccess(email=user_data["email"], user_id=user_data.get("sub"))
     except Exception as e:
         logger.debug(f"Token verification failed: {e}")
 
