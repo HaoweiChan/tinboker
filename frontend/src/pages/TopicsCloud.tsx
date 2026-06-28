@@ -192,7 +192,7 @@ export const TopicsCloud: React.FC = () => {
   }, []);
 
   const industryBoard = useMemo(
-    () => sectors.filter((s) => s.exposure_type === 'sector'),
+    () => sectors.filter((s) => s.exposure_type === 'industry'),
     [sectors],
   );
   const themeBoard = useMemo(

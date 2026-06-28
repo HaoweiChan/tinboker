@@ -58,9 +58,7 @@ def _theme_entry(theme: dict[str, Any], tickers: dict[str, Any]) -> dict[str, An
         # Unified ``sector_`` namespace — curated themes and official sectors are one
         # concept to the user. ``exposure_type`` still records the provenance.
         "exposure_id": f"sector_{theme_id}",
-        "exposure_type": "theme",
-        "sector_id": None,
-        "theme_id": theme_id,
+        "exposure_type": theme.get("exposure_type") or "theme",
         "display_name": theme.get("display_name", theme_id),
         "aliases": theme.get("aliases") or [theme.get("display_name", theme_id)],
         "members": sorted(members, key=lambda m: int(m.get("rank") or 1_000_000)),
@@ -90,10 +88,16 @@ def main(argv: list[str] | None = None) -> int:
     # prebuild richer low-cost sector baselines while this script refreshes the
     # manually curated themes deterministically.
     existing = _load(OUT) if OUT.exists() else {"version": 1, "max_tickers": 10, "exposures": []}
-    non_theme_entries = [
-        e for e in (existing.get("exposures") or [])
-        if e.get("exposure_type") != "theme"
-    ]
+    non_theme_entries = []
+    for e in (existing.get("exposures") or []):
+        if e.get("exposure_type") == "theme":
+            continue
+        cleaned = dict(e)
+        if cleaned.get("exposure_type") == "sector":
+            cleaned["exposure_type"] = "industry"
+        cleaned.pop("sector_id", None)
+        cleaned.pop("theme_id", None)
+        non_theme_entries.append(cleaned)
 
     compiled = {
         "version": int(existing.get("version") or 1),

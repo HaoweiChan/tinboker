@@ -43,7 +43,7 @@ export const SectorHeroCard: React.FC<SectorHeroCardProps> = ({ sector }) => {
             variant="chip"
           />
           <span className="text-2xs font-medium text-muted-foreground bg-muted/70 px-1.5 py-0.5 rounded leading-none">
-            {sector.exposure_type === 'sector' ? '產業' : sector.exposure_type === 'theme' ? '題材' : '總經'}
+            {sector.exposure_type === 'industry' ? '產業' : sector.exposure_type === 'theme' ? '題材' : '總經'}
           </span>
         </div>
 

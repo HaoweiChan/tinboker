@@ -84,8 +84,6 @@ class ResolvedTicker(TypedDict, total=False):
 class SectorExposure(TypedDict, total=False):
     exposure_id: str
     exposure_type: str
-    sector_id: Optional[str]
-    theme_id: Optional[str]
     display_name: str
     mention_text: str
     confidence: float

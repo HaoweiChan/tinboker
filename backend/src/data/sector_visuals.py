@@ -14,39 +14,37 @@ then falls back to a stable hashed-hue chip.
 """
 from __future__ import annotations
 
-import json
 import logging
 from functools import lru_cache
-from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-_DATA_FILE = Path(__file__).resolve().parent / "sector_visuals.json"
-
 
 @lru_cache(maxsize=1)
 def _visuals() -> dict[str, dict[str, str]]:
-    """Load the visuals map (``{exposure_id: {icon_id, color_hex}}``)."""
+    """Load the visuals map (``{exposure_id: {icon_id, color_hex}}``) from database."""
+    from src.database import postgres
+    from src.database.models import TagRegistry
     try:
-        raw = json.loads(_DATA_FILE.read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        return {}
+        if postgres.SessionLocal is None:
+            postgres.init_engine()
+        db = postgres.SessionLocal()
+        try:
+            rows = db.query(TagRegistry).filter(TagRegistry.kind == "sector").all()
+            out: dict[str, dict[str, str]] = {}
+            for r in rows:
+                if r.exposure_id and (r.icon_id or r.color_hex):
+                    out[r.exposure_id] = {
+                        "icon_id": r.icon_id,
+                        "color_hex": r.color_hex,
+                    }
+            return out
+        finally:
+            db.close()
     except Exception as exc:  # noqa: BLE001 — never let bad data break the page
-        logger.warning("sector_visuals: could not load %s: %s", _DATA_FILE, exc)
+        logger.warning("sector_visuals: could not query TagRegistry: %s", exc)
         return {}
-    out: dict[str, dict[str, str]] = {}
-    for eid, v in (raw or {}).items():
-        if not isinstance(v, dict):
-            continue
-        icon_id = v.get("icon_id")
-        color_hex = v.get("color_hex")
-        if icon_id or color_hex:
-            out[str(eid)] = {
-                "icon_id": str(icon_id) if icon_id else None,
-                "color_hex": str(color_hex) if color_hex else None,
-            }
-    return out
 
 
 def visual_for(exposure_id: str) -> Optional[dict[str, Optional[str]]]:

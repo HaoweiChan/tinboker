@@ -20,7 +20,6 @@ class Episode(BaseModel):
     sector_exposures: List[dict] = Field(default_factory=list, description="Broad sector/theme exposure metadata; separate from direct ticker mentions")
     unresolved_market_trends: List[dict] = Field(default_factory=list, description="Unmapped recurring market concepts for demand-driven curation")
     sector_exposure_ids: List[str] = Field(default_factory=list, description="Flat Firestore-queryable sector/theme exposure IDs")
-    sector_ids: List[str] = Field(default_factory=list, description="Flat Firestore-queryable base ids of all exposures (themes + sectors, unified)")
     unresolved_market_trend_ids: List[str] = Field(default_factory=list, description="Flat unresolved trend IDs")
     created_time: int = Field(..., description="Creation/ingestion timestamp (Unix milliseconds)")
     released_at_ms: Optional[int] = Field(None, description="True episode publish time (Unix milliseconds), agents-written from the feed's datePublished. Falls back to created_time when absent.")
