@@ -100,6 +100,7 @@ def cards_from_marp_slides(
     cards: list[dict[str, Any]] = [{
         "kind": "cover",
         "title": deck_title,
+        "subtitle": (episode_title or "").strip(),  # shown under the show name on the cover
         "bullets": insights,
         "start_time_ms": None,
         "image_url": None,

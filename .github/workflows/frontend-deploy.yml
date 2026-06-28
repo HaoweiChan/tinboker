@@ -102,9 +102,13 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # Run wrangler from frontend/ so it picks up frontend/functions/ — Pages
+          # Functions must live in wrangler's working directory, NOT inside the
+          # deployed assets dir. (dist == frontend/dist from here.)
+          workingDirectory: frontend
           # CF Pages project name is immutable and owns the prod custom domains;
           # it stays "tinboker-platform" even though the repo is now "tinboker".
-          command: pages deploy frontend/dist --project-name=tinboker-platform --branch=${{ steps.env.outputs.branch }} --commit-dirty=true
+          command: pages deploy dist --project-name=tinboker-platform --branch=${{ steps.env.outputs.branch }} --commit-dirty=true
 
       - name: Purge Cloudflare CDN cache
         if: success()

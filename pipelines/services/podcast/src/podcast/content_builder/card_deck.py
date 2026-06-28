@@ -77,6 +77,10 @@ section.cover .label {{
   color: {accent}; text-transform: uppercase; margin-bottom: 28px;
 }}
 section.cover h1 {{ font-size: 132px; font-weight: 900; line-height: 1.04; margin: 0 0 18px; color: {TEXT}; }}
+section.cover .subtitle {{
+  font-size: 46px; font-weight: 600; line-height: 1.34; color: {SOFT}; margin: 6px 0 30px;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}}
 section.cover .date {{ font-size: 34px; color: {MUTED}; margin-bottom: 36px; }}
 section.cover .rule {{ width: 132px; height: 10px; background: {accent}; border-radius: 6px; margin-bottom: 40px; }}
 section.cover .hook {{ font-size: 40px; line-height: 1.6; font-weight: 500; color: {SOFT}; }}
@@ -97,6 +101,14 @@ section.theme li {{
 section.theme li:last-child {{ margin-bottom: 0; }}
 section.theme li::before {{ content: "▍"; position: absolute; left: 0; top: 2px; color: {accent}; font-size: 34px; }}
 section.theme .ts {{ color: {accent}; font-weight: 700; font-size: .82em; white-space: nowrap; }}
+/* Content-aware fit tiers (chosen per card by char volume in _theme_slide) — shrink
+   type so dense cards FIT instead of clipping. Keep these in sync with _THEME_TIERS. */
+section.theme.fit-s h2 {{ font-size: 50px; margin-bottom: 32px; }}
+section.theme.fit-s li {{ font-size: 32px; line-height: 1.50; margin-bottom: 22px; }}
+section.theme.fit-xs h2 {{ font-size: 46px; margin-bottom: 30px; }}
+section.theme.fit-xs li {{ font-size: 28px; line-height: 1.45; margin-bottom: 18px; }}
+section.theme.fit-xxs h2 {{ font-size: 42px; margin-bottom: 26px; }}
+section.theme.fit-xxs li {{ font-size: 24px; line-height: 1.40; margin-bottom: 14px; }}
 /* ---- Sentiment badges (5-tier enum → low-noise chip, dark surface) ---- */
 .badge {{ display: inline-block; padding: 7px 22px; border-radius: 8px;
   font-size: 28px; font-weight: 800; letter-spacing: 1.5px; white-space: nowrap; }}
@@ -187,7 +199,10 @@ def _cover_slide(card: dict, show_name: str, date_str: str) -> str:
     hook = html.escape("，".join(b.strip().rstrip("。") for b in bullets[:3]))
     if hook:
         hook += "。"
+    subtitle = html.escape((card.get("subtitle") or "").strip())
     lines = ["<!-- _class: cover -->", "", '<div class="label">Podcast Memo</div>', "", f"# {title}", ""]
+    if subtitle:
+        lines.append(f'<div class="subtitle">{subtitle}</div>')
     if date_str:
         lines.append(f'<div class="date">{html.escape(date_str)}</div>')
     lines.append('<div class="rule"></div>')
@@ -196,11 +211,45 @@ def _cover_slide(card: dict, show_name: str, date_str: str) -> str:
     return "\n".join(lines)
 
 
+# Per-tier theme metrics — MUST match the `section.theme.fit-*` CSS above.
+# (class suffix, li font px, li line-height, li margin px, h2 font px, h2 margin px)
+_THEME_TIERS = [
+    ("",        37, 1.52, 26, 52, 36),
+    ("fit-s",   32, 1.50, 22, 50, 32),
+    ("fit-xs",  28, 1.45, 18, 46, 30),
+    ("fit-xxs", 24, 1.40, 14, 42, 26),
+]
+_THEME_BUDGET_PX = 1080 - 84 - 132   # canvas minus top padding minus watermark band
+_SIDE_PAD_PX = 88 * 2                 # left+right section padding
+_LI_INDENT_PX = 40                    # li padding-left (bullet marker)
+
+
+def _theme_fit_suffix(heading: str, bullets: list[str]) -> str:
+    """Pick the largest type tier whose estimated height fits the card.
+
+    Deterministic auto-fit: estimates wrapped-line counts for CJK text (≈1 glyph per
+    font-px wide) so dense cards shrink to FIT rather than clip. Falls back to the
+    smallest tier (overflow:hidden then clips, very rare)."""
+    import math
+
+    for suffix, lf, lh, lm, hf, hm in _THEME_TIERS:
+        li_cpl = max(1, (1080 - _SIDE_PAD_PX - _LI_INDENT_PX) // lf)
+        ul_lines = sum(max(1, math.ceil(len(b) / li_cpl)) for b in bullets)
+        ul_h = ul_lines * lf * lh + max(0, len(bullets) - 1) * lm
+        h2_cpl = max(1, (1080 - _SIDE_PAD_PX) // hf)
+        h2_h = max(1, math.ceil(len(heading) / h2_cpl)) * hf * 1.3 + 40 + hm  # 40 = h2 v-padding
+        if h2_h + ul_h <= _THEME_BUDGET_PX:
+            return suffix
+    return _THEME_TIERS[-1][0]
+
+
 def _theme_slide(card: dict) -> str:
-    heading = html.escape((card.get("title") or "").strip())
-    bullets = [b for b in (card.get("bullets") or []) if b and b.strip()]
-    parts = ["<!-- _class: theme -->", "", f"## {heading}", ""]
-    parts += [f"- {_wrap_timestamp(b)}" for b in bullets]
+    raw_heading = (card.get("title") or "").strip()
+    raw_bullets = [b.strip() for b in (card.get("bullets") or []) if b and b.strip()]
+    suffix = _theme_fit_suffix(raw_heading, raw_bullets)
+    cls = f"theme {suffix}".strip()
+    parts = [f"<!-- _class: {cls} -->", "", f"## {html.escape(raw_heading)}", ""]
+    parts += [f"- {_wrap_timestamp(b)}" for b in raw_bullets]
     return "\n".join(parts)
 
 

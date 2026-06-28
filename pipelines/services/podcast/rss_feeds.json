@@ -1,4 +1,7 @@
 {
   "_comment": "Canonical podcast RSS feeds, keyed by exact show name. The pipeline and watcher read these (RSS-first) instead of the lagging podcasttomp3 mirror. Add a show's real RSS URL here to get within-minutes ingestion; shows not listed fall back to the mirror.",
-  "Gooaye 股癌": "https://feeds.soundon.fm/podcasts/954689a5-3096-43a4-a80b-7810b219cef3.xml"
+  "Gooaye 股癌": "https://feeds.soundon.fm/podcasts/954689a5-3096-43a4-a80b-7810b219cef3.xml",
+  "兆華與股惑仔": "https://feeds.soundon.fm/podcasts/91be014b-9f55-4bf3-a910-b232eda82d11.xml",
+  "韭菜畢業班": "https://api.soundon.fm/v2/podcasts/eaf95eee-f3b9-43ca-9b9b-245902018222/feed.xml"
 }
+

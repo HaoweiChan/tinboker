@@ -8,6 +8,7 @@ import { NotificationDropdown } from '@/components/ui/NotificationDropdown';
 import { UserMenu } from '@/components/ui/UserMenu';
 import { BracketMark } from '@/components/logo/AppLogo';
 import { OnboardingModals } from '@/components/onboarding/OnboardingModals';
+import { LoginPromptModal } from '@/components/auth/LoginPromptModal';
 import { usePlayerStore } from '@/store/usePlayerStore';
 
 /** [title, subtitle] for the page header, derived from the route. */
@@ -94,6 +95,7 @@ export const AppLayout: React.FC = () => {
         <BottomTabs />
       </div>
       <OnboardingModals />
+      <LoginPromptModal />
     </div>
   );
 };

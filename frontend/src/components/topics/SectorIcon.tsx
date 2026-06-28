@@ -130,12 +130,13 @@ function normalizeExposureId(exposureId: string): string {
 }
 
 /** Resolve a lucide component: API icon_id → exposure_id fallback → Hash. */
-function resolveIcon(exposureId: string, iconId?: string | null): LucideIcon {
+// eslint-disable-next-line react-refresh/only-export-components
+export function resolveIcon(exposureId: string, iconId?: string | null): LucideIcon {
   if (iconId && ICON_REGISTRY[iconId]) return ICON_REGISTRY[iconId];
   return ICON_MAP[normalizeExposureId(exposureId)] ?? Hash;
 }
 
-/** Resolve an accent color: API color_hex → exposure_id fallback → hashed hue. */
+// eslint-disable-next-line react-refresh/only-export-components
 export function sectorColor(exposureId: string, colorHex?: string | null): string {
   const id = normalizeExposureId(exposureId || 'topic');
   return colorHex || COLOR_MAP[id] || `hsl(${hashHue(id)} 64% 56%)`;

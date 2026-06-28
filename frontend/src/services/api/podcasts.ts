@@ -165,7 +165,7 @@ export async function getSortedPodcasts(options?: {
   limit?: number;
   offset?: number;
 }): Promise<Podcast[]> {
-  const params: Record<string, any> = {};
+  const params: Record<string, string | number> = {};
   if (options?.sortBy) params.sort_by = options.sortBy;
   if (options?.order) params.order = options.order;
   if (options?.limit) params.limit = options.limit;
@@ -189,7 +189,7 @@ export async function getPodcastEpisodes(
     includeContent?: boolean;
   }
 ): Promise<Episode[]> {
-  const params: Record<string, any> = {};
+  const params: Record<string, string | number | boolean> = {};
   if (options?.sortBy) params.sort_by = options.sortBy;
   if (options?.order) params.order = options.order;
   if (options?.limit) params.limit = options.limit;
@@ -236,7 +236,7 @@ export async function getEpisodesByTicker(
   ticker: string,
   options?: { limit?: number; offset?: number; sortBy?: string; order?: 'asc' | 'desc'; includeContent?: boolean }
 ): Promise<Episode[]> {
-  const params: Record<string, any> = {};
+  const params: Record<string, string | number | boolean> = {};
   if (options?.limit) params.limit = options.limit;
   if (options?.offset) params.offset = options.offset;
   if (options?.sortBy) params.sort_by = options.sortBy;
@@ -392,12 +392,17 @@ export interface TagRegistryEntry {
 
 export interface TagRegistryResponse {
   tags: TagRegistryEntry[];
+  /** Normalized slugs of admin-hidden off-vocab tags — dropped from episode tag chips. */
+  hidden_slugs: string[];
 }
 
 export async function getTagRegistry(): Promise<TagRegistryResponse> {
   const response = await apiClient.get('/api/tags/registry');
   const d = response.data ?? {};
-  return { tags: Array.isArray(d.tags) ? d.tags : [] };
+  return {
+    tags: Array.isArray(d.tags) ? d.tags : [],
+    hidden_slugs: Array.isArray(d.hidden_slugs) ? d.hidden_slugs : [],
+  };
 }
 
 export async function getTags(): Promise<TagsResponse> {
@@ -416,8 +421,8 @@ export async function getEpisodesByTag(
   limit: number = 50,
   offset: number = 0,
   includeContent?: boolean
-): Promise<any> {
-  const params: Record<string, any> = { limit, offset };
+): Promise<EpisodesByTagResponse> {
+  const params: Record<string, string | number | boolean> = { limit, offset };
   if (includeContent !== undefined) params.include_content = includeContent;
   const response = await apiClient.get(`/api/episodes/by-tag/${encodeURIComponent(tag)}`, { params });
   return response.data;
@@ -431,7 +436,7 @@ export async function getRecentEpisodes(options?: {
   order?: 'asc' | 'desc';
   includeContent?: boolean;
 }): Promise<Episode[]> {
-  const params: Record<string, any> = {};
+  const params: Record<string, string | number | boolean> = {};
   if (options?.limit) params.limit = options.limit;
   if (options?.offset) params.offset = options.offset;
   if (options?.podcastName) params.podcast_name = options.podcastName;
@@ -555,6 +560,7 @@ export interface SectorBoardItem {
   icon_id?: string | null;   // lucide icon name from the compiled universe
   color_hex?: string | null; // accent color
   episode_count: number;
+  heat?: number | null; // recency-weighted discussion (Σ 0.5^(age/H))
   avg_change: number | null;
   hotness: number;
   members: SectorBoardMember[];
@@ -565,6 +571,42 @@ export async function getSectorBoard(): Promise<SectorBoardItem[]> {
   const response = await apiClient.get('/api/sectors/board');
   const d = response.data ?? {};
   return Array.isArray(d.sectors) ? d.sectors : [];
+}
+
+/** Industry (exposure_type='sector') performance for the /topics 產業 bubble chart.
+ *  market_cap_twd is aggregate constituent market cap in NT$ (TW-only via FinMind). */
+export interface IndustryPerformanceItem {
+  exposure_id: string;
+  display_name: string;
+  color_hex?: string | null;
+  market_cap_twd: number | null;
+  return_pct: number | null;
+  episode_count: number;
+}
+
+export async function getIndustryPerformance(): Promise<IndustryPerformanceItem[]> {
+  const response = await apiClient.get('/api/sectors/industry-performance');
+  const d = response.data ?? {};
+  return Array.isArray(d.industries) ? d.industries : [];
+}
+
+/** Theme (exposure_type='theme') performance for the /topics 題材 bubble chart.
+ *  Themes use hotness + money-flow dimensions: X = episode_count, Y = return_pct,
+ *  bubble = trading_value_twd (aggregate constituent daily trade value, NT$, TW-only). */
+export interface ThemePerformanceItem {
+  exposure_id: string;
+  display_name: string;
+  color_hex?: string | null;
+  episode_count: number;
+  heat: number | null; // recency-weighted discussion (X axis)
+  return_pct: number | null;
+  trading_value_twd: number | null;
+}
+
+export async function getThemePerformance(): Promise<ThemePerformanceItem[]> {
+  const response = await apiClient.get('/api/sectors/theme-performance');
+  const d = response.data ?? {};
+  return Array.isArray(d.themes) ? d.themes : [];
 }
 
 /** Trailing close-to-close performance for a ticker over fixed windows. */

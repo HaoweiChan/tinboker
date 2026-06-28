@@ -100,7 +100,7 @@ VITE_GOOGLE_CLIENT_ID=...
 | `npm run build` | `tsc -b` type-check + Vite production build |
 | `npm run lint` | ESLint |
 | `npm run preview` | Serve the production build locally |
-| `npm run generate-pwa-icons` / `generate-screenshots` / `generate-sitemap` | Asset/SEO generators |
+| `npm run generate-pwa-icons` / `generate-screenshots` | Asset generators |
 
 ---
 

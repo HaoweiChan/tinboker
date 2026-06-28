@@ -82,7 +82,7 @@ export const SectorBoardCard: React.FC<SectorBoardCardProps> = ({ sector }) => {
 
   const typeLabel =
     sector.exposure_type === 'sector' ? '產業'
-    : sector.exposure_type === 'theme' ? '主題'
+    : sector.exposure_type === 'theme' ? '題材'
     : '總經';
 
   return (

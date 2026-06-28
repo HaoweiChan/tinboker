@@ -53,6 +53,7 @@ def test_canonical_symbol():
     "BRK.B",                        # US class share
     "SPY", "QQQ",                   # registry ETFs (type=etf)
     "SPCE",                         # real ticker (Virgin Galactic) — stays valid
+    "SPCX",                         # SpaceX — real Nasdaq listing since 2026-06
     "ZZZZ",                         # not in registry but valid US shape
     "00878", "006208",             # real TW ETF codes — leading-zero guard must allow
 ])
@@ -64,7 +65,8 @@ def test_valid_symbols_pass(sym):
     # Market indices — both registry-stored (type=index) and not-in-registry.
     "VIX", "SPX", "DJI", "IXIC", "RUT", "NBI", "MSCI", "SOX", "NDX",
     # Private companies / wrong-or-junk symbols with no price data.
-    "OPENAI", "ANTHROPIC", "SPACEX", "TSMC", "SPACE", "WD", "GIGA", "ASE",
+    # (SPACEX removed — SpaceX is public as SPCX since 2026-06; it now resolves valid.)
+    "OPENAI", "ANTHROPIC", "TSMC", "SPACE", "WD", "GIGA", "ASE",
     # Foreign / unlisted-on-our-feeds names that pass the US-letter shape.
     "YMTC", "BNP", "LINEPAY", "HSCEI",
     # Country / region abbreviations (mostly 2-letter, would pass the shape check).

@@ -1227,8 +1227,14 @@ class PodcastService:
         except Exception as e:
             raise Exception(f"Failed to scan episodes for sector board: {e}") from e
 
-        # Tally per sector: episode count, first-seen meta, union of tickers (cap 12)
+        # Tally per sector: episode count, recency-weighted "heat", first-seen meta, tickers.
+        # heat = Σ 0.5^(age_days / H): a mention today weighs 1.0, H days ago 0.5, etc. — so
+        # the theme board's X axis reflects *recent* discussion, not a flat window count.
+        import time
+        now_ms = int(time.time() * 1000)
+        HALF_LIFE_DAYS = 7.0
         counts: dict[str, int] = {}
+        heat: dict[str, float] = {}      # exposure_id -> recency-weighted discussion heat
         meta: dict[str, dict] = {}       # exposure_id -> {display_name, exposure_type}
         ticker_map: dict[str, dict[str, str]] = {}  # exposure_id -> {ticker: first-seen name}
 
@@ -1237,13 +1243,17 @@ class PodcastService:
                 continue
             if allowed is not None and doc.get("podcast_name") not in allowed:
                 continue
-            if cutoff is not None and self._dict_release_ms(doc) < cutoff:
+            rel_ms = self._dict_release_ms(doc)
+            if cutoff is not None and rel_ms < cutoff:
                 continue
+            age_days = max(0.0, (now_ms - rel_ms) / 86_400_000.0)
+            weight = 0.5 ** (age_days / HALF_LIFE_DAYS)
             for entry in doc.get("sector_exposures") or []:
                 eid = normalize_exposure_id(entry.get("exposure_id"))
                 if not eid or eid in EXCLUDED_EXPOSURE_IDS:
                     continue
                 counts[eid] = counts.get(eid, 0) + 1
+                heat[eid] = heat.get(eid, 0.0) + weight
                 if eid not in meta:
                     meta[eid] = {
                         "display_name": entry.get("display_name") or eid,
@@ -1321,6 +1331,7 @@ class PodcastService:
                 "icon_id": visual.get("icon_id"),
                 "color_hex": visual.get("color_hex"),
                 "episode_count": count,
+                "heat": round(heat.get(eid, 0.0), 2),
                 "avg_change": avg_change,
                 "members": members,
                 "series": sector_series,
@@ -1359,6 +1370,199 @@ class PodcastService:
 
         result.sort(key=lambda x: x["hotness"], reverse=True)
         return result
+
+    # ── Industry performance (bubble chart, /topics 產業 tab) ─────────────────
+    def _finmind(self):
+        """Lazily-constructed FinMind client, shared per service instance."""
+        fm = getattr(self, "_finmind_client", None)
+        if fm is None:
+            from src.services.finmind_service import FinMindAPIService
+            fm = FinMindAPIService()
+            self._finmind_client = fm
+        return fm
+
+    async def _tw_market_caps_cached(self) -> dict[str, float]:
+        """``{stock_id: market value NT$}`` for all TW stocks, daily-cached (FinMind)."""
+        cache_key = "sectors:tw_market_caps:v1"
+        cached = await cache_get(cache_key)
+        if cached:
+            try:
+                return json.loads(cached)
+            except Exception:
+                pass
+        caps = await asyncio.to_thread(self._finmind().get_tw_market_caps)
+        if caps:
+            await cache_set(cache_key, json.dumps(caps), CACHE_TTL["stock_ohlcv"])  # 1 day
+        return caps or {}
+
+    async def industry_performance(self) -> list[dict]:
+        """Bubble-chart rows for the /topics 產業 tab: industry (exposure_type='sector')
+        board items joined with aggregate constituent market cap.
+
+        Reuses the warm sector board (no extra Firestore scan) and daily-cached TW market
+        caps. Market caps are TW-only — FinMind has no US coverage — consistent with
+        industry boards being TW-centric; US members contribute 0.
+        """
+        board = await self.sector_board()
+        industries = [s for s in board if s.get("exposure_type") == "sector"]
+        if not industries:
+            return []
+        caps = await self._tw_market_caps_cached()
+        out: list[dict] = []
+        for s in industries:
+            total_mc = sum(
+                caps.get((m.get("ticker") or "").strip(), 0.0)
+                for m in s.get("members") or []
+            )
+            out.append({
+                "exposure_id": s["exposure_id"],
+                "display_name": s["display_name"],
+                "color_hex": s.get("color_hex"),
+                "market_cap_twd": total_mc or None,
+                "return_pct": s.get("avg_change"),
+                "episode_count": s.get("episode_count", 0),
+            })
+        out.sort(key=lambda x: (x["market_cap_twd"] or 0.0), reverse=True)
+        return out
+
+    async def _tw_trading_values_cached(self) -> dict[str, float]:
+        """``{stock_id: latest daily trading value NT$}`` for all TW stocks, daily-cached."""
+        cache_key = "sectors:tw_trading_values:v1"
+        cached = await cache_get(cache_key)
+        if cached:
+            try:
+                return json.loads(cached)
+            except Exception:
+                pass
+        vals = await asyncio.to_thread(self._finmind().get_tw_trading_values)
+        if vals:
+            await cache_set(cache_key, json.dumps(vals), CACHE_TTL["stock_ohlcv"])  # 1 day
+        return vals or {}
+
+    async def theme_performance(self) -> list[dict]:
+        """Bubble-chart rows for the /topics 題材 tab: theme (exposure_type='theme') board
+        items, mapped to theme-appropriate dimensions.
+
+        Themes are curated/corpus-discovered concepts, not official baskets, so market cap
+        is the wrong size metric (the user watches hotness + money flow). The chart maps:
+        X = discussion volume (episode_count), Y = avg member % change, bubble = aggregate
+        constituent daily trading value (TW-only via FinMind; US members contribute 0, and
+        the bounded radius keeps US-heavy themes visible).
+        """
+        board = await self.sector_board()
+        themes = [s for s in board if s.get("exposure_type") == "theme"]
+        if not themes:
+            return []
+        tvals = await self._tw_trading_values_cached()
+        out: list[dict] = []
+        for s in themes:
+            total_tv = sum(
+                tvals.get((m.get("ticker") or "").strip(), 0.0)
+                for m in s.get("members") or []
+            )
+            out.append({
+                "exposure_id": s["exposure_id"],
+                "display_name": s["display_name"],
+                "color_hex": s.get("color_hex"),
+                "episode_count": s.get("episode_count", 0),
+                "heat": s.get("heat"),  # recency-weighted discussion (X axis)
+                "return_pct": s.get("avg_change"),
+                "trading_value_twd": total_tv or None,
+            })
+        out.sort(key=lambda x: ((x["heat"] or 0.0), x["episode_count"]), reverse=True)
+        return out
+
+    # ── Theme discovery (admin curation queue) ────────────────────────────────
+    _THEME_SCAN_FIELDS = [
+        "unresolved_market_trends", "related_tickers", "podcast_name", "episode_title",
+        "title", "retracted_at", "released_at_ms", "spotify_release_date", "created_time",
+    ]
+    # Indices / breadth gauges the writer emits as "trends" — never curatable themes.
+    _THEME_INDEX_STOPWORDS = frozenset({
+        "SP500", "SPX", "DJI", "DJIA", "IXIC", "NDX", "RUT", "SOX", "SOXX", "VIX",
+        "NASDAQ", "DOW", "NIKKEI", "TWSE", "TAIEX", "TWII",
+    })
+
+    async def theme_candidates(self, *, threshold: int = 3, limit: int = 40) -> list[dict]:
+        """Rank emerging theme candidates from episodes' ``unresolved_market_trends``.
+
+        These are CPO-style market concepts the deterministic resolver saw but could not
+        map to any curated exposure — by construction NOT yet in the universe. Aggregated
+        across in-scope episodes (same release scoping as the board) so an admin can
+        promote recurring ones into curated_themes.json. Cached; full projected scan on miss.
+
+        Ticker symbols the writer mis-files as "trends" (NVDA, AAPL, …) and index gauges
+        (SP500, VIX, …) are dropped — those are stocks/indices, not curatable themes.
+        """
+        cache_key = f"sectors:theme_candidates:v2:{threshold}:{limit}:{self._scope_tag()}"
+        cached = await cache_get(cache_key)
+        if cached:
+            try:
+                return json.loads(cached)
+            except Exception:
+                pass
+
+        allowed = await self._allowed_podcast_names()
+        cutoff = self._recency_cutoff_ms()
+        try:
+            docs = await asyncio.to_thread(
+                self.firestore_service.stream_documents_projected,
+                "episodes",
+                self._THEME_SCAN_FIELDS,
+            )
+        except Exception as e:
+            raise Exception(f"Failed to scan episodes for theme candidates: {e}") from e
+
+        # Real tickers the pipeline emitted ANYWHERE (any episode, scope-independent) — the
+        # canonical "this is a stock, not a theme" set. The writer sometimes also drops a
+        # ticker into unresolved_market_trends; filtering candidates against this removes them.
+        tickers: set[str] = set()
+        for doc in docs:
+            for tk in doc.get("related_tickers") or []:
+                sym = str(tk).split(".")[0].strip().upper()
+                if sym:
+                    tickers.add(sym)
+
+        agg: dict[str, dict] = {}
+        for doc in docs:
+            if doc.get("retracted_at"):
+                continue
+            if allowed is not None and doc.get("podcast_name") not in allowed:
+                continue
+            if cutoff is not None and self._dict_release_ms(doc) < cutoff:
+                continue
+            for t in doc.get("unresolved_market_trends") or []:
+                key = (t.get("normalized_text") or "").strip()
+                if not key:
+                    continue
+                bucket = agg.setdefault(key, {
+                    "normalized_text": key,
+                    "mention_text": t.get("mention_text") or key,
+                    "count": 0,
+                    "examples": [],
+                })
+                bucket["count"] += 1
+                if len(bucket["examples"]) < 3:
+                    bucket["examples"].append({
+                        "episode_title": doc.get("episode_title") or doc.get("title") or "",
+                        "context": (t.get("context") or "")[:200],
+                    })
+
+        def _is_ticker_or_index(b: dict) -> bool:
+            for sym in (b["mention_text"], b["normalized_text"]):
+                u = str(sym).strip().upper()
+                if u in tickers or u in self._THEME_INDEX_STOPWORDS:
+                    return True
+            return False
+
+        candidates = [
+            b for b in agg.values()
+            if b["count"] >= threshold and not _is_ticker_or_index(b)
+        ]
+        candidates.sort(key=lambda x: (-x["count"], x["normalized_text"]))
+        candidates = candidates[:limit]
+        await cache_set(cache_key, json.dumps(candidates), CACHE_TTL["podcast_episodes"])
+        return candidates
 
     async def list_sectors(self) -> list[dict]:
         """Return all sector/theme exposures that appear in at least one episode, with counts.

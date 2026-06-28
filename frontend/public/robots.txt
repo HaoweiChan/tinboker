@@ -1,5 +1,5 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://tinboker.com/sitemap.xml
+Sitemap: https://api.tinboker.com/sitemap.xml
 

@@ -7,6 +7,7 @@ import { useParams, Link } from 'react-router-dom';
 import { ChevronLeft, Clock, Eye, Calendar } from 'lucide-react';
 import { PageContent } from '@/components/layout/PageContent';
 import { ArticleBody } from '@/components/article/ArticleBody';
+import { SEO } from '@/components/common/SEO';
 import { getArticleBySlug } from '@/services/articleService';
 import type { Article } from '@/validation/schemas';
 import { formatDate } from '@/lib/date';
@@ -43,6 +44,26 @@ export const ArticleDetail: React.FC = () => {
       </PageContent>
     );
   }
+
+  const canonicalUrl = `https://tinboker.com/article/${article.slug}`;
+  const seoDescription = article.subtitle || article.key_points?.[0] || article.title;
+  const seoImage = article.cover_image_url || 'https://tinboker.com/brand/tinboker-square-dark-1080.png';
+  const structuredData: Record<string, unknown> = {
+    '@context': 'https://schema.org',
+    '@type': 'Article',
+    headline: article.title,
+    description: seoDescription,
+    image: [seoImage],
+    author: { '@type': 'Person', name: article.author_name },
+    publisher: {
+      '@type': 'Organization',
+      name: '聽播客 TinBoker',
+      logo: { '@type': 'ImageObject', url: 'https://tinboker.com/brand/tinboker-square-dark-1080.png' },
+    },
+    mainEntityOfPage: canonicalUrl,
+  };
+  if (article.published_at) structuredData.datePublished = article.published_at;
+  if (article.updated_at) structuredData.dateModified = article.updated_at;
 
   const rightRail = (
     <div className="flex flex-col gap-4">
@@ -99,6 +120,14 @@ export const ArticleDetail: React.FC = () => {
 
   return (
     <PageContent className="max-w-[728px]">
+      <SEO
+        title={article.title}
+        description={seoDescription}
+        image={seoImage}
+        url={canonicalUrl}
+        type="article"
+        structuredData={structuredData}
+      />
       {/* Back link */}
       <Link
         to="/articles"

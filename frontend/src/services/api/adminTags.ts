@@ -21,6 +21,8 @@ export interface AdminTagEntry {
   /** false = virtual (no registry row); hiding it creates the row. */
   registered?: boolean;
   exposure_id?: string | null;
+  /** 'sector' (industry) | 'theme' for sector-kind rows; absent for plain tags. */
+  exposure_type?: string | null;
   icon_id?: string | null;
   color_hex?: string | null;
   episode_count?: number | null;
@@ -104,4 +106,30 @@ export async function syncSectors(): Promise<SyncSectorsResponse> {
     adminAuthConfig(),
   );
   return response.data;
+}
+
+// ── Theme discovery queue (emerging concepts not yet in the universe) ─────────
+
+export interface ThemeCandidateExample {
+  episode_title: string;
+  context: string;
+}
+
+export interface ThemeCandidate {
+  normalized_text: string;
+  mention_text: string;
+  count: number;
+  examples: ThemeCandidateExample[];
+}
+
+interface ThemeCandidatesResponse {
+  candidates: ThemeCandidate[];
+}
+
+export async function getThemeCandidates(threshold = 3, limit = 40): Promise<ThemeCandidate[]> {
+  const response = await apiClient.get<ThemeCandidatesResponse>(
+    '/api/admin/sectors/theme-candidates',
+    { params: { threshold, limit }, ...adminAuthConfig() },
+  );
+  return response.data.candidates ?? [];
 }

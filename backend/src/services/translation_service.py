@@ -30,8 +30,9 @@ _STUB_TW_RE = re.compile(r"^(?!0{4,})\d{3,6}[A-Z]?$")
 _STUB_US_RE = re.compile(r"^[A-Z]{1,5}(?:\.[A-Z]{1,2})?$")
 # Symbols that pass the regex but are NOT listed on TW or US exchanges.
 _STUB_NON_TICKERS: frozenset[str] = frozenset({
-    # private-company hallucinations
-    "ANTHR", "ANTHROPIC", "OPENAI", "OAI", "SPACEX", "SPCX",
+    # private-company hallucinations (SPCX/SPACEX removed — SpaceX is now public on
+    # Nasdaq as SPCX since 2026-06; keep in sync with shared/tickers.py::_NON_TICKERS)
+    "ANTHR", "ANTHROPIC", "OPENAI", "OAI",
     "BYTEDANCE", "DEEPSEEK", "XAI", "GRK", "GROK", "STRIPE", "SHEIN",
     # Yangtze Memory — Chinese state-owned, not listed on TW/US
     "YMTC",
