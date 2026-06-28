@@ -7,15 +7,14 @@ endpoints, Tavily, or scraping code. Maintenance jobs refresh the artifact.
 
 from __future__ import annotations
 
-import json
 import re
 import unicodedata
 from dataclasses import dataclass
 from functools import lru_cache
-from pathlib import Path
 from typing import Any, Iterable
 
-_DATA_FILE = Path(__file__).resolve().parent / "data" / "sector_and_theme_universe.json"
+from shared.platform_client import fetch_sectors_universe
+
 _CJK_RE = re.compile(r"[\u3400-\u9fff]")
 _LATIN_WORD_RE = re.compile(r"[a-z0-9][a-z0-9+.-]{1,12}")
 _UNRESOLVED_UPPER_RE = re.compile(r"\b[A-Z][A-Z0-9+.-]{1,10}\b")
@@ -106,10 +105,16 @@ def _clean_member(member: dict[str, Any]) -> dict[str, Any]:
 
 @lru_cache(maxsize=1)
 def _universe() -> dict[str, Any]:
-    raw = json.loads(_DATA_FILE.read_text(encoding="utf-8"))
-    max_tickers = int(raw.get("max_tickers") or DEFAULT_MAX_TICKERS)
+    universe_data = fetch_sectors_universe()
+    if not universe_data:
+        from shared.sectors_seed_backup import SECTORS_SEED
+        universe_data = {
+            "max_tickers": DEFAULT_MAX_TICKERS,
+            "exposures": SECTORS_SEED,
+        }
+    max_tickers = int(universe_data.get("max_tickers") or DEFAULT_MAX_TICKERS)
     exposures = []
-    for item in raw.get("exposures") or []:
+    for item in universe_data.get("exposures") or []:
         copied = dict(item)
         members = [m for m in copied.get("members") or [] if isinstance(m, dict)]
         copied["members"] = sorted(members, key=_member_sort_key)

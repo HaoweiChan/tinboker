@@ -258,3 +258,31 @@ async def get_episodes_by_sector(
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching episodes by sector: {str(e)}")
+
+
+@router.get("/sectors/universe")
+async def get_sectors_universe(db: Session = Depends(get_session)):
+    """Return the compiled universe mapping of all visible sectors/themes with their display names,
+    exposure types, icons, colors, aliases, and members directly from the tag_registry table.
+    """
+    try:
+        from src.database.models import TagRegistry
+        rows = db.query(TagRegistry).filter(TagRegistry.kind == "sector").all()
+        exposures = []
+        for r in rows:
+            exposures.append({
+                "exposure_id": r.exposure_id,
+                "exposure_type": r.exposure_type or "theme",
+                "display_name": r.display_zh,
+                "icon_id": r.icon_id,
+                "color_hex": r.color_hex,
+                "aliases": r.aliases or [],
+                "members": r.members or []
+            })
+        return {
+            "max_tickers": 10,
+            "exposures": exposures
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error compiling sectors universe: {str(e)}")
+
