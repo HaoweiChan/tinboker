@@ -74,7 +74,7 @@ export async function uploadPromoMedia(file: File): Promise<PromoMedia> {
   // and the backend's file parser sees an empty/malformed part (→ 422).
   const auth = adminAuthConfig();
   const res = await apiClient.post<PromoMedia>('/api/admin/promo/media', form, {
-    headers: auth.headers,
+    headers: { ...auth.headers, 'Content-Type': undefined },
     timeout: PROMO_TIMEOUT_MS,
   });
   return res.data;
