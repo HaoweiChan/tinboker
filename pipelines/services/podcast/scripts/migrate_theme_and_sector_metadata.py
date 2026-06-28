@@ -263,7 +263,7 @@ def main() -> int:
                 else:
                     print(f"[DRY-RUN] Will delete tag '{t}' from Firestore tags collection.")
 
-    print(f"\nTags migration completed.")
+    print("\nTags migration completed.")
     print(f"Tags to migrate: {moved_tags_count}")
     if args.commit:
         print(f"Total episodes referenced across migrated tags: {moved_episodes_count}")
