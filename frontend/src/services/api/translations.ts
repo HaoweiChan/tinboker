@@ -136,7 +136,7 @@ export async function bulkImportCSV(file: File): Promise<BulkImportResponse> {
       ...adminAuthConfig(),
       headers: {
         ...adminAuthConfig().headers,
-        'Content-Type': 'multipart/form-data',
+        'Content-Type': undefined,
       },
     }
   );
