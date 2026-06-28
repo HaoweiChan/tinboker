@@ -22,6 +22,11 @@ from src.cache.redis_client import cache_get, cache_set, cache_delete, cache_del
 from src.cache.cache_config import CACHE_TTL
 from src.cache.cdn_cache import purge_cdn_cache
 
+from src.services.firestore_service import FirestoreService
+from src.services.gcs_content import GCSContentService
+from src.services.episode_transformer import EpisodeTransformer
+import httpx
+
 # Per-env API host for Cloudflare edge purges (host-scoped so one env never clears
 # another's cache). Mirrors the map in routers/admin_sources.py.
 _API_HOST_BY_ENV = {
@@ -29,10 +34,6 @@ _API_HOST_BY_ENV = {
     "staging": "staging-api.tinboker.com",
     "development": "dev-api.tinboker.com",
 }
-from src.services.firestore_service import FirestoreService
-from src.services.gcs_content import GCSContentService
-from src.services.episode_transformer import EpisodeTransformer
-import httpx
 
 
 logger = logging.getLogger(__name__)
