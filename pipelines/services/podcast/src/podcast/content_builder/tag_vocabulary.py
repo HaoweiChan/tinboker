@@ -31,14 +31,9 @@ slug vocabulary avoids that.
 
 from __future__ import annotations
 
-import json
 import re
-from pathlib import Path
 
-_VOCAB_PATH = Path(__file__).with_name("tag_vocabulary.json")
-
-# slug -> zh-TW display name. Slugs are ASCII [A-Za-z0-9_]; the join key is normalized.
-TAG_DISPLAY: dict[str, str] = json.loads(_VOCAB_PATH.read_text(encoding="utf-8"))
+from shared.tag_vocabulary_seed_backup import TAG_VOCABULARY_SEED as TAG_DISPLAY
 
 
 def normalize_tag_slug(slug: str) -> str:

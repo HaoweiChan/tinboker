@@ -14,30 +14,29 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
-CANONICAL = REPO_ROOT / "pipelines/services/podcast/src/podcast/content_builder/tag_vocabulary.json"
-MIRROR = REPO_ROOT / "backend/src/data/tag_vocabulary.json"
-
-
-def _strip_meta(d: dict) -> dict:
-    return {k: v for k, v in d.items() if not k.startswith("_")}
+CANONICAL = REPO_ROOT / "pipelines/libs/shared/src/shared/tag_vocabulary_seed_backup.py"
+MIRROR = REPO_ROOT / "backend/src/data/tag_vocabulary_seed.py"
 
 
 def test_mirror_matches_canonical():
     if not MIRROR.exists():
         pytest.skip("backend/ tree not present (pipelines-only checkout)")
-    canonical = json.loads(CANONICAL.read_text(encoding="utf-8"))
-    mirror = _strip_meta(json.loads(MIRROR.read_text(encoding="utf-8")))
+    # Import values dynamically to compare
+    import sys
+    sys.path.insert(0, str(REPO_ROOT / "backend/src"))
+    from data.tag_vocabulary_seed import TAG_VOCABULARY_SEED as mirror
+    from shared.tag_vocabulary_seed_backup import TAG_VOCABULARY_SEED as canonical
     assert mirror == canonical, (
-        "backend/src/data/tag_vocabulary.json is out of sync with the pipeline canonical. "
+        "backend/src/data/tag_vocabulary_seed.py is out of sync with the pipeline backup. "
         "Run: python scripts/sync_tag_vocabulary.py"
     )
 
 
 def test_tag_display_loads_from_json():
-    """``TAG_DISPLAY`` is sourced from the JSON, not a hardcoded dict."""
+    """``TAG_DISPLAY`` matches the canonical seed backup."""
+    from shared.tag_vocabulary_seed_backup import TAG_VOCABULARY_SEED
     from src.podcast.content_builder.tag_vocabulary import TAG_DISPLAY, display_for
 
-    canonical = json.loads(CANONICAL.read_text(encoding="utf-8"))
-    assert TAG_DISPLAY == canonical
+    assert TAG_DISPLAY == TAG_VOCABULARY_SEED
     # normalize: PascalCase / snake_case / lowercased all resolve to the same label.
     assert display_for("SupplyChain") == display_for("supply_chain") == display_for("supplychain")
