@@ -85,6 +85,8 @@ class SyncSectorsResponse(BaseModel):
 
 async def _invalidate_tag_caches() -> None:
     """Bust Redis caches that depend on tag registry data (all envs share the DB)."""
+    from src.data.sector_visuals import _visuals
+    _visuals.cache_clear()
     for pattern in ("tags:*",):
         try:
             await cache_delete_pattern_all_envs(pattern)

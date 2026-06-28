@@ -178,6 +178,13 @@ def create_all_tables():
             if tr_cols and "color_hex" not in tr_cols:
                 conn.execute(text("ALTER TABLE tag_registry ADD COLUMN color_hex VARCHAR(16)"))
                 conn.commit()
+    # Clean up obsolete cryptocurrency tag registry rows (idempotent)
+    with engine.connect() as conn:
+        conn.execute(text(
+            "DELETE FROM tag_registry WHERE slug IN ('cryptocurrency', 'sector_cryptocurrency') "
+            "OR exposure_id IN ('sector_cryptocurrency', 'theme_cryptocurrency')"
+        ))
+        conn.commit()
     logger.info("Database tables created successfully")
 
 

@@ -188,8 +188,6 @@ class EpisodeTransformer:
             sector_exposures=episode_dict.get('sector_exposures', []) or [],
             unresolved_market_trends=episode_dict.get('unresolved_market_trends', []) or [],
             sector_exposure_ids=episode_dict.get('sector_exposure_ids', []) or [],
-            # Unified namespace: fold any legacy theme_ids into sector_ids on read.
-            sector_ids=sorted(set(episode_dict.get('sector_ids') or []) | set(episode_dict.get('theme_ids') or [])),
             unresolved_market_trend_ids=episode_dict.get('unresolved_market_trend_ids', []) or [],
             created_time=self.datetime_to_timestamp_ms(created_time),
             released_at_ms=released_at_ms,

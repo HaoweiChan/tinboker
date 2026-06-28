@@ -40,9 +40,7 @@ export interface SectorResolvedTicker {
 
 export interface SectorExposure {
   exposure_id: string;
-  exposure_type: 'sector' | 'theme' | string;
-  sector_id?: string | null;
-  theme_id?: string | null;
+  exposure_type: 'industry' | 'theme' | string;
   display_name: string;
   mention_text: string;
   confidence: number;
@@ -89,7 +87,6 @@ export interface Episode {
   sector_exposures?: SectorExposure[];
   unresolved_market_trends?: UnresolvedMarketTrend[];
   sector_exposure_ids?: string[];
-  sector_ids?: string[];
   unresolved_market_trend_ids?: string[];
   created_time: number;
   /** True publish time (Unix ms), agents-written from the feed. Prefer over

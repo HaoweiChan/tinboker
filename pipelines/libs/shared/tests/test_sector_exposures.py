@@ -18,8 +18,8 @@ def test_english_normalization_handles_case_and_plural():
     singular = resolve_text("Semiconductor demand is improving")
     plural = resolve_text("semiconductors are recovering")
 
-    assert singular["sector_exposures"][0]["sector_id"] == "semiconductor"
-    assert plural["sector_exposures"][0]["sector_id"] == "semiconductor"
+    assert singular["sector_exposures"][0]["exposure_id"] == "sector_semiconductor"
+    assert plural["sector_exposures"][0]["exposure_id"] == "sector_semiconductor"
 
 
 def test_cross_lingual_aliases_and_many_to_many_indexing():
@@ -32,7 +32,7 @@ def test_cross_lingual_aliases_and_many_to_many_indexing():
 def test_longest_match_first_prefers_ai_server_over_shorter_ai_alias():
     out = resolve_text("AI 伺服器供應鏈轉強，AI 題材延續")
 
-    assert out["sector_exposures"][0]["theme_id"] == "ai_server"
+    assert out["sector_exposures"][0]["exposure_id"] == "sector_ai_server"
     assert out["sector_exposures"][0]["mention_text"] == "AI 伺服器"
 
 

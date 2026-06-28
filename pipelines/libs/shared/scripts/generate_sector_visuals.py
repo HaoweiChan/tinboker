@@ -36,8 +36,6 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1] / "src" / "shared" / "data"
 UNIVERSE = ROOT / "sector_and_theme_universe.json"
 CURATED_THEMES = ROOT / "curated_themes.json"
-# Compact mirror the backend serves from (it cannot import the pipelines package).
-BACKEND_MIRROR = Path(__file__).resolve().parents[4] / "backend" / "src" / "data" / "sector_visuals.json"
 
 # Authored visual identity per exposure_id.
 #   icon_id   — a lucide-react icon name (kebab-case); the frontend maps it to a
@@ -116,17 +114,13 @@ def main() -> int:
             theme["icon_id"] = v["icon_id"]
             theme["color_hex"] = v["color_hex"]
 
-    mirror = {eid: v for eid, v in VISUALS.items()}
-
-    print(f"=== {stamped} exposures stamped, {len(mirror)} visuals in mirror ===")
+    print(f"=== {stamped} exposures stamped ===")
 
     if args.apply:
         UNIVERSE.write_text(json.dumps(universe, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         print(f"Wrote universe: {UNIVERSE}")
         CURATED_THEMES.write_text(json.dumps(themes_doc, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         print(f"Wrote curated themes: {CURATED_THEMES}")
-        BACKEND_MIRROR.write_text(json.dumps(mirror, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        print(f"Wrote backend mirror: {BACKEND_MIRROR}")
     else:
         print("(dry-run — pass --apply to write)")
     return 0

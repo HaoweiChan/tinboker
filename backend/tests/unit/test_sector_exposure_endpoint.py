@@ -27,7 +27,7 @@ def _raw_doc(
     podcast_name: str = "Gooaye 股癌",
     exposure_id: str = "sector_passive_components",
     display_name: str = "被動元件",
-    exposure_type: str = "sector",
+    exposure_type: str = "industry",
     tickers: list | None = None,
     released_at_ms: int | None = None,
     summary_content: str = "摘要內容",
@@ -78,7 +78,7 @@ async def test_empty_result_returns_defaults():
 
     assert result["exposure_id"] == "sector_unknown"
     assert result["display_name"] == "sector_unknown"
-    assert result["exposure_type"] == "sector"
+    assert result["exposure_type"] == "industry"
     assert result["resolved_tickers"] == []
     assert result["episodes"] == []
     assert result["total"] == 0
@@ -108,7 +108,7 @@ async def test_returns_matched_episodes_and_metadata():
         result = await svc.get_episodes_by_sector("sector_passive_components")
 
     assert result["display_name"] == "被動元件"
-    assert result["exposure_type"] == "sector"
+    assert result["exposure_type"] == "industry"
     assert len(result["episodes"]) == 2
     assert result["total"] == 2
 

@@ -975,7 +975,7 @@ class PodcastService:
             return {
                 "exposure_id": exposure_id,
                 "display_name": "",
-                "exposure_type": "sector",
+                "exposure_type": "industry",
                 "resolved_tickers": [],
                 "episodes": [],
                 "total": 0,
@@ -1025,7 +1025,7 @@ class PodcastService:
         # out by the release scope (otherwise the page would show the raw exposure_id
         # as its title with no tickers).
         display_name = exposure_id
-        exposure_type = "sector"
+        exposure_type = "industry"
         seen_tickers: dict[str, dict] = {}  # ticker -> first-seen entry
         exposure_counts: dict[str, int] = {}  # display_name -> count, for majority vote
 
@@ -1035,7 +1035,7 @@ class PodcastService:
                     continue
                 dn = entry.get("display_name") or exposure_id
                 exposure_counts[dn] = exposure_counts.get(dn, 0) + 1
-                et = entry.get("exposure_type") or "sector"
+                et = entry.get("exposure_type") or "industry"
                 # Use the type from the most-frequent display_name entry (updated below)
                 # For now capture the first one seen; we overwrite with majority below
                 for rt in entry.get("resolved_tickers") or []:
@@ -1257,7 +1257,7 @@ class PodcastService:
                 if eid not in meta:
                     meta[eid] = {
                         "display_name": entry.get("display_name") or eid,
-                        "exposure_type": entry.get("exposure_type") or "sector",
+                        "exposure_type": entry.get("exposure_type") or "industry",
                     }
                 sector_tickers = ticker_map.setdefault(eid, {})
                 for rt in entry.get("resolved_tickers") or []:
@@ -1404,7 +1404,7 @@ class PodcastService:
         industry boards being TW-centric; US members contribute 0.
         """
         board = await self.sector_board()
-        industries = [s for s in board if s.get("exposure_type") == "sector"]
+        industries = [s for s in board if s.get("exposure_type") == "industry"]
         if not industries:
             return []
         caps = await self._tw_market_caps_cached()
@@ -1616,7 +1616,7 @@ class PodcastService:
                 if eid not in meta:
                     meta[eid] = {
                         "display_name": entry.get("display_name") or eid,
-                        "exposure_type": entry.get("exposure_type") or "sector",
+                        "exposure_type": entry.get("exposure_type") or "industry",
                     }
 
         from src.data.sector_visuals import visual_for

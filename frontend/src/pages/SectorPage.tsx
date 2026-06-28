@@ -104,7 +104,7 @@ export const SectorPage: React.FC = () => {
       const [res, podcastList] = await Promise.all([
         fetchWithFallback<EpisodesBySectorResponse>(
           () => getEpisodesBySector(exposureId, 50, 0),
-          { exposure_id: exposureId, display_name: '', exposure_type: 'sector', resolved_tickers: [], episodes: [], total: 0 },
+          { exposure_id: exposureId, display_name: '', exposure_type: 'industry', resolved_tickers: [], episodes: [], total: 0 },
           `getEpisodesBySector:${exposureId}`,
         ).catch(() => null),
         fetchWithFallback<Podcast[]>(

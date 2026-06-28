@@ -41,7 +41,6 @@ _SEED: list[tuple[str, str, str]] = [
     ("bitcoin", "比特幣", TIER_TRENDING),
     ("capital_expenditure", "資本支出", TIER_TRENDING),
     ("centralbanks", "央行", TIER_TRENDING),
-    ("cryptocurrency", "加密貨幣", TIER_TRENDING),
     ("datacenters", "資料中心", TIER_TRENDING),
     ("demographics", "人口趨勢", TIER_TRENDING),
     ("digitalassets", "數位資產", TIER_TRENDING),

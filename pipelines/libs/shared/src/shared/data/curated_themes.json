@@ -386,69 +386,7 @@
       "icon_id": "brain",
       "color_hex": "#7C3AED"
     },
-    {
-      "theme_id": "cryptocurrency",
-      "display_name": "加密貨幣",
-      "aliases": [
-        "加密貨幣",
-        "比特幣",
-        "區塊鏈",
-        "以太坊",
-        "數位資產",
-        "虛擬貨幣",
-        "bitcoin",
-        "cryptocurrency",
-        "crypto",
-        "blockchain",
-        "ethereum",
-        "stablecoin",
-        "穩定幣"
-      ],
-      "members": [
-        {
-          "ticker": "COIN",
-          "name": "Coinbase",
-          "name_en": "Coinbase Global",
-          "market": "US",
-          "source": "curated",
-          "rank": 1
-        },
-        {
-          "ticker": "MSTR",
-          "name": "Strategy",
-          "name_en": "Strategy (MicroStrategy)",
-          "market": "US",
-          "source": "curated",
-          "rank": 2
-        },
-        {
-          "ticker": "MARA",
-          "name": "MARA",
-          "name_en": "MARA Holdings",
-          "market": "US",
-          "source": "curated",
-          "rank": 3
-        },
-        {
-          "ticker": "RIOT",
-          "name": "Riot Platforms",
-          "name_en": "Riot Platforms",
-          "market": "US",
-          "source": "curated",
-          "rank": 4
-        },
-        {
-          "ticker": "HOOD",
-          "name": "Robinhood",
-          "name_en": "Robinhood Markets",
-          "market": "US",
-          "source": "curated",
-          "rank": 5
-        }
-      ],
-      "icon_id": "bitcoin",
-      "color_hex": "#F59E0B"
-    },
+
     {
       "theme_id": "electric_vehicle",
       "display_name": "電動車",
@@ -633,6 +571,7 @@
     },
     {
       "theme_id": "energy",
+      "exposure_type": "industry",
       "display_name": "能源",
       "aliases": [
         "能源",
@@ -898,6 +837,291 @@
       ],
       "icon_id": "shopping-cart",
       "color_hex": "#EC4899"
+    },
+    {
+      "theme_id": "glass_substrate",
+      "display_name": "玻璃基板",
+      "aliases": ["玻璃基板", "glass substrate", "glass core substrate", "TGV"],
+      "members": [
+        {"ticker": "3481", "name": "群創", "name_en": "Innolux", "market": "TW", "source": "curated", "rank": 1, "reason": "全球主要面板廠，積極投入玻璃基板封裝技術開發，跨足先進封裝領域。"},
+        {"ticker": "2409", "name": "友達", "name_en": "AU Optronics", "market": "TW", "source": "curated", "rank": 2, "reason": "運用面板製程優勢切入玻璃基板領域，與半導體封裝廠合作開發新技術。"},
+        {"ticker": "GLW", "name": "康寧", "name_en": "Corning", "market": "US", "source": "curated", "rank": 3, "reason": "全球特殊玻璃材料領導廠商，提供半導體封裝用玻璃基板材料。"},
+        {"ticker": "5234", "name": "達興材料", "name_en": "Daxin Materials", "market": "TW", "source": "curated", "rank": 4, "reason": "專注於光阻劑與特殊化學材料，為玻璃基板製程提供關鍵材料。"}
+      ],
+      "icon_id": "square",
+      "color_hex": "#0D9488"
+    },
+    {
+      "theme_id": "ic_design",
+      "display_name": "IC 設計",
+      "aliases": ["IC設計", "IC 設計", "晶片設計", "fabless", "ic design"],
+      "members": [
+        {"ticker": "2454", "name": "聯發科", "name_en": "MediaTek", "market": "TW", "source": "curated", "rank": 1, "reason": "全球領先的IC設計公司，專注於手機、智慧家庭與物聯網晶片解決方案。"},
+        {"ticker": "2379", "name": "瑞昱", "name_en": "Realtek", "market": "TW", "source": "curated", "rank": 2, "reason": "專精於網路通訊與多媒體IC設計，產品廣泛應用於PC、網通設備。"},
+        {"ticker": "3034", "name": "聯詠", "name_en": "Novatek", "market": "TW", "source": "curated", "rank": 3, "reason": "全球顯示驅動IC龍頭，並積極拓展系統單晶片（SoC）產品線。"},
+        {"ticker": "AVGO", "name": "博通", "name_en": "Broadcom", "market": "US", "source": "curated", "rank": 4, "reason": "全球半導體設計巨頭，提供網通、寬頻與儲存等多元IC解決方案。"},
+        {"ticker": "5274", "name": "信驊", "name_en": "Aspeed Technology", "market": "TW", "source": "curated", "rank": 5, "reason": "全球伺服器管理晶片（BMC）設計龍頭，市佔率超過七成。"}
+      ],
+      "icon_id": "cpu",
+      "color_hex": "#4F46E5"
+    },
+    {
+      "theme_id": "power_supply",
+      "display_name": "電源供應器",
+      "aliases": ["電源供應器", "電源", "PSU", "power supply", "power supply unit"],
+      "members": [
+        {"ticker": "2308", "name": "台達電", "name_en": "Delta Electronics", "market": "TW", "source": "curated", "rank": 1, "reason": "全球電源管理解決方案龍頭，為AI伺服器與資料中心提供高效率電源供應器。"},
+        {"ticker": "2301", "name": "光寶科", "name_en": "Lite-On Technology", "market": "TW", "source": "curated", "rank": 2, "reason": "主要生產伺服器電源供應器與LED照明產品，為雲端資料中心關鍵供應商。"},
+        {"ticker": "2385", "name": "群光", "name_en": "Chicony Electronics", "market": "TW", "source": "curated", "rank": 3, "reason": "專業電源供應器製造商，產品涵蓋筆電變壓器、伺服器電源及車用充電器。"},
+        {"ticker": "6282", "name": "康舒", "name_en": "AcBel Polytech", "market": "TW", "source": "curated", "rank": 4, "reason": "專注於伺服器與工業用電源供應器，為AI伺服器高功率需求提供解決方案。"},
+        {"ticker": "3015", "name": "全漢", "name_en": "FSP Group", "market": "TW", "source": "curated", "rank": 5, "reason": "提供工業、醫療及消費性電子用電源供應器，為全球知名電源品牌。"}
+      ],
+      "icon_id": "plug-zap",
+      "color_hex": "#DC2626"
+    },
+    {
+      "theme_id": "copos",
+      "display_name": "CoPoS 封裝",
+      "aliases": ["CoPoS", "Chip-on-Panel-on-Substrate", "面板級封裝", "panel level packaging"],
+      "members": [
+        {"ticker": "3481", "name": "群創", "name_en": "Innolux", "market": "TW", "source": "curated", "rank": 1, "reason": "運用面板廠大面積製程優勢，積極開發CoPoS面板級先進封裝技術。"},
+        {"ticker": "2409", "name": "友達", "name_en": "AU Optronics", "market": "TW", "source": "curated", "rank": 2, "reason": "投入面板級封裝研發，運用既有TFT技術能力跨足半導體先進封裝。"},
+        {"ticker": "3711", "name": "日月光投控", "name_en": "ASE Technology", "market": "TW", "source": "curated", "rank": 3, "reason": "全球封測龍頭，與面板廠合作推動CoPoS等新型態封裝技術商業化。"},
+        {"ticker": "3374", "name": "精材", "name_en": "Xintec", "market": "TW", "source": "curated", "rank": 4, "reason": "台積電旗下晶圓級封裝廠，參與先進封裝技術平台開發。"}
+      ],
+      "icon_id": "layers",
+      "color_hex": "#7E22CE"
+    },
+    {
+      "theme_id": "drone",
+      "display_name": "無人機",
+      "aliases": ["無人機", "UAV", "drone", "drones", "軍用無人機"],
+      "members": [
+        {"ticker": "8495", "name": "經緯航太", "name_en": "Geosat Aerospace", "market": "TW", "source": "curated", "rank": 1, "reason": "台灣無人機系統整合龍頭，提供軍用與民用無人飛行載具解決方案。"},
+        {"ticker": "8033", "name": "雷虎", "name_en": "Thunder Tiger", "market": "TW", "source": "curated", "rank": 2, "reason": "從遙控模型轉型無人機領域，開發工業級與軍用無人飛行器。"},
+        {"ticker": "AVAV", "name": "AeroVironment", "name_en": "AeroVironment", "market": "US", "source": "curated", "rank": 3, "reason": "美國軍用小型無人機領導廠商，提供偵察與巡飛彈藥系統。"},
+        {"ticker": "2634", "name": "漢翔", "name_en": "AIDC", "market": "TW", "source": "curated", "rank": 4, "reason": "台灣航太國防龍頭，參與軍用無人機系統研發與製造。"}
+      ],
+      "icon_id": "plane",
+      "color_hex": "#374151"
+    },
+    {
+      "theme_id": "leadframe",
+      "display_name": "半導體導線架",
+      "aliases": ["導線架", "leadframe", "lead frame", "半導體導線架"],
+      "members": [
+        {"ticker": "8070", "name": "長華科技", "name_en": "Chang Wah Technology", "market": "TW", "source": "curated", "rank": 1, "reason": "台灣最大半導體導線架供應商，為封裝製程提供關鍵金屬載體。"},
+        {"ticker": "2351", "name": "順德", "name_en": "Shunde", "market": "TW", "source": "curated", "rank": 2, "reason": "專精於半導體導線架與連接器端子沖壓件，為IC封裝提供基礎材料。"},
+        {"ticker": "6548", "name": "長科*", "name_en": "Chang Wah Electromaterials", "market": "TW", "source": "curated", "rank": 3, "reason": "生產半導體導線架與封裝基板材料，受惠先進封裝需求成長。"},
+        {"ticker": "2486", "name": "一詮", "name_en": "I-Chiun Precision", "market": "TW", "source": "curated", "rank": 4, "reason": "專業精密沖壓件廠商，生產半導體導線架與連接器零組件。"}
+      ],
+      "icon_id": "git-branch",
+      "color_hex": "#A16207"
+    },
+    {
+      "theme_id": "pmic",
+      "display_name": "電源管理IC",
+      "aliases": ["電源管理IC", "PMIC", "power management ic", "電源IC"],
+      "members": [
+        {"ticker": "6415", "name": "矽力-KY", "name_en": "Silergy", "market": "TW", "source": "curated", "rank": 1, "reason": "全球類比電源管理IC領導廠商，產品廣泛應用於消費電子與工業設備。"},
+        {"ticker": "8081", "name": "致新", "name_en": "GMT", "market": "TW", "source": "curated", "rank": 2, "reason": "專注於電源管理IC設計，主要應用於筆電、桌機及伺服器電源管理。"},
+        {"ticker": "6138", "name": "茂達", "name_en": "Anpec Electronics", "market": "TW", "source": "curated", "rank": 3, "reason": "電源管理IC設計公司，提供DC-DC轉換器、LDO穩壓器等產品。"},
+        {"ticker": "TXN", "name": "德州儀器", "name_en": "Texas Instruments", "market": "US", "source": "curated", "rank": 4, "reason": "全球最大類比IC供應商，電源管理IC為其核心產品線之一。"},
+        {"ticker": "3438", "name": "類比科", "name_en": "Advanced Analog Technology", "market": "TW", "source": "curated", "rank": 5, "reason": "專精於電源管理IC設計，產品應用於手機、平板及消費性電子。"}
+      ],
+      "icon_id": "battery-charging",
+      "color_hex": "#059669"
+    },
+    {
+      "theme_id": "glass_fiber",
+      "display_name": "玻纖布",
+      "aliases": ["玻纖布", "玻璃纖維", "glass fiber", "glass cloth", "fiberglass"],
+      "members": [
+        {"ticker": "1815", "name": "富喬", "name_en": "Fuchiao Technology", "market": "TW", "source": "curated", "rank": 1, "reason": "台灣主要電子級玻纖布供應商，為CCL與PCB產業提供關鍵上游材料。"},
+        {"ticker": "5475", "name": "德宏", "name_en": "De Hung", "market": "TW", "source": "curated", "rank": 2, "reason": "專業玻纖布製造商，產品應用於印刷電路板基材與複合材料。"},
+        {"ticker": "1717", "name": "長興", "name_en": "Eternal Materials", "market": "TW", "source": "curated", "rank": 3, "reason": "生產電子級樹脂與特殊化學材料，為CCL製造提供關鍵原料。"},
+        {"ticker": "1303", "name": "南亞", "name_en": "Nan Ya Plastics", "market": "TW", "source": "curated", "rank": 4, "reason": "台塑集團旗下，生產銅箔基板（CCL）及電子材料，為PCB產業上游。"}
+      ],
+      "icon_id": "layers",
+      "color_hex": "#78716C"
+    },
+    {
+      "theme_id": "specialty_chemicals",
+      "display_name": "特用化學品",
+      "aliases": ["特用化學品", "半導體材料", "電子化學品", "specialty chemicals", "electronic chemicals"],
+      "members": [
+        {"ticker": "1773", "name": "勝一", "name_en": "Shiny Chemical", "market": "TW", "source": "curated", "rank": 1, "reason": "專業電子級溶劑與特殊化學品供應商，為半導體及面板製程提供關鍵材料。"},
+        {"ticker": "4755", "name": "三福化", "name_en": "San Fu Chemical", "market": "TW", "source": "curated", "rank": 2, "reason": "生產電子級化學品，包括蝕刻液、清洗液等半導體製程用材料。"},
+        {"ticker": "1785", "name": "光洋科", "name_en": "Solar Applied Materials", "market": "TW", "source": "curated", "rank": 3, "reason": "專精於貴金屬與靶材回收再製，提供半導體濺鍍靶材等特殊材料。"},
+        {"ticker": "ENTG", "name": "Entegris", "name_en": "Entegris", "market": "US", "source": "curated", "rank": 4, "reason": "全球半導體製程材料領導廠商，提供過濾、純化及先進材料解決方案。"},
+        {"ticker": "1727", "name": "中華化", "name_en": "China Chemical", "market": "TW", "source": "curated", "rank": 5, "reason": "生產特用化學品與電子材料，產品應用於半導體、面板等高科技製程。"}
+      ],
+      "icon_id": "flask-conical",
+      "color_hex": "#0F766E"
+    },
+    {
+      "theme_id": "high_speed_io",
+      "display_name": "高速傳輸",
+      "aliases": ["高速傳輸", "高速連接器", "800G", "1.6T", "high speed io", "high speed interconnect", "SerDes"],
+      "members": [
+        {"ticker": "3533", "name": "嘉澤", "name_en": "Lotes", "market": "TW", "source": "curated", "rank": 1, "reason": "全球高速連接器領導廠商，提供AI伺服器用CPU插座與高速傳輸介面。"},
+        {"ticker": "3023", "name": "信邦", "name_en": "Sinbon Electronics", "market": "TW", "source": "curated", "rank": 2, "reason": "專業線束與連接器製造商，為資料中心提供高速傳輸線材解決方案。"},
+        {"ticker": "APH", "name": "安費諾", "name_en": "Amphenol", "market": "US", "source": "curated", "rank": 3, "reason": "全球第二大連接器廠商，提供高速網路與資料中心互連解決方案。"},
+        {"ticker": "6290", "name": "良維", "name_en": "Leohab", "market": "TW", "source": "curated", "rank": 4, "reason": "生產高速傳輸線材與連接器組件，為伺服器與網通設備提供關鍵零組件。"},
+        {"ticker": "3665", "name": "貿聯-KY", "name_en": "Bizlink", "market": "TW", "source": "curated", "rank": 5, "reason": "專業電源線束與高速傳輸線材廠商，產品應用於AI伺服器與資料中心。"}
+      ],
+      "icon_id": "cable",
+      "color_hex": "#7C3AED"
+    },
+    {
+      "theme_id": "ai_pc",
+      "display_name": "AI PC",
+      "aliases": ["AI PC", "AI 筆電", "NPU", "ai personal computer", "on-device ai"],
+      "members": [
+        {"ticker": "2357", "name": "華碩", "name_en": "ASUS", "market": "TW", "source": "curated", "rank": 1, "reason": "全球主要PC品牌，率先推出搭載NPU的AI PC產品線。"},
+        {"ticker": "2353", "name": "宏碁", "name_en": "Acer", "market": "TW", "source": "curated", "rank": 2, "reason": "台灣PC品牌大廠，積極布局AI PC與Copilot+筆電產品。"},
+        {"ticker": "INTC", "name": "英特爾", "name_en": "Intel", "market": "US", "source": "curated", "rank": 3, "reason": "推出內建NPU的Core Ultra處理器，驅動AI PC世代交替。"},
+        {"ticker": "QCOM", "name": "高通", "name_en": "Qualcomm", "market": "US", "source": "curated", "rank": 4, "reason": "以Snapdragon X系列進軍AI PC市場，提供高效能低功耗處理器。"},
+        {"ticker": "2382", "name": "廣達", "name_en": "Quanta", "market": "TW", "source": "curated", "rank": 5, "reason": "全球最大筆電代工廠，為各品牌組裝AI PC筆電。"}
+      ],
+      "icon_id": "laptop",
+      "color_hex": "#2563EB"
+    },
+    {
+      "theme_id": "low_orbit_satellite",
+      "display_name": "低軌衛星",
+      "aliases": ["低軌衛星", "LEO衛星", "Starlink", "低軌道衛星", "low earth orbit satellite", "LEO"],
+      "members": [
+        {"ticker": "3491", "name": "昇達科", "name_en": "ASEH Technology", "market": "TW", "source": "curated", "rank": 1, "reason": "專精於微波通訊元件，為低軌衛星地面接收站提供關鍵零組件。"},
+        {"ticker": "2314", "name": "台揚", "name_en": "Taiyang", "market": "TW", "source": "curated", "rank": 2, "reason": "生產衛星通訊天線與地面接收設備，為Starlink供應鏈成員。"},
+        {"ticker": "3105", "name": "穩懋", "name_en": "WIN Semiconductors", "market": "TW", "source": "curated", "rank": 3, "reason": "全球最大砷化鎵晶圓代工廠，為衛星通訊提供射頻元件。"},
+        {"ticker": "6285", "name": "啟碁", "name_en": "Wistron NeWeb", "market": "TW", "source": "curated", "rank": 4, "reason": "研製衛星通訊終端設備與天線模組，受惠低軌衛星通訊商機。"},
+        {"ticker": "6271", "name": "同欣電", "name_en": "Tong Hsing", "market": "TW", "source": "curated", "rank": 5, "reason": "生產陶瓷基板與封裝元件，應用於衛星通訊與軍用電子。"}
+      ],
+      "icon_id": "satellite",
+      "color_hex": "#1D4ED8"
+    },
+    {
+      "theme_id": "nuclear_power",
+      "display_name": "核能",
+      "aliases": ["核能", "核電", "核能發電", "小型模組化反應爐", "SMR", "nuclear power", "nuclear energy"],
+      "members": [
+        {"ticker": "CEG", "name": "Constellation Energy", "name_en": "Constellation Energy", "market": "US", "source": "curated", "rank": 1, "reason": "美國最大核能發電商，與微軟簽訂長期購電協議供應AI資料中心。"},
+        {"ticker": "CCJ", "name": "Cameco", "name_en": "Cameco", "market": "US", "source": "curated", "rank": 2, "reason": "全球最大鈾礦生產商之一，受惠核能需求復甦帶動鈾價上漲。"},
+        {"ticker": "SMR", "name": "NuScale Power", "name_en": "NuScale Power", "market": "US", "source": "curated", "rank": 3, "reason": "小型模組化核反應爐（SMR）開發商，為新世代核能技術先驅。"},
+        {"ticker": "VST", "name": "Vistra", "name_en": "Vistra", "market": "US", "source": "curated", "rank": 4, "reason": "擁有核電廠的美國綜合電力公司，受惠AI資料中心用電需求成長。"}
+      ],
+      "icon_id": "atom",
+      "color_hex": "#16A34A"
+    },
+    {
+      "theme_id": "data_center",
+      "display_name": "資料中心",
+      "aliases": ["資料中心", "數據中心", "IDC", "data center", "data centre", "colocation"],
+      "members": [
+        {"ticker": "EQIX", "name": "Equinix", "name_en": "Equinix", "market": "US", "source": "curated", "rank": 1, "reason": "全球最大資料中心營運商，提供主機代管與互連服務。"},
+        {"ticker": "DLR", "name": "Digital Realty", "name_en": "Digital Realty Trust", "market": "US", "source": "curated", "rank": 2, "reason": "全球領先的資料中心不動產投資信託，為雲端服務商提供基礎設施。"},
+        {"ticker": "VRT", "name": "Vertiv", "name_en": "Vertiv Holdings", "market": "US", "source": "curated", "rank": 3, "reason": "提供資料中心電力管理、散熱及IT基礎設施解決方案。"},
+        {"ticker": "2382", "name": "廣達", "name_en": "Quanta", "market": "TW", "source": "curated", "rank": 4, "reason": "全球AI伺服器代工龍頭，為超大規模資料中心提供整機解決方案。"},
+        {"ticker": "6669", "name": "緯穎", "name_en": "Wiwynn", "market": "TW", "source": "curated", "rank": 5, "reason": "雲端伺服器與資料中心設備供應商，為全球主要雲端服務商代工。"}
+      ],
+      "icon_id": "server",
+      "color_hex": "#4338CA"
+    },
+    {
+      "theme_id": "optical_comms",
+      "display_name": "光通訊",
+      "aliases": ["光通訊", "光纖", "光模組", "光收發器", "optical communication", "optical transceiver", "fiber optic"],
+      "members": [
+        {"ticker": "4979", "name": "華星光", "name_en": "TrueLight", "market": "TW", "source": "curated", "rank": 1, "reason": "專精於光通訊元件與模組，提供光收發器與光纖感測產品。"},
+        {"ticker": "3081", "name": "聯亞", "name_en": "LandMark Optoelectronics", "market": "TW", "source": "curated", "rank": 2, "reason": "專業磷化銦（InP）雷射二極體與光偵測器製造商，為光通訊核心元件。"},
+        {"ticker": "4908", "name": "前鼎", "name_en": "Browave", "market": "TW", "source": "curated", "rank": 3, "reason": "生產光通訊被動元件與模組，產品應用於電信與資料中心網路。"},
+        {"ticker": "COHR", "name": "高意", "name_en": "Coherent", "market": "US", "source": "curated", "rank": 4, "reason": "全球光通訊元件與模組領導廠商，提供資料中心光互連解決方案。"},
+        {"ticker": "6426", "name": "統新", "name_en": "Top Win", "market": "TW", "source": "curated", "rank": 5, "reason": "專業光通訊與RF連接器製造商，產品應用於基地台與資料中心。"}
+      ],
+      "icon_id": "radio",
+      "color_hex": "#0284C7"
+    },
+    {
+      "theme_id": "mlcc",
+      "display_name": "MLCC",
+      "aliases": ["MLCC", "積層陶瓷電容", "multilayer ceramic capacitor", "陶瓷電容"],
+      "members": [
+        {"ticker": "2327", "name": "國巨", "name_en": "Yageo", "market": "TW", "source": "curated", "rank": 1, "reason": "全球領先的MLCC與晶片電阻供應商，市佔率居全球前三。"},
+        {"ticker": "2492", "name": "華新科", "name_en": "Walsin Technology", "market": "TW", "source": "curated", "rank": 2, "reason": "專注於MLCC與晶片電阻的研發製造，為被動元件重要供應商。"},
+        {"ticker": "3026", "name": "禾伸堂", "name_en": "Holystone", "market": "TW", "source": "curated", "rank": 3, "reason": "代理銷售與自製MLCC產品，為被動元件通路與製造兼具的供應商。"},
+        {"ticker": "6173", "name": "信昌電", "name_en": "Holy Stone", "market": "TW", "source": "curated", "rank": 4, "reason": "生產MLCC、晶片電阻與電感等被動元件，應用於多種電子裝置。"}
+      ],
+      "icon_id": "circuit-board",
+      "color_hex": "#15803D"
+    },
+    {
+      "theme_id": "abf_substrate",
+      "display_name": "ABF 載板",
+      "aliases": ["ABF載板", "ABF", "IC載板", "ABF substrate", "ajinomoto build-up film"],
+      "members": [
+        {"ticker": "3037", "name": "欣興", "name_en": "Unimicron", "market": "TW", "source": "curated", "rank": 1, "reason": "全球ABF載板龍頭，廣泛應用於AI晶片與高效能運算封裝。"},
+        {"ticker": "8046", "name": "南電", "name_en": "Nan Ya PCB", "market": "TW", "source": "curated", "rank": 2, "reason": "專注於ABF與BT載板製造，為記憶體與網通晶片提供封裝基板。"},
+        {"ticker": "3189", "name": "景碩", "name_en": "Kinsus", "market": "TW", "source": "curated", "rank": 3, "reason": "專業ABF與BT載板製造商，產品應用於CPU、GPU及記憶體封裝。"},
+        {"ticker": "2313", "name": "華通", "name_en": "Compeq", "market": "TW", "source": "curated", "rank": 4, "reason": "主要HDI與IC載板製造商，積極擴充ABF載板產能因應AI需求。"}
+      ],
+      "icon_id": "square-stack",
+      "color_hex": "#9333EA"
+    },
+    {
+      "theme_id": "silicon_carbide",
+      "display_name": "碳化矽",
+      "aliases": ["碳化矽", "SiC", "silicon carbide", "第三代半導體"],
+      "members": [
+        {"ticker": "3707", "name": "漢磊", "name_en": "Episil-Precision", "market": "TW", "source": "curated", "rank": 1, "reason": "台灣碳化矽磊晶與晶圓代工先驅，提供SiC功率元件製造服務。"},
+        {"ticker": "8255", "name": "朋程", "name_en": "Panjit International", "market": "TW", "source": "curated", "rank": 2, "reason": "專業汽車整流二極體與功率元件廠，積極布局碳化矽產品線。"},
+        {"ticker": "WOLF", "name": "Wolfspeed", "name_en": "Wolfspeed", "market": "US", "source": "curated", "rank": 3, "reason": "全球碳化矽基板與元件龍頭，為電動車與工業應用提供SiC方案。"},
+        {"ticker": "ON", "name": "安森美", "name_en": "ON Semiconductor", "market": "US", "source": "curated", "rank": 4, "reason": "積極擴充碳化矽產能，為電動車提供SiC MOSFET功率模組。"},
+        {"ticker": "6488", "name": "環球晶", "name_en": "GlobalWafers", "market": "TW", "source": "curated", "rank": 5, "reason": "全球第三大半導體矽晶圓廠，積極投入碳化矽晶圓產品開發。"}
+      ],
+      "icon_id": "diamond",
+      "color_hex": "#B91C1C"
+    },
+    {
+      "theme_id": "gallium_nitride",
+      "display_name": "氮化鎵",
+      "aliases": ["氮化鎵", "GaN", "gallium nitride"],
+      "members": [
+        {"ticker": "3105", "name": "穩懋", "name_en": "WIN Semiconductors", "market": "TW", "source": "curated", "rank": 1, "reason": "全球最大砷化鎵/氮化鎵晶圓代工廠，為5G與衛星通訊提供射頻元件。"},
+        {"ticker": "8086", "name": "宏捷科", "name_en": "AWSC", "market": "TW", "source": "curated", "rank": 2, "reason": "砷化鎵與氮化鎵磊晶代工廠，為射頻功率放大器提供製造服務。"},
+        {"ticker": "NVTS", "name": "Navitas", "name_en": "Navitas Semiconductor", "market": "US", "source": "curated", "rank": 3, "reason": "氮化鎵功率IC設計公司，提供高效率充電器與電源轉換解決方案。"},
+        {"ticker": "2455", "name": "全新", "name_en": "Tyntek", "market": "TW", "source": "curated", "rank": 4, "reason": "專注於化合物半導體磊晶製造，提供氮化鎵與砷化鎵磊晶片。"}
+      ],
+      "icon_id": "zap",
+      "color_hex": "#CA8A04"
+    },
+    {
+      "theme_id": "capacitor",
+      "display_name": "電容器",
+      "aliases": ["電容器", "電容", "鋁質電解電容", "固態電容", "capacitor", "aluminum electrolytic capacitor"],
+      "members": [
+        {"ticker": "2472", "name": "立隆電", "name_en": "Lelon Electronics", "market": "TW", "source": "curated", "rank": 1, "reason": "專注於鋁質電解電容器的生產與銷售，為電子產品提供穩定電源。"},
+        {"ticker": "2375", "name": "凱美", "name_en": "Jamicon", "market": "TW", "source": "curated", "rank": 2, "reason": "專業鋁質電解電容器製造商，產品應用於電源供應器及消費性電子。"},
+        {"ticker": "6449", "name": "鈺邦", "name_en": "Apaq Technology", "market": "TW", "source": "curated", "rank": 3, "reason": "專精於固態電容與導電高分子電容，應用於主機板與伺服器。"},
+        {"ticker": "8042", "name": "金山電", "name_en": "Chinsan Electronic", "market": "TW", "source": "curated", "rank": 4, "reason": "生產鋁質電解電容器與薄膜電容器，產品應用於電源與照明領域。"},
+        {"ticker": "6284", "name": "佳邦", "name_en": "Cyntec", "market": "TW", "source": "curated", "rank": 5, "reason": "提供電感、電容及EMI濾波器等被動元件，應用於電源管理模組。"}
+      ],
+      "icon_id": "battery",
+      "color_hex": "#0E7490"
+    },
+    {
+      "theme_id": "resistor",
+      "display_name": "電阻器",
+      "aliases": ["電阻器", "電阻", "晶片電阻", "resistor", "chip resistor"],
+      "members": [
+        {"ticker": "2327", "name": "國巨", "name_en": "Yageo", "market": "TW", "source": "curated", "rank": 1, "reason": "全球晶片電阻龍頭，市佔率穩居前三，產品應用遍及各類電子設備。"},
+        {"ticker": "2478", "name": "大毅", "name_en": "Ta-I Technology", "market": "TW", "source": "curated", "rank": 2, "reason": "專業晶片電阻與電流感測電阻製造商，產品應用於車用與工業電子。"},
+        {"ticker": "2428", "name": "興勤", "name_en": "Thinking Electronic", "market": "TW", "source": "curated", "rank": 3, "reason": "專精於熱敏電阻（NTC/PTC）與壓敏電阻（MOV），為保護元件領導廠商。"},
+        {"ticker": "3624", "name": "光頡", "name_en": "Viking Tech", "market": "TW", "source": "curated", "rank": 4, "reason": "提供薄膜與厚膜晶片電阻、電感及精密電阻等被動元件解決方案。"},
+        {"ticker": "6224", "name": "聚鼎", "name_en": "Polytronics Technology", "market": "TW", "source": "curated", "rank": 5, "reason": "專業正溫度係數（PPTC）保護元件與散熱片製造商。"}
+      ],
+      "icon_id": "minus",
+      "color_hex": "#6B7280"
     }
   ]
 }
