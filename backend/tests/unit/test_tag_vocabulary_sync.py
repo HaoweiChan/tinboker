@@ -16,23 +16,21 @@ from types import SimpleNamespace
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-CANONICAL = REPO_ROOT / "pipelines/services/podcast/src/podcast/content_builder/tag_vocabulary.json"
-MIRROR = REPO_ROOT / "backend/src/data/tag_vocabulary.json"
-
-
-def _strip_meta(d: dict) -> dict:
-    """Drop the mirror's ``_comment`` provenance key (JSON has no comments)."""
-    return {k: v for k, v in d.items() if not k.startswith("_")}
+CANONICAL = REPO_ROOT / "pipelines/libs/shared/src/shared/tag_vocabulary_seed_backup.py"
+MIRROR = REPO_ROOT / "backend/src/data/tag_vocabulary_seed.py"
 
 
 def test_mirror_matches_canonical():
     """Backend mirror == pipeline canonical (the single-source-of-truth assertion)."""
     if not CANONICAL.exists():
         pytest.skip("pipelines/ tree not present (backend-only checkout)")
-    canonical = json.loads(CANONICAL.read_text(encoding="utf-8"))
-    mirror = _strip_meta(json.loads(MIRROR.read_text(encoding="utf-8")))
+    # Import values dynamically to compare
+    import sys
+    sys.path.insert(0, str(CANONICAL.parent))
+    from tag_vocabulary_seed_backup import TAG_VOCABULARY_SEED as canonical
+    from src.data.tag_vocabulary_seed import TAG_VOCABULARY_SEED as mirror
     assert mirror == canonical, (
-        "backend/src/data/tag_vocabulary.json is out of sync with the pipeline canonical. "
+        "backend/src/data/tag_vocabulary_seed.py is out of sync with the pipeline backup. "
         "Run: python scripts/sync_tag_vocabulary.py"
     )
 
@@ -40,9 +38,9 @@ def test_mirror_matches_canonical():
 def test_registry_loads_full_catalogue():
     """The backend registry exposes every canonical label, keyed by normalized slug."""
     from src.tag_registry import _CANONICAL_DISPLAY, normalize_tag_slug
+    from src.data.tag_vocabulary_seed import TAG_VOCABULARY_SEED
 
-    mirror = _strip_meta(json.loads(MIRROR.read_text(encoding="utf-8")))
-    expected = {normalize_tag_slug(slug): zh for slug, zh in mirror.items()}
+    expected = {normalize_tag_slug(slug): zh for slug, zh in TAG_VOCABULARY_SEED.items()}
     assert _CANONICAL_DISPLAY == expected
 
 
@@ -134,14 +132,14 @@ def test_normalize_has_no_conflicting_collisions():
     label map by the normalized slug safely.
     """
     from src.tag_registry import _SEED, normalize_tag_slug
+    from src.data.tag_vocabulary_seed import TAG_VOCABULARY_SEED
 
-    mirror = _strip_meta(json.loads(MIRROR.read_text(encoding="utf-8")))
     by_norm: dict[str, str] = {}
     # DB seed first, canonical wins on overlap (mirrors registry_snapshot precedence).
     for slug, zh, _tier in _SEED:
         by_norm.setdefault(normalize_tag_slug(slug), zh)
     conflicts = {}
-    for slug, zh in mirror.items():
+    for slug, zh in TAG_VOCABULARY_SEED.items():
         norm = normalize_tag_slug(slug)
         if norm in by_norm and by_norm[norm] != zh:
             conflicts[norm] = (by_norm[norm], zh)

@@ -99,3 +99,27 @@ def trigger_threads_publish(
     except (urllib.error.URLError, TimeoutError, ValueError, OSError) as exc:
         print(f"Warning: Threads publish trigger failed ({exc})")
         return None
+
+
+def fetch_sectors_universe(*, timeout: float = 10.0) -> dict[str, Any] | None:
+    """Get full compiled sectors/themes universe from platform API.
+
+    GET {base}/api/sectors/universe -> returns {max_tickers, exposures}
+    """
+    base = platform_base_url()
+    if not base:
+        return None
+    url = f"{base}/api/sectors/universe"
+    try:
+        req = urllib.request.Request(url, headers={"Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            if getattr(resp, "status", 200) != 200:
+                return None
+            payload = json.loads(resp.read().decode("utf-8"))
+            if isinstance(payload, dict) and "exposures" in payload:
+                return payload
+    except Exception as exc:
+        print(f"Warning: platform sectors universe unavailable ({exc}); falling back to local seed backup")
+        return None
+    return None
+
