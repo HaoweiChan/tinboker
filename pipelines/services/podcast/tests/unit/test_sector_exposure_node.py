@@ -10,7 +10,7 @@ def test_node_derives_exposures_without_polluting_related_tickers():
                 "end": 5000,
                 "sentences": [
                     {"index": 0, "content": "AI 伺服器需求帶動半導體供應鏈", "start": 1000, "end": 3000},
-                    {"index": 1, "content": "CPO 也被提到", "start": 3000, "end": 5000},
+                    {"index": 1, "content": "XYZ 也被提到", "start": 3000, "end": 5000},
                 ],
             }
         ],
@@ -24,4 +24,4 @@ def test_node_derives_exposures_without_polluting_related_tickers():
     assert "related_tickers" not in out
     assert "ticker_insights" not in out
     assert {"sector_ai_server", "sector_semiconductor"} <= set(out["sector_exposure_ids"])
-    assert "cpo" in out["unresolved_market_trend_ids"]
+    assert "xyz" in out["unresolved_market_trend_ids"]
