@@ -1478,10 +1478,21 @@ class PodcastService:
         "unresolved_market_trends", "related_tickers", "podcast_name", "episode_title",
         "title", "retracted_at", "released_at_ms", "spotify_release_date", "created_time",
     ]
-    # Indices / breadth gauges the writer emits as "trends" — never curatable themes.
+    # Indices / breadth gauges and known stopwords the writer emits as "trends" — never curatable themes.
     _THEME_INDEX_STOPWORDS = frozenset({
         "SP500", "SPX", "DJI", "DJIA", "IXIC", "NDX", "RUT", "SOX", "SOXX", "VIX",
         "NASDAQ", "DOW", "NIKKEI", "TWSE", "TAIEX", "TWII",
+        # Tech terms already covered by tag_vocabulary
+        "GPU", "CPU", "ASIC", "CPO", "HPC", "HBM4", "TPU", "MOSFET", "DSP",
+        # Company names / tickers
+        "NVIDIA", "TSMC", "HP", "KLA",
+        # Industry jargon
+        "CSP", "ODM", "IDM", "OEM", "EMS",
+        # Investable-but-deferred concepts
+        "AIPC", "HVDC",
+        # Noise / ambiguous abbreviations
+        "KS", "KY", "RPO", "AST", "EP", "JP", "P500", "QE", "QT",
+        "ASP", "ARR", "EIA", "FOMO",
     })
 
     async def theme_candidates(self, *, threshold: int = 3, limit: int = 40) -> list[dict]:

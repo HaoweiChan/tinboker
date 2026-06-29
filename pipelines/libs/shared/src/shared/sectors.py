@@ -25,12 +25,33 @@ DEFAULT_MAX_TICKERS = 10
 # drop them to keep ``unresolved_market_trends`` (written to every episode doc)
 # low-noise. Values are normalized (lower-cased) to match ``normalize_text``.
 _UNRESOLVED_STOPWORDS: frozenset[str] = frozenset({
-    "ceo", "cfo", "coo", "cto", "cio", "vp", "ir", "vc", "pe", "pb", "ps", "eps",
-    "roe", "roa", "roi", "gdp", "cpi", "ppi", "pce", "ism", "pmi", "fomc", "fed",
-    "ecb", "boj", "imf", "usd", "twd", "jpy", "eur", "rmb", "cny", "krw", "etf",
-    "ipo", "spo", "m&a", "esg", "yoy", "qoq", "mom", "ttm", "q1", "q2", "q3", "q4",
-    "h1", "h2", "1h", "2h", "fy", "ai", "ev", "iot", "5g", "6g", "pc", "tv", "us",
-    "uk", "eu", "ok", "ceo's", "api", "app", "ui", "ux", "faq", "diy", "b2b", "b2c",
+    # C-suite / titles
+    "ceo", "cfo", "coo", "cto", "cio", "vp", "ir", "vc", "ceo's",
+    # Valuation / financial ratios
+    "pe", "pb", "ps", "eps", "roe", "roa", "roi", "asp", "arr",
+    # Macro indicators & central banks
+    "gdp", "cpi", "ppi", "pce", "ism", "pmi", "fomc", "fed", "ecb", "boj", "imf",
+    "qe", "qt", "eia",
+    # Currencies
+    "usd", "twd", "jpy", "eur", "rmb", "cny", "krw",
+    # Market events / instruments
+    "etf", "ipo", "spo", "m&a", "esg", "fomo",
+    # Time periods
+    "yoy", "qoq", "mom", "ttm", "q1", "q2", "q3", "q4",
+    "h1", "h2", "1h", "2h", "fy",
+    # Tech terms already covered by tag_vocabulary (not curatable themes)
+    "gpu", "cpu", "asic", "cpo", "hpc", "hbm4", "tpu", "mosfet", "dsp",
+    # Company names / tickers that bypass the related_tickers filter
+    "nvidia", "tsmc", "hp", "kla",
+    # Industry jargon (not investable themes)
+    "csp", "odm", "idm", "oem", "ems",
+    # Investable-but-deferred concepts (revisit when adding as full themes)
+    "aipc", "hvdc",
+    # Noise / ambiguous abbreviations
+    "ks", "ky", "rpo", "ast", "ep", "jp", "p500",
+    # General / tech
+    "ai", "ev", "iot", "5g", "6g", "pc", "tv", "us", "uk", "eu", "ok",
+    "api", "app", "ui", "ux", "faq", "diy", "b2b", "b2c",
 })
 
 

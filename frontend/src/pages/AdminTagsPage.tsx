@@ -294,7 +294,7 @@ export const AdminTagsPage: React.FC = () => {
             ) : (
               <>
                 <p className="mb-3 text-xs text-muted-foreground">
-                  要收錄候選題材，請在 <code className="rounded bg-muted px-1">curated_themes.json</code> 新增條目後重新編譯 — 此處僅供探勘。
+                  要收錄候選題材，請在資料庫 <code className="rounded bg-muted px-1">TagRegistry</code> 新增條目（或更新 <code className="rounded bg-muted px-1">sectors_seed.py</code>） — 此處僅供探勘。
                 </p>
                 <ul className="divide-y divide-border">
                   {candidates.map((c) => {

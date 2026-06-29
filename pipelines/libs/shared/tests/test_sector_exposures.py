@@ -61,6 +61,6 @@ def test_unresolved_trend_aggregation_threshold():
 
 
 def test_unresolved_market_trend_emitted_for_unmapped_uppercase_concept():
-    out = resolve_text("主持人提到 CPO 會帶動下一波光通訊需求")
+    out = resolve_text("主持人提到 XYZ 會帶動下一波光通訊需求")
 
-    assert {"cpo"} <= {item["normalized_text"] for item in out["unresolved_market_trends"]}
+    assert {"xyz"} <= {item["normalized_text"] for item in out["unresolved_market_trends"]}
