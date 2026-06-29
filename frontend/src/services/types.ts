@@ -311,13 +311,13 @@ export interface SectorBubbleData {
   id: string;
   name: string;
   value: number; // Market Cap
-  return: number; // Percentage Return
+  return: number | null; // Percentage Return
   x?: number;
   y?: number;
   r?: number;
   volume?: number;
   marketCap?: number;
-  returnRate?: number;
+  returnRate?: number | null;
   label?: string;
 }
 

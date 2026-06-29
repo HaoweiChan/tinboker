@@ -278,8 +278,8 @@ export const SectorBubbleDataSchema = z.object({
   label: z.string().optional(),
   value: z.number(),
   marketCap: z.number().optional(),
-  return: z.number(),
-  returnRate: z.number().optional(),
+  return: z.number().nullable(),
+  returnRate: z.number().nullable().optional(),
   volume: z.number().optional(),
 });
 
@@ -494,4 +494,3 @@ export function parseResponse<T>(schema: z.ZodType<T>, data: unknown): T {
     throw error;
   }
 }
-

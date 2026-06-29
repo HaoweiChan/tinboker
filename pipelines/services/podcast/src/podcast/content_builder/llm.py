@@ -49,6 +49,7 @@ _ROLE_ENV: dict[str, str] = {
     "ticker_extractor": "TICKER_EXTRACTOR_MODEL",
     "key_insights_extractor": "KEY_INSIGHTS_EXTRACTOR_MODEL",
     "social_copy_writer": "SOCIAL_COPY_WRITER_MODEL",
+    "sector_verifier": "SECTOR_VERIFIER_MODEL",
 }
 
 
@@ -97,6 +98,7 @@ _TEMPERATURE_MAP: dict[str, float] = {
     "marp_writer": _LLM_OVERRIDES.get("temperatures", {}).get("marp_writer", 0.4),
     "ticker_extractor": _LLM_OVERRIDES.get("temperatures", {}).get("ticker_extractor", 0.1),
     "key_insights_extractor": _LLM_OVERRIDES.get("temperatures", {}).get("key_insights_extractor", 0.3),
+    "sector_verifier": _LLM_OVERRIDES.get("temperatures", {}).get("sector_verifier", 0.1),
 }
 
 _MAX_TOKENS_MAP: dict[str, int] = {
@@ -113,6 +115,7 @@ _MAX_TOKENS_MAP: dict[str, int] = {
     # multi-ticker payload; deepseek-v4-pro supports the larger completion.
     "ticker_extractor": 16384,
     "key_insights_extractor": 2048,
+    "sector_verifier": 2048,
 }
 
 

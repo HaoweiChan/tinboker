@@ -1,5 +1,5 @@
 """Pydantic response schemas for the sector/theme episode-discovery endpoint."""
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel
 
@@ -76,6 +76,9 @@ class IndustryPerformanceItem(BaseModel):
     market_cap_twd: Optional[float] = None  # aggregate constituent market cap (NT$)
     return_pct: Optional[float] = None       # avg member daily % change
     episode_count: int = 0
+    heat: Optional[float] = None
+    trading_value_twd: Optional[float] = None
+    trading_value_windows_twd: Optional[Dict[str, float]] = None
 
 
 class IndustryPerformanceResponse(BaseModel):
@@ -94,6 +97,7 @@ class ThemePerformanceItem(BaseModel):
     heat: Optional[float] = None               # recency-weighted discussion (X axis)
     return_pct: Optional[float] = None         # avg member daily % change
     trading_value_twd: Optional[float] = None  # aggregate constituent daily trade value (NT$)
+    trading_value_windows_twd: Optional[Dict[str, float]] = None
 
 
 class ThemePerformanceResponse(BaseModel):

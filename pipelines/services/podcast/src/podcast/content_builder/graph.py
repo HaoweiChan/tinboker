@@ -93,7 +93,6 @@ def build_graph() -> StateGraph:
     graph.add_edge("cluster_sentences", "consolidate_chapters")
     graph.add_edge("cluster_sentences", "write_marp_slides")
     graph.add_edge("cluster_sentences", "extract_tickers")
-    graph.add_edge("cluster_sentences", "derive_sector_exposures")
     graph.add_edge("consolidate_chapters", "write_article")
 
     # Article branch (markdown → tags/tickers → key_insights, from the finished summary)
@@ -114,7 +113,9 @@ def build_graph() -> StateGraph:
     graph.add_edge("build_social_cards", "write_social_copy")
     graph.add_edge("write_social_copy", END)
 
-    # Deterministic exposure branch (separate from direct ticker extraction).
+    # Deterministic exposure branch runs after ticker extraction so it has access
+    # to the validated ticker insights for cross-filtering.
+    graph.add_edge("extract_tickers", "derive_sector_exposures")
     graph.add_edge("derive_sector_exposures", END)
 
     # Ticker branch — the deck is now built deterministically from ticker_insights

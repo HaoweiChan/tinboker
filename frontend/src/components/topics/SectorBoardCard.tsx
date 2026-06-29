@@ -4,6 +4,7 @@ import { useStockTrendColor } from '@/hooks/useStockTrendColor';
 import { SimpleSparkline } from '@/components/charts/SimpleSparkline';
 import { SectorIcon } from './SectorIcon';
 import { ChangePct } from './ChangePct';
+import { TOPICS_TYPOGRAPHY } from './topicsTypography';
 import { StockIdentity } from '@/components/common/StockIdentity';
 import type { SectorBoardItem, SectorBoardMember } from '@/services/api/podcasts';
 
@@ -18,6 +19,7 @@ const MemberRow: React.FC<MemberRowProps> = ({ member }) => {
   const trend = useStockTrendColor(member.change_percent ?? 0);
   const hasChange = member.change_percent != null && Number.isFinite(member.change_percent);
   const hasSeries = member.series && member.series.length > 1;
+  const type = TOPICS_TYPOGRAPHY.className;
 
   return (
     <Link
@@ -56,7 +58,7 @@ const MemberRow: React.FC<MemberRowProps> = ({ member }) => {
       <div className="shrink-0 w-[4.25rem] flex justify-end">
         <ChangePct
           value={member.change_percent}
-          sizeClass="text-sm"
+          sizeClass={type.memberMetric}
           skeleton
         />
       </div>
@@ -79,6 +81,7 @@ export const SectorBoardCard: React.FC<SectorBoardCardProps> = ({ sector }) => {
   const trend = useStockTrendColor(sector.avg_change ?? 0);
   const hasChange = sector.avg_change != null && Number.isFinite(sector.avg_change);
   const topMembers = sector.members.slice(0, 4);
+  const type = TOPICS_TYPOGRAPHY.className;
 
   const typeLabel =
     sector.exposure_type === 'industry' ? '產業'
@@ -107,11 +110,11 @@ export const SectorBoardCard: React.FC<SectorBoardCardProps> = ({ sector }) => {
               size={13}
               variant="chip"
             />
-            <span className="text-2xs font-medium text-muted-foreground bg-muted/60 px-1.5 py-0.5 rounded leading-none shrink-0">
+            <span className={`${type.micro} font-medium text-muted-foreground bg-muted/60 px-1.5 py-0.5 rounded leading-none shrink-0`}>
               {typeLabel}
             </span>
           </div>
-          <span className="text-lg font-semibold tracking-[-0.01em] group-hover:text-foreground/80 transition-colors leading-snug block">
+          <span className={`${type.cardTitle} font-semibold tracking-[-0.01em] group-hover:text-foreground/80 transition-colors leading-snug block`}>
             {sector.display_name}
           </span>
         </div>
@@ -120,11 +123,11 @@ export const SectorBoardCard: React.FC<SectorBoardCardProps> = ({ sector }) => {
         <div className="shrink-0 flex flex-col items-end gap-1 pt-0.5">
           <ChangePct
             value={sector.avg_change}
-            sizeClass="text-xl"
+            sizeClass={type.cardMetric}
             showArrow
             skeleton={false}
           />
-          <span className="text-xs text-muted-foreground font-mono tabular-nums">
+          <span className={`${type.meta} text-muted-foreground font-mono tabular-nums`}>
             {sector.episode_count} 集
           </span>
         </div>

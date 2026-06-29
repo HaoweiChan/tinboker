@@ -1,10 +1,12 @@
 """Podcast service for managing podcast data from Firestore"""
+import hashlib
 import os
 import json
 import asyncio
 import logging
+import time
 from typing import Optional, List, Collection
-from datetime import datetime
+from datetime import datetime, timedelta
 from urllib.parse import quote
 
 from src.config import settings
@@ -1384,15 +1386,23 @@ class PodcastService:
 
     async def _tw_market_caps_cached(self) -> dict[str, float]:
         """``{stock_id: market value NT$}`` for all TW stocks, daily-cached (FinMind)."""
-        cache_key = "sectors:tw_market_caps:v1"
+        cache_key = "sectors:tw_market_caps:v2"
+        memory_cache = getattr(self, "_tw_market_caps_memory_cache", {})
+        cached_at, memory_value = memory_cache.get(cache_key, (0.0, None))
+        if memory_value and time.time() - cached_at < CACHE_TTL["stock_ohlcv"]:
+            return memory_value
+
         cached = await cache_get(cache_key)
         if cached:
             try:
-                return json.loads(cached)
+                caps = json.loads(cached)
+                self._tw_market_caps_memory_cache = {cache_key: (time.time(), caps)}
+                return caps
             except Exception:
                 pass
         caps = await asyncio.to_thread(self._finmind().get_tw_market_caps)
         if caps:
+            self._tw_market_caps_memory_cache = {cache_key: (time.time(), caps)}
             await cache_set(cache_key, json.dumps(caps), CACHE_TTL["stock_ohlcv"])  # 1 day
         return caps or {}
 
@@ -1408,13 +1418,31 @@ class PodcastService:
         industries = [s for s in board if s.get("exposure_type") == "industry"]
         if not industries:
             return []
+        all_tickers = [
+            (m.get("ticker") or "").strip()
+            for sector in board
+            for m in sector.get("members") or []
+        ]
         caps = await self._tw_market_caps_cached()
+        us_caps = await self._us_market_caps_cached(all_tickers)
+        trading_windows = await self._tw_trading_value_windows_cached(all_tickers)
+        us_trading_windows = await self._us_trading_value_windows_cached(all_tickers)
         out: list[dict] = []
         for s in industries:
+            members = s.get("members") or []
             total_mc = sum(
                 caps.get((m.get("ticker") or "").strip(), 0.0)
-                for m in s.get("members") or []
+                + us_caps.get((m.get("ticker") or "").strip().upper(), 0.0)
+                for m in members
             )
+            exposure_tvals = {
+                window: sum(
+                    values.get((m.get("ticker") or "").strip(), 0.0)
+                    + us_trading_windows.get(window, {}).get((m.get("ticker") or "").strip().upper(), 0.0)
+                    for m in members
+                )
+                for window, values in trading_windows.items()
+            }
             out.append({
                 "exposure_id": s["exposure_id"],
                 "display_name": s["display_name"],
@@ -1422,8 +1450,11 @@ class PodcastService:
                 "market_cap_twd": total_mc or None,
                 "return_pct": s.get("avg_change"),
                 "episode_count": s.get("episode_count", 0),
+                "heat": s.get("heat"),
+                "trading_value_twd": exposure_tvals.get("1") or None,
+                "trading_value_windows_twd": exposure_tvals,
             })
-        out.sort(key=lambda x: (x["market_cap_twd"] or 0.0), reverse=True)
+        out.sort(key=lambda x: ((x["heat"] or 0.0), x["episode_count"]), reverse=True)
         return out
 
     async def _tw_trading_values_cached(self) -> dict[str, float]:
@@ -1440,27 +1471,179 @@ class PodcastService:
             await cache_set(cache_key, json.dumps(vals), CACHE_TTL["stock_ohlcv"])  # 1 day
         return vals or {}
 
+    async def _tw_trading_value_windows_cached(self, tickers: list[str]) -> dict[str, dict[str, float]]:
+        """``{window_days: {stock_id: cumulative trading value NT$}}`` for TW stocks."""
+        universe = ",".join(sorted({ticker.strip() for ticker in tickers if ticker.strip()}))
+        universe_key = hashlib.sha1(universe.encode("utf-8")).hexdigest()[:12] if universe else "empty"
+        cache_key = f"sectors:tw_trading_value_windows:v2:{universe_key}"
+        memory_cache = getattr(self, "_tw_trading_value_windows_memory_cache", {})
+        cached_at, memory_value = memory_cache.get(cache_key, (0.0, None))
+        if memory_value and time.time() - cached_at < CACHE_TTL["stock_ohlcv"]:
+            return memory_value
+
+        cached = await cache_get(cache_key)
+        if cached:
+            try:
+                vals = json.loads(cached)
+                self._tw_trading_value_windows_memory_cache = {cache_key: (time.time(), vals)}
+                return vals
+            except Exception:
+                pass
+        vals = await asyncio.to_thread(self._finmind().get_tw_trading_value_windows, tickers)
+        if vals:
+            self._tw_trading_value_windows_memory_cache = {cache_key: (time.time(), vals)}
+            await cache_set(cache_key, json.dumps(vals), CACHE_TTL["stock_ohlcv"])  # 1 day
+        return vals or {}
+
+    def _read_us_market_caps_twd(self, tickers: list[str]) -> dict[str, float]:
+        """Read warmed US market caps and convert USD → TWD for aggregate charts."""
+        from src.database.models import StockProfile
+        from src.services.providers.base import is_us_ticker
+
+        us_tickers = sorted({t.strip().upper() for t in tickers if is_us_ticker(t.strip())})
+        if not us_tickers:
+            return {}
+        out: dict[str, float] = {}
+        for session in get_session():
+            rows = session.query(StockProfile).filter(StockProfile.ticker.in_(us_tickers)).all()
+            for row in rows:
+                if row.market_cap:
+                    out[row.ticker] = float(row.market_cap) * settings.usd_twd_rate
+            break
+        return out
+
+    async def _us_market_caps_cached(self, tickers: list[str]) -> dict[str, float]:
+        """``{ticker: market cap NT$}`` for warmed US stocks."""
+        universe = ",".join(sorted({ticker.strip().upper() for ticker in tickers if ticker.strip()}))
+        universe_key = hashlib.sha1(universe.encode("utf-8")).hexdigest()[:12] if universe else "empty"
+        cache_key = f"sectors:us_market_caps_twd:v1:{universe_key}"
+        memory_cache = getattr(self, "_us_market_caps_memory_cache", {})
+        cached_at, memory_value = memory_cache.get(cache_key, (0.0, None))
+        if memory_value and time.time() - cached_at < CACHE_TTL["stock_ohlcv"]:
+            return memory_value
+
+        cached = await cache_get(cache_key)
+        if cached:
+            try:
+                caps = json.loads(cached)
+                self._us_market_caps_memory_cache = {cache_key: (time.time(), caps)}
+                return caps
+            except Exception:
+                pass
+        caps = await asyncio.to_thread(self._read_us_market_caps_twd, tickers)
+        if caps:
+            self._us_market_caps_memory_cache = {cache_key: (time.time(), caps)}
+            await cache_set(cache_key, json.dumps(caps), CACHE_TTL["stock_ohlcv"])
+        return caps or {}
+
+    def _read_us_trading_value_windows_twd(
+        self,
+        tickers: list[str],
+        windows: tuple[int, ...] = (1, 7, 30, 90),
+    ) -> dict[str, dict[str, float]]:
+        """Read warmed US OHLCV and return ``{window: {ticker: close*volume NT$}}``."""
+        from src.database.models import StockDailyOHLC
+        from src.services.providers.base import is_us_ticker
+
+        us_tickers = sorted({t.strip().upper() for t in tickers if is_us_ticker(t.strip())})
+        totals: dict[str, dict[str, float]] = {str(window): {} for window in windows}
+        if not us_tickers:
+            return totals
+
+        start = (datetime.utcnow() - timedelta(days=max(windows) + 20)).strftime("%Y-%m-%d")
+        rows_by_ticker: dict[str, list] = {}
+        for session in get_session():
+            rows = (
+                session.query(
+                    StockDailyOHLC.ticker,
+                    StockDailyOHLC.date,
+                    StockDailyOHLC.close,
+                    StockDailyOHLC.volume,
+                )
+                .filter(StockDailyOHLC.ticker.in_(us_tickers), StockDailyOHLC.date >= start)
+                .order_by(StockDailyOHLC.ticker.asc(), StockDailyOHLC.date.asc())
+                .all()
+            )
+            for row in rows:
+                rows_by_ticker.setdefault(row.ticker, []).append(row)
+            break
+
+        for ticker, rows in rows_by_ticker.items():
+            dates = [row.date for row in rows if row.date]
+            if not dates:
+                continue
+            latest = datetime.strptime(max(dates), "%Y-%m-%d").date()
+            cutoffs = {
+                str(window): latest - timedelta(days=window - 1)
+                for window in windows
+            }
+            for row in rows:
+                if not row.date or not row.close or not row.volume:
+                    continue
+                try:
+                    row_date = datetime.strptime(row.date, "%Y-%m-%d").date()
+                    value = float(row.close) * float(row.volume) * settings.usd_twd_rate
+                except (TypeError, ValueError):
+                    continue
+                for window_key, cutoff in cutoffs.items():
+                    if row_date >= cutoff:
+                        totals[window_key][ticker] = totals[window_key].get(ticker, 0.0) + value
+        return totals
+
+    async def _us_trading_value_windows_cached(self, tickers: list[str]) -> dict[str, dict[str, float]]:
+        """``{window_days: {ticker: cumulative trading value NT$}}`` for warmed US stocks."""
+        universe = ",".join(sorted({ticker.strip().upper() for ticker in tickers if ticker.strip()}))
+        universe_key = hashlib.sha1(universe.encode("utf-8")).hexdigest()[:12] if universe else "empty"
+        cache_key = f"sectors:us_trading_value_windows_twd:v1:{universe_key}"
+        memory_cache = getattr(self, "_us_trading_value_windows_memory_cache", {})
+        cached_at, memory_value = memory_cache.get(cache_key, (0.0, None))
+        if memory_value and time.time() - cached_at < CACHE_TTL["stock_ohlcv"]:
+            return memory_value
+
+        cached = await cache_get(cache_key)
+        if cached:
+            try:
+                vals = json.loads(cached)
+                self._us_trading_value_windows_memory_cache = {cache_key: (time.time(), vals)}
+                return vals
+            except Exception:
+                pass
+        vals = await asyncio.to_thread(self._read_us_trading_value_windows_twd, tickers)
+        if vals:
+            self._us_trading_value_windows_memory_cache = {cache_key: (time.time(), vals)}
+            await cache_set(cache_key, json.dumps(vals), CACHE_TTL["stock_ohlcv"])
+        return vals or {}
+
     async def theme_performance(self) -> list[dict]:
         """Bubble-chart rows for the /topics 題材 tab: theme (exposure_type='theme') board
         items, mapped to theme-appropriate dimensions.
 
-        Themes are curated/corpus-discovered concepts, not official baskets, so market cap
-        is the wrong size metric (the user watches hotness + money flow). The chart maps:
-        X = discussion volume (episode_count), Y = avg member % change, bubble = aggregate
-        constituent daily trading value (TW-only via FinMind; US members contribute 0, and
-        the bounded radius keeps US-heavy themes visible).
+        Themes are curated/corpus-discovered concepts, not official baskets. The chart maps:
+        X = recency-weighted discussion heat, Y = avg member % change, bubble = aggregate
+        constituent trading value by timeframe (TW-only via FinMind; US members contribute 0).
         """
         board = await self.sector_board()
         themes = [s for s in board if s.get("exposure_type") == "theme"]
         if not themes:
             return []
-        tvals = await self._tw_trading_values_cached()
+        all_tickers = [
+            (m.get("ticker") or "").strip()
+            for sector in board
+            for m in sector.get("members") or []
+        ]
+        trading_windows = await self._tw_trading_value_windows_cached(all_tickers)
+        us_trading_windows = await self._us_trading_value_windows_cached(all_tickers)
         out: list[dict] = []
         for s in themes:
-            total_tv = sum(
-                tvals.get((m.get("ticker") or "").strip(), 0.0)
-                for m in s.get("members") or []
-            )
+            members = s.get("members") or []
+            exposure_tvals = {
+                window: sum(
+                    values.get((m.get("ticker") or "").strip(), 0.0)
+                    + us_trading_windows.get(window, {}).get((m.get("ticker") or "").strip().upper(), 0.0)
+                    for m in members
+                )
+                for window, values in trading_windows.items()
+            }
             out.append({
                 "exposure_id": s["exposure_id"],
                 "display_name": s["display_name"],
@@ -1468,7 +1651,8 @@ class PodcastService:
                 "episode_count": s.get("episode_count", 0),
                 "heat": s.get("heat"),  # recency-weighted discussion (X axis)
                 "return_pct": s.get("avg_change"),
-                "trading_value_twd": total_tv or None,
+                "trading_value_twd": exposure_tvals.get("1") or None,
+                "trading_value_windows_twd": exposure_tvals,
             })
         out.sort(key=lambda x: ((x["heat"] or 0.0), x["episode_count"]), reverse=True)
         return out
