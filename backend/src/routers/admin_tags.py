@@ -54,6 +54,8 @@ class TagEntryResponse(BaseModel):
     color_hex: Optional[str] = None
     episode_count: Optional[int] = None
     updated_by: Optional[str] = None
+    members: Optional[List[dict]] = None
+    aliases: Optional[List[str]] = None
 
 
 class TagListResponse(BaseModel):
@@ -70,6 +72,8 @@ class TagCreate(BaseModel):
 class TagUpdate(BaseModel):
     display_zh: Optional[str] = None
     tier: Optional[str] = None
+    members: Optional[List[dict]] = None
+    aliases: Optional[List[str]] = None
 
 
 class DiscoverResponse(BaseModel):
@@ -244,6 +248,7 @@ async def list_tags(
             exposure_type=sector_types.get(r.exposure_id or "") if r.kind == KIND_SECTOR else None,
             icon_id=r.icon_id, color_hex=r.color_hex,
             episode_count=_count_for(r), updated_by=r.updated_by,
+            members=r.members, aliases=r.aliases,
         )
         for r in display_rows
     ]
@@ -336,7 +341,53 @@ async def create_tag(
     return TagEntryResponse(
         id=row.id, slug=row.slug, display_zh=row.display_zh,
         tier=row.tier, updated_by=row.updated_by,
+        members=row.members, aliases=row.aliases,
     )
+
+
+def clean_members_list(db: Session, members: list[dict]) -> list[dict]:
+    cleaned = []
+    seen = set()
+    for m in members:
+        ticker = str(m.get("ticker") or "").strip().upper()
+        if not ticker or ticker in seen:
+            continue
+        seen.add(ticker)
+        
+        is_tw = ticker.isdigit() or (ticker.endswith("*") and ticker[:-1].isdigit())
+        market = "TW" if is_tw else "US"
+        
+        name = m.get("name") or ""
+        name_en = m.get("name_en") or ""
+        
+        if not name or not name_en:
+            from src.database.models import StockTranslation
+            t_row = db.query(StockTranslation).filter(
+                StockTranslation.ticker == ticker,
+                StockTranslation.market == market
+            ).first()
+            if t_row:
+                if not name:
+                    name = t_row.name_zh_tw or t_row.name_en or ticker
+                if not name_en:
+                    name_en = t_row.name_en or ""
+            else:
+                if not name:
+                    name = ticker
+                    
+        cleaned_member = {
+            "ticker": ticker,
+            "name": name,
+            "market": market,
+            "source": m.get("source") or "curated",
+            "rank": m.get("rank") or (len(cleaned) + 1),
+        }
+        if name_en:
+            cleaned_member["name_en"] = name_en
+        if m.get("reason"):
+            cleaned_member["reason"] = m["reason"]
+        cleaned.append(cleaned_member)
+    return cleaned
 
 
 @router.patch("/tags/{tag_id}", response_model=TagEntryResponse)
@@ -346,7 +397,7 @@ async def update_tag(
     admin: AdminAccess = Depends(get_admin_access),
     db: Session = Depends(get_session),
 ):
-    """Update a tag's display name or tier."""
+    """Update a tag's display name, tier, or sector members/aliases."""
     row = db.query(TagRegistry).filter(TagRegistry.id == tag_id).first()
     if not row:
         raise HTTPException(404, "Tag not found")
@@ -356,6 +407,10 @@ async def update_tag(
         row.display_zh = body.display_zh
     if body.tier is not None:
         row.tier = body.tier
+    if body.members is not None:
+        row.members = clean_members_list(db, body.members)
+    if body.aliases is not None:
+        row.aliases = body.aliases
     row.updated_by = admin.email
     db.commit()
     db.refresh(row)
@@ -363,6 +418,7 @@ async def update_tag(
     return TagEntryResponse(
         id=row.id, slug=row.slug, display_zh=row.display_zh,
         tier=row.tier, updated_by=row.updated_by,
+        members=row.members, aliases=row.aliases,
     )
 
 

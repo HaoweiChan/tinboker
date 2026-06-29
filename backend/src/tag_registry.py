@@ -261,8 +261,10 @@ def sync_sectors(db: Session, sectors: list[dict]) -> int:
             existing.icon_id = icon_id
             existing.color_hex = color_hex
             existing.exposure_type = sector.get("exposure_type")
-            existing.members = sector.get("members")
-            existing.aliases = sector.get("aliases")
+            if not existing.members:
+                existing.members = sector.get("members")
+            if not existing.aliases:
+                existing.aliases = sector.get("aliases")
         else:
             db.add(TagRegistry(
                 slug=eid,  # exposure_id is globally unique (sector_*/theme_* prefixed)
