@@ -28,14 +28,15 @@ def test_drops_tickers_and_indices_keeps_real_themes():
         {"mention_text": "GOOGL", "normalized_text": "googl"},    # ticker (case)
         {"mention_text": "SP500", "normalized_text": "sp500"},    # index stopword
         {"mention_text": "VIX", "normalized_text": "vix"},        # index stopword
-        {"mention_text": "CPO", "normalized_text": "copackagedoptics"},  # real theme
-        {"mention_text": "AIPC", "normalized_text": "aipc"},      # real theme
+        {"mention_text": "CPO", "normalized_text": "copackagedoptics"},  # stopword now
+        {"mention_text": "AIPC", "normalized_text": "aipc"},      # stopword now
+        {"mention_text": "XYZ", "normalized_text": "xyz"},        # real theme (not in stopword list)
     ]
     # 2330.TW exercises the exchange-suffix strip; NVDA/GOOGL the US symbols.
     related = ["NVDA", "2330.TW", "GOOGL", "AAPL"]
 
     kept = {b["mention_text"] for b in _filter(candidates, related)}
-    assert kept == {"CPO", "AIPC"}, kept
+    assert kept == {"XYZ"}, kept
 
 
 if __name__ == "__main__":
