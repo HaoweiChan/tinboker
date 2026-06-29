@@ -104,6 +104,26 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({
     return () => ro.disconnect();
   }, []);
 
+  // Dismiss active tooltip when user taps outside the bubble or tooltip on mobile
+  useEffect(() => {
+    if (!hoveredSectorId) return;
+
+    const handleOutsideTouch = (e: TouchEvent | MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest('[data-bubble]') && !target.closest('[data-tooltip]')) {
+        setHoveredSectorId(null);
+      }
+    };
+
+    document.addEventListener('touchstart', handleOutsideTouch, { passive: true });
+    document.addEventListener('mousedown', handleOutsideTouch);
+
+    return () => {
+      document.removeEventListener('touchstart', handleOutsideTouch);
+      document.removeEventListener('mousedown', handleOutsideTouch);
+    };
+  }, [hoveredSectorId]);
+
   // Chart Dimensions — the viewBox tracks the panel's real pixel size (1:1) so the plot fills
   // the container at any aspect (no letterbox margins on tall mobile cards) and fonts/padding
   // render at their true px size. Falls back to 1000×500 before the panel is measured.
@@ -162,6 +182,19 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({
       {xHelp && <InfoHint text={xHelp} />}
     </div>
   );
+
+  const handleBubbleClick = (e: React.MouseEvent, itemId: string) => {
+    const isTouch = window.matchMedia('(pointer: coarse)').matches;
+    if (isTouch) {
+      if (hoveredSectorId !== itemId) {
+        e.preventDefault();
+        e.stopPropagation();
+        setHoveredSectorId(itemId);
+        return;
+      }
+    }
+    onSelectExposure?.(itemId);
+  };
 
   return (
     <div className={containerClasses} style={wrapperStyle}>
@@ -245,11 +278,12 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({
                       return (
                          <g
                             key={item.id}
+                            data-bubble="true"
                             transform={`translate(${x}, ${y})`}
                             className="transition-all duration-300 cursor-pointer group"
                             onMouseEnter={() => setHoveredSectorId(item.id)}
                             onMouseLeave={() => setHoveredSectorId(null)}
-                            onClick={() => onSelectExposure?.(item.id)}
+                            onClick={(e) => handleBubbleClick(e, item.id)}
                             style={{ opacity: activeId && !isActive ? 0.3 : 1 }}
                          >
                             <circle
@@ -293,6 +327,7 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({
                   const left = flipX ? px - 14 - CARD_W : px + 14;
                   return (
                     <div
+                      data-tooltip="true"
                       className="absolute z-10 pointer-events-none backdrop-blur border p-3 rounded-lg shadow-xl"
                       style={{
                         left: Math.max(4, Math.min(left, panel.w - CARD_W - 4)),

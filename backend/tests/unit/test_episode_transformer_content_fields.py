@@ -81,8 +81,6 @@ async def test_to_episode_preserves_sector_exposure_fields_and_defaults_old_docs
         "sector_exposures": [{"exposure_id": "theme_ai_server"}],
         "unresolved_market_trends": [{"normalized_text": "cpo"}],
         "sector_exposure_ids": ["theme_ai_server"],
-        "sector_ids": [],
-        "theme_ids": ["ai_server"],
         "unresolved_market_trend_ids": ["cpo"],
     }
     episode = await transformer.to_episode(raw, enrich_content=False)
@@ -90,8 +88,6 @@ async def test_to_episode_preserves_sector_exposure_fields_and_defaults_old_docs
     assert episode.sector_exposures == [{"exposure_id": "theme_ai_server"}]
     assert episode.unresolved_market_trends == [{"normalized_text": "cpo"}]
     assert episode.sector_exposure_ids == ["theme_ai_server"]
-    # Unified namespace: a legacy doc's theme_ids fold into sector_ids on read.
-    assert episode.sector_ids == ["ai_server"]
     assert not hasattr(episode, "theme_ids")
     assert episode.unresolved_market_trend_ids == ["cpo"]
 

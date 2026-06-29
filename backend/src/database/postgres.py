@@ -150,6 +150,18 @@ def create_all_tables():
                 "ALTER TABLE IF EXISTS tag_registry "
                 "ADD COLUMN IF NOT EXISTS color_hex VARCHAR(16)"
             ))
+            conn.execute(text(
+                "ALTER TABLE IF EXISTS tag_registry "
+                "ADD COLUMN IF NOT EXISTS exposure_type VARCHAR(20)"
+            ))
+            conn.execute(text(
+                "ALTER TABLE IF EXISTS tag_registry "
+                "ADD COLUMN IF NOT EXISTS members JSONB"
+            ))
+            conn.execute(text(
+                "ALTER TABLE IF EXISTS tag_registry "
+                "ADD COLUMN IF NOT EXISTS aliases JSONB"
+            ))
             conn.commit()
     elif engine.dialect.name == "sqlite":
         # SQLite has no "ADD COLUMN IF NOT EXISTS" — check PRAGMA first.
@@ -178,6 +190,22 @@ def create_all_tables():
             if tr_cols and "color_hex" not in tr_cols:
                 conn.execute(text("ALTER TABLE tag_registry ADD COLUMN color_hex VARCHAR(16)"))
                 conn.commit()
+            if tr_cols and "exposure_type" not in tr_cols:
+                conn.execute(text("ALTER TABLE tag_registry ADD COLUMN exposure_type VARCHAR(20)"))
+                conn.commit()
+            if tr_cols and "members" not in tr_cols:
+                conn.execute(text("ALTER TABLE tag_registry ADD COLUMN members JSON"))
+                conn.commit()
+            if tr_cols and "aliases" not in tr_cols:
+                conn.execute(text("ALTER TABLE tag_registry ADD COLUMN aliases JSON"))
+                conn.commit()
+    # Clean up obsolete cryptocurrency tag registry rows (idempotent)
+    with engine.connect() as conn:
+        conn.execute(text(
+            "DELETE FROM tag_registry WHERE slug IN ('cryptocurrency', 'sector_cryptocurrency') "
+            "OR exposure_id IN ('sector_cryptocurrency', 'theme_cryptocurrency')"
+        ))
+        conn.commit()
     logger.info("Database tables created successfully")
 
 

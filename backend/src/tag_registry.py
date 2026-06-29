@@ -12,10 +12,8 @@ Tiers
 
 from __future__ import annotations
 
-import json
 import logging
 import re
-from pathlib import Path
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -41,7 +39,6 @@ _SEED: list[tuple[str, str, str]] = [
     ("bitcoin", "比特幣", TIER_TRENDING),
     ("capital_expenditure", "資本支出", TIER_TRENDING),
     ("centralbanks", "央行", TIER_TRENDING),
-    ("cryptocurrency", "加密貨幣", TIER_TRENDING),
     ("datacenters", "資料中心", TIER_TRENDING),
     ("demographics", "人口趨勢", TIER_TRENDING),
     ("digitalassets", "數位資產", TIER_TRENDING),
@@ -89,9 +86,6 @@ _SEED: list[tuple[str, str, str]] = [
 # ``docs/tag-vocabulary-source-of-truth.md``.
 #
 # Episode tags are stored PascalCase and looked up via ``normalize_tag_slug``
-# (lowercase + strip separators). This map only supplies DISPLAY labels — the
-# trending GATE still comes from the DB (`trending_slugs`).
-_MIRROR_PATH = Path(__file__).with_name("data") / "tag_vocabulary.json"
 
 
 def normalize_tag_slug(slug: str) -> str:
@@ -141,10 +135,9 @@ def canonical_tag_slugs() -> frozenset[str]:
 
 
 def _load_canonical_display() -> dict[str, str]:
-    """normalized-slug → zh-TW display, from the committed pipeline mirror."""
-    raw = json.loads(_MIRROR_PATH.read_text(encoding="utf-8"))
-    # The mirror carries a ``_comment`` provenance key (JSON has no comments); drop it.
-    return {normalize_tag_slug(slug): zh for slug, zh in raw.items() if not slug.startswith("_")}
+    """normalized-slug → zh-TW display, from the committed seed data."""
+    from src.data.tag_vocabulary_seed import TAG_VOCABULARY_SEED
+    return {normalize_tag_slug(slug): zh for slug, zh in TAG_VOCABULARY_SEED.items()}
 
 
 _CANONICAL_DISPLAY: dict[str, str] = _load_canonical_display()
@@ -259,6 +252,9 @@ def sync_sectors(db: Session, sectors: list[dict]) -> int:
             existing.display_zh = display
             existing.icon_id = icon_id
             existing.color_hex = color_hex
+            existing.exposure_type = sector.get("exposure_type")
+            existing.members = sector.get("members")
+            existing.aliases = sector.get("aliases")
         else:
             db.add(TagRegistry(
                 slug=eid,  # exposure_id is globally unique (sector_*/theme_* prefixed)
@@ -268,6 +264,9 @@ def sync_sectors(db: Session, sectors: list[dict]) -> int:
                 exposure_id=eid,
                 icon_id=icon_id,
                 color_hex=color_hex,
+                exposure_type=sector.get("exposure_type"),
+                members=sector.get("members"),
+                aliases=sector.get("aliases"),
             ))
             new_count += 1
 

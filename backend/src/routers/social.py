@@ -7,7 +7,8 @@ fan the new episode out to Threads. It is idempotent and dry-run by default.
 
 import logging
 import uuid
-from typing import List, Optional
+from datetime import datetime
+from typing import List, Optional, Any
 
 import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
@@ -16,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from src.auth.admin_auth import AdminAccess, get_admin_access, get_social_access
 from src.config import settings
-from src.database.models import PromoDraft
+from src.database.models import PromoDraft, ScheduledSocialPost
 from src.database.postgres import get_session
 from src.services import facebook_publisher, promo_publisher, threads_publisher
 from src.services.gcs_content import GCSContentService
@@ -566,3 +567,132 @@ def delete_promo_draft(
         raise HTTPException(status_code=404, detail="Draft not found")
     db.delete(row)
     db.commit()
+
+
+# ── Scheduled posts management ───────────────────────────────────────────
+
+class SchedulePostRequest(BaseModel):
+    post_type: str = Field(..., description="'episode' or 'promo'")
+    episode_id: Optional[str] = None
+    text: Optional[str] = ""
+    media: Optional[List[PromoMedia]] = None
+    comments: Optional[List[Any]] = None  # Support string comments for promos or dict comments for episodes
+    platforms: List[str]
+    scheduled_for: datetime
+
+
+@router.post("/scheduled", status_code=201)
+def schedule_post(
+    body: SchedulePostRequest,
+    admin: AdminAccess = Depends(get_admin_access),
+    db: Session = Depends(get_session),
+):
+    """Schedule a social media post (episode summary or promo)."""
+    if body.post_type not in ("episode", "promo"):
+        raise HTTPException(status_code=422, detail="post_type must be 'episode' or 'promo'")
+    if body.post_type == "episode" and not body.episode_id:
+        raise HTTPException(status_code=422, detail="episode_id is required for 'episode' post_type")
+
+    # Store media cleanly (durable part only; path is what persists)
+    stored_media = []
+    if body.media:
+        stored_media = [
+            {"type": m.type, "path": m.path, "filename": m.filename}
+            for m in body.media if m.path
+        ]
+
+    row = ScheduledSocialPost(
+        post_type=body.post_type,
+        episode_id=body.episode_id,
+        text=(body.text or "").strip(),
+        media=stored_media,
+        comments=body.comments or [],
+        platforms=body.platforms,
+        scheduled_for=body.scheduled_for,
+        status="pending",
+        created_by=admin.email
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return {"id": row.id, "status": row.status}
+
+
+@router.get("/scheduled")
+def list_scheduled_posts(
+    status: Optional[str] = Query(None, description="pending, processing, posted, failed"),
+    limit: int = Query(default=50, ge=1, le=100),
+    _: AdminAccess = Depends(get_admin_access),
+    db: Session = Depends(get_session),
+):
+    """List scheduled social posts, sorted by scheduled_for desc."""
+    query = db.query(ScheduledSocialPost)
+    if status:
+        query = query.filter(ScheduledSocialPost.status == status)
+    rows = query.order_by(ScheduledSocialPost.scheduled_for.desc()).limit(limit).all()
+
+    return {"posts": [
+        {
+            "id": r.id,
+            "post_type": r.post_type,
+            "episode_id": r.episode_id,
+            "text": r.text,
+            "media": r.media,
+            "comments": r.comments,
+            "platforms": r.platforms,
+            "scheduled_for": r.scheduled_for.isoformat() + "Z",  # ensure Z/UTC suffix for frontend
+            "status": r.status,
+            "error_message": r.error_message,
+            "posted_at": r.posted_at.isoformat() + "Z" if r.posted_at else None,
+            "published_results": r.published_results,
+            "created_by": r.created_by,
+            "created_at": r.created_at.isoformat() + "Z"
+        }
+        for r in rows
+    ]}
+
+
+@router.delete("/scheduled/{post_id}", status_code=204)
+def delete_scheduled_post(
+    post_id: int,
+    _: AdminAccess = Depends(get_admin_access),
+    db: Session = Depends(get_session),
+):
+    """Cancel and delete a scheduled post."""
+    row = db.query(ScheduledSocialPost).filter(ScheduledSocialPost.id == post_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Scheduled post not found")
+    if row.status == "processing":
+        raise HTTPException(status_code=400, detail="Cannot delete a post that is currently processing")
+    db.delete(row)
+    db.commit()
+
+
+@router.post("/scheduled/{post_id}/publish-now")
+async def publish_scheduled_post_now(
+    post_id: int,
+    _: AdminAccess = Depends(get_admin_access),
+    db: Session = Depends(get_session),
+):
+    """Manually trigger a scheduled post to publish immediately."""
+    row = db.query(ScheduledSocialPost).filter(ScheduledSocialPost.id == post_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Scheduled post not found")
+    if row.status in ("processing", "posted"):
+        raise HTTPException(status_code=400, detail=f"Cannot publish post that is {row.status}")
+
+    row.status = "pending"
+    row.scheduled_for = datetime.utcnow()
+    db.commit()
+
+    from src.services.scheduled_social_worker import process_scheduled_posts
+    await process_scheduled_posts()
+
+    db.refresh(row)
+    return {
+        "id": row.id,
+        "status": row.status,
+        "error_message": row.error_message,
+        "published_results": row.published_results
+    }
+

@@ -22,6 +22,11 @@ from src.cache.redis_client import cache_get, cache_set, cache_delete, cache_del
 from src.cache.cache_config import CACHE_TTL
 from src.cache.cdn_cache import purge_cdn_cache
 
+from src.services.firestore_service import FirestoreService
+from src.services.gcs_content import GCSContentService
+from src.services.episode_transformer import EpisodeTransformer
+import httpx
+
 # Per-env API host for Cloudflare edge purges (host-scoped so one env never clears
 # another's cache). Mirrors the map in routers/admin_sources.py.
 _API_HOST_BY_ENV = {
@@ -29,10 +34,6 @@ _API_HOST_BY_ENV = {
     "staging": "staging-api.tinboker.com",
     "development": "dev-api.tinboker.com",
 }
-from src.services.firestore_service import FirestoreService
-from src.services.gcs_content import GCSContentService
-from src.services.episode_transformer import EpisodeTransformer
-import httpx
 
 
 logger = logging.getLogger(__name__)
@@ -975,7 +976,7 @@ class PodcastService:
             return {
                 "exposure_id": exposure_id,
                 "display_name": "",
-                "exposure_type": "sector",
+                "exposure_type": "industry",
                 "resolved_tickers": [],
                 "episodes": [],
                 "total": 0,
@@ -1025,7 +1026,7 @@ class PodcastService:
         # out by the release scope (otherwise the page would show the raw exposure_id
         # as its title with no tickers).
         display_name = exposure_id
-        exposure_type = "sector"
+        exposure_type = "industry"
         seen_tickers: dict[str, dict] = {}  # ticker -> first-seen entry
         exposure_counts: dict[str, int] = {}  # display_name -> count, for majority vote
 
@@ -1035,7 +1036,7 @@ class PodcastService:
                     continue
                 dn = entry.get("display_name") or exposure_id
                 exposure_counts[dn] = exposure_counts.get(dn, 0) + 1
-                et = entry.get("exposure_type") or "sector"
+                et = entry.get("exposure_type") or "industry"
                 # Use the type from the most-frequent display_name entry (updated below)
                 # For now capture the first one seen; we overwrite with majority below
                 for rt in entry.get("resolved_tickers") or []:
@@ -1257,7 +1258,7 @@ class PodcastService:
                 if eid not in meta:
                     meta[eid] = {
                         "display_name": entry.get("display_name") or eid,
-                        "exposure_type": entry.get("exposure_type") or "sector",
+                        "exposure_type": entry.get("exposure_type") or "industry",
                     }
                 sector_tickers = ticker_map.setdefault(eid, {})
                 for rt in entry.get("resolved_tickers") or []:
@@ -1404,7 +1405,7 @@ class PodcastService:
         industry boards being TW-centric; US members contribute 0.
         """
         board = await self.sector_board()
-        industries = [s for s in board if s.get("exposure_type") == "sector"]
+        industries = [s for s in board if s.get("exposure_type") == "industry"]
         if not industries:
             return []
         caps = await self._tw_market_caps_cached()
@@ -1477,10 +1478,21 @@ class PodcastService:
         "unresolved_market_trends", "related_tickers", "podcast_name", "episode_title",
         "title", "retracted_at", "released_at_ms", "spotify_release_date", "created_time",
     ]
-    # Indices / breadth gauges the writer emits as "trends" — never curatable themes.
+    # Indices / breadth gauges and known stopwords the writer emits as "trends" — never curatable themes.
     _THEME_INDEX_STOPWORDS = frozenset({
         "SP500", "SPX", "DJI", "DJIA", "IXIC", "NDX", "RUT", "SOX", "SOXX", "VIX",
         "NASDAQ", "DOW", "NIKKEI", "TWSE", "TAIEX", "TWII",
+        # Tech terms already covered by tag_vocabulary
+        "GPU", "CPU", "ASIC", "CPO", "HPC", "HBM4", "TPU", "MOSFET", "DSP",
+        # Company names / tickers
+        "NVIDIA", "TSMC", "HP", "KLA",
+        # Industry jargon
+        "CSP", "ODM", "IDM", "OEM", "EMS",
+        # Investable-but-deferred concepts
+        "AIPC", "HVDC",
+        # Noise / ambiguous abbreviations
+        "KS", "KY", "RPO", "AST", "EP", "JP", "P500", "QE", "QT",
+        "ASP", "ARR", "EIA", "FOMO",
     })
 
     async def theme_candidates(self, *, threshold: int = 3, limit: int = 40) -> list[dict]:
@@ -1616,7 +1628,7 @@ class PodcastService:
                 if eid not in meta:
                     meta[eid] = {
                         "display_name": entry.get("display_name") or eid,
-                        "exposure_type": entry.get("exposure_type") or "sector",
+                        "exposure_type": entry.get("exposure_type") or "industry",
                     }
 
         from src.data.sector_visuals import visual_for

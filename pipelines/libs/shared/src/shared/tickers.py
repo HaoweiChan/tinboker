@@ -13,13 +13,11 @@ Extend ``tickers.json`` freely.
 
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import dataclass
 from functools import lru_cache
-from pathlib import Path
 
-_DATA_FILE = Path(__file__).resolve().parent / "data" / "tickers.json"
+from shared.platform_client import fetch_translation_aliases
 
 
 @dataclass(frozen=True)
@@ -49,11 +47,34 @@ def _norm(raw: str) -> str:
 @lru_cache(maxsize=1)
 def _index() -> dict[str, TickerInfo]:
     """Flat lookup index: every canonical symbol, alias, and normalized form -> TickerInfo."""
-    if not _DATA_FILE.exists():
-        return {}
-    raw = json.loads(_DATA_FILE.read_text(encoding="utf-8"))
     out: dict[str, TickerInfo] = {}
-    for symbol, meta in (raw.get("tickers") or {}).items():
+
+    # 1. Try to fetch from platform API
+    items = fetch_translation_aliases()
+    if items is not None:
+        for item in items:
+            symbol = item.get("ticker", "").strip().upper()
+            if not symbol:
+                continue
+            aliases = item.get("aliases", []) or []
+            info = TickerInfo(
+                symbol=symbol,
+                name=item.get("name_zh_tw") or item.get("name_en") or symbol,
+                name_en=item.get("name_en") or item.get("name_zh_tw") or symbol,
+                market=item.get("market", ""),
+                sector="",
+                type="company",
+                aliases=tuple(aliases),
+            )
+            keys = {symbol, _norm(symbol), *aliases, *(_norm(a) for a in aliases)}
+            for k in keys:
+                if k:
+                    out.setdefault(k, info)
+        return out
+
+    # 2. Fall back to local seed backup
+    from shared.tickers_seed_backup import TICKERS_SEED
+    for symbol, meta in TICKERS_SEED.items():
         aliases = meta.get("aliases", []) or []
         info = TickerInfo(
             symbol=symbol,

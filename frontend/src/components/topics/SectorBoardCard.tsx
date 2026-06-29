@@ -81,7 +81,7 @@ export const SectorBoardCard: React.FC<SectorBoardCardProps> = ({ sector }) => {
   const topMembers = sector.members.slice(0, 4);
 
   const typeLabel =
-    sector.exposure_type === 'sector' ? '產業'
+    sector.exposure_type === 'industry' ? '產業'
     : sector.exposure_type === 'theme' ? '題材'
     : '總經';
 

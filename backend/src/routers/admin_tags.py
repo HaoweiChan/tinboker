@@ -85,6 +85,8 @@ class SyncSectorsResponse(BaseModel):
 
 async def _invalidate_tag_caches() -> None:
     """Bust Redis caches that depend on tag registry data (all envs share the DB)."""
+    from src.data.sector_visuals import _visuals
+    _visuals.cache_clear()
     for pattern in ("tags:*",):
         try:
             await cache_delete_pattern_all_envs(pattern)
@@ -299,16 +301,16 @@ async def sync_sectors_endpoint(
     name / visuals but keep their curated visibility. Admins then hide unwanted sectors.
     """
     try:
-        sectors = await podcast_service.list_sectors()
+        from src.data.sectors_seed import SECTORS_SEED
+        new_count = sync_sectors(db, SECTORS_SEED)
+        await _invalidate_tag_caches()
+        return SyncSectorsResponse(
+            synced=new_count,
+            total=len(SECTORS_SEED),
+            message=f"Synced {len(SECTORS_SEED)} sectors ({new_count} new, added as visible)",
+        )
     except Exception as e:
-        raise HTTPException(500, f"Failed to read sectors from universe: {e}")
-    new_count = sync_sectors(db, sectors)
-    await _invalidate_tag_caches()
-    return SyncSectorsResponse(
-        synced=new_count,
-        total=len(sectors),
-        message=f"Synced {len(sectors)} sectors ({new_count} new, added as visible)",
-    )
+        raise HTTPException(500, f"Failed to sync sectors: {e}")
 
 
 @router.post("/tags", response_model=TagEntryResponse, status_code=201)

@@ -7,15 +7,14 @@ endpoints, Tavily, or scraping code. Maintenance jobs refresh the artifact.
 
 from __future__ import annotations
 
-import json
 import re
 import unicodedata
 from dataclasses import dataclass
 from functools import lru_cache
-from pathlib import Path
 from typing import Any, Iterable
 
-_DATA_FILE = Path(__file__).resolve().parent / "data" / "sector_and_theme_universe.json"
+from shared.platform_client import fetch_sectors_universe
+
 _CJK_RE = re.compile(r"[\u3400-\u9fff]")
 _LATIN_WORD_RE = re.compile(r"[a-z0-9][a-z0-9+.-]{1,12}")
 _UNRESOLVED_UPPER_RE = re.compile(r"\b[A-Z][A-Z0-9+.-]{1,10}\b")
@@ -26,12 +25,33 @@ DEFAULT_MAX_TICKERS = 10
 # drop them to keep ``unresolved_market_trends`` (written to every episode doc)
 # low-noise. Values are normalized (lower-cased) to match ``normalize_text``.
 _UNRESOLVED_STOPWORDS: frozenset[str] = frozenset({
-    "ceo", "cfo", "coo", "cto", "cio", "vp", "ir", "vc", "pe", "pb", "ps", "eps",
-    "roe", "roa", "roi", "gdp", "cpi", "ppi", "pce", "ism", "pmi", "fomc", "fed",
-    "ecb", "boj", "imf", "usd", "twd", "jpy", "eur", "rmb", "cny", "krw", "etf",
-    "ipo", "spo", "m&a", "esg", "yoy", "qoq", "mom", "ttm", "q1", "q2", "q3", "q4",
-    "h1", "h2", "1h", "2h", "fy", "ai", "ev", "iot", "5g", "6g", "pc", "tv", "us",
-    "uk", "eu", "ok", "ceo's", "api", "app", "ui", "ux", "faq", "diy", "b2b", "b2c",
+    # C-suite / titles
+    "ceo", "cfo", "coo", "cto", "cio", "vp", "ir", "vc", "ceo's",
+    # Valuation / financial ratios
+    "pe", "pb", "ps", "eps", "roe", "roa", "roi", "asp", "arr",
+    # Macro indicators & central banks
+    "gdp", "cpi", "ppi", "pce", "ism", "pmi", "fomc", "fed", "ecb", "boj", "imf",
+    "qe", "qt", "eia",
+    # Currencies
+    "usd", "twd", "jpy", "eur", "rmb", "cny", "krw",
+    # Market events / instruments
+    "etf", "ipo", "spo", "m&a", "esg", "fomo",
+    # Time periods
+    "yoy", "qoq", "mom", "ttm", "q1", "q2", "q3", "q4",
+    "h1", "h2", "1h", "2h", "fy",
+    # Tech terms already covered by tag_vocabulary (not curatable themes)
+    "gpu", "cpu", "asic", "cpo", "hpc", "hbm4", "tpu", "mosfet", "dsp",
+    # Company names / tickers that bypass the related_tickers filter
+    "nvidia", "tsmc", "hp", "kla",
+    # Industry jargon (not investable themes)
+    "csp", "odm", "idm", "oem", "ems",
+    # Investable-but-deferred concepts (revisit when adding as full themes)
+    "aipc", "hvdc",
+    # Noise / ambiguous abbreviations
+    "ks", "ky", "rpo", "ast", "ep", "jp", "p500",
+    # General / tech
+    "ai", "ev", "iot", "5g", "6g", "pc", "tv", "us", "uk", "eu", "ok",
+    "api", "app", "ui", "ux", "faq", "diy", "b2b", "b2c",
 })
 
 
@@ -106,10 +126,16 @@ def _clean_member(member: dict[str, Any]) -> dict[str, Any]:
 
 @lru_cache(maxsize=1)
 def _universe() -> dict[str, Any]:
-    raw = json.loads(_DATA_FILE.read_text(encoding="utf-8"))
-    max_tickers = int(raw.get("max_tickers") or DEFAULT_MAX_TICKERS)
+    universe_data = fetch_sectors_universe()
+    if not universe_data:
+        from shared.sectors_seed_backup import SECTORS_SEED
+        universe_data = {
+            "max_tickers": DEFAULT_MAX_TICKERS,
+            "exposures": SECTORS_SEED,
+        }
+    max_tickers = int(universe_data.get("max_tickers") or DEFAULT_MAX_TICKERS)
     exposures = []
-    for item in raw.get("exposures") or []:
+    for item in universe_data.get("exposures") or []:
         copied = dict(item)
         members = [m for m in copied.get("members") or [] if isinstance(m, dict)]
         copied["members"] = sorted(members, key=_member_sort_key)
@@ -192,11 +218,11 @@ def _exposure_payload(match: ExposureMatch, *, max_tickers: int | None = None) -
     return {
         "exposure_id": normalize_exposure_id(exposure.get("exposure_id")),
         "exposure_type": exposure.get("exposure_type"),
-        "sector_id": exposure.get("sector_id"),
-        "theme_id": exposure.get("theme_id"),
         "display_name": exposure.get("display_name"),
         "mention_text": match.alias,
         "confidence": 1.0,
+        "icon_id": exposure.get("icon_id"),
+        "color_hex": exposure.get("color_hex"),
         "resolved_tickers": [_clean_member(m) for m in members[:cap]],
         "total_matches": len(members),
     }
@@ -260,22 +286,13 @@ def find_unresolved_market_trends(
 
 
 def flatten_exposure_ids(sector_exposures: Iterable[dict[str, Any]]) -> dict[str, list[str]]:
-    """Flat, Firestore-queryable id arrays for an episode's exposures.
-
-    Themes and sectors are one ``sector_`` namespace, so a theme's base id is a
-    sector id too — everything lands in ``sector_ids`` (no separate ``theme_ids``).
-    """
+    """Flat, Firestore-queryable id arrays for an episode's exposures."""
     exposure_ids: set[str] = set()
-    sector_ids: set[str] = set()
     for item in sector_exposures or []:
         if item.get("exposure_id"):
             exposure_ids.add(str(item["exposure_id"]))
-        base = item.get("sector_id") or item.get("theme_id")
-        if base:
-            sector_ids.add(str(base))
     return {
         "sector_exposure_ids": sorted(exposure_ids),
-        "sector_ids": sorted(sector_ids),
     }
 
 

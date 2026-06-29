@@ -165,3 +165,62 @@ export async function publishSocialEpisode(
   );
   return res.data;
 }
+
+export interface ScheduledPost {
+  id: number;
+  post_type: 'episode' | 'promo';
+  episode_id: string | null;
+  text: string;
+  media: any[];
+  comments: any[];
+  platforms: string[];
+  scheduled_for: string; // ISO-8601 string
+  status: 'pending' | 'processing' | 'posted' | 'failed';
+  error_message: string | null;
+  posted_at: string | null;
+  published_results: any;
+  created_by: string | null;
+  created_at: string;
+}
+
+export async function schedulePost(payload: {
+  post_type: 'episode' | 'promo';
+  episode_id?: string | null;
+  text?: string;
+  media?: any[] | null;
+  comments?: any[] | null;
+  platforms: string[];
+  scheduled_for: string; // ISO string
+}): Promise<{ id: number; status: string }> {
+  const res = await apiClient.post<{ id: number; status: string }>(
+    '/api/admin/threads/scheduled',
+    payload,
+    adminAuthConfig(),
+  );
+  return res.data;
+}
+
+export async function listScheduledPosts(status?: string, limit = 50): Promise<ScheduledPost[]> {
+  const res = await apiClient.get<{ posts: ScheduledPost[] }>(
+    '/api/admin/threads/scheduled',
+    { params: { status, limit }, ...adminAuthConfig() },
+  );
+  return res.data.posts;
+}
+
+export async function deleteScheduledPost(postId: number): Promise<void> {
+  await apiClient.delete(
+    `/api/admin/threads/scheduled/${postId}`,
+    adminAuthConfig(),
+  );
+}
+
+export async function publishScheduledPostNow(postId: number): Promise<{ id: number; status: string }> {
+  const res = await apiClient.post<{ id: number; status: string }>(
+    `/api/admin/threads/scheduled/${postId}/publish-now`,
+    null,
+    { ...adminAuthConfig(), timeout: LLM_REQUEST_TIMEOUT_MS },
+  );
+  return res.data;
+}
+

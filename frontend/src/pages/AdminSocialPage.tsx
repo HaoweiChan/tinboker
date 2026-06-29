@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { RefreshCw, Save, Check, MessageSquare, Image as ImageIcon, Eye, Wand2, Send, AlertCircle, ExternalLink, Plus, Trash2 } from 'lucide-react';
+import { RefreshCw, Save, Check, MessageSquare, Image as ImageIcon, Eye, Wand2, Send, AlertCircle, ExternalLink, Plus, Trash2, Clock, Play } from 'lucide-react';
 import { SlideViewer } from '@/components/common/SlideViewer';
 import { PromoComposer } from '@/components/admin/PromoComposer';
 import {
@@ -16,11 +16,16 @@ import {
   generateSocialEpisode,
   renderSocialCards,
   publishSocialEpisode,
+  schedulePost,
+  listScheduledPosts,
+  deleteScheduledPost,
+  publishScheduledPostNow,
   type SocialEpisodeListItem,
   type SocialEpisodeBundle,
   type SocialComment,
   type PublishResult,
   type PublishPlatformResult,
+  type ScheduledPost,
 } from '@/services/api/adminSocial';
 
 const PLATFORM_LABELS: Record<string, string> = { threads: 'Threads', facebook: 'Facebook' };
@@ -83,16 +88,80 @@ export const AdminSocialPage: React.FC = () => {
   const [showComposed, setShowComposed] = useState(false);
   const [tab, setTab] = useState<'episodes' | 'promo'>('episodes');
 
+  const [scheduledPosts, setScheduledPosts] = useState<ScheduledPost[]>([]);
+  const [scheduling, setScheduling] = useState(false);
+  const [scheduleTime, setScheduleTime] = useState('');
+
+  const fetchScheduled = useCallback(async () => {
+    try {
+      setScheduledPosts(await listScheduledPosts());
+    } catch (e) {
+      console.error('[social] list scheduled failed', e);
+    }
+  }, []);
+
+  const handleCancelSchedule = useCallback(async (id: number) => {
+    if (!window.confirm('確定要取消此排程發佈嗎？')) return;
+    try {
+      await deleteScheduledPost(id);
+      await fetchScheduled();
+    } catch (e) {
+      console.error('[social] cancel schedule failed', e);
+      alert('取消排程失敗，請看 console');
+    }
+  }, [fetchScheduled]);
+
+  const handlePublishNow = useCallback(async (id: number) => {
+    if (!window.confirm('確定要立即發佈此排程貼文嗎？')) return;
+    try {
+      await publishScheduledPostNow(id);
+      alert('已成功立即發佈！');
+      await fetchScheduled();
+      // Refetch list to update badges
+      setEpisodes(await listSocialEpisodes(40));
+    } catch (e) {
+      console.error('[social] publish now failed', e);
+      alert('立即發佈失敗，請看 console');
+    }
+  }, [fetchScheduled]);
+
+  const handleSchedule = useCallback(async () => {
+    if (!selectedId || !scheduleTime) return;
+    setScheduling(true);
+    try {
+      await saveSocialEpisode(selectedId, { post, comments });
+      setSaved(true);
+
+      const targetTime = new Date(scheduleTime).toISOString();
+      await schedulePost({
+        post_type: 'episode',
+        episode_id: selectedId,
+        platforms: ['threads', 'facebook'],
+        scheduled_for: targetTime,
+      });
+
+      alert('排程成功！');
+      setScheduleTime('');
+      fetchScheduled();
+    } catch (e) {
+      console.error('[social] schedule failed', e);
+      alert('排程失敗，請看 console');
+    } finally {
+      setScheduling(false);
+    }
+  }, [selectedId, post, comments, scheduleTime, fetchScheduled]);
+
   const fetchList = useCallback(async () => {
     setLoadingList(true);
     try {
       setEpisodes(await listSocialEpisodes(40));
+      fetchScheduled();
     } catch (e) {
       console.error('[social] list failed', e);
     } finally {
       setLoadingList(false);
     }
-  }, []);
+  }, [fetchScheduled]);
 
   useEffect(() => { fetchList(); }, [fetchList]);
 
@@ -253,46 +322,129 @@ export const AdminSocialPage: React.FC = () => {
         ))}
       </div>
 
-      {tab === 'promo' && <PromoComposer />}
+      {tab === 'promo' && <PromoComposer onScheduled={fetchScheduled} />}
 
       {tab === 'episodes' && (
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[320px_1fr]">
-        {/* Episode list */}
-        <div className={`${card} h-fit max-h-[80vh] overflow-y-auto`}>
-          {episodes.map((ep) => (
-            <button
-              key={ep.episode_id}
-              onClick={() => selectEpisode(ep.episode_id)}
-              className={`flex w-full flex-col gap-1 border-b border-border p-3 text-left last:border-0 ${
-                selectedId === ep.episode_id ? 'bg-primary/10' : 'hover:bg-muted'
-              }`}
-            >
-              <div className="line-clamp-1 text-base font-medium text-foreground">
-                {ep.episode_title || ep.episode_id}
-              </div>
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <span>{ep.podcast_name}</span>
-                <span>·</span>
-                <span>{fmtDate(ep.released_at_ms)}</span>
-              </div>
-              <div className="mt-1 flex flex-wrap items-center gap-2">
-                <Badge ok={ep.has_copy} icon={<MessageSquare className="h-3 w-3" />}>
-                  {ep.has_copy ? `${ep.comment_count}/${ep.theme_card_count} 文案` : '尚無文案'}
-                </Badge>
-                <Badge ok={ep.has_images} icon={<ImageIcon className="h-3 w-3" />}>
-                  {ep.has_images ? '有圖' : '無圖'}
-                </Badge>
-                {(ep.posted?.threads || ep.posted?.facebook) && (
-                  <PostedPill>
-                    已發佈{ep.posted?.threads && ep.posted?.facebook ? '' : ep.posted?.threads ? '· TH' : '· FB'}
-                  </PostedPill>
-                )}
-              </div>
-            </button>
-          ))}
-          {!episodes.length && !loadingList && (
-            <div className="p-4 text-base text-muted-foreground">沒有節目</div>
-          )}
+        {/* Left Column: Episode list & Scheduled Queue */}
+        <div className="space-y-6">
+          <div className={`${card} h-fit max-h-[50vh] overflow-y-auto`}>
+            {episodes.map((ep) => (
+              <button
+                key={ep.episode_id}
+                onClick={() => selectEpisode(ep.episode_id)}
+                className={`flex w-full flex-col gap-1 border-b border-border p-3 text-left last:border-0 ${
+                  selectedId === ep.episode_id ? 'bg-primary/10' : 'hover:bg-muted'
+                }`}
+              >
+                <div className="line-clamp-1 text-base font-medium text-foreground">
+                  {ep.episode_title || ep.episode_id}
+                </div>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <span>{ep.podcast_name}</span>
+                  <span>·</span>
+                  <span>{fmtDate(ep.released_at_ms)}</span>
+                </div>
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  <Badge ok={ep.has_copy} icon={<MessageSquare className="h-3 w-3" />}>
+                    {ep.has_copy ? `${ep.comment_count}/${ep.theme_card_count} 文案` : '尚無文案'}
+                  </Badge>
+                  <Badge ok={ep.has_images} icon={<ImageIcon className="h-3 w-3" />}>
+                    {ep.has_images ? '有圖' : '無圖'}
+                  </Badge>
+                  {(ep.posted?.threads || ep.posted?.facebook) && (
+                    <PostedPill>
+                      已發佈{ep.posted?.threads && ep.posted?.facebook ? '' : ep.posted?.threads ? '· TH' : '· FB'}
+                    </PostedPill>
+                  )}
+                </div>
+              </button>
+            ))}
+            {!episodes.length && !loadingList && (
+              <div className="p-4 text-base text-muted-foreground">沒有節目</div>
+            )}
+          </div>
+
+          {/* Scheduled posts list */}
+          <div className={`${card} p-4 space-y-3 h-fit max-h-[40vh] overflow-y-auto`}>
+            <div className="flex items-center justify-between border-b border-border pb-2">
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
+                <Clock className="h-4 w-4" /> 排程貼文 Queue
+              </h3>
+              <button
+                onClick={fetchScheduled}
+                className="text-muted-foreground hover:text-foreground text-xs"
+                title="重新整理排程"
+              >
+                <RefreshCw className="h-3 w-3" />
+              </button>
+            </div>
+            <div className="space-y-2">
+              {scheduledPosts.map((post) => (
+                <div key={post.id} className="text-xs border border-border rounded-lg p-2.5 space-y-1.5 bg-muted/20">
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="font-semibold text-foreground capitalize">
+                      {post.post_type === 'episode' ? '節目' : '宣傳'} · {post.platforms.map(p => PLATFORM_LABELS[p] || p).join('/')}
+                    </span>
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium uppercase ${
+                      post.status === 'pending' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300' :
+                      post.status === 'processing' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300 animate-pulse' :
+                      post.status === 'posted' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300' :
+                      'bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-300'
+                    }`}>
+                      {post.status === 'pending' ? '排程中' :
+                       post.status === 'processing' ? '發佈中' :
+                       post.status === 'posted' ? '已發佈' : '失敗'}
+                    </span>
+                  </div>
+
+                  <div className="text-muted-foreground line-clamp-2">
+                    {post.post_type === 'episode'
+                      ? (episodes.find(e => e.episode_id === post.episode_id)?.episode_title || post.episode_id)
+                      : post.text}
+                  </div>
+
+                  <div className="text-[10px] text-muted-foreground flex items-center justify-between gap-2 pt-1 border-t border-border/40">
+                    <span>
+                      {new Date(post.scheduled_for).toLocaleString('zh-TW', {
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })}
+                    </span>
+                    
+                    {post.status === 'pending' && (
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handlePublishNow(post.id)}
+                          className="text-accent-info hover:underline flex items-center gap-0.5 font-medium"
+                          title="立即發佈"
+                        >
+                          <Play className="h-3 w-3" /> 立即
+                        </button>
+                        <button
+                          onClick={() => handleCancelSchedule(post.id)}
+                          className="text-sentiment-bear hover:underline flex items-center gap-0.5 font-medium"
+                          title="取消排程"
+                        >
+                          <Trash2 className="h-3 w-3" /> 取消
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  {post.error_message && (
+                    <div className="text-[10px] text-destructive break-words pt-1">
+                      {post.error_message}
+                    </div>
+                  )}
+                </div>
+              ))}
+              {!scheduledPosts.length && (
+                <div className="text-xs text-muted-foreground text-center py-4">目前無排程貼文</div>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Editor */}
@@ -316,7 +468,7 @@ export const AdminSocialPage: React.FC = () => {
                 <div className="flex shrink-0 flex-wrap items-center gap-2">
                   <button
                     onClick={handleGenerate}
-                    disabled={generating || saving || publishing}
+                    disabled={generating || saving || publishing || scheduling}
                     title="用 AI 從卡片＋摘要生成文案（會覆蓋目前內容）"
                     className="inline-flex items-center gap-2 rounded-lg border border-primary px-3 py-2 text-base font-semibold text-primary hover:bg-primary/10 disabled:opacity-60"
                   >
@@ -325,7 +477,7 @@ export const AdminSocialPage: React.FC = () => {
                   </button>
                   <button
                     onClick={handleSave}
-                    disabled={saving || generating || publishing}
+                    disabled={saving || generating || publishing || scheduling}
                     className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-base font-semibold text-foreground hover:bg-muted disabled:opacity-60"
                   >
                     {saved ? <Check className="h-4 w-4" /> : <Save className="h-4 w-4" />}
@@ -333,13 +485,32 @@ export const AdminSocialPage: React.FC = () => {
                   </button>
                   <button
                     onClick={handlePublish}
-                    disabled={publishing || generating || saving}
+                    disabled={publishing || generating || saving || scheduling}
                     title="儲存目前文案並發佈到 Threads + Facebook"
                     className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-base font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
                   >
                     <Send className={`h-4 w-4 ${publishing ? 'animate-pulse' : ''}`} />
                     {publishing ? '發佈中…' : '發佈'}
                   </button>
+
+                  {/* Scheduling UI */}
+                  <div className="flex items-center gap-2 border-l border-border pl-2">
+                    <input
+                      type="datetime-local"
+                      value={scheduleTime}
+                      onChange={(e) => setScheduleTime(e.target.value)}
+                      className="rounded-lg border border-input bg-card px-2 py-1.5 text-base text-foreground focus:border-accent-info focus:outline-none"
+                    />
+                    <button
+                      onClick={handleSchedule}
+                      disabled={!scheduleTime || scheduling || saving || publishing}
+                      title="設定日期時間後排程發佈"
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-primary px-3 py-2 text-base font-semibold text-primary hover:bg-primary/10 disabled:opacity-60"
+                    >
+                      <Clock className="h-4 w-4" />
+                      {scheduling ? '排程中…' : '排程'}
+                    </button>
+                  </div>
                 </div>
               </div>
 

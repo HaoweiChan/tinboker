@@ -223,15 +223,14 @@ async def lifespan(app: FastAPI):
     # JSON stays curated; this only keeps the registry index in sync. Best-effort.
     async def _sync_sectors_bg():
         try:
-            from src.services.podcast import PodcastService
             from src.database.postgres import get_session
             from src.tag_registry import sync_sectors
-            sectors = await PodcastService().list_sectors()
+            from src.data.sectors_seed import SECTORS_SEED
             for session in get_session():
-                added = sync_sectors(session, sectors)
+                added = sync_sectors(session, SECTORS_SEED)
                 break
             if added:
-                print(f"Sector sync: indexed {added} new sector(s).")
+                print(f"Sector sync: indexed {added} new sector(s) from seed.")
         except Exception as e:
             print(f"Warning: sector sync skipped: {e}")
 
@@ -249,6 +248,16 @@ async def lifespan(app: FastAPI):
             print(f"Warning: notification producer stopped: {e}")
 
     asyncio.create_task(_notify_bg())
+
+    # Process scheduled social media posts. Runs every 60 seconds.
+    async def _scheduled_posts_bg():
+        try:
+            from src.services.scheduled_social_worker import run_periodic_scheduled_posts
+            await run_periodic_scheduled_posts(interval_seconds=60.0)
+        except Exception as e:
+            print(f"Warning: scheduled posts worker stopped: {e}")
+
+    asyncio.create_task(_scheduled_posts_bg())
 
     yield
 

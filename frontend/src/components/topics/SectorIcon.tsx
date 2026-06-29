@@ -30,6 +30,32 @@ import {
   Gem,
   ShoppingCart,
   Hash,
+  Cable,
+  Monitor,
+  Laptop,
+  Shirt,
+  Building,
+  Utensils,
+  Sun,
+  Lightbulb,
+  Store,
+  Settings,
+  Fuel,
+  HeartPulse,
+  Code2,
+  Wind,
+  Mountain,
+  Square,
+  PlugZap,
+  Layers,
+  GitBranch,
+  BatteryCharging,
+  Satellite,
+  Atom,
+  SquareStack,
+  Diamond,
+  Battery,
+  Minus,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -66,54 +92,32 @@ const ICON_REGISTRY: Record<string, LucideIcon> = {
   gem: Gem,
   'shopping-cart': ShoppingCart,
   hash: Hash,
-};
-
-// Fallback map by exposure_id, for when the API has not (yet) supplied a visual —
-// e.g. a stale cache entry, or an offline render. The API value takes precedence.
-const ICON_MAP: Record<string, LucideIcon> = {
-  sector_semiconductor: Cpu,
-  sector_financials: Landmark,
-  sector_shipping: Ship,
-  sector_memory: MemoryStick,
-  sector_ai_server: Server,
-  sector_robotics: Bot,
-  sector_passive_components: CircuitBoard,
-  sector_power_semiconductor: Zap,
-  sector_silicon_photonics: Radio,
-  sector_heavy_electrical: Plug,
-  sector_networking: Network,
-  sector_pcb_substrate: CircuitBoard,
-  sector_silicon_ip: FileCode,
-  sector_advanced_packaging: Package,
-  sector_biotech: FlaskConical,
-  sector_bicycle: Bike,
-  sector_steel: Factory,
-  sector_tourism: Plane,
-  sector_semiconductor_equipment: Wrench,
-  sector_liquid_cooling: Droplets,
-};
-
-const COLOR_MAP: Record<string, string> = {
-  sector_semiconductor: '#3B82F6',
-  sector_financials: '#F59E0B',
-  sector_shipping: '#14B8A6',
-  sector_memory: '#EF4444',
-  sector_ai_server: '#8B5CF6',
-  sector_robotics: '#06B6D4',
-  sector_passive_components: '#10B981',
-  sector_power_semiconductor: '#EAB308',
-  sector_silicon_photonics: '#0EA5E9',
-  sector_heavy_electrical: '#F97316',
-  sector_networking: '#6366F1',
-  sector_pcb_substrate: '#A855F7',
-  sector_silicon_ip: '#EC4899',
-  sector_advanced_packaging: '#D946EF',
-  sector_biotech: '#22C55E',
-  sector_bicycle: '#84CC16',
-  sector_steel: '#94A3B8',
-  sector_tourism: '#F43F5E',
-  sector_semiconductor_equipment: '#2DD4BF',
-  sector_liquid_cooling: '#38BDF8',
+  cable: Cable,
+  monitor: Monitor,
+  laptop: Laptop,
+  shirt: Shirt,
+  building: Building,
+  utensils: Utensils,
+  sun: Sun,
+  lightbulb: Lightbulb,
+  store: Store,
+  settings: Settings,
+  fuel: Fuel,
+  'heart-pulse': HeartPulse,
+  'code-2': Code2,
+  wind: Wind,
+  mountain: Mountain,
+  square: Square,
+  'plug-zap': PlugZap,
+  layers: Layers,
+  'git-branch': GitBranch,
+  'battery-charging': BatteryCharging,
+  satellite: Satellite,
+  atom: Atom,
+  'square-stack': SquareStack,
+  diamond: Diamond,
+  battery: Battery,
+  minus: Minus,
 };
 
 function hashHue(s: string): number {
@@ -129,17 +133,17 @@ function normalizeExposureId(exposureId: string): string {
   return exposureId?.startsWith('theme_') ? `sector_${exposureId.slice('theme_'.length)}` : exposureId;
 }
 
-/** Resolve a lucide component: API icon_id → exposure_id fallback → Hash. */
+/** Resolve a lucide component: API icon_id → Hash. */
 // eslint-disable-next-line react-refresh/only-export-components
-export function resolveIcon(exposureId: string, iconId?: string | null): LucideIcon {
+export function resolveIcon(_exposureId: string, iconId?: string | null): LucideIcon {
   if (iconId && ICON_REGISTRY[iconId]) return ICON_REGISTRY[iconId];
-  return ICON_MAP[normalizeExposureId(exposureId)] ?? Hash;
+  return Hash;
 }
 
 // eslint-disable-next-line react-refresh/only-export-components
 export function sectorColor(exposureId: string, colorHex?: string | null): string {
   const id = normalizeExposureId(exposureId || 'topic');
-  return colorHex || COLOR_MAP[id] || `hsl(${hashHue(id)} 64% 56%)`;
+  return colorHex || `hsl(${hashHue(id)} 64% 56%)`;
 }
 
 interface SectorIconProps {
