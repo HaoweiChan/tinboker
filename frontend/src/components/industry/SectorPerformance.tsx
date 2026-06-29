@@ -4,16 +4,18 @@ import { Play, Pause, Info, ChevronDown } from 'lucide-react';
 import { getSectorBubbleData } from '@/services/mocks';
 import type { SectorBubbleData } from '@/services/mocks/types';
 import { resolveIcon } from '@/components/topics/SectorIcon';
+import { TOPICS_TYPOGRAPHY } from '@/components/topics/topicsTypography';
 import { useAppStore } from '@/store/useAppStore';
 import { getIndustryColor } from '@/utils/industryColors';
 
 /** Small ⓘ with a styled hover tooltip (for axis-metric / list help). */
 function InfoHint({ text }: { text: string }) {
+  const type = TOPICS_TYPOGRAPHY.className;
   return (
     <span className="relative inline-flex items-center group align-middle">
       <Info size={13} className="cursor-help text-slate-400" />
       <span
-        className="pointer-events-none absolute right-0 top-5 z-30 hidden w-56 rounded-md border p-2 text-2xs font-normal normal-case leading-relaxed shadow-xl group-hover:block"
+        className={`pointer-events-none absolute right-0 top-5 z-30 hidden w-56 rounded-md border p-2 ${type.micro} font-normal normal-case leading-relaxed shadow-xl group-hover:block`}
         style={{ backgroundColor: 'var(--bg-surface)', borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }}
       >
         {text}
@@ -50,11 +52,10 @@ const getBubbleVisuals = (label: string, returnRate: number, isDark: boolean) =>
 
 interface SectorPerformanceProps {
   variant?: 'standalone' | 'embedded';
-  /** Live data: marketCap = X magnitude, returnRate = Y %, volume = bubble size.
+  /** Live data: x = X magnitude, returnRate = Y %, r = bubble size.
    *  When omitted, falls back to mock data. */
   data?: SectorBubbleData[];
-  /** Axis/tooltip labels — defaults frame X as market cap (產業 tab). The 題材 tab
-   *  overrides them to frame X as discussion volume and the bubble as money flow. */
+  /** Axis/tooltip labels. Defaults preserve the standalone mock chart. */
   xAxisLabel?: string;
   xTickSuffix?: string;
   xTooltipLabel?: string;
@@ -67,6 +68,14 @@ interface SectorPerformanceProps {
   /** Click a bubble or list row → open that sector/theme. */
   onSelectExposure?: (exposureId: string) => void;
 }
+
+type PlottedSectorBubble = SectorBubbleData & {
+  anchorX: number;
+  anchorY: number;
+  plotX: number;
+  plotY: number;
+  radius: number;
+};
 
 const SectorPerformance: React.FC<SectorPerformanceProps> = ({
   variant = 'standalone',
@@ -88,6 +97,7 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({
   const { theme } = useAppStore();
   const isDark = theme === 'dark';
   const isEmbedded = variant === 'embedded';
+  const type = TOPICS_TYPOGRAPHY.className;
 
   // Track the chart panel's pixel size so the hover tooltip (an HTML overlay) can be
   // placed at the bubble's pixel position — readable at any SVG scale, unlike in-SVG text.
@@ -133,17 +143,19 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({
   const graphWidth = width - padding.left - padding.right;
   const graphHeight = height - padding.top - padding.bottom;
 
-  // Scales — derived from the data so live numbers (兆 NTD market caps, small daily
-  // returns) and the mock both render sensibly without hardcoded bounds.
-  const maxCap = Math.max(1, ...rawData.map((d) => d.marketCap ?? 0));
-  const xMax = maxCap * 1.1;
+  const xValue = (d: SectorBubbleData) => d.x ?? d.marketCap ?? d.value ?? 0;
+  const radiusValue = (d: SectorBubbleData) => d.r ?? d.volume ?? 0;
+
+  // Scales — derived from the data so live numbers and the mock both render sensibly
+  // without hardcoded bounds.
+  const xMax = Math.max(1, ...rawData.map(xValue)) * 1.1;
   const returns = rawData.map((d) => d.returnRate ?? 0);
   const rawYMax = Math.max(1, ...returns);
   const rawYMin = Math.min(0, ...returns);
   const yPad = Math.max(1, (rawYMax - rawYMin) * 0.15);
   const yMax = rawYMax + yPad;
   const yMin = rawYMin - yPad;
-  const maxVol = Math.max(1, ...rawData.map((d) => d.volume ?? 0));
+  const maxVol = Math.max(1, ...rawData.map(radiusValue));
 
   const xScale = (val: number) => (val / xMax) * graphWidth;
   const yScale = (val: number) => graphHeight - ((val - yMin) / (yMax - yMin)) * graphHeight;
@@ -153,11 +165,89 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({
   const xTicks = Array.from({ length: 6 }, (_, i) => niceNum((xMax * (i + 1)) / 6));
   const yTicks = Array.from({ length: 7 }, (_, i) => niceNum(yMin + ((yMax - yMin) * i) / 6));
 
-  // px-based viewBox → fonts render at true px; on a narrow (mobile) panel that's relatively
-  // large, so step the axis text down one level.
+  // px-based viewBox → fonts render at true px; use the Topics typography scale so
+  // SVG text stays aligned with the surrounding page typography.
   const compact = width < 480;
-  const tickFont = compact ? 12 : 15;
-  const axisFont = compact ? 13 : 16;
+  const chartText = compact ? TOPICS_TYPOGRAPHY.chart.compact : TOPICS_TYPOGRAPHY.chart.default;
+
+  const plottedData = useMemo<PlottedSectorBubble[]>(() => {
+    const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+    const maxShift = compact ? 12 : 20;
+    const goldenAngle = 2.399963229728653;
+    const clampToAnchor = (node: PlottedSectorBubble) => {
+      const dx = node.plotX - node.anchorX;
+      const dy = node.plotY - node.anchorY;
+      const distance = Math.hypot(dx, dy);
+
+      if (distance > maxShift) {
+        const ratio = maxShift / distance;
+        node.plotX = node.anchorX + dx * ratio;
+        node.plotY = node.anchorY + dy * ratio;
+      }
+
+      node.plotX = clamp(node.plotX, node.radius, graphWidth - node.radius);
+      node.plotY = clamp(node.plotY, node.radius, graphHeight - node.radius);
+    };
+    const nodes = rawData.map((item, index) => {
+      const radius = rScale(radiusValue(item));
+      const anchorX = xScale(xValue(item));
+      const anchorY = yScale(item.returnRate || 0);
+      const jitter = Math.min(5, radius * 0.2);
+      const angle = index * goldenAngle;
+
+      return {
+        ...item,
+        anchorX,
+        anchorY,
+        plotX: clamp(anchorX + Math.cos(angle) * jitter, radius, graphWidth - radius),
+        plotY: clamp(anchorY + Math.sin(angle) * jitter, radius, graphHeight - radius),
+        radius,
+      };
+    });
+
+    // Visual-only de-overlap; axes, tooltip values, and sorting still use source data.
+    for (let pass = 0; pass < 5; pass += 1) {
+      for (let i = 0; i < nodes.length; i += 1) {
+        for (let j = i + 1; j < nodes.length; j += 1) {
+          const a = nodes[i];
+          const b = nodes[j];
+          const minDistance = (a.radius + b.radius) * 0.72 + 3;
+          let dx = b.plotX - a.plotX;
+          let dy = b.plotY - a.plotY;
+          let distance = Math.hypot(dx, dy);
+
+          if (!distance) {
+            const angle = (i + j + 1) * goldenAngle;
+            dx = Math.cos(angle);
+            dy = Math.sin(angle);
+            distance = 1;
+          }
+
+          if (distance >= minDistance) continue;
+
+          const push = (minDistance - distance) / 2;
+          const nx = dx / distance;
+          const ny = dy / distance;
+
+          a.plotX -= nx * push;
+          a.plotY -= ny * push;
+          b.plotX += nx * push;
+          b.plotY += ny * push;
+
+          clampToAnchor(a);
+          clampToAnchor(b);
+        }
+      }
+
+      for (const node of nodes) {
+        node.plotX += (node.anchorX - node.plotX) * 0.18;
+        node.plotY += (node.anchorY - node.plotY) * 0.18;
+        clampToAnchor(node);
+      }
+    }
+
+    return nodes;
+  }, [compact, graphHeight, graphWidth, maxVol, rawData, xMax, yMax, yMin]);
 
   const containerClasses = ['w-full md:h-full flex flex-col overflow-hidden', isEmbedded ? '' : 'transition-colors duration-300']
     .filter(Boolean)
@@ -172,7 +262,7 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({
   // Legend: bubbles are coloured by sector/theme identity (icons disambiguate), so the only
   // non-axis encoding to explain is SIZE. Ascending dots = more of the radius metric.
   const legendContent = (
-    <div className="flex items-center gap-1.5 text-2xs" style={legendTextColor}>
+    <div className={`flex items-center gap-1.5 ${type.micro}`} style={legendTextColor}>
       <span className="whitespace-nowrap">{radiusTooltipLabel}</span>
       <span className="flex items-center gap-0.5">
         <span className="inline-block w-1.5 h-1.5 rounded-full border border-current opacity-70" />
@@ -196,13 +286,24 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({
     onSelectExposure?.(itemId);
   };
 
+  const handleRankedItemClick = (e: React.MouseEvent, itemId: string) => {
+    const isTouch = window.matchMedia('(pointer: coarse)').matches;
+    if (isTouch && hoveredSectorId !== itemId) {
+      e.preventDefault();
+      e.stopPropagation();
+      setHoveredSectorId(itemId);
+      return;
+    }
+    onSelectExposure?.(itemId);
+  };
+
   return (
     <div className={containerClasses} style={wrapperStyle}>
       {!isEmbedded && (
         <div className="px-8 py-6 flex justify-between items-end border-b transition-colors" style={headerSurfaceStyle}>
           <div>
-            <h1 className="text-2xl font-bold mb-1" style={{ color: 'var(--text-primary)' }}>Sector Performance</h1>
-            <div className="flex gap-2 text-base" style={{ color: 'var(--text-muted)' }}>
+            <h1 className={`${type.pageTitle} font-bold mb-1`} style={{ color: 'var(--text-primary)' }}>Sector Performance</h1>
+            <div className={`flex gap-2 ${type.body}`} style={{ color: 'var(--text-muted)' }}>
               <span className="text-indigo-500 hover:underline cursor-pointer">Home</span> 
               <span>/</span>
               <span>Industry</span>
@@ -239,7 +340,7 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({
                         return (
                           <g key={tick}>
                             <line x1={0} y1={y} x2={graphWidth} y2={y} stroke={isDark ? '#334155' : '#e2e8f0'} strokeDasharray="4 4" />
-                            <text x={-10} y={y} dy={4} textAnchor="end" fill="#94a3b8" fontSize={tickFont}>{tick}%</text>
+                            <text x={-10} y={y} dy={4} textAnchor="end" fill="#94a3b8" fontSize={chartText.tick}>{tick}%</text>
                           </g>
                         );
                     })}
@@ -252,25 +353,25 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({
                         return (
                           <g key={tick}>
                             <line x1={x} y1={0} x2={x} y2={graphHeight} stroke={isDark ? '#334155' : '#e2e8f0'} strokeDasharray="4 4" />
-                            <text x={x} y={graphHeight + 20} textAnchor="middle" fill="#94a3b8" fontSize={tickFont}>{tick}{xTickSuffix}</text>
+                            <text x={x} y={graphHeight + 20} textAnchor="middle" fill="#94a3b8" fontSize={chartText.tick}>{tick}{xTickSuffix}</text>
                           </g>
                         );
                     })}
 
                     {/* Axis Labels */}
-                    <text x={-70} y={graphHeight/2} transform={`rotate(-90, -70, ${graphHeight/2})`} textAnchor="middle" fill="#94a3b8" fontSize={axisFont} fontWeight="600">
+                    <text x={-70} y={graphHeight/2} transform={`rotate(-90, -70, ${graphHeight/2})`} textAnchor="middle" fill="#94a3b8" fontSize={chartText.axis} fontWeight="600">
                         {yAxisLabel}
                     </text>
-                    <text x={graphWidth/2} y={graphHeight + 52} textAnchor="middle" fill="#94a3b8" fontSize={axisFont} fontWeight="600">
+                    <text x={graphWidth/2} y={graphHeight + 52} textAnchor="middle" fill="#94a3b8" fontSize={chartText.axis} fontWeight="600">
                         {xAxisLabel}
                     </text>
 
 
                    {/* Bubbles */}
-                   {rawData.map((item) => {
-                      const x = xScale(item.marketCap || 0);
-                      const y = yScale(item.returnRate || 0);
-                      const r = rScale(item.volume || 10);
+                   {plottedData.map((item) => {
+                      const x = item.plotX;
+                      const y = item.plotY;
+                      const r = item.radius;
                       const activeId = hoveredSectorId;
                       const isActive = activeId === item.id;
                       const visuals = getBubbleVisuals(item.label || '', item.returnRate || 0, isDark);
@@ -315,13 +416,13 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({
               {(() => {
                   const activeId = hoveredSectorId;
                   if (!activeId || !panel.w || !panel.h) return null;
-                  const s = rawData.find((i) => i.id === activeId);
+                  const s = plottedData.find((i) => i.id === activeId);
                   if (!s) return null;
                   const scale = Math.min(panel.w / width, panel.h / height);
                   const ox = (panel.w - width * scale) / 2;
                   const oy = (panel.h - height * scale) / 2;
-                  const px = ox + (padding.left + xScale(s.marketCap || 0)) * scale;
-                  const py = oy + (padding.top + yScale(s.returnRate || 0)) * scale;
+                  const px = ox + (padding.left + s.plotX) * scale;
+                  const py = oy + (padding.top + s.plotY) * scale;
                   const CARD_W = 168;
                   const flipX = px + 14 + CARD_W > panel.w;
                   const left = flipX ? px - 14 - CARD_W : px + 14;
@@ -338,13 +439,13 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({
                         borderColor: 'var(--border-default)',
                       }}
                     >
-                       <h3 className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{s.label}</h3>
+                       <h3 className={`${type.sectionTitle} font-bold truncate`} style={{ color: 'var(--text-primary)' }}>{s.label}</h3>
                        {s.subLabel && (
-                         <div className="text-2xs mb-1.5" style={{ color: 'var(--text-muted)' }}>{s.subLabel}</div>
+                         <div className={`${type.micro} mb-1.5`} style={{ color: 'var(--text-muted)' }}>{s.subLabel}</div>
                        )}
-                       <div className={`grid grid-cols-2 gap-x-3 gap-y-1 text-xs ${s.subLabel ? '' : 'mt-1.5'}`}>
+                       <div className={`grid grid-cols-2 gap-x-3 gap-y-1 ${type.meta} ${s.subLabel ? '' : 'mt-1.5'}`}>
                           <span style={{ color: 'var(--text-muted)' }}>{xTooltipLabel}</span>
-                          <span className="text-right font-mono" style={{ color: 'var(--text-secondary)' }}>{s.marketCap}{xTickSuffix}</span>
+                          <span className="text-right font-mono" style={{ color: 'var(--text-secondary)' }}>{xValue(s)}{xTickSuffix}</span>
 
                           <span style={{ color: 'var(--text-muted)' }}>漲跌</span>
                           <span className={`text-right font-mono font-bold ${(s.returnRate || 0) > 0 ? 'text-emerald-500' : 'text-red-500'}`}>
@@ -352,7 +453,7 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({
                           </span>
 
                           <span style={{ color: 'var(--text-muted)' }}>{radiusTooltipLabel}</span>
-                          <span className="text-right font-mono" style={{ color: 'var(--text-secondary)' }}>{s.volume}{radiusTooltipSuffix}</span>
+                          <span className="text-right font-mono" style={{ color: 'var(--text-secondary)' }}>{radiusValue(s)}{radiusTooltipSuffix}</span>
                        </div>
                     </div>
                   );
@@ -370,7 +471,7 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({
               style={{ borderColor: 'var(--border-default)' }}
             >
                <span className="flex items-center gap-2">
-                 <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">依漲跌排序</span>
+                 <span className={`${type.meta} font-bold text-slate-500 uppercase tracking-wider`}>依漲跌排序</span>
                  <InfoHint text="依所選漲跌期間的漲跌幅，由高到低排序。點任一項可在圖上標示對應泡泡。" />
                </span>
                <ChevronDown size={16} className={`md:hidden text-slate-400 transition-transform ${listOpen ? 'rotate-180' : ''}`} />
@@ -382,7 +483,7 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({
                  return (
                    <div
                       key={item.id}
-                      onClick={() => onSelectExposure?.(item.id)}
+                      onClick={(e) => handleRankedItemClick(e, item.id)}
                       onMouseEnter={() => setHoveredSectorId(item.id)}
                       onMouseLeave={() => setHoveredSectorId(null)}
                       className={`flex items-center gap-2.5 p-2 rounded cursor-pointer transition-colors ${
@@ -397,8 +498,8 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({
                       >
                         <RowIcon size={14} />
                       </span>
-                      <span className={`text-base truncate flex-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>{item.label}</span>
-                      <span className={`text-xs font-mono ${(item.returnRate || 0) > 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                      <span className={`${type.chartRow} truncate flex-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>{item.label}</span>
+                      <span className={`${type.meta} font-mono ${(item.returnRate || 0) > 0 ? 'text-emerald-500' : 'text-red-500'}`}>
                           {item.returnRate || 0}%
                       </span>
                    </div>
@@ -420,7 +521,7 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({
                <div className="h-full bg-indigo-500 rounded-full relative" style={{ width: `${timeValue}%` }}>
                   <div className={`absolute right-0 top-1/2 -translate-y-1/2 w-4 h-4 bg-indigo-500 rounded-full shadow-lg transform scale-125 cursor-grab border-2 ${isDark ? 'border-slate-900' : 'border-white'}`} />
                   <div
-                    className="absolute right-0 -top-8 text-xs font-bold px-2 py-1 rounded shadow-lg transform -translate-x-1/2"
+                    className={`absolute right-0 -top-8 ${type.meta} font-bold px-2 py-1 rounded shadow-lg transform -translate-x-1/2`}
                     style={{ backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)' }}
                   >
                      2025-09-24
@@ -429,7 +530,7 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({
             </div>
          </div>
          
-         <div className="text-xs font-mono text-slate-400 w-24 text-right">
+         <div className={`${type.meta} font-mono text-slate-400 w-24 text-right`}>
             LIVE DATA
          </div>
       </div>
@@ -440,4 +541,3 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({
 };
 
 export default SectorPerformance;
-

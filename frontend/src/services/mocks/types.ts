@@ -138,6 +138,8 @@ export interface SectorBubbleData {
   name: string;
   label?: string;
   value: number;
+  x?: number;
+  r?: number;
   marketCap?: number;
   return: number;
   returnRate?: number;
@@ -188,4 +190,3 @@ export interface StockNodeData {
   ownership?: string;
   group?: string;
 }
-

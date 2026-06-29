@@ -1409,12 +1409,21 @@ class PodcastService:
         if not industries:
             return []
         caps = await self._tw_market_caps_cached()
+        trading_windows = await self._tw_trading_value_windows_cached()
         out: list[dict] = []
         for s in industries:
+            members = s.get("members") or []
             total_mc = sum(
                 caps.get((m.get("ticker") or "").strip(), 0.0)
-                for m in s.get("members") or []
+                for m in members
             )
+            exposure_tvals = {
+                window: sum(
+                    values.get((m.get("ticker") or "").strip(), 0.0)
+                    for m in members
+                )
+                for window, values in trading_windows.items()
+            }
             out.append({
                 "exposure_id": s["exposure_id"],
                 "display_name": s["display_name"],
@@ -1422,8 +1431,11 @@ class PodcastService:
                 "market_cap_twd": total_mc or None,
                 "return_pct": s.get("avg_change"),
                 "episode_count": s.get("episode_count", 0),
+                "heat": s.get("heat"),
+                "trading_value_twd": exposure_tvals.get("1") or None,
+                "trading_value_windows_twd": exposure_tvals,
             })
-        out.sort(key=lambda x: (x["market_cap_twd"] or 0.0), reverse=True)
+        out.sort(key=lambda x: ((x["heat"] or 0.0), x["episode_count"]), reverse=True)
         return out
 
     async def _tw_trading_values_cached(self) -> dict[str, float]:
@@ -1436,6 +1448,20 @@ class PodcastService:
             except Exception:
                 pass
         vals = await asyncio.to_thread(self._finmind().get_tw_trading_values)
+        if vals:
+            await cache_set(cache_key, json.dumps(vals), CACHE_TTL["stock_ohlcv"])  # 1 day
+        return vals or {}
+
+    async def _tw_trading_value_windows_cached(self) -> dict[str, dict[str, float]]:
+        """``{window_days: {stock_id: cumulative trading value NT$}}`` for TW stocks."""
+        cache_key = "sectors:tw_trading_value_windows:v1"
+        cached = await cache_get(cache_key)
+        if cached:
+            try:
+                return json.loads(cached)
+            except Exception:
+                pass
+        vals = await asyncio.to_thread(self._finmind().get_tw_trading_value_windows)
         if vals:
             await cache_set(cache_key, json.dumps(vals), CACHE_TTL["stock_ohlcv"])  # 1 day
         return vals or {}
@@ -1454,13 +1480,17 @@ class PodcastService:
         themes = [s for s in board if s.get("exposure_type") == "theme"]
         if not themes:
             return []
-        tvals = await self._tw_trading_values_cached()
+        trading_windows = await self._tw_trading_value_windows_cached()
         out: list[dict] = []
         for s in themes:
-            total_tv = sum(
-                tvals.get((m.get("ticker") or "").strip(), 0.0)
-                for m in s.get("members") or []
-            )
+            members = s.get("members") or []
+            exposure_tvals = {
+                window: sum(
+                    values.get((m.get("ticker") or "").strip(), 0.0)
+                    for m in members
+                )
+                for window, values in trading_windows.items()
+            }
             out.append({
                 "exposure_id": s["exposure_id"],
                 "display_name": s["display_name"],
@@ -1468,7 +1498,8 @@ class PodcastService:
                 "episode_count": s.get("episode_count", 0),
                 "heat": s.get("heat"),  # recency-weighted discussion (X axis)
                 "return_pct": s.get("avg_change"),
-                "trading_value_twd": total_tv or None,
+                "trading_value_twd": exposure_tvals.get("1") or None,
+                "trading_value_windows_twd": exposure_tvals,
             })
         out.sort(key=lambda x: ((x["heat"] or 0.0), x["episode_count"]), reverse=True)
         return out

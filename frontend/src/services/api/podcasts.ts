@@ -571,7 +571,7 @@ export async function getSectorBoard(): Promise<SectorBoardItem[]> {
 }
 
 /** Industry (exposure_type='sector') performance for the /topics 產業 bubble chart.
- *  market_cap_twd is aggregate constituent market cap in NT$ (TW-only via FinMind). */
+ *  heat is the shared X axis; market_cap_twd is optional supporting data only. */
 export interface IndustryPerformanceItem {
   exposure_id: string;
   display_name: string;
@@ -579,6 +579,9 @@ export interface IndustryPerformanceItem {
   market_cap_twd: number | null;
   return_pct: number | null;
   episode_count: number;
+  heat?: number | null;
+  trading_value_twd?: number | null;
+  trading_value_windows_twd?: Record<string, number> | null;
 }
 
 export async function getIndustryPerformance(): Promise<IndustryPerformanceItem[]> {
@@ -588,8 +591,7 @@ export async function getIndustryPerformance(): Promise<IndustryPerformanceItem[
 }
 
 /** Theme (exposure_type='theme') performance for the /topics 題材 bubble chart.
- *  Themes use hotness + money-flow dimensions: X = episode_count, Y = return_pct,
- *  bubble = trading_value_twd (aggregate constituent daily trade value, NT$, TW-only). */
+ *  heat is the shared X axis; trading_value_twd is optional supporting data only. */
 export interface ThemePerformanceItem {
   exposure_id: string;
   display_name: string;
@@ -598,6 +600,7 @@ export interface ThemePerformanceItem {
   heat: number | null; // recency-weighted discussion (X axis)
   return_pct: number | null;
   trading_value_twd: number | null;
+  trading_value_windows_twd?: Record<string, number> | null;
 }
 
 export async function getThemePerformance(): Promise<ThemePerformanceItem[]> {

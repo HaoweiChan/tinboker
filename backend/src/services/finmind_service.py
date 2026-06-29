@@ -569,6 +569,56 @@ class FinMindAPIService:
                 latest[sid] = (d, float(tm))
         return {sid: v for sid, (_, v) in latest.items()}
 
+    def get_tw_trading_value_windows(self, windows: tuple[int, ...] = (1, 7, 30, 90)) -> Dict[str, Dict[str, float]]:
+        """Return ``{window_days: {stock_id: cumulative Trading_money NT$}}``.
+
+        Uses one TW-wide ``TaiwanStockPrice`` download and sums trading money by calendar
+        window from the latest available trading date in the response.
+        """
+        from datetime import date, datetime, timedelta
+
+        max_window = max(windows)
+        start = (date.today() - timedelta(days=max_window + 10)).isoformat()
+        data = self._make_request(
+            {"dataset": "TaiwanStockPrice", "start_date": start}, timeout=120
+        )
+        rows = data.get("data") if data else None
+        if not rows:
+            return {str(window): {} for window in windows}
+
+        dates = sorted({str(row.get("date", "")) for row in rows if row.get("date")})
+        if not dates:
+            return {str(window): {} for window in windows}
+
+        earliest = datetime.strptime(dates[0], "%Y-%m-%d").date()
+        latest = datetime.strptime(dates[-1], "%Y-%m-%d").date()
+        covered_days = (latest - earliest).days + 1
+        valid_windows = [window for window in windows if window <= covered_days]
+        cutoffs = {
+            str(window): latest - timedelta(days=window - 1)
+            for window in valid_windows
+        }
+        totals: Dict[str, Dict[str, float]] = {str(window): {} for window in windows}
+
+        for row in rows:
+            sid = str(row.get("stock_id", "")).strip()
+            trading_money = row.get("Trading_money")
+            row_date_raw = row.get("date")
+            if not sid or not trading_money or not row_date_raw:
+                continue
+
+            try:
+                row_date = datetime.strptime(str(row_date_raw), "%Y-%m-%d").date()
+                value = float(trading_money)
+            except (TypeError, ValueError):
+                continue
+
+            for window_key, cutoff in cutoffs.items():
+                if row_date >= cutoff:
+                    totals[window_key][sid] = totals[window_key].get(sid, 0.0) + value
+
+        return totals
+
     def list_news(self, ticker: str, limit: int = 10) -> List[Dict[str, Any]]:
         """
         Get news articles for a ticker.
@@ -710,4 +760,3 @@ class FinMindAPIService:
         except Exception as e:
             logger.error(f"Error fetching daily aggregates for {ticker}: {e}")
             return []
-
