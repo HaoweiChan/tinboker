@@ -33,18 +33,16 @@ VALID_KINDS = {KIND_TAG, KIND_SECTOR}
 
 # ── Seed data (inserted once when table is empty) ───────────────────
 _SEED: list[tuple[str, str, str]] = [
-    ("advanced_packaging", "先進封裝", TIER_TRENDING),
+    ("advancedpackaging", "先進封裝", TIER_TRENDING),
     ("ai", "AI", TIER_TRENDING),
-    ("ai_chip", "AI 晶片", TIER_TRENDING),
+    ("aichip", "AI 晶片", TIER_TRENDING),
     ("bitcoin", "比特幣", TIER_TRENDING),
-    ("capital_expenditure", "資本支出", TIER_TRENDING),
-    ("centralbanks", "央行", TIER_TRENDING),
-    ("datacenters", "資料中心", TIER_TRENDING),
+    ("capitalexpenditure", "資本支出", TIER_TRENDING),
+    ("centralbank", "央行", TIER_TRENDING),
+    ("datacenter", "資料中心", TIER_TRENDING),
     ("demographics", "人口趨勢", TIER_TRENDING),
     ("digitalassets", "數位資產", TIER_TRENDING),
-    ("earningsreport", "財報", TIER_TRENDING),
-    ("electric_vehicles", "電動車", TIER_TRENDING),
-    ("electricvehicles", "電動車", TIER_TRENDING),
+    ("earnings", "財報", TIER_TRENDING),
     ("etf", "ETF", TIER_HIDDEN),
     ("ev", "電動車", TIER_TRENDING),
     ("federalreserve", "聯準會", TIER_TRENDING),
@@ -55,19 +53,19 @@ _SEED: list[tuple[str, str, str]] = [
     ("interestratepolicy", "利率政策", TIER_TRENDING),
     ("japanmarket", "日本市場", TIER_TRENDING),
     ("labormarket", "就業市場", TIER_TRENDING),
-    ("low_earth_orbit_satellite", "低軌衛星", TIER_TRENDING),
+    ("leosatellite", "低軌衛星", TIER_TRENDING),
     ("marketnarratives", "市場敘事", TIER_TRENDING),
-    ("media_industry", "媒體產業", TIER_TRENDING),
-    ("mergers_and_acquisitions", "併購", TIER_TRENDING),
+    ("mediaindustry", "媒體產業", TIER_TRENDING),
+    ("mergersacquisitions", "併購", TIER_TRENDING),
     ("monetarypolicy", "貨幣政策", TIER_TRENDING),
     ("powersupply", "電力供應", TIER_TRENDING),
     ("privatemarkets", "私募市場", TIER_TRENDING),
     ("semiconductor", "半導體", TIER_TRENDING),
-    ("streaming_services", "串流服務", TIER_TRENDING),
-    ("supply_chain", "供應鏈", TIER_TRENDING),
+    ("streamingservices", "串流服務", TIER_TRENDING),
+    ("supplychain", "供應鏈", TIER_TRENDING),
     ("taiwaneconomy", "台灣經濟", TIER_HIDDEN),
-    ("trade_war", "貿易戰", TIER_TRENDING),
-    ("us_stocks", "美股", TIER_TRENDING),
+    ("tradewar", "貿易戰", TIER_TRENDING),
+    ("usstocks", "美股", TIER_TRENDING),
     ("useconomy", "美國經濟", TIER_TRENDING),
     ("usstockmarket", "美股市場", TIER_TRENDING),
     ("ustreasuries", "美債", TIER_TRENDING),
@@ -97,7 +95,17 @@ def normalize_tag_slug(slug: str) -> str:
     ``pipelines/.../content_builder/tag_vocabulary.py::normalize_tag_slug`` and
     ``frontend/src/hooks/useTagLabels.ts::normalizeTagSlug``.
     """
-    return re.sub(r"[^a-z0-9]", "", (slug or "").lower())
+    s = re.sub(r"[^a-z0-9]", "", (slug or "").lower())
+    # Merge known duplicates/aliases to avoid redundancies
+    aliases = {
+        "datacenters": "datacenter",
+        "earningsreport": "earnings",
+        "electricvehicles": "ev",
+        "electric_vehicles": "ev",
+        "lowearthorbitsatellite": "leosatellite",
+        "mergersandacquisitions": "mergersacquisitions",
+    }
+    return aliases.get(s, s)
 
 
 def normalize_exposure_id(exposure_id: str | None) -> str:

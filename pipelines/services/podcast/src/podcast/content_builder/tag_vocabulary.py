@@ -48,7 +48,17 @@ def normalize_tag_slug(slug: str) -> str:
     frontend (see ``frontend/src/hooks/useTagLabels.ts``). Keep the three
     implementations in sync.
     """
-    return re.sub(r"[^a-z0-9]", "", (slug or "").lower())
+    s = re.sub(r"[^a-z0-9]", "", (slug or "").lower())
+    # Merge known duplicates/aliases to avoid redundancies
+    aliases = {
+        "datacenters": "datacenter",
+        "earningsreport": "earnings",
+        "electricvehicles": "ev",
+        "electric_vehicles": "ev",
+        "lowearthorbitsatellite": "leosatellite",
+        "mergersandacquisitions": "mergersacquisitions",
+    }
+    return aliases.get(s, s)
 
 
 # Normalized-slug -> display, for case/separator-insensitive lookup against extracted tags.
