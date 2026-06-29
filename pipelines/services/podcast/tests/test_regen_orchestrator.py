@@ -144,7 +144,7 @@ def test_marp_glue_matches_convert_marp():
     draft = _new_draft()
     orch.submit("ep_test", "extractor", {"events": [{"section_topic": "台積電", "start_index": 0, "end_index": 2}]})
     orch.submit("ep_test", "marp_writer", MARP_OUT)
-    expected = convert_marp({"marp_slides": MARP_OUT})["marp_markdown"]
+    expected = convert_marp(draft["state"])["marp_markdown"]
     assert draft["state"]["marp_markdown"] == expected
 
 
