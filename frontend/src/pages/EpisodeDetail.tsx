@@ -339,7 +339,7 @@ export const EpisodeDetail: React.FC = () => {
       <PageContent
         rail={
           (tickers.length > 0 || (episode?.sector_exposures?.length ?? 0) > 0) ? (
-            <nav className="bg-card border border-border rounded-md p-3 max-h-[calc(100vh-96px)] overflow-y-auto" aria-label="集數導覽">
+            <nav className="bg-card border border-border rounded-md p-3 max-h-[calc(100vh-96px)] overflow-y-auto scrollbar-thin" aria-label="集數導覽">
               {tickers.length > 0 && (
                 <section aria-labelledby="episode-rail-tickers">
                   <h4 id="episode-rail-tickers" className="text-2xs font-semibold tracking-[0.08em] uppercase text-muted-foreground px-2 mb-2">提及股票</h4>
