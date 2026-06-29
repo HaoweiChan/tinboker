@@ -27,6 +27,16 @@ export interface AdminTagEntry {
   color_hex?: string | null;
   episode_count?: number | null;
   updated_by?: string | null;
+  members?: Array<{
+    ticker: string;
+    name?: string;
+    name_en?: string;
+    market?: string;
+    source?: string;
+    rank?: number;
+    reason?: string;
+  }>;
+  aliases?: string[];
 }
 
 export interface AdminTagListResponse {
@@ -43,6 +53,16 @@ export interface AdminTagCreate {
 export interface AdminTagUpdate {
   display_zh?: string;
   tier?: string;
+  members?: Array<{
+    ticker: string;
+    name?: string;
+    name_en?: string;
+    market?: string;
+    source?: string;
+    rank?: number;
+    reason?: string;
+  }>;
+  aliases?: string[];
 }
 
 export interface DiscoverResponse {

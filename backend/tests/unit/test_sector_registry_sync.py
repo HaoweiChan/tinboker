@@ -76,6 +76,24 @@ def test_resync_refreshes_visuals_but_preserves_curated_tier(session):
     assert row.icon_id == "circuit-board"   # visual refreshed
 
 
+def test_resync_preserves_edited_members(session):
+    theme_a = {
+        "exposure_id": "sector_a",
+        "display_name": "A",
+        "members": [{"ticker": "3481", "name": "群創"}],
+    }
+    sync_sectors(session, [theme_a])
+
+    row = session.query(TagRegistry).filter_by(exposure_id="sector_a").one()
+    row.members = [{"ticker": "3481", "name": "群創"}, {"ticker": "2409", "name": "友達"}]
+    session.commit()
+
+    sync_sectors(session, [theme_a])
+
+    row = session.query(TagRegistry).filter_by(exposure_id="sector_a").one()
+    assert len(row.members) == 2
+
+
 def test_hidden_sector_exposure_ids_returns_only_hidden(session):
     sync_sectors(session, [
         _sector("sector_a", "A"),
