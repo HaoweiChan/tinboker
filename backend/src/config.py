@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     # Massive (Polygon) rate-limits PER KEY (~5/min), so a pool genuinely multiplies the
     # ceiling. Falls back to the single massive_api_key when unset.
     massive_api_keys: Optional[str] = None
+    usd_twd_rate: float = 32.0
     podcast_api_key: Optional[str] = None  # API key for external podcast API (Netcup server)
     
     # Google OAuth Configuration

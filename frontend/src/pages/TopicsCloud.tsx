@@ -218,13 +218,13 @@ export const TopicsCloud: React.FC = () => {
   // Average member trailing return for the selected timeframe (skips tickers with no data).
   const memberReturn = useMemo(() => {
     const ready = Object.keys(trailing).length > 0;
-    return (exposureId: string, fallback: number | null): number => {
-      if (!ready) return tf === '1' ? (fallback ?? 0) : 0;
+    return (exposureId: string, fallback: number | null): number | null => {
+      if (!ready) return tf === '1' ? fallback : null;
       const vals = (membersByExposure[exposureId] || [])
         .map((t) => trailing[t]?.[`d${tf}` as 'd1' | 'd7' | 'd30' | 'd90'])
         .filter((v): v is number => v != null);
       if (vals.length) return +(vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2);
-      return tf === '1' ? (fallback ?? 0) : 0;
+      return tf === '1' ? fallback : null;
     };
   }, [trailing, membersByExposure, tf]);
 
@@ -252,15 +252,6 @@ export const TopicsCloud: React.FC = () => {
     </div>
   );
 
-  const hasIndustryTradingValue = useMemo(
-    () =>
-      industries.some((i) => {
-        const value = i.trading_value_windows_twd?.[tf] ?? (tf === '1' ? i.trading_value_twd : 0) ?? 0;
-        return value > 0;
-      }),
-    [industries, tf],
-  );
-
   // Bubble-chart shape: X = discussion heat, Y = return %, size = cumulative trading value.
   const industryBubbles = useMemo<SectorBubbleData[]>(
     () => {
@@ -279,11 +270,11 @@ export const TopicsCloud: React.FC = () => {
         const heat = i.heat ?? board?.heat ?? 0;
         const tradingValueTwd = i.trading_value_windows_twd?.[tf] ?? (tf === '1' ? i.trading_value_twd : 0) ?? 0;
         const tradingValueYi = tradingValueTwd ? +(tradingValueTwd / 1e8).toFixed(0) : 0;
-        const marketCapT = i.market_cap_twd ? +(i.market_cap_twd / 1e12).toFixed(2) : 0;
-        const sizeValue = hasIndustryTradingValue ? tradingValueYi : marketCapT;
-        const sizeLabel = hasIndustryTradingValue
-          ? `${tf}日成交值${tradingValueYi ? `${tradingValueYi}億` : '暫無資料'}`
-          : `市值${marketCapT ? `${marketCapT}兆` : '暫無資料'}`;
+        const marketCapYi = i.market_cap_twd ? +(i.market_cap_twd / 1e8).toFixed(0) : 0;
+        const sizeValue = tradingValueYi || marketCapYi;
+        const sizeLabel = tradingValueYi
+          ? `${tf}日成交值${tradingValueYi}億`
+          : `市值${marketCapYi ? `${marketCapYi}億` : '暫無資料'}`;
         return {
           id: i.exposure_id,
           name: i.display_name,
@@ -298,7 +289,7 @@ export const TopicsCloud: React.FC = () => {
         };
       });
     },
-    [industries, industryBoard, boardByExposure, hasIndustryTradingValue, tf, memberReturn, iconByExposure],
+    [industries, industryBoard, boardByExposure, tf, memberReturn, iconByExposure],
   );
 
   // Theme bubble: X = discussion heat, Y = return %, size = cumulative trading value.
@@ -393,12 +384,12 @@ export const TopicsCloud: React.FC = () => {
                   xAxisLabel="討論熱度（近 7 日加權）"
                   xTickSuffix=""
                   xTooltipLabel="討論熱度"
-                  xHelp={`X 軸：討論熱度（近 7 日 Podcast 提及加權，半衰期 7 天，越近期權重越高）；Y 軸：近期漲跌；泡泡大小：${hasIndustryTradingValue ? '所選期間聚合成交值' : '聚合市值'}；顏色：產業別。`}
+                  xHelp="X 軸：討論熱度（近 7 日 Podcast 提及加權，半衰期 7 天，越近期權重越高）；Y 軸：近期漲跌；泡泡大小：優先使用所選期間聚合成交值，缺成交值時使用聚合市值；顏色：產業別。"
                   yAxisLabel={yAxisLabel}
                   headerLeft={tfToggle}
                   onSelectExposure={openExposure}
-                  radiusTooltipLabel={hasIndustryTradingValue ? `${tf}日成交值` : '市值'}
-                  radiusTooltipSuffix={hasIndustryTradingValue ? '億' : '兆'}
+                  radiusTooltipLabel="成交值 / 市值"
+                  radiusTooltipSuffix="億"
                 />
               ) : (
                 <div className={`w-full h-full flex items-center justify-center ${type.empty} text-muted-foreground`}>

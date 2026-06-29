@@ -9,10 +9,12 @@ This module provides a wrapper around the FinMind API with:
 
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timedelta
+from typing import Optional, List, Dict, Any
+
 import requests
 import pandas as pd
-from typing import Optional, List, Dict, Any
-from datetime import datetime, timedelta
 from src.config import settings
 from src.services import finmind_budget
 
@@ -41,6 +43,68 @@ def is_tw_ticker(ticker: str) -> bool:
 # every cold miss, which was the single biggest FinMind-quota waster. Cache it in-process.
 _STOCK_INFO_TTL_SECONDS = 6 * 3600
 _stock_info_cache: dict = {"df": None, "ts": 0.0}
+
+
+def list_yahoo_tw_daily_range(ticker: str, start_date: str, end_date: str) -> List[Dict[str, Any]]:
+    """Best-effort TW daily OHLCV from Yahoo, trying TWSE then TPEx symbols."""
+    code = (ticker or "").split(".")[0].strip()
+    if not is_tw_ticker(code):
+        return []
+
+    try:
+        end_exclusive = (
+            datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)
+        ).strftime("%Y-%m-%d")
+    except ValueError:
+        return []
+
+    try:
+        import yfinance as yf
+    except ImportError:
+        return []
+
+    for symbol in (f"{code}.TW", f"{code}.TWO"):
+        try:
+            df = yf.Ticker(symbol).history(
+                start=start_date,
+                end=end_exclusive,
+                interval="1d",
+                auto_adjust=False,
+            )
+        except Exception as exc:
+            logger.debug("Yahoo TW range fetch failed for %s: %s", symbol, exc)
+            continue
+        if df is None or df.empty:
+            continue
+
+        rows: List[Dict[str, Any]] = []
+        for idx, row in df.iterrows():
+            try:
+                close_raw = row["Close"]
+                if pd.isna(close_raw):
+                    continue
+                close = float(close_raw)
+                volume_raw = row.get("Volume", 0)
+                volume = 0.0 if pd.isna(volume_raw) else float(volume_raw or 0)
+
+                def price(field: str) -> float:
+                    raw = row.get(field, close)
+                    return close if pd.isna(raw) else float(raw or close)
+
+                rows.append({
+                    "date": idx.strftime("%Y-%m-%d"),
+                    "open": price("Open"),
+                    "max": price("High"),
+                    "min": price("Low"),
+                    "close": close,
+                    "Trading_Volume": int(volume),
+                    "Trading_money": close * volume,
+                })
+            except (KeyError, TypeError, ValueError):
+                continue
+        if rows:
+            return rows
+    return []
 
 
 class FinMindAPIError(Exception):
@@ -521,17 +585,21 @@ class FinMindAPIService:
     def get_tw_market_caps(self) -> Dict[str, float]:
         """Return ``{stock_id: latest market value in NT$}`` for all TW stocks.
 
-        One bulk ``TaiwanStockMarketValue`` download (no data_id → TW-wide, passes the
-        per-ticker gate in ``_make_request``). Used by the industry-performance board and
-        daily-cached by the caller. Returns ``{}`` when FinMind is unavailable so callers
-        degrade gracefully.
+        ``TaiwanStockMarketValue`` is a daily bulk dataset: a request for a non-trading
+        date returns no rows. Walk backward from today until the latest available trading
+        day, then daily-cache the result in the caller.
         """
         from datetime import date, timedelta
-        start = (date.today() - timedelta(days=10)).isoformat()
-        data = self._make_request(
-            {"dataset": "TaiwanStockMarketValue", "start_date": start}, timeout=60
-        )
-        if not data:
+
+        data = None
+        for offset in range(14):
+            day = (date.today() - timedelta(days=offset)).isoformat()
+            data = self._make_request(
+                {"dataset": "TaiwanStockMarketValue", "start_date": day}, timeout=60
+            )
+            if data and data.get("data"):
+                break
+        if not data or not data.get("data"):
             return {}
         latest: Dict[str, tuple] = {}
         for row in data.get("data") or []:
@@ -569,53 +637,81 @@ class FinMindAPIService:
                 latest[sid] = (d, float(tm))
         return {sid: v for sid, (_, v) in latest.items()}
 
-    def get_tw_trading_value_windows(self, windows: tuple[int, ...] = (1, 7, 30, 90)) -> Dict[str, Dict[str, float]]:
+    def get_tw_trading_value_windows(
+        self,
+        tickers: Optional[List[str]] = None,
+        windows: tuple[int, ...] = (1, 7, 30, 90),
+    ) -> Dict[str, Dict[str, float]]:
         """Return ``{window_days: {stock_id: cumulative Trading_money NT$}}``.
 
-        Uses one TW-wide ``TaiwanStockPrice`` download and sums trading money by calendar
-        window from the latest available trading date in the response.
+        The TW-wide ``TaiwanStockPrice`` bulk dataset is daily, not range-based. For
+        windows, fetch range data per TW ticker and daily-cache the aggregate in the caller.
         """
         from datetime import date, datetime, timedelta
 
-        max_window = max(windows)
-        start = (date.today() - timedelta(days=max_window + 10)).isoformat()
-        data = self._make_request(
-            {"dataset": "TaiwanStockPrice", "start_date": start}, timeout=120
-        )
-        rows = data.get("data") if data else None
-        if not rows:
-            return {str(window): {} for window in windows}
-
-        dates = sorted({str(row.get("date", "")) for row in rows if row.get("date")})
-        if not dates:
-            return {str(window): {} for window in windows}
-
-        earliest = datetime.strptime(dates[0], "%Y-%m-%d").date()
-        latest = datetime.strptime(dates[-1], "%Y-%m-%d").date()
-        covered_days = (latest - earliest).days + 1
-        valid_windows = [window for window in windows if window <= covered_days]
-        cutoffs = {
-            str(window): latest - timedelta(days=window - 1)
-            for window in valid_windows
-        }
+        tw_tickers = sorted({
+            str(ticker).strip()
+            for ticker in tickers or []
+            if is_tw_ticker(str(ticker).strip())
+        })
         totals: Dict[str, Dict[str, float]] = {str(window): {} for window in windows}
+        if not tw_tickers:
+            return totals
 
-        for row in rows:
-            sid = str(row.get("stock_id", "")).strip()
-            trading_money = row.get("Trading_money")
-            row_date_raw = row.get("date")
-            if not sid or not trading_money or not row_date_raw:
-                continue
+        max_window = max(windows)
+        start = (date.today() - timedelta(days=max_window + 20)).isoformat()
+        end = date.today().isoformat()
 
-            try:
-                row_date = datetime.strptime(str(row_date_raw), "%Y-%m-%d").date()
-                value = float(trading_money)
-            except (TypeError, ValueError):
-                continue
+        def fetch_ticker(ticker: str) -> tuple[str, list[dict]]:
+            data = self._make_request(
+                {
+                    "dataset": "TaiwanStockPrice",
+                    "data_id": ticker,
+                    "start_date": start,
+                    "end_date": end,
+                },
+                timeout=30,
+            )
+            rows = data.get("data") if data else []
+            if not rows:
+                rows = list_yahoo_tw_daily_range(ticker, start, end)
+            return ticker, rows
 
-            for window_key, cutoff in cutoffs.items():
-                if row_date >= cutoff:
-                    totals[window_key][sid] = totals[window_key].get(sid, 0.0) + value
+        max_workers = min(6, len(tw_tickers))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [executor.submit(fetch_ticker, ticker) for ticker in tw_tickers]
+            for future in as_completed(futures):
+                try:
+                    ticker, rows = future.result()
+                except Exception as exc:
+                    logger.debug("FinMind trading value window fetch failed: %s", exc)
+                    continue
+                if not rows:
+                    continue
+
+                dates = sorted({str(row.get("date", "")) for row in rows if row.get("date")})
+                if not dates:
+                    continue
+                latest = datetime.strptime(dates[-1], "%Y-%m-%d").date()
+                cutoffs = {
+                    str(window): latest - timedelta(days=window - 1)
+                    for window in windows
+                }
+
+                for row in rows:
+                    trading_money = row.get("Trading_money")
+                    row_date_raw = row.get("date")
+                    if not trading_money or not row_date_raw:
+                        continue
+                    try:
+                        row_date = datetime.strptime(str(row_date_raw), "%Y-%m-%d").date()
+                        value = float(trading_money)
+                    except (TypeError, ValueError):
+                        continue
+
+                    for window_key, cutoff in cutoffs.items():
+                        if row_date >= cutoff:
+                            totals[window_key][ticker] = totals[window_key].get(ticker, 0.0) + value
 
         return totals
 
@@ -681,7 +777,7 @@ class FinMindAPIService:
                         else:
                             dt = datetime.strptime(date_str, "%Y-%m-%d")
                         timestamp = int(dt.timestamp() * 1000)
-                    except:
+                    except Exception:
                         timestamp = int(datetime.now().timestamp() * 1000)
                     
                     bars.append({
@@ -742,7 +838,7 @@ class FinMindAPIService:
                         date_str = str(row.get("date", ""))
                         dt = datetime.strptime(date_str, "%Y-%m-%d")
                         timestamp = int(dt.timestamp() * 1000)
-                    except:
+                    except Exception:
                         timestamp = int(datetime.now().timestamp() * 1000)
                     
                     bars.append({

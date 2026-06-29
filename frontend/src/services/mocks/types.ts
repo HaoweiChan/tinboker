@@ -141,8 +141,8 @@ export interface SectorBubbleData {
   x?: number;
   r?: number;
   marketCap?: number;
-  return: number;
-  returnRate?: number;
+  return: number | null;
+  returnRate?: number | null;
   volume?: number;
   subLabel?: string; // optional muted line in the hover card (e.g. raw episode count)
   icon_id?: string | null; // lucide icon name; falls back to exposure-id map in resolveIcon

@@ -41,9 +41,9 @@ const toRgba = (hex: string, alpha: number) => {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 };
 
-const getBubbleVisuals = (label: string, returnRate: number, isDark: boolean) => {
+const getBubbleVisuals = (label: string, returnRate: number | null | undefined, isDark: boolean) => {
   const baseColor = getIndustryColor(label);
-  const magnitude = Math.min(Math.abs(returnRate) / 35, 1);
+  const magnitude = Math.min(Math.abs(returnRate ?? 0) / 35, 1);
   const alphaBase = isDark ? 0.35 : 0.4;
   const fill = toRgba(baseColor, alphaBase + magnitude * 0.35);
   const glow = toRgba(baseColor, isDark ? 0.35 : 0.25);
@@ -145,17 +145,30 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({
 
   const xValue = (d: SectorBubbleData) => d.x ?? d.marketCap ?? d.value ?? 0;
   const radiusValue = (d: SectorBubbleData) => d.r ?? d.volume ?? 0;
+  const returnValue = (d: SectorBubbleData) => d.returnRate ?? null;
+  const returnSortValue = (d: SectorBubbleData) => d.returnRate ?? Number.NEGATIVE_INFINITY;
+  const formatReturn = (value: number | null | undefined) => (
+    value == null ? '暫無資料' : `${value > 0 ? '+' : ''}${value}%`
+  );
+  const returnTone = (value: number | null | undefined) => {
+    if (value == null) return 'text-slate-400';
+    return value > 0 ? 'text-emerald-500' : 'text-red-500';
+  };
+  const chartData = useMemo(
+    () => rawData.filter((item) => item.returnRate != null && radiusValue(item) > 0),
+    [rawData],
+  );
 
   // Scales — derived from the data so live numbers and the mock both render sensibly
   // without hardcoded bounds.
-  const xMax = Math.max(1, ...rawData.map(xValue)) * 1.1;
-  const returns = rawData.map((d) => d.returnRate ?? 0);
+  const xMax = Math.max(1, ...chartData.map(xValue)) * 1.1;
+  const returns = chartData.map(returnValue).filter((v): v is number => v != null);
   const rawYMax = Math.max(1, ...returns);
   const rawYMin = Math.min(0, ...returns);
   const yPad = Math.max(1, (rawYMax - rawYMin) * 0.15);
   const yMax = rawYMax + yPad;
   const yMin = rawYMin - yPad;
-  const maxVol = Math.max(1, ...rawData.map(radiusValue));
+  const maxVol = Math.max(1, ...chartData.map(radiusValue));
 
   const xScale = (val: number) => (val / xMax) * graphWidth;
   const yScale = (val: number) => graphHeight - ((val - yMin) / (yMax - yMin)) * graphHeight;
@@ -188,10 +201,10 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({
       node.plotX = clamp(node.plotX, node.radius, graphWidth - node.radius);
       node.plotY = clamp(node.plotY, node.radius, graphHeight - node.radius);
     };
-    const nodes = rawData.map((item, index) => {
+    const nodes = chartData.map((item, index) => {
       const radius = rScale(radiusValue(item));
       const anchorX = xScale(xValue(item));
-      const anchorY = yScale(item.returnRate || 0);
+      const anchorY = yScale(item.returnRate ?? 0);
       const jitter = Math.min(5, radius * 0.2);
       const angle = index * goldenAngle;
 
@@ -247,7 +260,7 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({
     }
 
     return nodes;
-  }, [compact, graphHeight, graphWidth, maxVol, rawData, xMax, yMax, yMin]);
+  }, [chartData, compact, graphHeight, graphWidth, maxVol, xMax, yMax, yMin]);
 
   const containerClasses = ['w-full md:h-full flex flex-col overflow-hidden', isEmbedded ? '' : 'transition-colors duration-300']
     .filter(Boolean)
@@ -374,7 +387,7 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({
                       const r = item.radius;
                       const activeId = hoveredSectorId;
                       const isActive = activeId === item.id;
-                      const visuals = getBubbleVisuals(item.label || '', item.returnRate || 0, isDark);
+                      const visuals = getBubbleVisuals(item.label || '', item.returnRate, isDark);
 
                       return (
                          <g
@@ -448,8 +461,8 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({
                           <span className="text-right font-mono" style={{ color: 'var(--text-secondary)' }}>{xValue(s)}{xTickSuffix}</span>
 
                           <span style={{ color: 'var(--text-muted)' }}>漲跌</span>
-                          <span className={`text-right font-mono font-bold ${(s.returnRate || 0) > 0 ? 'text-emerald-500' : 'text-red-500'}`}>
-                            {(s.returnRate || 0) > 0 ? '+' : ''}{s.returnRate || 0}%
+                          <span className={`text-right font-mono font-bold ${returnTone(s.returnRate)}`}>
+                            {formatReturn(s.returnRate)}
                           </span>
 
                           <span style={{ color: 'var(--text-muted)' }}>{radiusTooltipLabel}</span>
@@ -472,13 +485,13 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({
             >
                <span className="flex items-center gap-2">
                  <span className={`${type.meta} font-bold text-slate-500 uppercase tracking-wider`}>依漲跌排序</span>
-                 <InfoHint text="依所選漲跌期間的漲跌幅，由高到低排序。點任一項可在圖上標示對應泡泡。" />
+                 <InfoHint text="僅列入同時具備漲跌與泡泡大小資料的項目，依所選期間漲跌幅排序。" />
                </span>
                <ChevronDown size={16} className={`md:hidden text-slate-400 transition-transform ${listOpen ? 'rotate-180' : ''}`} />
             </button>
             <div className={`overflow-y-auto p-2 space-y-1 scrollbar-thin max-h-[45vh] md:max-h-none md:flex-1 md:block ${listOpen ? 'block' : 'hidden'}`}>
-               {[...rawData].sort((a,b) => (b.returnRate || 0) - (a.returnRate || 0)).map(item => {
-                 const visuals = getBubbleVisuals(item.label || '', item.returnRate || 0, isDark);
+               {[...chartData].sort((a,b) => returnSortValue(b) - returnSortValue(a)).map(item => {
+                 const visuals = getBubbleVisuals(item.label || '', item.returnRate, isDark);
                  const RowIcon = resolveIcon(item.id, item.icon_id);
                  return (
                    <div
@@ -499,8 +512,8 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({
                         <RowIcon size={14} />
                       </span>
                       <span className={`${type.chartRow} truncate flex-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>{item.label}</span>
-                      <span className={`${type.meta} font-mono ${(item.returnRate || 0) > 0 ? 'text-emerald-500' : 'text-red-500'}`}>
-                          {item.returnRate || 0}%
+                      <span className={`${type.meta} font-mono ${returnTone(item.returnRate)}`}>
+                          {formatReturn(item.returnRate)}
                       </span>
                    </div>
                  );

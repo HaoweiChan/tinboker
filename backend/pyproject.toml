@@ -27,4 +27,5 @@ dependencies = [
     "uvicorn[standard]==0.24.0",
     "yfinance>=0.2.66",
     "google-auth>=2.23.0",
+    "google-cloud-secret-manager>=2.16.0",
 ]

@@ -18,8 +18,8 @@ from typing import List, Optional
 
 from src.database.models import StockDailyClose
 from src.database.postgres import get_session
-from src.services import finmind_budget
 from src.services.finmind_service import is_tw_ticker as _is_tw
+from src.services.finmind_service import list_yahoo_tw_daily_range
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +32,8 @@ _US_GAP_SECONDS = 14.0
 _TW_GAP_SECONDS = 2.0
 # Lookback window to fetch per ticker (enough for the last 2 trading days incl. weekends).
 _LOOKBACK_DAYS = 7
+# Bubble charts need 90-day cumulative US dollar-volume windows from warmed OHLCV.
+_US_OHLC_LOOKBACK_DAYS = 120
 
 
 async def get_tracked_tickers(limit: int = MAX_TRACKED) -> List[str]:
@@ -87,9 +89,9 @@ def _fetch_and_store_closes(ticker: str, fin_svc, mas_svc) -> int:
     start = (datetime.utcnow() - timedelta(days=_LOOKBACK_DAYS)).strftime("%Y-%m-%d")
     try:
         if _is_tw(ticker):
-            if not finmind_budget.consume(finmind_budget_bucket()):
-                return 0  # FinMind budget spent — skip; next cycle retries
             rows = fin_svc.list_daily_ticker_summary_range(ticker.split(".")[0], start, end)
+            if not rows:
+                rows = list_yahoo_tw_daily_range(ticker, start, end)
         else:
             rows = mas_svc.list_daily_ticker_summary_range(ticker, start, end)
     except Exception as e:
@@ -122,12 +124,6 @@ def _fetch_and_store_closes(ticker: str, fin_svc, mas_svc) -> int:
             logger.debug(f"close-refresh: upsert failed for {ticker}: {e}")
         break
     return inserted
-
-
-def finmind_budget_bucket() -> str:
-    # Mirror the single global bucket used by the FinMind client.
-    from src.services.finmind_service import _FINMIND_BUDGET
-    return _FINMIND_BUDGET
 
 
 # Profile fields (name/market-cap/P-E) drift slowly; refresh weekly. Logos are static and
@@ -193,7 +189,7 @@ def _warm_us_slow_data(ticker: str, yf_provider, mas_provider) -> bool:
 
     # OHLC bars (full chart data) — yfinance end is exclusive, so pad +1 day.
     end = (datetime.utcnow() + timedelta(days=1)).strftime("%Y-%m-%d")
-    start = (datetime.utcnow() - timedelta(days=_LOOKBACK_DAYS)).strftime("%Y-%m-%d")
+    start = (datetime.utcnow() - timedelta(days=_US_OHLC_LOOKBACK_DAYS)).strftime("%Y-%m-%d")
     bars = yf_provider.get_daily_ohlc(ticker, start, end)
     if bars:
         for session in get_session():
