@@ -83,6 +83,9 @@ class ExposurePerformanceItem(BaseModel):
     market_cap_twd: Optional[float] = None     # aggregate constituent market cap (industries only)
     trading_value_twd: Optional[float] = None  # aggregate constituent daily trade value (NT$)
     trading_value_windows_twd: Optional[Dict[str, float]] = None
+    # 三大法人 net flow by window (1/5/20d), NT$ — TW members only. Total = all法人; foreign = 外資.
+    net_buy_windows_twd: Optional[Dict[str, float]] = None
+    foreign_net_windows_twd: Optional[Dict[str, float]] = None
 
 
 class ExposurePerformanceResponse(BaseModel):

@@ -8,6 +8,14 @@ import { TOPICS_TYPOGRAPHY } from './topicsTypography';
 import { StockIdentity } from '@/components/common/StockIdentity';
 import type { SectorBoardItem, SectorBoardMember } from '@/services/api/podcasts';
 
+/** Net institutional flow for one exposure, in 億 (NT$ / 1e8). null = no data. */
+export interface SectorNetFlow {
+  foreign5d: number | null; // 外資
+  total5d: number | null;   // 三大法人
+}
+
+const fmtYi = (v: number): string => `${v >= 0 ? '+' : ''}${Math.round(v)}億`;
+
 // ── MemberRow ──────────────────────────────────────────────────────────────
 // Separate component so useStockTrendColor is called at hook top level (not in map).
 
@@ -70,16 +78,21 @@ const MemberRow: React.FC<MemberRowProps> = ({ member }) => {
 
 interface SectorBoardCardProps {
   sector: SectorBoardItem;
+  /** 三大法人 net flow (5d), shown under the name. Omitted for the industry drawer. */
+  netFlow?: SectorNetFlow;
 }
 
 /**
  * Card in the 題材總覽 grid.
  * - Sector icon + type badge + name + aggregate change in the header
+ * - Optional 5d 外資/法人 net-flow line under the name
  * - Up to 4 member rows with individual sparklines and change %
  */
-export const SectorBoardCard: React.FC<SectorBoardCardProps> = ({ sector }) => {
+export const SectorBoardCard: React.FC<SectorBoardCardProps> = ({ sector, netFlow }) => {
   const trend = useStockTrendColor(sector.avg_change ?? 0);
+  const foreignTrend = useStockTrendColor(netFlow?.foreign5d ?? 0);
   const hasChange = sector.avg_change != null && Number.isFinite(sector.avg_change);
+  const hasFlow = !!netFlow && (netFlow.foreign5d != null || netFlow.total5d != null);
   const topMembers = sector.members.slice(0, 4);
   const type = TOPICS_TYPOGRAPHY.className;
 
@@ -117,6 +130,17 @@ export const SectorBoardCard: React.FC<SectorBoardCardProps> = ({ sector }) => {
           <span className={`${type.cardTitle} font-semibold tracking-[-0.01em] group-hover:text-foreground/80 transition-colors leading-snug block`}>
             {sector.display_name}
           </span>
+          {hasFlow && (
+            <div className={`${type.micro} mt-1 flex items-center gap-2 font-mono tabular-nums`}>
+              <span className="text-muted-foreground/60">5日</span>
+              {netFlow!.foreign5d != null && (
+                <span style={{ color: foreignTrend.lineColor }}>外資 {fmtYi(netFlow!.foreign5d)}</span>
+              )}
+              {netFlow!.total5d != null && (
+                <span className="text-muted-foreground">法人 {fmtYi(netFlow!.total5d)}</span>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Right: aggregate change + episode count */}

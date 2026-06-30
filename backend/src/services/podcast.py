@@ -1427,6 +1427,10 @@ class PodcastService:
         us_caps = await self._us_market_caps_cached(all_tickers)
         trading_windows = await self._tw_trading_value_windows_cached(all_tickers)
         us_trading_windows = await self._us_trading_value_windows_cached(all_tickers)
+        # 三大法人 net flow (TW-only via FinMind; US members contribute 0).
+        inst = await self._tw_institutional_net_windows_cached(all_tickers)
+        inst_total = inst.get("total") or {}
+        inst_foreign = inst.get("foreign") or {}
         out: list[dict] = []
         for s in board:
             members = s.get("members") or []
@@ -1444,6 +1448,14 @@ class PodcastService:
                 )
                 for window, values in trading_windows.items()
             }
+            net_total = {
+                window: sum(values.get((m.get("ticker") or "").strip(), 0.0) for m in members)
+                for window, values in inst_total.items()
+            }
+            net_foreign = {
+                window: sum(values.get((m.get("ticker") or "").strip(), 0.0) for m in members)
+                for window, values in inst_foreign.items()
+            }
             out.append({
                 "exposure_id": s["exposure_id"],
                 "exposure_type": s.get("exposure_type"),
@@ -1455,6 +1467,8 @@ class PodcastService:
                 "heat": s.get("heat"),
                 "trading_value_twd": exposure_tvals.get("1") or None,
                 "trading_value_windows_twd": exposure_tvals,
+                "net_buy_windows_twd": net_total or None,
+                "foreign_net_windows_twd": net_foreign or None,
             })
         out.sort(key=lambda x: ((x["heat"] or 0.0), x["episode_count"]), reverse=True)
         return out
@@ -1496,6 +1510,30 @@ class PodcastService:
             self._tw_trading_value_windows_memory_cache = {cache_key: (time.time(), vals)}
             await cache_set(cache_key, json.dumps(vals), CACHE_TTL["stock_ohlcv"])  # 1 day
         return vals or {}
+
+    async def _tw_institutional_net_windows_cached(self, tickers: list[str]) -> dict:
+        """``{"total"|"foreign": {window: {stock_id: net 三大法人 flow NT$}}}`` (daily-cached)."""
+        universe = ",".join(sorted({t.strip() for t in tickers if t.strip()}))
+        universe_key = hashlib.sha1(universe.encode("utf-8")).hexdigest()[:12] if universe else "empty"
+        cache_key = f"sectors:tw_institutional_net_windows:v1:{universe_key}"
+        memory_cache = getattr(self, "_tw_institutional_net_windows_memory_cache", {})
+        cached_at, memory_value = memory_cache.get(cache_key, (0.0, None))
+        if memory_value and time.time() - cached_at < CACHE_TTL["stock_ohlcv"]:
+            return memory_value
+
+        cached = await cache_get(cache_key)
+        if cached:
+            try:
+                vals = json.loads(cached)
+                self._tw_institutional_net_windows_memory_cache = {cache_key: (time.time(), vals)}
+                return vals
+            except Exception:
+                pass
+        vals = await asyncio.to_thread(self._finmind().get_tw_institutional_net_windows, tickers)
+        if vals and (vals.get("total") or vals.get("foreign")):
+            self._tw_institutional_net_windows_memory_cache = {cache_key: (time.time(), vals)}
+            await cache_set(cache_key, json.dumps(vals), CACHE_TTL["stock_ohlcv"])  # 1 day
+        return vals or {"total": {}, "foreign": {}}
 
     def _read_us_market_caps_twd(self, tickers: list[str]) -> dict[str, float]:
         """Read warmed US market caps and convert USD → TWD for aggregate charts."""

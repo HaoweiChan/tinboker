@@ -5,7 +5,7 @@ import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
 import { Segmented } from '@/components/redesign/Segmented';
 import SectorPerformance from '@/components/industry/SectorPerformance';
-import { SectorBoardCard } from '@/components/topics/SectorBoardCard';
+import { SectorBoardCard, type SectorNetFlow } from '@/components/topics/SectorBoardCard';
 import { TOPICS_TYPOGRAPHY } from '@/components/topics/topicsTypography';
 import {
   getSectorBoard,
@@ -23,7 +23,12 @@ import { useTagLabels, tagLabelFor } from '@/hooks/useTagLabels';
 
 // ── Sort types ───────────────────────────────────────────────────────────────
 
-type SortKey = 'hotness' | 'avg_change' | 'episode_count';
+type BoardSortKey = 'hotness' | 'avg_change' | 'episode_count';
+type SortKey = BoardSortKey | 'money_flow';
+
+// NT$ → 億 (1e8), rounded; null passes through.
+const toYi = (v?: number | null): number | null => (v == null ? null : +(v / 1e8).toFixed(0));
+
 type BubbleSource = {
   exposure_id: string;
   display_name: string;
@@ -47,6 +52,7 @@ const SORT_OPTIONS: { value: SortKey; label: string }[] = [
   { value: 'hotness', label: '綜合熱度' },
   { value: 'avg_change', label: '今日表現' },
   { value: 'episode_count', label: '討論熱度' },
+  { value: 'money_flow', label: '資金流入' },
 ];
 
 // ── Skeleton cards ─────────────────────────────────────────────────────────
@@ -78,7 +84,7 @@ function BoardSkeleton() {
   );
 }
 
-function sortBoard(items: SectorBoardItem[], sortKey: SortKey): SectorBoardItem[] {
+function sortBoard(items: SectorBoardItem[], sortKey: BoardSortKey): SectorBoardItem[] {
   return [...items].sort((a, b) => {
     if (sortKey === 'hotness') return (b.hotness ?? 0) - (a.hotness ?? 0);
     if (sortKey === 'avg_change') return (b.avg_change ?? -Infinity) - (a.avg_change ?? -Infinity);
@@ -156,6 +162,18 @@ export const TopicsCloud: React.FC = () => {
     () => perf.filter((p) => p.exposure_type === 'theme'),
     [perf],
   );
+
+  // exposure_id → 5d 三大法人 / 外資 net flow (億), for the board metric + 資金流入 sort.
+  const netFlowByExposure = useMemo(() => {
+    const m: Record<string, SectorNetFlow> = {};
+    for (const p of perf) {
+      m[p.exposure_id] = {
+        foreign5d: toYi(p.foreign_net_windows_twd?.['5']),
+        total5d: toYi(p.net_buy_windows_twd?.['5']),
+      };
+    }
+    return m;
+  }, [perf]);
 
   // exposure_id → constituent tickers (from the board), so the bubble Y can be recomputed
   // per timeframe from trailing returns without the perf endpoint carrying member lists.
@@ -271,7 +289,16 @@ export const TopicsCloud: React.FC = () => {
     [themePerf, themeBoard, boardByExposure, tf, memberReturn, iconByExposure],
   );
 
-  const sortedThemeBoard = useMemo(() => sortBoard(themeBoard, sortKey), [themeBoard, sortKey]);
+  const sortedThemeBoard = useMemo(() => {
+    if (sortKey === 'money_flow') {
+      return [...themeBoard].sort((a, b) => {
+        const av = netFlowByExposure[a.exposure_id]?.foreign5d ?? -Infinity;
+        const bv = netFlowByExposure[b.exposure_id]?.foreign5d ?? -Infinity;
+        return bv - av;
+      });
+    }
+    return sortBoard(themeBoard, sortKey);
+  }, [themeBoard, sortKey, netFlowByExposure]);
   // Industry drawer is secondary — always hotness-sorted, no own control.
   const sortedIndustryBoard = useMemo(() => sortBoard(industryBoard, 'hotness'), [industryBoard]);
 
@@ -341,7 +368,7 @@ export const TopicsCloud: React.FC = () => {
           </div>
           <Segmented options={SORT_OPTIONS} value={sortKey} onChange={setSortKey} />
         </div>
-        <BoardGrid loading={loading} items={sortedThemeBoard} empty="目前沒有題材資料。" />
+        <BoardGrid loading={loading} items={sortedThemeBoard} empty="目前沒有題材資料。" netFlowByExposure={netFlowByExposure} />
 
         {/* ── 總經與焦點議題 (tag chip strip) ────────────────────────── */}
         <div className="flex items-center gap-1.5 mt-9 mb-1.5">
@@ -398,7 +425,12 @@ export const TopicsCloud: React.FC = () => {
   );
 };
 
-function BoardGrid({ loading, items, empty }: { loading: boolean; items: SectorBoardItem[]; empty: string }) {
+function BoardGrid({ loading, items, empty, netFlowByExposure }: {
+  loading: boolean;
+  items: SectorBoardItem[];
+  empty: string;
+  netFlowByExposure?: Record<string, SectorNetFlow>;
+}) {
   const type = TOPICS_TYPOGRAPHY.className;
   if (loading) {
     return (
@@ -417,7 +449,7 @@ function BoardGrid({ loading, items, empty }: { loading: boolean; items: SectorB
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
       {items.map((s) => (
-        <SectorBoardCard key={s.exposure_id} sector={s} />
+        <SectorBoardCard key={s.exposure_id} sector={s} netFlow={netFlowByExposure?.[s.exposure_id]} />
       ))}
     </div>
   );
