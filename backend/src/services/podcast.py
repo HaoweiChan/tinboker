@@ -1406,17 +1406,17 @@ class PodcastService:
             await cache_set(cache_key, json.dumps(caps), CACHE_TTL["stock_ohlcv"])  # 1 day
         return caps or {}
 
-    async def industry_performance(self) -> list[dict]:
-        """Bubble-chart rows for the /topics 產業 tab: industry (exposure_type='sector')
-        board items joined with aggregate constituent market cap.
+    async def exposures_performance(self) -> list[dict]:
+        """Unified bubble-chart rows for /topics — both themes and industries.
 
-        Reuses the warm sector board (no extra Firestore scan) and daily-cached TW market
-        caps. Market caps are TW-only — FinMind has no US coverage — consistent with
-        industry boards being TW-centric; US members contribute 0.
+        One pass over the warm sector board (no extra Firestore scan): X = recency-weighted
+        discussion heat, Y = avg member % change, bubble = aggregate constituent trading value
+        by timeframe. ``market_cap_twd`` is attached for industries only (TW-only via FinMind,
+        US members contribute 0); themes carry None since they aren't official baskets. The
+        frontend splits the list by ``exposure_type`` for the theme vs industry views.
         """
         board = await self.sector_board()
-        industries = [s for s in board if s.get("exposure_type") == "industry"]
-        if not industries:
+        if not board:
             return []
         all_tickers = [
             (m.get("ticker") or "").strip()
@@ -1428,13 +1428,14 @@ class PodcastService:
         trading_windows = await self._tw_trading_value_windows_cached(all_tickers)
         us_trading_windows = await self._us_trading_value_windows_cached(all_tickers)
         out: list[dict] = []
-        for s in industries:
+        for s in board:
             members = s.get("members") or []
+            is_industry = s.get("exposure_type") == "industry"
             total_mc = sum(
                 caps.get((m.get("ticker") or "").strip(), 0.0)
                 + us_caps.get((m.get("ticker") or "").strip().upper(), 0.0)
                 for m in members
-            )
+            ) if is_industry else 0.0
             exposure_tvals = {
                 window: sum(
                     values.get((m.get("ticker") or "").strip(), 0.0)
@@ -1445,6 +1446,7 @@ class PodcastService:
             }
             out.append({
                 "exposure_id": s["exposure_id"],
+                "exposure_type": s.get("exposure_type"),
                 "display_name": s["display_name"],
                 "color_hex": s.get("color_hex"),
                 "market_cap_twd": total_mc or None,
@@ -1613,49 +1615,6 @@ class PodcastService:
             self._us_trading_value_windows_memory_cache = {cache_key: (time.time(), vals)}
             await cache_set(cache_key, json.dumps(vals), CACHE_TTL["stock_ohlcv"])
         return vals or {}
-
-    async def theme_performance(self) -> list[dict]:
-        """Bubble-chart rows for the /topics 題材 tab: theme (exposure_type='theme') board
-        items, mapped to theme-appropriate dimensions.
-
-        Themes are curated/corpus-discovered concepts, not official baskets. The chart maps:
-        X = recency-weighted discussion heat, Y = avg member % change, bubble = aggregate
-        constituent trading value by timeframe (TW-only via FinMind; US members contribute 0).
-        """
-        board = await self.sector_board()
-        themes = [s for s in board if s.get("exposure_type") == "theme"]
-        if not themes:
-            return []
-        all_tickers = [
-            (m.get("ticker") or "").strip()
-            for sector in board
-            for m in sector.get("members") or []
-        ]
-        trading_windows = await self._tw_trading_value_windows_cached(all_tickers)
-        us_trading_windows = await self._us_trading_value_windows_cached(all_tickers)
-        out: list[dict] = []
-        for s in themes:
-            members = s.get("members") or []
-            exposure_tvals = {
-                window: sum(
-                    values.get((m.get("ticker") or "").strip(), 0.0)
-                    + us_trading_windows.get(window, {}).get((m.get("ticker") or "").strip().upper(), 0.0)
-                    for m in members
-                )
-                for window, values in trading_windows.items()
-            }
-            out.append({
-                "exposure_id": s["exposure_id"],
-                "display_name": s["display_name"],
-                "color_hex": s.get("color_hex"),
-                "episode_count": s.get("episode_count", 0),
-                "heat": s.get("heat"),  # recency-weighted discussion (X axis)
-                "return_pct": s.get("avg_change"),
-                "trading_value_twd": exposure_tvals.get("1") or None,
-                "trading_value_windows_twd": exposure_tvals,
-            })
-        out.sort(key=lambda x: ((x["heat"] or 0.0), x["episode_count"]), reverse=True)
-        return out
 
     # ── Theme discovery (admin curation queue) ────────────────────────────────
     _THEME_SCAN_FIELDS = [
