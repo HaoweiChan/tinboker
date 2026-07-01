@@ -21,7 +21,8 @@ def test_institutional_net_windows():
         {"date": d1, "stock_id": "2330", "name": "Foreign_Investor", "buy": 0, "sell": 200},
         {"date": d0, "stock_id": "9999", "name": "Foreign_Investor", "buy": 9999, "sell": 0},  # not requested
     ]
-    svc._make_request = lambda params, timeout=10: {"data": rows}
+    # per-ticker fetch: honor data_id so only the requested stock's rows come back
+    svc._make_request = lambda params, timeout=10: {"data": [r for r in rows if r["stock_id"] == params.get("data_id")]}
     svc.get_tw_latest_closes = lambda: {"2330": 1000.0}  # close NT$1000
 
     out = svc.get_tw_institutional_net_windows(["2330"], windows=(1, 5))

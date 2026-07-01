@@ -78,14 +78,15 @@ class ExposurePerformanceItem(BaseModel):
     display_name: str
     color_hex: Optional[str] = None
     episode_count: int = 0
-    heat: Optional[float] = None               # recency-weighted discussion (X axis)
-    return_pct: Optional[float] = None         # avg member daily % change
-    market_cap_twd: Optional[float] = None     # aggregate constituent market cap (industries only)
-    trading_value_twd: Optional[float] = None  # aggregate constituent daily trade value (NT$)
-    trading_value_windows_twd: Optional[Dict[str, float]] = None
+    heat: Optional[float] = None               # recency-weighted discussion (X axis), 1 dp
+    return_pct: Optional[float] = None         # avg member daily % change, 2 dp
+    # NT$ amounts are whole numbers (rounded server-side) — int keeps the JSON clean (no .0).
+    market_cap_twd: Optional[int] = None       # aggregate constituent market cap (industries only)
+    trading_value_twd: Optional[int] = None    # aggregate constituent daily trade value (NT$)
+    trading_value_windows_twd: Optional[Dict[str, int]] = None
     # 三大法人 net flow by window (1/5/20d), NT$ — TW members only. Total = all法人; foreign = 外資.
-    net_buy_windows_twd: Optional[Dict[str, float]] = None
-    foreign_net_windows_twd: Optional[Dict[str, float]] = None
+    net_buy_windows_twd: Optional[Dict[str, int]] = None
+    foreign_net_windows_twd: Optional[Dict[str, int]] = None
 
 
 class ExposurePerformanceResponse(BaseModel):
