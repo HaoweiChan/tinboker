@@ -78,7 +78,12 @@ class ExposurePerformanceItem(BaseModel):
     display_name: str
     color_hex: Optional[str] = None
     episode_count: int = 0
-    heat: Optional[float] = None               # recency-weighted discussion (X axis), 1 dp
+    heat: Optional[float] = None               # blended discussion heat (X axis), 2 dp
+    # Raw heat components (recency-weighted) + constituent count — the blend
+    # (weights / normalisation) is retunable from these without a rescan.
+    heat_direct: Optional[float] = None        # from episodes that NAME the sector
+    heat_ticker: Optional[float] = None        # from episodes mentioning a CONSTITUENT
+    attr_size: Optional[int] = None            # constituent count used to normalise heat_ticker
     return_pct: Optional[float] = None         # avg member daily % change, 2 dp
     # NT$ amounts are whole numbers (rounded server-side) — int keeps the JSON clean (no .0).
     market_cap_twd: Optional[int] = None       # aggregate constituent market cap (industries only)

@@ -438,6 +438,68 @@ async def test_member_and_sector_series_populated():
 
 # ── Refresh-ahead (warm cache off the request path) ─────────────────────────────
 
+# ── Ticker-implied discussion heat (Phase 1) ───────────────────────────────────
+
+_HEAT_INDEX = {
+    # 3711 is a constituent of theme sector_hbm, whose parent industry is sector_ai_hardware.
+    "ticker_to_sectors": {"3711": {"sector_hbm", "sector_ai_hardware"}},
+    "attr_size": {"sector_hbm": 4, "sector_ai_hardware": 16},
+    "meta": {
+        "sector_hbm": {"display_name": "HBM", "exposure_type": "theme"},
+        "sector_ai_hardware": {"display_name": "AI硬體", "exposure_type": "industry"},
+    },
+    "ticker_name": {"3711": "日月光"},
+}
+
+
+@pytest.mark.asyncio
+async def test_ticker_implied_heat_and_parent_aggregation():
+    """A NAMED mention feeds direct_heat; a CONSTITUENT mention (via related_tickers)
+    feeds ticker_heat for the theme AND its parent industry. episode_count is the
+    union, and heat blends the two with sub-linear size normalisation."""
+    ep_named = _doc("ep-named", exposures=[{
+        "exposure_id": "sector_hbm", "exposure_type": "theme", "display_name": "HBM",
+        "resolved_tickers": [{"ticker": "3711", "name": "日月光", "market": "TW", "source": "curated"}],
+    }])
+    ep_ticker = _doc("ep-ticker", exposures=[])   # names no sector...
+    ep_ticker["related_tickers"] = ["3711"]        # ...but mentions a constituent
+    svc, _ = _make_svc([ep_named, ep_ticker])
+
+    async def _fake_eod(ticker: str):
+        return {"3711": 1.0}.get(ticker)
+
+    with (
+        patch("src.services.podcast.cache_get", new=AsyncMock(return_value=None)),
+        patch("src.services.podcast.cache_set", new=AsyncMock()),
+        patch.object(svc, "_allowed_podcast_names", new=AsyncMock(return_value=None)),
+        patch.object(PodcastService, "_sector_membership_index", return_value=_HEAT_INDEX),
+        patch("src.services.stock_close_refresh.get_eod_change_pct", side_effect=_fake_eod),
+        _patch_get_session(),
+    ):
+        result = await svc.sector_board()
+
+    by_id = {s["exposure_id"]: s for s in result}
+    assert set(by_id) == {"sector_hbm", "sector_ai_hardware"}
+
+    hbm = by_id["sector_hbm"]
+    ind = by_id["sector_ai_hardware"]
+
+    # theme: named once (direct) + constituent once (ticker); union episode_count == 2
+    assert hbm["direct_heat"] > 0 and hbm["ticker_heat"] > 0
+    assert hbm["episode_count"] == 2
+    # industry: never named, only implied via its child theme's constituent; count == 1
+    assert ind["direct_heat"] == 0 and ind["ticker_heat"] > 0
+    assert ind["episode_count"] == 1
+
+    # blend: heat = 1·direct + 1·(ticker / attr_size**0.5)  (rel tol — components are 3-dp rounded)
+    assert hbm["heat"] == pytest.approx(
+        hbm["direct_heat"] + hbm["ticker_heat"] / (hbm["attr_size"] ** 0.5), rel=0.02)
+    assert ind["heat"] == pytest.approx(
+        ind["ticker_heat"] / (ind["attr_size"] ** 0.5), rel=0.02)
+    # same raw weight, but the theme (size 4) normalises lighter than the industry (size 16)
+    assert hbm["heat"] > ind["heat"]
+
+
 @pytest.mark.asyncio
 async def test_sector_board_serves_cache_without_scanning():
     """On a cache hit, sector_board() returns the cached payload and never runs the
