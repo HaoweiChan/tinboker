@@ -6,9 +6,9 @@ import json
 from typing import Any
 
 from shared.sectors import (
-    resolve_clustered_events,
     flatten_exposure_ids,
     flatten_unresolved_trend_ids,
+    resolve_clustered_events,
 )
 
 from ..state import PipelineState

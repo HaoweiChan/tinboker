@@ -5,12 +5,13 @@ from shared.sectors import (
 )
 
 
-def test_resolved_tickers_support_tw_and_us_markets():
+def test_resolved_tickers_are_tw_only():
+    # US exposures were split out to a separate topics tab; the sector universe is TW-only.
     out = resolve_text("今天半導體供應鏈很強", max_tickers=10)
     exposure = out["sector_exposures"][0]
 
     markets = {t["market"] for t in exposure["resolved_tickers"]}
-    assert {"TW", "US"} <= markets
+    assert markets == {"TW"}
     assert exposure["confidence"] == 1.0
 
 
