@@ -250,10 +250,12 @@ def pick_leaders(stocks, curated_tw):
     seen, ordered = set(), []
     for t in stocks:
         if t in curated_tw and t not in seen:
-            ordered.append(t); seen.add(t)
+            ordered.append(t)
+            seen.add(t)
     for t in stocks:
         if t not in seen:
-            ordered.append(t); seen.add(t)
+            ordered.append(t)
+            seen.add(t)
     return ordered[:LEADERS_CAP]
 
 
@@ -302,7 +304,8 @@ def build(tide_dir: Path):
             base = slug
             i = 2
             while slug in used_slugs:
-                slug = f"{base}_{i}"; i += 1
+                slug = f"{base}_{i}"
+                i += 1
             used_slugs.add(slug)
             stocks = sub_stocks.get(sn, [])
             leaders = pick_leaders(stocks, curated_tw)
