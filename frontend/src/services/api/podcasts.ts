@@ -570,43 +570,26 @@ export async function getSectorBoard(): Promise<SectorBoardItem[]> {
   return Array.isArray(d.sectors) ? d.sectors : [];
 }
 
-/** Industry (exposure_type='sector') performance for the /topics 產業 bubble chart.
- *  heat is the shared X axis; market_cap_twd is optional supporting data only. */
-export interface IndustryPerformanceItem {
+/** Unified theme + industry performance for the /topics bubble charts.
+ *  heat is the shared X axis; split by exposure_type for the theme vs industry views.
+ *  market_cap_twd is populated for industries only. */
+export interface ExposurePerformanceItem {
   exposure_id: string;
+  exposure_type: string;
   display_name: string;
   color_hex?: string | null;
-  market_cap_twd: number | null;
-  return_pct: number | null;
   episode_count: number;
-  heat?: number | null;
+  heat?: number | null; // recency-weighted discussion (X axis)
+  return_pct: number | null;
+  market_cap_twd?: number | null; // industries only
   trading_value_twd?: number | null;
   trading_value_windows_twd?: Record<string, number> | null;
 }
 
-export async function getIndustryPerformance(): Promise<IndustryPerformanceItem[]> {
-  const response = await apiClient.get('/api/sectors/industry-performance');
+export async function getExposurePerformance(): Promise<ExposurePerformanceItem[]> {
+  const response = await apiClient.get('/api/sectors/performance');
   const d = response.data ?? {};
-  return Array.isArray(d.industries) ? d.industries : [];
-}
-
-/** Theme (exposure_type='theme') performance for the /topics 題材 bubble chart.
- *  heat is the shared X axis; trading_value_twd is optional supporting data only. */
-export interface ThemePerformanceItem {
-  exposure_id: string;
-  display_name: string;
-  color_hex?: string | null;
-  episode_count: number;
-  heat: number | null; // recency-weighted discussion (X axis)
-  return_pct: number | null;
-  trading_value_twd: number | null;
-  trading_value_windows_twd?: Record<string, number> | null;
-}
-
-export async function getThemePerformance(): Promise<ThemePerformanceItem[]> {
-  const response = await apiClient.get('/api/sectors/theme-performance');
-  const d = response.data ?? {};
-  return Array.isArray(d.themes) ? d.themes : [];
+  return Array.isArray(d.exposures) ? d.exposures : [];
 }
 
 /** Trailing close-to-close performance for a ticker over fixed windows. */
@@ -626,7 +609,11 @@ export async function getBatchPricesTrailing(
 ): Promise<Record<string, TrailingPerf>> {
   const unique = [...new Set(tickers.map((t) => t.toUpperCase()))];
   if (!unique.length) return {};
-  const response = await apiClient.post('/api/stocks/batch-prices-trailing', { tickers: unique });
+  const response = await apiClient.post(
+    '/api/stocks/batch-prices-trailing',
+    { tickers: unique },
+    { timeout: 120000 },
+  );
   return response.data && typeof response.data === 'object' ? response.data : {};
 }
 

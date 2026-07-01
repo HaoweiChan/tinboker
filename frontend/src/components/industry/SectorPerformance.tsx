@@ -60,6 +60,7 @@ interface SectorPerformanceProps {
   xTickSuffix?: string;
   xTooltipLabel?: string;
   xHelp?: string; // explanation shown on the legend ⓘ for the X metric
+  xScaleMode?: 'linear' | 'log';
   yAxisLabel?: string;
   radiusTooltipLabel?: string;
   radiusTooltipSuffix?: string;
@@ -84,6 +85,7 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({
   xTickSuffix = '兆',
   xTooltipLabel = '市值',
   xHelp,
+  xScaleMode = 'linear',
   yAxisLabel = '近期漲跌 %',
   radiusTooltipLabel = '討論度',
   radiusTooltipSuffix = '',
@@ -170,12 +172,20 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({
   const yMin = rawYMin - yPad;
   const maxVol = Math.max(1, ...chartData.map(radiusValue));
 
-  const xScale = (val: number) => (val / xMax) * graphWidth;
+  const xScaleMax = xScaleMode === 'log' ? Math.log1p(xMax) : xMax;
+  const xScaleValue = (val: number) => xScaleMode === 'log' ? Math.log1p(Math.max(0, val)) : val;
+  const xScale = (val: number) => (xScaleValue(val) / xScaleMax) * graphWidth;
   const yScale = (val: number) => graphHeight - ((val - yMin) / (yMax - yMin)) * graphHeight;
   const rScale = (vol: number) => 6 + Math.sqrt(vol / maxVol) * 26; // bounded 6..32px
 
   const niceNum = (n: number) => (n >= 10 ? Math.round(n) : +n.toFixed(1));
-  const xTicks = Array.from({ length: 6 }, (_, i) => niceNum((xMax * (i + 1)) / 6));
+  const xTicks = Array.from({ length: 6 }, (_, i) => {
+    const step = (i + 1) / 6;
+    const value = xScaleMode === 'log'
+      ? Math.expm1(Math.log1p(xMax) * step)
+      : xMax * step;
+    return niceNum(value);
+  });
   const yTicks = Array.from({ length: 7 }, (_, i) => niceNum(yMin + ((yMax - yMin) * i) / 6));
 
   // px-based viewBox → fonts render at true px; use the Topics typography scale so
@@ -260,7 +270,8 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({
     }
 
     return nodes;
-  }, [chartData, compact, graphHeight, graphWidth, maxVol, xMax, yMax, yMin]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chartData, compact, graphHeight, graphWidth, maxVol, xMax, xScaleMode, yMax, yMin]);
 
   const containerClasses = ['w-full md:h-full flex flex-col overflow-hidden', isEmbedded ? '' : 'transition-colors duration-300']
     .filter(Boolean)
@@ -438,16 +449,20 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({
                   const py = oy + (padding.top + s.plotY) * scale;
                   const CARD_W = 168;
                   const flipX = px + 14 + CARD_W > panel.w;
+                  const placeBelow = py < panel.h * 0.32;
+                  const placeAbove = py > panel.h * 0.68;
                   const left = flipX ? px - 14 - CARD_W : px + 14;
+                  const top = placeBelow ? py + 14 : placeAbove ? py - 14 : py;
+                  const translateY = placeBelow ? '0' : placeAbove ? '-100%' : '-50%';
                   return (
                     <div
                       data-tooltip="true"
-                      className="absolute z-10 pointer-events-none backdrop-blur border p-3 rounded-lg shadow-xl"
+                      className="absolute z-30 pointer-events-none backdrop-blur border p-3 rounded-lg shadow-xl"
                       style={{
                         left: Math.max(4, Math.min(left, panel.w - CARD_W - 4)),
-                        top: py,
+                        top,
                         width: CARD_W,
-                        transform: 'translateY(-50%)',
+                        transform: `translateY(${translateY})`,
                         backgroundColor: 'var(--bg-surface)',
                         borderColor: 'var(--border-default)',
                       }}
