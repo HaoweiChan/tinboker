@@ -162,6 +162,10 @@ def create_all_tables():
                 "ALTER TABLE IF EXISTS tag_registry "
                 "ADD COLUMN IF NOT EXISTS aliases JSONB"
             ))
+            conn.execute(text(
+                "ALTER TABLE IF EXISTS tag_registry "
+                "ADD COLUMN IF NOT EXISTS parent_id VARCHAR(120)"
+            ))
             conn.commit()
     elif engine.dialect.name == "sqlite":
         # SQLite has no "ADD COLUMN IF NOT EXISTS" — check PRAGMA first.
@@ -198,6 +202,9 @@ def create_all_tables():
                 conn.commit()
             if tr_cols and "aliases" not in tr_cols:
                 conn.execute(text("ALTER TABLE tag_registry ADD COLUMN aliases JSON"))
+                conn.commit()
+            if tr_cols and "parent_id" not in tr_cols:
+                conn.execute(text("ALTER TABLE tag_registry ADD COLUMN parent_id VARCHAR(120)"))
                 conn.commit()
     # Clean up obsolete cryptocurrency tag registry rows (idempotent)
     with engine.connect() as conn:

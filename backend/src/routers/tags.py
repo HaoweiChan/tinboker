@@ -255,7 +255,8 @@ async def get_sectors_universe(db: Session = Depends(get_session)):
                 "icon_id": r.icon_id,
                 "color_hex": r.color_hex,
                 "aliases": r.aliases or [],
-                "members": r.members or []
+                "members": r.members or [],
+                "parent_id": r.parent_id,
             })
         return {
             "max_tickers": 10,

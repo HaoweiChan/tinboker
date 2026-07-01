@@ -254,6 +254,9 @@ class TagRegistry(Base):
     color_hex = Column(String(16), nullable=True)
     members = Column(JSON, nullable=True)
     aliases = Column(JSON, nullable=True)
+    # For 'sector' rows of exposure_type='theme': the parent industry exposure_id.
+    # Lets industry discussion-heat be derived by aggregating its child themes.
+    parent_id = Column(String(120), nullable=True, index=True)
     updated_by = Column(String(100), nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     created_at = Column(DateTime, default=datetime.utcnow)

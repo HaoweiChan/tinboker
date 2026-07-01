@@ -261,6 +261,7 @@ def sync_sectors(db: Session, sectors: list[dict]) -> int:
             existing.icon_id = icon_id
             existing.color_hex = color_hex
             existing.exposure_type = sector.get("exposure_type")
+            existing.parent_id = sector.get("group")  # pipeline-owned, refresh always
             if not existing.members:
                 existing.members = sector.get("members")
             if not existing.aliases:
@@ -277,6 +278,7 @@ def sync_sectors(db: Session, sectors: list[dict]) -> int:
                 exposure_type=sector.get("exposure_type"),
                 members=sector.get("members"),
                 aliases=sector.get("aliases"),
+                parent_id=sector.get("group"),
             ))
             new_count += 1
 
