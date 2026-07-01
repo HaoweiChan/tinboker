@@ -715,6 +715,104 @@ class FinMindAPIService:
 
         return totals
 
+    def get_tw_latest_closes(self) -> Dict[str, float]:
+        """Return ``{stock_id: latest daily close (NT$)}`` for all TW stocks (bulk, one call)."""
+        from datetime import date, timedelta
+        start = (date.today() - timedelta(days=7)).isoformat()
+        data = self._make_request(
+            {"dataset": "TaiwanStockPrice", "start_date": start}, timeout=120
+        )
+        if not data:
+            return {}
+        latest: Dict[str, tuple] = {}
+        for row in data.get("data") or []:
+            sid = str(row.get("stock_id", "")).strip()
+            close = row.get("close")
+            d = str(row.get("date", ""))
+            if not sid or not close:
+                continue
+            if sid not in latest or d > latest[sid][0]:
+                latest[sid] = (d, float(close))
+        return {sid: v for sid, (_, v) in latest.items()}
+
+    def get_tw_institutional_net_windows(
+        self,
+        tickers: Optional[List[str]] = None,
+        windows: tuple[int, ...] = (1, 5, 20),
+    ) -> Dict[str, Dict[str, Dict[str, float]]]:
+        """Return ``{"total"|"foreign": {window: {stock_id: net institutional flow NT$}}}``.
+
+        三大法人 net buy/sell from FinMind ``TaiwanStockInstitutionalInvestorsBuySell``
+        (covers 上市 + 上櫃 — so no TWSE T86 / TPEx scraping). Fetched per-ticker over the
+        window — the full-market bulk endpoint is unreliable (it gets rate-limited and
+        silently returns empty → all-zero flow), so we mirror get_tw_trading_value_windows.
+        net shares = Σ(buy − sell), value = net shares × latest close. ``foreign`` is 外資
+        (Foreign_Investor + Foreign_Dealer_Self); ``total`` is all三大法人.
+
+        ponytail: value uses the latest close, not each day's close — fine for a money-flow
+        heat signal over 1/5/20d. Switch to per-day close if the magnitude must be exact.
+        """
+        from datetime import date, datetime, timedelta
+
+        tw_tickers = sorted({
+            str(ticker).strip()
+            for ticker in tickers or []
+            if is_tw_ticker(str(ticker).strip())
+        })
+        total: Dict[str, Dict[str, float]] = {str(window): {} for window in windows}
+        foreign: Dict[str, Dict[str, float]] = {str(window): {} for window in windows}
+        if not tw_tickers:
+            return {"total": total, "foreign": foreign}
+
+        closes = self.get_tw_latest_closes()
+        max_window = max(windows)
+        start = (date.today() - timedelta(days=max_window + 20)).isoformat()
+        end = date.today().isoformat()
+        foreign_names = {"Foreign_Investor", "Foreign_Dealer_Self"}
+
+        def fetch_ticker(ticker: str) -> tuple[str, list[dict]]:
+            data = self._make_request(
+                {
+                    "dataset": "TaiwanStockInstitutionalInvestorsBuySell",
+                    "data_id": ticker,
+                    "start_date": start,
+                    "end_date": end,
+                },
+                timeout=30,
+            )
+            return ticker, (data.get("data") if data else []) or []
+
+        max_workers = min(6, len(tw_tickers))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [executor.submit(fetch_ticker, ticker) for ticker in tw_tickers]
+            for future in as_completed(futures):
+                try:
+                    ticker, rows = future.result()
+                except Exception as exc:
+                    logger.debug("FinMind institutional fetch failed: %s", exc)
+                    continue
+                close = closes.get(ticker)
+                if not rows or not close:
+                    continue
+                dates = sorted({str(row.get("date", "")) for row in rows if row.get("date")})
+                if not dates:
+                    continue
+                latest = datetime.strptime(dates[-1], "%Y-%m-%d").date()
+                cutoffs = {str(window): latest - timedelta(days=window - 1) for window in windows}
+                for row in rows:
+                    try:
+                        row_date = datetime.strptime(str(row.get("date", "")), "%Y-%m-%d").date()
+                        net_twd = (float(row.get("buy") or 0) - float(row.get("sell") or 0)) * close
+                    except (TypeError, ValueError):
+                        continue
+                    is_foreign = str(row.get("name", "")) in foreign_names
+                    for window_key, cutoff in cutoffs.items():
+                        if row_date >= cutoff:
+                            total[window_key][ticker] = total[window_key].get(ticker, 0.0) + net_twd
+                            if is_foreign:
+                                foreign[window_key][ticker] = foreign[window_key].get(ticker, 0.0) + net_twd
+        return {"total": total, "foreign": foreign}
+
     def list_news(self, ticker: str, limit: int = 10) -> List[Dict[str, Any]]:
         """
         Get news articles for a ticker.

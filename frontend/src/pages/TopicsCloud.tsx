@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { ChartScatter, Layers, Hash, Info, ListTree, ChevronDown } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { ChartScatter, Layers, Hash, Info, ListTree, ChevronDown, LayoutGrid } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
 import { Segmented } from '@/components/redesign/Segmented';
 import SectorPerformance from '@/components/industry/SectorPerformance';
-import { SectorBoardCard } from '@/components/topics/SectorBoardCard';
+import { SectorBoardCard, type SectorNetFlow } from '@/components/topics/SectorBoardCard';
+import { TagBoardCard } from '@/components/topics/TagBoardCard';
 import { TOPICS_TYPOGRAPHY } from '@/components/topics/topicsTypography';
 import {
   getSectorBoard,
@@ -23,7 +24,12 @@ import { useTagLabels, tagLabelFor } from '@/hooks/useTagLabels';
 
 // ── Sort types ───────────────────────────────────────────────────────────────
 
-type SortKey = 'hotness' | 'avg_change' | 'episode_count';
+type BoardSortKey = 'hotness' | 'avg_change' | 'episode_count';
+type SortKey = BoardSortKey | 'money_flow';
+
+// NT$ → 億 (1e8), rounded; null passes through.
+const toYi = (v?: number | null): number | null => (v == null ? null : +(v / 1e8).toFixed(0));
+
 type BubbleSource = {
   exposure_id: string;
   display_name: string;
@@ -47,6 +53,7 @@ const SORT_OPTIONS: { value: SortKey; label: string }[] = [
   { value: 'hotness', label: '綜合熱度' },
   { value: 'avg_change', label: '今日表現' },
   { value: 'episode_count', label: '討論熱度' },
+  { value: 'money_flow', label: '資金流入' },
 ];
 
 // ── Skeleton cards ─────────────────────────────────────────────────────────
@@ -78,13 +85,45 @@ function BoardSkeleton() {
   );
 }
 
-function sortBoard(items: SectorBoardItem[], sortKey: SortKey): SectorBoardItem[] {
+function sortBoard(items: SectorBoardItem[], sortKey: BoardSortKey): SectorBoardItem[] {
   return [...items].sort((a, b) => {
     if (sortKey === 'hotness') return (b.hotness ?? 0) - (a.hotness ?? 0);
     if (sortKey === 'avg_change') return (b.avg_change ?? -Infinity) - (a.avg_change ?? -Infinity);
     return (b.episode_count ?? 0) - (a.episode_count ?? 0);
   });
 }
+
+// Rounded tinted chip for section-header icons — reads as a designed badge, not a bare glyph.
+const SECTION_TONE = {
+  info: 'bg-accent-info/10 text-accent-info',
+  amber: 'bg-amber-500/10 text-amber-500',
+  primary: 'bg-primary/10 text-primary',
+} as const;
+
+const SectionIcon: React.FC<{ icon: React.ReactNode; tone?: keyof typeof SECTION_TONE }> = ({ icon, tone = 'info' }) => (
+  <span className={`inline-grid place-items-center rounded-lg shrink-0 ${SECTION_TONE[tone]}`} style={{ width: 26, height: 26 }}>
+    {icon}
+  </span>
+);
+
+const BOARD_PREVIEW = 8;
+
+// Centered "顯示全部 N / 收合" toggle shared by every previewable section.
+const ShowAllToggle: React.FC<{ expanded: boolean; total: number; unit: string; onToggle: () => void }> = ({
+  expanded, total, unit, onToggle,
+}) => (
+  <div className="mt-3 flex justify-center">
+    <button
+      type="button"
+      onClick={onToggle}
+      className={`flex items-center gap-1.5 rounded-lg border border-border bg-card px-4 py-2 ${TOPICS_TYPOGRAPHY.className.meta}
+                  text-muted-foreground transition-colors hover:border-border/80 hover:text-foreground`}
+    >
+      <span>{expanded ? '收合' : `顯示全部 ${total} 個${unit}`}</span>
+      <ChevronDown size={14} className={`transition-transform ${expanded ? 'rotate-180' : ''}`} />
+    </button>
+  </div>
+);
 
 // ── Main page ──────────────────────────────────────────────────────────────
 
@@ -98,6 +137,9 @@ export const TopicsCloud: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [perfLoading, setPerfLoading] = useState(true);
   const [sortKey, setSortKey] = useState<SortKey>('hotness');
+  const [boardExpanded, setBoardExpanded] = useState(false);
+  const [tagsExpanded, setTagsExpanded] = useState(false);
+  const [industryExpanded, setIndustryExpanded] = useState(false);
   const [tags, setTags] = useState<TrendingTag[]>([]);
   const [tf, setTf] = useState<TF>('1');
   const [trailing, setTrailing] = useState<Record<string, TrailingPerf>>({});
@@ -156,6 +198,18 @@ export const TopicsCloud: React.FC = () => {
     () => perf.filter((p) => p.exposure_type === 'theme'),
     [perf],
   );
+
+  // exposure_id → 5d 三大法人 / 外資 net flow (億), for the board metric + 資金流入 sort.
+  const netFlowByExposure = useMemo(() => {
+    const m: Record<string, SectorNetFlow> = {};
+    for (const p of perf) {
+      m[p.exposure_id] = {
+        foreign5d: toYi(p.foreign_net_windows_twd?.['5']),
+        total5d: toYi(p.net_buy_windows_twd?.['5']),
+      };
+    }
+    return m;
+  }, [perf]);
 
   // exposure_id → constituent tickers (from the board), so the bubble Y can be recomputed
   // per timeframe from trailing returns without the perf endpoint carrying member lists.
@@ -271,7 +325,16 @@ export const TopicsCloud: React.FC = () => {
     [themePerf, themeBoard, boardByExposure, tf, memberReturn, iconByExposure],
   );
 
-  const sortedThemeBoard = useMemo(() => sortBoard(themeBoard, sortKey), [themeBoard, sortKey]);
+  const sortedThemeBoard = useMemo(() => {
+    if (sortKey === 'money_flow') {
+      return [...themeBoard].sort((a, b) => {
+        const av = netFlowByExposure[a.exposure_id]?.foreign5d ?? -Infinity;
+        const bv = netFlowByExposure[b.exposure_id]?.foreign5d ?? -Infinity;
+        return bv - av;
+      });
+    }
+    return sortBoard(themeBoard, sortKey);
+  }, [themeBoard, sortKey, netFlowByExposure]);
   // Industry drawer is secondary — always hotness-sorted, no own control.
   const sortedIndustryBoard = useMemo(() => sortBoard(industryBoard, 'hotness'), [industryBoard]);
 
@@ -304,8 +367,8 @@ export const TopicsCloud: React.FC = () => {
         </p>
 
         {/* ── THEME BUBBLE CHART (hero) ─────────────────────────────── */}
-        <div className="flex items-center gap-1.5 mb-2.5">
-          <ChartScatter size={iconSize.section} className="text-accent-info" />
+        <div className="flex items-center gap-2 mb-2.5">
+          <SectionIcon icon={<ChartScatter size={15} />} tone="info" />
           <h2 className={`${type.sectionTitle} font-semibold`}>題材泡泡圖</h2>
         </div>
         <div className="mb-7 rounded-xl border border-border bg-card overflow-hidden md:h-[520px]">
@@ -333,72 +396,75 @@ export const TopicsCloud: React.FC = () => {
           )}
         </div>
 
-        {/* ── THEME BOARD ───────────────────────────────────────────── */}
+        {/* ── THEME BOARD (collapsed to a preview so the tags below stay reachable) ── */}
         <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-1.5">
-            <ListTree size={iconSize.section} className="text-accent-info" />
+          <div className="flex items-center gap-2">
+            <SectionIcon icon={<LayoutGrid size={15} />} tone="info" />
             <h2 className={`${type.sectionTitle} font-semibold`}>題材總覽</h2>
           </div>
           <Segmented options={SORT_OPTIONS} value={sortKey} onChange={setSortKey} />
         </div>
-        <BoardGrid loading={loading} items={sortedThemeBoard} empty="目前沒有題材資料。" />
-
-        {/* ── 總經與焦點議題 (tag chip strip) ────────────────────────── */}
-        <div className="flex items-center gap-1.5 mt-9 mb-1.5">
-          <Hash size={iconSize.section} className="text-amber-500" />
-          <h2 className={`${type.sectionTitle} font-semibold`}>總經與焦點議題</h2>
-        </div>
-        <p className={`${type.meta} text-muted-foreground mb-3`}>
-          跨產業的政策與總經話題，點擊探索相關集數。
-        </p>
-        {tags.length > 0 ? (
-          <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 [scrollbar-width:thin]">
-            {tags.map((t) => (
-              <Link
-                key={t.id}
-                to={`/topics/${encodeURIComponent(t.id)}`}
-                className={`group shrink-0 inline-flex items-center gap-1.5 rounded-full border border-border bg-card
-                            px-3 py-1.5 transition-colors hover:border-amber-500/50 hover:bg-amber-500/[0.06] ${type.meta}`}
-              >
-                <Hash size={11} className="text-amber-500 shrink-0" />
-                <span className="font-medium text-foreground/85 whitespace-nowrap group-hover:text-foreground">
-                  {tagLabelFor(t.id, tagLabels)}
-                </span>
-                <span className="font-mono tabular-nums text-muted-foreground whitespace-nowrap">{t.scoped_count}</span>
-              </Link>
-            ))}
-          </div>
-        ) : (
-          <div className={`bg-card border border-border rounded-xl p-6 text-center ${type.empty} text-muted-foreground`}>
-            目前沒有議題資料。
-          </div>
+        <BoardGrid
+          loading={loading}
+          items={boardExpanded ? sortedThemeBoard : sortedThemeBoard.slice(0, BOARD_PREVIEW)}
+          empty="目前沒有題材資料。"
+          netFlowByExposure={netFlowByExposure}
+        />
+        {!loading && sortedThemeBoard.length > BOARD_PREVIEW && (
+          <ShowAllToggle expanded={boardExpanded} total={sortedThemeBoard.length} unit="題材" onToggle={() => setBoardExpanded((v) => !v)} />
         )}
 
-        {/* ── 產業地圖 (collapsible secondary market map) ─────────────── */}
-        <details className="group mt-9 rounded-xl border border-border overflow-hidden">
-          <summary className="flex items-center justify-between gap-2 px-4 py-3 cursor-pointer list-none select-none [&::-webkit-details-marker]:hidden hover:bg-muted/30 transition-colors">
-            <div className="flex items-center gap-1.5 min-w-0">
-              <ListTree size={iconSize.section} className="text-primary shrink-0" />
-              <h2 className={`${type.sectionTitle} font-semibold`}>產業地圖</h2>
-              <span className={`${type.meta} text-muted-foreground truncate`}>
-                完整市場分類{industryBoard.length > 0 ? ` · ${industryBoard.length} 產業` : ''}
-              </span>
+        {/* ── 總經與焦點議題 (macro topics, as cards) ─────────────────── */}
+        {tags.length > 0 && (
+          <>
+            <div className="flex items-center gap-1.5 mt-9 mb-1">
+              <Hash size={iconSize.section} className="text-amber-500" />
+              <h2 className={`${type.sectionTitle} font-semibold`}>總經與焦點議題</h2>
             </div>
-            <ChevronDown size={16} className="text-muted-foreground shrink-0 transition-transform group-open:rotate-180" />
-          </summary>
-          <div className="px-4 pb-4 pt-1">
+            <p className={`${type.meta} text-muted-foreground mb-3`}>政策與大盤風向，點擊看相關集數。</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {(tagsExpanded ? tags : tags.slice(0, BOARD_PREVIEW)).map((t) => (
+                <TagBoardCard key={t.id} tag={t} label={tagLabelFor(t.id, tagLabels)} />
+              ))}
+            </div>
+            {tags.length > BOARD_PREVIEW && (
+              <ShowAllToggle expanded={tagsExpanded} total={tags.length} unit="議題" onToggle={() => setTagsExpanded((v) => !v)} />
+            )}
+          </>
+        )}
+
+        {/* ── 產業地圖 (secondary market map — preview + toggle) ──────── */}
+        {industryBoard.length > 0 && (
+          <>
+            <div className="flex items-center gap-2 mt-9 mb-1">
+              <SectionIcon icon={<ListTree size={15} />} tone="primary" />
+              <h2 className={`${type.sectionTitle} font-semibold`}>產業地圖</h2>
+              <span className={`${type.meta} text-muted-foreground`}>· 完整市場分類 · {industryBoard.length} 產業</span>
+            </div>
             <p className={`${type.meta} text-muted-foreground mb-3 max-w-[60ch]`}>
               台股完整產業分類（個股各歸一類）。題材為跨產業概念，同一檔個股可同時屬於多個題材。
             </p>
-            <BoardGrid loading={loading} items={sortedIndustryBoard} empty="目前沒有產業資料。" />
-          </div>
-        </details>
+            <BoardGrid
+              loading={loading}
+              items={industryExpanded ? sortedIndustryBoard : sortedIndustryBoard.slice(0, BOARD_PREVIEW)}
+              empty="目前沒有產業資料。"
+            />
+            {sortedIndustryBoard.length > BOARD_PREVIEW && (
+              <ShowAllToggle expanded={industryExpanded} total={sortedIndustryBoard.length} unit="產業" onToggle={() => setIndustryExpanded((v) => !v)} />
+            )}
+          </>
+        )}
       </PageContent>
     </>
   );
 };
 
-function BoardGrid({ loading, items, empty }: { loading: boolean; items: SectorBoardItem[]; empty: string }) {
+function BoardGrid({ loading, items, empty, netFlowByExposure }: {
+  loading: boolean;
+  items: SectorBoardItem[];
+  empty: string;
+  netFlowByExposure?: Record<string, SectorNetFlow>;
+}) {
   const type = TOPICS_TYPOGRAPHY.className;
   if (loading) {
     return (
@@ -417,7 +483,7 @@ function BoardGrid({ loading, items, empty }: { loading: boolean; items: SectorB
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
       {items.map((s) => (
-        <SectorBoardCard key={s.exposure_id} sector={s} />
+        <SectorBoardCard key={s.exposure_id} sector={s} netFlow={netFlowByExposure?.[s.exposure_id]} />
       ))}
     </div>
   );

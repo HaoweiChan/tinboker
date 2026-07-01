@@ -1423,6 +1423,12 @@ class PodcastService:
             for sector in board
             for m in sector.get("members") or []
         ]
+        # 三大法人 net flow FIRST — its single full-market bulk call gets starved/rate-limited
+        # if it runs after the per-ticker trading-value fetches, silently returning empty
+        # (which shows up as all-zero money flow). TW-only via FinMind; US members contribute 0.
+        inst = await self._tw_institutional_net_windows_cached(all_tickers)
+        inst_total = inst.get("total") or {}
+        inst_foreign = inst.get("foreign") or {}
         caps = await self._tw_market_caps_cached()
         us_caps = await self._us_market_caps_cached(all_tickers)
         trading_windows = await self._tw_trading_value_windows_cached(all_tickers)
@@ -1444,17 +1450,34 @@ class PodcastService:
                 )
                 for window, values in trading_windows.items()
             }
+            net_total = {
+                window: sum(values.get((m.get("ticker") or "").strip(), 0.0) for m in members)
+                for window, values in inst_total.items()
+            }
+            net_foreign = {
+                window: sum(values.get((m.get("ticker") or "").strip(), 0.0) for m in members)
+                for window, values in inst_foreign.items()
+            }
+            # Round server-side so the chart/tooltips get clean numbers (no float noise).
+            # int() forces plain ints for the big NT$ values (FinMind returns numpy floats).
+            heat = s.get("heat")
+            avg = s.get("avg_change")
+            tvals_r = {k: int(round(v)) for k, v in exposure_tvals.items()}
+            net_total_r = {k: int(round(v)) for k, v in net_total.items()}
+            net_foreign_r = {k: int(round(v)) for k, v in net_foreign.items()}
             out.append({
                 "exposure_id": s["exposure_id"],
                 "exposure_type": s.get("exposure_type"),
                 "display_name": s["display_name"],
                 "color_hex": s.get("color_hex"),
-                "market_cap_twd": total_mc or None,
-                "return_pct": s.get("avg_change"),
+                "market_cap_twd": int(round(total_mc)) or None,
+                "return_pct": round(float(avg), 2) if avg is not None else None,
                 "episode_count": s.get("episode_count", 0),
-                "heat": s.get("heat"),
-                "trading_value_twd": exposure_tvals.get("1") or None,
-                "trading_value_windows_twd": exposure_tvals,
+                "heat": round(float(heat), 1) if heat is not None else None,
+                "trading_value_twd": tvals_r.get("1") or None,
+                "trading_value_windows_twd": tvals_r,
+                "net_buy_windows_twd": net_total_r or None,
+                "foreign_net_windows_twd": net_foreign_r or None,
             })
         out.sort(key=lambda x: ((x["heat"] or 0.0), x["episode_count"]), reverse=True)
         return out
@@ -1496,6 +1519,35 @@ class PodcastService:
             self._tw_trading_value_windows_memory_cache = {cache_key: (time.time(), vals)}
             await cache_set(cache_key, json.dumps(vals), CACHE_TTL["stock_ohlcv"])  # 1 day
         return vals or {}
+
+    async def _tw_institutional_net_windows_cached(self, tickers: list[str]) -> dict:
+        """``{"total"|"foreign": {window: {stock_id: net 三大法人 flow NT$}}}`` (daily-cached)."""
+        universe = ",".join(sorted({t.strip() for t in tickers if t.strip()}))
+        universe_key = hashlib.sha1(universe.encode("utf-8")).hexdigest()[:12] if universe else "empty"
+        cache_key = f"sectors:tw_institutional_net_windows:v1:{universe_key}"
+        memory_cache = getattr(self, "_tw_institutional_net_windows_memory_cache", {})
+        cached_at, memory_value = memory_cache.get(cache_key, (0.0, None))
+        if memory_value and time.time() - cached_at < CACHE_TTL["stock_ohlcv"]:
+            return memory_value
+
+        cached = await cache_get(cache_key)
+        if cached:
+            try:
+                vals = json.loads(cached)
+                self._tw_institutional_net_windows_memory_cache = {cache_key: (time.time(), vals)}
+                return vals
+            except Exception:
+                pass
+        vals = await asyncio.to_thread(self._finmind().get_tw_institutional_net_windows, tickers)
+        # Only cache a result that actually carries per-stock data — a transient empty fetch
+        # (FinMind rate-limit) must not poison the day-long cache with all-zero flow.
+        has_data = bool(vals) and any(
+            bool(window) for key in ("total", "foreign") for window in (vals.get(key) or {}).values()
+        )
+        if has_data:
+            self._tw_institutional_net_windows_memory_cache = {cache_key: (time.time(), vals)}
+            await cache_set(cache_key, json.dumps(vals), CACHE_TTL["stock_ohlcv"])  # 1 day
+        return vals or {"total": {}, "foreign": {}}
 
     def _read_us_market_caps_twd(self, tickers: list[str]) -> dict[str, float]:
         """Read warmed US market caps and convert USD → TWD for aggregate charts."""

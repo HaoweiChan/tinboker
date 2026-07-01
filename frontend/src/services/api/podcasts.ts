@@ -584,6 +584,8 @@ export interface ExposurePerformanceItem {
   market_cap_twd?: number | null; // industries only
   trading_value_twd?: number | null;
   trading_value_windows_twd?: Record<string, number> | null;
+  net_buy_windows_twd?: Record<string, number> | null;     // 三大法人 net by window (NT$, TW only)
+  foreign_net_windows_twd?: Record<string, number> | null; // 外資 net by window (NT$, TW only)
 }
 
 export async function getExposurePerformance(): Promise<ExposurePerformanceItem[]> {
