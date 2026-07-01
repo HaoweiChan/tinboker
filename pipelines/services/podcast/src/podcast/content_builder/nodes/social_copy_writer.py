@@ -27,6 +27,18 @@ MAX_TOPICS = 10
 SECTION_BODY_CHARS = 1200
 OVERVIEW_CHARS = 1000
 
+# Host nicknames the writer may use instead of the generic "主持人"/"他" — keyed by a
+# substring match against the episode's podcast_name (state["source"]). Passed to the
+# LLM as a *user*-message value (never baked into the system prompt as an example —
+# see test_prompt_has_no_hardcoded_host_name) so an unlisted show never inherits a
+# name that isn't its own. Extend as new shows are added.
+_HOST_NICKNAMES: dict[str, tuple[str, ...]] = {
+    "股癌": ("孟恭", "癌大", "股癌"),
+    "游庭皓": ("皓哥",),
+    "財經皓角": ("皓哥",),
+}
+_NO_HOST_NICKNAME = "（未提供，不要編造，一律用「主持人」或「他」）"
+
 # A level-2 markdown heading marks a summary section. The summary appends a
 # ``(#time:NNN)`` anchor to headings — strip it for a clean comment heading.
 _SECTION_RE = re.compile(r"^\s{0,3}##\s+(.+?)\s*$")
@@ -43,6 +55,14 @@ def _cards_for_copy(state: PipelineState) -> list[dict[str, Any]]:
         state.get("key_insights") or [],
         state.get("episode_title") or "",
     )
+
+
+def _host_nicknames_for(source: str) -> str:
+    """A comma-separated nickname list for the given podcast name, or the no-nickname marker."""
+    for key, names in _HOST_NICKNAMES.items():
+        if key in (source or ""):
+            return "、".join(names)
+    return _NO_HOST_NICKNAME
 
 
 def _clean_heading(heading: str) -> str:
@@ -130,9 +150,11 @@ def build_messages(state: PipelineState) -> list[dict[str, str]]:
     overview = _summary_overview(summary) or summary
     overview = overview[:OVERVIEW_CHARS] if overview else "（無摘要，請從下方各段重點抓主軸）"
 
+    source = state.get("source") or "Podcast"
     user_msg = prompts["user"].format(
-        source=state.get("source") or "Podcast",
+        source=source,
         episode_title=state.get("episode_title") or "Episode",
+        host_nicknames=_host_nicknames_for(source),
         overview=overview,
         sections=json.dumps(slim, ensure_ascii=False, indent=2),
     )
