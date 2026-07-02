@@ -11,3 +11,4 @@ export * from './news';
 export * from './content';
 export * from './visuals';
 export * from './podcasts';
+export * from './mentions';

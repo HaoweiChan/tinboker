@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { Star, Plus } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
 import { Change, StatGroup, SentBar, SentimentChip, EpisodeCardV2, type StatItem } from '@/components/redesign';
 import { apiEpisodeToCardV2 } from '@/components/redesign/episodeAdapter';
 import { TickerInsightCard } from '@/components/financial/TickerInsightCard';
+import { MentionReturnChips } from '@/components/financial/MentionReturnChips';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/store/useAppStore';
 import { useRequireAuth } from '@/hooks/useRequireAuth';
@@ -18,6 +19,8 @@ import { priceWebSocketClient } from '@/services/websocket/priceWebSocket';
 import TradingViewChart from '@/components/charts/TradingViewChart';
 import { ChartControls } from '@/components/charts/ChartControls';
 import { getInsightsByTicker, getRecentBuzz, getSortedPodcasts, type Podcast } from '@/services/api/podcasts';
+import { getTickerMentions, type TickerMentionsResponse } from '@/services/api/mentions';
+import { formatDate } from '@/lib/date';
 import { transformApiEpisodeToMock } from '@/services/api/transformers';
 import { useStockPriceMap } from '@/hooks/useStockPriceMap';
 import { useStockPriceSinceMap } from '@/hooks/useStockPriceSinceMap';
@@ -303,6 +306,8 @@ export const StockDashboard: React.FC = () => {
   const episodeIds = useMemo(() => episodes.map((e) => e.id), [episodes]);
   const sentimentMap = useEpisodeSentimentMap(episodeIds);
   const [insights, setInsights] = useState<TickerInsight[]>([]);
+  // Post-mention 1/5/20/60 trading-day performance (TKB-001); null hides the section.
+  const [tickerMentions, setTickerMentions] = useState<TickerMentionsResponse | null>(null);
   const [buzzTicker, setBuzzTicker] = useState<TickerTrending | null>(null);
   const [podcasts, setPodcasts] = useState<Podcast[]>([]);
   const [episodesLoading, setEpisodesLoading] = useState(true);
@@ -341,6 +346,22 @@ export const StockDashboard: React.FC = () => {
       })
       .catch(() => {
         if (!cancelled) setInsights([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [symbol]);
+
+  useEffect(() => {
+    if (!symbol) return;
+    let cancelled = false;
+    setTickerMentions(null);
+    getTickerMentions(symbol)
+      .then((res) => {
+        if (!cancelled) setTickerMentions(res.mentions.length > 0 ? res : null);
+      })
+      .catch(() => {
+        if (!cancelled) setTickerMentions(null);
       });
     return () => {
       cancelled = true;
@@ -447,6 +468,29 @@ export const StockDashboard: React.FC = () => {
                 />
               ))}
             </div>
+          </section>
+        )}
+
+        {tickerMentions && tickerMentions.mentions.length > 0 && (
+          <section className="mb-[18px]">
+            <h2 className="text-sm font-semibold text-muted-foreground mb-3">播客提及後續表現</h2>
+            <div className="bg-card border border-border rounded-md divide-y divide-border">
+              {tickerMentions.mentions.slice(0, 10).map((m, idx) => (
+                <Link
+                  key={`${m.episode_id}-${idx}`}
+                  to={`/episode/${encodeURIComponent(m.episode_id)}`}
+                  className="block px-4 py-3 hover:bg-muted/40 transition-colors"
+                >
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-medium text-foreground truncate">{m.podcaster || '—'}</span>
+                    <span className="text-xs text-muted-foreground tabular-nums shrink-0">{formatDate(m.mentioned_at)}</span>
+                    <SentimentChip sentiment={normalizeSentiment(m.sentiment_label)} />
+                  </div>
+                  <MentionReturnChips performance={m.performance} className="mt-2 max-w-sm" />
+                </Link>
+              ))}
+            </div>
+            <p className="text-2xs text-muted-foreground/70 leading-relaxed mt-2">{tickerMentions.disclaimer}</p>
           </section>
         )}
 

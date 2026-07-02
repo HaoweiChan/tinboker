@@ -477,6 +477,56 @@ export const CommentListSchema = z.object({
 });
 export type CommentList = z.infer<typeof CommentListSchema>;
 
+// ── Podcast mentions & post-mention performance (TKB-001) ────────────────────
+
+/** Post-mention returns over 1/5/20/60 *trading days*. Each window is null until
+ *  it has elapsed (or when no close data exists). Ticker snapshots carry
+ *  baseline_close; sector snapshots carry member_count instead. */
+export const MentionPerformanceSchema = z.object({
+  baseline_close: z.number().nullable().optional(),
+  member_count: z.number().nullable().optional(),
+  r1d: z.number().nullable(),
+  r5d: z.number().nullable(),
+  r20d: z.number().nullable(),
+  r60d: z.number().nullable(),
+});
+
+export const ContentMentionSchema = z.object({
+  episode_id: z.string(),
+  podcaster: z.string().nullable(),
+  mention_type: z.string(),
+  ticker: z.string().nullable(),
+  exposure_id: z.string().nullable(),
+  display_name: z.string().nullable(),
+  market: z.string().nullable(),
+  mentioned_at: z.string(),
+  mention_start_s: z.number().nullable(),
+  confidence: z.number().nullable(),
+  extraction_method: z.string().nullable(),
+  sentiment_label: z.string().nullable(),
+  thesis: z.string().nullable(),
+  /** null when the performance snapshot hasn't been computed yet. */
+  performance: MentionPerformanceSchema.nullable(),
+});
+
+export const TickerMentionsResponseSchema = z.object({
+  ticker: z.string(),
+  mentions: z.array(ContentMentionSchema),
+  disclaimer: z.string(),
+});
+
+export const EpisodeMentionsResponseSchema = z.object({
+  episode_id: z.string(),
+  ticker_mentions: z.array(ContentMentionSchema),
+  sector_mentions: z.array(ContentMentionSchema),
+  disclaimer: z.string(),
+});
+
+export type MentionPerformance = z.infer<typeof MentionPerformanceSchema>;
+export type ContentMention = z.infer<typeof ContentMentionSchema>;
+export type TickerMentionsResponse = z.infer<typeof TickerMentionsResponseSchema>;
+export type EpisodeMentionsResponse = z.infer<typeof EpisodeMentionsResponseSchema>;
+
 /**
  * Parse API response with Zod schema
  * Throws descriptive error on validation failure
