@@ -1105,6 +1105,18 @@ class PodcastService:
     _BOARD_W_PRICE: float = 0.5
     _BOARD_W_MENTION: float = 0.5
 
+    # Discussion-heat blend (serve-time knobs — retune without a rescan/backfill).
+    # heat = W_DIRECT·direct + W_TICKER·(ticker_implied / attr_size**NORM_ALPHA)
+    #   direct         = Σ recency-weight over episodes that NAME the sector (verified
+    #                    sector_exposures). Size-independent → not normalised.
+    #   ticker_implied = Σ recency-weight over episodes that mention any CONSTITUENT
+    #                    (ticker → theme(s) → parent industry). Normalised by the
+    #                    sector's constituent count (sub-linear) so a broad sector
+    #                    isn't hot purely by breadth.
+    _HEAT_W_DIRECT: float = 1.0
+    _HEAT_W_TICKER: float = 1.0
+    _HEAT_NORM_ALPHA: float = 0.5
+
     # ── Trending tags (auto-surface by volume) ────────────────────────
     # A tag must have >= this many scoped episodes (recency + language window) to
     # surface on the board, filtering one-off noise; the board shows the top N.
@@ -1114,7 +1126,7 @@ class PodcastService:
     # stream_documents_projected so the ~2700-doc scan skips transcript/summary
     # refs etc. Covers the tally + scoping (_dict_release_ms, allowlist, retracted).
     _SECTOR_SCAN_FIELDS = [
-        "sector_exposures", "podcast_name", "retracted_at",
+        "sector_exposures", "related_tickers", "podcast_name", "retracted_at",
         "released_at_ms", "spotify_release_date", "created_time",
     ]
 
@@ -1209,6 +1221,73 @@ class PodcastService:
         except Exception:
             pass
 
+    @staticmethod
+    def _sector_membership_index() -> dict:
+        """ticker -> sector attribution index, built fresh from tag_registry each
+        recompute (so admin member edits take effect without a restart).
+
+        - ``ticker_to_sectors``: {TICKER: {exposure_id}} — every theme a ticker is a
+          constituent of, PLUS those themes' parent industries (and, for robustness,
+          any industry it is a leader of).
+        - ``attr_size``: {exposure_id: int} constituent count for sub-linear
+          normalisation — theme = its members, industry = union of its themes'.
+        - ``meta``: {exposure_id: {display_name, exposure_type}} so a sector surfaced
+          only via ticker mentions still renders.
+        - ``ticker_name``: {TICKER: name} to label implied-only members.
+        """
+        from src.database import postgres
+        from src.database.models import TagRegistry
+        empty = {"ticker_to_sectors": {}, "attr_size": {}, "meta": {}, "ticker_name": {}}
+        try:
+            if postgres.SessionLocal is None:
+                postgres.init_engine()
+            db = postgres.SessionLocal()
+            try:
+                rows = db.query(TagRegistry).filter(TagRegistry.kind == "sector").all()
+            finally:
+                db.close()
+        except Exception as exc:  # noqa: BLE001 — never let a bad query break the board
+            logger.warning("sector_membership_index: query failed: %s", exc)
+            return empty
+
+        ticker_to_sectors: dict[str, set] = {}
+        attr_size: dict[str, int] = {}
+        meta: dict[str, dict] = {}
+        ticker_name: dict[str, str] = {}
+        industry_tickers: dict[str, set] = {}  # industry eid -> union of child-theme tickers
+        for r in rows:
+            eid = r.exposure_id
+            if not eid or eid in EXCLUDED_EXPOSURE_IDS:
+                continue
+            etype = r.exposure_type or "theme"
+            meta[eid] = {"display_name": r.display_zh or eid, "exposure_type": etype}
+            tickers = set()
+            for m in r.members or []:
+                t = str((m or {}).get("ticker") or "").strip().upper()
+                if not t:
+                    continue
+                tickers.add(t)
+                ticker_name.setdefault(t, (m or {}).get("name") or "")
+            attr_size[eid] = len(tickers) or 1
+            if etype == "theme":
+                parent = r.parent_id if (r.parent_id and r.parent_id not in EXCLUDED_EXPOSURE_IDS) else None
+                for t in tickers:
+                    s = ticker_to_sectors.setdefault(t, set())
+                    s.add(eid)
+                    if parent:
+                        s.add(parent)
+                if parent:
+                    industry_tickers.setdefault(parent, set()).update(tickers)
+            else:  # industry — leaders credit the industry directly (covers ・其他-only leaders)
+                for t in tickers:
+                    ticker_to_sectors.setdefault(t, set()).add(eid)
+        # industry attribution size = union of its themes' constituents (fallback to leaders)
+        for eid, tset in industry_tickers.items():
+            if tset:
+                attr_size[eid] = len(tset)
+        return {"ticker_to_sectors": ticker_to_sectors, "attr_size": attr_size,
+                "meta": meta, "ticker_name": ticker_name}
+
     async def _compute_sector_board(self) -> list[dict]:
         """Scan + aggregate + price-join the board (no cache read/write).
 
@@ -1236,8 +1315,14 @@ class PodcastService:
         import time
         now_ms = int(time.time() * 1000)
         HALF_LIFE_DAYS = 7.0
-        counts: dict[str, int] = {}
-        heat: dict[str, float] = {}      # exposure_id -> recency-weighted discussion heat
+        idx = await asyncio.to_thread(self._sector_membership_index)
+        ticker_to_sectors = idx["ticker_to_sectors"]
+        attr_size = idx["attr_size"]
+        uni_meta = idx["meta"]
+        ticker_name = idx["ticker_name"]
+        counts: dict[str, int] = {}      # exposure_id -> episodes touching it (direct OR implied)
+        direct_heat: dict[str, float] = {}   # recency-weighted heat from NAMED mentions
+        ticker_heat: dict[str, float] = {}   # recency-weighted heat from CONSTITUENT mentions
         meta: dict[str, dict] = {}       # exposure_id -> {display_name, exposure_type}
         ticker_map: dict[str, dict[str, str]] = {}  # exposure_id -> {ticker: first-seen name}
 
@@ -1251,12 +1336,14 @@ class PodcastService:
                 continue
             age_days = max(0.0, (now_ms - rel_ms) / 86_400_000.0)
             weight = 0.5 ** (age_days / HALF_LIFE_DAYS)
+
+            # 1. DIRECT — sectors this episode explicitly NAMES (verified sector_exposures).
+            direct_eids: set[str] = set()
             for entry in doc.get("sector_exposures") or []:
                 eid = normalize_exposure_id(entry.get("exposure_id"))
                 if not eid or eid in EXCLUDED_EXPOSURE_IDS:
                     continue
-                counts[eid] = counts.get(eid, 0) + 1
-                heat[eid] = heat.get(eid, 0.0) + weight
+                direct_eids.add(eid)
                 if eid not in meta:
                     meta[eid] = {
                         "display_name": entry.get("display_name") or eid,
@@ -1267,6 +1354,30 @@ class PodcastService:
                     ticker = (rt.get("ticker") or "").strip()
                     if ticker and ticker not in sector_tickers and len(sector_tickers) < 12:
                         sector_tickers[ticker] = rt.get("name") or ""
+
+            # 2. TICKER-IMPLIED — mentioned constituents -> their theme(s) + parent industry.
+            implied_eids: set[str] = set()
+            for tk in doc.get("related_tickers") or []:
+                sym = str(tk).split(".")[0].strip().upper()
+                for eid in ticker_to_sectors.get(sym, ()):  # index already drops EXCLUDED ids
+                    implied_eids.add(eid)
+                    sector_tickers = ticker_map.setdefault(eid, {})
+                    if sym not in sector_tickers and len(sector_tickers) < 12:
+                        sector_tickers[sym] = ticker_name.get(sym, "")
+
+            # 3. Accumulate — binary per sector per episode; the union drives episode_count.
+            for eid in direct_eids:
+                direct_heat[eid] = direct_heat.get(eid, 0.0) + weight
+            for eid in implied_eids:
+                ticker_heat[eid] = ticker_heat.get(eid, 0.0) + weight
+            for eid in direct_eids | implied_eids:
+                counts[eid] = counts.get(eid, 0) + 1
+                if eid not in meta:
+                    um = uni_meta.get(eid, {})
+                    meta[eid] = {
+                        "display_name": um.get("display_name") or eid,
+                        "exposure_type": um.get("exposure_type") or "industry",
+                    }
 
         if not counts:
             return []
@@ -1326,6 +1437,16 @@ class PodcastService:
             else:
                 sector_series = []
 
+            # Blend the two recency-weighted components. direct is size-independent;
+            # ticker_implied is normalised sub-linearly by constituent count so a broad
+            # sector isn't hot purely by breadth. Raw components are kept for retuning.
+            d_heat = direct_heat.get(eid, 0.0)
+            t_heat = ticker_heat.get(eid, 0.0)
+            size = attr_size.get(eid, 1) or 1
+            blended_heat = (
+                self._HEAT_W_DIRECT * d_heat
+                + self._HEAT_W_TICKER * (t_heat / (size ** self._HEAT_NORM_ALPHA))
+            )
             visual = visual_for(eid) or {}
             sectors_raw.append({
                 "exposure_id": eid,
@@ -1334,7 +1455,10 @@ class PodcastService:
                 "icon_id": visual.get("icon_id"),
                 "color_hex": visual.get("color_hex"),
                 "episode_count": count,
-                "heat": round(heat.get(eid, 0.0), 2),
+                "heat": round(blended_heat, 3),
+                "direct_heat": round(d_heat, 3),
+                "ticker_heat": round(t_heat, 3),
+                "attr_size": size,
                 "avg_change": avg_change,
                 "members": members,
                 "series": sector_series,
@@ -1473,7 +1597,12 @@ class PodcastService:
                 "market_cap_twd": int(round(total_mc)) or None,
                 "return_pct": round(float(avg), 2) if avg is not None else None,
                 "episode_count": s.get("episode_count", 0),
-                "heat": round(float(heat), 1) if heat is not None else None,
+                "heat": round(float(heat), 2) if heat is not None else None,
+                # raw components + constituent count -> weights/normalisation are
+                # retunable from these without a rescan.
+                "heat_direct": s.get("direct_heat"),
+                "heat_ticker": s.get("ticker_heat"),
+                "attr_size": s.get("attr_size"),
                 "trading_value_twd": tvals_r.get("1") or None,
                 "trading_value_windows_twd": tvals_r,
                 "net_buy_windows_twd": net_total_r or None,

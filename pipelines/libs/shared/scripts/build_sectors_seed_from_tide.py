@@ -15,9 +15,10 @@ US tickers are intentionally dropped — a separate US topics tab handles them.
 
 Display metadata (slug / icon / colour / aliases / per-ticker reasons) is NOT in
 tide, so we reuse it from the current seed by concept-matching, and fall back to
-per-group defaults for genuinely new themes. Members are capped to a handful of
-"leaders" (current-curated tickers first, then tide's own order) so the board /
-cards stay the same size as today.
+per-group defaults for genuinely new themes. Themes carry their FULL constituent
+list (the backend inverts it into a ticker->sector map for discussion-heat
+attribution); industries keep a handful of display "leaders" and derive heat from
+their child themes via the ``group`` link. Display caps to leaders at serve time.
 
 Run:  python build_sectors_seed_from_tide.py [--tide DIR] [--write]
 Without --write it prints a summary and diff stats only.
@@ -245,8 +246,13 @@ def make_member(ticker, names, reason_by_ticker, name_en_by_ticker):
     }
 
 
-def pick_leaders(stocks, curated_tw):
-    """Current-curated tickers first (they are hand-picked leaders), then tide order."""
+def order_members(stocks, curated_tw, cap=None):
+    """Order tickers leaders-first (current-curated are hand-picked), then tide order.
+
+    ``cap`` limits the list — used for industry *display* leaders. ``None`` keeps the
+    full constituent set (themes), which the backend inverts into the ticker->sector
+    map that drives discussion-heat attribution.
+    """
     seen, ordered = set(), []
     for t in stocks:
         if t in curated_tw and t not in seen:
@@ -256,7 +262,7 @@ def pick_leaders(stocks, curated_tw):
         if t not in seen:
             ordered.append(t)
             seen.add(t)
-    return ordered[:LEADERS_CAP]
+    return ordered[:cap] if cap else ordered
 
 
 def build(tide_dir: Path):
@@ -280,13 +286,14 @@ def build(tide_dir: Path):
         union = list(OrderedDict.fromkeys(
             t for sn in subnames for t in sub_stocks.get(sn, [])
         ))
-        leaders = pick_leaders(union, curated_tw)
+        leaders = order_members(union, curated_tw, cap=LEADERS_CAP)
         seed.append({
             "exposure_id": slug,
             "exposure_type": "industry",
             "display_name": group,
             "icon_id": icon,
             "color_hex": color,
+            "group": None,  # industries are top-level
             "aliases": aliases,
             "members": [make_member(t, names, reason_by_ticker, name_en_by_ticker) for t in leaders],
         })
@@ -308,7 +315,10 @@ def build(tide_dir: Path):
                 i += 1
             used_slugs.add(slug)
             stocks = sub_stocks.get(sn, [])
-            leaders = pick_leaders(stocks, curated_tw)
+            # Full constituent set (not just leaders): themes are the granular unit the
+            # backend inverts into the ticker->sector map for heat attribution. Display
+            # caps to leaders at serve time; industries derive heat from their themes.
+            members = order_members(stocks, curated_tw)
             aliases = list(OrderedDict.fromkeys([sn] + ov.get("aliases", [])))
             seed.append({
                 "exposure_id": slug,
@@ -316,8 +326,9 @@ def build(tide_dir: Path):
                 "display_name": ov.get("display", sn),
                 "icon_id": ov.get("icon") or ICON_BY_SLUG.get(slug, gicon),
                 "color_hex": ov.get("color", gcolor),
+                "group": gslug,  # parent industry exposure_id
                 "aliases": aliases,
-                "members": [make_member(t, names, reason_by_ticker, name_en_by_ticker) for t in leaders],
+                "members": [make_member(t, names, reason_by_ticker, name_en_by_ticker) for t in members],
             })
     return seed
 
