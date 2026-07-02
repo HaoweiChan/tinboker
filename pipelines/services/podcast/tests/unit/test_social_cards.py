@@ -194,6 +194,21 @@ def test_ticker_insights_empty_returns_no_cards():
     assert sc.cards_from_ticker_insights(None) == []
 
 
+def test_deck_filtered_to_canonical_related_tickers():
+    # The extractor picked 8046/ON; the page's canonical related_tickers omits them.
+    # Passing allowed_tickers constrains the deck to the page-consistent set.
+    insights = [_insight("2330", 0.8, reasons=[{"description": "r", "start_time": 0}]),
+                _insight("8046", 0.8, reasons=[{"description": "r", "start_time": 0}]),
+                _insight("ON", 0.8, reasons=[{"description": "r", "start_time": 0}])]
+    allowed = sc.canonical_ticker_set(["2330", "MU"])         # MU absent from insights → no card
+    cards = sc.cards_from_ticker_insights({"ticker_insights": insights}, allowed_tickers=allowed)
+    codes = {r["code"] or r["name"] for c in cards if c["kind"] == "ticker_table" for r in c["rows"]}
+    assert codes == {"2330"}                                  # 8046/ON dropped, MU not fabricated
+    # Empty/None allowed set ⇒ no filter (backward compatible).
+    assert len(sc.cards_from_ticker_insights({"ticker_insights": insights}, allowed_tickers=set())
+               ) == len(sc.cards_from_ticker_insights({"ticker_insights": insights}))
+
+
 # --- persistence + graph wiring --------------------------------------------
 
 def _episode(**kw) -> PodcastEpisode:

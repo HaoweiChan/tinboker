@@ -115,7 +115,7 @@ _MAX_TOKENS_MAP: dict[str, int] = {
     # multi-ticker payload; deepseek-v4-pro supports the larger completion.
     "ticker_extractor": 16384,
     "key_insights_extractor": 2048,
-    "sector_verifier": 2048,
+    "sector_verifier": 8192,
 }
 
 

@@ -100,8 +100,12 @@ def build_graph() -> StateGraph:
     graph.add_edge("transform_to_markdown", "derive_tags_tickers")
     graph.add_edge("derive_tags_tickers", "extract_key_insights")
 
-    # Marp branch
+    # Marp branch. convert_marp also joins on derive_tags_tickers so the canonical
+    # related_tickers exist in state before the deck's ticker cards are filtered to
+    # them (page-consistent) — without this edge convert_marp runs first and the
+    # filter no-ops. No latency cost: build_social_cards already waits on that chain.
     graph.add_edge("write_marp_slides", "convert_marp")
+    graph.add_edge("derive_tags_tickers", "convert_marp")
 
     # Join: the unified carousel needs the marp slides, the key insights AND the
     # ticker insights (for the overview grid + analysis cards), so build_social_cards
@@ -119,8 +123,10 @@ def build_graph() -> StateGraph:
     graph.add_edge("derive_sector_exposures", END)
 
     # Ticker branch — the deck is now built deterministically from ticker_insights
-    # (overview grid + focus-analysis cards), so no LLM marp step in between.
+    # (overview grid + focus-analysis cards), so no LLM marp step in between. Also
+    # joins on derive_tags_tickers so its cards filter to the canonical related_tickers.
     graph.add_edge("extract_tickers", "convert_marp_ticker")
+    graph.add_edge("derive_tags_tickers", "convert_marp_ticker")
     graph.add_edge("convert_marp_ticker", END)
 
     return graph.compile()
