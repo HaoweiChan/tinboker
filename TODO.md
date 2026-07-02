@@ -107,7 +107,7 @@ Meaning:
 
 ```yaml
 id: TKB-001
-status: ready
+status: in_progress
 priority: P0
 area:
 - pipelines
