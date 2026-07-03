@@ -65,13 +65,3 @@ Common term reference:
 | Filter | 篩選 | Loading | 載入中 |
 | Save / Cancel | 儲存 / 取消 | No Data | 無資料 |
 | Load More | 載入更多 | Coming Soon | 即將推出 |
-
----
-
-## Code conventions
-
-- Zod schemas for all API response validation (`frontend/src/validation/schemas.ts`)
-- Zustand stores for global state (`frontend/src/store/`)
-- Axios client at `frontend/src/services/api/client.ts`
-- Gate `console.warn/log` debug output behind `import.meta.env.DEV`
-- No `any` types — use proper type definitions in `frontend/src/types/`

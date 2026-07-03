@@ -130,20 +130,6 @@ class TestStockService:
         ...
 ```
 
-Run tests with:
-
-```bash
-pytest tests/ -v --cov=src --cov-report=term-missing   # unit + integration, with coverage
-pytest -m asyncio -v                                    # async-marked tests only
-pytest -m integration -v                                 # integration-marked tests only
-```
-
-### Naming Conventions
-
-- `snake_case` for files and variables
-- `PascalCase` for classes
-- `UPPER_SNAKE_CASE` for constants
-
 ---
 
 ## Important Files
