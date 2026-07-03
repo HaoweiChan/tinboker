@@ -1,0 +1,12 @@
+.git/
+node_modules/
+dist/
+build/
+.venv/
+.env
+.env.*
+*.pem
+*.key
+*.sqlite
+*.db
+graphify-out/cache/
