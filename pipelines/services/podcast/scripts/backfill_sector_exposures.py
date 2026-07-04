@@ -27,32 +27,67 @@ from typing import Any
 _SERVICE_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_SERVICE_ROOT))
 
+# Populate os.environ from Secret Manager (GCS_BUCKET_NAME for the summary
+# hydration below, FIRESTORE_DATABASE_ID, …) before any client is built.
+from src.secrets_bootstrap import bootstrap  # noqa: E402
+
+bootstrap()
+
 from google.cloud import firestore  # noqa: E402
 from shared.sectors import (  # noqa: E402
     flatten_exposure_ids,
     flatten_unresolved_trend_ids,
     resolve_text,
 )
+from src.service.gcs_storage_service import GCSStorageService  # noqa: E402
 from src.service.upload_to_firebase import FirebaseService  # noqa: E402
 
 
-def episode_text(ep: dict[str, Any]) -> str:
+def hydrated_summary(ep: dict[str, Any], gcs: GCSStorageService | None) -> str:
+    """The episode summary, hydrated from GCS when the inline field is empty.
+
+    Published/consolidated episodes keep ``summary_content`` empty in Firestore and
+    store the real text as a GCS blob at ``summary_url`` (the backend hydrates it at
+    read time via ``episode_transformer._GCS_CONTENT_FIELDS``). The resolver needs
+    that full text — without it the backfill sees only title/insights/tags and
+    under-resolves, then OVERWRITES the richer existing exposures with a sparse set.
+    """
+    inline = str(ep.get("summary_content") or "").strip()
+    if inline:
+        return inline
+    url = ep.get("summary_url")
+    if gcs and isinstance(url, str) and url.startswith("gs://"):
+        try:
+            return gcs.download_text_by_gcs_url(url)
+        except Exception:  # noqa: BLE001 — missing/unauthorized/moved blob → degrade
+            return ""
+    return ""
+
+
+def episode_text(ep: dict[str, Any], gcs: GCSStorageService | None = None) -> str:
     """Best-effort text for the resolver from already-stored episode fields."""
     parts = [
         str(ep.get("episode_title") or ep.get("title") or ""),
-        str(ep.get("summary_content") or ""),
+        hydrated_summary(ep, gcs),
         " ".join(str(x) for x in (ep.get("key_insights") or [])),
         " ".join(str(x) for x in (ep.get("tags") or [])),
     ]
     return " \n".join(p for p in parts if p)
 
 
-def build_update(ep: dict[str, Any]) -> dict[str, Any] | None:
+def build_update(
+    ep: dict[str, Any], gcs: GCSStorageService | None = None
+) -> dict[str, Any] | None:
     """Return the sector-metadata merge update, or None when nothing resolved."""
-    resolved = resolve_text(episode_text(ep))
+    resolved = resolve_text(episode_text(ep, gcs))
     exposures = resolved["sector_exposures"]
     unresolved = resolved["unresolved_market_trends"]
     if not exposures and not unresolved:
+        return None
+    # Safety: never overwrite an existing non-empty exposure set with nothing. If the
+    # resolve produced no exposures (e.g. the summary blob was missing so only
+    # title/tags were seen), leave the stored data alone rather than wiping it.
+    if not exposures and (ep.get("sector_exposures") or ep.get("sector_exposure_ids")):
         return None
     flat = flatten_exposure_ids(exposures)
     return {
@@ -75,6 +110,14 @@ def main() -> int:
     fb = FirebaseService()
     col = fb.db.collection("episodes")
 
+    # Best-effort GCS reader so we can hydrate summaries stored as blobs (empty
+    # inline). If the bucket env is missing, degrade to inline-only text.
+    try:
+        gcs: GCSStorageService | None = GCSStorageService()
+    except Exception as exc:  # noqa: BLE001
+        print(f"Warning: GCS unavailable ({exc}); resolving over inline text only.")
+        gcs = None
+
     if args.episode_id:
         snap = col.document(args.episode_id).get()
         snaps = [snap] if snap.exists else []
@@ -89,7 +132,7 @@ def main() -> int:
     for snap in snaps:
         ep = snap.to_dict() or {}
         scanned += 1
-        update = build_update(ep)
+        update = build_update(ep, gcs)
         if not update:
             continue
         hits.append((snap.id, update["sector_exposure_ids"]))
