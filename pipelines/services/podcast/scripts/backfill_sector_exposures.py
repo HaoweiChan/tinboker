@@ -39,8 +39,24 @@ from shared.sectors import (  # noqa: E402
     flatten_unresolved_trend_ids,
     resolve_text,
 )
+from shared.sectors_seed_backup import SECTORS_SEED  # noqa: E402
 from src.service.gcs_storage_service import GCSStorageService  # noqa: E402
 from src.service.upload_to_firebase import FirebaseService  # noqa: E402
+
+# Ids in the current sector/theme universe. An episode is "stale" when it carries an
+# exposure id that no longer exists here (dropped in a taxonomy remake) — those are
+# the ones showing broken/old categories. Episodes whose ids are all current are left
+# alone under --stale-only so a verified (Plan B) or freshly-ingested set is never
+# overwritten with this deterministic resolve.
+_CURRENT_EXPOSURE_IDS = {e.get("exposure_id") for e in SECTORS_SEED}
+
+
+def has_dead_id(ep: dict[str, Any]) -> bool:
+    """True if the episode carries any exposure id absent from the current universe."""
+    ids = ep.get("sector_exposure_ids") or [
+        e.get("exposure_id") for e in (ep.get("sector_exposures") or [])
+    ]
+    return any(i and i not in _CURRENT_EXPOSURE_IDS for i in ids)
 
 
 def hydrated_summary(ep: dict[str, Any], gcs: GCSStorageService | None) -> str:
@@ -105,6 +121,12 @@ def main() -> int:
     ap.add_argument("--limit", type=int, default=50, help="most-recent episodes to scan")
     ap.add_argument("--episode-id", help="backfill a single episode id")
     ap.add_argument("--commit", action="store_true", help="write (default: dry-run)")
+    ap.add_argument(
+        "--stale-only",
+        action="store_true",
+        help="only touch episodes carrying a dead (dropped-from-universe) exposure id; "
+        "skip those already on the current taxonomy (protects verified/fresh sets)",
+    )
     args = ap.parse_args()
 
     fb = FirebaseService()
@@ -127,11 +149,17 @@ def main() -> int:
         )
 
     scanned = 0
+    skipped_current = 0
     hits: list[tuple[str, list[str]]] = []
     written = 0
     for snap in snaps:
         ep = snap.to_dict() or {}
         scanned += 1
+        # Under --stale-only, leave episodes that are already on the current taxonomy
+        # alone (no dead ids) — cheap check that also avoids a GCS summary fetch.
+        if args.stale_only and not has_dead_id(ep):
+            skipped_current += 1
+            continue
         update = build_update(ep, gcs)
         if not update:
             continue
@@ -140,7 +168,10 @@ def main() -> int:
             col.document(snap.id).set(update, merge=True)
             written += 1
 
-    print(f"Scanned {scanned} episodes; {len(hits)} matched a sector/theme exposure.")
+    scope = " (stale-only)" if args.stale_only else ""
+    print(f"Scanned {scanned} episodes{scope}; {len(hits)} to refresh.")
+    if args.stale_only:
+        print(f"Skipped {skipped_current} already on the current taxonomy.")
     for ep_id, ids in hits[:40]:
         print(f"  {ep_id}: {ids}")
     if args.commit:
