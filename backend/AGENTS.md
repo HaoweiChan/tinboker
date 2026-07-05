@@ -146,6 +146,29 @@ pytest -m integration -v                                 # integration-marked te
 
 ---
 
+## Boundary
+
+`backend/` is for FastAPI endpoints, authentication, database models, API schemas, admin
+APIs, service orchestration, cache access, permission checks. Do not place long-running
+ingestion pipelines in request handlers — that belongs in `pipelines/`.
+
+## Stability & External API Rules
+
+> Migrated 2026-07-04 from the root `AGENTS.md`. Applies to `backend/`; `pipelines/`
+> integrations (Spotify, Tavily) follow the same rules — see `pipelines/AGENTS.md`.
+
+- Add explicit timeouts for external API calls (Massive, FinMind, Spotify, Tavily, Threads).
+- Add retries with backoff where appropriate.
+- Avoid unbounded concurrency; avoid large in-memory batch processing.
+- Use Redis caching for repeated external API calls or expensive computed results.
+- Make jobs idempotent where possible.
+- Log provider errors with provider name and endpoint context; don't swallow exceptions silently.
+- Avoid changing the production database schema without migrations.
+- Never leak API keys to the frontend, and never call external providers directly from React —
+  backend/pipelines is the integration layer.
+- Don't add large dependencies without justification.
+- Don't add scraping logic that violates a platform's terms of service without explicit review.
+
 ## Important Files
 
 | File | Purpose |
