@@ -105,6 +105,9 @@ one-time migration source; it is gitignored and never committed.
 - **Do not commit wiki content.** The wiki lives in Postgres on the VPS; `wiki_builder` is infra only.
 - **Do not own users/follows/comments/quotes.** Those belong to the platform repo; here, just expose stable IDs (episode/entity/topic slug, show name).
 - **Do not bypass `secrets.bootstrap()`.** Always call it before reading env vars.
+- **External API calls (Spotify, Tavily) follow the stability rules in
+  [`../backend/AGENTS.md`](../backend/AGENTS.md#stability--external-api-rules)** — timeouts,
+  backoff, no unbounded concurrency, idempotent jobs.
 
 ## Pipelines at a glance
 

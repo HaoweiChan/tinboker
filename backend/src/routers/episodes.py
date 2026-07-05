@@ -38,8 +38,8 @@ async def get_recent_episodes(
     - limit: Maximum number of episodes to return (default: 20, max: 200)
     - offset: Pagination offset
     - podcast_name: Optional filter by podcast name
-    
-    CDN Cache: 30 minutes
+
+    CDN Cache: 10 minutes
     """
     try:
         episodes = await podcast_service.get_recent_episodes(
@@ -118,8 +118,8 @@ async def get_episodes_by_ticker(
     Query params:
     - limit: Maximum number of episodes to return (default: 50, max: 200)
     - offset: Pagination offset
-    
-    CDN Cache: 30 minutes
+
+    CDN Cache: 1 hour
     """
     try:
         episodes = await podcast_service.get_episodes_by_ticker(
@@ -157,7 +157,7 @@ async def get_episode_by_id(
     known client-side. Returns the same full Episode payload as
     GET /api/podcast/{podcast_name}/episodes/{episode_id}.
 
-    CDN Cache: 30 minutes
+    CDN Cache: 1 hour
     """
     try:
         fields = None if include_heavy_content else EPISODE_DETAIL_CONTENT_FIELDS

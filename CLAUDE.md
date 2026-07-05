@@ -6,8 +6,9 @@ do not work from memory of it**. If this file conflicts with a referenced doc, t
 newer — trust it and fix the pointer here (rules for editing this file:
 `docs/ai-ops/40-maintenance-protocol.md`).
 
-Note: the root `AGENTS.md` is a separate legacy file for non-Claude tools (Codex, Cursor,
-Aider) and has drifted. For Claude sessions, this file + `docs/` are canonical.
+Note: the root `AGENTS.md` is a symlink to this file — non-Claude tools (Codex, Cursor,
+Aider) that look for `AGENTS.md` read the same content Claude sessions do. There is no
+separate AGENTS.md content to keep in sync anymore.
 
 ---
 
@@ -57,6 +58,7 @@ TinBoker (聽播客) — Taiwanese stock & podcast intelligence platform. Monore
 | Parallel agents / git worktrees | `docs/workflows/parallel-agents.md` |
 | Python style & backend file map | `backend/AGENTS.md` |
 | UI conventions, zh-TW localization, icons, TS style | `frontend/AGENTS.md` |
+| Product/engineering task tracking (TODO.md, TKB- IDs) | `docs/workflows/task-management.md` |
 
 Tool wrappers (all thin pointers to the docs above): `.claude/agents/`, `.claude/skills/`,
 `.codex/agents/`, `.cursor/rules/`, `.agents/skills/`.

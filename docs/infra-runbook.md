@@ -198,11 +198,15 @@ docker network create app_default 2>/dev/null || true
 
 ### 2.1 Service account
 
-The backend authenticates to GCP using a service account JSON key mounted into the
-Docker container at `/app/gcp-service-account.json`.
+The backend authenticates to GCP using a service account JSON key. There are two
+distinct paths for this file — they are not a typo, they refer to different sides of
+the Docker volume mount (`backend/docker-compose.multi.yml`: `./gcp-service-account.json:/app/gcp-service-account.json:ro`):
 
 - **GCP project:** `gen-lang-client-0901363254`
-- **Key file on VPS:** `/app/backend/gcp-service-account.json` (not committed to git)
+- **Host path (on the VPS filesystem, compose is run from `/app/backend`):**
+  `/app/backend/gcp-service-account.json` (not committed to git)
+- **Container path (inside the running container, matches `GOOGLE_APPLICATION_CREDENTIALS`):**
+  `/app/gcp-service-account.json`
 
 To get a new key if lost:
 1. GCP Console → IAM & Admin → Service Accounts

@@ -54,6 +54,19 @@ Boundaries: stock-data, search, and the knowledge-graph visualizations are **sep
 - **Don't bypass `episode_transformer.py`.** It normalizes raw Firestore docs into the canonical `Episode` shape. Adding a new field requires updating the transformer plus the Pydantic model plus the frontend type.
 - **Two recommendation paths exist in parallel.** Legacy `/api/recommendations/*` (Postgres-backed, **soft-deprecated** — `deprecated=True`, kept as an alias for one release) and new `/api/ticker-insights/*` (Firestore-backed). New work goes through ticker-insights.
 
+## Financial content rules
+
+> Migrated 2026-07-04 from the root `AGENTS.md`.
+
+Tinboker can provide market intelligence and source-grounded summaries. Avoid creating
+output that sounds like direct investment advice.
+
+Use language such as: "mentioned by podcasts", "historical performance after mention",
+"possible bull case", "possible bear case", "risk factors", "not investment advice".
+
+Avoid first-version output such as: "buy", "sell", "target price", "guaranteed",
+"must enter", "sure win".
+
 ## External integrations
 
 - **Firestore** `graphfolio-db` — episodes, podcasts, comments, ticker_insights, trending_tickers, users, notifications. Via service account JSON. See [`../firestore-contract.md`](../firestore-contract.md).
