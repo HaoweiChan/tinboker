@@ -324,6 +324,13 @@ def _apply(step: str, output: Any, state: dict[str, Any]) -> list[str]:
         state.update(key_insights_extractor.postprocess(output, state))
     elif step == STEP_TICKER:
         state.update(ticker_extractor.postprocess(output, state))
+        # Re-derive sector exposures now that ticker_insights exists: the live graph
+        # runs derive_sector_exposures AFTER extract_tickers (commit e435237) so
+        # exposures whose constituents overlap the episode's actually-mentioned
+        # tickers are auto-approved instead of relying on the LLM verifier alone.
+        # The extractor-step pass above ran before tickers existed (verifier-only,
+        # which over-drops e.g. foundry/HBM); this refines it to match live fidelity.
+        state.update(derive_sector_exposures(state))
     elif step == STEP_MARP:
         state.update(marp_writer.postprocess(output, state))
         state.update(convert_marp(state))

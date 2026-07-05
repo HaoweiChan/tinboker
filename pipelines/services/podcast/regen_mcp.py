@@ -14,6 +14,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+# Populate os.environ from Secret Manager (OPENROUTER_API_KEY, GROQ_API_KEY, …)
+# before any LLM client is constructed. Without this the inline sector_verifier
+# LLM call in derive_sector_exposures fails auth and falls back to keep-all,
+# silently disabling sector verification. Mirrors main.py's entry-point bootstrap.
+from src.secrets_bootstrap import bootstrap  # noqa: E402
+
+bootstrap()
+
 from src.podcast.regen.mcp_server import main  # noqa: E402
 
 if __name__ == "__main__":
