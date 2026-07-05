@@ -7,6 +7,23 @@
 
 ---
 
+## 2026-07-05 — FinMind silent-zero signature struck a third time (/topics blank)
+- **Situation:** /topics bubbles empty; `/api/sectors/performance` served all-zero
+  `trading_value_windows_twd` for 139 exposures while heat/returns were healthy.
+- **Wrong assumption / failure:** assumed the sector-classification work or a missing
+  API key; actually (a) the recompute's ~1,740 per-ticker FinMind calls (580 members × 3
+  datasets) self-exhaust the 1,500/hr budget, (b) the Yahoo fallback was structurally
+  dead — `import yfinance` inside `list_yahoo_tw_daily_range` (`finmind_service.py:48`)
+  ImportError-returns `[]` and **yfinance was never in the backend image**, (c) truthy-empty
+  `{"1":{},...}` results pass `if vals:` and cache for a day (`podcast.py:1628`).
+  Same signature previously fixed in `090bb92` and `317233f`.
+- **Rule:** a fallback that can `except ImportError: return []` must have its dependency
+  proven present in the deployed image (`docker exec <c> python -c "import x"`), and
+  empty-shaped results must never be cached at full TTL. When a FinMind-fed field goes
+  all-zero, check the budget counter and the fallback's import FIRST, not the data model.
+  Full diagnosis: `docs/fix-plans/2026-07-05-topics-bubbles-zero-trading-value.md`.
+- **Status:** logged; fix plan handed to implementer 2026-07-05.
+
 ## 2026-07-04 — Root AGENTS.md reconciled into a real symlink, not just a "canonical" note
 - **Situation:** User decided root `AGENTS.md` should be a literal symlink to `CLAUDE.md`
   (closing the open task from `60-letter-to-future-sessions.md`), after confirming that
