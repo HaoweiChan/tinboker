@@ -202,11 +202,14 @@ class StockProfile(Base):
 
 
 class StockDailyOHLC(Base):
-    """Warmed full daily OHLCV bars for US stocks (chart data).
+    """Warmed whole-market daily OHLCV + 成交金額 bars.
 
     Sibling to ``stock_daily_closes`` (which stays close-only for the lightweight change%
-    path). Filled by the warmer from yfinance — no per-key rate cap — so the per-request
-    chart path can read from Postgres instead of hitting Massive's aggregates endpoint.
+    path). Populated by ``tw_daily_ohlc_refresh`` from the official TWSE/TPEx OpenAPI
+    whole-market feeds (2 free calls/day, no key) so the request path — /topics money-flow
+    windows and stock charts — reads daily bars from Postgres instead of fanning out
+    hundreds of per-ticker FinMind calls. ``trading_value`` (成交金額, NT$) is what the
+    bubble chart sizes on; ``source`` records which feed produced the row (twse/tpex).
     """
 
     __tablename__ = "stock_daily_ohlc"
@@ -219,6 +222,8 @@ class StockDailyOHLC(Base):
     low = Column(Float, nullable=True)
     close = Column(Float, nullable=False)
     volume = Column(Float, nullable=True)
+    trading_value = Column(Float, nullable=True)  # 成交金額 NT$ (bubble-chart size)
+    source = Column(String(20), nullable=True)    # twse | tpex
     created_at = Column(DateTime, default=datetime.utcnow)
 
     __table_args__ = (
