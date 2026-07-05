@@ -1,36 +1,14 @@
 """Regression tests for the /topics bubble-chart all-zero outage (2026-07-05).
 
-Two silent-failure bugs blanked the bubble chart:
-- F1: a missing FinMind key raised inside the per-ticker fetch closure, skipping the
-  Yahoo fallback → all-zero trading value. The fix makes `_make_request` return None
-  (like every other failure) so `get_tw_trading_value_windows` falls through to Yahoo.
-- F2: the all-empty result was cached for a day, turning a one-hour outage into 24h.
-  `_tw_trading_value_windows_cached` must not cache a result with no per-stock data.
+The trading-value windows now come from Postgres (stock_daily_ohlc), but two guards from
+the original outage still matter:
+- F2: an all-empty result must NOT be cached for a day — before the daily fetcher/backfill
+  has populated the table, an empty read would otherwise poison the cache for 24h.
+- F1: yfinance must ship in the image (requirements.txt), so the Yahoo fallback used by the
+  daily-close warmer isn't a silent ImportError.
 """
 
 from unittest.mock import patch
-
-from src.services.finmind_service import FinMindAPIService
-
-
-# ── F1: no key → Yahoo fallback populates the windows (no raise, no all-zero) ──────
-
-def test_windows_fall_back_to_yahoo_when_no_api_key():
-    svc = FinMindAPIService(api_key=None)
-    svc.api_keys = []  # simulate an unconfigured container
-
-    yahoo_rows = [
-        {"date": "2026-07-04", "Trading_money": 1_000_000.0},
-        {"date": "2026-07-03", "Trading_money": 2_000_000.0},
-    ]
-    with patch(
-        "src.services.finmind_service.list_yahoo_tw_daily_range",
-        return_value=yahoo_rows,
-    ) as yahoo:
-        totals = svc.get_tw_trading_value_windows(["2330"], windows=(7,))
-
-    yahoo.assert_called_once()  # fallback was reached, not skipped by a raise
-    assert totals["7"]["2330"] == 3_000_000.0  # both days summed from Yahoo
 
 
 # ── F2: an all-empty windows result is not written to the day-long cache ───────────

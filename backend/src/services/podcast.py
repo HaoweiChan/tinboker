@@ -1611,20 +1611,6 @@ class PodcastService:
         out.sort(key=lambda x: ((x["heat"] or 0.0), x["episode_count"]), reverse=True)
         return out
 
-    async def _tw_trading_values_cached(self) -> dict[str, float]:
-        """``{stock_id: latest daily trading value NT$}`` for all TW stocks, daily-cached."""
-        cache_key = "sectors:tw_trading_values:v1"
-        cached = await cache_get(cache_key)
-        if cached:
-            try:
-                return json.loads(cached)
-            except Exception:
-                pass
-        vals = await asyncio.to_thread(self._finmind().get_tw_trading_values)
-        if vals:
-            await cache_set(cache_key, json.dumps(vals), CACHE_TTL["stock_ohlcv"])  # 1 day
-        return vals or {}
-
     async def _tw_trading_value_windows_cached(self, tickers: list[str]) -> dict[str, dict[str, float]]:
         """``{window_days: {stock_id: cumulative trading value NT$}}`` for TW stocks."""
         universe = ",".join(sorted({ticker.strip() for ticker in tickers if ticker.strip()}))
@@ -1672,9 +1658,10 @@ class PodcastService:
                 return vals
             except Exception:
                 pass
-        vals = await asyncio.to_thread(self._finmind().get_tw_institutional_net_windows, tickers)
-        # Only cache a result that actually carries per-stock data — a transient empty fetch
-        # (FinMind rate-limit) must not poison the day-long cache with all-zero flow.
+        vals = await asyncio.to_thread(self._read_tw_institutional_net_windows, tickers)
+        # Only cache a result that actually carries per-stock data — an empty read (before
+        # stock_institutional_daily is warmed) must not poison the day-long cache with
+        # all-zero flow.
         has_data = bool(vals) and any(
             bool(window) for key in ("total", "foreign") for window in (vals.get(key) or {}).values()
         )
@@ -1833,6 +1820,75 @@ class PodcastService:
                     if row_date >= cutoff:
                         totals[window_key][ticker] = totals[window_key].get(ticker, 0.0) + value
         return totals
+
+    def _read_tw_institutional_net_windows(
+        self,
+        tickers: list[str],
+        windows: tuple[int, ...] = (1, 5, 20),
+    ) -> dict:
+        """``{"total"|"foreign": {window: {ticker: net 三大法人 flow NT$}}}`` from Postgres.
+
+        Replaces the per-ticker FinMind fan-out (the other half of the /topics storm):
+        net shares come from ``stock_institutional_daily`` (warmed from TWSE T86 / TPEx),
+        converted to NT$ with each ticker's latest close in ``stock_daily_ohlc`` — matching
+        the previous "net shares × latest close" semantics. Zero external calls.
+        """
+        from src.database.models import StockDailyOHLC, StockInstitutionalDaily
+        from src.services.finmind_service import is_tw_ticker
+
+        tw_tickers = sorted({t.strip() for t in tickers if is_tw_ticker(t.strip())})
+        total: dict[str, dict[str, float]] = {str(window): {} for window in windows}
+        foreign: dict[str, dict[str, float]] = {str(window): {} for window in windows}
+        if not tw_tickers:
+            return {"total": total, "foreign": foreign}
+
+        start = (datetime.utcnow() - timedelta(days=max(windows) + 5)).strftime("%Y-%m-%d")
+        close_start = (datetime.utcnow() - timedelta(days=20)).strftime("%Y-%m-%d")
+        latest_close: dict[str, float] = {}
+        rows_by_ticker: dict[str, list] = {}
+        for session in get_session():
+            for t, _d, c in (
+                session.query(StockDailyOHLC.ticker, StockDailyOHLC.date, StockDailyOHLC.close)
+                .filter(StockDailyOHLC.ticker.in_(tw_tickers), StockDailyOHLC.date >= close_start)
+                .order_by(StockDailyOHLC.ticker.asc(), StockDailyOHLC.date.asc())
+                .all()
+            ):
+                latest_close[t] = c  # asc date order → last write is the latest close
+            for row in (
+                session.query(
+                    StockInstitutionalDaily.ticker,
+                    StockInstitutionalDaily.date,
+                    StockInstitutionalDaily.foreign_net_shares,
+                    StockInstitutionalDaily.total_net_shares,
+                )
+                .filter(StockInstitutionalDaily.ticker.in_(tw_tickers), StockInstitutionalDaily.date >= start)
+                .order_by(StockInstitutionalDaily.ticker.asc(), StockInstitutionalDaily.date.asc())
+                .all()
+            ):
+                rows_by_ticker.setdefault(row.ticker, []).append(row)
+            break
+
+        for ticker, rows in rows_by_ticker.items():
+            close = latest_close.get(ticker)
+            dates = [row.date for row in rows if row.date]
+            if not close or not dates:
+                continue
+            latest = datetime.strptime(max(dates), "%Y-%m-%d").date()
+            cutoffs = {str(window): latest - timedelta(days=window - 1) for window in windows}
+            for row in rows:
+                if not row.date:
+                    continue
+                try:
+                    row_date = datetime.strptime(row.date, "%Y-%m-%d").date()
+                except (TypeError, ValueError):
+                    continue
+                tval = float(row.total_net_shares or 0.0) * float(close)
+                fval = float(row.foreign_net_shares or 0.0) * float(close)
+                for window_key, cutoff in cutoffs.items():
+                    if row_date >= cutoff:
+                        total[window_key][ticker] = total[window_key].get(ticker, 0.0) + tval
+                        foreign[window_key][ticker] = foreign[window_key].get(ticker, 0.0) + fval
+        return {"total": total, "foreign": foreign}
 
     async def _us_trading_value_windows_cached(self, tickers: list[str]) -> dict[str, dict[str, float]]:
         """``{window_days: {ticker: cumulative trading value NT$}}`` for warmed US stocks."""

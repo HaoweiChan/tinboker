@@ -27,7 +27,7 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-from src.database.models import StockDailyOHLC
+from src.database.models import StockDailyOHLC, StockInstitutionalDaily
 from src.database.postgres import get_session
 from src.services.finmind_service import is_tw_ticker
 
@@ -295,6 +295,169 @@ async def backfill_tw_daily_ohlc(days: int = _BACKFILL_DAYS, gap_seconds: float 
     return total
 
 
+# ── 三大法人 institutional net-buy (keyless: TWSE T86 + TPEx OpenAPI) ───────────────
+
+_TWSE_T86_URL = "https://www.twse.com.tw/fund/T86"                      # date=YYYYMMDD, selectType=ALL
+_TPEX_INSTI_URL = "https://www.tpex.org.tw/openapi/v1/tpex_3insti_daily_trading"  # today-only
+_INSTI_BACKFILL_DAYS = 30  # covers the 20-day money-flow window with margin
+
+
+def _normalize_twse_t86(rec: Dict[str, Any], iso: str) -> Optional[Dict[str, Any]]:
+    ticker = str(rec.get("證券代號", "")).strip()
+    total = _num(rec.get("三大法人買賣超股數"))
+    if not ticker or total is None or not is_tw_ticker(ticker):
+        return None
+    foreign = (_num(rec.get("外陸資買賣超股數(不含外資自營商)")) or 0.0) + (
+        _num(rec.get("外資自營商買賣超股數")) or 0.0
+    )
+    return {
+        "ticker": ticker, "date": iso,
+        "foreign_net_shares": foreign, "total_net_shares": total, "source": "twse",
+    }
+
+
+# TPEx OpenAPI 3insti keys (exact, verified 2026-07-05).
+_TPEX_FX_EXCL = "Foreign Investors include Mainland Area Investors (Foreign Dealers excluded)-Difference"
+_TPEX_FX_DEALER = "ForeignDealers-Difference"
+
+
+def _normalize_tpex_insti(rec: Dict[str, Any], iso: str) -> Optional[Dict[str, Any]]:
+    ticker = str(rec.get("SecuritiesCompanyCode", "")).strip()
+    total = _num(rec.get("TotalDifference"))
+    if not ticker or total is None or not is_tw_ticker(ticker):
+        return None
+    foreign = (_num(rec.get(_TPEX_FX_EXCL)) or 0.0) + (_num(rec.get(_TPEX_FX_DEALER)) or 0.0)
+    return {
+        "ticker": ticker, "date": iso,
+        "foreign_net_shares": foreign, "total_net_shares": total, "source": "tpex",
+    }
+
+
+def _fetch_twse_t86(iso: str) -> List[Dict[str, Any]]:
+    """TWSE T86 (all listed 三大法人) for one day — fields/data table, historical-capable."""
+    try:
+        payload = requests.get(
+            _TWSE_T86_URL,
+            params={"response": "json", "date": iso.replace("-", ""), "selectType": "ALL"},
+            headers={"User-Agent": _BROWSER_UA}, timeout=60,
+        ).json()
+    except Exception as e:
+        logger.warning("TWSE T86 fetch failed for %s: %s", iso, e)
+        return []
+    if str(payload.get("stat", "")).lower() not in ("ok",):
+        return []  # holiday / no session
+    fields = payload.get("fields") or []
+    return [r for row in (payload.get("data") or []) if (r := _normalize_twse_t86(dict(zip(fields, row)), iso))]
+
+
+def _fetch_tpex_insti(iso: str) -> List[Dict[str, Any]]:
+    """TPEx OpenAPI 3insti (all OTC 三大法人) — today's session only; row Date confirms it."""
+    try:
+        payload = requests.get(_TPEX_INSTI_URL, headers={"User-Agent": _BROWSER_UA}, timeout=60).json()
+    except Exception as e:
+        logger.warning("TPEx 3insti fetch failed: %s", e)
+        return []
+    out: List[Dict[str, Any]] = []
+    for rec in payload if isinstance(payload, list) else []:
+        # The feed is today-only; only accept rows whose ROC date matches the target day.
+        if _roc_to_iso(str(rec.get("Date", ""))) != iso:
+            continue
+        r = _normalize_tpex_insti(rec, iso)
+        if r:
+            out.append(r)
+    return out
+
+
+def _upsert_insti_rows(rows: List[Dict[str, Any]]) -> int:
+    """Upsert institutional net-share rows into stock_institutional_daily (update-or-insert)."""
+    written = 0
+    for session in get_session():
+        try:
+            for row in rows:
+                existing = (
+                    session.query(StockInstitutionalDaily)
+                    .filter(
+                        StockInstitutionalDaily.ticker == row["ticker"],
+                        StockInstitutionalDaily.date == row["date"],
+                    )
+                    .first()
+                )
+                if existing:
+                    existing.foreign_net_shares = row["foreign_net_shares"]
+                    existing.total_net_shares = row["total_net_shares"]
+                    existing.source = row["source"]
+                else:
+                    session.add(StockInstitutionalDaily(**row))
+                written += 1
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            logger.warning("TW institutional upsert failed: %s", e)
+            written = 0
+        break
+    return written
+
+
+def _insti_rows_for_date(iso: str) -> int:
+    for session in get_session():
+        try:
+            return session.query(StockInstitutionalDaily).filter(StockInstitutionalDaily.date == iso).count()
+        except Exception:
+            return 0
+    return 0
+
+
+async def refresh_tw_institutional() -> int:
+    """Fetch today's TWSE + TPEx 三大法人 net shares and upsert into Postgres. Never raises."""
+    loop = asyncio.get_event_loop()
+    iso_today = _fetch_latest_market_date()  # the newest date the feeds carry
+    if not iso_today:
+        return 0
+    twse = await loop.run_in_executor(None, _fetch_twse_t86, iso_today)
+    tpex = await loop.run_in_executor(None, _fetch_tpex_insti, iso_today)
+    rows = twse + tpex
+    if not rows:
+        logger.warning("TW institutional refresh: both feeds empty for %s.", iso_today)
+        return 0
+    written = await loop.run_in_executor(None, _upsert_insti_rows, rows)
+    logger.info("TW institutional refresh: %s wrote %d rows (twse=%d, tpex=%d).", iso_today, written, len(twse), len(tpex))
+    return written
+
+
+def _fetch_latest_market_date() -> Optional[str]:
+    """The newest trading date the TPEx 3insti feed reports (drives 'today' for institutional
+    — TWSE T86 for the same date is then historical-capable). Falls back to None if unreachable."""
+    try:
+        payload = requests.get(_TPEX_INSTI_URL, headers={"User-Agent": _BROWSER_UA}, timeout=60).json()
+    except Exception as e:
+        logger.warning("TPEx 3insti latest-date probe failed: %s", e)
+        return None
+    dates = {_roc_to_iso(str(rec.get("Date", ""))) for rec in (payload if isinstance(payload, list) else [])}
+    dates.discard(None)
+    return max(dates) if dates else None
+
+
+async def backfill_tw_institutional(days: int = _INSTI_BACKFILL_DAYS, gap_seconds: float = _BACKFILL_GAP_SECONDS) -> int:
+    """Seed `days` of 三大法人 history. TWSE T86 is historical; TPEx OpenAPI is today-only, so
+    OTC (上櫃) institutional accretes forward instead. Idempotent + resumable. Never raises."""
+    loop = asyncio.get_event_loop()
+    dates = _weekday_dates(days)
+    filled = total = 0
+    for iso in dates:
+        if await loop.run_in_executor(None, _insti_rows_for_date, iso) >= _MIN_ROWS_PER_DAY:
+            continue
+        twse = await loop.run_in_executor(None, _fetch_twse_t86, iso)
+        await asyncio.sleep(gap_seconds)
+        if twse:
+            total += await loop.run_in_executor(None, _upsert_insti_rows, twse)
+            filled += 1
+    logger.info(
+        "TW institutional backfill: filled %d day(s), wrote %d rows (TWSE T86 only; OTC accretes forward).",
+        filled, total,
+    )
+    return total
+
+
 async def run_periodic_tw_ohlc_refresh(interval_hours: float = 6.0, backfill_days: int = _BACKFILL_DAYS) -> None:
     """Background loop: refresh on startup, then every interval_hours. Never raises.
 
@@ -308,12 +471,20 @@ async def run_periodic_tw_ohlc_refresh(interval_hours: float = 6.0, backfill_day
             await refresh_tw_daily_ohlc()
         except Exception as e:
             logger.warning("TW OHLC refresh cycle failed: %s", e)
+        try:
+            await refresh_tw_institutional()
+        except Exception as e:
+            logger.warning("TW institutional refresh cycle failed: %s", e)
         if first:
             first = False
             try:
                 await backfill_tw_daily_ohlc(days=backfill_days)
             except Exception as e:
                 logger.warning("TW OHLC backfill failed: %s", e)
+            try:
+                await backfill_tw_institutional()
+            except Exception as e:
+                logger.warning("TW institutional backfill failed: %s", e)
         await asyncio.sleep(interval_hours * 3600)
 
 
@@ -325,7 +496,9 @@ if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else "refresh"
     if cmd == "backfill":
         days = int(sys.argv[2]) if len(sys.argv) > 2 else _BACKFILL_DAYS
-        print("backfilled", asyncio.run(backfill_tw_daily_ohlc(days=days)), "rows")
+        print("OHLC backfilled", asyncio.run(backfill_tw_daily_ohlc(days=days)), "rows")
+        print("institutional backfilled", asyncio.run(backfill_tw_institutional()), "rows")
     else:
-        print("wrote", asyncio.run(refresh_tw_daily_ohlc()), "rows")
+        print("OHLC wrote", asyncio.run(refresh_tw_daily_ohlc()), "rows")
+        print("institutional wrote", asyncio.run(refresh_tw_institutional()), "rows")
     sys.exit(0)

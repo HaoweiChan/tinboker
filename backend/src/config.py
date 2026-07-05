@@ -37,8 +37,13 @@ class Settings(BaseSettings):
     # single finmind_api_key when unset.
     finmind_api_keys: Optional[str] = None
     # Self-imposed FinMind hourly request cap (see finmind_budget). Default suits the free
-    # tier (~600/hr); the backer plan allows ~1600/hr, so raise via GSM secret
-    # FINMIND_HOURLY_CAP once the backer key is the primary key in the pool.
+    # tier (~600/hr); our Backer account allows ~1600/hr (dashboard-confirmed 2026-07-05),
+    # raised in prod via GSM secret FINMIND_HOURLY_CAP (VPS runs ~1500 — sane headroom
+    # under 1600). Since the /topics money-flow leg moved to Postgres (TWSE/TPEx daily
+    # feeds via tw_daily_ohlc_refresh), the old ~1,740-call recompute storm is gone;
+    # FinMind now serves only market caps (1 bulk/day), per-stock chart metadata, and the
+    # daily-close warmer — well within any tier. yfinance is emergency-only (warmer
+    # fallback in stock_close_refresh), not a primary source.
     finmind_hourly_cap: int = 280
     massive_api_key: Optional[str] = None
     # Optional pool of Massive/Polygon keys (comma-separated) → GSM secret MASSIVE_API_KEYS.

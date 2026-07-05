@@ -232,6 +232,32 @@ class StockDailyOHLC(Base):
     )
 
 
+class StockInstitutionalDaily(Base):
+    """Warmed whole-market daily 三大法人 (institutional) net-buy shares.
+
+    Populated by ``tw_daily_ohlc_refresh`` from the official keyless feeds — TWSE T86
+    (上市, historical/backfillable) + TPEx OpenAPI 3insti (上櫃, today-forward). Stores NET
+    SHARES per stock/day; the /topics money-flow windows convert to NT$ at read time using
+    the latest close from ``stock_daily_ohlc``. Replaces the per-ticker FinMind fan-out
+    (the other half of the /topics call storm).
+    """
+
+    __tablename__ = "stock_institutional_daily"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    ticker = Column(String(20), nullable=False)
+    date = Column(String(10), nullable=False)  # YYYY-MM-DD
+    foreign_net_shares = Column(Float, nullable=True)  # 外資 (incl. foreign dealer) net shares
+    total_net_shares = Column(Float, nullable=True)    # 三大法人 net shares
+    source = Column(String(20), nullable=True)         # twse | tpex
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("ticker", "date", name="uq_insti_ticker_date"),
+        Index("idx_insti_ticker_date", "ticker", "date"),
+    )
+
+
 class TagRegistry(Base):
     """Admin-managed topic registry — the unified index of tags AND sectors/themes.
 
