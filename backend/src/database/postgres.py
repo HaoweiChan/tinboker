@@ -166,6 +166,16 @@ def create_all_tables():
                 "ALTER TABLE IF EXISTS tag_registry "
                 "ADD COLUMN IF NOT EXISTS parent_id VARCHAR(120)"
             ))
+            # stock_daily_ohlc predates the whole-market TWSE/TPEx fetcher (was an unused
+            # US/yfinance orphan) — add the columns the fetcher writes.
+            conn.execute(text(
+                "ALTER TABLE IF EXISTS stock_daily_ohlc "
+                "ADD COLUMN IF NOT EXISTS trading_value DOUBLE PRECISION"
+            ))
+            conn.execute(text(
+                "ALTER TABLE IF EXISTS stock_daily_ohlc "
+                "ADD COLUMN IF NOT EXISTS source VARCHAR(20)"
+            ))
             conn.commit()
     elif engine.dialect.name == "sqlite":
         # SQLite has no "ADD COLUMN IF NOT EXISTS" — check PRAGMA first.

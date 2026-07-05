@@ -194,6 +194,18 @@ async def lifespan(app: FastAPI):
 
     asyncio.create_task(_refresh_closes_bg())
 
+    # Whole-market TW daily OHLCV + 成交金額 from the official TWSE/TPEx OpenAPIs (2 free
+    # calls/day) into Postgres, so /topics money-flow reads daily bars from the DB instead
+    # of fanning out hundreds of per-ticker FinMind calls. Off the request path.
+    async def _refresh_tw_ohlc_bg():
+        try:
+            from src.services.tw_daily_ohlc_refresh import run_periodic_tw_ohlc_refresh
+            await run_periodic_tw_ohlc_refresh(interval_hours=6.0)
+        except Exception as e:
+            print(f"Warning: TW daily OHLC fetcher stopped: {e}")
+
+    asyncio.create_task(_refresh_tw_ohlc_bg())
+
     # Refresh-ahead for the /topics hot-sectors board: recompute + rewrite its Redis
     # entry every 5 min (inside the 10-min TTL) so the serving path never pays the
     # cold ~2700-doc episode scan. Off the request path; must not block startup.

@@ -1643,8 +1643,13 @@ class PodcastService:
                 return vals
             except Exception:
                 pass
-        vals = await asyncio.to_thread(self._finmind().get_tw_trading_value_windows, tickers)
-        if vals:
+        vals = await asyncio.to_thread(self._read_tw_trading_value_windows, tickers)
+        # Only cache a result that actually carries per-stock data — `vals` is always
+        # truthy ({"1":{},...}), so an empty read (before the daily fetcher/backfill has
+        # populated stock_daily_ohlc) would otherwise poison the day-long cache with
+        # all-zero bubbles. Mirrors the institutional guard below.
+        has_data = any(bool(window) for window in vals.values()) if vals else False
+        if has_data:
             self._tw_trading_value_windows_memory_cache = {cache_key: (time.time(), vals)}
             await cache_set(cache_key, json.dumps(vals), CACHE_TTL["stock_ohlcv"])  # 1 day
         return vals or {}
@@ -1766,6 +1771,62 @@ class PodcastService:
                 try:
                     row_date = datetime.strptime(row.date, "%Y-%m-%d").date()
                     value = float(row.close) * float(row.volume) * settings.usd_twd_rate
+                except (TypeError, ValueError):
+                    continue
+                for window_key, cutoff in cutoffs.items():
+                    if row_date >= cutoff:
+                        totals[window_key][ticker] = totals[window_key].get(ticker, 0.0) + value
+        return totals
+
+    def _read_tw_trading_value_windows(
+        self,
+        tickers: list[str],
+        windows: tuple[int, ...] = (1, 7, 30, 90),
+    ) -> dict[str, dict[str, float]]:
+        """Read warmed TW daily 成交金額 → ``{window: {ticker: cumulative NT$}}``.
+
+        Replaces the per-ticker FinMind fan-out that self-exhausted the hourly budget (the
+        /topics call storm): trading value now comes from ``stock_daily_ohlc``, warmed daily
+        from the official TWSE/TPEx feeds by ``tw_daily_ohlc_refresh``. Zero external calls.
+        Sums ``trading_value`` directly (already NT$ — no close×volume, no FX).
+        """
+        from src.database.models import StockDailyOHLC
+        from src.services.finmind_service import is_tw_ticker
+
+        tw_tickers = sorted({t.strip() for t in tickers if is_tw_ticker(t.strip())})
+        totals: dict[str, dict[str, float]] = {str(window): {} for window in windows}
+        if not tw_tickers:
+            return totals
+
+        start = (datetime.utcnow() - timedelta(days=max(windows) + 20)).strftime("%Y-%m-%d")
+        rows_by_ticker: dict[str, list] = {}
+        for session in get_session():
+            rows = (
+                session.query(
+                    StockDailyOHLC.ticker,
+                    StockDailyOHLC.date,
+                    StockDailyOHLC.trading_value,
+                )
+                .filter(StockDailyOHLC.ticker.in_(tw_tickers), StockDailyOHLC.date >= start)
+                .order_by(StockDailyOHLC.ticker.asc(), StockDailyOHLC.date.asc())
+                .all()
+            )
+            for row in rows:
+                rows_by_ticker.setdefault(row.ticker, []).append(row)
+            break
+
+        for ticker, rows in rows_by_ticker.items():
+            dates = [row.date for row in rows if row.date]
+            if not dates:
+                continue
+            latest = datetime.strptime(max(dates), "%Y-%m-%d").date()
+            cutoffs = {str(window): latest - timedelta(days=window - 1) for window in windows}
+            for row in rows:
+                if not row.date or row.trading_value is None:
+                    continue
+                try:
+                    row_date = datetime.strptime(row.date, "%Y-%m-%d").date()
+                    value = float(row.trading_value)
                 except (TypeError, ValueError):
                     continue
                 for window_key, cutoff in cutoffs.items():

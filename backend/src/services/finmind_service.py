@@ -170,7 +170,12 @@ class FinMindAPIService:
 
         Returns the response JSON on success, or None when the budget is spent / on error.
         """
-        self._check_api_key()
+        # No key configured is a normal "unavailable" outcome, not a fatal error: return
+        # None like every other failure path so callers fall through to their fallback
+        # (Yahoo / empty). Raising here escapes the per-ticker fetch closures and skips the
+        # Yahoo fallback entirely. Constructor already warns once when keys are missing.
+        if not self.api_keys:
+            return None
 
         # FinMind only serves TW. A non-TW data_id (KR 6-digit, HK, junk) always 404s but
         # still burns the shared hourly budget — gate it out BEFORE consume(). Datasets with
@@ -663,20 +668,27 @@ class FinMindAPIService:
         end = date.today().isoformat()
 
         def fetch_ticker(ticker: str) -> tuple[str, list[dict]]:
-            data = self._make_request(
-                {
-                    "dataset": "TaiwanStockPrice",
-                    "data_id": ticker,
-                    "start_date": start,
-                    "end_date": end,
-                },
-                timeout=30,
-            )
-            rows = data.get("data") if data else []
+            # A raised FinMindAPIError must never skip the Yahoo fallback — that silent
+            # bypass (swallowed at debug in the loop below) blanked the /topics bubbles.
+            try:
+                data = self._make_request(
+                    {
+                        "dataset": "TaiwanStockPrice",
+                        "data_id": ticker,
+                        "start_date": start,
+                        "end_date": end,
+                    },
+                    timeout=30,
+                )
+                rows = (data.get("data") if data else []) or []
+            except FinMindAPIError:
+                rows = []
             if not rows:
                 rows = list_yahoo_tw_daily_range(ticker, start, end)
             return ticker, rows
 
+        n_empty = 0
+        last_exc: Optional[Exception] = None
         max_workers = min(6, len(tw_tickers))
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = [executor.submit(fetch_ticker, ticker) for ticker in tw_tickers]
@@ -684,9 +696,11 @@ class FinMindAPIService:
                 try:
                     ticker, rows = future.result()
                 except Exception as exc:
-                    logger.debug("FinMind trading value window fetch failed: %s", exc)
+                    last_exc = exc
+                    n_empty += 1
                     continue
                 if not rows:
+                    n_empty += 1
                     continue
 
                 dates = sorted({str(row.get("date", "")) for row in rows if row.get("date")})
@@ -713,6 +727,13 @@ class FinMindAPIService:
                         if row_date >= cutoff:
                             totals[window_key][ticker] = totals[window_key].get(ticker, 0.0) + value
 
+        if n_empty:
+            logger.warning(
+                "FinMind trading-value windows: %d/%d tickers returned no data "
+                "(FinMind + Yahoo both dry%s)",
+                n_empty, len(tw_tickers),
+                f"; last error: {last_exc}" if last_exc else "",
+            )
         return totals
 
     def get_tw_latest_closes(self) -> Dict[str, float]:
@@ -782,6 +803,8 @@ class FinMindAPIService:
             )
             return ticker, (data.get("data") if data else []) or []
 
+        n_empty = 0
+        last_exc: Optional[Exception] = None
         max_workers = min(6, len(tw_tickers))
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = [executor.submit(fetch_ticker, ticker) for ticker in tw_tickers]
@@ -789,10 +812,12 @@ class FinMindAPIService:
                 try:
                     ticker, rows = future.result()
                 except Exception as exc:
-                    logger.debug("FinMind institutional fetch failed: %s", exc)
+                    last_exc = exc
+                    n_empty += 1
                     continue
                 close = closes.get(ticker)
                 if not rows or not close:
+                    n_empty += 1
                     continue
                 dates = sorted({str(row.get("date", "")) for row in rows if row.get("date")})
                 if not dates:
@@ -811,6 +836,12 @@ class FinMindAPIService:
                             total[window_key][ticker] = total[window_key].get(ticker, 0.0) + net_twd
                             if is_foreign:
                                 foreign[window_key][ticker] = foreign[window_key].get(ticker, 0.0) + net_twd
+        if n_empty:
+            logger.warning(
+                "FinMind institutional windows: %d/%d tickers returned no data%s",
+                n_empty, len(tw_tickers),
+                f"; last error: {last_exc}" if last_exc else "",
+            )
         return {"total": total, "foreign": foreign}
 
     def list_news(self, ticker: str, limit: int = 10) -> List[Dict[str, Any]]:
