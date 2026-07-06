@@ -1,381 +1,254 @@
-# Fix plan v2.1 — sector taxonomy: structural curation, per-sector reasons, stock-page membership
+# Fix plan v3 — sector taxonomy: Postgres as source of truth, reasons fill, stock-page membership
 
-> Status: planned 2026-07-06 (v2.1 — v1 patched symptoms; v2 fixed the structure; v2.1
-> incorporates the adversarial review: the old reason-generator is dead code, the tide
-> input directory is absent locally, so curation is redesigned to run off the committed
-> seed). Tracked as **TKB-009** in `TODO.md`.
-> Audience: implementing agents (Sonnet/Opus). Follow this doc literally. Do NOT
-> improvise schema or naming beyond what a milestone specifies. One milestone = one PR,
-> in order.
->
-> **Companion evidence docs (read the relevant one before its milestone):**
-> - `docs/fix-plans/2026-07-06-grouping-logic-spec.md` — every generation rule with
->   file:line (read before M0/M1).
-> - `docs/fix-plans/2026-07-06-sector-universe-audit.md` — full data audit of all 103
->   sectors: metrics, offender tables, merge candidates (read before M2).
-> - `docs/fix-plans/assets/audit_sectors.py` — working stdlib-only metrics script
->   (productized in M5; do not rewrite from scratch).
+> Status: v3, 2026-07-06. Tracked as **TKB-009** in `TODO.md`.
+> v1 patched symptoms → v2/v2.1 fixed grouping structurally with git-as-truth → **v3
+> changes the source of truth to Postgres** after (a) Willy's IP requirement — this repo
+> is PUBLIC and the curated taxonomy + rationale text are proprietary, and (b) a
+> methodology research pass whose sources converge on DB-as-truth for data that is
+> served live by an API and updated regularly (see §1). Research notes with citations:
+> `docs/fix-plans/pg-governance-research.md`, `docs/fix-plans/taxonomy-governance-research.md`.
+> Audience: implementing agents (Sonnet/Opus/Codex). Follow literally; one milestone =
+> one PR, in order. Companion evidence docs (unchanged from v2):
+> `2026-07-06-grouping-logic-spec.md`, `2026-07-06-sector-universe-audit.md`,
+> `assets/audit_sectors.py`.
 
 ---
 
-## 1. Problems (user-reported symptoms → audited root causes)
+## 1. The architecture decision (locked — do not relitigate)
 
-The audit (2026-07-06, all 103 sectors / 1413 member rows / 977 tickers; numbers
-re-verified independently) shows the two reported symptoms are instances of **systemic**
-defects:
+**Postgres `tag_registry` is the single source of truth for the sector taxonomy**
+(structure, membership, per-member reasons, descriptions). Git carries the engine code
+and a synthetic test fixture only. Rationale, from the research:
 
-| # | Symptom | Systemic root cause (evidence) |
-|---|---------|-------------------------------|
-| P1 | 2330 in `sector_hbm` is far-fetched | Membership inherited verbatim from external `tide-tw-data` with zero per-ticker vetting, plus a **reason-reuse bug** (`build_sectors_seed_from_tide.py:213` `build_reuse_index()`: global first-wins ticker→reason map) that pastes one company blurb into up to 10 themes, making stretches look justified. Audit: 85 reused strings taint 279 rows (20%); ~30 high-confidence far-fetched memberships (audit §2g); `sector_hbm` is **majority-wrong** (only 2408 南亞科 + 2344 華邦電 of 7 members are real memory makers). |
-| P2 | `sector_jp_wafer` / `sector_jp_passive` confusing (all TW tickers) | The 4 `jp_*` sectors are tide's "Japan supply-chain" themes AND are **100% redundant**: `jp_wafer` ↔ `silicon_wafer` at Jaccard 1.0; the other three ⊆ their non-jp siblings (audit §1c/§1f). Renaming keeps duplicate pages; the structural fix is **merge + redirect**. |
-| P3 | Stock page doesn't show a ticker's sectors | No reverse ticker→sectors endpoint exists anywhere in backend/src. |
-| P4 | Per-(ticker, sector) reasons must be sector-specific | Same reuse bug — the reason is a company blurb, never a per-theme thesis. |
-| P5 | Reasons incomplete; no maintenance mechanism | **73% of reasons are EMPTY** (1026/1413). The weekly workflow is DEAD (see §2); the old LLM reason script is dead code (see §2). Only 2 build invariants exist (`build_sectors_seed_from_tide.py:392-393`). |
-| P6 *(found by audit)* | Industry layer largely fictional | 6–7 of 10 industries are 79–94% identical to one child theme (financials≈banks, software_cloud≈cloud_msp, consumer≈ecommerce, shipping_logistics≈container_shipping, manufacturing≈industrial_automation, ai_hardware≈ai_server, green_energy≈offshore_wind) — industries were seeded as flat "top-~15" lists, not aggregations (audit §2i). |
-| P7 *(found by audit)* | Three "themes" are raw TWSE dumps | `textile` (51), `steel_metals` (47), `tourism` (47) — full TWSE rosters, no thesis (audit §1a/§2i). |
+- dbt's own guidance names our exact shape as the anti-pattern for data-in-git:
+  data that is *"regularly updated"* or that *"other systems need to update"* or served
+  at runtime belongs in *"a centralized database or API"*.
+- GICS/ICB/TRBC (the real-world analogues of this taxonomy) all separate **structural
+  change** (rare, versioned, dated, with published rationale) from **membership change**
+  (frequent, low-ceremony annual re-reviews) — two tempos, one database.
+- The M0 drift disaster (42 stale rows, 46 divergent member lists served for weeks) was
+  caused by **two independently-writable truths** (seed + admin edits), the exact
+  failure mode every hybrid-pattern source flags. v3 removes the second truth entirely.
+- IP: the proprietary dataset lives only in the private prod DB and private backups.
+  NOTE: the pre-v3 taxonomy is already public in git history — that snapshot is
+  unrecoverable; v3 protects the future increments (the M3 reasons corpus and all
+  later curation), which is where the IP accrues.
 
-## 2. System map — verified 2026-07-06 (v1's map was wrong on three points)
+**Governance rules (from the research, kept deliberately minimal — no governance
+theater):**
 
-Exactly **ONE live generation chain**:
+- **G1 — One write path.** All taxonomy mutations go through the authenticated admin
+  API, which runs the POL validators transactionally and rejects violations
+  (validate-on-write replaces CI-on-PR). Nothing else writes: no startup sync
+  overwrite, no scripts writing artifacts, no direct psql as routine practice.
+- **G2 — Trigger-based audit table.** Every INSERT/UPDATE/DELETE on `tag_registry` is
+  captured by a Postgres trigger into `tag_registry_audit` (JSONB before/after row
+  image, actor, timestamp, note). Catches ALL write paths including manual psql.
+  "As of" questions are answered from the audit table; the live table stays
+  current-state-only. No temporal/SCD machinery.
+- **G3 — Two tempos (GICS-style).** Structural changes (sector add/remove/merge/
+  reclassify) bump a `taxonomy_version` row and append a dated changelog entry with a
+  one-line rationale. Member/reason/description edits are low-ceremony (audit trail
+  only).
+- **G4 — Survivorship: manual beats machine.** Rows/fields last written by a human
+  admin (`updated_by` not in the bot allowlist) are NEVER overwritten by an LLM bulk
+  pass unless the operator passes an explicit `--force`. Write this check into the bulk
+  endpoint, not into the client scripts.
+- **G5 — Draft → publish for bulk writes.** LLM bulk output lands as a draft (dry-run
+  report reviewed by Willy, then an explicit publish call). Human single-row admin
+  edits publish directly.
+- **G6 — One-way private export.** A scheduled job dumps the taxonomy (JSON + pg_dump)
+  to the private GCS bucket for diffable snapshots and disaster recovery. Export is
+  never a write path back (the two-writable-paths failure mode). Nothing
+  taxonomy-shaped is ever committed to this public repo again — including future audit
+  reports (they go to GCS or the PR-free maintenance report path).
 
-```
-tide-tw-data  (external dir, gitignored .gitignore:53, ⚠ NOT PRESENT LOCALLY; the
-        │      importer expects sector_groups.json / latest.json / stock_names.json,
-        │      build_sectors_seed_from_tide.py:269-271, and CANNOT RUN without them)
-        │  manual re-import only: python build_sectors_seed_from_tide.py --write
-        ▼
-backend/src/data/sectors_seed.py            ← canonical COMMITTED seed (103 sectors)
-pipelines/.../shared/sectors_seed_backup.py ← pipelines fallback copy
-backend/src/data/sector_reasons.json        ← mirror, emitted by the SAME build script
-                                              (emit_reasons :360, write :398)
-        │
-        ├── backend startup: sync_sectors() (backend/src/tag_registry.py:234) upserts
-        │   into Postgres tag_registry (kind='sector').
-        │   ⚠ sync only writes members/aliases when the row's are EMPTY
-        │   (`if not existing.members:` tag_registry.py:265); display/icon/color/type
-        │   always overwrite. Seed member fixes do NOT reach existing rows on redeploy.
-        │   Fixed in M1.5.
-        │
-        ├── served: GET /api/sectors/universe (tags.py:241, reads TagRegistry) →
-        │   pipelines fetch at ingest (falls back to sectors_seed_backup.py) →
-        │   episode docs embed a SNAPSHOT of sector_exposures[]
-        │   (docs/firestore-contract.md §2.1.1). Universe changes do NOT retro-update
-        │   episodes — run pipelines/services/podcast/scripts/
-        │   backfill_sector_exposures.py --commit (dry-run by default).
-        │
-        └── runtime reason lookup: backend/src/data/sector_reasons.py::
-            reason_for(exposure_id, ticker) reads sector_reasons.json.
+## 2. Current state (post-M2, PR #436) and what changes
 
-DEAD CODE (do not run, delete in M5): refresh_industry_members.py,
-compile_sector_and_theme_universe.py, generate_sector_reasons.py (reads the universe
-JSON deleted in commit b3fae75 → FileNotFoundError; it is NOT the live reasons writer),
-and .github/workflows/refresh-sectors.yml (cron still live, targets the deleted files).
-```
+Shipped so far: **M0** (dead weekly chain retired; drift inventory), **M1** (curation
+engine `curate_sectors.py` + validators + redirects + authoritative sync),
+**M2** (content pass: 21 purges, 4 `jp_*` merges with redirects, HBM rebuilt, industry
+roll-ups, blurbs blanked, enforcement in CI, Firestore follows migration). PR #436
+merges as-is — its cleaned seed becomes the **initial import payload** for the DB.
 
-Serving endpoints (all `backend/src/routers/tags.py`): `/api/episodes/by-sector/{id}`
-:211 (SectorPage), `/api/sectors` :143, `/api/sectors/board` :160,
-`/api/sectors/performance` :189 (TopicsCloud), `/api/sectors/universe` :241 (pipelines).
+What v3 changes about the v2 architecture:
 
-Facts an implementer must not miss:
+| v2 (git-as-truth) | v3 (Postgres-as-truth) |
+|---|---|
+| `sectors_seed.py` canonical; sync overwrites DB at startup | `tag_registry` canonical; seed demoted to empty-DB bootstrap fixture; startup sync-overwrite retired (M2.5.4) |
+| POL validators run in CI on the committed seed | Validators run transactionally in the admin write endpoint (G1); CI keeps engine unit tests on a synthetic fixture only |
+| Reasons in `sector_reasons.json`, served by `reason_for()` | Reasons live in `tag_registry.members[].reason` JSONB; `reason_for()` reads the registry (M2.5.5) |
+| Curation via committed overlay files + PR review | Curation via admin API (single edits) and draft→publish bulk endpoint (LLM passes); review = audit trail + dry-run reports (G2/G5) |
+| M5 monthly workflow opens PRs in this public repo | Maintenance runs against the DB from a private context; reports go to private storage (M5) |
+| Admin PATCH edits are temporary until next deploy | Admin edits are durable and first-class (G4 protects them) |
 
-- **Two membership read paths disagree**: board/performance read live `tag_registry`
-  via `_sector_membership_index()` (`podcast.py:1225`); SectorPage's constituent grid
-  comes from episode-embedded snapshots. A membership fix is fully live only after
-  (a) seed artifacts regenerated, (b) sync overwrite lands (M1.5) + backend restart,
-  (c) `backfill_sector_exposures.py --commit` run.
-- **`exposure_id` is immutable** (URLs, episode snapshots). Merges/drops need a
-  redirect map, never an id rename (POL-6).
-- **Sector follows are SERVER-SIDE, keyed by DISPLAY NAME**: SectorPage subscribes via
-  `toggleTagSubscription(displayName)` (`SectorPage.tsx:160,198`) →
-  `useAppStore.ts:356` → `POST /api/user/subscriptions/tags/{tagName}/toggle`
-  (`frontend/src/services/api/user.ts:143`); localStorage is only an optimistic cache.
-  **Nothing matches subscriptions against `aliases`** — a rename/merge REQUIRES the
-  server-side migration in M2.6 or users silently lose follows.
-- **Never hand-edit generated artifacts** (`sectors_seed.py`, `sectors_seed_backup.py`,
-  `sector_reasons.json`). Fixes go into the curation inputs (M1.1), then re-run
-  `curate_sectors.py`.
-- Per-member `reason` is already rendered on SectorPage
-  (`SectorTickerCard.tsx:79-83`); P4/P5 are data problems, not missing UI.
-- The 10 industries are hardcoded in `GROUP_META` (`build_sectors_seed_from_tide.py:55-76`);
-  theme exclusion drops `其他` buckets (`:47-51,228-235`). Full rule list: the
-  grouping-logic-spec doc.
-- pipelines/ is a uv workspace (`uv sync`, never pip). OpenRouter key: env-first with
-  gcloud Secret Manager fallback — copy the pattern from
-  `generate_sector_reasons.py:42-53` (pattern only — never RUN that script, it reads
-  deleted inputs). Never write key values anywhere.
+Everything already true stays true: episode snapshots + `backfill_sector_exposures.py`
+semantics, `exposure_id` immutability + `SECTOR_REDIRECTS` (redirect map moves into the
+DB as registry rows' `redirect_to` or a small table — implementer picks the smaller
+diff, plan assumes a `redirect_to` column), the follows display-name coupling, the
+`/api/sectors/*` serving endpoints, `_sector_membership_index()`.
 
-## 3. Target design — the structural fix
-
-**Key architectural move (v2.1):** curation is decoupled from the tide importer.
-A new standalone step, `pipelines/libs/shared/scripts/curate_sectors.py`, reads the
-**committed seed** + the curation inputs and rewrites the three seed artifacts. Because
-it runs off the committed seed, every milestone below (and CI) works **without
-tide-tw-data**; the tide importer is only for future raw re-imports, and its last step
-becomes "call the curate module".
-
-```
-INPUTS (committed, human/LLM-curated):
-  pipelines/libs/shared/curation/sector_overrides.json      ← exclude/include/merge/
-                                                               rename/reclassify/descriptions
-  pipelines/libs/shared/curation/sector_member_reasons.json ← {"<exposure_id>": {"<ticker>": "reason"}}
-
-curate_sectors.py:  committed seed + curation inputs
-  → apply overrides (exclude → include → merge → reclassify → rename → descriptions)
-  → merge reasons file (it is the authoritative reason source; seed-carried reasons are
-    a fallback during migration only)
-  → POL-1 industry roll-ups
-  → POL validators
-  → rewrite sectors_seed.py + sectors_seed_backup.py + sector_reasons.json
-    (curate is the SINGLE writer of all three; the tide importer defers to it)
-```
-
-Policy (validators in M1, content compliant by end of M3):
-
-- **POL-1 Industries are pure roll-ups.** Industry members := union of child themes'
-  members (dedup by ticker; curated-first ordering). The two theme-less industries
-  (`生技醫療`, `營建地產`) keep their tide rosters. Kills P6 permanently; artifact shape
-  and all consumers unchanged.
-- **POL-2 Every theme has a thesis.** Per-sector `description` (zh-TW, 1–2 sentences:
-  what the theme is AND the inclusion criterion). Member belongs only if the theme is a
-  **material driver**.
-- **POL-3 No duplicate reasons.** The same non-empty (ticker, reason) string in ≥2
-  sectors fails the build — EXCEPT the parent-child case: an industry roll-up member may
-  reuse its child-theme reason. Zero-EMPTY reasons becomes a hard failure at end of M3.
-- **POL-4 No redundant sectors.** Jaccard ≥ 0.8 between two sectors fails the build —
-  EXCEPT parent-child pairs, defined mechanically as: one sector's `group` equals the
-  other's `exposure_id`.
-- **POL-5 Theme size guideline 4–40 members** → build warning only.
-- **POL-6 IDs immutable; merges leave a redirect** in `SECTOR_REDIRECTS` (emitted into
-  the seed artifacts); old URLs and un-backfilled episode snapshots keep resolving.
-
-## 4. Decision points (defaults chosen; Willy overrides in PR review)
+## 3. Decision points (defaults; Willy overrides in PR review)
 
 | # | Decision | Default |
 |---|---|---|
-| D1 | Far-fetched members | **Purge via overlay** — starting set = audit §2g confidence-**H** rows (~20 pairs); M-confidence rows go to Willy as a review list. No "peripheral member" role field. |
-| D2 | `jp_*` sectors | **Merge + redirect** (jp_wafer→silicon_wafer, jp_front_end_equip→front_end_equipment, jp_back_end_equip→pkg_equipment, jp_passive→mlcc; all four targets verified present in the seed). |
-| D3 | Stock-page card placement | StockDashboard only; CompanyOverviewPage deferred. |
-| D4 | Industry layer | **POL-1 roll-ups.** Visible effect: industry board cards/pages grow (semiconductor ~15 → ~100+ members); avg_change becomes a broader mean. |
-| D5 | Raw-dump themes (`textile`, `steel_metals`, `tourism`) | **Reclassify as industries** (ids/URLs unchanged; only `exposure_type`/group placement). |
-| D6 | Other merges (audit §2i.4) and renames (§2h) | **Not auto-applied.** M2 ships them as a proposed change-set table; Willy approves line-by-line. Only D1/D2/D5 are pre-approved. |
-| D7 | Blanked blurbs (M2.3) leave more members reason-less on SectorPage until M3 lands | Accepted — 73% are already empty; M3 follows immediately. |
+| D1 | Where does the M3 LLM fill run? | Operator-run from a dev machine against the admin API (needs `SECTOR_REASONS_MODEL` + OpenRouter key + admin token). Not public-repo CI. |
+| D2 | Redirect storage | `redirect_to` column on `tag_registry` (nullable FK-ish string). |
+| D3 | Bot identity for G4 | `updated_by` values: `bot:reasons-fill`, `bot:import`, `admin:<email>`; survivorship checks the prefix. |
+| D4 | Export cadence (G6) | Weekly + on-demand after bulk passes; GCS bucket `graphfolio-articles` sibling path or a new private bucket — implementer confirms bucket privacy before first export. |
+| D5 | M2's review-queue items (9 M-confidence purges, 2 merge clusters, 5 renames in PR #436 body) | Applied post-migration via the admin API once Willy ticks them — no longer via overlay files. |
 
 ---
 
-## M0 — Retire the dead chain (small PR, no data change)
+## M2.5 — Truth migration (the v3 core; one PR + one operational import)
 
-1. Remove the `schedule:` trigger from `.github/workflows/refresh-sectors.yml` (keep
-   `workflow_dispatch` + header comment: "inputs deleted in b3fae75; replaced by TKB-009
-   M5"). Do NOT delete the workflow file or the dead scripts in this PR — M5 deletes
-   them together with their replacement.
-2. Drift inventory: read-only script (scripts/ tier) diffing each `tag_registry`
-   `kind='sector'` row's members against the current seed; list diverging rows in the PR
-   description. (No hand-edited flag exists — sync skips ANY non-empty row,
-   `tag_registry.py:265`.) Port deliberate-looking edits into the M1 overlay file.
+Backend + one pipelines touch. No taxonomy content changes beyond the import itself.
 
-Acceptance: `grep -n 'schedule:' .github/workflows/refresh-sectors.yml` empty; drift
-list in PR description.
+1. **Schema** (idempotent DDL in `backend/src/database/postgres.py`, following the M1
+   description-column pattern):
+   - `tag_registry_audit` (id, tag_registry_id, exposure_id, action, actor, note,
+     before JSONB, after JSONB, at timestamptz) + the Postgres trigger on
+     `tag_registry` capturing INSERT/UPDATE/DELETE (pattern: Postgres wiki
+     `audit_trigger_91plus`, simplified to JSONB).
+   - `taxonomy_changelog` (id, version, dated entry, rationale, actor) + a
+     `taxonomy_version` counter (single-row table or max(version)).
+   - `tag_registry.redirect_to` column (D2); `updated_by` semantics per D3.
+2. **Write API** (new router `backend/src/routers/admin_taxonomy.py`, admin JWT like
+   the existing admin endpoints):
+   - `PUT /api/admin/taxonomy/sectors/{exposure_id}` — single-sector upsert
+     (structure/members/reasons/description). Runs POL validators against the
+     would-be state of the WHOLE taxonomy (load registry, apply change in memory,
+     validate — reuse `shared/curation.py` validator functions by extracting them into
+     a backend-importable module or duplicating the ~100 lines; implementer picks,
+     duplication is acceptable here to avoid a cross-tier import).
+     Rejects violations with the offender list in the 422 body.
+   - `POST /api/admin/taxonomy/bulk` — bulk draft: accepts a full or partial taxonomy
+     payload, validates, stores as draft (status column or a `taxonomy_drafts` row —
+     single-table status column preferred per research), returns a diff report
+     (added/removed/changed counts + samples).
+   - `POST /api/admin/taxonomy/bulk/{draft_id}/publish` — applies the draft
+     transactionally, honoring G4 survivorship (skip human-authored fields unless
+     `force=true`), bumps changelog for structural changes (G3).
+   - `GET /api/admin/taxonomy/audit?exposure_id=...` — read the audit trail.
+3. **One-time import**: operator script (scripts/ tier is fine, it calls the API)
+   pushing the post-#436 seed (99 sectors incl. redirects) through the bulk
+   draft→publish path with actor `bot:import`. This is changelog version 1.
+4. **Retire the old write paths**: `sync_sectors` no longer overwrites from seed; it
+   becomes bootstrap-only (`if tag_registry has zero kind='sector' rows → seed it from
+   the fixture, log loudly`). Delete the seed-regeneration writers from the runtime
+   path: `curate_sectors.py` survives ONLY as a dev tool operating on the fixture, or
+   is deleted with its logic absorbed into the backend validators — implementer keeps
+   whichever is the smaller diff. The tide importer's runbook gains: "re-imports are
+   drafted through POST /api/admin/taxonomy/bulk, never committed to git".
+5. **Read-path swap**: `reason_for(exposure_id, ticker)` and description resolution
+   read from `tag_registry` (registry already reaches the relevant services;
+   `sector_reasons.json` is deleted). Redirect resolution reads `redirect_to` instead
+   of the seed's `SECTOR_REDIRECTS`. Pipelines' offline fallback
+   (`sectors_seed_backup.py`) is frozen with a header comment "stale-acceptable
+   emergency fallback; truth is the API" — do not delete (ingest must survive API
+   downtime).
+6. **G6 export job**: small script + schedule (VPS cron via existing infra patterns or
+   GitHub Actions in a PRIVATE context — NOT this repo's public Actions) dumping
+   taxonomy JSON + audit table to private GCS. Verify bucket is not public before
+   first write.
+7. **Public-repo hygiene**: the curation overlay JSONs stop being the mechanism
+   (already-public content stays in history; files get a deprecation header). CI keeps
+   the curation-engine unit tests on the synthetic fixture; the real-seed invariant
+   test is retired (its job moved into validate-on-write).
 
-## M1 — `curate_sectors.py` + validators + redirect machinery (mechanism only, no content)
+Acceptance: audit trigger captures a psql UPDATE (test via a unit/integration test with
+the trigger installed); single-sector PUT rejects a POL violation with offenders listed;
+bulk draft→publish round-trips the full 99-sector payload byte-equal (export and
+compare); after import + deploy, `/api/sectors/board` serves from registry with zero
+behavioral diff vs pre-migration (compare responses); `sync_sectors` on a non-empty DB
+writes nothing (log assertion); backend `pytest` green; export lands in GCS and the
+bucket is confirmed private.
 
-Runs entirely off the committed seed — no tide-tw-data needed. Curation inputs start
-empty except one smoke entry.
+## M3 — Reasons + descriptions fill (~1,870 reasons, ~94 descriptions) — via the API
 
-1. **`curate_sectors.py`** (pipelines/libs/shared/scripts): load `sectors_seed.py` (it
-   is a Python literal — parse with `ast`, don't import backend code), apply
-   `sector_overrides.json` in the order given in §3, merge
-   `sector_member_reasons.json`, emit the three artifacts. Log every applied entry.
-   Refactor `build_sectors_seed_from_tide.py` so its final stage calls the same curate
-   module (extract shared code into `pipelines/libs/shared/src/shared/curation.py`);
-   the importer's own `build_reuse_index` (:213) is deleted — reason carry-forward is
-   now the reasons file's job. ⚠ The importer refactor is verified via unit tests that
-   STUB the tide-read step only — do NOT attempt to run
-   `build_sectors_seed_from_tide.py` end-to-end; tide-tw-data does not exist locally
-   and the script cannot run without it.
-2. **Policy validators** in the curate module, gated by `--enforce` (off by default;
-   M2 flips it on — today's content would fail otherwise): POL-3 duplicate non-empty
-   (ticker, reason) across sectors → hard fail listing offenders, exempting parent-child
-   (industry member reusing its child theme's reason); POL-4 Jaccard ≥ 0.8 → hard fail,
-   exempting pairs where one's `group` == the other's `exposure_id`; POL-5 size band →
-   warnings. Keep the two existing asserts. Zero-empty-reason check starts as
-   "must not exceed baseline 1026" and becomes a hard zero in M3.4.
-3. **POL-1 roll-ups** in the curate module, also behind `--enforce` (ships with M2's
-   content flip).
-4. **Redirect machinery**: curate emits `SECTOR_REDIRECTS: dict[str, str]` into both
-   seed artifacts. Backend: `sync_sectors` skips redirected ids; `get_episodes_by_sector`
-   (`podcast.py:962`) and `_sector_membership_index` (`podcast.py:1225`) resolve
-   old→canonical; responses carry the canonical `exposure_id`. Also IN THIS MILESTONE:
-   `sync_sectors` must mark any existing `tag_registry` row whose id appears in
-   `SECTOR_REDIRECTS` as hidden (they iterate registry rows filtered by
-   `hidden_sector_exposure_ids`; merely skipping redirected ids on upsert would leave a
-   stale visible row). Unit-test this with the synthetic fixture (M1.7a).
-   NOTE: appending the merged display_name to the target's `aliases` helps
-   pipeline text-matching ONLY — it does NOT preserve follows (nothing matches
-   subscriptions against aliases); follows are handled in M2.6.
-5. **Fix `sync_sectors`**: always overwrite `members` (and description) from the seed.
-   Repo is the single source of truth (M0.2 ported drift). Note in `admin_tags.py`'s
-   PATCH docstring that member edits last only until next deploy — durable edits belong
-   in the overlay.
-6. **Schema plumbing for `description`**: `backend/src/schemas/sector.py` (optional
-   field) → thread through `/api/episodes/by-sector/{id}` and `/api/sectors` → render in
-   SectorPage header (`SectorPage.tsx:171-208`) → add to `EpisodesBySectorResponse`
-   (`frontend/src/services/api/podcasts.ts:622`).
-7. **Tests**: (a) unit tests for the curate module using a SMALL synthetic seed fixture
-   (~5 sectors) covering every override type, both validator exemptions, roll-ups, and
-   redirects; (b) invariant pytest over the real committed seed
-   (`uv run --package tinboker-shared pytest`): no excluded pair present, every redirect
-   target exists, empty-reason count ≤ 1026 baseline; (c) round-trip: `curate_sectors.py`
-   with empty inputs and no `--enforce` reproduces the current seed byte-identical
-   except the new empty `SECTOR_REDIRECTS = {}`.
+1. `fill_sector_reasons.py` (pipelines scripts, operator-run per D1): reads current
+   taxonomy from `GET /api/sectors/universe` (or admin GET), finds members with empty
+   reasons + sectors with empty descriptions, one LLM call per sector returning strict
+   JSON `{"description": "...", "reasons": {ticker: reason}}`, retries ×3, model from
+   `SECTOR_REASONS_MODEL` (default `deepseek/deepseek-v4-pro`), OpenRouter key
+   env→gcloud fallback (copy the pattern from the dead `generate_sector_reasons.py:42-53`;
+   never run that script). Skips roll-up members (industry members reuse the child-theme
+   reason server-side — the validator's parent-child exemption).
+2. Prompt: sector display_name + description in context; 每檔理由必須說明「這檔為什麼
+   屬於**這個**產業/題材」，禁止泛用公司簡介；1–2 句 zh-TW。
+3. Output goes to `POST /api/admin/taxonomy/bulk` as a draft; the returned diff report
+   + a sampled reasons sheet go to Willy; publish only after his OK (G5). Distinctness
+   check before submission: identical reason for one ticker across ≥2 non-parent-child
+   sectors → re-ask once → still identical → include in the report as flagged, publish
+   anyway (server tolerates; validator blocks only exact-duplicate strings — flagged
+   pairs get manual review).
+4. After publish: zero-empty-reasons becomes a standing validator warning→error switch
+   in the write path (server setting), so future member additions without reasons are
+   rejected at write time.
 
-Acceptance: round-trip test (7c) green; smoke overlay entry visibly applied on a re-run;
-redirect unit test green; after local backend restart with an edited seed,
-`curl localhost:5174/api/sectors/board | jq` reflects the change (proves M1.5); backend
-`pytest tests/ -v`, frontend `npm run build && npm run lint` green.
+Acceptance: post-publish `GET`-based audit shows 0 empty reasons / 0 empty
+descriptions; 2330's reasons differ across its sectors; SectorPage on dev renders
+reasons for a previously-empty sector; audit table shows the bulk pass under
+`bot:reasons-fill`.
 
-## M2 — Full-universe content pass (the actual cleanup)
+## M4 — Stock page 「所屬產業與題材」 (unchanged from v2.1 except the reason source)
 
-Read `2026-07-06-sector-universe-audit.md` in full first. One PR; its review IS Willy's
-sign-off gate. Everything below runs via `curate_sectors.py` — no tide needed.
+1. `GET /api/sectors/by-ticker/{ticker}` in `tags.py`: reuse
+   `_sector_membership_index()`; attach reason/description from the registry (NOT from
+   `sector_reasons.json`, which is gone). Items: `exposure_id, exposure_type,
+   display_name, icon_id, color_hex, group, reason`; industries first; Redis TTL 1h;
+   unknown ticker → `{"items": []}`, 200.
+2. Frontend: Zod-validated client + a new card in `StockDashboard.tsx` after the
+   關鍵數據 card (insertion after ~:287, grid closes :289-291); chip links to
+   `/sector/{exposure_id}` with the per-sector reason as secondary text; copy the
+   reason-rendering pattern from `SectorTickerCard.tsx:79-83` (note:
+   `SectorExposureList.tsx` renders NO reasons — layout reference only). Hide when
+   empty.
 
-1. **Populate the overlay**: `exclude` = all §2g confidence-**H** rows (~20 pairs);
-   `merge` = the 4 `jp_*` per D2; `reclassify` = textile/steel_metals/tourism per D5;
-   `descriptions` = hand-write for the 4 merge targets + post-purge `sector_hbm`.
-2. **Proposed-changes table in the PR description** (NOT applied): §2g M-confidence
-   rows, §2i.4 merge candidates (liquid/air cooling, ems/odm/ai_server), §2h renames
-   (odm, air_cooling, environmental, cpu_agentic_ai, cxl). One row each: current state,
-   proposed action, audit evidence. Willy ticks; a follow-up commit in the same PR
-   applies ticked rows.
-3. **Blank the tainted blurbs**: add a one-time curate step (`--blank-duplicate-reasons`)
-   that empties EVERY occurrence of a (ticker, reason) string appearing in ≥2 sectors
-   (excluding parent-child copies) — all ~279 rows. These are company blurbs, not
-   theses; even the "original" sector deserves a rewritten reason (M3). This is what
-   lets POL-3 pass when `--enforce` flips on below. (D7 accepts the temporary extra
-   empties.) Mechanics, to be explicit: the blanking runs inside `curate_sectors.py`
-   and lands ONLY in the regenerated seed artifacts — it does not touch
-   `sector_member_reasons.json` (still near-empty at this point). The seed's surviving
-   non-blanked reasons remain in place until M3.1's `--import-seed-reasons` promotes
-   them into the reasons file, which from then on is authoritative. At no point does
-   anyone write reasons into `sectors_seed.py` by hand.
-4. Flip `--enforce` on permanently (validators + POL-1 roll-ups). Expected: the
-   industry≈theme Jaccard failures disappear via the parent-child exemption; if
-   `hbm`/`cxl` still trip POL-4 after the purge, purge further per audit §2i.4 (their
-   overlap IS the contamination). Re-run curate; commit the three artifacts.
-5. Verify `sector_hbm` post-purge has ≥4 members with real memory exposure — if only
-   2408/2344 remain, ADD real HBM-chain members via `include` with hand-written reasons
-   in the reasons file, or Willy folds the sector into a broader memory theme (his call
-   in the PR).
-6. **Follows migration (server-side, mandatory)**: follows live behind
-   `POST /api/user/subscriptions/tags/{tagName}/toggle` keyed by display-name string
-   (`user.ts:143`; locate the backend table via that route's handler). Write a one-off
-   migration mapping each renamed/merged sector's old display name → new display name
-   (dedupe if a user has both). Acceptance: a user subscribed to 「日本矽晶圓」 is
-   subscribed to the merge target's name after deploy.
-7. After merge to `develop`: run `backfill_sector_exposures.py --commit`; quote
-   before/after counts in the PR.
+Acceptance: `curl /api/sectors/by-ticker/2330 | jq` → ≥1 item, reasons non-empty and
+pairwise different; `/stock/2330` renders; `npm run build && npm run lint` + backend
+`pytest` green.
 
-Acceptance: `audit_sectors.py` re-run quoted in PR: 0 non-parent-child pairs at
-Jaccard ≥ 0.8, `sector_hbm` majority real-memory, fan-out max < 8, duplicate-reason rows
-= 0; the 4 old `jp_*` urls return the canonical payload
-(`curl /api/episodes/by-sector/sector_jp_wafer | jq .exposure_id` →
-`"sector_silicon_wafer"`); dev-env spot check `dev.tinboker.com/sector/sector_hbm` has
-no 2330; follows migration verified per M2.6.
-
-## M3 — Fill reasons + descriptions (~1300 empty reasons after M2.3, ~98 descriptions)
-
-The old `generate_sector_reasons.py` is DEAD (reads inputs deleted in b3fae75) — do not
-run or resurrect it. Write a NEW script; copy only its retry pattern (:82-110) and
-secret fallback (:42-53).
-
-1. **`fill_sector_reasons.py`** (pipelines/libs/shared/scripts): reads the committed
-   seed (membership + descriptions) and `sector_member_reasons.json`; for every member
-   whose reason is missing there, and every sector missing a description, one LLM call
-   per sector returning STRICT JSON `{"description": "...", "reasons": {ticker: ...}}`.
-   Writes ONLY into `sector_member_reasons.json` and the overlay's `descriptions` —
-   never into seed artifacts; the caller then re-runs `curate_sectors.py` to regenerate
-   them. Defaults: skip-existing; flags `--only <exposure_id>`, `--overwrite`.
-   Model via `SECTOR_REASONS_MODEL` env (default `deepseek/deepseek-v4-pro`).
-   One-time bootstrap flag `--import-seed-reasons`: exports the surviving (non-blanked)
-   seed reasons into the reasons file first, so the file becomes complete and authoritative.
-2. **Prompt requirements**: include the sector's display_name + description; 每檔理由
-   必須說明「這檔為什麼屬於**這個**產業/題材」，禁止泛用公司簡介；1–2 句 zh-TW。
-   Roll-up members are skipped (they reuse the child-theme reason per POL-3's exemption).
-3. **Distinctness check** post-run: identical reason for one ticker across ≥2
-   non-parent-child sectors → re-ask once → still identical → write to
-   `reasons_flagged.json`, exit 0 (report, don't block).
-4. Run: `--import-seed-reasons`, then the default fill, then `--only` re-runs for
-   flagged sectors. Re-run curate; commit reasons file + overlay + regenerated
-   artifacts. Flip the M1.7 empty-reason invariant to hard zero.
-
-Acceptance: invariant pytest green with zero-empty enforced; `reasons_flagged.json`
-empty or listed in the PR; spot-check quoted: 2330's reason differs between
-`sector_semiconductor` and every other sector containing it; SectorPage on dev shows
-per-member reasons for a previously-empty sector.
-
-## M4 — Stock page: 「所屬產業與題材」
-
-1. Backend `GET /api/sectors/by-ticker/{ticker}` in `tags.py` (mirrors
-   `/api/episodes/by-sector/{id}`; keeps sector logic out of stock.py). Reuse
-   `_sector_membership_index()` — do NOT re-derive; attach
-   `reason_for(exposure_id, ticker)`. Items: `exposure_id, exposure_type, display_name,
-   icon_id, color_hex, group, reason`; industries first, themes after, alphabetical
-   within. Redis cache_get→compute→cache_set, TTL 1h. Unknown ticker → `{"items": []}`,
-   200.
-2. Frontend: Zod schema in `validation/schemas.ts` (REQUIRED — new endpoint follows the
-   project convention even though legacy sector payloads don't); client in
-   `services/api/stocks.ts`; new card in `StockDashboard.tsx` inserted after the
-   關鍵數據 card (after line ~287, inside the grid that closes at :289-291). This is a
-   NEW component: icon + name chip linking to `/sector/{exposure_id}` with the
-   per-sector `reason` as secondary text — copy the reason-rendering pattern from
-   `SectorTickerCard.tsx:79-83` (note: `SectorExposureList.tsx` does NOT render reasons;
-   it's only a reference for the chip-link + icon layout). Hide the card when `items`
-   is empty.
-
-Acceptance: `curl localhost:5174/api/sectors/by-ticker/2330 | jq` → ≥1 item, all
-reasons non-empty and pairwise different; `/stock/2330` renders chips that navigate;
-`npm run build && npm run lint` + backend `pytest` green.
-
-## M5 — Ongoing maintenance (replaces the dead chain; fully CI-runnable — no tide)
+## M5 — Ongoing maintenance (private, PR-free)
 
 1. Productize `docs/fix-plans/assets/audit_sectors.py` →
-   `pipelines/libs/shared/scripts/audit_sector_universe.py` (same metrics + markdown
-   report; add `--judge`: one LLM call per sector given description + members + reasons,
-   flagging members that fail the stated inclusion criterion — report-only, never
-   auto-remove).
-2. New workflow `.github/workflows/sector-maintenance.yml`: monthly cron +
-   workflow_dispatch; jobs: audit (`--judge`) → `fill_sector_reasons.py` (skip-existing;
-   fills any members added since) → `curate_sectors.py --enforce` → invariant pytest →
-   PR to `develop` embedding the audit report + added/removed/filled counts.
-   **In this same M5 PR** (not earlier): delete `refresh-sectors.yml`,
-   `refresh_industry_members.py`, `compile_sector_and_theme_universe.py`,
-   `generate_sector_reasons.py`.
-3. CI guard: the invariant pytest runs on every PR touching
-   `backend/src/data/sectors_seed.py` (hook into the existing pipelines test job).
-4. Tide re-imports remain a MANUAL runbook: document at the top of
-   `build_sectors_seed_from_tide.py` (obtain tide-tw-data from Willy; run with
-   `--tide <dir> --write`; the importer ends by calling curate, so overrides/reasons
-   survive re-imports by construction).
+   `audit_sector_universe.py` reading from the API (not the seed), plus `--judge`
+   (one LLM call per sector flagging members that fail the stated inclusion criterion
+   — report-only).
+2. Monthly job (private context per M2.5.6 — VPS cron or private Actions): audit
+   (`--judge`) → fill (skip-existing) as a DRAFT → notify Willy with the report +
+   draft id; nothing publishes without his call. Report artifact → private GCS.
+   Weekly G6 export runs on its own schedule.
+3. Membership refresh from FinMind (the old `refresh_industry_members.py` purpose)
+   returns later as another drafted bulk pass — out of scope here; note it in the
+   runbook as the pattern.
+4. Delete from this repo: `refresh-sectors.yml`, `refresh_industry_members.py`,
+   `compile_sector_and_theme_universe.py`, `generate_sector_reasons.py` (all dead), and
+   the real-seed CI invariant if not already retired in M2.5.7.
 
-Acceptance: `workflow_dispatch` dry-run produces a PR with the audit report embedded and
-zero unexplained membership churn; a seed-touching PR without green invariants fails CI;
-running the workflow twice back-to-back produces a second PR with no reason churn.
+Acceptance: one full dry-run of the monthly job produces a report + an unpublished
+draft; a second run produces no new draft content (skip-existing verified against the
+DB); the dead files are gone and CI is green.
 
 ---
 
 ## Out of scope
 
-- Renaming any live `exposure_id` (redirects only, POL-6).
-- Retrofitting Zod onto legacy sector payloads (only the new M4 endpoint gets Zod).
-- The 12-member cap on SectorPage's grid (`SectorPage.tsx:220-240`).
-- Market-cap-weighted composite index (performance stays a simple mean).
-- Rebuilding tide-tw-data itself or replacing it as the raw-import source.
-- Deleting dead scripts/workflow before M5.
+- Rewriting public git history to scrub the already-published taxonomy (impractical;
+  accepted loss — see §1).
+- Renaming any live `exposure_id` (redirects only).
+- Zod retrofit on legacy sector payloads; SectorPage 12-member cap; market-cap
+  composite index.
+- Multi-user editorial workflow / approval committees (governance theater at this
+  scale — revisit only if the team grows).
 
-## Verification protocol (every milestone)
+## Verification protocol
 
 Per `docs/ai-ops/20-judgment-rubrics.md` R2: quoted command output in each PR —
-backend `pytest tests/ -v`, frontend `npm run build && npm run lint`, the milestone's
-`curl`/`jq` checks, `uv run --package tinboker-shared pytest` for pipelines changes,
-and re-running the audit script after any membership change (quote the headline table).
-Deploy path is git → PR → CI only; post-merge verify on
-`https://dev-api.tinboker.com` + `dev.tinboker.com/sector/...`.
+backend `pytest tests/ -v` (use `uv run --python 3.12`, the default env breaks on
+3.14), pipelines `uv run --package tinboker-shared --with pytest pytest`, frontend
+`npm run build && npm run lint`, plus each milestone's `curl`/`jq` checks. For
+migration steps that touch prod data (M2.5.3 import, M3 publish): dry-run report
+reviewed BEFORE the mutating call, and a G6 export taken immediately before as the
+restore point. Deploy path is git → PR → CI only; post-merge verify on
+`https://dev-api.tinboker.com`.
