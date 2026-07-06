@@ -777,6 +777,62 @@ Do not implement before TKB-001, TKB-002, and TKB-003 are shipped.
 
 ---
 
+## TKB-008 Sector curation, per-sector member reasons, stock-page membership
+
+```yaml
+id: TKB-008
+status: ready
+priority: P1
+area:
+- pipelines
+- backend
+- frontend
+type: feature
+effort: L
+risk: medium
+github_issue: null
+github_project_item: null
+pr: null
+```
+
+### Goal
+
+Structurally fix the sector/industry grouping: TinBoker-owned curation layer over the
+tide-tw-data input (exclude/include/merge/reclassify overlay + machine-checked policy),
+purge the ~30 audited far-fetched memberships (2330-in-HBM class), merge the 4 redundant
+`jp_*` sectors with URL redirects, rebuild industries as roll-ups of their themes, fill
+the 73%-empty per-(ticker, sector) reasons with sector-specific text, show each stock's
+memberships (with reasons) on the stock page, and replace the dead weekly refresh chain
+with an audit+fill maintenance workflow.
+
+### Plan
+
+Full milestone plan (M0–M5, one PR each, in order):
+`docs/fix-plans/2026-07-06-sector-curation-and-reasons.md` (v2, structural).
+Evidence base: `docs/fix-plans/2026-07-06-sector-universe-audit.md` (full 103-sector
+audit) and `docs/fix-plans/2026-07-06-grouping-logic-spec.md` (every generation rule,
+file:line). Read the plan before writing any code.
+
+### Acceptance criteria
+
+- [ ] M0: dead weekly cron disabled; tag_registry drift inventoried.
+- [ ] M1: curation overlay + POL validators + merge/redirect machinery + sync_sectors overwrite fix + `description` plumbing (mechanism only).
+- [ ] M2: full content pass — confidence-H purges, `jp_*` merges w/ redirects + follows migration, raw-dump reclassify, industry roll-ups enforced, episodes backfilled; Willy-reviewed change-set for the rest.
+- [ ] M3: reason-reuse bug fixed at source; 0 empty reasons/descriptions; distinctness-checked; invariant pytest hard-enforced.
+- [ ] M4: `GET /api/sectors/by-ticker/{ticker}` + 「所屬產業與題材」 card on StockDashboard (Zod-validated).
+- [ ] M5: audit script productized (`--judge` mode); monthly maintenance workflow replaces refresh-sectors.yml; seed-touching PRs gated by invariant CI.
+
+### Risks
+
+- Merges/renames touch follows, which are SERVER-SIDE and keyed by DISPLAY NAME (SectorPage.tsx:198 → /api/user/subscriptions/tags/{name}/toggle) — M2.6 migration is mandatory or users silently lose subscriptions.
+- Membership changes only reach existing episodes after a manual `backfill_sector_exposures.py --commit` run.
+- `sync_sectors` never overwrites non-empty tag_registry members until M1.5 ships — a plain redeploy does NOT propagate seed fixes.
+- `tide-tw-data` is absent locally and `generate_sector_reasons.py` is dead code (reads files deleted in b3fae75) — the plan's curate_sectors.py architecture works off the committed seed precisely so no milestone depends on either; do not "fix" by running the old scripts.
+- Industry roll-ups (POL-1) visibly change /topics industry cards (member counts grow ~7x for semiconductor); flagged as D4 for Willy.
+- Audit Part-2 judgments are INFERRED market calls — every purge/merge beyond the pre-approved defaults goes through Willy's line-by-line review in M2.2.
+
+---
+
 # Agent Working Rules
 
 When an agent starts work:
