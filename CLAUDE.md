@@ -305,6 +305,7 @@ CORS_ORIGINS=http://localhost:5173,https://tinboker.com,https://dev.tinboker.com
 # Release scoping (launch subset) — empty value disables a filter
 RELEASE_PODCAST_LANGUAGES=zh-TW    # only show content_sources podcasts in these languages ("" = all)
 RELEASE_EPISODE_MAX_AGE_DAYS=0     # hide episodes older than N days (0=off; flip to 30 once released_at_ms is backfilled on existing episodes — see docs/firestore-contract.md § contract cleanups)
+NEWSLETTER_SUBSCRIBE_URL=https://tinboker.substack.com/subscribe   # outbound subscription-funnel destination (issue #424; config-driven so it can move off Substack — see docs/features/subscription-funnel.md)
 ```
 
 ### Frontend (`.env.*` per environment)

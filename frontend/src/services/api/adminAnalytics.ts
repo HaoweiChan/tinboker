@@ -143,3 +143,20 @@ export async function getAnalyticsHistory(days = 90): Promise<AnalyticsSnapshot[
     });
     return res.data.snapshots;
 }
+
+// ── Subscription funnel (issue #424): top CTA sources by view + outbound click ──
+export interface SubscribeFunnel {
+    destination: string;
+    total_views: number;
+    total_clicks: number;
+    top_view_sources: { source: string; count: number }[];
+    top_click_sources: { source: string; count: number }[];
+}
+
+export async function getSubscribeFunnel(top = 20): Promise<SubscribeFunnel> {
+    const res = await apiClient.get<SubscribeFunnel>('/api/admin/analytics/subscribe', {
+        ...adminAuthConfig(),
+        params: { top },
+    });
+    return res.data;
+}

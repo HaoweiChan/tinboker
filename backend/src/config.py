@@ -119,6 +119,13 @@ class Settings(BaseSettings):
     # firebase-admin already uses on the VPS, once added as a GSC property user).
     google_application_credentials: Optional[str] = None
 
+    # ==================== Newsletter / subscription funnel ====================
+    # Config-driven outbound destination for the subscription funnel (issue #424).
+    # Starts on Substack but stays overridable so the ESP can change later without a
+    # code change — the /api/subscribe redirect and CTA slots always read this value.
+    # Override via env NEWSLETTER_SUBSCRIBE_URL.
+    newsletter_subscribe_url: str = "https://tinboker.substack.com/subscribe"
+
     @field_validator("admin_emails", mode="before")
     @classmethod
     def parse_admin_emails(cls, v: Union[str, list, None]) -> list[str]:

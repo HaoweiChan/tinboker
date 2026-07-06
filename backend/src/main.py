@@ -22,6 +22,7 @@ from src.routers.auth import router as auth_router
 from src.routers.user import router as user_router
 from src.routers.search import router as search_router, init_search_index
 from src.routers.analytics import router as analytics_router
+from src.routers.subscribe import router as subscribe_router
 from src.routers.recommendations import router as recommendations_router
 from src.routers.ticker_insights import router as ticker_insights_router
 from src.routers.translations import router as translations_router
@@ -329,6 +330,7 @@ app.include_router(search_router)
 app.include_router(recommendations_router)
 app.include_router(ticker_insights_router)
 app.include_router(analytics_router, prefix="/api/analytics", tags=["analytics"])
+app.include_router(subscribe_router)  # public outbound subscription funnel (/api/subscribe)
 app.include_router(translations_router)
 app.include_router(sources_router)
 app.include_router(notifications_router)

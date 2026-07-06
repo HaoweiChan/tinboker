@@ -7,6 +7,7 @@ import { useParams, Link } from 'react-router-dom';
 import { ChevronLeft, Clock, Eye, Calendar } from 'lucide-react';
 import { PageContent } from '@/components/layout/PageContent';
 import { ArticleBody } from '@/components/article/ArticleBody';
+import { SubscribeCTA } from '@/components/subscribe/SubscribeCTA';
 import { SEO } from '@/components/common/SEO';
 import { getArticleBySlug } from '@/services/articleService';
 import type { Article } from '@/validation/schemas';
@@ -188,6 +189,9 @@ export const ArticleDetail: React.FC = () => {
 
       {/* Body */}
       <ArticleBody content={article.body_content} />
+
+      {/* Subscription CTA — end-of-article funnel slot (#424). */}
+      <SubscribeCTA source="article_detail_end" className="mt-10" />
 
       {/* Related (tags / tickers / key points) — Substack-style single column,
           so this lives below the article instead of in a sidebar rail. */}

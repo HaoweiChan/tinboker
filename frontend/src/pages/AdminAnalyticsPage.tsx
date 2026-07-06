@@ -31,6 +31,7 @@ import {
     Star,
     Bookmark,
     UserPlus,
+    Mail,
 } from 'lucide-react';
 import {
     getCloudflareOverview,
@@ -39,6 +40,7 @@ import {
     getFacebookInsights,
     getMemberAnalytics,
     getAnalyticsHistory,
+    getSubscribeFunnel,
     type CloudflareOverview,
     type SeoOverview,
     type SeoRow,
@@ -46,6 +48,7 @@ import {
     type FacebookInsights,
     type MemberAnalytics,
     type AnalyticsSnapshot,
+    type SubscribeFunnel,
 } from '@/services/api/adminAnalytics';
 import { TrendChart, type TrendPoint } from '@/components/admin/TrendChart';
 
@@ -242,18 +245,20 @@ export const AdminAnalyticsPage: React.FC = () => {
     const [fb, setFb] = useState<FacebookInsights | null>(null);
     const [members, setMembers] = useState<MemberAnalytics | null>(null);
     const [history, setHistory] = useState<AnalyticsSnapshot[]>([]);
+    const [funnel, setFunnel] = useState<SubscribeFunnel | null>(null);
     const [loading, setLoading] = useState(true);
 
     const load = useCallback(async () => {
         setLoading(true);
         // Independent sources — settle each on its own so one failure never blanks the page.
-        const [cfRes, seoRes, thRes, fbRes, memRes, histRes] = await Promise.allSettled([
+        const [cfRes, seoRes, thRes, fbRes, memRes, histRes, funnelRes] = await Promise.allSettled([
             getCloudflareOverview(28),
             getSeoOverview(28),
             getThreadsInsights(28, 5),
             getFacebookInsights(28),
             getMemberAnalytics(10),
             getAnalyticsHistory(90),
+            getSubscribeFunnel(20),
         ]);
         if (cfRes.status === 'fulfilled') setCf(cfRes.value);
         if (seoRes.status === 'fulfilled') setSeo(seoRes.value);
@@ -261,6 +266,7 @@ export const AdminAnalyticsPage: React.FC = () => {
         if (fbRes.status === 'fulfilled') setFb(fbRes.value);
         if (memRes.status === 'fulfilled') setMembers(memRes.value);
         if (histRes.status === 'fulfilled') setHistory(histRes.value);
+        if (funnelRes.status === 'fulfilled') setFunnel(funnelRes.value);
         setLoading(false);
     }, []);
 
@@ -346,6 +352,44 @@ export const AdminAnalyticsPage: React.FC = () => {
                         rows={(members?.top_episodes || []).map((r) => ({ label: r.title, count: r.count }))}
                     />
                 </div>
+            </SectionCard>
+
+            {/* Subscription funnel — TinBoker → newsletter outbound (issue #424) */}
+            <SectionCard
+                icon={<Mail className="h-5 w-5 text-primary" />}
+                title="Subscription Funnel"
+                subtitle={
+                    funnel?.destination
+                        ? `Outbound newsletter intent · → ${funnel.destination}`
+                        : 'Landing views vs. outbound clicks, by CTA source'
+                }
+            >
+                <div className="mt-4 grid gap-4 sm:grid-cols-3">
+                    <Stat icon={<Eye className="h-4 w-4" />} label="Landing Views" value={fmt(funnel?.total_views)} />
+                    <Stat icon={<MousePointerClick className="h-4 w-4" />} label="Outbound Clicks" value={fmt(funnel?.total_clicks)} />
+                    <Stat
+                        icon={<TrendingUp className="h-4 w-4" />}
+                        label="View → Click"
+                        value={funnel && funnel.total_views > 0 ? pct(funnel.total_clicks / funnel.total_views) : '—'}
+                    />
+                </div>
+                <div className="mt-6 grid gap-6 lg:grid-cols-2">
+                    <RankList
+                        icon={<Eye className="h-4 w-4 text-muted-foreground" />}
+                        title="Top Sources — Landing Views"
+                        rows={(funnel?.top_view_sources || []).map((r) => ({ label: r.source, count: r.count }))}
+                    />
+                    <RankList
+                        icon={<MousePointerClick className="h-4 w-4 text-muted-foreground" />}
+                        title="Top Sources — Outbound Clicks"
+                        rows={(funnel?.top_click_sources || []).map((r) => ({ label: r.source, count: r.count }))}
+                    />
+                </div>
+                {(!funnel || (funnel.total_views === 0 && funnel.total_clicks === 0)) && (
+                    <p className="mt-4 text-xs text-muted-foreground">
+                        {loading ? 'Loading…' : '尚無訂閱漏斗數據 — CTA 曝光與點擊累積後即會顯示各來源排名。'}
+                    </p>
+                )}
             </SectionCard>
 
             {/* Cloudflare traffic */}

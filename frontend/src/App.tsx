@@ -30,6 +30,7 @@ import { AdminTagsPage } from '@/pages/AdminTagsPage';
 import { AdminSocialPage } from '@/pages/AdminSocialPage';
 import { ArticleDetail } from '@/pages/ArticleDetail';
 import { ArticleList } from '@/pages/ArticleList';
+import { SubscribePage } from '@/pages/SubscribePage';
 import { DevPortalPage } from '@/pages/DevPortalPage';
 import { DevGrafanaPage } from '@/pages/DevGrafanaPage';
 import { DevPodcasterListPage } from '@/pages/DevPodcasterListPage';
@@ -125,6 +126,8 @@ function App() {
             <Route path="/episode/:id" element={<EpisodeDetail />} />
             <Route path="/articles" element={<ArticleList />} />
             <Route path="/article/:slug" element={<ArticleDetail />} />
+            {/* Newsletter subscription funnel — TinBoker-owned outbound entry point (#424) */}
+            <Route path="/subscribe" element={<SubscribePage />} />
 
             {/* Login-gated — personal surfaces with nothing to show logged out. */}
             <Route element={<RequireLogin />}>

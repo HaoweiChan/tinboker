@@ -11,8 +11,10 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from src.auth.admin_auth import AdminAccess, get_admin_access, get_social_access
-from src.cache.redis_client import cache_get, cache_set
+from src.cache.redis_client import cache_get, cache_set, get_redis
 from src.database.models import AnalyticsSnapshot
+from src.routers.subscribe import CLICK_KEY as SUBSCRIBE_CLICK_KEY
+from src.routers.subscribe import VIEW_KEY as SUBSCRIBE_VIEW_KEY
 from src.database.postgres import get_session
 from src.services.cloudflare_analytics_service import CloudflareAnalyticsService
 from src.services.facebook_insights_service import FacebookInsightsService
@@ -177,6 +179,43 @@ async def record_snapshot(
     logger.info("analytics snapshot %s: th=%s fb=%s fans=%s",
                 row.day, row.threads_followers, row.fb_followers, row.fb_fans)
     return _snapshot_dict(row)
+
+
+async def _top_sources(key: str, top: int) -> list[dict]:
+    """Read a subscribe-funnel ZSET as a descending [{source, count}] ranking."""
+    redis = await get_redis()
+    if not redis:
+        return []
+    rows = await redis.zrevrange(key, 0, top - 1, withscores=True)
+    out: list[dict] = []
+    for member, score in rows:
+        src = member.decode() if isinstance(member, (bytes, bytearray)) else member
+        out.append({"source": src, "count": int(score)})
+    return out
+
+
+@router.get("/subscribe")
+async def get_subscribe_funnel(
+    top: int = Query(default=20, ge=1, le=100, description="Rows per top-list"),
+    admin: AdminAccess = Depends(get_admin_access),
+):
+    """Subscription funnel (issue #424): top CTA sources by landing view + outbound click.
+
+    First-party counts from Redis, keyed by the ``source`` attribution slot each CTA sends.
+    ``destination`` echoes the config-driven newsletter target so it's clear where clicks go.
+    Reads live counters (no cache) so a just-clicked CTA shows up immediately.
+    """
+    from src.config import settings
+
+    views = await _top_sources(SUBSCRIBE_VIEW_KEY, top)
+    clicks = await _top_sources(SUBSCRIBE_CLICK_KEY, top)
+    return {
+        "destination": settings.newsletter_subscribe_url,
+        "total_views": sum(r["count"] for r in views),
+        "total_clicks": sum(r["count"] for r in clicks),
+        "top_view_sources": views,
+        "top_click_sources": clicks,
+    }
 
 
 @router.get("/history")
