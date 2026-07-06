@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Author a one-line zh-TW "why this ticker belongs to the sector" reason per member.
+"""Deprecated bootstrap-fixture helper for sector member reasons.
+
+Production taxonomy reasons now live in Postgres and are written through the admin
+taxonomy draft/publish API. This script may update only the stale bootstrap fixture.
 
 MAINTENANCE / COMPILATION TIER ONLY (docs/firestore-contract.md § 2.1.1): the
-runtime resolver stays offline reading the compiled artifact; this script (run
-manually or on a schedule, alongside ``enrich_sectors_with_tavily.py``) fills the
+runtime resolver reads the platform API; this script fills the
 ``reason`` field on every member of ``sector_and_theme_universe.json``.
 
 The relationships are factual and well-known, so a single LLM call per exposure
@@ -32,8 +34,6 @@ from typing import Any
 import httpx
 
 DATA = Path(__file__).resolve().parents[1] / "src" / "shared" / "data" / "sector_and_theme_universe.json"
-# Compact mirror the backend serves from (it cannot import the pipelines package).
-BACKEND_MIRROR = Path(__file__).resolve().parents[4] / "backend" / "src" / "data" / "sector_reasons.json"
 GCP_PROJECT = "gen-lang-client-0901363254"
 MODEL = "deepseek/deepseek-v4-pro"
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
@@ -113,7 +113,7 @@ def _openrouter_reasons(api_key: str, display_name: str, members: list[dict[str,
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--only", help="generate for a single exposure_id")
-    ap.add_argument("--apply", action="store_true", help="write the universe + backend mirror")
+    ap.add_argument("--apply", action="store_true", help="write the bootstrap universe fixture")
     ap.add_argument("--overwrite", action="store_true", help="regenerate reasons that already exist")
     args = ap.parse_args()
 
@@ -146,26 +146,9 @@ def main() -> int:
     if args.apply and filled:
         DATA.write_text(json.dumps(universe, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         print(f"Wrote universe: {DATA}")
-        _write_backend_mirror(universe)
     elif not args.apply:
         print("(dry-run — pass --apply to write)")
     return 0
-
-
-def _write_backend_mirror(universe: dict[str, Any]) -> None:
-    """Emit the compact ``{exposure_id: {TICKER: reason}}`` map the backend serves."""
-    mirror: dict[str, dict[str, str]] = {}
-    for exp in universe["exposures"]:
-        eid = str(exp.get("exposure_id") or "")
-        bucket = {
-            str(m.get("ticker") or "").strip().upper(): str(m.get("reason"))
-            for m in exp.get("members") or []
-            if isinstance(m, dict) and m.get("reason") and m.get("ticker")
-        }
-        if bucket:
-            mirror[eid] = bucket
-    BACKEND_MIRROR.write_text(json.dumps(mirror, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    print(f"Wrote backend mirror: {BACKEND_MIRROR} ({sum(len(v) for v in mirror.values())} reasons)")
 
 
 if __name__ == "__main__":

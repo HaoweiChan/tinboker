@@ -31,7 +31,11 @@ def _metadata() -> dict[str, dict[str, str | None]]:
             postgres.init_engine()
         db = postgres.SessionLocal()
         try:
-            rows = db.query(TagRegistry).filter(TagRegistry.kind == "sector").all()
+            rows = (
+                db.query(TagRegistry)
+                .filter(TagRegistry.kind == "sector", TagRegistry.redirect_to.is_(None))
+                .all()
+            )
             out: dict[str, dict[str, str | None]] = {}
             for r in rows:
                 if r.exposure_id:

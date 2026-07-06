@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Apply sector curation inputs and rewrite the committed seed artifacts."""
+"""Dev tool for the bootstrap fixture only; production taxonomy lives in Postgres."""
 
 from __future__ import annotations
 
@@ -15,9 +15,7 @@ from shared.curation import (  # noqa: E402
     DEFAULT_MEMBER_REASONS_JSON,
     DEFAULT_OVERRIDES_JSON,
     DEFAULT_PIPELINE_SEED,
-    DEFAULT_REASONS_JSON,
     curate_artifacts,
-    emit_reasons_json,
     emit_seed_py,
 )
 
@@ -35,7 +33,6 @@ def main() -> int:
     before = {
         DEFAULT_BACKEND_SEED: DEFAULT_BACKEND_SEED.read_text(encoding="utf-8"),
         DEFAULT_PIPELINE_SEED: DEFAULT_PIPELINE_SEED.read_text(encoding="utf-8"),
-        DEFAULT_REASONS_JSON: DEFAULT_REASONS_JSON.read_text(encoding="utf-8"),
     }
     result = curate_artifacts(
         enforce=args.enforce,
@@ -44,7 +41,6 @@ def main() -> int:
     after = {
         DEFAULT_BACKEND_SEED: emit_seed_py(result.seed, result.redirects),
         DEFAULT_PIPELINE_SEED: emit_seed_py(result.seed, result.redirects),
-        DEFAULT_REASONS_JSON: emit_reasons_json(result.reasons),
     }
 
     print(f"overrides: {DEFAULT_OVERRIDES_JSON}")

@@ -21,7 +21,6 @@ SINGLE_SUB_GROUP_IDS = {"sector_biotech_medical", "sector_construction_realestat
 REPO_ROOT = Path(__file__).resolve().parents[5]
 DEFAULT_BACKEND_SEED = REPO_ROOT / "backend/src/data/sectors_seed.py"
 DEFAULT_PIPELINE_SEED = REPO_ROOT / "pipelines/libs/shared/src/shared/sectors_seed_backup.py"
-DEFAULT_REASONS_JSON = REPO_ROOT / "backend/src/data/sector_reasons.json"
 DEFAULT_OVERRIDES_JSON = REPO_ROOT / "pipelines/libs/shared/curation/sector_overrides.json"
 DEFAULT_MEMBER_REASONS_JSON = (
     REPO_ROOT / "pipelines/libs/shared/curation/sector_member_reasons.json"
@@ -339,15 +338,10 @@ def emit_seed_py(seed: list[dict[str, Any]], redirects: dict[str, str]) -> str:
     return f"{header}SECTOR_REDIRECTS = {redirects_src}\n\nSECTORS_SEED = {seed_src}\n"
 
 
-def emit_reasons_json(reasons: dict[str, dict[str, str]]) -> str:
-    return json.dumps(reasons, ensure_ascii=False, indent=2) + "\n"
-
-
 def curate_artifacts(
     *,
     backend_seed_path: Path = DEFAULT_BACKEND_SEED,
     pipeline_seed_path: Path = DEFAULT_PIPELINE_SEED,
-    reasons_path: Path = DEFAULT_REASONS_JSON,
     overrides_path: Path = DEFAULT_OVERRIDES_JSON,
     member_reasons_path: Path = DEFAULT_MEMBER_REASONS_JSON,
     enforce: bool = False,
@@ -363,10 +357,8 @@ def curate_artifacts(
         inherited_redirects=redirects,
     )
     seed_src = emit_seed_py(result.seed, result.redirects)
-    reasons_src = emit_reasons_json(result.reasons)
     _write_if_changed(backend_seed_path, seed_src)
     _write_if_changed(pipeline_seed_path, seed_src)
-    _write_if_changed(reasons_path, reasons_src)
     return result
 
 

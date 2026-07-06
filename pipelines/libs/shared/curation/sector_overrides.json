@@ -1,4 +1,5 @@
 {
+  "_meta": "historical; taxonomy now lives in Postgres — see plan v3",
   "exclude": [
     {
       "exposure_id": "sector_hbm",

@@ -3,8 +3,26 @@ SQLAlchemy ORM models for the TinBoker database.
 """
 
 from datetime import datetime
-from sqlalchemy import Column, Float, ForeignKey, Integer, String, Text, DateTime, Boolean, JSON, Index, UniqueConstraint
+
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    JSON,
+    String,
+    Text,
+    UniqueConstraint,
+)
+from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
+
 from src.database.postgres import Base
+
+JSON_VARIANT = JSON().with_variant(JSONB, "postgresql")
+TZ_DATETIME = DateTime(timezone=True).with_variant(TIMESTAMP(timezone=True), "postgresql")
 
 
 class StockTranslation(Base):
@@ -266,11 +284,10 @@ class TagRegistry(Base):
 
     kind discriminates the two topic flavours that share this index:
       'tag'    → free-form extraction tags (full admin CRUD; this is the default).
-      'sector' → sector/theme exposures synced from the pipeline universe. These are
-                 NOT hand-authored: members/aliases/icons stay pipeline-owned and are
-                 merged at read time. Admin only curates their visibility (tier).
+      'sector' → sector/theme exposures authored through the admin taxonomy API.
     Sector rows carry the universe identity (exposure_id) and display visuals
     (icon_id, color_hex) so the admin list can render them without a universe lookup.
+    redirect_to marks a retired/merged exposure row; canonical rows leave it NULL.
     """
     __tablename__ = "tag_registry"
 
@@ -284,17 +301,74 @@ class TagRegistry(Base):
     icon_id = Column(String(64), nullable=True)
     color_hex = Column(String(16), nullable=True)
     description = Column(Text, nullable=True)
-    members = Column(JSON, nullable=True)
-    aliases = Column(JSON, nullable=True)
+    members = Column(JSON_VARIANT, nullable=True)
+    aliases = Column(JSON_VARIANT, nullable=True)
+    field_owners = Column(JSON_VARIANT, nullable=True)
     # For 'sector' rows of exposure_type='theme': the parent industry exposure_id.
     # Lets industry discussion-heat be derived by aggregating its child themes.
     parent_id = Column(String(120), nullable=True, index=True)
+    redirect_to = Column(String(120), nullable=True, index=True)
     updated_by = Column(String(100), nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     def __repr__(self) -> str:
         return f"<TagRegistry(slug='{self.slug}', kind='{self.kind}', tier='{self.tier}')>"
+
+
+class TaxonomyDraft(Base):
+    """Drafted bulk taxonomy payload awaiting explicit publish."""
+
+    __tablename__ = "taxonomy_drafts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    status = Column(String(20), nullable=False, default="draft", index=True)
+    payload = Column(JSON_VARIANT, nullable=False)
+    diff = Column(JSON_VARIANT, nullable=True)
+    actor = Column(String(100), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    published_at = Column(DateTime, nullable=True)
+
+
+class TaxonomyVersion(Base):
+    """Single-row structural taxonomy version counter."""
+
+    __tablename__ = "taxonomy_version"
+
+    id = Column(Integer, primary_key=True, default=1)
+    version = Column(Integer, nullable=False, default=0)
+    updated_by = Column(String(100), nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class TaxonomyChangelog(Base):
+    """Dated changelog entries for structural taxonomy changes."""
+
+    __tablename__ = "taxonomy_changelog"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    version = Column(Integer, nullable=False, index=True)
+    entry = Column(Text, nullable=False)
+    rationale = Column(Text, nullable=True)
+    actor = Column(String(100), nullable=False)
+    at = Column(TZ_DATETIME, default=datetime.utcnow, nullable=False)
+
+
+class TagRegistryAudit(Base):
+    """Trigger-written audit snapshots for tag_registry sector taxonomy writes."""
+
+    __tablename__ = "tag_registry_audit"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tag_registry_id = Column(Integer, nullable=True, index=True)
+    exposure_id = Column(String(120), nullable=True, index=True)
+    action = Column(String(10), nullable=False, index=True)
+    actor = Column(String(100), nullable=False, default="unknown", index=True)
+    note = Column(Text, nullable=True)
+    before = Column("before", JSON_VARIANT, nullable=True)
+    after = Column("after", JSON_VARIANT, nullable=True)
+    at = Column(TZ_DATETIME, default=datetime.utcnow, nullable=False, index=True)
 
 
 class AnalyticsSnapshot(Base):

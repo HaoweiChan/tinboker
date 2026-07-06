@@ -246,7 +246,11 @@ async def get_sectors_universe(db: Session = Depends(get_session)):
     """
     try:
         from src.database.models import TagRegistry
-        rows = db.query(TagRegistry).filter(TagRegistry.kind == "sector").all()
+        rows = (
+            db.query(TagRegistry)
+            .filter(TagRegistry.kind == "sector", TagRegistry.redirect_to.is_(None))
+            .all()
+        )
         exposures = []
         for r in rows:
             exposures.append({
