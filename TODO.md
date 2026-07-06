@@ -815,19 +815,20 @@ file:line). Read the plan before writing any code.
 
 ### Acceptance criteria
 
-- [ ] M0: dead weekly cron disabled; tag_registry drift inventoried.
-- [ ] M1: curation overlay + POL validators + merge/redirect machinery + sync_sectors overwrite fix + `description` plumbing (mechanism only).
-- [ ] M2: full content pass — confidence-H purges, `jp_*` merges w/ redirects + follows migration, raw-dump reclassify, industry roll-ups enforced, episodes backfilled; Willy-reviewed change-set for the rest.
-- [ ] M3: reason-reuse bug fixed at source; 0 empty reasons/descriptions; distinctness-checked; invariant pytest hard-enforced.
-- [ ] M4: `GET /api/sectors/by-ticker/{ticker}` + 「所屬產業與題材」 card on StockDashboard (Zod-validated).
-- [ ] M5: audit script productized (`--judge` mode); monthly maintenance workflow replaces refresh-sectors.yml; seed-touching PRs gated by invariant CI.
+- [x] M0: dead weekly cron disabled; tag_registry drift inventoried (PR #433/#434).
+- [x] M1: curation engine + POL validators + redirects + authoritative sync (PR #435).
+- [x] M2: content pass — 21 purges, jp_* merges, HBM rebuild, roll-ups, enforcement, follows migration (PR #436).
+- [ ] M2.5 (v3): Postgres becomes source of truth — audit trigger table, taxonomy changelog, validate-on-write admin API (draft→publish), one-time import, sync/seed demoted to bootstrap, reasons served from registry, private GCS export. See plan §1 governance rules G1–G6.
+- [ ] M3 (v3): LLM fill of ~1,870 reasons + ~94 descriptions via the bulk draft API; Willy reviews the dry-run report before publish; zero-empty enforced at write path afterward.
+- [ ] M4: `GET /api/sectors/by-ticker/{ticker}` + 「所屬產業與題材」 card on StockDashboard (Zod-validated); reasons from registry.
+- [ ] M5: monthly audit+fill as drafts from a PRIVATE context (no public-repo PRs); dead Chain-B files deleted.
 
 ### Risks
 
 - Merges/renames touch follows, which are SERVER-SIDE and keyed by DISPLAY NAME (SectorPage.tsx:198 → /api/user/subscriptions/tags/{name}/toggle) — M2.6 migration is mandatory or users silently lose subscriptions.
 - Membership changes only reach existing episodes after a manual `backfill_sector_exposures.py --commit` run.
 - `sync_sectors` never overwrites non-empty tag_registry members until M1.5 ships — a plain redeploy does NOT propagate seed fixes.
-- `tide-tw-data` is absent locally and `generate_sector_reasons.py` is dead code (reads files deleted in b3fae75) — the plan's curate_sectors.py architecture works off the committed seed precisely so no milestone depends on either; do not "fix" by running the old scripts.
+- v3 (Postgres-as-truth) is a deliberate IP decision: this repo is PUBLIC and the curated taxonomy/reasons are proprietary — nothing taxonomy-shaped gets committed to git anymore (the pre-v3 snapshot in git history is an accepted loss). `generate_sector_reasons.py` and the Chain-B scripts are dead code — never run them.
 - Industry roll-ups (POL-1) visibly change /topics industry cards (member counts grow ~7x for semiconductor); flagged as D4 for Willy.
 - Audit Part-2 judgments are INFERRED market calls — every purge/merge beyond the pre-approved defaults goes through Willy's line-by-line review in M2.2.
 
