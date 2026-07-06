@@ -33,12 +33,14 @@ def session():
     db.close()
 
 
-def _sector(exposure_id, display_name, icon_id="cpu", color_hex="#3B82F6"):
+def _sector(exposure_id, display_name, icon_id="cpu", color_hex="#3B82F6", members=None, description=None):
     return {
         "exposure_id": exposure_id,
         "display_name": display_name,
         "icon_id": icon_id,
         "color_hex": color_hex,
+        "description": description,
+        "members": members or [{"ticker": "2330", "name": "台積電", "market": "TW"}],
         "count": 5,
     }
 
@@ -76,22 +78,48 @@ def test_resync_refreshes_visuals_but_preserves_curated_tier(session):
     assert row.icon_id == "circuit-board"   # visual refreshed
 
 
-def test_resync_preserves_edited_members(session):
+def test_resync_overwrites_members_and_description_from_seed(session):
     theme_a = {
         "exposure_id": "sector_a",
         "display_name": "A",
         "members": [{"ticker": "3481", "name": "群創"}],
+        "description": "seed description",
     }
     sync_sectors(session, [theme_a])
 
     row = session.query(TagRegistry).filter_by(exposure_id="sector_a").one()
     row.members = [{"ticker": "3481", "name": "群創"}, {"ticker": "2409", "name": "友達"}]
+    row.description = "admin description"
     session.commit()
 
     sync_sectors(session, [theme_a])
 
     row = session.query(TagRegistry).filter_by(exposure_id="sector_a").one()
-    assert len(row.members) == 2
+    assert row.members == [{"ticker": "3481", "name": "群創"}]
+    assert row.description == "seed description"
+
+
+def test_sync_hides_redirected_and_stale_sector_rows(session, monkeypatch):
+    session.add(TagRegistry(
+        slug="sector_old", display_zh="Old", tier=TIER_TRENDING,
+        kind=KIND_SECTOR, exposure_id="sector_old",
+    ))
+    session.add(TagRegistry(
+        slug="sector_stale", display_zh="Stale", tier=TIER_TRENDING,
+        kind=KIND_SECTOR, exposure_id="sector_stale",
+    ))
+    session.commit()
+
+    monkeypatch.setattr("src.tag_registry._sector_redirects", lambda: {"sector_old": "sector_new"})
+    sync_sectors(session, [_sector("sector_new", "New")])
+
+    rows = {
+        r.exposure_id: r
+        for r in session.query(TagRegistry).filter(TagRegistry.kind == KIND_SECTOR).all()
+    }
+    assert rows["sector_new"].tier == TIER_TRENDING
+    assert rows["sector_old"].tier == TIER_HIDDEN
+    assert rows["sector_stale"].tier == TIER_HIDDEN
 
 
 def test_hidden_sector_exposure_ids_returns_only_hidden(session):

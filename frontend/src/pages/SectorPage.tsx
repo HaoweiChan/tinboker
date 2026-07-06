@@ -104,7 +104,7 @@ export const SectorPage: React.FC = () => {
       const [res, podcastList] = await Promise.all([
         fetchWithFallback<EpisodesBySectorResponse>(
           () => getEpisodesBySector(exposureId, 50, 0),
-          { exposure_id: exposureId, display_name: '', exposure_type: 'industry', resolved_tickers: [], episodes: [], total: 0 },
+          { exposure_id: exposureId, display_name: '', exposure_type: 'industry', description: null, resolved_tickers: [], episodes: [], total: 0 },
           `getEpisodesBySector:${exposureId}`,
         ).catch(() => null),
         fetchWithFallback<Podcast[]>(
@@ -150,6 +150,7 @@ export const SectorPage: React.FC = () => {
   }, [memberKey]);
 
   const displayName = data?.display_name || '';
+  const sectorDescription = data?.description?.trim() || '';
   // Never flash the raw exposure id (e.g. "sector_passive_components") while the
   // request is in flight or if it fails — show a skeleton, then the resolved name
   // (or a generic label as a last resort).
@@ -189,7 +190,7 @@ export const SectorPage: React.FC = () => {
             <p className="text-base text-muted-foreground mt-1 max-w-[56ch] leading-[1.55]">
               {loading
                 ? '載入中…'
-                : `瀏覽所有關於「${titleText}」的 Podcast 摘要與市場討論 · ${episodes.length} 集。`}
+                : sectorDescription || `瀏覽所有關於「${titleText}」的 Podcast 摘要與市場討論 · ${episodes.length} 集。`}
             </p>
           </div>
           {!loading && displayName && (

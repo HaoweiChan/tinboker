@@ -22,8 +22,8 @@ logger = logging.getLogger(__name__)
 
 
 @lru_cache(maxsize=1)
-def _visuals() -> dict[str, dict[str, str]]:
-    """Load the visuals map (``{exposure_id: {icon_id, color_hex}}``) from database."""
+def _metadata() -> dict[str, dict[str, str | None]]:
+    """Load sector metadata from the registry."""
     from src.database import postgres
     from src.database.models import TagRegistry
     try:
@@ -32,12 +32,15 @@ def _visuals() -> dict[str, dict[str, str]]:
         db = postgres.SessionLocal()
         try:
             rows = db.query(TagRegistry).filter(TagRegistry.kind == "sector").all()
-            out: dict[str, dict[str, str]] = {}
+            out: dict[str, dict[str, str | None]] = {}
             for r in rows:
-                if r.exposure_id and (r.icon_id or r.color_hex):
+                if r.exposure_id:
                     out[r.exposure_id] = {
                         "icon_id": r.icon_id,
                         "color_hex": r.color_hex,
+                        "description": r.description,
+                        "display_name": r.display_zh,
+                        "exposure_type": r.exposure_type,
                     }
             return out
         finally:
@@ -47,6 +50,18 @@ def _visuals() -> dict[str, dict[str, str]]:
         return {}
 
 
+def _visuals() -> dict[str, dict[str, str | None]]:
+    return _metadata()
+
+
 def visual_for(exposure_id: str) -> Optional[dict[str, Optional[str]]]:
     """Return ``{"icon_id": ..., "color_hex": ...}`` for an exposure, or ``None``."""
-    return _visuals().get(str(exposure_id or ""))
+    meta = _metadata().get(str(exposure_id or ""))
+    if not meta:
+        return None
+    return {"icon_id": meta.get("icon_id"), "color_hex": meta.get("color_hex")}
+
+
+def metadata_for(exposure_id: str) -> Optional[dict[str, Optional[str]]]:
+    """Return display metadata for an exposure, or ``None``."""
+    return _metadata().get(str(exposure_id or ""))

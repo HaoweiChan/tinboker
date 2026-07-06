@@ -226,4 +226,5 @@ async def test_response_shape_has_required_keys():
     item = result[0]
     assert set(item.keys()) == {
         "exposure_id", "display_name", "exposure_type", "icon_id", "color_hex", "count",
+        "description",
     }

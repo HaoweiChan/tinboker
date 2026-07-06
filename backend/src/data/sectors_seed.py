@@ -9204,3 +9204,5 @@ SECTORS_SEED = [{'exposure_id': 'sector_semiconductor',
                'market': 'TW',
                'source': 'tide',
                'reason': ''}]}]
+
+SECTOR_REDIRECTS = {}
