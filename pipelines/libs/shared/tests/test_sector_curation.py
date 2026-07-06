@@ -4,7 +4,6 @@ import sys
 from pathlib import Path
 
 import pytest
-
 from shared.curation import (
     EMPTY_REASON_BASELINE,
     curate_seed,
@@ -12,7 +11,6 @@ from shared.curation import (
     empty_overrides,
     load_seed_from_py,
 )
-
 
 REPO = Path(__file__).resolve().parents[4]
 

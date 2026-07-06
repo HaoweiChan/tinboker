@@ -199,7 +199,6 @@ def merge_member_reasons(
 
 
 def apply_industry_rollups(seed: list[dict[str, Any]], applied: list[str]) -> None:
-    by_id = _by_id(seed)
     children_by_parent: dict[str, list[dict[str, Any]]] = {}
     for sector in seed:
         parent = sector.get("group")
