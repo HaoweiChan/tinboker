@@ -248,6 +248,19 @@ async def lifespan(app: FastAPI):
 
     asyncio.create_task(_sync_sectors_bg())
 
+    # Sector follows are keyed by display name in Firestore user docs. M2 merges four
+    # jp_* sector pages into canonical sectors, so migrate old followed names once.
+    async def _migrate_sector_follows_bg():
+        try:
+            from src.database.user_db import migrate_merged_sector_tag_subscriptions
+            migrated = await asyncio.to_thread(migrate_merged_sector_tag_subscriptions)
+            if migrated:
+                print(f"Sector follow migration: remapped {migrated} user(s).")
+        except Exception as e:
+            print(f"Warning: sector follow migration skipped: {e}")
+
+    asyncio.create_task(_migrate_sector_follows_bg())
+
     # Producer for in-app notifications: poll the recent-episodes feed every ~10 min (the
     # ingestion cadence) and fan out NEW_EPISODE / STOCK_MENTION / TOPIC_MENTION to the
     # users who subscribe to the podcaster / watch a mentioned ticker / follow a tag.

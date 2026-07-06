@@ -1,8 +1,175 @@
 {
-  "exclude": [],
-  "include": [],
-  "merge": [],
-  "reclassify": {},
+  "exclude": [
+    {
+      "exposure_id": "sector_hbm",
+      "ticker": "2330",
+      "note": "Foundry, not a DRAM/HBM maker. TSMC does CoWoS around HBM but doesn't make HBM — the theme isn't a driver. (the known bad)"
+    },
+    {
+      "exposure_id": "sector_hbm",
+      "ticker": "5388",
+      "note": "Networking/router ODM. No memory business at all."
+    },
+    {
+      "exposure_id": "sector_hbm",
+      "ticker": "5269",
+      "note": "USB/PCIe/SATA controller IC (ASMedia). Not HBM."
+    },
+    {
+      "exposure_id": "sector_hbm",
+      "ticker": "6515",
+      "note": "Test-socket maker. Peripheral to HBM at best."
+    },
+    {
+      "exposure_id": "sector_cxl",
+      "ticker": "5388",
+      "note": "Router ODM again — not a CXL controller/switch player."
+    },
+    {
+      "exposure_id": "sector_cxl",
+      "ticker": "8261",
+      "note": "Power MOSFET maker. Unrelated to CXL."
+    },
+    {
+      "exposure_id": "sector_cxl",
+      "ticker": "6515",
+      "note": "Test sockets, not CXL silicon."
+    },
+    {
+      "exposure_id": "sector_pkg_metrology",
+      "ticker": "3017",
+      "note": "Thermal/cooling module maker. Not packaging metrology/automation equipment."
+    },
+    {
+      "exposure_id": "sector_industrial_automation",
+      "ticker": "3017",
+      "note": "Cooling company; industrial automation isn't its business."
+    },
+    {
+      "exposure_id": "sector_ar_vr_optics",
+      "ticker": "6271",
+      "note": "Ceramic-substrate/hybrid IC packager. AR/VR optics is not a driver — swept in by the copied \"衛星/軍用\" blurb."
+    },
+    {
+      "exposure_id": "sector_crystal_osc",
+      "ticker": "6271",
+      "note": "Not a quartz/frequency-control maker."
+    },
+    {
+      "exposure_id": "sector_resistor",
+      "ticker": "6271",
+      "note": "Not a chip-resistor maker."
+    },
+    {
+      "exposure_id": "sector_connector",
+      "ticker": "6271",
+      "note": "Not a connector maker."
+    },
+    {
+      "exposure_id": "sector_cpu_agentic_ai",
+      "ticker": "6515",
+      "note": "Test sockets, not CPU/AI silicon."
+    },
+    {
+      "exposure_id": "sector_cpu_agentic_ai",
+      "ticker": "5347",
+      "note": "Analog/power foundry (Vanguard). Not CPU/agentic AI."
+    },
+    {
+      "exposure_id": "sector_saas",
+      "ticker": "6669",
+      "note": "Hardware server ODM. SaaS (software subscription) is not its model."
+    },
+    {
+      "exposure_id": "sector_cloud_msp",
+      "ticker": "2640",
+      "note": "Taxi-fleet operator (Taiwan Taxi). Not a cloud MSP."
+    },
+    {
+      "exposure_id": "sector_edge_ai",
+      "ticker": "6515",
+      "note": "Test sockets. Not an edge-AI product."
+    },
+    {
+      "exposure_id": "sector_wide_bandgap",
+      "ticker": "5269",
+      "note": "Controller-IC designer, no SiC/GaN business."
+    },
+    {
+      "exposure_id": "sector_battery_materials",
+      "ticker": "1503",
+      "note": "Heavy-electrical (transformers/switchgear). Not a battery-material supplier."
+    },
+    {
+      "exposure_id": "sector_environmental",
+      "ticker": "1417",
+      "note": "Menswear/apparel (Carnival). Not resource/environmental industry."
+    }
+  ],
+  "include": [
+    {
+      "exposure_id": "sector_hbm",
+      "member": {
+        "ticker": "6239",
+        "name": "力成",
+        "name_en": "Powertech Technology",
+        "market": "TW",
+        "source": "curated",
+        "reason": ""
+      },
+      "note": "PROPOSED — Willy review"
+    },
+    {
+      "exposure_id": "sector_hbm",
+      "member": {
+        "ticker": "2449",
+        "name": "京元電子",
+        "name_en": "King Yuan Electronics",
+        "market": "TW",
+        "source": "curated",
+        "reason": ""
+      },
+      "note": "PROPOSED — Willy review"
+    }
+  ],
+  "merge": [
+    {
+      "from": "sector_jp_wafer",
+      "into": "sector_silicon_wafer"
+    },
+    {
+      "from": "sector_jp_front_end_equip",
+      "into": "sector_front_end_equipment"
+    },
+    {
+      "from": "sector_jp_back_end_equip",
+      "into": "sector_pkg_equipment"
+    },
+    {
+      "from": "sector_jp_passive",
+      "into": "sector_mlcc"
+    }
+  ],
+  "reclassify": {
+    "sector_textile": {
+      "exposure_type": "industry",
+      "group": null
+    },
+    "sector_steel_metals": {
+      "exposure_type": "industry",
+      "group": null
+    },
+    "sector_tourism": {
+      "exposure_type": "industry",
+      "group": null
+    }
+  },
   "rename": {},
-  "descriptions": {}
+  "descriptions": {
+    "sector_silicon_wafer": "矽晶圓題材聚焦半導體晶圓材料供應商，包含矽晶圓與化合物半導體晶圓等上游材料。納入標準是晶圓產品或相關材料製造對營收與產能布局具有實質影響。",
+    "sector_front_end_equipment": "前段製程設備涵蓋晶圓製造前段使用的關鍵設備、耗材與自動化解決方案。納入標準是產品直接支援曝光、濕製程、搬運或檢測等晶圓廠前段流程。",
+    "sector_pkg_equipment": "封裝製程機台聚焦晶圓完成後的封裝、切割、貼合、搬運與自動化設備。納入標準是公司設備或零組件直接用於半導體封裝產線，且對封裝擴產需求具敏感度。",
+    "sector_mlcc": "被動元件 MLCC 題材涵蓋積層陶瓷電容與主要被動元件供應鏈。納入標準是公司以 MLCC、電容、電阻、電感或相關被動元件為重要產品線，並受電子終端需求循環影響。",
+    "sector_hbm": "HBM 高頻寬記憶體題材聚焦 AI 與高效能運算所需的高頻寬記憶體及其直接封裝、測試、載板供應鏈。納入標準是公司在 DRAM/HBM、記憶體封測或 HBM 先進封裝關鍵環節具實質業務曝險。"
+  }
 }

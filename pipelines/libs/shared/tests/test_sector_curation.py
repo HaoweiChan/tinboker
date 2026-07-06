@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from shared.curation import (
     EMPTY_REASON_BASELINE,
+    blank_duplicate_reasons_for_non_parent_child_sectors,
     curate_seed,
     emit_seed_py,
     empty_overrides,
@@ -111,6 +112,40 @@ def test_enforced_duplicate_reason_allows_parent_child_only():
         curate_seed(rejected, overrides=empty_overrides(), enforce=True)
 
 
+def test_blank_duplicate_reasons_blanks_every_tainted_occurrence():
+    seed = [
+        _sector("sector_parent", "industry", [_member("1001", "same reason")]),
+        _sector("sector_child", "theme", [_member("1001", "same reason")], "sector_parent"),
+        _sector("sector_peer", "theme", [_member("1001", "same reason")]),
+        _sector("sector_clean", "theme", [_member("1002", "same reason")]),
+    ]
+
+    result = curate_seed(
+        seed,
+        overrides=empty_overrides(),
+        blank_duplicate_reasons=True,
+        enforce=False,
+    )
+    by_id = {s["exposure_id"]: s for s in result.seed}
+
+    assert by_id["sector_parent"]["members"][0]["reason"] == ""
+    assert by_id["sector_child"]["members"][0]["reason"] == ""
+    assert by_id["sector_peer"]["members"][0]["reason"] == ""
+    assert by_id["sector_clean"]["members"][0]["reason"] == "same reason"
+    assert "blank duplicate reasons in 3 member rows" in result.applied
+
+
+def test_blank_duplicate_reasons_leaves_parent_child_only_copy():
+    seed = [
+        _sector("sector_parent", "industry", [_member("1001", "same reason")]),
+        _sector("sector_child", "theme", [_member("1001", "same reason")], "sector_parent"),
+    ]
+
+    assert blank_duplicate_reasons_for_non_parent_child_sectors(seed) == 0
+    assert seed[0]["members"][0]["reason"] == "same reason"
+    assert seed[1]["members"][0]["reason"] == "same reason"
+
+
 def test_enforced_jaccard_allows_parent_child_only():
     allowed = [
         _sector("sector_parent", "industry", [_member("1001"), _member("1002")]),
@@ -127,6 +162,14 @@ def test_enforced_jaccard_allows_parent_child_only():
 
 def test_real_seed_invariants():
     seed, redirects = load_seed_from_py(REPO / "backend/src/data/sectors_seed.py")
+    result = curate_seed(
+        seed,
+        overrides=empty_overrides(),
+        enforce=True,
+        inherited_redirects=redirects,
+    )
+    seed = result.seed
+    redirects = result.redirects
     ids = {s["exposure_id"] for s in seed}
     empty_reasons = sum(
         1 for sector in seed for member in sector.get("members") or []

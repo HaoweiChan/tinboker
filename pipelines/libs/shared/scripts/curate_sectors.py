@@ -25,6 +25,11 @@ from shared.curation import (  # noqa: E402
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--enforce", action="store_true", help="Enable POL-1/POL-3/POL-4/POL-5 checks")
+    parser.add_argument(
+        "--blank-duplicate-reasons",
+        action="store_true",
+        help="Blank copied non-parent-child member reason strings in emitted seed artifacts",
+    )
     args = parser.parse_args()
 
     before = {
@@ -32,7 +37,10 @@ def main() -> int:
         DEFAULT_PIPELINE_SEED: DEFAULT_PIPELINE_SEED.read_text(encoding="utf-8"),
         DEFAULT_REASONS_JSON: DEFAULT_REASONS_JSON.read_text(encoding="utf-8"),
     }
-    result = curate_artifacts(enforce=args.enforce)
+    result = curate_artifacts(
+        enforce=args.enforce,
+        blank_duplicate_reasons=args.blank_duplicate_reasons,
+    )
     after = {
         DEFAULT_BACKEND_SEED: emit_seed_py(result.seed, result.redirects),
         DEFAULT_PIPELINE_SEED: emit_seed_py(result.seed, result.redirects),

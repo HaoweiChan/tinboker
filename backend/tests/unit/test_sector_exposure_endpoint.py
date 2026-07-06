@@ -219,9 +219,9 @@ async def test_excluded_exposure_returns_empty_without_querying():
 async def test_resolved_tickers_enriched_with_reason():
     """Each constituent gets a zh-TW 'why it belongs to the sector' reason from the
     compiled universe mirror."""
-    doc = _raw_doc("ep-001", exposure_id="sector_mlcc", display_name="被動元件 MLCC",
+    doc = _raw_doc("ep-001", exposure_id="sector_hbm", display_name="HBM 高頻寬記憶體",
                    exposure_type="theme", tickers=[
-        {"ticker": "2327", "name": "國巨", "name_en": None, "market": "TW", "source": "curated"},
+        {"ticker": "6239", "name": "力成", "name_en": None, "market": "TW", "source": "curated"},
     ])
 
     mock_fs = MagicMock()
@@ -234,10 +234,10 @@ async def test_resolved_tickers_enriched_with_reason():
         patch("src.services.podcast.cache_set", new=AsyncMock()),
         patch.object(svc, "_allowed_podcast_names", new=AsyncMock(return_value=None)),
     ):
-        result = await svc.get_episodes_by_sector("sector_mlcc")
+        result = await svc.get_episodes_by_sector("sector_hbm")
 
     rt = {t["ticker"]: t for t in result["resolved_tickers"]}
-    assert rt["2327"].get("reason"), "expected a sector-relationship reason for 2327"
+    assert rt["6239"].get("reason"), "expected a sector-relationship reason for 6239"
 
 
 @pytest.mark.asyncio

@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-EMPTY_REASON_BASELINE = 1026
+EMPTY_REASON_BASELINE = 1870
 SINGLE_SUB_GROUP_IDS = {"sector_biotech_medical", "sector_construction_realestate"}
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
@@ -78,6 +78,7 @@ def curate_seed(
     overrides: dict[str, Any] | None = None,
     member_reasons: dict[str, dict[str, str]] | None = None,
     enforce: bool = False,
+    blank_duplicate_reasons: bool = False,
     inherited_redirects: dict[str, str] | None = None,
 ) -> CurateResult:
     """Apply curation inputs and return the emitted seed + sidecar maps."""
@@ -88,6 +89,10 @@ def curate_seed(
 
     apply_overrides(working, overrides or empty_overrides(), redirects, applied)
     merge_member_reasons(working, member_reasons or {}, applied)
+    if blank_duplicate_reasons:
+        blanked = blank_duplicate_reasons_for_non_parent_child_sectors(working)
+        if blanked:
+            applied.append(f"blank duplicate reasons in {blanked} member rows")
 
     if enforce:
         apply_industry_rollups(working, applied)
@@ -198,6 +203,38 @@ def merge_member_reasons(
                 applied.append(f"reason {eid}/{ticker}")
 
 
+def blank_duplicate_reasons_for_non_parent_child_sectors(seed: list[dict[str, Any]]) -> int:
+    """Blank copied company blurbs that appear in multiple unrelated sectors."""
+    by_id = _by_id(seed)
+    occurrences: dict[tuple[str, str], list[tuple[str, dict[str, Any]]]] = {}
+    for sector in seed:
+        eid = str(sector.get("exposure_id") or "")
+        for member in sector.get("members") or []:
+            ticker = _bare_ticker((member or {}).get("ticker"))
+            reason = str((member or {}).get("reason") or "").strip()
+            if ticker and reason:
+                occurrences.setdefault((ticker, reason), []).append((eid, member))
+
+    tainted: set[tuple[str, str]] = set()
+    for key, rows in occurrences.items():
+        eids = [eid for eid, _member in rows]
+        for i, left in enumerate(eids):
+            for right in eids[i + 1:]:
+                if not _is_parent_child(by_id[left], by_id[right]):
+                    tainted.add(key)
+                    break
+            if key in tainted:
+                break
+
+    blanked = 0
+    for key in tainted:
+        for _eid, member in occurrences[key]:
+            if member.get("reason"):
+                member["reason"] = ""
+                blanked += 1
+    return blanked
+
+
 def apply_industry_rollups(seed: list[dict[str, Any]], applied: list[str]) -> None:
     children_by_parent: dict[str, list[dict[str, Any]]] = {}
     for sector in seed:
@@ -299,7 +336,7 @@ def emit_seed_py(seed: list[dict[str, Any]], redirects: dict[str, str]) -> str:
     )
     seed_src = pprint.pformat(seed, width=110, sort_dicts=False)
     redirects_src = pprint.pformat(redirects, width=110, sort_dicts=False)
-    return f"{header}SECTORS_SEED = {seed_src}\n\nSECTOR_REDIRECTS = {redirects_src}\n"
+    return f"{header}SECTOR_REDIRECTS = {redirects_src}\n\nSECTORS_SEED = {seed_src}\n"
 
 
 def emit_reasons_json(reasons: dict[str, dict[str, str]]) -> str:
@@ -314,6 +351,7 @@ def curate_artifacts(
     overrides_path: Path = DEFAULT_OVERRIDES_JSON,
     member_reasons_path: Path = DEFAULT_MEMBER_REASONS_JSON,
     enforce: bool = False,
+    blank_duplicate_reasons: bool = False,
 ) -> CurateResult:
     seed, redirects = load_seed_from_py(backend_seed_path)
     result = curate_seed(
@@ -321,6 +359,7 @@ def curate_artifacts(
         overrides=load_json(overrides_path, empty_overrides()),
         member_reasons=load_json(member_reasons_path, {}),
         enforce=enforce,
+        blank_duplicate_reasons=blank_duplicate_reasons,
         inherited_redirects=redirects,
     )
     seed_src = emit_seed_py(result.seed, result.redirects)
