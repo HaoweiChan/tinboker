@@ -58,7 +58,10 @@ theater):**
   report reviewed by Willy, then an explicit publish call). Human single-row admin
   edits publish directly.
 - **G6 — One-way private export.** A scheduled job dumps the taxonomy (JSON + pg_dump)
-  to the private GCS bucket for diffable snapshots and disaster recovery. Export is
+  to the private GCS bucket for diffable snapshots and disaster recovery. (The research
+  baseline is "scheduled pg_dump committed to git"; we deliberately redirect the
+  destination to GCS because THIS repo is public — a git-committed dump would defeat
+  the IP goal. Same pattern, private destination.) Export is
   never a write path back (the two-writable-paths failure mode). Nothing
   taxonomy-shaped is ever committed to this public repo again — including future audit
   reports (they go to GCS or the PR-free maintenance report path).
@@ -181,7 +184,9 @@ bucket is confirmed private.
    check before submission: identical reason for one ticker across ≥2 non-parent-child
    sectors → re-ask once → still identical → include in the report as flagged, publish
    anyway (server tolerates; validator blocks only exact-duplicate strings — flagged
-   pairs get manual review).
+   pairs get manual review). The operator (whoever ran the fill) issues the publish
+   call after receiving Willy's go-ahead — publish is a second explicit API call,
+   never automatic.
 4. After publish: zero-empty-reasons becomes a standing validator warning→error switch
    in the write path (server setting), so future member additions without reasons are
    rejected at write time.
