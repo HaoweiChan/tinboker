@@ -232,6 +232,7 @@ async def test_resolved_tickers_enriched_with_reason():
     with (
         patch("src.services.podcast.cache_get", new=AsyncMock(return_value=None)),
         patch("src.services.podcast.cache_set", new=AsyncMock()),
+        patch("src.data.sector_reasons.reason_for", return_value="registry reason"),
         patch.object(svc, "_allowed_podcast_names", new=AsyncMock(return_value=None)),
     ):
         result = await svc.get_episodes_by_sector("sector_hbm")

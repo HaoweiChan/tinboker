@@ -40,7 +40,6 @@ from shared.curation import (  # noqa: E402
     DEFAULT_MEMBER_REASONS_JSON,
     DEFAULT_OVERRIDES_JSON,
     curate_seed,
-    emit_reasons_json,
     emit_seed_py,
     load_json,
     load_seed_from_py,
@@ -49,7 +48,6 @@ from shared.curation import (  # noqa: E402
 REPO = Path(__file__).resolve().parents[4]
 BACKEND_SEED = REPO / "backend/src/data/sectors_seed.py"
 PIPELINE_SEED = REPO / "pipelines/libs/shared/src/shared/sectors_seed_backup.py"
-REASONS_JSON = REPO / "backend/src/data/sector_reasons.json"
 
 LEADERS_CAP = 15  # members kept per sector for display / board perf
 
@@ -359,7 +357,6 @@ def main():
         inherited_redirects=existing_redirects,
     )
     src = emit_seed_py(curated.seed, curated.redirects)
-    reasons = emit_reasons_json(curated.reasons)
 
     n_ind = sum(1 for s in curated.seed if s["exposure_type"] == "industry")
     n_thm = sum(1 for s in curated.seed if s["exposure_type"] == "theme")
@@ -380,10 +377,8 @@ def main():
     if args.write:
         BACKEND_SEED.write_text(src, encoding="utf-8")
         PIPELINE_SEED.write_text(src, encoding="utf-8")
-        REASONS_JSON.write_text(reasons, encoding="utf-8")
         print(f"\nwrote {BACKEND_SEED}")
         print(f"wrote {PIPELINE_SEED}")
-        print(f"wrote {REASONS_JSON}")
     else:
         print("\n(dry run — pass --write to update the seed files)")
 

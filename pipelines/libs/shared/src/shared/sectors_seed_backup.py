@@ -1,4 +1,6 @@
-"""Database seed data for 99 TW sectors and themes (13 industries + 86 themes).
+"""Stale-acceptable emergency fallback; truth is the API.
+
+Database seed data for 99 TW sectors and themes (13 industries + 86 themes).
 
 Generated from the tide-tw-data curation by
 pipelines/libs/shared/scripts/build_sectors_seed_from_tide.py — do not hand-edit;

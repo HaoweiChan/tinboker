@@ -18,6 +18,7 @@ from src.tag_registry import (
     hidden_tag_slugs,
     normalize_exposure_id,
     normalize_tag_slug,
+    sector_redirects,
     trending_slugs,
 )
 from src.database.postgres import get_session
@@ -59,11 +60,7 @@ HIDDEN_PODCAST_NAMES: frozenset[str] = frozenset({"曲博科技教室"})
 
 
 def _sector_redirects() -> dict[str, str]:
-    try:
-        from src.data.sectors_seed import SECTOR_REDIRECTS
-    except Exception:
-        return {}
-    return {str(k): str(v) for k, v in dict(SECTOR_REDIRECTS or {}).items()}
+    return sector_redirects()
 
 
 def resolve_sector_exposure_id(exposure_id: str | None) -> str:
@@ -1316,6 +1313,8 @@ class PodcastService:
             # board: resolving them into the canonical id would inherit stale members
             # and overwrite canonical meta. Only canonical, visible rows contribute.
             if getattr(r, "tier", None) == TIER_HIDDEN:
+                continue
+            if getattr(r, "redirect_to", None):
                 continue
             eid = resolve_sector_exposure_id(raw_eid)
             if normalize_exposure_id(raw_eid) != eid:

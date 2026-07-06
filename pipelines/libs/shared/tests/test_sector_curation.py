@@ -5,12 +5,10 @@ from pathlib import Path
 
 import pytest
 from shared.curation import (
-    EMPTY_REASON_BASELINE,
     blank_duplicate_reasons_for_non_parent_child_sectors,
     curate_seed,
     emit_seed_py,
     empty_overrides,
-    load_seed_from_py,
 )
 
 REPO = Path(__file__).resolve().parents[4]
@@ -160,37 +158,6 @@ def test_enforced_jaccard_allows_parent_child_only():
         curate_seed(rejected, overrides=empty_overrides(), enforce=True)
 
 
-def test_real_seed_invariants():
-    seed, redirects = load_seed_from_py(REPO / "backend/src/data/sectors_seed.py")
-    result = curate_seed(
-        seed,
-        overrides=empty_overrides(),
-        enforce=True,
-        inherited_redirects=redirects,
-    )
-    seed = result.seed
-    redirects = result.redirects
-    ids = {s["exposure_id"] for s in seed}
-    empty_reasons = sum(
-        1 for sector in seed for member in sector.get("members") or []
-        if not member.get("reason")
-    )
-    overrides = empty_overrides()
-
-    assert empty_reasons <= EMPTY_REASON_BASELINE
-    assert set(redirects.values()) <= ids
-    for item in overrides["exclude"]:
-        sector = next(s for s in seed if s["exposure_id"] == item["exposure_id"])
-        assert item["ticker"] not in {m["ticker"] for m in sector["members"]}
-
-
-def test_empty_inputs_round_trip_seed_byte_stable():
-    seed_path = REPO / "backend/src/data/sectors_seed.py"
-    seed, redirects = load_seed_from_py(seed_path)
-
-    assert emit_seed_py(seed, redirects) == seed_path.read_text(encoding="utf-8")
-
-
 def test_tide_builder_final_stage_calls_curate_without_tide(tmp_path, monkeypatch):
     scripts_dir = REPO / "pipelines/libs/shared/scripts"
     sys.path.insert(0, str(scripts_dir))
@@ -198,19 +165,16 @@ def test_tide_builder_final_stage_calls_curate_without_tide(tmp_path, monkeypatc
 
     backend_seed = tmp_path / "sectors_seed.py"
     pipeline_seed = tmp_path / "sectors_seed_backup.py"
-    reasons_json = tmp_path / "sector_reasons.json"
     overrides_json = tmp_path / "sector_overrides.json"
     member_reasons_json = tmp_path / "sector_member_reasons.json"
     base_seed = [_sector("sector_a", "theme", [_member("1001")])]
     backend_seed.write_text(emit_seed_py(base_seed, {}), encoding="utf-8")
     pipeline_seed.write_text("", encoding="utf-8")
-    reasons_json.write_text("{}\n", encoding="utf-8")
     overrides_json.write_text('{"rename": {"sector_a": "Renamed"}}', encoding="utf-8")
     member_reasons_json.write_text('{"sector_a": {"1001": "reason"}}', encoding="utf-8")
 
     monkeypatch.setattr(builder, "BACKEND_SEED", backend_seed)
     monkeypatch.setattr(builder, "PIPELINE_SEED", pipeline_seed)
-    monkeypatch.setattr(builder, "REASONS_JSON", reasons_json)
     monkeypatch.setattr(builder, "DEFAULT_OVERRIDES_JSON", overrides_json)
     monkeypatch.setattr(builder, "DEFAULT_MEMBER_REASONS_JSON", member_reasons_json)
     monkeypatch.setattr(builder, "build", lambda _tide: base_seed)
@@ -218,10 +182,3 @@ def test_tide_builder_final_stage_calls_curate_without_tide(tmp_path, monkeypatc
 
     assert builder.main() is None
     assert "Renamed" in backend_seed.read_text(encoding="utf-8")
-    assert json_load(reasons_json) == {"sector_a": {"1001": "reason"}}
-
-
-def json_load(path: Path) -> dict:
-    import json
-
-    return json.loads(path.read_text(encoding="utf-8"))

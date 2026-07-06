@@ -37,6 +37,7 @@ from src.routers.comments import router as comments_router, comments_router as c
 from src.routers.articles import router as articles_router
 from src.routers.admin_articles import router as admin_articles_router
 from src.routers.admin_tags import router as admin_tags_router
+from src.routers.admin_taxonomy import router as admin_taxonomy_router
 from src.routers.admin_sectors import router as admin_sectors_router
 from src.routers.social import router as social_router, facebook_router, promo_router
 from src.routers.seo import router as seo_router, admin_router as admin_seo_router
@@ -230,9 +231,8 @@ async def lifespan(app: FastAPI):
 
     asyncio.create_task(_refresh_trending_bg())
 
-    # Auto-index sector/theme exposures from the pipeline universe into the registry so
-    # new sectors surface (as visible) without an admin clicking 同步產業. The universe
-    # JSON stays curated; this only keeps the registry index in sync. Best-effort.
+    # Empty-DB bootstrap only. Once any sector row exists, taxonomy writes are managed
+    # by the admin taxonomy API and this seed sync writes nothing.
     async def _sync_sectors_bg():
         try:
             from src.database.postgres import get_session
@@ -376,6 +376,7 @@ if not settings.is_production:
     app.include_router(admin_analytics_router)
     app.include_router(admin_articles_router)
     app.include_router(admin_tags_router)
+    app.include_router(admin_taxonomy_router)
     app.include_router(admin_sectors_router)  # /api/admin/sectors/theme-candidates
     app.include_router(social_router)       # /api/admin/threads/*
     app.include_router(facebook_router)     # /api/admin/facebook/*

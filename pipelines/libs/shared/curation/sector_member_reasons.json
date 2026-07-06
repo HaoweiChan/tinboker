@@ -1,4 +1,5 @@
 {
+  "_meta": "historical; taxonomy now lives in Postgres — see plan v3",
   "sector_hbm": {
     "6239": "力成以記憶體封裝與測試為核心業務，屬於 HBM 與高階 DRAM 量產鏈中封測服務的直接供應環節。",
     "2449": "京元電子提供半導體測試服務，AI/HPC 晶片與高階記憶體導入帶動的測試需求，使其具備 HBM 供應鏈曝險。"
