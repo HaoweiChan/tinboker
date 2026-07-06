@@ -19,8 +19,7 @@ name: Refresh Industry Sectors
 # run backfill_sector_exposures.py separately for immediate effect on existing episodes.
 
 on:
-  schedule:
-    - cron: '0 4 * * 1'        # 04:00 UTC every Monday (after refresh-social-tokens at 03:00)
+  # Inputs deleted in commit b3fae75 — this chain is dead. Do not re-enable the cron. Replaced by TKB-009 M5 (sector-maintenance workflow).
   workflow_dispatch: {}
 
 permissions:
