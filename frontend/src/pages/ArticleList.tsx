@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Clock, FileText } from 'lucide-react';
 import { PageContent } from '@/components/layout/PageContent';
+import { NewsletterCta } from '@/components/newsletter/NewsletterCta';
 import { getPublishedArticles } from '@/services/articleService';
 import type { ArticleListItem } from '@/validation/schemas';
 import { formatDate } from '@/lib/date';
@@ -86,6 +87,8 @@ export const ArticleList: React.FC = () => {
         <h1 className="text-2xl sm:text-3xl font-bold tracking-[-0.02em]">文章</h1>
         <p className="text-base text-muted-foreground mt-1">深度分析與市場觀察</p>
       </header>
+
+      <NewsletterCta placement="hero" className="mb-6" />
 
       {loading ? (
         <div className="flex items-center justify-center py-20 text-muted-foreground">載入中...</div>

@@ -7,10 +7,38 @@ import { useParams, Link } from 'react-router-dom';
 import { ChevronLeft, Clock, Eye, Calendar } from 'lucide-react';
 import { PageContent } from '@/components/layout/PageContent';
 import { ArticleBody } from '@/components/article/ArticleBody';
+import { NewsletterCta } from '@/components/newsletter/NewsletterCta';
 import { SEO } from '@/components/common/SEO';
 import { getArticleBySlug } from '@/services/articleService';
 import type { Article } from '@/validation/schemas';
 import { formatDate } from '@/lib/date';
+
+/**
+ * Split article markdown into [before, after] at a fence-safe paragraph
+ * boundary near the middle, so a mid-article CTA can be inserted without
+ * cutting a code block. Returns `[content, '']` (no split point) when the
+ * article is too short to warrant a mid-article break.
+ */
+const MIN_BLOCKS_FOR_MID_CTA = 6;
+const splitForMidCta = (content: string): [string, string] => {
+  const blocks = content.split(/\n{2,}/);
+  if (blocks.length < MIN_BLOCKS_FOR_MID_CTA) return [content, ''];
+
+  const target = Math.floor(blocks.length * 0.45);
+  // Walk forward from the target to the first boundary where all ``` fences are
+  // balanced (i.e. we are not inside a code block).
+  let fences = 0;
+  let splitAt = -1;
+  for (let i = 0; i < blocks.length; i++) {
+    fences += (blocks[i].match(/```/g) || []).length;
+    if (i >= target && i < blocks.length - 1 && fences % 2 === 0) {
+      splitAt = i;
+      break;
+    }
+  }
+  if (splitAt < 1) return [content, ''];
+  return [blocks.slice(0, splitAt + 1).join('\n\n'), blocks.slice(splitAt + 1).join('\n\n')];
+};
 
 export const ArticleDetail: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
@@ -186,12 +214,28 @@ export const ArticleDetail: React.FC = () => {
         </div>
       </header>
 
-      {/* Body */}
-      <ArticleBody content={article.body_content} />
+      {/* Body — split around a mid-article newsletter CTA when long enough. */}
+      {(() => {
+        const [before, after] = splitForMidCta(article.body_content);
+        return (
+          <>
+            <ArticleBody content={before} />
+            {after && (
+              <>
+                <NewsletterCta placement="mid" />
+                <ArticleBody content={after} />
+              </>
+            )}
+          </>
+        );
+      })()}
 
       {/* Related (tags / tickers / key points) — Substack-style single column,
           so this lives below the article instead of in a sidebar rail. */}
       <div className="mt-10">{rightRail}</div>
+
+      {/* End-of-article subscription CTA. */}
+      <NewsletterCta placement="end" />
     </PageContent>
   );
 };
