@@ -4,8 +4,9 @@
 
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Clock, FileText } from 'lucide-react';
+import { Clock, Crown, FileText } from 'lucide-react';
 import { PageContent } from '@/components/layout/PageContent';
+import { SubscribeCTA } from '@/components/article/SubscribeCTA';
 import { getPublishedArticles } from '@/services/articleService';
 import type { ArticleListItem } from '@/validation/schemas';
 import { formatDate } from '@/lib/date';
@@ -22,6 +23,12 @@ const ArticleCard: React.FC<{ article: ArticleListItem }> = ({ article }) => (
         className="w-full rounded-md object-cover h-[180px] mb-3"
         loading="lazy"
       />
+    )}
+    {article.premium_pitch && (
+      <span className="mb-2 inline-flex items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-2xs font-medium text-primary">
+        <Crown className="h-3 w-3" />
+        含完整版
+      </span>
     )}
     <h3 className="text-lg font-medium leading-[1.35] tracking-[-0.005em] mb-2 text-foreground line-clamp-2">
       {article.title}
@@ -95,11 +102,14 @@ export const ArticleList: React.FC = () => {
           <p>尚無文章</p>
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {articles.map((a) => (
-            <ArticleCard key={a.id} article={a} />
-          ))}
-        </div>
+        <>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {articles.map((a) => (
+              <ArticleCard key={a.id} article={a} />
+            ))}
+          </div>
+          <SubscribeCTA className="mt-8" />
+        </>
       )}
     </PageContent>
   );

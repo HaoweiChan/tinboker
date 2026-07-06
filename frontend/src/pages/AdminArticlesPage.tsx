@@ -7,6 +7,7 @@ import {
   ArrowLeft,
   CheckCircle2,
   Copy,
+  Crown,
   Eye,
   FileText,
   Hash,
@@ -23,6 +24,7 @@ import {
 import { toast } from 'sonner';
 import { useAppStore } from '@/store/useAppStore';
 import { ArticleBody } from '@/components/article/ArticleBody';
+import { PremiumEditionCard } from '@/components/article/PremiumEditionCard';
 import {
   adminListArticles,
   adminGetArticle,
@@ -62,6 +64,9 @@ interface EditorState {
   key_points: string;
   tags: string;
   tickers: string;
+  premium_pitch: string;
+  premium_includes: string;
+  subscribe_url: string;
 }
 
 const EMPTY_EDITOR: EditorState = {
@@ -75,6 +80,9 @@ const EMPTY_EDITOR: EditorState = {
   key_points: '',
   tags: '',
   tickers: '',
+  premium_pitch: '',
+  premium_includes: '',
+  subscribe_url: '',
 };
 
 const SNIPPETS = [
@@ -112,6 +120,9 @@ function editorFromArticle(a: Article): EditorState {
     key_points: (a.key_points || []).join('\n'),
     tags: (a.tags || []).join(', '),
     tickers: (a.tickers || []).join(', '),
+    premium_pitch: a.premium_pitch || '',
+    premium_includes: (a.premium_includes || []).join('\n'),
+    subscribe_url: a.subscribe_url || '',
   };
 }
 
@@ -214,6 +225,9 @@ export const AdminArticlesPage: React.FC = () => {
     key_points: parseList(editor.key_points, '\n'),
     tags: parseList(editor.tags),
     tickers: parseList(editor.tickers).map((ticker) => ticker.toUpperCase()),
+    premium_pitch: editor.premium_pitch.trim() || undefined,
+    premium_includes: parseList(editor.premium_includes, '\n'),
+    subscribe_url: editor.subscribe_url.trim() || undefined,
     status: publish ? 'published' : 'draft',
   });
 
@@ -562,6 +576,54 @@ export const AdminArticlesPage: React.FC = () => {
             />
           </div>
 
+          {/* Paid full-edition funnel (issue #425) — all optional; leave blank
+              for a plain public post. */}
+          <div className="rounded-lg border border-primary/25 bg-primary/[0.04] p-4">
+            <div className="mb-3 flex items-center gap-2">
+              <Crown className="h-4 w-4 text-primary" />
+              <span className="text-sm font-semibold text-foreground">完整版（付費）設定</span>
+              <span className="text-xs text-muted-foreground">選填 · 留白則為純公開文章</span>
+            </div>
+            <div className="grid gap-3">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                  完整版一句話賣點
+                </label>
+                <input
+                  type="text"
+                  value={editor.premium_pitch}
+                  onChange={(e) => setField('premium_pitch', e.target.value)}
+                  placeholder="完整版含觀察名單、風險地圖、失效條件與後續追蹤更新"
+                  className="w-full rounded-lg border border-input bg-card px-3 py-2 text-base text-foreground outline-none focus:border-transparent focus:ring-2 focus:ring-primary"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                  完整版收錄項目（每行一個）
+                </label>
+                <textarea
+                  value={editor.premium_includes}
+                  onChange={(e) => setField('premium_includes', e.target.value)}
+                  placeholder={'觀察名單與進出場區間\n風險地圖與失效條件\n事件後續追蹤更新'}
+                  rows={3}
+                  className="w-full resize-y rounded-lg border border-input bg-card px-3 py-2 text-base text-foreground outline-none focus:border-transparent focus:ring-2 focus:ring-primary"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                  訂閱連結（留白則用全站預設）
+                </label>
+                <input
+                  type="text"
+                  value={editor.subscribe_url}
+                  onChange={(e) => setField('subscribe_url', e.target.value)}
+                  placeholder="https://tinboker.substack.com/subscribe"
+                  className="w-full rounded-lg border border-input bg-card px-3 py-2 text-base text-foreground outline-none focus:border-transparent focus:ring-2 focus:ring-primary"
+                />
+              </div>
+            </div>
+          </div>
+
           <div className="rounded-lg border border-border bg-card">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
               <div className="flex flex-wrap items-center gap-1.5">
@@ -629,6 +691,17 @@ export const AdminArticlesPage: React.FC = () => {
               <ArticleBody content={editor.body_content} />
             ) : (
               <p className="py-12 text-center text-base text-muted-foreground">尚無內容</p>
+            )}
+            {(editor.premium_pitch.trim() || editor.premium_includes.trim()) && (
+              <div className="mt-8">
+                <PremiumEditionCard
+                  article={{
+                    premium_pitch: editor.premium_pitch.trim() || null,
+                    premium_includes: parseList(editor.premium_includes, '\n'),
+                    subscribe_url: editor.subscribe_url.trim() || null,
+                  }}
+                />
+              </div>
             )}
           </div>
         </section>

@@ -425,6 +425,10 @@ export const ArticleSchema = z.object({
   key_points: z.array(z.string()).nullable().optional(),
   tags: z.array(z.string()).nullable().optional(),
   tickers: z.array(z.string()).nullable().optional(),
+  // Public-teaser vs paid-edition funnel (issue #425)
+  premium_pitch: z.string().nullable().optional(),
+  premium_includes: z.array(z.string()).nullable().optional(),
+  subscribe_url: z.string().nullable().optional(),
   read_minutes: z.number().nullable().optional(),
   view_count: z.number().default(0),
   published_at: z.string().nullable().optional(),
@@ -444,6 +448,7 @@ export const ArticleListItemSchema = z.object({
   key_points: z.array(z.string()).nullable().optional(),
   tags: z.array(z.string()).nullable().optional(),
   tickers: z.array(z.string()).nullable().optional(),
+  premium_pitch: z.string().nullable().optional(),
   read_minutes: z.number().nullable().optional(),
   view_count: z.number().default(0),
   published_at: z.string().nullable().optional(),

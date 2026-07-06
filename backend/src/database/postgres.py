@@ -162,6 +162,19 @@ def create_all_tables():
                 "ALTER TABLE IF EXISTS tag_registry "
                 "ADD COLUMN IF NOT EXISTS aliases JSONB"
             ))
+            # Public-teaser vs paid-edition funnel (issue #425)
+            conn.execute(text(
+                "ALTER TABLE IF EXISTS articles "
+                "ADD COLUMN IF NOT EXISTS premium_pitch TEXT"
+            ))
+            conn.execute(text(
+                "ALTER TABLE IF EXISTS articles "
+                "ADD COLUMN IF NOT EXISTS premium_includes JSONB"
+            ))
+            conn.execute(text(
+                "ALTER TABLE IF EXISTS articles "
+                "ADD COLUMN IF NOT EXISTS subscribe_url TEXT"
+            ))
             conn.commit()
     elif engine.dialect.name == "sqlite":
         # SQLite has no "ADD COLUMN IF NOT EXISTS" — check PRAGMA first.
@@ -198,6 +211,17 @@ def create_all_tables():
                 conn.commit()
             if tr_cols and "aliases" not in tr_cols:
                 conn.execute(text("ALTER TABLE tag_registry ADD COLUMN aliases JSON"))
+                conn.commit()
+            # Public-teaser vs paid-edition funnel (issue #425)
+            art_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(articles)"))}
+            if art_cols and "premium_pitch" not in art_cols:
+                conn.execute(text("ALTER TABLE articles ADD COLUMN premium_pitch TEXT"))
+                conn.commit()
+            if art_cols and "premium_includes" not in art_cols:
+                conn.execute(text("ALTER TABLE articles ADD COLUMN premium_includes JSON"))
+                conn.commit()
+            if art_cols and "subscribe_url" not in art_cols:
+                conn.execute(text("ALTER TABLE articles ADD COLUMN subscribe_url TEXT"))
                 conn.commit()
     # Clean up obsolete cryptocurrency tag registry rows (idempotent)
     with engine.connect() as conn:

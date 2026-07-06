@@ -20,6 +20,10 @@ class ArticleCreate(BaseModel):
     key_points: Optional[list[str]] = None
     tags: Optional[list[str]] = None
     tickers: Optional[list[str]] = None
+    # Public-teaser vs paid-edition funnel (issue #425)
+    premium_pitch: Optional[str] = None
+    premium_includes: Optional[list[str]] = None
+    subscribe_url: Optional[str] = None
     status: ArticleStatus = "draft"
 
 
@@ -33,6 +37,9 @@ class ArticleUpdate(BaseModel):
     key_points: Optional[list[str]] = None
     tags: Optional[list[str]] = None
     tickers: Optional[list[str]] = None
+    premium_pitch: Optional[str] = None
+    premium_includes: Optional[list[str]] = None
+    subscribe_url: Optional[str] = None
     status: Optional[ArticleStatus] = None
 
 
@@ -53,6 +60,9 @@ class ArticleResponse(BaseModel):
     key_points: Optional[list[str]] = None
     tags: Optional[list[str]] = None
     tickers: Optional[list[str]] = None
+    premium_pitch: Optional[str] = None
+    premium_includes: Optional[list[str]] = None
+    subscribe_url: Optional[str] = None
     read_minutes: Optional[int] = None
     view_count: int = 0
     published_at: Optional[datetime] = None
@@ -75,6 +85,7 @@ class ArticleListItem(BaseModel):
     key_points: Optional[list[str]] = None
     tags: Optional[list[str]] = None
     tickers: Optional[list[str]] = None
+    premium_pitch: Optional[str] = None  # surfaced so list cards can badge paid-edition articles
     read_minutes: Optional[int] = None
     view_count: int = 0
     published_at: Optional[datetime] = None

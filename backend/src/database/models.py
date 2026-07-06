@@ -108,6 +108,11 @@ class Article(Base):
     key_points = Column(JSON, nullable=True)
     tags = Column(JSON, nullable=True)
     tickers = Column(JSON, nullable=True)
+    # Public-teaser vs paid-edition funnel (issue #425). All optional — an article
+    # with none of these set renders as a plain public post.
+    premium_pitch = Column(Text, nullable=True)          # one-line promise of the paid/full edition
+    premium_includes = Column(JSON, nullable=True)       # list[str]: what the subscriber gets
+    subscribe_url = Column(Text, nullable=True)          # per-article paid-edition/subscribe link
     read_minutes = Column(Integer, nullable=True)
     view_count = Column(Integer, nullable=False, default=0)
     published_at = Column(DateTime, nullable=True)

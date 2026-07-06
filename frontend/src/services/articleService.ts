@@ -17,6 +17,29 @@ export async function getArticleBySlug(slug: string): Promise<Article> {
   return data;
 }
 
+/**
+ * Related published articles for the "next best action" module (issue #425).
+ * Scored client-side off the existing list endpoint (no dedicated backend route)
+ * by counting shared tags/tickers, so it stays within the minimal-scope brief.
+ */
+export async function getRelatedArticles(article: Article, limit = 3): Promise<ArticleListItem[]> {
+  const candidates = await getPublishedArticles(50, 0);
+  const tags = new Set((article.tags || []).map((t) => t.toLowerCase()));
+  const tickers = new Set((article.tickers || []).map((t) => t.toUpperCase()));
+
+  return candidates
+    .filter((a) => a.slug !== article.slug)
+    .map((a) => {
+      const sharedTags = (a.tags || []).filter((t) => tags.has(t.toLowerCase())).length;
+      const sharedTickers = (a.tickers || []).filter((t) => tickers.has(t.toUpperCase())).length;
+      return { article: a, score: sharedTags + sharedTickers * 2 };
+    })
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map((x) => x.article);
+}
+
 // ── Admin writes ──────────────────────────────────────────────────────────────
 
 function authHeaders(token: string) {
@@ -45,6 +68,9 @@ export interface ArticleCreatePayload {
   key_points?: string[];
   tags?: string[];
   tickers?: string[];
+  premium_pitch?: string;
+  premium_includes?: string[];
+  subscribe_url?: string;
   status?: string;
 }
 

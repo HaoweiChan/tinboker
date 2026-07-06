@@ -81,6 +81,9 @@ class ArticleService:
             key_points=data.key_points,
             tags=merged_tags,
             tickers=merged_tickers,
+            premium_pitch=data.premium_pitch,
+            premium_includes=data.premium_includes,
+            subscribe_url=data.subscribe_url,
             read_minutes=_estimate_read_minutes(data.body_content),
             published_at=datetime.utcnow() if data.status == "published" else None,
         )

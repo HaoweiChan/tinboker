@@ -7,6 +7,8 @@ import { useParams, Link } from 'react-router-dom';
 import { ChevronLeft, Clock, Eye, Calendar } from 'lucide-react';
 import { PageContent } from '@/components/layout/PageContent';
 import { ArticleBody } from '@/components/article/ArticleBody';
+import { PremiumEditionCard } from '@/components/article/PremiumEditionCard';
+import { NextBestActions } from '@/components/article/NextBestActions';
 import { SEO } from '@/components/common/SEO';
 import { getArticleBySlug } from '@/services/articleService';
 import type { Article } from '@/validation/schemas';
@@ -67,6 +69,8 @@ export const ArticleDetail: React.FC = () => {
 
   const rightRail = (
     <div className="flex flex-col gap-4">
+      {/* Paid full-edition promise */}
+      <PremiumEditionCard article={article} />
       {/* Tags */}
       {article.tags && article.tags.length > 0 && (
         <div className="bg-card border border-border rounded-[var(--radius-md)] p-4">
@@ -192,6 +196,9 @@ export const ArticleDetail: React.FC = () => {
       {/* Related (tags / tickers / key points) — Substack-style single column,
           so this lives below the article instead of in a sidebar rail. */}
       <div className="mt-10">{rightRail}</div>
+
+      {/* Next best action: related articles, tickers/topics, subscribe CTA */}
+      <NextBestActions article={article} />
     </PageContent>
   );
 };
