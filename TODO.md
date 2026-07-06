@@ -214,7 +214,7 @@ Do not build real-time tracking yet.
 
 ```yaml
 id: TKB-008
-status: ready
+status: in_progress
 priority: P0
 area:
 - pipelines
@@ -781,7 +781,7 @@ Do not implement before TKB-001, TKB-002, and TKB-003 are shipped.
 
 ```yaml
 id: TKB-008
-status: ready
+status: in_progress
 priority: P1
 area:
 - pipelines
@@ -792,7 +792,7 @@ effort: L
 risk: medium
 github_issue: null
 github_project_item: null
-pr: null
+pr: https://github.com/HaoweiChan/tinboker/pull/432
 ```
 
 ### Goal
