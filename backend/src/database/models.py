@@ -283,6 +283,7 @@ class TagRegistry(Base):
     exposure_type = Column(String(20), nullable=True)
     icon_id = Column(String(64), nullable=True)
     color_hex = Column(String(16), nullable=True)
+    description = Column(Text, nullable=True)
     members = Column(JSON, nullable=True)
     aliases = Column(JSON, nullable=True)
     # For 'sector' rows of exposure_type='theme': the parent industry exposure_id.
@@ -388,4 +389,3 @@ class ScheduledSocialPost(Base):
 
     def __repr__(self) -> str:
         return f"<ScheduledSocialPost(id={self.id}, type='{self.post_type}', status='{self.status}', scheduled_for='{self.scheduled_for}')>"
-

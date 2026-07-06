@@ -230,6 +230,7 @@ async def get_episodes_by_sector(
             exposure_type=result["exposure_type"],
             icon_id=result.get("icon_id"),
             color_hex=result.get("color_hex"),
+            description=result.get("description"),
             resolved_tickers=[SectorResolvedTicker(**t) for t in result["resolved_tickers"]],
             episodes=result["episodes"],
             total=result["total"],
@@ -254,6 +255,7 @@ async def get_sectors_universe(db: Session = Depends(get_session)):
                 "display_name": r.display_zh,
                 "icon_id": r.icon_id,
                 "color_hex": r.color_hex,
+                "description": r.description,
                 "aliases": r.aliases or [],
                 "members": r.members or [],
                 "parent_id": r.parent_id,
@@ -264,4 +266,3 @@ async def get_sectors_universe(db: Session = Depends(get_session)):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error compiling sectors universe: {str(e)}")
-

@@ -89,8 +89,8 @@ class SyncSectorsResponse(BaseModel):
 
 async def _invalidate_tag_caches() -> None:
     """Bust Redis caches that depend on tag registry data (all envs share the DB)."""
-    from src.data.sector_visuals import _visuals
-    _visuals.cache_clear()
+    from src.data.sector_visuals import _metadata
+    _metadata.cache_clear()
     for pattern in ("tags:*",):
         try:
             await cache_delete_pattern_all_envs(pattern)
@@ -397,7 +397,12 @@ async def update_tag(
     admin: AdminAccess = Depends(get_admin_access),
     db: Session = Depends(get_session),
 ):
-    """Update a tag's display name, tier, or sector members/aliases."""
+    """Update a tag's display name, tier, or sector members/aliases.
+
+    Sector member/alias edits are operational overrides only: the next sector sync
+    overwrites members from the committed seed. Durable sector taxonomy edits belong
+    in the curation overlay under ``pipelines/libs/shared/curation/``.
+    """
     row = db.query(TagRegistry).filter(TagRegistry.id == tag_id).first()
     if not row:
         raise HTTPException(404, "Tag not found")

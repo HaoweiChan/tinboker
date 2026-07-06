@@ -243,6 +243,7 @@ def sync_sectors(db: Session, sectors: list[dict]) -> int:
     board — admins HIDE the ones they don't want. Existing rows refresh their display
     name / visuals from the universe but keep their curated ``tier`` untouched.
     """
+    redirects = _sector_redirects()
     by_exposure = {
         r.exposure_id: r
         for r in db.query(TagRegistry).filter(TagRegistry.kind == KIND_SECTOR).all()
@@ -252,18 +253,21 @@ def sync_sectors(db: Session, sectors: list[dict]) -> int:
         eid = str(sector.get("exposure_id") or "").strip()
         if not eid:
             continue
+        if eid in redirects:
+            continue
         display = str(sector.get("display_name") or eid)
         icon_id = sector.get("icon_id")
         color_hex = sector.get("color_hex")
+        description = sector.get("description")
         existing = by_exposure.get(eid)
         if existing is not None:
             existing.display_zh = display
             existing.icon_id = icon_id
             existing.color_hex = color_hex
+            existing.description = description
             existing.exposure_type = sector.get("exposure_type")
             existing.parent_id = sector.get("group")  # pipeline-owned, refresh always
-            if not existing.members:
-                existing.members = sector.get("members")
+            existing.members = sector.get("members")
             if not existing.aliases:
                 existing.aliases = sector.get("aliases")
         else:
@@ -275,6 +279,7 @@ def sync_sectors(db: Session, sectors: list[dict]) -> int:
                 exposure_id=eid,
                 icon_id=icon_id,
                 color_hex=color_hex,
+                description=description,
                 exposure_type=sector.get("exposure_type"),
                 members=sector.get("members"),
                 aliases=sector.get("aliases"),
@@ -285,7 +290,11 @@ def sync_sectors(db: Session, sectors: list[dict]) -> int:
     # Self-heal the theme_ -> sector_ unification: drop superseded ``theme_<id>`` sector
     # rows once their ``sector_<id>`` equivalent exists, carrying any admin 'hidden'
     # curation onto the survivor. Idempotent — a no-op once the rename has settled.
-    synced_ids = {str(s.get("exposure_id") or "") for s in sectors}
+    synced_ids = {
+        str(s.get("exposure_id") or "")
+        for s in sectors
+        if str(s.get("exposure_id") or "") not in redirects
+    }
     db.flush()  # make rows added above queryable for the survivor lookup
     removed = 0
     for row in [r for r in by_exposure.values() if str(r.exposure_id or "").startswith("theme_")]:
@@ -303,12 +312,30 @@ def sync_sectors(db: Session, sectors: list[dict]) -> int:
         db.delete(row)
         removed += 1
 
+    hidden_count = 0
+    for row in db.query(TagRegistry).filter(TagRegistry.kind == KIND_SECTOR).all():
+        eid = str(row.exposure_id or "")
+        if eid in synced_ids:
+            continue
+        if eid in redirects or eid not in redirects.values():
+            if row.tier != TIER_HIDDEN:
+                row.tier = TIER_HIDDEN
+                hidden_count += 1
+
     db.commit()
     logger.info(
-        "Synced sectors: %d new, %d refreshed, %d legacy theme_ rows removed",
-        new_count, len(sectors) - new_count, removed,
+        "Synced sectors: %d new, %d refreshed, %d legacy theme_ rows removed, %d stale/redirect rows hidden",
+        new_count, len(synced_ids) - new_count, removed, hidden_count,
     )
     return new_count
+
+
+def _sector_redirects() -> dict[str, str]:
+    try:
+        from src.data.sectors_seed import SECTOR_REDIRECTS
+    except Exception:
+        return {}
+    return {str(k): str(v) for k, v in dict(SECTOR_REDIRECTS or {}).items()}
 
 
 def hidden_tag_slugs(db: Session) -> set[str]:

@@ -156,6 +156,10 @@ def create_all_tables():
             ))
             conn.execute(text(
                 "ALTER TABLE IF EXISTS tag_registry "
+                "ADD COLUMN IF NOT EXISTS description TEXT"
+            ))
+            conn.execute(text(
+                "ALTER TABLE IF EXISTS tag_registry "
                 "ADD COLUMN IF NOT EXISTS members JSONB"
             ))
             conn.execute(text(
@@ -206,6 +210,9 @@ def create_all_tables():
                 conn.commit()
             if tr_cols and "exposure_type" not in tr_cols:
                 conn.execute(text("ALTER TABLE tag_registry ADD COLUMN exposure_type VARCHAR(20)"))
+                conn.commit()
+            if tr_cols and "description" not in tr_cols:
+                conn.execute(text("ALTER TABLE tag_registry ADD COLUMN description TEXT"))
                 conn.commit()
             if tr_cols and "members" not in tr_cols:
                 conn.execute(text("ALTER TABLE tag_registry ADD COLUMN members JSON"))

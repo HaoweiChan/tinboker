@@ -13,6 +13,7 @@ from src.config import settings
 from src.models.podcast import Podcast, Episode
 from src.schemas.search import SearchResultItem
 from src.tag_registry import (
+    TIER_HIDDEN,
     canonical_tag_slugs,
     hidden_tag_slugs,
     normalize_exposure_id,
@@ -55,6 +56,35 @@ EXCLUDED_EXPOSURE_IDS: frozenset[str] = frozenset({"sector_semiconductor"})
 # content_sources.active=False so it stays version-controlled and the pipeline can
 # still ingest it (in case it picks back up). Matched on exact podcast_name.
 HIDDEN_PODCAST_NAMES: frozenset[str] = frozenset({"曲博科技教室"})
+
+
+def _sector_redirects() -> dict[str, str]:
+    try:
+        from src.data.sectors_seed import SECTOR_REDIRECTS
+    except Exception:
+        return {}
+    return {str(k): str(v) for k, v in dict(SECTOR_REDIRECTS or {}).items()}
+
+
+def resolve_sector_exposure_id(exposure_id: str | None) -> str:
+    eid = normalize_exposure_id(exposure_id)
+    redirects = _sector_redirects()
+    seen = set()
+    while eid in redirects and eid not in seen:
+        seen.add(eid)
+        eid = normalize_exposure_id(redirects[eid])
+    return eid
+
+
+def _sector_query_ids(canonical_id: str) -> list[str]:
+    redirects = _sector_redirects()
+    ids = [old for old, new in redirects.items() if resolve_sector_exposure_id(new) == canonical_id]
+    ids.append(canonical_id)
+    # Pre-migration episode snapshots stored themes as ``theme_<id>`` (see
+    # docs/firestore-contract.md §2.1.1); Firestore array-contains matches exact
+    # values only, so query the legacy alias of every sector_ id as well.
+    ids += ["theme_" + i.removeprefix("sector_") for i in list(ids) if i.startswith("sector_")]
+    return list(dict.fromkeys(ids))
 
 
 def _read_close_series(tickers: list[str], limit: int = 12) -> dict[str, list[float]]:
@@ -972,6 +1002,8 @@ class PodcastService:
         All release-scoping and content-empty guards are applied identically to
         get_episodes_by_tag.
         """
+        exposure_id = resolve_sector_exposure_id(exposure_id)
+
         # Suppressed umbrella exposures (e.g. the broad 半導體 sector) resolve to an
         # empty page — the frontend renders the standard "no episodes" state.
         if exposure_id in EXCLUDED_EXPOSURE_IDS:
@@ -979,12 +1011,13 @@ class PodcastService:
                 "exposure_id": exposure_id,
                 "display_name": "",
                 "exposure_type": "industry",
+                "description": None,
                 "resolved_tickers": [],
                 "episodes": [],
                 "total": 0,
             }
 
-        cache_key = f"sector:episodes:v3:{exposure_id}:{offset}:{limit}:{self._scope_tag()}"
+        cache_key = f"sector:episodes:v4:{exposure_id}:{offset}:{limit}:{self._scope_tag()}"
         cached = await cache_get(cache_key)
         if cached:
             try:
@@ -999,14 +1032,26 @@ class PodcastService:
         fetch_limit = max((limit + offset) * 5, 100) if scoping_active else (limit + offset)
 
         try:
-            dicts = await asyncio.to_thread(
-                self.firestore_service.query_collection,
-                "episodes",
-                [("sector_exposure_ids", "array-contains", exposure_id)],
-                None,       # no Firestore-side ordering — sort in Python to avoid composite index
-                None,
-                fetch_limit,
-            )
+            query_ids = _sector_query_ids(exposure_id)
+            batches = []
+            for query_id in query_ids:
+                batches.append(await asyncio.to_thread(
+                    self.firestore_service.query_collection,
+                    "episodes",
+                    [("sector_exposure_ids", "array-contains", query_id)],
+                    None,       # no Firestore-side ordering — sort in Python to avoid composite index
+                    None,
+                    fetch_limit,
+                ))
+            seen_doc_ids: set[str] = set()
+            dicts = []
+            for batch in batches:
+                for doc in batch or []:
+                    doc_id = str(doc.get("id") or doc.get("episode_id") or id(doc))
+                    if doc_id in seen_doc_ids:
+                        continue
+                    seen_doc_ids.add(doc_id)
+                    dicts.append(doc)
         except Exception as e:
             raise Exception(f"Failed to query episodes by sector: {e}") from e
 
@@ -1029,12 +1074,13 @@ class PodcastService:
         # as its title with no tickers).
         display_name = exposure_id
         exposure_type = "industry"
+        description = None
         seen_tickers: dict[str, dict] = {}  # ticker -> first-seen entry
         exposure_counts: dict[str, int] = {}  # display_name -> count, for majority vote
 
         for ep in episodes_raw:
             for entry in ep.sector_exposures:
-                if entry.get("exposure_id") != exposure_id:
+                if resolve_sector_exposure_id(entry.get("exposure_id")) != exposure_id:
                     continue
                 dn = entry.get("display_name") or exposure_id
                 exposure_counts[dn] = exposure_counts.get(dn, 0) + 1
@@ -1065,6 +1111,14 @@ class PodcastService:
         if best_key:
             display_name, exposure_type = best_key
 
+        from src.data.sector_visuals import metadata_for
+        registry_meta = metadata_for(exposure_id) or {}
+        if registry_meta.get("display_name"):
+            display_name = registry_meta["display_name"] or display_name
+        if registry_meta.get("exposure_type"):
+            exposure_type = registry_meta["exposure_type"] or exposure_type
+        description = registry_meta.get("description")
+
         resolved_tickers = list(seen_tickers.values())[:12]
 
         # Enrich each constituent with a short zh-TW "why this ticker belongs to the
@@ -1087,6 +1141,7 @@ class PodcastService:
             "exposure_id": exposure_id,
             "display_name": display_name,
             "exposure_type": exposure_type,
+            "description": description,
             "icon_id": visual.get("icon_id"),
             "color_hex": visual.get("color_hex"),
             "resolved_tickers": resolved_tickers,
@@ -1163,7 +1218,7 @@ class PodcastService:
             if cutoff is not None and self._dict_release_ms(doc) < cutoff:
                 continue
             for entry in doc.get("sector_exposures") or []:
-                if (entry.get("exposure_id") or "") in EXCLUDED_EXPOSURE_IDS:
+                if resolve_sector_exposure_id(entry.get("exposure_id")) in EXCLUDED_EXPOSURE_IDS:
                     continue
                 for rt in entry.get("resolved_tickers") or []:
                     t = str(rt.get("ticker") or "").strip().upper()
@@ -1256,11 +1311,23 @@ class PodcastService:
         ticker_name: dict[str, str] = {}
         industry_tickers: dict[str, set] = {}  # industry eid -> union of child-theme tickers
         for r in rows:
-            eid = r.exposure_id
+            raw_eid = r.exposure_id
+            # Hidden rows (redirect sources + stale pre-remake ids) must not feed the
+            # board: resolving them into the canonical id would inherit stale members
+            # and overwrite canonical meta. Only canonical, visible rows contribute.
+            if getattr(r, "tier", None) == TIER_HIDDEN:
+                continue
+            eid = resolve_sector_exposure_id(raw_eid)
+            if normalize_exposure_id(raw_eid) != eid:
+                continue  # redirect-source row — the canonical row is authoritative
             if not eid or eid in EXCLUDED_EXPOSURE_IDS:
                 continue
             etype = r.exposure_type or "theme"
-            meta[eid] = {"display_name": r.display_zh or eid, "exposure_type": etype}
+            meta[eid] = {
+                "display_name": r.display_zh or eid,
+                "exposure_type": etype,
+                "description": r.description,
+            }
             tickers = set()
             for m in r.members or []:
                 t = str((m or {}).get("ticker") or "").strip().upper()
@@ -1270,7 +1337,8 @@ class PodcastService:
                 ticker_name.setdefault(t, (m or {}).get("name") or "")
             attr_size[eid] = len(tickers) or 1
             if etype == "theme":
-                parent = r.parent_id if (r.parent_id and r.parent_id not in EXCLUDED_EXPOSURE_IDS) else None
+                parent = resolve_sector_exposure_id(r.parent_id) if r.parent_id else None
+                parent = parent if parent and parent not in EXCLUDED_EXPOSURE_IDS else None
                 for t in tickers:
                     s = ticker_to_sectors.setdefault(t, set())
                     s.add(eid)
@@ -1340,7 +1408,7 @@ class PodcastService:
             # 1. DIRECT — sectors this episode explicitly NAMES (verified sector_exposures).
             direct_eids: set[str] = set()
             for entry in doc.get("sector_exposures") or []:
-                eid = normalize_exposure_id(entry.get("exposure_id"))
+                eid = resolve_sector_exposure_id(entry.get("exposure_id"))
                 if not eid or eid in EXCLUDED_EXPOSURE_IDS:
                     continue
                 direct_eids.add(eid)
@@ -2062,7 +2130,7 @@ class PodcastService:
             if cutoff is not None and self._dict_release_ms(doc) < cutoff:
                 continue
             for entry in doc.get("sector_exposures") or []:
-                eid = normalize_exposure_id(entry.get("exposure_id"))
+                eid = resolve_sector_exposure_id(entry.get("exposure_id"))
                 if not eid or eid in EXCLUDED_EXPOSURE_IDS:
                     continue
                 counts[eid] = counts.get(eid, 0) + 1
@@ -2072,15 +2140,16 @@ class PodcastService:
                         "exposure_type": entry.get("exposure_type") or "industry",
                     }
 
-        from src.data.sector_visuals import visual_for
+        from src.data.sector_visuals import metadata_for, visual_for
         result = sorted(
             [
                 {
                     "exposure_id": eid,
-                    "display_name": meta[eid]["display_name"],
-                    "exposure_type": meta[eid]["exposure_type"],
+                    "display_name": (metadata_for(eid) or {}).get("display_name") or meta[eid]["display_name"],
+                    "exposure_type": (metadata_for(eid) or {}).get("exposure_type") or meta[eid]["exposure_type"],
                     "icon_id": (visual_for(eid) or {}).get("icon_id"),
                     "color_hex": (visual_for(eid) or {}).get("color_hex"),
+                    "description": (metadata_for(eid) or {}).get("description"),
                     "count": cnt,
                 }
                 for eid, cnt in counts.items()

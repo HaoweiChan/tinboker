@@ -534,6 +534,7 @@ export interface SectorListItem {
   exposure_type: string;
   icon_id?: string | null;   // lucide icon name from the compiled universe
   color_hex?: string | null; // accent color
+  description?: string | null;
   count: number;
 }
 
@@ -625,6 +626,7 @@ export interface EpisodesBySectorResponse {
   exposure_type: string;
   icon_id?: string | null;   // lucide icon name from the compiled universe
   color_hex?: string | null; // accent color
+  description?: string | null;
   resolved_tickers: SectorResolvedTicker[];
   episodes: Episode[];
   total: number;
@@ -646,6 +648,7 @@ export async function getEpisodesBySector(
     exposure_type: d.exposure_type ?? 'sector',
     icon_id: d.icon_id ?? null,
     color_hex: d.color_hex ?? null,
+    description: d.description ?? null,
     resolved_tickers: Array.isArray(d.resolved_tickers) ? d.resolved_tickers : [],
     episodes: Array.isArray(d.episodes) ? d.episodes : [],
     total: typeof d.total === 'number' ? d.total : 0,

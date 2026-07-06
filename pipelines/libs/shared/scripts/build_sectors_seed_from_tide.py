@@ -29,12 +29,22 @@ Without --write it prints a summary and diff stats only.
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import json
-import pprint
 import sys
 from collections import OrderedDict
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "pipelines/libs/shared/src"))
+
+from shared.curation import (  # noqa: E402
+    DEFAULT_MEMBER_REASONS_JSON,
+    DEFAULT_OVERRIDES_JSON,
+    curate_seed,
+    emit_reasons_json,
+    emit_seed_py,
+    load_json,
+    load_seed_from_py,
+)
 
 REPO = Path(__file__).resolve().parents[4]
 BACKEND_SEED = REPO / "backend/src/data/sectors_seed.py"
@@ -203,26 +213,17 @@ ICON_BY_SLUG = {
 }
 
 
-def load_current_seed():
-    spec = importlib.util.spec_from_file_location("cur_seed", BACKEND_SEED)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod.SECTORS_SEED
-
-
-def build_reuse_index(current):
-    """ticker -> (reason, name_en) reused from current curated members (TW only)."""
-    reason_by_ticker, name_en_by_ticker = {}, {}
+def build_name_en_index(current):
+    """ticker -> name_en reused from current curated members (TW only)."""
+    name_en_by_ticker = {}
     for sec in current:
         for mem in sec["members"]:
             if mem["market"] != "TW":
                 continue
             t = mem["ticker"]
-            if mem.get("reason") and t not in reason_by_ticker:
-                reason_by_ticker[t] = mem["reason"]
             if mem.get("name_en") and t not in name_en_by_ticker:
                 name_en_by_ticker[t] = mem["name_en"]
-    return reason_by_ticker, name_en_by_ticker
+    return name_en_by_ticker
 
 
 def is_theme_sub(name: str) -> bool:
@@ -235,14 +236,14 @@ def is_theme_sub(name: str) -> bool:
     return True
 
 
-def make_member(ticker, names, reason_by_ticker, name_en_by_ticker):
+def make_member(ticker, names, name_en_by_ticker):
     return {
         "ticker": ticker,
         "name": names.get(ticker, ticker),
         "name_en": name_en_by_ticker.get(ticker),
         "market": "TW",
         "source": "tide",
-        "reason": reason_by_ticker.get(ticker, ""),
+        "reason": "",
     }
 
 
@@ -271,9 +272,9 @@ def build(tide_dir: Path):
     names = json.loads((tide_dir / "stock_names.json").read_text(encoding="utf-8"))
     sub_stocks = {s["name"]: s["stocks"] for s in latest["sectors"]}
 
-    current = load_current_seed()
-    reason_by_ticker, name_en_by_ticker = build_reuse_index(current)
-    curated_tw = set(reason_by_ticker) | {
+    current, _ = load_seed_from_py(BACKEND_SEED)
+    name_en_by_ticker = build_name_en_index(current)
+    curated_tw = {
         m["ticker"] for s in current for m in s["members"] if m["market"] == "TW"
     }
 
@@ -295,7 +296,7 @@ def build(tide_dir: Path):
             "color_hex": color,
             "group": None,  # industries are top-level
             "aliases": aliases,
-            "members": [make_member(t, names, reason_by_ticker, name_en_by_ticker) for t in leaders],
+            "members": [make_member(t, names, name_en_by_ticker) for t in leaders],
         })
 
     # --- THEMES: real sub-industries (drop residual buckets + single-sub dups)
@@ -328,7 +329,7 @@ def build(tide_dir: Path):
                 "color_hex": ov.get("color", gcolor),
                 "group": gslug,  # parent industry exposure_id
                 "aliases": aliases,
-                "members": [make_member(t, names, reason_by_ticker, name_en_by_ticker) for t in members],
+                "members": [make_member(t, names, name_en_by_ticker) for t in members],
             })
     return seed
 
@@ -343,29 +344,6 @@ def _ascii_slug(name: str) -> str:
     return format(abs(hash(name)) % 0xFFFFFF, "06x")
 
 
-def emit(seed) -> str:
-    n_ind = sum(1 for s in seed if s["exposure_type"] == "industry")
-    n_thm = sum(1 for s in seed if s["exposure_type"] == "theme")
-    header = (
-        f'"""Database seed data for {len(seed)} TW sectors and themes '
-        f'({n_ind} industries + {n_thm} themes).\n\n'
-        'Generated from the tide-tw-data curation by\n'
-        'pipelines/libs/shared/scripts/build_sectors_seed_from_tide.py — do not hand-edit;\n'
-        're-run that script to regenerate. TW-only (US exposures live in a separate tab).\n'
-        '"""\n\n'
-    )
-    return header + "SECTORS_SEED = " + pprint.pformat(seed, width=110, sort_dicts=False) + "\n"
-
-
-def emit_reasons(seed) -> str:
-    out = {}
-    for s in seed:
-        bucket = {m["ticker"]: m["reason"] for m in s["members"] if m.get("reason")}
-        if bucket:
-            out[s["exposure_id"]] = bucket
-    return json.dumps(out, ensure_ascii=False, indent=2) + "\n"
-
-
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--tide", default=str(REPO / "tide-tw-data"), type=Path)
@@ -373,18 +351,25 @@ def main():
     args = ap.parse_args()
 
     seed = build(args.tide)
-    src = emit(seed)
-    reasons = emit_reasons(seed)
+    _, existing_redirects = load_seed_from_py(BACKEND_SEED)
+    curated = curate_seed(
+        seed,
+        overrides=load_json(DEFAULT_OVERRIDES_JSON, {}),
+        member_reasons=load_json(DEFAULT_MEMBER_REASONS_JSON, {}),
+        inherited_redirects=existing_redirects,
+    )
+    src = emit_seed_py(curated.seed, curated.redirects)
+    reasons = emit_reasons_json(curated.reasons)
 
-    n_ind = sum(1 for s in seed if s["exposure_type"] == "industry")
-    n_thm = sum(1 for s in seed if s["exposure_type"] == "theme")
-    all_tickers = {m["ticker"] for s in seed for m in s["members"]}
-    us = [m["ticker"] for s in seed for m in s["members"] if m["market"] != "TW"]
-    empty = [s["exposure_id"] for s in seed if not s["members"]]
-    with_reason = sum(1 for s in seed for m in s["members"] if m.get("reason"))
-    total_members = sum(len(s["members"]) for s in seed)
+    n_ind = sum(1 for s in curated.seed if s["exposure_type"] == "industry")
+    n_thm = sum(1 for s in curated.seed if s["exposure_type"] == "theme")
+    all_tickers = {m["ticker"] for s in curated.seed for m in s["members"]}
+    us = [m["ticker"] for s in curated.seed for m in s["members"] if m["market"] != "TW"]
+    empty = [s["exposure_id"] for s in curated.seed if not s["members"]]
+    with_reason = sum(1 for s in curated.seed for m in s["members"] if m.get("reason"))
+    total_members = sum(len(s["members"]) for s in curated.seed)
 
-    print(f"sectors: {len(seed)}  ({n_ind} industries + {n_thm} themes)")
+    print(f"sectors: {len(curated.seed)}  ({n_ind} industries + {n_thm} themes)")
     print(f"unique tickers surfaced: {len(all_tickers)}  members total: {total_members}")
     print(f"US members (must be 0): {len(us)}")
     print(f"empty sectors (must be 0): {empty}")
