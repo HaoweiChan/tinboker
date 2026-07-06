@@ -3,7 +3,7 @@
 > Status: planned 2026-07-06 (v2.1 — v1 patched symptoms; v2 fixed the structure; v2.1
 > incorporates the adversarial review: the old reason-generator is dead code, the tide
 > input directory is absent locally, so curation is redesigned to run off the committed
-> seed). Tracked as **TKB-008** in `TODO.md`.
+> seed). Tracked as **TKB-009** in `TODO.md`.
 > Audience: implementing agents (Sonnet/Opus). Follow this doc literally. Do NOT
 > improvise schema or naming beyond what a milestone specifies. One milestone = one PR,
 > in order.
@@ -165,7 +165,7 @@ Policy (validators in M1, content compliant by end of M3):
 ## M0 — Retire the dead chain (small PR, no data change)
 
 1. Remove the `schedule:` trigger from `.github/workflows/refresh-sectors.yml` (keep
-   `workflow_dispatch` + header comment: "inputs deleted in b3fae75; replaced by TKB-008
+   `workflow_dispatch` + header comment: "inputs deleted in b3fae75; replaced by TKB-009
    M5"). Do NOT delete the workflow file or the dead scripts in this PR — M5 deletes
    them together with their replacement.
 2. Drift inventory: read-only script (scripts/ tier) diffing each `tag_registry`

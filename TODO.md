@@ -214,7 +214,7 @@ Do not build real-time tracking yet.
 
 ```yaml
 id: TKB-008
-status: in_progress
+status: ready
 priority: P0
 area:
 - pipelines
@@ -777,10 +777,10 @@ Do not implement before TKB-001, TKB-002, and TKB-003 are shipped.
 
 ---
 
-## TKB-008 Sector curation, per-sector member reasons, stock-page membership
+## TKB-009 Sector curation, per-sector member reasons, stock-page membership
 
 ```yaml
-id: TKB-008
+id: TKB-009
 status: in_progress
 priority: P1
 area:
