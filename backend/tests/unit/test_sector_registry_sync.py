@@ -59,21 +59,22 @@ def test_sync_inserts_new_sectors_as_visible(session):
         assert r.icon_id and r.color_hex
 
 
-def test_resync_refreshes_visuals_but_preserves_curated_tier(session):
+def test_resync_is_noop_on_populated_registry(session):
+    """TKB-009 M2.5 forward-compat: the shared-DB taxonomy is DB-managed — a populated
+    registry is never overwritten from this environment's bundled seed."""
     sync_sectors(session, [_sector("sector_semiconductor", "半導體", icon_id="cpu")])
-    # Admin hides it.
     row = session.query(TagRegistry).filter_by(exposure_id="sector_semiconductor").one()
     row.tier = TIER_HIDDEN
     session.commit()
 
-    # Re-sync with refreshed display name + visuals.
+    # Re-sync with a different seed: must be a complete no-op.
     new_count = sync_sectors(session, [_sector("sector_semiconductor", "半導體業", icon_id="circuit-board")])
-    assert new_count == 0  # not a new row
+    assert new_count == 0
 
     row = session.query(TagRegistry).filter_by(exposure_id="sector_semiconductor").one()
-    assert row.tier == TIER_HIDDEN          # curation preserved
-    assert row.display_zh == "半導體業"      # display refreshed
-    assert row.icon_id == "circuit-board"   # visual refreshed
+    assert row.tier == TIER_HIDDEN           # untouched
+    assert row.display_zh == "半導體"        # NOT refreshed — DB is the truth
+    assert row.icon_id == "cpu"              # NOT refreshed
 
 
 def test_hidden_sector_exposure_ids_returns_only_hidden(session):
@@ -123,20 +124,17 @@ def test_hidden_tag_slugs_normalized_and_tag_only(session):
     assert "sectorsemiconductor" not in hidden  # sectors are not tag-kind
 
 
-def test_sync_self_heals_legacy_theme_rows(session):
-    """A legacy theme_<id> sector row is dropped once sector_<id> is synced, and an
-    admin 'hidden' curation carries onto the survivor."""
-    # Pre-existing legacy row: admin had HIDDEN the old theme exposure.
+def test_sync_skips_even_legacy_rows_when_registry_populated(session):
+    """TKB-009 M2.5 forward-compat: any pre-existing sector row (even a legacy
+    theme_<id> orphan) makes sync a no-op — cleanup is DB-side now."""
     session.add(TagRegistry(
         slug="theme_ai_server", display_zh="AI 伺服器", tier=TIER_HIDDEN,
         kind=KIND_SECTOR, exposure_id="theme_ai_server",
     ))
     session.commit()
 
-    sync_sectors(session, [_sector("sector_ai_server", "AI 伺服器")])
+    new_count = sync_sectors(session, [_sector("sector_ai_server", "AI 伺服器")])
+    assert new_count == 0
 
-    rows = session.query(TagRegistry).filter(TagRegistry.kind == KIND_SECTOR).all()
-    ids = {r.exposure_id for r in rows}
-    assert ids == {"sector_ai_server"}              # theme_ orphan removed
-    survivor = next(r for r in rows if r.exposure_id == "sector_ai_server")
-    assert survivor.tier == TIER_HIDDEN              # admin hide preserved
+    ids = {r.exposure_id for r in session.query(TagRegistry).filter(TagRegistry.kind == KIND_SECTOR).all()}
+    assert ids == {"theme_ai_server"}  # untouched — no additions, no healing

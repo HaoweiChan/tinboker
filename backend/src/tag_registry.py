@@ -239,6 +239,17 @@ def sync_sectors(db: Session, sectors: list[dict]) -> int:
         r.exposure_id: r
         for r in db.query(TagRegistry).filter(TagRegistry.kind == KIND_SECTOR).all()
     }
+    # Hotfix (TKB-009 M2.5 forward-compat): the taxonomy is becoming DB-managed and all
+    # environments share one Postgres. A populated registry must never be overwritten
+    # from this environment's bundled seed — only a completely empty registry gets
+    # bootstrap-seeded. Without this guard, a staging/prod restart stomps the shared
+    # tag_registry with a stale seed.
+    if by_exposure:
+        logger.info(
+            "sync_sectors: registry already has %d sectors — taxonomy is DB-managed, skipping seed sync",
+            len(by_exposure),
+        )
+        return 0
     new_count = 0
     for sector in sectors:
         eid = str(sector.get("exposure_id") or "").strip()
