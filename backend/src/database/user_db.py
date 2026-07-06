@@ -18,12 +18,58 @@ except ImportError:
 # Initialize Firestore service (singleton pattern)
 _firestore_service = None
 
+MERGED_SECTOR_TAG_SUBSCRIPTION_RENAMES = {
+    "日本矽晶圓": "矽晶圓",
+    "日本前段設備": "前段製程設備",
+    "日本後段設備": "封裝製程機台",
+    "日本被動元件": "被動元件 MLCC",
+}
+
 def _get_firestore_service() -> FirestoreService:
     """Get or create FirestoreService instance"""
     global _firestore_service
     if _firestore_service is None:
         _firestore_service = FirestoreService()
     return _firestore_service
+
+
+def remap_merged_sector_tag_subscriptions(tag_subscriptions: list[str]) -> list[str]:
+    """Map merged sector display-name follows to their canonical target names."""
+    remapped: list[str] = []
+    seen: set[str] = set()
+    for tag in tag_subscriptions or []:
+        # Legacy entries may carry a '#' prefix (SectorPage matches both forms) —
+        # remap those too, preserving the prefix.
+        prefix = "#" if isinstance(tag, str) and tag.startswith("#") else ""
+        bare = tag[1:] if prefix else tag
+        canonical = prefix + MERGED_SECTOR_TAG_SUBSCRIPTION_RENAMES.get(bare, bare)
+        if canonical not in seen:
+            remapped.append(canonical)
+            seen.add(canonical)
+    return remapped
+
+
+def migrate_merged_sector_tag_subscriptions() -> int:
+    """One-off idempotent migration for display-name keyed sector follows."""
+    firestore_service = _get_firestore_service()
+    migrated = 0
+    now = datetime.now(timezone.utc)
+    for user_doc in firestore_service.get_all_documents("users"):
+        user_id = user_doc.get("id")
+        current = user_doc.get("tag_subscriptions", [])
+        if not user_id or not isinstance(current, list):
+            continue
+        remapped = remap_merged_sector_tag_subscriptions(current)
+        if remapped == current:
+            continue
+        firestore_service.set_document(
+            "users",
+            user_id,
+            {"tag_subscriptions": remapped, "updated_at": now},
+            merge=True,
+        )
+        migrated += 1
+    return migrated
 
 
 def _firestore_timestamp_to_datetime(timestamp) -> datetime:
