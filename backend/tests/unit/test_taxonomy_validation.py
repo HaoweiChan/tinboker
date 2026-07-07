@@ -76,3 +76,25 @@ def test_rejects_empty_sector_and_us_member():
     with pytest.raises(TaxonomyValidationError) as us_exc:
         validate_taxonomy([_sector("sector_us", [_member("AAPL", market="US")])], {}, enforce=True)
     assert us_exc.value.rule == "US tickers leaked into the TW taxonomy"
+
+
+def test_member_reason_requirement_default_off(monkeypatch):
+    monkeypatch.delenv("TAXONOMY_REQUIRE_MEMBER_REASONS", raising=False)
+
+    validate_taxonomy([_sector("sector_a", [_member("1001")])], {}, enforce=False)
+
+
+def test_member_reason_requirement_rejects_only_new_empty_members(monkeypatch):
+    monkeypatch.setenv("TAXONOMY_REQUIRE_MEMBER_REASONS", "true")
+    previous = [_sector("sector_a", [_member("1001")])]
+    unchanged = [_sector("sector_a", [_member("1001")])]
+    added_empty = [_sector("sector_a", [_member("1001"), _member("2002")])]
+    added_filled = [_sector("sector_a", [_member("1001"), _member("2002", "new reason")])]
+
+    validate_taxonomy(unchanged, {}, enforce=False, previous_sectors=previous)
+    validate_taxonomy(added_filled, {}, enforce=False, previous_sectors=previous)
+    with pytest.raises(TaxonomyValidationError) as exc:
+        validate_taxonomy(added_empty, {}, enforce=False, previous_sectors=previous)
+
+    assert exc.value.rule == "new members require non-empty reasons"
+    assert exc.value.offenders == ["sector_a/2002"]

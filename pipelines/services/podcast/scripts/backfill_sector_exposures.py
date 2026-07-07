@@ -35,28 +35,21 @@ bootstrap()
 
 from google.cloud import firestore  # noqa: E402
 from shared.sectors import (  # noqa: E402
+    current_exposure_ids,
     flatten_exposure_ids,
     flatten_unresolved_trend_ids,
     resolve_text,
 )
-from shared.sectors_seed_backup import SECTORS_SEED  # noqa: E402
 from src.service.gcs_storage_service import GCSStorageService  # noqa: E402
 from src.service.upload_to_firebase import FirebaseService  # noqa: E402
 
-# Ids in the current sector/theme universe. An episode is "stale" when it carries an
-# exposure id that no longer exists here (dropped in a taxonomy remake) — those are
-# the ones showing broken/old categories. Episodes whose ids are all current are left
-# alone under --stale-only so a verified (Plan B) or freshly-ingested set is never
-# overwritten with this deterministic resolve.
-_CURRENT_EXPOSURE_IDS = {e.get("exposure_id") for e in SECTORS_SEED}
 
-
-def has_dead_id(ep: dict[str, Any]) -> bool:
+def has_dead_id(ep: dict[str, Any], current_ids: set[str]) -> bool:
     """True if the episode carries any exposure id absent from the current universe."""
     ids = ep.get("sector_exposure_ids") or [
         e.get("exposure_id") for e in (ep.get("sector_exposures") or [])
     ]
-    return any(i and i not in _CURRENT_EXPOSURE_IDS for i in ids)
+    return any(i and i not in current_ids for i in ids)
 
 
 def hydrated_summary(ep: dict[str, Any], gcs: GCSStorageService | None) -> str:
@@ -92,10 +85,16 @@ def episode_text(ep: dict[str, Any], gcs: GCSStorageService | None = None) -> st
 
 
 def build_update(
-    ep: dict[str, Any], gcs: GCSStorageService | None = None
+    ep: dict[str, Any],
+    gcs: GCSStorageService | None = None,
+    *,
+    require_live_universe: bool = False,
 ) -> dict[str, Any] | None:
     """Return the sector-metadata merge update, or None when nothing resolved."""
-    resolved = resolve_text(episode_text(ep, gcs))
+    resolved = resolve_text(
+        episode_text(ep, gcs),
+        require_live_universe=require_live_universe,
+    )
     exposures = resolved["sector_exposures"]
     unresolved = resolved["unresolved_market_trends"]
     if not exposures and not unresolved:
@@ -127,10 +126,16 @@ def main() -> int:
         help="only touch episodes carrying a dead (dropped-from-universe) exposure id; "
         "skip those already on the current taxonomy (protects verified/fresh sets)",
     )
+    ap.add_argument(
+        "--require-live-universe",
+        action="store_true",
+        help="fail instead of using shared/sectors_seed_backup.py when /api/sectors/universe is unavailable",
+    )
     args = ap.parse_args()
 
     fb = FirebaseService()
     col = fb.db.collection("episodes")
+    current_ids = current_exposure_ids(require_live_universe=args.require_live_universe)
 
     # Best-effort GCS reader so we can hydrate summaries stored as blobs (empty
     # inline). If the bucket env is missing, degrade to inline-only text.
@@ -157,10 +162,10 @@ def main() -> int:
         scanned += 1
         # Under --stale-only, leave episodes that are already on the current taxonomy
         # alone (no dead ids) — cheap check that also avoids a GCS summary fetch.
-        if args.stale_only and not has_dead_id(ep):
+        if args.stale_only and not has_dead_id(ep, current_ids):
             skipped_current += 1
             continue
-        update = build_update(ep, gcs)
+        update = build_update(ep, gcs, require_live_universe=args.require_live_universe)
         if not update:
             continue
         hits.append((snap.id, update["sector_exposure_ids"]))

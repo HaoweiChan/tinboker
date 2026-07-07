@@ -7,10 +7,12 @@ cross-tier import while preserving the same write-time invariants.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from typing import Any
 
 EMPTY_REASON_BASELINE = 1870
+REQUIRE_MEMBER_REASONS_ENV = "TAXONOMY_REQUIRE_MEMBER_REASONS"
 
 
 @dataclass
@@ -30,6 +32,7 @@ def validate_taxonomy(
     redirects: dict[str, str] | None = None,
     *,
     enforce: bool = True,
+    previous_sectors: list[dict[str, Any]] | None = None,
 ) -> list[str]:
     """Validate the full would-be published taxonomy state.
 
@@ -61,6 +64,8 @@ def validate_taxonomy(
             f"empty member reasons {empty_reasons} exceed baseline {EMPTY_REASON_BASELINE}",
             [str(empty_reasons)],
         )
+    if _require_member_reasons():
+        _validate_new_members_have_reasons(sectors, previous_sectors or [])
 
     self_redirects = [old for old, new in redirects.items() if old == new]
     if self_redirects:
@@ -77,6 +82,26 @@ def validate_taxonomy(
         _validate_jaccard(sectors)
         warnings.extend(_validate_size_band(sectors))
     return warnings
+
+
+def _validate_new_members_have_reasons(
+    sectors: list[dict[str, Any]],
+    previous_sectors: list[dict[str, Any]],
+) -> None:
+    previous_keys = {
+        _member_identity(sector, member)
+        for sector in previous_sectors
+        for member in sector.get("members") or []
+    }
+    offenders = [
+        f"{sector.get('exposure_id')}/{member.get('ticker')}"
+        for sector in sectors
+        for member in sector.get("members") or []
+        if _member_identity(sector, member) not in previous_keys
+        and not (member or {}).get("reason")
+    ]
+    if offenders:
+        raise TaxonomyValidationError("new members require non-empty reasons", offenders[:50])
 
 
 def _validate_duplicate_reasons(sectors: list[dict[str, Any]]) -> None:
@@ -150,3 +175,20 @@ def _by_id(sectors: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
 
 def _bare_ticker(value: Any) -> str:
     return str(value or "").strip().upper().split(".")[0]
+
+
+def _member_identity(sector: dict[str, Any], member: dict[str, Any]) -> tuple[str, str, str]:
+    return (
+        str(sector.get("exposure_id") or ""),
+        _bare_ticker((member or {}).get("ticker")),
+        str((member or {}).get("market") or "").upper(),
+    )
+
+
+def _require_member_reasons() -> bool:
+    return str(os.getenv(REQUIRE_MEMBER_REASONS_ENV) or "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
