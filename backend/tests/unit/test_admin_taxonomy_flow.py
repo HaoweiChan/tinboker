@@ -259,3 +259,80 @@ def test_reasons_fill_merges_into_admin_owned_members_without_reordering():
         assert response.skipped == []
     finally:
         db.close()
+
+
+def test_reasons_fill_conflict_rolls_back_and_can_publish_after_drift_reverted():
+    db = _session()
+    try:
+        existing_members = [_member("1001"), _member("2002")]
+        db.add(TagRegistry(
+            slug="sector_reasons_conflict",
+            display_zh="sector_reasons_conflict",
+            tier=TIER_TRENDING,
+            kind=KIND_SECTOR,
+            exposure_id="sector_reasons_conflict",
+            exposure_type="theme",
+            description="desc",
+            members=existing_members,
+            field_owners={"members": "admin:owner@example.com"},
+            updated_by="admin:owner@example.com",
+        ))
+        db.add(TaxonomyVersion(id=1, version=1))
+        db.commit()
+
+        incoming_members = [
+            {**_member("1001"), "reason": "reason one"},
+            {**_member("2002"), "reason": "reason two"},
+        ]
+        body = BulkTaxonomyRequest(
+            actor="bot:reasons-fill",
+            sectors=[
+                SectorPayload(
+                    exposure_id="sector_reasons_conflict",
+                    display_name="sector_reasons_conflict",
+                    exposure_type="theme",
+                    description="desc",
+                    members=incoming_members,
+                )
+            ],
+        )
+        draft, _ = create_taxonomy_draft(db, body, actor="bot:reasons-fill")
+
+        row = db.query(TagRegistry).filter_by(exposure_id="sector_reasons_conflict").one()
+        row.members = [*existing_members, _member("3003")]
+        db.commit()
+
+        try:
+            publish_taxonomy_draft(db, draft.id)
+        except HTTPException as exc:
+            assert exc.status_code == 409
+            assert exc.detail["conflicting_exposure_ids"] == ["sector_reasons_conflict"]
+        else:
+            raise AssertionError("drifted reasons-fill publish should conflict")
+
+        db.expire_all()
+        draft_after_conflict = db.get(TaxonomyDraft, draft.id)
+        row_after_conflict = db.query(TagRegistry).filter_by(
+            exposure_id="sector_reasons_conflict"
+        ).one()
+        assert draft_after_conflict.status == "draft"
+        assert all("reason" not in member for member in row_after_conflict.members)
+        assert [member["ticker"] for member in row_after_conflict.members] == [
+            "1001",
+            "2002",
+            "3003",
+        ]
+
+        row_after_conflict.members = existing_members
+        db.commit()
+
+        response = publish_taxonomy_draft(db, draft.id)
+
+        db.refresh(row_after_conflict)
+        assert response.skipped == []
+        assert [member["reason"] for member in row_after_conflict.members] == [
+            "reason one",
+            "reason two",
+        ]
+    finally:
+        db.close()

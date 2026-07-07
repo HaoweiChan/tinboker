@@ -131,7 +131,7 @@ def create_taxonomy_draft(
 ) -> tuple[TaxonomyDraft, DiffReport]:
     current, redirects = load_taxonomy_state(db)
     proposed, proposed_redirects = state_after_payload(current, redirects, body)
-    _validate_or_422(proposed, proposed_redirects)
+    _validate_or_422(proposed, proposed_redirects, previous=current)
     diff = diff_taxonomy(current, redirects, proposed, proposed_redirects)
     draft = TaxonomyDraft(
         status="draft",
@@ -180,18 +180,28 @@ def publish_taxonomy_draft(
     body = BulkTaxonomyRequest.model_validate(draft.payload)
     current, redirects = load_taxonomy_state(db)
     proposed, proposed_redirects = state_after_payload(current, redirects, body)
-    _validate_or_422(proposed, proposed_redirects)
+    _validate_or_422(proposed, proposed_redirects, previous=current)
     diff = diff_taxonomy(current, redirects, proposed, proposed_redirects)
     structural = has_structural_change(current, redirects, proposed, proposed_redirects)
 
     _set_audit_context(db, draft.actor, f"taxonomy draft {draft.id} publish")
-    skipped = apply_taxonomy_state(
-        db,
-        proposed,
-        proposed_redirects,
-        actor=draft.actor,
-        force=force,
-    )
+    try:
+        skipped = apply_taxonomy_state(
+            db,
+            proposed,
+            proposed_redirects,
+            actor=draft.actor,
+            force=force,
+        )
+    except ReasonsFillConflictError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "reasons-fill draft conflicts with protected sector members",
+                "conflicting_exposure_ids": exc.exposure_ids,
+            },
+        ) from exc
 
     version = None
     current_version = _taxonomy_version_number(db)
@@ -233,7 +243,7 @@ async def upsert_sector(
     )
     bulk = BulkTaxonomyRequest(sectors=[payload], full=False)
     proposed, proposed_redirects = state_after_payload(current, redirects, bulk)
-    _validate_or_422(proposed, proposed_redirects)
+    _validate_or_422(proposed, proposed_redirects, previous=current)
     structural = has_structural_change(current, redirects, proposed, proposed_redirects)
 
     _set_audit_context(db, actor, f"single-sector upsert {exposure_id}")
@@ -475,6 +485,7 @@ def apply_taxonomy_state(
         if row.exposure_id
     }
     skipped: list[dict[str, Any]] = []
+    reasons_fill_conflicts: list[str] = []
 
     for eid, row in list(rows.items()):
         if eid in proposed or eid in redirects:
@@ -495,9 +506,19 @@ def apply_taxonomy_state(
                 exposure_id=eid,
             )
             db.add(row)
-        skipped_fields = _apply_sector_fields(row, sector, actor, force=force)
+        skipped_fields, reasons_fill_conflict = _apply_sector_fields(
+            row,
+            sector,
+            actor,
+            force=force,
+        )
+        if reasons_fill_conflict:
+            reasons_fill_conflicts.append(eid)
         if skipped_fields:
             skipped.append({"exposure_id": eid, "fields": skipped_fields})
+
+    if reasons_fill_conflicts:
+        raise ReasonsFillConflictError(reasons_fill_conflicts)
 
     for old, new in redirects.items():
         row = rows.get(old)
@@ -580,13 +601,19 @@ OWNED_FIELDS = (
 )
 
 
+class ReasonsFillConflictError(RuntimeError):
+    def __init__(self, exposure_ids: list[str]) -> None:
+        self.exposure_ids = exposure_ids
+        super().__init__("reasons-fill draft no longer matches protected members")
+
+
 def _apply_sector_fields(
     row: TagRegistry,
     sector: dict[str, Any],
     actor: str,
     *,
     force: bool,
-) -> list[str]:
+) -> tuple[list[str], bool]:
     changed = _sector_field_values(sector)
     changed.update({
         "redirect_to": None,
@@ -595,6 +622,7 @@ def _apply_sector_fields(
     changed_fields: list[str] = []
     owner_fields: list[str] = []
     skipped_fields: list[str] = []
+    reasons_fill_conflict = False
 
     row.slug = str(sector.get("exposure_id") or row.exposure_id or row.slug)
     row.kind = KIND_SECTOR
@@ -611,6 +639,7 @@ def _apply_sector_fields(
                     row.members = merged
                     changed_fields.append(field)
                     continue
+                reasons_fill_conflict = True
             skipped_fields.append(field)
             continue
         setattr(row, field, value)
@@ -620,7 +649,7 @@ def _apply_sector_fields(
     if changed_fields:
         _record_field_owners(row, actor, owner_fields)
         row.updated_by = actor
-    return skipped_fields
+    return skipped_fields, reasons_fill_conflict
 
 
 def _apply_redirect_fields(
@@ -760,9 +789,16 @@ def _merge_reason_fill_only(
 def _validate_or_422(
     sectors: dict[str, dict[str, Any]],
     redirects: dict[str, str],
+    *,
+    previous: dict[str, dict[str, Any]] | None = None,
 ) -> None:
     try:
-        validate_taxonomy(list(sectors.values()), redirects, enforce=True)
+        validate_taxonomy(
+            list(sectors.values()),
+            redirects,
+            enforce=True,
+            previous_sectors=list((previous or {}).values()),
+        )
     except TaxonomyValidationError as exc:
         raise HTTPException(
             status_code=422,

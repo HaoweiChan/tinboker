@@ -1,6 +1,9 @@
 from shared.sectors import (
+    LiveUniverseRequiredError,
     aggregate_unresolved_trends,
+    current_exposure_ids,
     find_exposure_matches,
+    load_universe,
     resolve_text,
 )
 
@@ -65,3 +68,80 @@ def test_unresolved_market_trend_emitted_for_unmapped_uppercase_concept():
     out = resolve_text("主持人提到 XYZ 會帶動下一波光通訊需求")
 
     assert {"xyz"} <= {item["normalized_text"] for item in out["unresolved_market_trends"]}
+
+
+def test_universe_prefers_live_platform_fetch(monkeypatch):
+    import shared.sectors as sectors
+
+    sectors._universe.cache_clear()
+    monkeypatch.setattr(
+        sectors,
+        "fetch_sectors_universe",
+        lambda: {
+            "max_tickers": 3,
+            "exposures": [
+                {
+                    "exposure_id": "sector_live",
+                    "display_name": "Live",
+                    "aliases": ["live alias"],
+                    "members": [{"ticker": "1001", "market": "TW"}],
+                }
+            ],
+        },
+    )
+
+    out = resolve_text("live alias", require_live_universe=True)
+
+    assert out["sector_exposures"][0]["exposure_id"] == "sector_live"
+    assert current_exposure_ids(require_live_universe=True) == {"sector_live"}
+
+
+def test_universe_backup_fallback_warns_and_can_be_disallowed(monkeypatch, caplog):
+    import shared.sectors as sectors
+
+    sectors._universe.cache_clear()
+    monkeypatch.setattr(sectors, "fetch_sectors_universe", lambda: None)
+
+    with caplog.at_level("WARNING"):
+        universe = load_universe()
+
+    assert universe["exposures"]
+    assert "sectors_seed_backup.py" in caplog.text
+    assert "stale" in caplog.text
+    try:
+        load_universe(require_live_universe=True)
+    except LiveUniverseRequiredError:
+        pass
+    else:
+        raise AssertionError("require_live_universe should reject backup fallback")
+
+
+def test_backup_fallback_does_not_poison_live_universe_cache(monkeypatch, caplog):
+    import shared.sectors as sectors
+
+    live_payload = {
+        "max_tickers": 3,
+        "exposures": [
+            {
+                "exposure_id": "sector_live_after_backup",
+                "display_name": "Live After Backup",
+                "aliases": ["live after backup"],
+                "members": [{"ticker": "1001", "market": "TW"}],
+            }
+        ],
+    }
+    responses = [None, live_payload]
+
+    sectors._alias_index.cache_clear()
+    sectors._universe.cache_clear()
+    monkeypatch.setattr(sectors, "fetch_sectors_universe", lambda: responses.pop(0))
+
+    with caplog.at_level("WARNING"):
+        fallback = load_universe()
+
+    assert fallback["exposures"]
+    assert "stale emergency sector taxonomy backup" in caplog.text
+
+    out = resolve_text("live after backup")
+
+    assert out["sector_exposures"][0]["exposure_id"] == "sector_live_after_backup"
