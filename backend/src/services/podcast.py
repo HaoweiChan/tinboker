@@ -1283,13 +1283,20 @@ class PodcastService:
           any industry it is a leader of).
         - ``attr_size``: {exposure_id: int} constituent count for sub-linear
           normalisation — theme = its members, industry = union of its themes'.
-        - ``meta``: {exposure_id: {display_name, exposure_type}} so a sector surfaced
-          only via ticker mentions still renders.
+        - ``meta``: {exposure_id: {display_name, exposure_type, icon_id, color_hex,
+          description, group}} so a sector surfaced only via ticker mentions still renders.
         - ``ticker_name``: {TICKER: name} to label implied-only members.
+        - ``members``: {exposure_id: [{ticker, name}]} visible live registry roster.
         """
         from src.database import postgres
         from src.database.models import TagRegistry
-        empty = {"ticker_to_sectors": {}, "attr_size": {}, "meta": {}, "ticker_name": {}}
+        empty = {
+            "ticker_to_sectors": {},
+            "attr_size": {},
+            "meta": {},
+            "ticker_name": {},
+            "members": {},
+        }
         try:
             if postgres.SessionLocal is None:
                 postgres.init_engine()
@@ -1306,6 +1313,8 @@ class PodcastService:
         attr_size: dict[str, int] = {}
         meta: dict[str, dict] = {}
         ticker_name: dict[str, str] = {}
+        members: dict[str, list[dict[str, str]]] = {}
+        member_tickers: dict[str, set] = {}
         industry_tickers: dict[str, set] = {}  # industry eid -> union of child-theme tickers
         for r in rows:
             raw_eid = r.exposure_id
@@ -1325,7 +1334,10 @@ class PodcastService:
             meta[eid] = {
                 "display_name": r.display_zh or eid,
                 "exposure_type": etype,
-                "description": r.description,
+                "description": getattr(r, "description", None),
+                "icon_id": getattr(r, "icon_id", None),
+                "color_hex": getattr(r, "color_hex", None),
+                "group": getattr(r, "parent_id", None),
             }
             tickers = set()
             for m in r.members or []:
@@ -1333,7 +1345,12 @@ class PodcastService:
                 if not t:
                     continue
                 tickers.add(t)
-                ticker_name.setdefault(t, (m or {}).get("name") or "")
+                name = (m or {}).get("name") or ""
+                ticker_name.setdefault(t, name)
+                exposure_member_tickers = member_tickers.setdefault(eid, set())
+                if t not in exposure_member_tickers:
+                    exposure_member_tickers.add(t)
+                    members.setdefault(eid, []).append({"ticker": t, "name": name})
             attr_size[eid] = len(tickers) or 1
             if etype == "theme":
                 parent = resolve_sector_exposure_id(r.parent_id) if r.parent_id else None
@@ -1345,6 +1362,13 @@ class PodcastService:
                         s.add(parent)
                 if parent:
                     industry_tickers.setdefault(parent, set()).update(tickers)
+                    parent_members = member_tickers.setdefault(parent, set())
+                    parent_roster = members.setdefault(parent, [])
+                    for member in members.get(eid, []):
+                        mt = member["ticker"]
+                        if mt not in parent_members:
+                            parent_members.add(mt)
+                            parent_roster.append(member)
             else:  # industry — leaders credit the industry directly (covers ・其他-only leaders)
                 for t in tickers:
                     ticker_to_sectors.setdefault(t, set()).add(eid)
@@ -1353,7 +1377,7 @@ class PodcastService:
             if tset:
                 attr_size[eid] = len(tset)
         return {"ticker_to_sectors": ticker_to_sectors, "attr_size": attr_size,
-                "meta": meta, "ticker_name": ticker_name}
+                "meta": meta, "ticker_name": ticker_name, "members": members}
 
     async def _compute_sector_board(self) -> list[dict]:
         """Scan + aggregate + price-join the board (no cache read/write).
@@ -1387,6 +1411,7 @@ class PodcastService:
         attr_size = idx["attr_size"]
         uni_meta = idx["meta"]
         ticker_name = idx["ticker_name"]
+        registry_members = idx.get("members", {})
         counts: dict[str, int] = {}      # exposure_id -> episodes touching it (direct OR implied)
         direct_heat: dict[str, float] = {}   # recency-weighted heat from NAMED mentions
         ticker_heat: dict[str, float] = {}   # recency-weighted heat from CONSTITUENT mentions
@@ -1453,8 +1478,26 @@ class PodcastService:
         from src.services.stock_close_refresh import get_eod_change_pct
         from src.data.sector_visuals import visual_for
 
+        live_member_map: dict[str, dict[str, str]] = {}
+        for eid in counts:
+            registry_roster = registry_members.get(eid) or []
+            if registry_roster:
+                sector_members: dict[str, str] = {}
+                snapshot_names = ticker_map.get(eid, {})
+                for member in registry_roster:
+                    ticker = str((member or {}).get("ticker") or "").strip().upper()
+                    if ticker and ticker not in sector_members and len(sector_members) < 12:
+                        sector_members[ticker] = (
+                            ticker_name.get(ticker)
+                            or str((member or {}).get("name") or "")
+                            or snapshot_names.get(ticker, "")
+                        )
+                live_member_map[eid] = sector_members
+            else:
+                live_member_map[eid] = dict(list(ticker_map.get(eid, {}).items())[:12])
+
         all_tickers: list[str] = list({
-            t for tickers in ticker_map.values() for t in tickers
+            t for tickers in live_member_map.values() for t in tickers
         })
         pcts = await asyncio.gather(*[get_eod_change_pct(t) for t in all_tickers])
         ticker_pct: dict[str, Optional[float]] = dict(zip(all_tickers, pcts))
@@ -1468,7 +1511,7 @@ class PodcastService:
         sectors_raw: list[dict] = []
         for eid, count in counts.items():
             members_unsorted: list[dict] = []
-            for ticker, name in ticker_map.get(eid, {}).items():
+            for ticker, name in live_member_map.get(eid, {}).items():
                 closes = ticker_series.get(ticker, [])
                 members_unsorted.append({
                     "ticker": ticker,

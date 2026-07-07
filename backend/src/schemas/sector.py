@@ -42,6 +42,21 @@ class SectorsListResponse(BaseModel):
     sectors: List[SectorListItem]
 
 
+class SectorByTickerItem(BaseModel):
+    exposure_id: str
+    exposure_type: str
+    display_name: str
+    icon_id: Optional[str] = None
+    color_hex: Optional[str] = None
+    group: Optional[str] = None
+    reason: str = ""
+    description: Optional[str] = None
+
+
+class SectorsByTickerResponse(BaseModel):
+    items: List[SectorByTickerItem] = []
+
+
 # ── Sector board (hot sectors) ───────────────────────────────────────────────
 
 class SectorBoardMember(BaseModel):
