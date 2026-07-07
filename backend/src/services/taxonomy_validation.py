@@ -98,7 +98,7 @@ def _validate_new_members_have_reasons(
         for sector in sectors
         for member in sector.get("members") or []
         if _member_identity(sector, member) not in previous_keys
-        and not (member or {}).get("reason")
+        and not str((member or {}).get("reason") or "").strip()
     ]
     if offenders:
         raise TaxonomyValidationError("new members require non-empty reasons", offenders[:50])
