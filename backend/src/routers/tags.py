@@ -1,20 +1,26 @@
 """Tags API router for tag-based episode discovery"""
+import asyncio
+import json
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from src.cache.redis_client import cache_get, cache_set
+from src.data.sector_reasons import reason_for
 from src.database.postgres import get_session
 from src.schemas.sector import (
     EpisodesBySectorResponse,
     ExposurePerformanceItem,
     ExposurePerformanceResponse,
+    SectorByTickerItem,
     SectorBoardItem,
     SectorBoardMember,
     SectorBoardResponse,
     SectorListItem,
     SectorResolvedTicker,
+    SectorsByTickerResponse,
     SectorsListResponse,
 )
 from src.services.podcast import PodcastService
@@ -193,6 +199,64 @@ async def get_sector_board(db: Session = Depends(get_session)):
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching sector board: {str(e)}")
+
+
+@router.get("/sectors/by-ticker/{ticker}", response_model=SectorsByTickerResponse)
+async def get_sectors_by_ticker(
+    ticker: str = Path(..., description="Stock ticker symbol"),
+):
+    """Return visible sector/theme memberships for a ticker from the live registry."""
+    normalized_ticker = ticker.strip().upper()
+    cache_key = f"sectors:by-ticker:v1:{normalized_ticker}"
+    if not normalized_ticker:
+        return SectorsByTickerResponse(items=[])
+
+    try:
+        cached = await cache_get(cache_key)
+        if cached:
+            return SectorsByTickerResponse(**json.loads(cached))
+    except Exception:
+        pass
+
+    try:
+        idx = await asyncio.to_thread(PodcastService._sector_membership_index)
+        exposure_ids = idx.get("ticker_to_sectors", {}).get(normalized_ticker, set())
+        meta = idx.get("meta", {})
+        items: list[SectorByTickerItem] = []
+        for exposure_id in exposure_ids:
+            sector_meta = meta.get(exposure_id)
+            if not sector_meta:
+                continue
+            items.append(
+                SectorByTickerItem(
+                    exposure_id=exposure_id,
+                    exposure_type=sector_meta.get("exposure_type") or "theme",
+                    display_name=sector_meta.get("display_name") or exposure_id,
+                    icon_id=sector_meta.get("icon_id"),
+                    color_hex=sector_meta.get("color_hex"),
+                    group=sector_meta.get("group"),
+                    reason=reason_for(exposure_id, normalized_ticker) or "",
+                    description=sector_meta.get("description"),
+                )
+            )
+
+        def _sort_key(item: SectorByTickerItem) -> tuple[int, str]:
+            if item.exposure_type == "industry":
+                rank = 0
+            elif item.exposure_type == "theme":
+                rank = 1
+            else:
+                rank = 2
+            return (rank, item.display_name)
+
+        response = SectorsByTickerResponse(items=sorted(items, key=_sort_key))
+        try:
+            await cache_set(cache_key, json.dumps(response.model_dump(), ensure_ascii=False), 3600)
+        except Exception:
+            pass
+        return response
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching sectors by ticker: {str(e)}")
 
 
 @router.get("/sectors/performance", response_model=ExposurePerformanceResponse)

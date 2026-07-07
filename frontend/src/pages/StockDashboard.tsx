@@ -24,6 +24,7 @@ import { useStockPriceSinceMap } from '@/hooks/useStockPriceSinceMap';
 import { useEpisodeSentimentMap } from '@/hooks/useEpisodeSentimentMap';
 import { useTranslationMap } from '@/hooks/useTranslationMap';
 import { getStockLabel, inferStockMarket } from '@/utils/stockDisplay';
+import { TickerSectorsCard } from '@/components/stock/TickerSectorsCard';
 
 function countsToBreakdown(counts: TickerTrending['sentiment_counts']): SentimentBreakdown | null {
   if (!counts) return null;
@@ -285,6 +286,7 @@ const StockHeaderCard: React.FC<{ symbol: string }> = ({ symbol }) => {
             ))}
           </div>
         </div>
+        <TickerSectorsCard symbol={symbol} />
       </div>
     </>
   );

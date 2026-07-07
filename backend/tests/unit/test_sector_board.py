@@ -501,6 +501,76 @@ async def test_ticker_implied_heat_and_parent_aggregation():
 
 
 @pytest.mark.asyncio
+async def test_board_members_follow_live_registry_roster_without_episode_backfill():
+    """A fresh board compute reads displayed members from the registry index, so a
+    registry roster edit is visible even when episode snapshots are unchanged."""
+    exposures = [
+        {
+            "exposure_id": "sector_live",
+            "exposure_type": "theme",
+            "display_name": "Live Sector",
+            "resolved_tickers": [
+                {"ticker": "OLD", "name": "Old Snapshot", "market": "US", "source": "curated"},
+            ],
+        }
+    ]
+    docs = [_doc("ep-001", exposures=exposures)]
+    svc, _ = _make_svc(docs)
+
+    base_index = {
+        "ticker_to_sectors": {},
+        "attr_size": {"sector_live": 2},
+        "meta": {
+            "sector_live": {"display_name": "Live Sector", "exposure_type": "theme"},
+        },
+        "ticker_name": {"NEW1": "New One", "NEW2": "New Two", "NEW3": "New Three"},
+        "members": {
+            "sector_live": [
+                {"ticker": "NEW1", "name": "New One"},
+                {"ticker": "NEW2", "name": "New Two"},
+            ],
+        },
+    }
+    changed_index = {
+        **base_index,
+        "attr_size": {"sector_live": 2},
+        "members": {
+            "sector_live": [
+                {"ticker": "NEW1", "name": "New One"},
+                {"ticker": "NEW3", "name": "New Three"},
+            ],
+        },
+    }
+
+    async def _fake_eod(ticker: str):
+        return {"NEW1": 1.0, "NEW2": 2.0, "NEW3": 3.0, "OLD": 9.0}.get(ticker)
+
+    with (
+        patch("src.services.podcast.cache_get", new=AsyncMock(return_value=None)),
+        patch("src.services.podcast.cache_set", new=AsyncMock()),
+        patch.object(svc, "_allowed_podcast_names", new=AsyncMock(return_value=None)),
+        patch.object(PodcastService, "_sector_membership_index", return_value=base_index),
+        patch("src.services.stock_close_refresh.get_eod_change_pct", side_effect=_fake_eod),
+        _patch_get_session(),
+    ):
+        first = await svc.sector_board()
+
+    with (
+        patch("src.services.podcast.cache_get", new=AsyncMock(return_value=None)),
+        patch("src.services.podcast.cache_set", new=AsyncMock()),
+        patch.object(svc, "_allowed_podcast_names", new=AsyncMock(return_value=None)),
+        patch.object(PodcastService, "_sector_membership_index", return_value=changed_index),
+        patch("src.services.stock_close_refresh.get_eod_change_pct", side_effect=_fake_eod),
+        _patch_get_session(),
+    ):
+        second = await svc.sector_board()
+
+    assert [m["ticker"] for m in first[0]["members"]] == ["NEW2", "NEW1"]
+    assert [m["ticker"] for m in second[0]["members"]] == ["NEW3", "NEW1"]
+    assert "OLD" not in {m["ticker"] for m in second[0]["members"]}
+
+
+@pytest.mark.asyncio
 async def test_sector_board_serves_cache_without_scanning():
     """On a cache hit, sector_board() returns the cached payload and never runs the
     expensive Firestore scan — this is what keeps the warm serving path fast."""
