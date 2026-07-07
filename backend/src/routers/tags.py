@@ -22,6 +22,7 @@ from src.services.translation_discovery import schedule_ticker_discovery
 from src.tag_registry import (
     hidden_offvocab_slugs,
     hidden_sector_exposure_ids,
+    served_sector_exposure_ids,
     registry_snapshot,
     seed_if_empty,
 )
@@ -150,8 +151,12 @@ async def list_sectors(db: Session = Depends(get_session)):
     """
     try:
         sectors = await podcast_service.list_sectors()
-        hidden = hidden_sector_exposure_ids(db)
-        visible = [s for s in sectors if s.get("exposure_id") not in hidden]
+        served = served_sector_exposure_ids(db)
+        if served is None:  # bootstrap window: registry empty — fall back to blocklist
+            hidden = hidden_sector_exposure_ids(db)
+            visible = [s for s in sectors if s.get("exposure_id") not in hidden]
+        else:
+            visible = [s for s in sectors if s.get("exposure_id") in served]
         return SectorsListResponse(sectors=[SectorListItem(**s) for s in visible])
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching sectors: {str(e)}")
@@ -171,7 +176,12 @@ async def get_sector_board(db: Session = Depends(get_session)):
     """
     try:
         sectors = await podcast_service.sector_board()
-        hidden = hidden_sector_exposure_ids(db)
+        served = served_sector_exposure_ids(db)
+        if served is None:  # bootstrap window: registry empty — fall back to blocklist
+            hidden = hidden_sector_exposure_ids(db)
+            sectors = [s for s in sectors if s.get("exposure_id") not in hidden]
+        else:
+            sectors = [s for s in sectors if s.get("exposure_id") in served]
         return SectorBoardResponse(
             sectors=[
                 SectorBoardItem(
@@ -179,7 +189,6 @@ async def get_sector_board(db: Session = Depends(get_session)):
                     members=[SectorBoardMember(**m) for m in s["members"]],
                 )
                 for s in sectors
-                if s.get("exposure_id") not in hidden
             ]
         )
     except Exception as e:
@@ -197,12 +206,14 @@ async def get_exposures_performance(db: Session = Depends(get_session)):
     """
     try:
         items = await podcast_service.exposures_performance()
-        hidden = hidden_sector_exposure_ids(db)
+        served = served_sector_exposure_ids(db)
+        if served is None:  # bootstrap window: registry empty — fall back to blocklist
+            hidden = hidden_sector_exposure_ids(db)
+            items = [i for i in items if i.get("exposure_id") not in hidden]
+        else:
+            items = [i for i in items if i.get("exposure_id") in served]
         return ExposurePerformanceResponse(
-            exposures=[
-                ExposurePerformanceItem(**i) for i in items
-                if i.get("exposure_id") not in hidden
-            ]
+            exposures=[ExposurePerformanceItem(**i) for i in items]
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching exposure performance: {str(e)}")

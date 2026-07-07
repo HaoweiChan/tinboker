@@ -376,6 +376,35 @@ def hidden_sector_exposure_ids(db: Session) -> set[str]:
     return {r[0] for r in rows if r[0]}
 
 
+def served_sector_exposure_ids(db: Session) -> Optional[set[str]]:
+    """Exposure IDs eligible for public serving — ALLOWLIST semantics.
+
+    Since the taxonomy became DB-managed (TKB-009 M2.5), the registry is the source of
+    truth: an exposure that is absent from it (e.g. a hard-DELETEd stale sector) must
+    not be served, even though old episode snapshots still carry it. The previous
+    hidden-only blocklist let deleted rows resurrect on /topics — a deleted row is
+    neither present nor hidden, so it slipped through.
+
+    Serves rows that are not admin-hidden and are not redirect stubs (merged sectors
+    resolve to their canonical target, which has its own row).
+
+    Returns None when the registry has no sector rows at all (bootstrap window before
+    the first seed/import) — callers fall back to hidden-blocklist behavior so the
+    board never silently empties.
+    """
+    rows = (
+        db.query(TagRegistry.exposure_id, TagRegistry.tier, TagRegistry.redirect_to)
+        .filter(TagRegistry.kind == KIND_SECTOR)
+        .all()
+    )
+    if not rows:
+        return None
+    return {
+        eid for (eid, tier, redirect_to) in rows
+        if eid and tier != TIER_HIDDEN and not redirect_to
+    }
+
+
 # ── Public query helpers ─────────────────────────────────────────────
 
 def trending_slugs(db: Session) -> list[str]:

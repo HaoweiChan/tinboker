@@ -142,3 +142,31 @@ def test_hidden_tag_slugs_normalized_and_tag_only(session):
     assert "supplychain" in hidden
     assert "ai" not in hidden
     assert "sectorsemiconductor" not in hidden
+
+
+def test_served_ids_allowlist_excludes_deleted_and_redirects(session):
+    """TKB-009: a DELETEd registry row must not resurrect on the board — allowlist
+    serves only present, non-hidden, non-redirect rows."""
+    from src.tag_registry import served_sector_exposure_ids
+    sync_sectors(session, [
+        _sector("sector_a", "A"),
+        _sector("sector_b", "B"),
+    ])
+    rows = {r.exposure_id: r for r in session.query(TagRegistry).all()}
+    rows["sector_b"].tier = TIER_HIDDEN
+    session.add(TagRegistry(
+        slug="sector_old", display_zh="舊", kind=KIND_SECTOR,
+        exposure_id="sector_old", tier="trending", redirect_to="sector_a",
+    ))
+    session.commit()
+
+    served = served_sector_exposure_ids(session)
+    assert served == {"sector_a"}  # hidden + redirect stub excluded
+    # 'sector_memory'-style deleted/absent ids are excluded by construction:
+    assert "sector_memory" not in served
+
+
+def test_served_ids_none_on_empty_registry(session):
+    """Bootstrap window: empty registry → None, callers fall back to blocklist."""
+    from src.tag_registry import served_sector_exposure_ids
+    assert served_sector_exposure_ids(session) is None
