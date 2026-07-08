@@ -24,12 +24,22 @@ class ClusteredEvent(TypedDict, total=False):
     sentences: list[dict[str, Any]]
     start: int
     end: int
+    # Dominant segment_type carried through from the extractor (clusterer.py
+    # attaches it; chapter_consolidator preserves the majority type on merge) —
+    # lets markdown_transform render a deterministic Q&A heading (see A5).
+    segment_type: str
+    # Ordinal id (E1, E2, ...) stamped by chapter_consolidator.consolidate_chapters;
+    # the writer echoes it per section so markdown_transform can anchor timestamps
+    # by id instead of position even when a section is dropped/merged (see A2).
+    event_id: str
 
 
 class ArticleSection(TypedDict, total=False):
     heading: str
     content: str
     start_time: Optional[int]
+    # Echo of the input event's event_id (see ClusteredEvent.event_id / A2).
+    event_id: Optional[str]
     subsections: list[dict[str, str]]
 
 
