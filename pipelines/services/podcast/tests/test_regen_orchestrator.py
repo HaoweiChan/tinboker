@@ -441,6 +441,18 @@ def test_submit_accepts_extractor_bare_list():
     assert "extractor" in res["completed"]
 
 
+def test_submit_accepts_ticker_insights_key():
+    """ticker_extractor.yaml asks for "ticker_insights"; the validator must accept
+    it like the node postprocess/exporter do (was: legacy-only, broke regen)."""
+    _new_draft()
+    orch.submit("ep_test", "extractor", {"events": [{"section_topic": "台積電", "start_index": 0, "end_index": 2}]})
+    res = orch.submit("ep_test", "ticker_extractor", {"ticker_insights": [
+        {"ticker": "2330", "sentiment": "BULLISH", "sentiment_score": 0.7,
+         "time_horizon": "LONG_TERM", "bluf_thesis": "看好", "reasons": [], "risks": []},
+    ]})
+    assert "ticker_extractor" in res["completed"]
+
+
 # --- Output parity: automated pipeline (run_pipeline) vs agent regen ---------
 
 def _patch_canned_llm(monkeypatch):

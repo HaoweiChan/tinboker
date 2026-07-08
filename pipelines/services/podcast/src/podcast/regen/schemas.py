@@ -263,13 +263,20 @@ def validate_output(step: str, output: Any) -> list[str]:
                 errors.append('key_insights: "key_insights" must be an array of plain-text strings.')
 
     elif step == "ticker_extractor":
-        recs = (output or {}).get("ticker_recommendations") if isinstance(output, dict) else None
+        # Accept BOTH wrapper keys, matching the node postprocess and the
+        # exporter (exporters/ticker_insights.py) — ticker_extractor.yaml asks the
+        # model for "ticker_insights", so rejecting it here broke regen runs.
+        recs = None
+        if isinstance(output, dict):
+            recs = output.get("ticker_insights")
+            if not isinstance(recs, list):
+                recs = output.get("ticker_recommendations")
         if not isinstance(recs, list):
-            errors.append('ticker_extractor: expected {"ticker_recommendations": [...]} (legacy key name).')
+            errors.append('ticker_extractor: expected {"ticker_insights": [...]} (or legacy "ticker_recommendations").')
         else:
             for i, r in enumerate(recs):
                 if not isinstance(r, dict) or "ticker" not in r:
-                    errors.append(f'ticker_extractor: ticker_recommendations[{i}] missing "ticker".')
+                    errors.append(f'ticker_extractor: ticker_insights[{i}] missing "ticker".')
                     break
 
     elif step == "marp_writer":

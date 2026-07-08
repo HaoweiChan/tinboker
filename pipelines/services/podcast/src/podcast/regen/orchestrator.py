@@ -411,7 +411,13 @@ def _assemble(draft: dict[str, Any]) -> dict[str, Any]:
 
     if STEP_WRITER in completed:
         payload["summary_content"] = state.get("markdown_report", "")
-        payload["tags"] = state.get("tags", [])
+        # Same tag↔sector dedup as run_pipeline's assembly (graph.py) — done here,
+        # not in derive_tags_tickers, because sector exposures are re-derived after
+        # the writer step (STEP_TICKER re-runs derive_sector_exposures).
+        from ..content_builder.nodes.tags_tickers import dedup_tags_against_sectors
+        payload["tags"] = dedup_tags_against_sectors(
+            state.get("tags", []), state.get("sector_exposures", [])
+        )
         related_tickers = state.get("related_tickers", [])
         if STEP_TICKER in completed and not related_tickers:
             from src.podcast.exporters.ticker_insights import iter_insight_tickers
