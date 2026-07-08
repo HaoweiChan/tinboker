@@ -781,7 +781,7 @@ Do not implement before TKB-001, TKB-002, and TKB-003 are shipped.
 
 ```yaml
 id: TKB-009
-status: review
+status: done
 priority: P1
 area:
 - pipelines
@@ -821,7 +821,7 @@ file:line). Read the plan before writing any code.
 - [x] M2.5 (v3): Postgres becomes source of truth — audit trigger table, taxonomy changelog, validate-on-write admin API (draft→publish), one-time import, sync/seed demoted to bootstrap, reasons served from registry, private GCS export. See plan §1 governance rules G1–G6.
 - [x] M3 (v3): LLM fill of ~1,870 reasons + ~94 descriptions via the bulk draft API; Willy reviews the dry-run report before publish; zero-empty enforced at write path afterward.
 - [x] M4: `GET /api/sectors/by-ticker/{ticker}` + 「所屬產業與題材」 card on StockDashboard (Zod-validated); reasons from registry.
-- [x] M5 (this PR): monthly audit+fill as drafts from a PRIVATE context (no public-repo PRs); dead Chain-B files deleted.
+- [x] M5: monthly audit+fill as drafts from a PRIVATE context (no public-repo PRs); dead Chain-B files deleted.
 
 ### Risks
 
