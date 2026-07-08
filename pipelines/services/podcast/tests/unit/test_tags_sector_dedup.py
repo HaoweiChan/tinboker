@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import src.podcast.content_builder.nodes.tags_tickers as tt
 
-
 _UNIVERSE = {
     "max_tickers": 10,
     "exposures": [
