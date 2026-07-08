@@ -144,3 +144,27 @@ def test_qa_chapters_get_a_deterministic_heading_prefix():
     md = transform_to_markdown(state)["markdown_report"]
     assert "## 台積電展望 (#time:0)" in md
     assert "## Q&A：記憶體報價提問 (#time:60000)" in md
+
+
+def test_qa_prefix_strips_redundant_llm_lead():
+    """LLM-authored 聽眾提問：/聽眾來信： leads are stripped before the code-side
+    prefix so headings never render "Q&A：聽眾提問：..."."""
+    state = {
+        "chapter_events": [
+            {"event_id": "E1", "start": 0, "segment_type": "qa"},
+            {"event_id": "E2", "start": 60000, "segment_type": "qa"},
+            {"event_id": "E3", "start": 120000, "segment_type": "qa"},
+        ],
+        "writer_output": {
+            "sections": [
+                {"heading": "聽眾提問：台股熊市", "event_id": "E1", "content": "..."},
+                {"heading": "聽眾來信：軟體股布局", "event_id": "E2", "content": "..."},
+                {"heading": "Q&A：長期持有邏輯", "event_id": "E3", "content": "..."},
+            ],
+        },
+    }
+    md = transform_to_markdown(state)["markdown_report"]
+    assert "## Q&A：台股熊市 (#time:0)" in md
+    assert "## Q&A：軟體股布局 (#time:60000)" in md
+    assert "## Q&A：長期持有邏輯 (#time:120000)" in md
+    assert "Q&A：聽眾" not in md and "Q&A：Q&A" not in md

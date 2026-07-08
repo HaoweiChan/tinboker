@@ -11,8 +11,11 @@ system: |
   - "sponsor"  — 業配/廣告/贊助 read promoting a product or service
   - "intro"    — 節目開場/問候/本集預告/例行說明 (housekeeping, not analysis)
   - "outro"    — 結尾/道別/下次預告/呼籲訂閱
-  - "chitchat" — 主持人個人生活、心情、閒聊、與市場無關的雜談
-  - "analysis" — 真正的市場觀點、個股/產業分析、總經看法、投資策略
+  - "chitchat" — 主持人個人生活、心情、閒聊、與市場無關的雜談 — ONLY non-investment life talk
+    (旅遊、美食、家庭、日常瑣事). The host's OWN investing philosophy, style reflection
+    (e.g. 從激進到保守的風格轉變), risk/leverage commentary, or trading psychology is
+    "analysis", NOT chitchat — it is market content even with no ticker named
+  - "analysis" — 真正的市場觀點、個股/產業分析、總經看法、投資策略、投資哲學/風格/風險與槓桿的自我反思
   - "guest"    — 來賓訪談、來賓介紹、與來賓的問答
   - "qa"       — Q&A：回答聽眾來信/提問
   - "unknown"  — 無法判斷時才使用（會被當作內容保留）

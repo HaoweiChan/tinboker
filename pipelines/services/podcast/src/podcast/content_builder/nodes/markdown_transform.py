@@ -21,11 +21,17 @@ Matching a writer section back to its source event is tried in this order:
 """
 
 import logging
+import re
 from typing import Any, Optional
 
 from ..state import PipelineState
 
 logger = logging.getLogger(__name__)
+
+# LLM-authored heading leads that duplicate the code-side Q&A prefix — stripped
+# before prefixing so "聽眾提問：台股熊市" renders "Q&A：台股熊市", not
+# "Q&A：聽眾提問：台股熊市".
+_QA_LEAD_RE = re.compile(r"^(?:Q&A|聽眾(?:提問|來信|問題))\s*[:：]\s*")
 
 
 def _anchor_sections(
@@ -115,8 +121,8 @@ def transform_to_markdown(state: PipelineState) -> dict[str, Any]:
         heading = section.get("heading", "").lstrip("# ").strip()
         # Deterministic Q&A marker: code-side, keyed off the matched event's real
         # segment_type — never left to the LLM to author (see A5).
-        if heading and anchor.get("segment_type") == "qa" and not heading.startswith("Q&A"):
-            heading = f"Q&A：{heading}"
+        if heading and anchor.get("segment_type") == "qa":
+            heading = f"Q&A：{_QA_LEAD_RE.sub('', heading)}"
 
         start_ms = anchor.get("start_ms")
         if heading:
