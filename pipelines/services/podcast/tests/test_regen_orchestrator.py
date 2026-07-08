@@ -42,7 +42,7 @@ WRITER_OUT = {
     "executive_summary": "摘要重點",
     "sections": [{
         "heading": "台積電前景",
-        "content": "看好[台積電](#ticker:2330)在[半導體](#tag:Semiconductor)的成長",
+        "content": "看好[台積電](#ticker:2330)在[供應鏈](#tag:SupplyChain)的成長",
         "start_time": 0,
     }],
     "conclusion": "結論",
@@ -107,7 +107,7 @@ def test_writer_prompt_injects_tag_vocabulary():
     orch.submit("ep_test", "extractor", {"events": [{"section_topic": "台積電", "start_index": 0, "end_index": 2}]})
     p = orch._prompt_payload("writer", draft["state"])
     assert "{tag_vocabulary}" not in p["user"]      # placeholder substituted
-    assert "Semiconductor = 半導體" in p["user"]     # a vocabulary entry is present
+    assert "SupplyChain = 供應鏈" in p["user"]     # a vocabulary entry is present
 
 
 def test_ticker_marp_uses_ticker_insights_not_events():
@@ -136,7 +136,7 @@ def test_writer_glue_matches_transform_to_markdown():
     })["markdown_report"]
     assert draft["state"]["markdown_report"] == expected
     # tags/tickers parsed from the markdown links
-    assert draft["state"]["tags"] == ["semiconductor"]
+    assert draft["state"]["tags"] == ["supplychain"]
     assert draft["state"]["related_tickers"] == ["2330"]
 
 
@@ -441,6 +441,18 @@ def test_submit_accepts_extractor_bare_list():
     assert "extractor" in res["completed"]
 
 
+def test_submit_accepts_ticker_insights_key():
+    """ticker_extractor.yaml asks for "ticker_insights"; the validator must accept
+    it like the node postprocess/exporter do (was: legacy-only, broke regen)."""
+    _new_draft()
+    orch.submit("ep_test", "extractor", {"events": [{"section_topic": "台積電", "start_index": 0, "end_index": 2}]})
+    res = orch.submit("ep_test", "ticker_extractor", {"ticker_insights": [
+        {"ticker": "2330", "sentiment": "BULLISH", "sentiment_score": 0.7,
+         "time_horizon": "LONG_TERM", "bluf_thesis": "看好", "reasons": [], "risks": []},
+    ]})
+    assert "ticker_extractor" in res["completed"]
+
+
 # --- Output parity: automated pipeline (run_pipeline) vs agent regen ---------
 
 def _patch_canned_llm(monkeypatch):
@@ -495,7 +507,7 @@ def test_episode_doc_parity_pipeline_vs_regen(monkeypatch):
     assert payload["sector_exposures"] == pipe["sector_exposures"]
     assert payload["sector_exposure_ids"] == pipe["sector_exposure_ids"]
     # And the canonical tags are the ASCII slug parsed from the #tag: link.
-    assert payload["tags"] == ["semiconductor"]
+    assert payload["tags"] == ["supplychain"]
     assert payload["related_tickers"] == ["2330"]
     assert "sector_semiconductor" in payload["sector_exposure_ids"]
 

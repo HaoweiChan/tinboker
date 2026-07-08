@@ -1,10 +1,13 @@
 """Drift guard: the backend tag-vocabulary mirror must match the pipeline canonical.
 
 The slug→zh-TW label catalogue has ONE source of truth — the pipeline's
-``tag_vocabulary.json`` — mirrored into the backend by ``scripts/sync_tag_vocabulary.py``.
-These tests fail if the mirror drifts, which is exactly the bug PRs #161/#162 fixed by
-hand (new pipeline tags rendering in English on the website because the backend copy
-went stale). Run ``python scripts/sync_tag_vocabulary.py`` to fix a failure.
+``tag_vocabulary_seed_backup.py`` (``TAG_VOCABULARY_SEED``) — manually mirrored into
+``backend/src/data/tag_vocabulary_seed.py``. (``scripts/sync_tag_vocabulary.py``
+targets a ``tag_vocabulary.json`` pair that doesn't exist on this branch; ignore it
+until it's repointed at the ``.py`` seed files.) These tests fail if the mirror
+drifts, which is exactly the bug PRs #161/#162 fixed by hand (new pipeline tags
+rendering in English on the website because the backend copy went stale). Fix a
+failure by editing both seed files to match.
 """
 
 from __future__ import annotations
@@ -65,8 +68,8 @@ def test_registry_snapshot_translates_episode_tag_slugs():
 
     snap = {normalize_tag_slug(e["slug"]): e["display_zh"] for e in registry_snapshot(_FakeDb([]))}
     expected = {
-        "DataCenter": "資料中心", "Finance": "金融", "TWStocks": "台股",
-        "Memory": "記憶體", "Inflation": "通膨", "FedRate": "聯準會利率",
+        "SupplyChain": "供應鏈", "TWStocks": "台股",
+        "DRAM": "動態隨機存取記憶體", "Inflation": "通膨", "FedRate": "聯準會利率",
         "Macroeconomy": "總體經濟",
     }
     for slug, zh in expected.items():
@@ -77,9 +80,9 @@ def test_registry_snapshot_placeholder_does_not_mask_canonical():
     """An auto-registered English placeholder must not override the canonical label."""
     from src.tag_registry import normalize_tag_slug, registry_snapshot
 
-    rows = [SimpleNamespace(slug="DataCenter", display_zh="DataCenter", tier="hidden")]
+    rows = [SimpleNamespace(slug="SupplyChain", display_zh="SupplyChain", tier="hidden")]
     snap = {normalize_tag_slug(e["slug"]): e for e in registry_snapshot(_FakeDb(rows))}
-    assert snap[normalize_tag_slug("DataCenter")]["display_zh"] == "資料中心"
+    assert snap[normalize_tag_slug("SupplyChain")]["display_zh"] == "供應鏈"
 
 
 def test_registry_snapshot_dedupes_canonical_and_db_by_normalized_slug():
@@ -119,9 +122,9 @@ def test_hidden_offvocab_slugs_excludes_canonical():
     """Off-vocab hidden junk is returned; in-vocab tags stay on episode pages."""
     from src.tag_registry import hidden_offvocab_slugs, normalize_tag_slug
 
-    out = hidden_offvocab_slugs(_FilterDb(["TaiwanStocks", "Memory"]))
+    out = hidden_offvocab_slugs(_FilterDb(["TaiwanStocks", "SupplyChain"]))
     assert normalize_tag_slug("TaiwanStocks") in out  # off-vocab junk → filtered
-    assert normalize_tag_slug("Memory") not in out    # canonical topic → kept
+    assert normalize_tag_slug("SupplyChain") not in out    # canonical topic → kept
 
 
 def test_normalize_has_no_conflicting_collisions():

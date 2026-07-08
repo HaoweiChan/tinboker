@@ -171,6 +171,14 @@ def run_pipeline(
         from src.podcast.exporters.ticker_insights import iter_insight_tickers
         related_tickers = sorted(set(iter_insight_tickers(ticker_insights)))
 
+    # Tags duplicating a fired sector are redundant on the episode page — the
+    # sector chip already covers the concept (dedup at assembly because the tags
+    # and sector branches run in parallel inside the graph).
+    from .nodes.tags_tickers import dedup_tags_against_sectors
+    tags = dedup_tags_against_sectors(
+        result.get("tags", []), result.get("sector_exposures", [])
+    )
+
     return {
         "markdown_report": result.get("markdown_report", ""),
         "events_markdown": result.get("events_markdown", ""),
@@ -178,7 +186,7 @@ def run_pipeline(
         "ticker_insights": ticker_insights,
         "ticker_marp_markdown": result.get("ticker_marp_markdown", ""),
         "key_insights": result.get("key_insights", []),
-        "tags": result.get("tags", []),
+        "tags": tags,
         "related_tickers": related_tickers,
         "social_cards": result.get("social_cards", []),
         "social_thread": result.get("social_thread") or {"post": "", "comments": []},
