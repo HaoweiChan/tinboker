@@ -77,11 +77,11 @@ STEP_OUTPUT: dict[str, dict[str, Any]] = {
             ],
             "conclusion": "str",
             "stock_tickers": [{"display_name": "str", "symbol": "str — e.g. 2330, NVDA"}],
-            "tags": [{"display_name": "str — zh-TW", "tag_name": "str — ASCII slug, e.g. Semiconductor"}],
+            "tags": [{"display_name": "str — zh-TW", "tag_name": "str — ASCII slug, e.g. SupplyChain"}],
             "_notes": [
                 "#ticker: and #tag: slugs MUST be ASCII [A-Za-z0-9_]; non-ASCII slugs are silently "
                 "dropped by extraction. Put Chinese in the display text only "
-                "(e.g. [半導體](#tag:Semiconductor), [台積電](#ticker:2330)).",
+                "(e.g. [供應鏈](#tag:SupplyChain), [台積電](#ticker:2330)).",
                 "tag_name in the tags array must be the same canonical ASCII slug used in the #tag: links.",
             ],
         },
@@ -91,13 +91,13 @@ STEP_OUTPUT: dict[str, dict[str, Any]] = {
             "sections": [
                 {
                     "heading": "AI 需求撐起先進製程",
-                    "content": "[台積電](#ticker:2330)本季在 [AI](#tag:AI) 與[半導體](#tag:Semiconductor)需求帶動下，營收優於預期。",
+                    "content": "[台積電](#ticker:2330)本季在 [AI 供應鏈](#tag:AISupplyChain)需求帶動下，營收優於預期。",
                     "start_time": 0,
                 }
             ],
             "conclusion": "展望樂觀，但需留意總體變數。",
             "stock_tickers": [{"display_name": "台積電", "symbol": "2330"}],
-            "tags": [{"display_name": "半導體", "tag_name": "Semiconductor"}, {"display_name": "AI", "tag_name": "AI"}],
+            "tags": [{"display_name": "AI 供應鏈", "tag_name": "AISupplyChain"}],
         },
     },
     "key_insights": {

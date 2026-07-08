@@ -3,13 +3,13 @@ from src.pipeline.utils import extract_tags_and_tickers, extract_tags_from_markd
 
 def test_extract_tags_from_markdown_keeps_only_vocab_tags():
     markdown = (
-        "看好[台股](#tag:TWStocks)、[半導體](#tag:Semiconductor)、"
-        "[資料中心](#tag:DataCenter)，但忽略[亂造](#tag:MadeUpTheme)。"
+        "看好[台股](#tag:TWStocks)、[供應鏈](#tag:SupplyChain)、"
+        "[通膨](#tag:Inflation)，但忽略[亂造](#tag:MadeUpTheme)。"
     )
 
     assert extract_tags_from_markdown(markdown) == [
-        "datacenter",
-        "semiconductor",
+        "inflation",
+        "supplychain",
         "twstocks",
     ]
 
@@ -22,9 +22,9 @@ def test_extract_tags_normalizes_case_and_separators():
 
 def test_extract_tags_and_tickers_filters_structured_tags_through_vocabulary():
     result = extract_tags_and_tickers({
-        "summary_text": "看好[台積電](#ticker:2330)與[AI](#tag:AI)。",
+        "summary_text": "看好[台積電](#ticker:2330)與[供應鏈](#tag:SupplyChain)。",
         "tags": [
-            {"display_name": "半導體", "tag_name": "Semiconductor"},
+            {"display_name": "供應鏈", "tag_name": "SupplyChain"},
             {"display_name": "未收錄題材", "tag_name": "UntranslatedTheme"},
             "Inflation",
         ],
@@ -32,6 +32,6 @@ def test_extract_tags_and_tickers_filters_structured_tags_through_vocabulary():
     })
 
     assert result == {
-        "tags": ["ai", "inflation", "semiconductor"],
+        "tags": ["inflation", "supplychain"],
         "tickers": ["2330"],
     }
