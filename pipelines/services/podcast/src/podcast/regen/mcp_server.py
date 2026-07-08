@@ -13,8 +13,9 @@ Per-episode workflow:
   3. preview_regen(episode_id)              -> review exactly what will be written
   4. commit_regen(episode_id)               -> persist to Firestore (+ platform cache bust)
 
-Required steps:  extractor -> writer -> key_insights -> ticker_extractor
-Optional steps:  marp_writer (episode slides), ticker_marp_writer (ticker slides)
+Required steps:  extractor -> writer -> key_insights -> ticker_extractor -> marp_writer
+Optional steps:  ticker_marp_writer (the ticker deck is rebuilt automatically by the
+                 ticker_extractor step; this only forces an extra refresh)
 
 Whisper/transcription is out of scope — the episode must already have a stored
 transcript. Prompts are read live from the pipeline YAML files (the same files the

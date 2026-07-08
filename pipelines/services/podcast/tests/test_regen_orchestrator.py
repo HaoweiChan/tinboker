@@ -70,6 +70,7 @@ def _drive_required(episode_id="ep_test"):
     orch.submit(episode_id, "writer", WRITER_OUT)
     orch.submit(episode_id, "key_insights", {"key_insights": ["台積電財報優於預期", "半導體供應鏈樂觀"]})
     orch.submit(episode_id, "ticker_extractor", TICKER_OUT)
+    orch.submit(episode_id, "marp_writer", MARP_OUT)
 
 
 # --- Prompt parity ----------------------------------------------------------
@@ -223,8 +224,6 @@ def test_assemble_only_includes_completed_steps():
 def test_full_run_preview_has_everything():
     _new_draft()
     _drive_required()
-    orch.submit("ep_test", "marp_writer", MARP_OUT)
-    orch.submit("ep_test", "ticker_marp_writer", {"title": "T", "slides": [{"heading": "2330", "bullet_points": ["看多"], "start_time": 0}]})
     prev = orch.preview("ep_test")
     assert prev["key_insights"][:2] == ["台積電財報優於預期", "半導體供應鏈樂觀"]
     assert len(prev["key_insights"]) >= 3
@@ -238,6 +237,43 @@ def test_commit_with_nothing_submitted_errors():
     _new_draft("ep_empty")
     with pytest.raises(orch.RegenError):
         orch.commit("ep_empty")
+
+
+# --- Slide freshness (EP677 incident: regen shipped a new summary, old slides) ----
+
+def test_required_done_needs_marp():
+    """marp_writer is a REQUIRED step: required_done stays False without it."""
+    assert "marp_writer" in orch.REQUIRED_STEPS
+    _new_draft()
+    orch.submit("ep_test", "extractor", {"events": [{"section_topic": "台積電", "start_index": 0, "end_index": 2}]})
+    orch.submit("ep_test", "writer", WRITER_OUT)
+    orch.submit("ep_test", "key_insights", {"key_insights": ["台積電財報優於預期"]})
+    res = orch.submit("ep_test", "ticker_extractor", TICKER_OUT)
+    assert res["required_done"] is False
+    res = orch.submit("ep_test", "marp_writer", MARP_OUT)
+    assert res["required_done"] is True
+
+
+def test_commit_refuses_new_summary_without_new_slides():
+    """A regenerated writer output must not commit with the old episode deck."""
+    _new_draft()
+    orch.submit("ep_test", "extractor", {"events": [{"section_topic": "台積電", "start_index": 0, "end_index": 2}]})
+    orch.submit("ep_test", "writer", WRITER_OUT)
+    with pytest.raises(orch.RegenError, match="marp_writer"):
+        orch.commit("ep_test")
+
+
+def test_ticker_step_auto_rebuilds_ticker_deck():
+    """The ticker deck is deterministic — the ticker step's glue rebuilds it, so a
+    commit after ticker_extractor can never carry a stale ticker deck (no explicit
+    ticker_marp_writer submit needed)."""
+    _new_draft()
+    orch.submit("ep_test", "extractor", {"events": [{"section_topic": "台積電", "start_index": 0, "end_index": 2}]})
+    orch.submit("ep_test", "writer", WRITER_OUT)
+    orch.submit("ep_test", "ticker_extractor", TICKER_OUT)
+    prev = orch.preview("ep_test")
+    assert prev["ticker_marp_chars"] > 0
+    assert "ticker_marp_markdown" in prev["will_write_fields"]
 
 
 # --- commit writes the served content path (GCS re-upload + authed cache bust) ----
