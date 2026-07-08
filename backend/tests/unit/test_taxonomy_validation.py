@@ -98,3 +98,16 @@ def test_member_reason_requirement_rejects_only_new_empty_members(monkeypatch):
 
     assert exc.value.rule == "new members require non-empty reasons"
     assert exc.value.offenders == ["sector_a/2002"]
+
+
+def test_whitespace_only_reason_rejected_for_new_member(monkeypatch):
+    """Adversarial-review regression: '   ' must not satisfy the reason gate."""
+    monkeypatch.setenv("TAXONOMY_REQUIRE_MEMBER_REASONS", "true")
+    previous = [_sector("sector_a", members=[_member("2330", reason="ok")])]
+    proposed = [_sector("sector_a", members=[
+        _member("2330", reason="ok"),
+        _member("9999", reason="   "),
+    ])]
+    with pytest.raises(TaxonomyValidationError) as exc:
+        validate_taxonomy(proposed, previous_sectors=previous)
+    assert "sector_a/9999" in str(exc.value.offenders)

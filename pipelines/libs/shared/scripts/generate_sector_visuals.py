@@ -7,7 +7,7 @@ an ``icon_id`` (a lucide-react icon name) and ``color_hex`` (accent color) onto
 every exposure so the web UI renders a meaningful, colorful tile instead of the
 generic ``hash`` fallback.
 
-Unlike ``generate_sector_reasons.py`` there is no model call: the mapping is a
+Unlike an LLM-based reasons pass there is no model call: the mapping is a
 small, deliberately-curated table (``VISUALS`` below) — icons are a design choice,
 not something to guess at ingest time. Adding a new sector/theme is a two-step
 edit: add it to ``curated_themes.json`` (themes) / the universe (sectors), then add
@@ -15,8 +15,8 @@ one line to ``VISUALS`` and re-run this with ``--apply``.
 
 This writes three places so the value survives a universe recompile:
   * ``sector_and_theme_universe.json`` — every exposure gets icon_id/color_hex (live).
-  * ``curated_themes.json``           — theme entries get them too, so
-    ``compile_sector_and_theme_universe.py`` carries them through on the next compile.
+  * ``curated_themes.json``           — theme entries get them too, so a future
+    universe recompile carries them through.
   * ``backend/src/data/sector_visuals.json`` — the compact mirror the backend serves
     (it cannot import the pipelines package).
 

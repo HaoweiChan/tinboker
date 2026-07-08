@@ -141,3 +141,35 @@ def test_fetch_translation_aliases_parses_items(monkeypatch):
     out = platform_client.fetch_translation_aliases()
     assert out == [{"ticker": "2330", "aliases": ["TSMC"]}]
     assert captured["url"].endswith("/api/stocks/translations/aliases")
+
+
+def test_all_requests_carry_the_self_identifying_user_agent(monkeypatch):
+    # Cloudflare's bot rules 403 the default `Python-urllib/x.y` UA at the edge — every
+    # request this module makes must self-identify instead.
+    monkeypatch.setenv("TINBOKER_PLATFORM_API_URL", "https://api.example.com")
+    monkeypatch.setenv("TINBOKER_SOCIAL_TOKEN", "sekret")
+    captured: list[str | None] = []
+
+    class _Resp:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return json.dumps({"items": []}).encode()
+
+    def _fake_urlopen(req, timeout=None):
+        captured.append(req.get_header("User-agent"))
+        return _Resp()
+
+    monkeypatch.setattr(platform_client.urllib.request, "urlopen", _fake_urlopen)
+    platform_client.fetch_sources("podcast")
+    platform_client.fetch_translation_aliases()
+    platform_client.trigger_threads_publish()
+    platform_client.fetch_sectors_universe()
+
+    assert captured == [platform_client.USER_AGENT] * 4
