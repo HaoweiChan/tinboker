@@ -109,3 +109,24 @@ def test_non_us_ticker_uses_bare_doc_id():
     )
     assert set(docs) == {"2330"}
     assert "market" not in docs["2330"]
+
+
+def test_suffixed_source_rows_merge_into_bare_ticker():
+    # Some ticker_insights rows carry a leaked ".TW"/".US" market suffix; they
+    # must merge into the bare token so Hermes' bare read gets the full count
+    # and no phantom "2303.TW" doc is written. Raw dotted symbols are preserved.
+    docs = aggregate_trending(
+        [
+            _insight("2303", 0.7, 1, "股癌", "e1"),
+            _insight("2303.TW", 0.7, 2, "股癌", "e2"),
+            _insight("NVDA", 0.7, 1, "M觀點", "e3"),
+            _insight("NVDA.US", 0.7, 2, "M觀點", "e4"),
+            _insight("000001.SZ", 0.7, 1, "股癌", "e5"),
+        ],
+        now=_NOW,
+    )
+    assert docs["2303"]["count_all_time"] == 2
+    assert "2303.TW" not in docs
+    assert docs["NVDA"]["count_all_time"] == 2
+    assert "NVDA.US" not in docs
+    assert "000001.SZ" in docs  # real symbol, not a market suffix
