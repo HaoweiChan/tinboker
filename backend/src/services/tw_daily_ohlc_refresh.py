@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Awaitable, Callable, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
 import requests
 
@@ -49,6 +49,13 @@ _BACKFILL_DAYS = 90
 # A real TW trading day yields ~2,100 filtered rows; below this a date is "not yet backfilled"
 # (0 for weekends/holidays — harmlessly re-probed). Makes backfill idempotent and resumable.
 _MIN_ROWS_PER_DAY = 500
+# Per-source thresholds for stock_daily_ohlc completeness (mirrors screener_refresh's
+# MIN_TWSE_ROWS_COMPLETE/MIN_TPEX_ROWS_COMPLETE). TWSE's STOCK_DAY_ALL feed sometimes lags
+# a day, landing a single-source (TPEx-only, ~880 rows) partial day that the old
+# rows>=_MIN_ROWS_PER_DAY check wrongly treated as "filled" — its missing TWSE half was
+# never backfilled. A date is "filled" only once BOTH sources clear their own bar.
+_MIN_TWSE_ROWS = 500
+_MIN_TPEX_ROWS = 100
 _BACKFILL_GAP_SECONDS = 1.0  # be polite to the gov endpoints (unpublished rate limits)
 
 
@@ -238,19 +245,31 @@ def _fetch_tpex_history(iso: str) -> List[Dict[str, Any]]:
     return _rows_from_feed(payload, "代號", _normalize_tpex_hist, iso)
 
 
-def _rows_for_date(iso: str) -> int:
-    """How many rows already stored for a date (sync) — lets backfill skip filled days.
+def _rows_for_date(iso: str) -> Tuple[int, int]:
+    """Per-source row counts already stored for a date: ``(twse_count, tpex_count)``.
 
-    ``return`` inside the get_session() loop exits after the single yielded session (and
-    closes it via the generator's finally) — no explicit break, which in a ``finally``
-    would swallow the return value and always yield 0.
+    Lets backfill skip a date only when BOTH sources are filled, not just the total — a
+    TPEx-only day (~880 rows) clears the old combined 500-row bar while its TWSE half is
+    still 0 and unbackfilled. ``return`` inside the get_session() loop exits after the
+    single yielded session (and closes it via the generator's finally) — no explicit
+    break, which in a ``finally`` would swallow the return value and always yield 0.
     """
     for session in get_session():
         try:
-            return session.query(StockDailyOHLC).filter(StockDailyOHLC.date == iso).count()
+            twse_n = (
+                session.query(StockDailyOHLC)
+                .filter(StockDailyOHLC.date == iso, StockDailyOHLC.source == "twse")
+                .count()
+            )
+            tpex_n = (
+                session.query(StockDailyOHLC)
+                .filter(StockDailyOHLC.date == iso, StockDailyOHLC.source == "tpex")
+                .count()
+            )
+            return twse_n, tpex_n
         except Exception:
-            return 0
-    return 0
+            return 0, 0
+    return 0, 0
 
 
 def _weekday_dates(days: int) -> List[str]:
@@ -270,15 +289,20 @@ def _weekday_dates(days: int) -> List[str]:
 async def backfill_tw_daily_ohlc(days: int = _BACKFILL_DAYS, gap_seconds: float = _BACKFILL_GAP_SECONDS) -> int:
     """Seed `days` of history into stock_daily_ohlc from the historical whole-market feeds.
 
-    Idempotent + resumable: dates already populated (≥ _MIN_ROWS_PER_DAY) are skipped, so a
-    re-run (or restart mid-backfill) only fetches the gaps. Recent-first so an interrupted
-    run still leaves the most useful days filled. Never raises.
+    Idempotent + resumable: a date is skipped only when BOTH sources are already populated
+    (twse >= _MIN_TWSE_ROWS AND tpex >= _MIN_TPEX_ROWS) — a single-source partial day (e.g.
+    TPEx-only) is re-fetched so its missing half gets filled via upsert (idempotent for the
+    source already present). Recent-first so an interrupted run still leaves the most useful
+    days filled. Pre-TPEx-era dates genuinely have tpex=0 and will never satisfy the
+    both-sources rule, so they're re-probed every run — one cheap historical fetch that
+    returns empty, harmless and self-limiting to the `days` window. Never raises.
     """
     loop = asyncio.get_event_loop()
     dates = _weekday_dates(days)
     filled_days = total = 0
     for iso in dates:
-        if await loop.run_in_executor(None, _rows_for_date, iso) >= _MIN_ROWS_PER_DAY:
+        twse_n, tpex_n = await loop.run_in_executor(None, _rows_for_date, iso)
+        if twse_n >= _MIN_TWSE_ROWS and tpex_n >= _MIN_TPEX_ROWS:
             continue
         twse = await loop.run_in_executor(None, _fetch_twse_history, iso)
         await asyncio.sleep(gap_seconds)

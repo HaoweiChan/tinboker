@@ -180,6 +180,71 @@ def _seed(ticker, dates, closes, volumes, insti=None):
         break
 
 
+def _seed_source_padding(date, source, n):
+    """n placeholder rows on ``date`` tagged with ``source`` (twse/tpex), to drive the
+    per-source completeness counts in ``_latest_complete_ohlc_date`` without a real
+    whole-market fetch. Tickers are non-numeric so ``passes_universe`` drops them from
+    any candidate pool."""
+    from src.database.models import StockDailyOHLC
+    for s in pg.get_session():
+        for i in range(n):
+            s.add(StockDailyOHLC(ticker=f"PAD-{source}-{i:05d}", date=date, close=1.0, source=source))
+        s.commit()
+        break
+
+
+# --------------------------------------------------------------------------- #
+# Fix #1: screener must target the latest COMPLETE (both-sources) day
+# --------------------------------------------------------------------------- #
+def test_latest_complete_ohlc_date_skips_single_source_partial_day(screener_db):
+    complete_day = "2026-07-08"
+    partial_day = "2026-07-09"  # TPEx-only, mirrors the real 2026-07-09 incident
+
+    _seed_source_padding(complete_day, "twse", sr.MIN_TWSE_ROWS_COMPLETE)
+    _seed_source_padding(complete_day, "tpex", sr.MIN_TPEX_ROWS_COMPLETE)
+    # Partial day: TPEx-only, comfortably clears the (old, combined) 500-row bar on its
+    # own, but has zero TWSE rows -> must NOT be picked as the target.
+    _seed_source_padding(partial_day, "tpex", sr.MIN_TWSE_ROWS_COMPLETE + sr.MIN_TPEX_ROWS_COMPLETE)
+
+    for s in pg.get_session():
+        assert sr._latest_complete_ohlc_date(s) == complete_day
+        break
+
+
+def test_latest_complete_ohlc_date_falls_back_when_no_day_is_complete(screener_db):
+    # Only a single-source day exists (e.g. a fresh DB) -> fall back to the plain latest
+    # date rather than returning None and silently skipping the refresh.
+    _seed_source_padding("2026-07-09", "tpex", sr.MIN_TPEX_ROWS_COMPLETE)
+    for s in pg.get_session():
+        assert sr._latest_complete_ohlc_date(s) == "2026-07-09"
+        break
+
+
+def test_refresh_targets_complete_day_not_later_partial_day(screener_db):
+    from datetime import datetime, timedelta
+
+    from src.database.models import ScreenerCandidate
+
+    dates, closes, volumes = _clean_breakout()
+    complete_day = dates[-1]
+    _seed("2330", dates, closes, volumes, _positive_insti(dates))
+    _seed_source_padding(complete_day, "twse", sr.MIN_TWSE_ROWS_COMPLETE)
+    _seed_source_padding(complete_day, "tpex", sr.MIN_TPEX_ROWS_COMPLETE)
+
+    # A later TPEx-only partial day — old MAX(date) logic would target this and find
+    # nothing (no TWSE-listed name has history through it).
+    partial_day = (datetime.strptime(complete_day, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
+    _seed_source_padding(partial_day, "tpex", sr.MIN_TWSE_ROWS_COMPLETE)
+
+    written = sr.refresh_screener_for_date_sync()  # target_date=None -> must resolve latest COMPLETE day
+    assert written == 1
+    for s in pg.get_session():
+        rows = s.query(ScreenerCandidate).all()
+        assert {r.date for r in rows} == {complete_day}
+        assert {r.ticker for r in rows} == {"2330"}
+        break
+
+
 def test_refresh_and_endpoint(screener_db):
     from fastapi.testclient import TestClient
     from src.database.models import ScreenerCandidate
