@@ -22,6 +22,8 @@ import logging
 import re
 from typing import Dict, List, Optional, Sequence, Tuple
 
+from sqlalchemy import case, func
+
 from src.database.models import ScreenerCandidate, StockDailyOHLC, StockInstitutionalDaily
 from src.database.postgres import get_session
 
@@ -40,6 +42,13 @@ INSTITUTION_LOOKBACK = 5   # sessions summed for the concentration numerator
 CROWDED_THRESHOLD = 70.0   # price_pos_60d above this flags crowded
 # Minimum sessions of history required to evaluate a ticker (MA60 / 60d-high need 60).
 MIN_SESSIONS = MA_LONG
+# A complete TW trading day has both listed (TWSE) and OTC (TPEx) rows. TWSE's
+# STOCK_DAY_ALL feed lags ~1 day on some days, leaving MAX(date) a single-source
+# partial day (e.g. TPEx-only, ~880 rows) that has zero real breakout candidates
+# (they're almost all TWSE-listed). These mirror tw_daily_ohlc_refresh's per-source
+# backfill thresholds.
+MIN_TWSE_ROWS_COMPLETE = 500
+MIN_TPEX_ROWS_COMPLETE = 100
 
 _UNIVERSE_RE = re.compile(r"^\d{4}$")
 
@@ -205,9 +214,35 @@ def _factors_payload(m: dict) -> dict:
 
 
 # --- DB orchestration ----------------------------------------------------------
-def _latest_ohlc_date(session) -> Optional[str]:
-    row = session.query(StockDailyOHLC.date).order_by(StockDailyOHLC.date.desc()).first()
-    return row[0] if row else None
+def _latest_complete_ohlc_date(session) -> Optional[str]:
+    """Most recent date with a healthy TWSE row count AND a healthy TPEx row count.
+
+    A single-source partial day (see ``MIN_TWSE_ROWS_COMPLETE``/``MIN_TPEX_ROWS_COMPLETE``
+    above) must never be the screener's target — it silently yields zero candidates.
+    Falls back to the plain latest date (logged) when no date satisfies the both-sources
+    rule, e.g. a fresh DB or one with only pre-TPEx-era rows. Never raises.
+    """
+    rows = (
+        session.query(
+            StockDailyOHLC.date,
+            func.sum(case((StockDailyOHLC.source == "twse", 1), else_=0)),
+            func.sum(case((StockDailyOHLC.source == "tpex", 1), else_=0)),
+        )
+        .group_by(StockDailyOHLC.date)
+        .order_by(StockDailyOHLC.date.desc())
+        .all()
+    )
+    for date, twse_n, tpex_n in rows:
+        if (twse_n or 0) >= MIN_TWSE_ROWS_COMPLETE and (tpex_n or 0) >= MIN_TPEX_ROWS_COMPLETE:
+            return date
+    if rows:
+        logger.warning(
+            "screener: no date has both TWSE(>=%d) and TPEx(>=%d) rows; falling back to "
+            "latest date %s, which may be a single-source partial day.",
+            MIN_TWSE_ROWS_COMPLETE, MIN_TPEX_ROWS_COMPLETE, rows[0][0],
+        )
+        return rows[0][0]
+    return None
 
 
 def _universe_tickers_for_date(session, target_date: str) -> List[str]:
@@ -263,7 +298,7 @@ def refresh_screener_for_date_sync(target_date: Optional[str] = None) -> int:
     """
     try:
         for session in get_session():
-            date = target_date or _latest_ohlc_date(session)
+            date = target_date or _latest_complete_ohlc_date(session)
             if not date:
                 return 0
 

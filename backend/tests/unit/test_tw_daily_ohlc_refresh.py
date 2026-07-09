@@ -3,9 +3,21 @@
 The exchange feeds return ROC-format dates and string numerics; getting the conversion
 and field mapping right is the only non-trivial logic (the fetch/upsert are I/O). No
 network — hand-built payloads mirror the live TWSE/TPEx OpenAPI shapes (verified 2026-07-05).
+
+The per-source backfill-completeness check (Fix #2 for the 2026-07-09 zero-candidate
+screener incident) does touch the DB, so it gets a small SQLite fixture mirroring
+``test_screener.py``'s ``screener_db``.
 """
 
+import os
+import tempfile
+
+import pytest
+
 from src.services.tw_daily_ohlc_refresh import (
+    _MIN_ROWS_PER_DAY,
+    _MIN_TPEX_ROWS,
+    _MIN_TWSE_ROWS,
     _normalize_tpex,
     _normalize_tpex_hist,
     _normalize_tpex_insti,
@@ -14,6 +26,7 @@ from src.services.tw_daily_ohlc_refresh import (
     _normalize_twse_t86,
     _num,
     _roc_to_iso,
+    _rows_for_date,
     _rows_from_feed,
 )
 
@@ -143,3 +156,74 @@ def test_normalize_tpex_insti():
         "foreign_net_shares": 1700.0, "trust_net_shares": 400.0,
         "total_net_shares": 2000.0, "source": "tpex",
     }
+
+
+# ── Fix #2: per-source backfill completeness (2026-07-09 zero-candidate incident) ──
+
+@pytest.fixture()
+def ohlc_db():
+    """Fresh SQLite engine bound to a temp file, tables created — mirrors
+    ``test_screener.py``'s ``screener_db`` fixture (no internal-API-key setup needed here)."""
+    import src.database.postgres as pg
+    from src.config import settings
+
+    fd, path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+
+    prev_engine, prev_session = pg.engine, pg.SessionLocal
+    prev_use_pg, prev_path = settings.use_postgres, settings.database_path
+
+    settings.use_postgres = False
+    settings.database_path = path
+    pg.engine = None
+    pg.SessionLocal = None
+    pg.init_engine()
+    from src.database import models  # noqa: F401
+    pg.create_all_tables()
+
+    try:
+        yield pg
+    finally:
+        pg.engine, pg.SessionLocal = prev_engine, prev_session
+        settings.use_postgres = prev_use_pg
+        settings.database_path = prev_path
+        if os.path.exists(path):
+            os.unlink(path)
+
+
+def test_rows_for_date_tpex_only_partial_day_not_skipped(ohlc_db):
+    """A TPEx-only day (880 real-world rows) clears the OLD combined
+    ``>= _MIN_ROWS_PER_DAY`` (500) bar on its own but must fail the NEW per-source rule
+    (twse >= _MIN_TWSE_ROWS AND tpex >= _MIN_TPEX_ROWS), so backfill does not skip it and
+    its missing TWSE half gets fetched."""
+    from src.database.models import StockDailyOHLC
+
+    for s in ohlc_db.get_session():
+        for i in range(880):
+            s.add(StockDailyOHLC(ticker=f"PAD-{i:05d}", date="2026-07-09", close=1.0, source="tpex"))
+        s.commit()
+        break
+
+    twse_n, tpex_n = _rows_for_date("2026-07-09")
+    assert twse_n == 0
+    assert tpex_n == 880
+
+    # The bug: old check only looked at the combined total.
+    assert (twse_n + tpex_n) >= _MIN_ROWS_PER_DAY  # would have been wrongly "filled"
+    # The fix: per-source check correctly says "not filled" (skip condition is False).
+    assert not (twse_n >= _MIN_TWSE_ROWS and tpex_n >= _MIN_TPEX_ROWS)
+
+
+def test_rows_for_date_both_sources_filled_is_skipped(ohlc_db):
+    from src.database.models import StockDailyOHLC
+
+    for s in ohlc_db.get_session():
+        for i in range(_MIN_TWSE_ROWS):
+            s.add(StockDailyOHLC(ticker=f"TW-{i:05d}", date="2026-07-08", close=1.0, source="twse"))
+        for i in range(_MIN_TPEX_ROWS):
+            s.add(StockDailyOHLC(ticker=f"TP-{i:05d}", date="2026-07-08", close=1.0, source="tpex"))
+        s.commit()
+        break
+
+    twse_n, tpex_n = _rows_for_date("2026-07-08")
+    assert twse_n >= _MIN_TWSE_ROWS and tpex_n >= _MIN_TPEX_ROWS  # skip condition is True
