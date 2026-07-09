@@ -109,18 +109,25 @@ def test_rows_from_feed_picks_stock_table_and_skips_holidays():
 
 def test_normalize_twse_t86():
     # foreign = 外陸資買賣超 + 外資自營商買賣超; total = 三大法人買賣超. Net can be negative.
+    # 投信買賣超股數 (issue #450 Part A) is a sibling column on the same T86 record.
     rec = {
         "證券代號": "2330", "外陸資買賣超股數(不含外資自營商)": "1,000",
-        "外資自營商買賣超股數": "100", "三大法人買賣超股數": "1,500",
+        "外資自營商買賣超股數": "100", "投信買賣超股數": "300", "三大法人買賣超股數": "1,500",
     }
     assert _normalize_twse_t86(rec, "2026-07-03") == {
         "ticker": "2330", "date": "2026-07-03",
-        "foreign_net_shares": 1100.0, "total_net_shares": 1500.0, "source": "twse",
+        "foreign_net_shares": 1100.0, "trust_net_shares": 300.0,
+        "total_net_shares": 1500.0, "source": "twse",
     }
     # negative net + 0 total are valid (kept); warrant code filtered out.
     neg = _normalize_twse_t86({"證券代號": "2317", "外陸資買賣超股數(不含外資自營商)": "-5,000",
-                               "外資自營商買賣超股數": "0", "三大法人買賣超股數": "0"}, "2026-07-03")
+                               "外資自營商買賣超股數": "0", "投信買賣超股數": "0",
+                               "三大法人買賣超股數": "0"}, "2026-07-03")
     assert neg["foreign_net_shares"] == -5000.0 and neg["total_net_shares"] == 0.0
+    assert neg["trust_net_shares"] == 0.0
+    # missing 投信 field (e.g. an older/short payload) defaults to 0.0, never crashes.
+    missing = _normalize_twse_t86({"證券代號": "2330", "三大法人買賣超股數": "10"}, "2026-07-03")
+    assert missing["trust_net_shares"] == 0.0
     assert _normalize_twse_t86({"證券代號": "030123", "三大法人買賣超股數": "5"}, "2026-07-03") is None
 
 
@@ -129,8 +136,10 @@ def test_normalize_tpex_insti():
         "SecuritiesCompanyCode": "6488", "TotalDifference": "2000",
         "Foreign Investors include Mainland Area Investors (Foreign Dealers excluded)-Difference": "1500",
         "ForeignDealers-Difference": "200",
+        "SecuritiesInvestmentTrustCompanies-Difference": "400",
     }
     assert _normalize_tpex_insti(rec, "2026-07-03") == {
         "ticker": "6488", "date": "2026-07-03",
-        "foreign_net_shares": 1700.0, "total_net_shares": 2000.0, "source": "tpex",
+        "foreign_net_shares": 1700.0, "trust_net_shares": 400.0,
+        "total_net_shares": 2000.0, "source": "tpex",
     }

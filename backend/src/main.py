@@ -41,6 +41,7 @@ from src.routers.admin_taxonomy import router as admin_taxonomy_router
 from src.routers.admin_sectors import router as admin_sectors_router
 from src.routers.social import router as social_router, facebook_router, promo_router
 from src.routers.seo import router as seo_router, admin_router as admin_seo_router
+from src.routers.screener import router as screener_router
 from src.middleware.cloudflare import CloudflareMiddleware
 
 
@@ -198,10 +199,17 @@ async def lifespan(app: FastAPI):
     # Whole-market TW daily OHLCV + 成交金額 from the official TWSE/TPEx OpenAPIs (2 free
     # calls/day) into Postgres, so /topics money-flow reads daily bars from the DB instead
     # of fanning out hundreds of per-ticker FinMind calls. Off the request path.
+    #
+    # The whole-market TW anomaly screener (issue #450) is chained AFTER each cycle's
+    # OHLC/institutional refresh via `after_refresh`, rather than its own independent
+    # loop — it reads stock_daily_ohlc / stock_institutional_daily, so it must never run
+    # ahead of the refresh that warms them. `refresh_screener_for_date` is idempotent per
+    # date (re-running overwrites), so recomputing every cycle is harmless.
     async def _refresh_tw_ohlc_bg():
         try:
             from src.services.tw_daily_ohlc_refresh import run_periodic_tw_ohlc_refresh
-            await run_periodic_tw_ohlc_refresh(interval_hours=6.0)
+            from src.services.screener_refresh import refresh_screener_for_date
+            await run_periodic_tw_ohlc_refresh(interval_hours=6.0, after_refresh=refresh_screener_for_date)
         except Exception as e:
             print(f"Warning: TW daily OHLC fetcher stopped: {e}")
 
@@ -361,6 +369,7 @@ app.include_router(comments_router)
 app.include_router(comments_delete_router)
 app.include_router(articles_router)
 app.include_router(seo_router)  # public /sitemap.xml — stays on every env
+app.include_router(screener_router)  # X-Internal-Key gated — stays on every env
 
 # Admin dashboard is developer-only and consolidated onto the dev/staging envs. Skip
 # mounting every /api/admin/* router in production so api.tinboker.com exposes no admin

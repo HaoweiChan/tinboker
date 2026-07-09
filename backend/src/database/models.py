@@ -266,6 +266,7 @@ class StockInstitutionalDaily(Base):
     ticker = Column(String(20), nullable=False)
     date = Column(String(10), nullable=False)  # YYYY-MM-DD
     foreign_net_shares = Column(Float, nullable=True)  # 外資 (incl. foreign dealer) net shares
+    trust_net_shares = Column(Float, nullable=True)    # 投信 (investment trust) net shares
     total_net_shares = Column(Float, nullable=True)    # 三大法人 net shares
     source = Column(String(20), nullable=True)         # twse | tpex
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -274,6 +275,39 @@ class StockInstitutionalDaily(Base):
         UniqueConstraint("ticker", "date", name="uq_insti_ticker_date"),
         Index("idx_insti_ticker_date", "ticker", "date"),
     )
+
+
+class ScreenerCandidate(Base):
+    """Ranked whole-market TW anomaly-screener output for one trading day.
+
+    Written by ``screener_refresh`` — ALL Stage-1 passers for a date (not a Top-N
+    cut), scored cross-sectionally within that day's pool. Re-running a date
+    overwrites its rows (idempotent on ``(date, ticker)``).
+    """
+
+    __tablename__ = "screener_candidates"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    date = Column(String(10), nullable=False)  # YYYY-MM-DD
+    ticker = Column(String(20), nullable=False)
+    rank = Column(Integer, nullable=False)  # 1 = highest final_score
+    final_score = Column(Float, nullable=False)
+    momentum_score = Column(Float, nullable=False)
+    institution_score = Column(Float, nullable=False)
+    # Raw sub-metrics: close_ma20, close_ma60, vol_mult, institution_raw,
+    # price_pos_60d, ret_5d, ma20, ma60, high_20, high_60, today_volume, etc.
+    factors = Column(JSON, nullable=True)
+    is_60d_high = Column(Boolean, nullable=False, default=False)
+    crowded = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("date", "ticker", name="uq_screener_date_ticker"),
+        Index("idx_screener_date_rank", "date", "rank"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<ScreenerCandidate(date='{self.date}', ticker='{self.ticker}', rank={self.rank})>"
 
 
 class TagRegistry(Base):
