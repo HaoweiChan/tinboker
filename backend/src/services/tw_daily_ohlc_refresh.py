@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 import requests
 
@@ -312,13 +312,18 @@ def _normalize_twse_t86(rec: Dict[str, Any], iso: str) -> Optional[Dict[str, Any
     )
     return {
         "ticker": ticker, "date": iso,
-        "foreign_net_shares": foreign, "total_net_shares": total, "source": "twse",
+        "foreign_net_shares": foreign,
+        "trust_net_shares": _num(rec.get("投信買賣超股數")) or 0.0,
+        "total_net_shares": total, "source": "twse",
     }
 
 
-# TPEx OpenAPI 3insti keys (exact, verified 2026-07-05).
+# TPEx OpenAPI 3insti keys (exact, verified 2026-07-09 — the feed's key spacing is
+# inconsistent across columns, e.g. a leading space on the "-Total Sell" variant and
+# a stray space before "-TotalSell" on the Dealers row; these three are clean/exact).
 _TPEX_FX_EXCL = "Foreign Investors include Mainland Area Investors (Foreign Dealers excluded)-Difference"
 _TPEX_FX_DEALER = "ForeignDealers-Difference"
+_TPEX_TRUST = "SecuritiesInvestmentTrustCompanies-Difference"
 
 
 def _normalize_tpex_insti(rec: Dict[str, Any], iso: str) -> Optional[Dict[str, Any]]:
@@ -329,7 +334,9 @@ def _normalize_tpex_insti(rec: Dict[str, Any], iso: str) -> Optional[Dict[str, A
     foreign = (_num(rec.get(_TPEX_FX_EXCL)) or 0.0) + (_num(rec.get(_TPEX_FX_DEALER)) or 0.0)
     return {
         "ticker": ticker, "date": iso,
-        "foreign_net_shares": foreign, "total_net_shares": total, "source": "tpex",
+        "foreign_net_shares": foreign,
+        "trust_net_shares": _num(rec.get(_TPEX_TRUST)) or 0.0,
+        "total_net_shares": total, "source": "tpex",
     }
 
 
@@ -384,6 +391,7 @@ def _upsert_insti_rows(rows: List[Dict[str, Any]]) -> int:
                 )
                 if existing:
                     existing.foreign_net_shares = row["foreign_net_shares"]
+                    existing.trust_net_shares = row.get("trust_net_shares")
                     existing.total_net_shares = row["total_net_shares"]
                     existing.source = row["source"]
                 else:
@@ -458,12 +466,22 @@ async def backfill_tw_institutional(days: int = _INSTI_BACKFILL_DAYS, gap_second
     return total
 
 
-async def run_periodic_tw_ohlc_refresh(interval_hours: float = 6.0, backfill_days: int = _BACKFILL_DAYS) -> None:
+async def run_periodic_tw_ohlc_refresh(
+    interval_hours: float = 6.0,
+    backfill_days: int = _BACKFILL_DAYS,
+    after_refresh: Optional[Callable[[], Awaitable[Any]]] = None,
+) -> None:
     """Background loop: refresh on startup, then every interval_hours. Never raises.
 
     Both feeds publish the finalized day after ~15:00 Taipei; a 6h cadence lands the day
     within one cycle and cheaply re-confirms it (upsert overwrites), at 2 calls/run. On the
     first cycle it also seeds `backfill_days` of history (idempotent — a no-op once filled).
+
+    ``after_refresh``, if given, is awaited once per cycle right after the OHLC +
+    institutional refresh (and first-run backfill) complete — e.g. to chain the screener
+    so it always runs against data from *this* cycle rather than as an independent loop
+    that could race ahead of the day's warm-table write. A failure in the hook is caught
+    and logged like every other step here; it never breaks the refresh loop.
     """
     first = True
     while True:
@@ -485,6 +503,11 @@ async def run_periodic_tw_ohlc_refresh(interval_hours: float = 6.0, backfill_day
                 await backfill_tw_institutional()
             except Exception as e:
                 logger.warning("TW institutional backfill failed: %s", e)
+        if after_refresh is not None:
+            try:
+                await after_refresh()
+            except Exception as e:
+                logger.warning("post-refresh hook failed: %s", e)
         await asyncio.sleep(interval_hours * 3600)
 
 

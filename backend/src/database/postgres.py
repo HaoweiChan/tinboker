@@ -307,6 +307,13 @@ def create_all_tables():
                 "ALTER TABLE IF EXISTS stock_daily_ohlc "
                 "ADD COLUMN IF NOT EXISTS source VARCHAR(20)"
             ))
+            # Screener (issue #450 Part A): 投信 net-shares column added on top of the
+            # original foreign/total pair. Pre-existing rows stay NULL until the next
+            # tw_daily_ohlc_refresh cycle backfills them.
+            conn.execute(text(
+                "ALTER TABLE IF EXISTS stock_institutional_daily "
+                "ADD COLUMN IF NOT EXISTS trust_net_shares DOUBLE PRECISION"
+            ))
             conn.commit()
     elif engine.dialect.name == "sqlite":
         # SQLite has no "ADD COLUMN IF NOT EXISTS" — check PRAGMA first.
@@ -355,6 +362,11 @@ def create_all_tables():
                 conn.commit()
             if tr_cols and "redirect_to" not in tr_cols:
                 conn.execute(text("ALTER TABLE tag_registry ADD COLUMN redirect_to VARCHAR(120)"))
+                conn.commit()
+            # Screener (issue #450 Part A): 投信 net-shares column.
+            si_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(stock_institutional_daily)"))}
+            if si_cols and "trust_net_shares" not in si_cols:
+                conn.execute(text("ALTER TABLE stock_institutional_daily ADD COLUMN trust_net_shares FLOAT"))
                 conn.commit()
     # Clean up obsolete cryptocurrency tag registry rows (idempotent)
     with engine.connect() as conn:

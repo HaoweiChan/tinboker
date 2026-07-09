@@ -86,6 +86,12 @@ class Settings(BaseSettings):
     tinboker_article_author_name: Optional[str] = None
     tinboker_article_author_avatar: Optional[str] = None
 
+    # Shared secret guarding internal, machine-only endpoints (whole-market data
+    # exports #449 + the screener candidates read). Callers pass it as the
+    # ``X-Internal-Key`` header; unset (None) means every internal endpoint 401s.
+    # Store in GSM as INTERNAL_API_KEY. Generate with `openssl rand -hex 32`.
+    internal_api_key: Optional[str] = None
+
     # ==================== Social / Threads publishing ====================
     # Meta Threads Graph API credentials. Generate a long-lived access token for
     # the brand's Threads account + its numeric user id; store both in GSM.
