@@ -31,6 +31,21 @@ def _avg(values: list[float]) -> float | None:
     return sum(values) / len(values) if values else None
 
 
+def _canonical_ticker(raw: Any) -> str:
+    """Bare ticker token for trending doc-ids, merging split-brain source rows.
+
+    A minority of ``ticker_insights`` rows carry a ``{code}.TW`` / ``{code}.US``
+    market-suffixed ``ticker`` field (leaked from the deferred market scheme),
+    so the same real ticker would otherwise land in both ``2303`` and
+    ``2303.TW``. Strip only the ``.TW``/``.US`` market suffixes; raw dotted
+    symbols (``.SZ``/``.SH``/``.KS``/``.HK`` …) are genuine tickers — leave them.
+    """
+    t = str(raw).strip()
+    if t[-3:].upper() in (".TW", ".US"):
+        return t[:-3]
+    return t
+
+
 # ponytail: full recompute every run — one collection-group scan of ~thousands
 # insight docs into ~2800 bare-id docs, <60s at current scale. If insight
 # volume outgrows a full scan, reintroduce a delta mode AND provision a
@@ -55,9 +70,9 @@ def aggregate_trending(
 
     by_ticker: dict[str, list[dict[str, Any]]] = {}
     for row in insights:
-        ticker = row.get("ticker")
-        if not ticker:
+        if not row.get("ticker"):
             continue
+        ticker = _canonical_ticker(row.get("ticker"))
         by_ticker.setdefault(ticker, []).append(row)
 
     out: dict[str, dict[str, Any]] = {}
