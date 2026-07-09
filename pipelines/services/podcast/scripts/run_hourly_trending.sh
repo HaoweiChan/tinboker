@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Hourly trending ticker refresh: update only tickers touched by recent
-# ticker_insights writes. This is what tinboker-trending-tickers.timer invokes.
+# Hourly trending ticker refresh: full recompute of trending_tickers/{ticker}
+# (bare doc-ids) from the ticker_insights source. This is what
+# tinboker-trending-tickers.timer invokes.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -15,9 +16,4 @@ fi
 PY="$REPO_ROOT/.venv/bin/python"
 [ -x "$PY" ] || PY="$(command -v python3)"
 
-: "${TRENDING_LOOKBACK_HOURS:=1}"
-
-exec "$PY" scripts/refresh_trending_tickers.py \
-  --mode delta \
-  --lookback-hours "$TRENDING_LOOKBACK_HOURS" \
-  "$@"
+exec "$PY" scripts/refresh_trending_tickers.py "$@"
