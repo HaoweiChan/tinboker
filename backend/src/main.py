@@ -215,6 +215,19 @@ async def lifespan(app: FastAPI):
 
     asyncio.create_task(_refresh_tw_ohlc_bg())
 
+    # Whole-market US daily OHLCV warmer (issue #449): pulls the entire US market in one
+    # Polygon grouped-daily call per session into stock_daily_ohlc (source='polygon'), the
+    # US sibling of the TW warmer above. No after_refresh hook yet — the US screener isn't
+    # built (see screener-us-architecture spec); this only warms the data it will read.
+    async def _refresh_us_ohlc_bg():
+        try:
+            from src.services.us_daily_ohlc_refresh import run_periodic_us_ohlc_refresh
+            await run_periodic_us_ohlc_refresh(interval_hours=6.0)
+        except Exception as e:
+            print(f"Warning: US daily OHLC fetcher stopped: {e}")
+
+    asyncio.create_task(_refresh_us_ohlc_bg())
+
     # Refresh-ahead for the /topics hot-sectors board: recompute + rewrite its Redis
     # entry every 5 min (inside the 10-min TTL) so the serving path never pays the
     # cold ~2700-doc episode scan. Off the request path; must not block startup.

@@ -14,10 +14,11 @@ from src.models.stock import CompanyDetail
 from src.services.stock import StockService
 from src.services.websocket_subscriber import WebSocketSubscriber
 from src.database.postgres import get_session
-from src.database.models import StockTranslation, StockDailyClose
+from src.database.models import StockTranslation, StockDailyClose, StockDailyOHLC, StockInstitutionalDaily
 from src.utils.market import infer_market
 from src.cache.redis_client import cache_get, cache_set
 from src.cache.cache_config import CACHE_TTL
+from src.routers.screener import require_internal_key
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,100 @@ def _translation_display_name(row: StockTranslation) -> str:
     if _has_cjk(row.name_zh_tw) and pref != "en":
         return row.name_zh_tw or row.ticker
     return row.name_en or row.ticker
+
+
+# --------------------------------------------------------------------------- #
+# Whole-universe daily market-data read endpoints (issue #449)
+#
+# Machine-only, internal-key gated (same mechanism as /api/screener). They serve the warm
+# ``stock_daily_ohlc`` / ``stock_institutional_daily`` tables in bulk for backtesting /
+# Hermes analysis — the screener services read Postgres directly and don't need these.
+# --------------------------------------------------------------------------- #
+_MARKET_SOURCES = {"tw": ("twse", "tpex"), "us": ("polygon",)}
+_MAX_RANGE_DAYS = 90
+
+
+def _resolve_range(date: Optional[str], start: Optional[str], end: Optional[str]) -> tuple[str, str]:
+    """Validate the (date | start+end) query into an inclusive [start, end] pair of
+    YYYY-MM-DD strings, or raise HTTPException(400). Caps the span at _MAX_RANGE_DAYS."""
+    if date:
+        start = end = date
+    if not start or not end:
+        raise HTTPException(status_code=400, detail="provide start & end (or date)")
+    try:
+        s = datetime.strptime(start, "%Y-%m-%d").date()
+        e = datetime.strptime(end, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="dates must be YYYY-MM-DD")
+    if e < s:
+        raise HTTPException(status_code=400, detail="end is before start")
+    if (e - s).days > _MAX_RANGE_DAYS:
+        raise HTTPException(status_code=400, detail=f"range exceeds {_MAX_RANGE_DAYS} days")
+    return start, end
+
+
+@router.get("/daily-ohlc", dependencies=[Depends(require_internal_key)])
+def get_daily_ohlc(
+    market: str = Query("tw", description="tw | us"),
+    start: Optional[str] = Query(None, description="Inclusive start YYYY-MM-DD"),
+    end: Optional[str] = Query(None, description="Inclusive end YYYY-MM-DD"),
+    date: Optional[str] = Query(None, description="Shorthand for start=end=date"),
+    db: Session = Depends(get_session),
+):
+    """Whole-universe daily OHLCV bars for a market over [start, end] (<= 90 days).
+
+    ``market=tw`` → TWSE+TPEx rows; ``market=us`` → Polygon rows. Returns a JSON array of
+    row objects ordered by (date, ticker); an empty range yields ``[]``.
+    """
+    sources = _MARKET_SOURCES.get(market.lower())
+    if not sources:
+        raise HTTPException(status_code=400, detail="market must be 'tw' or 'us'")
+    s, e = _resolve_range(date, start, end)
+    rows = (
+        db.query(StockDailyOHLC)
+        .filter(StockDailyOHLC.source.in_(sources), StockDailyOHLC.date >= s, StockDailyOHLC.date <= e)
+        .order_by(StockDailyOHLC.date, StockDailyOHLC.ticker)
+        .all()
+    )
+    return [
+        {
+            "ticker": r.ticker, "date": r.date, "open": r.open, "high": r.high,
+            "low": r.low, "close": r.close, "volume": r.volume,
+            "trading_value": r.trading_value, "source": r.source,
+        }
+        for r in rows
+    ]
+
+
+@router.get("/daily-institutional", dependencies=[Depends(require_internal_key)])
+def get_daily_institutional(
+    market: str = Query("tw", description="tw only for now"),
+    start: Optional[str] = Query(None, description="Inclusive start YYYY-MM-DD"),
+    end: Optional[str] = Query(None, description="Inclusive end YYYY-MM-DD"),
+    date: Optional[str] = Query(None, description="Shorthand for start=end=date"),
+    db: Session = Depends(get_session),
+):
+    """Whole-universe daily 三大法人 net shares over [start, end] (<= 90 days). TW-only —
+    the US institutional feed isn't warmed. Returns a JSON array ordered by (date, ticker)."""
+    if market.lower() != "tw":
+        raise HTTPException(status_code=400, detail="institutional data is TW-only")
+    s, e = _resolve_range(date, start, end)
+    rows = (
+        db.query(StockInstitutionalDaily)
+        .filter(StockInstitutionalDaily.date >= s, StockInstitutionalDaily.date <= e)
+        .order_by(StockInstitutionalDaily.date, StockInstitutionalDaily.ticker)
+        .all()
+    )
+    return [
+        {
+            "ticker": r.ticker, "date": r.date,
+            "foreign_net_shares": r.foreign_net_shares,
+            "trust_net_shares": r.trust_net_shares,
+            "total_net_shares": r.total_net_shares,
+            "source": r.source,
+        }
+        for r in rows
+    ]
 
 
 @router.get("", response_model=List[dict])
