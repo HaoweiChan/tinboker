@@ -4,14 +4,15 @@ Utility scripts for managing the podcast downloader system.
 
 ## run_hourly_trending.sh
 
-Runs the optimized hourly `trending_tickers` delta refresh. It calls
-`refresh_trending_tickers.py --mode delta --lookback-hours 1`, so it only
-recomputes tickers touched by recent `ticker_insights` writes. The systemd
-timer lives at `../deploy/tinboker-trending-tickers.timer`.
+Runs the hourly `trending_tickers` full recompute. It calls
+`refresh_trending_tickers.py`, which streams the whole `ticker_insights`
+collection group and rewrites every `trending_tickers/{ticker}` doc (bare
+doc-ids, no market suffix). The systemd timer lives at
+`../deploy/tinboker-trending-tickers.timer`.
 
 ```bash
 ./scripts/run_hourly_trending.sh
-TRENDING_LOOKBACK_HOURS=2 ./scripts/run_hourly_trending.sh --dry-run
+./scripts/run_hourly_trending.sh --dry-run
 ```
 
 ## backfill_ticker_insights_from_postgres.py

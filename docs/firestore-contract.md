@@ -432,6 +432,8 @@ Old `/api/recommendations/*` paths remain as deprecation aliases for one release
 
 This replaces the on-the-fly Postgres aggregation that powers `/api/recommendations/buzz`. Agents refresh this collection hourly via a localized delta job: recent `ticker_insights/*/tickers/*` writes identify touched `(ticker, market)` pairs, then only those tickers are recomputed from their historical source rows. A full recompute mode remains available for backfills/audits.
 
+> **Status note (2026-07-09) — the delta + market-suffix design below is DEFERRED, not active.** The hourly delta job and the `{ticker}.{market}` doc-id scheme (schema below / § 10) were added in `eee31f0` (2026-06-19) but **never ran in production**: the systemd timer was never installed and the delta query's `tickers.created_at` collection-group index was never created. The writer currently runs a **full recompute with bare doc-ids** (`trending_tickers/2330`, no `market` field) — the proven pre-`eee31f0` behavior — because a direct-Firestore consumer (the Hermes trading system) reads `trending_tickers/{bare_ticker}` by document id. Readers are unaffected: the backend maps by the `ticker` *field* and already tolerates bare ids. Re-activate delta + the suffix scheme only as a coordinated migration (provision the `created_at` index, update the Hermes reader) when insight volume outgrows an hourly full scan.
+
 ### 5.1 Document schema
 
 ```jsonc
