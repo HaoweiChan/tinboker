@@ -1,20 +1,24 @@
 """Podcast service for managing podcast data from Firestore"""
+import hashlib
 import os
 import json
 import asyncio
 import logging
+import time
 from typing import Optional, List, Collection
-from datetime import datetime
+from datetime import datetime, timedelta
 from urllib.parse import quote
 
 from src.config import settings
 from src.models.podcast import Podcast, Episode
 from src.schemas.search import SearchResultItem
 from src.tag_registry import (
+    TIER_HIDDEN,
     canonical_tag_slugs,
     hidden_tag_slugs,
     normalize_exposure_id,
     normalize_tag_slug,
+    sector_redirects,
     trending_slugs,
 )
 from src.database.postgres import get_session
@@ -53,6 +57,31 @@ EXCLUDED_EXPOSURE_IDS: frozenset[str] = frozenset({"sector_semiconductor"})
 # content_sources.active=False so it stays version-controlled and the pipeline can
 # still ingest it (in case it picks back up). Matched on exact podcast_name.
 HIDDEN_PODCAST_NAMES: frozenset[str] = frozenset({"曲博科技教室"})
+
+
+def _sector_redirects() -> dict[str, str]:
+    return sector_redirects()
+
+
+def resolve_sector_exposure_id(exposure_id: str | None) -> str:
+    eid = normalize_exposure_id(exposure_id)
+    redirects = _sector_redirects()
+    seen = set()
+    while eid in redirects and eid not in seen:
+        seen.add(eid)
+        eid = normalize_exposure_id(redirects[eid])
+    return eid
+
+
+def _sector_query_ids(canonical_id: str) -> list[str]:
+    redirects = _sector_redirects()
+    ids = [old for old, new in redirects.items() if resolve_sector_exposure_id(new) == canonical_id]
+    ids.append(canonical_id)
+    # Pre-migration episode snapshots stored themes as ``theme_<id>`` (see
+    # docs/firestore-contract.md §2.1.1); Firestore array-contains matches exact
+    # values only, so query the legacy alias of every sector_ id as well.
+    ids += ["theme_" + i.removeprefix("sector_") for i in list(ids) if i.startswith("sector_")]
+    return list(dict.fromkeys(ids))
 
 
 def _read_close_series(tickers: list[str], limit: int = 12) -> dict[str, list[float]]:
@@ -970,6 +999,8 @@ class PodcastService:
         All release-scoping and content-empty guards are applied identically to
         get_episodes_by_tag.
         """
+        exposure_id = resolve_sector_exposure_id(exposure_id)
+
         # Suppressed umbrella exposures (e.g. the broad 半導體 sector) resolve to an
         # empty page — the frontend renders the standard "no episodes" state.
         if exposure_id in EXCLUDED_EXPOSURE_IDS:
@@ -977,12 +1008,13 @@ class PodcastService:
                 "exposure_id": exposure_id,
                 "display_name": "",
                 "exposure_type": "industry",
+                "description": None,
                 "resolved_tickers": [],
                 "episodes": [],
                 "total": 0,
             }
 
-        cache_key = f"sector:episodes:v3:{exposure_id}:{offset}:{limit}:{self._scope_tag()}"
+        cache_key = f"sector:episodes:v4:{exposure_id}:{offset}:{limit}:{self._scope_tag()}"
         cached = await cache_get(cache_key)
         if cached:
             try:
@@ -997,14 +1029,26 @@ class PodcastService:
         fetch_limit = max((limit + offset) * 5, 100) if scoping_active else (limit + offset)
 
         try:
-            dicts = await asyncio.to_thread(
-                self.firestore_service.query_collection,
-                "episodes",
-                [("sector_exposure_ids", "array-contains", exposure_id)],
-                None,       # no Firestore-side ordering — sort in Python to avoid composite index
-                None,
-                fetch_limit,
-            )
+            query_ids = _sector_query_ids(exposure_id)
+            batches = []
+            for query_id in query_ids:
+                batches.append(await asyncio.to_thread(
+                    self.firestore_service.query_collection,
+                    "episodes",
+                    [("sector_exposure_ids", "array-contains", query_id)],
+                    None,       # no Firestore-side ordering — sort in Python to avoid composite index
+                    None,
+                    fetch_limit,
+                ))
+            seen_doc_ids: set[str] = set()
+            dicts = []
+            for batch in batches:
+                for doc in batch or []:
+                    doc_id = str(doc.get("id") or doc.get("episode_id") or id(doc))
+                    if doc_id in seen_doc_ids:
+                        continue
+                    seen_doc_ids.add(doc_id)
+                    dicts.append(doc)
         except Exception as e:
             raise Exception(f"Failed to query episodes by sector: {e}") from e
 
@@ -1027,12 +1071,13 @@ class PodcastService:
         # as its title with no tickers).
         display_name = exposure_id
         exposure_type = "industry"
+        description = None
         seen_tickers: dict[str, dict] = {}  # ticker -> first-seen entry
         exposure_counts: dict[str, int] = {}  # display_name -> count, for majority vote
 
         for ep in episodes_raw:
             for entry in ep.sector_exposures:
-                if entry.get("exposure_id") != exposure_id:
+                if resolve_sector_exposure_id(entry.get("exposure_id")) != exposure_id:
                     continue
                 dn = entry.get("display_name") or exposure_id
                 exposure_counts[dn] = exposure_counts.get(dn, 0) + 1
@@ -1063,6 +1108,14 @@ class PodcastService:
         if best_key:
             display_name, exposure_type = best_key
 
+        from src.data.sector_visuals import metadata_for
+        registry_meta = metadata_for(exposure_id) or {}
+        if registry_meta.get("display_name"):
+            display_name = registry_meta["display_name"] or display_name
+        if registry_meta.get("exposure_type"):
+            exposure_type = registry_meta["exposure_type"] or exposure_type
+        description = registry_meta.get("description")
+
         resolved_tickers = list(seen_tickers.values())[:12]
 
         # Enrich each constituent with a short zh-TW "why this ticker belongs to the
@@ -1085,6 +1138,7 @@ class PodcastService:
             "exposure_id": exposure_id,
             "display_name": display_name,
             "exposure_type": exposure_type,
+            "description": description,
             "icon_id": visual.get("icon_id"),
             "color_hex": visual.get("color_hex"),
             "resolved_tickers": resolved_tickers,
@@ -1103,6 +1157,18 @@ class PodcastService:
     _BOARD_W_PRICE: float = 0.5
     _BOARD_W_MENTION: float = 0.5
 
+    # Discussion-heat blend (serve-time knobs — retune without a rescan/backfill).
+    # heat = W_DIRECT·direct + W_TICKER·(ticker_implied / attr_size**NORM_ALPHA)
+    #   direct         = Σ recency-weight over episodes that NAME the sector (verified
+    #                    sector_exposures). Size-independent → not normalised.
+    #   ticker_implied = Σ recency-weight over episodes that mention any CONSTITUENT
+    #                    (ticker → theme(s) → parent industry). Normalised by the
+    #                    sector's constituent count (sub-linear) so a broad sector
+    #                    isn't hot purely by breadth.
+    _HEAT_W_DIRECT: float = 1.0
+    _HEAT_W_TICKER: float = 1.0
+    _HEAT_NORM_ALPHA: float = 0.5
+
     # ── Trending tags (auto-surface by volume) ────────────────────────
     # A tag must have >= this many scoped episodes (recency + language window) to
     # surface on the board, filtering one-off noise; the board shows the top N.
@@ -1112,7 +1178,7 @@ class PodcastService:
     # stream_documents_projected so the ~2700-doc scan skips transcript/summary
     # refs etc. Covers the tally + scoping (_dict_release_ms, allowlist, retracted).
     _SECTOR_SCAN_FIELDS = [
-        "sector_exposures", "podcast_name", "retracted_at",
+        "sector_exposures", "related_tickers", "podcast_name", "retracted_at",
         "released_at_ms", "spotify_release_date", "created_time",
     ]
 
@@ -1149,7 +1215,7 @@ class PodcastService:
             if cutoff is not None and self._dict_release_ms(doc) < cutoff:
                 continue
             for entry in doc.get("sector_exposures") or []:
-                if (entry.get("exposure_id") or "") in EXCLUDED_EXPOSURE_IDS:
+                if resolve_sector_exposure_id(entry.get("exposure_id")) in EXCLUDED_EXPOSURE_IDS:
                     continue
                 for rt in entry.get("resolved_tickers") or []:
                     t = str(rt.get("ticker") or "").strip().upper()
@@ -1207,6 +1273,112 @@ class PodcastService:
         except Exception:
             pass
 
+    @staticmethod
+    def _sector_membership_index() -> dict:
+        """ticker -> sector attribution index, built fresh from tag_registry each
+        recompute (so admin member edits take effect without a restart).
+
+        - ``ticker_to_sectors``: {TICKER: {exposure_id}} — every theme a ticker is a
+          constituent of, PLUS those themes' parent industries (and, for robustness,
+          any industry it is a leader of).
+        - ``attr_size``: {exposure_id: int} constituent count for sub-linear
+          normalisation — theme = its members, industry = union of its themes'.
+        - ``meta``: {exposure_id: {display_name, exposure_type, icon_id, color_hex,
+          description, group}} so a sector surfaced only via ticker mentions still renders.
+        - ``ticker_name``: {TICKER: name} to label implied-only members.
+        - ``members``: {exposure_id: [{ticker, name}]} visible live registry roster.
+        """
+        from src.database import postgres
+        from src.database.models import TagRegistry
+        empty = {
+            "ticker_to_sectors": {},
+            "attr_size": {},
+            "meta": {},
+            "ticker_name": {},
+            "members": {},
+        }
+        try:
+            if postgres.SessionLocal is None:
+                postgres.init_engine()
+            db = postgres.SessionLocal()
+            try:
+                rows = db.query(TagRegistry).filter(TagRegistry.kind == "sector").all()
+            finally:
+                db.close()
+        except Exception as exc:  # noqa: BLE001 — never let a bad query break the board
+            logger.warning("sector_membership_index: query failed: %s", exc)
+            return empty
+
+        ticker_to_sectors: dict[str, set] = {}
+        attr_size: dict[str, int] = {}
+        meta: dict[str, dict] = {}
+        ticker_name: dict[str, str] = {}
+        members: dict[str, list[dict[str, str]]] = {}
+        member_tickers: dict[str, set] = {}
+        industry_tickers: dict[str, set] = {}  # industry eid -> union of child-theme tickers
+        for r in rows:
+            raw_eid = r.exposure_id
+            # Hidden rows (redirect sources + stale pre-remake ids) must not feed the
+            # board: resolving them into the canonical id would inherit stale members
+            # and overwrite canonical meta. Only canonical, visible rows contribute.
+            if getattr(r, "tier", None) == TIER_HIDDEN:
+                continue
+            if getattr(r, "redirect_to", None):
+                continue
+            eid = resolve_sector_exposure_id(raw_eid)
+            if normalize_exposure_id(raw_eid) != eid:
+                continue  # redirect-source row — the canonical row is authoritative
+            if not eid or eid in EXCLUDED_EXPOSURE_IDS:
+                continue
+            etype = r.exposure_type or "theme"
+            meta[eid] = {
+                "display_name": r.display_zh or eid,
+                "exposure_type": etype,
+                "description": getattr(r, "description", None),
+                "icon_id": getattr(r, "icon_id", None),
+                "color_hex": getattr(r, "color_hex", None),
+                "group": getattr(r, "parent_id", None),
+            }
+            tickers = set()
+            for m in r.members or []:
+                t = str((m or {}).get("ticker") or "").strip().upper()
+                if not t:
+                    continue
+                tickers.add(t)
+                name = (m or {}).get("name") or ""
+                ticker_name.setdefault(t, name)
+                exposure_member_tickers = member_tickers.setdefault(eid, set())
+                if t not in exposure_member_tickers:
+                    exposure_member_tickers.add(t)
+                    members.setdefault(eid, []).append({"ticker": t, "name": name})
+            attr_size[eid] = len(tickers) or 1
+            if etype == "theme":
+                parent = resolve_sector_exposure_id(r.parent_id) if r.parent_id else None
+                parent = parent if parent and parent not in EXCLUDED_EXPOSURE_IDS else None
+                for t in tickers:
+                    s = ticker_to_sectors.setdefault(t, set())
+                    s.add(eid)
+                    if parent:
+                        s.add(parent)
+                if parent:
+                    industry_tickers.setdefault(parent, set()).update(tickers)
+                    parent_members = member_tickers.setdefault(parent, set())
+                    parent_roster = members.setdefault(parent, [])
+                    for member in members.get(eid, []):
+                        mt = member["ticker"]
+                        if mt not in parent_members:
+                            parent_members.add(mt)
+                            parent_roster.append(member)
+            else:  # industry — leaders credit the industry directly (covers ・其他-only leaders)
+                for t in tickers:
+                    ticker_to_sectors.setdefault(t, set()).add(eid)
+        # industry attribution size = union of its themes' constituents (fallback to leaders)
+        for eid, tset in industry_tickers.items():
+            if tset:
+                attr_size[eid] = len(tset)
+        return {"ticker_to_sectors": ticker_to_sectors, "attr_size": attr_size,
+                "meta": meta, "ticker_name": ticker_name, "members": members}
+
     async def _compute_sector_board(self) -> list[dict]:
         """Scan + aggregate + price-join the board (no cache read/write).
 
@@ -1234,8 +1406,15 @@ class PodcastService:
         import time
         now_ms = int(time.time() * 1000)
         HALF_LIFE_DAYS = 7.0
-        counts: dict[str, int] = {}
-        heat: dict[str, float] = {}      # exposure_id -> recency-weighted discussion heat
+        idx = await asyncio.to_thread(self._sector_membership_index)
+        ticker_to_sectors = idx["ticker_to_sectors"]
+        attr_size = idx["attr_size"]
+        uni_meta = idx["meta"]
+        ticker_name = idx["ticker_name"]
+        registry_members = idx.get("members", {})
+        counts: dict[str, int] = {}      # exposure_id -> episodes touching it (direct OR implied)
+        direct_heat: dict[str, float] = {}   # recency-weighted heat from NAMED mentions
+        ticker_heat: dict[str, float] = {}   # recency-weighted heat from CONSTITUENT mentions
         meta: dict[str, dict] = {}       # exposure_id -> {display_name, exposure_type}
         ticker_map: dict[str, dict[str, str]] = {}  # exposure_id -> {ticker: first-seen name}
 
@@ -1249,12 +1428,14 @@ class PodcastService:
                 continue
             age_days = max(0.0, (now_ms - rel_ms) / 86_400_000.0)
             weight = 0.5 ** (age_days / HALF_LIFE_DAYS)
+
+            # 1. DIRECT — sectors this episode explicitly NAMES (verified sector_exposures).
+            direct_eids: set[str] = set()
             for entry in doc.get("sector_exposures") or []:
-                eid = normalize_exposure_id(entry.get("exposure_id"))
+                eid = resolve_sector_exposure_id(entry.get("exposure_id"))
                 if not eid or eid in EXCLUDED_EXPOSURE_IDS:
                     continue
-                counts[eid] = counts.get(eid, 0) + 1
-                heat[eid] = heat.get(eid, 0.0) + weight
+                direct_eids.add(eid)
                 if eid not in meta:
                     meta[eid] = {
                         "display_name": entry.get("display_name") or eid,
@@ -1266,6 +1447,30 @@ class PodcastService:
                     if ticker and ticker not in sector_tickers and len(sector_tickers) < 12:
                         sector_tickers[ticker] = rt.get("name") or ""
 
+            # 2. TICKER-IMPLIED — mentioned constituents -> their theme(s) + parent industry.
+            implied_eids: set[str] = set()
+            for tk in doc.get("related_tickers") or []:
+                sym = str(tk).split(".")[0].strip().upper()
+                for eid in ticker_to_sectors.get(sym, ()):  # index already drops EXCLUDED ids
+                    implied_eids.add(eid)
+                    sector_tickers = ticker_map.setdefault(eid, {})
+                    if sym not in sector_tickers and len(sector_tickers) < 12:
+                        sector_tickers[sym] = ticker_name.get(sym, "")
+
+            # 3. Accumulate — binary per sector per episode; the union drives episode_count.
+            for eid in direct_eids:
+                direct_heat[eid] = direct_heat.get(eid, 0.0) + weight
+            for eid in implied_eids:
+                ticker_heat[eid] = ticker_heat.get(eid, 0.0) + weight
+            for eid in direct_eids | implied_eids:
+                counts[eid] = counts.get(eid, 0) + 1
+                if eid not in meta:
+                    um = uni_meta.get(eid, {})
+                    meta[eid] = {
+                        "display_name": um.get("display_name") or eid,
+                        "exposure_type": um.get("exposure_type") or "industry",
+                    }
+
         if not counts:
             return []
 
@@ -1273,8 +1478,26 @@ class PodcastService:
         from src.services.stock_close_refresh import get_eod_change_pct
         from src.data.sector_visuals import visual_for
 
+        live_member_map: dict[str, dict[str, str]] = {}
+        for eid in counts:
+            registry_roster = registry_members.get(eid) or []
+            if registry_roster:
+                sector_members: dict[str, str] = {}
+                snapshot_names = ticker_map.get(eid, {})
+                for member in registry_roster:
+                    ticker = str((member or {}).get("ticker") or "").strip().upper()
+                    if ticker and ticker not in sector_members and len(sector_members) < 12:
+                        sector_members[ticker] = (
+                            ticker_name.get(ticker)
+                            or str((member or {}).get("name") or "")
+                            or snapshot_names.get(ticker, "")
+                        )
+                live_member_map[eid] = sector_members
+            else:
+                live_member_map[eid] = dict(list(ticker_map.get(eid, {}).items())[:12])
+
         all_tickers: list[str] = list({
-            t for tickers in ticker_map.values() for t in tickers
+            t for tickers in live_member_map.values() for t in tickers
         })
         pcts = await asyncio.gather(*[get_eod_change_pct(t) for t in all_tickers])
         ticker_pct: dict[str, Optional[float]] = dict(zip(all_tickers, pcts))
@@ -1288,7 +1511,7 @@ class PodcastService:
         sectors_raw: list[dict] = []
         for eid, count in counts.items():
             members_unsorted: list[dict] = []
-            for ticker, name in ticker_map.get(eid, {}).items():
+            for ticker, name in live_member_map.get(eid, {}).items():
                 closes = ticker_series.get(ticker, [])
                 members_unsorted.append({
                     "ticker": ticker,
@@ -1324,6 +1547,16 @@ class PodcastService:
             else:
                 sector_series = []
 
+            # Blend the two recency-weighted components. direct is size-independent;
+            # ticker_implied is normalised sub-linearly by constituent count so a broad
+            # sector isn't hot purely by breadth. Raw components are kept for retuning.
+            d_heat = direct_heat.get(eid, 0.0)
+            t_heat = ticker_heat.get(eid, 0.0)
+            size = attr_size.get(eid, 1) or 1
+            blended_heat = (
+                self._HEAT_W_DIRECT * d_heat
+                + self._HEAT_W_TICKER * (t_heat / (size ** self._HEAT_NORM_ALPHA))
+            )
             visual = visual_for(eid) or {}
             sectors_raw.append({
                 "exposure_id": eid,
@@ -1332,7 +1565,10 @@ class PodcastService:
                 "icon_id": visual.get("icon_id"),
                 "color_hex": visual.get("color_hex"),
                 "episode_count": count,
-                "heat": round(heat.get(eid, 0.0), 2),
+                "heat": round(blended_heat, 3),
+                "direct_heat": round(d_heat, 3),
+                "ticker_heat": round(t_heat, 3),
+                "attr_size": size,
                 "avg_change": avg_change,
                 "members": members,
                 "series": sector_series,
@@ -1384,94 +1620,409 @@ class PodcastService:
 
     async def _tw_market_caps_cached(self) -> dict[str, float]:
         """``{stock_id: market value NT$}`` for all TW stocks, daily-cached (FinMind)."""
-        cache_key = "sectors:tw_market_caps:v1"
+        cache_key = "sectors:tw_market_caps:v2"
+        memory_cache = getattr(self, "_tw_market_caps_memory_cache", {})
+        cached_at, memory_value = memory_cache.get(cache_key, (0.0, None))
+        if memory_value and time.time() - cached_at < CACHE_TTL["stock_ohlcv"]:
+            return memory_value
+
         cached = await cache_get(cache_key)
         if cached:
             try:
-                return json.loads(cached)
+                caps = json.loads(cached)
+                self._tw_market_caps_memory_cache = {cache_key: (time.time(), caps)}
+                return caps
             except Exception:
                 pass
         caps = await asyncio.to_thread(self._finmind().get_tw_market_caps)
         if caps:
+            self._tw_market_caps_memory_cache = {cache_key: (time.time(), caps)}
             await cache_set(cache_key, json.dumps(caps), CACHE_TTL["stock_ohlcv"])  # 1 day
         return caps or {}
 
-    async def industry_performance(self) -> list[dict]:
-        """Bubble-chart rows for the /topics 產業 tab: industry (exposure_type='sector')
-        board items joined with aggregate constituent market cap.
+    async def exposures_performance(self) -> list[dict]:
+        """Unified bubble-chart rows for /topics — both themes and industries.
 
-        Reuses the warm sector board (no extra Firestore scan) and daily-cached TW market
-        caps. Market caps are TW-only — FinMind has no US coverage — consistent with
-        industry boards being TW-centric; US members contribute 0.
+        One pass over the warm sector board (no extra Firestore scan): X = recency-weighted
+        discussion heat, Y = avg member % change, bubble = aggregate constituent trading value
+        by timeframe. ``market_cap_twd`` is attached for industries only (TW-only via FinMind,
+        US members contribute 0); themes carry None since they aren't official baskets. The
+        frontend splits the list by ``exposure_type`` for the theme vs industry views.
         """
         board = await self.sector_board()
-        industries = [s for s in board if s.get("exposure_type") == "industry"]
-        if not industries:
+        if not board:
             return []
+        all_tickers = [
+            (m.get("ticker") or "").strip()
+            for sector in board
+            for m in sector.get("members") or []
+        ]
+        # 三大法人 net flow FIRST — its single full-market bulk call gets starved/rate-limited
+        # if it runs after the per-ticker trading-value fetches, silently returning empty
+        # (which shows up as all-zero money flow). TW-only via FinMind; US members contribute 0.
+        inst = await self._tw_institutional_net_windows_cached(all_tickers)
+        inst_total = inst.get("total") or {}
+        inst_foreign = inst.get("foreign") or {}
         caps = await self._tw_market_caps_cached()
+        us_caps = await self._us_market_caps_cached(all_tickers)
+        trading_windows = await self._tw_trading_value_windows_cached(all_tickers)
+        us_trading_windows = await self._us_trading_value_windows_cached(all_tickers)
         out: list[dict] = []
-        for s in industries:
+        for s in board:
+            members = s.get("members") or []
+            is_industry = s.get("exposure_type") == "industry"
             total_mc = sum(
                 caps.get((m.get("ticker") or "").strip(), 0.0)
-                for m in s.get("members") or []
-            )
+                + us_caps.get((m.get("ticker") or "").strip().upper(), 0.0)
+                for m in members
+            ) if is_industry else 0.0
+            exposure_tvals = {
+                window: sum(
+                    values.get((m.get("ticker") or "").strip(), 0.0)
+                    + us_trading_windows.get(window, {}).get((m.get("ticker") or "").strip().upper(), 0.0)
+                    for m in members
+                )
+                for window, values in trading_windows.items()
+            }
+            net_total = {
+                window: sum(values.get((m.get("ticker") or "").strip(), 0.0) for m in members)
+                for window, values in inst_total.items()
+            }
+            net_foreign = {
+                window: sum(values.get((m.get("ticker") or "").strip(), 0.0) for m in members)
+                for window, values in inst_foreign.items()
+            }
+            # Round server-side so the chart/tooltips get clean numbers (no float noise).
+            # int() forces plain ints for the big NT$ values (FinMind returns numpy floats).
+            heat = s.get("heat")
+            avg = s.get("avg_change")
+            tvals_r = {k: int(round(v)) for k, v in exposure_tvals.items()}
+            net_total_r = {k: int(round(v)) for k, v in net_total.items()}
+            net_foreign_r = {k: int(round(v)) for k, v in net_foreign.items()}
             out.append({
                 "exposure_id": s["exposure_id"],
+                "exposure_type": s.get("exposure_type"),
                 "display_name": s["display_name"],
                 "color_hex": s.get("color_hex"),
-                "market_cap_twd": total_mc or None,
-                "return_pct": s.get("avg_change"),
+                "market_cap_twd": int(round(total_mc)) or None,
+                "return_pct": round(float(avg), 2) if avg is not None else None,
                 "episode_count": s.get("episode_count", 0),
-            })
-        out.sort(key=lambda x: (x["market_cap_twd"] or 0.0), reverse=True)
-        return out
-
-    async def _tw_trading_values_cached(self) -> dict[str, float]:
-        """``{stock_id: latest daily trading value NT$}`` for all TW stocks, daily-cached."""
-        cache_key = "sectors:tw_trading_values:v1"
-        cached = await cache_get(cache_key)
-        if cached:
-            try:
-                return json.loads(cached)
-            except Exception:
-                pass
-        vals = await asyncio.to_thread(self._finmind().get_tw_trading_values)
-        if vals:
-            await cache_set(cache_key, json.dumps(vals), CACHE_TTL["stock_ohlcv"])  # 1 day
-        return vals or {}
-
-    async def theme_performance(self) -> list[dict]:
-        """Bubble-chart rows for the /topics 題材 tab: theme (exposure_type='theme') board
-        items, mapped to theme-appropriate dimensions.
-
-        Themes are curated/corpus-discovered concepts, not official baskets, so market cap
-        is the wrong size metric (the user watches hotness + money flow). The chart maps:
-        X = discussion volume (episode_count), Y = avg member % change, bubble = aggregate
-        constituent daily trading value (TW-only via FinMind; US members contribute 0, and
-        the bounded radius keeps US-heavy themes visible).
-        """
-        board = await self.sector_board()
-        themes = [s for s in board if s.get("exposure_type") == "theme"]
-        if not themes:
-            return []
-        tvals = await self._tw_trading_values_cached()
-        out: list[dict] = []
-        for s in themes:
-            total_tv = sum(
-                tvals.get((m.get("ticker") or "").strip(), 0.0)
-                for m in s.get("members") or []
-            )
-            out.append({
-                "exposure_id": s["exposure_id"],
-                "display_name": s["display_name"],
-                "color_hex": s.get("color_hex"),
-                "episode_count": s.get("episode_count", 0),
-                "heat": s.get("heat"),  # recency-weighted discussion (X axis)
-                "return_pct": s.get("avg_change"),
-                "trading_value_twd": total_tv or None,
+                "heat": round(float(heat), 2) if heat is not None else None,
+                # raw components + constituent count -> weights/normalisation are
+                # retunable from these without a rescan.
+                "heat_direct": s.get("direct_heat"),
+                "heat_ticker": s.get("ticker_heat"),
+                "attr_size": s.get("attr_size"),
+                "trading_value_twd": tvals_r.get("1") or None,
+                "trading_value_windows_twd": tvals_r,
+                "net_buy_windows_twd": net_total_r or None,
+                "foreign_net_windows_twd": net_foreign_r or None,
             })
         out.sort(key=lambda x: ((x["heat"] or 0.0), x["episode_count"]), reverse=True)
         return out
+
+    async def _tw_trading_value_windows_cached(self, tickers: list[str]) -> dict[str, dict[str, float]]:
+        """``{window_days: {stock_id: cumulative trading value NT$}}`` for TW stocks."""
+        universe = ",".join(sorted({ticker.strip() for ticker in tickers if ticker.strip()}))
+        universe_key = hashlib.sha1(universe.encode("utf-8")).hexdigest()[:12] if universe else "empty"
+        cache_key = f"sectors:tw_trading_value_windows:v2:{universe_key}"
+        memory_cache = getattr(self, "_tw_trading_value_windows_memory_cache", {})
+        cached_at, memory_value = memory_cache.get(cache_key, (0.0, None))
+        if memory_value and time.time() - cached_at < CACHE_TTL["stock_ohlcv"]:
+            return memory_value
+
+        cached = await cache_get(cache_key)
+        if cached:
+            try:
+                vals = json.loads(cached)
+                self._tw_trading_value_windows_memory_cache = {cache_key: (time.time(), vals)}
+                return vals
+            except Exception:
+                pass
+        vals = await asyncio.to_thread(self._read_tw_trading_value_windows, tickers)
+        # Only cache a result that actually carries per-stock data — `vals` is always
+        # truthy ({"1":{},...}), so an empty read (before the daily fetcher/backfill has
+        # populated stock_daily_ohlc) would otherwise poison the day-long cache with
+        # all-zero bubbles. Mirrors the institutional guard below.
+        has_data = any(bool(window) for window in vals.values()) if vals else False
+        if has_data:
+            self._tw_trading_value_windows_memory_cache = {cache_key: (time.time(), vals)}
+            await cache_set(cache_key, json.dumps(vals), CACHE_TTL["stock_ohlcv"])  # 1 day
+        return vals or {}
+
+    async def _tw_institutional_net_windows_cached(self, tickers: list[str]) -> dict:
+        """``{"total"|"foreign": {window: {stock_id: net 三大法人 flow NT$}}}`` (daily-cached)."""
+        universe = ",".join(sorted({t.strip() for t in tickers if t.strip()}))
+        universe_key = hashlib.sha1(universe.encode("utf-8")).hexdigest()[:12] if universe else "empty"
+        cache_key = f"sectors:tw_institutional_net_windows:v1:{universe_key}"
+        memory_cache = getattr(self, "_tw_institutional_net_windows_memory_cache", {})
+        cached_at, memory_value = memory_cache.get(cache_key, (0.0, None))
+        if memory_value and time.time() - cached_at < CACHE_TTL["stock_ohlcv"]:
+            return memory_value
+
+        cached = await cache_get(cache_key)
+        if cached:
+            try:
+                vals = json.loads(cached)
+                self._tw_institutional_net_windows_memory_cache = {cache_key: (time.time(), vals)}
+                return vals
+            except Exception:
+                pass
+        vals = await asyncio.to_thread(self._read_tw_institutional_net_windows, tickers)
+        # Only cache a result that actually carries per-stock data — an empty read (before
+        # stock_institutional_daily is warmed) must not poison the day-long cache with
+        # all-zero flow.
+        has_data = bool(vals) and any(
+            bool(window) for key in ("total", "foreign") for window in (vals.get(key) or {}).values()
+        )
+        if has_data:
+            self._tw_institutional_net_windows_memory_cache = {cache_key: (time.time(), vals)}
+            await cache_set(cache_key, json.dumps(vals), CACHE_TTL["stock_ohlcv"])  # 1 day
+        return vals or {"total": {}, "foreign": {}}
+
+    def _read_us_market_caps_twd(self, tickers: list[str]) -> dict[str, float]:
+        """Read warmed US market caps and convert USD → TWD for aggregate charts."""
+        from src.database.models import StockProfile
+        from src.services.providers.base import is_us_ticker
+
+        us_tickers = sorted({t.strip().upper() for t in tickers if is_us_ticker(t.strip())})
+        if not us_tickers:
+            return {}
+        out: dict[str, float] = {}
+        for session in get_session():
+            rows = session.query(StockProfile).filter(StockProfile.ticker.in_(us_tickers)).all()
+            for row in rows:
+                if row.market_cap:
+                    out[row.ticker] = float(row.market_cap) * settings.usd_twd_rate
+            break
+        return out
+
+    async def _us_market_caps_cached(self, tickers: list[str]) -> dict[str, float]:
+        """``{ticker: market cap NT$}`` for warmed US stocks."""
+        universe = ",".join(sorted({ticker.strip().upper() for ticker in tickers if ticker.strip()}))
+        universe_key = hashlib.sha1(universe.encode("utf-8")).hexdigest()[:12] if universe else "empty"
+        cache_key = f"sectors:us_market_caps_twd:v1:{universe_key}"
+        memory_cache = getattr(self, "_us_market_caps_memory_cache", {})
+        cached_at, memory_value = memory_cache.get(cache_key, (0.0, None))
+        if memory_value and time.time() - cached_at < CACHE_TTL["stock_ohlcv"]:
+            return memory_value
+
+        cached = await cache_get(cache_key)
+        if cached:
+            try:
+                caps = json.loads(cached)
+                self._us_market_caps_memory_cache = {cache_key: (time.time(), caps)}
+                return caps
+            except Exception:
+                pass
+        caps = await asyncio.to_thread(self._read_us_market_caps_twd, tickers)
+        if caps:
+            self._us_market_caps_memory_cache = {cache_key: (time.time(), caps)}
+            await cache_set(cache_key, json.dumps(caps), CACHE_TTL["stock_ohlcv"])
+        return caps or {}
+
+    def _read_us_trading_value_windows_twd(
+        self,
+        tickers: list[str],
+        windows: tuple[int, ...] = (1, 7, 30, 90),
+    ) -> dict[str, dict[str, float]]:
+        """Read warmed US OHLCV and return ``{window: {ticker: close*volume NT$}}``."""
+        from src.database.models import StockDailyOHLC
+        from src.services.providers.base import is_us_ticker
+
+        us_tickers = sorted({t.strip().upper() for t in tickers if is_us_ticker(t.strip())})
+        totals: dict[str, dict[str, float]] = {str(window): {} for window in windows}
+        if not us_tickers:
+            return totals
+
+        start = (datetime.utcnow() - timedelta(days=max(windows) + 20)).strftime("%Y-%m-%d")
+        rows_by_ticker: dict[str, list] = {}
+        for session in get_session():
+            rows = (
+                session.query(
+                    StockDailyOHLC.ticker,
+                    StockDailyOHLC.date,
+                    StockDailyOHLC.close,
+                    StockDailyOHLC.volume,
+                )
+                .filter(StockDailyOHLC.ticker.in_(us_tickers), StockDailyOHLC.date >= start)
+                .order_by(StockDailyOHLC.ticker.asc(), StockDailyOHLC.date.asc())
+                .all()
+            )
+            for row in rows:
+                rows_by_ticker.setdefault(row.ticker, []).append(row)
+            break
+
+        for ticker, rows in rows_by_ticker.items():
+            dates = [row.date for row in rows if row.date]
+            if not dates:
+                continue
+            latest = datetime.strptime(max(dates), "%Y-%m-%d").date()
+            cutoffs = {
+                str(window): latest - timedelta(days=window - 1)
+                for window in windows
+            }
+            for row in rows:
+                if not row.date or not row.close or not row.volume:
+                    continue
+                try:
+                    row_date = datetime.strptime(row.date, "%Y-%m-%d").date()
+                    value = float(row.close) * float(row.volume) * settings.usd_twd_rate
+                except (TypeError, ValueError):
+                    continue
+                for window_key, cutoff in cutoffs.items():
+                    if row_date >= cutoff:
+                        totals[window_key][ticker] = totals[window_key].get(ticker, 0.0) + value
+        return totals
+
+    def _read_tw_trading_value_windows(
+        self,
+        tickers: list[str],
+        windows: tuple[int, ...] = (1, 7, 30, 90),
+    ) -> dict[str, dict[str, float]]:
+        """Read warmed TW daily 成交金額 → ``{window: {ticker: cumulative NT$}}``.
+
+        Replaces the per-ticker FinMind fan-out that self-exhausted the hourly budget (the
+        /topics call storm): trading value now comes from ``stock_daily_ohlc``, warmed daily
+        from the official TWSE/TPEx feeds by ``tw_daily_ohlc_refresh``. Zero external calls.
+        Sums ``trading_value`` directly (already NT$ — no close×volume, no FX).
+        """
+        from src.database.models import StockDailyOHLC
+        from src.services.finmind_service import is_tw_ticker
+
+        tw_tickers = sorted({t.strip() for t in tickers if is_tw_ticker(t.strip())})
+        totals: dict[str, dict[str, float]] = {str(window): {} for window in windows}
+        if not tw_tickers:
+            return totals
+
+        start = (datetime.utcnow() - timedelta(days=max(windows) + 20)).strftime("%Y-%m-%d")
+        rows_by_ticker: dict[str, list] = {}
+        for session in get_session():
+            rows = (
+                session.query(
+                    StockDailyOHLC.ticker,
+                    StockDailyOHLC.date,
+                    StockDailyOHLC.trading_value,
+                )
+                .filter(StockDailyOHLC.ticker.in_(tw_tickers), StockDailyOHLC.date >= start)
+                .order_by(StockDailyOHLC.ticker.asc(), StockDailyOHLC.date.asc())
+                .all()
+            )
+            for row in rows:
+                rows_by_ticker.setdefault(row.ticker, []).append(row)
+            break
+
+        for ticker, rows in rows_by_ticker.items():
+            dates = [row.date for row in rows if row.date]
+            if not dates:
+                continue
+            latest = datetime.strptime(max(dates), "%Y-%m-%d").date()
+            cutoffs = {str(window): latest - timedelta(days=window - 1) for window in windows}
+            for row in rows:
+                if not row.date or row.trading_value is None:
+                    continue
+                try:
+                    row_date = datetime.strptime(row.date, "%Y-%m-%d").date()
+                    value = float(row.trading_value)
+                except (TypeError, ValueError):
+                    continue
+                for window_key, cutoff in cutoffs.items():
+                    if row_date >= cutoff:
+                        totals[window_key][ticker] = totals[window_key].get(ticker, 0.0) + value
+        return totals
+
+    def _read_tw_institutional_net_windows(
+        self,
+        tickers: list[str],
+        windows: tuple[int, ...] = (1, 5, 20),
+    ) -> dict:
+        """``{"total"|"foreign": {window: {ticker: net 三大法人 flow NT$}}}`` from Postgres.
+
+        Replaces the per-ticker FinMind fan-out (the other half of the /topics storm):
+        net shares come from ``stock_institutional_daily`` (warmed from TWSE T86 / TPEx),
+        converted to NT$ with each ticker's latest close in ``stock_daily_ohlc`` — matching
+        the previous "net shares × latest close" semantics. Zero external calls.
+        """
+        from src.database.models import StockDailyOHLC, StockInstitutionalDaily
+        from src.services.finmind_service import is_tw_ticker
+
+        tw_tickers = sorted({t.strip() for t in tickers if is_tw_ticker(t.strip())})
+        total: dict[str, dict[str, float]] = {str(window): {} for window in windows}
+        foreign: dict[str, dict[str, float]] = {str(window): {} for window in windows}
+        if not tw_tickers:
+            return {"total": total, "foreign": foreign}
+
+        start = (datetime.utcnow() - timedelta(days=max(windows) + 5)).strftime("%Y-%m-%d")
+        close_start = (datetime.utcnow() - timedelta(days=20)).strftime("%Y-%m-%d")
+        latest_close: dict[str, float] = {}
+        rows_by_ticker: dict[str, list] = {}
+        for session in get_session():
+            for t, _d, c in (
+                session.query(StockDailyOHLC.ticker, StockDailyOHLC.date, StockDailyOHLC.close)
+                .filter(StockDailyOHLC.ticker.in_(tw_tickers), StockDailyOHLC.date >= close_start)
+                .order_by(StockDailyOHLC.ticker.asc(), StockDailyOHLC.date.asc())
+                .all()
+            ):
+                latest_close[t] = c  # asc date order → last write is the latest close
+            for row in (
+                session.query(
+                    StockInstitutionalDaily.ticker,
+                    StockInstitutionalDaily.date,
+                    StockInstitutionalDaily.foreign_net_shares,
+                    StockInstitutionalDaily.total_net_shares,
+                )
+                .filter(StockInstitutionalDaily.ticker.in_(tw_tickers), StockInstitutionalDaily.date >= start)
+                .order_by(StockInstitutionalDaily.ticker.asc(), StockInstitutionalDaily.date.asc())
+                .all()
+            ):
+                rows_by_ticker.setdefault(row.ticker, []).append(row)
+            break
+
+        for ticker, rows in rows_by_ticker.items():
+            close = latest_close.get(ticker)
+            dates = [row.date for row in rows if row.date]
+            if not close or not dates:
+                continue
+            latest = datetime.strptime(max(dates), "%Y-%m-%d").date()
+            cutoffs = {str(window): latest - timedelta(days=window - 1) for window in windows}
+            for row in rows:
+                if not row.date:
+                    continue
+                try:
+                    row_date = datetime.strptime(row.date, "%Y-%m-%d").date()
+                except (TypeError, ValueError):
+                    continue
+                tval = float(row.total_net_shares or 0.0) * float(close)
+                fval = float(row.foreign_net_shares or 0.0) * float(close)
+                for window_key, cutoff in cutoffs.items():
+                    if row_date >= cutoff:
+                        total[window_key][ticker] = total[window_key].get(ticker, 0.0) + tval
+                        foreign[window_key][ticker] = foreign[window_key].get(ticker, 0.0) + fval
+        return {"total": total, "foreign": foreign}
+
+    async def _us_trading_value_windows_cached(self, tickers: list[str]) -> dict[str, dict[str, float]]:
+        """``{window_days: {ticker: cumulative trading value NT$}}`` for warmed US stocks."""
+        universe = ",".join(sorted({ticker.strip().upper() for ticker in tickers if ticker.strip()}))
+        universe_key = hashlib.sha1(universe.encode("utf-8")).hexdigest()[:12] if universe else "empty"
+        cache_key = f"sectors:us_trading_value_windows_twd:v1:{universe_key}"
+        memory_cache = getattr(self, "_us_trading_value_windows_memory_cache", {})
+        cached_at, memory_value = memory_cache.get(cache_key, (0.0, None))
+        if memory_value and time.time() - cached_at < CACHE_TTL["stock_ohlcv"]:
+            return memory_value
+
+        cached = await cache_get(cache_key)
+        if cached:
+            try:
+                vals = json.loads(cached)
+                self._us_trading_value_windows_memory_cache = {cache_key: (time.time(), vals)}
+                return vals
+            except Exception:
+                pass
+        vals = await asyncio.to_thread(self._read_us_trading_value_windows_twd, tickers)
+        if vals:
+            self._us_trading_value_windows_memory_cache = {cache_key: (time.time(), vals)}
+            await cache_set(cache_key, json.dumps(vals), CACHE_TTL["stock_ohlcv"])
+        return vals or {}
 
     # ── Theme discovery (admin curation queue) ────────────────────────────────
     _THEME_SCAN_FIELDS = [
@@ -1621,7 +2172,7 @@ class PodcastService:
             if cutoff is not None and self._dict_release_ms(doc) < cutoff:
                 continue
             for entry in doc.get("sector_exposures") or []:
-                eid = normalize_exposure_id(entry.get("exposure_id"))
+                eid = resolve_sector_exposure_id(entry.get("exposure_id"))
                 if not eid or eid in EXCLUDED_EXPOSURE_IDS:
                     continue
                 counts[eid] = counts.get(eid, 0) + 1
@@ -1631,15 +2182,16 @@ class PodcastService:
                         "exposure_type": entry.get("exposure_type") or "industry",
                     }
 
-        from src.data.sector_visuals import visual_for
+        from src.data.sector_visuals import metadata_for, visual_for
         result = sorted(
             [
                 {
                     "exposure_id": eid,
-                    "display_name": meta[eid]["display_name"],
-                    "exposure_type": meta[eid]["exposure_type"],
+                    "display_name": (metadata_for(eid) or {}).get("display_name") or meta[eid]["display_name"],
+                    "exposure_type": (metadata_for(eid) or {}).get("exposure_type") or meta[eid]["exposure_type"],
                     "icon_id": (visual_for(eid) or {}).get("icon_id"),
                     "color_hex": (visual_for(eid) or {}).get("color_hex"),
+                    "description": (metadata_for(eid) or {}).get("description"),
                     "count": cnt,
                 }
                 for eid, cnt in counts.items()

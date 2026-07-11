@@ -10,6 +10,15 @@
     }
   },
   {
+    "name": "M觀點",
+    "link": "https://feeds.soundon.fm/podcasts/b8f5a471-f4f7-4763-9678-65887beda63a.xml",
+    "limit": 10,
+    "transcript_option": {
+      "transcript_service": "groq",
+      "model": "whisper-large-v3"
+    }
+  },
+  {
     "name": "游庭皓的財經皓角",
     "link": "https://podcasttomp3.com/podcasts/v2/1196687",
     "limit": 10,

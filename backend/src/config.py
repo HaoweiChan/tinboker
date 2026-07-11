@@ -37,14 +37,20 @@ class Settings(BaseSettings):
     # single finmind_api_key when unset.
     finmind_api_keys: Optional[str] = None
     # Self-imposed FinMind hourly request cap (see finmind_budget). Default suits the free
-    # tier (~600/hr); the backer plan allows ~1600/hr, so raise via GSM secret
-    # FINMIND_HOURLY_CAP once the backer key is the primary key in the pool.
+    # tier (~600/hr); our Backer account allows ~1600/hr (dashboard-confirmed 2026-07-05),
+    # raised in prod via GSM secret FINMIND_HOURLY_CAP (VPS runs ~1500 — sane headroom
+    # under 1600). Since the /topics money-flow leg moved to Postgres (TWSE/TPEx daily
+    # feeds via tw_daily_ohlc_refresh), the old ~1,740-call recompute storm is gone;
+    # FinMind now serves only market caps (1 bulk/day), per-stock chart metadata, and the
+    # daily-close warmer — well within any tier. yfinance is emergency-only (warmer
+    # fallback in stock_close_refresh), not a primary source.
     finmind_hourly_cap: int = 280
     massive_api_key: Optional[str] = None
     # Optional pool of Massive/Polygon keys (comma-separated) → GSM secret MASSIVE_API_KEYS.
     # Massive (Polygon) rate-limits PER KEY (~5/min), so a pool genuinely multiplies the
     # ceiling. Falls back to the single massive_api_key when unset.
     massive_api_keys: Optional[str] = None
+    usd_twd_rate: float = 32.0
     podcast_api_key: Optional[str] = None  # API key for external podcast API (Netcup server)
     
     # Google OAuth Configuration
@@ -79,6 +85,12 @@ class Settings(BaseSettings):
     tinboker_article_author_id: Optional[str] = None
     tinboker_article_author_name: Optional[str] = None
     tinboker_article_author_avatar: Optional[str] = None
+
+    # Shared secret guarding internal, machine-only endpoints (whole-market data
+    # exports #449 + the screener candidates read). Callers pass it as the
+    # ``X-Internal-Key`` header; unset (None) means every internal endpoint 401s.
+    # Store in GSM as INTERNAL_API_KEY. Generate with `openssl rand -hex 32`.
+    internal_api_key: Optional[str] = None
 
     # ==================== Social / Threads publishing ====================
     # Meta Threads Graph API credentials. Generate a long-lived access token for

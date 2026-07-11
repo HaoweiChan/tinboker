@@ -3,10 +3,16 @@
 .env.*
 !.env.example
 
-# graphify output — ignore everything except the report and graph
-graphify-out/
-!graphify-out/GRAPH_REPORT.md
-!graphify-out/graph.json
+# graphify: local / machine-specific state (absolute paths, breaks across machines)
+graphify-out/cache/
+graphify-out/manifest.json
+graphify-out/.graphify_root
+graphify-out/.graphify_incremental.json
+graphify-out/.graphify_python
+graphify-out/.graphify_detect.json
+graphify-out/.graphify_uncached.txt
+graphify-out/cost.json
+# shared outputs (graph.json, GRAPH_REPORT.md, graph.html, wiki/) are committed
 
 # Logs
 *.log
@@ -44,3 +50,9 @@ marp-examples/
 
 # Local technical blog drafts
 tech-blogs/
+tide-tw-data/
+
+# ai-ops pre-edit backups (docs/ai-ops/40-maintenance-protocol.md §2) — scratch by
+# design; existing files from founding PR #415 stay tracked for history, new ones
+# shouldn't be (already-tracked files are unaffected by this pattern)
+docs/ai-ops/_backups/*

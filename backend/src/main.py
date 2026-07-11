@@ -37,9 +37,11 @@ from src.routers.comments import router as comments_router, comments_router as c
 from src.routers.articles import router as articles_router
 from src.routers.admin_articles import router as admin_articles_router
 from src.routers.admin_tags import router as admin_tags_router
+from src.routers.admin_taxonomy import router as admin_taxonomy_router
 from src.routers.admin_sectors import router as admin_sectors_router
 from src.routers.social import router as social_router, facebook_router, promo_router
 from src.routers.seo import router as seo_router, admin_router as admin_seo_router
+from src.routers.screener import router as screener_router
 from src.middleware.cloudflare import CloudflareMiddleware
 
 
@@ -194,6 +196,25 @@ async def lifespan(app: FastAPI):
 
     asyncio.create_task(_refresh_closes_bg())
 
+    # Whole-market TW daily OHLCV + 成交金額 from the official TWSE/TPEx OpenAPIs (2 free
+    # calls/day) into Postgres, so /topics money-flow reads daily bars from the DB instead
+    # of fanning out hundreds of per-ticker FinMind calls. Off the request path.
+    #
+    # The whole-market TW anomaly screener (issue #450) is chained AFTER each cycle's
+    # OHLC/institutional refresh via `after_refresh`, rather than its own independent
+    # loop — it reads stock_daily_ohlc / stock_institutional_daily, so it must never run
+    # ahead of the refresh that warms them. `refresh_screener_for_date` is idempotent per
+    # date (re-running overwrites), so recomputing every cycle is harmless.
+    async def _refresh_tw_ohlc_bg():
+        try:
+            from src.services.tw_daily_ohlc_refresh import run_periodic_tw_ohlc_refresh
+            from src.services.screener_refresh import refresh_screener_for_date
+            await run_periodic_tw_ohlc_refresh(interval_hours=6.0, after_refresh=refresh_screener_for_date)
+        except Exception as e:
+            print(f"Warning: TW daily OHLC fetcher stopped: {e}")
+
+    asyncio.create_task(_refresh_tw_ohlc_bg())
+
     # Refresh-ahead for the /topics hot-sectors board: recompute + rewrite its Redis
     # entry every 5 min (inside the 10-min TTL) so the serving path never pays the
     # cold ~2700-doc episode scan. Off the request path; must not block startup.
@@ -218,9 +239,8 @@ async def lifespan(app: FastAPI):
 
     asyncio.create_task(_refresh_trending_bg())
 
-    # Auto-index sector/theme exposures from the pipeline universe into the registry so
-    # new sectors surface (as visible) without an admin clicking 同步產業. The universe
-    # JSON stays curated; this only keeps the registry index in sync. Best-effort.
+    # Empty-DB bootstrap only. Once any sector row exists, taxonomy writes are managed
+    # by the admin taxonomy API and this seed sync writes nothing.
     async def _sync_sectors_bg():
         try:
             from src.database.postgres import get_session
@@ -235,6 +255,19 @@ async def lifespan(app: FastAPI):
             print(f"Warning: sector sync skipped: {e}")
 
     asyncio.create_task(_sync_sectors_bg())
+
+    # Sector follows are keyed by display name in Firestore user docs. M2 merges four
+    # jp_* sector pages into canonical sectors, so migrate old followed names once.
+    async def _migrate_sector_follows_bg():
+        try:
+            from src.database.user_db import migrate_merged_sector_tag_subscriptions
+            migrated = await asyncio.to_thread(migrate_merged_sector_tag_subscriptions)
+            if migrated:
+                print(f"Sector follow migration: remapped {migrated} user(s).")
+        except Exception as e:
+            print(f"Warning: sector follow migration skipped: {e}")
+
+    asyncio.create_task(_migrate_sector_follows_bg())
 
     # Producer for in-app notifications: poll the recent-episodes feed every ~10 min (the
     # ingestion cadence) and fan out NEW_EPISODE / STOCK_MENTION / TOPIC_MENTION to the
@@ -336,6 +369,7 @@ app.include_router(comments_router)
 app.include_router(comments_delete_router)
 app.include_router(articles_router)
 app.include_router(seo_router)  # public /sitemap.xml — stays on every env
+app.include_router(screener_router)  # X-Internal-Key gated — stays on every env
 
 # Admin dashboard is developer-only and consolidated onto the dev/staging envs. Skip
 # mounting every /api/admin/* router in production so api.tinboker.com exposes no admin
@@ -351,6 +385,7 @@ if not settings.is_production:
     app.include_router(admin_analytics_router)
     app.include_router(admin_articles_router)
     app.include_router(admin_tags_router)
+    app.include_router(admin_taxonomy_router)
     app.include_router(admin_sectors_router)  # /api/admin/sectors/theme-candidates
     app.include_router(social_router)       # /api/admin/threads/*
     app.include_router(facebook_router)     # /api/admin/facebook/*

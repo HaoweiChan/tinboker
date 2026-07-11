@@ -344,7 +344,9 @@ class WhisperService(SpeechToTextService):
                 "-i", str(audio_path),
                 "-ss", str(current_start),
                 "-t", str(chunk_duration_seconds),
-                "-acodec", "libmp3lame",
+                # Stream-copy the segment (no re-encode): far faster and avoids a
+                # libmp3lame encoder crash on some ffmpeg builds (e.g. ffmpeg 8).
+                "-acodec", "copy",
                 "-y",
                 str(chunk_path)
             ]
@@ -936,7 +938,9 @@ class GroqService(SpeechToTextService):
                 "-i", str(audio_path),
                 "-ss", str(current_start),
                 "-t", str(chunk_duration_seconds),
-                "-acodec", "libmp3lame",
+                # Stream-copy the segment (no re-encode): far faster and avoids a
+                # libmp3lame encoder crash on some ffmpeg builds (e.g. ffmpeg 8).
+                "-acodec", "copy",
                 "-y",
                 str(chunk_path)
             ]

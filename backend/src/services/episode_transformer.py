@@ -2,6 +2,8 @@
 import re
 import asyncio
 import logging
+import unicodedata
+from functools import lru_cache
 from typing import Optional, Collection
 from datetime import datetime
 from src.models.podcast import Episode
@@ -9,6 +11,91 @@ from src.services.gcs_content import GCSContentService
 
 
 logger = logging.getLogger(__name__)
+
+_CJK_RE = re.compile(r"[㐀-鿿]")
+
+
+def _norm_text(s) -> str:
+    """Mirror of pipelines ``shared.sectors.normalize_text`` (duplicated across
+    tiers on purpose — the two packages deploy as disjoint Docker contexts)."""
+    s = unicodedata.normalize("NFKC", str(s or "")).lower()
+    s = re.sub(r"[_/\\-]+", " ", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+@lru_cache(maxsize=1)
+def _sector_alias_index() -> dict:
+    """exposure_id -> normalized display+aliases, from the in-process sectors seed.
+
+    Zero I/O: ``SECTORS_SEED`` is committed data (same provenance as the registry
+    sync). Slightly staler than the live registry, but the fired exposure's own
+    ``display_name`` from the episode doc is always matched too, which covers
+    live-only renames.
+    """
+    from src.data.sectors_seed import SECTORS_SEED
+    index: dict = {}
+    for exposure in SECTORS_SEED:
+        names = {
+            _norm_text(a)
+            for a in [exposure.get("display_name"), *(exposure.get("aliases") or [])]
+            if a
+        }
+        index[str(exposure.get("exposure_id"))] = frozenset(n for n in names if n)
+    return index
+
+
+def filter_tags_against_sectors(tags: list, sector_exposures: list) -> list:
+    """Drop served tags that duplicate one of the episode's FIRED sector exposures.
+
+    Serve-time mirror of the pipeline's ``dedup_tags_against_sectors``
+    (pipelines/.../content_builder/nodes/tags_tickers.py) — needed because
+    ``to_episode`` re-derives tags from inline ``#tag:`` prose links and unions
+    them with the stored (already-deduped) tags array, and every historical
+    episode predates the pipeline-side dedup. Same rule, same test vectors:
+    a tag is dropped when its slug or zh-TW display matches a fired sector's
+    display name or alias — exact normalized match, or CJK containment either
+    way when the contained string is >=3 CJK chars.
+    """
+    if not tags or not sector_exposures:
+        return list(tags or [])
+
+    from src.tag_registry import canonical_label
+
+    alias_index = _sector_alias_index()
+    blocked: set = set()
+    for exp in sector_exposures:
+        if not isinstance(exp, dict):
+            continue
+        if exp.get("display_name"):
+            blocked.add(_norm_text(exp["display_name"]))
+        exposure_id = str(exp.get("exposure_id") or "")
+        if exposure_id.startswith("theme_"):  # pre-migration episode docs
+            exposure_id = "sector_" + exposure_id[len("theme_"):]
+        blocked.update(alias_index.get(exposure_id, ()))
+
+    def _cjk_len(s: str) -> int:
+        return len(_CJK_RE.findall(s))
+
+    def _collides(tag: str) -> bool:
+        for candidate in (_norm_text(tag), _norm_text(canonical_label(tag))):
+            if not candidate:
+                continue
+            if candidate in blocked:
+                return True
+            for b in blocked:
+                if _cjk_len(b) >= 3 and b in candidate:
+                    return True
+                if _cjk_len(candidate) >= 3 and candidate in b:
+                    return True
+        return False
+
+    kept = [t for t in tags if not _collides(t)]
+    if len(kept) != len(tags):
+        logger.debug(
+            "filter_tags_against_sectors: dropped %d tag(s) duplicating fired sectors",
+            len(tags) - len(kept),
+        )
+    return kept
 
 # Content fields that can be fetched from GCS
 _GCS_CONTENT_FIELDS = [
@@ -159,12 +246,17 @@ class EpisodeTransformer:
         if enrich_content:
             episode_dict = await self.enrich_with_content(episode_dict, content_fields=content_fields)
 
-        # Merge extracted + existing tags
+        # Merge extracted + existing tags, then drop any tag duplicating a fired
+        # sector exposure — the prose #tag: links (and historical stored tags)
+        # re-introduce dupes the pipeline-side dedup already removed at write time.
         extracted = set()
         for field in ('summary_content', 'events_markdown_content', 'sentences_markdown_content'):
             extracted.update(self.extract_tags_from_text(episode_dict.get(field, '')))
         existing = set(episode_dict.get('tags', []) or [])
-        all_tags = [t for t in existing.union(extracted) if t]
+        all_tags = filter_tags_against_sectors(
+            [t for t in existing.union(extracted) if t],
+            episode_dict.get('sector_exposures') or [],
+        )
 
         created_time = episode_dict.get('created_time')
         if isinstance(created_time, str):

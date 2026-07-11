@@ -293,11 +293,11 @@ python scripts/test-redis-connection.py
 
 ### Router map
 
-The API is organised into 32 routers under `src/routers/`:
+The API is organised into 33 routers under `src/routers/`:
 
 | Group | Routers |
 |-------|---------|
-| Stocks & markets | `stock`, `company`, `ticker_insights`, `translations`, `websocket_prices`, `websocket` |
+| Stocks & markets | `stock`, `company`, `ticker_insights`, `translations`, `screener`, `websocket_prices`, `websocket` |
 | Content | `episodes`, `podcast`, `comments`, `news`, `articles`, `content`, `recommendations` |
 | Discovery | `search`, `tags`, `graph`, `visual_graph` |
 | Platform | `auth`, `user`, `notifications`, `analytics`, `seo`, `social`, `sources` |
@@ -307,6 +307,16 @@ The API is organised into 32 routers under `src/routers/`:
 
 - **Local**: `http://localhost:5174`
 - **Production**: `https://api.tinboker.com`
+
+---
+
+### Screener API (internal)
+
+`GET /api/screener/candidates?date=YYYY-MM-DD&limit=N` — ranked whole-market TW
+anomaly-screener candidates for a trading day (momentum breakout + 三大法人
+confirmation). Machine-only: send `X-Internal-Key: <INTERNAL_API_KEY>`; missing/bad
+key → 401. `date` defaults to the latest computed day, `limit` defaults to all rows.
+See `docs`/`/redoc` for the full response schema.
 
 ---
 

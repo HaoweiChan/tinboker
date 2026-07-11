@@ -219,8 +219,9 @@ async def test_excluded_exposure_returns_empty_without_querying():
 async def test_resolved_tickers_enriched_with_reason():
     """Each constituent gets a zh-TW 'why it belongs to the sector' reason from the
     compiled universe mirror."""
-    doc = _raw_doc("ep-001", tickers=[
-        {"ticker": "2327", "name": "國巨", "name_en": None, "market": "TW", "source": "curated"},
+    doc = _raw_doc("ep-001", exposure_id="sector_hbm", display_name="HBM 高頻寬記憶體",
+                   exposure_type="theme", tickers=[
+        {"ticker": "6239", "name": "力成", "name_en": None, "market": "TW", "source": "curated"},
     ])
 
     mock_fs = MagicMock()
@@ -231,12 +232,13 @@ async def test_resolved_tickers_enriched_with_reason():
     with (
         patch("src.services.podcast.cache_get", new=AsyncMock(return_value=None)),
         patch("src.services.podcast.cache_set", new=AsyncMock()),
+        patch("src.data.sector_reasons.reason_for", return_value="registry reason"),
         patch.object(svc, "_allowed_podcast_names", new=AsyncMock(return_value=None)),
     ):
-        result = await svc.get_episodes_by_sector("sector_passive_components")
+        result = await svc.get_episodes_by_sector("sector_hbm")
 
     rt = {t["ticker"]: t for t in result["resolved_tickers"]}
-    assert rt["2327"].get("reason"), "expected a sector-relationship reason for 2327"
+    assert rt["6239"].get("reason"), "expected a sector-relationship reason for 6239"
 
 
 @pytest.mark.asyncio
@@ -254,15 +256,49 @@ async def test_firestore_query_uses_array_contains():
     ):
         await svc.get_episodes_by_sector("sector_passive_components", limit=20, offset=0)
 
-    mock_fs.query_collection.assert_called_once()
-    call_args = mock_fs.query_collection.call_args
-    collection_arg = call_args[0][0]
-    filters_arg = call_args[0][1]
-    assert collection_arg == "episodes"
-    assert any(
-        f[0] == "sector_exposure_ids" and f[1] == "array-contains" and f[2] == "sector_passive_components"
-        for f in filters_arg
+    # one query per id: the canonical sector_ id plus its legacy theme_ alias
+    queried = []
+    for call in mock_fs.query_collection.call_args_list:
+        assert call.args[0] == "episodes"
+        for f in call.args[1]:
+            if f[0] == "sector_exposure_ids" and f[1] == "array-contains":
+                queried.append(f[2])
+    assert queried == ["sector_passive_components", "theme_passive_components"]
+
+
+@pytest.mark.asyncio
+async def test_redirected_sector_queries_old_and_canonical_ids():
+    old_doc = _raw_doc(
+        "ep-old",
+        exposure_id="sector_old",
+        display_name="Old Name",
+        tickers=[{"ticker": "2327", "name": "國巨", "market": "TW", "source": "curated"}],
     )
+    new_doc = _raw_doc(
+        "ep-new",
+        exposure_id="sector_new",
+        display_name="New Name",
+        tickers=[{"ticker": "2330", "name": "台積電", "market": "TW", "source": "curated"}],
+    )
+
+    mock_fs = MagicMock()
+    # order: redirect source, canonical, then their legacy theme_ aliases
+    mock_fs.query_collection.side_effect = [[old_doc], [new_doc], [], []]
+    svc = PodcastService(firestore_service=mock_fs)
+
+    with (
+        patch("src.services.podcast.cache_get", new=AsyncMock(return_value=None)),
+        patch("src.services.podcast.cache_set", new=AsyncMock()),
+        patch("src.services.podcast._sector_redirects", return_value={"sector_old": "sector_new"}),
+        patch.object(svc, "_allowed_podcast_names", new=AsyncMock(return_value=None)),
+    ):
+        result = await svc.get_episodes_by_sector("sector_old")
+
+    assert result["exposure_id"] == "sector_new"
+    assert result["total"] == 2
+    assert {t["ticker"] for t in result["resolved_tickers"]} == {"2327", "2330"}
+    filters = [call.args[1][0][2] for call in mock_fs.query_collection.call_args_list]
+    assert filters == ["sector_old", "sector_new", "theme_old", "theme_new"]
 
 
 @pytest.mark.asyncio

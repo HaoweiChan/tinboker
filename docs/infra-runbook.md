@@ -138,9 +138,50 @@ guards:
 [`backend-deploy-admin.yml`](../.github/workflows/backend-deploy-admin.yml)) purge the deployed
 env's `/api/` edge cache once the container is healthy, so a deploy no longer serves pre-deploy
 `/api/*` responses until TTL. Uses `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ZONE_TAG` from GSM
-(host-scoped purge of `{api_host}` — same method as the manual recipe in
-[`CLAUDE.md`](../CLAUDE.md) — falling back to `purge_everything` on non-Enterprise plans).
+(host-scoped purge of `{api_host}` — same method as the manual recipe below —
+falling back to `purge_everything` on non-Enterprise plans).
 Best-effort: a purge failure warns but does not fail the deploy.
+
+Both CI pipelines auto-purge the CDN after every code deploy, so no manual purge is needed for
+code changes — see [`workflows/deploy-flow.md`](./workflows/deploy-flow.md) Verification.
+
+### 1.4a Ad-hoc Cloudflare purge (data-only changes)
+
+This is the **canonical recipe** for manually purging the Cloudflare CDN when there is no
+code deploy to trigger the automatic purge — e.g. a Firestore data fix, or a manual pipeline
+run. Fetch credentials from GCP Secret Manager yourself, never ask the user:
+
+```bash
+PROJ=gen-lang-client-0901363254
+TOKEN=$(gcloud secrets versions access latest --secret=CLOUDFLARE_API_TOKEN --project=$PROJ)
+ZONE=$(gcloud secrets versions access latest --secret=CLOUDFLARE_ZONE_TAG --project=$PROJ)
+# Host-scoped purge (leaves other envs cached). Swap hosts per env.
+curl -s -X POST "https://api.cloudflare.com/client/v4/zones/$ZONE/purge_cache" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  --data '{"hosts":["dev-api.tinboker.com","dev.tinboker.com"]}'
+# Prod — whole zone:  --data '{"purge_everything":true}'
+```
+
+Hosts by env: dev = `dev-api.tinboker.com` / `dev.tinboker.com`; staging =
+`staging-api.tinboker.com` / `staging.tinboker.com`; prod = `api.tinboker.com` /
+`tinboker.com` / `www.tinboker.com`. **Never print the token.** Verify success with
+`cf-cache-status: MISS` on a clean (non-cache-busted) URL afterward.
+
+### 1.4b Cache TTLs — episode freshness
+
+The content pipeline pulls new episodes every ~10 minutes. Cache layers are aligned to that
+cadence:
+
+| Layer | TTL | Source |
+|-------|-----|--------|
+| Redis (`podcast_episodes` key) | 10 min | [`backend/src/cache/cache_config.py:43`](../backend/src/cache/cache_config.py) |
+| CDN edge (`s-maxage`) | 10 min (600s) | `/api/episodes/recent` — [`backend/src/routers/episodes.py:27`](../backend/src/routers/episodes.py) `@cdn_cached(s_maxage=600, max_age=120, stale=300)` |
+| Browser (`max-age`) | 2 min (120s) | Same decorator — short enough that a refresh shows fresh content |
+| Stale-while-revalidate | 5 min (300s) | Same decorator |
+
+Other endpoints (stock, news, graph) retain longer TTLs — see the `CacheProfile` enum in
+[`backend/src/cache/cdn_cache.py`](../backend/src/cache/cdn_cache.py) (e.g. `TRENDING` =
+`s_maxage=3600, max_age=120, stale=7200`).
 
 ### 1.5 Docker shared network
 
@@ -157,11 +198,15 @@ docker network create app_default 2>/dev/null || true
 
 ### 2.1 Service account
 
-The backend authenticates to GCP using a service account JSON key mounted into the
-Docker container at `/app/gcp-service-account.json`.
+The backend authenticates to GCP using a service account JSON key. There are two
+distinct paths for this file — they are not a typo, they refer to different sides of
+the Docker volume mount (`backend/docker-compose.multi.yml`: `./gcp-service-account.json:/app/gcp-service-account.json:ro`):
 
 - **GCP project:** `gen-lang-client-0901363254`
-- **Key file on VPS:** `/app/backend/gcp-service-account.json` (not committed to git)
+- **Host path (on the VPS filesystem, compose is run from `/app/backend`):**
+  `/app/backend/gcp-service-account.json` (not committed to git)
+- **Container path (inside the running container, matches `GOOGLE_APPLICATION_CREDENTIALS`):**
+  `/app/gcp-service-account.json`
 
 To get a new key if lost:
 1. GCP Console → IAM & Admin → Service Accounts
@@ -338,19 +383,35 @@ not listed here are loaded from GCP Secret Manager at runtime by `src/config_loa
 | Variable | Value | Notes |
 |---|---|---|
 | `ENVIRONMENT` | `production` / `development` / `staging` | Controls DB enforcement, logging |
+| `PORT` | `5174` | Local dev server port |
 | `USE_POSTGRES` | `true` | Forces PostgreSQL; production auto-enables this |
 | `REDIS_URL` | `redis://redis:6379/0` | Docker internal network |
 | `GCP_PROJECT_ID` | `gen-lang-client-0901363254` | Enables Secret Manager |
 | `GOOGLE_APPLICATION_CREDENTIALS` | `/app/gcp-service-account.json` | Mounted at runtime |
+| `MASSIVE_API_KEY` | loaded from GSM | US stocks market data |
+| `FINMIND_API_KEY` | loaded from GSM | TW stocks market data |
+| `JWT_SECRET_KEY` | loaded from GSM | Signing key for user auth tokens |
 | `POSTGRES_HOST` | `docker-db_postgres-1` | External Docker network |
 | `POSTGRES_DB` | `podcast_db` | Recommendation data |
 | `POSTGRES_USER` | `podcast_user` | |
 | `POSTGRES_PASSWORD` | loaded from GSM | |
 | `FIRESTORE_DATABASE_ID` | `graphfolio-db` | Named Firestore instance |
 | `CORS_ORIGINS` | `["https://tinboker.com",...]` | Set per environment in compose file |
+| `RELEASE_PODCAST_LANGUAGES` | `zh-TW` | Release scoping (launch subset) — only show `content_sources` podcasts in these languages ("" = all) |
+| `RELEASE_EPISODE_MAX_AGE_DAYS` | `0` | Release scoping — hide episodes older than N days (0=off; flip to 30 once `released_at_ms` is backfilled on existing episodes — see `docs/firestore-contract.md` § contract cleanups) |
 
 For **local development** (not Docker), copy `backend/.env.example` to `backend/.env`
 and fill in values. The app loads `.env` before falling back to Secret Manager.
+
+### Frontend env
+
+Set per environment in `frontend/.env.*`:
+
+| Variable | Value | Notes |
+|---|---|---|
+| `VITE_API_BASE_URL` | `http://localhost:5174` locally, `https://api.tinboker.com` in prod | Backend base URL |
+| `VITE_STAGE` | `DEV` \| `STAGING` \| `PRODUCTION` | Environment flag |
+| `VITE_GOOGLE_CLIENT_ID` | from GCP Secret Manager `GOOGLE_CLIENT_ID` | Injected at build time (see Part 2.3) |
 
 ---
 

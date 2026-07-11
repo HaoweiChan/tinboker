@@ -1,22 +1,20 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Flame, BarChart3, Layers, Hash, Info } from 'lucide-react';
+import { ChartScatter, Layers, Hash, Info, ListTree, ChevronDown, LayoutGrid } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
 import { Segmented } from '@/components/redesign/Segmented';
 import SectorPerformance from '@/components/industry/SectorPerformance';
-import { SectorHeroCard } from '@/components/topics/SectorHeroCard';
-import { SectorBoardCard } from '@/components/topics/SectorBoardCard';
+import { SectorBoardCard, type SectorNetFlow } from '@/components/topics/SectorBoardCard';
 import { TagBoardCard } from '@/components/topics/TagBoardCard';
+import { TOPICS_TYPOGRAPHY } from '@/components/topics/topicsTypography';
 import {
   getSectorBoard,
-  getIndustryPerformance,
-  getThemePerformance,
+  getExposurePerformance,
   getTrendingTags,
   getBatchPricesTrailing,
   type SectorBoardItem,
-  type IndustryPerformanceItem,
-  type ThemePerformanceItem,
+  type ExposurePerformanceItem,
   type TrailingPerf,
   type TrendingTag,
 } from '@/services/api/podcasts';
@@ -24,17 +22,25 @@ import type { SectorBubbleData } from '@/services/mocks/types';
 import { fetchWithFallback } from '@/services/api/migration';
 import { useTagLabels, tagLabelFor } from '@/hooks/useTagLabels';
 
-// ── Tab + sort types ─────────────────────────────────────────────────────────
+// ── Sort types ───────────────────────────────────────────────────────────────
 
-type TabKey = 'industry' | 'theme';
-type SortKey = 'hotness' | 'avg_change' | 'episode_count';
+type BoardSortKey = 'hotness' | 'avg_change' | 'episode_count';
+type SortKey = BoardSortKey | 'money_flow';
 
-const TAB_OPTIONS = [
-  { value: 'theme' as const, label: '題材' },
-  { value: 'industry' as const, label: '產業' },
-];
+// NT$ → 億 (1e8), rounded; null passes through.
+const toYi = (v?: number | null): number | null => (v == null ? null : +(v / 1e8).toFixed(0));
 
-// Return-axis timeframe for the bubble charts (trailing close-to-close % per window).
+type BubbleSource = {
+  exposure_id: string;
+  display_name: string;
+  heat?: number | null;
+  episode_count: number;
+  return_pct: number | null;
+  trading_value_twd?: number | null;
+  trading_value_windows_twd?: Record<string, number> | null;
+};
+
+// Return-axis timeframe for the bubble chart (trailing close-to-close % per window).
 type TF = '1' | '7' | '30' | '90';
 const TF_OPTIONS = [
   { value: '1' as const, label: '1日' },
@@ -43,48 +49,14 @@ const TF_OPTIONS = [
   { value: '90' as const, label: '90日' },
 ];
 
-const SORT_OPTIONS: { key: SortKey; label: string }[] = [
-  { key: 'hotness', label: '綜合熱度' },
-  { key: 'avg_change', label: '今日表現' },
-  { key: 'episode_count', label: '討論熱度' },
+const SORT_OPTIONS: { value: SortKey; label: string }[] = [
+  { value: 'hotness', label: '綜合熱度' },
+  { value: 'avg_change', label: '今日表現' },
+  { value: 'episode_count', label: '討論熱度' },
+  { value: 'money_flow', label: '資金流入' },
 ];
 
-function SortToggle({ value, onChange }: { value: SortKey; onChange: (k: SortKey) => void }) {
-  return (
-    <div className="flex items-center gap-0.5 bg-muted/50 border border-border rounded-lg p-0.5">
-      {SORT_OPTIONS.map((opt) => (
-        <button
-          key={opt.key}
-          type="button"
-          onClick={() => onChange(opt.key)}
-          className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-150
-            ${value === opt.key
-              ? 'bg-card text-foreground shadow-sm border border-border/60'
-              : 'text-muted-foreground hover:text-foreground'
-            }`}
-        >
-          {opt.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 // ── Skeleton cards ─────────────────────────────────────────────────────────
-
-function HeroSkeleton() {
-  return (
-    <div className="flex-1 min-w-[148px] bg-card border border-border dark:border-white/[0.08] rounded-xl p-4 animate-pulse">
-      <div className="flex items-center gap-1.5 mb-3">
-        <div className="h-3 w-3 bg-muted rounded" />
-        <div className="h-3 w-8 bg-muted rounded" />
-      </div>
-      <div className="h-4 w-24 bg-muted rounded mb-3" />
-      <div className="h-7 w-16 bg-muted rounded" />
-      <div className="h-2.5 w-8 bg-muted rounded mt-2" />
-    </div>
-  );
-}
 
 function BoardSkeleton() {
   return (
@@ -113,7 +85,7 @@ function BoardSkeleton() {
   );
 }
 
-function sortBoard(items: SectorBoardItem[], sortKey: SortKey): SectorBoardItem[] {
+function sortBoard(items: SectorBoardItem[], sortKey: BoardSortKey): SectorBoardItem[] {
   return [...items].sort((a, b) => {
     if (sortKey === 'hotness') return (b.hotness ?? 0) - (a.hotness ?? 0);
     if (sortKey === 'avg_change') return (b.avg_change ?? -Infinity) - (a.avg_change ?? -Infinity);
@@ -121,25 +93,60 @@ function sortBoard(items: SectorBoardItem[], sortKey: SortKey): SectorBoardItem[
   });
 }
 
+// Rounded tinted chip for section-header icons — reads as a designed badge, not a bare glyph.
+const SECTION_TONE = {
+  info: 'bg-accent-info/10 text-accent-info',
+  amber: 'bg-amber-500/10 text-amber-500',
+  primary: 'bg-primary/10 text-primary',
+} as const;
+
+const SectionIcon: React.FC<{ icon: React.ReactNode; tone?: keyof typeof SECTION_TONE }> = ({ icon, tone = 'info' }) => (
+  <span className={`inline-grid place-items-center rounded-lg shrink-0 ${SECTION_TONE[tone]}`} style={{ width: 26, height: 26 }}>
+    {icon}
+  </span>
+);
+
+const BOARD_PREVIEW = 8;
+
+// Centered "顯示全部 N / 收合" toggle shared by every previewable section.
+const ShowAllToggle: React.FC<{ expanded: boolean; total: number; unit: string; onToggle: () => void }> = ({
+  expanded, total, unit, onToggle,
+}) => (
+  <div className="mt-3 flex justify-center">
+    <button
+      type="button"
+      onClick={onToggle}
+      className={`flex items-center gap-1.5 rounded-lg border border-border bg-card px-4 py-2 ${TOPICS_TYPOGRAPHY.className.meta}
+                  text-muted-foreground transition-colors hover:border-border/80 hover:text-foreground`}
+    >
+      <span>{expanded ? '收合' : `顯示全部 ${total} 個${unit}`}</span>
+      <ChevronDown size={14} className={`transition-transform ${expanded ? 'rotate-180' : ''}`} />
+    </button>
+  </div>
+);
+
 // ── Main page ──────────────────────────────────────────────────────────────
 
 export const TopicsCloud: React.FC = () => {
   const navigate = useNavigate();
+  const type = TOPICS_TYPOGRAPHY.className;
+  const iconSize = TOPICS_TYPOGRAPHY.iconSize;
   const openExposure = (id: string) => navigate(`/sector/${encodeURIComponent(id)}`);
-  const [tab, setTab] = useState<TabKey>('theme');
   const [sectors, setSectors] = useState<SectorBoardItem[]>([]);
-  const [industries, setIndustries] = useState<IndustryPerformanceItem[]>([]);
-  const [themes, setThemes] = useState<ThemePerformanceItem[]>([]);
+  const [perf, setPerf] = useState<ExposurePerformanceItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [industryLoading, setIndustryLoading] = useState(true);
-  const [themeLoading, setThemeLoading] = useState(true);
+  const [perfLoading, setPerfLoading] = useState(true);
   const [sortKey, setSortKey] = useState<SortKey>('hotness');
+  const [boardExpanded, setBoardExpanded] = useState(false);
+  const [tagsExpanded, setTagsExpanded] = useState(false);
+  const [industryExpanded, setIndustryExpanded] = useState(false);
   const [tags, setTags] = useState<TrendingTag[]>([]);
   const [tf, setTf] = useState<TF>('1');
   const [trailing, setTrailing] = useState<Record<string, TrailingPerf>>({});
+  const [trailingLoading, setTrailingLoading] = useState(false);
   const tagLabels = useTagLabels();
 
-  // Board (both tabs filter this by exposure_type)
+  // Board — every exposure (split by exposure_type for the theme hero vs the industry drawer).
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -156,31 +163,19 @@ export const TopicsCloud: React.FC = () => {
     return () => { alive = false; };
   }, []);
 
-  // Industry performance (bubble chart) — FinMind-driven market cap + return
+  // Unified exposure performance (bubble chart) — heat × return, sized by trading value.
   useEffect(() => {
     let alive = true;
     (async () => {
-      const res = await getIndustryPerformance().catch(() => [] as IndustryPerformanceItem[]);
+      const res = await getExposurePerformance().catch(() => [] as ExposurePerformanceItem[]);
       if (!alive) return;
-      setIndustries(res);
-      setIndustryLoading(false);
+      setPerf(res);
+      setPerfLoading(false);
     })();
     return () => { alive = false; };
   }, []);
 
-  // Theme performance (bubble chart) — discussion volume × return, sized by trade value
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      const res = await getThemePerformance().catch(() => [] as ThemePerformanceItem[]);
-      if (!alive) return;
-      setThemes(res);
-      setThemeLoading(false);
-    })();
-    return () => { alive = false; };
-  }, []);
-
-  // Trending tags (free-form topics, shown on the 題材 tab)
+  // Trending tags → 總經與焦點議題 chip strip (cross-sector policy/macro topics).
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -199,9 +194,25 @@ export const TopicsCloud: React.FC = () => {
     () => sectors.filter((s) => s.exposure_type === 'theme'),
     [sectors],
   );
+  const themePerf = useMemo(
+    () => perf.filter((p) => p.exposure_type === 'theme'),
+    [perf],
+  );
+
+  // exposure_id → 5d 三大法人 / 外資 net flow (億), for the board metric + 資金流入 sort.
+  const netFlowByExposure = useMemo(() => {
+    const m: Record<string, SectorNetFlow> = {};
+    for (const p of perf) {
+      m[p.exposure_id] = {
+        foreign5d: toYi(p.foreign_net_windows_twd?.['5']),
+        total5d: toYi(p.net_buy_windows_twd?.['5']),
+      };
+    }
+    return m;
+  }, [perf]);
 
   // exposure_id → constituent tickers (from the board), so the bubble Y can be recomputed
-  // per timeframe from trailing returns without the perf endpoints carrying member lists.
+  // per timeframe from trailing returns without the perf endpoint carrying member lists.
   const membersByExposure = useMemo(() => {
     const m: Record<string, string[]> = {};
     for (const s of sectors) m[s.exposure_id] = (s.members || []).map((x) => x.ticker.toUpperCase());
@@ -215,6 +226,12 @@ export const TopicsCloud: React.FC = () => {
     return m;
   }, [sectors]);
 
+  const boardByExposure = useMemo(() => {
+    const m: Record<string, SectorBoardItem> = {};
+    for (const s of sectors) m[s.exposure_id] = s;
+    return m;
+  }, [sectors]);
+
   // Fetch trailing 1/7/30/90D returns for every board constituent (chunked — the endpoint
   // caps at 60 tickers/call), so the TF toggle re-plots Y client-side with no refetch.
   useEffect(() => {
@@ -222,11 +239,16 @@ export const TopicsCloud: React.FC = () => {
     if (!union.length) return;
     let alive = true;
     (async () => {
+      setTrailingLoading(true);
       const chunks: string[][] = [];
       for (let i = 0; i < union.length; i += 60) chunks.push(union.slice(i, i + 60));
-      const results = await Promise.all(chunks.map((c) => getBatchPricesTrailing(c).catch(() => ({}))));
+      const results: Record<string, TrailingPerf>[] = [];
+      for (const chunk of chunks) {
+        results.push(await getBatchPricesTrailing(chunk).catch(() => ({})));
+      }
       if (!alive) return;
       setTrailing(Object.assign({}, ...results));
+      setTrailingLoading(false);
     })();
     return () => { alive = false; };
   }, [membersByExposure]);
@@ -234,22 +256,22 @@ export const TopicsCloud: React.FC = () => {
   // Average member trailing return for the selected timeframe (skips tickers with no data).
   const memberReturn = useMemo(() => {
     const ready = Object.keys(trailing).length > 0;
-    return (exposureId: string, fallback: number | null): number => {
-      if (!ready) return tf === '1' ? (fallback ?? 0) : 0;
+    return (exposureId: string, fallback: number | null): number | null => {
+      if (!ready || trailingLoading) return fallback;
       const vals = (membersByExposure[exposureId] || [])
         .map((t) => trailing[t]?.[`d${tf}` as 'd1' | 'd7' | 'd30' | 'd90'])
         .filter((v): v is number => v != null);
       if (vals.length) return +(vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2);
-      return tf === '1' ? (fallback ?? 0) : 0;
+      return tf === '1' ? fallback : null;
     };
-  }, [trailing, membersByExposure, tf]);
+  }, [trailing, trailingLoading, membersByExposure, tf]);
 
   const tfLabel = TF_OPTIONS.find((o) => o.value === tf)?.label ?? '';
   const yAxisLabel = `近期漲跌 %（${tfLabel}）`;
 
-  // Timeframe toggle rendered inside each chart card (top-left of the legend bar).
+  // Timeframe toggle rendered inside the chart card (top-left of the legend bar).
   const tfToggle = (
-    <div className="flex shrink-0 items-center gap-0.5 whitespace-nowrap text-2xs">
+    <div className={`flex shrink-0 items-center gap-0.5 whitespace-nowrap ${type.micro}`}>
       <span className="mr-1 hidden text-muted-foreground/60 min-[420px]:inline">漲跌期間</span>
       {TF_OPTIONS.map((o) => (
         <button
@@ -268,198 +290,182 @@ export const TopicsCloud: React.FC = () => {
     </div>
   );
 
-  // Bubble-chart shape: market cap NT$ → 兆, daily avg_change → return, episodes → size.
-  const industryBubbles = useMemo<SectorBubbleData[]>(
-    () =>
-      industries.map((i) => ({
-        id: i.exposure_id,
-        name: i.display_name,
-        label: i.display_name,
-        icon_id: iconByExposure[i.exposure_id],
-        value: i.market_cap_twd ? i.market_cap_twd / 1e12 : 0,
-        marketCap: i.market_cap_twd ? +(i.market_cap_twd / 1e12).toFixed(1) : 0,
-        return: memberReturn(i.exposure_id, i.return_pct),
-        returnRate: memberReturn(i.exposure_id, i.return_pct),
-        volume: i.episode_count,
-      })),
-    [industries, memberReturn, iconByExposure],
-  );
-
-  // Theme bubble: X = discussion (episodes), Y = return %, size = today's trade value (億).
+  // Theme bubble: X = discussion heat, Y = return %, size = cumulative trading value.
   const themeBubbles = useMemo<SectorBubbleData[]>(
-    () =>
-      themes.map((t) => ({
-        id: t.exposure_id,
-        name: t.display_name,
-        label: t.display_name,
-        icon_id: iconByExposure[t.exposure_id],
-        value: t.heat ?? 0,
-        // X = recency-weighted 討論熱度 (time-decay, 7d half-life); raw count → sub-line.
-        marketCap: t.heat != null ? +t.heat.toFixed(1) : 0,
-        subLabel: `${t.episode_count} 集討論`,
-        return: memberReturn(t.exposure_id, t.return_pct),
-        returnRate: memberReturn(t.exposure_id, t.return_pct),
-        volume: t.trading_value_twd ? +(t.trading_value_twd / 1e8).toFixed(0) : 0,
-      })),
-    [themes, memberReturn, iconByExposure],
+    () => {
+      const source: BubbleSource[] = themePerf.length
+        ? themePerf
+        : themeBoard.map((s) => ({
+            exposure_id: s.exposure_id,
+            display_name: s.display_name,
+            heat: s.heat,
+            episode_count: s.episode_count,
+            return_pct: s.avg_change,
+            trading_value_windows_twd: null,
+          }));
+      return source.map((t) => {
+        const board = boardByExposure[t.exposure_id];
+        const heat = t.heat ?? board?.heat ?? 0;
+        const tradingValueTwd = t.trading_value_windows_twd?.[tf] ?? (tf === '1' ? t.trading_value_twd : 0) ?? 0;
+        const tradingValueYi = tradingValueTwd ? +(tradingValueTwd / 1e8).toFixed(0) : 0;
+        return {
+          id: t.exposure_id,
+          name: t.display_name,
+          label: t.display_name,
+          icon_id: iconByExposure[t.exposure_id],
+          value: heat,
+          x: +heat.toFixed(1),
+          r: tradingValueYi,
+          subLabel: `${t.episode_count} 集討論 · ${tf}日成交值${tradingValueYi ? `${tradingValueYi}億` : '暫無資料'}`,
+          return: memberReturn(t.exposure_id, t.return_pct),
+          returnRate: memberReturn(t.exposure_id, t.return_pct),
+        };
+      });
+    },
+    [themePerf, themeBoard, boardByExposure, tf, memberReturn, iconByExposure],
   );
 
-  // Theme tab hero strip: top theme gainers
-  const heroThemes = useMemo(
-    () =>
-      [...themeBoard]
-        .filter((s) => s.avg_change != null && Number.isFinite(s.avg_change))
-        .sort((a, b) => (b.avg_change ?? -Infinity) - (a.avg_change ?? -Infinity))
-        .slice(0, 5),
-    [themeBoard],
-  );
-
-  const visibleBoard = tab === 'industry' ? industryBoard : themeBoard;
-  const sortedBoard = useMemo(() => sortBoard(visibleBoard, sortKey), [visibleBoard, sortKey]);
+  const sortedThemeBoard = useMemo(() => {
+    if (sortKey === 'money_flow') {
+      return [...themeBoard].sort((a, b) => {
+        const av = netFlowByExposure[a.exposure_id]?.foreign5d ?? -Infinity;
+        const bv = netFlowByExposure[b.exposure_id]?.foreign5d ?? -Infinity;
+        return bv - av;
+      });
+    }
+    return sortBoard(themeBoard, sortKey);
+  }, [themeBoard, sortKey, netFlowByExposure]);
+  // Industry drawer is secondary — always hotness-sorted, no own control.
+  const sortedIndustryBoard = useMemo(() => sortBoard(industryBoard, 'hotness'), [industryBoard]);
 
   return (
     <>
       <SEO
         title="話題排行"
-        description="今日最強題材焦點 — 依產業/主題聚合，顯示漲跌幅與相關個股表現。"
+        description="今日最強題材焦點 — 依題材聚合，顯示漲跌幅、資金流與相關個股表現。"
       />
       <PageContent>
         {/* Page header */}
         <div className="flex items-center justify-between mb-1">
-          <h1 className="text-2xl font-semibold tracking-[-0.02em]">話題排行</h1>
-          {!loading && sectors.length > 0 && (
-            <div className="text-xs text-muted-foreground font-mono tabular-nums flex items-center gap-1.5">
+          <h1 className={`${type.pageTitle} font-semibold tracking-[-0.02em]`}>話題排行</h1>
+          {themeBoard.length > 0 && (
+            <div className={`${type.meta} text-muted-foreground font-mono tabular-nums flex items-center gap-1.5`}>
               <Layers size={12} />
-              <span>{visibleBoard.length} {tab === 'industry' ? '產業' : '題材'}</span>
+              <span>{themeBoard.length} 題材</span>
             </div>
           )}
         </div>
-        <p className="text-base text-muted-foreground mb-5 max-w-[60ch]">
-          {tab === 'industry'
-            ? '台股產業地圖 — 市值與近期漲跌，依產業別聚合。'
-            : '今日最強題材焦點 — 短線概念聚合，顯示漲跌幅與相關個股。'}
+        <p className={`${type.body} text-muted-foreground mb-5 max-w-[60ch]`}>
+          今日最強題材焦點 — 短線概念聚合，顯示漲跌幅與相關個股。完整產業分類收於頁尾。
         </p>
-
-        {/* Tabs */}
-        <Segmented options={TAB_OPTIONS} value={tab} onChange={(v) => setTab(v as TabKey)} className="mb-3" />
 
         {/* Data-freshness disclaimer: prices come from the last *completed* daily bar,
             not live ticks — so before today's close the figures may be the prior day's. */}
-        <p className="mb-6 flex items-start gap-1.5 text-xs text-muted-foreground">
+        <p className={`mb-6 flex items-start gap-1.5 ${type.meta} text-muted-foreground`}>
           <Info size={12} className="mt-0.5 shrink-0" />
-          <span>漲跌與市值採用最近一個<strong className="font-medium text-foreground/80">完整交易日</strong>的收盤資料，非即時報價；當日尚未收盤結算前，可能顯示前一交易日數據。</span>
+          <span>漲跌採用最近一個<strong className="font-medium text-foreground/80">完整交易日</strong>的收盤資料，非即時報價；當日尚未收盤結算前，可能顯示前一交易日數據。</span>
         </p>
 
-        {tab === 'industry' ? (
-          <>
-            {/* ── BUBBLE CHART ─────────────────────────────────────── */}
-            <div className="mb-7 rounded-xl border border-border bg-card overflow-hidden md:h-[520px]">
-              {industryLoading ? (
-                <div className="w-full h-full animate-pulse bg-muted/30" />
-              ) : industryBubbles.length > 0 ? (
-                <SectorPerformance
-                  variant="embedded"
-                  data={industryBubbles}
-                  yAxisLabel={yAxisLabel}
-                  headerLeft={tfToggle}
-                  onSelectExposure={openExposure}
-                  xHelp="X 軸：市值（成分股總市值加總，台股 FinMind）；Y 軸：近期漲跌；泡泡大小：相關 Podcast 集數（討論度）；顏色：產業別。"
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-sm text-muted-foreground">
-                  尚無產業市值資料
-                </div>
-              )}
+        {/* ── THEME BUBBLE CHART (hero) ─────────────────────────────── */}
+        <div className="flex items-center gap-2 mb-2.5">
+          <SectionIcon icon={<ChartScatter size={15} />} tone="info" />
+          <h2 className={`${type.sectionTitle} font-semibold`}>題材泡泡圖</h2>
+        </div>
+        <div className="mb-7 rounded-xl border border-border bg-card overflow-hidden md:h-[520px]">
+          {perfLoading ? (
+            <div className="w-full h-full animate-pulse bg-muted/30" />
+          ) : themeBubbles.length > 0 ? (
+            <SectorPerformance
+              variant="embedded"
+              data={themeBubbles}
+              xAxisLabel="討論熱度（近 7 日加權，log）"
+              xTickSuffix=""
+              xTooltipLabel="討論熱度"
+              xScaleMode="log"
+              xHelp="X 軸：討論熱度（近 7 日 Podcast 提及加權，半衰期 7 天，越近期權重越高），以 log 尺度顯示以展開低熱度區；Y 軸：近期漲跌；泡泡大小：所選期間聚合成交值；顏色：題材別。"
+              yAxisLabel={yAxisLabel}
+              headerLeft={tfToggle}
+              onSelectExposure={openExposure}
+              radiusTooltipLabel={`${tf}日成交值`}
+              radiusTooltipSuffix="億"
+            />
+          ) : (
+            <div className={`w-full h-full flex items-center justify-center ${type.empty} text-muted-foreground`}>
+              尚無題材熱度資料
             </div>
+          )}
+        </div>
 
-            {/* ── INDUSTRY BOARD ───────────────────────────────────── */}
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-1.5">
-                <BarChart3 size={13} className="text-muted-foreground" />
-                <h2 className="text-sm font-semibold">產業總覽</h2>
-              </div>
-              <SortToggle value={sortKey} onChange={setSortKey} />
-            </div>
-            <BoardGrid loading={loading} items={sortedBoard} empty="目前沒有產業資料。" />
-          </>
-        ) : (
-          <>
-            {/* ── BUBBLE CHART (討論熱度 × 漲跌, sized by 成交值) ───────── */}
-            <div className="mb-7 rounded-xl border border-border bg-card overflow-hidden md:h-[520px]">
-              {themeLoading ? (
-                <div className="w-full h-full animate-pulse bg-muted/30" />
-              ) : themeBubbles.length > 0 ? (
-                <SectorPerformance
-                  variant="embedded"
-                  data={themeBubbles}
-                  xAxisLabel="討論熱度（近 7 日加權）"
-                  xTickSuffix=""
-                  xTooltipLabel="討論熱度"
-                  xHelp="X 軸：討論熱度（近 7 日 Podcast 提及加權，半衰期 7 天，越近期權重越高）；Y 軸：近期漲跌；泡泡大小：當日成交值；顏色：題材別。"
-                  yAxisLabel={yAxisLabel}
-                  headerLeft={tfToggle}
-                  onSelectExposure={openExposure}
-                  radiusTooltipLabel="今日成交值"
-                  radiusTooltipSuffix=" 億"
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-sm text-muted-foreground">
-                  尚無題材熱度資料
-                </div>
-              )}
-            </div>
-
-            {/* ── HERO STRIP ───────────────────────────────────────── */}
-            <div className="mb-7">
-              <div className="flex items-center gap-1.5 mb-2.5">
-                <Flame size={13} className="text-accent-info" />
-                <h2 className="text-sm font-semibold">今日漲幅最強</h2>
-              </div>
-              <div className="flex gap-2.5 overflow-x-auto pb-1 -mx-0.5 px-0.5 scrollbar-none">
-                {loading
-                  ? Array.from({ length: 5 }).map((_, i) => <HeroSkeleton key={i} />)
-                  : heroThemes.length > 0
-                    ? heroThemes.map((s) => <SectorHeroCard key={s.exposure_id} sector={s} />)
-                    : (
-                      <div className="flex-1 bg-card border border-border rounded-xl p-4 text-sm text-muted-foreground text-center">
-                        尚無漲跌幅資料
-                      </div>
-                    )}
-              </div>
-            </div>
-
-            {/* ── THEME BOARD ──────────────────────────────────────── */}
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-1.5">
-                <BarChart3 size={13} className="text-muted-foreground" />
-                <h2 className="text-sm font-semibold">題材總覽</h2>
-              </div>
-              <SortToggle value={sortKey} onChange={setSortKey} />
-            </div>
-            <BoardGrid loading={loading} items={sortedBoard} empty="目前沒有題材資料。" />
-          </>
+        {/* ── THEME BOARD (collapsed to a preview so the tags below stay reachable) ── */}
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <SectionIcon icon={<LayoutGrid size={15} />} tone="info" />
+            <h2 className={`${type.sectionTitle} font-semibold`}>題材總覽</h2>
+          </div>
+          <Segmented options={SORT_OPTIONS} value={sortKey} onChange={setSortKey} />
+        </div>
+        <BoardGrid
+          loading={loading}
+          items={boardExpanded ? sortedThemeBoard : sortedThemeBoard.slice(0, BOARD_PREVIEW)}
+          empty="目前沒有題材資料。"
+          netFlowByExposure={netFlowByExposure}
+        />
+        {!loading && sortedThemeBoard.length > BOARD_PREVIEW && (
+          <ShowAllToggle expanded={boardExpanded} total={sortedThemeBoard.length} unit="題材" onToggle={() => setBoardExpanded((v) => !v)} />
         )}
 
-        {/* ── TAGS (shown under both tabs) ──────────────────────────── */}
+        {/* ── 總經與焦點議題 (macro topics, as cards) ─────────────────── */}
         {tags.length > 0 && (
-          <div className="mt-9">
-            <div className="flex items-center gap-1.5 mb-3">
-              <Hash size={13} className="text-muted-foreground" />
-              <h2 className="text-sm font-semibold">熱門標籤</h2>
+          <>
+            <div className="flex items-center gap-1.5 mt-9 mb-1">
+              <Hash size={iconSize.section} className="text-amber-500" />
+              <h2 className={`${type.sectionTitle} font-semibold`}>總經與焦點議題</h2>
             </div>
+            <p className={`${type.meta} text-muted-foreground mb-3`}>政策與大盤風向，點擊看相關集數。</p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {tags.map((t) => (
+              {(tagsExpanded ? tags : tags.slice(0, BOARD_PREVIEW)).map((t) => (
                 <TagBoardCard key={t.id} tag={t} label={tagLabelFor(t.id, tagLabels)} />
               ))}
             </div>
-          </div>
+            {tags.length > BOARD_PREVIEW && (
+              <ShowAllToggle expanded={tagsExpanded} total={tags.length} unit="議題" onToggle={() => setTagsExpanded((v) => !v)} />
+            )}
+          </>
+        )}
+
+        {/* ── 產業地圖 (secondary market map — preview + toggle) ──────── */}
+        {industryBoard.length > 0 && (
+          <>
+            <div className="flex items-center gap-2 mt-9 mb-1">
+              <SectionIcon icon={<ListTree size={15} />} tone="primary" />
+              <h2 className={`${type.sectionTitle} font-semibold`}>產業地圖</h2>
+              <span className={`${type.meta} text-muted-foreground`}>· 完整市場分類 · {industryBoard.length} 產業</span>
+            </div>
+            <p className={`${type.meta} text-muted-foreground mb-3 max-w-[60ch]`}>
+              台股完整產業分類（個股各歸一類）。題材為跨產業概念，同一檔個股可同時屬於多個題材。
+            </p>
+            <BoardGrid
+              loading={loading}
+              items={industryExpanded ? sortedIndustryBoard : sortedIndustryBoard.slice(0, BOARD_PREVIEW)}
+              empty="目前沒有產業資料。"
+            />
+            {sortedIndustryBoard.length > BOARD_PREVIEW && (
+              <ShowAllToggle expanded={industryExpanded} total={sortedIndustryBoard.length} unit="產業" onToggle={() => setIndustryExpanded((v) => !v)} />
+            )}
+          </>
         )}
       </PageContent>
     </>
   );
 };
 
-function BoardGrid({ loading, items, empty }: { loading: boolean; items: SectorBoardItem[]; empty: string }) {
+function BoardGrid({ loading, items, empty, netFlowByExposure }: {
+  loading: boolean;
+  items: SectorBoardItem[];
+  empty: string;
+  netFlowByExposure?: Record<string, SectorNetFlow>;
+}) {
+  const type = TOPICS_TYPOGRAPHY.className;
   if (loading) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -469,7 +475,7 @@ function BoardGrid({ loading, items, empty }: { loading: boolean; items: SectorB
   }
   if (items.length === 0) {
     return (
-      <div className="bg-card border border-border rounded-xl p-10 text-center text-sm text-muted-foreground">
+      <div className={`bg-card border border-border rounded-xl p-10 text-center ${type.empty} text-muted-foreground`}>
         {empty}
       </div>
     );
@@ -477,7 +483,7 @@ function BoardGrid({ loading, items, empty }: { loading: boolean; items: SectorB
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
       {items.map((s) => (
-        <SectorBoardCard key={s.exposure_id} sector={s} />
+        <SectorBoardCard key={s.exposure_id} sector={s} netFlow={netFlowByExposure?.[s.exposure_id]} />
       ))}
     </div>
   );

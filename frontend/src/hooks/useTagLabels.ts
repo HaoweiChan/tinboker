@@ -28,7 +28,16 @@ const EMPTY_HIDDEN: Set<string> = new Set();
  * episode tag and a snake_case registry slug can never read differently again.
  */
 export function normalizeTagSlug(slug: string): string {
-  return slug.replace(/^#/, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const s = slug.replace(/^#/, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const aliases: Record<string, string> = {
+    datacenters: 'datacenter',
+    earningsreport: 'earnings',
+    electricvehicles: 'ev',
+    electric_vehicles: 'ev',
+    lowearthorbitsatellite: 'leosatellite',
+    mergersandacquisitions: 'mergersacquisitions',
+  };
+  return aliases[s] || s;
 }
 
 function load(): Promise<Labels> {

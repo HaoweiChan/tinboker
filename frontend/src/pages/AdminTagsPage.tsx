@@ -81,22 +81,50 @@ export const AdminTagsPage: React.FC = () => {
 
   useEffect(() => { fetchTags(); }, [fetchTags]);
 
-  // Episodes column sort: off (registered-first default) -> desc -> asc -> off.
-  const [episodeSort, setEpisodeSort] = useState<'desc' | 'asc' | null>(null);
-  const toggleEpisodeSort = () =>
-    setEpisodeSort((s) => (s === null ? 'desc' : s === 'desc' ? 'asc' : null));
+  // Sorting: col can be 'episode' or 'kind'
+  const [sortCol, setSortCol] = useState<'episode' | 'kind' | null>(null);
+  const [sortDir, setSortDir] = useState<'desc' | 'asc'>('desc');
+
+  const handleSort = (col: 'episode' | 'kind') => {
+    if (sortCol !== col) {
+      setSortCol(col);
+      setSortDir(col === 'kind' ? 'asc' : 'desc');
+    } else {
+      if (col === 'episode') {
+        if (sortDir === 'desc') setSortDir('asc');
+        else setSortCol(null);
+      } else {
+        if (sortDir === 'asc') setSortDir('desc');
+        else setSortCol(null);
+      }
+    }
+  };
+
   const displayTags = useMemo(() => {
-    if (!episodeSort) return tags;
-    const dir = episodeSort === 'asc' ? 1 : -1;
+    if (!sortCol) return tags;
+    const dir = sortDir === 'asc' ? 1 : -1;
     return [...tags].sort((a, b) => {
-      const av = a.episode_count, bv = b.episode_count;
-      // Uncounted (virtual "—") rows always sort to the bottom.
-      if (av == null && bv == null) return 0;
-      if (av == null) return 1;
-      if (bv == null) return -1;
-      return (av - bv) * dir;
+      if (sortCol === 'episode') {
+        const av = a.episode_count, bv = b.episode_count;
+        if (av == null && bv == null) return 0;
+        if (av == null) return 1;
+        if (bv == null) return -1;
+        return (av - bv) * dir;
+      } else {
+        const ak = a.kind || '';
+        const bk = b.kind || '';
+        if (ak !== bk) {
+          return ak.localeCompare(bk) * dir;
+        }
+        const aet = a.exposure_type || '';
+        const bet = b.exposure_type || '';
+        if (aet !== bet) {
+          return aet.localeCompare(bet) * dir;
+        }
+        return a.slug.localeCompare(b.slug) * dir;
+      }
     });
-  }, [tags, episodeSort]);
+  }, [tags, sortCol, sortDir]);
 
   const handleToggleTier = async (tag: AdminTagEntry) => {
     try {
@@ -128,6 +156,32 @@ export const AdminTagsPage: React.FC = () => {
       }
     } catch (err) {
       console.error('Failed to update display name:', err);
+    } finally {
+      setEditKey(null);
+    }
+  };
+
+  const handleSaveTickers = async (tag: AdminTagEntry) => {
+    const rawVal = editValue;
+    const tickers = Array.from(new Set(
+      rawVal.split(',')
+        .map(s => s.trim().toUpperCase())
+        .filter(Boolean)
+    ));
+    
+    const existingMap = new Map(tag.members?.map(m => [m.ticker.toUpperCase(), m]) || []);
+    const newMembers = tickers.map(ticker => {
+      const existing = existingMap.get(ticker);
+      if (existing) return existing;
+      return { ticker };
+    });
+
+    try {
+      if (tag.id == null) return;
+      const updated = await updateAdminTag(tag.id, { members: newMembers });
+      setTags((prev) => prev.map((t) => (t.id === tag.id ? { ...t, ...updated } : t)));
+    } catch (err) {
+      console.error('Failed to update sector composite tickers:', err);
     } finally {
       setEditKey(null);
     }
@@ -380,17 +434,28 @@ export const AdminTagsPage: React.FC = () => {
             <tr>
               <th className="px-4 py-3">Slug</th>
               <th className="px-4 py-3">顯示名稱</th>
-              <th className="px-4 py-3">Kind</th>
+              <th className="px-4 py-3">
+                <button
+                  type="button"
+                  onClick={() => handleSort('kind')}
+                  className="inline-flex items-center gap-1 hover:text-foreground"
+                  title="Sort by kind"
+                >
+                  Kind
+                  {sortCol === 'kind' && sortDir === 'desc' && <ChevronDown className="h-3 w-3" />}
+                  {sortCol === 'kind' && sortDir === 'asc' && <ChevronUp className="h-3 w-3" />}
+                </button>
+              </th>
               <th className="px-4 py-3 text-right">
                 <button
                   type="button"
-                  onClick={toggleEpisodeSort}
+                  onClick={() => handleSort('episode')}
                   className="ml-auto inline-flex items-center gap-1 hover:text-foreground"
                   title="Sort by episode count"
                 >
                   Episodes
-                  {episodeSort === 'desc' && <ChevronDown className="h-3 w-3" />}
-                  {episodeSort === 'asc' && <ChevronUp className="h-3 w-3" />}
+                  {sortCol === 'episode' && sortDir === 'desc' && <ChevronDown className="h-3 w-3" />}
+                  {sortCol === 'episode' && sortDir === 'asc' && <ChevronUp className="h-3 w-3" />}
                 </button>
               </th>
               <th className="px-4 py-3">Visibility</th>
@@ -494,8 +559,48 @@ export const AdminTagsPage: React.FC = () => {
                         </button>
                       </div>
                     ) : isSector ? (
-                      // Sector labels come from the pipeline universe — a re-sync overwrites them, so don't edit here.
-                      tag.display_zh
+                      <div>
+                        <div>{tag.display_zh}</div>
+                        {editKey === `tickers:${tag.slug}` ? (
+                          <div className="mt-1.5 flex flex-col gap-1">
+                            <span className="text-[10px] uppercase font-semibold text-muted-foreground">編輯成分股 (以逗號分隔)</span>
+                            <div className="flex items-center gap-1.5">
+                              <input
+                                type="text"
+                                value={editValue}
+                                onChange={(e) => setEditValue(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') handleSaveTickers(tag);
+                                  if (e.key === 'Escape') setEditKey(null);
+                                }}
+                                className="w-full max-w-md rounded border border-input bg-card px-2 py-1 text-xs text-foreground font-mono"
+                                autoFocus
+                                placeholder="e.g. 2330, 2454, AAPL"
+                              />
+                              <button onClick={() => handleSaveTickers(tag)} className="rounded p-1 text-sentiment-bull hover:bg-sentiment-bull-soft" title="Save">
+                                <Check className="h-3.5 w-3.5" />
+                              </button>
+                              <button onClick={() => setEditKey(null)} className="rounded p-1 text-muted-foreground hover:bg-muted" title="Cancel">
+                                <X className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="mt-1 text-xs">
+                            <button
+                              onClick={() => {
+                                setEditKey(`tickers:${tag.slug}`);
+                                setEditValue(tag.members?.map(m => m.ticker).join(', ') || '');
+                              }}
+                              className="group inline-flex items-center gap-1 text-left hover:text-foreground text-muted-foreground"
+                              title="Click to edit composite tickers"
+                            >
+                              <span>成分股: {tag.members?.map(m => m.ticker).join(', ') || '(無)'}</span>
+                              <Pencil className="h-2.5 w-2.5 opacity-0 transition-opacity group-hover:opacity-60" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     ) : (
                       <button
                         onClick={() => { setEditKey(`${tag.kind}:${tag.slug}`); setEditValue(tag.display_zh); }}

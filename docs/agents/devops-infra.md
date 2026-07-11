@@ -65,7 +65,9 @@ Users → Cloudflare Edge (cache + DDoS) → Netcup VPS (152.53.136.182)
 ### Episode-endpoint cache headers (specific values)
 
 - `GET /api/podcast/{name}/episodes/{id}` → `Cache-Control: public, max-age=3600, s-maxage=3600` (1 hour).
-- `GET /api/episodes/recent` → `Cache-Control: public, max-age=300` (5 min).
+- `GET /api/episodes/recent` → CDN `s-maxage=600` (10 min), browser `max-age=120` (2 min),
+  `stale-while-revalidate=300` (5 min), per [`backend/src/routers/episodes.py:27`](../../backend/src/routers/episodes.py)
+  `@cdn_cached(s_maxage=600, max_age=120, stale=300)` (see [`docs/infra-runbook.md`](../infra-runbook.md) § Cache TTLs).
 
 ### Secrets
 

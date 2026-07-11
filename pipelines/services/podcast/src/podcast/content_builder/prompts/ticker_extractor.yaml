@@ -42,6 +42,7 @@ system: |
         e.g. 阿斯麥/ASML→ASML, 安謀/Arm→ARM — is fine: use that letter symbol.)
       • Any symbol containing a space or more than 5 letters (for non-TW tickers)
   - Only extract ticker insights where the podcaster expresses a clear opinion or analysis
+  - A holding disclosure or portfolio-rationale mention (e.g. "我自己有持有...", explaining why a position is sized the way it is) is NOT automatically BULLISH. If the podcaster discloses/explains a holding WITHOUT also making a forward-looking call (an expectation the stock will rise, a catalyst, a price target), use NEUTRAL and state the holding rationale (持倉理由) in bluf_thesis instead of manufacturing a bullish/bearish direction that wasn't actually said
   - Write all natural-language content in Traditional Chinese (zh-TW), including bluf_thesis, reason titles/descriptions, and risk titles/descriptions
   - Sentiment should reflect the overall tone: BULLISH (positive outlook), BEARISH (negative outlook), NEUTRAL (mixed or no clear direction)
   - Sentiment score: 0.0-0.3 (strongly bearish), 0.3-0.45 (bearish), 0.45-0.55 (neutral), 0.55-0.7 (bullish), 0.7-1.0 (strongly bullish)

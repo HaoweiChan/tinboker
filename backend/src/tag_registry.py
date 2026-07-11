@@ -33,18 +33,16 @@ VALID_KINDS = {KIND_TAG, KIND_SECTOR}
 
 # ── Seed data (inserted once when table is empty) ───────────────────
 _SEED: list[tuple[str, str, str]] = [
-    ("advanced_packaging", "先進封裝", TIER_TRENDING),
+    ("advancedpackaging", "先進封裝", TIER_TRENDING),
     ("ai", "AI", TIER_TRENDING),
-    ("ai_chip", "AI 晶片", TIER_TRENDING),
+    ("aichip", "AI 晶片", TIER_TRENDING),
     ("bitcoin", "比特幣", TIER_TRENDING),
-    ("capital_expenditure", "資本支出", TIER_TRENDING),
-    ("centralbanks", "央行", TIER_TRENDING),
-    ("datacenters", "資料中心", TIER_TRENDING),
+    ("capitalexpenditure", "資本支出", TIER_TRENDING),
+    ("centralbank", "央行", TIER_TRENDING),
+    ("datacenter", "資料中心", TIER_TRENDING),
     ("demographics", "人口趨勢", TIER_TRENDING),
     ("digitalassets", "數位資產", TIER_TRENDING),
-    ("earningsreport", "財報", TIER_TRENDING),
-    ("electric_vehicles", "電動車", TIER_TRENDING),
-    ("electricvehicles", "電動車", TIER_TRENDING),
+    ("earnings", "財報", TIER_TRENDING),
     ("etf", "ETF", TIER_HIDDEN),
     ("ev", "電動車", TIER_TRENDING),
     ("federalreserve", "聯準會", TIER_TRENDING),
@@ -55,19 +53,19 @@ _SEED: list[tuple[str, str, str]] = [
     ("interestratepolicy", "利率政策", TIER_TRENDING),
     ("japanmarket", "日本市場", TIER_TRENDING),
     ("labormarket", "就業市場", TIER_TRENDING),
-    ("low_earth_orbit_satellite", "低軌衛星", TIER_TRENDING),
+    ("leosatellite", "低軌衛星", TIER_TRENDING),
     ("marketnarratives", "市場敘事", TIER_TRENDING),
-    ("media_industry", "媒體產業", TIER_TRENDING),
-    ("mergers_and_acquisitions", "併購", TIER_TRENDING),
+    ("mediaindustry", "媒體產業", TIER_TRENDING),
+    ("mergersacquisitions", "併購", TIER_TRENDING),
     ("monetarypolicy", "貨幣政策", TIER_TRENDING),
     ("powersupply", "電力供應", TIER_TRENDING),
     ("privatemarkets", "私募市場", TIER_TRENDING),
     ("semiconductor", "半導體", TIER_TRENDING),
-    ("streaming_services", "串流服務", TIER_TRENDING),
-    ("supply_chain", "供應鏈", TIER_TRENDING),
+    ("streamingservices", "串流服務", TIER_TRENDING),
+    ("supplychain", "供應鏈", TIER_TRENDING),
     ("taiwaneconomy", "台灣經濟", TIER_HIDDEN),
-    ("trade_war", "貿易戰", TIER_TRENDING),
-    ("us_stocks", "美股", TIER_TRENDING),
+    ("tradewar", "貿易戰", TIER_TRENDING),
+    ("usstocks", "美股", TIER_TRENDING),
     ("useconomy", "美國經濟", TIER_TRENDING),
     ("usstockmarket", "美股市場", TIER_TRENDING),
     ("ustreasuries", "美債", TIER_TRENDING),
@@ -97,7 +95,17 @@ def normalize_tag_slug(slug: str) -> str:
     ``pipelines/.../content_builder/tag_vocabulary.py::normalize_tag_slug`` and
     ``frontend/src/hooks/useTagLabels.ts::normalizeTagSlug``.
     """
-    return re.sub(r"[^a-z0-9]", "", (slug or "").lower())
+    s = re.sub(r"[^a-z0-9]", "", (slug or "").lower())
+    # Merge known duplicates/aliases to avoid redundancies
+    aliases = {
+        "datacenters": "datacenter",
+        "earningsreport": "earnings",
+        "electricvehicles": "ev",
+        "electric_vehicles": "ev",
+        "lowearthorbitsatellite": "leosatellite",
+        "mergersandacquisitions": "mergersacquisitions",
+    }
+    return aliases.get(s, s)
 
 
 def normalize_exposure_id(exposure_id: str | None) -> str:
@@ -224,90 +232,106 @@ def consolidate_tag_registry(db: Session) -> int:
 
 
 def sync_sectors(db: Session, sectors: list[dict]) -> int:
-    """Upsert sector/theme exposures into the unified registry. Returns count of NEW rows.
+    """Bootstrap sector/theme rows only when the registry has no sector rows.
 
-    The pipeline universe owns sector identity, members, aliases and visuals; this only
-    maintains the registry INDEX so admins can curate sector visibility alongside tags.
-    Caller supplies the sector list (e.g. ``PodcastService.list_sectors()`` output) so
-    this stays a pure sync DB helper, mirroring ``auto_register``.
-
-    New sectors default to ``trending`` (VISIBLE) so a first sync never empties the live
-    board — admins HIDE the ones they don't want. Existing rows refresh their display
-    name / visuals from the universe but keep their curated ``tier`` untouched.
+    After M2.5 the taxonomy is managed in Postgres through the admin taxonomy API.
+    Startup seed sync must never overwrite DB-authored taxonomy rows again.
     """
-    by_exposure = {
-        r.exposure_id: r
-        for r in db.query(TagRegistry).filter(TagRegistry.kind == KIND_SECTOR).all()
-    }
-    # Hotfix (TKB-009 M2.5 forward-compat): the taxonomy is becoming DB-managed and all
-    # environments share one Postgres. A populated registry must never be overwritten
-    # from this environment's bundled seed — only a completely empty registry gets
-    # bootstrap-seeded. Without this guard, a staging/prod restart stomps the shared
-    # tag_registry with a stale seed.
-    if by_exposure:
-        logger.info(
-            "sync_sectors: registry already has %d sectors — taxonomy is DB-managed, skipping seed sync",
-            len(by_exposure),
-        )
+    existing = db.query(TagRegistry.id).filter(TagRegistry.kind == KIND_SECTOR).first()
+    if existing is not None:
+        logger.info("taxonomy managed in DB; seed sync skipped")
         return 0
+
+    redirects = _seed_sector_redirects()
     new_count = 0
+    logger.warning(
+        "BOOTSTRAP ONLY: tag_registry has no sector rows; seeding %d sectors from fixture",
+        len(sectors),
+    )
     for sector in sectors:
         eid = str(sector.get("exposure_id") or "").strip()
-        if not eid:
+        if not eid or eid in redirects:
             continue
-        display = str(sector.get("display_name") or eid)
-        icon_id = sector.get("icon_id")
-        color_hex = sector.get("color_hex")
-        existing = by_exposure.get(eid)
-        if existing is not None:
-            existing.display_zh = display
-            existing.icon_id = icon_id
-            existing.color_hex = color_hex
-            existing.exposure_type = sector.get("exposure_type")
-            existing.members = sector.get("members")
-            existing.aliases = sector.get("aliases")
-        else:
-            db.add(TagRegistry(
-                slug=eid,  # exposure_id is globally unique (sector_*/theme_* prefixed)
-                display_zh=display,
-                tier=TIER_TRENDING,
-                kind=KIND_SECTOR,
-                exposure_id=eid,
-                icon_id=icon_id,
-                color_hex=color_hex,
-                exposure_type=sector.get("exposure_type"),
-                members=sector.get("members"),
-                aliases=sector.get("aliases"),
-            ))
-            new_count += 1
+        db.add(TagRegistry(
+            slug=eid,
+            display_zh=str(sector.get("display_name") or eid),
+            tier=TIER_TRENDING,
+            kind=KIND_SECTOR,
+            exposure_id=eid,
+            icon_id=sector.get("icon_id"),
+            color_hex=sector.get("color_hex"),
+            description=sector.get("description"),
+            exposure_type=sector.get("exposure_type"),
+            members=sector.get("members"),
+            aliases=sector.get("aliases"),
+            parent_id=sector.get("group"),
+            updated_by="bootstrap:seed",
+        ))
+        new_count += 1
 
-    # Self-heal the theme_ -> sector_ unification: drop superseded ``theme_<id>`` sector
-    # rows once their ``sector_<id>`` equivalent exists, carrying any admin 'hidden'
-    # curation onto the survivor. Idempotent — a no-op once the rename has settled.
-    synced_ids = {str(s.get("exposure_id") or "") for s in sectors}
-    db.flush()  # make rows added above queryable for the survivor lookup
-    removed = 0
-    for row in [r for r in by_exposure.values() if str(r.exposure_id or "").startswith("theme_")]:
-        target = normalize_exposure_id(row.exposure_id)
-        if target not in synced_ids:
-            continue  # the exposure is gone from the universe entirely; leave it
-        if row.tier == TIER_HIDDEN:
-            survivor = (
-                db.query(TagRegistry)
-                .filter(TagRegistry.kind == KIND_SECTOR, TagRegistry.exposure_id == target)
-                .first()
-            )
-            if survivor is not None and survivor.tier != TIER_HIDDEN:
-                survivor.tier = TIER_HIDDEN
-        db.delete(row)
-        removed += 1
+    for old, new in redirects.items():
+        db.add(TagRegistry(
+            slug=old,
+            display_zh=old,
+            tier=TIER_HIDDEN,
+            kind=KIND_SECTOR,
+            exposure_id=old,
+            redirect_to=new,
+            updated_by="bootstrap:seed",
+        ))
 
     db.commit()
-    logger.info(
-        "Synced sectors: %d new, %d refreshed, %d legacy theme_ rows removed",
-        new_count, len(sectors) - new_count, removed,
+    logger.warning(
+        "BOOTSTRAP ONLY: seeded %d sector rows and %d redirect rows from fixture",
+        new_count,
+        len(redirects),
     )
     return new_count
+
+
+def sector_redirects(db: Session | None = None) -> dict[str, str]:
+    """Read exposure redirects from tag_registry.redirect_to.
+
+    The seed fallback is used only for the completely empty bootstrap window.
+    """
+    if db is not None:
+        return _sector_redirects_from_session(db)
+    try:
+        from src.database import postgres
+
+        if postgres.SessionLocal is None:
+            postgres.init_engine()
+        session = postgres.SessionLocal()
+        try:
+            return _sector_redirects_from_session(session)
+        finally:
+            session.close()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("sector_redirects: registry read failed: %s", exc)
+        return {}
+
+
+def _sector_redirects_from_session(db: Session) -> dict[str, str]:
+    rows = db.query(TagRegistry).filter(TagRegistry.kind == KIND_SECTOR).all()
+    if not rows:
+        return _seed_sector_redirects()
+    return {
+        str(row.exposure_id): str(row.redirect_to)
+        for row in rows
+        if row.exposure_id and row.redirect_to
+    }
+
+
+def _seed_sector_redirects() -> dict[str, str]:
+    try:
+        from src.data.sectors_seed import SECTOR_REDIRECTS
+    except Exception:
+        return {}
+    return {str(k): str(v) for k, v in dict(SECTOR_REDIRECTS or {}).items()}
+
+
+def _sector_redirects() -> dict[str, str]:
+    return sector_redirects()
 
 
 def hidden_tag_slugs(db: Session) -> set[str]:
@@ -350,6 +374,35 @@ def hidden_sector_exposure_ids(db: Session) -> set[str]:
         .all()
     )
     return {r[0] for r in rows if r[0]}
+
+
+def served_sector_exposure_ids(db: Session) -> Optional[set[str]]:
+    """Exposure IDs eligible for public serving — ALLOWLIST semantics.
+
+    Since the taxonomy became DB-managed (TKB-009 M2.5), the registry is the source of
+    truth: an exposure that is absent from it (e.g. a hard-DELETEd stale sector) must
+    not be served, even though old episode snapshots still carry it. The previous
+    hidden-only blocklist let deleted rows resurrect on /topics — a deleted row is
+    neither present nor hidden, so it slipped through.
+
+    Serves rows that are not admin-hidden and are not redirect stubs (merged sectors
+    resolve to their canonical target, which has its own row).
+
+    Returns None when the registry has no sector rows at all (bootstrap window before
+    the first seed/import) — callers fall back to hidden-blocklist behavior so the
+    board never silently empties.
+    """
+    rows = (
+        db.query(TagRegistry.exposure_id, TagRegistry.tier, TagRegistry.redirect_to)
+        .filter(TagRegistry.kind == KIND_SECTOR)
+        .all()
+    )
+    if not rows:
+        return None
+    return {
+        eid for (eid, tier, redirect_to) in rows
+        if eid and tier != TIER_HIDDEN and not redirect_to
+    }
 
 
 # ── Public query helpers ─────────────────────────────────────────────

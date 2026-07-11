@@ -70,6 +70,21 @@ def test_build_messages_falls_back_to_cards_when_summary_unsectioned():
     assert "孟恭" in user  # the input summary still passes through as a steer
 
 
+def test_host_nicknames_known_show():
+    assert scw._host_nicknames_for("Gooaye 股癌") == "孟恭、癌大、股癌"
+    assert scw._host_nicknames_for("游庭皓的財經皓角") == "皓哥"
+
+
+def test_host_nicknames_unknown_show_not_fabricated():
+    assert "未提供" in scw._host_nicknames_for("財經一路發")
+    assert "孟恭" not in scw._host_nicknames_for("財經一路發")
+
+
+def test_build_messages_includes_host_nicknames_for_known_show():
+    user = scw.build_messages(_STATE)[1]["content"]
+    assert "孟恭、癌大、股癌" in user
+
+
 def test_prompt_has_no_hardcoded_host_name():
     # Regression: the old prompt example was 「孟恭覺得…」, which leaked the 股癌 host
     # into every show's copy. The prompt must not name any specific host.

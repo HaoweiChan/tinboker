@@ -67,8 +67,16 @@ def _build_clustered(event: dict, sentences_list: list) -> dict | None:
                 end_time = sentence.get("end")
 
     if event_sentences and start_time is not None and end_time is not None:
-        return {"section_topic": section_topic, "sentences": event_sentences,
-                "start": start_time, "end": end_time}
+        return {
+            "section_topic": section_topic,
+            "sentences": event_sentences,
+            "start": start_time,
+            "end": end_time,
+            # Carried through so chapter_consolidator/markdown_transform can render
+            # a deterministic Q&A heading — previously dropped here, which is why
+            # no downstream code could recover the segment type at all (see A5).
+            "segment_type": event.get("segment_type") or "unknown",
+        }
     return None
 
 

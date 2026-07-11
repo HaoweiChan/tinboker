@@ -36,6 +36,10 @@ class GCPSecretManagerSource(PydanticBaseSettingsSource):
             logger.debug("GCP_PROJECT_ID not set, skipping Secret Manager loading")
             return {}
 
+        if not secretmanager:
+            logger.warning("google-cloud-secret-manager is not installed, skipping GCP Secret Manager loading")
+            return {}
+
         try:
             client = secretmanager.SecretManagerServiceClient()
             secrets = {}

@@ -278,8 +278,8 @@ export const SectorBubbleDataSchema = z.object({
   label: z.string().optional(),
   value: z.number(),
   marketCap: z.number().optional(),
-  return: z.number(),
-  returnRate: z.number().optional(),
+  return: z.number().nullable(),
+  returnRate: z.number().nullable().optional(),
   volume: z.number().optional(),
 });
 
@@ -317,6 +317,24 @@ export type TreeMapItem = {
   price?: string;
   children?: TreeMapItem[];
 };
+
+export const SectorByTickerItemSchema = z.object({
+  exposure_id: z.string(),
+  exposure_type: z.string(),
+  display_name: z.string(),
+  icon_id: z.string().nullable().optional(),
+  color_hex: z.string().nullable().optional(),
+  group: z.string().nullable().optional(),
+  reason: z.string().nullable().transform((value) => value ?? ''),
+  description: z.string().nullable().optional(),
+});
+
+export const SectorsByTickerResponseSchema = z.object({
+  items: z.array(SectorByTickerItemSchema),
+});
+
+export type SectorByTickerItem = z.infer<typeof SectorByTickerItemSchema>;
+export type SectorsByTickerResponse = z.infer<typeof SectorsByTickerResponseSchema>;
 
 // ============================================
 // Interactive Model Schemas
@@ -494,4 +512,3 @@ export function parseResponse<T>(schema: z.ZodType<T>, data: unknown): T {
     throw error;
   }
 }
-

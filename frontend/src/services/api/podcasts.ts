@@ -534,6 +534,7 @@ export interface SectorListItem {
   exposure_type: string;
   icon_id?: string | null;   // lucide icon name from the compiled universe
   color_hex?: string | null; // accent color
+  description?: string | null;
   count: number;
 }
 
@@ -570,40 +571,28 @@ export async function getSectorBoard(): Promise<SectorBoardItem[]> {
   return Array.isArray(d.sectors) ? d.sectors : [];
 }
 
-/** Industry (exposure_type='sector') performance for the /topics 產業 bubble chart.
- *  market_cap_twd is aggregate constituent market cap in NT$ (TW-only via FinMind). */
-export interface IndustryPerformanceItem {
+/** Unified theme + industry performance for the /topics bubble charts.
+ *  heat is the shared X axis; split by exposure_type for the theme vs industry views.
+ *  market_cap_twd is populated for industries only. */
+export interface ExposurePerformanceItem {
   exposure_id: string;
-  display_name: string;
-  color_hex?: string | null;
-  market_cap_twd: number | null;
-  return_pct: number | null;
-  episode_count: number;
-}
-
-export async function getIndustryPerformance(): Promise<IndustryPerformanceItem[]> {
-  const response = await apiClient.get('/api/sectors/industry-performance');
-  const d = response.data ?? {};
-  return Array.isArray(d.industries) ? d.industries : [];
-}
-
-/** Theme (exposure_type='theme') performance for the /topics 題材 bubble chart.
- *  Themes use hotness + money-flow dimensions: X = episode_count, Y = return_pct,
- *  bubble = trading_value_twd (aggregate constituent daily trade value, NT$, TW-only). */
-export interface ThemePerformanceItem {
-  exposure_id: string;
+  exposure_type: string;
   display_name: string;
   color_hex?: string | null;
   episode_count: number;
-  heat: number | null; // recency-weighted discussion (X axis)
+  heat?: number | null; // recency-weighted discussion (X axis)
   return_pct: number | null;
-  trading_value_twd: number | null;
+  market_cap_twd?: number | null; // industries only
+  trading_value_twd?: number | null;
+  trading_value_windows_twd?: Record<string, number> | null;
+  net_buy_windows_twd?: Record<string, number> | null;     // 三大法人 net by window (NT$, TW only)
+  foreign_net_windows_twd?: Record<string, number> | null; // 外資 net by window (NT$, TW only)
 }
 
-export async function getThemePerformance(): Promise<ThemePerformanceItem[]> {
-  const response = await apiClient.get('/api/sectors/theme-performance');
+export async function getExposurePerformance(): Promise<ExposurePerformanceItem[]> {
+  const response = await apiClient.get('/api/sectors/performance');
   const d = response.data ?? {};
-  return Array.isArray(d.themes) ? d.themes : [];
+  return Array.isArray(d.exposures) ? d.exposures : [];
 }
 
 /** Trailing close-to-close performance for a ticker over fixed windows. */
@@ -623,7 +612,11 @@ export async function getBatchPricesTrailing(
 ): Promise<Record<string, TrailingPerf>> {
   const unique = [...new Set(tickers.map((t) => t.toUpperCase()))];
   if (!unique.length) return {};
-  const response = await apiClient.post('/api/stocks/batch-prices-trailing', { tickers: unique });
+  const response = await apiClient.post(
+    '/api/stocks/batch-prices-trailing',
+    { tickers: unique },
+    { timeout: 120000 },
+  );
   return response.data && typeof response.data === 'object' ? response.data : {};
 }
 
@@ -633,6 +626,7 @@ export interface EpisodesBySectorResponse {
   exposure_type: string;
   icon_id?: string | null;   // lucide icon name from the compiled universe
   color_hex?: string | null; // accent color
+  description?: string | null;
   resolved_tickers: SectorResolvedTicker[];
   episodes: Episode[];
   total: number;
@@ -654,6 +648,7 @@ export async function getEpisodesBySector(
     exposure_type: d.exposure_type ?? 'sector',
     icon_id: d.icon_id ?? null,
     color_hex: d.color_hex ?? null,
+    description: d.description ?? null,
     resolved_tickers: Array.isArray(d.resolved_tickers) ? d.resolved_tickers : [],
     episodes: Array.isArray(d.episodes) ? d.episodes : [],
     total: typeof d.total === 'number' ? d.total : 0,

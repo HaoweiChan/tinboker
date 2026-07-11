@@ -4,6 +4,7 @@ pytest==7.4.3
 pytest-asyncio>=0.21.0
 
 FinMind
+yfinance>=0.2.66
 tqdm
 fastapi==0.104.1
 uvicorn[standard]==0.24.0

@@ -30,7 +30,8 @@ Branch conventions:
 6. Merge to `main` → auto-deploys to staging.
 7. Verify on staging.
 8. **Update the in-app "What's new" changelog** for the version you're about to cut — see [In-app changelog](#in-app-changelog-whats-new). Commit it to `main` before tagging so prod ships with it.
-9. Cut release: `git tag v1.x.0 && git push --tags`.
+9. Cut release: `git tag vX.Y.Z origin/main && git push origin vX.Y.Z` (push the single
+   tag — never `git push --tags`, which publishes every local tag).
 10. Tag push → auto-deploys to `tinboker.com` + `api.tinboker.com`.
 
 ## In-app changelog (What's new)
@@ -102,6 +103,8 @@ After every deploy, in order:
 3. **Image tag was applied:** the GHCR image for the merged commit is listed and the container is using it (`docker inspect --format='{{.Config.Image}}' ...`).
 4. **Pre-prod additional check:** run the smoke suite from [`qa-flow.md`](./qa-flow.md) against the staging URL.
 5. **Post-prod:** repeat steps 1–3 against `api.tinboker.com`, plus a manual sanity click on `tinboker.com` (landing, stock page, search).
+6. **Monitor both CI runs to green** — `Frontend Deploy to Cloudflare Pages` and `Backend Build & Deploy` — before declaring the release done. Don't stop at one going green.
+7. **CDN purge is automatic** — both pipelines auto-purge the Cloudflare CDN after deploy, so no manual purge is needed for code deploys. For ad-hoc content/data-only changes (no code deploy), use the manual purge recipe in [`infra-runbook.md`](../infra-runbook.md) §1.4a.
 
 ## Allowed read-only VPS commands
 
@@ -128,6 +131,16 @@ There is no automated rollback. Before each prod deploy:
    PROD_IMAGE_TAG=<previous-tag> docker compose -f docker-compose.multi.yml pull backend-prod
    PROD_IMAGE_TAG=<previous-tag> docker compose -f docker-compose.multi.yml up -d --no-deps backend-prod
    ```
+
+### Tag rollback (prod actually down after a `v*` tag deploy)
+
+**First verify prod directly** — `curl https://api.tinboker.com/health` — because CI can
+report a failure while prod is actually healthy (false alarm). Only if prod is genuinely
+down: delete the tag and fix forward before re-tagging, rather than re-pushing the same tag:
+
+```bash
+git push origin :refs/tags/vX.Y.Z && git tag -d vX.Y.Z
+```
 
 ## Pre-merge-to-main checklist
 

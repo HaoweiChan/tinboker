@@ -59,8 +59,12 @@ STEP_TICKER = "ticker_extractor"
 STEP_MARP = "marp_writer"
 STEP_TICKER_MARP = "ticker_marp_writer"
 
-REQUIRED_STEPS = [STEP_EXTRACTOR, STEP_WRITER, STEP_KEY_INSIGHTS, STEP_TICKER]
-OPTIONAL_STEPS = [STEP_MARP, STEP_TICKER_MARP]
+# marp_writer is REQUIRED: a regen that rewrites the summary but skips the slides
+# leaves the on-page deck describing the OLD content (EP677 incident, 2026-07-08).
+# ticker_marp stays optional because the ticker deck is rebuilt deterministically
+# by the ticker_extractor glue (see _apply) — no agent round-trip needed.
+REQUIRED_STEPS = [STEP_EXTRACTOR, STEP_WRITER, STEP_KEY_INSIGHTS, STEP_TICKER, STEP_MARP]
+OPTIONAL_STEPS = [STEP_TICKER_MARP]
 ALL_STEPS = REQUIRED_STEPS + OPTIONAL_STEPS
 
 # Forgiving aliases so the agent can say "key_insights_extractor", "slides", etc.
@@ -104,7 +108,7 @@ _STEP_HINT = {
     STEP_KEY_INSIGHTS: "Extract 3-8 plain-text zh-TW key insights from the summary. Return {\"key_insights\": [...]} (most important first, no markdown/links).",
     STEP_TICKER: "Extract ticker sentiment. Return {\"ticker_recommendations\": [{ticker, sentiment, sentiment_score, time_horizon, bluf_thesis, reasons, risks}, ...]} (keep the legacy key name).",
     STEP_MARP: "Generate episode slide data. Return {title, slides:[{heading, bullet_points, start_time, slide_notes}, ...]}.",
-    STEP_TICKER_MARP: "Rebuild the ticker deck (overview grid + focus analysis). Built deterministically from the ticker step — submit {} to trigger; any slide data is ignored.",
+    STEP_TICKER_MARP: "Re-trigger the ticker deck rebuild. The ticker_extractor step already rebuilds it automatically; submit {} only to force a refresh — any slide data is ignored.",
 }
 
 
@@ -324,6 +328,19 @@ def _apply(step: str, output: Any, state: dict[str, Any]) -> list[str]:
         state.update(key_insights_extractor.postprocess(output, state))
     elif step == STEP_TICKER:
         state.update(ticker_extractor.postprocess(output, state))
+        # Re-derive sector exposures now that ticker_insights exists: the live graph
+        # runs derive_sector_exposures AFTER extract_tickers (commit e435237) so
+        # exposures whose constituents overlap the episode's actually-mentioned
+        # tickers are auto-approved instead of relying on the LLM verifier alone.
+        # The extractor-step pass above ran before tickers existed (verifier-only,
+        # which over-drops e.g. foundry/HBM); this refines it to match live fidelity.
+        state.update(derive_sector_exposures(state))
+        # The ticker deck is deterministic from ticker_insights (same as the live
+        # graph's extract_tickers -> convert_marp_ticker edge) — rebuild it here so a
+        # commit after this step can never carry a stale ticker deck.
+        # ponytail: if ticker runs before writer, related_tickers isn't derived yet
+        # and canonicalization is skipped; resubmit ticker (or ticker_marp) to refresh.
+        state.update(convert_marp_ticker(state))
     elif step == STEP_MARP:
         state.update(marp_writer.postprocess(output, state))
         state.update(convert_marp(state))
@@ -404,7 +421,13 @@ def _assemble(draft: dict[str, Any]) -> dict[str, Any]:
 
     if STEP_WRITER in completed:
         payload["summary_content"] = state.get("markdown_report", "")
-        payload["tags"] = state.get("tags", [])
+        # Same tag↔sector dedup as run_pipeline's assembly (graph.py) — done here,
+        # not in derive_tags_tickers, because sector exposures are re-derived after
+        # the writer step (STEP_TICKER re-runs derive_sector_exposures).
+        from ..content_builder.nodes.tags_tickers import dedup_tags_against_sectors
+        payload["tags"] = dedup_tags_against_sectors(
+            state.get("tags", []), state.get("sector_exposures", [])
+        )
         related_tickers = state.get("related_tickers", [])
         if STEP_TICKER in completed and not related_tickers:
             from src.podcast.exporters.ticker_insights import iter_insight_tickers
@@ -431,7 +454,9 @@ def _assemble(draft: dict[str, Any]) -> dict[str, Any]:
         payload["marp_markdown"] = state.get("marp_markdown", "")
         if STEP_KEY_INSIGHTS in completed:
             payload["social_cards"] = build_social_cards(state).get("social_cards", [])
-    if STEP_TICKER_MARP in completed:
+    # The ticker deck is rebuilt by the ticker step's glue (and by the explicit
+    # re-trigger step), so either completion means the state's deck is fresh.
+    if STEP_TICKER in completed or STEP_TICKER_MARP in completed:
         payload["ticker_marp_markdown"] = state.get("ticker_marp_markdown", "")
 
     return payload
@@ -777,6 +802,14 @@ def commit(
     payload = _assemble(draft)
     if not _doc_update(payload) and not payload.get("ticker_insights"):
         raise RegenError("Nothing to commit — no steps have been submitted yet.")
+    # Hard slide-freshness guard: a new summary with the old deck is exactly the
+    # EP677 incident. Partial regens that don't touch the writer stay allowed.
+    if STEP_WRITER in draft["completed"] and STEP_MARP not in draft["completed"]:
+        raise RegenError(
+            "The writer step was regenerated but marp_writer was not — committing "
+            "would leave the episode slides describing the OLD summary. Submit "
+            "'marp_writer' first (get_role_prompt(episode_id, 'marp_writer'))."
+        )
 
     report: dict[str, Any] = {"episode_id": episode_id, "warnings": []}
     fs = _firestore()

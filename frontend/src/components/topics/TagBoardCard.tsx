@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Hash } from 'lucide-react';
 import { SimpleSparkline } from '@/components/charts/SimpleSparkline';
 import type { TrendingTag } from '@/services/api/podcasts';
+import { TOPICS_TYPOGRAPHY } from './topicsTypography';
 
 // Tag identity is amber across the app (sectors are individually colored), so the
 // hash chip + discussion-trend sparkline use amber to read as a tag, not a sector.
@@ -21,6 +22,7 @@ interface TagBoardCardProps {
  */
 export const TagBoardCard: React.FC<TagBoardCardProps> = ({ tag, label }) => {
   const episodes = tag.recent_episodes.slice(0, 4);
+  const type = TOPICS_TYPOGRAPHY.className;
   // weekly_counts is most-recent-first from the API; reverse to read old→new like
   // the member sparklines elsewhere on the page.
   const weekly = Array.isArray(tag.weekly_counts) ? [...tag.weekly_counts].reverse() : [];
@@ -46,11 +48,11 @@ export const TagBoardCard: React.FC<TagBoardCardProps> = ({ tag, label }) => {
             >
               <Hash size={13} />
             </span>
-            <span className="text-2xs font-medium text-muted-foreground bg-muted/60 px-1.5 py-0.5 rounded leading-none shrink-0">
+            <span className={`${type.micro} font-medium text-muted-foreground bg-muted/60 px-1.5 py-0.5 rounded leading-none shrink-0`}>
               標籤
             </span>
           </div>
-          <span className="text-lg font-semibold tracking-[-0.01em] group-hover:text-foreground/80 transition-colors leading-snug block truncate">
+          <span className={`${type.cardTitle} font-semibold tracking-[-0.01em] group-hover:text-foreground/80 transition-colors leading-snug block truncate`}>
             #{label}
           </span>
         </div>
@@ -68,7 +70,7 @@ export const TagBoardCard: React.FC<TagBoardCardProps> = ({ tag, label }) => {
               className="opacity-70"
             />
           )}
-          <span className="text-xs text-muted-foreground font-mono tabular-nums">
+          <span className={`${type.meta} text-muted-foreground font-mono tabular-nums`}>
             {tag.scoped_count} 集
           </span>
         </div>
@@ -83,10 +85,10 @@ export const TagBoardCard: React.FC<TagBoardCardProps> = ({ tag, label }) => {
               to={`/episode/${encodeURIComponent(ep.id)}${ep.podcast_name ? `?podcast=${encodeURIComponent(ep.podcast_name)}` : ''}`}
               className="group/row flex items-center gap-3 py-2 first:pt-0 last:pb-0 -mx-1 px-1 rounded transition-colors hover:bg-muted/40"
             >
-              <span className="text-2xs text-foreground/80 truncate flex-1 min-w-0 leading-snug group-hover/row:text-accent-info transition-colors">
+              <span className={`${type.micro} text-foreground/80 truncate flex-1 min-w-0 leading-snug group-hover/row:text-accent-info transition-colors`}>
                 {ep.title || '(無標題)'}
               </span>
-              <span className="text-2xs text-muted-foreground truncate max-w-[40%] shrink-0 leading-none">
+              <span className={`${type.micro} text-muted-foreground truncate max-w-[40%] shrink-0 leading-none`}>
                 {ep.podcast_name}
               </span>
             </Link>

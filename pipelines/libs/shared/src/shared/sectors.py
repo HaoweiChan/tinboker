@@ -7,6 +7,7 @@ endpoints, Tavily, or scraping code. Maintenance jobs refresh the artifact.
 
 from __future__ import annotations
 
+import logging
 import re
 import unicodedata
 from dataclasses import dataclass
@@ -14,6 +15,8 @@ from functools import lru_cache
 from typing import Any, Iterable
 
 from shared.platform_client import fetch_sectors_universe
+
+logger = logging.getLogger(__name__)
 
 _CJK_RE = re.compile(r"[\u3400-\u9fff]")
 _LATIN_WORD_RE = re.compile(r"[a-z0-9][a-z0-9+.-]{1,12}")
@@ -62,6 +65,14 @@ class ExposureMatch:
     normalized_alias: str
     start: int
     end: int
+
+
+class LiveUniverseRequiredError(RuntimeError):
+    """Raised when an operator run forbids stale backup taxonomy fallback."""
+
+
+class _LiveUniverseUnavailableError(RuntimeError):
+    """Internal signal for live misses that must not be cached."""
 
 
 def normalize_text(text: str) -> str:
@@ -128,11 +139,47 @@ def _clean_member(member: dict[str, Any]) -> dict[str, Any]:
 def _universe() -> dict[str, Any]:
     universe_data = fetch_sectors_universe()
     if not universe_data:
-        from shared.sectors_seed_backup import SECTORS_SEED
-        universe_data = {
-            "max_tickers": DEFAULT_MAX_TICKERS,
-            "exposures": SECTORS_SEED,
-        }
+        raise _LiveUniverseUnavailableError
+    return _normalize_universe(universe_data)
+
+
+def load_universe(*, require_live_universe: bool = False) -> dict[str, Any]:
+    """Load the sector universe, optionally refusing the stale backup fallback."""
+    try:
+        return _universe()
+    except _LiveUniverseUnavailableError as exc:
+        if require_live_universe:
+            raise LiveUniverseRequiredError(
+                "Live sector taxonomy universe is unavailable; refusing stale backup fallback."
+            ) from exc
+        return _normalize_universe(_backup_universe_data())
+
+
+def current_exposure_ids(*, require_live_universe: bool = False) -> set[str]:
+    """Current normalized exposure ids from the same live-first universe as resolver."""
+    return {
+        normalize_exposure_id(exposure.get("exposure_id"))
+        for exposure in load_universe(require_live_universe=require_live_universe)["exposures"]
+        if exposure.get("exposure_id")
+    }
+
+
+def _backup_universe_data() -> dict[str, Any]:
+    from shared import sectors_seed_backup
+
+    backup_path = getattr(sectors_seed_backup, "__file__", "shared/sectors_seed_backup.py")
+    logger.warning(
+        "Using stale emergency sector taxonomy backup file %s; truth is the platform "
+        "API /api/sectors/universe, and episode backfills may write stale snapshots.",
+        backup_path,
+    )
+    return {
+        "max_tickers": DEFAULT_MAX_TICKERS,
+        "exposures": sectors_seed_backup.SECTORS_SEED,
+    }
+
+
+def _normalize_universe(universe_data: dict[str, Any]) -> dict[str, Any]:
     max_tickers = int(universe_data.get("max_tickers") or DEFAULT_MAX_TICKERS)
     exposures = []
     for item in universe_data.get("exposures") or []:
@@ -150,8 +197,12 @@ def _alias_index() -> list[tuple[str, str, dict[str, Any]]]:
     Multiple exposures may share one alias; all are retained, which gives the
     many-to-many alias behavior required by the extraction plan.
     """
+    return _alias_index_for_universe(_universe())
+
+
+def _alias_index_for_universe(universe: dict[str, Any]) -> list[tuple[str, str, dict[str, Any]]]:
     rows: list[tuple[str, str, dict[str, Any]]] = []
-    for exposure in _universe()["exposures"]:
+    for exposure in universe["exposures"]:
         aliases = exposure.get("aliases") or []
         for alias in aliases:
             for variant in _english_variants(str(alias)):
@@ -165,14 +216,28 @@ def _overlaps(span: tuple[int, int], spans: Iterable[tuple[int, int]]) -> bool:
     return any(start < used_end and end > used_start for used_start, used_end in spans)
 
 
-def find_exposure_matches(text: str) -> list[ExposureMatch]:
+def find_exposure_matches(text: str, *, require_live_universe: bool = False) -> list[ExposureMatch]:
     """Find sector/theme aliases using longest-match-first string matching."""
+    if require_live_universe:
+        alias_rows = _alias_index_for_universe(load_universe(require_live_universe=True))
+    else:
+        try:
+            alias_rows = _alias_index()
+        except _LiveUniverseUnavailableError:
+            alias_rows = _alias_index_for_universe(load_universe())
+    return _find_exposure_matches_from_alias_rows(text, alias_rows)
+
+
+def _find_exposure_matches_from_alias_rows(
+    text: str,
+    alias_rows: list[tuple[str, str, dict[str, Any]]],
+) -> list[ExposureMatch]:
     normalized = normalize_text(text)
     if not normalized:
         return []
     used_spans: list[tuple[int, int]] = []
     matches: list[ExposureMatch] = []
-    for norm_alias, raw_alias, exposure in _alias_index():
+    for norm_alias, raw_alias, exposure in alias_rows:
         if not norm_alias:
             continue
         if _CJK_RE.search(norm_alias):
@@ -211,9 +276,14 @@ def normalize_exposure_id(exposure_id: str | None) -> str:
     return "sector_" + s[len("theme_"):] if s.startswith("theme_") else s
 
 
-def _exposure_payload(match: ExposureMatch, *, max_tickers: int | None = None) -> dict[str, Any]:
+def _exposure_payload(
+    match: ExposureMatch,
+    *,
+    max_tickers: int | None = None,
+    require_live_universe: bool = False,
+) -> dict[str, Any]:
     exposure = match.exposure
-    cap = max_tickers or _universe()["max_tickers"]
+    cap = max_tickers or load_universe(require_live_universe=require_live_universe)["max_tickers"]
     members = exposure.get("members") or []
     return {
         "exposure_id": normalize_exposure_id(exposure.get("exposure_id")),
@@ -228,13 +298,27 @@ def _exposure_payload(match: ExposureMatch, *, max_tickers: int | None = None) -
     }
 
 
-def resolve_text(text: str, *, max_tickers: int | None = None) -> dict[str, list[dict[str, Any]]]:
+def resolve_text(
+    text: str,
+    *,
+    max_tickers: int | None = None,
+    require_live_universe: bool = False,
+) -> dict[str, list[dict[str, Any]]]:
     """Resolve known exposures and emit credible unresolved market trends."""
-    matches = find_exposure_matches(text)
+    universe = load_universe(require_live_universe=True) if require_live_universe else None
+    matches = (
+        _find_exposure_matches_from_alias_rows(text, _alias_index_for_universe(universe))
+        if universe
+        else find_exposure_matches(text)
+    )
+    ticker_cap = max_tickers or (universe or load_universe())["max_tickers"]
     exposures: list[dict[str, Any]] = []
     seen: set[str] = set()
     for match in matches:
-        payload = _exposure_payload(match, max_tickers=max_tickers)
+        payload = _exposure_payload(
+            match,
+            max_tickers=ticker_cap,
+        )
         exposure_id = str(payload.get("exposure_id") or "")
         if exposure_id and exposure_id not in seen:
             seen.add(exposure_id)

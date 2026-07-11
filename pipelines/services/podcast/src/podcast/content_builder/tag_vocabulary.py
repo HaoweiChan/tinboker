@@ -1,22 +1,26 @@
 """Canonical tag vocabulary: ASCII slug (the clustering join key) → zh-TW display.
 
-**Single source of truth.** The slug→zh-TW catalogue lives in the sibling data
-file ``tag_vocabulary.json`` (next to this module). This module is the only place
-that hand-edits it conceptually, but the *data* is the JSON — so the backend can
-consume the exact same bytes without re-typing the table. See
-``docs/tag-vocabulary-source-of-truth.md`` for the full design.
+**Single source of truth — as actually loaded at runtime.** The slug→zh-TW
+catalogue lives in ``pipelines/libs/shared/src/shared/tag_vocabulary_seed_backup.py``
+(``TAG_VOCABULARY_SEED``), imported below. (The docstring here used to point at a
+sibling ``tag_vocabulary.json`` data file and a ``scripts/sync_tag_vocabulary.py``
+JSON-mirroring script — that JSON file does not exist on this branch; ignore any
+reference to it. The real drift guard is
+``pipelines/services/podcast/tests/unit/test_tag_vocabulary_sync.py`` /
+``backend/tests/unit/test_tag_vocabulary_sync.py``, which fail if
+``tag_vocabulary_seed_backup.py`` and its backend mirror
+``backend/src/data/tag_vocabulary_seed.py`` disagree — edit BOTH files together.)
 
 **Extraction-side vocabulary.** Injected into the writer prompt so the LLM maps
 concepts to KNOWN slugs instead of inventing per-episode phrasings. Extraction
-lowercases slugs (``#tag:Semiconductor`` → ``semiconductor``); lookups go through
+lowercases slugs (``#tag:SupplyChain`` → ``supplychain``); lookups go through
 ``normalize_tag_slug`` so case AND separators (``Supply_Chain``/``SupplyChain``/
 ``supplychain``) all reconcile to one key.
 
-**Adding a tag:** edit ``tag_vocabulary.json`` only, then run
-``python scripts/sync_tag_vocabulary.py`` to refresh the backend mirror
-(``backend/src/data/tag_vocabulary.json``). A drift test in BOTH the pipelines and
-backend CI suites fails if the two files disagree, so the website can never again
-render a new tag in English because someone forgot to sync the backend.
+**Adding a tag:** edit ``tag_vocabulary_seed_backup.py`` AND
+``backend/src/data/tag_vocabulary_seed.py`` together (same dict, kept manually in
+sync — the drift test above fails CI if they diverge), so the website never again
+renders a new tag in English because someone forgot to sync the backend.
 
 The **display-side gate** (which extracted tags appear in trending vs. hidden)
 lives in ``backend/src/tag_registry.py`` (the DB-backed ``tag_registry`` table,
@@ -48,7 +52,17 @@ def normalize_tag_slug(slug: str) -> str:
     frontend (see ``frontend/src/hooks/useTagLabels.ts``). Keep the three
     implementations in sync.
     """
-    return re.sub(r"[^a-z0-9]", "", (slug or "").lower())
+    s = re.sub(r"[^a-z0-9]", "", (slug or "").lower())
+    # Merge known duplicates/aliases to avoid redundancies
+    aliases = {
+        "datacenters": "datacenter",
+        "earningsreport": "earnings",
+        "electricvehicles": "ev",
+        "electric_vehicles": "ev",
+        "lowearthorbitsatellite": "leosatellite",
+        "mergersandacquisitions": "mergersacquisitions",
+    }
+    return aliases.get(s, s)
 
 
 # Normalized-slug -> display, for case/separator-insensitive lookup against extracted tags.

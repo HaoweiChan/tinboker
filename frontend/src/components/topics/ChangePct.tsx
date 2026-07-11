@@ -1,10 +1,11 @@
 import React from 'react';
 import { ArrowUpRight, ArrowDownRight, Minus } from 'lucide-react';
 import { useStockTrendColor } from '@/hooks/useStockTrendColor';
+import { TOPICS_TYPOGRAPHY } from './topicsTypography';
 
 interface ChangePctProps {
   value: number | null;
-  /** text size class, e.g. 'text-2xs' */
+  /** text size token class from topicsTypography */
   sizeClass?: string;
   /** extra className on the wrapper span */
   className?: string;
@@ -20,7 +21,7 @@ interface ChangePctProps {
  */
 export const ChangePct: React.FC<ChangePctProps> = ({
   value,
-  sizeClass = 'text-2xs',
+  sizeClass = TOPICS_TYPOGRAPHY.className.micro,
   className = '',
   showArrow = false,
   skeleton = false,

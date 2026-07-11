@@ -13,7 +13,11 @@ from typing import Any, Optional
 
 from ..card_deck import build_inline_deck_markdown
 from ..state import PipelineState
-from .social_cards_builder import assemble_social_cards, cards_from_ticker_insights
+from .social_cards_builder import (
+    assemble_social_cards,
+    canonical_ticker_set,
+    cards_from_ticker_insights,
+)
 
 
 def _date_str(state: PipelineState) -> str:
@@ -51,6 +55,7 @@ def convert_marp_ticker(state: PipelineState) -> dict[str, Any]:
     cards = cards_from_ticker_insights(
         state.get("ticker_insights") or {},
         state.get("episode_title") or "",
+        canonical_ticker_set(state.get("related_tickers")),
     )
     if not cards:
         return {"ticker_marp_markdown": ""}

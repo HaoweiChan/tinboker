@@ -93,7 +93,6 @@ def build_graph() -> StateGraph:
     graph.add_edge("cluster_sentences", "consolidate_chapters")
     graph.add_edge("cluster_sentences", "write_marp_slides")
     graph.add_edge("cluster_sentences", "extract_tickers")
-    graph.add_edge("cluster_sentences", "derive_sector_exposures")
     graph.add_edge("consolidate_chapters", "write_article")
 
     # Article branch (markdown → tags/tickers → key_insights, from the finished summary)
@@ -101,8 +100,12 @@ def build_graph() -> StateGraph:
     graph.add_edge("transform_to_markdown", "derive_tags_tickers")
     graph.add_edge("derive_tags_tickers", "extract_key_insights")
 
-    # Marp branch
+    # Marp branch. convert_marp also joins on derive_tags_tickers so the canonical
+    # related_tickers exist in state before the deck's ticker cards are filtered to
+    # them (page-consistent) — without this edge convert_marp runs first and the
+    # filter no-ops. No latency cost: build_social_cards already waits on that chain.
     graph.add_edge("write_marp_slides", "convert_marp")
+    graph.add_edge("derive_tags_tickers", "convert_marp")
 
     # Join: the unified carousel needs the marp slides, the key insights AND the
     # ticker insights (for the overview grid + analysis cards), so build_social_cards
@@ -114,12 +117,16 @@ def build_graph() -> StateGraph:
     graph.add_edge("build_social_cards", "write_social_copy")
     graph.add_edge("write_social_copy", END)
 
-    # Deterministic exposure branch (separate from direct ticker extraction).
+    # Deterministic exposure branch runs after ticker extraction so it has access
+    # to the validated ticker insights for cross-filtering.
+    graph.add_edge("extract_tickers", "derive_sector_exposures")
     graph.add_edge("derive_sector_exposures", END)
 
     # Ticker branch — the deck is now built deterministically from ticker_insights
-    # (overview grid + focus-analysis cards), so no LLM marp step in between.
+    # (overview grid + focus-analysis cards), so no LLM marp step in between. Also
+    # joins on derive_tags_tickers so its cards filter to the canonical related_tickers.
     graph.add_edge("extract_tickers", "convert_marp_ticker")
+    graph.add_edge("derive_tags_tickers", "convert_marp_ticker")
     graph.add_edge("convert_marp_ticker", END)
 
     return graph.compile()
@@ -164,6 +171,14 @@ def run_pipeline(
         from src.podcast.exporters.ticker_insights import iter_insight_tickers
         related_tickers = sorted(set(iter_insight_tickers(ticker_insights)))
 
+    # Tags duplicating a fired sector are redundant on the episode page — the
+    # sector chip already covers the concept (dedup at assembly because the tags
+    # and sector branches run in parallel inside the graph).
+    from .nodes.tags_tickers import dedup_tags_against_sectors
+    tags = dedup_tags_against_sectors(
+        result.get("tags", []), result.get("sector_exposures", [])
+    )
+
     return {
         "markdown_report": result.get("markdown_report", ""),
         "events_markdown": result.get("events_markdown", ""),
@@ -171,7 +186,7 @@ def run_pipeline(
         "ticker_insights": ticker_insights,
         "ticker_marp_markdown": result.get("ticker_marp_markdown", ""),
         "key_insights": result.get("key_insights", []),
-        "tags": result.get("tags", []),
+        "tags": tags,
         "related_tickers": related_tickers,
         "social_cards": result.get("social_cards", []),
         "social_thread": result.get("social_thread") or {"post": "", "comments": []},

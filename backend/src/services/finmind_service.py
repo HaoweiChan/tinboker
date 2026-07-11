@@ -9,10 +9,11 @@ This module provides a wrapper around the FinMind API with:
 
 import logging
 import time
+from datetime import datetime, timedelta
+from typing import Optional, List, Dict, Any
+
 import requests
 import pandas as pd
-from typing import Optional, List, Dict, Any
-from datetime import datetime, timedelta
 from src.config import settings
 from src.services import finmind_budget
 
@@ -41,6 +42,68 @@ def is_tw_ticker(ticker: str) -> bool:
 # every cold miss, which was the single biggest FinMind-quota waster. Cache it in-process.
 _STOCK_INFO_TTL_SECONDS = 6 * 3600
 _stock_info_cache: dict = {"df": None, "ts": 0.0}
+
+
+def list_yahoo_tw_daily_range(ticker: str, start_date: str, end_date: str) -> List[Dict[str, Any]]:
+    """Best-effort TW daily OHLCV from Yahoo, trying TWSE then TPEx symbols."""
+    code = (ticker or "").split(".")[0].strip()
+    if not is_tw_ticker(code):
+        return []
+
+    try:
+        end_exclusive = (
+            datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)
+        ).strftime("%Y-%m-%d")
+    except ValueError:
+        return []
+
+    try:
+        import yfinance as yf
+    except ImportError:
+        return []
+
+    for symbol in (f"{code}.TW", f"{code}.TWO"):
+        try:
+            df = yf.Ticker(symbol).history(
+                start=start_date,
+                end=end_exclusive,
+                interval="1d",
+                auto_adjust=False,
+            )
+        except Exception as exc:
+            logger.debug("Yahoo TW range fetch failed for %s: %s", symbol, exc)
+            continue
+        if df is None or df.empty:
+            continue
+
+        rows: List[Dict[str, Any]] = []
+        for idx, row in df.iterrows():
+            try:
+                close_raw = row["Close"]
+                if pd.isna(close_raw):
+                    continue
+                close = float(close_raw)
+                volume_raw = row.get("Volume", 0)
+                volume = 0.0 if pd.isna(volume_raw) else float(volume_raw or 0)
+
+                def price(field: str) -> float:
+                    raw = row.get(field, close)
+                    return close if pd.isna(raw) else float(raw or close)
+
+                rows.append({
+                    "date": idx.strftime("%Y-%m-%d"),
+                    "open": price("Open"),
+                    "max": price("High"),
+                    "min": price("Low"),
+                    "close": close,
+                    "Trading_Volume": int(volume),
+                    "Trading_money": close * volume,
+                })
+            except (KeyError, TypeError, ValueError):
+                continue
+        if rows:
+            return rows
+    return []
 
 
 class FinMindAPIError(Exception):
@@ -106,7 +169,12 @@ class FinMindAPIService:
 
         Returns the response JSON on success, or None when the budget is spent / on error.
         """
-        self._check_api_key()
+        # No key configured is a normal "unavailable" outcome, not a fatal error: return
+        # None like every other failure path so callers fall through to their fallback
+        # (Yahoo / empty). Raising here escapes the per-ticker fetch closures and skips the
+        # Yahoo fallback entirely. Constructor already warns once when keys are missing.
+        if not self.api_keys:
+            return None
 
         # FinMind only serves TW. A non-TW data_id (KR 6-digit, HK, junk) always 404s but
         # still burns the shared hourly budget — gate it out BEFORE consume(). Datasets with
@@ -521,17 +589,21 @@ class FinMindAPIService:
     def get_tw_market_caps(self) -> Dict[str, float]:
         """Return ``{stock_id: latest market value in NT$}`` for all TW stocks.
 
-        One bulk ``TaiwanStockMarketValue`` download (no data_id → TW-wide, passes the
-        per-ticker gate in ``_make_request``). Used by the industry-performance board and
-        daily-cached by the caller. Returns ``{}`` when FinMind is unavailable so callers
-        degrade gracefully.
+        ``TaiwanStockMarketValue`` is a daily bulk dataset: a request for a non-trading
+        date returns no rows. Walk backward from today until the latest available trading
+        day, then daily-cache the result in the caller.
         """
         from datetime import date, timedelta
-        start = (date.today() - timedelta(days=10)).isoformat()
-        data = self._make_request(
-            {"dataset": "TaiwanStockMarketValue", "start_date": start}, timeout=60
-        )
-        if not data:
+
+        data = None
+        for offset in range(14):
+            day = (date.today() - timedelta(days=offset)).isoformat()
+            data = self._make_request(
+                {"dataset": "TaiwanStockMarketValue", "start_date": day}, timeout=60
+            )
+            if data and data.get("data"):
+                break
+        if not data or not data.get("data"):
             return {}
         latest: Dict[str, tuple] = {}
         for row in data.get("data") or []:
@@ -542,31 +614,6 @@ class FinMindAPIService:
                 continue
             if sid not in latest or d > latest[sid][0]:
                 latest[sid] = (d, float(mv))
-        return {sid: v for sid, (_, v) in latest.items()}
-
-    def get_tw_trading_values(self) -> Dict[str, float]:
-        """Return ``{stock_id: latest daily trading value (Trading_money, NT$)}``.
-
-        Bulk ``TaiwanStockPrice`` download (a short window → reduce to the latest day per
-        stock). Powers the 'money flow' bubble size on the theme board; daily-cached by
-        the caller. Returns ``{}`` when FinMind is unavailable.
-        """
-        from datetime import date, timedelta
-        start = (date.today() - timedelta(days=5)).isoformat()
-        data = self._make_request(
-            {"dataset": "TaiwanStockPrice", "start_date": start}, timeout=120
-        )
-        if not data:
-            return {}
-        latest: Dict[str, tuple] = {}
-        for row in data.get("data") or []:
-            sid = str(row.get("stock_id", "")).strip()
-            tm = row.get("Trading_money")
-            d = str(row.get("date", ""))
-            if not sid or not tm:
-                continue
-            if sid not in latest or d > latest[sid][0]:
-                latest[sid] = (d, float(tm))
         return {sid: v for sid, (_, v) in latest.items()}
 
     def list_news(self, ticker: str, limit: int = 10) -> List[Dict[str, Any]]:
@@ -631,7 +678,7 @@ class FinMindAPIService:
                         else:
                             dt = datetime.strptime(date_str, "%Y-%m-%d")
                         timestamp = int(dt.timestamp() * 1000)
-                    except:
+                    except Exception:
                         timestamp = int(datetime.now().timestamp() * 1000)
                     
                     bars.append({
@@ -692,7 +739,7 @@ class FinMindAPIService:
                         date_str = str(row.get("date", ""))
                         dt = datetime.strptime(date_str, "%Y-%m-%d")
                         timestamp = int(dt.timestamp() * 1000)
-                    except:
+                    except Exception:
                         timestamp = int(datetime.now().timestamp() * 1000)
                     
                     bars.append({
@@ -710,4 +757,3 @@ class FinMindAPIService:
         except Exception as e:
             logger.error(f"Error fetching daily aggregates for {ticker}: {e}")
             return []
-

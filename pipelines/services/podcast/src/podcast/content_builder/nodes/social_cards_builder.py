@@ -16,7 +16,7 @@ import logging
 import re
 from typing import Any, Optional
 
-from shared.tickers import lookup_ticker
+from shared.tickers import canonical_symbol, lookup_ticker
 
 from ...exporters.ticker_insights import market_for_ticker, score_to_label
 from ..state import PipelineState
@@ -219,17 +219,42 @@ def _focus_item(insight: dict[str, Any]) -> Optional[dict[str, Any]]:
     }
 
 
+def canonical_ticker_set(related_tickers: Any) -> set[str]:
+    """Canonicalize ``related_tickers`` → the allowed set for deck cards.
+
+    Empty set ⇒ "don't filter" (the fields disagree only because the summarizer's
+    canonical ``related_tickers`` hadn't populated yet — see the graph ordering).
+    """
+    if not isinstance(related_tickers, list):
+        return set()
+    return {canonical_symbol(str(t)) for t in related_tickers if str(t).strip()}
+
+
 def cards_from_ticker_insights(
     ticker_insights: Optional[dict[str, Any]],
     episode_title: str = "",  # noqa: ARG001 — kept for signature parity with cards_from_marp_slides
+    allowed_tickers: Optional[set[str]] = None,
 ) -> list[dict[str, Any]]:
     """Build the structured ticker deck (overview grid + focus-analysis cards).
 
     Pure + deterministic: reads the per-ticker ``ticker_insights`` rows directly,
     no LLM. Sentiment chips come from ``sentiment_score`` (via the 5-tier label),
     risk from the worst ``risks[].severity``, names from the ticker registry.
+
+    ``allowed_tickers`` (canonicalized ``related_tickers``) constrains the deck to
+    the SAME tickers the episode page shows — the ticker-insights extractor and the
+    summarizer are two independent LLM passes, so the page (canonical) is the source
+    of truth. Falsy ⇒ no filter.
     """
     insights = _insight_rows(ticker_insights)
+    if allowed_tickers:
+        kept = [i for i in insights if canonical_symbol(str(i.get("ticker", ""))) in allowed_tickers]
+        if len(kept) != len(insights):
+            logger.info(
+                "ticker deck: filtered %d→%d rows to canonical related_tickers (page-consistent)",
+                len(insights), len(kept),
+            )
+        insights = kept
     if not insights:
         return []
 
@@ -285,7 +310,10 @@ def assemble_social_cards(state: PipelineState) -> list[dict[str, Any]]:
         return []
 
     cover, themes = base[0], base[1:MAX_THEME_CARDS + 1]
-    ticker_cards = cards_from_ticker_insights(state.get("ticker_insights") or {}, title)
+    ticker_cards = cards_from_ticker_insights(
+        state.get("ticker_insights") or {}, title,
+        canonical_ticker_set(state.get("related_tickers")),
+    )
     tables = [c for c in ticker_cards if c.get("kind") == "ticker_table"]
     focus = [c for c in ticker_cards if c.get("kind") == "focus_list"]
 

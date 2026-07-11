@@ -1,7 +1,20 @@
 #!/usr/bin/env python3
 """Sync the backend's tag-vocabulary mirror from the pipeline canonical.
 
-Single source of truth for the English→zh-TW tag label catalogue:
+STALE / NOT CURRENTLY WIRED UP: this script's CANONICAL/MIRROR paths below
+(``tag_vocabulary.json`` on both sides) do not exist on this branch — running it
+as-is will crash with FileNotFoundError. The actual live-at-runtime source of
+truth today is ``pipelines/libs/shared/src/shared/tag_vocabulary_seed_backup.py``
+(``TAG_VOCABULARY_SEED``, a plain Python dict, imported directly by
+``pipelines/services/podcast/src/podcast/content_builder/tag_vocabulary.py``), and
+its backend mirror is ``backend/src/data/tag_vocabulary_seed.py`` — kept in sync
+BY HAND, guarded by
+``pipelines/services/podcast/tests/unit/test_tag_vocabulary_sync.py`` /
+``backend/tests/unit/test_tag_vocabulary_sync.py``. Edit both ``.py`` seed files
+together; do not rely on this script until it is repointed at them.
+
+Original design intent (kept for history — the JSON-based mirroring this script
+implements never shipped):
 
     pipelines/services/podcast/src/podcast/content_builder/tag_vocabulary.json   (CANONICAL, hand-edited)
     backend/src/data/tag_vocabulary.json                                         (GENERATED MIRROR)
@@ -9,8 +22,8 @@ Single source of truth for the English→zh-TW tag label catalogue:
 The two packages deploy as separate Docker images with disjoint build contexts
 (``./backend`` vs ``./pipelines``), so each runtime needs its own physical copy of
 the data. To keep them from drifting (which once shipped English tags to prod — see
-PRs #161/#162), the backend copy is GENERATED from the canonical by this script and
-guarded by a drift test in both CI suites.
+PRs #161/#162), the backend copy was meant to be GENERATED from the canonical by
+this script and guarded by a drift test in both CI suites.
 
 Usage:
     python scripts/sync_tag_vocabulary.py          # write the mirror

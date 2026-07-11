@@ -19,6 +19,15 @@ import urllib.parse
 import urllib.request
 from typing import Any
 
+# Cloudflare's bot rules 403 the default `Python-urllib/x.y` User-Agent at the edge.
+# Every request this module makes goes through _headers() so the identifying UA is
+# set in exactly one place.
+USER_AGENT = "tinboker-pipeline/1.0 (+https://tinboker.com)"
+
+
+def _headers(extra: dict[str, str] | None = None) -> dict[str, str]:
+    return {"User-Agent": USER_AGENT, **(extra or {})}
+
 
 def platform_base_url() -> str | None:
     """The platform API base URL, or ``None`` when the platform pull is disabled."""
@@ -37,7 +46,7 @@ def _get_items(path: str, *, timeout: float = 10.0, what: str = "data") -> list[
         return None
     url = f"{base}{path}"
     try:
-        req = urllib.request.Request(url, headers={"Accept": "application/json"})
+        req = urllib.request.Request(url, headers=_headers({"Accept": "application/json"}))
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             if getattr(resp, "status", 200) != 200:
                 return None
@@ -90,7 +99,7 @@ def trigger_threads_publish(
     try:
         req = urllib.request.Request(
             url, data=b"", method="POST",
-            headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+            headers=_headers({"Authorization": f"Bearer {token}", "Accept": "application/json"}),
         )
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             if getattr(resp, "status", 200) >= 400:
@@ -111,7 +120,7 @@ def fetch_sectors_universe(*, timeout: float = 10.0) -> dict[str, Any] | None:
         return None
     url = f"{base}/api/sectors/universe"
     try:
-        req = urllib.request.Request(url, headers={"Accept": "application/json"})
+        req = urllib.request.Request(url, headers=_headers({"Accept": "application/json"}))
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             if getattr(resp, "status", 200) != 200:
                 return None
