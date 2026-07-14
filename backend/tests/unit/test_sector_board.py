@@ -474,6 +474,15 @@ async def test_ticker_implied_heat_and_parent_aggregation():
         patch.object(svc, "_allowed_podcast_names", new=AsyncMock(return_value=None)),
         patch.object(PodcastService, "_sector_membership_index", return_value=_HEAT_INDEX),
         patch("src.services.stock_close_refresh.get_eod_change_pct", side_effect=_fake_eod),
+        # Freeze the decay clock to the docs' release time. The board decays heat against
+        # wall-clock now (0.5^(age/7)), while these docs are pinned to a fixed NOW_MS — so
+        # with a live clock the heat shrinks a little more every day and the components,
+        # which the board rounds to 3 dp, lose precision RELATIVE to their own magnitude.
+        # At ~25 days out that rounding error crossed the 2% rel tolerance below and the
+        # test began flapping purely on what time CI happened to run (industry bucket:
+        # 1.2% at 15:35Z → 2.4% at 17:37Z). Frozen, age=0 → weight=1.0 and every figure
+        # here is exact, so this asserts the blend formula rather than the calendar.
+        patch("time.time", return_value=NOW_MS / 1000),
         _patch_get_session(),
     ):
         result = await svc.sector_board()
