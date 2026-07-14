@@ -113,3 +113,32 @@ class ExposurePerformanceItem(BaseModel):
 
 class ExposurePerformanceResponse(BaseModel):
     exposures: List[ExposurePerformanceItem]
+
+
+# ── Heat → forward-return validation (point-in-time backtest, /topics) ────────
+# Corrects the live bubble chart's contemporaneous axes: heat is recomputed as of
+# a past date and quantized against the *forward* N-day return, so each bucket reads
+# as "past discussion heat → subsequent profit". Returns are cross-sectionally
+# demeaned per as-of date, so mean_return is EXCESS vs the other themes that same day
+# — a market-wide rally can't manufacture a gradient. n is surfaced so shallow (short-
+# history) buckets stay honest.
+
+class HeatValidationBucket(BaseModel):
+    bucket: int                 # 1 = lowest heat quantile … n_buckets = highest
+    signal_min: float           # heat range covered by this bucket
+    signal_max: float
+    mean_return: float          # mean EXCESS forward return vs same-day themes, percent
+    n: int                      # observations in the bucket
+
+
+class HeatValidationHorizon(BaseModel):
+    buckets: List[HeatValidationBucket] = []
+    n: int = 0                  # total (theme, date) observations for this horizon
+
+
+class HeatValidationResponse(BaseModel):
+    half_life_days: float
+    n_buckets: int
+    horizons: Dict[str, HeatValidationHorizon]  # keyed by horizon days: "7"/"30"/"90"
+    date_span: Dict[str, Optional[str]]         # {"start","end"} of the price grid
+    as_of_count: int                            # distinct as-of dates sampled

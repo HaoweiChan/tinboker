@@ -119,6 +119,43 @@ def _read_close_series(tickers: list[str], limit: int = 12) -> dict[str, list[fl
     return {t: closes[-limit:] for t, closes in result_map.items()}
 
 
+def _read_dated_closes(tickers: list[str]) -> dict[str, list[tuple[str, float]]]:
+    """Read the *full* daily close history per ticker as ascending ``(date, close)``.
+
+    Reads from ``stock_daily_ohlc`` — the whole-market TW table (plus US tickers
+    landed by the US OHLC warmer) that the backfill can deepen arbitrarily
+    (``tw_daily_ohlc_refresh``). NOT ``stock_daily_closes``, which only warms a
+    rolling ~7 days for ≤400 tracked tickers and has no historical backfill — too
+    shallow and too narrow for a point-in-time backtest. Best-effort: DB error → {}.
+    """
+    from src.database.models import StockDailyOHLC
+
+    _CHUNK_SIZE = 200
+    result_map: dict[str, list[tuple[str, float]]] = {}
+    if not tickers:
+        return result_map
+    for session in get_session():
+        try:
+            for chunk_start in range(0, len(tickers), _CHUNK_SIZE):
+                chunk = tickers[chunk_start: chunk_start + _CHUNK_SIZE]
+                rows = (
+                    session.query(
+                        StockDailyOHLC.ticker,
+                        StockDailyOHLC.date,
+                        StockDailyOHLC.close,
+                    )
+                    .filter(StockDailyOHLC.ticker.in_(chunk))
+                    .order_by(StockDailyOHLC.ticker.asc(), StockDailyOHLC.date.asc())
+                    .all()
+                )
+                for ticker, date_str, close in rows:
+                    result_map.setdefault(ticker, []).append((date_str, close))
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(f"_read_dated_closes: OHLC history read failed: {exc}")
+        break
+    return result_map
+
+
 EPISODE_DETAIL_CONTENT_FIELDS = frozenset({
     "summary_content",
     "events_markdown_content",
@@ -1607,6 +1644,121 @@ class PodcastService:
 
         result.sort(key=lambda x: x["hotness"], reverse=True)
         return result
+
+    # ── Heat → forward-return validation (point-in-time backtest) ─────────────
+    async def heat_return_validation(
+        self, horizons: tuple[int, ...] = (7, 30, 90), n_buckets: int = 5,
+    ) -> dict:
+        """Cached point-in-time backtest of discussion heat as a profit signal.
+
+        Recomputes each theme's heat *as of* past dates and quantizes it against the
+        *forward* 7/30/90-day member return — the corrected framing for the /topics
+        plot, whose live axes are contemporaneous. Cached like the board (10 min);
+        cold recompute only. See ``heat_validation.compute_validation``.
+        """
+        cache_key = f"sectors:heat_validation:v1:{self._scope_tag()}"
+        cached = await cache_get(cache_key)
+        if cached:
+            try:
+                return json.loads(cached)
+            except Exception:
+                pass
+        result = await self._compute_heat_return_validation(horizons, n_buckets)
+        try:
+            await cache_set(cache_key, json.dumps(result), CACHE_TTL["podcast_episodes"])
+        except Exception:
+            pass
+        return result
+
+    async def _compute_heat_return_validation(
+        self, horizons: tuple[int, ...], n_buckets: int,
+    ) -> dict:
+        """Scan episodes → per-theme release-day events, join dated closes, backtest.
+
+        A slim variant of the board scan: only release timestamps + exposure
+        attribution are needed (no prices/series here — those come from the dated
+        close history). Heat is reconstructed as of each past date with the SAME
+        blend weights the live board uses, so the validation judges the exact signal
+        that is plotted, not a proxy.
+        """
+        from src.services.heat_validation import compute_validation
+
+        allowed = await self._allowed_podcast_names()
+        # NO recency cutoff here — deliberately unlike every other consumer of this scan.
+        # _recency_cutoff_ms() is a no-op today (RELEASE_EPISODE_MAX_AGE_DAYS=0), but the
+        # runbook plans to flip it to 30, and the moment it does a scoped scan corrupts the
+        # backtest twice: (1) left-truncated heat — an episode just outside the window still
+        # carries real weight at nearby as-of dates (5 days out → 0.5^(5/7) ≈ 0.61), so the
+        # oldest as-of dates would systematically understate heat; (2) horizon collapse —
+        # nothing older than the window is scanned, so as-of dates further back get zero heat
+        # and drop out, and those are exactly the dates the 30/90d horizons need for a
+        # complete forward window, quietly making them n=0. The live board wants "recent
+        # only"; a backtest wants all history. The language allowlist still applies (and
+        # _scope_tag() still keys the cache, so languages stay isolated).
+        try:
+            docs = await asyncio.to_thread(
+                self.firestore_service.stream_documents_projected,
+                "episodes",
+                self._SECTOR_SCAN_FIELDS,
+            )
+        except Exception as e:
+            raise Exception(f"Failed to scan episodes for heat validation: {e}") from e
+
+        idx = await asyncio.to_thread(self._sector_membership_index)
+        ticker_to_sectors = idx["ticker_to_sectors"]
+        uni_meta = idx["meta"]
+        registry_members = idx.get("members", {})
+
+        # release day (epoch-days) per theme, split NAMED vs CONSTITUENT-implied.
+        direct_events: dict[str, list[float]] = {}
+        implied_events: dict[str, list[float]] = {}
+        for doc in docs:
+            if doc.get("retracted_at"):
+                continue
+            if allowed is not None and doc.get("podcast_name") not in allowed:
+                continue
+            rel_ms = self._dict_release_ms(doc)
+            day = rel_ms / 86_400_000.0
+            direct_eids: set[str] = set()
+            for entry in doc.get("sector_exposures") or []:
+                eid = resolve_sector_exposure_id(entry.get("exposure_id"))
+                if eid and eid not in EXCLUDED_EXPOSURE_IDS:
+                    direct_eids.add(eid)
+            implied_eids: set[str] = set()
+            for tk in doc.get("related_tickers") or []:
+                sym = str(tk).split(".")[0].strip().upper()
+                for eid in ticker_to_sectors.get(sym, ()):
+                    implied_eids.add(eid)
+            for eid in direct_eids:
+                direct_events.setdefault(eid, []).append(day)
+            for eid in implied_eids:
+                implied_events.setdefault(eid, []).append(day)
+
+        # Validate over the themes the plot shows (the bubble hero is theme-only).
+        theme_eids = {
+            eid for eid in set(direct_events) | set(implied_events)
+            if (uni_meta.get(eid, {}).get("exposure_type") == "theme")
+        }
+        members_by_eid = {
+            eid: [str(m.get("ticker") or "").strip().upper()
+                  for m in registry_members.get(eid, []) if m.get("ticker")]
+            for eid in theme_eids
+        }
+        all_tickers = sorted({t for ts in members_by_eid.values() for t in ts})
+        closes = await asyncio.to_thread(_read_dated_closes, all_tickers)
+
+        return await asyncio.to_thread(
+            compute_validation,
+            direct_events={e: direct_events[e] for e in theme_eids if e in direct_events},
+            implied_events={e: implied_events[e] for e in theme_eids if e in implied_events},
+            members_by_eid=members_by_eid,
+            closes=closes,
+            horizons=horizons,
+            n_buckets=n_buckets,
+            w_direct=self._HEAT_W_DIRECT,
+            w_ticker=self._HEAT_W_TICKER,
+            norm_alpha=self._HEAT_NORM_ALPHA,
+        )
 
     # ── Industry performance (bubble chart, /topics 產業 tab) ─────────────────
     def _finmind(self):

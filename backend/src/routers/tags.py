@@ -14,6 +14,7 @@ from src.schemas.sector import (
     EpisodesBySectorResponse,
     ExposurePerformanceItem,
     ExposurePerformanceResponse,
+    HeatValidationResponse,
     SectorByTickerItem,
     SectorBoardItem,
     SectorBoardMember,
@@ -281,6 +282,20 @@ async def get_exposures_performance(db: Session = Depends(get_session)):
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching exposure performance: {str(e)}")
+
+
+@router.get("/sectors/heat-validation", response_model=HeatValidationResponse)
+async def get_heat_validation():
+    """Point-in-time backtest of discussion heat as a forward-return predictor.
+
+    Powers the /topics validation panel: heat recomputed as of past dates, quantized
+    against the forward 7/30/90-day member return — correcting the live bubble chart,
+    whose heat (X) and trailing return (Y) are both measured at request time.
+    """
+    try:
+        return HeatValidationResponse(**await podcast_service.heat_return_validation())
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error computing heat validation: {str(e)}")
 
 
 @router.get("/episodes/by-sector/{exposure_id}", response_model=EpisodesBySectorResponse)
