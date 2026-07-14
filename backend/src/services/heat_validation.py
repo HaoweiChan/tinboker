@@ -15,6 +15,7 @@ supplies the scanned episode events and dated closes.
 """
 from __future__ import annotations
 
+from bisect import bisect_right
 from datetime import date, timedelta
 
 _EPOCH = date(1970, 1, 1)
@@ -39,14 +40,13 @@ def decayed_heat(event_days: list[float], asof_day: float, half_life: float = 7.
 
 
 def close_asof(series: list[tuple[str, float]], target: str) -> float | None:
-    """Last close with date <= ``target``. ``series`` is ascending ``(date, close)``."""
-    result: float | None = None
-    for d, c in series:
-        if d <= target:
-            result = c
-        else:
-            break
-    return result
+    """Last close with date <= ``target``. ``series`` is ascending ``(date, close)``.
+
+    Binary search (dates are sorted) so the backtest stays fast as price history
+    deepens — the whole point of a backfill is a longer series here.
+    """
+    i = bisect_right(series, target, key=lambda e: e[0])
+    return series[i - 1][1] if i > 0 else None
 
 
 def forward_return(series: list[tuple[str, float]], start: str, end: str) -> float | None:
@@ -113,8 +113,6 @@ def compute_validation(
     ``closes`` is ``{ticker: [(date, close)]}`` ascending; the union of its dates is
     the as-of grid.
     """
-    # ponytail: O(themes × dates × members × history) linear scan — fine at ~90-day
-    # price depth behind a 10-min cache; if history deepens, bisect close_asof.
     all_dates = sorted({d for series in closes.values() for d, _ in series})
     if not all_dates:
         return _empty(horizons, n_buckets, half_life)

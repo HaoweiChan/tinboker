@@ -122,11 +122,13 @@ def _read_close_series(tickers: list[str], limit: int = 12) -> dict[str, list[fl
 def _read_dated_closes(tickers: list[str]) -> dict[str, list[tuple[str, float]]]:
     """Read the *full* daily close history per ticker as ascending ``(date, close)``.
 
-    Unlike ``_read_close_series`` (which drops dates and keeps only the trailing N),
-    the heat→forward-return backtest needs every dated close to look up ``close(D)``
-    and ``close(D+N)`` at historical as-of dates. Best-effort: a DB error yields {}.
+    Reads from ``stock_daily_ohlc`` — the whole-market TW table (plus US tickers
+    landed by the US OHLC warmer) that the backfill can deepen arbitrarily
+    (``tw_daily_ohlc_refresh``). NOT ``stock_daily_closes``, which only warms a
+    rolling ~7 days for ≤400 tracked tickers and has no historical backfill — too
+    shallow and too narrow for a point-in-time backtest. Best-effort: DB error → {}.
     """
-    from src.database.models import StockDailyClose
+    from src.database.models import StockDailyOHLC
 
     _CHUNK_SIZE = 200
     result_map: dict[str, list[tuple[str, float]]] = {}
@@ -138,18 +140,18 @@ def _read_dated_closes(tickers: list[str]) -> dict[str, list[tuple[str, float]]]
                 chunk = tickers[chunk_start: chunk_start + _CHUNK_SIZE]
                 rows = (
                     session.query(
-                        StockDailyClose.ticker,
-                        StockDailyClose.date,
-                        StockDailyClose.close,
+                        StockDailyOHLC.ticker,
+                        StockDailyOHLC.date,
+                        StockDailyOHLC.close,
                     )
-                    .filter(StockDailyClose.ticker.in_(chunk))
-                    .order_by(StockDailyClose.ticker.asc(), StockDailyClose.date.asc())
+                    .filter(StockDailyOHLC.ticker.in_(chunk))
+                    .order_by(StockDailyOHLC.ticker.asc(), StockDailyOHLC.date.asc())
                     .all()
                 )
                 for ticker, date_str, close in rows:
                     result_map.setdefault(ticker, []).append((date_str, close))
         except Exception as exc:  # noqa: BLE001
-            logger.debug(f"_read_dated_closes: close history read failed: {exc}")
+            logger.debug(f"_read_dated_closes: OHLC history read failed: {exc}")
         break
     return result_map
 
