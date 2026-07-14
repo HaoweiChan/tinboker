@@ -118,14 +118,16 @@ class ExposurePerformanceResponse(BaseModel):
 # ── Heat → forward-return validation (point-in-time backtest, /topics) ────────
 # Corrects the live bubble chart's contemporaneous axes: heat is recomputed as of
 # a past date and quantized against the *forward* N-day return, so each bucket reads
-# as "past discussion heat → subsequent profit". n is surfaced so shallow (short-
+# as "past discussion heat → subsequent profit". Returns are cross-sectionally
+# demeaned per as-of date, so mean_return is EXCESS vs the other themes that same day
+# — a market-wide rally can't manufacture a gradient. n is surfaced so shallow (short-
 # history) buckets stay honest.
 
 class HeatValidationBucket(BaseModel):
     bucket: int                 # 1 = lowest heat quantile … n_buckets = highest
     signal_min: float           # heat range covered by this bucket
     signal_max: float
-    mean_return: float          # mean forward return over the horizon, percent
+    mean_return: float          # mean EXCESS forward return vs same-day themes, percent
     n: int                      # observations in the bucket
 
 

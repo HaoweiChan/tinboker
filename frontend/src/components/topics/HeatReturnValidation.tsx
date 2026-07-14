@@ -110,7 +110,7 @@ export const HeatReturnValidation: React.FC = () => {
       <p className={`mb-3 flex items-start gap-1.5 ${type.meta} text-muted-foreground`}>
         <Info size={12} className="mt-0.5 shrink-0" />
         <span>
-          用<strong className="font-medium text-foreground/80">歷史當時</strong>的討論熱度分組，對照<strong className="font-medium text-foreground/80">其後 {hz} 日</strong>的題材平均報酬（非事後同時段），避免看後照鏡。熱度越高的組別報酬越高，才代表熱度有預測力。
+          用<strong className="font-medium text-foreground/80">歷史當時</strong>的討論熱度分組，對照<strong className="font-medium text-foreground/80">其後 {hz} 日</strong>的<strong className="font-medium text-foreground/80">超額報酬</strong>——相對「同一天」其他題材的平均（已剔除大盤齊漲齊跌），避免看後照鏡與行情假訊號。熱度越高的組別超額報酬越高，才代表熱度有預測力。
         </span>
       </p>
 

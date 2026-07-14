@@ -9,6 +9,12 @@ return over the following N days — the only framing in which heat can be judge
 profit signal. Heat is then quantized into buckets so the mean forward return per
 bucket reads directly as a signal→profit curve.
 
+Returns are cross-sectionally demeaned per as-of date before quantizing (see
+``demean_by_date``): raw pooled returns would let a single market regime — or a
+calendar stretch of heavy podcast volume — manufacture a heat→return gradient out
+of nothing. Every bucket therefore reports EXCESS return vs the other themes on the
+same day, not an absolute one.
+
 Everything here is pure (no I/O) so ``compute_validation`` is unit-tested by the
 ``__main__`` self-check at the bottom. The service layer (``PodcastService``)
 supplies the scanned episode events and dated closes.
@@ -66,12 +72,36 @@ def forward_return(series: list[tuple[str, float]], start: str, end: str) -> flo
     return b / a - 1.0
 
 
-def quantize(observations: list[tuple[float, float]], n_buckets: int) -> list[dict]:
-    """Rank-split ``[(signal, fwd_return)]`` into ``n_buckets`` by signal (low→high).
+def demean_by_date(observations: list[tuple[float, float, str]]) -> list[tuple[float, float]]:
+    """Subtract each as-of date's cross-sectional mean return → ``[(signal, excess)]``.
 
-    Returns one dict per non-empty bucket: signal range, mean forward return
-    (percent), and the sample count (surfaced so shallow buckets are visible, never
-    silently averaged over 2 points as if robust).
+    Without this, two confounds stack: returns are raw (not market-adjusted) and
+    observations are pooled across dates before the rank-split. A calendar stretch of
+    heavy podcast volume then lands wholesale in the top heat buckets, and with a
+    shallow price history one market regime dominates — so in a rising tape the top
+    bucket beats the bottom one even when heat carries ZERO cross-sectional signal,
+    and the panel would "validate" heat spuriously.
+
+    Demeaning per date makes every bucket answer the question the panel actually
+    claims: did the hottest themes *that day* beat the other themes *that same day*.
+    A date with a single theme demeans to 0 and self-neutralises — correct, since one
+    theme carries no cross-sectional information.
+    """
+    sums: dict[str, float] = {}
+    counts: dict[str, int] = {}
+    for _, r, d in observations:
+        sums[d] = sums.get(d, 0.0) + r
+        counts[d] = counts.get(d, 0) + 1
+    return [(h, r - sums[d] / counts[d]) for h, r, d in observations]
+
+
+def quantize(observations: list[tuple[float, float]], n_buckets: int) -> list[dict]:
+    """Rank-split ``[(signal, excess_return)]`` into ``n_buckets`` by signal (low→high).
+
+    Returns one dict per non-empty bucket: signal range, mean excess forward return
+    (percent, cross-sectionally demeaned by ``demean_by_date``), and the sample count
+    (surfaced so shallow buckets are visible, never silently averaged over 2 points as
+    if robust).
     """
     obs = sorted(observations, key=lambda o: o[0])
     total = len(obs)
@@ -118,7 +148,9 @@ def compute_validation(
         return _empty(horizons, n_buckets, half_life)
 
     attr_size = {eid: max(len(members_by_eid.get(eid) or []), 1) for eid in members_by_eid}
-    obs: dict[int, list[tuple[float, float]]] = {n: [] for n in horizons}
+    # (heat, forward_return, as_of_date) — the date is carried so returns can be
+    # cross-sectionally demeaned per date before quantizing (see demean_by_date).
+    obs: dict[int, list[tuple[float, float, str]]] = {n: [] for n in horizons}
     used_dates: set[str] = set()
 
     for eid, members in members_by_eid.items():
@@ -142,14 +174,17 @@ def compute_validation(
                 end = (date.fromisoformat(d) + timedelta(days=n)).isoformat()
                 rets = [fr for s in member_series if (fr := forward_return(s, d, end)) is not None]
                 if rets:
-                    obs[n].append((heat, sum(rets) / len(rets)))
+                    obs[n].append((heat, sum(rets) / len(rets), d))
                     used_dates.add(d)
 
     return {
         "half_life_days": half_life,
         "n_buckets": n_buckets,
         "horizons": {
-            str(n): {"buckets": quantize(obs[n], n_buckets), "n": len(obs[n])}
+            str(n): {
+                "buckets": quantize(demean_by_date(obs[n]), n_buckets),
+                "n": len(obs[n]),
+            }
             for n in horizons
         },
         "date_span": {"start": all_dates[0], "end": all_dates[-1]},
@@ -187,15 +222,32 @@ if __name__ == "__main__":
     assert buckets[0]["signal_max"] <= buckets[1]["signal_min"]
     assert buckets[1]["mean_return"] > buckets[0]["mean_return"]
 
-    # End-to-end: a theme discussed on 01-01, one member that rose 10% over 7 days.
+    # demean_by_date subtracts each date's cross-sectional mean; a lone theme on a
+    # date carries no cross-sectional info and self-neutralises to 0.
+    dm = demean_by_date([(1.0, 0.02, "d1"), (2.0, 0.00, "d1"), (3.0, 0.05, "d2")])
+    assert abs(dm[0][1] - 0.01) < 1e-12 and abs(dm[1][1] + 0.01) < 1e-12
+    assert abs(dm[2][1]) < 1e-12
+
+    # THE regression guard: a pure market move (every theme up the same amount) has
+    # zero cross-sectional signal — demeaning must flatten it, so a rising tape can
+    # never manufacture a heat→return gradient.
+    flat = demean_by_date([(1.0, 0.05, "d1"), (9.0, 0.05, "d1")])
+    assert all(abs(r) < 1e-12 for _, r in flat)
+
+    # End-to-end, cross-sectional: same day, hot theme's member +10%, cold theme's
+    # -10%. The hot bucket must earn positive EXCESS return over the cold one.
+    d0 = float(day_index("2024-01-01"))
+    down = [("2024-01-01", 100.0), ("2024-01-08", 90.0)]
     out = compute_validation(
-        direct_events={"t1": [float(day_index("2024-01-01"))]},
+        direct_events={"hot": [d0, d0, d0], "cold": [d0]},  # hot is discussed 3x
         implied_events={},
-        members_by_eid={"t1": ["AAA"]},
-        closes={"AAA": s},
+        members_by_eid={"hot": ["AAA"], "cold": ["BBB"]},
+        closes={"AAA": s, "BBB": down},
         horizons=(7,),
-        n_buckets=1,
+        n_buckets=2,
     )
     b7 = out["horizons"]["7"]["buckets"]
-    assert b7 and b7[0]["n"] >= 1 and b7[0]["mean_return"] > 0
+    assert len(b7) == 2, b7
+    assert b7[0]["signal_max"] <= b7[1]["signal_min"]        # bucket 2 = hotter
+    assert b7[1]["mean_return"] > 0 > b7[0]["mean_return"]   # hotter → higher excess
     print("heat_validation self-check OK")

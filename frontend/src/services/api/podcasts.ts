@@ -595,12 +595,15 @@ export async function getExposurePerformance(): Promise<ExposurePerformanceItem[
   return Array.isArray(d.exposures) ? d.exposures : [];
 }
 
-/** One heat quantile bucket → mean forward return (point-in-time backtest). */
+/** One heat quantile bucket → mean EXCESS forward return (point-in-time backtest).
+ *  Returns are cross-sectionally demeaned per as-of date, so this is the theme's
+ *  return relative to the other themes that same day — a market-wide rally can't
+ *  manufacture a heat→return gradient. */
 export interface HeatValidationBucket {
   bucket: number;      // 1 = lowest heat quantile … n_buckets = highest
   signal_min: number;
   signal_max: number;
-  mean_return: number; // mean forward return over the horizon, percent
+  mean_return: number; // mean EXCESS forward return vs same-day themes, percent
   n: number;           // observations in the bucket
 }
 

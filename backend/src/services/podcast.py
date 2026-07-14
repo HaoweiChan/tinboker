@@ -1684,7 +1684,17 @@ class PodcastService:
         from src.services.heat_validation import compute_validation
 
         allowed = await self._allowed_podcast_names()
-        cutoff = self._recency_cutoff_ms()
+        # NO recency cutoff here — deliberately unlike every other consumer of this scan.
+        # _recency_cutoff_ms() is a no-op today (RELEASE_EPISODE_MAX_AGE_DAYS=0), but the
+        # runbook plans to flip it to 30, and the moment it does a scoped scan corrupts the
+        # backtest twice: (1) left-truncated heat — an episode just outside the window still
+        # carries real weight at nearby as-of dates (5 days out → 0.5^(5/7) ≈ 0.61), so the
+        # oldest as-of dates would systematically understate heat; (2) horizon collapse —
+        # nothing older than the window is scanned, so as-of dates further back get zero heat
+        # and drop out, and those are exactly the dates the 30/90d horizons need for a
+        # complete forward window, quietly making them n=0. The live board wants "recent
+        # only"; a backtest wants all history. The language allowlist still applies (and
+        # _scope_tag() still keys the cache, so languages stay isolated).
         try:
             docs = await asyncio.to_thread(
                 self.firestore_service.stream_documents_projected,
@@ -1708,8 +1718,6 @@ class PodcastService:
             if allowed is not None and doc.get("podcast_name") not in allowed:
                 continue
             rel_ms = self._dict_release_ms(doc)
-            if cutoff is not None and rel_ms < cutoff:
-                continue
             day = rel_ms / 86_400_000.0
             direct_eids: set[str] = set()
             for entry in doc.get("sector_exposures") or []:
