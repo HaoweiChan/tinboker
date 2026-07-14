@@ -6,6 +6,7 @@ import { PageContent } from '@/components/layout/PageContent';
 import { Segmented } from '@/components/redesign/Segmented';
 import SectorPerformance from '@/components/industry/SectorPerformance';
 import { SectorBoardCard, type SectorNetFlow } from '@/components/topics/SectorBoardCard';
+import { HeatReturnValidation } from '@/components/topics/HeatReturnValidation';
 import { TagBoardCard } from '@/components/topics/TagBoardCard';
 import { TOPICS_TYPOGRAPHY } from '@/components/topics/topicsTypography';
 import {
@@ -394,6 +395,11 @@ export const TopicsCloud: React.FC = () => {
               尚無題材熱度資料
             </div>
           )}
+        </div>
+
+        {/* ── HEAT → FORWARD-RETURN VALIDATION (point-in-time, corrects the plot above) ── */}
+        <div className="mb-7">
+          <HeatReturnValidation />
         </div>
 
         {/* ── THEME BOARD (collapsed to a preview so the tags below stay reachable) ── */}
