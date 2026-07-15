@@ -1646,23 +1646,59 @@ class PodcastService:
         return result
 
     # ── Heat → forward-return validation (point-in-time backtest) ─────────────
+    _HEAT_VALIDATION_KEY = "sectors:heat_validation:v1"
+
     async def heat_return_validation(
         self, horizons: tuple[int, ...] = (7, 30, 90), n_buckets: int = 5,
+        *, compute_if_cold: bool = False,
     ) -> dict:
-        """Cached point-in-time backtest of discussion heat as a profit signal.
+        """Point-in-time backtest of discussion heat as a profit signal.
 
         Recomputes each theme's heat *as of* past dates and quantizes it against the
         *forward* 7/30/90-day member return — the corrected framing for the /topics
-        plot, whose live axes are contemporaneous. Cached like the board (10 min);
-        cold recompute only. See ``heat_validation.compute_validation``.
+        plot, whose live axes are contemporaneous. See ``heat_validation``.
+
+        **Request path is cache-only** (``compute_if_cold=False``). The compute runs
+        the cold ~2700-doc episode scan plus a full price join — far too heavy for the
+        request path. Doing it inline once took the dev API down: every /topics load
+        re-ran it with no single-flight, so the scans piled up and starved the event
+        loop (health + performance also hung). It is warmed off-path by
+        ``run_periodic_heat_validation_refresh``, exactly like the board. A cold cache
+        returns an empty payload so the panel shows 資料不足 until the first warm cycle
+        lands (≤5 min) — it never hangs the page.
         """
-        cache_key = f"sectors:heat_validation:v1:{self._scope_tag()}"
+        cache_key = f"{self._HEAT_VALIDATION_KEY}:{self._scope_tag()}"
         cached = await cache_get(cache_key)
         if cached:
             try:
                 return json.loads(cached)
             except Exception:
                 pass
+        if not compute_if_cold:
+            return {
+                "half_life_days": 7.0,
+                "n_buckets": n_buckets,
+                "horizons": {str(n): {"buckets": [], "n": 0} for n in horizons},
+                "date_span": {"start": None, "end": None},
+                "as_of_count": 0,
+            }
+        return await self._recompute_heat_validation(horizons, n_buckets, cache_key)
+
+    async def warm_heat_return_validation(
+        self, horizons: tuple[int, ...] = (7, 30, 90), n_buckets: int = 5,
+    ) -> dict:
+        """Force-recompute + overwrite the cache (refresh-ahead; ignores any warm entry).
+
+        Called by ``run_periodic_heat_validation_refresh`` so the serving path always
+        finds a warm entry and never pays the cold scan — the same contract as
+        ``warm_sector_board``.
+        """
+        cache_key = f"{self._HEAT_VALIDATION_KEY}:{self._scope_tag()}"
+        return await self._recompute_heat_validation(horizons, n_buckets, cache_key)
+
+    async def _recompute_heat_validation(
+        self, horizons: tuple[int, ...], n_buckets: int, cache_key: str,
+    ) -> dict:
         result = await self._compute_heat_return_validation(horizons, n_buckets)
         try:
             await cache_set(cache_key, json.dumps(result), CACHE_TTL["podcast_episodes"])
@@ -2841,6 +2877,24 @@ async def run_periodic_board_refresh(interval_seconds: float = 300.0) -> None:
             await PodcastService().warm_sector_board()
         except Exception as e:
             logger.warning(f"sector-board refresh cycle failed: {e}")
+        await asyncio.sleep(interval_seconds)
+
+
+async def run_periodic_heat_validation_refresh(interval_seconds: float = 300.0) -> None:
+    """Refresh-ahead loop for the /topics heat→forward-return validation panel.
+
+    Its compute is the cold full-episode scan + a whole-history price join — the
+    heaviest thing on /topics — so it must never run on the request path (doing so
+    took the dev API down). This loop force-recomputes + rewrites the Redis entry
+    every ``interval_seconds`` (inside the 10-min TTL); the endpoint then only ever
+    reads the warm entry. Isolated from run_periodic_board_refresh so a slow backtest
+    can't delay the board's own refresh cadence. Runs on start, then loops. Never
+    raises (mirrors run_periodic_board_refresh)."""
+    while True:
+        try:
+            await PodcastService().warm_heat_return_validation()
+        except Exception as e:
+            logger.warning(f"heat-validation refresh cycle failed: {e}")
         await asyncio.sleep(interval_seconds)
 
 
