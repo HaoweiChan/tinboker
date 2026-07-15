@@ -240,6 +240,19 @@ async def lifespan(app: FastAPI):
 
     asyncio.create_task(_refresh_board_bg())
 
+    # Refresh-ahead for the /topics heat→forward-return validation panel. Its cold
+    # compute (full-episode scan + whole-history price join) is the heaviest thing on
+    # /topics and must never touch the request path — running it inline took the API
+    # down. Own task so a slow backtest can't delay the board refresh above.
+    async def _refresh_heat_validation_bg():
+        try:
+            from src.services.podcast import run_periodic_heat_validation_refresh
+            await run_periodic_heat_validation_refresh(interval_seconds=300.0)
+        except Exception as e:
+            print(f"Warning: heat-validation refresher stopped: {e}")
+
+    asyncio.create_task(_refresh_heat_validation_bg())
+
     # Refresh-ahead for the /topics 熱門標籤 board: the volume-driven candidate set
     # scans every tag's Firestore subcollection, so keep that off the request path by
     # recomputing + rewriting its Redis entry every 10 min (inside the 30-min TTL).
