@@ -1745,6 +1745,21 @@ class PodcastService:
         uni_meta = idx["meta"]
         registry_members = idx.get("members", {})
 
+        # Resolve exposure redirects from ONE snapshot. resolve_sector_exposure_id()
+        # calls sector_redirects() every invocation, which opens a fresh session and
+        # scans all sector rows — calling it per exposure across ~2700 episodes fired
+        # hundreds of tag_registry queries/sec and saturated the dev connection pool
+        # (incident 2026-07-15). Fetch the redirect map once; resolve in memory.
+        redirects = await asyncio.to_thread(_sector_redirects)
+
+        def _resolve(raw_eid: object) -> str:
+            eid = normalize_exposure_id(raw_eid)  # type: ignore[arg-type]
+            seen: set[str] = set()
+            while eid in redirects and eid not in seen:
+                seen.add(eid)
+                eid = normalize_exposure_id(redirects[eid])
+            return eid
+
         # release day (epoch-days) per theme, split NAMED vs CONSTITUENT-implied.
         direct_events: dict[str, list[float]] = {}
         implied_events: dict[str, list[float]] = {}
@@ -1757,7 +1772,7 @@ class PodcastService:
             day = rel_ms / 86_400_000.0
             direct_eids: set[str] = set()
             for entry in doc.get("sector_exposures") or []:
-                eid = resolve_sector_exposure_id(entry.get("exposure_id"))
+                eid = _resolve(entry.get("exposure_id"))
                 if eid and eid not in EXCLUDED_EXPOSURE_IDS:
                     direct_eids.add(eid)
             implied_eids: set[str] = set()
