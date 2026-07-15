@@ -219,6 +219,15 @@ async def lifespan(app: FastAPI):
     # Polygon grouped-daily call per session into stock_daily_ohlc (source='polygon'), the
     # US sibling of the TW warmer above. No after_refresh hook yet — the US screener isn't
     # built (see screener-us-architecture spec); this only warms the data it will read.
+    #
+    # DISABLED (incident 2026-07-15): re-uses tw_daily_ohlc_refresh._upsert_rows, which does
+    # a per-row SELECT + a wholesale batch INSERT. At US-market scale (~10k rows) that runs
+    # ~10k SELECTs inside one long transaction and the batch aborts on the first pre-existing
+    # (ticker,date) key, so nothing commits and the whole warm re-runs every cycle. On dev it
+    # saturated the Postgres connection pool and every DB-backed endpoint (/health, /topics
+    # board) timed out. Re-enable once _upsert_rows is a batched ON CONFLICT DO UPDATE — see
+    # the follow-up. The US read endpoints and the warmer code are untouched; it just doesn't
+    # run on startup. TW warming is unaffected.
     async def _refresh_us_ohlc_bg():
         try:
             from src.services.us_daily_ohlc_refresh import run_periodic_us_ohlc_refresh
@@ -226,7 +235,7 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             print(f"Warning: US daily OHLC fetcher stopped: {e}")
 
-    asyncio.create_task(_refresh_us_ohlc_bg())
+    # asyncio.create_task(_refresh_us_ohlc_bg())  # re-enable after the _upsert_rows fix
 
     # Refresh-ahead for the /topics hot-sectors board: recompute + rewrite its Redis
     # entry every 5 min (inside the 10-min TTL) so the serving path never pays the
