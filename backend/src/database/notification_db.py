@@ -194,17 +194,24 @@ def delete_notification(user_id: str, notification_id: str) -> bool:
 
 
 def get_unread_count(user_id: str) -> int:
-    """Get count of unread notifications for a user"""
+    """Get count of unread notifications for a user.
+
+    Uses Firestore's server-side count() aggregation. Streaming the matching
+    documents and counting them client-side costs one document transfer per
+    unread notification, which is why this endpoint's tail reached 90s for
+    users with a backlog while the median stayed under a second.
+    """
     firestore = _get_firestore_service()
 
     try:
-        docs = firestore.db.collection("users").document(user_id) \
+        query = firestore.db.collection("users").document(user_id) \
             .collection("notifications") \
-            .where("is_read", "==", False) \
-            .stream()
+            .where("is_read", "==", False)
 
-        return sum(1 for _ in docs)
-    except Exception:
+        # count().get() returns [[AggregationResult]] — one result, one aggregation.
+        return int(query.count().get()[0][0].value)
+    except Exception as e:
+        print(f"Error counting unread notifications: {e}")
         return 0
 
 
