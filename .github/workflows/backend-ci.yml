@@ -85,8 +85,10 @@ jobs:
       - name: Install ruff
         run: pip install ruff
 
+      # Rule set lives in backend/pyproject.toml ([tool.ruff.lint]) so an unpinned ruff
+      # upgrade can't silently change what CI enforces.
       - name: Run linter
-        run: ruff check src/ --ignore E501,E722,E701,E402,F841
+        run: ruff check src/
 
   # ── 4. Gate — always runs; the required status check branch protection targets ─
   ci-gate:
