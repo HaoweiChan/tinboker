@@ -385,6 +385,7 @@ not listed here are loaded from GCP Secret Manager at runtime by `src/config_loa
 | `ENVIRONMENT` | `production` / `development` / `staging` | Controls DB enforcement, logging |
 | `PORT` | `5174` | Local dev server port |
 | `USE_POSTGRES` | `true` | Forces PostgreSQL; production auto-enables this |
+| `SQL_ECHO` | `false` (default) | Echoes every SQL statement to stdout. Debugging only — turn it back off. Containers have no log rotation, and this wrote ~1.5 GB/day when left on in dev |
 | `REDIS_URL` | `redis://redis:6379/0` | Docker internal network |
 | `GCP_PROJECT_ID` | `gen-lang-client-0901363254` | Enables Secret Manager |
 | `GOOGLE_APPLICATION_CREDENTIALS` | `/app/gcp-service-account.json` | Mounted at runtime |
