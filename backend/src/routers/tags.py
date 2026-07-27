@@ -271,9 +271,9 @@ async def get_exposures_performance(db: Session = Depends(get_session)):
     """
     try:
         items = await podcast_service.exposures_performance()
-        served = served_sector_exposure_ids(db)
+        served = await asyncio.to_thread(served_sector_exposure_ids, db)
         if served is None:  # bootstrap window: registry empty — fall back to blocklist
-            hidden = hidden_sector_exposure_ids(db)
+            hidden = await asyncio.to_thread(hidden_sector_exposure_ids, db)
             items = [i for i in items if i.get("exposure_id") not in hidden]
         else:
             items = [i for i in items if i.get("exposure_id") in served]
