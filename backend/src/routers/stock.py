@@ -216,10 +216,53 @@ _ext_api_sem = asyncio.Semaphore(5)
 _NULL_CACHE_TTL = 300  # 5 min
 
 
+def _read_close_before(ticker: str, ref_date_str: str) -> Optional[float]:
+    """Latest stored close in the 7-day window ending at *ref_date_str*.
+
+    Opens its own session (it's called via asyncio.to_thread) rather than taking
+    the request-scoped one. Callers fan this out over up to 300 tickers with
+    asyncio.gather, and a SQLAlchemy Session is not safe to share across threads.
+    ``close`` is NOT NULL, so "no row" and "no price" collapse to the same None.
+    """
+    window_start = (datetime.strptime(ref_date_str, "%Y-%m-%d") - timedelta(days=7)).strftime("%Y-%m-%d")
+    for session in get_session():
+        row = (
+            session.query(StockDailyClose)
+            .filter(
+                StockDailyClose.ticker == ticker,
+                StockDailyClose.date >= window_start,
+                StockDailyClose.date <= ref_date_str,
+            )
+            .order_by(StockDailyClose.date.desc())
+            .first()
+        )
+        return row.close if row is not None else None
+    return None
+
+
+def _persist_close(ticker: str, date: str, close: float) -> None:
+    """Store a fetched close so this (ticker, date) never needs an API call again.
+
+    Own session, same reason as :func:`_read_close_before`.
+    """
+    for session in get_session():
+        try:
+            existing = (
+                session.query(StockDailyClose)
+                .filter(StockDailyClose.ticker == ticker, StockDailyClose.date == date)
+                .first()
+            )
+            if not existing:
+                session.add(StockDailyClose(ticker=ticker, date=date, close=close))
+                session.commit()
+        except Exception:
+            session.rollback()
+        return
+
+
 async def _get_reference_close(
     ticker: str,
     ref_date_str: str,
-    db: Session,
 ) -> Optional[float]:
     """Return the closing price on or just before *ref_date_str*.
 
@@ -227,21 +270,14 @@ async def _get_reference_close(
       1. PostgreSQL ``stock_daily_closes`` table (permanent, never expires)
       2. Redis cache (catches recent API results; 24 h TTL)
       3. External API (FinMind for TW, Massive for US) — result persisted to both DB + Redis
+
+    Every DB touch is offloaded with its own session, so this is safe to fan out
+    concurrently — which is exactly what all three batch-price routes do.
     """
     # --- 1. DB lookup (permanent store, 7-day window) ---
-    window_start = (datetime.strptime(ref_date_str, "%Y-%m-%d") - timedelta(days=7)).strftime("%Y-%m-%d")
-    row = (
-        db.query(StockDailyClose)
-        .filter(
-            StockDailyClose.ticker == ticker,
-            StockDailyClose.date >= window_start,
-            StockDailyClose.date <= ref_date_str,
-        )
-        .order_by(StockDailyClose.date.desc())
-        .first()
-    )
-    if row is not None:
-        return row.close
+    stored = await asyncio.to_thread(_read_close_before, ticker, ref_date_str)
+    if stored is not None:
+        return stored
 
     # --- 2. Redis cache ---
     cache_key = f"stock:{ticker}:close:{ref_date_str}"
@@ -286,17 +322,7 @@ async def _get_reference_close(
 
     # Persist to DB so this (ticker, date) never needs an API call again.
     actual_date = rows[-1].get("date", ref_date_str)
-    try:
-        existing = (
-            db.query(StockDailyClose)
-            .filter(StockDailyClose.ticker == ticker, StockDailyClose.date == actual_date)
-            .first()
-        )
-        if not existing:
-            db.add(StockDailyClose(ticker=ticker, date=actual_date, close=close))
-            db.commit()
-    except Exception:
-        db.rollback()
+    await asyncio.to_thread(_persist_close, ticker, actual_date, close)
 
     await cache_set(cache_key, str(close), CACHE_TTL["stock_history"])
     return close
@@ -305,7 +331,6 @@ async def _get_reference_close(
 @router.post("/batch-prices-since")
 async def get_batch_prices_since(
     body: BatchPricesSinceRequest,
-    db: Session = Depends(get_session),
 ):
     """Return % change from each ticker's reference date to its current price.
 
@@ -337,7 +362,7 @@ async def get_batch_prices_since(
     # 10s timeout per ticker to avoid hanging when external APIs are rate-limited.
     async def _ref_close_safe(t, d):
         try:
-            return await asyncio.wait_for(_get_reference_close(t, d, db), timeout=10)
+            return await asyncio.wait_for(_get_reference_close(t, d), timeout=10)
         except (asyncio.TimeoutError, Exception):
             return None
 
@@ -380,7 +405,6 @@ async def _window_returns(
     ticker: str,
     reference_ms: int,
     current_price: Optional[float],
-    db: Session,
 ) -> dict:
     """Forward 7/30/90D returns measured *from* the mention date, plus mention→now.
 
@@ -393,7 +417,7 @@ async def _window_returns(
         "baseline": None, "d7": None, "d30": None, "d90": None, "since": None,
     }
     mention_dt = datetime.utcfromtimestamp(reference_ms / 1000)
-    baseline = await _get_reference_close(ticker, mention_dt.strftime("%Y-%m-%d"), db)
+    baseline = await _get_reference_close(ticker, mention_dt.strftime("%Y-%m-%d"))
     if not baseline or baseline <= 0:
         return result
     result["baseline"] = baseline
@@ -403,7 +427,7 @@ async def _window_returns(
         end_dt = mention_dt + timedelta(days=n)
         if end_dt > now:
             continue  # window not complete yet → leave None ("—")
-        end_close = await _get_reference_close(ticker, end_dt.strftime("%Y-%m-%d"), db)
+        end_close = await _get_reference_close(ticker, end_dt.strftime("%Y-%m-%d"))
         if end_close and end_close > 0:
             result[f"d{n}"] = round((end_close - baseline) / baseline * 100, 2)
 
@@ -415,7 +439,6 @@ async def _window_returns(
 @router.post("/batch-prices-windows")
 async def get_batch_prices_windows(
     body: BatchPricesSinceRequest,
-    db: Session = Depends(get_session),
 ):
     """Forward 7/30/90D (+ since) returns per *pick*, keyed by ``"{TICKER}:{reference_ms}"``.
 
@@ -453,7 +476,7 @@ async def get_batch_prices_windows(
     # Close-to-close is also consistent with the 7/30/90D windows.
     async def _latest_close_safe(t):
         try:
-            return await asyncio.wait_for(_get_reference_close(t, today_str, db), timeout=12)
+            return await asyncio.wait_for(_get_reference_close(t, today_str), timeout=12)
         except (asyncio.TimeoutError, Exception):
             return None
 
@@ -462,7 +485,7 @@ async def get_batch_prices_windows(
 
     async def _win_safe(t: str, ms: int) -> dict:
         try:
-            return await asyncio.wait_for(_window_returns(t, ms, latest.get(t), db), timeout=15)
+            return await asyncio.wait_for(_window_returns(t, ms, latest.get(t)), timeout=15)
         except (asyncio.TimeoutError, Exception):
             return {"baseline": None, "d7": None, "d30": None, "d90": None, "since": None}
 
@@ -517,7 +540,7 @@ def _batch_read_dated_closes(tickers: List[str], limit: int = 120) -> dict:
     return {t: pairs[-limit:] for t, pairs in out.items()}
 
 
-async def _trailing_returns(ticker: str, pairs: list, db: Session) -> dict:
+async def _trailing_returns(ticker: str, pairs: list) -> dict:
     """Trailing 1/7/30/90D close-to-close % returns, anchored on the latest close.
 
     ``pairs`` is the ticker's ``[(iso_date, close)]`` list (date asc) from the DB. All
@@ -557,7 +580,7 @@ async def _trailing_returns(ticker: str, pairs: list, db: Session) -> dict:
                     break
             # Target predates our series → fetch the anchor (DB → Redis → API).
             if anchor is None and dates and target < dates[0]:
-                anchor = await _get_reference_close(ticker, target, db)
+                anchor = await _get_reference_close(ticker, target)
         if anchor and anchor > 0:
             result[f"d{n}"] = round((latest - anchor) / anchor * 100, 2)
     return result
@@ -570,7 +593,6 @@ class BatchTrailingRequest(BaseModel):
 @router.post("/batch-prices-trailing")
 async def get_batch_prices_trailing(
     body: BatchTrailingRequest,
-    db: Session = Depends(get_session),
 ):
     """Trailing 1/7/30/90D returns (+ recent close series) per ticker.
 
@@ -596,7 +618,7 @@ async def get_batch_prices_trailing(
 
     async def _safe(t: str) -> dict:
         try:
-            return await asyncio.wait_for(_trailing_returns(t, dated.get(t, []), db), timeout=15)
+            return await asyncio.wait_for(_trailing_returns(t, dated.get(t, [])), timeout=15)
         except (asyncio.TimeoutError, Exception):
             return {"price": None, "d1": None, "d7": None, "d30": None, "d90": None}
 
@@ -636,8 +658,8 @@ async def get_batch_summary(
         return []
     lookup_tickers = [t.split(".")[0] for t in requested_tickers]
 
-    rows = (
-        db.query(StockTranslation)
+    rows = await asyncio.to_thread(
+        lambda: db.query(StockTranslation)
         .filter(StockTranslation.ticker.in_(lookup_tickers))
         .all()
     )
