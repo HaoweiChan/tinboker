@@ -58,14 +58,14 @@ def init_engine():
             pool_size=10,
             max_overflow=20,
             pool_pre_ping=True,  # Verify connections before using
-            echo=settings.is_development,  # Log SQL in development
+            echo=settings.sql_echo,
         )
     else:
         # SQLite settings
         engine = create_engine(
             db_url,
             connect_args={"check_same_thread": False},  # SQLite specific
-            echo=settings.is_development,
+            echo=settings.sql_echo,
         )
         
         # Enable foreign keys for SQLite
