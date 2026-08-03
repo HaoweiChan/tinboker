@@ -3,6 +3,7 @@ PostgreSQL database connection and session management using SQLAlchemy.
 """
 
 import logging
+from contextlib import contextmanager
 from typing import Generator
 from sqlalchemy import create_engine, event, Engine, text
 from sqlalchemy.ext.declarative import declarative_base
@@ -99,6 +100,27 @@ def get_session() -> Generator[Session, None, None]:
     db = SessionLocal()
     try:
         yield db
+    finally:
+        db.close()
+
+
+@contextmanager
+def session_scope() -> Generator[Session, None, None]:
+    """Session for non-FastAPI (plain sync) code: commits on success, always closes.
+
+    ``get_session`` above is the request-scoped dependency and never commits; the
+    user/notification data layer runs outside the dependency system and writes.
+    """
+    if SessionLocal is None:
+        init_engine()
+
+    db = SessionLocal()
+    try:
+        yield db
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
 

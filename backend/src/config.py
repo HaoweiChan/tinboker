@@ -277,7 +277,8 @@ class Settings(BaseSettings):
     # Serve episode / ticker-insight / trending content reads from the VPS-local
     # Postgres mirror of Firestore (schema `firestore_mirror`, same podcast_db)
     # instead of Firestore itself — the Firestore egress bill is the reason.
-    # users/* and notifications ALWAYS stay on Firestore regardless of this flag.
+    # Users and notifications are unaffected: P3 moved them to first-class Postgres
+    # tables (`users`, `user_notifications`), so they never consult this flag.
     content_reads_from_postgres: bool = False
 
     @property

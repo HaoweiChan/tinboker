@@ -127,18 +127,26 @@ class FirestoreService:
     def get_document(self, collection: str, doc_id: str) -> Optional[Dict]:
         """
         Get a single document by ID.
-        
+
+        ``episodes`` reads are flipped onto ``firestore_mirror.episodes`` (P2,
+        docs/firestore-contract.md § 11) — every live (non-script) caller only
+        ever reads that collection. Any other collection still reads Firestore
+        directly (unused today, kept for generic/script callers).
+
         Args:
             collection: Collection name
             doc_id: Document ID
-            
+
         Returns:
             Document data as dictionary, or None if not found
         """
+        if collection == "episodes":
+            from src.service import postgres_mirror_reader
+            return postgres_mirror_reader.get_episode_by_id(doc_id)
         try:
             doc_ref = self.db.collection(collection).document(doc_id)
             doc = doc_ref.get()
-            
+
             if doc.exists:
                 data = doc.to_dict()
                 data['id'] = doc.id  # Include document ID
@@ -192,9 +200,13 @@ class FirestoreService:
         Returns:
             List of document dictionaries
         """
+        if collection == "episodes":
+            return self._query_episodes_from_mirror(
+                filters=filters, order_by=order_by, direction=direction, limit=limit
+            )
         try:
             query = self.db.collection(collection)
-            
+
             # Apply filters
             if filters:
                 for field, operator, value in filters:
@@ -232,7 +244,38 @@ class FirestoreService:
             return results
         except Exception as e:
             raise Exception(f"Failed to query collection in Firestore: {e}") from e
-    
+
+    @staticmethod
+    def _query_episodes_from_mirror(
+        filters: Optional[List[tuple]],
+        order_by: Optional[str],
+        direction: Optional[str],
+        limit: Optional[int],
+    ) -> List[Dict]:
+        """The ``episodes`` branch of :meth:`query_collection` (P2 read-flip).
+
+        A narrow translation of the two shapes the only real caller
+        (``podcast.regen.orchestrator.find_candidates``) actually issues — an
+        optional single ``podcast_name ==`` filter plus order/limit — not a
+        general Firestore-query-to-SQL translator.
+        """
+        from src.service import postgres_mirror_reader
+
+        podcast_name = None
+        if filters:
+            if len(filters) != 1 or filters[0][0] != "podcast_name" or filters[0][1] != "==":
+                raise ValueError(
+                    "mirror-backed episodes query only supports a single "
+                    f"podcast_name=='...' filter, got {filters!r}"
+                )
+            podcast_name = filters[0][2]
+        return postgres_mirror_reader.query_episodes(
+            podcast_name=podcast_name,
+            order_by=order_by or "created_time",
+            descending=(direction != "ASCENDING"),
+            limit=limit,
+        )
+
     def get_all_documents(self, collection: str) -> List[Dict]:
         """
         Get all documents from a collection.
