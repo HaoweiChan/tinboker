@@ -12,9 +12,13 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+import psycopg
 from src.models.podcast_models import PodcastEpisode
 from src.pipeline.episode_data import EpisodeData
-from src.pipeline.steps.ticker_insights_export import export_ticker_insights
+from src.pipeline.steps.ticker_insights_export import (
+    _mirror_ticker_insights_to_postgres,
+    export_ticker_insights,
+)
 
 _FEED_MS = 1764849366000  # 2025-12-04 — a real back-catalogue publish date
 
@@ -80,6 +84,97 @@ def test_export_falls_back_to_created_time_without_episode_model(monkeypatch):
         _Config(), _Services(), _episode_data(episode_model=None, created_time=created)
     )
     assert captured["launch_time"] == created
+
+
+# --- Postgres dual-write (firestore_mirror.ticker_insights) -----------------
+
+
+class _FakeCursor:
+    def __init__(self):
+        self.executed: list[tuple[str, tuple]] = []
+
+    def execute(self, sql, params=None):
+        self.executed.append((sql, params))
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+class _FakeConn:
+    def __init__(self, cursor):
+        self._cursor = cursor
+
+    def cursor(self):
+        return self._cursor
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+def test_mirror_skips_without_episode_database_url(monkeypatch):
+    monkeypatch.delenv("EPISODE_DATABASE_URL", raising=False)
+
+    def _must_not_connect(*a, **k):
+        raise AssertionError("must not connect without EPISODE_DATABASE_URL")
+
+    monkeypatch.setattr(psycopg, "connect", _must_not_connect)
+
+    _mirror_ticker_insights_to_postgres("ep_1", {"2330": {"ticker": "2330"}})
+
+
+def test_mirror_skips_when_docs_empty(monkeypatch):
+    monkeypatch.setenv("EPISODE_DATABASE_URL", "postgresql://x/y")
+
+    def _must_not_connect(*a, **k):
+        raise AssertionError("must not connect with no docs to write")
+
+    monkeypatch.setattr(psycopg, "connect", _must_not_connect)
+
+    _mirror_ticker_insights_to_postgres("ep_1", {})
+
+
+def test_mirror_upserts_each_ticker_doc_when_configured(monkeypatch):
+    monkeypatch.setenv("EPISODE_DATABASE_URL", "postgresql://x/y")
+    cur = _FakeCursor()
+    monkeypatch.setattr(psycopg, "connect", lambda *a, **k: _FakeConn(cur))
+
+    docs = {"2330": {"ticker": "2330"}, "NVDA": {"ticker": "NVDA"}}
+    _mirror_ticker_insights_to_postgres("ep_1", docs)
+
+    assert any("CREATE TABLE" in sql for sql, _ in cur.executed)
+    upserts = [params for sql, params in cur.executed if "INSERT INTO" in sql]
+    assert len(upserts) == 2
+    assert {p[0] for p in upserts} == {"ep_1"}
+    assert {p[1] for p in upserts} == {"2330", "NVDA"}
+
+
+def test_export_ticker_insights_dual_writes_same_docs_to_postgres(monkeypatch):
+    """The live pipeline step upserts the SAME dict it wrote to Firestore, in the
+    same run — not a re-derived copy."""
+    monkeypatch.setenv("EPISODE_DATABASE_URL", "postgresql://x/y")
+    _capture(monkeypatch)  # fakes build_episode_insight_docs -> {"2330": {"ticker": "2330"}}
+    cur = _FakeCursor()
+    monkeypatch.setattr(psycopg, "connect", lambda *a, **k: _FakeConn(cur))
+
+    model = PodcastEpisode(
+        mp3_url="gs://b/m", transcript_url="gs://b/t",
+        summary_url="gs://b/s", summary_image_url="gs://b/i",
+        feed_date_published_ms=_FEED_MS,
+    )
+    export_ticker_insights(_Config(), _Services(), _episode_data(episode_model=model))
+
+    upserts = [params for sql, params in cur.executed if "INSERT INTO" in sql]
+    assert len(upserts) == 1
+    episode_id, ticker, doc = upserts[0]
+    assert episode_id == "ep_x"
+    assert ticker == "2330"
+    assert doc.obj == {"ticker": "2330"}
 
 
 def test_resolved_publish_ms_matches_firestore_released_at_ms():
