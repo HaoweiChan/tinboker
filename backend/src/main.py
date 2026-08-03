@@ -298,7 +298,7 @@ async def lifespan(app: FastAPI):
 
     asyncio.create_task(_sync_sectors_bg())
 
-    # Sector follows are keyed by display name in Firestore user docs. M2 merges four
+    # Sector follows are keyed by display name on the user row. M2 merges four
     # jp_* sector pages into canonical sectors, so migrate old followed names once.
     async def _migrate_sector_follows_bg():
         try:

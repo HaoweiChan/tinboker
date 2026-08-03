@@ -2,7 +2,7 @@
 SQLAlchemy ORM models for the TinBoker database.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import (
     Boolean,
@@ -497,3 +497,56 @@ class ScheduledSocialPost(Base):
 
     def __repr__(self) -> str:
         return f"<ScheduledSocialPost(id={self.id}, type='{self.post_type}', status='{self.status}', scheduled_for='{self.scheduled_for}')>"
+
+
+class User(Base):
+    """A registered member (was Firestore ``users/{user_id}``, P3 of the Firestore exit).
+
+    The five subscription arrays and the preferences map stay JSON rather than becoming
+    child tables: every read wants the whole set at once, every write is a single
+    add/remove on one user, and the population is ~40 rows. A join buys nothing here.
+    ponytail: JSON arrays, normalise if per-ticker fan-in queries ever need an index.
+    """
+    __tablename__ = "users"
+
+    id = Column(String(64), primary_key=True)  # uuid4, was the Firestore doc id
+    google_id = Column(String(64), nullable=False, unique=True, index=True)
+    email = Column(String(320), nullable=False, index=True)
+    name = Column(String(200), nullable=False, default="")
+    avatar = Column(Text, nullable=True)  # https URL or data:image/... URI (~300KB cap)
+    email_verified = Column(Boolean, nullable=False, default=False)
+    created_at = Column(TZ_DATETIME, nullable=True)
+    updated_at = Column(TZ_DATETIME, nullable=True)
+
+    watchlist = Column(JSON_VARIANT, nullable=False, default=list)  # tickers
+    podcast_subscriptions = Column(JSON_VARIANT, nullable=False, default=list)
+    episode_bookmarks = Column(JSON_VARIANT, nullable=False, default=list)  # "{podcast}_{ep}"
+    alerts = Column(JSON_VARIANT, nullable=False, default=list)
+    tag_subscriptions = Column(JSON_VARIANT, nullable=False, default=list)
+    notification_preferences = Column(JSON_VARIANT, nullable=False, default=dict)
+
+    def __repr__(self) -> str:
+        return f"<User(id={self.id}, email='{self.email}')>"
+
+
+class UserNotification(Base):
+    """In-app notification (was the Firestore ``users/{id}/notifications`` subcollection)."""
+    __tablename__ = "user_notifications"
+
+    id = Column(String(64), primary_key=True)  # uuid4
+    user_id = Column(String(64), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    type = Column(String(32), nullable=False)
+    title = Column(Text, nullable=False, default="")
+    body = Column(Text, nullable=False, default="")
+    data = Column(JSON_VARIANT, nullable=False, default=dict)
+    is_read = Column(Boolean, nullable=False, default=False)
+    created_at = Column(TZ_DATETIME, nullable=False, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        # Every query is "this user's inbox, newest first" or "…unread only".
+        Index("idx_user_notifications_user_created", "user_id", "created_at"),
+        Index("idx_user_notifications_user_unread", "user_id", "is_read"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<UserNotification(id={self.id}, user_id={self.user_id}, read={self.is_read})>"

@@ -65,6 +65,40 @@ def db_connection(test_db):
     conn.close()
 
 
+@pytest.fixture(scope="function")
+def orm_db(monkeypatch):
+    """Point the ORM (src.database.postgres) at a fresh in-memory SQLite database.
+
+    Everything that goes through ``session_scope`` — users, notifications — then runs
+    against real SQL instead of a mock. StaticPool keeps the single in-memory database
+    alive across sessions/threads.
+    """
+    from sqlalchemy import create_engine, event
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+
+    from src.database import postgres
+    import src.database.models  # noqa: F401 — registers the tables on Base.metadata
+
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+
+    @event.listens_for(engine, "connect")
+    def _enable_fk(dbapi_conn, _record):
+        dbapi_conn.execute("PRAGMA foreign_keys=ON")
+
+    postgres.Base.metadata.create_all(bind=engine)
+    monkeypatch.setattr(postgres, "engine", engine)
+    monkeypatch.setattr(
+        postgres, "SessionLocal", sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    )
+    yield engine
+    engine.dispose()
+
+
 @pytest.fixture
 def sample_stock_data():
     """Sample stock data for testing"""
