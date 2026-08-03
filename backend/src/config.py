@@ -274,6 +274,11 @@ class Settings(BaseSettings):
     # container logs (18 GB before the container was recycled), and the containers have
     # no log rotation configured.
     sql_echo: bool = False
+    # Serve episode / ticker-insight / trending content reads from the VPS-local
+    # Postgres mirror of Firestore (schema `firestore_mirror`, same podcast_db)
+    # instead of Firestore itself — the Firestore egress bill is the reason.
+    # users/* and notifications ALWAYS stay on Firestore regardless of this flag.
+    content_reads_from_postgres: bool = False
 
     @property
     def postgres_connection_string(self) -> Optional[str]:

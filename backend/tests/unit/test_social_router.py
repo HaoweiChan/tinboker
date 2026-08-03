@@ -89,6 +89,7 @@ def _svc(monkeypatch, *, images, cards, deck=_DECK):
         get_document=lambda col, eid: {"social_cards": [dict(c) for c in cards]},
         set_document=lambda col, eid, data, merge: sink.update(data),
     )
+    svc._fs_write = svc.firestore_service  # writes go to Firestore, reads may not
 
     async def _upload(bucket, path, data, ctype):
         return f"https://cdn/{path}"

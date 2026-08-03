@@ -15,7 +15,7 @@ from typing import Any, List, Optional, Tuple
 from src.cache.cache_config import CACHE_TTL
 from src.cache.redis_client import cache_get, cache_set
 from src.config import settings
-from src.services.firestore_service import FirestoreService
+from src.services.postgres_mirror_service import content_read_service
 
 logger = logging.getLogger(__name__)
 
@@ -247,10 +247,10 @@ def _doc_to_trending(doc: dict, days: int) -> dict:
 
 
 class InsightService:
-    """Reads ticker insight / trending data from Firestore."""
+    """Reads ticker insight / trending data from Firestore (or its Postgres mirror)."""
 
     def __init__(self) -> None:
-        self._fs = FirestoreService()
+        self._fs = content_read_service()
 
     async def get_trending(self, days: int = 30, limit: int = 100) -> List[dict]:
         """
