@@ -83,6 +83,9 @@ services:
     environment:
       ENVIRONMENT: development
       USE_POSTGRES: "true"
+      # P1 read flip (firestore-contract §11): content reads from the local
+      # firestore_mirror instead of Firestore. Dev first; staging/prod after soak.
+      CONTENT_READS_FROM_POSTGRES: "true"
       REDIS_URL: redis://redis:6379/2
       PORT: "8000"
       HOST: 0.0.0.0
