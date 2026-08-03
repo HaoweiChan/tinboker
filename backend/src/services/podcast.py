@@ -27,6 +27,7 @@ from src.cache.cache_config import CACHE_TTL
 from src.cache.cdn_cache import purge_cdn_cache
 
 from src.services.firestore_service import FirestoreService
+from src.services.postgres_mirror_service import content_read_service, patch_episode_doc
 from src.services.gcs_content import GCSContentService
 from src.services.episode_transformer import EpisodeTransformer
 import httpx
@@ -192,7 +193,11 @@ class PodcastService:
     """Service for podcast CRUD operations, search, and summary management"""
 
     def __init__(self, firestore_service: Optional[FirestoreService] = None):
-        self.firestore_service = firestore_service or FirestoreService()
+        # Reads: Firestore, or the Postgres mirror when CONTENT_READS_FROM_POSTGRES.
+        self.firestore_service = firestore_service or content_read_service()
+        # Writes: always Firestore (source of truth) + mirror write-through, so the
+        # mirror is already fresh whenever the read flag is flipped on.
+        self._fs_write = firestore_service or FirestoreService()
         self.gcs = GCSContentService()
         self.transformer = EpisodeTransformer(self.gcs)
 
@@ -2583,6 +2588,23 @@ class PodcastService:
 
     # ── Summary mutations ────────────────────────────────────────────
 
+    async def _write_episode_fields(self, episode_id: str, updates: dict) -> None:
+        """Merge-patch an episode doc: Firestore first, then the Postgres mirror.
+
+        Firestore stays the source of truth; the mirror write-through runs on every
+        platform write regardless of ``content_reads_from_postgres`` so the mirror is
+        already current when reads flip over (and so a read-after-write against the
+        mirror sees the edit). A mirror failure is logged, never surfaced — the
+        pipeline's next episode upsert restores it.
+        """
+        await asyncio.to_thread(
+            self._fs_write.set_document, "episodes", episode_id, updates, True,
+        )
+        try:
+            await asyncio.to_thread(patch_episode_doc, episode_id, updates)
+        except Exception as e:
+            logger.warning("Postgres mirror write-through failed for %s: %s", episode_id, e)
+
     async def save_modified_summary(
         self, podcast_name: str, episode_id: str,
         content: str, modified_by: Optional[str] = None,
@@ -2614,9 +2636,7 @@ class PodcastService:
             if modified_by:
                 update_data['modified_by'] = modified_by
 
-            await asyncio.to_thread(
-                self.firestore_service.set_document, "episodes", episode_id, update_data, True,
-            )
+            await self._write_episode_fields(episode_id, update_data)
             await self._invalidate_episode_cache(podcast_name, episode_id)
             return await self.get_episode_by_id(podcast_name, episode_id, apply_scope=False)
         except Exception as e:
@@ -2643,12 +2663,10 @@ class PodcastService:
                 await self.gcs.delete_blob(*parsed)
 
             from google.cloud.firestore import DELETE_FIELD
-            await asyncio.to_thread(
-                self.firestore_service.set_document, "episodes", episode_id,
-                {'modified_summary_url': DELETE_FIELD, 'modified_summary_content': DELETE_FIELD,
-                 'modified_by': DELETE_FIELD, 'modified_at': DELETE_FIELD},
-                True,
-            )
+            await self._write_episode_fields(episode_id, {
+                'modified_summary_url': DELETE_FIELD, 'modified_summary_content': DELETE_FIELD,
+                'modified_by': DELETE_FIELD, 'modified_at': DELETE_FIELD,
+            })
             await self._invalidate_episode_cache(podcast_name, episode_id)
             return True
         except Exception as e:
@@ -2673,9 +2691,7 @@ class PodcastService:
         if episode_dict.get("podcast_name") != podcast_name:
             raise HTTPException(status_code=404, detail=f"Episode {episode_id} not found for podcast {podcast_name}")
         try:
-            await asyncio.to_thread(
-                self.firestore_service.set_document, "episodes", episode_id, updates, True,
-            )
+            await self._write_episode_fields(episode_id, updates)
             await self._invalidate_episode_cache(podcast_name, episode_id)
             # When related_tickers change (e.g. a content regen), the per-ticker
             # sentiment cards are served from a separate ticker_insights:* cache the
@@ -2715,10 +2731,7 @@ class PodcastService:
             raise HTTPException(status_code=404, detail=f"Episode {episode_id} not found")
         podcast_name = episode_dict.get("podcast_name", "")
         try:
-            await asyncio.to_thread(
-                self.firestore_service.set_document,
-                "episodes", episode_id, {"social_thread": thread}, True,
-            )
+            await self._write_episode_fields(episode_id, {"social_thread": thread})
             await self._invalidate_episode_cache(podcast_name, episode_id)
             await self._purge_api_host_cdn()
             episode = await self.get_episode_admin(episode_id)
@@ -2794,9 +2807,7 @@ class PodcastService:
             ver = hashlib.md5(b64.encode("utf-8")).hexdigest()[:10]
             cards[i]["image_url"] = f"{url}?v={ver}"
 
-        await asyncio.to_thread(
-            self.firestore_service.set_document, "episodes", episode_id, {"social_cards": cards}, True
-        )
+        await self._write_episode_fields(episode_id, {"social_cards": cards})
         await self._invalidate_episode_cache(episode.podcast_name, episode_id)
         await self._purge_api_host_cdn()
         return (await self.get_episode_admin(episode_id)) or episode

@@ -621,3 +621,74 @@ These decisions close the implementation questions that originally blocked the F
 6. **Multi-market namespace: internal `market` metadata.** `ticker_insights` and `trending_tickers` carry market metadata so TW/US symbols can be segregated while preserving existing string document IDs. Ambiguous overlaps without market metadata must fail validation before commit.
 7. **Sector/theme exposures: episode metadata only.** Sector/theme-derived ticker baskets are written to `sector_exposures` and companion flat arrays on the episode document. They do not populate `related_tickers`, inverted ticker indices, ticker pages, watchlist notifications, or `ticker_insights`.
 8. **Still open: `*_url` audit (§ 2.3 cleanup #2).** Which `*_public_url` fields are actually fetched by external consumers vs. backend-only remains an audit task.
+
+---
+
+## § 11. Reverse migration: Firestore → VPS Postgres (2026-08)
+
+> **Status: Phase P1 in progress.** Direction reversed from § 7: the July 2026 GCP bill
+> (NT$46K — 78% Firestore internet egress, 17% read ops; see the P1 PR description)
+> made Firestore the wrong home for high-read content. The contract's *document
+> shapes* above remain authoritative; only the storage/transport changes.
+
+### 11.1 Target topology
+
+All environments already share one VPS-local Postgres container (`tinboker-postgres`,
+`backend/docker-compose.multi.yml`). The live pipeline mirrors every episode doc
+verbatim into `podcast_db`, schema `firestore_mirror`
+(`pipelines/services/podcast/src/pipeline/steps/postgres_episode.py`). P1 completes
+that mirror and flips backend content reads onto it:
+
+| Object | Shape |
+|---|---|
+| `firestore_mirror.episodes` | existing — promoted columns + `doc JSONB` (verbatim § 2 document) |
+| `firestore_mirror.ticker_insights` | `(episode_id text, ticker text, doc jsonb, updated_at, PK(episode_id, ticker))` — verbatim § 4 docs |
+| `firestore_mirror.trending_tickers` | `(ticker text PK, doc jsonb, updated_at)` — verbatim § 5 docs |
+
+The former `tags/{tag}/episodes` and `tickers/{ticker}/episodes` inverted indices are
+NOT mirrored as tables: per § 3.2 they are pure derivations of `episodes.tags` /
+`episodes.related_tickers`, so the backend queries the mirror's JSONB arrays directly
+(GIN-indexed).
+
+### 11.2 Read flip (backend)
+
+`CONTENT_READS_FROM_POSTGRES=true` swaps a same-interface `PostgresMirrorService` in
+place of `FirestoreService` for content reads (episodes, tag/ticker membership,
+ticker insights, trending). Default off; per-env rollout dev → staging → prod.
+**Rollback = flip the flag off** — Firestore stays fully written during P1–P3.
+`users/{id}` and `users/{id}/notifications` stay on Firestore until P3.
+
+### 11.3 Writer obligations added in P1 (pipelines)
+
+- `ticker_insights` export and the hourly `trending_tickers` refresh dual-write
+  Postgres (same doc JSON) alongside Firestore.
+- The regen tool's `commit()` applies its Firestore field updates to
+  `firestore_mirror.episodes.doc` in the same run (mirror must never drift).
+- `dump_firestore_to_postgres.py` additionally backfills `ticker_insights` (collection
+  group) and `trending_tickers`; it remains idempotent and re-runnable.
+
+### 11.4 Rollout runbook (P1)
+
+1. Merge P1 → `develop` (deploys backend to dev; pipelines deploy is manual).
+2. On the VPS: deploy pipelines, then run `dump_firestore_to_postgres.py` once
+   (creates tables/indexes, backfills history; safe to rerun).
+3. Sanity SQL: row counts for `episodes` / `ticker_insights` / `trending_tickers`
+   vs Firestore console counts; spot-check one episode doc.
+4. Set `CONTENT_READS_FROM_POSTGRES=true` on **dev** backend only; smoke
+   `/api/episodes/recent`, a tag page, a stock page, `/api/ticker-insights/trending`.
+5. Promote flag to staging (merge to `main`), soak, then prod (`v*` tag).
+6. 48h green in prod → P2+.
+
+### 11.5 Phases and the Hermes dependency
+
+| Phase | Content | Firestore usage removed |
+|---|---|---|
+| P1 | backend content reads → mirror; dual-writes above | ~99% of remaining reads |
+| P2 | pipelines' own `:8003` reads (`/api/podcast/shows` etc.) + `podcasts` metadata → Postgres | pipelines reads |
+| P3 | `users/*` + notifications → new Postgres tables; fan-out query → SQL | platform data |
+| P4 | stop all Firestore writes; decommission `graphfolio-db` | everything |
+
+**P4 blocker:** the external **Hermes trading system reads
+`trending_tickers/{bare_ticker}` directly from Firestore** (§ 5 status note). It must
+be repointed (VPS Postgres or backend HTTP API) before pipelines stop writing
+Firestore. Owner: Willy.

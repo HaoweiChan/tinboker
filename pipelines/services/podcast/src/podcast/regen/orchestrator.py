@@ -178,6 +178,41 @@ def _firestore():
     return FirestoreService()
 
 
+def _mirror_doc_update_to_postgres(episode_id: str, fields: dict[str, Any]) -> str:
+    """Best-effort jsonb-merge of ``fields`` onto ``firestore_mirror.episodes.doc``.
+
+    ``commit`` writes Firestore directly (it doesn't run through
+    ``pipeline.steps.postgres_episode``), so without this a regen would leave the
+    Postgres mirror silently stale. No-op without ``EPISODE_DATABASE_URL`` — importing
+    ``src.service.firestore_service`` (via ``_firestore()``) already bootstraps GSM
+    secrets, so the var is populated by the time ``commit`` calls this.
+
+    Returns "ok", "missing" (no such row — never fabricates a partial doc), "skipped"
+    (no EPISODE_DATABASE_URL / no psycopg / nothing to write), or "error".
+    """
+    if not fields:
+        return "skipped"
+    url = os.getenv("EPISODE_DATABASE_URL")
+    if not url:
+        return "skipped"
+    try:
+        import psycopg
+    except ImportError:
+        return "skipped"
+
+    from src.podcast.exporters import postgres_mirror
+
+    try:
+        with psycopg.connect(url, autocommit=True) as conn, conn.cursor() as cur:
+            merged = postgres_mirror.merge_episode_doc(cur, episode_id, fields)
+        return "ok" if merged else "missing"
+    except Exception:  # noqa: BLE001 — best-effort, never abort the commit
+        import traceback
+
+        traceback.print_exc()
+        return "error"
+
+
 def _episode_sentences(doc: dict[str, Any]) -> list[dict[str, Any]]:
     return doc.get("sentences") or doc.get("transcript_sentences") or []
 
@@ -820,6 +855,19 @@ def commit(
     if doc_update:
         fs.set_document("episodes", episode_id, doc_update, merge=True)
         report["episode_fields_written"] = sorted(doc_update.keys())
+        # ponytail: only this field set is mirrored — the GCS *_url refresh in 1b
+        # below still bypasses Postgres; add if the backend starts reading *_url
+        # fields from the mirror too.
+        pg_status = _mirror_doc_update_to_postgres(episode_id, doc_update)
+        if pg_status == "missing":
+            report["warnings"].append(
+                f"Postgres mirror has no row for episode_id={episode_id} — skipped "
+                "the doc merge there (the Firestore write above still succeeded)."
+            )
+        elif pg_status == "error":
+            report["warnings"].append(
+                "Postgres mirror merge failed (non-fatal) — see logs."
+            )
 
     # 1b. Re-upload the GCS-served artifacts (marp/events/ticker_marp/summary). The
     #     backend serves these by hydrating ``*_content`` from ``*_url`` when the inline

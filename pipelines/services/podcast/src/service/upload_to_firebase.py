@@ -29,6 +29,22 @@ except ImportError:
 from src.models.podcast_models import PodcastEpisode  # noqa: E402
 
 
+def _normalize_tags(tags: Optional[List[str]]) -> List[str]:
+    """Canonical, deduped, sorted tag slugs.
+
+    Enforces the curated vocabulary at this single persistence boundary so
+    LLM-hallucinated junk (off-vocab proper nouns, fund/ETF names, ticker
+    symbols) can never re-pollute either the ``episodes/{id}.tags`` array or the
+    ``tags/{slug}/episodes`` fan-out, regardless of caller (ingest, regen,
+    backfill). Idempotent — normalizing an already-normalized list is a no-op.
+    """
+    from src.podcast.content_builder.tag_vocabulary import (
+        canonical_tag_slug,
+        normalize_tag_slug,
+    )
+    return sorted({normalize_tag_slug(t) for t in (tags or []) if t and canonical_tag_slug(t)})
+
+
 # Lazy import for GCS (only when needed)
 def get_gcs_storage_service():
     """Lazy import for GCSStorageService to avoid import errors when not needed."""
@@ -220,6 +236,13 @@ class FirebaseService:
             episodes_collection = self.db.collection("episodes")
             doc_ref = episodes_collection.document(episode_id)
             
+            # Stamp the canonical tag list onto the episode BEFORE building the doc dict,
+            # so episodes/{id}.tags (contract §2.1: always present, may be empty) is
+            # written in the SAME call as the rest of the doc — and any other consumer
+            # of to_firestore_dict() (e.g. the Postgres mirror step, which runs right
+            # after this one on the same episode object) sees the final tags too.
+            episode.tags = _normalize_tags(tags)
+
             # Prepare episode data with episode_id included
             episode_data = episode.to_firestore_dict()
             episode_data['episode_id'] = episode_id  # Add episode_id to document for easy retrieval
@@ -410,20 +433,13 @@ class FirebaseService:
         """
         if not tags and not tickers:
             return
-        
-        # Normalize tags and tickers. Enforce the canonical vocabulary at this
-        # persistence boundary: a tag is written to the `tags` collection only if it is
-        # in the vocabulary, so LLM-hallucinated junk (off-vocab proper nouns, fund/ETF
-        # names, ticker symbols) can never re-pollute the collection regardless of which
-        # caller (ingest, regen, backfill) reaches here. The doc id is the NORMALIZED
-        # slug (lowercased, separators stripped) so spellings like ``ai_supply_chain``
-        # and ``aisupplychain`` can never fragment into two docs; membership is tested
-        # on that same normalized form.
-        from src.podcast.content_builder.tag_vocabulary import (
-            canonical_tag_slug,
-            normalize_tag_slug,
-        )
-        normalized_tags = sorted({normalize_tag_slug(tag) for tag in tags if tag and canonical_tag_slug(tag)})
+
+        # Normalize tags (shared with upload_podcast_data's episode.tags stamp — same
+        # vocabulary-filtered slug set both places, see _normalize_tags) and tickers.
+        # The doc id is the NORMALIZED slug (lowercased, separators stripped) so
+        # spellings like ``ai_supply_chain`` and ``aisupplychain`` can never fragment
+        # into two docs; membership is tested on that same normalized form.
+        normalized_tags = _normalize_tags(tags)
         normalized_tickers = [ticker.upper() for ticker in tickers if ticker]
         
         # Process tags
