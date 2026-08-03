@@ -37,6 +37,9 @@ services:
     environment:
       ENVIRONMENT: production
       USE_POSTGRES: "true"
+      # P1 read flip (firestore-contract §11): content reads from the local
+      # firestore_mirror. Verified on dev 2026-08-03 (parity vs Firestore).
+      CONTENT_READS_FROM_POSTGRES: "true"
       # Each env gets its own Redis logical DB so dev/staging test data can never
       # bleed into (or evict) production's cache. prod=/0, staging=/1, dev=/2.
       REDIS_URL: redis://redis:6379/0
@@ -128,6 +131,7 @@ services:
     environment:
       ENVIRONMENT: staging
       USE_POSTGRES: "true"
+      CONTENT_READS_FROM_POSTGRES: "true"
       REDIS_URL: redis://redis:6379/1
       PORT: "8000"
       HOST: 0.0.0.0
