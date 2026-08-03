@@ -188,6 +188,8 @@ jobs:
   # ── 4. Gate — always runs; the required status check branch protection targets ─
   # preview is intentionally excluded — a Cloudflare blip shouldn't block merging.
   ci-gate:
+    # Unique check-run name — see backend-ci.yml ci-gate comment.
+    name: frontend-ci-gate
     needs: [build]
     if: always()
     runs-on: ubuntu-latest
