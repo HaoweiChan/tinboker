@@ -45,6 +45,36 @@ def _normalize_tags(tags: Optional[List[str]]) -> List[str]:
     return sorted({normalize_tag_slug(t) for t in (tags or []) if t and canonical_tag_slug(t)})
 
 
+def _mirror_podcast_show_to_postgres(doc_id: str, metadata: Dict) -> None:
+    """Best-effort dual-write of a ``podcasts/{doc_id}`` show doc into
+    ``firestore_mirror.podcasts`` (Postgres), so ``get_podcast_show``/
+    ``get_all_podcast_shows`` (read-flipped in P2) see show adds/edits.
+    No-op without ``EPISODE_DATABASE_URL`` — same guard as the other live
+    dual-write steps (``pipeline.steps.ticker_insights_export``).
+    """
+    url = os.getenv("EPISODE_DATABASE_URL")
+    if not url:
+        return
+    try:
+        import psycopg
+    except ImportError:
+        print("  ⚠ psycopg not available — skipping Postgres podcasts mirror")
+        return
+
+    from src.podcast.exporters import postgres_mirror
+
+    try:
+        with psycopg.connect(url, autocommit=True) as conn, conn.cursor() as cur:
+            cur.execute(postgres_mirror.DDL_PODCASTS)
+            postgres_mirror.upsert_podcast_show(cur, doc_id, metadata)
+        print(f"  ✓ Mirrored to Postgres: {postgres_mirror.SCHEMA}.podcasts/{doc_id}")
+    except Exception as e:  # noqa: BLE001 — best-effort, show metadata is not dedup-critical
+        import traceback
+
+        print(f"  ⚠ Postgres podcasts mirror failed (non-fatal): {e}")
+        traceback.print_exc()
+
+
 # Lazy import for GCS (only when needed)
 def get_gcs_storage_service():
     """Lazy import for GCSStorageService to avoid import errors when not needed."""
@@ -690,7 +720,10 @@ class FirebaseService:
     
     def upsert_podcast_show(self, podcast_name: str, metadata: Dict) -> None:
         """
-        Create or update a podcast show document in the `podcasts` collection.
+        Create or update a podcast show document in the `podcasts` collection,
+        dual-written into firestore_mirror.podcasts (best-effort — see
+        ``_mirror_podcast_show_to_postgres``) so the :8003 /shows endpoints
+        (read-flipped onto the mirror in P2) see the update.
 
         Args:
             podcast_name: Canonical podcast name (used as document ID after sanitizing)
@@ -700,6 +733,7 @@ class FirebaseService:
         doc_ref = self.db.collection("podcasts").document(doc_id)
         metadata["podcast_name"] = podcast_name
         doc_ref.set(metadata, merge=True)
+        _mirror_podcast_show_to_postgres(doc_id, metadata)
 
     def get_podcast_show(self, podcast_name: str) -> Optional[Dict]:
         """

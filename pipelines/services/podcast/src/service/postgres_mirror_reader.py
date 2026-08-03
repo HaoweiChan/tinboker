@@ -114,7 +114,9 @@ def _order_and_limit_sql(order_by: str, descending: bool, limit: Optional[int]) 
         # promoted/indexed column any of them sort on. Fail loud rather than
         # silently ignoring an order_by nothing here supports.
         raise ValueError(f"unsupported order_by={order_by!r} for mirror-backed episode reads")
-    sql = f" ORDER BY created_time {'DESC' if descending else 'ASC'}"
+    # NULLS LAST regardless of direction: Firestore's created_time is sometimes
+    # unset on older/backfilled docs, and a null must never sort as "newest".
+    sql = f" ORDER BY created_time {'DESC' if descending else 'ASC'} NULLS LAST"
     params: list[Any] = []
     if limit:
         sql += " LIMIT %s"
