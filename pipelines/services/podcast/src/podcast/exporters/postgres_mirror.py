@@ -41,6 +41,14 @@ CREATE TABLE IF NOT EXISTS "{SCHEMA}".trending_tickers (
 );
 """
 
+DDL_PODCASTS = f"""
+CREATE SCHEMA IF NOT EXISTS "{SCHEMA}";
+CREATE TABLE IF NOT EXISTS "{SCHEMA}".podcasts (
+    podcast_name text PRIMARY KEY,
+    doc          jsonb NOT NULL
+);
+"""
+
 # Extra indexes on the existing firestore_mirror.episodes table (owned/created by
 # pipeline.steps.postgres_episode) that the backend queries against. No index on
 # created_time here: doc->>'created_time' is an ISO string (PodcastEpisode.
@@ -81,6 +89,13 @@ SET doc = doc || %s::jsonb
 WHERE episode_id = %s
 """
 
+_UPSERT_PODCAST_SHOW = f"""
+INSERT INTO "{SCHEMA}".podcasts (podcast_name, doc)
+VALUES (%s, %s)
+ON CONFLICT (podcast_name) DO UPDATE SET
+    doc = "{SCHEMA}".podcasts.doc || EXCLUDED.doc
+"""
+
 
 def upsert_ticker_insights(cur, episode_id: str, docs: dict[str, dict[str, Any]]) -> int:
     """Upsert each ``(episode_id, ticker)`` doc. Caller runs ``DDL_TICKER_INSIGHTS``
@@ -119,3 +134,14 @@ def merge_episode_doc(cur, episode_id: str, fields: dict[str, Any]) -> bool:
 
     cur.execute(_MERGE_EPISODE_DOC, (Jsonb(fields), episode_id))
     return cur.rowcount > 0
+
+
+def upsert_podcast_show(cur, doc_id: str, metadata: dict[str, Any]) -> None:
+    """Jsonb-merge upsert of one ``podcasts/{doc_id}`` show doc — mirrors the
+    Firestore write's ``merge=True`` semantics (existing fields not present in
+    ``metadata`` are preserved on conflict, new rows get exactly ``metadata``).
+    Caller runs ``DDL_PODCASTS`` and owns the connection/commit.
+    """
+    from psycopg.types.json import Jsonb
+
+    cur.execute(_UPSERT_PODCAST_SHOW, (doc_id, Jsonb(metadata)))
