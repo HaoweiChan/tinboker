@@ -237,42 +237,49 @@ async def lifespan(app: FastAPI):
 
     # asyncio.create_task(_refresh_us_ohlc_bg())  # re-enable after the _upsert_rows fix
 
-    # Refresh-ahead for the /topics hot-sectors board: recompute + rewrite its Redis
-    # entry every 5 min (inside the 10-min TTL) so the serving path never pays the
-    # cold ~2700-doc episode scan. Off the request path; must not block startup.
-    async def _refresh_board_bg():
-        try:
-            from src.services.podcast import run_periodic_board_refresh
-            await run_periodic_board_refresh(interval_seconds=300.0)
-        except Exception as e:
-            print(f"Warning: sector board refresher stopped: {e}")
+    # Refresh-ahead for the /topics boards (hot sectors + 熱門標籤). Production only,
+    # hourly: every cycle full-scans Firestore in us-central1, and with three envs
+    # running 5/10-min cycles the reads + cross-internet egress dominated the July
+    # 2026 GCP bill (~NT$44K/mo, ~24M doc reads/day). The boards only move when the
+    # pipeline ingests episodes (a few times a day), so hourly is fresh enough. The
+    # board/trending cache TTLs (2h) outlive the interval, so prod serving stays
+    # warm; dev/staging recompute on demand on a cold cache instead.
+    if settings.is_production:
+        async def _refresh_board_bg():
+            try:
+                from src.services.podcast import run_periodic_board_refresh
+                await run_periodic_board_refresh(interval_seconds=3600.0)
+            except Exception as e:
+                print(f"Warning: sector board refresher stopped: {e}")
 
-    asyncio.create_task(_refresh_board_bg())
+        asyncio.create_task(_refresh_board_bg())
+
+        async def _refresh_trending_bg():
+            try:
+                from src.services.podcast import run_periodic_trending_refresh
+                await run_periodic_trending_refresh(interval_seconds=3600.0)
+            except Exception as e:
+                print(f"Warning: trending-tags refresher stopped: {e}")
+
+        asyncio.create_task(_refresh_trending_bg())
 
     # Refresh-ahead for the /topics heat→forward-return validation panel. Its cold
     # compute (full-episode scan + whole-history price join) is the heaviest thing on
     # /topics and must never touch the request path — running it inline took the API
     # down. Own task so a slow backtest can't delay the board refresh above.
+    #
+    # NOT inside the is_production gate: the serving path has no inline fallback
+    # (compute_if_cold=False returns an empty panel), so without this loop the panel
+    # would be permanently empty on dev/staging. Hourly + 2h TTL keeps the Firestore
+    # cost negligible (~2700 projected reads/cycle) until the Postgres repoint (P2).
     async def _refresh_heat_validation_bg():
         try:
             from src.services.podcast import run_periodic_heat_validation_refresh
-            await run_periodic_heat_validation_refresh(interval_seconds=300.0)
+            await run_periodic_heat_validation_refresh(interval_seconds=3600.0)
         except Exception as e:
             print(f"Warning: heat-validation refresher stopped: {e}")
 
     asyncio.create_task(_refresh_heat_validation_bg())
-
-    # Refresh-ahead for the /topics 熱門標籤 board: the volume-driven candidate set
-    # scans every tag's Firestore subcollection, so keep that off the request path by
-    # recomputing + rewriting its Redis entry every 10 min (inside the 30-min TTL).
-    async def _refresh_trending_bg():
-        try:
-            from src.services.podcast import run_periodic_trending_refresh
-            await run_periodic_trending_refresh(interval_seconds=600.0)
-        except Exception as e:
-            print(f"Warning: trending-tags refresher stopped: {e}")
-
-    asyncio.create_task(_refresh_trending_bg())
 
     # Empty-DB bootstrap only. Once any sector row exists, taxonomy writes are managed
     # by the admin taxonomy API and this seed sync writes nothing.

@@ -1216,6 +1216,13 @@ class PodcastService:
     # surface on the board, filtering one-off noise; the board shows the top N.
     _TRENDING_MIN_EPISODES: int = 2
     _TRENDING_MAX_TAGS: int = 40
+    # Serving-cache TTL for the two /topics boards (sector board + trending tags).
+    # Must outlive the production refresh-ahead interval (1h, main.py) so the loop
+    # rewrites the entry before expiry and users never pay the cold Firestore scan.
+    # Recomputes cost real money (us-central1 reads + cross-internet egress — see
+    # July 2026 bill), so this is deliberately long; the boards only move on
+    # pipeline ingest anyway. Dev/staging have no loop and recompute on demand.
+    _TOPIC_BOARD_CACHE_TTL: int = 7200
     # Episode fields the board / sectors scans actually read — projected via
     # stream_documents_projected so the ~2700-doc scan skips transcript/summary
     # refs etc. Covers the tally + scoping (_dict_release_ms, allowlist, retracted).
@@ -1284,7 +1291,7 @@ class PodcastService:
 
         Serving path: returns the warm Redis entry kept fresh by
         run_periodic_board_refresh (refresh-ahead), and only falls back to a
-        recompute on a cold cache. Cache TTL matches podcast_episodes (10 min).
+        recompute on a cold cache. Cache TTL: _TOPIC_BOARD_CACHE_TTL (2h).
         """
         cache_key = f"sectors:board:v3:{self._scope_tag()}"
         cached = await cache_get(cache_key)
@@ -1308,10 +1315,17 @@ class PodcastService:
         return result
 
     async def _cache_sector_board(self, result: list[dict]) -> None:
-        """Write the board payload to the scope-keyed Redis entry (10-min TTL)."""
+        """Write the board payload to the scope-keyed Redis entry (2h TTL).
+
+        Empty results are NOT cached: a transient Postgres/Firestore blip yields []
+        (allowlist fails closed), and pinning that for the long TTL would blank
+        /topics for hours instead of self-healing on the next request/cycle.
+        """
+        if not result:
+            return
         cache_key = f"sectors:board:v3:{self._scope_tag()}"
         try:
-            await cache_set(cache_key, json.dumps(result), CACHE_TTL["podcast_episodes"])
+            await cache_set(cache_key, json.dumps(result), self._TOPIC_BOARD_CACHE_TTL)
         except Exception:
             pass
 
@@ -1705,10 +1719,14 @@ class PodcastService:
         self, horizons: tuple[int, ...], n_buckets: int, cache_key: str,
     ) -> dict:
         result = await self._compute_heat_return_validation(horizons, n_buckets)
-        try:
-            await cache_set(cache_key, json.dumps(result), CACHE_TTL["podcast_episodes"])
-        except Exception:
-            pass
+        # 2h TTL outlives the hourly refresh loop; empty results (transient upstream
+        # failure — allowlist fails closed / Firestore blip) are never cached, same
+        # guard as _cache_sector_board, so the panel self-heals next cycle.
+        if result.get("as_of_count"):
+            try:
+                await cache_set(cache_key, json.dumps(result), self._TOPIC_BOARD_CACHE_TTL)
+            except Exception:
+                pass
         return result
 
     async def _compute_heat_return_validation(
@@ -2421,8 +2439,11 @@ class PodcastService:
 
         Candidate set is volume-driven (see _get_topic_tags); tags below
         _TRENDING_MIN_EPISODES are dropped and the top _TRENDING_MAX_TAGS are returned.
-        Cached 30 min. force_refresh skips the cache read (used by the refresh-ahead loop
-        so the heavier all-tags scan stays off the request path)."""
+        Cached 2h; in production the hourly refresh-ahead loop rewrites the entry before
+        expiry. force_refresh skips the cache read (used by that loop so the heavier
+        all-tags scan stays off the request path). Episode docs are fetched ONCE across
+        all tags — the same episode sits under many tag subcollections, and per-tag
+        re-fetching multiplied Firestore reads and egress ~10x (July 2026 bill)."""
         cache_key = f"tags:trending:v1:{weeks}:{preview_count}:{self._scope_tag()}"
         if not force_refresh:
             cached = await cache_get(cache_key)
@@ -2438,61 +2459,84 @@ class PodcastService:
         week_boundaries = [now_ms - i * week_ms for i in range(weeks + 1)]
         sem = asyncio.Semaphore(6)
 
-        async def _process_tag(tid: str) -> Optional[dict]:
+        async def _tag_episode_refs(tid: str) -> List[dict]:
             async with sem:
                 try:
-                    refs = await asyncio.to_thread(
+                    return await asyncio.to_thread(
                         self.firestore_service.get_subcollection_documents,
                         collection="tags", parent_doc_id=tid,
                         subcollection="episodes", order_by="created_time",
                         direction="DESCENDING", limit=200,
                     )
-                    eids = [r.get('episode_id') for r in refs if r.get('episode_id')]
-                    if not eids:
-                        return None
-                    dicts = await asyncio.to_thread(
-                        self.firestore_service.get_documents_batch, "episodes", eids,
-                    )
-                    scoped_dicts = []
-                    for d in dicts:
-                        if not self._dict_has_content(d):
-                            continue
-                        if allowed is not None and d.get('podcast_name') not in allowed:
-                            continue
-                        if cutoff is not None and self._dict_release_ms(d) < cutoff:
-                            continue
-                        scoped_dicts.append(d)
-                    if not scoped_dicts:
-                        return None
-                    scoped_dicts.sort(key=lambda d: self._dict_release_ms(d), reverse=True)
-                    weekly = [0] * weeks
-                    for d in scoped_dicts:
-                        t = self._dict_release_ms(d)
-                        for w in range(weeks):
-                            if t >= week_boundaries[w + 1]:
-                                weekly[w] += 1
-                                break
-                    previews = []
-                    for d in scoped_dicts[:preview_count]:
-                        previews.append({
-                            "id": d.get("id", ""),
-                            "title": d.get("episode_title", ""),
-                            "podcast_name": d.get("podcast_name", ""),
-                            "released_at_ms": self._dict_release_ms(d),
-                            "key_insights": (d.get("key_insights") or [])[:3],
-                            "related_tickers": (d.get("related_tickers") or [])[:4],
-                        })
-                    return {
-                        "id": tid, "name": tid,
-                        "scoped_count": len(scoped_dicts),
-                        "weekly_counts": weekly,
-                        "recent_episodes": previews,
-                    }
                 except Exception:
-                    logger.warning("Failed to process trending tag %s", tid, exc_info=True)
-                    return None
+                    logger.warning("Failed to list episodes for trending tag %s", tid, exc_info=True)
+                    return []
 
-        results = await asyncio.gather(*[_process_tag(t) for t in self._get_topic_tags()])
+        candidates = self._get_topic_tags()
+        refs_per_tag = await asyncio.gather(*[_tag_episode_refs(t) for t in candidates])
+
+        unique_eids: set = set()
+        for refs in refs_per_tag:
+            for r in refs:
+                eid = r.get('episode_id')
+                if eid:
+                    unique_eids.add(eid)
+        try:
+            docs = await asyncio.to_thread(
+                self.firestore_service.get_documents_batch, "episodes", sorted(unique_eids),
+            ) if unique_eids else []
+        except Exception:
+            logger.warning("trending tags: shared episode fetch failed", exc_info=True)
+            return []
+        episodes_by_id = {d["id"]: d for d in docs}
+
+        def _process_tag(tid: str, refs: List[dict]) -> Optional[dict]:
+            try:
+                dicts = []
+                for r in refs:
+                    d = episodes_by_id.get(r.get('episode_id') or "")
+                    if d is not None:
+                        dicts.append(d)
+                scoped_dicts = []
+                for d in dicts:
+                    if not self._dict_has_content(d):
+                        continue
+                    if allowed is not None and d.get('podcast_name') not in allowed:
+                        continue
+                    if cutoff is not None and self._dict_release_ms(d) < cutoff:
+                        continue
+                    scoped_dicts.append(d)
+                if not scoped_dicts:
+                    return None
+                scoped_dicts.sort(key=lambda d: self._dict_release_ms(d), reverse=True)
+                weekly = [0] * weeks
+                for d in scoped_dicts:
+                    t = self._dict_release_ms(d)
+                    for w in range(weeks):
+                        if t >= week_boundaries[w + 1]:
+                            weekly[w] += 1
+                            break
+                previews = []
+                for d in scoped_dicts[:preview_count]:
+                    previews.append({
+                        "id": d.get("id", ""),
+                        "title": d.get("episode_title", ""),
+                        "podcast_name": d.get("podcast_name", ""),
+                        "released_at_ms": self._dict_release_ms(d),
+                        "key_insights": (d.get("key_insights") or [])[:3],
+                        "related_tickers": (d.get("related_tickers") or [])[:4],
+                    })
+                return {
+                    "id": tid, "name": tid,
+                    "scoped_count": len(scoped_dicts),
+                    "weekly_counts": weekly,
+                    "recent_episodes": previews,
+                }
+            except Exception:
+                logger.warning("Failed to process trending tag %s", tid, exc_info=True)
+                return None
+
+        results = [_process_tag(t, refs) for t, refs in zip(candidates, refs_per_tag)]
         # Auto-surface by volume: keep tags above the recent-episode floor, rank by
         # scoped count, and cap to the board size. (Sub-floor / zero-count tags drop.)
         tags = sorted(
@@ -2500,10 +2544,14 @@ class PodcastService:
             key=lambda x: x["scoped_count"],
             reverse=True,
         )[: self._TRENDING_MAX_TAGS]
-        try:
-            await cache_set(cache_key, json.dumps(tags), 1800)
-        except Exception:
-            pass
+        # Don't cache empty: [] here usually means a transient failure upstream
+        # (allowlist fails closed / Firestore blip), and pinning it for the long
+        # TTL would blank the board for hours instead of retrying next call.
+        if tags:
+            try:
+                await cache_set(cache_key, json.dumps(tags), self._TOPIC_BOARD_CACHE_TTL)
+            except Exception:
+                pass
         return tags
 
     # ── Search ───────────────────────────────────────────────────────
@@ -2889,14 +2937,16 @@ async def poll_regeneration_status(podcast_name: str, episode_id: str):
     logger.warning(f"Regeneration polling timed out for {podcast_name}/{episode_id}")
 
 
-async def run_periodic_board_refresh(interval_seconds: float = 300.0) -> None:
-    """Refresh-ahead loop for the /topics sector board.
+async def run_periodic_board_refresh(interval_seconds: float = 3600.0) -> None:
+    """Refresh-ahead loop for the /topics sector board. Production only (main.py).
 
     Recomputes the board for the active release scope and overwrites its Redis
-    entry every ``interval_seconds`` (default 5 min) — comfortably inside the
-    10-min cache TTL, so the serving path always finds a warm entry and a user
-    never pays the cold full-scan. Runs immediately on start, then loops. Never
-    raises (mirrors stock_close_refresh.run_periodic_refresh).
+    entry every ``interval_seconds`` (default 1h) — comfortably inside the 2h
+    cache TTL (_TOPIC_BOARD_CACHE_TTL), so the serving path always finds a warm
+    entry and a user never pays the cold full-scan. Each cycle reads ~2700 docs
+    from us-central1, so the cadence is a billing decision, not a freshness one.
+    Runs immediately on start, then loops. Never raises (mirrors
+    stock_close_refresh.run_periodic_refresh).
     """
     while True:
         try:
@@ -2906,14 +2956,17 @@ async def run_periodic_board_refresh(interval_seconds: float = 300.0) -> None:
         await asyncio.sleep(interval_seconds)
 
 
-async def run_periodic_heat_validation_refresh(interval_seconds: float = 300.0) -> None:
+async def run_periodic_heat_validation_refresh(interval_seconds: float = 3600.0) -> None:
     """Refresh-ahead loop for the /topics heat→forward-return validation panel.
 
     Its compute is the cold full-episode scan + a whole-history price join — the
     heaviest thing on /topics — so it must never run on the request path (doing so
     took the dev API down). This loop force-recomputes + rewrites the Redis entry
-    every ``interval_seconds`` (inside the 10-min TTL); the endpoint then only ever
-    reads the warm entry. Isolated from run_periodic_board_refresh so a slow backtest
+    every ``interval_seconds`` (default 1h, inside the 2h TTL); the endpoint then only
+    ever reads the warm entry. Runs in ALL environments (main.py) — the serving path
+    has no inline fallback, so the panel is empty wherever the loop doesn't run; the
+    episode scan is Firestore in us-central1, so the cadence is a billing decision
+    (July 2026 bill). Isolated from run_periodic_board_refresh so a slow backtest
     can't delay the board's own refresh cadence. Runs on start, then loops. Never
     raises (mirrors run_periodic_board_refresh)."""
     while True:
@@ -2924,13 +2977,14 @@ async def run_periodic_heat_validation_refresh(interval_seconds: float = 300.0) 
         await asyncio.sleep(interval_seconds)
 
 
-async def run_periodic_trending_refresh(interval_seconds: float = 600.0) -> None:
-    """Refresh-ahead loop for the /topics 熱門標籤 board.
+async def run_periodic_trending_refresh(interval_seconds: float = 3600.0) -> None:
+    """Refresh-ahead loop for the /topics 熱門標籤 board. Production only (main.py).
 
     The volume-driven candidate set scans every tag's Firestore subcollection, so this
     keeps that cost off the request path: it force-recomputes + rewrites the Redis entry
-    (30-min TTL) on the API's default params every ``interval_seconds``. Runs immediately
-    on start, then loops. Never raises (mirrors run_periodic_board_refresh)."""
+    (2h TTL) on the API's default params every ``interval_seconds`` (default 1h — inside
+    the TTL; the cadence is a billing decision, see run_periodic_board_refresh). Runs
+    immediately on start, then loops. Never raises (mirrors run_periodic_board_refresh)."""
     while True:
         try:
             await PodcastService().get_trending_tags(force_refresh=True)
