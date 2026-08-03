@@ -25,7 +25,10 @@ def _subscribers(field: str, value: str, pref_key: Optional[str] = None) -> List
     Python. ``pref_key`` is the notification_preferences toggle, default on; pass
     None for categories where subscribing IS the opt-in (tag follows).
     """
-    assert field in ("watchlist", "podcast_subscriptions", "tag_subscriptions")
+    # Not an assert: this guards an f-string interpolated into SQL below, and
+    # asserts are stripped under `python -O`.
+    if field not in ("watchlist", "podcast_subscriptions", "tag_subscriptions"):
+        raise ValueError(f"Invalid subscription field: {field}")
 
     with session_scope() as db:
         query = db.query(User.id, getattr(User, field), User.notification_preferences)

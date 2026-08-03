@@ -14,7 +14,7 @@ from src.database import notification_db as ndb
 from src.database import user_db
 from src.models.notification import NotificationCreate, NotificationType
 from src.models.user import UserCreate
-from scripts.ops.migrate_users_from_mirror import migrate, user_fields
+from scripts.ops.migrate_users_from_mirror import adoptable_fields, migrate, user_fields
 
 
 def _make_user(email="a@example.com", google_id="g-1", name="Aki"):
@@ -261,7 +261,9 @@ def test_fanout_matches_subscribers_and_honours_preference_toggles(orm_db):
 def test_fanout_field_whitelist_rejects_anything_else(orm_db):
     from src.services import notification_service as svc
 
-    with pytest.raises(AssertionError):
+    # Must be a real raise, not an assert — asserts vanish under `python -O` and this
+    # guards an f-string interpolated into SQL.
+    with pytest.raises(ValueError, match="Invalid subscription field"):
         svc._subscribers("email", "a@example.com")
 
 
@@ -333,16 +335,81 @@ def test_migrate_inserts_missing_users_skips_existing_and_reports_problems(orm_d
         ("u-dupe", {"google_id": "g-2", "email": "d@example.com"}),  # google_id collision
     ])
 
-    inserted, skipped, problems = migrate(dry_run=True)
-    assert (inserted, skipped) == (2, 0)
+    inserted, adopted, skipped, problems = migrate(dry_run=True)
+    assert (inserted, adopted, skipped) == (2, 0, 0)
     assert len(problems) == 2
     assert user_db.get_user_by_google_id("g-1") is None  # dry run wrote nothing
 
-    assert migrate()[:2] == (2, 0)
+    assert migrate()[:3] == (2, 0, 0)
     migrated = user_db.get_user_by_google_id("g-1")
     assert migrated.id == "u-1" and migrated.watchlist == ["2330"]
 
     # Re-runnable: the second pass inserts nothing and leaves live edits alone.
     user_db.add_to_watchlist("u-1", "NVDA")
-    assert migrate()[:2] == (0, 2)
+    assert migrate()[:3] == (0, 0, 2)
     assert user_db.get_user_subscriptions("u-1")["watchlist"] == ["2330", "NVDA"]
+
+
+def test_migrate_adopts_a_row_created_by_a_sign_in_during_the_deploy_window(orm_db):
+    """The race: deploy creates an empty table, the member signs in before this runs.
+
+    Their sign-in mints a fresh uuid row with empty arrays for the same google_id, so
+    matching on document id alone would strand every subscription in the mirror.
+    """
+    _seed_mirror(orm_db, [
+        ("u-1", {
+            "google_id": "g-1", "email": "a@example.com", "name": "Aki",
+            "watchlist": ["2330"], "podcast_subscriptions": ["股癌"],
+            "episode_bookmarks": ["股癌_EP677"], "alerts": ["2454"],
+            "tag_subscriptions": ["AI"],
+            "notification_preferences": {"daily_digest": True},
+        }),
+    ])
+    raced = user_db.get_or_create_user("g-1", "a@example.com", "Aki")
+    assert raced.id != "u-1" and raced.watchlist == []
+    # The member also managed one live edit before the migration ran.
+    user_db.add_to_watchlist(raced.id, "NVDA")
+
+    inserted, adopted, skipped, problems = migrate(dry_run=True)
+    assert (inserted, adopted, skipped, problems) == (0, 1, 0, [])
+    assert user_db.get_user_subscriptions(raced.id)["tag_subscriptions"] == []  # dry run
+
+    assert migrate()[:3] == (0, 1, 0)
+    subs = user_db.get_user_subscriptions(raced.id)
+    assert subs["podcast_subscriptions"] == ["股癌"]
+    assert subs["episode_bookmarks"] == ["股癌_EP677"]
+    assert subs["alerts"] == ["2454"]
+    assert subs["tag_subscriptions"] == ["AI"]
+    assert user_db.get_notification_preferences(raced.id).daily_digest is True
+    # The live edit wins — a non-empty field is never overwritten by the mirror.
+    assert subs["watchlist"] == ["NVDA"]
+    # No second row was minted for the same person.
+    assert user_db.get_user_by_google_id("g-1").id == raced.id
+    # And once adopted there is nothing left to do.
+    assert migrate()[:3] == (0, 0, 1)
+
+
+def test_adoptable_fields_only_fills_gaps():
+    mirror = {
+        "watchlist": ["2330"],
+        "podcast_subscriptions": ["股癌"],
+        "episode_bookmarks": [],
+        "alerts": [],
+        "tag_subscriptions": ["AI"],
+        "notification_preferences": {"daily_digest": True},
+    }
+    live = {
+        "watchlist": ["NVDA"],              # live edit -> preserved
+        "podcast_subscriptions": [],        # empty -> adopts
+        "episode_bookmarks": [],            # both empty -> not written at all
+        "alerts": None,                     # absent -> adopts nothing (mirror empty)
+        "notification_preferences": {},     # empty dict -> adopts
+    }
+    assert adoptable_fields(live, mirror) == {
+        "podcast_subscriptions": ["股癌"],
+        "tag_subscriptions": ["AI"],        # missing from live -> adopts
+        "notification_preferences": {"daily_digest": True},
+    }
+    # Nothing to give / nothing to fill are both no-ops.
+    assert adoptable_fields(live, {}) == {}
+    assert adoptable_fields({f: ["x"] for f in mirror}, mirror) == {}

@@ -6,12 +6,26 @@ The mirror table already holds every Firestore user document verbatim
 connects to that same database — so this reads Postgres only. No Firestore client,
 no GCP egress.
 
-Insert-only and re-runnable: rows that already exist in `users` are left alone, so a
-second run after the cutover cannot clobber live edits.
+ORDERING — RUN THIS IMMEDIATELY AFTER THE DEPLOY, BEFORE ANYONE SIGNS IN.
+The deploy creates an EMPTY `users` table at boot. Any member who signs in during
+the gap gets a brand-new row (fresh uuid, empty arrays) for their google_id, and
+their watchlist / subscriptions / bookmarks / preferences are then only in the
+mirror. So: deploy -> run this -> announce. Keep the window to minutes.
+
+Adoption closes that race for anyone who slipped through: when a mirror document's
+google_id already has a live row, the mirror's subscription arrays and preferences
+are merged INTO that row for every field the live row left empty. Live values
+always win — a non-empty live field is never overwritten — so this is safe to run
+late, and safe to re-run. Adopted rows are reported separately.
+
+Rows are matched on google_id, not document id, precisely because the racing
+sign-in mints a different id for the same person.
 
 NOT migrated: `users/{id}/notifications` — the subcollection was never mirrored
 (dump_firestore_to_postgres.py copies top-level collections only), so members start
 with an empty inbox. New notifications are produced within ~10 min by the poller.
+Also not adopted: `created_at` (a raced row dates from the sign-in, which skews the
+admin signup-growth chart only, and the mirror keeps the original indefinitely).
 
 Usage (on the VPS, inside the backend container or with POSTGRES_* set):
     python scripts/ops/migrate_users_from_mirror.py --dry-run   # preview
@@ -42,6 +56,11 @@ ARRAY_FIELDS = (
     "alerts",
     "tag_subscriptions",
 )
+
+# The member-owned fields a racing sign-in would have left empty. Identity fields
+# (name/email/avatar/email_verified) are deliberately excluded: the sign-in wrote
+# fresher Google values than the mirror holds.
+ADOPT_FIELDS = ARRAY_FIELDS + ("notification_preferences",)
 
 
 def _parse_dt(value) -> datetime | None:
@@ -91,18 +110,32 @@ def user_fields(doc_id: str, doc: dict) -> dict:
     return fields
 
 
-def migrate(dry_run: bool = False) -> tuple[int, int, list[str]]:
-    """Returns (inserted, skipped_existing, [problem descriptions])."""
-    inserted = skipped = 0
+def adoptable_fields(live: dict, mirror: dict) -> dict:
+    """Mirror values for the fields a live row never populated. Pure; the tested part.
+
+    A field is adoptable only when the live side is empty/absent AND the mirror has
+    something to give — so a live edit is never overwritten and an empty-over-empty
+    write is never issued.
+    """
+    return {
+        field: mirror[field]
+        for field in ADOPT_FIELDS
+        if not live.get(field) and mirror.get(field)
+    }
+
+
+def migrate(dry_run: bool = False) -> tuple[int, int, int, list[str]]:
+    """Returns (inserted, adopted, skipped_unchanged, [problem descriptions])."""
+    inserted = adopted = skipped = 0
     problems: list[str] = []
 
     with session_scope() as db:
         rows = db.execute(text(f"SELECT id, doc FROM {MIRROR_TABLE}")).all()
-        present = db.query(User.id, User.google_id).all()
-        existing = {row[0] for row in present}
-        # google_id is unique — track the ones already stored too, or a re-run would
-        # try to insert a second row for a user whose doc id changed.
-        seen_google_ids = {row[1] for row in present}
+        # ~40 rows — load the entities so adoption can write straight back.
+        live = {row.google_id: row for row in db.query(User).all()}
+        # Two mirror documents for one Google account is a data anomaly; report it the
+        # same way on every run, whether the first one landed as an insert or an adopt.
+        seen_google_ids: set[str] = set()
 
         for doc_id, doc in rows:
             try:
@@ -111,18 +144,35 @@ def migrate(dry_run: bool = False) -> tuple[int, int, list[str]]:
             except ValueError as e:
                 problems.append(f"{doc_id}: {e}")
                 continue
-            if fields["id"] in existing:
-                skipped += 1
-                continue
-            if fields["google_id"] in seen_google_ids:
+
+            google_id = fields["google_id"]
+            if google_id in seen_google_ids:
                 problems.append(f"{doc_id}: duplicate google_id, skipped")
                 continue
-            seen_google_ids.add(fields["google_id"])
+            seen_google_ids.add(google_id)
+
+            row = live.get(google_id)
+            if row is not None:
+                # Already present — either a plain re-run, or a member who signed in
+                # before this script ran and got an empty row. Fill the gaps only.
+                changes = adoptable_fields(
+                    {f: getattr(row, f) for f in ADOPT_FIELDS}, fields
+                )
+                if not changes:
+                    skipped += 1
+                    continue
+                if not dry_run:
+                    for field, value in changes.items():
+                        setattr(row, field, value)
+                    row.updated_at = datetime.now(timezone.utc)
+                adopted += 1
+                continue
+
             if not dry_run:
                 db.add(User(**fields))
             inserted += 1
 
-    return inserted, skipped, problems
+    return inserted, adopted, skipped, problems
 
 
 def main() -> int:
@@ -133,10 +183,13 @@ def main() -> int:
     if not args.dry_run:
         create_all_tables()  # idempotent; makes sure users/user_notifications exist
 
-    inserted, skipped, problems = migrate(dry_run=args.dry_run)
+    inserted, adopted, skipped, problems = migrate(dry_run=args.dry_run)
 
     print(f"{'[dry-run] ' if args.dry_run else ''}inserted {inserted}, "
-          f"already present {skipped}, problems {len(problems)}")
+          f"adopted {adopted}, unchanged {skipped}, problems {len(problems)}")
+    if adopted:
+        print(f"  {adopted} member(s) had signed in before this ran — their mirrored "
+              f"subscriptions were merged into the row the sign-in created.")
     for p in problems:
         print(f"  ! {p}")
     print("note: notification history is not migrated — the mirror has no "
