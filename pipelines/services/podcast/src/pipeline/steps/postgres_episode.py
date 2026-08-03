@@ -17,11 +17,12 @@ from __future__ import annotations
 import datetime as dt
 import os
 
+from src.podcast.exporters.postgres_mirror import DDL_EPISODES_MIRROR_INDEXES
+from src.podcast.exporters.postgres_mirror import SCHEMA as _SCHEMA
+
 from ..config import PipelineConfig
 from ..episode_data import EpisodeData
 from ..service_container import ServiceContainer
-
-_SCHEMA = os.getenv("EPISODE_DATABASE_SCHEMA", "firestore_mirror")
 
 _DDL = f"""
 CREATE SCHEMA IF NOT EXISTS "{_SCHEMA}";
@@ -44,7 +45,7 @@ CREATE INDEX IF NOT EXISTS ix_fm_episodes_number
     ON "{_SCHEMA}".episodes (podcast_name, episode_number);
 CREATE INDEX IF NOT EXISTS ix_fm_episodes_doc
     ON "{_SCHEMA}".episodes USING gin (doc);
-"""
+""" + DDL_EPISODES_MIRROR_INDEXES
 
 _UPSERT = f"""
 INSERT INTO "{_SCHEMA}".episodes

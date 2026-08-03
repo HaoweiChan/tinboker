@@ -27,6 +27,7 @@ from src.cache.cache_config import CACHE_TTL
 from src.cache.cdn_cache import purge_cdn_cache
 
 from src.services.firestore_service import FirestoreService
+from src.services.postgres_mirror_service import content_read_service, patch_episode_doc
 from src.services.gcs_content import GCSContentService
 from src.services.episode_transformer import EpisodeTransformer
 import httpx
@@ -119,6 +120,43 @@ def _read_close_series(tickers: list[str], limit: int = 12) -> dict[str, list[fl
     return {t: closes[-limit:] for t, closes in result_map.items()}
 
 
+def _read_dated_closes(tickers: list[str]) -> dict[str, list[tuple[str, float]]]:
+    """Read the *full* daily close history per ticker as ascending ``(date, close)``.
+
+    Reads from ``stock_daily_ohlc`` — the whole-market TW table (plus US tickers
+    landed by the US OHLC warmer) that the backfill can deepen arbitrarily
+    (``tw_daily_ohlc_refresh``). NOT ``stock_daily_closes``, which only warms a
+    rolling ~7 days for ≤400 tracked tickers and has no historical backfill — too
+    shallow and too narrow for a point-in-time backtest. Best-effort: DB error → {}.
+    """
+    from src.database.models import StockDailyOHLC
+
+    _CHUNK_SIZE = 200
+    result_map: dict[str, list[tuple[str, float]]] = {}
+    if not tickers:
+        return result_map
+    for session in get_session():
+        try:
+            for chunk_start in range(0, len(tickers), _CHUNK_SIZE):
+                chunk = tickers[chunk_start: chunk_start + _CHUNK_SIZE]
+                rows = (
+                    session.query(
+                        StockDailyOHLC.ticker,
+                        StockDailyOHLC.date,
+                        StockDailyOHLC.close,
+                    )
+                    .filter(StockDailyOHLC.ticker.in_(chunk))
+                    .order_by(StockDailyOHLC.ticker.asc(), StockDailyOHLC.date.asc())
+                    .all()
+                )
+                for ticker, date_str, close in rows:
+                    result_map.setdefault(ticker, []).append((date_str, close))
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(f"_read_dated_closes: OHLC history read failed: {exc}")
+        break
+    return result_map
+
+
 EPISODE_DETAIL_CONTENT_FIELDS = frozenset({
     "summary_content",
     "events_markdown_content",
@@ -155,7 +193,11 @@ class PodcastService:
     """Service for podcast CRUD operations, search, and summary management"""
 
     def __init__(self, firestore_service: Optional[FirestoreService] = None):
-        self.firestore_service = firestore_service or FirestoreService()
+        # Reads: Firestore, or the Postgres mirror when CONTENT_READS_FROM_POSTGRES.
+        self.firestore_service = firestore_service or content_read_service()
+        # Writes: always Firestore (source of truth) + mirror write-through, so the
+        # mirror is already fresh whenever the read flag is flipped on.
+        self._fs_write = firestore_service or FirestoreService()
         self.gcs = GCSContentService()
         self.transformer = EpisodeTransformer(self.gcs)
 
@@ -1622,6 +1664,176 @@ class PodcastService:
         result.sort(key=lambda x: x["hotness"], reverse=True)
         return result
 
+    # ── Heat → forward-return validation (point-in-time backtest) ─────────────
+    _HEAT_VALIDATION_KEY = "sectors:heat_validation:v1"
+
+    async def heat_return_validation(
+        self, horizons: tuple[int, ...] = (7, 30, 90), n_buckets: int = 5,
+        *, compute_if_cold: bool = False,
+    ) -> dict:
+        """Point-in-time backtest of discussion heat as a profit signal.
+
+        Recomputes each theme's heat *as of* past dates and quantizes it against the
+        *forward* 7/30/90-day member return — the corrected framing for the /topics
+        plot, whose live axes are contemporaneous. See ``heat_validation``.
+
+        **Request path is cache-only** (``compute_if_cold=False``). The compute runs
+        the cold ~2700-doc episode scan plus a full price join — far too heavy for the
+        request path. Doing it inline once took the dev API down: every /topics load
+        re-ran it with no single-flight, so the scans piled up and starved the event
+        loop (health + performance also hung). It is warmed off-path by
+        ``run_periodic_heat_validation_refresh``, exactly like the board. A cold cache
+        returns an empty payload so the panel shows 資料不足 until the first warm cycle
+        lands (≤5 min) — it never hangs the page.
+        """
+        cache_key = f"{self._HEAT_VALIDATION_KEY}:{self._scope_tag()}"
+        cached = await cache_get(cache_key)
+        if cached:
+            try:
+                return json.loads(cached)
+            except Exception:
+                pass
+        if not compute_if_cold:
+            return {
+                "half_life_days": 7.0,
+                "n_buckets": n_buckets,
+                "horizons": {str(n): {"buckets": [], "n": 0} for n in horizons},
+                "date_span": {"start": None, "end": None},
+                "as_of_count": 0,
+            }
+        return await self._recompute_heat_validation(horizons, n_buckets, cache_key)
+
+    async def warm_heat_return_validation(
+        self, horizons: tuple[int, ...] = (7, 30, 90), n_buckets: int = 5,
+    ) -> dict:
+        """Force-recompute + overwrite the cache (refresh-ahead; ignores any warm entry).
+
+        Called by ``run_periodic_heat_validation_refresh`` so the serving path always
+        finds a warm entry and never pays the cold scan — the same contract as
+        ``warm_sector_board``.
+        """
+        cache_key = f"{self._HEAT_VALIDATION_KEY}:{self._scope_tag()}"
+        return await self._recompute_heat_validation(horizons, n_buckets, cache_key)
+
+    async def _recompute_heat_validation(
+        self, horizons: tuple[int, ...], n_buckets: int, cache_key: str,
+    ) -> dict:
+        result = await self._compute_heat_return_validation(horizons, n_buckets)
+        # 2h TTL outlives the hourly refresh loop; empty results (transient upstream
+        # failure — allowlist fails closed / Firestore blip) are never cached, same
+        # guard as _cache_sector_board, so the panel self-heals next cycle.
+        if result.get("as_of_count"):
+            try:
+                await cache_set(cache_key, json.dumps(result), self._TOPIC_BOARD_CACHE_TTL)
+            except Exception:
+                pass
+        return result
+
+    async def _compute_heat_return_validation(
+        self, horizons: tuple[int, ...], n_buckets: int,
+    ) -> dict:
+        """Scan episodes → per-theme release-day events, join dated closes, backtest.
+
+        A slim variant of the board scan: only release timestamps + exposure
+        attribution are needed (no prices/series here — those come from the dated
+        close history). Heat is reconstructed as of each past date with the SAME
+        blend weights the live board uses, so the validation judges the exact signal
+        that is plotted, not a proxy.
+        """
+        from src.services.heat_validation import compute_validation
+
+        allowed = await self._allowed_podcast_names()
+        # NO recency cutoff here — deliberately unlike every other consumer of this scan.
+        # _recency_cutoff_ms() is a no-op today (RELEASE_EPISODE_MAX_AGE_DAYS=0), but the
+        # runbook plans to flip it to 30, and the moment it does a scoped scan corrupts the
+        # backtest twice: (1) left-truncated heat — an episode just outside the window still
+        # carries real weight at nearby as-of dates (5 days out → 0.5^(5/7) ≈ 0.61), so the
+        # oldest as-of dates would systematically understate heat; (2) horizon collapse —
+        # nothing older than the window is scanned, so as-of dates further back get zero heat
+        # and drop out, and those are exactly the dates the 30/90d horizons need for a
+        # complete forward window, quietly making them n=0. The live board wants "recent
+        # only"; a backtest wants all history. The language allowlist still applies (and
+        # _scope_tag() still keys the cache, so languages stay isolated).
+        try:
+            docs = await asyncio.to_thread(
+                self.firestore_service.stream_documents_projected,
+                "episodes",
+                self._SECTOR_SCAN_FIELDS,
+            )
+        except Exception as e:
+            raise Exception(f"Failed to scan episodes for heat validation: {e}") from e
+
+        idx = await asyncio.to_thread(self._sector_membership_index)
+        ticker_to_sectors = idx["ticker_to_sectors"]
+        uni_meta = idx["meta"]
+        registry_members = idx.get("members", {})
+
+        # Resolve exposure redirects from ONE snapshot. resolve_sector_exposure_id()
+        # calls sector_redirects() every invocation, which opens a fresh session and
+        # scans all sector rows — calling it per exposure across ~2700 episodes fired
+        # hundreds of tag_registry queries/sec and saturated the dev connection pool
+        # (incident 2026-07-15). Fetch the redirect map once; resolve in memory.
+        redirects = await asyncio.to_thread(_sector_redirects)
+
+        def _resolve(raw_eid: object) -> str:
+            eid = normalize_exposure_id(raw_eid)  # type: ignore[arg-type]
+            seen: set[str] = set()
+            while eid in redirects and eid not in seen:
+                seen.add(eid)
+                eid = normalize_exposure_id(redirects[eid])
+            return eid
+
+        # release day (epoch-days) per theme, split NAMED vs CONSTITUENT-implied.
+        direct_events: dict[str, list[float]] = {}
+        implied_events: dict[str, list[float]] = {}
+        for doc in docs:
+            if doc.get("retracted_at"):
+                continue
+            if allowed is not None and doc.get("podcast_name") not in allowed:
+                continue
+            rel_ms = self._dict_release_ms(doc)
+            day = rel_ms / 86_400_000.0
+            direct_eids: set[str] = set()
+            for entry in doc.get("sector_exposures") or []:
+                eid = _resolve(entry.get("exposure_id"))
+                if eid and eid not in EXCLUDED_EXPOSURE_IDS:
+                    direct_eids.add(eid)
+            implied_eids: set[str] = set()
+            for tk in doc.get("related_tickers") or []:
+                sym = str(tk).split(".")[0].strip().upper()
+                for eid in ticker_to_sectors.get(sym, ()):
+                    implied_eids.add(eid)
+            for eid in direct_eids:
+                direct_events.setdefault(eid, []).append(day)
+            for eid in implied_eids:
+                implied_events.setdefault(eid, []).append(day)
+
+        # Validate over the themes the plot shows (the bubble hero is theme-only).
+        theme_eids = {
+            eid for eid in set(direct_events) | set(implied_events)
+            if (uni_meta.get(eid, {}).get("exposure_type") == "theme")
+        }
+        members_by_eid = {
+            eid: [str(m.get("ticker") or "").strip().upper()
+                  for m in registry_members.get(eid, []) if m.get("ticker")]
+            for eid in theme_eids
+        }
+        all_tickers = sorted({t for ts in members_by_eid.values() for t in ts})
+        closes = await asyncio.to_thread(_read_dated_closes, all_tickers)
+
+        return await asyncio.to_thread(
+            compute_validation,
+            direct_events={e: direct_events[e] for e in theme_eids if e in direct_events},
+            implied_events={e: implied_events[e] for e in theme_eids if e in implied_events},
+            members_by_eid=members_by_eid,
+            closes=closes,
+            horizons=horizons,
+            n_buckets=n_buckets,
+            w_direct=self._HEAT_W_DIRECT,
+            w_ticker=self._HEAT_W_TICKER,
+            norm_alpha=self._HEAT_NORM_ALPHA,
+        )
+
     # ── Industry performance (bubble chart, /topics 產業 tab) ─────────────────
     def _finmind(self):
         """Lazily-constructed FinMind client, shared per service instance."""
@@ -2424,6 +2636,23 @@ class PodcastService:
 
     # ── Summary mutations ────────────────────────────────────────────
 
+    async def _write_episode_fields(self, episode_id: str, updates: dict) -> None:
+        """Merge-patch an episode doc: Firestore first, then the Postgres mirror.
+
+        Firestore stays the source of truth; the mirror write-through runs on every
+        platform write regardless of ``content_reads_from_postgres`` so the mirror is
+        already current when reads flip over (and so a read-after-write against the
+        mirror sees the edit). A mirror failure is logged, never surfaced — the
+        pipeline's next episode upsert restores it.
+        """
+        await asyncio.to_thread(
+            self._fs_write.set_document, "episodes", episode_id, updates, True,
+        )
+        try:
+            await asyncio.to_thread(patch_episode_doc, episode_id, updates)
+        except Exception as e:
+            logger.warning("Postgres mirror write-through failed for %s: %s", episode_id, e)
+
     async def save_modified_summary(
         self, podcast_name: str, episode_id: str,
         content: str, modified_by: Optional[str] = None,
@@ -2455,9 +2684,7 @@ class PodcastService:
             if modified_by:
                 update_data['modified_by'] = modified_by
 
-            await asyncio.to_thread(
-                self.firestore_service.set_document, "episodes", episode_id, update_data, True,
-            )
+            await self._write_episode_fields(episode_id, update_data)
             await self._invalidate_episode_cache(podcast_name, episode_id)
             return await self.get_episode_by_id(podcast_name, episode_id, apply_scope=False)
         except Exception as e:
@@ -2484,12 +2711,10 @@ class PodcastService:
                 await self.gcs.delete_blob(*parsed)
 
             from google.cloud.firestore import DELETE_FIELD
-            await asyncio.to_thread(
-                self.firestore_service.set_document, "episodes", episode_id,
-                {'modified_summary_url': DELETE_FIELD, 'modified_summary_content': DELETE_FIELD,
-                 'modified_by': DELETE_FIELD, 'modified_at': DELETE_FIELD},
-                True,
-            )
+            await self._write_episode_fields(episode_id, {
+                'modified_summary_url': DELETE_FIELD, 'modified_summary_content': DELETE_FIELD,
+                'modified_by': DELETE_FIELD, 'modified_at': DELETE_FIELD,
+            })
             await self._invalidate_episode_cache(podcast_name, episode_id)
             return True
         except Exception as e:
@@ -2514,9 +2739,7 @@ class PodcastService:
         if episode_dict.get("podcast_name") != podcast_name:
             raise HTTPException(status_code=404, detail=f"Episode {episode_id} not found for podcast {podcast_name}")
         try:
-            await asyncio.to_thread(
-                self.firestore_service.set_document, "episodes", episode_id, updates, True,
-            )
+            await self._write_episode_fields(episode_id, updates)
             await self._invalidate_episode_cache(podcast_name, episode_id)
             # When related_tickers change (e.g. a content regen), the per-ticker
             # sentiment cards are served from a separate ticker_insights:* cache the
@@ -2556,10 +2779,7 @@ class PodcastService:
             raise HTTPException(status_code=404, detail=f"Episode {episode_id} not found")
         podcast_name = episode_dict.get("podcast_name", "")
         try:
-            await asyncio.to_thread(
-                self.firestore_service.set_document,
-                "episodes", episode_id, {"social_thread": thread}, True,
-            )
+            await self._write_episode_fields(episode_id, {"social_thread": thread})
             await self._invalidate_episode_cache(podcast_name, episode_id)
             await self._purge_api_host_cdn()
             episode = await self.get_episode_admin(episode_id)
@@ -2635,9 +2855,7 @@ class PodcastService:
             ver = hashlib.md5(b64.encode("utf-8")).hexdigest()[:10]
             cards[i]["image_url"] = f"{url}?v={ver}"
 
-        await asyncio.to_thread(
-            self.firestore_service.set_document, "episodes", episode_id, {"social_cards": cards}, True
-        )
+        await self._write_episode_fields(episode_id, {"social_cards": cards})
         await self._invalidate_episode_cache(episode.podcast_name, episode_id)
         await self._purge_api_host_cdn()
         return (await self.get_episode_admin(episode_id)) or episode
@@ -2735,6 +2953,27 @@ async def run_periodic_board_refresh(interval_seconds: float = 3600.0) -> None:
             await PodcastService().warm_sector_board()
         except Exception as e:
             logger.warning(f"sector-board refresh cycle failed: {e}")
+        await asyncio.sleep(interval_seconds)
+
+
+async def run_periodic_heat_validation_refresh(interval_seconds: float = 3600.0) -> None:
+    """Refresh-ahead loop for the /topics heat→forward-return validation panel.
+
+    Its compute is the cold full-episode scan + a whole-history price join — the
+    heaviest thing on /topics — so it must never run on the request path (doing so
+    took the dev API down). This loop force-recomputes + rewrites the Redis entry
+    every ``interval_seconds`` (default 1h, inside the 2h TTL); the endpoint then only
+    ever reads the warm entry. Runs in ALL environments (main.py) — the serving path
+    has no inline fallback, so the panel is empty wherever the loop doesn't run; the
+    episode scan is Firestore in us-central1, so the cadence is a billing decision
+    (July 2026 bill). Isolated from run_periodic_board_refresh so a slow backtest
+    can't delay the board's own refresh cadence. Runs on start, then loops. Never
+    raises (mirrors run_periodic_board_refresh)."""
+    while True:
+        try:
+            await PodcastService().warm_heat_return_validation()
+        except Exception as e:
+            logger.warning(f"heat-validation refresh cycle failed: {e}")
         await asyncio.sleep(interval_seconds)
 
 

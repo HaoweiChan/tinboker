@@ -9,6 +9,7 @@ postprocess refactor against drift.
 
 import json
 
+import psycopg
 import pytest
 from src.podcast.content_builder.nodes import (
     extractor,
@@ -370,6 +371,111 @@ def test_commit_reuploads_gcs_served_content_and_repoints_urls(monkeypatch):
     assert merged["events_markdown_url"] == "gs://b/events/ep_test.md"
     assert merged["summary_url"] == "gs://b/summaries/ep_test.md"
     assert "marp_markdown_url" in report["gcs_content_uploaded"]
+
+
+# --- Regen drift fix: mirror the L817-824 doc merge onto firestore_mirror.episodes ----
+
+
+class _FakeCursor:
+    def __init__(self, rowcount: int = 1):
+        self.executed: list[tuple[str, tuple]] = []
+        self.rowcount = rowcount
+
+    def execute(self, sql, params=None):
+        self.executed.append((sql, params))
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+class _FakeConn:
+    def __init__(self, cursor):
+        self._cursor = cursor
+
+    def cursor(self):
+        return self._cursor
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+def test_commit_skips_postgres_mirror_without_env_var(monkeypatch):
+    """Default (no EPISODE_DATABASE_URL, per the conftest autouse scrub): commit
+    must not attempt a Postgres connection at all."""
+    _new_draft()
+    _drive_summary_and_marp()
+    monkeypatch.setattr(orch, "_firestore", lambda: _FakeFirestore())
+    monkeypatch.setattr(orch, "_gcs_storage_service", lambda: _FakeGCS())
+
+    def _must_not_connect(*a, **k):
+        raise AssertionError("must not connect without EPISODE_DATABASE_URL")
+
+    monkeypatch.setattr(psycopg, "connect", _must_not_connect)
+
+    report = orch.commit("ep_test", notify_platform=False)
+    assert not any("Postgres" in w for w in report["warnings"])
+
+
+def test_commit_mirrors_doc_update_onto_postgres_episodes_doc(monkeypatch):
+    """The core drift fix: commit's Firestore doc_update (summary_content/tags/
+    events_markdown/...) is also jsonb-merged onto firestore_mirror.episodes.doc."""
+    _new_draft()
+    _drive_summary_and_marp()
+    monkeypatch.setattr(orch, "_firestore", lambda: _FakeFirestore())
+    monkeypatch.setattr(orch, "_gcs_storage_service", lambda: _FakeGCS())
+    monkeypatch.setenv("EPISODE_DATABASE_URL", "postgresql://x/y")
+    cur = _FakeCursor(rowcount=1)
+    monkeypatch.setattr(psycopg, "connect", lambda *a, **k: _FakeConn(cur))
+
+    report = orch.commit("ep_test", notify_platform=False)
+
+    updates = [params for sql, params in cur.executed if "UPDATE" in sql]
+    assert len(updates) == 1
+    doc_param, episode_id = updates[0]
+    assert episode_id == "ep_test"
+    # the merged fields are exactly what was written to Firestore in step 1
+    assert set(doc_param.obj.keys()) == set(report["episode_fields_written"])
+    assert doc_param.obj["summary_content"]  # non-empty regenerated content
+    assert not any("Postgres" in w for w in report["warnings"])
+
+
+def test_commit_warns_when_postgres_mirror_row_missing(monkeypatch):
+    """A regen for an episode the mirror never saw must warn, not fabricate a doc."""
+    _new_draft()
+    _drive_summary_and_marp()
+    monkeypatch.setattr(orch, "_firestore", lambda: _FakeFirestore())
+    monkeypatch.setattr(orch, "_gcs_storage_service", lambda: _FakeGCS())
+    monkeypatch.setenv("EPISODE_DATABASE_URL", "postgresql://x/y")
+    cur = _FakeCursor(rowcount=0)  # UPDATE matched no row
+    monkeypatch.setattr(psycopg, "connect", lambda *a, **k: _FakeConn(cur))
+
+    report = orch.commit("ep_test", notify_platform=False)
+
+    assert any("no row for episode_id=ep_test" in w for w in report["warnings"])
+
+
+def test_commit_warns_but_does_not_abort_on_postgres_mirror_error(monkeypatch):
+    _new_draft()
+    _drive_summary_and_marp()
+    monkeypatch.setattr(orch, "_firestore", lambda: _FakeFirestore())
+    monkeypatch.setattr(orch, "_gcs_storage_service", lambda: _FakeGCS())
+    monkeypatch.setenv("EPISODE_DATABASE_URL", "postgresql://x/y")
+
+    def _boom(*a, **k):
+        raise RuntimeError("connection refused")
+
+    monkeypatch.setattr(psycopg, "connect", _boom)
+
+    report = orch.commit("ep_test", notify_platform=False)  # must not raise
+
+    assert report["committed"] is True
+    assert any("Postgres mirror merge failed" in w for w in report["warnings"])
 
 
 def test_commit_patch_carries_content_writer_token(monkeypatch):

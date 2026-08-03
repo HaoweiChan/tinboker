@@ -269,7 +269,17 @@ class Settings(BaseSettings):
     postgres_db: str = "podcast_db"
     postgres_user: str = "podcast_user"
     postgres_password: Optional[str] = None
-    
+    # Echo every SQL statement to stdout. Debugging only — set SQL_ECHO=true for a
+    # session and turn it back off. Left on permanently in dev it wrote ~1.5 GB/day of
+    # container logs (18 GB before the container was recycled), and the containers have
+    # no log rotation configured.
+    sql_echo: bool = False
+    # Serve episode / ticker-insight / trending content reads from the VPS-local
+    # Postgres mirror of Firestore (schema `firestore_mirror`, same podcast_db)
+    # instead of Firestore itself — the Firestore egress bill is the reason.
+    # users/* and notifications ALWAYS stay on Firestore regardless of this flag.
+    content_reads_from_postgres: bool = False
+
     @property
     def postgres_connection_string(self) -> Optional[str]:
         """Get PostgreSQL connection string from DATABASE_URL or individual settings."""
@@ -411,11 +421,6 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         """Check if running in production environment"""
         return self.environment.lower() == "production"
-    
-    @property
-    def is_development(self) -> bool:
-        """Check if running in development environment"""
-        return self.environment.lower() == "development"
 
 
 # Global settings instance

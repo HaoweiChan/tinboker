@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,12 +23,47 @@ from pathlib import Path
 _SERVICE_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_SERVICE_ROOT))
 
+from src.podcast.exporters import postgres_mirror  # noqa: E402
 from src.podcast.exporters.trending_tickers import (  # noqa: E402
     aggregate_trending,
     fetch_all_insights,
     write_trending,
 )
-from src.service.upload_to_firebase import FirebaseService  # noqa: E402
+from src.service.upload_to_firebase import (
+    FirebaseService,  # noqa: E402 (also bootstraps GSM secrets, incl. EPISODE_DATABASE_URL)
+)
+
+
+def _mirror_trending_to_postgres(docs: dict) -> None:
+    """Best-effort dual-write into ``firestore_mirror.trending_tickers``: upsert every
+    recomputed ticker doc, then prune rows whose ticker fell out of this full
+    recompute. No-op without ``EPISODE_DATABASE_URL``. Firestore write (above) is
+    untouched either way."""
+    if not docs:
+        return  # matches write_trending's own no-op guard — never prune on an empty set
+    url = os.getenv("EPISODE_DATABASE_URL")
+    if not url:
+        return
+    try:
+        import psycopg
+    except ImportError:
+        print("  ⚠ psycopg not available — skipping Postgres trending_tickers mirror")
+        return
+
+    try:
+        with psycopg.connect(url, autocommit=True) as conn, conn.cursor() as cur:
+            cur.execute(postgres_mirror.DDL_TRENDING_TICKERS)
+            n = postgres_mirror.upsert_trending_tickers(cur, docs)
+            pruned = postgres_mirror.prune_trending_tickers(cur, list(docs.keys()))
+        print(
+            f"  ✓ Mirrored {n} trending_tickers docs to Postgres "
+            f"({postgres_mirror.SCHEMA}.trending_tickers); pruned {pruned} stale"
+        )
+    except Exception as e:  # noqa: BLE001 — best-effort
+        import traceback
+
+        print(f"  ⚠ Postgres trending_tickers mirror failed (non-fatal): {e}")
+        traceback.print_exc()
 
 
 def main() -> int:
@@ -54,6 +90,8 @@ def main() -> int:
 
     written = write_trending(fb.db, docs)
     print(f"  wrote {written} trending_tickers docs")
+
+    _mirror_trending_to_postgres(docs)
     return 0
 
 

@@ -192,6 +192,32 @@ ssh root@152.53.136.182
 docker network create app_default 2>/dev/null || true
 ```
 
+### 1.6 Container log rotation
+
+Every service in [`backend/docker-compose.multi.yml`](../backend/docker-compose.multi.yml)
+carries `logging: *default-logging` (json-file, `max-size: 50m`, `max-file: 3`). Without
+it container logs grow without bound until a deploy happens to recycle the container —
+`backend-dev` reached **18 GB over 12 days** and was only reclaimed by chance.
+
+Two things that look like alternatives and are not:
+
+- **`/etc/docker/daemon.json`** with `log-opts` is the more conventional fix, but the
+  daemon only picks it up on `systemctl restart docker`, which bounces prod, staging and
+  dev at the same time. The compose settings apply when each container is next recreated,
+  which normal deploys already do.
+- **`logrotate`** cannot rotate these safely. dockerd holds the inode open, so the only
+  workable mode is `copytruncate`, and external truncation leaves the json-file driver
+  with a stale offset: **`docker logs --tail N` then returns nothing** (plain `docker logs`,
+  `--since` and `--tail all` keep working) until the container is recreated. Confirmed on
+  this host — do not add a logrotate drop-in for `/var/lib/docker/containers/*/*-json.log`.
+
+Rollout note: `backend-deploy.yml` uses `--force-recreate` for the three backends, so they
+pick the setting up on their next deploy. The shared services (`postgres`, `redis`,
+`netdata`) are started with `--no-recreate` and keep their current unbounded log until
+someone recreates them explicitly — acceptable, since they are not the growth source.
+
+See also `SQL_ECHO` in Part 6: leaving SQL echo on in dev was what generated ~1.5 GB/day.
+
 ---
 
 ## Part 2 — GCP setup
@@ -385,6 +411,7 @@ not listed here are loaded from GCP Secret Manager at runtime by `src/config_loa
 | `ENVIRONMENT` | `production` / `development` / `staging` | Controls DB enforcement, logging |
 | `PORT` | `5174` | Local dev server port |
 | `USE_POSTGRES` | `true` | Forces PostgreSQL; production auto-enables this |
+| `SQL_ECHO` | `false` (default) | Echoes every SQL statement to stdout. Debugging only — turn it back off. Containers have no log rotation, and this wrote ~1.5 GB/day when left on in dev |
 | `REDIS_URL` | `redis://redis:6379/0` | Docker internal network |
 | `GCP_PROJECT_ID` | `gen-lang-client-0901363254` | Enables Secret Manager |
 | `GOOGLE_APPLICATION_CREDENTIALS` | `/app/gcp-service-account.json` | Mounted at runtime |

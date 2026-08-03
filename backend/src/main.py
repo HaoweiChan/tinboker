@@ -215,6 +215,28 @@ async def lifespan(app: FastAPI):
 
     asyncio.create_task(_refresh_tw_ohlc_bg())
 
+    # Whole-market US daily OHLCV warmer (issue #449): pulls the entire US market in one
+    # Polygon grouped-daily call per session into stock_daily_ohlc (source='polygon'), the
+    # US sibling of the TW warmer above. No after_refresh hook yet — the US screener isn't
+    # built (see screener-us-architecture spec); this only warms the data it will read.
+    #
+    # DISABLED (incident 2026-07-15): re-uses tw_daily_ohlc_refresh._upsert_rows, which does
+    # a per-row SELECT + a wholesale batch INSERT. At US-market scale (~10k rows) that runs
+    # ~10k SELECTs inside one long transaction and the batch aborts on the first pre-existing
+    # (ticker,date) key, so nothing commits and the whole warm re-runs every cycle. On dev it
+    # saturated the Postgres connection pool and every DB-backed endpoint (/health, /topics
+    # board) timed out. Re-enable once _upsert_rows is a batched ON CONFLICT DO UPDATE — see
+    # the follow-up. The US read endpoints and the warmer code are untouched; it just doesn't
+    # run on startup. TW warming is unaffected.
+    async def _refresh_us_ohlc_bg():
+        try:
+            from src.services.us_daily_ohlc_refresh import run_periodic_us_ohlc_refresh
+            await run_periodic_us_ohlc_refresh(interval_hours=6.0)
+        except Exception as e:
+            print(f"Warning: US daily OHLC fetcher stopped: {e}")
+
+    # asyncio.create_task(_refresh_us_ohlc_bg())  # re-enable after the _upsert_rows fix
+
     # Refresh-ahead for the /topics boards (hot sectors + 熱門標籤). Production only,
     # hourly: every cycle full-scans Firestore in us-central1, and with three envs
     # running 5/10-min cycles the reads + cross-internet egress dominated the July
@@ -240,6 +262,24 @@ async def lifespan(app: FastAPI):
                 print(f"Warning: trending-tags refresher stopped: {e}")
 
         asyncio.create_task(_refresh_trending_bg())
+
+    # Refresh-ahead for the /topics heat→forward-return validation panel. Its cold
+    # compute (full-episode scan + whole-history price join) is the heaviest thing on
+    # /topics and must never touch the request path — running it inline took the API
+    # down. Own task so a slow backtest can't delay the board refresh above.
+    #
+    # NOT inside the is_production gate: the serving path has no inline fallback
+    # (compute_if_cold=False returns an empty panel), so without this loop the panel
+    # would be permanently empty on dev/staging. Hourly + 2h TTL keeps the Firestore
+    # cost negligible (~2700 projected reads/cycle) until the Postgres repoint (P2).
+    async def _refresh_heat_validation_bg():
+        try:
+            from src.services.podcast import run_periodic_heat_validation_refresh
+            await run_periodic_heat_validation_refresh(interval_seconds=3600.0)
+        except Exception as e:
+            print(f"Warning: heat-validation refresher stopped: {e}")
+
+    asyncio.create_task(_refresh_heat_validation_bg())
 
     # Empty-DB bootstrap only. Once any sector row exists, taxonomy writes are managed
     # by the admin taxonomy API and this seed sync writes nothing.

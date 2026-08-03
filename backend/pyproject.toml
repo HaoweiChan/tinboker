@@ -29,3 +29,14 @@ dependencies = [
     "google-auth>=2.23.0",
     "google-cloud-secret-manager>=2.16.0",
 ]
+
+# CI installs ruff unpinned, so the rule set must be pinned here instead — otherwise a
+# new ruff release that widens the defaults turns every backend PR red overnight (which
+# is exactly what 0.16.0 did). Mirrors how pipelines/pyproject.toml already does it.
+# These are ruff's pre-0.16 defaults minus the flags backend-ci.yml used to pass inline.
+[tool.ruff]
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
+ignore = ["E501", "E722", "E701", "E402", "F841"]

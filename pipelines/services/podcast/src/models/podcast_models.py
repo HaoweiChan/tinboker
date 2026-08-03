@@ -47,6 +47,7 @@ class PodcastEpisode:
     
     # Metadata
     related_tickers: List[str] = field(default_factory=list)  # List of ticker symbols
+    tags: List[str] = field(default_factory=list)  # Canonical tag slugs (contract §2.1: always present, may be empty)
     key_insights: List[str] = field(default_factory=list)  # 3–8 plain-text zh-TW takeaways
     social_cards: List[Dict] = field(default_factory=list)  # AlphaMemo-style cards (cover + per theme)
     skipped_segments: List[Dict] = field(default_factory=list)  # Dropped segments (timing+label) for player "skip" chips
@@ -163,6 +164,7 @@ class PodcastEpisode:
             'summary_url': self.summary_url,
             'summary_image_url': self.summary_image_url,
             'related_tickers': self.related_tickers,
+            'tags': self.tags,  # contract §2.1: always present (may be empty), not merge-safe-gated
             'created_time': self.created_time.isoformat() if isinstance(self.created_time, datetime) else self.created_time,
             'number_click': self.number_click,
             'num_likes': self.num_likes,

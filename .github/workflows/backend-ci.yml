@@ -85,14 +85,16 @@ jobs:
       - name: Install ruff
         run: pip install ruff
 
+      # Rule set lives in backend/pyproject.toml ([tool.ruff.lint]) so an unpinned ruff
+      # upgrade can't silently change what CI enforces.
       - name: Run linter
-        # --select pins ruff's historical default rule set (E4/E7/E9/F): the job
-        # installs latest ruff, and a 2026-07/08 release broadened the defaults,
-        # which failed the whole repo (2336 findings) with no code change.
-        run: ruff check src/ --select E4,E7,E9,F --ignore E501,E722,E701,E402,F841
+        run: ruff check src/
 
   # ── 4. Gate — always runs; the required status check branch protection targets ─
   ci-gate:
+    # Unique check-run name: branch protection matches on this string, and three
+    # workflows sharing the bare "ci-gate" name made required contexts unmatchable.
+    name: backend-ci-gate
     needs: [test, lint]
     if: always()
     runs-on: ubuntu-latest
