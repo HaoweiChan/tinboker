@@ -92,6 +92,9 @@ jobs:
 
   # ── 4. Gate — always runs; the required status check branch protection targets ─
   ci-gate:
+    # Unique check-run name: branch protection matches on this string, and three
+    # workflows sharing the bare "ci-gate" name made required contexts unmatchable.
+    name: backend-ci-gate
     needs: [test, lint]
     if: always()
     runs-on: ubuntu-latest
