@@ -515,64 +515,34 @@ class FirebaseService:
     
     def get_podcast_episodes(self, podcast_name: str, limit: Optional[int] = None, order_by: str = "created_time", descending: bool = True) -> List[Dict]:
         """
-        Get all episodes for a specific podcast from Firestore.
-        
+        Get all episodes for a specific podcast (read-flipped onto firestore_mirror.episodes, P2).
+
         Args:
             podcast_name: Name of the podcast
             limit: Optional limit on number of episodes to return
             order_by: Field to sort by (default: "created_time")
             descending: Sort in descending order (default: True, newest first)
-            
+
         Returns:
             List of episode dictionaries, sorted by created_time (newest first by default)
         """
-        try:
-            # Query episodes collection where podcast_name matches
-            episodes_collection = self.db.collection("episodes")
-            query = episodes_collection.where("podcast_name", "==", podcast_name)
-            
-            # Order by specified field
-            direction = firestore.Query.DESCENDING if descending else firestore.Query.ASCENDING
-            query = query.order_by(order_by, direction=direction)
-            
-            # Apply limit if specified
-            if limit:
-                query = query.limit(limit)
-            
-            episodes = []
-            for doc in query.stream():
-                episode_data = doc.to_dict()
-                episode_data['id'] = doc.id  # Include document ID
-                episodes.append(episode_data)
-            
-            return episodes
-            
-        except Exception as e:
-            raise Exception(f"Failed to get podcast episodes from Firestore: {e}") from e
-    
+        from src.service import postgres_mirror_reader
+        return postgres_mirror_reader.get_podcast_episodes(
+            podcast_name, limit=limit, order_by=order_by, descending=descending
+        )
+
     def get_episode_by_id(self, episode_id: str) -> Optional[Dict]:
         """
-        Get a single episode by its episode_id.
+        Get a single episode by its episode_id (read-flipped onto firestore_mirror.episodes, P2).
 
         Args:
-            episode_id: The episode ID (document ID in Firestore)
+            episode_id: The episode ID (document ID in Firestore, same as the mirror's PK)
 
         Returns:
             Episode dictionary if found, None otherwise
         """
-        try:
-            doc_ref = self.db.collection("episodes").document(episode_id)
-            doc = doc_ref.get()
-
-            if doc.exists:
-                episode_data = doc.to_dict()
-                episode_data['id'] = doc.id  # Include document ID
-                return episode_data
-            else:
-                return None
-
-        except Exception as e:
-            raise Exception(f"Failed to get episode from Firestore: {e}") from e
+        from src.service import postgres_mirror_reader
+        return postgres_mirror_reader.get_episode_by_id(episode_id)
 
     def update_episode_fields(self, episode_id: str, fields: Dict[str, Any]) -> None:
         """Partial update of an existing episode document.
@@ -592,32 +562,17 @@ class FirebaseService:
     
     def get_all_episodes(self, order_by: str = "created_time", descending: bool = True) -> List[Dict]:
         """
-        Get all episodes from Firestore.
-        
+        Get all episodes (read-flipped onto firestore_mirror.episodes, P2).
+
         Args:
             order_by: Field to sort by (default: "created_time")
             descending: Sort in descending order (default: True, newest first)
-            
+
         Returns:
             List of episode dictionaries, sorted by specified field
         """
-        try:
-            episodes_collection = self.db.collection("episodes")
-            
-            # Order by specified field
-            direction = firestore.Query.DESCENDING if descending else firestore.Query.ASCENDING
-            query = episodes_collection.order_by(order_by, direction=direction)
-            
-            episodes = []
-            for doc in query.stream():
-                episode_data = doc.to_dict()
-                episode_data['id'] = doc.id  # Include document ID
-                episodes.append(episode_data)
-            
-            return episodes
-            
-        except Exception as e:
-            raise Exception(f"Failed to get all episodes from Firestore: {e}") from e
+        from src.service import postgres_mirror_reader
+        return postgres_mirror_reader.get_all_episodes(order_by=order_by, descending=descending)
 
     def get_episode_by_fields(
         self,
@@ -626,11 +581,9 @@ class FirebaseService:
         episode_number: Optional[int] = None,
     ) -> Optional[Dict]:
         """
-        Get a single episode by its identifying fields.
-
-        This mirrors the query pattern used in episode_exists, but returns the
-        first matching document's data (including document ID) instead of just
-        a boolean flag.
+        Get a single episode by its identifying fields (read-flipped onto
+        firestore_mirror.episodes, P2 — same match semantics: podcast_name AND
+        episode_title, optionally narrowed by episode_number).
 
         Args:
             podcast_name: Name of the podcast
@@ -641,185 +594,99 @@ class FirebaseService:
             Dictionary containing episode data plus an 'id' field for the
             document ID, or None if not found.
         """
-        try:
-            episodes_collection = self.db.collection("episodes")
-            query = episodes_collection.where(
-                "podcast_name", "==", podcast_name
-            ).where("episode_title", "==", episode_title)
+        from src.service import postgres_mirror_reader
+        return postgres_mirror_reader.get_episode_by_fields(
+            podcast_name, episode_title, episode_number
+        )
 
-            if episode_number is not None:
-                query = query.where("episode_number", "==", episode_number)
-
-            docs = list(query.limit(1).stream())
-            if not docs:
-                return None
-
-            doc = docs[0]
-            episode_data = doc.to_dict() or {}
-            episode_data["id"] = doc.id
-            return episode_data
-
-        except Exception as e:
-            raise Exception(
-                f"Failed to get episode from Firestore by fields: {e}"
-            ) from e
-    
     def get_episode_by_title_and_number(
         self,
         episode_title: str,
         episode_number: Optional[int] = None,
     ) -> Optional[Dict]:
         """
-        Get a single episode by title and number (without podcast_name filter).
-        
-        This is a fallback method for cases where podcast_name might be empty
-        in Firestore. It queries by episode_title and optionally episode_number only.
-        
+        Get a single episode by title and number, without a podcast_name filter
+        (read-flipped onto firestore_mirror.episodes, P2).
+
+        This is a fallback method for cases where podcast_name might be empty.
+        It queries by episode_title and optionally episode_number only.
+
         Args:
             episode_title: Episode title (primary identifier)
             episode_number: Optional episode number for additional matching
-            
+
         Returns:
             Dictionary containing episode data plus an 'id' field for the
             document ID, or None if not found.
         """
-        try:
-            episodes_collection = self.db.collection("episodes")
-            query = episodes_collection.where("episode_title", "==", episode_title)
-            
-            if episode_number is not None:
-                query = query.where("episode_number", "==", episode_number)
-            
-            docs = list(query.limit(1).stream())
-            if not docs:
-                return None
-            
-            doc = docs[0]
-            episode_data = doc.to_dict() or {}
-            episode_data["id"] = doc.id
-            return episode_data
-            
-        except Exception as e:
-            raise Exception(
-                f"Failed to get episode from Firestore by title and number: {e}"
-            ) from e
-    
+        from src.service import postgres_mirror_reader
+        return postgres_mirror_reader.get_episode_by_title_and_number(
+            episode_title, episode_number
+        )
+
     def get_all_podcasts(self) -> List[str]:
         """
-        Get a list of all unique podcast names.
-        
+        Get a list of all unique podcast names (read-flipped onto
+        firestore_mirror.episodes, P2).
+
         Returns:
             List of podcast names (sorted alphabetically)
         """
-        try:
-            episodes_collection = self.db.collection("episodes")
-            
-            # Get all documents and extract unique podcast names
-            podcast_names = set()
-            for doc in episodes_collection.stream():
-                episode_data = doc.to_dict()
-                if episode_data and 'podcast_name' in episode_data:
-                    podcast_names.add(episode_data['podcast_name'])
-            
-            return sorted(list(podcast_names))
-            
-        except Exception as e:
-            raise Exception(f"Failed to get podcast list from Firestore: {e}") from e
-    
+        from src.service import postgres_mirror_reader
+        return postgres_mirror_reader.get_all_podcast_names()
+
     def get_existing_episode_titles(self, podcast_name: str) -> set:
         """
-        Get set of episode titles that already exist in Firestore for a podcast.
-        
+        Get set of episode titles that already exist for a podcast (read-flipped
+        onto firestore_mirror.episodes, P2).
+
         This is used for deduplication - only process episodes that don't exist yet.
         Uses episode_title as the primary matching field since it's always available.
-        
+
         Args:
             podcast_name: Name of the podcast
-            
+
         Returns:
             Set of episode titles (strings) that already exist
         """
-        try:
-            episodes_collection = self.db.collection("episodes")
-            query = episodes_collection.where("podcast_name", "==", podcast_name)
-            
-            existing_titles = set()
-            for doc in query.stream():
-                episode_data = doc.to_dict()
-                episode_title = episode_data.get('episode_title')
-                if episode_title:
-                    existing_titles.add(episode_title)
-            
-            return existing_titles
-            
-        except Exception as e:
-            raise Exception(f"Failed to get existing episode titles from Firestore: {e}") from e
-    
+        from src.service import postgres_mirror_reader
+        return postgres_mirror_reader.get_existing_episode_titles(podcast_name)
+
     def get_existing_episode_numbers(self, podcast_name: str) -> set:
         """
-        Get set of episode numbers that already exist in Firestore for a podcast.
-        
+        Get set of episode numbers that already exist for a podcast (read-flipped
+        onto firestore_mirror.episodes, P2).
+
         This is used for additional deduplication matching (secondary to episode_title).
-        
+
         Args:
             podcast_name: Name of the podcast
-            
+
         Returns:
             Set of episode numbers (integers) that already exist
         """
-        try:
-            episodes_collection = self.db.collection("episodes")
-            query = episodes_collection.where("podcast_name", "==", podcast_name)
-            
-            existing_numbers = set()
-            for doc in query.stream():
-                episode_data = doc.to_dict()
-                episode_number = episode_data.get('episode_number')
-                if episode_number is not None:
-                    existing_numbers.add(int(episode_number))
-            
-            return existing_numbers
-            
-        except Exception as e:
-            raise Exception(f"Failed to get existing episode numbers from Firestore: {e}") from e
-    
+        from src.service import postgres_mirror_reader
+        return postgres_mirror_reader.get_existing_episode_numbers(podcast_name)
+
     def episode_exists(self, podcast_name: str, episode_title: str, episode_number: Optional[int] = None) -> bool:
         """
-        Check if a specific episode already exists in Firestore.
-        
-        This method queries by podcast_name and episode_title field, not by document ID,
-        because older episodes may have hash-based document IDs. Querying by field ensures
-        we find episodes regardless of their document ID format.
-        
+        Check if a specific episode already exists (read-flipped onto
+        firestore_mirror.episodes, P2).
+
+        This method queries by podcast_name and episode_title field, not by document
+        ID, because older episodes may have hash-based document IDs. Querying by
+        field ensures we find episodes regardless of their document ID format.
+
         Args:
             podcast_name: Name of the podcast
             episode_title: Episode title (always available from API)
             episode_number: Optional episode number (for additional matching if available)
-            
+
         Returns:
             True if episode exists, False otherwise
         """
-        try:
-            # Query by podcast_name and episode_title (primary matching)
-            episodes_collection = self.db.collection("episodes")
-            query = episodes_collection.where("podcast_name", "==", podcast_name).where("episode_title", "==", episode_title)
-            
-            # If episode_number is provided, also filter by it for more precise matching
-            if episode_number is not None:
-                query = query.where("episode_number", "==", episode_number)
-            
-            # Check if any documents match
-            docs = list(query.limit(1).stream())
-            exists = len(docs) > 0
-            if exists:
-                doc_id = docs[0].id if docs else "N/A"
-                print(f"  🔍 Found existing episode (ID: {doc_id})")
-            else:
-                print("  🔍 Episode not found in Firestore")
-            return exists
-            
-        except Exception as e:
-            raise Exception(f"Failed to check if episode exists in Firestore: {e}") from e
+        from src.service import postgres_mirror_reader
+        return postgres_mirror_reader.episode_exists(podcast_name, episode_title, episode_number)
     
     def upsert_podcast_show(self, podcast_name: str, metadata: Dict) -> None:
         """
@@ -836,7 +703,8 @@ class FirebaseService:
 
     def get_podcast_show(self, podcast_name: str) -> Optional[Dict]:
         """
-        Get podcast show-level metadata from the `podcasts` collection.
+        Get podcast show-level metadata (read-flipped onto
+        firestore_mirror.podcasts, P2).
 
         Args:
             podcast_name: Canonical podcast name
@@ -844,69 +712,20 @@ class FirebaseService:
         Returns:
             Show metadata dict or None if not found
         """
-        doc_id = re.sub(r'[/]', '_', podcast_name)
-        doc_ref = self.db.collection("podcasts").document(doc_id)
-        doc = doc_ref.get()
-        if doc.exists:
-            data = doc.to_dict()
-            data["id"] = doc.id
-            return data
-        return None
+        from src.service import postgres_mirror_reader
+        return postgres_mirror_reader.get_podcast_show(podcast_name)
 
     def get_all_podcast_shows(self) -> List[Dict]:
         """
-        Get all podcast show documents from the `podcasts` collection.
+        Get all podcast show documents (read-flipped onto
+        firestore_mirror.podcasts, P2).
 
         Returns:
             List of show metadata dicts
         """
-        results = []
-        for doc in self.db.collection("podcasts").stream():
-            data = doc.to_dict()
-            data["id"] = doc.id
-            results.append(data)
-        return results
+        from src.service import postgres_mirror_reader
+        return postgres_mirror_reader.get_all_podcast_shows()
 
-    def episode_exists_in_tag(self, tag_name: str, episode_id: str) -> bool:
-        """
-        Check if an episode exists in a tag's episodes subcollection.
-        
-        Args:
-            tag_name: Tag name (normalized to lowercase)
-            episode_id: Episode document ID
-            
-        Returns:
-            True if episode exists in tag's subcollection, False otherwise
-        """
-        try:
-            tag_ref = self.db.collection("tags").document(tag_name.lower())
-            episode_ref = tag_ref.collection("episodes").document(episode_id)
-            doc = episode_ref.get()
-            return doc.exists
-        except Exception:
-            # If collection doesn't exist or other error, return False
-            return False
-    
-    def episode_exists_in_ticker(self, ticker_symbol: str, episode_id: str) -> bool:
-        """
-        Check if an episode exists in a ticker's episodes subcollection.
-        
-        Args:
-            ticker_symbol: Ticker symbol (normalized to uppercase)
-            episode_id: Episode document ID
-            
-        Returns:
-            True if episode exists in ticker's subcollection, False otherwise
-        """
-        try:
-            ticker_ref = self.db.collection("tickers").document(ticker_symbol.upper())
-            episode_ref = ticker_ref.collection("episodes").document(episode_id)
-            doc = episode_ref.get()
-            return doc.exists
-        except Exception:
-            # If collection doesn't exist or other error, return False
-            return False
-    
     def validate_episode_in_tags_and_tickers(
         self,
         episode_id: str,
@@ -914,43 +733,28 @@ class FirebaseService:
         tickers: List[str]
     ) -> Dict[str, bool]:
         """
-        Validate that episode exists in all expected tags and tickers subcollections.
-        
+        Validate that episode is tagged/tickered as expected (read-flipped onto
+        firestore_mirror.episodes, P2).
+
+        The former ``tags/{tag}/episodes`` and ``tickers/{ticker}/episodes``
+        Firestore subcollections this used to check aren't mirrored (contract
+        § 11.1 — they're pure derivations of ``episodes.tags`` /
+        ``episodes.related_tickers``), so membership is now checked against
+        those same arrays on the episode's own mirrored doc.
+
         Args:
             episode_id: Episode document ID
-            tags: List of tag names that should contain this episode
-            tickers: List of ticker symbols that should contain this episode
-            
+            tags: List of tag names that should be on this episode
+            tickers: List of ticker symbols that should be on this episode
+
         Returns:
             Dictionary with validation results:
-            - 'tags_valid': True if all tags contain the episode
-            - 'tickers_valid': True if all tickers contain the episode
-            - 'tags_details': Dict mapping tag_name -> exists (bool)
-            - 'tickers_details': Dict mapping ticker_symbol -> exists (bool)
+            - 'tags_valid': True if all tags are present
+            - 'tickers_valid': True if all tickers are present
+            - 'tags_details': Dict mapping tag_name -> present (bool)
+            - 'tickers_details': Dict mapping ticker_symbol -> present (bool)
         """
-        result = {
-            'tags_valid': True,
-            'tickers_valid': True,
-            'tags_details': {},
-            'tickers_details': {}
-        }
-        
-        # Check each tag
-        for tag_name in tags:
-            if tag_name:
-                normalized_tag = tag_name.lower()
-                exists = self.episode_exists_in_tag(normalized_tag, episode_id)
-                result['tags_details'][normalized_tag] = exists
-                if not exists:
-                    result['tags_valid'] = False
-        
-        # Check each ticker
-        for ticker_symbol in tickers:
-            if ticker_symbol:
-                normalized_ticker = ticker_symbol.upper()
-                exists = self.episode_exists_in_ticker(normalized_ticker, episode_id)
-                result['tickers_details'][normalized_ticker] = exists
-                if not exists:
-                    result['tickers_valid'] = False
-        
-        return result
+        from src.service import postgres_mirror_reader
+        return postgres_mirror_reader.validate_episode_in_tags_and_tickers(
+            episode_id, tags, tickers
+        )
