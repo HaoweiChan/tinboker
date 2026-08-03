@@ -12,8 +12,8 @@ from sqlalchemy.orm import Session
 
 from src.auth.admin_auth import AdminAccess, get_admin_access, get_social_access
 from src.cache.redis_client import cache_get, cache_set
-from src.database.models import AnalyticsSnapshot
-from src.database.postgres import get_session
+from src.database.models import AnalyticsSnapshot, User
+from src.database.postgres import get_session, session_scope
 from src.services.cloudflare_analytics_service import CloudflareAnalyticsService
 from src.services.facebook_insights_service import FacebookInsightsService
 from src.services.firestore_service import FirestoreService
@@ -24,11 +24,28 @@ router = APIRouter(prefix="/api/admin/analytics", tags=["admin-analytics"])
 logger = logging.getLogger(__name__)
 
 
+def _load_users() -> list[dict]:
+    """Every member's aggregatable fields (~40 rows — no pagination needed).
+
+    Selects columns rather than entities so the values survive the session close.
+    """
+    fields = (
+        "created_at",
+        "podcast_subscriptions",
+        "tag_subscriptions",
+        "watchlist",
+        "episode_bookmarks",
+    )
+    with session_scope() as db:
+        rows = db.query(*(getattr(User, f) for f in fields)).all()
+    return [dict(zip(fields, row)) for row in rows]
+
+
 def _to_dt(value) -> datetime | None:
-    """Best-effort parse of a Firestore created_at into an aware UTC datetime."""
+    """Best-effort parse of a stored created_at into an aware UTC datetime."""
     if value is None:
         return None
-    if hasattr(value, "timestamp"):  # Firestore Timestamp / datetime
+    if hasattr(value, "timestamp"):  # datetime (Postgres timestamptz / SQLite)
         try:
             return datetime.fromtimestamp(value.timestamp(), tz=timezone.utc)
         except Exception:
@@ -47,7 +64,7 @@ async def get_member_analytics(
     admin: AdminAccess = Depends(get_admin_access),
     db: Session = Depends(get_session),
 ):
-    """Registered-member analytics from first-party data (the `users` collection).
+    """Registered-member analytics from first-party data (the `users` table).
 
     Complements GA4 (which is anonymous): GA can't tell which signed-in members saved
     what. This aggregates their watchlists / subscriptions / bookmarks / tag follows
@@ -58,8 +75,7 @@ async def get_member_analytics(
     if cached is not None:
         return json.loads(cached)
 
-    fs = FirestoreService()
-    users = await asyncio.to_thread(fs.get_all_documents, "users")
+    users = await asyncio.to_thread(_load_users)
 
     podcasters: Counter = Counter()
     tags: Counter = Counter()
@@ -89,6 +105,8 @@ async def get_member_analytics(
     top_ep_ids = [eid for eid, _ in episodes.most_common(top)]
     ep_titles: dict[str, str] = {}
     if top_ep_ids:
+        # Content read — still goes through the content service (out of P3 scope).
+        fs = FirestoreService()
         docs = await asyncio.to_thread(fs.get_documents_batch, "episodes", top_ep_ids)
         ep_titles = {d["id"]: (d.get("title") or d["id"]) for d in docs}
 

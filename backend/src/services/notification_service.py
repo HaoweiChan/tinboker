@@ -1,36 +1,46 @@
 """
 Notification service for creating and managing notifications
 """
+import json
 from typing import List, Optional
+
+from sqlalchemy import text
+
 from src.models.notification import (
     NotificationType,
     NotificationCreate,
     NotificationResponse
 )
+from src.database.models import User
 from src.database.notification_db import create_notification
-from src.services.firestore_service import FirestoreService
-
-# Initialize Firestore service (singleton pattern)
-_firestore_service = None
+from src.database.postgres import session_scope
 
 
-def _get_firestore_service() -> FirestoreService:
-    """Get or create FirestoreService instance"""
-    global _firestore_service
-    if _firestore_service is None:
-        _firestore_service = FirestoreService()
-    return _firestore_service
+def _subscribers(field: str, value: str, pref_key: Optional[str] = None) -> List[str]:
+    """IDs of users whose ``field`` array contains ``value`` and who opted in.
 
-
-def _pref_enabled(user_doc, pref_key: str) -> bool:
-    """Whether the user has this notification category enabled (default on).
-
-    The toggle lives inline on the user doc (notification_preferences), already loaded
-    by the subscription query, so this is a free check — no extra Firestore read.
-    Tag/topic follows have no toggle: subscribing to the tag IS the opt-in.
+    ``field`` is one of the JSON subscription arrays on ``users`` (fixed set below —
+    never caller-supplied SQL). Postgres does the containment test in the database
+    (JSONB ``@>``); SQLite has no such operator, so dev filters the (tiny) table in
+    Python. ``pref_key`` is the notification_preferences toggle, default on; pass
+    None for categories where subscribing IS the opt-in (tag follows).
     """
-    prefs = (user_doc.to_dict() or {}).get("notification_preferences", {})
-    return prefs.get(pref_key, True)
+    assert field in ("watchlist", "podcast_subscriptions", "tag_subscriptions")
+
+    with session_scope() as db:
+        query = db.query(User.id, getattr(User, field), User.notification_preferences)
+        if db.bind.dialect.name == "postgresql":
+            query = query.filter(
+                text(f"users.{field} @> CAST(:needle AS jsonb)")
+            ).params(needle=json.dumps([value]))
+        rows = query.all()
+
+    return [
+        user_id
+        for user_id, subscribed, prefs in rows
+        if value in (subscribed or [])
+        and (pref_key is None or (prefs or {}).get(pref_key, True))
+    ]
 
 
 def create_user_notification(
@@ -79,19 +89,11 @@ def notify_new_episode(
     Returns:
         List of created notifications
     """
-    firestore = _get_firestore_service()
     created_notifications = []
 
     try:
         # Find all users subscribed to this podcast
-        users_docs = firestore.db.collection("users") \
-            .where("podcast_subscriptions", "array_contains", podcast_name) \
-            .stream()
-
-        for user_doc in users_docs:
-            if not _pref_enabled(user_doc, "new_episodes"):
-                continue
-            user_id = user_doc.id
+        for user_id in _subscribers("podcast_subscriptions", podcast_name, "new_episodes"):
             notification = create_user_notification(
                 user_id=user_id,
                 notification_type=NotificationType.NEW_EPISODE,
@@ -129,21 +131,13 @@ def notify_stock_mention(
     Returns:
         List of created notifications
     """
-    firestore = _get_firestore_service()
     created_notifications = []
 
     try:
-        # Find all users with this ticker in their watchlist
-        users_docs = firestore.db.collection("users") \
-            .where("watchlist", "array_contains", ticker) \
-            .stream()
-
         # Avoid an ugly "2330 (2330)" when no display name is known (producer passes ticker).
         label = f"{stock_name} ({ticker})" if stock_name and stock_name != ticker else ticker
-        for user_doc in users_docs:
-            if not _pref_enabled(user_doc, "stock_mentions"):
-                continue
-            user_id = user_doc.id
+        # Find all users with this ticker in their watchlist
+        for user_id in _subscribers("watchlist", ticker, "stock_mentions"):
             notification = create_user_notification(
                 user_id=user_id,
                 notification_type=NotificationType.STOCK_MENTION,
@@ -178,16 +172,10 @@ def notify_topic_mention(
     Returns:
         List of created notifications
     """
-    firestore = _get_firestore_service()
     created_notifications = []
 
     try:
-        users_docs = firestore.db.collection("users") \
-            .where("tag_subscriptions", "array_contains", tag) \
-            .stream()
-
-        for user_doc in users_docs:
-            user_id = user_doc.id
+        for user_id in _subscribers("tag_subscriptions", tag):
             notification = create_user_notification(
                 user_id=user_id,
                 notification_type=NotificationType.TOPIC_MENTION,
