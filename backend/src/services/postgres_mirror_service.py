@@ -105,32 +105,59 @@ def _with_id(doc: Optional[dict], doc_id: str, **extra: Any) -> Dict[str, Any]:
     return out
 
 
+def _deep_merge(base: Dict[str, Any], patch: Dict[str, Any]) -> Dict[str, Any]:
+    """Recursive dict merge matching Firestore ``set(..., merge=True)`` semantics."""
+    out = dict(base)
+    for k, v in patch.items():
+        if isinstance(v, dict) and isinstance(out.get(k), dict):
+            out[k] = _deep_merge(out[k], v)
+        else:
+            out[k] = v
+    return out
+
+
 def patch_episode_doc(episode_id: str, updates: Dict[str, Any]) -> bool:
     """Apply a Firestore merge-patch to the mirrored episode doc.
 
     Runs write-through on every platform episode write REGARDLESS of the read
-    flag, so the mirror is already fresh when reads are flipped over.
-    ``DELETE_FIELD`` values become JSONB key removals. Returns False when there
-    is no mirror to write to (SQLite dev) — callers treat failure as non-fatal.
+    flag, so the mirror is already fresh when reads are flipped over. Matches
+    Firestore ``set(..., merge=True)`` semantics: dict values merge recursively
+    (a shallow jsonb ``||`` would drop nested sibling keys), ``DELETE_FIELD``
+    removes the key. Read-modify-write runs under ``FOR UPDATE`` so concurrent
+    platform patches serialize. Returns False when there is no mirror to write
+    to (SQLite dev), or — with a warning, since a flag-ON read would then miss
+    this edit entirely — when the mirror row is absent (pipeline mirror gap).
     """
     if not settings.use_postgres:
         return False  # mirror only exists in podcast_db Postgres
     drop = [k for k, v in updates.items() if v is _DELETE_FIELD]
     patch = {k: v for k, v in updates.items() if v is not _DELETE_FIELD}
-    sql = text(
-        f"UPDATE {EPISODES} SET "
-        "doc = (doc - CAST(:drop AS text[])) || CAST(:patch AS jsonb), "
-        # related_tickers is promoted; patch_episode_fields can change it.
-        "related_tickers = COALESCE(CAST(:patch AS jsonb) -> 'related_tickers', related_tickers) "
-        "WHERE episode_id = :id"
-    )
-    params = {
-        "drop": _pg_text_array(drop),
-        "patch": json.dumps(patch, default=str),
-        "id": episode_id,
-    }
     with mirror_session() as db:
-        db.execute(sql, params)
+        row = db.execute(
+            text(f"SELECT doc FROM {EPISODES} WHERE episode_id = :id FOR UPDATE"),
+            {"id": episode_id},
+        ).first()
+        if row is None:
+            logger.warning(
+                "episode %s is missing from firestore_mirror — write-through "
+                "skipped (mirror gap; rerun dump_firestore_to_postgres.py)",
+                episode_id,
+            )
+            return False
+        doc = _deep_merge(dict(row[0] or {}), patch)
+        for k in drop:
+            doc.pop(k, None)
+        db.execute(
+            text(
+                f"UPDATE {EPISODES} SET doc = CAST(:doc AS jsonb), "
+                # keep the promoted column consistent with the final doc
+                "related_tickers = CASE WHEN CAST(:doc AS jsonb) ? 'related_tickers' "
+                "THEN ARRAY(SELECT jsonb_array_elements_text(CAST(:doc AS jsonb)->'related_tickers')) "
+                "ELSE NULL END "
+                "WHERE episode_id = :id"
+            ),
+            {"doc": json.dumps(doc, default=str), "id": episode_id},
+        )
         db.commit()
     return True
 

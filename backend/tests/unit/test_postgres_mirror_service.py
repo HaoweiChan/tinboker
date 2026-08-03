@@ -273,23 +273,48 @@ def test_mirror_is_read_only_for_writes():
         svc.delete_document("episodes", "EP1")
 
 
-def test_patch_episode_doc_splits_deletes_from_sets(stub_session, monkeypatch):
+def test_patch_episode_doc_merges_and_drops_like_firestore(stub_session, monkeypatch):
     from google.cloud.firestore import DELETE_FIELD
 
     monkeypatch.setattr(pms.settings, "use_postgres", True)
-    s = stub_session()
+    existing = {
+        "summary_content": "old",
+        "modified_summary_url": "gs://x",
+        "modified_at": 5,
+        "related_tickers": ["2330"],
+    }
+    s = stub_session(rows=[(existing,)])
     assert patch_episode_doc("EP1", {
         "modified_summary_url": DELETE_FIELD,
         "modified_at": DELETE_FIELD,
         "summary_content": "new",
     }) is True
-    sql, params = s.calls[0]
-    assert "doc = (doc - CAST(:drop AS text[])) || CAST(:patch AS jsonb)" in sql
-    assert "related_tickers = COALESCE(CAST(:patch AS jsonb) -> 'related_tickers', related_tickers)" in sql
-    assert params["drop"] == '{"modified_summary_url","modified_at"}'
-    assert json.loads(params["patch"]) == {"summary_content": "new"}
+    # read-modify-write: locked SELECT, then a whole-doc UPDATE
+    assert "SELECT doc FROM firestore_mirror.episodes WHERE episode_id = :id FOR UPDATE" in _sql(s, 0)
+    sql, params = s.calls[1]
+    assert "doc = CAST(:doc AS jsonb)" in sql
+    assert "jsonb_array_elements_text" in sql  # promoted related_tickers stays consistent
+    assert json.loads(params["doc"]) == {"summary_content": "new", "related_tickers": ["2330"]}
     assert params["id"] == "EP1"
     assert s.committed
+
+
+def test_patch_episode_doc_deep_merges_nested_maps(stub_session, monkeypatch):
+    monkeypatch.setattr(pms.settings, "use_postgres", True)
+    s = stub_session(rows=[({"social_thread": {"a": 1, "b": 2}},)])
+    assert patch_episode_doc("EP1", {"social_thread": {"a": 9}}) is True
+    # Firestore merge=True keeps sibling sub-keys; a shallow || would drop "b"
+    assert json.loads(s.calls[1][1]["doc"]) == {"social_thread": {"a": 9, "b": 2}}
+
+
+def test_patch_episode_doc_warns_and_skips_on_missing_row(stub_session, monkeypatch, caplog):
+    monkeypatch.setattr(pms.settings, "use_postgres", True)
+    s = stub_session(rows=[])
+    with caplog.at_level("WARNING"):
+        assert patch_episode_doc("EP_GONE", {"summary_content": "x"}) is False
+    assert len(s.calls) == 1  # SELECT only, no blind UPDATE
+    assert not s.committed
+    assert "missing from firestore_mirror" in caplog.text
 
 
 def test_patch_episode_doc_noop_without_postgres(stub_session, monkeypatch):
