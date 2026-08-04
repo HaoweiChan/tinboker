@@ -778,9 +778,11 @@ pipeline steps + the regen MCP) and `backend/src/services/gcs_content.py`
 (`GCSContentService`) — both keep the historical class names, both write via
 temp-file + `os.replace` so Caddy never serves a half-written artifact.
 
-**Known leftover:** `backend/src/routers/content.py` still reads the separate
-`CONTENT_BUCKET` article store from GCS (it needs bucket *listing*, not just reads).
-That is out of P5 scope and must be ported before the buckets are deleted.
+**Leftover resolved:** `backend/src/routers/content.py` (the supply-chain article
+endpoints, the one reader that needed bucket *listing*) now globs
+`{MEDIA_STORAGE_ROOT}/graphfolio-articles/` directly and returns stable media URLs;
+`CONTENT_BUCKET` / `CONTENT_PREFIX` / `CONTENT_URL_TTL` are gone. No code path reads
+GCS any more — the buckets can be deleted.
 
 ### 11.8 Secrets off Secret Manager (P6)
 
@@ -831,9 +833,8 @@ if the file is absent and the GSM fallback covers the gap.
 **What still pins the GCP service account.** `GOOGLE_APPLICATION_CREDENTIALS` and
 `gcp-service-account.json` are NOT removed:
 
-1. **The GCS article store.** `backend/src/routers/content.py` still lists and reads
-   the `CONTENT_BUCKET` article store from GCS (§ 11.7 "Known leftover"). Until that
-   is ported, the SA is load-bearing at runtime.
+1. **~~The GCS article store~~ — resolved.** `backend/src/routers/content.py` now
+   reads local disk (§ 11.7 "Leftover resolved"); no runtime GCS reads remain.
 2. **The GSM fallback itself.** Both tiers still authenticate to Secret Manager for
    any value the operator has not migrated.
 3. **`refresh-social-tokens.yml`** — the one remaining GSM *writer*. It adds a new
@@ -850,7 +851,7 @@ if the file is absent and the GSM fallback covers the gap.
 2. Operator fills `compose/backend/.env` and `/root/tinboker/pipelines/.env`; watch
    for `source=gsm` in `docker logs backend-*` and `journalctl -u podcast-api` until
    none remain.
-3. Port the `CONTENT_BUCKET` article store off GCS (§ 11.7 leftover).
+3. ~~Port the `CONTENT_BUCKET` article store off GCS~~ — done (§ 11.7).
 4. Close the Threads-token loop (deliver the refreshed token to the backend `.env`,
    or drop the automated refresh), then delete `refresh-social-tokens.yml`.
 5. Delete `GCPSecretManagerSource` + `_GSM_FIELDS`, `_gsm_client` / `_load_from_gsm`
