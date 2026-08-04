@@ -778,6 +778,8 @@ pipeline steps + the regen MCP) and `backend/src/services/gcs_content.py`
 (`GCSContentService`) — both keep the historical class names, both write via
 temp-file + `os.replace` so Caddy never serves a half-written artifact.
 
-**Known leftover:** `backend/src/routers/content.py` still reads the separate
-`CONTENT_BUCKET` article store from GCS (it needs bucket *listing*, not just reads).
-That is out of P5 scope and must be ported before the buckets are deleted.
+**Leftover resolved:** `backend/src/routers/content.py` (the supply-chain article
+endpoints, the one reader that needed bucket *listing*) now globs
+`{MEDIA_STORAGE_ROOT}/graphfolio-articles/` directly and returns stable media URLs;
+`CONTENT_BUCKET` / `CONTENT_PREFIX` / `CONTENT_URL_TTL` are gone. No code path reads
+GCS any more — the buckets can be deleted.

@@ -203,11 +203,10 @@ assembles the body, keeping the MCP thin):
 
 Resolve the infra ambiguities that would otherwise block image upload:
 
-- [ ] **Standardize the bucket name.** Real bucket is `graphfolio-articles`; docs/scripts say
-  `tinboker-articles` ([`backend/docs/features/content-api-gcs.md`](../backend/docs/features/content-api-gcs.md),
-  [`frontend/scripts/cors.json`](../frontend/scripts/cors.json)). Pick `graphfolio-articles` everywhere.
-- [ ] **Wire `CONTENT_BUCKET`** (currently unset in all envs → the `/api/content` router 500s) into
-  per-service env in [`docker-compose.multi.yml`](../backend/docker-compose.multi.yml); add `CONTENT_CDN_BASE`.
+- [x] **Bucket naming / `CONTENT_BUCKET` wiring — obsoleted by the GCS decommission.** The
+  `/api/content` router now reads `{MEDIA_STORAGE_ROOT}/graphfolio-articles/` from disk and
+  returns stable media URLs; `CONTENT_BUCKET`/`CONTENT_PREFIX`/`CONTENT_URL_TTL` no longer
+  exist (see [`backend/docs/features/content-api-gcs.md`](../backend/docs/features/content-api-gcs.md)).
 - [ ] Decide the public image prefix + CDN hostname (e.g. `cdn.tinboker.com` via Cloudflare → GCS),
   set the prefix public-read, confirm bucket CORS allows the real frontend origins (not just `*.vercel.app`).
 - [ ] Extend [`gcs_content.upload_content()`](../backend/src/services/gcs_content.py) to accept `bytes`
