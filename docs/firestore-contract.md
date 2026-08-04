@@ -532,8 +532,8 @@ Schema at [backend/src/models/notification.py:17-38](../backend/src/models/notif
 
 The notification fan-out service ([backend/src/services/notification_service.py](../backend/src/services/notification_service.py)) is triggered by new episode writes. The contract:
 
-- A document arriving at `episodes/{id}` with a never-before-seen `created_time` triggers `new_episode` notifications for every user with that `podcast_name` in `podcast_subscriptions`, and `stock_mention` notifications for every user whose `watchlist` overlaps `related_tickers`.
-- **Therefore agents MUST NOT mutate `created_time` on existing episodes.** Doing so would re-fire notifications.
+- An episode row first arriving in `firestore_mirror.episodes` triggers `new_episode` notifications for every user with that `podcast_name` in `podcast_subscriptions`, and `stock_mention` notifications for every user whose `watchlist` overlaps `related_tickers`. The trigger key is `first_seen_at` (DB default `now()` on the pipeline's first mirror insert, never set on conflict — [postgres_episode.py](../pipelines/services/podcast/src/pipeline/steps/postgres_episode.py)): monotonic ingestion order, so a late ingest with an old publish date still notifies. Re-inserting existing episodes into a fresh/truncated mirror resets `first_seen_at` and would re-fire — delete the producer's Redis marker first so its cold-start guard re-arms.
+- **Agents still MUST NOT mutate `created_time` on existing episodes.** The notification watermark no longer reads it, but feeds, recency scoping, and sort order do.
 - Sector/theme-derived `resolved_tickers` are inferred exposure metadata only and MUST NOT trigger `stock_mention` notifications unless the ticker is also present in `related_tickers`.
 - Retracted episodes should be marked with `retracted_at`; the episode doc remains in place so notification and index foreign keys do not break.
 - Agents MAY update other fields freely (re-summarization, transcript corrections, ticker re-extraction).
