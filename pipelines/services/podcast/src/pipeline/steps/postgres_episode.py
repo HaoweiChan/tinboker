@@ -42,13 +42,18 @@ CREATE TABLE IF NOT EXISTS "{_SCHEMA}".episodes (
     episode_number  integer,
     episode_title   text,
     created_time    timestamptz,
+    first_seen_at   timestamptz NOT NULL DEFAULT now(),
     num_likes       integer,
     number_click    integer,
     related_tickers jsonb,
     doc             jsonb NOT NULL
 );
+ALTER TABLE "{_SCHEMA}".episodes
+    ADD COLUMN IF NOT EXISTS first_seen_at timestamptz NOT NULL DEFAULT now();
 CREATE INDEX IF NOT EXISTS ix_fm_episodes_created
     ON "{_SCHEMA}".episodes (created_time DESC);
+CREATE INDEX IF NOT EXISTS ix_fm_episodes_first_seen
+    ON "{_SCHEMA}".episodes (first_seen_at);
 CREATE INDEX IF NOT EXISTS ix_fm_episodes_podcast
     ON "{_SCHEMA}".episodes (podcast_name);
 CREATE INDEX IF NOT EXISTS ix_fm_episodes_number
@@ -72,8 +77,10 @@ ON CONFLICT (episode_id) DO UPDATE SET
     doc             = EXCLUDED.doc
 """
 # created_time is deliberately NOT in the DO UPDATE set — contract § 2.1: it's
-# immutable after first write. A re-ingest of an already-mirrored episode must
-# never advance it (the notification producer's high-water mark reads it).
+# immutable after first write. first_seen_at is likewise never inserted nor
+# updated here: the DB default stamps it exactly once on the first mirror
+# insert, giving the backend notification producer a monotonic ingestion-order
+# key (contract § 6.3). A re-ingest must never advance either.
 
 
 def _as_int(value):
