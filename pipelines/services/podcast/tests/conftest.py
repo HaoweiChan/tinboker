@@ -23,6 +23,16 @@ FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 
 @pytest.fixture(autouse=True)
+def _isolated_media_root(tmp_path_factory, monkeypatch):
+    """Point MEDIA_STORAGE_ROOT at a temp dir for every test.
+
+    Without it, any test that reaches a real GCSStorageService writes artifacts into
+    the repo (the dev fallback root is ``pipelines/.media``).
+    """
+    monkeypatch.setenv("MEDIA_STORAGE_ROOT", str(tmp_path_factory.mktemp("media")))
+
+
+@pytest.fixture(autouse=True)
 def _no_live_episode_database_url(monkeypatch):
     """Scrub EPISODE_DATABASE_URL before every test.
 

@@ -59,10 +59,16 @@ services:
       # Marp render service runs as separate infra on its own docker network, only
       # reachable via its host-published :5004 — so go through the host gateway.
       MARP_SERVICE_URL: http://host.docker.internal:5004
+      # P5 (firestore-contract § 11.7): episode media artifacts live on the VPS disk,
+      # not GCS. Path inside the container; the host dir is bind-mounted rw below.
+      MEDIA_STORAGE_ROOT: /srv/tinboker-media
+      MEDIA_PUBLIC_BASE: https://podcast-api.tinboker.com/media
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
       - ./gcp-service-account.json:/app/gcp-service-account.json:ro
+      # rw: the backend writes modified summaries, social-card PNGs and promo media here.
+      - /srv/tinboker-media:/srv/tinboker-media:rw
     depends_on:
       redis:
         condition: service_healthy
@@ -104,10 +110,16 @@ services:
       TAXONOMY_REQUIRE_MEMBER_REASONS: "true"
       CORS_ORIGINS: '["https://dev.tinboker.com","http://localhost:5173","http://localhost:3000"]'
       MARP_SERVICE_URL: http://host.docker.internal:5004
+      # P5 (firestore-contract § 11.7): episode media artifacts live on the VPS disk,
+      # not GCS. Path inside the container; the host dir is bind-mounted rw below.
+      MEDIA_STORAGE_ROOT: /srv/tinboker-media
+      MEDIA_PUBLIC_BASE: https://podcast-api.tinboker.com/media
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
       - ./gcp-service-account.json:/app/gcp-service-account.json:ro
+      # rw: the backend writes modified summaries, social-card PNGs and promo media here.
+      - /srv/tinboker-media:/srv/tinboker-media:rw
     depends_on:
       redis:
         condition: service_healthy
@@ -147,10 +159,16 @@ services:
       TAXONOMY_REQUIRE_MEMBER_REASONS: "true"
       CORS_ORIGINS: '["https://tinboker.com","https://dev.tinboker.com","https://staging.tinboker.com","http://localhost:5173","http://localhost:3000"]'
       MARP_SERVICE_URL: http://host.docker.internal:5004
+      # P5 (firestore-contract § 11.7): episode media artifacts live on the VPS disk,
+      # not GCS. Path inside the container; the host dir is bind-mounted rw below.
+      MEDIA_STORAGE_ROOT: /srv/tinboker-media
+      MEDIA_PUBLIC_BASE: https://podcast-api.tinboker.com/media
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
       - ./gcp-service-account.json:/app/gcp-service-account.json:ro
+      # rw: the backend writes modified summaries, social-card PNGs and promo media here.
+      - /srv/tinboker-media:/srv/tinboker-media:rw
     depends_on:
       redis:
         condition: service_healthy

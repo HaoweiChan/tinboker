@@ -430,10 +430,10 @@ class PromoDraft(Base):
     """A saved draft for the admin promo cross-poster (free-form Threads/FB post).
 
     Durable + shared across envs (all share this Postgres). ``media`` stores each item
-    as ``{type, path, filename}`` where ``path`` is the permanent ``gs://`` location —
-    NOT the 12h signed URL — so a draft's media never expires; the read path re-signs a
-    fresh URL on load. ``comments`` is a list of text-only follow-ups; ``platforms`` the
-    selected targets.
+    as ``{type, path, filename}`` where ``path`` is the permanent media-store location,
+    so a draft's media never expires; the read path resolves it to a fetchable URL on
+    load. ``comments`` is a list of text-only follow-ups; ``platforms`` the selected
+    targets.
     """
     __tablename__ = "promo_drafts"
 

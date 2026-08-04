@@ -46,7 +46,7 @@ class Episode:
     spotify_duration_ms: Optional[int] = None
     spotify_images: list[str] = field(default_factory=list)
 
-    # File URLs (GCS gs:// or VPS /media/ paths post Phase E)
+    # File URLs (https media host since P5; legacy rows may hold gs://)
     mp3_url: Optional[str] = None
     transcript_url: Optional[str] = None
     summary_url: Optional[str] = None

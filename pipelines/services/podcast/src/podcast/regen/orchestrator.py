@@ -213,52 +213,31 @@ def _episode_sentences(doc: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _sentences_from_gcs(transcript_url: Optional[str]) -> list[dict[str, Any]]:
-    """Fetch the sentence array from a ``gs://`` transcript JSON, or ``[]``.
+    """Fetch the sentence array from the stored transcript JSON, or ``[]``.
 
-    Published/consolidated episodes keep only a flat ``transcript`` field in
-    Firestore and store the real sentence-level transcript (``{index, content,
-    start, end}``) as a JSON object in GCS at ``transcript_url``. Without this,
-    regen is impossible for every already-published episode (the inline fields
-    are empty). Read failures degrade to ``[]`` so callers fall back cleanly.
+    Published/consolidated episodes keep only a flat ``transcript`` field in the
+    episode doc and store the real sentence-level transcript (``{index, content,
+    start, end}``) as a JSON artifact at ``transcript_url``. Without this, regen is
+    impossible for every already-published episode (the inline fields are empty).
+    Read failures degrade to ``[]`` so callers fall back cleanly.
     """
-    if not transcript_url or not str(transcript_url).startswith("gs://"):
-        return []
-    bucket_name, _, blob_path = transcript_url[len("gs://"):].partition("/")
-    if not bucket_name or not blob_path:
+    if not transcript_url:
         return []
     try:
-        blob = _gcs_client().bucket(bucket_name).blob(blob_path)
-        data = json.loads(blob.download_as_text())
+        data = json.loads(_gcs_storage_service().download_text_by_gcs_url(str(transcript_url)))
         if isinstance(data, dict):
             return data.get("sentences") or data.get("transcript_sentences") or []
         if isinstance(data, list):
             return data
-    except Exception:  # noqa: BLE001 — missing/unauthorized/malformed → fall back
+    except Exception:  # noqa: BLE001 — missing/unreadable/malformed → fall back
         return []
     return []
 
 
-def _gcs_client():
-    """An authenticated ``storage.Client``.
-
-    The MCP authenticates GCP with an explicit service-account JSON (not ADC), so
-    reuse the pipeline's credential-bootstrapped client from ``GCSStorageService``;
-    fall back to a default client only if that can't be constructed.
-    """
-    try:
-        from src.service.gcs_storage_service import GCSStorageService
-
-        return GCSStorageService().client
-    except Exception:  # noqa: BLE001 — no bucket env / import issue → try ADC
-        from google.cloud import storage
-
-        return storage.Client()
-
-
 def _gcs_storage_service():
-    """The pipeline's credential-bootstrapped GCS uploader (same one ``gcs_upload``
-    uses). Imported lazily so importing this module doesn't require the GCS env —
-    ``commit`` is the only caller, and tests monkeypatch this to avoid real uploads."""
+    """The pipeline's media-store service (same one ``gcs_upload`` uses). Imported
+    lazily so importing this module doesn't require the storage env — tests
+    monkeypatch this to avoid touching the real media root."""
     from src.service.gcs_storage_service import GCSStorageService
 
     return GCSStorageService()
@@ -505,13 +484,13 @@ def _doc_update(payload: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in payload.items() if k not in protected}
 
 
-# Assembled-payload field -> the ``upload_episode_files`` kwarg that writes its GCS
-# blob. These are the artifacts the backend serves *from GCS*: the episode
+# Assembled-payload field -> the ``upload_episode_files`` kwarg that writes its
+# media-store artifact. These are the artifacts the backend serves *by URL*: the episode
 # transformer hydrates each ``*_content`` field from the matching ``*_url`` only when
 # the inline field is empty (see ``episode_transformer._GCS_CONTENT_FIELDS``). The
 # regen writes the inline doc fields (``marp_markdown``/``events_markdown``/…) but the
-# page reads the GCS blob, so a Firestore-only commit keeps serving the OLD content —
-# the blob itself must be re-uploaded.
+# page reads the stored artifact, so a doc-only commit keeps serving the OLD content —
+# the artifact itself must be rewritten.
 _GCS_UPLOAD_KWARGS = {
     "summary_content": "summary_content",
     "events_markdown": "events_markdown_content",
@@ -534,7 +513,7 @@ _GCS_URL_FIELDS = (
 def _upload_regen_content(
     episode_id: str, podcast_name: str, payload: dict[str, Any]
 ) -> tuple[dict[str, Any], Optional[str]]:
-    """Re-upload the GCS-served artifacts (marp/events/ticker_marp/summary + ticker
+    """Rewrite the URL-served artifacts (marp/events/ticker_marp/summary + ticker
     insights JSON) so the backend hydrates the regenerated content, not the stale blob.
 
     Overwrites the existing blobs (``skip_existing=False``) and returns the
@@ -555,9 +534,9 @@ def _upload_regen_content(
 
     try:
         svc = _gcs_storage_service()
-    except Exception as exc:  # noqa: BLE001 — no GCS env → can't refresh the blob
+    except Exception as exc:  # noqa: BLE001 — storage unavailable → can't refresh
         return {}, (
-            f"GCS upload skipped — storage unavailable ({exc}); the page will keep "
+            f"Media write skipped — storage unavailable ({exc}); the page will keep "
             "serving the OLD marp/events content until the blob is re-uploaded."
         )
     try:
@@ -569,7 +548,7 @@ def _upload_regen_content(
         )
     except Exception as exc:  # noqa: BLE001 — never abort an otherwise-good commit
         return {}, (
-            f"GCS upload failed ({exc}); the page will keep serving the OLD "
+            f"Media write failed ({exc}); the page will keep serving the OLD "
             "marp/events content until the blob is re-uploaded."
         )
     return {k: urls[k] for k in _GCS_URL_FIELDS if urls.get(k)}, None
@@ -625,8 +604,8 @@ def find_candidates(
     out: list[dict[str, Any]] = []
     for d in rows:
         sentences = _episode_sentences(d)
-        # A regen needs *a* transcript: inline sentences, a GCS transcript JSON,
-        # or at least the flat text. (We don't download GCS here — checking the
+        # A regen needs *a* transcript: inline sentences, a stored transcript JSON,
+        # or at least the flat text. (We don't read the artifact here — checking the
         # URL's presence keeps the listing cheap.) ``start`` resolves the real
         # source on demand.
         has_transcript = bool(sentences) or bool(d.get("transcript_url")) or bool((d.get("transcript") or "").strip())
@@ -669,7 +648,7 @@ def start(podcast_name: str, episode_id: str) -> dict[str, Any]:
     sentences = _episode_sentences(doc)
     derived_sentences = False
     if not sentences:
-        # Published episodes keep the real sentence-level transcript in GCS, not
+        # Published episodes keep the real sentence-level transcript as an artifact, not
         # inline — pull it before falling back to deriving from flat text.
         sentences = _sentences_from_gcs(doc.get("transcript_url"))
     if not sentences and transcript.strip():
@@ -850,7 +829,7 @@ def commit(
         _write_doc_update(episode_id, doc_update)
         report["episode_fields_written"] = sorted(doc_update.keys())
 
-    # 1b. Re-upload the GCS-served artifacts (marp/events/ticker_marp/summary). The
+    # 1b. Rewrite the URL-served artifacts (marp/events/ticker_marp/summary). The
     #     backend serves these by hydrating ``*_content`` from ``*_url`` when the inline
     #     field is empty, so the doc merge above is NOT enough — without this the
     #     page keeps rendering the OLD slides/events. Overwrite the blobs and repoint
