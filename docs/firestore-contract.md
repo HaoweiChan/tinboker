@@ -242,7 +242,7 @@ These are contract cleanups tracked across platform and pipeline work.
    - Keep both only for fields the frontend fetches directly without backend mediation.
    - Action: a separate sub-doc auditing each pair's usage; merge with this spec or land alongside.
 
-3. **`modified_*` is platform-only.** Agents pipeline must not overwrite `modified_summary_url`, `modified_summary_content`, `modified_by`, `modified_at` during regenerations. Spec requires agents to perform Firestore writes with `merge=True` *excluding* these fields. Pipeline episode update/regeneration paths enforce this; backend writes already use `merge=True` for adds and `DELETE_FIELD` for removals.
+3. **`modified_*` is platform-only.** Agents pipeline must not overwrite `modified_summary_url`, `modified_summary_content`, `modified_by`, `modified_at` during regenerations. Since P4 this is enforced by `pipeline/steps/postgres_episode.py::_merge_onto_stored` (previously by writing Firestore with `merge=True` *excluding* these fields); see § 11.6 for the full preserved-key set.
 
 4. **`*_content` fields are a cache, not a source.** Document that inlined markdown duplicates what `*_url` points to. Staleness rule: when agents regenerate the GCS file, they MUST also rewrite the matching `*_content` field in the same Firestore commit. Otherwise readers see drift.
 
@@ -626,7 +626,8 @@ These decisions close the implementation questions that originally blocked the F
 
 ## § 11. Reverse migration: Firestore → VPS Postgres (2026-08)
 
-> **Status: Phase P1 in progress.** Direction reversed from § 7: the July 2026 GCP bill
+> **Status: P1–P4 done, P5 (GCS + decommission) pending — see § 11.6.** Direction
+> reversed from § 7: the July 2026 GCP bill
 > (NT$46K — 78% Firestore internet egress, 17% read ops; see the P1 PR description)
 > made Firestore the wrong home for high-read content. The contract's *document
 > shapes* above remain authoritative; only the storage/transport changes.
@@ -654,18 +655,29 @@ NOT mirrored as tables: per § 3.2 they are pure derivations of `episodes.tags` 
 
 `CONTENT_READS_FROM_POSTGRES=true` swaps a same-interface `PostgresMirrorService` in
 place of `FirestoreService` for content reads (episodes, tag/ticker membership,
-ticker insights, trending). Default off; per-env rollout dev → staging → prod.
-**Rollback = flip the flag off** — Firestore stays fully written during P1–P3.
-`users/{id}` and `users/{id}/notifications` stay on Firestore until P3.
+ticker insights, trending). Rolled out per-env dev → staging → prod during P1;
+**default ON since P4**. Flipping it off is no longer a real rollback — Firestore
+stopped being written in P4, so the Firestore read path serves a frozen snapshot.
+`users/{id}` and `users/{id}/notifications` moved to first-class Postgres tables in
+P3 and never consult this flag.
 
-### 11.3 Writer obligations added in P1 (pipelines)
+### 11.3 Writer obligations (pipelines)
 
-- `ticker_insights` export and the hourly `trending_tickers` refresh dual-write
-  Postgres (same doc JSON) alongside Firestore.
-- The regen tool's `commit()` applies its Firestore field updates to
-  `firestore_mirror.episodes.doc` in the same run (mirror must never drift).
-- `dump_firestore_to_postgres.py` additionally backfills `ticker_insights` (collection
-  group) and `trending_tickers`; it remains idempotent and re-runnable.
+Added as dual-writes in P1; since P4 these ARE the writes — the Firestore halves are
+gone and each raises on failure rather than warning.
+
+- `pipeline/steps/postgres_episode.py::persist_episode` builds and upserts the episode
+  document (§ 2 shape) — see § 11.6 for the re-ingest preservation rules it enforces.
+- The `ticker_insights` export and the hourly `trending_tickers` refresh write their
+  Postgres tables; the refresh also reads its source rows from
+  `firestore_mirror.ticker_insights`.
+- `upsert_podcast_show` / `update_episode_fields` write `firestore_mirror.podcasts` /
+  `episodes.doc`.
+- The regen tool's `commit()` jsonb-merges its field updates onto
+  `firestore_mirror.episodes.doc`, and fails when the row does not exist rather than
+  fabricating a partial document.
+- `dump_firestore_to_postgres.py` remains the idempotent one-shot import (Firestore →
+  Postgres) for history; it is archival only now.
 
 ### 11.4 Rollout runbook (P1)
 
@@ -681,14 +693,43 @@ ticker insights, trending). Default off; per-env rollout dev → staging → pro
 
 ### 11.5 Phases and the Hermes dependency
 
-| Phase | Content | Firestore usage removed |
-|---|---|---|
-| P1 | backend content reads → mirror; dual-writes above | ~99% of remaining reads |
-| P2 | pipelines' own `:8003` reads (`/api/podcast/shows` etc.) + `podcasts` metadata → Postgres | pipelines reads |
-| P3 | `users/*` + notifications → new Postgres tables; fan-out query → SQL | platform data |
-| P4 | stop all Firestore writes; decommission `graphfolio-db` | everything |
+| Phase | Content | Firestore usage removed | Status |
+|---|---|---|---|
+| P1 | backend content reads → mirror; dual-writes above | ~99% of remaining reads | done |
+| P2 | pipelines' own `:8003` reads (`/api/podcast/shows` etc.) + `podcasts` metadata → Postgres | pipelines reads | done |
+| P3 | `users/*` + notifications → new Postgres tables; fan-out query → SQL | platform data | done |
+| P4 | stop all Firestore writes | all writes | **done** |
+| P5 | mp3/transcript/summary artifacts off GCS; decommission `graphfolio-db` + the GCP service account | storage + credentials | pending |
 
-**P4 blocker:** the external **Hermes trading system reads
-`trending_tickers/{bare_ticker}` directly from Firestore** (§ 5 status note). It must
-be repointed (VPS Postgres or backend HTTP API) before pipelines stop writing
-Firestore. Owner: Willy.
+The former **P4 blocker** — the external Hermes trading system reading
+`trending_tickers/{bare_ticker}` straight from Firestore — was cleared before this
+phase: Hermes now reads the backend HTTP API.
+
+### 11.6 Post-P4 state
+
+- **`podcast_db`, schema `firestore_mirror`, is the canonical content store.** The
+  name is kept (renaming it would churn every writer, reader and backfill script for
+  no behavioural gain), but nothing mirrors anything any more — `episodes`,
+  `ticker_insights`, `trending_tickers` and `podcasts` are the only copies.
+- **Postgres `users` / `user_notifications` are canonical for user data** (P3).
+- **Firestore (`graphfolio-db`) is idle.** No live code path in either tier reads or
+  writes it. The `FirestoreService` classes and `CONTENT_READS_FROM_POSTGRES` still
+  exist for one release; a handful of one-off archival/backfill scripts under
+  `pipelines/services/podcast/scripts/` still hold a Firestore client on purpose.
+  Deleting the database is a P5 step, after the soak.
+- **GCS is unchanged and still in use** — mp3s, transcripts, summary markdown and
+  social-card PNGs all live there, so the GCP service account stays for storage
+  access only.
+- **Every surviving write fails loudly.** With no second store, a warn-and-skip on
+  the episode upsert, the ticker-insight export, the trending refresh, the show
+  upsert, the regen `commit()` or the backend's `patch_episode_doc` would be silent
+  data loss, so each raises instead.
+- **Re-ingest preservation is explicit now.** Firestore's `set(..., merge=True)` gave
+  it for free; `pipeline/steps/postgres_episode.py::_merge_onto_stored` reproduces it
+  — stored-but-unwritten keys survive, `created_time` is immutable (§ 2.1), and the
+  platform-owned keys of § 2.3 #3 (plus `social_thread`, `social_cards`,
+  `retracted_at`, `num_likes`, `number_click`) keep their stored value unless the
+  incoming run produced a non-empty replacement.
+- **The inverted indices (§ 3) are not coming back.** Per § 3.2 they were pure
+  derivations of `episodes.tags` / `episodes.related_tickers`; the backend queries
+  those GIN-indexed JSONB arrays directly.
