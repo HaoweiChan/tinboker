@@ -18,7 +18,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write
     steps:
       - name: Check Production API Health
         id: prod-health
@@ -52,16 +51,6 @@ jobs:
           else
             echo "Dev API unhealthy (HTTP $HTTP_CODE)"
           fi
-
-      - name: Authenticate to Google Cloud
-        if: steps.prod-health.outputs.http_code != '200' || steps.staging-health.outputs.http_code != '200' || steps.dev-health.outputs.http_code != '200'
-        uses: google-github-actions/auth@v2
-        with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
-
-      - name: Set up Cloud SDK
-        if: steps.prod-health.outputs.http_code != '200' || steps.staging-health.outputs.http_code != '200' || steps.dev-health.outputs.http_code != '200'
-        uses: google-github-actions/setup-gcloud@v2
 
       - name: Check VPS Secrets Configured
         id: check-secrets

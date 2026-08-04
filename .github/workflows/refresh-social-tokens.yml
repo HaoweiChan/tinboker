@@ -15,6 +15,16 @@ name: Refresh Social Tokens
 #
 # Facebook Page tokens derived from a long-lived user token do not expire, so there
 # is nothing to refresh for Facebook.
+#
+# P6 (GSM decommission) — THE ONE REMAINING GSM WRITER. Everything else now reads
+# secrets from GitHub Actions repo secrets / the VPS env files. This job still
+# ADDS a GSM secret version, which GH Actions secrets cannot do from a workflow
+# without a PAT + libsodium encryption, so it was left alone.
+# Consequence: once THREADS_ACCESS_TOKEN is served from compose/backend/.env, the
+# value this job writes no longer reaches the backend — the operator must copy the
+# refreshed token into that .env (or re-mint by hand). Do not delete the GSM secret
+# THREADS_ACCESS_TOKEN or this workflow until that loop is closed.
+# See docs/firestore-contract.md §11.8.
 
 on:
   schedule:
