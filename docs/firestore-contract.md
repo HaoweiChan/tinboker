@@ -717,9 +717,8 @@ phase: Hermes now reads the backend HTTP API.
   exist for one release; a handful of one-off archival/backfill scripts under
   `pipelines/services/podcast/scripts/` still hold a Firestore client on purpose.
   Deleting the database is a P5 step, after the soak.
-- **GCS is unchanged and still in use** — mp3s, transcripts, summary markdown and
-  social-card PNGs all live there, so the GCP service account stays for storage
-  access only.
+- **GCS is frozen** — see § 11.7. Every artifact now lives on the VPS disk; the
+  buckets are read-only leftovers pending deletion.
 - **Every surviving write fails loudly.** With no second store, a warn-and-skip on
   the episode upsert, the ticker-insight export, the trending refresh, the show
   upsert, the regen `commit()` or the backend's `patch_episode_doc` would be silent
@@ -733,3 +732,52 @@ phase: Hermes now reads the backend HTTP API.
 - **The inverted indices (§ 3) are not coming back.** Per § 3.2 they were pure
   derivations of `episodes.tags` / `episodes.related_tickers`; the backend queries
   those GIN-indexed JSONB arrays directly.
+
+### 11.7 Media storage (P5 write side)
+
+Episode media artifacts are written to the VPS disk and served by Caddy. **No code
+path uploads to GCS any more** — the buckets are frozen and get deleted at the end
+of the decommission.
+
+**Layout.** Identical to the old bucket layout, so files copied out of
+`graphfolio-articles` and files written since P5 live in one uniform tree:
+
+```
+{MEDIA_STORAGE_ROOT}/{bucket}/{GCS_BASE_PATH?}/{type}/{sha256(podcast_name)[:12]}/{episode_id}.{ext}
+{MEDIA_PUBLIC_BASE}/{bucket}/{GCS_BASE_PATH?}/{type}/{sha256(podcast_name)[:12]}/{episode_id}.{ext}
+```
+
+`{type}` ∈ `mp3 · transcripts · summaries · images · events · sentences · marp ·
+ticker_marp · ticker_insights · presentations · social_cards`. `{bucket}` is the
+former bucket name kept as a directory (`graphfolio-articles`; legacy episodes point
+at `podcast-data-web`, which sits beside it).
+
+**Envs** (both tiers, same defaults):
+
+| Var | Default | Meaning |
+|---|---|---|
+| `MEDIA_STORAGE_ROOT` | `/srv/tinboker-media` | write root; falls back to a project-relative `.media` dir when the prod path is absent, so dev checkouts need no `/srv` |
+| `MEDIA_PUBLIC_BASE` | `https://podcast-api.tinboker.com/media` | public URL prefix Caddy serves that root at |
+| `GCS_BUCKET_NAME` | `graphfolio-articles` | now only the *directory* name under the root |
+| `GCS_BASE_PATH` | *(empty)* | optional path prefix, unchanged |
+
+The backend runs in Docker, so `backend/docker-compose.multi.yml` bind-mounts
+`/srv/tinboker-media` **rw** into all three env containers.
+
+**`gs://` is dead.** Writers put the *same* public https URL into both `*_url` and
+`*_public_url`; readers already prefer `*_public_url`. Readers still *parse* `gs://`
+and `storage.googleapis.com` URLs — historical docs carry them — but map them onto
+the local file, never onto GCS. Nothing writes a `gs://` value any more.
+
+**Signing is gone.** `GCSContentService.generate_signed_url` returns the stable
+public media URL (or `None` when the file is missing); the mp3 player and the promo
+composer use it unchanged, so their URLs no longer expire.
+
+**Writers.** `pipelines/…/service/gcs_storage_service.py::GCSStorageService` (all
+pipeline steps + the regen MCP) and `backend/src/services/gcs_content.py`
+(`GCSContentService`) — both keep the historical class names, both write via
+temp-file + `os.replace` so Caddy never serves a half-written artifact.
+
+**Known leftover:** `backend/src/routers/content.py` still reads the separate
+`CONTENT_BUCKET` article store from GCS (it needs bucket *listing*, not just reads).
+That is out of P5 scope and must be ported before the buckets are deleted.
