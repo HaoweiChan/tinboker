@@ -22,7 +22,7 @@ async def _resign_media(stored: list) -> list:
         url = None
         if m.get("path"):
             try:
-                url = await _gcs.generate_signed_url(m["path"], expiration_hours=12)
+                url = await _gcs.generate_signed_url(m["path"])
             except Exception as e:
                 logger.warning("scheduled worker media re-sign failed for %s: %s", m.get("path"), e)
         out.append({
