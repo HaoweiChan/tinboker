@@ -27,6 +27,12 @@ logger = logging.getLogger(__name__)
 DEFAULT_MEDIA_ROOT = "/srv/tinboker-media"
 DEFAULT_PUBLIC_BASE = "https://podcast-api.tinboker.com/media"
 
+# The only two directories under the media root. These are the *full* former bucket
+# names — the live convention, matching what Caddy serves. (A stale Phase-E plan
+# used short names, articles/ + web/; nothing ever served those. See
+# docs/firestore-contract.md § 11.7.)
+MEDIA_BUCKETS = frozenset({"graphfolio-articles", "podcast-data-web"})
+
 _GCS_HTTPS_RE = re.compile(r"^https://storage\.googleapis\.com/([^/]+)/(.+)$")
 
 
@@ -47,8 +53,25 @@ def public_base() -> str:
 
 
 def media_path(bucket_name: str, blob_path: str) -> Path:
-    """On-disk location of an artifact."""
-    return media_root() / bucket_name / blob_path
+    """On-disk location of an artifact — the single gate for every read/write/delete.
+
+    Two guards, both here so no caller can skip them:
+
+    1. ``bucket_name`` must be one of the two real media directories. An unknown
+       bucket is a bug or a poisoned doc field, never a reason to silently mkdir a
+       tree nothing serves.
+    2. The resolved path must stay inside the media root, which closes every
+       ``../`` traversal primitive reachable from a stored URL.
+    """
+    if bucket_name not in MEDIA_BUCKETS:
+        raise ValueError(
+            f"Unknown media bucket {bucket_name!r} (expected one of {sorted(MEDIA_BUCKETS)})"
+        )
+    root = media_root().resolve()
+    path = (root / bucket_name / blob_path).resolve()
+    if not path.is_relative_to(root):
+        raise ValueError(f"Media path escapes {root}: {bucket_name}/{blob_path}")
+    return path
 
 
 def media_url(bucket_name: str, blob_path: str) -> str:
@@ -110,15 +133,15 @@ class GCSContentService:
         parsed = self.parse_gs_url(gs_url)
         if not parsed:
             return ""
-        path = media_path(*parsed)
 
         def _read() -> str:
             try:
-                return path.read_bytes().decode("utf-8")
+                return media_path(*parsed).read_bytes().decode("utf-8")
             except FileNotFoundError:
                 return ""
-            except Exception as e:  # noqa: BLE001 — a bad artifact must not 500 a page
-                logger.warning("Error reading media file %s (%s): %s", gs_url, path, e)
+            except Exception as e:  # noqa: BLE001 — a bad artifact (or a rejected
+                # bucket/traversing path) must not 500 a page; log it and degrade.
+                logger.warning("Error reading media file %s: %s", gs_url, e)
                 return ""
 
         return await asyncio.to_thread(_read)
@@ -155,7 +178,11 @@ class GCSContentService:
         parsed = self.parse_gs_url(gs_url)
         if not parsed:
             return None
-        path = media_path(*parsed)
+        try:
+            path = media_path(*parsed)
+        except ValueError as e:  # rejected bucket / traversing path → no audio, not a 500
+            logger.warning("Refusing to resolve %s: %s", gs_url, e)
+            return None
         if not await asyncio.to_thread(path.is_file):
             return None
         return media_url(*parsed)

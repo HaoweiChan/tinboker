@@ -122,3 +122,59 @@ async def test_save_modified_summary_writes_locally_and_updates_doc(svc, tmp_pat
 
 async def _noop():
     return None
+
+
+# ── P5 review follow-ups: bucket allow-list, traversal containment, upload ext ──
+
+@pytest.mark.parametrize("bad_bucket", ["articles", "web", "tinboker-podcast-data"])
+@pytest.mark.asyncio
+async def test_unknown_bucket_is_rejected_never_silently_created(svc, tmp_path, bad_bucket):
+    """Short-form dirs (articles/, web/) are the stale Phase-E naming — nothing
+    serves them, so writing there would be silent data loss."""
+    with pytest.raises(ValueError, match="Unknown media bucket"):
+        mod.media_path(bad_bucket, "x.md")
+    with pytest.raises(ValueError):
+        await svc.upload_content(bad_bucket, "x.md", "x")
+    assert not (tmp_path / bad_bucket).exists()
+
+
+@pytest.mark.asyncio
+async def test_unknown_bucket_degrades_on_read_paths(svc):
+    """A poisoned or legacy doc URL must not 500 an episode page."""
+    assert await svc.fetch_gcs_content("gs://some-other-bucket/x.md") == ""
+    assert await svc.generate_signed_url("gs://some-other-bucket/x.md") is None
+
+
+@pytest.mark.parametrize("blob", ["../../etc/passwd", "a/../../../outside.md"])
+def test_path_traversal_is_contained(svc, blob):
+    with pytest.raises(ValueError, match="escapes"):
+        mod.media_path(BUCKET, blob)
+
+
+@pytest.mark.asyncio
+async def test_delete_blob_goes_through_the_guard(svc):
+    with pytest.raises(ValueError, match="escapes"):
+        await svc.delete_blob(BUCKET, "../../../tmp/victim")
+    with pytest.raises(ValueError, match="Unknown media bucket"):
+        await svc.delete_blob("articles", "x.md")
+
+
+def test_promo_upload_extension_comes_from_ctype_not_filename():
+    """Stored-XSS guard: a client filename of x.html must not decide how the media
+    origin serves the bytes back (Caddy infers Content-Type from the extension)."""
+    from src.routers.social import _safe_extension
+
+    assert _safe_extension("image/png") == ".png"
+    assert _safe_extension("image/jpeg") == ".jpg"
+    assert _safe_extension("video/mp4") == ".mp4"
+
+
+@pytest.mark.parametrize("ctype", ["image/svg+xml", "text/html", "image/x-nonsense"])
+def test_promo_upload_rejects_scriptable_or_unknown_types(ctype):
+    from fastapi import HTTPException
+
+    from src.routers.social import _safe_extension
+
+    with pytest.raises(HTTPException) as e:
+        _safe_extension(ctype)
+    assert e.value.status_code == 415

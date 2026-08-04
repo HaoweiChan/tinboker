@@ -46,6 +46,12 @@ DEFAULT_MEDIA_ROOT = "/srv/tinboker-media"
 DEFAULT_PUBLIC_BASE = "https://podcast-api.tinboker.com/media"
 DEFAULT_BUCKET = "graphfolio-articles"
 
+# The only two directories under the media root. These are the *full* former bucket
+# names — the live convention, matching what Caddy serves. (A stale Phase-E plan used
+# short names, articles/ + web/; nothing ever served those, and the script that would
+# have rewritten URLs to them is deleted. See docs/firestore-contract.md § 11.7.)
+MEDIA_BUCKETS = frozenset({"graphfolio-articles", "podcast-data-web"})
+
 _GCS_HTTPS_RE = re.compile(r"^https://storage\.googleapis\.com/([^/]+)/(.+)$")
 
 
@@ -151,8 +157,23 @@ class GCSStorageService:
         return '/'.join(parts)
 
     def local_path(self, blob_path: str, bucket: Optional[str] = None) -> Path:
-        """Absolute on-disk path for a blob path in ``bucket`` (default: ours)."""
-        return self.media_root / (bucket or self.bucket_name) / blob_path
+        """Absolute on-disk path for a blob path in ``bucket`` (default: ours).
+
+        The single gate for every read and write, so both guards live here: the
+        bucket must be one of the two real media directories, and the resolved path
+        must stay inside the media root (``path_for_url`` feeds this from stored doc
+        URLs, so ``../`` has to be closed off).
+        """
+        bucket = bucket or self.bucket_name
+        if bucket not in MEDIA_BUCKETS:
+            raise ValueError(
+                f"Unknown media bucket {bucket!r} (expected one of {sorted(MEDIA_BUCKETS)})"
+            )
+        root = self.media_root.resolve()
+        path = (root / bucket / blob_path).resolve()
+        if not path.is_relative_to(root):
+            raise ValueError(f"Media path escapes {root}: {bucket}/{blob_path}")
+        return path
 
     def path_for_url(self, url: str) -> Optional[Path]:
         """On-disk path for a gs:// / storage.googleapis.com / media URL."""

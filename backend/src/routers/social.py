@@ -6,6 +6,7 @@ fan the new episode out to Threads. It is idempotent and dry-run by default.
 """
 
 import logging
+import mimetypes
 import uuid
 from datetime import datetime
 from typing import List, Optional, Any
@@ -377,6 +378,30 @@ class PromoPublishBody(BaseModel):
     dry_run: bool = Field(True, description="Plan only; do not post (default)")
 
 
+# guess_extension picks ugly-but-valid aliases for these; pin the conventional ones.
+_CTYPE_EXT = {"image/jpeg": ".jpg", "video/mp4": ".mp4", "video/quicktime": ".mov"}
+
+# Active content served from the media origin would be stored XSS — Caddy sets
+# Content-Type from the extension, so an .html or .svg lands as a scriptable
+# document on podcast-api.tinboker.com. SVG passes the image/* check, so reject it
+# by name rather than relying on the image/ prefix.
+_BLOCKED_CTYPES = {"image/svg+xml", "image/svg"}
+
+
+def _safe_extension(ctype: str) -> str:
+    """File extension derived from the *validated* content type.
+
+    The client filename is never consulted: it is attacker-controlled, and the
+    extension is what decides how the media origin serves the bytes back.
+    """
+    if ctype in _BLOCKED_CTYPES:
+        raise HTTPException(status_code=415, detail=f"Unsupported media type: {ctype}")
+    ext = _CTYPE_EXT.get(ctype) or mimetypes.guess_extension(ctype)
+    if not ext or ext in (".html", ".htm", ".svg", ".xml"):
+        raise HTTPException(status_code=415, detail=f"Unsupported media type: {ctype}")
+    return ext
+
+
 @promo_router.post("/media")
 async def upload_promo_media(
     file: UploadFile = File(...),
@@ -388,7 +413,7 @@ async def upload_promo_media(
     ``path``/``url`` are the same string — kept as two fields so stored drafts and
     the composer need no migration.
     """
-    ctype = (file.content_type or "").lower()
+    ctype = (file.content_type or "").lower().split(";", 1)[0].strip()
     if ctype.startswith("image/"):
         mtype = "image"
     elif ctype.startswith("video/"):
@@ -403,9 +428,9 @@ async def upload_promo_media(
         raise HTTPException(status_code=413, detail="File too large (max 200 MB)")
 
     name = file.filename or ""
-    ext = name.rsplit(".", 1)[-1].lower() if "." in name else (ctype.split("/", 1)[-1] or mtype)
+    ext = _safe_extension(ctype)
     bucket = settings.promo_media_bucket
-    blob_path = f"promo-media/{uuid.uuid4().hex}.{ext}"
+    blob_path = f"promo-media/{uuid.uuid4().hex}{ext}"
     try:
         await _gcs.upload_bytes(bucket, blob_path, data, ctype)
     except Exception as e:  # noqa: BLE001 — surface any storage failure as a 502
