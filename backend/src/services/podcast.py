@@ -27,7 +27,11 @@ from src.cache.cache_config import CACHE_TTL
 from src.cache.cdn_cache import purge_cdn_cache
 
 from src.services.firestore_service import FirestoreService
-from src.services.postgres_mirror_service import content_read_service, patch_episode_doc
+from src.services.postgres_mirror_service import (
+    DELETE_FIELD,
+    content_read_service,
+    patch_episode_doc,
+)
 from src.services.gcs_content import GCSContentService
 from src.services.episode_transformer import EpisodeTransformer
 import httpx
@@ -193,11 +197,11 @@ class PodcastService:
     """Service for podcast CRUD operations, search, and summary management"""
 
     def __init__(self, firestore_service: Optional[FirestoreService] = None):
-        # Reads: Firestore, or the Postgres mirror when CONTENT_READS_FROM_POSTGRES.
+        # Reads: the Postgres mirror (CONTENT_READS_FROM_POSTGRES, on by default
+        # since P4); the Firestore path survives one more release as a rollback.
+        # Writes go straight to the mirror via patch_episode_doc — P4 stopped
+        # every Firestore write, so there is no second store to keep in sync.
         self.firestore_service = firestore_service or content_read_service()
-        # Writes: always Firestore (source of truth) + mirror write-through, so the
-        # mirror is already fresh whenever the read flag is flipped on.
-        self._fs_write = firestore_service or FirestoreService()
         self.gcs = GCSContentService()
         self.transformer = EpisodeTransformer(self.gcs)
 
@@ -2637,21 +2641,13 @@ class PodcastService:
     # ── Summary mutations ────────────────────────────────────────────
 
     async def _write_episode_fields(self, episode_id: str, updates: dict) -> None:
-        """Merge-patch an episode doc: Firestore first, then the Postgres mirror.
+        """Merge-patch an episode doc in the Postgres content store.
 
-        Firestore stays the source of truth; the mirror write-through runs on every
-        platform write regardless of ``content_reads_from_postgres`` so the mirror is
-        already current when reads flip over (and so a read-after-write against the
-        mirror sees the edit). A mirror failure is logged, never surfaced — the
-        pipeline's next episode upsert restores it.
+        The only episode write since P4 (contract § 11.5) — the Firestore half is
+        gone, so a failure propagates (the callers turn it into a 500) instead of
+        being logged. Swallowing it would report a saved edit that landed nowhere.
         """
-        await asyncio.to_thread(
-            self._fs_write.set_document, "episodes", episode_id, updates, True,
-        )
-        try:
-            await asyncio.to_thread(patch_episode_doc, episode_id, updates)
-        except Exception as e:
-            logger.warning("Postgres mirror write-through failed for %s: %s", episode_id, e)
+        await asyncio.to_thread(patch_episode_doc, episode_id, updates)
 
     async def save_modified_summary(
         self, podcast_name: str, episode_id: str,
@@ -2710,7 +2706,6 @@ class PodcastService:
             if parsed:
                 await self.gcs.delete_blob(*parsed)
 
-            from google.cloud.firestore import DELETE_FIELD
             await self._write_episode_fields(episode_id, {
                 'modified_summary_url': DELETE_FIELD, 'modified_summary_content': DELETE_FIELD,
                 'modified_by': DELETE_FIELD, 'modified_at': DELETE_FIELD,

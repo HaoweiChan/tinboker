@@ -178,39 +178,34 @@ def _firestore():
     return FirestoreService()
 
 
-def _mirror_doc_update_to_postgres(episode_id: str, fields: dict[str, Any]) -> str:
-    """Best-effort jsonb-merge of ``fields`` onto ``firestore_mirror.episodes.doc``.
+def _write_doc_update(episode_id: str, fields: dict[str, Any]) -> None:
+    """Jsonb-merge ``fields`` onto ``firestore_mirror.episodes.doc``.
 
-    ``commit`` writes Firestore directly (it doesn't run through
-    ``pipeline.steps.postgres_episode``), so without this a regen would leave the
-    Postgres mirror silently stale. No-op without ``EPISODE_DATABASE_URL`` — importing
-    ``src.service.firestore_service`` (via ``_firestore()``) already bootstraps GSM
-    secrets, so the var is populated by the time ``commit`` calls this.
-
-    Returns "ok", "missing" (no such row — never fabricates a partial doc), "skipped"
-    (no EPISODE_DATABASE_URL / no psycopg / nothing to write), or "error".
+    The sole episode write since P4 (contract § 11.5) — ``commit`` used to write
+    Firestore first and treat this as a best-effort mirror. There is no second
+    store now, so every failure mode raises: a missing row, a missing
+    ``EPISODE_DATABASE_URL``, or a Postgres error. Silently "committing" a regen
+    that landed nowhere is the worst outcome available.
     """
     if not fields:
-        return "skipped"
-    url = os.getenv("EPISODE_DATABASE_URL")
-    if not url:
-        return "skipped"
-    try:
-        import psycopg
-    except ImportError:
-        return "skipped"
+        return
+
+    import psycopg
 
     from src.podcast.exporters import postgres_mirror
 
-    try:
-        with psycopg.connect(url, autocommit=True) as conn, conn.cursor() as cur:
-            merged = postgres_mirror.merge_episode_doc(cur, episode_id, fields)
-        return "ok" if merged else "missing"
-    except Exception:  # noqa: BLE001 — best-effort, never abort the commit
-        import traceback
-
-        traceback.print_exc()
-        return "error"
+    url = os.getenv("EPISODE_DATABASE_URL")
+    if not url:
+        raise RegenError(
+            "EPISODE_DATABASE_URL is not set — cannot commit the regen (Postgres is "
+            "the only content store since P4)."
+        )
+    with psycopg.connect(url, autocommit=True) as conn, conn.cursor() as cur:
+        if not postgres_mirror.merge_episode_doc(cur, episode_id, fields):
+            raise RegenError(
+                f"No {postgres_mirror.SCHEMA}.episodes row for episode_id={episode_id} "
+                "— refusing to fabricate a partial document. Ingest the episode first."
+            )
 
 
 def _episode_sentences(doc: dict[str, Any]) -> list[dict[str, Any]]:
@@ -847,31 +842,17 @@ def commit(
         )
 
     report: dict[str, Any] = {"episode_id": episode_id, "warnings": []}
-    fs = _firestore()
 
     # 1. Episode-doc merge (summary_content, key_insights, tags, related_tickers,
     #    marp/events markdown, social_cards) — same fields the debug PATCH writes.
     doc_update = _doc_update(payload)
     if doc_update:
-        fs.set_document("episodes", episode_id, doc_update, merge=True)
+        _write_doc_update(episode_id, doc_update)
         report["episode_fields_written"] = sorted(doc_update.keys())
-        # ponytail: only this field set is mirrored — the GCS *_url refresh in 1b
-        # below still bypasses Postgres; add if the backend starts reading *_url
-        # fields from the mirror too.
-        pg_status = _mirror_doc_update_to_postgres(episode_id, doc_update)
-        if pg_status == "missing":
-            report["warnings"].append(
-                f"Postgres mirror has no row for episode_id={episode_id} — skipped "
-                "the doc merge there (the Firestore write above still succeeded)."
-            )
-        elif pg_status == "error":
-            report["warnings"].append(
-                "Postgres mirror merge failed (non-fatal) — see logs."
-            )
 
     # 1b. Re-upload the GCS-served artifacts (marp/events/ticker_marp/summary). The
     #     backend serves these by hydrating ``*_content`` from ``*_url`` when the inline
-    #     field is empty, so the Firestore merge above is NOT enough — without this the
+    #     field is empty, so the doc merge above is NOT enough — without this the
     #     page keeps rendering the OLD slides/events. Overwrite the blobs and repoint
     #     the doc's ``*_url`` fields at the fresh upload so hydration reads the regen.
     gcs_url_updates, gcs_error = _upload_regen_content(
@@ -880,15 +861,15 @@ def commit(
     if gcs_error:
         report["warnings"].append(gcs_error)
     if gcs_url_updates:
-        fs.set_document("episodes", episode_id, gcs_url_updates, merge=True)
+        _write_doc_update(episode_id, gcs_url_updates)
         report["gcs_content_uploaded"] = sorted(gcs_url_updates.keys())
 
-    # 2. Rich ticker sentiment -> ticker_insights/{episode_id}/tickers/{ticker}.
+    # 2. Rich ticker sentiment -> firestore_mirror.ticker_insights.
     if payload.get("ticker_insights"):
         try:
             from src.podcast.exporters.ticker_insights import (
                 build_episode_insight_docs,
-                write_episode_insights,
+                write_episode_insights_postgres,
             )
 
             docs = build_episode_insight_docs(
@@ -900,7 +881,7 @@ def commit(
                 podcast_launch_time=draft.get("podcast_launch_time") or draft.get("created_time"),
             )
             report["ticker_insights_written"] = (
-                write_episode_insights(fs.db, episode_id=episode_id, docs=docs) if docs else 0
+                write_episode_insights_postgres(episode_id, docs) if docs else 0
             )
         except Exception as exc:  # noqa: BLE001 — best-effort, never abort the commit
             report["warnings"].append(f"ticker_insights export failed: {exc}")

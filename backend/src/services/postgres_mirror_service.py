@@ -59,11 +59,11 @@ _EPISODE_COLUMNS = {
 
 _FIELD_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
-# Firestore's DELETE_FIELD sentinel — write-through turns it into a JSONB key removal.
-try:  # pragma: no cover - import shape depends on the firestore extra being installed
-    from google.cloud.firestore import DELETE_FIELD as _DELETE_FIELD
-except Exception:  # pragma: no cover
-    _DELETE_FIELD = object()
+# "Remove this key" marker in a patch_episode_doc payload — turns into a JSONB key
+# removal. Was google.cloud.firestore.DELETE_FIELD until P4 stopped every Firestore
+# write; a plain sentinel keeps the semantics without the SDK import. Compared by
+# identity, so it can never collide with a real field value.
+DELETE_FIELD = object()
 
 # Normalized tag slug, in SQL. Mirrors src.tag_registry.normalize_tag_slug.
 # ponytail: the 6-entry alias map in normalize_tag_slug (datacenters->datacenter etc.)
@@ -117,42 +117,44 @@ def _deep_merge(base: Dict[str, Any], patch: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def patch_episode_doc(episode_id: str, updates: Dict[str, Any]) -> bool:
-    """Apply a Firestore merge-patch to the mirrored episode doc.
+    """Apply a merge-patch to the episode doc in the Postgres content store.
 
-    Runs write-through on every platform episode write REGARDLESS of the read
-    flag, so the mirror is already fresh when reads are flipped over. Matches
-    Firestore ``set(..., merge=True)`` semantics: dict values merge recursively
-    (a shallow jsonb ``||`` would drop nested sibling keys), ``DELETE_FIELD``
-    removes the key. Read-modify-write runs under ``FOR UPDATE`` so concurrent
-    platform patches serialize. Returns False when there is no mirror to write
-    to (SQLite dev), or — with a warning, since a flag-ON read would then miss
-    this edit entirely — when the mirror row is absent (pipeline mirror gap).
+    The ONLY episode write since P4 (contract § 11.5) — there is no Firestore
+    copy left, so anything that would drop the edit raises instead of returning
+    quietly. Matches the Firestore ``set(..., merge=True)`` semantics it
+    replaced: dict values merge recursively (a shallow jsonb ``||`` would drop
+    nested sibling keys), ``DELETE_FIELD`` removes the key. Read-modify-write
+    runs under ``FOR UPDATE`` so concurrent platform patches serialize.
+
+    Returns False only in SQLite dev, where the store does not exist at all.
     """
     if not settings.use_postgres:
-        return False  # mirror only exists in podcast_db Postgres
-    drop = [k for k, v in updates.items() if v is _DELETE_FIELD]
-    patch = {k: v for k, v in updates.items() if v is not _DELETE_FIELD}
+        return False  # content store only exists in podcast_db Postgres
+    drop = [k for k, v in updates.items() if v is DELETE_FIELD]
+    patch = {k: v for k, v in updates.items() if v is not DELETE_FIELD}
     with mirror_session() as db:
         row = db.execute(
             text(f"SELECT doc FROM {EPISODES} WHERE episode_id = :id FOR UPDATE"),
             {"id": episode_id},
         ).first()
         if row is None:
-            logger.warning(
-                "episode %s is missing from firestore_mirror — write-through "
-                "skipped (mirror gap; rerun dump_firestore_to_postgres.py)",
-                episode_id,
+            raise RuntimeError(
+                f"episode {episode_id} is missing from {EPISODES} — refusing to "
+                "drop the edit. Re-ingest the episode through the pipeline."
             )
-            return False
         doc = _deep_merge(dict(row[0] or {}), patch)
         for k in drop:
             doc.pop(k, None)
         db.execute(
             text(
                 f"UPDATE {EPISODES} SET doc = CAST(:doc AS jsonb), "
-                # keep the promoted column consistent with the final doc
+                # Keep the promoted column consistent with the final doc. It is
+                # JSONB, not text[] — see the owning DDL in pipelines
+                # steps/postgres_episode.py (`related_tickers jsonb`), so extract
+                # the array as jsonb. An ARRAY(...) text[] here type-errors on
+                # every write.
                 "related_tickers = CASE WHEN CAST(:doc AS jsonb) ? 'related_tickers' "
-                "THEN ARRAY(SELECT jsonb_array_elements_text(CAST(:doc AS jsonb)->'related_tickers')) "
+                "THEN CAST(:doc AS jsonb)->'related_tickers' "
                 "ELSE NULL END "
                 "WHERE episode_id = :id"
             ),
@@ -343,16 +345,16 @@ class PostgresMirrorService:
             rows = db.execute(text(sql), params).fetchall()
         return [_with_id(r[2], r[1], _parent_id=r[0]) for r in rows]
 
-    # ── writes: never served from the mirror ─────────────────────────
+    # ── writes: not through the read interface ───────────────────────
 
     def set_document(self, collection: str, doc_id: str, data: Dict, merge: bool = False) -> bool:
         raise NotImplementedError(
-            "Postgres mirror is read-only — writes must go to FirestoreService "
-            "(PodcastService._fs_write) with patch_episode_doc() write-through"
+            "This is the read interface — episode writes go through "
+            "patch_episode_doc()"
         )
 
     def delete_document(self, collection: str, doc_id: str) -> bool:
-        raise NotImplementedError("Postgres mirror is read-only")
+        raise NotImplementedError("This is the read interface — no deletes")
 
     def count_collection(self, collection: str) -> int:
         raise NotImplementedError(

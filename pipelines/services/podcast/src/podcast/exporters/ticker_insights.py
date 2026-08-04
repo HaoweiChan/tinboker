@@ -298,6 +298,41 @@ def build_episode_insight_docs(
     return out
 
 
+def write_episode_insights_postgres(episode_id: str, docs: dict[str, dict[str, Any]]) -> int:
+    """Upsert an episode's insight docs into ``firestore_mirror.ticker_insights``.
+
+    The only live writer since P4 (contract § 11.5) — shared by the ingest step
+    (``pipeline.steps.ticker_insights_export``) and the regen orchestrator's
+    ``commit()`` so both persist the identical doc shape. Raises on failure:
+    there is no second store, and a dropped batch would leave /picks and the
+    hourly trending recompute blind to this episode.
+    """
+    if not docs or not episode_id:
+        return 0
+
+    import os
+
+    import psycopg
+
+    from src.podcast.exporters import postgres_mirror
+
+    url = os.getenv("EPISODE_DATABASE_URL")
+    if not url:
+        raise RuntimeError(
+            "EPISODE_DATABASE_URL is not set — cannot persist ticker insights."
+        )
+    with psycopg.connect(url, autocommit=True) as conn, conn.cursor() as cur:
+        cur.execute(postgres_mirror.DDL_TICKER_INSIGHTS)
+        return postgres_mirror.upsert_ticker_insights(cur, episode_id, docs)
+
+
+# ── Firestore writers — ARCHIVAL SCRIPTS ONLY ────────────────────────────────
+# No live code path reaches these since P4 stopped all Firestore writes. They
+# survive for the one-off ``scripts/backfill_ticker_insights*.py`` /
+# ``regenerate_ticker_insights_only.py`` / ``backfill_regen_from_gcs.py`` tools,
+# which still target the (now idle) Firestore database.
+
+
 def write_episode_insights(
     firestore_client: Any,
     *,

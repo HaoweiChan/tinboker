@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
-"""
-Firebase/Firestore Upload Service
+"""Episode/show persistence service.
 
-This module handles uploading podcast episode data to Google Cloud Firestore.
+Historically the Firestore writer. Since P4 (``docs/firestore-contract.md``
+§ 11.5) every read AND every write goes to Postgres (``podcast_db``, schema
+``firestore_mirror``); the class name and this module name are kept so the
+dozens of ``scripts/`` entry points and the pipeline wiring stay put.
+
+``self.db`` is still a real Firestore client, built lazily on first touch — only
+the archival/backfill scripts under ``scripts/`` reach for it. Nothing on the
+live pipeline path does, so the admin SDK is never bootstrapped in a normal run.
 """
 
 import hashlib
@@ -34,9 +40,9 @@ def _normalize_tags(tags: Optional[List[str]]) -> List[str]:
 
     Enforces the curated vocabulary at this single persistence boundary so
     LLM-hallucinated junk (off-vocab proper nouns, fund/ETF names, ticker
-    symbols) can never re-pollute either the ``episodes/{id}.tags`` array or the
-    ``tags/{slug}/episodes`` fan-out, regardless of caller (ingest, regen,
-    backfill). Idempotent — normalizing an already-normalized list is a no-op.
+    symbols) can never re-pollute the ``episodes/{id}.tags`` array, regardless of
+    caller (ingest, regen, backfill). Idempotent — normalizing an
+    already-normalized list is a no-op.
     """
     from src.podcast.content_builder.tag_vocabulary import (
         canonical_tag_slug,
@@ -45,34 +51,26 @@ def _normalize_tags(tags: Optional[List[str]]) -> List[str]:
     return sorted({normalize_tag_slug(t) for t in (tags or []) if t and canonical_tag_slug(t)})
 
 
-def _mirror_podcast_show_to_postgres(doc_id: str, metadata: Dict) -> None:
-    """Best-effort dual-write of a ``podcasts/{doc_id}`` show doc into
-    ``firestore_mirror.podcasts`` (Postgres), so ``get_podcast_show``/
-    ``get_all_podcast_shows`` (read-flipped in P2) see show adds/edits.
-    No-op without ``EPISODE_DATABASE_URL`` — same guard as the other live
-    dual-write steps (``pipeline.steps.ticker_insights_export``).
+def _write_podcast_show_to_postgres(doc_id: str, metadata: Dict) -> None:
+    """Upsert a ``podcasts/{doc_id}`` show doc into ``firestore_mirror.podcasts``.
+
+    Sole write since P4 (the Firestore half is gone), so it raises instead of
+    logging: a silently-dropped show edit would never show up on the :8003
+    ``/shows`` endpoints that read this table.
     """
-    url = os.getenv("EPISODE_DATABASE_URL")
-    if not url:
-        return
-    try:
-        import psycopg
-    except ImportError:
-        print("  ⚠ psycopg not available — skipping Postgres podcasts mirror")
-        return
+    import psycopg
 
     from src.podcast.exporters import postgres_mirror
 
-    try:
-        with psycopg.connect(url, autocommit=True) as conn, conn.cursor() as cur:
-            cur.execute(postgres_mirror.DDL_PODCASTS)
-            postgres_mirror.upsert_podcast_show(cur, doc_id, metadata)
-        print(f"  ✓ Mirrored to Postgres: {postgres_mirror.SCHEMA}.podcasts/{doc_id}")
-    except Exception as e:  # noqa: BLE001 — best-effort, show metadata is not dedup-critical
-        import traceback
-
-        print(f"  ⚠ Postgres podcasts mirror failed (non-fatal): {e}")
-        traceback.print_exc()
+    url = os.getenv("EPISODE_DATABASE_URL")
+    if not url:
+        raise RuntimeError(
+            "EPISODE_DATABASE_URL is not set — cannot persist the podcast show doc."
+        )
+    with psycopg.connect(url, autocommit=True) as conn, conn.cursor() as cur:
+        cur.execute(postgres_mirror.DDL_PODCASTS)
+        postgres_mirror.upsert_podcast_show(cur, doc_id, metadata)
+    print(f"  ✓ Persisted show: {postgres_mirror.SCHEMA}.podcasts/{doc_id}")
 
 
 # Lazy import for GCS (only when needed)
@@ -89,23 +87,28 @@ def get_gcs_storage_service():
 
 
 class FirebaseService:
-    """
-    Service for uploading podcast data to Google Cloud Firestore.
-    """
-    
+    """Service for reading and writing podcast data (Postgres since P4)."""
+
     def __init__(self):
-        """
-        Initialize Firebase Admin SDK and Firestore client.
-        
-        Raises:
-            ValueError: If required credentials are missing
-            Exception: If Firebase initialization fails
-        """
-        self._initialize_firebase()
-        self.db = self._get_firestore_client()
+        """Cheap — no credentials touched until something asks for ``.db``."""
+        self._db = None
         self.collection_name = "podcasts"
         self.document_id = "podcast"
-    
+
+    @property
+    def db(self):
+        """The raw Firestore client, bootstrapped on first touch.
+
+        Only the archival/backfill scripts under ``scripts/`` still use it; the
+        live pipeline reads and writes Postgres exclusively, so a normal run
+        never initializes the admin SDK.
+        """
+        if self._db is None:
+            self._initialize_firebase()
+            self._db = self._get_firestore_client()
+        return self._db
+
+
     def _initialize_firebase(self) -> None:
         """
         Initialize Firebase Admin SDK with credentials from environment variables.
@@ -182,314 +185,6 @@ class FirebaseService:
         else:
             # Use default database (default)
             return firestore.client()
-    
-    def upload_podcast_data(
-        self,
-        podcast_name: str,
-        episode: PodcastEpisode,
-        gcs_service=None,
-        mp3_path: Optional[Path] = None,
-        transcript_path: Optional[Path] = None,
-        transcript_content: Optional[str] = None,
-        summary_path: Optional[Path] = None,
-        summary_content: Optional[str] = None,
-        svg_path: Optional[Path] = None,
-        svg_content: Optional[str] = None,
-        tags: Optional[List[str]] = None,
-        tickers: Optional[List[str]] = None
-    ) -> None:
-        """
-        Upload podcast episode data to Firestore.
-        
-        Each episode is stored as a separate document to avoid Firestore's 1MB document size limit.
-        Files are uploaded to GCS first, then URLs are stored in Firestore.
-        
-        Structure:
-        - Collection: `episodes`
-        - Document ID: `{podcast_name}_{episode_title}` (sanitized)
-        - Document data: Episode metadata with GCS URLs
-        
-        Args:
-            podcast_name: Name of the podcast
-            episode: PodcastEpisode object containing episode data (may have URLs already set)
-            gcs_service: Optional GCSStorageService instance for uploading files
-            mp3_path: Optional path to MP3 file
-            transcript_path: Optional path to transcript file
-            transcript_content: Optional transcript content as string (for streaming mode)
-            summary_path: Optional path to summary file
-            summary_content: Optional summary content as string (for streaming mode)
-            svg_path: Optional path to SVG file
-            svg_content: Optional SVG content as string (for streaming mode)
-        
-        Raises:
-            Exception: If upload fails
-        """
-        try:
-            # Generate a stable, unique episode ID
-            # Use hash of podcast_name + episode_title + created_time for uniqueness
-            episode_id = self._generate_episode_id(podcast_name, episode)
-            print(f"  📝 Uploading episode with ID: {episode_id}")
-            
-            # Upload files to GCS if GCS service is provided and episode doesn't already have URLs
-            if gcs_service and not episode.mp3_url:
-                print("  ☁️  Uploading files to GCS...")
-                gcs_urls = gcs_service.upload_episode_files(
-                    episode_id=episode_id,
-                    podcast_name=podcast_name,
-                    mp3_path=mp3_path,
-                    transcript_path=transcript_path,
-                    transcript_content=transcript_content,
-                    summary_path=summary_path,
-                    summary_content=summary_content,
-                    svg_path=svg_path,
-                    svg_content=svg_content,
-                    skip_existing=True
-                )
-                
-                # Update episode with GCS URLs
-                episode.mp3_url = gcs_urls.get('mp3_url', '')
-                episode.transcript_url = gcs_urls.get('transcript_url', '')
-                episode.summary_url = gcs_urls.get('summary_url', '')
-                episode.summary_image_url = gcs_urls.get('summary_image_url', '')
-                episode.mp3_public_url = gcs_urls.get('mp3_public_url')
-                episode.transcript_public_url = gcs_urls.get('transcript_public_url')
-                episode.summary_public_url = gcs_urls.get('summary_public_url')
-                episode.summary_image_public_url = gcs_urls.get('summary_image_public_url')
-                episode.pptx_url = gcs_urls.get('pptx_url')
-                episode.pptx_public_url = gcs_urls.get('pptx_public_url')
-                episode.marp_markdown_url = gcs_urls.get('marp_markdown_url')
-                episode.marp_markdown_public_url = gcs_urls.get('marp_markdown_public_url')
-                
-                print("  ✓ Files uploaded to GCS")
-            
-            # Get reference to the episode document
-            episodes_collection = self.db.collection("episodes")
-            doc_ref = episodes_collection.document(episode_id)
-            
-            # Stamp the canonical tag list onto the episode BEFORE building the doc dict,
-            # so episodes/{id}.tags (contract §2.1: always present, may be empty) is
-            # written in the SAME call as the rest of the doc — and any other consumer
-            # of to_firestore_dict() (e.g. the Postgres mirror step, which runs right
-            # after this one on the same episode object) sees the final tags too.
-            episode.tags = _normalize_tags(tags)
-
-            # Prepare episode data with episode_id included
-            episode_data = episode.to_firestore_dict()
-            episode_data['episode_id'] = episode_id  # Add episode_id to document for easy retrieval
-            
-            # Ensure podcast_name is set (use parameter if episode.podcast_name is empty)
-            if not episode_data.get('podcast_name') and podcast_name:
-                episode_data['podcast_name'] = podcast_name
-            
-            # Check if episode already exists
-            existing_doc = doc_ref.get()
-            if existing_doc.exists:
-                print(f"  🔄 Updating existing episode document: {episode_id}")
-                # Preserve existing podcast_name if new one is empty
-                existing_data = existing_doc.to_dict() or {}
-                if not episode_data.get('podcast_name') and existing_data.get('podcast_name'):
-                    episode_data['podcast_name'] = existing_data['podcast_name']
-                    print(f"  ⚠ Preserved existing podcast_name: {existing_data['podcast_name']}")
-                # Contract invariants: created_time is immutable once the
-                # episode exists, and platform-owned modified_* fields must not
-                # be overwritten by pipeline regeneration writes.
-                update_data = dict(episode_data)
-                for protected_field in (
-                    'created_time',
-                    'modified_summary_url',
-                    'modified_summary_content',
-                    'modified_by',
-                    'modified_at',
-                ):
-                    update_data.pop(protected_field, None)
-                if update_data.get('retracted_at') is None:
-                    update_data.pop('retracted_at', None)
-                # Merge keeps unknown/frontend-owned fields intact.
-                doc_ref.set(update_data, merge=True)
-            else:
-                print(f"  ✨ Creating new episode document: {episode_id}")
-                # Create new episode document
-                episode_data.setdefault('retracted_at', None)
-                doc_ref.set(episode_data)
-            
-            # Upload episode to tags and tickers subcollections
-            if tags or tickers:
-                self.upload_tags_and_tickers(
-                    episode_id=episode_id,
-                    tags=tags or [],
-                    tickers=tickers or [],
-                    episode_data=episode_data
-                )
-            
-        except Exception as e:
-            error_msg = str(e)
-            # Provide helpful error message if database doesn't exist
-            if "does not exist" in error_msg or "404" in error_msg:
-                database_id = os.getenv("FIRESTORE_DATABASE_ID", "(default)")
-                project_id = os.getenv("GCP_PROJECT_ID")
-                if not project_id:
-                    # Try to get project ID from credentials
-                    try:
-                        creds_path = os.getenv("GCP_CREDENTIALS_PATH")
-                        if creds_path:
-                            with open(creds_path, 'r') as f:
-                                creds_data = json.load(f)
-                                project_id = creds_data.get('project_id', 'your-project')
-                    except Exception:
-                        project_id = 'your-project'
-                
-                raise Exception(
-                    f"Firestore database '{database_id}' does not exist.\n"
-                    f"Please create the database first:\n"
-                    f"1. Go to: https://console.cloud.google.com/firestore/databases?project={project_id}\n"
-                    f"2. Click 'Create Database'\n"
-                    f"3. Choose 'Native mode' (recommended)\n"
-                    f"4. Enter database ID: {database_id}\n"
-                    f"5. Select location and click 'Create'\n\n"
-                    f"Original error: {error_msg}"
-                ) from e
-            else:
-                raise Exception(f"Failed to upload podcast data to Firestore: {e}") from e
-    
-    def _ensure_tag_exists(self, tag_name: str) -> None:
-        """
-        Ensure tag parent document exists (create if it doesn't).
-        Parent documents are created implicitly when subcollection is accessed,
-        but we can create an empty document for consistency.
-        
-        Args:
-            tag_name: Tag name (normalized to lowercase)
-        """
-        try:
-            tag_ref = self.db.collection("tags").document(tag_name)
-            tag_doc = tag_ref.get()
-            if not tag_doc.exists:
-                # Create empty document (parent document can be empty)
-                tag_ref.set({})
-        except Exception:
-            # If creation fails, it's okay - parent doc will be created implicitly
-            pass
-    
-    def _ensure_ticker_exists(self, ticker_symbol: str) -> None:
-        """
-        Ensure ticker parent document exists (create if it doesn't).
-        Parent documents are created implicitly when subcollection is accessed,
-        but we can create an empty document for consistency.
-        
-        Args:
-            ticker_symbol: Ticker symbol (normalized to uppercase)
-        """
-        try:
-            ticker_ref = self.db.collection("tickers").document(ticker_symbol)
-            ticker_doc = ticker_ref.get()
-            if not ticker_doc.exists:
-                # Create empty document (parent document can be empty)
-                ticker_ref.set({})
-        except Exception:
-            # If creation fails, it's okay - parent doc will be created implicitly
-            pass
-    
-    def _add_episode_to_tag(self, tag_name: str, episode_id: str, episode_data: Dict) -> None:
-        """
-        Add episode reference to tag's episodes subcollection.
-        
-        Args:
-            tag_name: Tag name (normalized to lowercase)
-            episode_id: Episode document ID
-            episode_data: Episode data dictionary (from episode.to_firestore_dict())
-        """
-        try:
-            tag_ref = self.db.collection("tags").document(tag_name)
-            episode_ref = tag_ref.collection("episodes").document(episode_id)
-            
-            # Create episode document in subcollection with minimal fields
-            episode_subdoc = {
-                'episode_id': episode_id,
-                'episode_title': episode_data.get('episode_title', ''),
-                'podcast_name': episode_data.get('podcast_name', ''),
-                'episode_number': episode_data.get('episode_number'),
-                'created_time': episode_data.get('created_time')
-            }
-            
-            episode_ref.set(episode_subdoc)
-        except Exception as e:
-            raise Exception(f"Failed to add episode to tag '{tag_name}': {e}") from e
-    
-    def _add_episode_to_ticker(self, ticker_symbol: str, episode_id: str, episode_data: Dict) -> None:
-        """
-        Add episode reference to ticker's episodes subcollection.
-        
-        Args:
-            ticker_symbol: Ticker symbol (normalized to uppercase)
-            episode_id: Episode document ID
-            episode_data: Episode data dictionary (from episode.to_firestore_dict())
-        """
-        try:
-            ticker_ref = self.db.collection("tickers").document(ticker_symbol)
-            episode_ref = ticker_ref.collection("episodes").document(episode_id)
-            
-            # Create episode document in subcollection with minimal fields
-            episode_subdoc = {
-                'episode_id': episode_id,
-                'episode_title': episode_data.get('episode_title', ''),
-                'podcast_name': episode_data.get('podcast_name', ''),
-                'episode_number': episode_data.get('episode_number'),
-                'created_time': episode_data.get('created_time')
-            }
-            
-            episode_ref.set(episode_subdoc)
-        except Exception as e:
-            raise Exception(f"Failed to add episode to ticker '{ticker_symbol}': {e}") from e
-    
-    def upload_tags_and_tickers(
-        self,
-        episode_id: str,
-        tags: List[str],
-        tickers: List[str],
-        episode_data: Dict
-    ) -> None:
-        """
-        Upload episode to tags and tickers subcollections.
-        
-        For each tag/ticker:
-        1. Ensure parent document exists
-        2. Add episode to subcollection
-        
-        Args:
-            episode_id: Episode document ID
-            tags: List of tag names (will be normalized to lowercase)
-            tickers: List of ticker symbols (will be normalized to uppercase)
-            episode_data: Episode data dictionary (from episode.to_firestore_dict())
-        """
-        if not tags and not tickers:
-            return
-
-        # Normalize tags (shared with upload_podcast_data's episode.tags stamp — same
-        # vocabulary-filtered slug set both places, see _normalize_tags) and tickers.
-        # The doc id is the NORMALIZED slug (lowercased, separators stripped) so
-        # spellings like ``ai_supply_chain`` and ``aisupplychain`` can never fragment
-        # into two docs; membership is tested on that same normalized form.
-        normalized_tags = _normalize_tags(tags)
-        normalized_tickers = [ticker.upper() for ticker in tickers if ticker]
-        
-        # Process tags
-        for tag_name in normalized_tags:
-            try:
-                self._ensure_tag_exists(tag_name)
-                self._add_episode_to_tag(tag_name, episode_id, episode_data)
-            except Exception as e:
-                print(f"  ⚠ Warning: Failed to add episode to tag '{tag_name}': {e}")
-        
-        # Process tickers
-        for ticker_symbol in normalized_tickers:
-            try:
-                self._ensure_ticker_exists(ticker_symbol)
-                self._add_episode_to_ticker(ticker_symbol, episode_id, episode_data)
-            except Exception as e:
-                print(f"  ⚠ Warning: Failed to add episode to ticker '{ticker_symbol}': {e}")
-        
-        if normalized_tags or normalized_tickers:
-            print(f"  ✓ Added episode to {len(normalized_tags)} tags and {len(normalized_tickers)} tickers")
     
     def _generate_episode_id(self, podcast_name: str, episode: PodcastEpisode) -> str:
         """
@@ -575,21 +270,35 @@ class FirebaseService:
         return postgres_mirror_reader.get_episode_by_id(episode_id)
 
     def update_episode_fields(self, episode_id: str, fields: Dict[str, Any]) -> None:
-        """Partial update of an existing episode document.
+        """Partial update of an existing episode document (jsonb-merge, P4).
 
-        Used by the ``--rerun-from spotify-metadata`` mode to refresh Spotify
-        fields without rewriting the whole document. The episode must already
-        exist; this method does not create new documents.
+        Used by ``--rerun-from spotify-metadata`` and the ``released_at_ms``
+        reconcile/backfill paths. The episode must already exist — a missing row
+        raises rather than fabricating a partial doc, same as the Firestore
+        ``update()`` this replaced (which 404s on a missing document).
         """
         if not episode_id:
             raise ValueError("episode_id is required")
         if not fields:
             return
-        try:
-            self.db.collection("episodes").document(episode_id).update(fields)
-        except Exception as e:
-            raise Exception(f"Failed to update episode {episode_id}: {e}") from e
-    
+
+        import psycopg
+
+        from src.podcast.exporters import postgres_mirror
+
+        url = os.getenv("EPISODE_DATABASE_URL")
+        if not url:
+            raise RuntimeError(
+                "EPISODE_DATABASE_URL is not set — cannot update episode fields."
+            )
+        with psycopg.connect(url, autocommit=True) as conn, conn.cursor() as cur:
+            if not postgres_mirror.merge_episode_doc(cur, episode_id, fields):
+                raise RuntimeError(
+                    f"Failed to update episode {episode_id}: no such row in "
+                    f"{postgres_mirror.SCHEMA}.episodes"
+                )
+
+
     def get_all_episodes(self, order_by: str = "created_time", descending: bool = True) -> List[Dict]:
         """
         Get all episodes (read-flipped onto firestore_mirror.episodes, P2).
@@ -719,21 +428,16 @@ class FirebaseService:
         return postgres_mirror_reader.episode_exists(podcast_name, episode_title, episode_number)
     
     def upsert_podcast_show(self, podcast_name: str, metadata: Dict) -> None:
-        """
-        Create or update a podcast show document in the `podcasts` collection,
-        dual-written into firestore_mirror.podcasts (best-effort — see
-        ``_mirror_podcast_show_to_postgres``) so the :8003 /shows endpoints
-        (read-flipped onto the mirror in P2) see the update.
+        """Create or update a show doc in ``firestore_mirror.podcasts``, which the
+        :8003 /shows endpoints read.
 
         Args:
             podcast_name: Canonical podcast name (used as document ID after sanitizing)
             metadata: Show-level metadata dict (thumbnail_url, description, etc.)
         """
         doc_id = re.sub(r'[/]', '_', podcast_name)
-        doc_ref = self.db.collection("podcasts").document(doc_id)
         metadata["podcast_name"] = podcast_name
-        doc_ref.set(metadata, merge=True)
-        _mirror_podcast_show_to_postgres(doc_id, metadata)
+        _write_podcast_show_to_postgres(doc_id, metadata)
 
     def get_podcast_show(self, podcast_name: str) -> Optional[Dict]:
         """
