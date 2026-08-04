@@ -8,30 +8,20 @@ on:
       - '.github/workflows/pipelines-deploy.yml'
   workflow_dispatch:
 
-env:
-  GCP_PROJECT_ID: gen-lang-client-0901363254
-
 jobs:
   deploy:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write
     steps:
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
-        with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
-
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
-
-      - name: Fetch secrets from GSM
+      # P6: secrets come from GitHub Actions repo secrets, not GSM. Same names as the
+      # old GSM secrets — see docs/firestore-contract.md §11.8 for the migration map.
+      - name: Load deploy secrets
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
         run: |
-          VPS_HOST=$(gcloud secrets versions access latest --secret=VPS_HOST --project=${{ env.GCP_PROJECT_ID }})
-          VPS_USER=$(gcloud secrets versions access latest --secret=VPS_USER --project=${{ env.GCP_PROJECT_ID }})
-          VPS_SSH_KEY=$(gcloud secrets versions access latest --secret=VPS_SSH_KEY --project=${{ env.GCP_PROJECT_ID }})
-
           echo "::add-mask::$VPS_HOST"
           echo "::add-mask::$VPS_USER"
           echo "::add-mask::$VPS_SSH_KEY"
