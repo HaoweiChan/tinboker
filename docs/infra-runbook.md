@@ -137,7 +137,8 @@ guards:
 **Post-deploy purge.** Backend deploys ([`backend-deploy.yml`](../.github/workflows/backend-deploy.yml),
 [`backend-deploy-admin.yml`](../.github/workflows/backend-deploy-admin.yml)) purge the deployed
 env's `/api/` edge cache once the container is healthy, so a deploy no longer serves pre-deploy
-`/api/*` responses until TTL. Uses `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ZONE_TAG` from GSM
+`/api/*` responses until TTL. Uses the `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ZONE_TAG` GitHub
+Actions repo secrets (P6 — previously GSM)
 (host-scoped purge of `{api_host}` — same method as the manual recipe below —
 falling back to `purge_everything` on non-Enterprise plans).
 Best-effort: a purge failure warns but does not fail the deploy.
@@ -242,7 +243,15 @@ To get a new key if lost:
 
 ### 2.2 GCP Secret Manager — full secrets list
 
-The backend fetches these secrets from Secret Manager **at runtime** (loaded by
+> **P6 (2026-08): Secret Manager is a FALLBACK, not the source.** Runtime secrets come
+> from `compose/backend/.env` (backend) and `/root/tinboker/pipelines/.env` (pipelines);
+> CI/CD secrets come from GitHub Actions repo secrets. `GCPSecretManagerSource` only
+> fetches what the environment did not supply, and logs `source=gsm` when it does.
+> Canonical migration table and cleanup order: `docs/firestore-contract.md` § 11.8.
+> The authoritative field list is `_GSM_FIELDS` in `backend/src/config_loader.py`; the
+> table below is a subset kept for context.
+
+The backend falls back to these secrets from Secret Manager **at runtime** (loaded by
 `GCPSecretManagerSource` in `src/config_loader.py`). Secret name = uppercase of the
 Python settings field name.
 
@@ -270,17 +279,22 @@ echo -n "your-secret-value" | gcloud secrets versions add SECRET_NAME \
   --data-file=- --project=gen-lang-client-0901363254
 ```
 
-### 2.3 GCP secrets used by GitHub Actions CI (stored in Secret Manager, not as GH secrets)
+### 2.3 Secrets used by GitHub Actions CI
 
-These are fetched by the workflow via `gcloud secrets versions access`:
+**P6: these are GitHub Actions repo secrets now** (same names as the old GSM secrets).
+No workflow calls `gcloud secrets versions access` any more.
 
-| Secret name in GSM | Used for |
+| Repo secret | Used for |
 |---|---|
 | `VPS_HOST` | SSH target (`152.53.136.182`) |
 | `VPS_USER` | SSH user (`root`) |
 | `VPS_SSH_KEY` | SSH private key for deploy |
 | `GHCR_TOKEN` | GitHub Container Registry login token |
+| `GCP_CREDENTIALS_JSON` | SA JSON shipped to the VPS for the GCS article store |
+| `POSTGRES_PASSWORD` | Passed into the backend compose stack at deploy time |
+| `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ZONE_TAG` | Post-deploy CDN purge |
 | `GOOGLE_CLIENT_ID` | Injected as `VITE_GOOGLE_CLIENT_ID` at frontend build time |
+| `TINBOKER_SOCIAL_TOKEN` | `snapshot-social-metrics.yml` |
 
 ### 2.4 GitHub Actions secrets (stored directly in repo settings)
 
@@ -288,12 +302,12 @@ Settings → Secrets and variables → Actions → New repository secret:
 
 | Secret | Where to get it |
 |---|---|
-| `GCP_SA_KEY` | GCP Console → IAM → Service Accounts → your SA → Keys → Add Key → JSON. Paste the entire JSON content. |
+| `GCP_SA_KEY` | GCP Console → IAM → Service Accounts → your SA → Keys → Add Key → JSON. Paste the entire JSON content. Used ONLY by `refresh-social-tokens.yml`, the last GSM writer. |
 | `CLOUDFLARE_API_TOKEN` | Cloudflare → My Profile → API Tokens → Create Token → "Edit Cloudflare Workers" template, scoped to tinboker.com |
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare dashboard → right sidebar when on tinboker.com overview |
 
-> `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`, `GHCR_TOKEN` are **not** stored as GitHub secrets —
-> they are fetched from GCP Secret Manager at workflow runtime using `GCP_SA_KEY`.
+> P6: everything in § 2.3 is a repo secret too. Create those before merging a P6 branch —
+> the workflows have no GSM fallback. See `docs/firestore-contract.md` § 11.8.
 
 ---
 
@@ -403,8 +417,10 @@ Database ID: `graphfolio-db` (set as `FIRESTORE_DATABASE_ID` env var in `docker-
 
 ## Part 6 — Environment variables reference
 
-Variables set in `docker-compose.multi.yml` are passed directly to containers. Secrets
-not listed here are loaded from GCP Secret Manager at runtime by `src/config_loader.py`.
+Variables set in `docker-compose.multi.yml` are passed directly to containers. P6: every
+secret should be in `compose/backend/.env` (compose injects it); anything still missing
+there falls back to GCP Secret Manager at runtime via `src/config_loader.py`, which logs
+`source=gsm` for each one. See `docs/firestore-contract.md` § 11.8.
 
 | Variable | Value | Notes |
 |---|---|---|
@@ -415,13 +431,13 @@ not listed here are loaded from GCP Secret Manager at runtime by `src/config_loa
 | `REDIS_URL` | `redis://redis:6379/0` | Docker internal network |
 | `GCP_PROJECT_ID` | `gen-lang-client-0901363254` | Enables Secret Manager |
 | `GOOGLE_APPLICATION_CREDENTIALS` | `/app/gcp-service-account.json` | Mounted at runtime |
-| `MASSIVE_API_KEY` | loaded from GSM | US stocks market data |
-| `FINMIND_API_KEY` | loaded from GSM | TW stocks market data |
-| `JWT_SECRET_KEY` | loaded from GSM | Signing key for user auth tokens |
+| `MASSIVE_API_KEY` | `compose/backend/.env` (GSM fallback) | US stocks market data |
+| `FINMIND_API_KEY` | `compose/backend/.env` (GSM fallback) | TW stocks market data |
+| `JWT_SECRET_KEY` | `compose/backend/.env` (GSM fallback) | Signing key for user auth tokens |
 | `POSTGRES_HOST` | `docker-db_postgres-1` | External Docker network |
 | `POSTGRES_DB` | `podcast_db` | Recommendation data |
 | `POSTGRES_USER` | `podcast_user` | |
-| `POSTGRES_PASSWORD` | loaded from GSM | |
+| `POSTGRES_PASSWORD` | `compose/backend/.env` (GSM fallback) | |
 | `FIRESTORE_DATABASE_ID` | `graphfolio-db` | Named Firestore instance |
 | `CORS_ORIGINS` | `["https://tinboker.com",...]` | Set per environment in compose file |
 | `RELEASE_PODCAST_LANGUAGES` | `zh-TW` | Release scoping (launch subset) — only show `content_sources` podcasts in these languages ("" = all) |
