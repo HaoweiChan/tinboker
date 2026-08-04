@@ -56,3 +56,6 @@ tide-tw-data/
 # design; existing files from founding PR #415 stay tracked for history, new ones
 # shouldn't be (already-tracked files are unaffected by this pattern)
 docs/ai-ops/_backups/*
+
+# P5 local media store dev fallback (MEDIA_STORAGE_ROOT when /srv/tinboker-media is absent)
+.media/

@@ -22,16 +22,16 @@ class PodcastEpisode:
     """Represents a single podcast episode with all its data."""
     
     # GCS URLs for episode files
-    mp3_url: str  # GCS URL for MP3 file (gs://...)
-    transcript_url: str  # GCS URL for transcript file (gs://...)
-    summary_url: str  # GCS URL for summary markdown file (gs://...)
-    summary_image_url: str  # GCS URL for SVG image file (gs://...)
-    events_markdown_url: Optional[str] = None  # GCS URL for events markdown file (gs://...)
-    sentences_markdown_url: Optional[str] = None  # GCS URL for sentences markdown file (gs://...)
-    pptx_url: Optional[str] = None  # GCS URL for PPTX presentation file (gs://...)
-    marp_markdown_url: Optional[str] = None  # GCS URL for marp markdown file (gs://...)
-    ticker_insights_url: Optional[str] = None  # GCS URL for ticker insights JSON file (gs://...)
-    ticker_marp_markdown_url: Optional[str] = None  # GCS URL for ticker marp markdown file (gs://...)
+    mp3_url: str  # Media URL for MP3 file (https media host)
+    transcript_url: str  # Media URL for transcript file (https media host)
+    summary_url: str  # Media URL for summary markdown file (https media host)
+    summary_image_url: str  # Media URL for SVG image file (https media host)
+    events_markdown_url: Optional[str] = None  # Media URL for events markdown file (https media host)
+    sentences_markdown_url: Optional[str] = None  # Media URL for sentences markdown file (https media host)
+    pptx_url: Optional[str] = None  # Media URL for PPTX presentation file (https media host)
+    marp_markdown_url: Optional[str] = None  # Media URL for marp markdown file (https media host)
+    ticker_insights_url: Optional[str] = None  # Media URL for ticker insights JSON file (https media host)
+    ticker_marp_markdown_url: Optional[str] = None  # Media URL for ticker marp markdown file (https media host)
     
     # Optional public HTTPS URLs
     mp3_public_url: Optional[str] = None  # Public HTTPS URL for MP3

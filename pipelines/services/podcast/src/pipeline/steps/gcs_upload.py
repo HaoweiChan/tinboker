@@ -1,203 +1,16 @@
 """
-Step 4: Upload to GCS (or VPS local media directory when VPS_MEDIA_ROOT is set).
+Step 4: Write episode artifacts to the media store (VPS local disk since P5).
+
+The storage backend lives in ``GCSStorageService`` — despite the name it writes to
+``MEDIA_STORAGE_ROOT`` and returns https URLs on the VPS media host, never GCS.
 """
 
-import hashlib
 import json
-import os
-import shutil
-from pathlib import Path
-from typing import Optional
 
 from ..config import PipelineConfig
 from ..episode_data import EpisodeData
 from ..service_container import ServiceContainer
 from ..utils import generate_episode_id
-
-
-class _LocalMediaUploader:
-    """Drop-in replacement for GcsStorageService that writes to the VPS filesystem.
-
-    Activated when VPS_MEDIA_ROOT env var is set.  Preserves the same blob-path
-    structure as GCS so existing rclone-synced files are addressed consistently:
-        {media_root}/{file_type}/{podcast_hash12}/{episode_id}.{ext}
-    Returns https://… URLs (VPS_BASE_URL prefix) instead of gs:// URIs.
-    """
-
-    # Kept for compat with code that strips gs://<bucket>/ from URLs; since
-    # our URLs are already https:// the replace() call is a no-op.
-    bucket_name = "podcast-data-web"
-
-    def __init__(self, media_root: str, base_url: str) -> None:
-        self._root = Path(media_root)
-        self._base_url = base_url.rstrip("/")
-
-    def _podcast_hash(self, podcast_name: str) -> str:
-        return hashlib.sha256(podcast_name.encode()).hexdigest()[:12]
-
-    def _blob(self, file_type: str, podcast_name: str, episode_id: str, ext: str) -> str:
-        return f"{file_type}/{self._podcast_hash(podcast_name)}/{episode_id}.{ext}"
-
-    def _url(self, blob: str) -> str:
-        return f"{self._base_url}/{blob}"
-
-    def _write(self, blob: str, data: bytes, skip_existing: bool) -> tuple[bool, Optional[str]]:
-        dest = self._root / blob
-        if skip_existing and dest.exists():
-            return True, self._url(blob)
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(data)
-        return True, self._url(blob)
-
-    def upload_file(
-        self, local_file_path: Path, file_type: str, podcast_name: str,
-        episode_id: str, extension: str, skip_existing: bool = True
-    ) -> tuple[bool, Optional[str]]:
-        blob = self._blob(file_type, podcast_name, episode_id, extension)
-        dest = self._root / blob
-        if skip_existing and dest.exists():
-            return True, self._url(blob)
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(local_file_path, dest)
-        return True, self._url(blob)
-
-    def upload_file_from_string(
-        self, content: str, file_type: str, podcast_name: str,
-        episode_id: str, extension: str, skip_existing: bool = True
-    ) -> tuple[bool, Optional[str]]:
-        blob = self._blob(file_type, podcast_name, episode_id, extension)
-        return self._write(blob, content.encode(), skip_existing)
-
-    def upload_file_from_base64(
-        self, b64_content: str, file_type: str, podcast_name: str,
-        episode_id: str, extension: str, skip_existing: bool = True,
-        public: bool = False,
-    ) -> tuple[bool, Optional[str]]:
-        # `public` is a no-op here — files in the VPS media dir are already served
-        # publicly over HTTP; the flag exists for parity with the GCS uploader.
-        import base64
-        blob = self._blob(file_type, podcast_name, episode_id, extension)
-        return self._write(blob, base64.b64decode(b64_content), skip_existing)
-
-    def generate_public_url(self, blob_path: str) -> str:
-        # If the "blob_path" is already a full https:// URL (happens when GCS-compat
-        # code strips gs://<bucket>/ from our VPS URL and gets the whole URL back),
-        # return it unchanged.
-        if blob_path.startswith("https://"):
-            return blob_path
-        return self._url(blob_path)
-
-    def upload_episode_files(
-        self,
-        episode_id: str,
-        podcast_name: str,
-        mp3_path: Optional[Path] = None,
-        transcript_data: Optional[dict] = None,
-        transcript_content: Optional[str] = None,
-        summary_content: Optional[str] = None,
-        svg_content: Optional[str] = None,
-        events_markdown_content: Optional[str] = None,
-        sentences_markdown_content: Optional[str] = None,
-        pptx_base64: Optional[str] = None,
-        marp_markdown_content: Optional[str] = None,
-        ticker_insights_data: Optional[dict] = None,
-        ticker_marp_markdown_content: Optional[str] = None,
-        skip_existing: bool = True,
-        **_kwargs,
-    ) -> dict:
-        result: dict = {k: None for k in (
-            "mp3_url", "mp3_public_url",
-            "transcript_url", "transcript_public_url",
-            "summary_url", "summary_public_url",
-            "summary_image_url", "summary_image_public_url",
-            "events_markdown_url", "events_markdown_public_url",
-            "sentences_markdown_url", "sentences_markdown_public_url",
-            "pptx_url", "pptx_public_url",
-            "marp_markdown_url", "marp_markdown_public_url",
-            "ticker_insights_url", "ticker_insights_public_url",
-            "ticker_marp_markdown_url", "ticker_marp_markdown_public_url",
-        )}
-
-        def _set(key: str, url: Optional[str]) -> None:
-            result[key] = result[key.replace("_url", "_public_url")] = url
-
-        if mp3_path:
-            ok, url = self.upload_file(mp3_path, "mp3", podcast_name, episode_id, "mp3", skip_existing)
-            if ok:
-                _set("mp3_url", url)
-
-        if transcript_data:
-            ok, url = self.upload_file_from_string(
-                json.dumps(transcript_data, ensure_ascii=False, indent=2),
-                "transcripts", podcast_name, episode_id, "json", skip_existing,
-            )
-            if ok:
-                _set("transcript_url", url)
-        elif transcript_content:
-            ok, url = self.upload_file_from_string(
-                transcript_content, "transcripts", podcast_name, episode_id, "txt", skip_existing,
-            )
-            if ok:
-                _set("transcript_url", url)
-
-        if summary_content:
-            ok, url = self.upload_file_from_string(
-                summary_content, "summaries", podcast_name, episode_id, "md", skip_existing,
-            )
-            if ok:
-                _set("summary_url", url)
-
-        if svg_content:
-            ok, url = self.upload_file_from_string(
-                svg_content, "images", podcast_name, episode_id, "svg", skip_existing,
-            )
-            if ok:
-                _set("summary_image_url", url)
-
-        if events_markdown_content:
-            ok, url = self.upload_file_from_string(
-                events_markdown_content, "events", podcast_name, episode_id, "md", skip_existing,
-            )
-            if ok:
-                _set("events_markdown_url", url)
-
-        if sentences_markdown_content:
-            ok, url = self.upload_file_from_string(
-                sentences_markdown_content, "sentences", podcast_name, episode_id, "md", skip_existing,
-            )
-            if ok:
-                _set("sentences_markdown_url", url)
-
-        if pptx_base64:
-            ok, url = self.upload_file_from_base64(
-                pptx_base64, "presentations", podcast_name, episode_id, "pptx", skip_existing,
-            )
-            if ok:
-                _set("pptx_url", url)
-
-        if marp_markdown_content:
-            ok, url = self.upload_file_from_string(
-                marp_markdown_content, "marp", podcast_name, episode_id, "md", skip_existing,
-            )
-            if ok:
-                _set("marp_markdown_url", url)
-
-        if ticker_insights_data:
-            ok, url = self.upload_file_from_string(
-                json.dumps(ticker_insights_data, ensure_ascii=False, indent=2),
-                "ticker_insights", podcast_name, episode_id, "json", skip_existing,
-            )
-            if ok:
-                _set("ticker_insights_url", url)
-
-        if ticker_marp_markdown_content:
-            ok, url = self.upload_file_from_string(
-                ticker_marp_markdown_content, "ticker_marp", podcast_name, episode_id, "md", skip_existing,
-            )
-            if ok:
-                _set("ticker_marp_markdown_url", url)
-
-        return result
 
 
 def upload_to_gcs(
@@ -206,8 +19,8 @@ def upload_to_gcs(
     episode_data: EpisodeData
 ) -> None:
     """
-    Upload episode files to Google Cloud Storage.
-    
+    Write episode files to the media store and record their public URLs.
+
     Args:
         config: Pipeline configuration
         services: Service container
@@ -246,18 +59,11 @@ def upload_to_gcs(
         elif has_all_urls and not is_download_rerun and not needs_transcript_reupload:
             return
     
-    # Resolve storage backend: VPS local filesystem or GCS
-    _media_root = os.environ.get("VPS_MEDIA_ROOT")
-    if _media_root:
-        _base_url = os.environ.get("VPS_BASE_URL", "https://podcast-api.tinboker.com/media/web")
-        print(f"  📁 VPS_MEDIA_ROOT set — writing to {_media_root}")
-        svc = _LocalMediaUploader(_media_root, _base_url)
-    elif services.gcs_service:
-        svc = services.gcs_service
-    else:
-        print("  ⚠ Warning: GCS service not available, skipping GCS upload")
+    svc = services.gcs_service
+    if not svc:
+        print("  ⚠ Warning: media storage service not available, skipping upload")
         return
-    
+
     # Need episode ID
     if not episode_data.episode_id:
         if not services.firebase_service:
@@ -271,7 +77,7 @@ def upload_to_gcs(
         )
     
     episode_title = episode_data.api_data.get('title', 'Untitled Episode')
-    print(f"  ☁️  Uploading files to GCS: {episode_title}")
+    print(f"  💾 Writing files to media store: {episode_title}")
     
     # For rerun_from="download", we want to upload all files (treating each episode as new, force re-upload)
     # For rerun_from="summarize", we only want to upload summary files (force re-upload)
@@ -345,60 +151,48 @@ def upload_to_gcs(
                 summary_text, 'summaries', episode_data.podcast_name, episode_data.episode_id, 'md', skip_existing=False
             )
             if success and summary_url:
-                gcs_urls['summary_url'] = summary_url
-                blob_path = summary_url.replace(f"gs://{svc.bucket_name}/", "")
-                gcs_urls['summary_public_url'] = svc.generate_public_url(blob_path)
-                print(f"  ✓ Re-uploaded summary to GCS ({len(summary_text):,} characters)")
+                gcs_urls['summary_url'] = gcs_urls['summary_public_url'] = summary_url
+                print(f"  ✓ Re-uploaded summary to media store ({len(summary_text):,} characters)")
         
         if events_markdown:
             success, events_url = svc.upload_file_from_string(
                 events_markdown, 'events', episode_data.podcast_name, episode_data.episode_id, 'md', skip_existing=False
             )
             if success and events_url:
-                gcs_urls['events_markdown_url'] = events_url
-                blob_path = events_url.replace(f"gs://{svc.bucket_name}/", "")
-                gcs_urls['events_markdown_public_url'] = svc.generate_public_url(blob_path)
-                print(f"  ✓ Re-uploaded events markdown to GCS ({len(events_markdown):,} characters)")
+                gcs_urls['events_markdown_url'] = gcs_urls['events_markdown_public_url'] = events_url
+                print(f"  ✓ Re-uploaded events markdown to media store ({len(events_markdown):,} characters)")
         
         if sentences_markdown:
             success, sentences_url = svc.upload_file_from_string(
                 sentences_markdown, 'sentences', episode_data.podcast_name, episode_data.episode_id, 'md', skip_existing=False
             )
             if success and sentences_url:
-                gcs_urls['sentences_markdown_url'] = sentences_url
-                blob_path = sentences_url.replace(f"gs://{svc.bucket_name}/", "")
-                gcs_urls['sentences_markdown_public_url'] = svc.generate_public_url(blob_path)
-                print(f"  ✓ Re-uploaded sentences markdown to GCS ({len(sentences_markdown):,} characters)")
+                gcs_urls['sentences_markdown_url'] = gcs_urls['sentences_markdown_public_url'] = sentences_url
+                print(f"  ✓ Re-uploaded sentences markdown to media store ({len(sentences_markdown):,} characters)")
         
         if svg_content:
             success, svg_url = svc.upload_file_from_string(
                 svg_content, 'images', episode_data.podcast_name, episode_data.episode_id, 'svg', skip_existing=False
             )
             if success and svg_url:
-                gcs_urls['summary_image_url'] = svg_url
-                blob_path = svg_url.replace(f"gs://{svc.bucket_name}/", "")
-                gcs_urls['summary_image_public_url'] = svc.generate_public_url(blob_path)
-                print("  ✓ Re-uploaded SVG to GCS")
+                gcs_urls['summary_image_url'] = gcs_urls['summary_image_public_url'] = svg_url
+                print("  ✓ Re-uploaded SVG to media store")
         
         if pptx_base64:
             success, pptx_url = svc.upload_file_from_base64(
                 pptx_base64, 'presentations', episode_data.podcast_name, episode_data.episode_id, 'pptx', skip_existing=False
             )
             if success and pptx_url:
-                gcs_urls['pptx_url'] = pptx_url
-                blob_path = pptx_url.replace(f"gs://{svc.bucket_name}/", "")
-                gcs_urls['pptx_public_url'] = svc.generate_public_url(blob_path)
-                print("  ✓ Re-uploaded PPTX to GCS")
+                gcs_urls['pptx_url'] = gcs_urls['pptx_public_url'] = pptx_url
+                print("  ✓ Re-uploaded PPTX to media store")
         
         if marp_markdown:
             success, marp_url = svc.upload_file_from_string(
                 marp_markdown, 'marp', episode_data.podcast_name, episode_data.episode_id, 'md', skip_existing=False
             )
             if success and marp_url:
-                gcs_urls['marp_markdown_url'] = marp_url
-                blob_path = marp_url.replace(f"gs://{svc.bucket_name}/", "")
-                gcs_urls['marp_markdown_public_url'] = svc.generate_public_url(blob_path)
-                print(f"  ✓ Re-uploaded marp markdown to GCS ({len(marp_markdown):,} characters)")
+                gcs_urls['marp_markdown_url'] = gcs_urls['marp_markdown_public_url'] = marp_url
+                print(f"  ✓ Re-uploaded marp markdown to media store ({len(marp_markdown):,} characters)")
         
         ticker_insights = episode_data.summary_result.get('ticker_insights') if episode_data.summary_result else None
         if ticker_insights:
@@ -407,10 +201,8 @@ def upload_to_gcs(
                 ticker_insights_json, 'ticker_insights', episode_data.podcast_name, episode_data.episode_id, 'json', skip_existing=False
             )
             if success and ticker_insights_url:
-                gcs_urls['ticker_insights_url'] = ticker_insights_url
-                blob_path = ticker_insights_url.replace(f"gs://{svc.bucket_name}/", "")
-                gcs_urls['ticker_insights_public_url'] = svc.generate_public_url(blob_path)
-                print("  ✓ Re-uploaded ticker insights to GCS")
+                gcs_urls['ticker_insights_url'] = gcs_urls['ticker_insights_public_url'] = ticker_insights_url
+                print("  ✓ Re-uploaded ticker insights to media store")
         
         ticker_marp_markdown = episode_data.summary_result.get('ticker_marp_markdown') if episode_data.summary_result else None
         if ticker_marp_markdown:
@@ -418,10 +210,8 @@ def upload_to_gcs(
                 ticker_marp_markdown, 'ticker_marp', episode_data.podcast_name, episode_data.episode_id, 'md', skip_existing=False
             )
             if success and ticker_marp_url:
-                gcs_urls['ticker_marp_markdown_url'] = ticker_marp_url
-                blob_path = ticker_marp_url.replace(f"gs://{svc.bucket_name}/", "")
-                gcs_urls['ticker_marp_markdown_public_url'] = svc.generate_public_url(blob_path)
-                print(f"  ✓ Re-uploaded ticker marp markdown to GCS ({len(ticker_marp_markdown):,} characters)")
+                gcs_urls['ticker_marp_markdown_url'] = gcs_urls['ticker_marp_markdown_public_url'] = ticker_marp_url
+                print(f"  ✓ Re-uploaded ticker marp markdown to media store ({len(ticker_marp_markdown):,} characters)")
     elif config.rerun_from == "transcribe":
         # For rerun_from="transcribe", upload transcript and derived files (summary, events, etc.)
         # but preserve existing MP3 URL since the MP3 file hasn't changed
@@ -458,10 +248,8 @@ def upload_to_gcs(
                 # Update episode_data.gcs_urls with new JSON transcript URL
                 if not episode_data.gcs_urls:
                     episode_data.gcs_urls = {}
-                episode_data.gcs_urls['transcript_url'] = transcript_url
-                blob_path = transcript_url.replace(f"gs://{svc.bucket_name}/", "")
-                episode_data.gcs_urls['transcript_public_url'] = svc.generate_public_url(blob_path)
-                print(f"  ✓ Re-uploaded transcript as JSON to GCS ({len(episode_data.transcript_text):,} characters)")
+                episode_data.gcs_urls['transcript_url'] = episode_data.gcs_urls['transcript_public_url'] = transcript_url
+                print(f"  ✓ Re-uploaded transcript as JSON to media store ({len(episode_data.transcript_text):,} characters)")
         
         # Upload derived files (summary, events, sentences, SVG) - force re-upload (skip_existing=False)
         # But skip MP3 upload - preserve existing MP3 URL since the file hasn't changed
@@ -578,4 +366,4 @@ def upload_to_gcs(
     else:
         episode_data.gcs_urls = gcs_urls
     
-    print("  ✓ Files uploaded to GCS")
+    print("  ✓ Files written to media store")

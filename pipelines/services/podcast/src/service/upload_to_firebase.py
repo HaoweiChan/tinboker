@@ -73,19 +73,6 @@ def _write_podcast_show_to_postgres(doc_id: str, metadata: Dict) -> None:
     print(f"  ✓ Persisted show: {postgres_mirror.SCHEMA}.podcasts/{doc_id}")
 
 
-# Lazy import for GCS (only when needed)
-def get_gcs_storage_service():
-    """Lazy import for GCSStorageService to avoid import errors when not needed."""
-    try:
-        from src.service.gcs_storage_service import GCSStorageService
-        return GCSStorageService
-    except ImportError as e:
-        raise ImportError(
-            "google-cloud-storage is required for GCS upload functionality. "
-            "Install it with: pip install google-cloud-storage"
-        ) from e
-
-
 class FirebaseService:
     """Service for reading and writing podcast data (Postgres since P4)."""
 
