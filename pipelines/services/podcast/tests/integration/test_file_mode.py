@@ -52,7 +52,7 @@ class TestFileMode:
              patch('src.pipeline.steps.transcribe.transcribe_episode') as mock_transcribe, \
              patch('src.pipeline.steps.summarize.generate_summary') as mock_summarize, \
              patch('src.pipeline.steps.gcs_upload.upload_to_gcs') as mock_upload, \
-             patch('src.pipeline.steps.firestore.upload_to_firestore'), \
+             patch('src.pipeline.steps.postgres_episode.persist_episode'), \
              patch('src.pipeline.steps.validate.validate_episode') as mock_validate:
             
             mock_download.return_value = expected_path

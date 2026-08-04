@@ -16,13 +16,17 @@ podcast_service = PodcastService()
 
 
 async def _resign_media(stored: list) -> list:
-    """Re-sign GCS paths in stored media into fresh 12h URLs for publishing."""
+    """Resolve stored media paths into public media URLs for publishing.
+
+    Since P5 these don't expire (the media host serves them directly); ``url`` is
+    None when the artifact is gone.
+    """
     out = []
     for m in stored or []:
         url = None
         if m.get("path"):
             try:
-                url = await _gcs.generate_signed_url(m["path"], expiration_hours=12)
+                url = await _gcs.generate_signed_url(m["path"])
             except Exception as e:
                 logger.warning("scheduled worker media re-sign failed for %s: %s", m.get("path"), e)
         out.append({

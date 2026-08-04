@@ -41,16 +41,6 @@ def _render_png(markdown: str, theme_css: str, base_url: str, timeout: int = 120
     return payload.get("images", [])
 
 
-def _resolve_uploader(services: ServiceContainer):
-    """Same backend resolution as upload_to_gcs: VPS media dir or GCS."""
-    media_root = os.environ.get("VPS_MEDIA_ROOT")
-    if media_root:
-        from .gcs_upload import _LocalMediaUploader
-        base_url = os.environ.get("VPS_BASE_URL", "https://podcast-api.tinboker.com/media/web")
-        return _LocalMediaUploader(media_root, base_url)
-    return services.gcs_service
-
-
 def _cover_date(episode_data: EpisodeData) -> str:
     """Cover-card date as YYYY.MM.DD, from the feed datePublished (else today)."""
     published = (episode_data.api_data or {}).get("datePublished") or ""
@@ -79,7 +69,7 @@ def render_social_cards(
         print("  ⚠ Social cards skipped: missing episode_id")
         return
 
-    svc = _resolve_uploader(services)
+    svc = services.gcs_service
     if not svc:
         print("  ⚠ Social cards skipped: no storage backend")
         return
@@ -103,7 +93,6 @@ def render_social_cards(
         print(f"  ⚠ Social card count mismatch ({len(images)} PNG vs {len(cards)} cards); skipping")
         return
 
-    bucket = getattr(svc, "bucket_name", "")
     uploaded = 0
     for i, b64 in enumerate(images):
         try:
@@ -116,18 +105,15 @@ def render_social_cards(
             print(f"  ⚠ Social card {i} upload failed: {e}")
             continue
         if ok and url:
-            blob = url.replace(f"gs://{bucket}/", "") if bucket else url
-            public_url = svc.generate_public_url(blob)
-            if public_url:
-                # Cache-bust: the PNG path (``…/{i}.png``) is reused on every reprocess,
-                # but GCS serves it ``public, max-age=3600`` — so an overwrite stays
-                # masked behind the edge/browser cache for up to an hour. A content-hash
-                # query makes the URL change iff the card changes; unchanged cards keep
-                # their URL (and the cache). ``_is_raster`` strips the query, so Threads/
-                # FB publishing is unaffected.
-                ver = hashlib.md5(b64.encode("utf-8")).hexdigest()[:10]
-                cards[i]["image_url"] = f"{public_url}?v={ver}"
-                uploaded += 1
+            # Cache-bust: the PNG path (``…/{i}.png``) is reused on every reprocess,
+            # but the media host serves it with a long cache — so an overwrite stays
+            # masked behind the edge/browser cache. A content-hash query makes the URL
+            # change iff the card changes; unchanged cards keep their URL (and the
+            # cache). ``_is_raster`` strips the query, so Threads/FB publishing is
+            # unaffected.
+            ver = hashlib.md5(b64.encode("utf-8")).hexdigest()[:10]
+            cards[i]["image_url"] = f"{url}?v={ver}"
+            uploaded += 1
 
     if uploaded:
         print(f"  ✓ Rendered + uploaded {uploaded} social card image(s)")

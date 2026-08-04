@@ -153,28 +153,16 @@ def validate_episode(
             else:
                 episode_data.validation_results['gcs_summary_matches'] = False
             
-            # Verify SVG exists in GCS (check if blob exists)
+            # Verify the SVG landed in the media store
             svg_url = episode_data.gcs_urls.get('summary_image_url')
             if svg_url:
                 try:
-                    # Extract blob path from gs:// URL
-                    if svg_url.startswith("gs://"):
-                        without_scheme = svg_url[len("gs://"):]
-                        parts = without_scheme.split("/", 1)
-                        if len(parts) == 2:
-                            bucket_name, blob_path = parts
-                            # Access bucket through the service
-                            bucket = services.gcs_service.bucket
-                            blob = bucket.blob(blob_path)
-                            episode_data.validation_results['gcs_svg_exists'] = blob.exists()
-                            if not episode_data.validation_results['gcs_svg_exists']:
-                                print(f"    ⚠ SVG file not found in GCS: {svg_url}")
-                        else:
-                            episode_data.validation_results['gcs_svg_exists'] = False
-                    else:
-                        episode_data.validation_results['gcs_svg_exists'] = False
+                    exists = services.gcs_service.blob_exists(svg_url)
+                    episode_data.validation_results['gcs_svg_exists'] = exists
+                    if not exists:
+                        print(f"    ⚠ SVG file not found in media store: {svg_url}")
                 except Exception as e:
-                    print(f"    ⚠ Warning: Could not verify SVG in GCS: {e}")
+                    print(f"    ⚠ Warning: Could not verify SVG in media store: {e}")
                     episode_data.validation_results['gcs_svg_exists'] = False
             else:
                 episode_data.validation_results['gcs_svg_exists'] = False

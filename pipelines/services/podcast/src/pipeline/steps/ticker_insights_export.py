@@ -1,49 +1,16 @@
-"""Step 5d: dual-write per-ticker insight documents to Firestore.
+"""Step 5d: write per-ticker insight documents.
 
-Writes ``ticker_insights/{episode_id}/tickers/{ticker}`` per the platform
-contract in ``docs/firestore-contract.md`` § 4. During Phase B cutover this
-step runs after the Postgres mirror so new episodes have both the legacy row
-copy and the composite Firestore docs. Best-effort — failures are logged but do
-not abort the rest of the pipeline.
+Persists the § 4 docs of ``docs/firestore-contract.md`` into
+``firestore_mirror.ticker_insights`` (Postgres), keyed ``(episode_id, ticker)``.
+The Firestore ``ticker_insights/{episode_id}/tickers/{ticker}`` subcollection
+write is gone since P4 — this is the only copy, so it raises on failure.
 """
 
 from __future__ import annotations
 
-import os
-
 from ..config import PipelineConfig
 from ..episode_data import EpisodeData
 from ..service_container import ServiceContainer
-
-
-def _mirror_ticker_insights_to_postgres(episode_id: str, docs: dict) -> None:
-    """Best-effort dual-write of the same ticker-insight docs into
-    ``firestore_mirror.ticker_insights`` (Postgres). No-op without
-    ``EPISODE_DATABASE_URL`` — mirrors the guard in ``pipeline.steps.postgres_episode``.
-    """
-    if not docs:
-        return
-    url = os.getenv("EPISODE_DATABASE_URL")
-    if not url:
-        return
-    try:
-        import psycopg
-    except ImportError:
-        print("  ⚠ psycopg not available — skipping Postgres ticker_insights mirror")
-        return
-
-    from src.podcast.exporters import postgres_mirror
-
-    try:
-        with psycopg.connect(url, autocommit=True) as conn, conn.cursor() as cur:
-            cur.execute(postgres_mirror.DDL_TICKER_INSIGHTS)
-            n = postgres_mirror.upsert_ticker_insights(cur, episode_id, docs)
-        print(f"  ✓ Mirrored {n} ticker_insights docs to Postgres: {postgres_mirror.SCHEMA}.ticker_insights")
-    except Exception as e:  # noqa: BLE001 — best-effort
-        import traceback
-
-        print(f"  ⚠ Postgres ticker_insights mirror failed (non-fatal): {e}")
-        traceback.print_exc()
 
 
 def export_ticker_insights(
@@ -73,7 +40,7 @@ def export_ticker_insights(
 
     from src.podcast.exporters.ticker_insights import (
         build_episode_insight_docs,
-        write_episode_insights,
+        write_episode_insights_postgres,
     )
 
     # The insight's mention date MUST equal the episode doc's released_at_ms — the
@@ -101,19 +68,5 @@ def export_ticker_insights(
     if not docs:
         return
 
-    try:
-        written = write_episode_insights(
-            services.firebase_service.db,
-            episode_id=episode_data.episode_id,
-            docs=docs,
-        )
-        print(f"  ✓ Wrote {written} ticker_insights docs for {episode_data.episode_id}")
-    except Exception as e:
-        import traceback
-
-        print(f"  ⚠ Ticker insights export failed (non-fatal): {e}")
-        traceback.print_exc()
-
-    # Dual-write the same docs into the Postgres mirror (best-effort, independent of
-    # the Firestore outcome above so a mirror-only reader stays fresh either way).
-    _mirror_ticker_insights_to_postgres(episode_data.episode_id, docs)
+    written = write_episode_insights_postgres(episode_data.episode_id, docs)
+    print(f"  ✓ Wrote {written} ticker_insights docs for {episode_data.episode_id}")

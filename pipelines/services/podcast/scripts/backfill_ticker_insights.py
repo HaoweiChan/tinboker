@@ -1,20 +1,25 @@
 #!/usr/bin/env python3
-"""Phase B2 migration: backfill ``ticker_insights/{episode_id}/tickers/{ticker}``.
+"""Rebuild ``firestore_mirror.ticker_insights`` rows from the cached GCS payloads.
 
-For each Firestore episode with a ``ticker_insights_url`` (GCS gs://),
-this script:
+The repair path for the one gap P4 leaves: a run that persisted the episode but
+died before the ticker-insight export writes no insight rows, and there is no
+longer a second store to recover them from. For each episode with a
+``ticker_insights_url`` (GCS gs://), this script:
   1. Downloads the cached ticker JSON the pipeline already wrote at processing
      time.
   2. Translates it through the same exporter the live pipeline uses
      (`build_episode_insight_docs` — same spec output, same 5-tier label
      derivation, same Chinese horizon mapping).
-  3. Writes the per-ticker docs into Firestore with standard 500-op
-     WriteBatch chunks.
+  3. Upserts the per-ticker docs via ``write_episode_insights_postgres`` — the
+     same writer the ingest step and the regen commit use.
 
-Idempotent: re-running overwrites each doc with a fresh build. Reads any GCS
-bucket directly via ``google.cloud.storage`` so legacy episodes that live in
-``podcast-data-web`` (alongside the ones in ``graphfolio-articles``) are
-covered too.
+Idempotent: re-running overwrites each doc with a fresh build (the upsert is
+keyed on ``(episode_id, ticker)``). Reads any GCS bucket directly via
+``google.cloud.storage`` so legacy episodes that live in ``podcast-data-web``
+(alongside the ones in ``graphfolio-articles``) are covered too.
+
+Typical heal: ``--podcast <name> --limit 5`` after a failed nightly run, or bare
+to sweep everything.
 
 Usage:
     uv run python services/podcast/scripts/backfill_ticker_insights.py --dry-run
@@ -34,8 +39,7 @@ sys.path.insert(0, str(_SERVICE_ROOT))
 
 from src.podcast.exporters.ticker_insights import (  # noqa: E402
     build_episode_insight_docs,
-    write_episode_insights,
-    write_many_episode_insights,
+    write_episode_insights_postgres,
 )
 from src.service.upload_to_firebase import FirebaseService  # noqa: E402
 
@@ -53,13 +57,13 @@ def _read_gcs_json(gs_url: str) -> dict | list | None:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--dry-run", action="store_true", help="don't write to Firestore")
+    ap.add_argument("--dry-run", action="store_true", help="don't write")
     ap.add_argument("--limit", type=int, help="process at most N episodes")
     ap.add_argument("--podcast", help="only re-export episodes whose podcast_name matches this exactly")
     args = ap.parse_args()
 
-    fb = FirebaseService()
-    print("Streaming episodes from Firestore...")
+    fb = FirebaseService()  # reads firestore_mirror.episodes; also bootstraps GSM secrets
+    print("Streaming episodes from the content store...")
     episodes = fb.get_all_episodes(order_by="created_time", descending=True)
     targets = [
         ep
@@ -110,23 +114,12 @@ def main() -> int:
         pending_episode_docs[ep_id] = docs
         print(f"  [{i}/{len(targets)}] {ep_id}: staged {len(docs)} tickers")
 
-    if pending_episode_docs:
+    for ep_id, docs in pending_episode_docs.items():
         try:
-            total_written = write_many_episode_insights(
-                fb.db,
-                pending_episode_docs,
-                batch_size=500,
-            )
-            print("  wrote staged docs in 500-op Firestore batches")
-        except Exception as e:
-            print(f"  batch write failed ({e}); falling back to per-episode writes")
-            total_written = 0
-            for ep_id, docs in pending_episode_docs.items():
-                try:
-                    total_written += write_episode_insights(fb.db, episode_id=ep_id, docs=docs)
-                except Exception as inner:
-                    print(f"  {ep_id}: write failed ({inner})")
-                    skipped.append(ep_id)
+            total_written += write_episode_insights_postgres(ep_id, docs)
+        except Exception as e:  # noqa: BLE001 — one bad episode must not abort the sweep
+            print(f"  {ep_id}: write failed ({e})")
+            skipped.append(ep_id)
 
     print(f"\n{'(dry-run) ' if args.dry_run else ''}{total_written} ticker docs across {len(targets) - len(skipped)} episodes")
     if skipped:

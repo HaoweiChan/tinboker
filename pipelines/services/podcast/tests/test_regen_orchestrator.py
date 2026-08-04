@@ -289,22 +289,11 @@ class _Resp:
 
 
 class _FakeFirestore:
-    """Captures set_document writes so a commit can be asserted without Firestore."""
+    """Read-only FirestoreService stand-in — since P4 ``commit`` writes nothing to
+    Firestore, so this only has to exist for the draft-loading reads."""
 
     def __init__(self):
-        self.writes = []  # list of (collection, doc_id, data, merge)
         self.db = object()
-
-    def set_document(self, collection, doc_id, data, merge=False):
-        self.writes.append((collection, doc_id, dict(data), merge))
-
-    def merged(self, doc_id):
-        """The union of every merge write for ``doc_id`` (commit writes in parts)."""
-        out = {}
-        for collection, did, data, _ in self.writes:
-            if collection == "episodes" and did == doc_id:
-                out.update(data)
-        return out
 
 
 class _FakeGCS:
@@ -346,10 +335,10 @@ def test_commit_reuploads_gcs_served_content_and_repoints_urls(monkeypatch):
     _new_draft()
     _drive_summary_and_marp()
 
-    fake_fs = _FakeFirestore()
     fake_gcs = _FakeGCS()
-    monkeypatch.setattr(orch, "_firestore", lambda: fake_fs)
+    monkeypatch.setattr(orch, "_firestore", lambda: _FakeFirestore())
     monkeypatch.setattr(orch, "_gcs_storage_service", lambda: fake_gcs)
+    cur = _fake_pg(monkeypatch)
     monkeypatch.setattr("httpx.patch", lambda *a, **k: _Resp(200))
     monkeypatch.setenv("TINBOKER_PLATFORM_API_URL", "https://api.example.com")
     monkeypatch.setenv("TINBOKER_WRITE_TOKEN", "svc-token-123")
@@ -366,7 +355,7 @@ def test_commit_reuploads_gcs_served_content_and_repoints_urls(monkeypatch):
     assert call["summary_content"]
 
     # 2. The doc's *_url fields now point at the fresh upload (so hydration reads it).
-    merged = fake_fs.merged("ep_test")
+    merged = _merged_doc(cur)
     assert merged["marp_markdown_url"] == "gs://b/marp/ep_test.md"
     assert merged["events_markdown_url"] == "gs://b/events/ep_test.md"
     assert merged["summary_url"] == "gs://b/summaries/ep_test.md"
@@ -405,9 +394,27 @@ class _FakeConn:
         return False
 
 
-def test_commit_skips_postgres_mirror_without_env_var(monkeypatch):
-    """Default (no EPISODE_DATABASE_URL, per the conftest autouse scrub): commit
-    must not attempt a Postgres connection at all."""
+def _fake_pg(monkeypatch, rowcount: int = 1):
+    """Point commit()'s only write target — firestore_mirror.episodes — at a fake
+    cursor. Returns it so tests can read back the jsonb-merge parameters."""
+    monkeypatch.setenv("EPISODE_DATABASE_URL", "postgresql://x/y")
+    cur = _FakeCursor(rowcount=rowcount)
+    monkeypatch.setattr(psycopg, "connect", lambda *a, **k: _FakeConn(cur))
+    return cur
+
+
+def _merged_doc(cur) -> dict:
+    """Union of every jsonb-merge commit issued (it writes the doc in parts)."""
+    out: dict = {}
+    for sql, params in cur.executed:
+        if "UPDATE" in sql:
+            out.update(params[0].obj)
+    return out
+
+
+def test_commit_raises_without_episode_database_url(monkeypatch):
+    """P4: Postgres is the only content store, so a commit that cannot reach it
+    must fail loudly instead of reporting success for a write that went nowhere."""
     _new_draft()
     _drive_summary_and_marp()
     monkeypatch.setattr(orch, "_firestore", lambda: _FakeFirestore())
@@ -418,49 +425,43 @@ def test_commit_skips_postgres_mirror_without_env_var(monkeypatch):
 
     monkeypatch.setattr(psycopg, "connect", _must_not_connect)
 
-    report = orch.commit("ep_test", notify_platform=False)
-    assert not any("Postgres" in w for w in report["warnings"])
+    with pytest.raises(orch.RegenError, match="EPISODE_DATABASE_URL"):
+        orch.commit("ep_test", notify_platform=False)
 
 
-def test_commit_mirrors_doc_update_onto_postgres_episodes_doc(monkeypatch):
-    """The core drift fix: commit's Firestore doc_update (summary_content/tags/
-    events_markdown/...) is also jsonb-merged onto firestore_mirror.episodes.doc."""
+def test_commit_merges_doc_update_onto_postgres_episodes_doc(monkeypatch):
+    """commit's doc_update (summary_content/tags/events_markdown/...) is
+    jsonb-merged onto firestore_mirror.episodes.doc — the only write left."""
     _new_draft()
     _drive_summary_and_marp()
     monkeypatch.setattr(orch, "_firestore", lambda: _FakeFirestore())
     monkeypatch.setattr(orch, "_gcs_storage_service", lambda: _FakeGCS())
-    monkeypatch.setenv("EPISODE_DATABASE_URL", "postgresql://x/y")
-    cur = _FakeCursor(rowcount=1)
-    monkeypatch.setattr(psycopg, "connect", lambda *a, **k: _FakeConn(cur))
+    cur = _fake_pg(monkeypatch)
 
     report = orch.commit("ep_test", notify_platform=False)
 
     updates = [params for sql, params in cur.executed if "UPDATE" in sql]
-    assert len(updates) == 1
+    assert updates
     doc_param, episode_id = updates[0]
     assert episode_id == "ep_test"
-    # the merged fields are exactly what was written to Firestore in step 1
     assert set(doc_param.obj.keys()) == set(report["episode_fields_written"])
     assert doc_param.obj["summary_content"]  # non-empty regenerated content
-    assert not any("Postgres" in w for w in report["warnings"])
+    assert not report["warnings"]
 
 
-def test_commit_warns_when_postgres_mirror_row_missing(monkeypatch):
-    """A regen for an episode the mirror never saw must warn, not fabricate a doc."""
+def test_commit_raises_when_episode_row_missing(monkeypatch):
+    """A regen for an episode Postgres never saw must fail, not fabricate a doc."""
     _new_draft()
     _drive_summary_and_marp()
     monkeypatch.setattr(orch, "_firestore", lambda: _FakeFirestore())
     monkeypatch.setattr(orch, "_gcs_storage_service", lambda: _FakeGCS())
-    monkeypatch.setenv("EPISODE_DATABASE_URL", "postgresql://x/y")
-    cur = _FakeCursor(rowcount=0)  # UPDATE matched no row
-    monkeypatch.setattr(psycopg, "connect", lambda *a, **k: _FakeConn(cur))
+    _fake_pg(monkeypatch, rowcount=0)  # UPDATE matched no row
 
-    report = orch.commit("ep_test", notify_platform=False)
-
-    assert any("no row for episode_id=ep_test" in w for w in report["warnings"])
+    with pytest.raises(orch.RegenError, match="row for episode_id=ep_test"):
+        orch.commit("ep_test", notify_platform=False)
 
 
-def test_commit_warns_but_does_not_abort_on_postgres_mirror_error(monkeypatch):
+def test_commit_raises_on_postgres_error(monkeypatch):
     _new_draft()
     _drive_summary_and_marp()
     monkeypatch.setattr(orch, "_firestore", lambda: _FakeFirestore())
@@ -472,10 +473,8 @@ def test_commit_warns_but_does_not_abort_on_postgres_mirror_error(monkeypatch):
 
     monkeypatch.setattr(psycopg, "connect", _boom)
 
-    report = orch.commit("ep_test", notify_platform=False)  # must not raise
-
-    assert report["committed"] is True
-    assert any("Postgres mirror merge failed" in w for w in report["warnings"])
+    with pytest.raises(RuntimeError, match="connection refused"):
+        orch.commit("ep_test", notify_platform=False)
 
 
 def test_commit_patch_carries_content_writer_token(monkeypatch):
@@ -485,6 +484,7 @@ def test_commit_patch_carries_content_writer_token(monkeypatch):
     _drive_summary_and_marp()
     monkeypatch.setattr(orch, "_firestore", lambda: _FakeFirestore())
     monkeypatch.setattr(orch, "_gcs_storage_service", lambda: _FakeGCS())
+    _fake_pg(monkeypatch)
     monkeypatch.setenv("TINBOKER_PLATFORM_API_URL", "https://api.example.com")
     monkeypatch.setenv("TINBOKER_WRITE_TOKEN", "svc-token-123")
 
@@ -513,6 +513,7 @@ def test_commit_without_write_token_skips_patch_and_warns(monkeypatch):
     _drive_summary_and_marp()
     monkeypatch.setattr(orch, "_firestore", lambda: _FakeFirestore())
     monkeypatch.setattr(orch, "_gcs_storage_service", lambda: _FakeGCS())
+    _fake_pg(monkeypatch)
     monkeypatch.setenv("TINBOKER_PLATFORM_API_URL", "https://api.example.com")
     monkeypatch.delenv("TINBOKER_WRITE_TOKEN", raising=False)
 
@@ -660,33 +661,23 @@ def test_episode_doc_parity_pipeline_vs_regen(monkeypatch):
 # guard that commit() actually threads the captured value into the exporter.
 
 
-class _FakeFS:
-    """Minimal FirestoreService stand-in: records set_document calls, exposes .db."""
-
-    def __init__(self):
-        self.db = object()
-        self.writes = []
-
-    def set_document(self, *args, **kwargs):
-        self.writes.append((args, kwargs))
-
-
 def _capture_export(monkeypatch):
-    """Patch the insight exporter so commit() can run without Firestore, capturing the
-    ``podcast_launch_time`` it would stamp. Returns the capture dict."""
+    """Patch the insight exporter so commit() can run without a real database,
+    capturing the ``podcast_launch_time`` it would stamp."""
     captured: dict = {}
 
     def fake_build(*, raw_payload, episode_id, podcaster, podcast_launch_time):
         captured["podcast_launch_time"] = podcast_launch_time
         return {"2330": {"ticker": "2330"}}
 
-    monkeypatch.setattr(orch, "_firestore", lambda: _FakeFS())
+    monkeypatch.setattr(orch, "_firestore", lambda: _FakeFirestore())
+    _fake_pg(monkeypatch)
     monkeypatch.setattr(
         "src.podcast.exporters.ticker_insights.build_episode_insight_docs", fake_build
     )
     monkeypatch.setattr(
-        "src.podcast.exporters.ticker_insights.write_episode_insights",
-        lambda db, *, episode_id, docs: len(docs),
+        "src.podcast.exporters.ticker_insights.write_episode_insights_postgres",
+        lambda episode_id, docs: len(docs),
     )
     return captured
 

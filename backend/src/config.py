@@ -275,11 +275,14 @@ class Settings(BaseSettings):
     # no log rotation configured.
     sql_echo: bool = False
     # Serve episode / ticker-insight / trending content reads from the VPS-local
-    # Postgres mirror of Firestore (schema `firestore_mirror`, same podcast_db)
-    # instead of Firestore itself — the Firestore egress bill is the reason.
+    # Postgres content store (schema `firestore_mirror`, same podcast_db) instead
+    # of Firestore — the Firestore egress bill is the reason.
+    # ON by default since P4 (contract § 11.5): the pipelines stopped writing
+    # Firestore, so the Postgres copy is the only current one and the Firestore
+    # read path survives one release purely as a rollback lever.
     # Users and notifications are unaffected: P3 moved them to first-class Postgres
     # tables (`users`, `user_notifications`), so they never consult this flag.
-    content_reads_from_postgres: bool = False
+    content_reads_from_postgres: bool = True
 
     @property
     def postgres_connection_string(self) -> Optional[str]:

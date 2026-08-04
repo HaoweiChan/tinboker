@@ -80,10 +80,3 @@ def test_secrets_importable():
 
     assert callable(bootstrap)
     assert callable(reset)
-
-
-def test_gcs_importable():
-    from shared.gcs import create_gcs_client, get_bucket
-
-    assert callable(create_gcs_client)
-    assert callable(get_bucket)

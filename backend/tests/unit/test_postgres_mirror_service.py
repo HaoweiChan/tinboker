@@ -6,7 +6,6 @@ operator silently returns the wrong episodes instead of failing.
 """
 import json
 from contextlib import contextmanager
-from types import SimpleNamespace
 
 import pytest
 
@@ -265,7 +264,7 @@ def test_collection_group_unmapped_id_raises(stub_session):
 # ── writes ──────────────────────────────────────────────────────────────
 
 
-def test_mirror_is_read_only_for_writes():
+def test_read_interface_refuses_writes():
     svc = PostgresMirrorService()
     with pytest.raises(NotImplementedError):
         svc.set_document("episodes", "EP1", {"a": 1}, True)
@@ -274,7 +273,9 @@ def test_mirror_is_read_only_for_writes():
 
 
 def test_patch_episode_doc_merges_and_drops_like_firestore(stub_session, monkeypatch):
-    from google.cloud.firestore import DELETE_FIELD
+    """P4 replaced google.cloud.firestore.DELETE_FIELD with a local sentinel; the
+    merge/remove semantics it stands for are unchanged."""
+    from src.services.postgres_mirror_service import DELETE_FIELD
 
     monkeypatch.setattr(pms.settings, "use_postgres", True)
     existing = {
@@ -293,7 +294,15 @@ def test_patch_episode_doc_merges_and_drops_like_firestore(stub_session, monkeyp
     assert "SELECT doc FROM firestore_mirror.episodes WHERE episode_id = :id FOR UPDATE" in _sql(s, 0)
     sql, params = s.calls[1]
     assert "doc = CAST(:doc AS jsonb)" in sql
-    assert "jsonb_array_elements_text" in sql  # promoted related_tickers stays consistent
+    # The promoted related_tickers column is JSONB (pipelines steps/postgres_episode.py
+    # owns the DDL: `related_tickers jsonb`), so it must be assigned a plain jsonb
+    # extraction. Unit tests can't execute real SQL, so pin the shape: an
+    # ARRAY(SELECT jsonb_array_elements_text(...)) builds a text[] and type-errors
+    # against that column on EVERY backend episode write.
+    assert "related_tickers = CASE WHEN CAST(:doc AS jsonb) ? 'related_tickers' " \
+           "THEN CAST(:doc AS jsonb)->'related_tickers' ELSE NULL END" in " ".join(sql.split())
+    assert "ARRAY(" not in sql
+    assert "jsonb_array_elements_text" not in sql
     assert json.loads(params["doc"]) == {"summary_content": "new", "related_tickers": ["2330"]}
     assert params["id"] == "EP1"
     assert s.committed
@@ -307,14 +316,15 @@ def test_patch_episode_doc_deep_merges_nested_maps(stub_session, monkeypatch):
     assert json.loads(s.calls[1][1]["doc"]) == {"social_thread": {"a": 9, "b": 2}}
 
 
-def test_patch_episode_doc_warns_and_skips_on_missing_row(stub_session, monkeypatch, caplog):
+def test_patch_episode_doc_raises_on_missing_row(stub_session, monkeypatch):
+    """P4: Postgres is the only content store, so an edit with nowhere to land must
+    surface as a 500 rather than be logged and dropped."""
     monkeypatch.setattr(pms.settings, "use_postgres", True)
     s = stub_session(rows=[])
-    with caplog.at_level("WARNING"):
-        assert patch_episode_doc("EP_GONE", {"summary_content": "x"}) is False
+    with pytest.raises(RuntimeError, match="missing from firestore_mirror.episodes"):
+        patch_episode_doc("EP_GONE", {"summary_content": "x"})
     assert len(s.calls) == 1  # SELECT only, no blind UPDATE
     assert not s.committed
-    assert "missing from firestore_mirror" in caplog.text
 
 
 def test_patch_episode_doc_noop_without_postgres(stub_session, monkeypatch):
@@ -336,15 +346,13 @@ def test_content_read_service_follows_the_flag(monkeypatch):
     assert isinstance(content_read_service(), PostgresMirrorService)
 
 
-def test_services_read_through_the_flag_but_write_to_firestore(monkeypatch):
+def test_services_read_through_the_flag(monkeypatch):
     from src.services.firestore_service import FirestoreService
     from src.services.insight_service import InsightService
     from src.services.podcast import PodcastService
 
     monkeypatch.setattr(pms.settings, "content_reads_from_postgres", True)
-    svc = PodcastService()
-    assert isinstance(svc.firestore_service, PostgresMirrorService)
-    assert isinstance(svc._fs_write, FirestoreService)
+    assert isinstance(PodcastService().firestore_service, PostgresMirrorService)
     assert isinstance(InsightService()._fs, PostgresMirrorService)
 
     monkeypatch.setattr(pms.settings, "content_reads_from_postgres", False)
@@ -352,28 +360,33 @@ def test_services_read_through_the_flag_but_write_to_firestore(monkeypatch):
     assert isinstance(InsightService()._fs, FirestoreService)
 
 
-async def test_write_through_runs_regardless_of_flag(monkeypatch):
-    """Both writes fire on every platform edit, and a mirror failure is swallowed."""
+def test_content_reads_default_to_postgres():
+    """P4 flipped the default: the pipelines no longer write Firestore, so the
+    Firestore read path must not be what a fresh process picks."""
+    from src.config import Settings
+
+    assert Settings().content_reads_from_postgres is True
+
+
+async def test_episode_write_goes_only_to_postgres_and_failures_surface(monkeypatch):
+    """The Firestore half is gone (P4) — one write, and it must not be swallowed."""
     from src.services.podcast import PodcastService
 
     svc = object.__new__(PodcastService)
-    written, mirrored = {}, {}
-    svc._fs_write = SimpleNamespace(
-        set_document=lambda c, i, d, m: written.update({"col": c, "id": i, "data": d, "merge": m})
-    )
+    mirrored = {}
     monkeypatch.setattr(
         "src.services.podcast.patch_episode_doc",
         lambda eid, updates: mirrored.update({"id": eid, "updates": updates}),
     )
     await svc._write_episode_fields("EP1", {"social_thread": {"post": "hi"}})
-    assert written == {"col": "episodes", "id": "EP1", "data": {"social_thread": {"post": "hi"}}, "merge": True}
     assert mirrored == {"id": "EP1", "updates": {"social_thread": {"post": "hi"}}}
 
     def _boom(eid, updates):
-        raise RuntimeError("mirror down")
+        raise RuntimeError("content store down")
 
     monkeypatch.setattr("src.services.podcast.patch_episode_doc", _boom)
-    await svc._write_episode_fields("EP1", {"a": 1})  # must not raise
+    with pytest.raises(RuntimeError, match="content store down"):
+        await svc._write_episode_fields("EP1", {"a": 1})
 
 
 # ── one live-Postgres check (skipped unless the mirror is reachable) ────

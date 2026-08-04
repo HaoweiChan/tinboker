@@ -248,11 +248,22 @@ production Postgres, response shape matches the contract, response time
 - `include_content` semantics — the spec section § 2.3 #4 says inlined `*_content` fields are a cache. Decide whether `include_content=false` strips them at the API or just skips a separate GCS fetch.
 - `modified_summary_*` writes — these come from the platform backend. The HTTP API doesn't write these today; if the platform wants to keep editing summaries, we need a `PUT /api/episodes/{id}/summary` route. Confirm with the user before adding.
 
-### Phase E — GCS → VPS blob store (~1-2 sessions, gated on Q1+Q2)
+### Phase E — GCS → VPS blob store — ⚠️ SUPERSEDED, DO NOT FOLLOW
 
-**Prerequisites:** Q1 and Q2 resolved. Don't start until both are answered.
+**This section is historical.** It was never executed. The work shipped instead as
+P5 of the Firestore→Postgres migration; the authoritative spec is
+**`docs/firestore-contract.md` § 11.7**.
 
-**Deliverables:**
+The one thing to know before reading the plan below: it used **short** directory
+names (`/media/articles/`, `/media/web/`). The live convention is the **full bucket
+name** — `/srv/tinboker-media/{graphfolio-articles,podcast-data-web}`, served at
+`https://podcast-api.tinboker.com/media/<full-bucket-name>/…` (symlinked under
+`/var/lib/tinboker/media/`). No DB row has ever carried a short-form URL, and
+nothing serves one. The accompanying `migrate_urls_gcs_to_vps.py` script was deleted
+for rewriting URLs into that unserved short form.
+
+<details><summary>Original Phase E plan (not executed)</summary>
+
 1. `gsutil -m rsync -r gs://graphfolio-articles /var/lib/tinboker/media/articles/`
    and `gs://podcast-data-web /var/lib/tinboker/media/web/`. Verify checksums and counts.
 2. Caddy config: serve `/media/*` from `/var/lib/tinboker/media/`. Add range-request support for MP3 streaming (Caddy does this natively for static files; the test is whether iOS Safari can seek a streamed MP3).
@@ -260,7 +271,7 @@ production Postgres, response shape matches the contract, response time
 4. Migrate existing DB rows: `UPDATE episodes SET mp3_url = REPLACE(mp3_url, 'gs://podcast-data-web/', '/media/web/') …` for each `*_url` column. Mirror for the platform-served public URLs.
 5. Cutover: freeze the pipeline for ~30 min, final `rsync` delta, flip Caddy config, smoke-test 3 episode media plays end-to-end, then `gsutil rm -r` the buckets after Phase F's backup job is verified.
 
-**Validation gate before Phase F:** all 7k+ media objects readable via the new URLs; no 404s on a sample of 50 random episodes; MP3 streaming with seek works on iOS Safari + Chrome.
+</details>
 
 ### Phase F — Decommission GCP, set up backups (~1 session)
 

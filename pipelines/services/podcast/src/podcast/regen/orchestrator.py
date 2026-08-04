@@ -178,39 +178,34 @@ def _firestore():
     return FirestoreService()
 
 
-def _mirror_doc_update_to_postgres(episode_id: str, fields: dict[str, Any]) -> str:
-    """Best-effort jsonb-merge of ``fields`` onto ``firestore_mirror.episodes.doc``.
+def _write_doc_update(episode_id: str, fields: dict[str, Any]) -> None:
+    """Jsonb-merge ``fields`` onto ``firestore_mirror.episodes.doc``.
 
-    ``commit`` writes Firestore directly (it doesn't run through
-    ``pipeline.steps.postgres_episode``), so without this a regen would leave the
-    Postgres mirror silently stale. No-op without ``EPISODE_DATABASE_URL`` — importing
-    ``src.service.firestore_service`` (via ``_firestore()``) already bootstraps GSM
-    secrets, so the var is populated by the time ``commit`` calls this.
-
-    Returns "ok", "missing" (no such row — never fabricates a partial doc), "skipped"
-    (no EPISODE_DATABASE_URL / no psycopg / nothing to write), or "error".
+    The sole episode write since P4 (contract § 11.5) — ``commit`` used to write
+    Firestore first and treat this as a best-effort mirror. There is no second
+    store now, so every failure mode raises: a missing row, a missing
+    ``EPISODE_DATABASE_URL``, or a Postgres error. Silently "committing" a regen
+    that landed nowhere is the worst outcome available.
     """
     if not fields:
-        return "skipped"
-    url = os.getenv("EPISODE_DATABASE_URL")
-    if not url:
-        return "skipped"
-    try:
-        import psycopg
-    except ImportError:
-        return "skipped"
+        return
+
+    import psycopg
 
     from src.podcast.exporters import postgres_mirror
 
-    try:
-        with psycopg.connect(url, autocommit=True) as conn, conn.cursor() as cur:
-            merged = postgres_mirror.merge_episode_doc(cur, episode_id, fields)
-        return "ok" if merged else "missing"
-    except Exception:  # noqa: BLE001 — best-effort, never abort the commit
-        import traceback
-
-        traceback.print_exc()
-        return "error"
+    url = os.getenv("EPISODE_DATABASE_URL")
+    if not url:
+        raise RegenError(
+            "EPISODE_DATABASE_URL is not set — cannot commit the regen (Postgres is "
+            "the only content store since P4)."
+        )
+    with psycopg.connect(url, autocommit=True) as conn, conn.cursor() as cur:
+        if not postgres_mirror.merge_episode_doc(cur, episode_id, fields):
+            raise RegenError(
+                f"No {postgres_mirror.SCHEMA}.episodes row for episode_id={episode_id} "
+                "— refusing to fabricate a partial document. Ingest the episode first."
+            )
 
 
 def _episode_sentences(doc: dict[str, Any]) -> list[dict[str, Any]]:
@@ -218,52 +213,31 @@ def _episode_sentences(doc: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _sentences_from_gcs(transcript_url: Optional[str]) -> list[dict[str, Any]]:
-    """Fetch the sentence array from a ``gs://`` transcript JSON, or ``[]``.
+    """Fetch the sentence array from the stored transcript JSON, or ``[]``.
 
-    Published/consolidated episodes keep only a flat ``transcript`` field in
-    Firestore and store the real sentence-level transcript (``{index, content,
-    start, end}``) as a JSON object in GCS at ``transcript_url``. Without this,
-    regen is impossible for every already-published episode (the inline fields
-    are empty). Read failures degrade to ``[]`` so callers fall back cleanly.
+    Published/consolidated episodes keep only a flat ``transcript`` field in the
+    episode doc and store the real sentence-level transcript (``{index, content,
+    start, end}``) as a JSON artifact at ``transcript_url``. Without this, regen is
+    impossible for every already-published episode (the inline fields are empty).
+    Read failures degrade to ``[]`` so callers fall back cleanly.
     """
-    if not transcript_url or not str(transcript_url).startswith("gs://"):
-        return []
-    bucket_name, _, blob_path = transcript_url[len("gs://"):].partition("/")
-    if not bucket_name or not blob_path:
+    if not transcript_url:
         return []
     try:
-        blob = _gcs_client().bucket(bucket_name).blob(blob_path)
-        data = json.loads(blob.download_as_text())
+        data = json.loads(_gcs_storage_service().download_text_by_gcs_url(str(transcript_url)))
         if isinstance(data, dict):
             return data.get("sentences") or data.get("transcript_sentences") or []
         if isinstance(data, list):
             return data
-    except Exception:  # noqa: BLE001 — missing/unauthorized/malformed → fall back
+    except Exception:  # noqa: BLE001 — missing/unreadable/malformed → fall back
         return []
     return []
 
 
-def _gcs_client():
-    """An authenticated ``storage.Client``.
-
-    The MCP authenticates GCP with an explicit service-account JSON (not ADC), so
-    reuse the pipeline's credential-bootstrapped client from ``GCSStorageService``;
-    fall back to a default client only if that can't be constructed.
-    """
-    try:
-        from src.service.gcs_storage_service import GCSStorageService
-
-        return GCSStorageService().client
-    except Exception:  # noqa: BLE001 — no bucket env / import issue → try ADC
-        from google.cloud import storage
-
-        return storage.Client()
-
-
 def _gcs_storage_service():
-    """The pipeline's credential-bootstrapped GCS uploader (same one ``gcs_upload``
-    uses). Imported lazily so importing this module doesn't require the GCS env —
-    ``commit`` is the only caller, and tests monkeypatch this to avoid real uploads."""
+    """The pipeline's media-store service (same one ``gcs_upload`` uses). Imported
+    lazily so importing this module doesn't require the storage env — tests
+    monkeypatch this to avoid touching the real media root."""
     from src.service.gcs_storage_service import GCSStorageService
 
     return GCSStorageService()
@@ -510,13 +484,13 @@ def _doc_update(payload: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in payload.items() if k not in protected}
 
 
-# Assembled-payload field -> the ``upload_episode_files`` kwarg that writes its GCS
-# blob. These are the artifacts the backend serves *from GCS*: the episode
+# Assembled-payload field -> the ``upload_episode_files`` kwarg that writes its
+# media-store artifact. These are the artifacts the backend serves *by URL*: the episode
 # transformer hydrates each ``*_content`` field from the matching ``*_url`` only when
 # the inline field is empty (see ``episode_transformer._GCS_CONTENT_FIELDS``). The
 # regen writes the inline doc fields (``marp_markdown``/``events_markdown``/…) but the
-# page reads the GCS blob, so a Firestore-only commit keeps serving the OLD content —
-# the blob itself must be re-uploaded.
+# page reads the stored artifact, so a doc-only commit keeps serving the OLD content —
+# the artifact itself must be rewritten.
 _GCS_UPLOAD_KWARGS = {
     "summary_content": "summary_content",
     "events_markdown": "events_markdown_content",
@@ -539,7 +513,7 @@ _GCS_URL_FIELDS = (
 def _upload_regen_content(
     episode_id: str, podcast_name: str, payload: dict[str, Any]
 ) -> tuple[dict[str, Any], Optional[str]]:
-    """Re-upload the GCS-served artifacts (marp/events/ticker_marp/summary + ticker
+    """Rewrite the URL-served artifacts (marp/events/ticker_marp/summary + ticker
     insights JSON) so the backend hydrates the regenerated content, not the stale blob.
 
     Overwrites the existing blobs (``skip_existing=False``) and returns the
@@ -560,9 +534,9 @@ def _upload_regen_content(
 
     try:
         svc = _gcs_storage_service()
-    except Exception as exc:  # noqa: BLE001 — no GCS env → can't refresh the blob
+    except Exception as exc:  # noqa: BLE001 — storage unavailable → can't refresh
         return {}, (
-            f"GCS upload skipped — storage unavailable ({exc}); the page will keep "
+            f"Media write skipped — storage unavailable ({exc}); the page will keep "
             "serving the OLD marp/events content until the blob is re-uploaded."
         )
     try:
@@ -574,7 +548,7 @@ def _upload_regen_content(
         )
     except Exception as exc:  # noqa: BLE001 — never abort an otherwise-good commit
         return {}, (
-            f"GCS upload failed ({exc}); the page will keep serving the OLD "
+            f"Media write failed ({exc}); the page will keep serving the OLD "
             "marp/events content until the blob is re-uploaded."
         )
     return {k: urls[k] for k in _GCS_URL_FIELDS if urls.get(k)}, None
@@ -630,8 +604,8 @@ def find_candidates(
     out: list[dict[str, Any]] = []
     for d in rows:
         sentences = _episode_sentences(d)
-        # A regen needs *a* transcript: inline sentences, a GCS transcript JSON,
-        # or at least the flat text. (We don't download GCS here — checking the
+        # A regen needs *a* transcript: inline sentences, a stored transcript JSON,
+        # or at least the flat text. (We don't read the artifact here — checking the
         # URL's presence keeps the listing cheap.) ``start`` resolves the real
         # source on demand.
         has_transcript = bool(sentences) or bool(d.get("transcript_url")) or bool((d.get("transcript") or "").strip())
@@ -674,7 +648,7 @@ def start(podcast_name: str, episode_id: str) -> dict[str, Any]:
     sentences = _episode_sentences(doc)
     derived_sentences = False
     if not sentences:
-        # Published episodes keep the real sentence-level transcript in GCS, not
+        # Published episodes keep the real sentence-level transcript as an artifact, not
         # inline — pull it before falling back to deriving from flat text.
         sentences = _sentences_from_gcs(doc.get("transcript_url"))
     if not sentences and transcript.strip():
@@ -847,31 +821,17 @@ def commit(
         )
 
     report: dict[str, Any] = {"episode_id": episode_id, "warnings": []}
-    fs = _firestore()
 
     # 1. Episode-doc merge (summary_content, key_insights, tags, related_tickers,
     #    marp/events markdown, social_cards) — same fields the debug PATCH writes.
     doc_update = _doc_update(payload)
     if doc_update:
-        fs.set_document("episodes", episode_id, doc_update, merge=True)
+        _write_doc_update(episode_id, doc_update)
         report["episode_fields_written"] = sorted(doc_update.keys())
-        # ponytail: only this field set is mirrored — the GCS *_url refresh in 1b
-        # below still bypasses Postgres; add if the backend starts reading *_url
-        # fields from the mirror too.
-        pg_status = _mirror_doc_update_to_postgres(episode_id, doc_update)
-        if pg_status == "missing":
-            report["warnings"].append(
-                f"Postgres mirror has no row for episode_id={episode_id} — skipped "
-                "the doc merge there (the Firestore write above still succeeded)."
-            )
-        elif pg_status == "error":
-            report["warnings"].append(
-                "Postgres mirror merge failed (non-fatal) — see logs."
-            )
 
-    # 1b. Re-upload the GCS-served artifacts (marp/events/ticker_marp/summary). The
+    # 1b. Rewrite the URL-served artifacts (marp/events/ticker_marp/summary). The
     #     backend serves these by hydrating ``*_content`` from ``*_url`` when the inline
-    #     field is empty, so the Firestore merge above is NOT enough — without this the
+    #     field is empty, so the doc merge above is NOT enough — without this the
     #     page keeps rendering the OLD slides/events. Overwrite the blobs and repoint
     #     the doc's ``*_url`` fields at the fresh upload so hydration reads the regen.
     gcs_url_updates, gcs_error = _upload_regen_content(
@@ -880,15 +840,15 @@ def commit(
     if gcs_error:
         report["warnings"].append(gcs_error)
     if gcs_url_updates:
-        fs.set_document("episodes", episode_id, gcs_url_updates, merge=True)
+        _write_doc_update(episode_id, gcs_url_updates)
         report["gcs_content_uploaded"] = sorted(gcs_url_updates.keys())
 
-    # 2. Rich ticker sentiment -> ticker_insights/{episode_id}/tickers/{ticker}.
+    # 2. Rich ticker sentiment -> firestore_mirror.ticker_insights.
     if payload.get("ticker_insights"):
         try:
             from src.podcast.exporters.ticker_insights import (
                 build_episode_insight_docs,
-                write_episode_insights,
+                write_episode_insights_postgres,
             )
 
             docs = build_episode_insight_docs(
@@ -900,7 +860,7 @@ def commit(
                 podcast_launch_time=draft.get("podcast_launch_time") or draft.get("created_time"),
             )
             report["ticker_insights_written"] = (
-                write_episode_insights(fs.db, episode_id=episode_id, docs=docs) if docs else 0
+                write_episode_insights_postgres(episode_id, docs) if docs else 0
             )
         except Exception as exc:  # noqa: BLE001 — best-effort, never abort the commit
             report["warnings"].append(f"ticker_insights export failed: {exc}")

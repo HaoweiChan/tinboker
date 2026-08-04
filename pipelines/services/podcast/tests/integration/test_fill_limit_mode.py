@@ -207,7 +207,7 @@ class TestFillLimitMode:
              patch('src.pipeline.steps.transcribe.transcribe_episode', side_effect=transcribe_side_effect1), \
              patch('src.pipeline.steps.summarize.generate_summary', side_effect=summarize_side_effect1), \
              patch('src.pipeline.steps.gcs_upload.upload_to_gcs') as mock_upload, \
-             patch('src.pipeline.steps.firestore.upload_to_firestore'), \
+             patch('src.pipeline.steps.postgres_episode.persist_episode'), \
              patch('src.pipeline.steps.validate.validate_episode') as mock_validate:
             
             mock_download.return_value = mp3_1
@@ -242,7 +242,7 @@ class TestFillLimitMode:
              patch('src.pipeline.steps.transcribe.transcribe_episode', side_effect=transcribe_side_effect2), \
              patch('src.pipeline.steps.summarize.generate_summary', side_effect=summarize_side_effect2), \
              patch('src.pipeline.steps.gcs_upload.upload_to_gcs') as mock_upload, \
-             patch('src.pipeline.steps.firestore.upload_to_firestore'), \
+             patch('src.pipeline.steps.postgres_episode.persist_episode'), \
              patch('src.pipeline.steps.validate.validate_episode') as mock_validate:
             
             mock_download.return_value = mp3_2

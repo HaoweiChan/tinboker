@@ -178,17 +178,19 @@ async def get_episode_audio(
     episode_id: str = Path(..., description="Episode ID"),
 ):
     """
-    Redirect to a short-lived signed URL for the episode's MP3.
+    Redirect to the episode MP3's public URL on the media host.
 
-    Used by the web player when an episode has no Spotify URI. Never cached:
-    the signed URL expires, so each playback session gets a fresh one.
+    Used by the web player when an episode has no Spotify URI. Kept as a redirect
+    (rather than handing the client mp3_url straight from the doc) so a missing
+    artifact becomes a clean 404 here; ``no-store`` keeps that 404 from sticking if
+    the artifact lands later.
     """
     try:
         signed_url = await podcast_service.get_episode_audio_signed_url(podcast_name, episode_id)
     except Exception as e:
-        # A broken/missing GCS object or signing failure is a "no audio" condition
-        # for the player, not a server fault — surface it as 404 so the UI can fall
-        # back gracefully instead of showing an error.
+        # A missing artifact is a "no audio" condition for the player, not a server
+        # fault — surface it as 404 so the UI can fall back gracefully instead of
+        # showing an error.
         logger.warning(f"Failed to resolve audio for {podcast_name}/{episode_id}: {e}")
         signed_url = None
     if not signed_url:

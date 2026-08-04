@@ -27,8 +27,12 @@ from src.cache.cache_config import CACHE_TTL
 from src.cache.cdn_cache import purge_cdn_cache
 
 from src.services.firestore_service import FirestoreService
-from src.services.postgres_mirror_service import content_read_service, patch_episode_doc
-from src.services.gcs_content import GCSContentService
+from src.services.postgres_mirror_service import (
+    DELETE_FIELD,
+    content_read_service,
+    patch_episode_doc,
+)
+from src.services.gcs_content import GCSContentService, media_url
 from src.services.episode_transformer import EpisodeTransformer
 import httpx
 
@@ -193,11 +197,11 @@ class PodcastService:
     """Service for podcast CRUD operations, search, and summary management"""
 
     def __init__(self, firestore_service: Optional[FirestoreService] = None):
-        # Reads: Firestore, or the Postgres mirror when CONTENT_READS_FROM_POSTGRES.
+        # Reads: the Postgres mirror (CONTENT_READS_FROM_POSTGRES, on by default
+        # since P4); the Firestore path survives one more release as a rollback.
+        # Writes go straight to the mirror via patch_episode_doc — P4 stopped
+        # every Firestore write, so there is no second store to keep in sync.
         self.firestore_service = firestore_service or content_read_service()
-        # Writes: always Firestore (source of truth) + mirror write-through, so the
-        # mirror is already fresh whenever the read flag is flipped on.
-        self._fs_write = firestore_service or FirestoreService()
         self.gcs = GCSContentService()
         self.transformer = EpisodeTransformer(self.gcs)
 
@@ -765,10 +769,11 @@ class PodcastService:
     async def get_episode_audio_signed_url(
         self, podcast_name: str, episode_id: str
     ) -> Optional[str]:
-        """Short-lived signed GCS URL for an episode's MP3, or None if unavailable.
+        """Public media URL for an episode's MP3, or None if it isn't on disk.
 
-        The mp3 blobs in graphfolio-articles are private (no public ACL), so the
-        player streams them through a signed URL instead of mp3_public_url.
+        Kept as a separate endpoint (rather than handing the player mp3_url straight
+        from the doc) so a missing artifact 404s instead of silently 404-ing in the
+        audio element. Since P5 the media host serves mp3s directly — no signing.
         """
         episode_dict = self.firestore_service.get_document("episodes", episode_id)
         if not episode_dict or episode_dict.get('podcast_name') != podcast_name:
@@ -2637,27 +2642,19 @@ class PodcastService:
     # ── Summary mutations ────────────────────────────────────────────
 
     async def _write_episode_fields(self, episode_id: str, updates: dict) -> None:
-        """Merge-patch an episode doc: Firestore first, then the Postgres mirror.
+        """Merge-patch an episode doc in the Postgres content store.
 
-        Firestore stays the source of truth; the mirror write-through runs on every
-        platform write regardless of ``content_reads_from_postgres`` so the mirror is
-        already current when reads flip over (and so a read-after-write against the
-        mirror sees the edit). A mirror failure is logged, never surfaced — the
-        pipeline's next episode upsert restores it.
+        The only episode write since P4 (contract § 11.5) — the Firestore half is
+        gone, so a failure propagates (the callers turn it into a 500) instead of
+        being logged. Swallowing it would report a saved edit that landed nowhere.
         """
-        await asyncio.to_thread(
-            self._fs_write.set_document, "episodes", episode_id, updates, True,
-        )
-        try:
-            await asyncio.to_thread(patch_episode_doc, episode_id, updates)
-        except Exception as e:
-            logger.warning("Postgres mirror write-through failed for %s: %s", episode_id, e)
+        await asyncio.to_thread(patch_episode_doc, episode_id, updates)
 
     async def save_modified_summary(
         self, podcast_name: str, episode_id: str,
         content: str, modified_by: Optional[str] = None,
     ) -> Episode:
-        """Save modified summary to GCS and update Firestore"""
+        """Write the modified summary to the media store and point the doc at it."""
         from fastapi import HTTPException
 
         episode_dict = self.firestore_service.get_document("episodes", episode_id)
@@ -2674,13 +2671,17 @@ class PodcastService:
                     bucket_name = parsed[0]
                     break
         if not bucket_name:
-            bucket_name = os.getenv("GCS_BUCKET", "tinboker-podcast-data")
+            bucket_name = os.getenv("GCS_BUCKET", "graphfolio-articles")
 
         blob_path = f"{podcast_name}/modified_summary/{episode_id}_summary.md"
         try:
             await self.gcs.upload_content(bucket_name, blob_path, content)
             modified_at = int(datetime.now().timestamp() * 1000)
-            update_data = {'modified_summary_url': f"gs://{bucket_name}/{blob_path}", 'modified_at': modified_at}
+            # P5: gs:// is dead — the doc carries the public media URL the readers fetch.
+            update_data = {
+                'modified_summary_url': media_url(bucket_name, blob_path),
+                'modified_at': modified_at,
+            }
             if modified_by:
                 update_data['modified_by'] = modified_by
 
@@ -2692,7 +2693,7 @@ class PodcastService:
             raise HTTPException(status_code=500, detail=f"Failed to save modified summary: {str(e)}")
 
     async def delete_modified_summary(self, podcast_name: str, episode_id: str) -> bool:
-        """Delete modified summary from GCS and Firestore"""
+        """Delete the modified summary from the media store and clear the doc fields."""
         from fastapi import HTTPException
 
         episode_dict = self.firestore_service.get_document("episodes", episode_id)
@@ -2710,7 +2711,6 @@ class PodcastService:
             if parsed:
                 await self.gcs.delete_blob(*parsed)
 
-            from google.cloud.firestore import DELETE_FIELD
             await self._write_episode_fields(episode_id, {
                 'modified_summary_url': DELETE_FIELD, 'modified_summary_content': DELETE_FIELD,
                 'modified_by': DELETE_FIELD, 'modified_at': DELETE_FIELD,
@@ -2850,8 +2850,8 @@ class PodcastService:
             url = await self.gcs.upload_bytes_public(
                 bucket, f"social_cards/{episode_id}/{i}.png", base64.b64decode(b64), "image/png"
             )
-            # Content-hash cache-buster: the path is reused per render, but GCS serves
-            # it with a 1h public cache — the query changes iff the PNG bytes change.
+            # Content-hash cache-buster: the path is reused per render, but the media
+            # host serves it cached — the query changes iff the PNG bytes change.
             ver = hashlib.md5(b64.encode("utf-8")).hexdigest()[:10]
             cards[i]["image_url"] = f"{url}?v={ver}"
 
