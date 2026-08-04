@@ -1,29 +1,56 @@
-"""Unified secrets bootstrap: Google Secret Manager + dotenv.
+"""Secret resolution for the pipelines tier: env var → env file → GSM fallback.
 
-Replaces both podcast/src/secrets_bootstrap.py (GSM-based) and
-knowledge-graph/utils/config.py (dotenv-based) with a single module.
+P6 (GCP decommission). Secrets now live in:
+  - an env file on the VPS — ``/root/tinboker/pipelines/.env``, injected by the
+    systemd units via ``EnvironmentFile=-/root/tinboker/pipelines/.env``;
+  - GitHub Actions repo secrets for anything CI/CD needs.
+
+Google Secret Manager is retained ONLY as a last-resort fallback so a deploy
+still works before the operator has migrated a value. Every resolution logs its
+source by NAME (never the value); once ``source=gsm`` stops appearing in
+``journalctl -u podcast-api``, delete ``_gsm_client`` / ``_load_from_gsm`` and
+the ``google-cloud-secret-manager`` dependency.
+
+Env file format — one ``KEY=value`` per line, ``#`` comments, no ``export``:
+
+    OPENROUTER_API_KEY=<value>
+    WIKI_DATABASE_URL=<value>
 
 Usage:
     from shared.secrets import bootstrap
-    bootstrap()  # loads GSM secrets + YAML constants + .env fallback
+    bootstrap()
 """
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 from typing import Iterable, Optional
 
+logger = logging.getLogger(__name__)
+
 _DEFAULT_PROJECT_ID = "gen-lang-client-0901363254"
+
+# Searched in order when no explicit env_path is given. cwd is the service dir
+# (e.g. services/podcast) under systemd/run_*.sh, so the pipelines-root .env —
+# the one the systemd units point EnvironmentFile at — must be reachable too.
+_ENV_FILE_CANDIDATES: tuple[Path, ...] = (
+    Path(".env"),
+    Path("../../.env"),
+)
+
 _loaded = False
 
 
-def _load_dotenv(env_path: Optional[Path] = None) -> None:
-    """Load .env file without overriding existing vars."""
+def _load_env_files(env_path: Optional[Path] = None) -> None:
+    """Load env file(s) into os.environ without overriding what is already set."""
     from dotenv import load_dotenv
-    path = env_path or Path(".env")
-    if path.exists():
-        load_dotenv(path, override=False)
+
+    for path in (env_path,) if env_path else _ENV_FILE_CANDIDATES:
+        if path.exists():
+            load_dotenv(path, override=False)
+            logger.info("secrets: loaded env file %s", path)
 
 
 def _load_yaml_constants(yaml_path: Path) -> None:
@@ -43,25 +70,46 @@ def _load_yaml_constants(yaml_path: Path) -> None:
             os.environ[key] = str(value)
 
 
-def _load_gsm_secrets(
-    names: Iterable[str],
-    *,
-    project_id: str,
-    required: bool = True,
-) -> None:
-    """Fetch each secret's latest version from GSM and set in os.environ."""
+def _gsm_client():  # pragma: no cover - exercised only on the legacy fallback path
+    """Construct the Secret Manager client. Patched out in tests to prove that a
+    fully-populated environment never reaches GSM."""
     from google.cloud import secretmanager
-    client = secretmanager.SecretManagerServiceClient()
+    return secretmanager.SecretManagerServiceClient()
+
+
+def _load_from_gsm(names: list[str], *, project_id: str, required: bool) -> None:
+    client = _gsm_client()
     for name in names:
-        if os.environ.get(name):
-            continue
         path = f"projects/{project_id}/secrets/{name}/versions/latest"
         try:
             response = client.access_secret_version(name=path)
             os.environ[name] = response.payload.data.decode("utf-8")
+            logger.warning("secrets: %s source=gsm (migrate it to the env file)", name)
         except Exception:
             if required:
                 raise
+            logger.info("secrets: %s unresolved (optional)", name)
+
+
+def _resolve(
+    names: Iterable[str],
+    *,
+    project_id: str,
+    from_file: set[str],
+    required: bool,
+) -> None:
+    """env var → env file → GSM. The GSM client is built only if something is
+    still missing after the first two."""
+    missing: list[str] = []
+    for name in names:
+        if os.environ.get(name):
+            logger.info(
+                "secrets: %s source=%s", name, "env-file" if name in from_file else "env"
+            )
+        else:
+            missing.append(name)
+    if missing:
+        _load_from_gsm(missing, project_id=project_id, required=required)
 
 
 def bootstrap(
@@ -83,15 +131,17 @@ def bootstrap(
     yaml_path: Optional[Path] = None,
     env_path: Optional[Path] = None,
 ) -> None:
-    """Idempotent bootstrap: dotenv -> YAML constants -> GSM secrets."""
+    """Idempotent bootstrap: env file → YAML constants → GSM fallback."""
     global _loaded
     if _loaded:
         return
-    _load_dotenv(env_path)
+    before = set(os.environ)
+    _load_env_files(env_path)
+    from_file = set(os.environ) - before
     if yaml_path:
         _load_yaml_constants(yaml_path)
-    _load_gsm_secrets(gsm_vars, project_id=project_id, required=True)
-    _load_gsm_secrets(optional_vars, project_id=project_id, required=False)
+    _resolve(gsm_vars, project_id=project_id, from_file=from_file, required=True)
+    _resolve(optional_vars, project_id=project_id, from_file=from_file, required=False)
     _loaded = True
 
 

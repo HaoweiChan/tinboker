@@ -778,6 +778,84 @@ pipeline steps + the regen MCP) and `backend/src/services/gcs_content.py`
 (`GCSContentService`) — both keep the historical class names, both write via
 temp-file + `os.replace` so Caddy never serves a half-written artifact.
 
-**Known leftover:** `backend/src/routers/content.py` still reads the separate
-`CONTENT_BUCKET` article store from GCS (it needs bucket *listing*, not just reads).
-That is out of P5 scope and must be ported before the buckets are deleted.
+**Leftover resolved:** `backend/src/routers/content.py` (the supply-chain article
+endpoints, the one reader that needed bucket *listing*) now globs
+`{MEDIA_STORAGE_ROOT}/graphfolio-articles/` directly and returns stable media URLs;
+`CONTENT_BUCKET` / `CONTENT_PREFIX` / `CONTENT_URL_TTL` are gone. No code path reads
+GCS any more — the buckets can be deleted.
+
+### 11.8 Secrets off Secret Manager (P6)
+
+**State after P6: no code path *reads* a secret from Google Secret Manager as its
+first choice.** Secrets resolve from the environment; GSM survives only as a
+fallback so a deploy still works before the operator has migrated a value.
+
+| Consumer | Order | Where the value lives now |
+|---|---|---|
+| GitHub Actions (`.github/workflows/*.yml`) | GH repo secret only — no fallback | Settings → Secrets and variables → Actions |
+| `pipelines/**` (`shared.secrets.bootstrap`) | env var → env file → GSM | `/root/tinboker/pipelines/.env`, injected by `EnvironmentFile=-` in every unit |
+| `backend/**` (`src/config_loader.py`) | init → env var → `.env` → GSM | `compose/backend/.env`, injected by docker compose |
+
+`grep -rn "secrets versions access" .github/` is empty. The workflow steps named
+"Load deploy secrets" / "Load build secrets" replace the old "Fetch secrets from
+GSM" steps and keep the `::add-mask::` calls; the `google-github-actions/auth` +
+`setup-gcloud` pairs that existed only to reach GSM are gone, along with the
+now-unused `GCP_PROJECT_ID` workflow env and `id-token: write` permissions.
+
+**GSM name → destination.** Names are unchanged, so an operator migration is a
+copy, not a rename.
+
+| GSM secret | GitHub Actions repo secret | VPS env file → var |
+|---|---|---|
+| `VPS_HOST` | `VPS_HOST` | — |
+| `VPS_USER` | `VPS_USER` | — |
+| `VPS_SSH_KEY` | `VPS_SSH_KEY` | — |
+| `GHCR_TOKEN` | `GHCR_TOKEN` | — |
+| `GCP_CREDENTIALS_JSON` | `GCP_CREDENTIALS_JSON` | written to the VPS by the deploy job |
+| `GOOGLE_CLIENT_ID` | `GOOGLE_CLIENT_ID` | — (build-time `VITE_GOOGLE_CLIENT_ID`) |
+| `TINBOKER_SOCIAL_TOKEN` | `TINBOKER_SOCIAL_TOKEN` | `compose/backend/.env` → `TINBOKER_SOCIAL_TOKEN` |
+| `POSTGRES_PASSWORD` | `POSTGRES_PASSWORD` | `compose/backend/.env` → `POSTGRES_PASSWORD` |
+| `CLOUDFLARE_API_TOKEN` | `CLOUDFLARE_API_TOKEN` *(already existed)* | `compose/backend/.env` |
+| `CLOUDFLARE_ZONE_TAG` | `CLOUDFLARE_ZONE_TAG` | `compose/backend/.env` |
+| `JWT_SECRET_KEY`, `ADMIN_EMAILS`, `DEV_BYPASS_TOKEN`, `INTERNAL_API_KEY`, `TINBOKER_WRITE_TOKEN`, `TINBOKER_ARTICLE_TOKEN`, `FINMIND_API_KEY(S)`, `FINMIND_HOURLY_CAP`, `MASSIVE_API_KEY(S)`, `PODCAST_API_KEY`, `GOOGLE_CLIENT_SECRET`, `THREADS_ACCESS_TOKEN`, `THREADS_USER_ID`, `FACEBOOK_PAGE_ID`, `FACEBOOK_PAGE_ACCESS_TOKEN`, `GSC_SITE_URL`, `POSTGRES_URL`, `REDIS_URL`, `REDIS_PASSWORD`, `GOOGLE_APPLICATION_CREDENTIALS` | — | `compose/backend/.env` (same var name) |
+| `PODCAST_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY`, `FIRESTORE_DATABASE_ID`, `GCP_CREDENTIALS_JSON`, `SPOTIFY_ID`, `SPOTIFY_SECRET`, `LANGSMITH_API_KEY`, `TAVILY_API_KEY`, `WIKI_DATABASE_URL`, `EPISODE_DATABASE_URL` | — | `/root/tinboker/pipelines/.env` (same var name) |
+
+The backend's authoritative list is `_GSM_FIELDS` in `backend/src/config_loader.py`
+(uppercase the field name to get the secret name); the pipelines' lists are
+`_GSM_VARS` / `_GSM_OPTIONAL` in
+`pipelines/services/podcast/src/secrets_bootstrap.py` and the `gsm_vars` /
+`optional_vars` defaults in `pipelines/libs/shared/src/shared/secrets.py`.
+
+**Env file format** — `KEY=value` per line, `#` comments, no `export`, no quoting
+needed. `EnvironmentFile=-` (leading dash) means "optional", so a unit still starts
+if the file is absent and the GSM fallback covers the gap.
+
+**What still pins the GCP service account.** `GOOGLE_APPLICATION_CREDENTIALS` and
+`gcp-service-account.json` are NOT removed:
+
+1. **~~The GCS article store~~ — resolved.** `backend/src/routers/content.py` now
+   reads local disk (§ 11.7 "Leftover resolved"); no runtime GCS reads remain.
+2. **The GSM fallback itself.** Both tiers still authenticate to Secret Manager for
+   any value the operator has not migrated.
+3. **`refresh-social-tokens.yml`** — the one remaining GSM *writer*. It adds a new
+   `THREADS_ACCESS_TOKEN` version weekly; a workflow cannot do that against GitHub
+   Actions secrets without a PAT + libsodium encryption, so it was left alone.
+   ⚠️ Once `THREADS_ACCESS_TOKEN` is served from `compose/backend/.env`, the value
+   this job writes no longer reaches the backend — copy it across by hand, or the
+   token lapses after 60 days.
+
+**Cleanup order** (each step only after the one above it is verified):
+
+1. Operator creates the GitHub Actions repo secrets in the table above, then merges
+   this branch — CI/CD stops touching GSM immediately.
+2. Operator fills `compose/backend/.env` and `/root/tinboker/pipelines/.env`; watch
+   for `source=gsm` in `docker logs backend-*` and `journalctl -u podcast-api` until
+   none remain.
+3. ~~Port the `CONTENT_BUCKET` article store off GCS~~ — done (§ 11.7).
+4. Close the Threads-token loop (deliver the refreshed token to the backend `.env`,
+   or drop the automated refresh), then delete `refresh-social-tokens.yml`.
+5. Delete `GCPSecretManagerSource` + `_GSM_FIELDS`, `_gsm_client` / `_load_from_gsm`
+   in `shared/secrets.py`, and the `google-cloud-secret-manager` dependency from
+   both tiers.
+6. Delete `GOOGLE_APPLICATION_CREDENTIALS`, the SA JSON files, the GSM secrets, and
+   finally the GCP project.

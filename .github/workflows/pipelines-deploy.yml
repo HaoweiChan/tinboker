@@ -8,30 +8,20 @@ on:
       - '.github/workflows/pipelines-deploy.yml'
   workflow_dispatch:
 
-env:
-  GCP_PROJECT_ID: gen-lang-client-0901363254
-
 jobs:
   deploy:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write
     steps:
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
-        with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
-
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
-
-      - name: Fetch secrets from GSM
+      # P6: secrets come from GitHub Actions repo secrets, not GSM. Same names as the
+      # old GSM secrets — see docs/firestore-contract.md §11.8 for the migration map.
+      - name: Load deploy secrets
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
         run: |
-          VPS_HOST=$(gcloud secrets versions access latest --secret=VPS_HOST --project=${{ env.GCP_PROJECT_ID }})
-          VPS_USER=$(gcloud secrets versions access latest --secret=VPS_USER --project=${{ env.GCP_PROJECT_ID }})
-          VPS_SSH_KEY=$(gcloud secrets versions access latest --secret=VPS_SSH_KEY --project=${{ env.GCP_PROJECT_ID }})
-
           echo "::add-mask::$VPS_HOST"
           echo "::add-mask::$VPS_USER"
           echo "::add-mask::$VPS_SSH_KEY"
@@ -114,7 +104,14 @@ jobs:
             ExecStart=/root/tinboker/pipelines/.venv/bin/uvicorn app:app --host 0.0.0.0 --port 8003
             Restart=always
             RestartSec=5
+            # P6: pipeline secrets come from this env file. Leading "-" = optional, so
+            # the unit still starts before the operator has created it and
+            # shared.secrets falls back to GSM. KEY=value per line — format documented
+            # in pipelines/libs/shared/src/shared/secrets.py. Listed FIRST so the
+            # pinned Environment= constants below still win.
+            EnvironmentFile=-/root/tinboker/pipelines/.env
             Environment=PORT=8003
+            # Still required: the article store reads GCS with this service account.
             Environment=GOOGLE_APPLICATION_CREDENTIALS=/root/tinboker/pipelines/services/podcast/gcp-service-account.json
             # content_builder LLM model — ONE switch var for every role (extractor,
             # writer, marp, ticker, key-insights). No per-role model names are pinned

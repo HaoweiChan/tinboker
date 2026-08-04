@@ -1,18 +1,21 @@
-"""Populate os.environ from Google Secret Manager + configs/default.yaml.
-
-Replaces the old `.env` + `python-dotenv` flow. Call `bootstrap()` once at
+"""Populate os.environ for the podcast service. Call `bootstrap()` once at
 process start (entry points) — it is idempotent.
 
-Auth: uses Application Default Credentials.
-  - Local dev:  `gcloud auth application-default login`
-  - VPS / CI:   `GOOGLE_APPLICATION_CREDENTIALS=/path/to/sa.json`
+Resolution order (P6 — GCP decommission): env var → env file → Google Secret
+Manager fallback. The resolver itself lives in ``shared.secrets``; this module
+only owns the podcast service's variable lists and its configs/default.yaml.
+
+On the VPS the values come from ``/root/tinboker/pipelines/.env``, which the
+systemd units inject via ``EnvironmentFile=-``. See ``shared/secrets.py`` for
+the file format and for how to retire the GSM fallback.
 """
 
 from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Iterable
+
+from shared.secrets import bootstrap as _bootstrap
 
 _PROJECT_ID = "gen-lang-client-0901363254"
 
@@ -38,60 +41,20 @@ _GSM_OPTIONAL: tuple[str, ...] = (
 
 _YAML_PATH = Path(__file__).resolve().parent.parent / "configs" / "default.yaml"
 
-_loaded = False
-
-
-def _load_yaml_constants() -> None:
-    """Push non-secret deployment constants from default.yaml into os.environ."""
-    import yaml  # local import: only needed at bootstrap time
-
-    with _YAML_PATH.open("r", encoding="utf-8") as f:
-        cfg = yaml.safe_load(f) or {}
-
-    gcp = cfg.get("gcp", {})
-    mapping = {
-        "GCP_PROJECT_ID": gcp.get("project_id"),
-        "GCS_BUCKET_NAME": gcp.get("gcs_bucket_name"),
-    }
-    for key, value in mapping.items():
-        if value is not None and not os.environ.get(key):
-            os.environ[key] = str(value)
-
-
-def _load_gsm_secrets(names: Iterable[str], *, required: bool = True) -> None:
-    """Fetch each secret's latest version and push into os.environ."""
-    missing = [n for n in names if not os.environ.get(n)]
-    if not missing:
-        return
-
-    from google.cloud import secretmanager
-
-    client = secretmanager.SecretManagerServiceClient()
-    for name in missing:
-        path = f"projects/{_PROJECT_ID}/secrets/{name}/versions/latest"
-        try:
-            response = client.access_secret_version(name=path)
-            os.environ[name] = response.payload.data.decode("utf-8")
-        except Exception:
-            if required:
-                raise
-            # Optional secrets silently skipped if missing in GSM.
-
 
 def bootstrap() -> None:
-    """Idempotent: load yaml constants and GSM secrets into os.environ."""
-    global _loaded
-    if _loaded:
-        return
-    _load_yaml_constants()
-    _load_gsm_secrets(_GSM_VARS, required=True)
-    _load_gsm_secrets(_GSM_OPTIONAL, required=False)
-    _loaded = True
+    """Idempotent: load env file, yaml constants, then GSM for anything missing."""
+    _bootstrap(
+        project_id=_PROJECT_ID,
+        gsm_vars=_GSM_VARS,
+        optional_vars=_GSM_OPTIONAL,
+        yaml_path=_YAML_PATH,
+    )
 
 
 if __name__ == "__main__":
     bootstrap()
-    print("Bootstrapped from GSM. Loaded keys (masked):")
+    print("Bootstrapped. Loaded keys (masked):")
     for k in (*_GSM_VARS, *_GSM_OPTIONAL, "GCP_PROJECT_ID", "GCS_BUCKET_NAME"):
         v = os.environ.get(k, "")
         if v:
