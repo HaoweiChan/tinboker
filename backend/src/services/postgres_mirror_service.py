@@ -148,9 +148,13 @@ def patch_episode_doc(episode_id: str, updates: Dict[str, Any]) -> bool:
         db.execute(
             text(
                 f"UPDATE {EPISODES} SET doc = CAST(:doc AS jsonb), "
-                # keep the promoted column consistent with the final doc
+                # Keep the promoted column consistent with the final doc. It is
+                # JSONB, not text[] — see the owning DDL in pipelines
+                # steps/postgres_episode.py (`related_tickers jsonb`), so extract
+                # the array as jsonb. An ARRAY(...) text[] here type-errors on
+                # every write.
                 "related_tickers = CASE WHEN CAST(:doc AS jsonb) ? 'related_tickers' "
-                "THEN ARRAY(SELECT jsonb_array_elements_text(CAST(:doc AS jsonb)->'related_tickers')) "
+                "THEN CAST(:doc AS jsonb)->'related_tickers' "
                 "ELSE NULL END "
                 "WHERE episode_id = :id"
             ),

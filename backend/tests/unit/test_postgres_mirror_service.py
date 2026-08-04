@@ -294,7 +294,15 @@ def test_patch_episode_doc_merges_and_drops_like_firestore(stub_session, monkeyp
     assert "SELECT doc FROM firestore_mirror.episodes WHERE episode_id = :id FOR UPDATE" in _sql(s, 0)
     sql, params = s.calls[1]
     assert "doc = CAST(:doc AS jsonb)" in sql
-    assert "jsonb_array_elements_text" in sql  # promoted related_tickers stays consistent
+    # The promoted related_tickers column is JSONB (pipelines steps/postgres_episode.py
+    # owns the DDL: `related_tickers jsonb`), so it must be assigned a plain jsonb
+    # extraction. Unit tests can't execute real SQL, so pin the shape: an
+    # ARRAY(SELECT jsonb_array_elements_text(...)) builds a text[] and type-errors
+    # against that column on EVERY backend episode write.
+    assert "related_tickers = CASE WHEN CAST(:doc AS jsonb) ? 'related_tickers' " \
+           "THEN CAST(:doc AS jsonb)->'related_tickers' ELSE NULL END" in " ".join(sql.split())
+    assert "ARRAY(" not in sql
+    assert "jsonb_array_elements_text" not in sql
     assert json.loads(params["doc"]) == {"summary_content": "new", "related_tickers": ["2330"]}
     assert params["id"] == "EP1"
     assert s.committed

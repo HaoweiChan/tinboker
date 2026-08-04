@@ -130,7 +130,13 @@ def _merge_onto_stored(incoming: dict, stored: dict) -> dict:
     4. An empty ``podcast_name`` never overwrites a stored one.
     """
     doc = {**stored, **incoming}
-    doc["created_time"] = stored.get("created_time") or incoming.get("created_time")
+    # Key presence, not truthiness: a stored created_time of None/"" must still
+    # win. Falling back to the incoming value would re-stamp it with ingestion
+    # now(), lifting the episode over the notification producer's high-water mark
+    # and re-firing "new episode" for the whole back-catalogue.
+    doc["created_time"] = (
+        stored["created_time"] if "created_time" in stored else incoming.get("created_time")
+    )
     for key in _PLATFORM_OWNED_KEYS:
         if not incoming.get(key) and stored.get(key) is not None:
             doc[key] = stored[key]
@@ -192,8 +198,14 @@ def persist_episode(
     if not doc.get("podcast_name") and podcast_name:
         doc["podcast_name"] = podcast_name
 
-    with psycopg.connect(url) as conn, conn.cursor() as cur:
+    # DDL first, on its OWN autocommit connection. CREATE INDEX IF NOT EXISTS takes
+    # a ShareLock held until commit, so running it inside the write transaction
+    # below would have it queue behind (and deadlock with) the backend's
+    # patch_episode_doc row lock and any concurrent persist.
+    with psycopg.connect(url, autocommit=True) as conn, conn.cursor() as cur:
         cur.execute(_DDL)
+
+    with psycopg.connect(url) as conn, conn.cursor() as cur:
         cur.execute(_SELECT_STORED, (episode_id,))
         stored = cur.fetchone()
         if stored:

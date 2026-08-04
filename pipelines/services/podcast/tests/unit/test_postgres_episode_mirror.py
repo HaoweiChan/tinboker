@@ -238,3 +238,43 @@ def test_merge_lets_a_real_regeneration_replace_platform_owned_lists():
 def test_merge_never_blanks_podcast_name():
     merged = _merge_onto_stored({"podcast_name": ""}, {"podcast_name": "股癌"})
     assert merged["podcast_name"] == "股癌"
+
+
+def test_merge_keeps_a_falsy_stored_created_time_by_key_presence():
+    """A stored created_time of None must NOT fall back to this run's value: that
+    re-stamps the episode with ingestion now(), lifting it over the notification
+    producer's high-water mark and re-firing 'new episode'."""
+    merged = _merge_onto_stored({"created_time": "2026-08-04T00:00:00Z"}, {"created_time": None})
+    assert merged["created_time"] is None
+
+
+def test_merge_takes_the_incoming_created_time_when_the_row_never_had_one():
+    merged = _merge_onto_stored({"created_time": "2026-08-04T00:00:00Z"}, {"episode_title": "EP1"})
+    assert merged["created_time"] == "2026-08-04T00:00:00Z"
+
+
+def test_ddl_runs_outside_the_write_transaction(monkeypatch):
+    """CREATE INDEX IF NOT EXISTS takes a ShareLock held to commit — inside the
+    SELECT ... FOR UPDATE transaction it deadlocks with the backend's
+    patch_episode_doc row lock, so it gets its own autocommit connection."""
+    _stub_episode_build(monkeypatch)
+    monkeypatch.setenv("EPISODE_DATABASE_URL", "postgresql://x/y")
+    conns: list[tuple[bool, _FakeCursor]] = []
+
+    def _connect(*a, **kw):
+        cur = _FakeCursor(stored=None)
+        conns.append((bool(kw.get("autocommit")), cur))
+        return _FakeConn(cur)
+
+    monkeypatch.setattr(psycopg, "connect", _connect)
+
+    persist_episode(_Config(), _Services(), _EpisodeData())
+
+    assert len(conns) == 2
+    (ddl_autocommit, ddl_cur), (write_autocommit, write_cur) = conns
+    assert ddl_autocommit is True
+    assert all("CREATE" in sql for sql, _ in ddl_cur.executed)
+    assert write_autocommit is False
+    assert not any("CREATE" in sql for sql, _ in write_cur.executed)
+    assert any("FOR UPDATE" in sql for sql, _ in write_cur.executed)
+    assert any("INSERT INTO" in sql for sql, _ in write_cur.executed)
