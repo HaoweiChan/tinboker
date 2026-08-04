@@ -45,13 +45,18 @@ CREATE TABLE IF NOT EXISTS "{_SCHEMA}".episodes (
     episode_number  integer,
     episode_title   text,
     created_time    timestamptz,
+    first_seen_at   timestamptz NOT NULL DEFAULT now(),
     num_likes       integer,
     number_click    integer,
     related_tickers jsonb,
     doc             jsonb NOT NULL
 );
+ALTER TABLE "{_SCHEMA}".episodes
+    ADD COLUMN IF NOT EXISTS first_seen_at timestamptz NOT NULL DEFAULT now();
 CREATE INDEX IF NOT EXISTS ix_fm_episodes_created
     ON "{_SCHEMA}".episodes (created_time DESC);
+CREATE INDEX IF NOT EXISTS ix_fm_episodes_first_seen
+    ON "{_SCHEMA}".episodes (first_seen_at);
 CREATE INDEX IF NOT EXISTS ix_fm_episodes_podcast
     ON "{_SCHEMA}".episodes (podcast_name);
 CREATE INDEX IF NOT EXISTS ix_fm_episodes_number
@@ -81,6 +86,11 @@ ON CONFLICT (episode_id) DO UPDATE SET
 # created_time is deliberately NOT in the DO UPDATE set — contract § 2.1: it's
 # immutable after first write. A re-ingest of an already-stored episode must
 # never advance it (the notification producer's high-water mark reads it).
+# first_seen_at is likewise never inserted nor updated here: the DB default
+# stamps it exactly once on the first insert, giving the backend notification
+# producer a monotonic ingestion-order key (contract § 6.3). A re-ingest must
+# never advance either. It is a COLUMN, not a doc field — `_merge_onto_stored`
+# and the doc build must stay unaware of it.
 # The `doc` column IS fully replaced, but `_merge_onto_stored` has already folded
 # the stored document into the incoming one by then, so nothing is lost.
 

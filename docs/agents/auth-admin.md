@@ -81,7 +81,7 @@ Two distinct auth surfaces plus a shared "logged-in user" experience:
 
 ### Notifications
 
-- `new_episode` notifications fire when a Firestore episode appears with a never-before-seen `created_time`. See [`../firestore-contract.md`](../firestore-contract.md) §6.3 — the contract requires the agents pipeline NOT to mutate `created_time` on regeneration, or notifications re-fire.
+- `new_episode` notifications fire when an episode row first appears in the Postgres mirror (`firestore_mirror.episodes.first_seen_at` high-water mark). See [`../firestore-contract.md`](../firestore-contract.md) §6.3 — `created_time` must still never be mutated on regeneration (feeds and sort order consume it).
 - `stock_mention` notifications fire when a new episode's `related_tickers` intersects the user's `watchlist`.
 
 ## Common pitfalls
