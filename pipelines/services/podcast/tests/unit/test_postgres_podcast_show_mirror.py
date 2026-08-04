@@ -1,8 +1,9 @@
-"""Unit tests for the ``firestore_mirror.podcasts`` dual-write (P2 review
-follow-up MUST-FIX #1): ``upsert_podcast_show`` (upload_to_firebase.py) writes
-Firestore only unless this also runs, and ``get_podcast_show``/
-``get_all_podcast_shows`` (read-flipped in P2) read the mirror — without the
-dual-write, a show add/edit never reaches the :8003 /shows endpoints.
+"""Unit tests for the ``firestore_mirror.podcasts`` show write.
+
+``upsert_podcast_show`` (upload_to_firebase.py) is the ONLY place a show
+add/edit is persisted since P4 dropped the Firestore half, and
+``get_podcast_show``/``get_all_podcast_shows`` read that table — so a dropped
+write means the :8003 /shows endpoints never see the change.
 
 Fake psycopg connection/cursor, same idiom as
 ``test_ticker_insights_export_step.py``.
@@ -11,7 +12,8 @@ Fake psycopg connection/cursor, same idiom as
 from __future__ import annotations
 
 import psycopg
-from src.service.upload_to_firebase import _mirror_podcast_show_to_postgres
+import pytest
+from src.service.upload_to_firebase import _write_podcast_show_to_postgres
 
 
 class _FakeCursor:
@@ -42,7 +44,7 @@ class _FakeConn:
         return False
 
 
-def test_skips_without_episode_database_url(monkeypatch):
+def test_raises_without_episode_database_url(monkeypatch):
     monkeypatch.delenv("EPISODE_DATABASE_URL", raising=False)
 
     def _must_not_connect(*a, **k):
@@ -50,7 +52,8 @@ def test_skips_without_episode_database_url(monkeypatch):
 
     monkeypatch.setattr(psycopg, "connect", _must_not_connect)
 
-    _mirror_podcast_show_to_postgres("Show_A", {"podcast_name": "Show A"})
+    with pytest.raises(RuntimeError, match="EPISODE_DATABASE_URL"):
+        _write_podcast_show_to_postgres("Show_A", {"podcast_name": "Show A"})
 
 
 def test_upserts_the_same_doc_dict_keyed_by_doc_id(monkeypatch):
@@ -59,7 +62,7 @@ def test_upserts_the_same_doc_dict_keyed_by_doc_id(monkeypatch):
     monkeypatch.setattr(psycopg, "connect", lambda *a, **k: _FakeConn(cur))
 
     metadata = {"podcast_name": "Gooaye 股癌", "thumbnail_url": "https://x/y.png"}
-    _mirror_podcast_show_to_postgres("Gooaye_股癌", metadata)
+    _write_podcast_show_to_postgres("Gooaye_股癌", metadata)
 
     assert any("CREATE TABLE" in sql for sql, _ in cur.executed)
     upserts = [params for sql, params in cur.executed if "INSERT INTO" in sql]
@@ -69,9 +72,8 @@ def test_upserts_the_same_doc_dict_keyed_by_doc_id(monkeypatch):
     assert doc.obj == metadata
 
 
-def test_write_failure_is_non_fatal(monkeypatch):
-    """Show metadata isn't dedup-critical (unlike the episode mirror) — a
-    failure here must not raise, only warn."""
+def test_write_failure_propagates(monkeypatch):
+    """Sole write since P4 — a swallowed failure would silently lose a show edit."""
     monkeypatch.setenv("EPISODE_DATABASE_URL", "postgresql://x/y")
 
     def _boom(*a, **k):
@@ -79,7 +81,8 @@ def test_write_failure_is_non_fatal(monkeypatch):
 
     monkeypatch.setattr(psycopg, "connect", _boom)
 
-    _mirror_podcast_show_to_postgres("Show_A", {"podcast_name": "Show A"})  # must not raise
+    with pytest.raises(RuntimeError, match="connection refused"):
+        _write_podcast_show_to_postgres("Show_A", {"podcast_name": "Show A"})
 
 
 def test_upsert_sql_merges_onto_existing_doc_on_conflict():

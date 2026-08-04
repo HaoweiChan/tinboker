@@ -18,11 +18,10 @@ from .steps import (
     generate_summary,
     ingest_into_wiki,
     initialize_stt_service,
-    mirror_episode_to_postgres,
+    persist_episode,
     render_social_cards,
     transcribe_episode,
     trigger_social_publish,
-    upload_to_firestore,
     upload_to_gcs,
     validate_episode,
 )
@@ -140,16 +139,13 @@ class EpisodeProcessor:
             if os.environ.get("SOCIAL_AUTOPUBLISH", "").strip().lower() in ("1", "true", "yes", "on"):
                 render_social_cards(self.config, self.services, episode_data)
 
-            # Step 5: Upload to Firestore
-            upload_to_firestore(self.config, self.services, episode_data)
+            # Step 5: Persist the episode doc into Postgres (the only content store)
+            persist_episode(self.config, self.services, episode_data)
 
             # Step 5b: Ingest into knowledge wiki (best-effort)
             ingest_into_wiki(self.config, self.services, episode_data)
 
-            # Step 5c: Mirror episode into Postgres (best-effort; no-op w/o EPISODE_DATABASE_URL)
-            mirror_episode_to_postgres(self.config, self.services, episode_data)
-
-            # Step 5d: Export ticker insights to Firestore subcollection per platform contract
+            # Step 5d: Export ticker insights per platform contract
             export_ticker_insights(self.config, self.services, episode_data)
 
             # Step 5e: Trigger the platform to fan the new episode out to Threads (best-effort)

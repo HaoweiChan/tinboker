@@ -140,39 +140,8 @@ def aggregate_trending(
     return out
 
 
-def fetch_all_insights(firestore_client: Any) -> list[dict[str, Any]]:
-    """Stream every doc in the ``ticker_insights`` collection group.
-
-    A collection-group query pulls every ``ticker_insights/{x}/tickers/{y}``
-    document in one pass. For ~5000 docs (the projected backfill size) this
-    runs comfortably under the 60s Firestore query budget.
-    """
-    group = firestore_client.collection_group("tickers")
-    return [snap.to_dict() for snap in group.stream()]
-
-
-def write_trending(
-    firestore_client: Any,
-    docs: dict[str, dict[str, Any]],
-) -> int:
-    """Replace each ``trending_tickers/{ticker}`` document. Returns the count.
-
-    Stale tickers (no longer in ``docs`` but present in Firestore) are NOT
-    deleted automatically — that's a separate housekeeping concern.
-    """
-    if not docs:
-        return 0
-    collection = firestore_client.collection("trending_tickers")
-    # Firestore batches cap at 500 operations.
-    batch_size = 400
-    pending = list(docs.items())
-    written = 0
-    while pending:
-        chunk = pending[:batch_size]
-        pending = pending[batch_size:]
-        batch = firestore_client.batch()
-        for ticker, doc in chunk:
-            batch.set(collection.document(ticker), doc)
-        batch.commit()
-        written += len(chunk)
-    return written
+# The Firestore reader (``fetch_all_insights``, collection-group stream) and
+# writer (``write_trending``, WriteBatch) that used to live here were deleted in
+# P4 — ``scripts/refresh_trending_tickers.py`` now reads
+# ``firestore_mirror.ticker_insights`` and writes
+# ``firestore_mirror.trending_tickers`` directly.
