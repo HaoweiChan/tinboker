@@ -376,13 +376,18 @@ class Settings(BaseSettings):
         1. Constructor arguments (init_settings)
         2. Environment variables (env_settings)
         3. .env file (dotenv_settings)
-        4. GCP Secret Manager (GCPSecretManagerSource)
+        4. GCP Secret Manager (GCPSecretManagerSource) — legacy P6 fallback
+
+        The GSM source is told up front which fields (2) and (3) already supply,
+        so it skips them entirely; when the environment is complete it never
+        constructs a Secret Manager client. See src/config_loader.py.
         """
+        resolved = set(dotenv_settings()) | set(env_settings())
         return (
             init_settings,
             env_settings,
             dotenv_settings,
-            GCPSecretManagerSource(settings_cls),
+            GCPSecretManagerSource(settings_cls, resolved=resolved),
         )
     
     @property
