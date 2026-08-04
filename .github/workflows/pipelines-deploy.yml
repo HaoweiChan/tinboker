@@ -104,7 +104,14 @@ jobs:
             ExecStart=/root/tinboker/pipelines/.venv/bin/uvicorn app:app --host 0.0.0.0 --port 8003
             Restart=always
             RestartSec=5
+            # P6: pipeline secrets come from this env file. Leading "-" = optional, so
+            # the unit still starts before the operator has created it and
+            # shared.secrets falls back to GSM. KEY=value per line — format documented
+            # in pipelines/libs/shared/src/shared/secrets.py. Listed FIRST so the
+            # pinned Environment= constants below still win.
+            EnvironmentFile=-/root/tinboker/pipelines/.env
             Environment=PORT=8003
+            # Still required: the article store reads GCS with this service account.
             Environment=GOOGLE_APPLICATION_CREDENTIALS=/root/tinboker/pipelines/services/podcast/gcp-service-account.json
             # content_builder LLM model — ONE switch var for every role (extractor,
             # writer, marp, ticker, key-insights). No per-role model names are pinned

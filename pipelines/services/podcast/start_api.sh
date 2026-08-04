@@ -35,8 +35,9 @@ done
 cd "$(dirname "$0")"
 source .venv/bin/activate
 
-# Secrets are pulled from Google Secret Manager at process start
-# (see src/secrets_bootstrap.py). Make sure ADC is configured:
+# Secrets resolve env var → env file (pipelines/.env) → Google Secret Manager
+# fallback at process start (see src/secrets_bootstrap.py). Only that last
+# fallback needs ADC:
 #   - Local:  gcloud auth application-default login
 #   - VPS:    export GOOGLE_APPLICATION_CREDENTIALS=/path/to/sa.json
 
