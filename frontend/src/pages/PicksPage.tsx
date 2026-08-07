@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Filter, ChevronDown, Search, Check } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
@@ -334,6 +335,11 @@ export const PicksPage: React.FC = () => {
           </div>
           </>
         )}
+
+        <p className="text-2xs text-muted-foreground/70 leading-relaxed mt-6">
+          本頁內容為播客觀點整理，僅供參考，並非投資建議；過去績效不代表未來表現。
+          <Link to="/disclaimer" className="text-accent-info hover:underline ml-1">完整免責聲明</Link>
+        </p>
       </PageContent>
     </>
   );

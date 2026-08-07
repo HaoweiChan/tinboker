@@ -499,6 +499,84 @@ class ScheduledSocialPost(Base):
         return f"<ScheduledSocialPost(id={self.id}, type='{self.post_type}', status='{self.status}', scheduled_for='{self.scheduled_for}')>"
 
 
+class ContentMention(Base):
+    """One ticker or sector mention extracted from a podcast episode (TKB-001).
+
+    Rows are derived by the mention-sync job from the pipeline-written
+    ticker_insights table (ticker mentions) and episode sector_exposures
+    (sector mentions). `mention_key` makes the upsert idempotent — nullable
+    ticker/exposure_id columns can't carry a Postgres unique constraint.
+    """
+
+    __tablename__ = "content_mentions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    mention_key = Column(String(500), nullable=False, unique=True)  # "{episode_id}:{mention_type}:{ticker|exposure_id}"
+    episode_id = Column(String(255), nullable=False, index=True)
+    source_type = Column(String(20), nullable=False, default="podcast")
+    podcaster = Column(String(255), nullable=True)
+    mention_type = Column(String(10), nullable=False, index=True)  # "ticker" | "sector"
+    ticker = Column(String(20), nullable=True, index=True)  # canonical symbol, ticker mentions only
+    exposure_id = Column(String(100), nullable=True, index=True)  # sector mentions only
+    display_name = Column(Text, nullable=True)
+    market = Column(String(10), nullable=True)  # "TW" | "US" | "KR" (ticker mentions)
+    mentioned_at = Column(DateTime, nullable=False, index=True)  # episode release time (UTC)
+    mention_start_s = Column(Float, nullable=True)  # offset within the episode, when available
+    confidence = Column(Float, nullable=False, default=1.0)
+    extraction_method = Column(String(50), nullable=False)  # "pipeline_llm" | "alias_match"
+    sentiment_label = Column(String(20), nullable=True)
+    thesis = Column(Text, nullable=True)
+    payload = Column(JSON, nullable=True)  # extras: resolved member tickers, mention_text, ...
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        Index("idx_mentions_ticker_date", "ticker", "mentioned_at"),
+        Index("idx_mentions_exposure_date", "exposure_id", "mentioned_at"),
+    )
+
+
+class TickerPerformanceSnapshot(Base):
+    """Post-mention returns for one ticker mention (TKB-001).
+
+    rNd = close on the Nth trading day after the baseline close (the last close
+    on/before the mention date), as a percent. A window stays NULL until it has
+    elapsed and the closes exist in stock_daily_closes; the sync job recomputes
+    until all windows fill.
+    """
+
+    __tablename__ = "ticker_performance_snapshots"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    mention_id = Column(Integer, ForeignKey("content_mentions.id", ondelete="CASCADE"), nullable=False, unique=True)
+    ticker = Column(String(20), nullable=False, index=True)
+    mention_date = Column(String(10), nullable=False)  # YYYY-MM-DD
+    baseline_close = Column(Float, nullable=True)
+    r1d = Column(Float, nullable=True)
+    r5d = Column(Float, nullable=True)
+    r20d = Column(Float, nullable=True)
+    r60d = Column(Float, nullable=True)
+    computed_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class SectorPerformanceSnapshot(Base):
+    """Post-mention returns for one sector mention: equal-weight average of the
+    exposure's resolved member tickers that have close data (TKB-001)."""
+
+    __tablename__ = "sector_performance_snapshots"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    mention_id = Column(Integer, ForeignKey("content_mentions.id", ondelete="CASCADE"), nullable=False, unique=True)
+    exposure_id = Column(String(100), nullable=False, index=True)
+    mention_date = Column(String(10), nullable=False)  # YYYY-MM-DD
+    member_count = Column(Integer, nullable=False, default=0)  # members with close data
+    r1d = Column(Float, nullable=True)
+    r5d = Column(Float, nullable=True)
+    r20d = Column(Float, nullable=True)
+    r60d = Column(Float, nullable=True)
+    computed_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class User(Base):
     """A registered member (was Firestore ``users/{user_id}``, P3 of the Firestore exit).
 

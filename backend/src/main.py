@@ -24,6 +24,7 @@ from src.routers.search import router as search_router, init_search_index
 from src.routers.analytics import router as analytics_router
 from src.routers.recommendations import router as recommendations_router
 from src.routers.ticker_insights import router as ticker_insights_router
+from src.routers.mentions import router as mentions_router
 from src.routers.translations import router as translations_router
 from src.routers.admin_translations import router as admin_translations_router
 from src.routers.sources import router as sources_router
@@ -195,6 +196,19 @@ async def lifespan(app: FastAPI):
             print(f"Warning: stock close refresher stopped: {e}")
 
     asyncio.create_task(_refresh_closes_bg())
+
+    # TKB-001: derive content_mentions from the pipeline-written ticker_insights
+    # table + episode sector_exposures, then compute post-mention 1/5/20/60
+    # trading-day returns from stock_daily_closes. Daily-batch cadence; must not
+    # block startup.
+    async def _mention_sync_bg():
+        try:
+            from src.services.mention_sync import run_periodic_mention_sync
+            await run_periodic_mention_sync(interval_hours=6.0)
+        except Exception as e:
+            print(f"Warning: mention sync stopped: {e}")
+
+    asyncio.create_task(_mention_sync_bg())
 
     # Whole-market TW daily OHLCV + 成交金額 from the official TWSE/TPEx OpenAPIs (2 free
     # calls/day) into Postgres, so /topics money-flow reads daily bars from the DB instead
@@ -403,6 +417,7 @@ app.include_router(user_router)
 app.include_router(search_router)
 app.include_router(recommendations_router)
 app.include_router(ticker_insights_router)
+app.include_router(mentions_router)
 app.include_router(analytics_router, prefix="/api/analytics", tags=["analytics"])
 app.include_router(translations_router)
 app.include_router(sources_router)
