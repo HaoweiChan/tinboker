@@ -85,6 +85,21 @@ def main() -> int:
         print(f"::error::failed to write new {SECRET} version: {e}")
         return 1
 
+    # Prune superseded versions (keep newest only) — each undestroyed version
+    # bills $0.06/mo forever, and this weekly cron was accumulating one per run.
+    try:
+        parent = f"projects/{PROJECT}/secrets/{SECRET}"
+        live = [
+            v for v in client.list_secret_versions(request={"parent": parent})
+            if v.state.name != "DESTROYED"
+        ]
+        live.sort(key=lambda v: int(v.name.rsplit("/", 1)[-1]), reverse=True)
+        for v in live[1:]:
+            client.destroy_secret_version(request={"name": v.name})
+            print(f"pruned old version {v.name.rsplit('/', 1)[-1]}")
+    except Exception as e:  # noqa: BLE001
+        print(f"::warning::version pruning failed (non-fatal): {e}")
+
     days = int(expires_in) // 86400 if expires_in else "?"
     print(f"✓ refreshed {SECRET} (expires_in={expires_in}s ≈ {days}d)")
     _set_output("changed", "true")
