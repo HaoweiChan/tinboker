@@ -69,7 +69,8 @@ Avoid first-version output such as: "buy", "sell", "target price", "guaranteed",
 
 ## External integrations
 
-- **Firestore** `graphfolio-db` — episodes, podcasts, comments, ticker_insights, trending_tickers, users, notifications. Via service account JSON. See [`../firestore-contract.md`](../firestore-contract.md).
+- **Firestore** `graphfolio-db` — episodes, podcasts, ticker_insights, trending_tickers, users, notifications. Via service account JSON. See [`../firestore-contract.md`](../firestore-contract.md).
+- **SQLite** `data/tinboker.db` — comments, in every environment. `comment_db.py` goes through `db.get_connection()`, which is `sqlite3.connect()` unconditionally ([`db.py:19`](../../backend/src/database/db.py:19)) — comments never touch Firestore or Postgres.
 - **GCS bucket** `graphfolio-articles` — large markdown files, transcripts, Marp slides. URLs stored on episode docs as `*_url` (gs://) and `*_public_url` (HTTPS).
 - **Spotify** — episode embed URLs, cover art images (`spotify_images[]`, smallest-first). No write integration; the agents pipeline ingests Spotify metadata upstream.
 - **PostgreSQL** `podcast_db` — read-only, used by the legacy recommendation router only. Will be retired once the ticker_insights migration completes (see firestore-contract.md § 7).

@@ -375,7 +375,11 @@ bash deploy/setup-systemd.sh
 
 ## Part 5 — Database
 
-### SQLite (default for dev/staging)
+### SQLite (local dev only)
+
+All three deployed environments set `USE_POSTGRES: "true"` in
+`docker-compose.multi.yml`, so SQLite is only the fallback when you run the backend
+locally without that flag (production forces it on regardless — `src/config.py:178`).
 
 Auto-created at startup. No manual steps required. The app calls `init_db()` via the
 FastAPI lifespan event in `src/main.py`. Tables are created with `CREATE TABLE IF NOT
@@ -383,28 +387,35 @@ EXISTS`, so re-running is safe.
 
 Default path: `/app/backend/data/graphfolio.db` (inside the container).
 
-> **Important:** `docker-compose.multi.yml` does not mount a volume for SQLite. Data is
-> lost on container rebuild. For persistence, add a volume mount:
-> ```yaml
-> volumes:
->   - ./data:/app/data
-> ```
+### PostgreSQL — the `postgres` service (shared by all three envs)
 
-### PostgreSQL — `podcast_db` (recommendations, read-only from backend)
-
-The backend reads recommendation data from an external PostgreSQL instance managed by
-a separate Docker Compose stack (`docker-db`). The backend connects using:
+Since commit `272f947` (2026-05-27) Postgres is a service in this repo's own compose
+file — `backend/docker-compose.multi.yml:186-206`. The legacy external `docker-db`
+stack is gone; any doc or error message referring to host `docker-db_postgres-1` is
+describing the pre-May-2026 topology.
 
 ```
-Host:     docker-db_postgres-1   (Docker internal DNS)
-Port:     5432
-DB:       podcast_db
-User:     podcast_user
-Password: stored in GCP Secret Manager as POSTGRES_PASSWORD
+Image:      postgres:16-alpine
+Container:  tinboker-postgres
+Published:  127.0.0.1:5432  (loopback only — host processes can reach it, the internet cannot)
+Volume:     postgres-data
+Network:    app_default (external)
 ```
 
-This database is managed by the podcast pipeline, not by this repo. The backend is
-read-only. No migrations to run here.
+Two consumers, two logical databases on the same server:
+
+| Consumer | Reaches it via | Database | Credentials |
+|---|---|---|---|
+| Backend containers (prod/dev/staging) | `POSTGRES_HOST=postgres` (Docker DNS on `app_default`), port 5432 | `podcast_db` | user `podcast_user`, `POSTGRES_PASSWORD` from `compose/backend/.env` (GSM fallback) |
+| Pipelines (systemd units on the VPS host, not in Docker) | `127.0.0.1:5432` (published port) | `tinboker_wiki` | `WIKI_DATABASE_URL` from `/root/tinboker/pipelines/.env` (GSM fallback) |
+
+`podcast_db` and `podcast_user` are created by the container's entrypoint from
+`POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD` (the last read from `backend/.env`
+— compose fails fast if it is unset). The pipelines' `tinboker_wiki` database is created
+separately; schema in [`pipelines/docs/wiki-schema.md`](../pipelines/docs/wiki-schema.md).
+
+All three backends depend on `postgres: condition: service_healthy`, so they will not
+start until `pg_isready -U podcast_user -d podcast_db` passes.
 
 ### Firestore — `graphfolio-db`
 
@@ -425,7 +436,7 @@ there falls back to GCP Secret Manager at runtime via `src/config_loader.py`, wh
 | Variable | Value | Notes |
 |---|---|---|
 | `ENVIRONMENT` | `production` / `development` / `staging` | Controls DB enforcement, logging |
-| `PORT` | `5174` | Local dev server port |
+| `PORT` | `8000` in containers, `5174` locally | Container port; Caddy/compose maps it to 8000/8001/8002 per env |
 | `USE_POSTGRES` | `true` | Forces PostgreSQL; production auto-enables this |
 | `SQL_ECHO` | `false` (default) | Echoes every SQL statement to stdout. Debugging only — turn it back off. Containers have no log rotation, and this wrote ~1.5 GB/day when left on in dev |
 | `REDIS_URL` | `redis://redis:6379/0` | Docker internal network |
@@ -434,10 +445,12 @@ there falls back to GCP Secret Manager at runtime via `src/config_loader.py`, wh
 | `MASSIVE_API_KEY` | `compose/backend/.env` (GSM fallback) | US stocks market data |
 | `FINMIND_API_KEY` | `compose/backend/.env` (GSM fallback) | TW stocks market data |
 | `JWT_SECRET_KEY` | `compose/backend/.env` (GSM fallback) | Signing key for user auth tokens |
-| `POSTGRES_HOST` | `docker-db_postgres-1` | External Docker network |
-| `POSTGRES_DB` | `podcast_db` | Recommendation data |
+| `POSTGRES_HOST` | `postgres` | The `postgres` service on the `app_default` Docker network (see Part 5) |
+| `POSTGRES_PORT` | `5432` | |
+| `POSTGRES_DB` | `podcast_db` | Backend's logical DB — content mirror + recommendations |
 | `POSTGRES_USER` | `podcast_user` | |
-| `POSTGRES_PASSWORD` | `compose/backend/.env` (GSM fallback) | |
+| `POSTGRES_PASSWORD` | `compose/backend/.env` (GSM fallback) | Also read by compose to seed the `postgres` container |
+| `WIKI_DATABASE_URL` | `/root/tinboker/pipelines/.env` (GSM fallback) | Pipelines only (host systemd, not Docker) — points at `127.0.0.1:5432/tinboker_wiki` |
 | `FIRESTORE_DATABASE_ID` | `graphfolio-db` | Named Firestore instance |
 | `CORS_ORIGINS` | `["https://tinboker.com",...]` | Set per environment in compose file |
 | `RELEASE_PODCAST_LANGUAGES` | `zh-TW` | Release scoping (launch subset) — only show `content_sources` podcasts in these languages ("" = all) |
