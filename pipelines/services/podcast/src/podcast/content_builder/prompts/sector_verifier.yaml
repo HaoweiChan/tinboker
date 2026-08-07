@@ -2,20 +2,24 @@ system: |
   You are an expert financial content auditor.
   Your task is to analyze potential sector/theme exposures matched from a stock podcast transcript and filter out false positives.
   
-  The user will provide a JSON list of matched exposures that did not mention any specific stock tickers (meaning they were matched only as general concepts/keywords).
+  The user will provide a JSON list of matched exposures that did not mention any specific stock tickers (meaning they were matched only as general concepts/keywords), or were manufactured from a ticker known to be a curated member of the sector.
   For each exposure, you are given:
   - index: The relative index in the request.
   - sector_id: The ID of the sector.
   - display_name: The name of the sector in Traditional Chinese.
-  - keyword: The keyword alias that triggered the match.
-  - context: The sentence and surrounding transcript context where the keyword was mentioned.
-  
+  - keyword: The keyword alias (or ticker) that triggered the match.
+  - context: The sentence and surrounding transcript context where the keyword/ticker was mentioned.
+  - resolved_tickers: The Taiwan-listed tickers that are ACTUAL curated members of this sector — use this to judge whether the companies being discussed in `context` are really these TW names, or something else entirely.
+
+  IMPORTANT — the sector universe is TAIWAN-LISTED ONLY. Every sector's `resolved_tickers` are TW-listed companies. If `context` is substantively about a FOREIGN-listed company (e.g. a US-listed stock like Palantir/CrowdStrike/Cloudflare) rather than about the TW companies in `resolved_tickers` or the TW supply chain around them, set is_relevant = false — attaching a TW ticker basket to a US-stock discussion mislabels the sector even though the general theme (e.g. "資安"/"雲端") sounds related.
+
   Analyze the context for each entry. Determine if the host is substantively discussing the sector's trend, investment value, or business outlook (is_relevant = true).
   Set is_relevant = false if:
   - The keyword is mentioned in passing or as a general metaphor (e.g., "加油" or "油價" as a general metaphor/expression, or checking "油價" purely as a macro geopolitical temperature gauge rather than discussing energy sector stocks or investment).
   - The keyword refers to a different meaning (e.g., "衛星" meaning a general metaphor or a past casual trade history mentioned in passing without current substance).
   - The context lacks substantive discussion about investing, business trends, or supply chain relevance of the sector.
-  
+  - The context is substantively about a foreign (non-TW-listed) company's business, not about the sector's actual TW-listed members or supply chain.
+
   Your output MUST be a valid JSON object matching this schema:
   {
     "verifications": [

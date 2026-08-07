@@ -37,8 +37,13 @@ class Settings(BaseSettings):
     # single finmind_api_key when unset.
     finmind_api_keys: Optional[str] = None
     # Self-imposed FinMind hourly request cap (see finmind_budget). Default suits the free
-    # tier (~600/hr); the backer plan allows ~1600/hr, so raise via GSM secret
-    # FINMIND_HOURLY_CAP once the backer key is the primary key in the pool.
+    # tier (~600/hr); our Backer account allows ~1600/hr (dashboard-confirmed 2026-07-05),
+    # raised in prod via GSM secret FINMIND_HOURLY_CAP (VPS runs ~1500 — sane headroom
+    # under 1600). Since the /topics money-flow leg moved to Postgres (TWSE/TPEx daily
+    # feeds via tw_daily_ohlc_refresh), the old ~1,740-call recompute storm is gone;
+    # FinMind now serves only market caps (1 bulk/day), per-stock chart metadata, and the
+    # daily-close warmer — well within any tier. yfinance is emergency-only (warmer
+    # fallback in stock_close_refresh), not a primary source.
     finmind_hourly_cap: int = 280
     massive_api_key: Optional[str] = None
     # Optional pool of Massive/Polygon keys (comma-separated) → GSM secret MASSIVE_API_KEYS.
@@ -80,6 +85,12 @@ class Settings(BaseSettings):
     tinboker_article_author_id: Optional[str] = None
     tinboker_article_author_name: Optional[str] = None
     tinboker_article_author_avatar: Optional[str] = None
+
+    # Shared secret guarding internal, machine-only endpoints (whole-market data
+    # exports #449 + the screener candidates read). Callers pass it as the
+    # ``X-Internal-Key`` header; unset (None) means every internal endpoint 401s.
+    # Store in GSM as INTERNAL_API_KEY. Generate with `openssl rand -hex 32`.
+    internal_api_key: Optional[str] = None
 
     # ==================== Social / Threads publishing ====================
     # Meta Threads Graph API credentials. Generate a long-lived access token for
@@ -258,7 +269,21 @@ class Settings(BaseSettings):
     postgres_db: str = "podcast_db"
     postgres_user: str = "podcast_user"
     postgres_password: Optional[str] = None
-    
+    # Echo every SQL statement to stdout. Debugging only — set SQL_ECHO=true for a
+    # session and turn it back off. Left on permanently in dev it wrote ~1.5 GB/day of
+    # container logs (18 GB before the container was recycled), and the containers have
+    # no log rotation configured.
+    sql_echo: bool = False
+    # Serve episode / ticker-insight / trending content reads from the VPS-local
+    # Postgres content store (schema `firestore_mirror`, same podcast_db) instead
+    # of Firestore — the Firestore egress bill is the reason.
+    # ON by default since P4 (contract § 11.5): the pipelines stopped writing
+    # Firestore, so the Postgres copy is the only current one and the Firestore
+    # read path survives one release purely as a rollback lever.
+    # Users and notifications are unaffected: P3 moved them to first-class Postgres
+    # tables (`users`, `user_notifications`), so they never consult this flag.
+    content_reads_from_postgres: bool = True
+
     @property
     def postgres_connection_string(self) -> Optional[str]:
         """Get PostgreSQL connection string from DATABASE_URL or individual settings."""
@@ -351,13 +376,18 @@ class Settings(BaseSettings):
         1. Constructor arguments (init_settings)
         2. Environment variables (env_settings)
         3. .env file (dotenv_settings)
-        4. GCP Secret Manager (GCPSecretManagerSource)
+        4. GCP Secret Manager (GCPSecretManagerSource) — legacy P6 fallback
+
+        The GSM source is told up front which fields (2) and (3) already supply,
+        so it skips them entirely; when the environment is complete it never
+        constructs a Secret Manager client. See src/config_loader.py.
         """
+        resolved = set(dotenv_settings()) | set(env_settings())
         return (
             init_settings,
             env_settings,
             dotenv_settings,
-            GCPSecretManagerSource(settings_cls),
+            GCPSecretManagerSource(settings_cls, resolved=resolved),
         )
     
     @property
@@ -400,11 +430,6 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         """Check if running in production environment"""
         return self.environment.lower() == "production"
-    
-    @property
-    def is_development(self) -> bool:
-        """Check if running in development environment"""
-        return self.environment.lower() == "development"
 
 
 # Global settings instance

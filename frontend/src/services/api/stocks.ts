@@ -1,14 +1,22 @@
 import { apiClient } from './client';
 import type { CompanyDetail, TimeframeOption } from '../types';
-import { CompanyDetailSchema, parseResponse } from '../../validation/schemas';
+import {
+  CompanyDetailSchema,
+  SectorsByTickerResponseSchema,
+  parseResponse,
+  type SectorsByTickerResponse,
+} from '../../validation/schemas';
 
+function isNumberArray(value: unknown): value is number[] {
+  return Array.isArray(value) && value.every((item): item is number => typeof item === 'number');
+}
 
 export async function getSortedStocks(options?: {
   sortBy?: string;
   q?: string;
   limit?: number;
-}): Promise<any[]> {
-  const params: Record<string, any> = {};
+}): Promise<unknown[]> {
+  const params: Record<string, string | number> = {};
   if (options?.sortBy) params.sort_by = options.sortBy;
   if (options?.q) params.q = options.q;
   if (options?.limit) params.limit = options.limit;
@@ -21,10 +29,10 @@ export async function getStockByTicker(
   timeframe?: TimeframeOption,
   options?: { silent?: boolean; before?: number }
 ): Promise<CompanyDetail> {
-  const params: Record<string, any> = {};
+  const params: Record<string, string | number> = {};
   if (timeframe) params.timeframe = timeframe;
   if (options?.before) params.before = options.before;
-  const config: any = { params };
+  const config: { params: Record<string, string | number>; headers?: Record<string, string> } = { params };
   if (options?.silent) {
     config.headers = { 'X-Silent-Error': 'true' };
   }
@@ -51,7 +59,7 @@ export async function getStockByTicker(
   return validated;
 }
 
-export async function getStockBasicInfo(ticker: string): Promise<any> {
+export async function getStockBasicInfo(ticker: string): Promise<unknown> {
   const response = await apiClient.get(`/api/stocks/${ticker}/basic`);
   return response.data;
 }
@@ -75,14 +83,27 @@ export async function getStockHistory(
   ticker: string,
   timeframe?: TimeframeOption
 ): Promise<{ data: number[] }> {
-  const params: Record<string, any> = {};
+  const params: Record<string, string> = {};
   if (timeframe) params.timeframe = timeframe;
   const response = await apiClient.get(`/api/stocks/${ticker}/history`, { params });
-  if (Array.isArray(response.data)) {
-    return { data: response.data };
+  const payload: unknown = response.data;
+  if (isNumberArray(payload)) {
+    return { data: payload };
   }
-  if (response.data?.data && Array.isArray(response.data.data)) {
-    return { data: response.data.data };
+  if (
+    typeof payload === 'object'
+    && payload !== null
+    && 'data' in payload
+    && isNumberArray(payload.data)
+  ) {
+    return { data: payload.data };
   }
   return { data: [] };
+}
+
+export async function getSectorsByTicker(ticker: string): Promise<SectorsByTickerResponse> {
+  const response = await apiClient.get(`/api/sectors/by-ticker/${encodeURIComponent(ticker)}`, {
+    headers: { 'X-Silent-Error': 'true' },
+  });
+  return parseResponse(SectorsByTickerResponseSchema, response.data);
 }

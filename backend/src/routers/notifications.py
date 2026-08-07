@@ -1,6 +1,8 @@
 """
 Notification routes for user notifications
 """
+import asyncio
+
 from pydantic import BaseModel
 from fastapi import APIRouter, HTTPException, Depends, Query
 from src.models.user import UserResponse
@@ -73,7 +75,7 @@ async def get_unread_notification_count(
     user: UserResponse = Depends(get_current_user)
 ):
     """Get count of unread notifications"""
-    count = get_unread_count(user.id)
+    count = await asyncio.to_thread(get_unread_count, user.id)
     return {"unread_count": count}
 
 

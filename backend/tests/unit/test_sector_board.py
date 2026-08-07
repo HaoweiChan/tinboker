@@ -474,6 +474,15 @@ async def test_ticker_implied_heat_and_parent_aggregation():
         patch.object(svc, "_allowed_podcast_names", new=AsyncMock(return_value=None)),
         patch.object(PodcastService, "_sector_membership_index", return_value=_HEAT_INDEX),
         patch("src.services.stock_close_refresh.get_eod_change_pct", side_effect=_fake_eod),
+        # Freeze the decay clock to the docs' release time. The board decays heat against
+        # wall-clock now (0.5^(age/7)), while these docs are pinned to a fixed NOW_MS — so
+        # with a live clock the heat shrinks a little more every day and the components,
+        # which the board rounds to 3 dp, lose precision RELATIVE to their own magnitude.
+        # At ~25 days out that rounding error crossed the 2% rel tolerance below and the
+        # test began flapping purely on what time CI happened to run (industry bucket:
+        # 1.2% at 15:35Z → 2.4% at 17:37Z). Frozen, age=0 → weight=1.0 and every figure
+        # here is exact, so this asserts the blend formula rather than the calendar.
+        patch("time.time", return_value=NOW_MS / 1000),
         _patch_get_session(),
     ):
         result = await svc.sector_board()
@@ -498,6 +507,76 @@ async def test_ticker_implied_heat_and_parent_aggregation():
         ind["ticker_heat"] / (ind["attr_size"] ** 0.5), rel=0.02)
     # same raw weight, but the theme (size 4) normalises lighter than the industry (size 16)
     assert hbm["heat"] > ind["heat"]
+
+
+@pytest.mark.asyncio
+async def test_board_members_follow_live_registry_roster_without_episode_backfill():
+    """A fresh board compute reads displayed members from the registry index, so a
+    registry roster edit is visible even when episode snapshots are unchanged."""
+    exposures = [
+        {
+            "exposure_id": "sector_live",
+            "exposure_type": "theme",
+            "display_name": "Live Sector",
+            "resolved_tickers": [
+                {"ticker": "OLD", "name": "Old Snapshot", "market": "US", "source": "curated"},
+            ],
+        }
+    ]
+    docs = [_doc("ep-001", exposures=exposures)]
+    svc, _ = _make_svc(docs)
+
+    base_index = {
+        "ticker_to_sectors": {},
+        "attr_size": {"sector_live": 2},
+        "meta": {
+            "sector_live": {"display_name": "Live Sector", "exposure_type": "theme"},
+        },
+        "ticker_name": {"NEW1": "New One", "NEW2": "New Two", "NEW3": "New Three"},
+        "members": {
+            "sector_live": [
+                {"ticker": "NEW1", "name": "New One"},
+                {"ticker": "NEW2", "name": "New Two"},
+            ],
+        },
+    }
+    changed_index = {
+        **base_index,
+        "attr_size": {"sector_live": 2},
+        "members": {
+            "sector_live": [
+                {"ticker": "NEW1", "name": "New One"},
+                {"ticker": "NEW3", "name": "New Three"},
+            ],
+        },
+    }
+
+    async def _fake_eod(ticker: str):
+        return {"NEW1": 1.0, "NEW2": 2.0, "NEW3": 3.0, "OLD": 9.0}.get(ticker)
+
+    with (
+        patch("src.services.podcast.cache_get", new=AsyncMock(return_value=None)),
+        patch("src.services.podcast.cache_set", new=AsyncMock()),
+        patch.object(svc, "_allowed_podcast_names", new=AsyncMock(return_value=None)),
+        patch.object(PodcastService, "_sector_membership_index", return_value=base_index),
+        patch("src.services.stock_close_refresh.get_eod_change_pct", side_effect=_fake_eod),
+        _patch_get_session(),
+    ):
+        first = await svc.sector_board()
+
+    with (
+        patch("src.services.podcast.cache_get", new=AsyncMock(return_value=None)),
+        patch("src.services.podcast.cache_set", new=AsyncMock()),
+        patch.object(svc, "_allowed_podcast_names", new=AsyncMock(return_value=None)),
+        patch.object(PodcastService, "_sector_membership_index", return_value=changed_index),
+        patch("src.services.stock_close_refresh.get_eod_change_pct", side_effect=_fake_eod),
+        _patch_get_session(),
+    ):
+        second = await svc.sector_board()
+
+    assert [m["ticker"] for m in first[0]["members"]] == ["NEW2", "NEW1"]
+    assert [m["ticker"] for m in second[0]["members"]] == ["NEW3", "NEW1"]
+    assert "OLD" not in {m["ticker"] for m in second[0]["members"]}
 
 
 @pytest.mark.asyncio

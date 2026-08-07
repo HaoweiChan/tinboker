@@ -1,5 +1,14 @@
 #!/usr/bin/env python3
-"""Regenerate a published episode's summary with the segment-aware pipeline,
+"""!! TARGETS THE DECOMMISSIONED FIRESTORE STORE — DO NOT RUN !!
+
+Kept for reference only. Since P4 (docs/firestore-contract.md § 11.5) nothing
+reads Firestore, so anything this writes lands in a store no surface consults.
+To repair ticker insights use ``backfill_ticker_insights.py`` (ported to
+``firestore_mirror.ticker_insights``); for episode-doc fixes write
+``firestore_mirror.episodes`` via ``FirebaseService.update_episode_fields``.
+Deletion is a cleanup-phase task.
+
+Regenerate a published episode's summary with the segment-aware pipeline,
 sourcing the sentence-level transcript from GCS ``transcript_url`` (not from an
 inline Firestore field — published episodes don't have one).
 

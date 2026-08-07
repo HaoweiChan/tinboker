@@ -6,6 +6,7 @@ fan the new episode out to Threads. It is idempotent and dry-run by default.
 """
 
 import logging
+import mimetypes
 import uuid
 from datetime import datetime
 from typing import List, Optional, Any
@@ -20,7 +21,7 @@ from src.config import settings
 from src.database.models import PromoDraft, ScheduledSocialPost
 from src.database.postgres import get_session
 from src.services import facebook_publisher, promo_publisher, threads_publisher
-from src.services.gcs_content import GCSContentService
+from src.services.gcs_content import GCSContentService, media_url
 from src.services.podcast import PodcastService
 from src.services.facebook_insights_service import FacebookInsightsService
 from src.services.threads_insights_service import ThreadsInsightsService
@@ -357,15 +358,15 @@ def _marp_size(marp_markdown: str) -> str:
 
 # ── Free-form promo posts (operator-authored text + media → Threads/Facebook) ──────
 # Distinct from the episode flow above: no LLM, no idempotency. The operator writes
-# everything; media is uploaded here, stored private in GCS, and handed to Meta as a
-# short-lived signed URL at publish time.
+# everything; media is written to the VPS media store here and handed to Meta as a
+# public URL at publish time (P5: GCS is gone, so is signing).
 promo_router = APIRouter(prefix="/api/admin/promo", tags=["admin", "social"])
 
 
 class PromoMedia(BaseModel):
     type: str = Field(..., description="'image' or 'video'")
-    url: Optional[str] = Field(None, description="Signed URL Meta can fetch (publish); re-signed on draft load")
-    path: Optional[str] = Field(None, description="Durable gs:// location (persisted in drafts)")
+    url: Optional[str] = Field(None, description="Public URL Meta can fetch (publish); resolved on draft load")
+    path: Optional[str] = Field(None, description="Durable media location (persisted in drafts)")
     filename: Optional[str] = None
 
 
@@ -377,18 +378,42 @@ class PromoPublishBody(BaseModel):
     dry_run: bool = Field(True, description="Plan only; do not post (default)")
 
 
+# guess_extension picks ugly-but-valid aliases for these; pin the conventional ones.
+_CTYPE_EXT = {"image/jpeg": ".jpg", "video/mp4": ".mp4", "video/quicktime": ".mov"}
+
+# Active content served from the media origin would be stored XSS — Caddy sets
+# Content-Type from the extension, so an .html or .svg lands as a scriptable
+# document on podcast-api.tinboker.com. SVG passes the image/* check, so reject it
+# by name rather than relying on the image/ prefix.
+_BLOCKED_CTYPES = {"image/svg+xml", "image/svg"}
+
+
+def _safe_extension(ctype: str) -> str:
+    """File extension derived from the *validated* content type.
+
+    The client filename is never consulted: it is attacker-controlled, and the
+    extension is what decides how the media origin serves the bytes back.
+    """
+    if ctype in _BLOCKED_CTYPES:
+        raise HTTPException(status_code=415, detail=f"Unsupported media type: {ctype}")
+    ext = _CTYPE_EXT.get(ctype) or mimetypes.guess_extension(ctype)
+    if not ext or ext in (".html", ".htm", ".svg", ".xml"):
+        raise HTTPException(status_code=415, detail=f"Unsupported media type: {ctype}")
+    return ext
+
+
 @promo_router.post("/media")
 async def upload_promo_media(
     file: UploadFile = File(...),
     _: AdminAccess = Depends(get_admin_access),
 ):
-    """Upload one image/video for a promo post; returns its type + a signed URL.
+    """Upload one image/video for a promo post; returns its type + its public URL.
 
-    The signed URL is valid for 12h — long enough to compose and publish in one
-    session. ``ponytail: 12h window; regenerate from the gs:// path if drafts ever
-    need to outlive that.``
+    ponytail: the media store is served publicly, so the URL never expires and
+    ``path``/``url`` are the same string — kept as two fields so stored drafts and
+    the composer need no migration.
     """
-    ctype = (file.content_type or "").lower()
+    ctype = (file.content_type or "").lower().split(";", 1)[0].strip()
     if ctype.startswith("image/"):
         mtype = "image"
     elif ctype.startswith("video/"):
@@ -403,20 +428,16 @@ async def upload_promo_media(
         raise HTTPException(status_code=413, detail="File too large (max 200 MB)")
 
     name = file.filename or ""
-    ext = name.rsplit(".", 1)[-1].lower() if "." in name else (ctype.split("/", 1)[-1] or mtype)
+    ext = _safe_extension(ctype)
     bucket = settings.promo_media_bucket
-    blob_path = f"promo-media/{uuid.uuid4().hex}.{ext}"
-    gs_url = f"gs://{bucket}/{blob_path}"
+    blob_path = f"promo-media/{uuid.uuid4().hex}{ext}"
     try:
         await _gcs.upload_bytes(bucket, blob_path, data, ctype)
-        url = await _gcs.generate_signed_url(gs_url, expiration_hours=12)
-    except Exception as e:  # noqa: BLE001 — surface any GCS failure as a 502
+    except Exception as e:  # noqa: BLE001 — surface any storage failure as a 502
         logger.exception("promo media upload failed")
         raise HTTPException(status_code=502, detail=f"Upload failed: {e}")
-    if not url:
-        raise HTTPException(status_code=502, detail="Could not sign media URL (SA key unavailable)")
-    # ``path`` (the gs:// location) is what drafts persist — the signed ``url`` expires.
-    return {"type": mtype, "url": url, "path": gs_url, "filename": name}
+    url = media_url(bucket, blob_path)
+    return {"type": mtype, "url": url, "path": url, "filename": name}
 
 
 @promo_router.post("/publish")
@@ -448,7 +469,7 @@ async def publish_promo_post(
     )
 
 
-# ── Promo drafts (durable, server-side; media re-signed on load) ────────────────
+# ── Promo drafts (durable, server-side; media URLs resolved on load) ───────────
 
 class PromoDraftBody(BaseModel):
     name: str = Field("未命名草稿", max_length=200)
@@ -459,7 +480,7 @@ class PromoDraftBody(BaseModel):
 
 
 def _store_media(media: List[PromoMedia]) -> list:
-    """Persist only the durable parts ({type, path, filename}); the signed url expires."""
+    """Persist only the durable parts ({type, path, filename})."""
     return [
         {"type": m.type, "path": m.path, "filename": m.filename}
         for m in media if m.path
@@ -467,15 +488,19 @@ def _store_media(media: List[PromoMedia]) -> list:
 
 
 async def _resign_media(stored: list) -> list:
-    """Re-sign each stored gs:// path into a fresh 12h URL for the composer/preview."""
+    """Resolve each stored media path into a fetchable URL for the composer/preview.
+
+    Historical drafts hold ``gs://`` paths; ``generate_signed_url`` maps those onto
+    the media store and returns the public URL (None when the file is gone).
+    """
     out = []
     for m in stored or []:
         url = None
         if m.get("path"):
             try:
-                url = await _gcs.generate_signed_url(m["path"], expiration_hours=12)
-            except Exception as e:  # noqa: BLE001 — a missing blob shouldn't 500 the load
-                logger.warning("promo draft media re-sign failed for %s: %s", m.get("path"), e)
+                url = await _gcs.generate_signed_url(m["path"])
+            except Exception as e:  # noqa: BLE001 — a missing artifact shouldn't 500 the load
+                logger.warning("promo draft media resolve failed for %s: %s", m.get("path"), e)
         out.append({"type": m.get("type"), "url": url, "path": m.get("path"), "filename": m.get("filename")})
     return out
 
@@ -501,7 +526,7 @@ async def get_promo_draft(
     _: AdminAccess = Depends(get_admin_access),
     db: Session = Depends(get_session),
 ):
-    """One draft, with media re-signed to fresh URLs (the stored signed URLs expire)."""
+    """One draft, with each stored media path resolved to a fetchable URL."""
     row = db.query(PromoDraft).filter(PromoDraft.id == draft_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="Draft not found")

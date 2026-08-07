@@ -8,9 +8,6 @@ on:
   pull_request:
     branches: [main, develop]
 
-env:
-  GCP_PROJECT_ID: gen-lang-client-0901363254
-
 jobs:
   # ── 1. Detect which paths changed ────────────────────────────────────────────
   changed:
@@ -33,7 +30,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write
 
     steps:
       - uses: actions/checkout@v4
@@ -46,28 +42,14 @@ jobs:
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Authenticate to Google Cloud
-        id: gcp-auth
-        uses: google-github-actions/auth@v2
-        continue-on-error: true
-        with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
-
-      - name: Set up Cloud SDK
-        if: steps.gcp-auth.outcome == 'success'
-        uses: google-github-actions/setup-gcloud@v2
-
-      - name: Fetch VITE_GOOGLE_CLIENT_ID from Secret Manager
-        if: steps.gcp-auth.outcome == 'success'
+      # P6: GOOGLE_CLIENT_ID is a GitHub Actions repo secret, not a GSM secret. Empty
+      # for fork PRs (secrets are withheld) — the placeholder keeps the build green.
+      - name: Resolve VITE_GOOGLE_CLIENT_ID
+        env:
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
         run: |
-          GOOGLE_CLIENT_ID=$(gcloud secrets versions access latest \
-            --secret=GOOGLE_CLIENT_ID --project=$GCP_PROJECT_ID)
           echo "::add-mask::$GOOGLE_CLIENT_ID"
-          echo "VITE_GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID" >> $GITHUB_ENV
-
-      - name: Use CI placeholder (GCP unavailable)
-        if: steps.gcp-auth.outcome != 'success'
-        run: echo "VITE_GOOGLE_CLIENT_ID=ci-placeholder" >> $GITHUB_ENV
+          echo "VITE_GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-ci-placeholder}" >> $GITHUB_ENV
 
       - name: Install dependencies
         working-directory: frontend
@@ -188,6 +170,8 @@ jobs:
   # ── 4. Gate — always runs; the required status check branch protection targets ─
   # preview is intentionally excluded — a Cloudflare blip shouldn't block merging.
   ci-gate:
+    # Unique check-run name — see backend-ci.yml ci-gate comment.
+    name: frontend-ci-gate
     needs: [build]
     if: always()
     runs-on: ubuntu-latest

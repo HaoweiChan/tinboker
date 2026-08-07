@@ -9,56 +9,89 @@ field entirely, which surfaced on the site as chapters stuck at 00:00 or summary
 chapters silently falling back to raw transcript sentences. Code owns the
 timestamp; the LLM owns the prose. ``build_events_markdown`` already anchors the
 same way — this keeps the summary path consistent with it.
+
+Matching a writer section back to its source event is tried in this order:
+1. ``event_id`` (E1, E2, ...) echoed by the writer — a short ordinal id the model
+   copies far more reliably than a 6-digit ms value (see A2 in the EP677 fix plan).
+2. An echoed ``start_time`` that exactly matches a known event start ms
+   (pre-event_id back-compat).
+3. Position — clamped to the available range. Any section that falls back to
+   position is exactly the failure mode that let a dropped/merged section shift
+   every later chapter, so it is logged.
 """
 
+import logging
+import re
 from typing import Any, Optional
 
 from ..state import PipelineState
 
+logger = logging.getLogger(__name__)
 
-def _anchor_section_times(
+# LLM-authored heading leads that duplicate the code-side Q&A prefix — stripped
+# before prefixing so "聽眾提問：台股熊市" renders "Q&A：台股熊市", not
+# "Q&A：聽眾提問：台股熊市".
+_QA_LEAD_RE = re.compile(r"^(?:Q&A|聽眾(?:提問|來信|問題))\s*[:：]\s*")
+
+
+def _anchor_sections(
     sections: list[dict[str, Any]],
-    cluster_starts: list[int],
-) -> list[Optional[int]]:
-    """Resolve a real start-ms for each writer section.
+    anchor_events: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Resolve a real start-ms + segment_type for each writer section.
 
-    The writer emits one section per clustered (already financial-filtered) event,
-    in the order it received them, so the base mapping is positional:
-    ``sections[i] -> cluster_starts[i]``. Two refinements harden it against the LLM
-    merging or adding sections:
-
-    - If the writer echoed a ``start_time`` that EXACTLY matches a known cluster
-      start, trust it (covers the writer reordering sections).
-    - Positional assignment is clamped to the available range and forced
-      monotonic non-decreasing, so chapters never jump backwards.
-
-    Returns ``None`` for a section when no real offset exists (e.g. the clusterer
-    produced no timed events) so the caller omits the marker instead of emitting a
-    bogus 00:00.
+    Returns one ``{"start_ms": Optional[int], "segment_type": Optional[str]}`` dict
+    per section, monotonic non-decreasing on ``start_ms`` so chapters never jump
+    backwards. ``start_ms`` is ``None`` when no timed events exist at all (the
+    caller omits the marker instead of fabricating 00:00).
     """
     if not sections:
         return []
+    if not anchor_events:
+        return [{"start_ms": None, "segment_type": None} for _ in sections]
 
-    valid = sorted({int(s) for s in cluster_starts if isinstance(s, (int, float))})
-    if not valid:
-        return [None] * len(sections)
-    valid_set = set(valid)
+    id_index = {e["event_id"]: i for i, e in enumerate(anchor_events) if e.get("event_id")}
+    ms_index: dict[int, int] = {}
+    for i, e in enumerate(anchor_events):
+        start = e.get("start")
+        if isinstance(start, (int, float)) and int(start) not in ms_index:
+            ms_index[int(start)] = i
 
-    resolved: list[Optional[int]] = []
+    resolved: list[dict[str, Any]] = []
     last = -1
+    positional_fallbacks = 0
     for i, section in enumerate(sections):
-        echoed = section.get("start_time")
-        # Trust an echoed value only if it is a real cluster start — this rejects
-        # the ordinal/placeholder values the model sometimes invents (1, 2, 3, …).
-        if isinstance(echoed, (int, float)) and int(echoed) in valid_set:
-            ms = int(echoed)
+        idx: Optional[int] = None
+        event_id = section.get("event_id")
+        if isinstance(event_id, str) and event_id in id_index:
+            idx = id_index[event_id]
         else:
-            ms = valid[i] if i < len(valid) else valid[-1]
-        # Keep chapters monotonic; downstream de-dupes identical timestamps.
-        if ms < last:
-            ms = last
-        last = ms
-        resolved.append(ms)
+            echoed = section.get("start_time")
+            if isinstance(echoed, (int, float)) and int(echoed) in ms_index:
+                idx = ms_index[int(echoed)]
+            else:
+                positional_fallbacks += 1
+                idx = min(i, len(anchor_events) - 1)
+
+        event = anchor_events[idx]
+        ms = event.get("start")
+        if isinstance(ms, (int, float)):
+            ms = int(ms)
+            if ms < last:
+                ms = last
+            last = ms
+        else:
+            ms = None
+        resolved.append({"start_ms": ms, "segment_type": event.get("segment_type")})
+
+    if positional_fallbacks:
+        logger.warning(
+            "markdown_transform: %d/%d sections had no matching event_id/start_time "
+            "echo and fell back to positional anchoring; chapter timestamps may be "
+            "unreliable if the writer dropped, merged, or reordered sections.",
+            positional_fallbacks,
+            len(sections),
+        )
     return resolved
 
 
@@ -72,14 +105,9 @@ def transform_to_markdown(state: PipelineState) -> dict[str, Any]:
     # Anchor against the SAME list the writer turned into sections: the
     # consolidated ``chapter_events`` when present, else the fine
     # ``clustered_events`` (regen/legacy). The writer emits one section per event
-    # in order, so this stays positionally aligned.
+    # in order, so this stays positionally aligned when id/ms echoes are absent.
     anchor_events = state.get("chapter_events") or state.get("clustered_events", [])
-    cluster_starts = [
-        e.get("start")
-        for e in anchor_events
-        if e.get("start") is not None
-    ]
-    section_times = _anchor_section_times(sections, cluster_starts)
+    anchors = _anchor_sections(sections, anchor_events)
 
     parts = []
 
@@ -89,9 +117,14 @@ def transform_to_markdown(state: PipelineState) -> dict[str, Any]:
     if writer_output.get("executive_summary"):
         parts.append(f"{writer_output['executive_summary']}\n")
 
-    for section, start_ms in zip(sections, section_times):
+    for section, anchor in zip(sections, anchors):
         heading = section.get("heading", "").lstrip("# ").strip()
+        # Deterministic Q&A marker: code-side, keyed off the matched event's real
+        # segment_type — never left to the LLM to author (see A5).
+        if heading and anchor.get("segment_type") == "qa":
+            heading = f"Q&A：{_QA_LEAD_RE.sub('', heading)}"
 
+        start_ms = anchor.get("start_ms")
         if heading:
             if start_ms is not None:
                 parts.append(f"## {heading} (#time:{start_ms})\n")

@@ -1,14 +1,39 @@
 #!/usr/bin/env python3
-"""
-Google Cloud Storage Service for Podcast Files
+"""Local media storage for podcast episode artifacts (P5 — GCS decommission).
 
-This module provides a centralized service for uploading podcast episode files
-to Google Cloud Storage and generating URLs for Firestore storage.
+Every episode artifact (mp3, transcript JSON, summary/events/sentences/marp
+markdown, SVG, ticker insights, social-card PNGs, PPTX) is written to the VPS
+media directory that Caddy serves publicly, and the returned URL points at that
+host. Nothing here talks to Google Cloud Storage any more.
+
+The class and method names are unchanged from the GCS era on purpose — every
+caller, script, test and the regen MCP keep working; only the backend moved.
+``gs://`` is dead: ``generate_gcs_url`` returns the same public https URL as
+``generate_public_url``, so ``*_url`` and ``*_public_url`` are identical
+(docs/firestore-contract.md § 11.7).
+
+The on-disk layout is byte-identical to the old bucket layout, so the files
+copied out of ``graphfolio-articles`` and the files written here live uniformly::
+
+    {MEDIA_STORAGE_ROOT}/{bucket}/{base_path?}/{type}/{podcast_hash12}/{id}.{ext}
+    {MEDIA_PUBLIC_BASE}/{bucket}/{base_path?}/{type}/{podcast_hash12}/{id}.{ext}
+
+Env:
+    MEDIA_STORAGE_ROOT  default /srv/tinboker-media (prod); falls back to
+                        ``pipelines/.media`` when that path does not exist, so a
+                        dev checkout never needs the prod directory.
+    MEDIA_PUBLIC_BASE   default https://podcast-api.tinboker.com/media
+    GCS_BUCKET_NAME     kept as the *directory* name under the root, so existing
+                        and new files share one tree. Default graphfolio-articles.
+    GCS_BASE_PATH       optional path prefix inside that directory (unchanged).
 """
 
 import hashlib
 import json
 import os
+import re
+import shutil
+import tempfile
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
@@ -17,171 +42,165 @@ from src.secrets_bootstrap import bootstrap
 # Load secrets from GSM (idempotent — safe if already bootstrapped at entry point).
 bootstrap()
 
-try:
-    from google.cloud import storage
-    from google.oauth2 import service_account
-except ImportError:
-    raise ImportError(
-        "google-cloud-storage is required for GCS upload functionality. "
-        "Install it with: pip install google-cloud-storage"
-    )
+DEFAULT_MEDIA_ROOT = "/srv/tinboker-media"
+DEFAULT_PUBLIC_BASE = "https://podcast-api.tinboker.com/media"
+DEFAULT_BUCKET = "graphfolio-articles"
+
+# The only two directories under the media root. These are the *full* former bucket
+# names — the live convention, matching what Caddy serves. (A stale Phase-E plan used
+# short names, articles/ + web/; nothing ever served those, and the script that would
+# have rewritten URLs to them is deleted. See docs/firestore-contract.md § 11.7.)
+MEDIA_BUCKETS = frozenset({"graphfolio-articles", "podcast-data-web"})
+
+_GCS_HTTPS_RE = re.compile(r"^https://storage\.googleapis\.com/([^/]+)/(.+)$")
+
+
+def media_root() -> Path:
+    """Root directory holding one subdirectory per legacy bucket name.
+
+    Prod mounts ``/srv/tinboker-media``; dev checkouts don't have it, so fall back
+    to a project-relative directory rather than hard-requiring the prod path.
+    """
+    env = os.getenv("MEDIA_STORAGE_ROOT")
+    if env:
+        return Path(env).expanduser()
+    default = Path(DEFAULT_MEDIA_ROOT)
+    if default.is_dir():
+        return default
+    # pipelines/.media — src/service/… → parents[4] is the workspace root.
+    return Path(__file__).resolve().parents[4] / ".media"
+
+
+def public_base() -> str:
+    """Public URL prefix Caddy serves the media root at (no trailing slash)."""
+    return os.getenv("MEDIA_PUBLIC_BASE", DEFAULT_PUBLIC_BASE).rstrip("/")
+
+
+def split_media_url(url: str) -> Optional[Tuple[str, str]]:
+    """``(bucket, blob_path)`` from a gs://, storage.googleapis.com or media URL.
+
+    All three forms are accepted because episode docs still carry historical
+    ``gs://`` values alongside the rewritten https ones.
+    """
+    if not url:
+        return None
+    url = str(url).split("?", 1)[0]
+    if url.startswith("gs://"):
+        bucket, _, blob = url[len("gs://"):].partition("/")
+        return (bucket, blob) if bucket and blob else None
+    m = _GCS_HTTPS_RE.match(url)
+    if m:
+        return m.group(1), m.group(2)
+    prefix = public_base() + "/"
+    if url.startswith(prefix):
+        bucket, _, blob = url[len(prefix):].partition("/")
+        return (bucket, blob) if bucket and blob else None
+    return None
+
+
+def _atomic_write(dest: Path, data: bytes) -> None:
+    """Write ``data`` to ``dest`` so readers never observe a partial file.
+
+    Same-directory temp file + ``os.replace`` (atomic within one filesystem) —
+    Caddy serves this tree while the pipeline writes into it.
+    """
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=dest.parent, prefix=f".{dest.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+        os.replace(tmp, dest)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
+
+
+def _atomic_copy(src: Path, dest: Path) -> None:
+    """Copy ``src`` onto ``dest`` atomically (used for mp3s, which are large)."""
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=dest.parent, prefix=f".{dest.name}.", suffix=".tmp")
+    os.close(fd)
+    try:
+        shutil.copyfile(src, tmp)
+        os.replace(tmp, dest)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
 
 
 class GCSStorageService:
-    """
-    Service for uploading podcast episode files to Google Cloud Storage
-    and generating URLs for Firestore storage.
-    """
-    
+    """Writes podcast episode files to the VPS media directory and returns URLs."""
+
     def __init__(self):
-        """
-        Initialize GCS Storage Service.
-        
-        Raises:
-            ValueError: If required environment variables are missing
-            Exception: If GCS client initialization fails
-        """
-        self.bucket_name = os.getenv("GCS_BUCKET_NAME")
+        self.bucket_name = os.getenv("GCS_BUCKET_NAME") or DEFAULT_BUCKET
         self.base_path = os.getenv("GCS_BASE_PATH", "").strip('/')
-        
-        if not self.bucket_name:
-            raise ValueError(
-                "GCS_BUCKET_NAME is required. Set it in your .env file."
-            )
-        
-        self.client = self._initialize_gcs_client()
-        self.bucket = self.client.bucket(self.bucket_name)
-    
-    def _initialize_gcs_client(self) -> storage.Client:
-        """
-        Initialize and return a Google Cloud Storage client.
-        
-        Returns:
-            storage.Client: GCS client instance
-            
-        Raises:
-            ValueError: If required environment variables are missing
-            Exception: If client initialization fails
-        """
-        project_id = os.getenv("GCS_PROJECT_ID")
-        
-        # Priority order: JSON credentials first, then path-based credentials
-        # Check GCS-specific credentials first, then fall back to GCP credentials
-        credentials_json = os.getenv("GCS_CREDENTIALS_JSON") or os.getenv("GCP_CREDENTIALS_JSON")
-        credentials_path = None
-        
-        # Only check for path-based credentials if JSON is not available
-        if not credentials_json:
-            credentials_path = os.getenv("GCS_CREDENTIALS_PATH") or os.getenv("GCP_CREDENTIALS_PATH")
-        
-        if not project_id:
-            # Try to get project_id from credentials if not explicitly set
-            if credentials_json:
-                try:
-                    if isinstance(credentials_json, str):
-                        creds_dict = json.loads(credentials_json)
-                    else:
-                        creds_dict = credentials_json
-                    project_id = creds_dict.get('project_id')
-                except (json.JSONDecodeError, (AttributeError, TypeError)):
-                    pass
-            elif credentials_path:
-                try:
-                    cred_path = Path(credentials_path).expanduser().resolve()
-                    if cred_path.exists():
-                        with open(cred_path, 'r') as f:
-                            creds_dict = json.load(f)
-                            project_id = creds_dict.get('project_id')
-                except (json.JSONDecodeError, (FileNotFoundError, IOError)):
-                    pass
-        
-        if not project_id:
-            raise ValueError(
-                "GCS_PROJECT_ID is required. Set it in your .env file, or it will be "
-                "inferred from credentials if GCP_CREDENTIALS_PATH or GCP_CREDENTIALS_JSON is set."
-            )
-        
-        # Initialize credentials
-        # Priority: JSON credentials first, then path-based credentials
-        credentials = None
-        
-        if credentials_json:
-            # Use credentials from JSON string (preferred method)
-            try:
-                if isinstance(credentials_json, str):
-                    creds_dict = json.loads(credentials_json)
-                else:
-                    creds_dict = credentials_json
-                credentials = service_account.Credentials.from_service_account_info(
-                    creds_dict
-                )
-            except json.JSONDecodeError as e:
-                raise ValueError(
-                    f"Invalid JSON in credentials: {e}"
-                ) from e
-        elif credentials_path:
-            # Use credentials from file path (fallback)
-            cred_path = Path(credentials_path).expanduser().resolve()
-            if not cred_path.exists():
-                raise FileNotFoundError(
-                    f"Credentials file not found: {cred_path}"
-                )
-            credentials = service_account.Credentials.from_service_account_file(
-                str(cred_path)
-            )
-        else:
-            raise ValueError(
-                "Either GCP_CREDENTIALS_JSON, GCS_CREDENTIALS_JSON, GCP_CREDENTIALS_PATH, "
-                "or GCS_CREDENTIALS_PATH is required. Set one of them in your .env file. "
-                "JSON credentials are preferred over path-based credentials."
-            )
-        
-        # Create and return client
-        try:
-            client = storage.Client(credentials=credentials, project=project_id)
-            return client
-        except Exception as e:
-            raise Exception(f"Failed to initialize GCS client: {e}") from e
-    
+        self.media_root = media_root()
+        self.public_base = public_base()
+        self.root = self.media_root / self.bucket_name
+
+    # ── paths & URLs ──────────────────────────────────────────────────────
+
     def _get_podcast_hash(self, podcast_name: str) -> str:
-        """
-        Generate a hash of the podcast name for URL-safe directory naming.
-        
-        Args:
-            podcast_name: Name of the podcast
-            
-        Returns:
-            Hash string (12 characters)
-        """
+        """12-char hash of the podcast name, used as the directory component."""
         return hashlib.sha256(podcast_name.encode('utf-8')).hexdigest()[:12]
-    
+
     def _get_file_path(self, file_type: str, podcast_name: str, episode_id: str, extension: str) -> str:
+        """Blob path ``{base_path}/{type}/{podcast_hash}/{episode_id}.{ext}``.
+
+        Unchanged from the GCS era — this is what keeps migrated and new files
+        addressable by the same relative path.
         """
-        Generate GCS blob path for a file.
-        
-        Path structure: {base_path}/{type}/{podcast_hash}/{episode_id}.{ext}
-        
-        Args:
-            file_type: Type of file ('mp3', 'transcripts', 'summaries', 'images')
-            podcast_name: Name of the podcast
-            episode_id: Episode ID (matches Firestore document ID)
-            extension: File extension (e.g., 'mp3', 'txt', 'md', 'svg')
-            
-        Returns:
-            GCS blob path (relative to bucket root)
-        """
-        podcast_hash = self._get_podcast_hash(podcast_name)
-        
-        # Build path components
         parts = []
         if self.base_path:
             parts.append(self.base_path)
-        parts.extend([file_type, podcast_hash, f"{episode_id}.{extension}"])
-        
-        # Join with forward slashes (GCS uses forward slashes)
-        blob_path = '/'.join(parts)
-        return blob_path
-    
+        parts.extend([file_type, self._get_podcast_hash(podcast_name), f"{episode_id}.{extension}"])
+        return '/'.join(parts)
+
+    def local_path(self, blob_path: str, bucket: Optional[str] = None) -> Path:
+        """Absolute on-disk path for a blob path in ``bucket`` (default: ours).
+
+        The single gate for every read and write, so both guards live here: the
+        bucket must be one of the two real media directories, and the resolved path
+        must stay inside the media root (``path_for_url`` feeds this from stored doc
+        URLs, so ``../`` has to be closed off).
+        """
+        bucket = bucket or self.bucket_name
+        if bucket not in MEDIA_BUCKETS:
+            raise ValueError(
+                f"Unknown media bucket {bucket!r} (expected one of {sorted(MEDIA_BUCKETS)})"
+            )
+        root = self.media_root.resolve()
+        path = (root / bucket / blob_path).resolve()
+        if not path.is_relative_to(root):
+            raise ValueError(f"Media path escapes {root}: {bucket}/{blob_path}")
+        return path
+
+    def path_for_url(self, url: str) -> Optional[Path]:
+        """On-disk path for a gs:// / storage.googleapis.com / media URL."""
+        parsed = split_media_url(url)
+        return self.local_path(parsed[1], parsed[0]) if parsed else None
+
+    def generate_gcs_url(self, blob_path: str) -> str:
+        """The artifact's public URL. gs:// is dead — this is the https URL."""
+        return self.generate_public_url(blob_path)
+
+    def generate_public_url(self, blob_path: str) -> str:
+        """Public https URL for a blob path.
+
+        A full https URL is returned unchanged, so the historical
+        ``url.replace("gs://<bucket>/", "")`` round-trips in callers stay correct.
+        """
+        if blob_path.startswith(("http://", "https://")):
+            return blob_path
+        return f"{self.public_base}/{self.bucket_name}/{blob_path}"
+
+    def blob_exists(self, url: str) -> bool:
+        """True when the artifact behind ``url`` is present on disk."""
+        path = self.path_for_url(url)
+        return bool(path and path.is_file())
+
+    # ── writes ────────────────────────────────────────────────────────────
+
     def upload_file(
         self,
         local_file_path: Path,
@@ -191,59 +210,20 @@ class GCSStorageService:
         extension: Optional[str] = None,
         skip_existing: bool = True
     ) -> Tuple[bool, Optional[str]]:
-        """
-        Upload a single file to Google Cloud Storage.
-        
-        Args:
-            local_file_path: Path to the local file
-            file_type: Type of file ('mp3', 'transcripts', 'summaries', 'images')
-            podcast_name: Name of the podcast
-            episode_id: Episode ID (matches Firestore document ID)
-            extension: File extension (if None, inferred from local_file_path)
-            skip_existing: If True, skip upload if file already exists with same size
-            
-        Returns:
-            Tuple of (success: bool, gcs_url: Optional[str])
-            Returns (True, gcs_url) on success, (False, None) on failure
-        """
+        """Copy a local file into the media tree. Returns ``(ok, public_url)``."""
         try:
-            # Infer extension from file path if not provided
             if extension is None:
                 extension = local_file_path.suffix.lstrip('.')
-            
-            # Generate GCS blob path
             blob_path = self._get_file_path(file_type, podcast_name, episode_id, extension)
-            
-            # Get blob reference
-            blob = self.bucket.blob(blob_path)
-            
-            # Check if file already exists
-            if skip_existing and blob.exists():
-                # Reload blob to get metadata (size) if not already loaded
-                if blob.size is None:
-                    blob.reload()
-                
-                # Get local and remote file sizes
-                local_size = local_file_path.stat().st_size
-                remote_size = blob.size
-                
-                # If sizes match, skip upload
-                if remote_size is not None and local_size == remote_size:
-                    gcs_url = self.generate_gcs_url(blob_path)
-                    return (True, gcs_url)
-                # If sizes don't match, upload anyway (file might be corrupted or updated)
-            
-            # Upload file
-            blob.upload_from_filename(str(local_file_path))
-            
-            # Generate and return GCS URL
-            gcs_url = self.generate_gcs_url(blob_path)
-            return (True, gcs_url)
-            
+            dest = self.local_path(blob_path)
+            if skip_existing and dest.is_file() and dest.stat().st_size == local_file_path.stat().st_size:
+                return (True, self.generate_public_url(blob_path))
+            _atomic_copy(local_file_path, dest)
+            return (True, self.generate_public_url(blob_path))
         except Exception as e:
-            print(f"  ✗ Error uploading {local_file_path.name} to GCS: {e}")
+            print(f"  ✗ Error writing {local_file_path.name} to media store: {e}")
             return (False, None)
-    
+
     def upload_file_from_string(
         self,
         content: str,
@@ -253,43 +233,11 @@ class GCSStorageService:
         extension: str,
         skip_existing: bool = True
     ) -> Tuple[bool, Optional[str]]:
-        """
-        Upload file content from a string to Google Cloud Storage.
-        
-        Args:
-            content: File content as string
-            file_type: Type of file ('mp3', 'transcripts', 'summaries', 'images')
-            podcast_name: Name of the podcast
-            episode_id: Episode ID (matches Firestore document ID)
-            extension: File extension (e.g., 'txt', 'md', 'svg')
-            skip_existing: If True, skip upload if file already exists
-            
-        Returns:
-            Tuple of (success: bool, gcs_url: Optional[str])
-        """
-        try:
-            # Generate GCS blob path
-            blob_path = self._get_file_path(file_type, podcast_name, episode_id, extension)
-            
-            # Get blob reference
-            blob = self.bucket.blob(blob_path)
-            
-            # Check if file already exists
-            if skip_existing and blob.exists():
-                gcs_url = self.generate_gcs_url(blob_path)
-                return (True, gcs_url)
-            
-            # Upload content
-            blob.upload_from_string(content.encode('utf-8'), content_type=self._get_content_type(extension))
-            
-            # Generate and return GCS URL
-            gcs_url = self.generate_gcs_url(blob_path)
-            return (True, gcs_url)
-            
-        except Exception as e:
-            print(f"  ✗ Error uploading {file_type} content to GCS: {e}")
-            return (False, None)
-    
+        """Write string content into the media tree. Returns ``(ok, public_url)``."""
+        return self._write(
+            content.encode('utf-8'), file_type, podcast_name, episode_id, extension, skip_existing
+        )
+
     def upload_file_from_base64(
         self,
         base64_content: str,
@@ -300,274 +248,80 @@ class GCSStorageService:
         skip_existing: bool = True,
         public: bool = False,
     ) -> Tuple[bool, Optional[str]]:
-        """
-        Upload file content from a base64-encoded string to Google Cloud Storage.
+        """Write base64-decoded bytes into the media tree.
 
-        Args:
-            base64_content: Base64-encoded file content as string
-            file_type: Type of file ('pptx', 'presentations', etc.)
-            podcast_name: Name of the podcast
-            episode_id: Episode ID (matches Firestore document ID)
-            extension: File extension (e.g., 'pptx')
-            skip_existing: If True, skip upload if file already exists
-            public: If True, grant allUsers:READER so the object is fetchable via
-                its https URL. Needed for social-card images that Threads fetches
-                directly (the bucket is not uniformly public). Best-effort.
-
-        Returns:
-            Tuple of (success: bool, gcs_url: Optional[str])
+        ``public`` is accepted for call-site compatibility and ignored: everything
+        under the media root is already served publicly by Caddy.
         """
+        import base64 as b64
+
         try:
-            import base64 as b64
-
-            # Generate GCS blob path
-            blob_path = self._get_file_path(file_type, podcast_name, episode_id, extension)
-
-            # Get blob reference
-            blob = self.bucket.blob(blob_path)
-
-            # Check if file already exists
-            if skip_existing and blob.exists():
-                if public:
-                    self._make_public(blob)
-                gcs_url = self.generate_gcs_url(blob_path)
-                return (True, gcs_url)
-
-            # Decode base64 content
-            file_content = b64.b64decode(base64_content)
-
-            # Upload binary content
-            blob.upload_from_string(file_content, content_type=self._get_content_type(extension))
-            if public:
-                self._make_public(blob)
-
-            # Generate and return GCS URL
-            gcs_url = self.generate_gcs_url(blob_path)
-            return (True, gcs_url)
-            
+            data = b64.b64decode(base64_content)
         except Exception as e:
-            print(f"  ✗ Error uploading {file_type} from base64 to GCS: {e}")
+            print(f"  ✗ Error decoding {file_type} base64: {e}")
+            return (False, None)
+        return self._write(data, file_type, podcast_name, episode_id, extension, skip_existing)
+
+    def _write(
+        self, data: bytes, file_type: str, podcast_name: str,
+        episode_id: str, extension: str, skip_existing: bool,
+    ) -> Tuple[bool, Optional[str]]:
+        try:
+            blob_path = self._get_file_path(file_type, podcast_name, episode_id, extension)
+            dest = self.local_path(blob_path)
+            if not (skip_existing and dest.is_file()):
+                _atomic_write(dest, data)
+            return (True, self.generate_public_url(blob_path))
+        except Exception as e:
+            print(f"  ✗ Error writing {file_type} content to media store: {e}")
             return (False, None)
 
-    @staticmethod
-    def _make_public(blob) -> None:
-        """Grant allUsers:READER on a blob (best-effort; bucket isn't uniformly public)."""
-        try:
-            blob.make_public()
-        except Exception as e:  # noqa: BLE001 — non-fatal; the upload itself succeeded
-            print(f"  ⚠ Could not make {getattr(blob, 'name', '?')} public: {e}")
+    # ── reads ─────────────────────────────────────────────────────────────
 
     def download_text_by_gcs_url(self, gcs_url: str, encoding: str = "utf-8") -> str:
-        """
-        Download a text file from GCS given a gs:// URL.
-        
-        Note: For transcripts, use download_transcript_by_gcs_url() instead to get both text and words.
-
-        Args:
-            gcs_url: GCS URL in the form gs://bucket/path/to/blob.ext
-            encoding: Text encoding to use when decoding bytes (default: utf-8)
-
-        Returns:
-            The decoded text content.
-
-        Raises:
-            ValueError: If the URL is not a valid gs:// URL or bucket mismatches.
-            Exception: If download fails for any reason.
-        """
-        if not gcs_url.startswith("gs://"):
-            raise ValueError(f"Invalid GCS URL (must start with gs://): {gcs_url}")
-
-        # Strip scheme and split into bucket and path
-        without_scheme = gcs_url[len("gs://") :]
-        parts = without_scheme.split("/", 1)
-        if len(parts) != 2:
-            raise ValueError(f"Invalid GCS URL format: {gcs_url}")
-
-        bucket_name, blob_path = parts
-
-        # Reads are safe cross-bucket: legacy episodes keep their transcript/media in
-        # ``podcast-data-web`` while new ones live in the configured bucket
-        # (``graphfolio-articles``). Use the configured bucket when it matches
-        # (cached handle), else read directly from the URL's bucket. These are
-        # read-only downloads, so no write-safety guard is needed.
-        if bucket_name == self.bucket_name:
-            source_bucket = self.bucket
-        else:
-            source_bucket = self.client.bucket(bucket_name)
-
+        """Read a text artifact by URL (gs://, storage.googleapis.com or media)."""
+        path = self.path_for_url(gcs_url)
+        if not path:
+            raise ValueError(f"Unrecognised media URL: {gcs_url}")
         try:
-            blob = source_bucket.blob(blob_path)
-            content_bytes = blob.download_as_bytes()
-            return content_bytes.decode(encoding)
+            return path.read_bytes().decode(encoding)
         except Exception as e:
-            raise Exception(f"Failed to download GCS object {gcs_url}: {e}") from e
-    
+            raise Exception(f"Failed to read media object {gcs_url} ({path}): {e}") from e
+
     def download_transcript_by_gcs_url(self, gcs_url: str, encoding: str = "utf-8") -> Dict[str, Any]:
+        """Read a transcript artifact; auto-detects JSON vs plain text.
+
+        Returns ``{'text', 'sentences', 'words'}`` ('words' is deprecated).
         """
-        Download a transcript file from GCS given a gs:// URL.
-        
-        Auto-detects format: JSON (with text, sentences, and words) or text-only.
-        Returns a dict with 'text', 'sentences', and 'words' keys.
-
-        Args:
-            gcs_url: GCS URL in the form gs://bucket/path/to/blob.ext
-            encoding: Text encoding to use when decoding bytes (default: utf-8)
-
-        Returns:
-            Dictionary with keys:
-                - 'text': str - The transcript text
-                - 'sentences': Optional[List[Dict]] - List of sentence objects with timing, or None if unavailable
-                - 'words': Optional[List[Dict]] - List of word objects with timing, or None if unavailable (deprecated)
-
-        Raises:
-            ValueError: If the URL is not a valid gs:// URL or bucket mismatches.
-            Exception: If download fails for any reason.
-        """
-        if not gcs_url.startswith("gs://"):
-            raise ValueError(f"Invalid GCS URL (must start with gs://): {gcs_url}")
-
-        # Strip scheme and split into bucket and path
-        without_scheme = gcs_url[len("gs://") :]
-        parts = without_scheme.split("/", 1)
-        if len(parts) != 2:
-            raise ValueError(f"Invalid GCS URL format: {gcs_url}")
-
-        bucket_name, blob_path = parts
-
-        # Reads are safe cross-bucket: legacy episodes keep their transcript/media in
-        # ``podcast-data-web`` while new ones live in the configured bucket
-        # (``graphfolio-articles``). Use the configured bucket when it matches
-        # (cached handle), else read directly from the URL's bucket. These are
-        # read-only downloads, so no write-safety guard is needed.
-        if bucket_name == self.bucket_name:
-            source_bucket = self.bucket
-        else:
-            source_bucket = self.client.bucket(bucket_name)
-
+        content = self.download_text_by_gcs_url(gcs_url, encoding)
+        if not str(gcs_url).lower().split("?", 1)[0].endswith('.json'):
+            return {'text': content, 'sentences': None, 'words': None}
         try:
-            blob = source_bucket.blob(blob_path)
-            content_bytes = blob.download_as_bytes()
-            content = content_bytes.decode(encoding)
-            
-            # Auto-detect format: check file extension or try to parse as JSON
-            is_json = blob_path.lower().endswith('.json')
-            
-            if is_json:
-                # Try to parse as JSON
-                try:
-                    transcript_data = json.loads(content)
-                    # Ensure it has the expected structure
-                    if isinstance(transcript_data, dict):
-                        return {
-                            'text': transcript_data.get('text', ''),
-                            'sentences': transcript_data.get('sentences'),
-                            'words': transcript_data.get('words')  # Deprecated, kept for backward compatibility
-                        }
-                    else:
-                        # Invalid JSON structure, treat as text
-                        return {'text': content, 'sentences': None, 'words': None}
-                except json.JSONDecodeError:
-                    # JSON parse failed, treat as text
-                    return {'text': content, 'sentences': None, 'words': None}
-            else:
-                # Text file (backward compatibility)
-                return {'text': content, 'sentences': None, 'words': None}
-                
-        except Exception as e:
-            raise Exception(f"Failed to download GCS object {gcs_url}: {e}") from e
-    
+            data = json.loads(content)
+        except json.JSONDecodeError:
+            return {'text': content, 'sentences': None, 'words': None}
+        if not isinstance(data, dict):
+            return {'text': content, 'sentences': None, 'words': None}
+        return {
+            'text': data.get('text', ''),
+            'sentences': data.get('sentences'),
+            'words': data.get('words'),
+        }
+
     def download_file_by_gcs_url(self, gcs_url: str, output_path: Path) -> Path:
-        """
-        Download a binary file (e.g., MP3) from GCS given a gs:// URL.
-        
-        Args:
-            gcs_url: GCS URL in the form gs://bucket/path/to/blob.ext
-            output_path: Path where the file should be saved
-            
-        Returns:
-            Path to the downloaded file
-            
-        Raises:
-            ValueError: If the URL is not a valid gs:// URL or bucket mismatches.
-            Exception: If download fails for any reason.
-        """
-        if not gcs_url.startswith("gs://"):
-            raise ValueError(f"Invalid GCS URL (must start with gs://): {gcs_url}")
-
-        # Strip scheme and split into bucket and path
-        without_scheme = gcs_url[len("gs://") :]
-        parts = without_scheme.split("/", 1)
-        if len(parts) != 2:
-            raise ValueError(f"Invalid GCS URL format: {gcs_url}")
-
-        bucket_name, blob_path = parts
-
-        # Ensure we're using the configured bucket
-        if bucket_name != self.bucket_name:
-            raise ValueError(
-                f"GCS URL bucket '{bucket_name}' does not match configured bucket '{self.bucket_name}'"
-            )
-
+        """Copy a binary artifact (e.g. an mp3) out of the media tree."""
+        path = self.path_for_url(gcs_url)
+        if not path:
+            raise ValueError(f"Unrecognised media URL: {gcs_url}")
         try:
-            # Ensure output directory exists
             output_path.parent.mkdir(parents=True, exist_ok=True)
-            
-            # Download file
-            blob = self.bucket.blob(blob_path)
-            blob.download_to_filename(str(output_path))
+            shutil.copyfile(path, output_path)
             return output_path
         except Exception as e:
-            raise Exception(f"Failed to download GCS file {gcs_url}: {e}") from e
-    
-    def _get_content_type(self, extension: str) -> str:
-        """
-        Get MIME content type for a file extension.
-        
-        Args:
-            extension: File extension (without dot)
-            
-        Returns:
-            MIME content type string
-        """
-        content_types = {
-            'mp3': 'audio/mpeg',
-            'txt': 'text/plain',
-            'json': 'application/json',
-            'md': 'text/markdown',
-            'svg': 'image/svg+xml',
-            'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-        }
-        return content_types.get(extension.lower(), 'application/octet-stream')
-    
-    def generate_gcs_url(self, blob_path: str) -> str:
-        """
-        Generate GCS URL (gs://) for a blob path.
-        
-        Args:
-            blob_path: GCS blob path (relative to bucket root)
-            
-        Returns:
-            GCS URL in format: gs://{bucket_name}/{blob_path}
-        """
-        return f"gs://{self.bucket_name}/{blob_path}"
-    
-    def generate_public_url(self, blob_path: str) -> Optional[str]:
-        """
-        Generate public HTTPS URL for a blob.
-        
-        Note: This assumes the bucket or blob is configured for public access.
-        Returns None if the bucket is not public.
-        
-        Args:
-            blob_path: GCS blob path (relative to bucket root)
-            
-        Returns:
-            Public HTTPS URL or None if bucket is not public
-        """
-        # Standard public URL format for GCS
-        # https://storage.googleapis.com/{bucket_name}/{blob_path}
-        return f"https://storage.googleapis.com/{self.bucket_name}/{blob_path}"
-    
+            raise Exception(f"Failed to read media file {gcs_url} ({path}): {e}") from e
+
+    # ── the one call the pipeline actually makes ──────────────────────────
+
     def upload_episode_files(
         self,
         episode_id: str,
@@ -590,232 +344,86 @@ class GCSStorageService:
         ticker_marp_markdown_content: Optional[str] = None,
         skip_existing: bool = True
     ) -> Dict[str, Optional[str]]:
+        """Write every supplied episode artifact and return its ``*_url`` fields.
+
+        Both ``x_url`` and ``x_public_url`` get the same public https URL — readers
+        prefer the public one and gs:// no longer exists.
         """
-        Upload all episode files to GCS and return URLs.
-        
-        This method uploads MP3, transcript, summary, and SVG files for an episode.
-        It can accept either file paths or content strings (for streaming mode).
-        
-        Args:
-            episode_id: Episode ID (matches Firestore document ID)
-            podcast_name: Name of the podcast
-            mp3_path: Path to MP3 file (optional)
-            transcript_data: Transcript data as dict with 'text' and 'words' keys (preferred, uploads as JSON)
-            transcript_content: Transcript content as string (deprecated, for backward compatibility)
-            transcript_path: Path to transcript file (optional, if transcript_data not provided)
-            summary_content: Summary content as string (optional, if summary_path not provided)
-            summary_path: Path to summary file (optional, if summary_content not provided)
-            svg_content: SVG content as string (optional, if svg_path not provided)
-            svg_path: Path to SVG file (optional, if svg_content not provided)
-            pptx_base64: Optional base64-encoded PPTX file content (optional)
-            marp_markdown_content: Optional marp markdown content as string (optional)
-            ticker_insights_data: Optional ticker insights data as dict (optional, uploads as JSON)
-            ticker_marp_markdown_content: Optional ticker marp markdown content as string (optional)
-            skip_existing: If True, skip upload if file already exists
-            
-        Returns:
-            Dictionary with URLs:
-            {
-                'mp3_url': gs://... or None,
-                'mp3_public_url': https://... or None,
-                'transcript_url': gs://... or None,
-                'transcript_public_url': https://... or None,
-                'summary_url': gs://... or None,
-                'summary_public_url': https://... or None,
-                'summary_image_url': gs://... or None,
-                'summary_image_public_url': https://... or None,
-                'pptx_url': gs://... or None,
-                'pptx_public_url': https://... or None,
-                'marp_markdown_url': gs://... or None,
-                'marp_markdown_public_url': https://... or None,
-                'ticker_insights_url': gs://... or None,
-                'ticker_insights_public_url': https://... or None,
-                'ticker_marp_markdown_url': gs://... or None,
-                'ticker_marp_markdown_public_url': https://... or None,
-            }
-        """
-        result = {
-            'mp3_url': None,
-            'mp3_public_url': None,
-            'transcript_url': None,
-            'transcript_public_url': None,
-            'summary_url': None,
-            'summary_public_url': None,
-            'summary_image_url': None,
-            'summary_image_public_url': None,
-            'pptx_url': None,
-            'pptx_public_url': None,
-            'marp_markdown_url': None,
-            'marp_markdown_public_url': None,
-            'ticker_insights_url': None,
-            'ticker_insights_public_url': None,
-            'ticker_marp_markdown_url': None,
-            'ticker_marp_markdown_public_url': None,
-        }
-        
-        # Upload MP3
-        if mp3_path and mp3_path.exists():
-            success, gcs_url = self.upload_file(
-                mp3_path, 'mp3', podcast_name, episode_id, 'mp3', skip_existing
+        keys = (
+            'mp3', 'transcript', 'summary', 'summary_image', 'events_markdown',
+            'sentences_markdown', 'pptx', 'marp_markdown', 'ticker_insights',
+            'ticker_marp_markdown',
+        )
+        result: Dict[str, Optional[str]] = {}
+        for k in keys:
+            result[f'{k}_url'] = None
+            result[f'{k}_public_url'] = None
+
+        def _set(key: str, ok: bool, url: Optional[str]) -> None:
+            if ok and url:
+                result[f'{key}_url'] = result[f'{key}_public_url'] = url
+
+        def _from_path(path: Path, file_type: str, ext: str) -> Tuple[bool, Optional[str]]:
+            return self.upload_file(path, file_type, podcast_name, episode_id, ext, skip_existing)
+
+        def _from_string(content: str, file_type: str, ext: str) -> Tuple[bool, Optional[str]]:
+            return self.upload_file_from_string(
+                content, file_type, podcast_name, episode_id, ext, skip_existing
             )
-            if success and gcs_url:
-                result['mp3_url'] = gcs_url
-                # Generate public URL
-                blob_path = gcs_url.replace(f"gs://{self.bucket_name}/", "")
-                result['mp3_public_url'] = self.generate_public_url(blob_path)
-        
-        # Upload transcript
-        # Priority: transcript_data (dict) > transcript_path > transcript_content (string)
+
+        if mp3_path and mp3_path.exists():
+            _set('mp3', *_from_path(mp3_path, 'mp3', 'mp3'))
+
+        # Priority: transcript_data (dict) > transcript_path > transcript_content
         if transcript_data is not None:
-            # Upload transcript as JSON with text, sentences, and words
-            # Ensure sentences are included in the data
             if isinstance(transcript_data, dict) and 'sentences' not in transcript_data:
                 transcript_data['sentences'] = None
-            transcript_json = json.dumps(transcript_data, ensure_ascii=False, indent=2)
-            success, gcs_url = self.upload_file_from_string(
-                transcript_json, 'transcripts', podcast_name, episode_id, 'json', skip_existing
-            )
-            if success and gcs_url:
-                result['transcript_url'] = gcs_url
-                blob_path = gcs_url.replace(f"gs://{self.bucket_name}/", "")
-                result['transcript_public_url'] = self.generate_public_url(blob_path)
+            _set('transcript', *_from_string(
+                json.dumps(transcript_data, ensure_ascii=False, indent=2), 'transcripts', 'json'
+            ))
         elif transcript_path and transcript_path.exists():
-            # Check if it's a JSON file or text file
-            if transcript_path.suffix.lower() == '.json':
-                # Upload JSON file as-is
-                success, gcs_url = self.upload_file(
-                    transcript_path, 'transcripts', podcast_name, episode_id, 'json', skip_existing
-                )
-            else:
-                # Upload text file (backward compatibility)
-                success, gcs_url = self.upload_file(
-                    transcript_path, 'transcripts', podcast_name, episode_id, 'txt', skip_existing
-                )
-            if success and gcs_url:
-                result['transcript_url'] = gcs_url
-                blob_path = gcs_url.replace(f"gs://{self.bucket_name}/", "")
-                result['transcript_public_url'] = self.generate_public_url(blob_path)
+            ext = 'json' if transcript_path.suffix.lower() == '.json' else 'txt'
+            _set('transcript', *_from_path(transcript_path, 'transcripts', ext))
         elif transcript_content:
-            # Backward compatibility: upload as text file
-            success, gcs_url = self.upload_file_from_string(
-                transcript_content, 'transcripts', podcast_name, episode_id, 'txt', skip_existing
-            )
-            if success and gcs_url:
-                result['transcript_url'] = gcs_url
-                blob_path = gcs_url.replace(f"gs://{self.bucket_name}/", "")
-                result['transcript_public_url'] = self.generate_public_url(blob_path)
-        
-        # Upload summary
+            _set('transcript', *_from_string(transcript_content, 'transcripts', 'txt'))
+
         if summary_path and summary_path.exists():
-            success, gcs_url = self.upload_file(
-                summary_path, 'summaries', podcast_name, episode_id, 'md', skip_existing
-            )
-            if success and gcs_url:
-                result['summary_url'] = gcs_url
-                blob_path = gcs_url.replace(f"gs://{self.bucket_name}/", "")
-                result['summary_public_url'] = self.generate_public_url(blob_path)
+            _set('summary', *_from_path(summary_path, 'summaries', 'md'))
         elif summary_content:
-            success, gcs_url = self.upload_file_from_string(
-                summary_content, 'summaries', podcast_name, episode_id, 'md', skip_existing
-            )
-            if success and gcs_url:
-                result['summary_url'] = gcs_url
-                blob_path = gcs_url.replace(f"gs://{self.bucket_name}/", "")
-                result['summary_public_url'] = self.generate_public_url(blob_path)
-        
-        # Upload SVG image
+            _set('summary', *_from_string(summary_content, 'summaries', 'md'))
+
         if svg_path and svg_path.exists():
-            success, gcs_url = self.upload_file(
-                svg_path, 'images', podcast_name, episode_id, 'svg', skip_existing
-            )
-            if success and gcs_url:
-                result['summary_image_url'] = gcs_url
-                blob_path = gcs_url.replace(f"gs://{self.bucket_name}/", "")
-                result['summary_image_public_url'] = self.generate_public_url(blob_path)
+            _set('summary_image', *_from_path(svg_path, 'images', 'svg'))
         elif svg_content:
-            success, gcs_url = self.upload_file_from_string(
-                svg_content, 'images', podcast_name, episode_id, 'svg', skip_existing
-            )
-            if success and gcs_url:
-                result['summary_image_url'] = gcs_url
-                blob_path = gcs_url.replace(f"gs://{self.bucket_name}/", "")
-                result['summary_image_public_url'] = self.generate_public_url(blob_path)
-        
-        # Upload events markdown to 'events' folder (separate from 'summaries')
+            _set('summary_image', *_from_string(svg_content, 'images', 'svg'))
+
         if events_markdown_path and events_markdown_path.exists():
-            success, gcs_url = self.upload_file(
-                events_markdown_path, 'events', podcast_name, episode_id, 'md', skip_existing
-            )
-            if success and gcs_url:
-                result['events_markdown_url'] = gcs_url
-                blob_path = gcs_url.replace(f"gs://{self.bucket_name}/", "")
-                result['events_markdown_public_url'] = self.generate_public_url(blob_path)
+            _set('events_markdown', *_from_path(events_markdown_path, 'events', 'md'))
         elif events_markdown_content:
-            success, gcs_url = self.upload_file_from_string(
-                events_markdown_content, 'events', podcast_name, episode_id, 'md', skip_existing
-            )
-            if success and gcs_url:
-                result['events_markdown_url'] = gcs_url
-                blob_path = gcs_url.replace(f"gs://{self.bucket_name}/", "")
-                result['events_markdown_public_url'] = self.generate_public_url(blob_path)
-        
-        # Upload sentences markdown to 'sentences' folder
+            _set('events_markdown', *_from_string(events_markdown_content, 'events', 'md'))
+
         if sentences_markdown_path and sentences_markdown_path.exists():
-            success, gcs_url = self.upload_file(
-                sentences_markdown_path, 'sentences', podcast_name, episode_id, 'md', skip_existing
-            )
-            if success and gcs_url:
-                result['sentences_markdown_url'] = gcs_url
-                blob_path = gcs_url.replace(f"gs://{self.bucket_name}/", "")
-                result['sentences_markdown_public_url'] = self.generate_public_url(blob_path)
+            _set('sentences_markdown', *_from_path(sentences_markdown_path, 'sentences', 'md'))
         elif sentences_markdown_content:
-            success, gcs_url = self.upload_file_from_string(
-                sentences_markdown_content, 'sentences', podcast_name, episode_id, 'md', skip_existing
-            )
-            if success and gcs_url:
-                result['sentences_markdown_url'] = gcs_url
-                blob_path = gcs_url.replace(f"gs://{self.bucket_name}/", "")
-                result['sentences_markdown_public_url'] = self.generate_public_url(blob_path)
-        
-        # Upload PPTX file from base64 to 'presentations' folder
+            _set('sentences_markdown', *_from_string(sentences_markdown_content, 'sentences', 'md'))
+
         if pptx_base64:
-            success, gcs_url = self.upload_file_from_base64(
+            _set('pptx', *self.upload_file_from_base64(
                 pptx_base64, 'presentations', podcast_name, episode_id, 'pptx', skip_existing
-            )
-            if success and gcs_url:
-                result['pptx_url'] = gcs_url
-                blob_path = gcs_url.replace(f"gs://{self.bucket_name}/", "")
-                result['pptx_public_url'] = self.generate_public_url(blob_path)
-        
-        # Upload marp markdown to 'marp' folder
+            ))
+
         if marp_markdown_content:
-            success, gcs_url = self.upload_file_from_string(
-                marp_markdown_content, 'marp', podcast_name, episode_id, 'md', skip_existing
-            )
-            if success and gcs_url:
-                result['marp_markdown_url'] = gcs_url
-                blob_path = gcs_url.replace(f"gs://{self.bucket_name}/", "")
-                result['marp_markdown_public_url'] = self.generate_public_url(blob_path)
-        
-        # Upload ticker insights to the ticker_insights folder as JSON.
+            _set('marp_markdown', *_from_string(marp_markdown_content, 'marp', 'md'))
+
         if ticker_insights_data:
-            ticker_insights_json = json.dumps(ticker_insights_data, ensure_ascii=False, indent=2)
-            success, gcs_url = self.upload_file_from_string(
-                ticker_insights_json, 'ticker_insights', podcast_name, episode_id, 'json', skip_existing
-            )
-            if success and gcs_url:
-                result['ticker_insights_url'] = gcs_url
-                blob_path = gcs_url.replace(f"gs://{self.bucket_name}/", "")
-                result['ticker_insights_public_url'] = self.generate_public_url(blob_path)
-        
-        # Upload ticker_marp_markdown to 'ticker_marp' folder
+            _set('ticker_insights', *_from_string(
+                json.dumps(ticker_insights_data, ensure_ascii=False, indent=2),
+                'ticker_insights', 'json',
+            ))
+
         if ticker_marp_markdown_content:
-            success, gcs_url = self.upload_file_from_string(
-                ticker_marp_markdown_content, 'ticker_marp', podcast_name, episode_id, 'md', skip_existing
-            )
-            if success and gcs_url:
-                result['ticker_marp_markdown_url'] = gcs_url
-                blob_path = gcs_url.replace(f"gs://{self.bucket_name}/", "")
-                result['ticker_marp_markdown_public_url'] = self.generate_public_url(blob_path)
-        
+            _set('ticker_marp_markdown', *_from_string(
+                ticker_marp_markdown_content, 'ticker_marp', 'md'
+            ))
+
         return result

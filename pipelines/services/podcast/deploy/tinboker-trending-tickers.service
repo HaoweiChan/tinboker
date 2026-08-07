@@ -7,6 +7,11 @@ Wants=network-online.target
 Type=oneshot
 WorkingDirectory=/root/tinboker/pipelines/services/podcast
 ExecStart=/root/tinboker/pipelines/services/podcast/scripts/run_hourly_trending.sh
+# P6: pipeline secrets come from this env file. Leading "-" = optional, so the unit
+# still starts before the operator has created it and shared.secrets falls back to
+# GSM. KEY=value per line — see pipelines/libs/shared/src/shared/secrets.py.
+EnvironmentFile=-/root/tinboker/pipelines/.env
+# Still required: the article store reads GCS with this service account.
 Environment=GOOGLE_APPLICATION_CREDENTIALS=/root/tinboker/pipelines/services/podcast/gcp-service-account.json
 # Delta refresh should be quick; fail rather than overlapping with the next hour.
 TimeoutStartSec=900

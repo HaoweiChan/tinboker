@@ -1,400 +1,138 @@
 # CLAUDE.md — TinBoker Monorepo
 
-This file is the root context for Claude Code agents. Sub-agents should also read the
-tier-specific guides — `backend/AGENTS.md`, `frontend/AGENTS.md`, and `pipelines/AGENTS.md` —
-for domain rules.
+Router file: identity, hard rules, and pointers. Each topic's detail lives in exactly ONE
+referenced file — when a trigger below matches your task, **read that file before acting;
+do not work from memory of it**. If this file conflicts with a referenced doc, the doc is
+newer — trust it and fix the pointer here (rules for editing this file:
+`docs/ai-ops/40-maintenance-protocol.md`).
+
+Note: the root `AGENTS.md` is a symlink to this file — non-Claude tools (Codex, Cursor,
+Aider) that look for `AGENTS.md` read the same content Claude sessions do. There is no
+separate AGENTS.md content to keep in sync anymore.
 
 ---
 
-## Project Summary
+## What this is
 
-TinBoker (聽播客) is a Taiwanese stock & podcast intelligence platform. This repo is a **monorepo**
-that consolidated the former `tinboker-platform` (web UI + API) and `tinboker-agents`
-(content pipelines, now under `pipelines/`) into one standalone repo.
+TinBoker (聽播客) — Taiwanese stock & podcast intelligence platform. Monorepo:
 
-- **Frontend** (`frontend/`): React 19 + TypeScript + Vite → Cloudflare Pages (`tinboker.com`)
-- **Backend** (`backend/`): FastAPI (Python 3.12) platform API → Docker on Netcup VPS (`api.tinboker.com`)
-- **Pipelines** (`pipelines/`): content/agent tier — podcast + news ingestion → transcribe,
-  summarize, extract ticker sentiment, build the wiki knowledge graph. uv workspace; the podcast
-  service serves `/api/wiki` + `/api/podcast` on `:8003`; news runs as a systemd timer. **Infra/content-only — no UI here.**
-- **MCP servers** (`mcp-servers/`): agent tooling — `stock-translations`, `article-authoring`
-- **Database:** SQLite (dev) / Cloud SQL PostgreSQL (main + prod) — incl. the pipelines wiki store
-- **Cache:** Redis 7-alpine on VPS
-- **Auth:** Google OAuth → JWT
-- **External APIs:** Massive API (US stocks), FinMind (TW stocks), GCP Firestore (podcasts), Spotify + Tavily (pipelines)
+- `frontend/` — React 19 + TypeScript + Vite → Cloudflare Pages (`tinboker.com`)
+- `backend/` — FastAPI (Python 3.12) API → Docker on Netcup VPS (`api.tinboker.com`)
+- `pipelines/` — content tier: podcast + news ingestion → transcribe, summarize, ticker
+  sentiment, wiki graph. uv workspace; serves `/api/wiki` + `/api/podcast` on `:8003`.
+  **Content/infra only — never build UI here.**
+- `mcp-servers/` — agent tooling (`stock-translations`, `article-authoring`)
+- Data: SQLite (dev) / Cloud SQL Postgres (staging+prod) · Redis cache · Firestore
+  (`graphfolio-db`) · Google OAuth → JWT
+- External APIs: Massive (US stocks), FinMind (TW stocks), Spotify + Tavily (pipelines)
 
----
+## How to operate (AI sessions — read before working)
 
-## Where AI tools should look first
+- `docs/ai-ops/10-model-dispatch.md` — **before spawning subagents or any repo-wide
+  scan.** Core rule: the main conversation dispatches; bulk reading/search/research goes
+  to subagents that return conclusions + `file:line` only.
+- `docs/ai-ops/20-judgment-rubrics.md` — when unsure whether to escalate a model, declare
+  done, ask the user, or change approach.
+- `docs/ai-ops/30-delegation-templates.md` — copy-paste prompts for delegating search /
+  implementation / refactor / research / review.
+- `docs/ai-ops/40-maintenance-protocol.md` — **before editing this file or anything in
+  `docs/ai-ops/`.**
+- `docs/ai-ops/00-diagnosis.md` — why these rules exist; read once per long project.
+- Never mark a task done without the evidence listed in rubric R2 (tests/build output,
+  read-back, or health check). Self-review of your own diff is not verification.
 
-**Domain reference docs (tool-neutral):**
-- `docs/agents/podcast-domain.md` — episodes, podcasts, comments, recommendations, news
-- `docs/agents/stock-data.md` — TW/US market data, charting, WebSocket prices, translations
-- `docs/agents/search-discovery.md` — search, suggestions, trending, tags
-- `docs/agents/graph-visuals.md` — knowledge graph, design system, PWA visuals
-- `docs/agents/auth-admin.md` — auth, user, admin dashboard, dev portal
-- `docs/agents/devops-infra.md` — VPS, Docker, Caddy, CI/CD, Redis, monitoring
-- `docs/agents/qa-tester.md` — full QA suite (infra/API/UI/CI/security/perf) across L/D/S/P
+## Read-first map (trigger → canonical file)
 
-**Content pipelines (the `pipelines/` tier — former `tinboker-agents`):**
-- `pipelines/AGENTS.md` — purpose, module map, decision tree, conventions
-- `pipelines/docs/wiki-schema.md` — wiki Postgres schema + `/api/wiki` API
-- `pipelines/docs/content-api-roadmap.md` — what the web UI needs from the pipelines, and the plan
-- `pipelines/docs/data-consolidation-plan.md` — Firestore/GCS → VPS Postgres consolidation
+| Working on | Read first |
+|---|---|
+| Episodes, podcasts, comments, news content | `docs/agents/podcast-domain.md` |
+| TW/US market data, charts, prices, translations | `docs/agents/stock-data.md` |
+| Search, suggestions, trending, tags | `docs/agents/search-discovery.md` |
+| Knowledge graph, design system, PWA visuals | `docs/agents/graph-visuals.md` |
+| Auth, user, admin dashboard, dev portal | `docs/agents/auth-admin.md` |
+| VPS, Docker, Caddy, CI/CD, Redis, env vars, cache TTLs, secrets | `docs/infra-runbook.md` (ops detail) + `docs/agents/devops-infra.md` (map) |
+| Deploy / release / tag / rollback | `docs/workflows/deploy-flow.md` |
+| QA, bug repro, smoke suite, browser dev-bypass | `docs/workflows/qa-flow.md` + `docs/agents/qa-tester.md` |
+| Firestore schema or data change | `docs/workflows/firestore-data-change.md` + `docs/firestore-contract.md` (shared contract) |
+| Anything under `pipelines/` | `pipelines/AGENTS.md` (+ `pipelines/docs/wiki-schema.md`) |
+| Parallel agents / git worktrees | `docs/workflows/parallel-agents.md` |
+| Python style & backend file map | `backend/AGENTS.md` |
+| UI conventions, zh-TW localization, icons, TS style | `frontend/AGENTS.md` |
+| Product/engineering task tracking (TODO.md, TKB- IDs) | `docs/workflows/task-management.md` |
 
-**Procedural workflows:**
-- `docs/workflows/deploy-flow.md` — branch → env → tag pipeline
-- `docs/workflows/qa-flow.md` — reproducing known bugs, dev-bypass flow
-- `docs/workflows/firestore-data-change.md` — Firestore schema / data-contract changes
+Tool wrappers (all thin pointers to the docs above): `.claude/agents/`, `.claude/skills/`,
+`.codex/agents/`, `.cursor/rules/`, `.agents/skills/`.
 
-**Canonical data contract (shared between `backend/` and `pipelines/`):**
-- `docs/firestore-contract.md`
-
-**Operational reference:**
-- `docs/infra-runbook.md` — VPS, Caddy, GCP, Cloudflare, Docker, env vars (live ops)
-
-**Code style / conventions (unchanged):**
-- `backend/AGENTS.md` — Python style, key file map
-- `frontend/AGENTS.md` — UI conventions, zh-TW localization, icon system
-- `pipelines/AGENTS.md` — uv workspaces, content-builder conventions, "don't build UI here"
-
-**Tool-specific entry points (all thin wrappers → `docs/agents/` + `pipelines/AGENTS.md`):**
-- Claude Code subagents: `.claude/agents/<domain>.md` (delegate by domain)
-- Claude Code skills: `.claude/skills/<workflow>/SKILL.md` (invoked by intent)
-- Codex CLI agents: `.codex/agents/<domain>.toml` (+ `.codex/config.toml` for MCP servers)
-- Cursor rules: `.cursor/rules/<domain>.mdc` (auto-attached by file glob)
-- Tool-neutral skills: `.agents/skills/<workflow>/SKILL.md`
-- Codex CLI / OpenCode / Aider: read this file (`AGENTS.md` is symlinked here)
-
----
-
-## Repository Layout
-
-```
-tinboker/
-├── frontend/           React 19 + Vite web UI → Cloudflare Pages
-├── backend/            FastAPI platform API, Docker, deploy scripts
-├── pipelines/          Content & agent pipelines (podcast + news ingestion, wiki builder; uv workspace)
-├── mcp-servers/        MCP servers for AI tooling (stock-translations, article-authoring)
-├── docs/               Domain references, workflows, firestore-contract, runbooks
-├── .claude/            Claude Code subagents + skills (thin wrappers)
-├── .codex/             Codex CLI agents + MCP config
-├── .cursor/rules/      Cursor rules (thin wrappers)
-├── .agents/            Tool-neutral skill wrappers
-└── .github/workflows/  CI/CD pipelines (backend, frontend, pipelines)
-```
-
----
-
-## Quick Commands
-
-### Backend
+## Quick commands
 
 ```bash
-cd backend
-uv sync                         # install deps (preferred over pip)
-docker compose up -d redis      # start Redis
-python -m src.main              # run dev server (localhost:5174)
-pytest tests/ -v                # run all tests
-pytest tests/unit/ -v           # unit tests only
+# backend
+cd backend && uv sync && docker compose up -d redis
+python -m src.main              # dev server localhost:5174
+pytest tests/ -v                # tests (more invocations: backend/AGENTS.md)
 ruff check src/                 # lint
+
+# frontend
+cd frontend && npm install
+npm run dev                     # localhost:5173
+npm run build && npm run lint   # required green before any merge
+
+# pipelines (uv workspace — NEVER pip install here)
+cd pipelines && uv sync
+cd services/podcast && python main.py --config podcasts_tw.json
+uv run --package tinboker-podcast pytest
 ```
 
-### Frontend
+## Environments
 
-```bash
-cd frontend
-npm install
-npm run dev                     # Vite dev server (localhost:5173)
-npm run build                   # TypeScript check + Vite build
-npm run lint                    # ESLint
-```
-
-### Pipelines (content/agents)
-
-```bash
-cd pipelines
-uv sync                                          # install uv-workspace deps
-cd services/podcast && python main.py --config podcasts_tw.json   # run podcast pipeline
-uv run --package tinboker-podcast pytest         # tests for the podcast service
-uv run --package tinboker-shared  pytest         # tests for the shared lib
-```
-
----
-
-## Environments & Endpoints
-
-| Env | Frontend | Backend API | Backend Port | Trigger |
-|-----|----------|-------------|--------------|---------|
+| Env | Frontend | API | Port | Deployed by |
+|-----|----------|-----|------|-------------|
 | Local | localhost:5173 | localhost:5174 | 5174 | manual |
 | Dev | dev.tinboker.com | dev-api.tinboker.com | 8001 | merge to `develop` |
 | Staging | staging.tinboker.com | staging-api.tinboker.com | 8002 | merge to `main` |
-| Production | tinboker.com | api.tinboker.com | 8000 | git tag `v*` on `main` |
-
-VPS: `152.53.136.182` (Netcup RS 1000 G11, Debian 13)
-Reverse proxy: Caddy (auto-HTTPS)
-
----
-
-## Deployment Rules — READ BEFORE TOUCHING CI/CD
-
-**NEVER deploy code directly to the VPS via SSH/rsync.**
-
-All changes must go through Git → PR → CI/CD.
-
-### Git Branching
-
-- Features: `feat/<name>` from `develop`
-- Bug fixes: `fix/<name>` from `develop`
-- Hotfixes: `hotfix/<name>` from `main`
-- No `staging` branch — staging is the HEAD of `main`
-- **Working alongside other agents?** Create the branch in a dedicated worktree — see
-  [Parallel Agents — Worktree Discipline](#parallel-agents--worktree-discipline).
-
-### Release Pipeline
-
-| Branch / Ref | Deploys to | URL |
-|---|---|---|
-| `develop` (any merge) | Dev environment | dev.tinboker.com |
-| `main` (any merge) | Staging environment | staging.tinboker.com |
-| `v*` tag on `main` | Production | tinboker.com |
-
-### Deploy Flow
-
-1. Create `feat/<name>` from `develop`; open PR → CI builds image + Cloudflare preview URL
-2. Merge PR to `develop` → auto-deploys to dev.tinboker.com + dev-api.tinboker.com
-3. When dev is stable, open PR `develop` → `main`
-4. Merge to `main` → auto-deploys to staging.tinboker.com + staging-api.tinboker.com
-5. Verify staging is healthy: frontend loads + `curl https://staging-api.tinboker.com/health` returns `"status":"healthy"`
-6. Cut the release tag: `git tag vX.Y.Z origin/main && git push origin vX.Y.Z`
-7. Tag push → CI auto-deploys to tinboker.com + api.tinboker.com (production)
-8. **Monitor both CI runs** (`Frontend Deploy to Cloudflare Pages` + `Backend Build & Deploy`) to completion — do not declare the release done until both are green
-9. Confirm prod health: `curl https://api.tinboker.com/health`
-10. **If a CI run reports failure:** verify prod directly first — if health returns `"status":"healthy"` it was a false alarm; if prod is actually down, delete the tag and fix forward before re-tagging:
-    ```bash
-    git push origin :refs/tags/vX.Y.Z && git tag -d vX.Y.Z
-    ```
-11. Both CI pipelines now **auto-purge** Cloudflare CDN after deploy (no manual purge needed)
-
-### Allowed Server Commands (read-only / inspection only)
-
-```bash
-curl https://api.tinboker.com/health                          # health check
-ssh root@VPS "docker ps"                                      # container status
-ssh root@VPS "docker logs tinboker-backend-prod --tail=50"    # logs
-```
-
-### Post-deploy: Cloudflare CDN cache (fully automated)
-
-**Both pipelines now auto-purge** their respective CDN hosts after deploy:
-
-- **Backend** (`backend-deploy.yml`): purges `*-api.tinboker.com` after health check
-- **Frontend** (`frontend-deploy.yml`): purges `*.tinboker.com` frontend hosts after Pages deploy
-
-No manual purge is needed for code deploys. For **ad-hoc content/data changes** (e.g.
-Firestore data fix, manual pipeline run), purge via the Cloudflare API — fetch credentials
-from GCP Secret Manager yourself, never ask the user:
-
-```bash
-PROJ=gen-lang-client-0901363254
-TOKEN=$(gcloud secrets versions access latest --secret=CLOUDFLARE_API_TOKEN --project=$PROJ)
-ZONE=$(gcloud secrets versions access latest --secret=CLOUDFLARE_ZONE_TAG --project=$PROJ)
-# Host-scoped purge (leaves other envs cached). Swap hosts per env.
-curl -s -X POST "https://api.cloudflare.com/client/v4/zones/$ZONE/purge_cache" \
-  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  --data '{"hosts":["dev-api.tinboker.com","dev.tinboker.com"]}'
-# Prod — whole zone:  --data '{"purge_everything":true}'
-```
-
-Hosts by env: dev = `dev-api.tinboker.com` / `dev.tinboker.com`; staging =
-`staging-api.tinboker.com` / `staging.tinboker.com`; prod = `api.tinboker.com` /
-`tinboker.com` / `www.tinboker.com`. Never print the token. Verify success with
-`cf-cache-status: MISS` on a clean (non-cache-busted) URL afterward.
-
-### Cache TTLs (episode freshness)
-
-The content pipeline pulls new episodes every ~10 minutes. Cache layers are aligned:
-
-| Layer | TTL | Notes |
-|-------|-----|-------|
-| Redis (`podcast_episodes`) | 10 min | Matches pipeline pull frequency |
-| CDN edge (`s-maxage`) | 10 min | `/api/episodes/recent` endpoint |
-| Browser (`max-age`) | 2 min | Short enough for user to see fresh content on refresh |
-
-Other endpoints (stock, news, graph) retain longer TTLs — see `backend/src/cache/cache_config.py`.
-
----
-
-## Parallel Agents — Worktree Discipline
-
-This repo is under **heavy concurrent agent development**. Multiple agents sharing the one
-primary checkout collide on each other's uncommitted changes and branch switches. To avoid that,
-do **implementation work in a dedicated git worktree** when other agents may be active.
-
-**Use a worktree for:** multi-file work, refactors, or anything you'll commit.
-**Skip it for:** read-only exploration, a single trivial edit, or when you're the only agent.
-
-```bash
-git fetch origin
-git worktree add ../tinboker-<task> -b <type>/<name> origin/develop   # <type> = feat|fix|docs|hotfix
-cd ../tinboker-<task>
-# install only what you touch: (cd frontend && npm install) | (cd backend && uv sync) | (cd pipelines && uv sync)
-# copy env only if you need to RUN it: cp ../tinboker/backend/.env backend/.env   (NEVER commit .env)
-```
-
-**Clean up when done:** `git worktree remove ../tinboker-<task>`; delete the branch once its PR
-merges; run `git worktree prune` periodically (stale worktrees accumulate).
-
-**What this does — and does NOT — fix:**
-- ✅ Isolates working trees — no more clobbering another agent's uncommitted changes.
-- ⚠️ Worktrees **share** one `.git` — `git fetch`, branch create/delete, and stashes are global;
-  another agent's merges can land on `origin/develop` mid-task (re-check HEAD before commit/rebase).
-- ❌ Does **not** prevent git **merge conflicts** when two branches edit the same lines — keep PRs
-  small and integrate often.
-
-**Sub-agents:** prefer built-in isolation over rolling your own — the Agent tool's
-`isolation: "worktree"` and the background-task chip already spin up isolated worktrees.
-
----
-
-## Known Issues — check before relying
-
-The original launch-era bugs are resolved; **always verify a bug still reproduces against current
-code before acting on it.** When you need to reproduce or regression-test, follow
-[`docs/agents/qa-tester.md`](docs/agents/qa-tester.md) and the procedural overlay in
-[`docs/workflows/qa-flow.md`](docs/workflows/qa-flow.md).
-
----
-
-## Code Style
-
-### Python (backend)
-- Imports: stdlib → third-party → local, blank-line separated
-- Always use type hints on function signatures
-- Pydantic v2 style (`ConfigDict`, `model_config`)
-- Async endpoints; use `run_in_executor` for blocking calls
-- Cache pattern: `cache_get` → compute → `cache_set`
-- HTTPException for API errors, `logger.warning/error` for observability
-- Naming: `snake_case` files/vars, `PascalCase` classes, `UPPER_SNAKE_CASE` constants
-
-### TypeScript (frontend)
-- Zod schemas for all API response validation (`frontend/src/validation/schemas.ts`)
-- Zustand stores for global state (`frontend/src/store/`)
-- Axios client at `frontend/src/services/api/client.ts`
-- Gate `console.warn/log` debug output behind `import.meta.env.DEV`
-- No `any` types; use proper type definitions in `frontend/src/types/`
-
----
-
-## Environment Variables
-
-### Backend (`.env` or GCP Secret Manager)
-
-```
-ENVIRONMENT=development|staging|production
-PORT=5174
-REDIS_URL=redis://localhost:6379/0
-USE_POSTGRES=false         # true for staging/prod
-MASSIVE_API_KEY=...
-FINMIND_API_KEY=...
-JWT_SECRET_KEY=...
-GCP_PROJECT_ID=gen-lang-client-0901363254
-FIRESTORE_DATABASE_ID=graphfolio-db
-POSTGRES_HOST=34.14.119.47
-CORS_ORIGINS=http://localhost:5173,https://tinboker.com,https://dev.tinboker.com,https://staging.tinboker.com
-# Release scoping (launch subset) — empty value disables a filter
-RELEASE_PODCAST_LANGUAGES=zh-TW    # only show content_sources podcasts in these languages ("" = all)
-RELEASE_EPISODE_MAX_AGE_DAYS=0     # hide episodes older than N days (0=off; flip to 30 once released_at_ms is backfilled on existing episodes — see docs/firestore-contract.md § contract cleanups)
-```
-
-### Frontend (`.env.*` per environment)
-
-```
-VITE_API_BASE_URL=http://localhost:5174    # or https://api.tinboker.com
-VITE_STAGE=DEV|STAGING|PRODUCTION
-VITE_GOOGLE_CLIENT_ID=...
-```
-
----
-
-## Testing
-
-```bash
-# Backend — unit + integration
-cd backend
-pytest tests/ -v --cov=src --cov-report=term-missing
-
-# Backend — specific markers
-pytest -m asyncio -v
-pytest -m integration -v
-
-# Frontend — type check + build (no dedicated test runner yet)
-cd frontend
-npm run build
-npm run lint
-```
-
-See `docs/agents/qa-tester.md` for end-to-end and environment-specific QA procedures.
-
----
-
-## GCP Dependencies
-
-- **Secret Manager:** Holds all production secrets; `config_loader.py` fetches them at startup
-- **Firestore:** `graphfolio-db` — podcast & episode data
-- **Cloud Storage:** `graphfolio-articles` — article content files
-- **Cloud SQL:** PostgreSQL at `34.14.119.47:5432`, db `podcast_db`
-- **Service account JSON:** Deployed to VPS as `/app/gcp-service-account.json` (not in repo)
-
----
-
-## Browser MCP — Dev Environment Auth Bypass
-
-The dev/staging environments are gated by Google OAuth + admin email allowlist.
-Automated browsers (Cursor browser MCP, Playwright) cannot complete Google OAuth.
-
-A **dev bypass** flow lets the browser authenticate without Google:
-
-### How it works
-
-1. Backend endpoint `POST /api/auth/dev-token` accepts a secret `token`
-2. Returns a valid JWT + user object (same as Google OAuth login)
-3. Only works when `ENVIRONMENT != production` AND `DEV_BYPASS_TOKEN` is set
-4. Frontend route `/auth/dev-bypass?token=SECRET` calls the backend and stores the JWT
-
-### Usage in Cursor browser MCP
-
-```
-# Step 1: Navigate to the bypass URL (substitute the live token, see below)
-browser_navigate → https://dev.tinboker.com/auth/dev-bypass?token=$DEV_BYPASS_TOKEN
-
-# Step 2: Wait for redirect to /
-# Step 3: Now browse freely — session is authenticated
-```
-
-### Token value
-
-The `DEV_BYPASS_TOKEN` is a rotating secret — **not stored in this repo**. Fetch the
-current value from GCP Secret Manager (it is also set as an env var on the VPS backend
-container):
-
-```bash
-gcloud secrets versions access latest --secret=DEV_BYPASS_TOKEN \
-  --project=gen-lang-client-0901363254
-```
-
-Never paste the token value into docs, commits, or the chat transcript.
-
----
-
-## Do Not
-
-- Commit `.env` files, `gcp-service-account.json`, or any secrets
-- Deploy directly to VPS via SSH (outside of CI/CD)
-- Use `@app.on_event("startup")` — already deprecated; use lifespan pattern
-- Add `continue-on-error: true` to CI test jobs
-- Hardcode financial values (OHLC, P/E ratios) in frontend components
-- Use `time.sleep()` in async code — use `await asyncio.sleep()`
-- Build UI in `pipelines/` — it is content/infra-only; the web UI lives in `frontend/`
-- Add new Firestore-direct read paths — reads are consolidating onto VPS Postgres + the HTTP API
-- Run `pip install` in `pipelines/` — it is a uv workspace; use `uv sync`
+| Production | tinboker.com | api.tinboker.com | 8000 | tag `v*` on `main` |
+
+VPS `152.53.136.182` (Netcup, Debian 13), Caddy reverse proxy.
+GCP project `gen-lang-client-0901363254` (Secret Manager, Firestore `graphfolio-db`,
+GCS `graphfolio-articles`, Cloud SQL `34.14.119.47:5432/podcast_db`).
+
+## Deployment — non-negotiables
+
+1. **Never deploy to the VPS via SSH/rsync.** Git → PR → CI/CD only. Read-only SSH
+   (`docker ps`, `docker logs`) is allowed.
+2. Branches: `feat|fix/<name>` from `develop`; `hotfix/<name>` from `main`; there is no
+   staging branch (staging = HEAD of `main`).
+3. `develop` → dev · `main` → staging · `v*` tag on `main` → production.
+4. A release is not done until **both** CI runs are green AND
+   `curl https://api.tinboker.com/health` returns `"status":"healthy"`.
+5. Full step-by-step procedure, verification, CDN purge, and tag-rollback recipe:
+   `docs/workflows/deploy-flow.md` — open it and follow it whenever releasing.
+
+## Do Not (hard rules)
+
+- Commit `.env` files, `gcp-service-account.json`, or secrets. **Never write a secret or
+  token value into any repo file, doc, commit message, or chat transcript** — reference
+  the GCP Secret Manager name instead.
+- Deploy directly to the VPS outside CI/CD.
+- Use `@app.on_event("startup")` (deprecated) — use the lifespan pattern.
+- Add `continue-on-error: true` to CI test jobs.
+- Hardcode financial values (OHLC, P/E) in frontend components.
+- Use `time.sleep()` in async code — `await asyncio.sleep()`.
+- Build UI in `pipelines/`.
+- Add new Firestore-direct read paths — reads are consolidating onto VPS Postgres + HTTP API.
+- Run `pip install` in `pipelines/` — uv workspace, use `uv sync`.
+- Trust a "known issue" without reproducing it against current code first
+  (`docs/workflows/qa-flow.md`).
+
+## Style — one line each, detail in the tier guides
+
+- Python: type-hinted, async endpoints, Pydantic v2, cache_get→compute→cache_set —
+  `backend/AGENTS.md`.
+- TypeScript: Zod-validated API responses, Zustand state, no `any` —
+  `frontend/AGENTS.md` § Code conventions.
+
+## Env vars & release scoping
+
+Canonical env-var reference (backend + frontend + release-scoping flags
+`RELEASE_PODCAST_LANGUAGES` / `RELEASE_EPISODE_MAX_AGE_DAYS`): `docs/infra-runbook.md`
+Part 6. Never copy values here.

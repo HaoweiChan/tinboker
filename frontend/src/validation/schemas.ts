@@ -318,6 +318,24 @@ export type TreeMapItem = {
   children?: TreeMapItem[];
 };
 
+export const SectorByTickerItemSchema = z.object({
+  exposure_id: z.string(),
+  exposure_type: z.string(),
+  display_name: z.string(),
+  icon_id: z.string().nullable().optional(),
+  color_hex: z.string().nullable().optional(),
+  group: z.string().nullable().optional(),
+  reason: z.string().nullable().transform((value) => value ?? ''),
+  description: z.string().nullable().optional(),
+});
+
+export const SectorsByTickerResponseSchema = z.object({
+  items: z.array(SectorByTickerItemSchema),
+});
+
+export type SectorByTickerItem = z.infer<typeof SectorByTickerItemSchema>;
+export type SectorsByTickerResponse = z.infer<typeof SectorsByTickerResponseSchema>;
+
 // ============================================
 // Interactive Model Schemas
 // ============================================

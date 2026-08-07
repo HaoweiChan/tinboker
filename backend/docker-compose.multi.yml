@@ -6,11 +6,30 @@
 #   docker compose -f docker-compose.multi.yml restart backend-prod
 #   docker compose -f docker-compose.multi.yml pull backend-prod && docker compose -f docker-compose.multi.yml up -d --no-deps backend-prod
 
+# Container log rotation. Without it, json-file logs grow without bound until a
+# deploy happens to recycle the container — backend-dev reached 18 GB over 12 days
+# and was only reclaimed by luck.
+#
+# Set per-service rather than in /etc/docker/daemon.json because daemon.json needs a
+# `systemctl restart docker`, which bounces prod, staging and dev simultaneously.
+# These apply when each container is next recreated, which normal deploys already do.
+#
+# logrotate is NOT a substitute: it can only rotate these by copytruncate (dockerd
+# holds the inode open), and external truncation leaves the json-file driver with a
+# stale offset — `docker logs --tail N` then returns nothing until the container is
+# recreated. Verified on this host. Docker's own rotation has no such problem.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "3"
+
 services:
   # Production Backend - Port 8000
   backend-prod:
     image: ghcr.io/haoweichan/tinboker-backend:${PROD_IMAGE_TAG:-main}
     container_name: tinboker-backend-prod
+    logging: *default-logging
     # Bind to loopback only: Caddy proxies from the host/Docker network, so the public
     # internet must NOT reach the origin directly (that bypasses Cloudflare's WAF/DDoS).
     ports:
@@ -18,6 +37,9 @@ services:
     environment:
       ENVIRONMENT: production
       USE_POSTGRES: "true"
+      # P1 read flip (firestore-contract §11): content reads from the local
+      # firestore_mirror. Verified on dev 2026-08-03 (parity vs Firestore).
+      CONTENT_READS_FROM_POSTGRES: "true"
       # Each env gets its own Redis logical DB so dev/staging test data can never
       # bleed into (or evict) production's cache. prod=/0, staging=/1, dev=/2.
       REDIS_URL: redis://redis:6379/0
@@ -32,14 +54,21 @@ services:
       POSTGRES_USER: podcast_user
       FIRESTORE_DATABASE_ID: graphfolio-db
       RELEASE_EPISODE_MAX_AGE_DAYS: "60"
+      TAXONOMY_REQUIRE_MEMBER_REASONS: "true"
       CORS_ORIGINS: '["https://tinboker.com","https://www.tinboker.com"]'
       # Marp render service runs as separate infra on its own docker network, only
       # reachable via its host-published :5004 — so go through the host gateway.
       MARP_SERVICE_URL: http://host.docker.internal:5004
+      # P5 (firestore-contract § 11.7): episode media artifacts live on the VPS disk,
+      # not GCS. Path inside the container; the host dir is bind-mounted rw below.
+      MEDIA_STORAGE_ROOT: /srv/tinboker-media
+      MEDIA_PUBLIC_BASE: https://podcast-api.tinboker.com/media
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
       - ./gcp-service-account.json:/app/gcp-service-account.json:ro
+      # rw: the backend writes modified summaries, social-card PNGs and promo media here.
+      - /srv/tinboker-media:/srv/tinboker-media:rw
     depends_on:
       redis:
         condition: service_healthy
@@ -57,11 +86,15 @@ services:
   backend-dev:
     image: ghcr.io/haoweichan/tinboker-backend:${DEV_IMAGE_TAG:-develop}
     container_name: tinboker-backend-dev
+    logging: *default-logging
     ports:
       - "127.0.0.1:8001:8000"
     environment:
       ENVIRONMENT: development
       USE_POSTGRES: "true"
+      # P1 read flip (firestore-contract §11): content reads from the local
+      # firestore_mirror instead of Firestore. Dev first; staging/prod after soak.
+      CONTENT_READS_FROM_POSTGRES: "true"
       REDIS_URL: redis://redis:6379/2
       PORT: "8000"
       HOST: 0.0.0.0
@@ -74,12 +107,19 @@ services:
       POSTGRES_USER: podcast_user
       FIRESTORE_DATABASE_ID: graphfolio-db
       RELEASE_EPISODE_MAX_AGE_DAYS: "60"
+      TAXONOMY_REQUIRE_MEMBER_REASONS: "true"
       CORS_ORIGINS: '["https://dev.tinboker.com","http://localhost:5173","http://localhost:3000"]'
       MARP_SERVICE_URL: http://host.docker.internal:5004
+      # P5 (firestore-contract § 11.7): episode media artifacts live on the VPS disk,
+      # not GCS. Path inside the container; the host dir is bind-mounted rw below.
+      MEDIA_STORAGE_ROOT: /srv/tinboker-media
+      MEDIA_PUBLIC_BASE: https://podcast-api.tinboker.com/media
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
       - ./gcp-service-account.json:/app/gcp-service-account.json:ro
+      # rw: the backend writes modified summaries, social-card PNGs and promo media here.
+      - /srv/tinboker-media:/srv/tinboker-media:rw
     depends_on:
       redis:
         condition: service_healthy
@@ -97,11 +137,13 @@ services:
   backend-staging:
     image: ghcr.io/haoweichan/tinboker-backend:${STAGING_IMAGE_TAG:-develop}
     container_name: tinboker-backend-staging
+    logging: *default-logging
     ports:
       - "127.0.0.1:8002:8000"
     environment:
       ENVIRONMENT: staging
       USE_POSTGRES: "true"
+      CONTENT_READS_FROM_POSTGRES: "true"
       REDIS_URL: redis://redis:6379/1
       PORT: "8000"
       HOST: 0.0.0.0
@@ -114,12 +156,19 @@ services:
       POSTGRES_USER: podcast_user
       FIRESTORE_DATABASE_ID: graphfolio-db
       RELEASE_EPISODE_MAX_AGE_DAYS: "60"
+      TAXONOMY_REQUIRE_MEMBER_REASONS: "true"
       CORS_ORIGINS: '["https://tinboker.com","https://dev.tinboker.com","https://staging.tinboker.com","http://localhost:5173","http://localhost:3000"]'
       MARP_SERVICE_URL: http://host.docker.internal:5004
+      # P5 (firestore-contract § 11.7): episode media artifacts live on the VPS disk,
+      # not GCS. Path inside the container; the host dir is bind-mounted rw below.
+      MEDIA_STORAGE_ROOT: /srv/tinboker-media
+      MEDIA_PUBLIC_BASE: https://podcast-api.tinboker.com/media
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
       - ./gcp-service-account.json:/app/gcp-service-account.json:ro
+      # rw: the backend writes modified summaries, social-card PNGs and promo media here.
+      - /srv/tinboker-media:/srv/tinboker-media:rw
     depends_on:
       redis:
         condition: service_healthy
@@ -137,6 +186,7 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: tinboker-postgres
+    logging: *default-logging
     ports:
       - "127.0.0.1:5432:5432"
     environment:
@@ -157,6 +207,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: tinboker-redis
+    logging: *default-logging
     ports:
       - "127.0.0.1:6379:6379"
     command: redis-server --appendonly no --maxmemory 2gb --maxmemory-policy allkeys-lru
@@ -173,6 +224,7 @@ services:
   netdata:
     image: netdata/netdata:stable
     container_name: tinboker-netdata
+    logging: *default-logging
     hostname: tinboker-vps
     ports:
       - "127.0.0.1:19999:19999"

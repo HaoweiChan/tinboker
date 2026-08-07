@@ -1,5 +1,18 @@
 #!/usr/bin/env python3
 """
+============================================================================
+DO NOT RUN — DEAD SCRIPT (GCS + Firestore decommission)
+============================================================================
+This script predates the P4/P5 migration (docs/firestore-contract.md § 11):
+it "deletes GCS files" through a storage service that now writes the VPS
+media disk, and deletes documents from the decommissioned Firestore, which
+is no longer the content store. Running it would at best crash and at worst
+delete live media files while leaving Postgres rows intact.
+
+Podcast deletion must go through Postgres. Kept only as a reference for the
+episode-enumeration logic until a Postgres-native replacement exists.
+============================================================================
+
 Script to delete all Firestore and GCS data for specific podcasts
 
 This script will:
@@ -18,6 +31,8 @@ Safety Features:
 - Requires explicit confirmation
 - Lists all files that will be deleted
 """
+
+raise SystemExit("delete_podcast_data.py is DEAD — see the DO-NOT-RUN banner above (GCS/Firestore decommissioned).")
 
 import argparse
 import hashlib

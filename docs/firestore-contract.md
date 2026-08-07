@@ -242,7 +242,7 @@ These are contract cleanups tracked across platform and pipeline work.
    - Keep both only for fields the frontend fetches directly without backend mediation.
    - Action: a separate sub-doc auditing each pair's usage; merge with this spec or land alongside.
 
-3. **`modified_*` is platform-only.** Agents pipeline must not overwrite `modified_summary_url`, `modified_summary_content`, `modified_by`, `modified_at` during regenerations. Spec requires agents to perform Firestore writes with `merge=True` *excluding* these fields. Pipeline episode update/regeneration paths enforce this; backend writes already use `merge=True` for adds and `DELETE_FIELD` for removals.
+3. **`modified_*` is platform-only.** Agents pipeline must not overwrite `modified_summary_url`, `modified_summary_content`, `modified_by`, `modified_at` during regenerations. Since P4 this is enforced by `pipeline/steps/postgres_episode.py::_merge_onto_stored` (previously by writing Firestore with `merge=True` *excluding* these fields); see § 11.6 for the full preserved-key set.
 
 4. **`*_content` fields are a cache, not a source.** Document that inlined markdown duplicates what `*_url` points to. Staleness rule: when agents regenerate the GCS file, they MUST also rewrite the matching `*_content` field in the same Firestore commit. Otherwise readers see drift.
 
@@ -432,6 +432,8 @@ Old `/api/recommendations/*` paths remain as deprecation aliases for one release
 
 This replaces the on-the-fly Postgres aggregation that powers `/api/recommendations/buzz`. Agents refresh this collection hourly via a localized delta job: recent `ticker_insights/*/tickers/*` writes identify touched `(ticker, market)` pairs, then only those tickers are recomputed from their historical source rows. A full recompute mode remains available for backfills/audits.
 
+> **Status note (2026-07-09) — the delta + market-suffix design below is DEFERRED, not active.** The hourly delta job and the `{ticker}.{market}` doc-id scheme (schema below / § 10) were added in `eee31f0` (2026-06-19) but **never ran in production**: the systemd timer was never installed and the delta query's `tickers.created_at` collection-group index was never created. The writer currently runs a **full recompute with bare doc-ids** (`trending_tickers/2330`, no `market` field) — the proven pre-`eee31f0` behavior — because a direct-Firestore consumer (the Hermes trading system) reads `trending_tickers/{bare_ticker}` by document id. Readers are unaffected: the backend maps by the `ticker` *field* and already tolerates bare ids. Re-activate delta + the suffix scheme only as a coordinated migration (provision the `created_at` index, update the Hermes reader) when insight volume outgrows an hourly full scan.
+
 ### 5.1 Document schema
 
 ```jsonc
@@ -530,8 +532,8 @@ Schema at [backend/src/models/notification.py:17-38](../backend/src/models/notif
 
 The notification fan-out service ([backend/src/services/notification_service.py](../backend/src/services/notification_service.py)) is triggered by new episode writes. The contract:
 
-- A document arriving at `episodes/{id}` with a never-before-seen `created_time` triggers `new_episode` notifications for every user with that `podcast_name` in `podcast_subscriptions`, and `stock_mention` notifications for every user whose `watchlist` overlaps `related_tickers`.
-- **Therefore agents MUST NOT mutate `created_time` on existing episodes.** Doing so would re-fire notifications.
+- An episode row first arriving in `firestore_mirror.episodes` triggers `new_episode` notifications for every user with that `podcast_name` in `podcast_subscriptions`, and `stock_mention` notifications for every user whose `watchlist` overlaps `related_tickers`. The trigger key is `first_seen_at` (DB default `now()` on the pipeline's first mirror insert, never set on conflict — [postgres_episode.py](../pipelines/services/podcast/src/pipeline/steps/postgres_episode.py)): monotonic ingestion order, so a late ingest with an old publish date still notifies. Re-inserting existing episodes into a fresh/truncated mirror resets `first_seen_at` and would re-fire — delete the producer's Redis marker first so its cold-start guard re-arms.
+- **Agents still MUST NOT mutate `created_time` on existing episodes.** The notification watermark no longer reads it, but feeds, recency scoping, and sort order do.
 - Sector/theme-derived `resolved_tickers` are inferred exposure metadata only and MUST NOT trigger `stock_mention` notifications unless the ticker is also present in `related_tickers`.
 - Retracted episodes should be marked with `retracted_at`; the episode doc remains in place so notification and index foreign keys do not break.
 - Agents MAY update other fields freely (re-summarization, transcript corrections, ticker re-extraction).
@@ -619,3 +621,241 @@ These decisions close the implementation questions that originally blocked the F
 6. **Multi-market namespace: internal `market` metadata.** `ticker_insights` and `trending_tickers` carry market metadata so TW/US symbols can be segregated while preserving existing string document IDs. Ambiguous overlaps without market metadata must fail validation before commit.
 7. **Sector/theme exposures: episode metadata only.** Sector/theme-derived ticker baskets are written to `sector_exposures` and companion flat arrays on the episode document. They do not populate `related_tickers`, inverted ticker indices, ticker pages, watchlist notifications, or `ticker_insights`.
 8. **Still open: `*_url` audit (§ 2.3 cleanup #2).** Which `*_public_url` fields are actually fetched by external consumers vs. backend-only remains an audit task.
+
+---
+
+## § 11. Reverse migration: Firestore → VPS Postgres (2026-08)
+
+> **Status: P1–P4 done, P5 (GCS + decommission) pending — see § 11.6.** Direction
+> reversed from § 7: the July 2026 GCP bill
+> (NT$46K — 78% Firestore internet egress, 17% read ops; see the P1 PR description)
+> made Firestore the wrong home for high-read content. The contract's *document
+> shapes* above remain authoritative; only the storage/transport changes.
+
+### 11.1 Target topology
+
+All environments already share one VPS-local Postgres container (`tinboker-postgres`,
+`backend/docker-compose.multi.yml`). The live pipeline mirrors every episode doc
+verbatim into `podcast_db`, schema `firestore_mirror`
+(`pipelines/services/podcast/src/pipeline/steps/postgres_episode.py`). P1 completes
+that mirror and flips backend content reads onto it:
+
+| Object | Shape |
+|---|---|
+| `firestore_mirror.episodes` | existing — promoted columns + `doc JSONB` (verbatim § 2 document) |
+| `firestore_mirror.ticker_insights` | `(episode_id text, ticker text, doc jsonb, updated_at, PK(episode_id, ticker))` — verbatim § 4 docs |
+| `firestore_mirror.trending_tickers` | `(ticker text PK, doc jsonb, updated_at)` — verbatim § 5 docs |
+
+The former `tags/{tag}/episodes` and `tickers/{ticker}/episodes` inverted indices are
+NOT mirrored as tables: per § 3.2 they are pure derivations of `episodes.tags` /
+`episodes.related_tickers`, so the backend queries the mirror's JSONB arrays directly
+(GIN-indexed).
+
+### 11.2 Read flip (backend)
+
+`CONTENT_READS_FROM_POSTGRES=true` swaps a same-interface `PostgresMirrorService` in
+place of `FirestoreService` for content reads (episodes, tag/ticker membership,
+ticker insights, trending). Rolled out per-env dev → staging → prod during P1;
+**default ON since P4**. Flipping it off is no longer a real rollback — Firestore
+stopped being written in P4, so the Firestore read path serves a frozen snapshot.
+`users/{id}` and `users/{id}/notifications` moved to first-class Postgres tables in
+P3 and never consult this flag.
+
+### 11.3 Writer obligations (pipelines)
+
+Added as dual-writes in P1; since P4 these ARE the writes — the Firestore halves are
+gone and each raises on failure rather than warning.
+
+- `pipeline/steps/postgres_episode.py::persist_episode` builds and upserts the episode
+  document (§ 2 shape) — see § 11.6 for the re-ingest preservation rules it enforces.
+- The `ticker_insights` export and the hourly `trending_tickers` refresh write their
+  Postgres tables; the refresh also reads its source rows from
+  `firestore_mirror.ticker_insights`.
+- `upsert_podcast_show` / `update_episode_fields` write `firestore_mirror.podcasts` /
+  `episodes.doc`.
+- The regen tool's `commit()` jsonb-merges its field updates onto
+  `firestore_mirror.episodes.doc`, and fails when the row does not exist rather than
+  fabricating a partial document.
+- `dump_firestore_to_postgres.py` remains the idempotent one-shot import (Firestore →
+  Postgres) for history; it is archival only now.
+
+### 11.4 Rollout runbook (P1)
+
+1. Merge P1 → `develop` (deploys backend to dev; pipelines deploy is manual).
+2. On the VPS: deploy pipelines, then run `dump_firestore_to_postgres.py` once
+   (creates tables/indexes, backfills history; safe to rerun).
+3. Sanity SQL: row counts for `episodes` / `ticker_insights` / `trending_tickers`
+   vs Firestore console counts; spot-check one episode doc.
+4. Set `CONTENT_READS_FROM_POSTGRES=true` on **dev** backend only; smoke
+   `/api/episodes/recent`, a tag page, a stock page, `/api/ticker-insights/trending`.
+5. Promote flag to staging (merge to `main`), soak, then prod (`v*` tag).
+6. 48h green in prod → P2+.
+
+### 11.5 Phases and the Hermes dependency
+
+| Phase | Content | Firestore usage removed | Status |
+|---|---|---|---|
+| P1 | backend content reads → mirror; dual-writes above | ~99% of remaining reads | done |
+| P2 | pipelines' own `:8003` reads (`/api/podcast/shows` etc.) + `podcasts` metadata → Postgres | pipelines reads | done |
+| P3 | `users/*` + notifications → new Postgres tables; fan-out query → SQL | platform data | done |
+| P4 | stop all Firestore writes | all writes | **done** |
+| P5 | mp3/transcript/summary artifacts off GCS; decommission `graphfolio-db` + the GCP service account | storage + credentials | pending |
+
+The former **P4 blocker** — the external Hermes trading system reading
+`trending_tickers/{bare_ticker}` straight from Firestore — was cleared before this
+phase: Hermes now reads the backend HTTP API.
+
+### 11.6 Post-P4 state
+
+- **`podcast_db`, schema `firestore_mirror`, is the canonical content store.** The
+  name is kept (renaming it would churn every writer, reader and backfill script for
+  no behavioural gain), but nothing mirrors anything any more — `episodes`,
+  `ticker_insights`, `trending_tickers` and `podcasts` are the only copies.
+- **Postgres `users` / `user_notifications` are canonical for user data** (P3).
+- **Firestore (`graphfolio-db`) is idle.** No live code path in either tier reads or
+  writes it. The `FirestoreService` classes and `CONTENT_READS_FROM_POSTGRES` still
+  exist for one release; a handful of one-off archival/backfill scripts under
+  `pipelines/services/podcast/scripts/` still hold a Firestore client on purpose.
+  Deleting the database is a P5 step, after the soak.
+- **GCS is frozen** — see § 11.7. Every artifact now lives on the VPS disk; the
+  buckets are read-only leftovers pending deletion.
+- **Every surviving write fails loudly.** With no second store, a warn-and-skip on
+  the episode upsert, the ticker-insight export, the trending refresh, the show
+  upsert, the regen `commit()` or the backend's `patch_episode_doc` would be silent
+  data loss, so each raises instead.
+- **Re-ingest preservation is explicit now.** Firestore's `set(..., merge=True)` gave
+  it for free; `pipeline/steps/postgres_episode.py::_merge_onto_stored` reproduces it
+  — stored-but-unwritten keys survive, `created_time` is immutable (§ 2.1), and the
+  platform-owned keys of § 2.3 #3 (plus `social_thread`, `social_cards`,
+  `retracted_at`, `num_likes`, `number_click`) keep their stored value unless the
+  incoming run produced a non-empty replacement.
+- **The inverted indices (§ 3) are not coming back.** Per § 3.2 they were pure
+  derivations of `episodes.tags` / `episodes.related_tickers`; the backend queries
+  those GIN-indexed JSONB arrays directly.
+
+### 11.7 Media storage (P5 write side)
+
+Episode media artifacts are written to the VPS disk and served by Caddy. **No code
+path uploads to GCS any more** — the buckets are frozen and get deleted at the end
+of the decommission.
+
+**Layout.** Identical to the old bucket layout, so files copied out of
+`graphfolio-articles` and files written since P5 live in one uniform tree:
+
+```
+{MEDIA_STORAGE_ROOT}/{bucket}/{GCS_BASE_PATH?}/{type}/{sha256(podcast_name)[:12]}/{episode_id}.{ext}
+{MEDIA_PUBLIC_BASE}/{bucket}/{GCS_BASE_PATH?}/{type}/{sha256(podcast_name)[:12]}/{episode_id}.{ext}
+```
+
+`{type}` ∈ `mp3 · transcripts · summaries · images · events · sentences · marp ·
+ticker_marp · ticker_insights · presentations · social_cards`. `{bucket}` is the
+former bucket name kept as a directory (`graphfolio-articles`; legacy episodes point
+at `podcast-data-web`, which sits beside it).
+
+**Envs** (both tiers, same defaults):
+
+| Var | Default | Meaning |
+|---|---|---|
+| `MEDIA_STORAGE_ROOT` | `/srv/tinboker-media` | write root; falls back to a project-relative `.media` dir when the prod path is absent, so dev checkouts need no `/srv` |
+| `MEDIA_PUBLIC_BASE` | `https://podcast-api.tinboker.com/media` | public URL prefix Caddy serves that root at |
+| `GCS_BUCKET_NAME` | `graphfolio-articles` | now only the *directory* name under the root |
+| `GCS_BASE_PATH` | *(empty)* | optional path prefix, unchanged |
+
+The backend runs in Docker, so `backend/docker-compose.multi.yml` bind-mounts
+`/srv/tinboker-media` **rw** into all three env containers.
+
+**`gs://` is dead.** Writers put the *same* public https URL into both `*_url` and
+`*_public_url`; readers already prefer `*_public_url`. Readers still *parse* `gs://`
+and `storage.googleapis.com` URLs — historical docs carry them — but map them onto
+the local file, never onto GCS. Nothing writes a `gs://` value any more.
+
+**Signing is gone.** `GCSContentService.generate_signed_url` returns the stable
+public media URL (or `None` when the file is missing); the mp3 player and the promo
+composer use it unchanged, so their URLs no longer expire.
+
+**Writers.** `pipelines/…/service/gcs_storage_service.py::GCSStorageService` (all
+pipeline steps + the regen MCP) and `backend/src/services/gcs_content.py`
+(`GCSContentService`) — both keep the historical class names, both write via
+temp-file + `os.replace` so Caddy never serves a half-written artifact.
+
+**Leftover resolved:** `backend/src/routers/content.py` (the supply-chain article
+endpoints, the one reader that needed bucket *listing*) now globs
+`{MEDIA_STORAGE_ROOT}/graphfolio-articles/` directly and returns stable media URLs;
+`CONTENT_BUCKET` / `CONTENT_PREFIX` / `CONTENT_URL_TTL` are gone. No code path reads
+GCS any more — the buckets can be deleted.
+
+### 11.8 Secrets off Secret Manager (P6)
+
+**State after P6: no code path *reads* a secret from Google Secret Manager as its
+first choice.** Secrets resolve from the environment; GSM survives only as a
+fallback so a deploy still works before the operator has migrated a value.
+
+| Consumer | Order | Where the value lives now |
+|---|---|---|
+| GitHub Actions (`.github/workflows/*.yml`) | GH repo secret only — no fallback | Settings → Secrets and variables → Actions |
+| `pipelines/**` (`shared.secrets.bootstrap`) | env var → env file → GSM | `/root/tinboker/pipelines/.env`, injected by `EnvironmentFile=-` in every unit |
+| `backend/**` (`src/config_loader.py`) | init → env var → `.env` → GSM | `compose/backend/.env`, injected by docker compose |
+
+`grep -rn "secrets versions access" .github/` is empty. The workflow steps named
+"Load deploy secrets" / "Load build secrets" replace the old "Fetch secrets from
+GSM" steps and keep the `::add-mask::` calls; the `google-github-actions/auth` +
+`setup-gcloud` pairs that existed only to reach GSM are gone, along with the
+now-unused `GCP_PROJECT_ID` workflow env and `id-token: write` permissions.
+
+**GSM name → destination.** Names are unchanged, so an operator migration is a
+copy, not a rename.
+
+| GSM secret | GitHub Actions repo secret | VPS env file → var |
+|---|---|---|
+| `VPS_HOST` | `VPS_HOST` | — |
+| `VPS_USER` | `VPS_USER` | — |
+| `VPS_SSH_KEY` | `VPS_SSH_KEY` | — |
+| `GHCR_TOKEN` | `GHCR_TOKEN` | — |
+| `GCP_CREDENTIALS_JSON` | `GCP_CREDENTIALS_JSON` | written to the VPS by the deploy job |
+| `GOOGLE_CLIENT_ID` | `GOOGLE_CLIENT_ID` | — (build-time `VITE_GOOGLE_CLIENT_ID`) |
+| `TINBOKER_SOCIAL_TOKEN` | `TINBOKER_SOCIAL_TOKEN` | `compose/backend/.env` → `TINBOKER_SOCIAL_TOKEN` |
+| `POSTGRES_PASSWORD` | `POSTGRES_PASSWORD` | `compose/backend/.env` → `POSTGRES_PASSWORD` |
+| `CLOUDFLARE_API_TOKEN` | `CLOUDFLARE_API_TOKEN` *(already existed)* | `compose/backend/.env` |
+| `CLOUDFLARE_ZONE_TAG` | `CLOUDFLARE_ZONE_TAG` | `compose/backend/.env` |
+| `JWT_SECRET_KEY`, `ADMIN_EMAILS`, `DEV_BYPASS_TOKEN`, `INTERNAL_API_KEY`, `TINBOKER_WRITE_TOKEN`, `TINBOKER_ARTICLE_TOKEN`, `FINMIND_API_KEY(S)`, `FINMIND_HOURLY_CAP`, `MASSIVE_API_KEY(S)`, `PODCAST_API_KEY`, `GOOGLE_CLIENT_SECRET`, `THREADS_ACCESS_TOKEN`, `THREADS_USER_ID`, `FACEBOOK_PAGE_ID`, `FACEBOOK_PAGE_ACCESS_TOKEN`, `GSC_SITE_URL`, `POSTGRES_URL`, `REDIS_URL`, `REDIS_PASSWORD`, `GOOGLE_APPLICATION_CREDENTIALS` | — | `compose/backend/.env` (same var name) |
+| `PODCAST_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY`, `FIRESTORE_DATABASE_ID`, `GCP_CREDENTIALS_JSON`, `SPOTIFY_ID`, `SPOTIFY_SECRET`, `LANGSMITH_API_KEY`, `TAVILY_API_KEY`, `WIKI_DATABASE_URL`, `EPISODE_DATABASE_URL` | — | `/root/tinboker/pipelines/.env` (same var name) |
+
+The backend's authoritative list is `_GSM_FIELDS` in `backend/src/config_loader.py`
+(uppercase the field name to get the secret name); the pipelines' lists are
+`_GSM_VARS` / `_GSM_OPTIONAL` in
+`pipelines/services/podcast/src/secrets_bootstrap.py` and the `gsm_vars` /
+`optional_vars` defaults in `pipelines/libs/shared/src/shared/secrets.py`.
+
+**Env file format** — `KEY=value` per line, `#` comments, no `export`, no quoting
+needed. `EnvironmentFile=-` (leading dash) means "optional", so a unit still starts
+if the file is absent and the GSM fallback covers the gap.
+
+**What still pins the GCP service account.** `GOOGLE_APPLICATION_CREDENTIALS` and
+`gcp-service-account.json` are NOT removed:
+
+1. **~~The GCS article store~~ — resolved.** `backend/src/routers/content.py` now
+   reads local disk (§ 11.7 "Leftover resolved"); no runtime GCS reads remain.
+2. **The GSM fallback itself.** Both tiers still authenticate to Secret Manager for
+   any value the operator has not migrated.
+3. **`refresh-social-tokens.yml`** — the one remaining GSM *writer*. It adds a new
+   `THREADS_ACCESS_TOKEN` version weekly; a workflow cannot do that against GitHub
+   Actions secrets without a PAT + libsodium encryption, so it was left alone.
+   ⚠️ Once `THREADS_ACCESS_TOKEN` is served from `compose/backend/.env`, the value
+   this job writes no longer reaches the backend — copy it across by hand, or the
+   token lapses after 60 days.
+
+**Cleanup order** (each step only after the one above it is verified):
+
+1. Operator creates the GitHub Actions repo secrets in the table above, then merges
+   this branch — CI/CD stops touching GSM immediately.
+2. Operator fills `compose/backend/.env` and `/root/tinboker/pipelines/.env`; watch
+   for `source=gsm` in `docker logs backend-*` and `journalctl -u podcast-api` until
+   none remain.
+3. ~~Port the `CONTENT_BUCKET` article store off GCS~~ — done (§ 11.7).
+4. Close the Threads-token loop (deliver the refreshed token to the backend `.env`,
+   or drop the automated refresh), then delete `refresh-social-tokens.yml`.
+5. Delete `GCPSecretManagerSource` + `_GSM_FIELDS`, `_gsm_client` / `_load_from_gsm`
+   in `shared/secrets.py`, and the `google-cloud-secret-manager` dependency from
+   both tiers.
+6. Delete `GOOGLE_APPLICATION_CREDENTIALS`, the SA JSON files, the GSM secrets, and
+   finally the GCP project.

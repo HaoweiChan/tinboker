@@ -9,6 +9,7 @@ postprocess refactor against drift.
 
 import json
 
+import psycopg
 import pytest
 from src.podcast.content_builder.nodes import (
     extractor,
@@ -42,7 +43,7 @@ WRITER_OUT = {
     "executive_summary": "摘要重點",
     "sections": [{
         "heading": "台積電前景",
-        "content": "看好[台積電](#ticker:2330)在[半導體](#tag:Semiconductor)的成長",
+        "content": "看好[台積電](#ticker:2330)在[供應鏈](#tag:SupplyChain)的成長",
         "start_time": 0,
     }],
     "conclusion": "結論",
@@ -70,6 +71,7 @@ def _drive_required(episode_id="ep_test"):
     orch.submit(episode_id, "writer", WRITER_OUT)
     orch.submit(episode_id, "key_insights", {"key_insights": ["台積電財報優於預期", "半導體供應鏈樂觀"]})
     orch.submit(episode_id, "ticker_extractor", TICKER_OUT)
+    orch.submit(episode_id, "marp_writer", MARP_OUT)
 
 
 # --- Prompt parity ----------------------------------------------------------
@@ -107,7 +109,7 @@ def test_writer_prompt_injects_tag_vocabulary():
     orch.submit("ep_test", "extractor", {"events": [{"section_topic": "台積電", "start_index": 0, "end_index": 2}]})
     p = orch._prompt_payload("writer", draft["state"])
     assert "{tag_vocabulary}" not in p["user"]      # placeholder substituted
-    assert "Semiconductor = 半導體" in p["user"]     # a vocabulary entry is present
+    assert "SupplyChain = 供應鏈" in p["user"]     # a vocabulary entry is present
 
 
 def test_ticker_marp_uses_ticker_insights_not_events():
@@ -136,7 +138,7 @@ def test_writer_glue_matches_transform_to_markdown():
     })["markdown_report"]
     assert draft["state"]["markdown_report"] == expected
     # tags/tickers parsed from the markdown links
-    assert draft["state"]["tags"] == ["semiconductor"]
+    assert draft["state"]["tags"] == ["supplychain"]
     assert draft["state"]["related_tickers"] == ["2330"]
 
 
@@ -223,8 +225,6 @@ def test_assemble_only_includes_completed_steps():
 def test_full_run_preview_has_everything():
     _new_draft()
     _drive_required()
-    orch.submit("ep_test", "marp_writer", MARP_OUT)
-    orch.submit("ep_test", "ticker_marp_writer", {"title": "T", "slides": [{"heading": "2330", "bullet_points": ["看多"], "start_time": 0}]})
     prev = orch.preview("ep_test")
     assert prev["key_insights"][:2] == ["台積電財報優於預期", "半導體供應鏈樂觀"]
     assert len(prev["key_insights"]) >= 3
@@ -240,6 +240,43 @@ def test_commit_with_nothing_submitted_errors():
         orch.commit("ep_empty")
 
 
+# --- Slide freshness (EP677 incident: regen shipped a new summary, old slides) ----
+
+def test_required_done_needs_marp():
+    """marp_writer is a REQUIRED step: required_done stays False without it."""
+    assert "marp_writer" in orch.REQUIRED_STEPS
+    _new_draft()
+    orch.submit("ep_test", "extractor", {"events": [{"section_topic": "台積電", "start_index": 0, "end_index": 2}]})
+    orch.submit("ep_test", "writer", WRITER_OUT)
+    orch.submit("ep_test", "key_insights", {"key_insights": ["台積電財報優於預期"]})
+    res = orch.submit("ep_test", "ticker_extractor", TICKER_OUT)
+    assert res["required_done"] is False
+    res = orch.submit("ep_test", "marp_writer", MARP_OUT)
+    assert res["required_done"] is True
+
+
+def test_commit_refuses_new_summary_without_new_slides():
+    """A regenerated writer output must not commit with the old episode deck."""
+    _new_draft()
+    orch.submit("ep_test", "extractor", {"events": [{"section_topic": "台積電", "start_index": 0, "end_index": 2}]})
+    orch.submit("ep_test", "writer", WRITER_OUT)
+    with pytest.raises(orch.RegenError, match="marp_writer"):
+        orch.commit("ep_test")
+
+
+def test_ticker_step_auto_rebuilds_ticker_deck():
+    """The ticker deck is deterministic — the ticker step's glue rebuilds it, so a
+    commit after ticker_extractor can never carry a stale ticker deck (no explicit
+    ticker_marp_writer submit needed)."""
+    _new_draft()
+    orch.submit("ep_test", "extractor", {"events": [{"section_topic": "台積電", "start_index": 0, "end_index": 2}]})
+    orch.submit("ep_test", "writer", WRITER_OUT)
+    orch.submit("ep_test", "ticker_extractor", TICKER_OUT)
+    prev = orch.preview("ep_test")
+    assert prev["ticker_marp_chars"] > 0
+    assert "ticker_marp_markdown" in prev["will_write_fields"]
+
+
 # --- commit writes the served content path (GCS re-upload + authed cache bust) ----
 
 
@@ -252,22 +289,11 @@ class _Resp:
 
 
 class _FakeFirestore:
-    """Captures set_document writes so a commit can be asserted without Firestore."""
+    """Read-only FirestoreService stand-in — since P4 ``commit`` writes nothing to
+    Firestore, so this only has to exist for the draft-loading reads."""
 
     def __init__(self):
-        self.writes = []  # list of (collection, doc_id, data, merge)
         self.db = object()
-
-    def set_document(self, collection, doc_id, data, merge=False):
-        self.writes.append((collection, doc_id, dict(data), merge))
-
-    def merged(self, doc_id):
-        """The union of every merge write for ``doc_id`` (commit writes in parts)."""
-        out = {}
-        for collection, did, data, _ in self.writes:
-            if collection == "episodes" and did == doc_id:
-                out.update(data)
-        return out
 
 
 class _FakeGCS:
@@ -309,10 +335,10 @@ def test_commit_reuploads_gcs_served_content_and_repoints_urls(monkeypatch):
     _new_draft()
     _drive_summary_and_marp()
 
-    fake_fs = _FakeFirestore()
     fake_gcs = _FakeGCS()
-    monkeypatch.setattr(orch, "_firestore", lambda: fake_fs)
+    monkeypatch.setattr(orch, "_firestore", lambda: _FakeFirestore())
     monkeypatch.setattr(orch, "_gcs_storage_service", lambda: fake_gcs)
+    cur = _fake_pg(monkeypatch)
     monkeypatch.setattr("httpx.patch", lambda *a, **k: _Resp(200))
     monkeypatch.setenv("TINBOKER_PLATFORM_API_URL", "https://api.example.com")
     monkeypatch.setenv("TINBOKER_WRITE_TOKEN", "svc-token-123")
@@ -329,11 +355,126 @@ def test_commit_reuploads_gcs_served_content_and_repoints_urls(monkeypatch):
     assert call["summary_content"]
 
     # 2. The doc's *_url fields now point at the fresh upload (so hydration reads it).
-    merged = fake_fs.merged("ep_test")
+    merged = _merged_doc(cur)
     assert merged["marp_markdown_url"] == "gs://b/marp/ep_test.md"
     assert merged["events_markdown_url"] == "gs://b/events/ep_test.md"
     assert merged["summary_url"] == "gs://b/summaries/ep_test.md"
     assert "marp_markdown_url" in report["gcs_content_uploaded"]
+
+
+# --- Regen drift fix: mirror the L817-824 doc merge onto firestore_mirror.episodes ----
+
+
+class _FakeCursor:
+    def __init__(self, rowcount: int = 1):
+        self.executed: list[tuple[str, tuple]] = []
+        self.rowcount = rowcount
+
+    def execute(self, sql, params=None):
+        self.executed.append((sql, params))
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+class _FakeConn:
+    def __init__(self, cursor):
+        self._cursor = cursor
+
+    def cursor(self):
+        return self._cursor
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+def _fake_pg(monkeypatch, rowcount: int = 1):
+    """Point commit()'s only write target — firestore_mirror.episodes — at a fake
+    cursor. Returns it so tests can read back the jsonb-merge parameters."""
+    monkeypatch.setenv("EPISODE_DATABASE_URL", "postgresql://x/y")
+    cur = _FakeCursor(rowcount=rowcount)
+    monkeypatch.setattr(psycopg, "connect", lambda *a, **k: _FakeConn(cur))
+    return cur
+
+
+def _merged_doc(cur) -> dict:
+    """Union of every jsonb-merge commit issued (it writes the doc in parts)."""
+    out: dict = {}
+    for sql, params in cur.executed:
+        if "UPDATE" in sql:
+            out.update(params[0].obj)
+    return out
+
+
+def test_commit_raises_without_episode_database_url(monkeypatch):
+    """P4: Postgres is the only content store, so a commit that cannot reach it
+    must fail loudly instead of reporting success for a write that went nowhere."""
+    _new_draft()
+    _drive_summary_and_marp()
+    monkeypatch.setattr(orch, "_firestore", lambda: _FakeFirestore())
+    monkeypatch.setattr(orch, "_gcs_storage_service", lambda: _FakeGCS())
+
+    def _must_not_connect(*a, **k):
+        raise AssertionError("must not connect without EPISODE_DATABASE_URL")
+
+    monkeypatch.setattr(psycopg, "connect", _must_not_connect)
+
+    with pytest.raises(orch.RegenError, match="EPISODE_DATABASE_URL"):
+        orch.commit("ep_test", notify_platform=False)
+
+
+def test_commit_merges_doc_update_onto_postgres_episodes_doc(monkeypatch):
+    """commit's doc_update (summary_content/tags/events_markdown/...) is
+    jsonb-merged onto firestore_mirror.episodes.doc — the only write left."""
+    _new_draft()
+    _drive_summary_and_marp()
+    monkeypatch.setattr(orch, "_firestore", lambda: _FakeFirestore())
+    monkeypatch.setattr(orch, "_gcs_storage_service", lambda: _FakeGCS())
+    cur = _fake_pg(monkeypatch)
+
+    report = orch.commit("ep_test", notify_platform=False)
+
+    updates = [params for sql, params in cur.executed if "UPDATE" in sql]
+    assert updates
+    doc_param, episode_id = updates[0]
+    assert episode_id == "ep_test"
+    assert set(doc_param.obj.keys()) == set(report["episode_fields_written"])
+    assert doc_param.obj["summary_content"]  # non-empty regenerated content
+    assert not report["warnings"]
+
+
+def test_commit_raises_when_episode_row_missing(monkeypatch):
+    """A regen for an episode Postgres never saw must fail, not fabricate a doc."""
+    _new_draft()
+    _drive_summary_and_marp()
+    monkeypatch.setattr(orch, "_firestore", lambda: _FakeFirestore())
+    monkeypatch.setattr(orch, "_gcs_storage_service", lambda: _FakeGCS())
+    _fake_pg(monkeypatch, rowcount=0)  # UPDATE matched no row
+
+    with pytest.raises(orch.RegenError, match="row for episode_id=ep_test"):
+        orch.commit("ep_test", notify_platform=False)
+
+
+def test_commit_raises_on_postgres_error(monkeypatch):
+    _new_draft()
+    _drive_summary_and_marp()
+    monkeypatch.setattr(orch, "_firestore", lambda: _FakeFirestore())
+    monkeypatch.setattr(orch, "_gcs_storage_service", lambda: _FakeGCS())
+    monkeypatch.setenv("EPISODE_DATABASE_URL", "postgresql://x/y")
+
+    def _boom(*a, **k):
+        raise RuntimeError("connection refused")
+
+    monkeypatch.setattr(psycopg, "connect", _boom)
+
+    with pytest.raises(RuntimeError, match="connection refused"):
+        orch.commit("ep_test", notify_platform=False)
 
 
 def test_commit_patch_carries_content_writer_token(monkeypatch):
@@ -343,6 +484,7 @@ def test_commit_patch_carries_content_writer_token(monkeypatch):
     _drive_summary_and_marp()
     monkeypatch.setattr(orch, "_firestore", lambda: _FakeFirestore())
     monkeypatch.setattr(orch, "_gcs_storage_service", lambda: _FakeGCS())
+    _fake_pg(monkeypatch)
     monkeypatch.setenv("TINBOKER_PLATFORM_API_URL", "https://api.example.com")
     monkeypatch.setenv("TINBOKER_WRITE_TOKEN", "svc-token-123")
 
@@ -371,6 +513,7 @@ def test_commit_without_write_token_skips_patch_and_warns(monkeypatch):
     _drive_summary_and_marp()
     monkeypatch.setattr(orch, "_firestore", lambda: _FakeFirestore())
     monkeypatch.setattr(orch, "_gcs_storage_service", lambda: _FakeGCS())
+    _fake_pg(monkeypatch)
     monkeypatch.setenv("TINBOKER_PLATFORM_API_URL", "https://api.example.com")
     monkeypatch.delenv("TINBOKER_WRITE_TOKEN", raising=False)
 
@@ -441,6 +584,18 @@ def test_submit_accepts_extractor_bare_list():
     assert "extractor" in res["completed"]
 
 
+def test_submit_accepts_ticker_insights_key():
+    """ticker_extractor.yaml asks for "ticker_insights"; the validator must accept
+    it like the node postprocess/exporter do (was: legacy-only, broke regen)."""
+    _new_draft()
+    orch.submit("ep_test", "extractor", {"events": [{"section_topic": "台積電", "start_index": 0, "end_index": 2}]})
+    res = orch.submit("ep_test", "ticker_extractor", {"ticker_insights": [
+        {"ticker": "2330", "sentiment": "BULLISH", "sentiment_score": 0.7,
+         "time_horizon": "LONG_TERM", "bluf_thesis": "看好", "reasons": [], "risks": []},
+    ]})
+    assert "ticker_extractor" in res["completed"]
+
+
 # --- Output parity: automated pipeline (run_pipeline) vs agent regen ---------
 
 def _patch_canned_llm(monkeypatch):
@@ -495,7 +650,7 @@ def test_episode_doc_parity_pipeline_vs_regen(monkeypatch):
     assert payload["sector_exposures"] == pipe["sector_exposures"]
     assert payload["sector_exposure_ids"] == pipe["sector_exposure_ids"]
     # And the canonical tags are the ASCII slug parsed from the #tag: link.
-    assert payload["tags"] == ["semiconductor"]
+    assert payload["tags"] == ["supplychain"]
     assert payload["related_tickers"] == ["2330"]
     assert "sector_semiconductor" in payload["sector_exposure_ids"]
 
@@ -506,33 +661,23 @@ def test_episode_doc_parity_pipeline_vs_regen(monkeypatch):
 # guard that commit() actually threads the captured value into the exporter.
 
 
-class _FakeFS:
-    """Minimal FirestoreService stand-in: records set_document calls, exposes .db."""
-
-    def __init__(self):
-        self.db = object()
-        self.writes = []
-
-    def set_document(self, *args, **kwargs):
-        self.writes.append((args, kwargs))
-
-
 def _capture_export(monkeypatch):
-    """Patch the insight exporter so commit() can run without Firestore, capturing the
-    ``podcast_launch_time`` it would stamp. Returns the capture dict."""
+    """Patch the insight exporter so commit() can run without a real database,
+    capturing the ``podcast_launch_time`` it would stamp."""
     captured: dict = {}
 
     def fake_build(*, raw_payload, episode_id, podcaster, podcast_launch_time):
         captured["podcast_launch_time"] = podcast_launch_time
         return {"2330": {"ticker": "2330"}}
 
-    monkeypatch.setattr(orch, "_firestore", lambda: _FakeFS())
+    monkeypatch.setattr(orch, "_firestore", lambda: _FakeFirestore())
+    _fake_pg(monkeypatch)
     monkeypatch.setattr(
         "src.podcast.exporters.ticker_insights.build_episode_insight_docs", fake_build
     )
     monkeypatch.setattr(
-        "src.podcast.exporters.ticker_insights.write_episode_insights",
-        lambda db, *, episode_id, docs: len(docs),
+        "src.podcast.exporters.ticker_insights.write_episode_insights_postgres",
+        lambda episode_id, docs: len(docs),
     )
     return captured
 

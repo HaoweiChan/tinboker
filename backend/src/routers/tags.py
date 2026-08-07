@@ -1,20 +1,27 @@
 """Tags API router for tag-based episode discovery"""
+import asyncio
+import json
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from src.cache.redis_client import cache_get, cache_set
+from src.data.sector_reasons import reason_for
 from src.database.postgres import get_session
 from src.schemas.sector import (
     EpisodesBySectorResponse,
     ExposurePerformanceItem,
     ExposurePerformanceResponse,
+    HeatValidationResponse,
+    SectorByTickerItem,
     SectorBoardItem,
     SectorBoardMember,
     SectorBoardResponse,
     SectorListItem,
     SectorResolvedTicker,
+    SectorsByTickerResponse,
     SectorsListResponse,
 )
 from src.services.podcast import PodcastService
@@ -22,6 +29,7 @@ from src.services.translation_discovery import schedule_ticker_discovery
 from src.tag_registry import (
     hidden_offvocab_slugs,
     hidden_sector_exposure_ids,
+    served_sector_exposure_ids,
     registry_snapshot,
     seed_if_empty,
 )
@@ -150,8 +158,12 @@ async def list_sectors(db: Session = Depends(get_session)):
     """
     try:
         sectors = await podcast_service.list_sectors()
-        hidden = hidden_sector_exposure_ids(db)
-        visible = [s for s in sectors if s.get("exposure_id") not in hidden]
+        served = served_sector_exposure_ids(db)
+        if served is None:  # bootstrap window: registry empty — fall back to blocklist
+            hidden = hidden_sector_exposure_ids(db)
+            visible = [s for s in sectors if s.get("exposure_id") not in hidden]
+        else:
+            visible = [s for s in sectors if s.get("exposure_id") in served]
         return SectorsListResponse(sectors=[SectorListItem(**s) for s in visible])
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching sectors: {str(e)}")
@@ -171,7 +183,12 @@ async def get_sector_board(db: Session = Depends(get_session)):
     """
     try:
         sectors = await podcast_service.sector_board()
-        hidden = hidden_sector_exposure_ids(db)
+        served = served_sector_exposure_ids(db)
+        if served is None:  # bootstrap window: registry empty — fall back to blocklist
+            hidden = hidden_sector_exposure_ids(db)
+            sectors = [s for s in sectors if s.get("exposure_id") not in hidden]
+        else:
+            sectors = [s for s in sectors if s.get("exposure_id") in served]
         return SectorBoardResponse(
             sectors=[
                 SectorBoardItem(
@@ -179,11 +196,68 @@ async def get_sector_board(db: Session = Depends(get_session)):
                     members=[SectorBoardMember(**m) for m in s["members"]],
                 )
                 for s in sectors
-                if s.get("exposure_id") not in hidden
             ]
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching sector board: {str(e)}")
+
+
+@router.get("/sectors/by-ticker/{ticker}", response_model=SectorsByTickerResponse)
+async def get_sectors_by_ticker(
+    ticker: str = Path(..., description="Stock ticker symbol"),
+):
+    """Return visible sector/theme memberships for a ticker from the live registry."""
+    normalized_ticker = ticker.strip().upper()
+    cache_key = f"sectors:by-ticker:v1:{normalized_ticker}"
+    if not normalized_ticker:
+        return SectorsByTickerResponse(items=[])
+
+    try:
+        cached = await cache_get(cache_key)
+        if cached:
+            return SectorsByTickerResponse(**json.loads(cached))
+    except Exception:
+        pass
+
+    try:
+        idx = await asyncio.to_thread(PodcastService._sector_membership_index)
+        exposure_ids = idx.get("ticker_to_sectors", {}).get(normalized_ticker, set())
+        meta = idx.get("meta", {})
+        items: list[SectorByTickerItem] = []
+        for exposure_id in exposure_ids:
+            sector_meta = meta.get(exposure_id)
+            if not sector_meta:
+                continue
+            items.append(
+                SectorByTickerItem(
+                    exposure_id=exposure_id,
+                    exposure_type=sector_meta.get("exposure_type") or "theme",
+                    display_name=sector_meta.get("display_name") or exposure_id,
+                    icon_id=sector_meta.get("icon_id"),
+                    color_hex=sector_meta.get("color_hex"),
+                    group=sector_meta.get("group"),
+                    reason=reason_for(exposure_id, normalized_ticker) or "",
+                    description=sector_meta.get("description"),
+                )
+            )
+
+        def _sort_key(item: SectorByTickerItem) -> tuple[int, str]:
+            if item.exposure_type == "industry":
+                rank = 0
+            elif item.exposure_type == "theme":
+                rank = 1
+            else:
+                rank = 2
+            return (rank, item.display_name)
+
+        response = SectorsByTickerResponse(items=sorted(items, key=_sort_key))
+        try:
+            await cache_set(cache_key, json.dumps(response.model_dump(), ensure_ascii=False), 3600)
+        except Exception:
+            pass
+        return response
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching sectors by ticker: {str(e)}")
 
 
 @router.get("/sectors/performance", response_model=ExposurePerformanceResponse)
@@ -197,15 +271,31 @@ async def get_exposures_performance(db: Session = Depends(get_session)):
     """
     try:
         items = await podcast_service.exposures_performance()
-        hidden = hidden_sector_exposure_ids(db)
+        served = await asyncio.to_thread(served_sector_exposure_ids, db)
+        if served is None:  # bootstrap window: registry empty — fall back to blocklist
+            hidden = await asyncio.to_thread(hidden_sector_exposure_ids, db)
+            items = [i for i in items if i.get("exposure_id") not in hidden]
+        else:
+            items = [i for i in items if i.get("exposure_id") in served]
         return ExposurePerformanceResponse(
-            exposures=[
-                ExposurePerformanceItem(**i) for i in items
-                if i.get("exposure_id") not in hidden
-            ]
+            exposures=[ExposurePerformanceItem(**i) for i in items]
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching exposure performance: {str(e)}")
+
+
+@router.get("/sectors/heat-validation", response_model=HeatValidationResponse)
+async def get_heat_validation():
+    """Point-in-time backtest of discussion heat as a forward-return predictor.
+
+    Powers the /topics validation panel: heat recomputed as of past dates, quantized
+    against the forward 7/30/90-day member return — correcting the live bubble chart,
+    whose heat (X) and trailing return (Y) are both measured at request time.
+    """
+    try:
+        return HeatValidationResponse(**await podcast_service.heat_return_validation())
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error computing heat validation: {str(e)}")
 
 
 @router.get("/episodes/by-sector/{exposure_id}", response_model=EpisodesBySectorResponse)
@@ -230,6 +320,7 @@ async def get_episodes_by_sector(
             exposure_type=result["exposure_type"],
             icon_id=result.get("icon_id"),
             color_hex=result.get("color_hex"),
+            description=result.get("description"),
             resolved_tickers=[SectorResolvedTicker(**t) for t in result["resolved_tickers"]],
             episodes=result["episodes"],
             total=result["total"],
@@ -245,7 +336,11 @@ async def get_sectors_universe(db: Session = Depends(get_session)):
     """
     try:
         from src.database.models import TagRegistry
-        rows = db.query(TagRegistry).filter(TagRegistry.kind == "sector").all()
+        rows = (
+            db.query(TagRegistry)
+            .filter(TagRegistry.kind == "sector", TagRegistry.redirect_to.is_(None))
+            .all()
+        )
         exposures = []
         for r in rows:
             exposures.append({
@@ -254,6 +349,7 @@ async def get_sectors_universe(db: Session = Depends(get_session)):
                 "display_name": r.display_zh,
                 "icon_id": r.icon_id,
                 "color_hex": r.color_hex,
+                "description": r.description,
                 "aliases": r.aliases or [],
                 "members": r.members or [],
                 "parent_id": r.parent_id,
@@ -264,4 +360,3 @@ async def get_sectors_universe(db: Session = Depends(get_session)):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error compiling sectors universe: {str(e)}")
-

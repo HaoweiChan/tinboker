@@ -38,9 +38,11 @@ from src.routers.comments import router as comments_router, comments_router as c
 from src.routers.articles import router as articles_router
 from src.routers.admin_articles import router as admin_articles_router
 from src.routers.admin_tags import router as admin_tags_router
+from src.routers.admin_taxonomy import router as admin_taxonomy_router
 from src.routers.admin_sectors import router as admin_sectors_router
 from src.routers.social import router as social_router, facebook_router, promo_router
 from src.routers.seo import router as seo_router, admin_router as admin_seo_router
+from src.routers.screener import router as screener_router
 from src.middleware.cloudflare import CloudflareMiddleware
 
 
@@ -208,33 +210,93 @@ async def lifespan(app: FastAPI):
 
     asyncio.create_task(_mention_sync_bg())
 
-    # Refresh-ahead for the /topics hot-sectors board: recompute + rewrite its Redis
-    # entry every 5 min (inside the 10-min TTL) so the serving path never pays the
-    # cold ~2700-doc episode scan. Off the request path; must not block startup.
-    async def _refresh_board_bg():
+    # Whole-market TW daily OHLCV + 成交金額 from the official TWSE/TPEx OpenAPIs (2 free
+    # calls/day) into Postgres, so /topics money-flow reads daily bars from the DB instead
+    # of fanning out hundreds of per-ticker FinMind calls. Off the request path.
+    #
+    # The whole-market TW anomaly screener (issue #450) is chained AFTER each cycle's
+    # OHLC/institutional refresh via `after_refresh`, rather than its own independent
+    # loop — it reads stock_daily_ohlc / stock_institutional_daily, so it must never run
+    # ahead of the refresh that warms them. `refresh_screener_for_date` is idempotent per
+    # date (re-running overwrites), so recomputing every cycle is harmless.
+    async def _refresh_tw_ohlc_bg():
         try:
-            from src.services.podcast import run_periodic_board_refresh
-            await run_periodic_board_refresh(interval_seconds=300.0)
+            from src.services.tw_daily_ohlc_refresh import run_periodic_tw_ohlc_refresh
+            from src.services.screener_refresh import refresh_screener_for_date
+            await run_periodic_tw_ohlc_refresh(interval_hours=6.0, after_refresh=refresh_screener_for_date)
         except Exception as e:
-            print(f"Warning: sector board refresher stopped: {e}")
+            print(f"Warning: TW daily OHLC fetcher stopped: {e}")
 
-    asyncio.create_task(_refresh_board_bg())
+    asyncio.create_task(_refresh_tw_ohlc_bg())
 
-    # Refresh-ahead for the /topics 熱門標籤 board: the volume-driven candidate set
-    # scans every tag's Firestore subcollection, so keep that off the request path by
-    # recomputing + rewriting its Redis entry every 10 min (inside the 30-min TTL).
-    async def _refresh_trending_bg():
+    # Whole-market US daily OHLCV warmer (issue #449): pulls the entire US market in one
+    # Polygon grouped-daily call per session into stock_daily_ohlc (source='polygon'), the
+    # US sibling of the TW warmer above. No after_refresh hook yet — the US screener isn't
+    # built (see screener-us-architecture spec); this only warms the data it will read.
+    #
+    # DISABLED (incident 2026-07-15): re-uses tw_daily_ohlc_refresh._upsert_rows, which does
+    # a per-row SELECT + a wholesale batch INSERT. At US-market scale (~10k rows) that runs
+    # ~10k SELECTs inside one long transaction and the batch aborts on the first pre-existing
+    # (ticker,date) key, so nothing commits and the whole warm re-runs every cycle. On dev it
+    # saturated the Postgres connection pool and every DB-backed endpoint (/health, /topics
+    # board) timed out. Re-enable once _upsert_rows is a batched ON CONFLICT DO UPDATE — see
+    # the follow-up. The US read endpoints and the warmer code are untouched; it just doesn't
+    # run on startup. TW warming is unaffected.
+    async def _refresh_us_ohlc_bg():
         try:
-            from src.services.podcast import run_periodic_trending_refresh
-            await run_periodic_trending_refresh(interval_seconds=600.0)
+            from src.services.us_daily_ohlc_refresh import run_periodic_us_ohlc_refresh
+            await run_periodic_us_ohlc_refresh(interval_hours=6.0)
         except Exception as e:
-            print(f"Warning: trending-tags refresher stopped: {e}")
+            print(f"Warning: US daily OHLC fetcher stopped: {e}")
 
-    asyncio.create_task(_refresh_trending_bg())
+    # asyncio.create_task(_refresh_us_ohlc_bg())  # re-enable after the _upsert_rows fix
 
-    # Auto-index sector/theme exposures from the pipeline universe into the registry so
-    # new sectors surface (as visible) without an admin clicking 同步產業. The universe
-    # JSON stays curated; this only keeps the registry index in sync. Best-effort.
+    # Refresh-ahead for the /topics boards (hot sectors + 熱門標籤). Production only,
+    # hourly: every cycle full-scans Firestore in us-central1, and with three envs
+    # running 5/10-min cycles the reads + cross-internet egress dominated the July
+    # 2026 GCP bill (~NT$44K/mo, ~24M doc reads/day). The boards only move when the
+    # pipeline ingests episodes (a few times a day), so hourly is fresh enough. The
+    # board/trending cache TTLs (2h) outlive the interval, so prod serving stays
+    # warm; dev/staging recompute on demand on a cold cache instead.
+    if settings.is_production:
+        async def _refresh_board_bg():
+            try:
+                from src.services.podcast import run_periodic_board_refresh
+                await run_periodic_board_refresh(interval_seconds=3600.0)
+            except Exception as e:
+                print(f"Warning: sector board refresher stopped: {e}")
+
+        asyncio.create_task(_refresh_board_bg())
+
+        async def _refresh_trending_bg():
+            try:
+                from src.services.podcast import run_periodic_trending_refresh
+                await run_periodic_trending_refresh(interval_seconds=3600.0)
+            except Exception as e:
+                print(f"Warning: trending-tags refresher stopped: {e}")
+
+        asyncio.create_task(_refresh_trending_bg())
+
+    # Refresh-ahead for the /topics heat→forward-return validation panel. Its cold
+    # compute (full-episode scan + whole-history price join) is the heaviest thing on
+    # /topics and must never touch the request path — running it inline took the API
+    # down. Own task so a slow backtest can't delay the board refresh above.
+    #
+    # NOT inside the is_production gate: the serving path has no inline fallback
+    # (compute_if_cold=False returns an empty panel), so without this loop the panel
+    # would be permanently empty on dev/staging. Hourly + 2h TTL keeps the Firestore
+    # cost negligible (~2700 projected reads/cycle) until the Postgres repoint (P2).
+    async def _refresh_heat_validation_bg():
+        try:
+            from src.services.podcast import run_periodic_heat_validation_refresh
+            await run_periodic_heat_validation_refresh(interval_seconds=3600.0)
+        except Exception as e:
+            print(f"Warning: heat-validation refresher stopped: {e}")
+
+    asyncio.create_task(_refresh_heat_validation_bg())
+
+    # Empty-DB bootstrap only. Once any sector row exists, taxonomy writes are managed
+    # by the admin taxonomy API and this seed sync writes nothing.
     async def _sync_sectors_bg():
         try:
             from src.database.postgres import get_session
@@ -249,6 +311,19 @@ async def lifespan(app: FastAPI):
             print(f"Warning: sector sync skipped: {e}")
 
     asyncio.create_task(_sync_sectors_bg())
+
+    # Sector follows are keyed by display name on the user row. M2 merges four
+    # jp_* sector pages into canonical sectors, so migrate old followed names once.
+    async def _migrate_sector_follows_bg():
+        try:
+            from src.database.user_db import migrate_merged_sector_tag_subscriptions
+            migrated = await asyncio.to_thread(migrate_merged_sector_tag_subscriptions)
+            if migrated:
+                print(f"Sector follow migration: remapped {migrated} user(s).")
+        except Exception as e:
+            print(f"Warning: sector follow migration skipped: {e}")
+
+    asyncio.create_task(_migrate_sector_follows_bg())
 
     # Producer for in-app notifications: poll the recent-episodes feed every ~10 min (the
     # ingestion cadence) and fan out NEW_EPISODE / STOCK_MENTION / TOPIC_MENTION to the
@@ -351,6 +426,7 @@ app.include_router(comments_router)
 app.include_router(comments_delete_router)
 app.include_router(articles_router)
 app.include_router(seo_router)  # public /sitemap.xml — stays on every env
+app.include_router(screener_router)  # X-Internal-Key gated — stays on every env
 
 # Admin dashboard is developer-only and consolidated onto the dev/staging envs. Skip
 # mounting every /api/admin/* router in production so api.tinboker.com exposes no admin
@@ -366,6 +442,7 @@ if not settings.is_production:
     app.include_router(admin_analytics_router)
     app.include_router(admin_articles_router)
     app.include_router(admin_tags_router)
+    app.include_router(admin_taxonomy_router)
     app.include_router(admin_sectors_router)  # /api/admin/sectors/theme-candidates
     app.include_router(social_router)       # /api/admin/threads/*
     app.include_router(facebook_router)     # /api/admin/facebook/*

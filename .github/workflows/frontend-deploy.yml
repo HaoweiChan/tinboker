@@ -1,4 +1,4 @@
-# Deploy to Cloudflare Pages with secrets from Google Secret Manager
+# Deploy to Cloudflare Pages with secrets from GitHub Actions repo secrets
 name: Frontend Deploy to Cloudflare Pages
 
 on:
@@ -8,15 +8,11 @@ on:
     paths: ['frontend/**']
   workflow_dispatch:
 
-env:
-  GCP_PROJECT_ID: gen-lang-client-0901363254
-
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write
       deployments: write
 
     steps:
@@ -30,18 +26,13 @@ jobs:
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
-        with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
-
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
-
-      - name: Fetch secrets from Google Secret Manager
+      # P6: secrets come from GitHub Actions repo secrets, not GSM. Same names as the
+      # old GSM secrets — see docs/firestore-contract.md §11.8 for the migration map.
+      - name: Load build secrets
         id: secrets
+        env:
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
         run: |
-          GOOGLE_CLIENT_ID=$(gcloud secrets versions access latest --secret=GOOGLE_CLIENT_ID --project=$GCP_PROJECT_ID)
           echo "::add-mask::$GOOGLE_CLIENT_ID"
           echo "VITE_GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID" >> $GITHUB_ENV
 
@@ -112,9 +103,10 @@ jobs:
 
       - name: Purge Cloudflare CDN cache
         if: success()
+        env:
+          CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ZONE_TAG: ${{ secrets.CLOUDFLARE_ZONE_TAG }}
         run: |
-          CF_API_TOKEN=$(gcloud secrets versions access latest --secret=CLOUDFLARE_API_TOKEN --project=$GCP_PROJECT_ID 2>/dev/null || echo "")
-          CF_ZONE_TAG=$(gcloud secrets versions access latest --secret=CLOUDFLARE_ZONE_TAG --project=$GCP_PROJECT_ID 2>/dev/null || echo "")
           if [ -z "$CF_API_TOKEN" ] || [ -z "$CF_ZONE_TAG" ]; then
             echo "::warning::Cloudflare credentials missing; skipping CDN purge."
             exit 0

@@ -2,9 +2,27 @@
 SQLAlchemy ORM models for the TinBoker database.
 """
 
-from datetime import datetime
-from sqlalchemy import Column, Float, ForeignKey, Integer, String, Text, DateTime, Boolean, JSON, Index, UniqueConstraint
+from datetime import datetime, timezone
+
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    JSON,
+    String,
+    Text,
+    UniqueConstraint,
+)
+from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
+
 from src.database.postgres import Base
+
+JSON_VARIANT = JSON().with_variant(JSONB, "postgresql")
+TZ_DATETIME = DateTime(timezone=True).with_variant(TIMESTAMP(timezone=True), "postgresql")
 
 
 class StockTranslation(Base):
@@ -202,11 +220,14 @@ class StockProfile(Base):
 
 
 class StockDailyOHLC(Base):
-    """Warmed full daily OHLCV bars for US stocks (chart data).
+    """Warmed whole-market daily OHLCV + 成交金額 bars.
 
     Sibling to ``stock_daily_closes`` (which stays close-only for the lightweight change%
-    path). Filled by the warmer from yfinance — no per-key rate cap — so the per-request
-    chart path can read from Postgres instead of hitting Massive's aggregates endpoint.
+    path). Populated by ``tw_daily_ohlc_refresh`` from the official TWSE/TPEx OpenAPI
+    whole-market feeds (2 free calls/day, no key) so the request path — /topics money-flow
+    windows and stock charts — reads daily bars from Postgres instead of fanning out
+    hundreds of per-ticker FinMind calls. ``trading_value`` (成交金額, NT$) is what the
+    bubble chart sizes on; ``source`` records which feed produced the row (twse/tpex).
     """
 
     __tablename__ = "stock_daily_ohlc"
@@ -219,12 +240,74 @@ class StockDailyOHLC(Base):
     low = Column(Float, nullable=True)
     close = Column(Float, nullable=False)
     volume = Column(Float, nullable=True)
+    trading_value = Column(Float, nullable=True)  # 成交金額 NT$ (bubble-chart size)
+    source = Column(String(20), nullable=True)    # twse | tpex
     created_at = Column(DateTime, default=datetime.utcnow)
 
     __table_args__ = (
         UniqueConstraint("ticker", "date", name="uq_ohlc_ticker_date"),
         Index("idx_ohlc_ticker_date", "ticker", "date"),
     )
+
+
+class StockInstitutionalDaily(Base):
+    """Warmed whole-market daily 三大法人 (institutional) net-buy shares.
+
+    Populated by ``tw_daily_ohlc_refresh`` from the official keyless feeds — TWSE T86
+    (上市, historical/backfillable) + TPEx OpenAPI 3insti (上櫃, today-forward). Stores NET
+    SHARES per stock/day; the /topics money-flow windows convert to NT$ at read time using
+    the latest close from ``stock_daily_ohlc``. Replaces the per-ticker FinMind fan-out
+    (the other half of the /topics call storm).
+    """
+
+    __tablename__ = "stock_institutional_daily"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    ticker = Column(String(20), nullable=False)
+    date = Column(String(10), nullable=False)  # YYYY-MM-DD
+    foreign_net_shares = Column(Float, nullable=True)  # 外資 (incl. foreign dealer) net shares
+    trust_net_shares = Column(Float, nullable=True)    # 投信 (investment trust) net shares
+    total_net_shares = Column(Float, nullable=True)    # 三大法人 net shares
+    source = Column(String(20), nullable=True)         # twse | tpex
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("ticker", "date", name="uq_insti_ticker_date"),
+        Index("idx_insti_ticker_date", "ticker", "date"),
+    )
+
+
+class ScreenerCandidate(Base):
+    """Ranked whole-market TW anomaly-screener output for one trading day.
+
+    Written by ``screener_refresh`` — ALL Stage-1 passers for a date (not a Top-N
+    cut), scored cross-sectionally within that day's pool. Re-running a date
+    overwrites its rows (idempotent on ``(date, ticker)``).
+    """
+
+    __tablename__ = "screener_candidates"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    date = Column(String(10), nullable=False)  # YYYY-MM-DD
+    ticker = Column(String(20), nullable=False)
+    rank = Column(Integer, nullable=False)  # 1 = highest final_score
+    final_score = Column(Float, nullable=False)
+    momentum_score = Column(Float, nullable=False)
+    institution_score = Column(Float, nullable=False)
+    # Raw sub-metrics: close_ma20, close_ma60, vol_mult, institution_raw,
+    # price_pos_60d, ret_5d, ma20, ma60, high_20, high_60, today_volume, etc.
+    factors = Column(JSON, nullable=True)
+    is_60d_high = Column(Boolean, nullable=False, default=False)
+    crowded = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("date", "ticker", name="uq_screener_date_ticker"),
+        Index("idx_screener_date_rank", "date", "rank"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<ScreenerCandidate(date='{self.date}', ticker='{self.ticker}', rank={self.rank})>"
 
 
 class TagRegistry(Base):
@@ -235,11 +318,10 @@ class TagRegistry(Base):
 
     kind discriminates the two topic flavours that share this index:
       'tag'    → free-form extraction tags (full admin CRUD; this is the default).
-      'sector' → sector/theme exposures synced from the pipeline universe. These are
-                 NOT hand-authored: members/aliases/icons stay pipeline-owned and are
-                 merged at read time. Admin only curates their visibility (tier).
+      'sector' → sector/theme exposures authored through the admin taxonomy API.
     Sector rows carry the universe identity (exposure_id) and display visuals
     (icon_id, color_hex) so the admin list can render them without a universe lookup.
+    redirect_to marks a retired/merged exposure row; canonical rows leave it NULL.
     """
     __tablename__ = "tag_registry"
 
@@ -252,17 +334,75 @@ class TagRegistry(Base):
     exposure_type = Column(String(20), nullable=True)
     icon_id = Column(String(64), nullable=True)
     color_hex = Column(String(16), nullable=True)
-    members = Column(JSON, nullable=True)
-    aliases = Column(JSON, nullable=True)
+    description = Column(Text, nullable=True)
+    members = Column(JSON_VARIANT, nullable=True)
+    aliases = Column(JSON_VARIANT, nullable=True)
+    field_owners = Column(JSON_VARIANT, nullable=True)
     # For 'sector' rows of exposure_type='theme': the parent industry exposure_id.
     # Lets industry discussion-heat be derived by aggregating its child themes.
     parent_id = Column(String(120), nullable=True, index=True)
+    redirect_to = Column(String(120), nullable=True, index=True)
     updated_by = Column(String(100), nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     def __repr__(self) -> str:
         return f"<TagRegistry(slug='{self.slug}', kind='{self.kind}', tier='{self.tier}')>"
+
+
+class TaxonomyDraft(Base):
+    """Drafted bulk taxonomy payload awaiting explicit publish."""
+
+    __tablename__ = "taxonomy_drafts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    status = Column(String(20), nullable=False, default="draft", index=True)
+    payload = Column(JSON_VARIANT, nullable=False)
+    diff = Column(JSON_VARIANT, nullable=True)
+    actor = Column(String(100), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    published_at = Column(DateTime, nullable=True)
+
+
+class TaxonomyVersion(Base):
+    """Single-row structural taxonomy version counter."""
+
+    __tablename__ = "taxonomy_version"
+
+    id = Column(Integer, primary_key=True, default=1)
+    version = Column(Integer, nullable=False, default=0)
+    updated_by = Column(String(100), nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class TaxonomyChangelog(Base):
+    """Dated changelog entries for structural taxonomy changes."""
+
+    __tablename__ = "taxonomy_changelog"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    version = Column(Integer, nullable=False, index=True)
+    entry = Column(Text, nullable=False)
+    rationale = Column(Text, nullable=True)
+    actor = Column(String(100), nullable=False)
+    at = Column(TZ_DATETIME, default=datetime.utcnow, nullable=False)
+
+
+class TagRegistryAudit(Base):
+    """Trigger-written audit snapshots for tag_registry sector taxonomy writes."""
+
+    __tablename__ = "tag_registry_audit"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tag_registry_id = Column(Integer, nullable=True, index=True)
+    exposure_id = Column(String(120), nullable=True, index=True)
+    action = Column(String(10), nullable=False, index=True)
+    actor = Column(String(100), nullable=False, default="unknown", index=True)
+    note = Column(Text, nullable=True)
+    before = Column("before", JSON_VARIANT, nullable=True)
+    after = Column("after", JSON_VARIANT, nullable=True)
+    at = Column(TZ_DATETIME, default=datetime.utcnow, nullable=False, index=True)
 
 
 class AnalyticsSnapshot(Base):
@@ -290,10 +430,10 @@ class PromoDraft(Base):
     """A saved draft for the admin promo cross-poster (free-form Threads/FB post).
 
     Durable + shared across envs (all share this Postgres). ``media`` stores each item
-    as ``{type, path, filename}`` where ``path`` is the permanent ``gs://`` location —
-    NOT the 12h signed URL — so a draft's media never expires; the read path re-signs a
-    fresh URL on load. ``comments`` is a list of text-only follow-ups; ``platforms`` the
-    selected targets.
+    as ``{type, path, filename}`` where ``path`` is the permanent media-store location,
+    so a draft's media never expires; the read path resolves it to a fetchable URL on
+    load. ``comments`` is a list of text-only follow-ups; ``platforms`` the selected
+    targets.
     """
     __tablename__ = "promo_drafts"
 
@@ -436,3 +576,55 @@ class SectorPerformanceSnapshot(Base):
     r60d = Column(Float, nullable=True)
     computed_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+
+class User(Base):
+    """A registered member (was Firestore ``users/{user_id}``, P3 of the Firestore exit).
+
+    The five subscription arrays and the preferences map stay JSON rather than becoming
+    child tables: every read wants the whole set at once, every write is a single
+    add/remove on one user, and the population is ~40 rows. A join buys nothing here.
+    ponytail: JSON arrays, normalise if per-ticker fan-in queries ever need an index.
+    """
+    __tablename__ = "users"
+
+    id = Column(String(64), primary_key=True)  # uuid4, was the Firestore doc id
+    google_id = Column(String(64), nullable=False, unique=True, index=True)
+    email = Column(String(320), nullable=False, index=True)
+    name = Column(String(200), nullable=False, default="")
+    avatar = Column(Text, nullable=True)  # https URL or data:image/... URI (~300KB cap)
+    email_verified = Column(Boolean, nullable=False, default=False)
+    created_at = Column(TZ_DATETIME, nullable=True)
+    updated_at = Column(TZ_DATETIME, nullable=True)
+
+    watchlist = Column(JSON_VARIANT, nullable=False, default=list)  # tickers
+    podcast_subscriptions = Column(JSON_VARIANT, nullable=False, default=list)
+    episode_bookmarks = Column(JSON_VARIANT, nullable=False, default=list)  # "{podcast}_{ep}"
+    alerts = Column(JSON_VARIANT, nullable=False, default=list)
+    tag_subscriptions = Column(JSON_VARIANT, nullable=False, default=list)
+    notification_preferences = Column(JSON_VARIANT, nullable=False, default=dict)
+
+    def __repr__(self) -> str:
+        return f"<User(id={self.id}, email='{self.email}')>"
+
+
+class UserNotification(Base):
+    """In-app notification (was the Firestore ``users/{id}/notifications`` subcollection)."""
+    __tablename__ = "user_notifications"
+
+    id = Column(String(64), primary_key=True)  # uuid4
+    user_id = Column(String(64), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    type = Column(String(32), nullable=False)
+    title = Column(Text, nullable=False, default="")
+    body = Column(Text, nullable=False, default="")
+    data = Column(JSON_VARIANT, nullable=False, default=dict)
+    is_read = Column(Boolean, nullable=False, default=False)
+    created_at = Column(TZ_DATETIME, nullable=False, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        # Every query is "this user's inbox, newest first" or "…unread only".
+        Index("idx_user_notifications_user_created", "user_id", "created_at"),
+        Index("idx_user_notifications_user_unread", "user_id", "is_read"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<UserNotification(id={self.id}, user_id={self.user_id}, read={self.is_read})>"

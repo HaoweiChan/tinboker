@@ -3,6 +3,7 @@ PostgreSQL database connection and session management using SQLAlchemy.
 """
 
 import logging
+from contextlib import contextmanager
 from typing import Generator
 from sqlalchemy import create_engine, event, Engine, text
 from sqlalchemy.ext.declarative import declarative_base
@@ -58,14 +59,14 @@ def init_engine():
             pool_size=10,
             max_overflow=20,
             pool_pre_ping=True,  # Verify connections before using
-            echo=settings.is_development,  # Log SQL in development
+            echo=settings.sql_echo,
         )
     else:
         # SQLite settings
         engine = create_engine(
             db_url,
             connect_args={"check_same_thread": False},  # SQLite specific
-            echo=settings.is_development,
+            echo=settings.sql_echo,
         )
         
         # Enable foreign keys for SQLite
@@ -99,6 +100,27 @@ def get_session() -> Generator[Session, None, None]:
     db = SessionLocal()
     try:
         yield db
+    finally:
+        db.close()
+
+
+@contextmanager
+def session_scope() -> Generator[Session, None, None]:
+    """Session for non-FastAPI (plain sync) code: commits on success, always closes.
+
+    ``get_session`` above is the request-scoped dependency and never commits; the
+    user/notification data layer runs outside the dependency system and writes.
+    """
+    if SessionLocal is None:
+        init_engine()
+
+    db = SessionLocal()
+    try:
+        yield db
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
 
@@ -156,6 +178,10 @@ def create_all_tables():
             ))
             conn.execute(text(
                 "ALTER TABLE IF EXISTS tag_registry "
+                "ADD COLUMN IF NOT EXISTS description TEXT"
+            ))
+            conn.execute(text(
+                "ALTER TABLE IF EXISTS tag_registry "
                 "ADD COLUMN IF NOT EXISTS members JSONB"
             ))
             conn.execute(text(
@@ -164,7 +190,151 @@ def create_all_tables():
             ))
             conn.execute(text(
                 "ALTER TABLE IF EXISTS tag_registry "
+                "ADD COLUMN IF NOT EXISTS field_owners JSONB"
+            ))
+            conn.execute(text(
+                "ALTER TABLE IF EXISTS tag_registry "
                 "ADD COLUMN IF NOT EXISTS parent_id VARCHAR(120)"
+            ))
+            conn.execute(text(
+                "ALTER TABLE IF EXISTS tag_registry "
+                "ADD COLUMN IF NOT EXISTS redirect_to VARCHAR(120)"
+            ))
+            conn.execute(text(
+                """
+                CREATE TABLE IF NOT EXISTS tag_registry_audit (
+                    id BIGSERIAL PRIMARY KEY,
+                    tag_registry_id INTEGER,
+                    exposure_id VARCHAR(120),
+                    action VARCHAR(10) NOT NULL,
+                    actor VARCHAR(100) NOT NULL DEFAULT 'unknown',
+                    note TEXT,
+                    "before" JSONB,
+                    "after" JSONB,
+                    at TIMESTAMPTZ NOT NULL DEFAULT now()
+                )
+                """
+            ))
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_tag_registry_audit_exposure_id "
+                "ON tag_registry_audit (exposure_id)"
+            ))
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_tag_registry_audit_at "
+                "ON tag_registry_audit (at)"
+            ))
+            conn.execute(text(
+                """
+                CREATE TABLE IF NOT EXISTS taxonomy_changelog (
+                    id BIGSERIAL PRIMARY KEY,
+                    version INTEGER NOT NULL,
+                    entry TEXT NOT NULL,
+                    rationale TEXT,
+                    actor VARCHAR(100) NOT NULL,
+                    at TIMESTAMPTZ NOT NULL DEFAULT now()
+                )
+                """
+            ))
+            conn.execute(text(
+                """
+                CREATE TABLE IF NOT EXISTS taxonomy_version (
+                    id INTEGER PRIMARY KEY DEFAULT 1,
+                    version INTEGER NOT NULL DEFAULT 0,
+                    updated_by VARCHAR(100),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                )
+                """
+            ))
+            conn.execute(text(
+                """
+                CREATE TABLE IF NOT EXISTS taxonomy_drafts (
+                    id BIGSERIAL PRIMARY KEY,
+                    status VARCHAR(20) NOT NULL DEFAULT 'draft',
+                    payload JSONB NOT NULL,
+                    diff JSONB,
+                    actor VARCHAR(100) NOT NULL,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    published_at TIMESTAMPTZ
+                )
+                """
+            ))
+            conn.execute(text(
+                """
+                CREATE OR REPLACE FUNCTION tag_registry_audit_trigger()
+                RETURNS trigger AS $$
+                DECLARE
+                    audit_actor TEXT;
+                    audit_note TEXT;
+                BEGIN
+                    audit_actor := COALESCE(
+                        NULLIF(current_setting('app.taxonomy_actor', true), ''),
+                        'unknown'
+                    );
+                    audit_note := NULLIF(current_setting('app.taxonomy_note', true), '');
+
+                    IF TG_OP = 'INSERT' THEN
+                        INSERT INTO tag_registry_audit (
+                            tag_registry_id, exposure_id, action, actor, note,
+                            "before", "after", at
+                        )
+                        VALUES (
+                            NEW.id, NEW.exposure_id, TG_OP, audit_actor, audit_note,
+                            NULL, to_jsonb(NEW), now()
+                        );
+                        RETURN NEW;
+                    ELSIF TG_OP = 'UPDATE' THEN
+                        INSERT INTO tag_registry_audit (
+                            tag_registry_id, exposure_id, action, actor, note,
+                            "before", "after", at
+                        )
+                        VALUES (
+                            NEW.id, COALESCE(NEW.exposure_id, OLD.exposure_id), TG_OP,
+                            audit_actor, audit_note, to_jsonb(OLD), to_jsonb(NEW), now()
+                        );
+                        RETURN NEW;
+                    ELSIF TG_OP = 'DELETE' THEN
+                        INSERT INTO tag_registry_audit (
+                            tag_registry_id, exposure_id, action, actor, note,
+                            "before", "after", at
+                        )
+                        VALUES (
+                            OLD.id, OLD.exposure_id, TG_OP, audit_actor, audit_note,
+                            to_jsonb(OLD), NULL, now()
+                        );
+                        RETURN OLD;
+                    END IF;
+                    RETURN NULL;
+                END;
+                $$ LANGUAGE plpgsql SECURITY DEFINER;
+                """
+            ))
+            conn.execute(text(
+                "DROP TRIGGER IF EXISTS tag_registry_audit_iud ON tag_registry"
+            ))
+            conn.execute(text(
+                """
+                CREATE TRIGGER tag_registry_audit_iud
+                AFTER INSERT OR UPDATE OR DELETE ON tag_registry
+                FOR EACH ROW EXECUTE FUNCTION tag_registry_audit_trigger()
+                """
+            ))
+            # stock_daily_ohlc predates the whole-market TWSE/TPEx fetcher (was an unused
+            # US/yfinance orphan) — add the columns the fetcher writes.
+            conn.execute(text(
+                "ALTER TABLE IF EXISTS stock_daily_ohlc "
+                "ADD COLUMN IF NOT EXISTS trading_value DOUBLE PRECISION"
+            ))
+            conn.execute(text(
+                "ALTER TABLE IF EXISTS stock_daily_ohlc "
+                "ADD COLUMN IF NOT EXISTS source VARCHAR(20)"
+            ))
+            # Screener (issue #450 Part A): 投信 net-shares column added on top of the
+            # original foreign/total pair. Pre-existing rows stay NULL until the next
+            # tw_daily_ohlc_refresh cycle backfills them.
+            conn.execute(text(
+                "ALTER TABLE IF EXISTS stock_institutional_daily "
+                "ADD COLUMN IF NOT EXISTS trust_net_shares DOUBLE PRECISION"
             ))
             conn.commit()
     elif engine.dialect.name == "sqlite":
@@ -197,14 +367,28 @@ def create_all_tables():
             if tr_cols and "exposure_type" not in tr_cols:
                 conn.execute(text("ALTER TABLE tag_registry ADD COLUMN exposure_type VARCHAR(20)"))
                 conn.commit()
+            if tr_cols and "description" not in tr_cols:
+                conn.execute(text("ALTER TABLE tag_registry ADD COLUMN description TEXT"))
+                conn.commit()
             if tr_cols and "members" not in tr_cols:
                 conn.execute(text("ALTER TABLE tag_registry ADD COLUMN members JSON"))
                 conn.commit()
             if tr_cols and "aliases" not in tr_cols:
                 conn.execute(text("ALTER TABLE tag_registry ADD COLUMN aliases JSON"))
                 conn.commit()
+            if tr_cols and "field_owners" not in tr_cols:
+                conn.execute(text("ALTER TABLE tag_registry ADD COLUMN field_owners JSON"))
+                conn.commit()
             if tr_cols and "parent_id" not in tr_cols:
                 conn.execute(text("ALTER TABLE tag_registry ADD COLUMN parent_id VARCHAR(120)"))
+                conn.commit()
+            if tr_cols and "redirect_to" not in tr_cols:
+                conn.execute(text("ALTER TABLE tag_registry ADD COLUMN redirect_to VARCHAR(120)"))
+                conn.commit()
+            # Screener (issue #450 Part A): 投信 net-shares column.
+            si_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(stock_institutional_daily)"))}
+            if si_cols and "trust_net_shares" not in si_cols:
+                conn.execute(text("ALTER TABLE stock_institutional_daily ADD COLUMN trust_net_shares FLOAT"))
                 conn.commit()
     # Clean up obsolete cryptocurrency tag registry rows (idempotent)
     with engine.connect() as conn:

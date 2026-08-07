@@ -59,7 +59,11 @@ Two distinct auth surfaces plus a shared "logged-in user" experience:
 - **Activation conditions:** `ENVIRONMENT != production` AND `DEV_BYPASS_TOKEN` env var is set.
 - **Frontend entry:** `/auth/dev-bypass?token=SECRET` ([`DevBypass.tsx`](../../frontend/src/pages/DevBypass.tsx)) calls the backend and stores the JWT.
 - **Browser MCP / Playwright flow:** navigate to the URL above, wait for redirect to `/`, then drive the app as an authenticated session.
-- **Token (Dev env):** `CXvkSTaZAghJF0jYidL4ii3DbgOo-Z5NVwgFLoNk05I` — only valid against `dev-api.tinboker.com`. NOT in repo; lives in [`CLAUDE.md`](../../CLAUDE.md) and the VPS `.env`.
+- **Token (Dev env):** the `DEV_BYPASS_TOKEN` is a rotating secret, never stored in the repo. Fetch it with:
+  ```bash
+  gcloud secrets versions access latest --secret=DEV_BYPASS_TOKEN --project=gen-lang-client-0901363254
+  ```
+  It is also set as an env var on the VPS backend container. Never paste the value into docs, commits, or chat transcripts.
 
 ### Admin dashboard layout
 
@@ -77,7 +81,7 @@ Two distinct auth surfaces plus a shared "logged-in user" experience:
 
 ### Notifications
 
-- `new_episode` notifications fire when a Firestore episode appears with a never-before-seen `created_time`. See [`../firestore-contract.md`](../firestore-contract.md) §6.3 — the contract requires the agents pipeline NOT to mutate `created_time` on regeneration, or notifications re-fire.
+- `new_episode` notifications fire when an episode row first appears in the Postgres mirror (`firestore_mirror.episodes.first_seen_at` high-water mark). See [`../firestore-contract.md`](../firestore-contract.md) §6.3 — `created_time` must still never be mutated on regeneration (feeds and sort order consume it).
 - `stock_mention` notifications fire when a new episode's `related_tickers` intersects the user's `watchlist`.
 
 ## Common pitfalls

@@ -87,7 +87,11 @@ def _svc(monkeypatch, *, images, cards, deck=_DECK):
     svc.get_episode_admin = _get_admin
     svc.firestore_service = SimpleNamespace(
         get_document=lambda col, eid: {"social_cards": [dict(c) for c in cards]},
-        set_document=lambda col, eid, data, merge: sink.update(data),
+    )
+    # P4: the only write path is patch_episode_doc against Postgres.
+    monkeypatch.setattr(
+        "src.services.podcast.patch_episode_doc",
+        lambda eid, updates: sink.update(updates),
     )
 
     async def _upload(bucket, path, data, ctype):

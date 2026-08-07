@@ -6,6 +6,7 @@ follow-list from here (instead of its local podcasts_*.json / feeds.json) at run
 Open read — the follow-list is not sensitive and mirrors the agents repo's open GET /api/shows.
 """
 
+import asyncio
 from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
@@ -28,9 +29,9 @@ async def list_public_sources(
     """Return the active follow-list for the agents pipeline to pull."""
     service = ContentSourceService(db)
     if active:
-        items = service.list_active_public(source_type=source_type)
+        items = await asyncio.to_thread(service.list_active_public, source_type=source_type)
     else:
-        items, _ = service.list_sources(source_type=source_type, limit=500)
+        items, _ = await asyncio.to_thread(service.list_sources, source_type=source_type, limit=500)
     return ContentSourcePublicListResponse(
         total=len(items),
         items=[ContentSourcePublic.model_validate(item) for item in items],

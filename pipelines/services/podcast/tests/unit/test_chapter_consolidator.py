@@ -10,6 +10,7 @@ the writer + ``markdown_transform`` consume that coarse list instead.
 from __future__ import annotations
 
 from src.podcast.content_builder.nodes.chapter_consolidator import (
+    _merge_group,
     _split_contiguous,
     _target_chapter_count,
     consolidate_chapters,
@@ -82,3 +83,71 @@ def test_split_contiguous_partitions_completely():
 def test_empty_events_yield_empty_chapters():
     assert consolidate_chapters({"clustered_events": []})["chapter_events"] == []
     assert consolidate_chapters({})["chapter_events"] == []
+
+
+def test_chapters_get_sequential_event_ids():
+    """A2: every chapter is stamped E1, E2, ... regardless of merge/pass-through."""
+    chapters = consolidate_chapters({"clustered_events": _events(3, span_min=6)})["chapter_events"]
+    assert [c["event_id"] for c in chapters] == ["E1", "E2", "E3"]
+
+    merged = consolidate_chapters({"clustered_events": _events(50, span_min=20)})["chapter_events"]
+    assert [c["event_id"] for c in merged] == ["E1", "E2", "E3", "E4"]
+
+
+def _typed_events(types: list[str], span_min: float = 20) -> list[dict]:
+    events = _events(len(types), span_min=span_min)
+    for e, t in zip(events, types):
+        e["segment_type"] = t
+    return events
+
+
+def test_merge_group_picks_dominant_segment_type():
+    """A5(i): the majority segment_type in a merged group survives, not be dropped."""
+    group = [
+        {"section_topic": "a", "sentences": [], "start": 0, "end": 10, "segment_type": "qa"},
+        {"section_topic": "b", "sentences": [], "start": 10, "end": 20, "segment_type": "qa"},
+        {"section_topic": "c", "sentences": [], "start": 20, "end": 30, "segment_type": "analysis"},
+    ]
+    assert _merge_group(group)["segment_type"] == "qa"
+
+
+def test_consolidate_chapters_never_drops_segment_type():
+    """End-to-end: every produced chapter carries a real segment_type."""
+    events = _typed_events(["analysis"] * 8 + ["qa"] * 4, span_min=20)
+    chapters = consolidate_chapters({"clustered_events": events})["chapter_events"]
+    assert all(c.get("segment_type") for c in chapters)
+    assert chapters[-1]["segment_type"] == "qa"
+
+
+def test_trailing_qa_run_never_merges_with_preceding_chapter():
+    """A5(ii): the trailing qa run never merges into the preceding non-qa chapter,
+    even though the plain count-based split would otherwise blend them."""
+    events = _typed_events(["analysis"] * 9 + ["qa"] * 3, span_min=6)
+    chapters = consolidate_chapters({"clustered_events": events})["chapter_events"]
+    head_topics = {f"topic-{i}" for i in range(9)}
+    tail_topics = {f"topic-{i}" for i in range(9, 12)}
+    for c in chapters:
+        topics = set(c["section_topic"].split("、"))
+        # No chapter straddles the boundary — head and tail topics never co-occur.
+        assert not (topics & head_topics and topics & tail_topics)
+    assert chapters[-1]["segment_type"] == "qa"
+
+
+def test_interleaved_qa_does_not_explode_chapter_count():
+    """A5(ii) guard: alternating qa/non-qa (not a trailing run) stays on the normal
+    count-based split — must NOT get a hard boundary at every transition, or a
+    qa-heavy show could blow past _MAX_CHAPTERS."""
+    types = ["analysis", "qa"] * 20  # 40 alternating events, ends on qa
+    events = _typed_events(types, span_min=90)  # long span -> would hit the cap
+    chapters = consolidate_chapters({"clustered_events": events})["chapter_events"]
+    assert len(chapters) <= 12  # _MAX_CHAPTERS
+    assert len(chapters) >= 4   # _MIN_CHAPTERS
+
+
+def test_all_qa_episode_has_no_boundary_split_artifact():
+    """When EVERY event is qa, there's no preceding non-qa chapter to separate from
+    — must behave like the normal (non-boundary) path, not produce an empty head."""
+    events = _typed_events(["qa"] * 8, span_min=20)
+    chapters = consolidate_chapters({"clustered_events": events})["chapter_events"]
+    assert len(chapters) == 4
+    assert all(c["segment_type"] == "qa" for c in chapters)

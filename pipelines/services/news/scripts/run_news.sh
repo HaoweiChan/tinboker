@@ -6,10 +6,11 @@
 # Writes: Postgres tinboker_wiki — kind='news_article' pages plus append-only
 #         enrichment of the shared entity/topic pages (/api/wiki).
 #
-# Secrets (WIKI_DATABASE_URL / OPENROUTER_API_KEY) are pulled from Google Secret
-# Manager by shared.secrets.bootstrap(). That needs ADC, so
-# GOOGLE_APPLICATION_CREDENTIALS must point at a service-account JSON — set it
-# before calling this, or rely on the conventional podcast service-account path.
+# Secrets (WIKI_DATABASE_URL / OPENROUTER_API_KEY) resolve env var → env file
+# (../../.env, i.e. pipelines/.env — systemd injects it via EnvironmentFile=) →
+# Google Secret Manager fallback. Only that last fallback needs ADC, hence the
+# GOOGLE_APPLICATION_CREDENTIALS handling below; it is also still required for
+# the GCS article store.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

@@ -15,7 +15,7 @@ from src.pipeline.steps import social_cards_render as scr
 
 
 class FakeUploader:
-    bucket_name = "podcast-data-web"
+    """Since P5 the uploader returns the final public URL directly (no gs:// step)."""
 
     def __init__(self):
         self.calls = []
@@ -24,10 +24,7 @@ class FakeUploader:
     def upload_file_from_base64(self, b64, file_type, podcast, episode_id, ext, skip_existing=True, public=False):
         self.calls.append((file_type, episode_id, ext))
         self.public_flags.append(public)
-        return True, f"gs://{self.bucket_name}/{file_type}/{episode_id}.{ext}"
-
-    def generate_public_url(self, blob):
-        return f"https://cdn.tinboker.com/{blob}"
+        return True, f"https://cdn.tinboker.com/{file_type}/{episode_id}.{ext}"
 
 
 def _cfg(rerun=None):
@@ -55,9 +52,6 @@ def _ep(cards, **kw):
     )
 
 
-@pytest.fixture(autouse=True)
-def _no_vps(monkeypatch):
-    monkeypatch.delenv("VPS_MEDIA_ROOT", raising=False)
 
 
 def test_happy_path_joins_public_urls_in_order(monkeypatch):
@@ -66,8 +60,8 @@ def test_happy_path_joins_public_urls_in_order(monkeypatch):
     cards = _cards(2)
     scr.render_social_cards(_cfg(), _services(up), _ep(cards))
 
-    # Each URL carries a content-hash ?v= cache-buster (GCS reuses the path on
-    # reprocess; the query changes iff the PNG bytes change).
+    # Each URL carries a content-hash ?v= cache-buster (the media host reuses the
+    # path on reprocess; the query changes iff the PNG bytes change).
     import hashlib
     def ver(b64):
         return hashlib.md5(b64.encode("utf-8")).hexdigest()[:10]

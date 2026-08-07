@@ -3,7 +3,10 @@
 Mirror of ``backend/tests/unit/test_tag_vocabulary_sync.py`` — lives here too so the
 guard fires on the realistic drift path: a maintainer edits the pipeline vocabulary
 (touching ``pipelines/**``, which triggers Pipelines CI) and forgets to re-sync the
-backend mirror. Run ``python scripts/sync_tag_vocabulary.py`` to fix a failure.
+backend mirror. Fix a failure by editing ``backend/src/data/tag_vocabulary_seed.py``
+to match ``pipelines/libs/shared/src/shared/tag_vocabulary_seed_backup.py`` — the
+canonical source (``scripts/sync_tag_vocabulary.py`` targets a stale JSON pair that
+doesn't exist on this branch; ignore it).
 """
 
 from __future__ import annotations

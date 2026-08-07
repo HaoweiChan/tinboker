@@ -65,3 +65,36 @@ Common term reference:
 | Filter | 篩選 | Loading | 載入中 |
 | Save / Cancel | 儲存 / 取消 | No Data | 無資料 |
 | Load More | 載入更多 | Coming Soon | 即將推出 |
+
+---
+
+## Boundary
+
+`frontend/` is for UI, React components, pages, routing, client-side state, SEO metadata
+rendering, structured data, admin surfaces. Do not place ingestion jobs or API logic in
+`frontend/`.
+
+## SEO conventions
+
+> Migrated 2026-07-04 from the root `AGENTS.md`.
+
+Tinboker should generate indexable, source-grounded pages. Important surfaces: ticker
+pages, sector pages, podcast show pages, episode pages, newsletter pages, topic pages.
+
+- Add title and description metadata.
+- Add canonical URL where appropriate.
+- Add Open Graph metadata.
+- Prefer semantic HTML.
+- Use JSON-LD where useful.
+- Avoid hiding all important content behind client-only rendering if SEO is important.
+
+Potential structured data: `PodcastSeries`, `PodcastEpisode`, `Article`,
+`BreadcrumbList`, `Organization`, `WebPage`.
+
+## Code conventions
+
+- Zod schemas for all API response validation (`frontend/src/validation/schemas.ts`)
+- Zustand stores for global state (`frontend/src/store/`)
+- Axios client at `frontend/src/services/api/client.ts`
+- Gate `console.warn/log` debug output behind `import.meta.env.DEV`
+- No `any` types — use proper type definitions in `frontend/src/types/`

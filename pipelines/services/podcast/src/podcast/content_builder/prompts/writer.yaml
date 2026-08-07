@@ -34,7 +34,7 @@ system: |
     Common mappings: 台積電→2330, 聯發科→2454, 鴻海→2317, 輝達→NVDA, 蘋果→AAPL,
     谷歌→GOOGL, 美光→MU, SK海力士→000660, 三星→005930, 博通→AVGO, 超微→AMD, 阿斯麥/ASML→ASML,
     SpaceX→SPCX.
-  - Tags: Format as [顯示名](#tag:Slug) — e.g., [半導體](#tag:Semiconductor). The slug
+  - Tags: Format as [顯示名](#tag:Slug) — e.g., [供應鏈](#tag:SupplyChain). The slug
     after #tag: MUST be an ASCII identifier ([A-Za-z0-9_]); Chinese goes in the display
     text only. Non-ASCII slugs are silently dropped.
     CLOSED VOCABULARY: you MUST pick the slug from the provided tag vocabulary EXACTLY
@@ -78,11 +78,14 @@ user: |
     Never invent, pluralize, or translate a slug; if none fits a theme, omit the tag:
     {tag_vocabulary}
   - tags array: each item is {{"display_name": "<zh-TW>", "tag_name": "<the same ASCII slug>"}}
-  - Focus ONLY on financial/market content; silently drop any non-financial topics
+  - The input events have ALREADY been filtered by an upstream policy step — every event you receive was deliberately kept as real content. Write ONE section per input event; never drop, merge, or reorder a section. Trading methodology, market psychology, and portfolio-management discussion (position sizing, risk management, how the host thinks about entries/exits) ARE financial content — write a full section for them like any other event, do not treat them as off-topic chitchat to skip.
+  - Never reproduce a listener's name, handle, or initials (e.g. "聽眾L", "聽眾O先生") in a Q&A section — refer to them generically as 一位聽眾 or 聽眾提問. This applies even if the transcript itself contains the name.
+  - The transcript is ASR (speech-to-text) output and sometimes mistranscribes a term as a similar-sounding phrase. Silently correct ONLY unambiguous homophone mistranscriptions of standard financial/tech terms — e.g. 刺激封裝→次級封裝 — where the correct term is obvious from context. Do NOT scare-quote uncertain terms with 「」to hedge; if you are not confident a term is a mistranscription, keep the original wording as plain unquoted text rather than flagging or "correcting" it.
   - For each section heading: rewrite the section_topic as an editorial headline that captures the key insight (e.g. "市場動盪下的生存法則：從機構操作解析到逆向投資策略"), NOT a literal transcript label; output plain text only — NEVER embed any timestamp, (#time:...), or MM:SS text in the heading
   - Each section should contain 3-4 substantial analytical paragraphs, not bullet lists
   - Write ONE section per input event, in the SAME order the events are given — do not reorder or invent sections. The chapter timestamp shown to users is computed by code from each event's real position; do NOT try to author it yourself
-  - start_time: copy event.start verbatim when present (it is only an ordering hint — code re-derives the authoritative value). Omit it rather than guessing; NEVER use a sequence number like 1/2/3
+  - event_id: each input event has an "event_id" field (e.g. "E1", "E2"). Copy it verbatim into the matching section's event_id field — this is how code reliably reconnects your section back to its source event, so get it exactly right.
+  - start_time: copy event.start verbatim when present (legacy ordering hint, kept for back-compat — it is only ever used if event_id is missing). Omit it rather than guessing; NEVER use a sequence number like 1/2/3
 
   Output a structured JSON object with the following fields:
   - title: Article title in Traditional Chinese
@@ -90,7 +93,8 @@ user: |
   - sections: Array of section objects, each with:
     - heading: Editorial headline in plain text (no leading ## or timestamp) — e.g. "市場動盪下的生存法則：從機構操作解析到逆向投資策略"
     - content: Section content in Markdown format — full paragraphs with inline ticker and tag links throughout
-    - start_time: Ordering hint only — copy event.start (milliseconds) when available, else omit. Code re-derives the authoritative chapter time; never put a sequence number here
+    - event_id: Copy the source event's event_id verbatim (e.g. "E3") — REQUIRED when the input event has one
+    - start_time: Legacy ordering hint only — copy event.start (milliseconds) when available, else omit. Code re-derives the authoritative chapter time; never put a sequence number here
     - subsections: Optional array of subsection objects with heading and content
   - conclusion: Conclusion paragraph in Traditional Chinese
   - stock_tickers: Array of stock ticker objects with display_name and symbol

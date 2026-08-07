@@ -1,10 +1,9 @@
-"""Step 5d: dual-write per-ticker insight documents to Firestore.
+"""Step 5d: write per-ticker insight documents.
 
-Writes ``ticker_insights/{episode_id}/tickers/{ticker}`` per the platform
-contract in ``docs/firestore-contract.md`` § 4. During Phase B cutover this
-step runs after the Postgres mirror so new episodes have both the legacy row
-copy and the composite Firestore docs. Best-effort — failures are logged but do
-not abort the rest of the pipeline.
+Persists the § 4 docs of ``docs/firestore-contract.md`` into
+``firestore_mirror.ticker_insights`` (Postgres), keyed ``(episode_id, ticker)``.
+The Firestore ``ticker_insights/{episode_id}/tickers/{ticker}`` subcollection
+write is gone since P4 — this is the only copy, so it raises on failure.
 """
 
 from __future__ import annotations
@@ -41,7 +40,7 @@ def export_ticker_insights(
 
     from src.podcast.exporters.ticker_insights import (
         build_episode_insight_docs,
-        write_episode_insights,
+        write_episode_insights_postgres,
     )
 
     # The insight's mention date MUST equal the episode doc's released_at_ms — the
@@ -69,15 +68,5 @@ def export_ticker_insights(
     if not docs:
         return
 
-    try:
-        written = write_episode_insights(
-            services.firebase_service.db,
-            episode_id=episode_data.episode_id,
-            docs=docs,
-        )
-        print(f"  ✓ Wrote {written} ticker_insights docs for {episode_data.episode_id}")
-    except Exception as e:
-        import traceback
-
-        print(f"  ⚠ Ticker insights export failed (non-fatal): {e}")
-        traceback.print_exc()
+    written = write_episode_insights_postgres(episode_data.episode_id, docs)
+    print(f"  ✓ Wrote {written} ticker_insights docs for {episode_data.episode_id}")

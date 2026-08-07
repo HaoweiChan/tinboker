@@ -1,11 +1,6 @@
-"""Unit tests for the unified topic registry's sector helpers.
+"""Unit tests for bootstrap-only sector registry helpers."""
 
-sync_sectors() indexes pipeline-universe sectors into the shared tag_registry so admins
-can curate their visibility alongside tags. New sectors default to VISIBLE (trending) so a
-first sync never empties the live board; existing rows refresh display/visuals but keep
-their curated tier. hidden_sector_exposure_ids() / trending_slugs() back the board gate and
-the tag-only trending cloud respectively.
-"""
+import logging
 
 import pytest
 from sqlalchemy import create_engine
@@ -19,6 +14,7 @@ from src.tag_registry import (
     TIER_TRENDING,
     hidden_sector_exposure_ids,
     hidden_tag_slugs,
+    sector_redirects,
     sync_sectors,
     trending_slugs,
 )
@@ -33,73 +29,72 @@ def session():
     db.close()
 
 
-def _sector(exposure_id, display_name, icon_id="cpu", color_hex="#3B82F6"):
+def _sector(exposure_id, display_name, members=None):
     return {
         "exposure_id": exposure_id,
         "display_name": display_name,
-        "icon_id": icon_id,
-        "color_hex": color_hex,
-        "count": 5,
+        "icon_id": "cpu",
+        "color_hex": "#3B82F6",
+        "description": "seed description",
+        "exposure_type": "theme",
+        "members": members or [{"ticker": "2330", "name": "台積電", "market": "TW"}],
+        "aliases": [display_name],
+        "group": None,
     }
 
 
-def test_sync_inserts_new_sectors_as_visible(session):
-    sectors = [
-        _sector("sector_semiconductor", "半導體"),
-        _sector("sector_ai_server", "AI 伺服器"),
-    ]
-    new_count = sync_sectors(session, sectors)
-    assert new_count == 2
+def test_sync_bootstraps_empty_registry_from_fixture(session, monkeypatch):
+    monkeypatch.setattr(
+        "src.tag_registry._seed_sector_redirects",
+        lambda: {"sector_old": "sector_new"},
+    )
+
+    new_count = sync_sectors(session, [_sector("sector_new", "New")])
+
+    rows = {
+        row.exposure_id: row
+        for row in session.query(TagRegistry).filter(TagRegistry.kind == KIND_SECTOR).all()
+    }
+    assert new_count == 1
+    assert rows["sector_new"].tier == TIER_TRENDING
+    assert rows["sector_new"].members == [{"ticker": "2330", "name": "台積電", "market": "TW"}]
+    assert rows["sector_old"].tier == TIER_HIDDEN
+    assert rows["sector_old"].redirect_to == "sector_new"
+    assert sector_redirects(session) == {"sector_old": "sector_new"}
+
+
+def test_sync_non_empty_registry_writes_nothing(session, caplog):
+    session.add(TagRegistry(
+        slug="sector_existing",
+        display_zh="Original",
+        tier=TIER_HIDDEN,
+        kind=KIND_SECTOR,
+        exposure_id="sector_existing",
+        description="admin description",
+        updated_by="admin:owner@example.com",
+    ))
+    session.commit()
+
+    with caplog.at_level(logging.INFO):
+        new_count = sync_sectors(session, [_sector("sector_new", "New")])
 
     rows = session.query(TagRegistry).filter(TagRegistry.kind == KIND_SECTOR).all()
-    assert len(rows) == 2
-    for r in rows:
-        assert r.tier == TIER_TRENDING  # visible by default
-        assert r.exposure_id == r.slug
-        assert r.icon_id and r.color_hex
-
-
-def test_resync_refreshes_visuals_but_preserves_curated_tier(session):
-    sync_sectors(session, [_sector("sector_semiconductor", "半導體", icon_id="cpu")])
-    # Admin hides it.
-    row = session.query(TagRegistry).filter_by(exposure_id="sector_semiconductor").one()
-    row.tier = TIER_HIDDEN
-    session.commit()
-
-    # Re-sync with refreshed display name + visuals.
-    new_count = sync_sectors(session, [_sector("sector_semiconductor", "半導體業", icon_id="circuit-board")])
-    assert new_count == 0  # not a new row
-
-    row = session.query(TagRegistry).filter_by(exposure_id="sector_semiconductor").one()
-    assert row.tier == TIER_HIDDEN          # curation preserved
-    assert row.display_zh == "半導體業"      # display refreshed
-    assert row.icon_id == "circuit-board"   # visual refreshed
-
-
-def test_resync_preserves_edited_members(session):
-    theme_a = {
-        "exposure_id": "sector_a",
-        "display_name": "A",
-        "members": [{"ticker": "3481", "name": "群創"}],
-    }
-    sync_sectors(session, [theme_a])
-
-    row = session.query(TagRegistry).filter_by(exposure_id="sector_a").one()
-    row.members = [{"ticker": "3481", "name": "群創"}, {"ticker": "2409", "name": "友達"}]
-    session.commit()
-
-    sync_sectors(session, [theme_a])
-
-    row = session.query(TagRegistry).filter_by(exposure_id="sector_a").one()
-    assert len(row.members) == 2
+    assert new_count == 0
+    assert len(rows) == 1
+    assert rows[0].exposure_id == "sector_existing"
+    assert rows[0].description == "admin description"
+    assert "taxonomy managed in DB; seed sync skipped" in caplog.text
 
 
 def test_hidden_sector_exposure_ids_returns_only_hidden(session):
-    sync_sectors(session, [
-        _sector("sector_a", "A"),
-        _sector("sector_b", "B"),
-    ])
-    session.query(TagRegistry).filter_by(exposure_id="sector_b").one().tier = TIER_HIDDEN
+    session.add(TagRegistry(
+        slug="sector_a", display_zh="A", tier=TIER_TRENDING,
+        kind=KIND_SECTOR, exposure_id="sector_a",
+    ))
+    session.add(TagRegistry(
+        slug="sector_b", display_zh="B", tier=TIER_HIDDEN,
+        kind=KIND_SECTOR, exposure_id="sector_b",
+    ))
     session.commit()
 
     assert hidden_sector_exposure_ids(session) == {"sector_b"}
@@ -107,8 +102,14 @@ def test_hidden_sector_exposure_ids_returns_only_hidden(session):
 
 def test_trending_slugs_excludes_sectors(session):
     session.add(TagRegistry(slug="ai", display_zh="AI", tier=TIER_TRENDING, kind=KIND_TAG))
+    session.add(TagRegistry(
+        slug="sector_semiconductor",
+        display_zh="半導體",
+        tier=TIER_TRENDING,
+        kind=KIND_SECTOR,
+        exposure_id="sector_semiconductor",
+    ))
     session.commit()
-    sync_sectors(session, [_sector("sector_semiconductor", "半導體")])  # trending, but a sector
 
     slugs = trending_slugs(session)
     assert "ai" in slugs
@@ -116,45 +117,56 @@ def test_trending_slugs_excludes_sectors(session):
 
 
 def test_canonical_tag_slugs_gates_junk():
-    """The vocabulary gate keeps real tags and drops LLM-hallucinated junk/tickers."""
     from src.tag_registry import canonical_tag_slugs
 
     vocab = canonical_tag_slugs()
-    assert len(vocab) > 100               # the curated vocabulary, not empty
-    assert "twstocks" in vocab            # real topic
-    assert "taiwanstocks" not in vocab    # off-vocabulary junk (the reported tag)
-    assert "000660" not in vocab          # ticker symbol written as a tag
+    assert len(vocab) > 100
+    assert "twstocks" in vocab
+    assert "taiwanstocks" not in vocab
+    assert "000660" not in vocab
 
 
 def test_hidden_tag_slugs_normalized_and_tag_only(session):
-    # A hidden tag (mixed spelling) → normalized; a visible tag and a hidden sector excluded.
     session.add(TagRegistry(slug="Supply_Chain", display_zh="供應鏈", tier=TIER_HIDDEN, kind=KIND_TAG))
     session.add(TagRegistry(slug="ai", display_zh="AI", tier=TIER_TRENDING, kind=KIND_TAG))
-    session.commit()
-    sync_sectors(session, [_sector("sector_semiconductor", "半導體")])
-    session.query(TagRegistry).filter_by(exposure_id="sector_semiconductor").one().tier = TIER_HIDDEN
-    session.commit()
-
-    hidden = hidden_tag_slugs(session)
-    assert "supplychain" in hidden          # normalized (strips case + underscore)
-    assert "ai" not in hidden               # visible tag not hidden
-    assert "sectorsemiconductor" not in hidden  # sectors are not tag-kind
-
-
-def test_sync_self_heals_legacy_theme_rows(session):
-    """A legacy theme_<id> sector row is dropped once sector_<id> is synced, and an
-    admin 'hidden' curation carries onto the survivor."""
-    # Pre-existing legacy row: admin had HIDDEN the old theme exposure.
     session.add(TagRegistry(
-        slug="theme_ai_server", display_zh="AI 伺服器", tier=TIER_HIDDEN,
-        kind=KIND_SECTOR, exposure_id="theme_ai_server",
+        slug="sector_semiconductor",
+        display_zh="半導體",
+        tier=TIER_HIDDEN,
+        kind=KIND_SECTOR,
+        exposure_id="sector_semiconductor",
     ))
     session.commit()
 
-    sync_sectors(session, [_sector("sector_ai_server", "AI 伺服器")])
+    hidden = hidden_tag_slugs(session)
+    assert "supplychain" in hidden
+    assert "ai" not in hidden
+    assert "sectorsemiconductor" not in hidden
 
-    rows = session.query(TagRegistry).filter(TagRegistry.kind == KIND_SECTOR).all()
-    ids = {r.exposure_id for r in rows}
-    assert ids == {"sector_ai_server"}              # theme_ orphan removed
-    survivor = next(r for r in rows if r.exposure_id == "sector_ai_server")
-    assert survivor.tier == TIER_HIDDEN              # admin hide preserved
+
+def test_served_ids_allowlist_excludes_deleted_and_redirects(session):
+    """TKB-009: a DELETEd registry row must not resurrect on the board — allowlist
+    serves only present, non-hidden, non-redirect rows."""
+    from src.tag_registry import served_sector_exposure_ids
+    sync_sectors(session, [
+        _sector("sector_a", "A"),
+        _sector("sector_b", "B"),
+    ])
+    rows = {r.exposure_id: r for r in session.query(TagRegistry).all()}
+    rows["sector_b"].tier = TIER_HIDDEN
+    session.add(TagRegistry(
+        slug="sector_old", display_zh="舊", kind=KIND_SECTOR,
+        exposure_id="sector_old", tier="trending", redirect_to="sector_a",
+    ))
+    session.commit()
+
+    served = served_sector_exposure_ids(session)
+    assert served == {"sector_a"}  # hidden + redirect stub excluded
+    # 'sector_memory'-style deleted/absent ids are excluded by construction:
+    assert "sector_memory" not in served
+
+
+def test_served_ids_none_on_empty_registry(session):
+    """Bootstrap window: empty registry → None, callers fall back to blocklist."""
+    from src.tag_registry import served_sector_exposure_ids
+    assert served_sector_exposure_ids(session) is None

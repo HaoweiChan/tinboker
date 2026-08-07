@@ -22,6 +22,32 @@ from src.pipeline import ServiceContainer as PipelineContext
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 
+@pytest.fixture(autouse=True)
+def _isolated_media_root(tmp_path_factory, monkeypatch):
+    """Point MEDIA_STORAGE_ROOT at a temp dir for every test.
+
+    Without it, any test that reaches a real GCSStorageService writes artifacts into
+    the repo (the dev fallback root is ``pipelines/.media``).
+    """
+    monkeypatch.setenv("MEDIA_STORAGE_ROOT", str(tmp_path_factory.mktemp("media")))
+
+
+@pytest.fixture(autouse=True)
+def _no_live_episode_database_url(monkeypatch):
+    """Scrub EPISODE_DATABASE_URL before every test.
+
+    secrets_bootstrap.bootstrap() (triggered as an import side-effect by
+    upload_to_firebase/firestore_service, which many tests import transitively)
+    populates this from GSM with the real VPS Postgres connection string. Without
+    this fixture, any test that exercises a postgres_mirror dual-write path
+    (pipeline.steps.ticker_insights_export, scripts/refresh_trending_tickers.py,
+    podcast.regen.orchestrator.commit) and doesn't itself mock psycopg.connect
+    would attempt a real connection. Tests that want to exercise the dual-write
+    opt back in explicitly via monkeypatch.setenv + a fake psycopg.connect.
+    """
+    monkeypatch.delenv("EPISODE_DATABASE_URL", raising=False)
+
+
 @pytest.fixture
 def fixtures_dir():
     """Return path to fixtures directory."""

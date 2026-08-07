@@ -534,6 +534,7 @@ export interface SectorListItem {
   exposure_type: string;
   icon_id?: string | null;   // lucide icon name from the compiled universe
   color_hex?: string | null; // accent color
+  description?: string | null;
   count: number;
 }
 
@@ -594,6 +595,40 @@ export async function getExposurePerformance(): Promise<ExposurePerformanceItem[
   return Array.isArray(d.exposures) ? d.exposures : [];
 }
 
+/** One heat quantile bucket → mean EXCESS forward return (point-in-time backtest).
+ *  Returns are cross-sectionally demeaned per as-of date, so this is the theme's
+ *  return relative to the other themes that same day — a market-wide rally can't
+ *  manufacture a heat→return gradient. */
+export interface HeatValidationBucket {
+  bucket: number;      // 1 = lowest heat quantile … n_buckets = highest
+  signal_min: number;
+  signal_max: number;
+  mean_return: number; // mean EXCESS forward return vs same-day themes, percent
+  n: number;           // observations in the bucket
+}
+
+export interface HeatValidationHorizon {
+  buckets: HeatValidationBucket[];
+  n: number;
+}
+
+/** Corrects the /topics bubble chart: heat measured *as of* a past date, quantized
+ *  against the *forward* 7/30/90-day return, so higher-heat buckets read as a
+ *  profit prediction rather than a look-ahead artifact. */
+export interface HeatValidation {
+  half_life_days: number;
+  n_buckets: number;
+  horizons: Record<string, HeatValidationHorizon>; // keyed by days: "7"/"30"/"90"
+  date_span: { start: string | null; end: string | null };
+  as_of_count: number;
+}
+
+export async function getHeatValidation(): Promise<HeatValidation | null> {
+  const response = await apiClient.get('/api/sectors/heat-validation');
+  const d = response.data;
+  return d && typeof d === 'object' && d.horizons ? (d as HeatValidation) : null;
+}
+
 /** Trailing close-to-close performance for a ticker over fixed windows. */
 export interface TrailingPerf {
   price: number | null;
@@ -625,6 +660,7 @@ export interface EpisodesBySectorResponse {
   exposure_type: string;
   icon_id?: string | null;   // lucide icon name from the compiled universe
   color_hex?: string | null; // accent color
+  description?: string | null;
   resolved_tickers: SectorResolvedTicker[];
   episodes: Episode[];
   total: number;
@@ -646,6 +682,7 @@ export async function getEpisodesBySector(
     exposure_type: d.exposure_type ?? 'sector',
     icon_id: d.icon_id ?? null,
     color_hex: d.color_hex ?? null,
+    description: d.description ?? null,
     resolved_tickers: Array.isArray(d.resolved_tickers) ? d.resolved_tickers : [],
     episodes: Array.isArray(d.episodes) ? d.episodes : [],
     total: typeof d.total === 'number' ? d.total : 0,

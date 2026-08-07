@@ -77,11 +77,11 @@ STEP_OUTPUT: dict[str, dict[str, Any]] = {
             ],
             "conclusion": "str",
             "stock_tickers": [{"display_name": "str", "symbol": "str — e.g. 2330, NVDA"}],
-            "tags": [{"display_name": "str — zh-TW", "tag_name": "str — ASCII slug, e.g. Semiconductor"}],
+            "tags": [{"display_name": "str — zh-TW", "tag_name": "str — ASCII slug, e.g. SupplyChain"}],
             "_notes": [
                 "#ticker: and #tag: slugs MUST be ASCII [A-Za-z0-9_]; non-ASCII slugs are silently "
                 "dropped by extraction. Put Chinese in the display text only "
-                "(e.g. [半導體](#tag:Semiconductor), [台積電](#ticker:2330)).",
+                "(e.g. [供應鏈](#tag:SupplyChain), [台積電](#ticker:2330)).",
                 "tag_name in the tags array must be the same canonical ASCII slug used in the #tag: links.",
             ],
         },
@@ -91,13 +91,13 @@ STEP_OUTPUT: dict[str, dict[str, Any]] = {
             "sections": [
                 {
                     "heading": "AI 需求撐起先進製程",
-                    "content": "[台積電](#ticker:2330)本季在 [AI](#tag:AI) 與[半導體](#tag:Semiconductor)需求帶動下，營收優於預期。",
+                    "content": "[台積電](#ticker:2330)本季在 [AI 供應鏈](#tag:AISupplyChain)需求帶動下，營收優於預期。",
                     "start_time": 0,
                 }
             ],
             "conclusion": "展望樂觀，但需留意總體變數。",
             "stock_tickers": [{"display_name": "台積電", "symbol": "2330"}],
-            "tags": [{"display_name": "半導體", "tag_name": "Semiconductor"}, {"display_name": "AI", "tag_name": "AI"}],
+            "tags": [{"display_name": "AI 供應鏈", "tag_name": "AISupplyChain"}],
         },
     },
     "key_insights": {
@@ -263,13 +263,20 @@ def validate_output(step: str, output: Any) -> list[str]:
                 errors.append('key_insights: "key_insights" must be an array of plain-text strings.')
 
     elif step == "ticker_extractor":
-        recs = (output or {}).get("ticker_recommendations") if isinstance(output, dict) else None
+        # Accept BOTH wrapper keys, matching the node postprocess and the
+        # exporter (exporters/ticker_insights.py) — ticker_extractor.yaml asks the
+        # model for "ticker_insights", so rejecting it here broke regen runs.
+        recs = None
+        if isinstance(output, dict):
+            recs = output.get("ticker_insights")
+            if not isinstance(recs, list):
+                recs = output.get("ticker_recommendations")
         if not isinstance(recs, list):
-            errors.append('ticker_extractor: expected {"ticker_recommendations": [...]} (legacy key name).')
+            errors.append('ticker_extractor: expected {"ticker_insights": [...]} (or legacy "ticker_recommendations").')
         else:
             for i, r in enumerate(recs):
                 if not isinstance(r, dict) or "ticker" not in r:
-                    errors.append(f'ticker_extractor: ticker_recommendations[{i}] missing "ticker".')
+                    errors.append(f'ticker_extractor: ticker_insights[{i}] missing "ticker".')
                     break
 
     elif step == "marp_writer":

@@ -137,10 +137,52 @@ guards:
 **Post-deploy purge.** Backend deploys ([`backend-deploy.yml`](../.github/workflows/backend-deploy.yml),
 [`backend-deploy-admin.yml`](../.github/workflows/backend-deploy-admin.yml)) purge the deployed
 env's `/api/` edge cache once the container is healthy, so a deploy no longer serves pre-deploy
-`/api/*` responses until TTL. Uses `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ZONE_TAG` from GSM
-(host-scoped purge of `{api_host}` — same method as the manual recipe in
-[`CLAUDE.md`](../CLAUDE.md) — falling back to `purge_everything` on non-Enterprise plans).
+`/api/*` responses until TTL. Uses the `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ZONE_TAG` GitHub
+Actions repo secrets (P6 — previously GSM)
+(host-scoped purge of `{api_host}` — same method as the manual recipe below —
+falling back to `purge_everything` on non-Enterprise plans).
 Best-effort: a purge failure warns but does not fail the deploy.
+
+Both CI pipelines auto-purge the CDN after every code deploy, so no manual purge is needed for
+code changes — see [`workflows/deploy-flow.md`](./workflows/deploy-flow.md) Verification.
+
+### 1.4a Ad-hoc Cloudflare purge (data-only changes)
+
+This is the **canonical recipe** for manually purging the Cloudflare CDN when there is no
+code deploy to trigger the automatic purge — e.g. a Firestore data fix, or a manual pipeline
+run. Fetch credentials from GCP Secret Manager yourself, never ask the user:
+
+```bash
+PROJ=gen-lang-client-0901363254
+TOKEN=$(gcloud secrets versions access latest --secret=CLOUDFLARE_API_TOKEN --project=$PROJ)
+ZONE=$(gcloud secrets versions access latest --secret=CLOUDFLARE_ZONE_TAG --project=$PROJ)
+# Host-scoped purge (leaves other envs cached). Swap hosts per env.
+curl -s -X POST "https://api.cloudflare.com/client/v4/zones/$ZONE/purge_cache" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  --data '{"hosts":["dev-api.tinboker.com","dev.tinboker.com"]}'
+# Prod — whole zone:  --data '{"purge_everything":true}'
+```
+
+Hosts by env: dev = `dev-api.tinboker.com` / `dev.tinboker.com`; staging =
+`staging-api.tinboker.com` / `staging.tinboker.com`; prod = `api.tinboker.com` /
+`tinboker.com` / `www.tinboker.com`. **Never print the token.** Verify success with
+`cf-cache-status: MISS` on a clean (non-cache-busted) URL afterward.
+
+### 1.4b Cache TTLs — episode freshness
+
+The content pipeline pulls new episodes every ~10 minutes. Cache layers are aligned to that
+cadence:
+
+| Layer | TTL | Source |
+|-------|-----|--------|
+| Redis (`podcast_episodes` key) | 10 min | [`backend/src/cache/cache_config.py:43`](../backend/src/cache/cache_config.py) |
+| CDN edge (`s-maxage`) | 10 min (600s) | `/api/episodes/recent` — [`backend/src/routers/episodes.py:27`](../backend/src/routers/episodes.py) `@cdn_cached(s_maxage=600, max_age=120, stale=300)` |
+| Browser (`max-age`) | 2 min (120s) | Same decorator — short enough that a refresh shows fresh content |
+| Stale-while-revalidate | 5 min (300s) | Same decorator |
+
+Other endpoints (stock, news, graph) retain longer TTLs — see the `CacheProfile` enum in
+[`backend/src/cache/cdn_cache.py`](../backend/src/cache/cdn_cache.py) (e.g. `TRENDING` =
+`s_maxage=3600, max_age=120, stale=7200`).
 
 ### 1.5 Docker shared network
 
@@ -151,17 +193,47 @@ ssh root@152.53.136.182
 docker network create app_default 2>/dev/null || true
 ```
 
+### 1.6 Container log rotation
+
+Every service in [`backend/docker-compose.multi.yml`](../backend/docker-compose.multi.yml)
+carries `logging: *default-logging` (json-file, `max-size: 50m`, `max-file: 3`). Without
+it container logs grow without bound until a deploy happens to recycle the container —
+`backend-dev` reached **18 GB over 12 days** and was only reclaimed by chance.
+
+Two things that look like alternatives and are not:
+
+- **`/etc/docker/daemon.json`** with `log-opts` is the more conventional fix, but the
+  daemon only picks it up on `systemctl restart docker`, which bounces prod, staging and
+  dev at the same time. The compose settings apply when each container is next recreated,
+  which normal deploys already do.
+- **`logrotate`** cannot rotate these safely. dockerd holds the inode open, so the only
+  workable mode is `copytruncate`, and external truncation leaves the json-file driver
+  with a stale offset: **`docker logs --tail N` then returns nothing** (plain `docker logs`,
+  `--since` and `--tail all` keep working) until the container is recreated. Confirmed on
+  this host — do not add a logrotate drop-in for `/var/lib/docker/containers/*/*-json.log`.
+
+Rollout note: `backend-deploy.yml` uses `--force-recreate` for the three backends, so they
+pick the setting up on their next deploy. The shared services (`postgres`, `redis`,
+`netdata`) are started with `--no-recreate` and keep their current unbounded log until
+someone recreates them explicitly — acceptable, since they are not the growth source.
+
+See also `SQL_ECHO` in Part 6: leaving SQL echo on in dev was what generated ~1.5 GB/day.
+
 ---
 
 ## Part 2 — GCP setup
 
 ### 2.1 Service account
 
-The backend authenticates to GCP using a service account JSON key mounted into the
-Docker container at `/app/gcp-service-account.json`.
+The backend authenticates to GCP using a service account JSON key. There are two
+distinct paths for this file — they are not a typo, they refer to different sides of
+the Docker volume mount (`backend/docker-compose.multi.yml`: `./gcp-service-account.json:/app/gcp-service-account.json:ro`):
 
 - **GCP project:** `gen-lang-client-0901363254`
-- **Key file on VPS:** `/app/backend/gcp-service-account.json` (not committed to git)
+- **Host path (on the VPS filesystem, compose is run from `/app/backend`):**
+  `/app/backend/gcp-service-account.json` (not committed to git)
+- **Container path (inside the running container, matches `GOOGLE_APPLICATION_CREDENTIALS`):**
+  `/app/gcp-service-account.json`
 
 To get a new key if lost:
 1. GCP Console → IAM & Admin → Service Accounts
@@ -171,7 +243,15 @@ To get a new key if lost:
 
 ### 2.2 GCP Secret Manager — full secrets list
 
-The backend fetches these secrets from Secret Manager **at runtime** (loaded by
+> **P6 (2026-08): Secret Manager is a FALLBACK, not the source.** Runtime secrets come
+> from `compose/backend/.env` (backend) and `/root/tinboker/pipelines/.env` (pipelines);
+> CI/CD secrets come from GitHub Actions repo secrets. `GCPSecretManagerSource` only
+> fetches what the environment did not supply, and logs `source=gsm` when it does.
+> Canonical migration table and cleanup order: `docs/firestore-contract.md` § 11.8.
+> The authoritative field list is `_GSM_FIELDS` in `backend/src/config_loader.py`; the
+> table below is a subset kept for context.
+
+The backend falls back to these secrets from Secret Manager **at runtime** (loaded by
 `GCPSecretManagerSource` in `src/config_loader.py`). Secret name = uppercase of the
 Python settings field name.
 
@@ -199,17 +279,22 @@ echo -n "your-secret-value" | gcloud secrets versions add SECRET_NAME \
   --data-file=- --project=gen-lang-client-0901363254
 ```
 
-### 2.3 GCP secrets used by GitHub Actions CI (stored in Secret Manager, not as GH secrets)
+### 2.3 Secrets used by GitHub Actions CI
 
-These are fetched by the workflow via `gcloud secrets versions access`:
+**P6: these are GitHub Actions repo secrets now** (same names as the old GSM secrets).
+No workflow calls `gcloud secrets versions access` any more.
 
-| Secret name in GSM | Used for |
+| Repo secret | Used for |
 |---|---|
 | `VPS_HOST` | SSH target (`152.53.136.182`) |
 | `VPS_USER` | SSH user (`root`) |
 | `VPS_SSH_KEY` | SSH private key for deploy |
 | `GHCR_TOKEN` | GitHub Container Registry login token |
+| `GCP_CREDENTIALS_JSON` | SA JSON shipped to the VPS for the GCS article store |
+| `POSTGRES_PASSWORD` | Passed into the backend compose stack at deploy time |
+| `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ZONE_TAG` | Post-deploy CDN purge |
 | `GOOGLE_CLIENT_ID` | Injected as `VITE_GOOGLE_CLIENT_ID` at frontend build time |
+| `TINBOKER_SOCIAL_TOKEN` | `snapshot-social-metrics.yml` |
 
 ### 2.4 GitHub Actions secrets (stored directly in repo settings)
 
@@ -217,12 +302,12 @@ Settings → Secrets and variables → Actions → New repository secret:
 
 | Secret | Where to get it |
 |---|---|
-| `GCP_SA_KEY` | GCP Console → IAM → Service Accounts → your SA → Keys → Add Key → JSON. Paste the entire JSON content. |
+| `GCP_SA_KEY` | GCP Console → IAM → Service Accounts → your SA → Keys → Add Key → JSON. Paste the entire JSON content. Used ONLY by `refresh-social-tokens.yml`, the last GSM writer. |
 | `CLOUDFLARE_API_TOKEN` | Cloudflare → My Profile → API Tokens → Create Token → "Edit Cloudflare Workers" template, scoped to tinboker.com |
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare dashboard → right sidebar when on tinboker.com overview |
 
-> `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`, `GHCR_TOKEN` are **not** stored as GitHub secrets —
-> they are fetched from GCP Secret Manager at workflow runtime using `GCP_SA_KEY`.
+> P6: everything in § 2.3 is a repo secret too. Create those before merging a P6 branch —
+> the workflows have no GSM fallback. See `docs/firestore-contract.md` § 11.8.
 
 ---
 
@@ -332,25 +417,44 @@ Database ID: `graphfolio-db` (set as `FIRESTORE_DATABASE_ID` env var in `docker-
 
 ## Part 6 — Environment variables reference
 
-Variables set in `docker-compose.multi.yml` are passed directly to containers. Secrets
-not listed here are loaded from GCP Secret Manager at runtime by `src/config_loader.py`.
+Variables set in `docker-compose.multi.yml` are passed directly to containers. P6: every
+secret should be in `compose/backend/.env` (compose injects it); anything still missing
+there falls back to GCP Secret Manager at runtime via `src/config_loader.py`, which logs
+`source=gsm` for each one. See `docs/firestore-contract.md` § 11.8.
 
 | Variable | Value | Notes |
 |---|---|---|
 | `ENVIRONMENT` | `production` / `development` / `staging` | Controls DB enforcement, logging |
+| `PORT` | `5174` | Local dev server port |
 | `USE_POSTGRES` | `true` | Forces PostgreSQL; production auto-enables this |
+| `SQL_ECHO` | `false` (default) | Echoes every SQL statement to stdout. Debugging only — turn it back off. Containers have no log rotation, and this wrote ~1.5 GB/day when left on in dev |
 | `REDIS_URL` | `redis://redis:6379/0` | Docker internal network |
 | `GCP_PROJECT_ID` | `gen-lang-client-0901363254` | Enables Secret Manager |
 | `GOOGLE_APPLICATION_CREDENTIALS` | `/app/gcp-service-account.json` | Mounted at runtime |
+| `MASSIVE_API_KEY` | `compose/backend/.env` (GSM fallback) | US stocks market data |
+| `FINMIND_API_KEY` | `compose/backend/.env` (GSM fallback) | TW stocks market data |
+| `JWT_SECRET_KEY` | `compose/backend/.env` (GSM fallback) | Signing key for user auth tokens |
 | `POSTGRES_HOST` | `docker-db_postgres-1` | External Docker network |
 | `POSTGRES_DB` | `podcast_db` | Recommendation data |
 | `POSTGRES_USER` | `podcast_user` | |
-| `POSTGRES_PASSWORD` | loaded from GSM | |
+| `POSTGRES_PASSWORD` | `compose/backend/.env` (GSM fallback) | |
 | `FIRESTORE_DATABASE_ID` | `graphfolio-db` | Named Firestore instance |
 | `CORS_ORIGINS` | `["https://tinboker.com",...]` | Set per environment in compose file |
+| `RELEASE_PODCAST_LANGUAGES` | `zh-TW` | Release scoping (launch subset) — only show `content_sources` podcasts in these languages ("" = all) |
+| `RELEASE_EPISODE_MAX_AGE_DAYS` | `0` | Release scoping — hide episodes older than N days (0=off; flip to 30 once `released_at_ms` is backfilled on existing episodes — see `docs/firestore-contract.md` § contract cleanups) |
 
 For **local development** (not Docker), copy `backend/.env.example` to `backend/.env`
 and fill in values. The app loads `.env` before falling back to Secret Manager.
+
+### Frontend env
+
+Set per environment in `frontend/.env.*`:
+
+| Variable | Value | Notes |
+|---|---|---|
+| `VITE_API_BASE_URL` | `http://localhost:5174` locally, `https://api.tinboker.com` in prod | Backend base URL |
+| `VITE_STAGE` | `DEV` \| `STAGING` \| `PRODUCTION` | Environment flag |
+| `VITE_GOOGLE_CLIENT_ID` | from GCP Secret Manager `GOOGLE_CLIENT_ID` | Injected at build time (see Part 2.3) |
 
 ---
 

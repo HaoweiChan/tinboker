@@ -19,7 +19,7 @@ def _ms(dt: datetime) -> int:
 
 def _patch_closes(monkeypatch, mention_date_str: str, baseline, other):
     """Stub _get_reference_close: `baseline` on the mention date, `other` elsewhere."""
-    async def _fake(ticker, ref_date_str, db):
+    async def _fake(ticker, ref_date_str):
         return baseline if ref_date_str == mention_date_str else other
     monkeypatch.setattr(stock, "_get_reference_close", _fake)
 
@@ -27,7 +27,7 @@ def _patch_closes(monkeypatch, mention_date_str: str, baseline, other):
 def test_completed_windows(monkeypatch):
     mention = datetime(2020, 1, 1)
     _patch_closes(monkeypatch, "2020-01-01", 100.0, 110.0)
-    res = asyncio.run(stock._window_returns("AAPL", _ms(mention), 120.0, None))
+    res = asyncio.run(stock._window_returns("AAPL", _ms(mention), 120.0))
     assert res["baseline"] == 100.0
     assert res["d7"] == pytest.approx(10.0)
     assert res["d30"] == pytest.approx(10.0)
@@ -38,7 +38,7 @@ def test_completed_windows(monkeypatch):
 def test_incomplete_windows_are_none(monkeypatch):
     mention = datetime.utcnow() - timedelta(days=10)
     _patch_closes(monkeypatch, mention.strftime("%Y-%m-%d"), 100.0, 110.0)
-    res = asyncio.run(stock._window_returns("AAPL", _ms(mention), None, None))
+    res = asyncio.run(stock._window_returns("AAPL", _ms(mention), None))
     assert res["d7"] == pytest.approx(10.0)  # 7 days elapsed → scored
     assert res["d30"] is None                # window not complete yet
     assert res["d90"] is None
@@ -46,8 +46,8 @@ def test_incomplete_windows_are_none(monkeypatch):
 
 
 def test_missing_baseline_all_none(monkeypatch):
-    async def _none(ticker, ref_date_str, db):
+    async def _none(ticker, ref_date_str):
         return None
     monkeypatch.setattr(stock, "_get_reference_close", _none)
-    res = asyncio.run(stock._window_returns("AAPL", _ms(datetime(2020, 1, 1)), 120.0, None))
+    res = asyncio.run(stock._window_returns("AAPL", _ms(datetime(2020, 1, 1)), 120.0))
     assert res == {"baseline": None, "d7": None, "d30": None, "d90": None, "since": None}

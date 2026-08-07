@@ -13,10 +13,12 @@ from src.config import settings
 from src.models.podcast import Podcast, Episode
 from src.schemas.search import SearchResultItem
 from src.tag_registry import (
+    TIER_HIDDEN,
     canonical_tag_slugs,
     hidden_tag_slugs,
     normalize_exposure_id,
     normalize_tag_slug,
+    sector_redirects,
     trending_slugs,
 )
 from src.database.postgres import get_session
@@ -25,7 +27,12 @@ from src.cache.cache_config import CACHE_TTL
 from src.cache.cdn_cache import purge_cdn_cache
 
 from src.services.firestore_service import FirestoreService
-from src.services.gcs_content import GCSContentService
+from src.services.postgres_mirror_service import (
+    DELETE_FIELD,
+    content_read_service,
+    patch_episode_doc,
+)
+from src.services.gcs_content import GCSContentService, media_url
 from src.services.episode_transformer import EpisodeTransformer
 import httpx
 
@@ -55,6 +62,31 @@ EXCLUDED_EXPOSURE_IDS: frozenset[str] = frozenset({"sector_semiconductor"})
 # content_sources.active=False so it stays version-controlled and the pipeline can
 # still ingest it (in case it picks back up). Matched on exact podcast_name.
 HIDDEN_PODCAST_NAMES: frozenset[str] = frozenset({"曲博科技教室"})
+
+
+def _sector_redirects() -> dict[str, str]:
+    return sector_redirects()
+
+
+def resolve_sector_exposure_id(exposure_id: str | None) -> str:
+    eid = normalize_exposure_id(exposure_id)
+    redirects = _sector_redirects()
+    seen = set()
+    while eid in redirects and eid not in seen:
+        seen.add(eid)
+        eid = normalize_exposure_id(redirects[eid])
+    return eid
+
+
+def _sector_query_ids(canonical_id: str) -> list[str]:
+    redirects = _sector_redirects()
+    ids = [old for old, new in redirects.items() if resolve_sector_exposure_id(new) == canonical_id]
+    ids.append(canonical_id)
+    # Pre-migration episode snapshots stored themes as ``theme_<id>`` (see
+    # docs/firestore-contract.md §2.1.1); Firestore array-contains matches exact
+    # values only, so query the legacy alias of every sector_ id as well.
+    ids += ["theme_" + i.removeprefix("sector_") for i in list(ids) if i.startswith("sector_")]
+    return list(dict.fromkeys(ids))
 
 
 def _read_close_series(tickers: list[str], limit: int = 12) -> dict[str, list[float]]:
@@ -90,6 +122,43 @@ def _read_close_series(tickers: list[str], limit: int = 12) -> dict[str, list[fl
             logger.debug(f"_read_close_series: close series read failed: {exc}")
         break
     return {t: closes[-limit:] for t, closes in result_map.items()}
+
+
+def _read_dated_closes(tickers: list[str]) -> dict[str, list[tuple[str, float]]]:
+    """Read the *full* daily close history per ticker as ascending ``(date, close)``.
+
+    Reads from ``stock_daily_ohlc`` — the whole-market TW table (plus US tickers
+    landed by the US OHLC warmer) that the backfill can deepen arbitrarily
+    (``tw_daily_ohlc_refresh``). NOT ``stock_daily_closes``, which only warms a
+    rolling ~7 days for ≤400 tracked tickers and has no historical backfill — too
+    shallow and too narrow for a point-in-time backtest. Best-effort: DB error → {}.
+    """
+    from src.database.models import StockDailyOHLC
+
+    _CHUNK_SIZE = 200
+    result_map: dict[str, list[tuple[str, float]]] = {}
+    if not tickers:
+        return result_map
+    for session in get_session():
+        try:
+            for chunk_start in range(0, len(tickers), _CHUNK_SIZE):
+                chunk = tickers[chunk_start: chunk_start + _CHUNK_SIZE]
+                rows = (
+                    session.query(
+                        StockDailyOHLC.ticker,
+                        StockDailyOHLC.date,
+                        StockDailyOHLC.close,
+                    )
+                    .filter(StockDailyOHLC.ticker.in_(chunk))
+                    .order_by(StockDailyOHLC.ticker.asc(), StockDailyOHLC.date.asc())
+                    .all()
+                )
+                for ticker, date_str, close in rows:
+                    result_map.setdefault(ticker, []).append((date_str, close))
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(f"_read_dated_closes: OHLC history read failed: {exc}")
+        break
+    return result_map
 
 
 EPISODE_DETAIL_CONTENT_FIELDS = frozenset({
@@ -128,7 +197,11 @@ class PodcastService:
     """Service for podcast CRUD operations, search, and summary management"""
 
     def __init__(self, firestore_service: Optional[FirestoreService] = None):
-        self.firestore_service = firestore_service or FirestoreService()
+        # Reads: the Postgres mirror (CONTENT_READS_FROM_POSTGRES, on by default
+        # since P4); the Firestore path survives one more release as a rollback.
+        # Writes go straight to the mirror via patch_episode_doc — P4 stopped
+        # every Firestore write, so there is no second store to keep in sync.
+        self.firestore_service = firestore_service or content_read_service()
         self.gcs = GCSContentService()
         self.transformer = EpisodeTransformer(self.gcs)
 
@@ -696,10 +769,11 @@ class PodcastService:
     async def get_episode_audio_signed_url(
         self, podcast_name: str, episode_id: str
     ) -> Optional[str]:
-        """Short-lived signed GCS URL for an episode's MP3, or None if unavailable.
+        """Public media URL for an episode's MP3, or None if it isn't on disk.
 
-        The mp3 blobs in graphfolio-articles are private (no public ACL), so the
-        player streams them through a signed URL instead of mp3_public_url.
+        Kept as a separate endpoint (rather than handing the player mp3_url straight
+        from the doc) so a missing artifact 404s instead of silently 404-ing in the
+        audio element. Since P5 the media host serves mp3s directly — no signing.
         """
         episode_dict = self.firestore_service.get_document("episodes", episode_id)
         if not episode_dict or episode_dict.get('podcast_name') != podcast_name:
@@ -972,6 +1046,8 @@ class PodcastService:
         All release-scoping and content-empty guards are applied identically to
         get_episodes_by_tag.
         """
+        exposure_id = resolve_sector_exposure_id(exposure_id)
+
         # Suppressed umbrella exposures (e.g. the broad 半導體 sector) resolve to an
         # empty page — the frontend renders the standard "no episodes" state.
         if exposure_id in EXCLUDED_EXPOSURE_IDS:
@@ -979,12 +1055,13 @@ class PodcastService:
                 "exposure_id": exposure_id,
                 "display_name": "",
                 "exposure_type": "industry",
+                "description": None,
                 "resolved_tickers": [],
                 "episodes": [],
                 "total": 0,
             }
 
-        cache_key = f"sector:episodes:v3:{exposure_id}:{offset}:{limit}:{self._scope_tag()}"
+        cache_key = f"sector:episodes:v4:{exposure_id}:{offset}:{limit}:{self._scope_tag()}"
         cached = await cache_get(cache_key)
         if cached:
             try:
@@ -999,14 +1076,26 @@ class PodcastService:
         fetch_limit = max((limit + offset) * 5, 100) if scoping_active else (limit + offset)
 
         try:
-            dicts = await asyncio.to_thread(
-                self.firestore_service.query_collection,
-                "episodes",
-                [("sector_exposure_ids", "array-contains", exposure_id)],
-                None,       # no Firestore-side ordering — sort in Python to avoid composite index
-                None,
-                fetch_limit,
-            )
+            query_ids = _sector_query_ids(exposure_id)
+            batches = []
+            for query_id in query_ids:
+                batches.append(await asyncio.to_thread(
+                    self.firestore_service.query_collection,
+                    "episodes",
+                    [("sector_exposure_ids", "array-contains", query_id)],
+                    None,       # no Firestore-side ordering — sort in Python to avoid composite index
+                    None,
+                    fetch_limit,
+                ))
+            seen_doc_ids: set[str] = set()
+            dicts = []
+            for batch in batches:
+                for doc in batch or []:
+                    doc_id = str(doc.get("id") or doc.get("episode_id") or id(doc))
+                    if doc_id in seen_doc_ids:
+                        continue
+                    seen_doc_ids.add(doc_id)
+                    dicts.append(doc)
         except Exception as e:
             raise Exception(f"Failed to query episodes by sector: {e}") from e
 
@@ -1029,12 +1118,13 @@ class PodcastService:
         # as its title with no tickers).
         display_name = exposure_id
         exposure_type = "industry"
+        description = None
         seen_tickers: dict[str, dict] = {}  # ticker -> first-seen entry
         exposure_counts: dict[str, int] = {}  # display_name -> count, for majority vote
 
         for ep in episodes_raw:
             for entry in ep.sector_exposures:
-                if entry.get("exposure_id") != exposure_id:
+                if resolve_sector_exposure_id(entry.get("exposure_id")) != exposure_id:
                     continue
                 dn = entry.get("display_name") or exposure_id
                 exposure_counts[dn] = exposure_counts.get(dn, 0) + 1
@@ -1065,6 +1155,14 @@ class PodcastService:
         if best_key:
             display_name, exposure_type = best_key
 
+        from src.data.sector_visuals import metadata_for
+        registry_meta = metadata_for(exposure_id) or {}
+        if registry_meta.get("display_name"):
+            display_name = registry_meta["display_name"] or display_name
+        if registry_meta.get("exposure_type"):
+            exposure_type = registry_meta["exposure_type"] or exposure_type
+        description = registry_meta.get("description")
+
         resolved_tickers = list(seen_tickers.values())[:12]
 
         # Enrich each constituent with a short zh-TW "why this ticker belongs to the
@@ -1087,6 +1185,7 @@ class PodcastService:
             "exposure_id": exposure_id,
             "display_name": display_name,
             "exposure_type": exposure_type,
+            "description": description,
             "icon_id": visual.get("icon_id"),
             "color_hex": visual.get("color_hex"),
             "resolved_tickers": resolved_tickers,
@@ -1122,6 +1221,13 @@ class PodcastService:
     # surface on the board, filtering one-off noise; the board shows the top N.
     _TRENDING_MIN_EPISODES: int = 2
     _TRENDING_MAX_TAGS: int = 40
+    # Serving-cache TTL for the two /topics boards (sector board + trending tags).
+    # Must outlive the production refresh-ahead interval (1h, main.py) so the loop
+    # rewrites the entry before expiry and users never pay the cold Firestore scan.
+    # Recomputes cost real money (us-central1 reads + cross-internet egress — see
+    # July 2026 bill), so this is deliberately long; the boards only move on
+    # pipeline ingest anyway. Dev/staging have no loop and recompute on demand.
+    _TOPIC_BOARD_CACHE_TTL: int = 7200
     # Episode fields the board / sectors scans actually read — projected via
     # stream_documents_projected so the ~2700-doc scan skips transcript/summary
     # refs etc. Covers the tally + scoping (_dict_release_ms, allowlist, retracted).
@@ -1163,7 +1269,7 @@ class PodcastService:
             if cutoff is not None and self._dict_release_ms(doc) < cutoff:
                 continue
             for entry in doc.get("sector_exposures") or []:
-                if (entry.get("exposure_id") or "") in EXCLUDED_EXPOSURE_IDS:
+                if resolve_sector_exposure_id(entry.get("exposure_id")) in EXCLUDED_EXPOSURE_IDS:
                     continue
                 for rt in entry.get("resolved_tickers") or []:
                     t = str(rt.get("ticker") or "").strip().upper()
@@ -1190,7 +1296,7 @@ class PodcastService:
 
         Serving path: returns the warm Redis entry kept fresh by
         run_periodic_board_refresh (refresh-ahead), and only falls back to a
-        recompute on a cold cache. Cache TTL matches podcast_episodes (10 min).
+        recompute on a cold cache. Cache TTL: _TOPIC_BOARD_CACHE_TTL (2h).
         """
         cache_key = f"sectors:board:v3:{self._scope_tag()}"
         cached = await cache_get(cache_key)
@@ -1214,10 +1320,17 @@ class PodcastService:
         return result
 
     async def _cache_sector_board(self, result: list[dict]) -> None:
-        """Write the board payload to the scope-keyed Redis entry (10-min TTL)."""
+        """Write the board payload to the scope-keyed Redis entry (2h TTL).
+
+        Empty results are NOT cached: a transient Postgres/Firestore blip yields []
+        (allowlist fails closed), and pinning that for the long TTL would blank
+        /topics for hours instead of self-healing on the next request/cycle.
+        """
+        if not result:
+            return
         cache_key = f"sectors:board:v3:{self._scope_tag()}"
         try:
-            await cache_set(cache_key, json.dumps(result), CACHE_TTL["podcast_episodes"])
+            await cache_set(cache_key, json.dumps(result), self._TOPIC_BOARD_CACHE_TTL)
         except Exception:
             pass
 
@@ -1231,13 +1344,20 @@ class PodcastService:
           any industry it is a leader of).
         - ``attr_size``: {exposure_id: int} constituent count for sub-linear
           normalisation — theme = its members, industry = union of its themes'.
-        - ``meta``: {exposure_id: {display_name, exposure_type}} so a sector surfaced
-          only via ticker mentions still renders.
+        - ``meta``: {exposure_id: {display_name, exposure_type, icon_id, color_hex,
+          description, group}} so a sector surfaced only via ticker mentions still renders.
         - ``ticker_name``: {TICKER: name} to label implied-only members.
+        - ``members``: {exposure_id: [{ticker, name}]} visible live registry roster.
         """
         from src.database import postgres
         from src.database.models import TagRegistry
-        empty = {"ticker_to_sectors": {}, "attr_size": {}, "meta": {}, "ticker_name": {}}
+        empty = {
+            "ticker_to_sectors": {},
+            "attr_size": {},
+            "meta": {},
+            "ticker_name": {},
+            "members": {},
+        }
         try:
             if postgres.SessionLocal is None:
                 postgres.init_engine()
@@ -1254,23 +1374,48 @@ class PodcastService:
         attr_size: dict[str, int] = {}
         meta: dict[str, dict] = {}
         ticker_name: dict[str, str] = {}
+        members: dict[str, list[dict[str, str]]] = {}
+        member_tickers: dict[str, set] = {}
         industry_tickers: dict[str, set] = {}  # industry eid -> union of child-theme tickers
         for r in rows:
-            eid = r.exposure_id
+            raw_eid = r.exposure_id
+            # Hidden rows (redirect sources + stale pre-remake ids) must not feed the
+            # board: resolving them into the canonical id would inherit stale members
+            # and overwrite canonical meta. Only canonical, visible rows contribute.
+            if getattr(r, "tier", None) == TIER_HIDDEN:
+                continue
+            if getattr(r, "redirect_to", None):
+                continue
+            eid = resolve_sector_exposure_id(raw_eid)
+            if normalize_exposure_id(raw_eid) != eid:
+                continue  # redirect-source row — the canonical row is authoritative
             if not eid or eid in EXCLUDED_EXPOSURE_IDS:
                 continue
             etype = r.exposure_type or "theme"
-            meta[eid] = {"display_name": r.display_zh or eid, "exposure_type": etype}
+            meta[eid] = {
+                "display_name": r.display_zh or eid,
+                "exposure_type": etype,
+                "description": getattr(r, "description", None),
+                "icon_id": getattr(r, "icon_id", None),
+                "color_hex": getattr(r, "color_hex", None),
+                "group": getattr(r, "parent_id", None),
+            }
             tickers = set()
             for m in r.members or []:
                 t = str((m or {}).get("ticker") or "").strip().upper()
                 if not t:
                     continue
                 tickers.add(t)
-                ticker_name.setdefault(t, (m or {}).get("name") or "")
+                name = (m or {}).get("name") or ""
+                ticker_name.setdefault(t, name)
+                exposure_member_tickers = member_tickers.setdefault(eid, set())
+                if t not in exposure_member_tickers:
+                    exposure_member_tickers.add(t)
+                    members.setdefault(eid, []).append({"ticker": t, "name": name})
             attr_size[eid] = len(tickers) or 1
             if etype == "theme":
-                parent = r.parent_id if (r.parent_id and r.parent_id not in EXCLUDED_EXPOSURE_IDS) else None
+                parent = resolve_sector_exposure_id(r.parent_id) if r.parent_id else None
+                parent = parent if parent and parent not in EXCLUDED_EXPOSURE_IDS else None
                 for t in tickers:
                     s = ticker_to_sectors.setdefault(t, set())
                     s.add(eid)
@@ -1278,6 +1423,13 @@ class PodcastService:
                         s.add(parent)
                 if parent:
                     industry_tickers.setdefault(parent, set()).update(tickers)
+                    parent_members = member_tickers.setdefault(parent, set())
+                    parent_roster = members.setdefault(parent, [])
+                    for member in members.get(eid, []):
+                        mt = member["ticker"]
+                        if mt not in parent_members:
+                            parent_members.add(mt)
+                            parent_roster.append(member)
             else:  # industry — leaders credit the industry directly (covers ・其他-only leaders)
                 for t in tickers:
                     ticker_to_sectors.setdefault(t, set()).add(eid)
@@ -1286,7 +1438,7 @@ class PodcastService:
             if tset:
                 attr_size[eid] = len(tset)
         return {"ticker_to_sectors": ticker_to_sectors, "attr_size": attr_size,
-                "meta": meta, "ticker_name": ticker_name}
+                "meta": meta, "ticker_name": ticker_name, "members": members}
 
     async def _compute_sector_board(self) -> list[dict]:
         """Scan + aggregate + price-join the board (no cache read/write).
@@ -1320,6 +1472,7 @@ class PodcastService:
         attr_size = idx["attr_size"]
         uni_meta = idx["meta"]
         ticker_name = idx["ticker_name"]
+        registry_members = idx.get("members", {})
         counts: dict[str, int] = {}      # exposure_id -> episodes touching it (direct OR implied)
         direct_heat: dict[str, float] = {}   # recency-weighted heat from NAMED mentions
         ticker_heat: dict[str, float] = {}   # recency-weighted heat from CONSTITUENT mentions
@@ -1340,7 +1493,7 @@ class PodcastService:
             # 1. DIRECT — sectors this episode explicitly NAMES (verified sector_exposures).
             direct_eids: set[str] = set()
             for entry in doc.get("sector_exposures") or []:
-                eid = normalize_exposure_id(entry.get("exposure_id"))
+                eid = resolve_sector_exposure_id(entry.get("exposure_id"))
                 if not eid or eid in EXCLUDED_EXPOSURE_IDS:
                     continue
                 direct_eids.add(eid)
@@ -1386,8 +1539,26 @@ class PodcastService:
         from src.services.stock_close_refresh import get_eod_change_pct
         from src.data.sector_visuals import visual_for
 
+        live_member_map: dict[str, dict[str, str]] = {}
+        for eid in counts:
+            registry_roster = registry_members.get(eid) or []
+            if registry_roster:
+                sector_members: dict[str, str] = {}
+                snapshot_names = ticker_map.get(eid, {})
+                for member in registry_roster:
+                    ticker = str((member or {}).get("ticker") or "").strip().upper()
+                    if ticker and ticker not in sector_members and len(sector_members) < 12:
+                        sector_members[ticker] = (
+                            ticker_name.get(ticker)
+                            or str((member or {}).get("name") or "")
+                            or snapshot_names.get(ticker, "")
+                        )
+                live_member_map[eid] = sector_members
+            else:
+                live_member_map[eid] = dict(list(ticker_map.get(eid, {}).items())[:12])
+
         all_tickers: list[str] = list({
-            t for tickers in ticker_map.values() for t in tickers
+            t for tickers in live_member_map.values() for t in tickers
         })
         pcts = await asyncio.gather(*[get_eod_change_pct(t) for t in all_tickers])
         ticker_pct: dict[str, Optional[float]] = dict(zip(all_tickers, pcts))
@@ -1401,7 +1572,7 @@ class PodcastService:
         sectors_raw: list[dict] = []
         for eid, count in counts.items():
             members_unsorted: list[dict] = []
-            for ticker, name in ticker_map.get(eid, {}).items():
+            for ticker, name in live_member_map.get(eid, {}).items():
                 closes = ticker_series.get(ticker, [])
                 members_unsorted.append({
                     "ticker": ticker,
@@ -1497,6 +1668,176 @@ class PodcastService:
 
         result.sort(key=lambda x: x["hotness"], reverse=True)
         return result
+
+    # ── Heat → forward-return validation (point-in-time backtest) ─────────────
+    _HEAT_VALIDATION_KEY = "sectors:heat_validation:v1"
+
+    async def heat_return_validation(
+        self, horizons: tuple[int, ...] = (7, 30, 90), n_buckets: int = 5,
+        *, compute_if_cold: bool = False,
+    ) -> dict:
+        """Point-in-time backtest of discussion heat as a profit signal.
+
+        Recomputes each theme's heat *as of* past dates and quantizes it against the
+        *forward* 7/30/90-day member return — the corrected framing for the /topics
+        plot, whose live axes are contemporaneous. See ``heat_validation``.
+
+        **Request path is cache-only** (``compute_if_cold=False``). The compute runs
+        the cold ~2700-doc episode scan plus a full price join — far too heavy for the
+        request path. Doing it inline once took the dev API down: every /topics load
+        re-ran it with no single-flight, so the scans piled up and starved the event
+        loop (health + performance also hung). It is warmed off-path by
+        ``run_periodic_heat_validation_refresh``, exactly like the board. A cold cache
+        returns an empty payload so the panel shows 資料不足 until the first warm cycle
+        lands (≤5 min) — it never hangs the page.
+        """
+        cache_key = f"{self._HEAT_VALIDATION_KEY}:{self._scope_tag()}"
+        cached = await cache_get(cache_key)
+        if cached:
+            try:
+                return json.loads(cached)
+            except Exception:
+                pass
+        if not compute_if_cold:
+            return {
+                "half_life_days": 7.0,
+                "n_buckets": n_buckets,
+                "horizons": {str(n): {"buckets": [], "n": 0} for n in horizons},
+                "date_span": {"start": None, "end": None},
+                "as_of_count": 0,
+            }
+        return await self._recompute_heat_validation(horizons, n_buckets, cache_key)
+
+    async def warm_heat_return_validation(
+        self, horizons: tuple[int, ...] = (7, 30, 90), n_buckets: int = 5,
+    ) -> dict:
+        """Force-recompute + overwrite the cache (refresh-ahead; ignores any warm entry).
+
+        Called by ``run_periodic_heat_validation_refresh`` so the serving path always
+        finds a warm entry and never pays the cold scan — the same contract as
+        ``warm_sector_board``.
+        """
+        cache_key = f"{self._HEAT_VALIDATION_KEY}:{self._scope_tag()}"
+        return await self._recompute_heat_validation(horizons, n_buckets, cache_key)
+
+    async def _recompute_heat_validation(
+        self, horizons: tuple[int, ...], n_buckets: int, cache_key: str,
+    ) -> dict:
+        result = await self._compute_heat_return_validation(horizons, n_buckets)
+        # 2h TTL outlives the hourly refresh loop; empty results (transient upstream
+        # failure — allowlist fails closed / Firestore blip) are never cached, same
+        # guard as _cache_sector_board, so the panel self-heals next cycle.
+        if result.get("as_of_count"):
+            try:
+                await cache_set(cache_key, json.dumps(result), self._TOPIC_BOARD_CACHE_TTL)
+            except Exception:
+                pass
+        return result
+
+    async def _compute_heat_return_validation(
+        self, horizons: tuple[int, ...], n_buckets: int,
+    ) -> dict:
+        """Scan episodes → per-theme release-day events, join dated closes, backtest.
+
+        A slim variant of the board scan: only release timestamps + exposure
+        attribution are needed (no prices/series here — those come from the dated
+        close history). Heat is reconstructed as of each past date with the SAME
+        blend weights the live board uses, so the validation judges the exact signal
+        that is plotted, not a proxy.
+        """
+        from src.services.heat_validation import compute_validation
+
+        allowed = await self._allowed_podcast_names()
+        # NO recency cutoff here — deliberately unlike every other consumer of this scan.
+        # _recency_cutoff_ms() is a no-op today (RELEASE_EPISODE_MAX_AGE_DAYS=0), but the
+        # runbook plans to flip it to 30, and the moment it does a scoped scan corrupts the
+        # backtest twice: (1) left-truncated heat — an episode just outside the window still
+        # carries real weight at nearby as-of dates (5 days out → 0.5^(5/7) ≈ 0.61), so the
+        # oldest as-of dates would systematically understate heat; (2) horizon collapse —
+        # nothing older than the window is scanned, so as-of dates further back get zero heat
+        # and drop out, and those are exactly the dates the 30/90d horizons need for a
+        # complete forward window, quietly making them n=0. The live board wants "recent
+        # only"; a backtest wants all history. The language allowlist still applies (and
+        # _scope_tag() still keys the cache, so languages stay isolated).
+        try:
+            docs = await asyncio.to_thread(
+                self.firestore_service.stream_documents_projected,
+                "episodes",
+                self._SECTOR_SCAN_FIELDS,
+            )
+        except Exception as e:
+            raise Exception(f"Failed to scan episodes for heat validation: {e}") from e
+
+        idx = await asyncio.to_thread(self._sector_membership_index)
+        ticker_to_sectors = idx["ticker_to_sectors"]
+        uni_meta = idx["meta"]
+        registry_members = idx.get("members", {})
+
+        # Resolve exposure redirects from ONE snapshot. resolve_sector_exposure_id()
+        # calls sector_redirects() every invocation, which opens a fresh session and
+        # scans all sector rows — calling it per exposure across ~2700 episodes fired
+        # hundreds of tag_registry queries/sec and saturated the dev connection pool
+        # (incident 2026-07-15). Fetch the redirect map once; resolve in memory.
+        redirects = await asyncio.to_thread(_sector_redirects)
+
+        def _resolve(raw_eid: object) -> str:
+            eid = normalize_exposure_id(raw_eid)  # type: ignore[arg-type]
+            seen: set[str] = set()
+            while eid in redirects and eid not in seen:
+                seen.add(eid)
+                eid = normalize_exposure_id(redirects[eid])
+            return eid
+
+        # release day (epoch-days) per theme, split NAMED vs CONSTITUENT-implied.
+        direct_events: dict[str, list[float]] = {}
+        implied_events: dict[str, list[float]] = {}
+        for doc in docs:
+            if doc.get("retracted_at"):
+                continue
+            if allowed is not None and doc.get("podcast_name") not in allowed:
+                continue
+            rel_ms = self._dict_release_ms(doc)
+            day = rel_ms / 86_400_000.0
+            direct_eids: set[str] = set()
+            for entry in doc.get("sector_exposures") or []:
+                eid = _resolve(entry.get("exposure_id"))
+                if eid and eid not in EXCLUDED_EXPOSURE_IDS:
+                    direct_eids.add(eid)
+            implied_eids: set[str] = set()
+            for tk in doc.get("related_tickers") or []:
+                sym = str(tk).split(".")[0].strip().upper()
+                for eid in ticker_to_sectors.get(sym, ()):
+                    implied_eids.add(eid)
+            for eid in direct_eids:
+                direct_events.setdefault(eid, []).append(day)
+            for eid in implied_eids:
+                implied_events.setdefault(eid, []).append(day)
+
+        # Validate over the themes the plot shows (the bubble hero is theme-only).
+        theme_eids = {
+            eid for eid in set(direct_events) | set(implied_events)
+            if (uni_meta.get(eid, {}).get("exposure_type") == "theme")
+        }
+        members_by_eid = {
+            eid: [str(m.get("ticker") or "").strip().upper()
+                  for m in registry_members.get(eid, []) if m.get("ticker")]
+            for eid in theme_eids
+        }
+        all_tickers = sorted({t for ts in members_by_eid.values() for t in ts})
+        closes = await asyncio.to_thread(_read_dated_closes, all_tickers)
+
+        return await asyncio.to_thread(
+            compute_validation,
+            direct_events={e: direct_events[e] for e in theme_eids if e in direct_events},
+            implied_events={e: implied_events[e] for e in theme_eids if e in implied_events},
+            members_by_eid=members_by_eid,
+            closes=closes,
+            horizons=horizons,
+            n_buckets=n_buckets,
+            w_direct=self._HEAT_W_DIRECT,
+            w_ticker=self._HEAT_W_TICKER,
+            norm_alpha=self._HEAT_NORM_ALPHA,
+        )
 
     # ── Industry performance (bubble chart, /topics 產業 tab) ─────────────────
     def _finmind(self):
@@ -1611,20 +1952,6 @@ class PodcastService:
         out.sort(key=lambda x: ((x["heat"] or 0.0), x["episode_count"]), reverse=True)
         return out
 
-    async def _tw_trading_values_cached(self) -> dict[str, float]:
-        """``{stock_id: latest daily trading value NT$}`` for all TW stocks, daily-cached."""
-        cache_key = "sectors:tw_trading_values:v1"
-        cached = await cache_get(cache_key)
-        if cached:
-            try:
-                return json.loads(cached)
-            except Exception:
-                pass
-        vals = await asyncio.to_thread(self._finmind().get_tw_trading_values)
-        if vals:
-            await cache_set(cache_key, json.dumps(vals), CACHE_TTL["stock_ohlcv"])  # 1 day
-        return vals or {}
-
     async def _tw_trading_value_windows_cached(self, tickers: list[str]) -> dict[str, dict[str, float]]:
         """``{window_days: {stock_id: cumulative trading value NT$}}`` for TW stocks."""
         universe = ",".join(sorted({ticker.strip() for ticker in tickers if ticker.strip()}))
@@ -1643,8 +1970,13 @@ class PodcastService:
                 return vals
             except Exception:
                 pass
-        vals = await asyncio.to_thread(self._finmind().get_tw_trading_value_windows, tickers)
-        if vals:
+        vals = await asyncio.to_thread(self._read_tw_trading_value_windows, tickers)
+        # Only cache a result that actually carries per-stock data — `vals` is always
+        # truthy ({"1":{},...}), so an empty read (before the daily fetcher/backfill has
+        # populated stock_daily_ohlc) would otherwise poison the day-long cache with
+        # all-zero bubbles. Mirrors the institutional guard below.
+        has_data = any(bool(window) for window in vals.values()) if vals else False
+        if has_data:
             self._tw_trading_value_windows_memory_cache = {cache_key: (time.time(), vals)}
             await cache_set(cache_key, json.dumps(vals), CACHE_TTL["stock_ohlcv"])  # 1 day
         return vals or {}
@@ -1667,9 +1999,10 @@ class PodcastService:
                 return vals
             except Exception:
                 pass
-        vals = await asyncio.to_thread(self._finmind().get_tw_institutional_net_windows, tickers)
-        # Only cache a result that actually carries per-stock data — a transient empty fetch
-        # (FinMind rate-limit) must not poison the day-long cache with all-zero flow.
+        vals = await asyncio.to_thread(self._read_tw_institutional_net_windows, tickers)
+        # Only cache a result that actually carries per-stock data — an empty read (before
+        # stock_institutional_daily is warmed) must not poison the day-long cache with
+        # all-zero flow.
         has_data = bool(vals) and any(
             bool(window) for key in ("total", "foreign") for window in (vals.get(key) or {}).values()
         )
@@ -1772,6 +2105,131 @@ class PodcastService:
                     if row_date >= cutoff:
                         totals[window_key][ticker] = totals[window_key].get(ticker, 0.0) + value
         return totals
+
+    def _read_tw_trading_value_windows(
+        self,
+        tickers: list[str],
+        windows: tuple[int, ...] = (1, 7, 30, 90),
+    ) -> dict[str, dict[str, float]]:
+        """Read warmed TW daily 成交金額 → ``{window: {ticker: cumulative NT$}}``.
+
+        Replaces the per-ticker FinMind fan-out that self-exhausted the hourly budget (the
+        /topics call storm): trading value now comes from ``stock_daily_ohlc``, warmed daily
+        from the official TWSE/TPEx feeds by ``tw_daily_ohlc_refresh``. Zero external calls.
+        Sums ``trading_value`` directly (already NT$ — no close×volume, no FX).
+        """
+        from src.database.models import StockDailyOHLC
+        from src.services.finmind_service import is_tw_ticker
+
+        tw_tickers = sorted({t.strip() for t in tickers if is_tw_ticker(t.strip())})
+        totals: dict[str, dict[str, float]] = {str(window): {} for window in windows}
+        if not tw_tickers:
+            return totals
+
+        start = (datetime.utcnow() - timedelta(days=max(windows) + 20)).strftime("%Y-%m-%d")
+        rows_by_ticker: dict[str, list] = {}
+        for session in get_session():
+            rows = (
+                session.query(
+                    StockDailyOHLC.ticker,
+                    StockDailyOHLC.date,
+                    StockDailyOHLC.trading_value,
+                )
+                .filter(StockDailyOHLC.ticker.in_(tw_tickers), StockDailyOHLC.date >= start)
+                .order_by(StockDailyOHLC.ticker.asc(), StockDailyOHLC.date.asc())
+                .all()
+            )
+            for row in rows:
+                rows_by_ticker.setdefault(row.ticker, []).append(row)
+            break
+
+        for ticker, rows in rows_by_ticker.items():
+            dates = [row.date for row in rows if row.date]
+            if not dates:
+                continue
+            latest = datetime.strptime(max(dates), "%Y-%m-%d").date()
+            cutoffs = {str(window): latest - timedelta(days=window - 1) for window in windows}
+            for row in rows:
+                if not row.date or row.trading_value is None:
+                    continue
+                try:
+                    row_date = datetime.strptime(row.date, "%Y-%m-%d").date()
+                    value = float(row.trading_value)
+                except (TypeError, ValueError):
+                    continue
+                for window_key, cutoff in cutoffs.items():
+                    if row_date >= cutoff:
+                        totals[window_key][ticker] = totals[window_key].get(ticker, 0.0) + value
+        return totals
+
+    def _read_tw_institutional_net_windows(
+        self,
+        tickers: list[str],
+        windows: tuple[int, ...] = (1, 5, 20),
+    ) -> dict:
+        """``{"total"|"foreign": {window: {ticker: net 三大法人 flow NT$}}}`` from Postgres.
+
+        Replaces the per-ticker FinMind fan-out (the other half of the /topics storm):
+        net shares come from ``stock_institutional_daily`` (warmed from TWSE T86 / TPEx),
+        converted to NT$ with each ticker's latest close in ``stock_daily_ohlc`` — matching
+        the previous "net shares × latest close" semantics. Zero external calls.
+        """
+        from src.database.models import StockDailyOHLC, StockInstitutionalDaily
+        from src.services.finmind_service import is_tw_ticker
+
+        tw_tickers = sorted({t.strip() for t in tickers if is_tw_ticker(t.strip())})
+        total: dict[str, dict[str, float]] = {str(window): {} for window in windows}
+        foreign: dict[str, dict[str, float]] = {str(window): {} for window in windows}
+        if not tw_tickers:
+            return {"total": total, "foreign": foreign}
+
+        start = (datetime.utcnow() - timedelta(days=max(windows) + 5)).strftime("%Y-%m-%d")
+        close_start = (datetime.utcnow() - timedelta(days=20)).strftime("%Y-%m-%d")
+        latest_close: dict[str, float] = {}
+        rows_by_ticker: dict[str, list] = {}
+        for session in get_session():
+            for t, _d, c in (
+                session.query(StockDailyOHLC.ticker, StockDailyOHLC.date, StockDailyOHLC.close)
+                .filter(StockDailyOHLC.ticker.in_(tw_tickers), StockDailyOHLC.date >= close_start)
+                .order_by(StockDailyOHLC.ticker.asc(), StockDailyOHLC.date.asc())
+                .all()
+            ):
+                latest_close[t] = c  # asc date order → last write is the latest close
+            for row in (
+                session.query(
+                    StockInstitutionalDaily.ticker,
+                    StockInstitutionalDaily.date,
+                    StockInstitutionalDaily.foreign_net_shares,
+                    StockInstitutionalDaily.total_net_shares,
+                )
+                .filter(StockInstitutionalDaily.ticker.in_(tw_tickers), StockInstitutionalDaily.date >= start)
+                .order_by(StockInstitutionalDaily.ticker.asc(), StockInstitutionalDaily.date.asc())
+                .all()
+            ):
+                rows_by_ticker.setdefault(row.ticker, []).append(row)
+            break
+
+        for ticker, rows in rows_by_ticker.items():
+            close = latest_close.get(ticker)
+            dates = [row.date for row in rows if row.date]
+            if not close or not dates:
+                continue
+            latest = datetime.strptime(max(dates), "%Y-%m-%d").date()
+            cutoffs = {str(window): latest - timedelta(days=window - 1) for window in windows}
+            for row in rows:
+                if not row.date:
+                    continue
+                try:
+                    row_date = datetime.strptime(row.date, "%Y-%m-%d").date()
+                except (TypeError, ValueError):
+                    continue
+                tval = float(row.total_net_shares or 0.0) * float(close)
+                fval = float(row.foreign_net_shares or 0.0) * float(close)
+                for window_key, cutoff in cutoffs.items():
+                    if row_date >= cutoff:
+                        total[window_key][ticker] = total[window_key].get(ticker, 0.0) + tval
+                        foreign[window_key][ticker] = foreign[window_key].get(ticker, 0.0) + fval
+        return {"total": total, "foreign": foreign}
 
     async def _us_trading_value_windows_cached(self, tickers: list[str]) -> dict[str, dict[str, float]]:
         """``{window_days: {ticker: cumulative trading value NT$}}`` for warmed US stocks."""
@@ -1945,7 +2403,7 @@ class PodcastService:
             if cutoff is not None and self._dict_release_ms(doc) < cutoff:
                 continue
             for entry in doc.get("sector_exposures") or []:
-                eid = normalize_exposure_id(entry.get("exposure_id"))
+                eid = resolve_sector_exposure_id(entry.get("exposure_id"))
                 if not eid or eid in EXCLUDED_EXPOSURE_IDS:
                     continue
                 counts[eid] = counts.get(eid, 0) + 1
@@ -1955,15 +2413,16 @@ class PodcastService:
                         "exposure_type": entry.get("exposure_type") or "industry",
                     }
 
-        from src.data.sector_visuals import visual_for
+        from src.data.sector_visuals import metadata_for, visual_for
         result = sorted(
             [
                 {
                     "exposure_id": eid,
-                    "display_name": meta[eid]["display_name"],
-                    "exposure_type": meta[eid]["exposure_type"],
+                    "display_name": (metadata_for(eid) or {}).get("display_name") or meta[eid]["display_name"],
+                    "exposure_type": (metadata_for(eid) or {}).get("exposure_type") or meta[eid]["exposure_type"],
                     "icon_id": (visual_for(eid) or {}).get("icon_id"),
                     "color_hex": (visual_for(eid) or {}).get("color_hex"),
+                    "description": (metadata_for(eid) or {}).get("description"),
                     "count": cnt,
                 }
                 for eid, cnt in counts.items()
@@ -1985,8 +2444,11 @@ class PodcastService:
 
         Candidate set is volume-driven (see _get_topic_tags); tags below
         _TRENDING_MIN_EPISODES are dropped and the top _TRENDING_MAX_TAGS are returned.
-        Cached 30 min. force_refresh skips the cache read (used by the refresh-ahead loop
-        so the heavier all-tags scan stays off the request path)."""
+        Cached 2h; in production the hourly refresh-ahead loop rewrites the entry before
+        expiry. force_refresh skips the cache read (used by that loop so the heavier
+        all-tags scan stays off the request path). Episode docs are fetched ONCE across
+        all tags — the same episode sits under many tag subcollections, and per-tag
+        re-fetching multiplied Firestore reads and egress ~10x (July 2026 bill)."""
         cache_key = f"tags:trending:v1:{weeks}:{preview_count}:{self._scope_tag()}"
         if not force_refresh:
             cached = await cache_get(cache_key)
@@ -2002,61 +2464,84 @@ class PodcastService:
         week_boundaries = [now_ms - i * week_ms for i in range(weeks + 1)]
         sem = asyncio.Semaphore(6)
 
-        async def _process_tag(tid: str) -> Optional[dict]:
+        async def _tag_episode_refs(tid: str) -> List[dict]:
             async with sem:
                 try:
-                    refs = await asyncio.to_thread(
+                    return await asyncio.to_thread(
                         self.firestore_service.get_subcollection_documents,
                         collection="tags", parent_doc_id=tid,
                         subcollection="episodes", order_by="created_time",
                         direction="DESCENDING", limit=200,
                     )
-                    eids = [r.get('episode_id') for r in refs if r.get('episode_id')]
-                    if not eids:
-                        return None
-                    dicts = await asyncio.to_thread(
-                        self.firestore_service.get_documents_batch, "episodes", eids,
-                    )
-                    scoped_dicts = []
-                    for d in dicts:
-                        if not self._dict_has_content(d):
-                            continue
-                        if allowed is not None and d.get('podcast_name') not in allowed:
-                            continue
-                        if cutoff is not None and self._dict_release_ms(d) < cutoff:
-                            continue
-                        scoped_dicts.append(d)
-                    if not scoped_dicts:
-                        return None
-                    scoped_dicts.sort(key=lambda d: self._dict_release_ms(d), reverse=True)
-                    weekly = [0] * weeks
-                    for d in scoped_dicts:
-                        t = self._dict_release_ms(d)
-                        for w in range(weeks):
-                            if t >= week_boundaries[w + 1]:
-                                weekly[w] += 1
-                                break
-                    previews = []
-                    for d in scoped_dicts[:preview_count]:
-                        previews.append({
-                            "id": d.get("id", ""),
-                            "title": d.get("episode_title", ""),
-                            "podcast_name": d.get("podcast_name", ""),
-                            "released_at_ms": self._dict_release_ms(d),
-                            "key_insights": (d.get("key_insights") or [])[:3],
-                            "related_tickers": (d.get("related_tickers") or [])[:4],
-                        })
-                    return {
-                        "id": tid, "name": tid,
-                        "scoped_count": len(scoped_dicts),
-                        "weekly_counts": weekly,
-                        "recent_episodes": previews,
-                    }
                 except Exception:
-                    logger.warning("Failed to process trending tag %s", tid, exc_info=True)
-                    return None
+                    logger.warning("Failed to list episodes for trending tag %s", tid, exc_info=True)
+                    return []
 
-        results = await asyncio.gather(*[_process_tag(t) for t in self._get_topic_tags()])
+        candidates = self._get_topic_tags()
+        refs_per_tag = await asyncio.gather(*[_tag_episode_refs(t) for t in candidates])
+
+        unique_eids: set = set()
+        for refs in refs_per_tag:
+            for r in refs:
+                eid = r.get('episode_id')
+                if eid:
+                    unique_eids.add(eid)
+        try:
+            docs = await asyncio.to_thread(
+                self.firestore_service.get_documents_batch, "episodes", sorted(unique_eids),
+            ) if unique_eids else []
+        except Exception:
+            logger.warning("trending tags: shared episode fetch failed", exc_info=True)
+            return []
+        episodes_by_id = {d["id"]: d for d in docs}
+
+        def _process_tag(tid: str, refs: List[dict]) -> Optional[dict]:
+            try:
+                dicts = []
+                for r in refs:
+                    d = episodes_by_id.get(r.get('episode_id') or "")
+                    if d is not None:
+                        dicts.append(d)
+                scoped_dicts = []
+                for d in dicts:
+                    if not self._dict_has_content(d):
+                        continue
+                    if allowed is not None and d.get('podcast_name') not in allowed:
+                        continue
+                    if cutoff is not None and self._dict_release_ms(d) < cutoff:
+                        continue
+                    scoped_dicts.append(d)
+                if not scoped_dicts:
+                    return None
+                scoped_dicts.sort(key=lambda d: self._dict_release_ms(d), reverse=True)
+                weekly = [0] * weeks
+                for d in scoped_dicts:
+                    t = self._dict_release_ms(d)
+                    for w in range(weeks):
+                        if t >= week_boundaries[w + 1]:
+                            weekly[w] += 1
+                            break
+                previews = []
+                for d in scoped_dicts[:preview_count]:
+                    previews.append({
+                        "id": d.get("id", ""),
+                        "title": d.get("episode_title", ""),
+                        "podcast_name": d.get("podcast_name", ""),
+                        "released_at_ms": self._dict_release_ms(d),
+                        "key_insights": (d.get("key_insights") or [])[:3],
+                        "related_tickers": (d.get("related_tickers") or [])[:4],
+                    })
+                return {
+                    "id": tid, "name": tid,
+                    "scoped_count": len(scoped_dicts),
+                    "weekly_counts": weekly,
+                    "recent_episodes": previews,
+                }
+            except Exception:
+                logger.warning("Failed to process trending tag %s", tid, exc_info=True)
+                return None
+
+        results = [_process_tag(t, refs) for t, refs in zip(candidates, refs_per_tag)]
         # Auto-surface by volume: keep tags above the recent-episode floor, rank by
         # scoped count, and cap to the board size. (Sub-floor / zero-count tags drop.)
         tags = sorted(
@@ -2064,10 +2549,14 @@ class PodcastService:
             key=lambda x: x["scoped_count"],
             reverse=True,
         )[: self._TRENDING_MAX_TAGS]
-        try:
-            await cache_set(cache_key, json.dumps(tags), 1800)
-        except Exception:
-            pass
+        # Don't cache empty: [] here usually means a transient failure upstream
+        # (allowlist fails closed / Firestore blip), and pinning it for the long
+        # TTL would blank the board for hours instead of retrying next call.
+        if tags:
+            try:
+                await cache_set(cache_key, json.dumps(tags), self._TOPIC_BOARD_CACHE_TTL)
+            except Exception:
+                pass
         return tags
 
     # ── Search ───────────────────────────────────────────────────────
@@ -2152,11 +2641,20 @@ class PodcastService:
 
     # ── Summary mutations ────────────────────────────────────────────
 
+    async def _write_episode_fields(self, episode_id: str, updates: dict) -> None:
+        """Merge-patch an episode doc in the Postgres content store.
+
+        The only episode write since P4 (contract § 11.5) — the Firestore half is
+        gone, so a failure propagates (the callers turn it into a 500) instead of
+        being logged. Swallowing it would report a saved edit that landed nowhere.
+        """
+        await asyncio.to_thread(patch_episode_doc, episode_id, updates)
+
     async def save_modified_summary(
         self, podcast_name: str, episode_id: str,
         content: str, modified_by: Optional[str] = None,
     ) -> Episode:
-        """Save modified summary to GCS and update Firestore"""
+        """Write the modified summary to the media store and point the doc at it."""
         from fastapi import HTTPException
 
         episode_dict = self.firestore_service.get_document("episodes", episode_id)
@@ -2173,19 +2671,21 @@ class PodcastService:
                     bucket_name = parsed[0]
                     break
         if not bucket_name:
-            bucket_name = os.getenv("GCS_BUCKET", "tinboker-podcast-data")
+            bucket_name = os.getenv("GCS_BUCKET", "graphfolio-articles")
 
         blob_path = f"{podcast_name}/modified_summary/{episode_id}_summary.md"
         try:
             await self.gcs.upload_content(bucket_name, blob_path, content)
             modified_at = int(datetime.now().timestamp() * 1000)
-            update_data = {'modified_summary_url': f"gs://{bucket_name}/{blob_path}", 'modified_at': modified_at}
+            # P5: gs:// is dead — the doc carries the public media URL the readers fetch.
+            update_data = {
+                'modified_summary_url': media_url(bucket_name, blob_path),
+                'modified_at': modified_at,
+            }
             if modified_by:
                 update_data['modified_by'] = modified_by
 
-            await asyncio.to_thread(
-                self.firestore_service.set_document, "episodes", episode_id, update_data, True,
-            )
+            await self._write_episode_fields(episode_id, update_data)
             await self._invalidate_episode_cache(podcast_name, episode_id)
             return await self.get_episode_by_id(podcast_name, episode_id, apply_scope=False)
         except Exception as e:
@@ -2193,7 +2693,7 @@ class PodcastService:
             raise HTTPException(status_code=500, detail=f"Failed to save modified summary: {str(e)}")
 
     async def delete_modified_summary(self, podcast_name: str, episode_id: str) -> bool:
-        """Delete modified summary from GCS and Firestore"""
+        """Delete the modified summary from the media store and clear the doc fields."""
         from fastapi import HTTPException
 
         episode_dict = self.firestore_service.get_document("episodes", episode_id)
@@ -2211,13 +2711,10 @@ class PodcastService:
             if parsed:
                 await self.gcs.delete_blob(*parsed)
 
-            from google.cloud.firestore import DELETE_FIELD
-            await asyncio.to_thread(
-                self.firestore_service.set_document, "episodes", episode_id,
-                {'modified_summary_url': DELETE_FIELD, 'modified_summary_content': DELETE_FIELD,
-                 'modified_by': DELETE_FIELD, 'modified_at': DELETE_FIELD},
-                True,
-            )
+            await self._write_episode_fields(episode_id, {
+                'modified_summary_url': DELETE_FIELD, 'modified_summary_content': DELETE_FIELD,
+                'modified_by': DELETE_FIELD, 'modified_at': DELETE_FIELD,
+            })
             await self._invalidate_episode_cache(podcast_name, episode_id)
             return True
         except Exception as e:
@@ -2242,9 +2739,7 @@ class PodcastService:
         if episode_dict.get("podcast_name") != podcast_name:
             raise HTTPException(status_code=404, detail=f"Episode {episode_id} not found for podcast {podcast_name}")
         try:
-            await asyncio.to_thread(
-                self.firestore_service.set_document, "episodes", episode_id, updates, True,
-            )
+            await self._write_episode_fields(episode_id, updates)
             await self._invalidate_episode_cache(podcast_name, episode_id)
             # When related_tickers change (e.g. a content regen), the per-ticker
             # sentiment cards are served from a separate ticker_insights:* cache the
@@ -2284,10 +2779,7 @@ class PodcastService:
             raise HTTPException(status_code=404, detail=f"Episode {episode_id} not found")
         podcast_name = episode_dict.get("podcast_name", "")
         try:
-            await asyncio.to_thread(
-                self.firestore_service.set_document,
-                "episodes", episode_id, {"social_thread": thread}, True,
-            )
+            await self._write_episode_fields(episode_id, {"social_thread": thread})
             await self._invalidate_episode_cache(podcast_name, episode_id)
             await self._purge_api_host_cdn()
             episode = await self.get_episode_admin(episode_id)
@@ -2358,14 +2850,12 @@ class PodcastService:
             url = await self.gcs.upload_bytes_public(
                 bucket, f"social_cards/{episode_id}/{i}.png", base64.b64decode(b64), "image/png"
             )
-            # Content-hash cache-buster: the path is reused per render, but GCS serves
-            # it with a 1h public cache — the query changes iff the PNG bytes change.
+            # Content-hash cache-buster: the path is reused per render, but the media
+            # host serves it cached — the query changes iff the PNG bytes change.
             ver = hashlib.md5(b64.encode("utf-8")).hexdigest()[:10]
             cards[i]["image_url"] = f"{url}?v={ver}"
 
-        await asyncio.to_thread(
-            self.firestore_service.set_document, "episodes", episode_id, {"social_cards": cards}, True
-        )
+        await self._write_episode_fields(episode_id, {"social_cards": cards})
         await self._invalidate_episode_cache(episode.podcast_name, episode_id)
         await self._purge_api_host_cdn()
         return (await self.get_episode_admin(episode_id)) or episode
@@ -2447,14 +2937,16 @@ async def poll_regeneration_status(podcast_name: str, episode_id: str):
     logger.warning(f"Regeneration polling timed out for {podcast_name}/{episode_id}")
 
 
-async def run_periodic_board_refresh(interval_seconds: float = 300.0) -> None:
-    """Refresh-ahead loop for the /topics sector board.
+async def run_periodic_board_refresh(interval_seconds: float = 3600.0) -> None:
+    """Refresh-ahead loop for the /topics sector board. Production only (main.py).
 
     Recomputes the board for the active release scope and overwrites its Redis
-    entry every ``interval_seconds`` (default 5 min) — comfortably inside the
-    10-min cache TTL, so the serving path always finds a warm entry and a user
-    never pays the cold full-scan. Runs immediately on start, then loops. Never
-    raises (mirrors stock_close_refresh.run_periodic_refresh).
+    entry every ``interval_seconds`` (default 1h) — comfortably inside the 2h
+    cache TTL (_TOPIC_BOARD_CACHE_TTL), so the serving path always finds a warm
+    entry and a user never pays the cold full-scan. Each cycle reads ~2700 docs
+    from us-central1, so the cadence is a billing decision, not a freshness one.
+    Runs immediately on start, then loops. Never raises (mirrors
+    stock_close_refresh.run_periodic_refresh).
     """
     while True:
         try:
@@ -2464,13 +2956,35 @@ async def run_periodic_board_refresh(interval_seconds: float = 300.0) -> None:
         await asyncio.sleep(interval_seconds)
 
 
-async def run_periodic_trending_refresh(interval_seconds: float = 600.0) -> None:
-    """Refresh-ahead loop for the /topics 熱門標籤 board.
+async def run_periodic_heat_validation_refresh(interval_seconds: float = 3600.0) -> None:
+    """Refresh-ahead loop for the /topics heat→forward-return validation panel.
+
+    Its compute is the cold full-episode scan + a whole-history price join — the
+    heaviest thing on /topics — so it must never run on the request path (doing so
+    took the dev API down). This loop force-recomputes + rewrites the Redis entry
+    every ``interval_seconds`` (default 1h, inside the 2h TTL); the endpoint then only
+    ever reads the warm entry. Runs in ALL environments (main.py) — the serving path
+    has no inline fallback, so the panel is empty wherever the loop doesn't run; the
+    episode scan is Firestore in us-central1, so the cadence is a billing decision
+    (July 2026 bill). Isolated from run_periodic_board_refresh so a slow backtest
+    can't delay the board's own refresh cadence. Runs on start, then loops. Never
+    raises (mirrors run_periodic_board_refresh)."""
+    while True:
+        try:
+            await PodcastService().warm_heat_return_validation()
+        except Exception as e:
+            logger.warning(f"heat-validation refresh cycle failed: {e}")
+        await asyncio.sleep(interval_seconds)
+
+
+async def run_periodic_trending_refresh(interval_seconds: float = 3600.0) -> None:
+    """Refresh-ahead loop for the /topics 熱門標籤 board. Production only (main.py).
 
     The volume-driven candidate set scans every tag's Firestore subcollection, so this
     keeps that cost off the request path: it force-recomputes + rewrites the Redis entry
-    (30-min TTL) on the API's default params every ``interval_seconds``. Runs immediately
-    on start, then loops. Never raises (mirrors run_periodic_board_refresh)."""
+    (2h TTL) on the API's default params every ``interval_seconds`` (default 1h — inside
+    the TTL; the cadence is a billing decision, see run_periodic_board_refresh). Runs
+    immediately on start, then loops. Never raises (mirrors run_periodic_board_refresh)."""
     while True:
         try:
             await PodcastService().get_trending_tags(force_refresh=True)
