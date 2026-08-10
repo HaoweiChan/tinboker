@@ -6,7 +6,8 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { RefreshCw, Save, Check, MessageSquare, Image as ImageIcon, Eye, Wand2, Send, AlertCircle, ExternalLink, Plus, Trash2, Clock, Play } from 'lucide-react';
+import { RefreshCw, Save, Check, MessageSquare, Image as ImageIcon, Eye, Wand2, Send, AlertCircle, ExternalLink, Plus, Trash2, Clock, Play, ClipboardCopy } from 'lucide-react';
+import { copySyndicationToClipboard } from '@/utils/syndicationHtml';
 import { SlideViewer } from '@/components/common/SlideViewer';
 import { PromoComposer } from '@/components/admin/PromoComposer';
 import {
@@ -75,6 +76,7 @@ export const AdminSocialPage: React.FC = () => {
   const [loadingList, setLoadingList] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [bundle, setBundle] = useState<SocialEpisodeBundle | null>(null);
+  const [copied, setCopied] = useState<'html' | 'markdown' | null>(null);
   const [loadingBundle, setLoadingBundle] = useState(false);
   const [post, setPost] = useState('');
   const [comments, setComments] = useState<SocialComment[]>([]);
@@ -240,6 +242,20 @@ export const AdminSocialPage: React.FC = () => {
       setRendering(false);
     }
   }, [selectedId, selectEpisode]);
+
+  // 方格子 and Substack have no usable publishing API, so syndication is a paste.
+  // Both editors ingest HTML, which is what the clipboard write below carries.
+  const handleCopySyndication = useCallback(async () => {
+    if (!selectedId || !bundle?.summary_markdown) return;
+    try {
+      const flavour = await copySyndicationToClipboard(bundle.summary_markdown, selectedId);
+      setCopied(flavour);
+      setTimeout(() => setCopied(null), 4000);
+    } catch (e) {
+      console.error('[social] copy for syndication failed', e);
+      alert('複製失敗，請看 console');
+    }
+  }, [selectedId, bundle]);
 
   const handlePublish = useCallback(async () => {
     if (!selectedId) return;
@@ -491,6 +507,19 @@ export const AdminSocialPage: React.FC = () => {
                   >
                     <Send className={`h-4 w-4 ${publishing ? 'animate-pulse' : ''}`} />
                     {publishing ? '發佈中…' : '發佈'}
+                  </button>
+                  <button
+                    onClick={handleCopySyndication}
+                    disabled={!bundle.summary_markdown}
+                    title={bundle.summary_markdown
+                      ? '複製整篇摘要（站內連結已轉成絕對網址、時間戳轉純文字），可直接貼到方格子／Substack'
+                      : '這集還沒有摘要正文'}
+                    className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-base font-semibold text-foreground hover:bg-muted disabled:opacity-60"
+                  >
+                    {copied ? <Check className="h-4 w-4" /> : <ClipboardCopy className="h-4 w-4" />}
+                    {copied === 'html' ? '已複製（含格式）'
+                      : copied === 'markdown' ? '已複製（純 Markdown）'
+                      : '複製站外版'}
                   </button>
 
                   {/* Scheduling UI */}
