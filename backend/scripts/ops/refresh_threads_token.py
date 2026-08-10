@@ -7,8 +7,10 @@ at least 24h old — each refresh extends validity another 60 days. Run on a sch
 ``THREADS_ACCESS_TOKEN``; the new token value is never printed.
 
 The backend reads the token at startup, so a refreshed token takes effect on the
-next deploy/restart. The companion workflow restarts the prod backend after a
-successful refresh so it's effective immediately.
+next deploy/restart — which lands well inside the 60-day window on a normal merge
+cadence. (An earlier version of this docstring claimed the companion workflow
+restarts the prod backend on a successful refresh; it does not. The ``changed``
+output written below is what such a step would gate on, and is currently unused.)
 
 Exit codes: 0 = refreshed or nothing-to-do (don't fail the schedule on a too-new /
 unset token); 1 = a real error (can't read the secret, write failed).
