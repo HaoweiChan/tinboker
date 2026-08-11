@@ -215,6 +215,9 @@ async def get_social_episode(
         ],
         "marp_markdown": episode.marp_markdown_content or "",
         "marp_size": _marp_size(episode.marp_markdown_content or ""),
+        # The long-form summary, for the "copy for 方格子/Substack" action. Prefer the
+        # human-edited version, same precedence the episode page uses.
+        "summary_markdown": episode.modified_summary_content or episode.summary_content or "",
         "composed": threads_publisher.compose_thread(episode),
         "has_copy": bool((thread.get("post") or "").strip()),
         "posted": _posted_status(episode.id),
