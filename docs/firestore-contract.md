@@ -784,7 +784,29 @@ endpoints, the one reader that needed bucket *listing*) now globs
 `CONTENT_BUCKET` / `CONTENT_PREFIX` / `CONTENT_URL_TTL` are gone. No code path reads
 GCS any more — the buckets can be deleted.
 
-### 11.8 Secrets off Secret Manager (P6)
+### 11.8 Secrets off Secret Manager (P6) — **policy reversed 2026-08-10**
+
+> ⚠️ **Read this box before acting on anything below it.** P6 aimed to move secrets
+> off GSM and onto the VPS filesystem. That direction was **reversed on 2026-08-10**:
+> a credential on disk is a larger attack surface than one in GSM (which gives
+> rotation, an audit log, and instant revocation), and GSM costs ~NT$4/month at this
+> scale. The rule now is **real secrets → GSM; non-confidential configuration → `.env`.**
+>
+> Consequences:
+> - **Cleanup step 5 (delete `GCPSecretManagerSource` / `_GSM_FIELDS`) is CANCELLED.**
+>   Doing it would delete the live secret source.
+> - **Step 2 (fill `compose/backend/.env`) was never executed and must not be.** As of
+>   2026-08-10 there is no backend `.env` on the VPS at all; all three backend
+>   containers read their 22 secrets from GSM at startup. That is the intended state.
+> - `refresh-social-tokens.yml` (step 4) **stays** — it writes the renewed
+>   `THREADS_ACCESS_TOKEN` to GSM, which is now where the backend reads it from. The
+>   loop is closed as long as `THREADS_ACCESS_TOKEN` never appears in an `.env`.
+> - Precedence is env → `.env` → GSM, so **an `.env` entry silently shadows GSM**.
+> - `_GSM_FIELDS` is an explicit allowlist: a new secret that is not added there will
+>   never be read from GSM, no matter what exists in the project.
+>
+> The migration tables below are retained as an accurate record of *where each value
+> can be found*, not as a to-do list.
 
 **State after P6: no code path *reads* a secret from Google Secret Manager as its
 first choice.** Secrets resolve from the environment; GSM survives only as a

@@ -14,15 +14,23 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-# ── P6 (GCP decommission) ─────────────────────────────────────────────────────
-# The full set of settings fields that were ever stored in Google Secret Manager.
-# They now come from the environment: compose/backend/.env on the VPS (docker
-# compose injects it) or plain env vars locally. GSM is retained ONLY as a
-# fallback for values the operator has not migrated yet.
+# ── Secret source policy (supersedes P6's "GSM is legacy" framing) ────────────
+# Google Secret Manager is the DESIGNATED HOME for real secrets. The environment
+# (compose/backend/.env on the VPS, plain env vars locally) is for non-confidential
+# configuration only — hosts, ports, feature flags, public identifiers.
 #
-# To retire the fallback: confirm no "source=gsm" lines remain in the backend
-# logs, then delete this list, GCPSecretManagerSource, its entry in
-# Settings.settings_customise_sources, and the google-cloud-secret-manager dep.
+# Rationale: a credential on the VPS filesystem is a larger attack surface than one
+# in GSM, which gives rotation, an access audit log, and instant revocation. GSM
+# costs ~NT$4/month at this scale, so cost is not a factor.
+#
+# DO NOT delete this list or GCPSecretManagerSource. `docs/firestore-contract.md`
+# § 11.8 used to instruct exactly that once no "source=gsm" lines remained — that
+# step is CANCELLED. Removing it would take the live secret source with it.
+#
+# Adding a new secret: put the field name here (this is an explicit allowlist — a
+# field that is absent is NEVER read from GSM), then add the value to GSM and
+# leave it out of every .env file. Precedence is env → .env → GSM, so any .env
+# entry silently shadows GSM.
 #
 # NOTE: this list is deliberately over-inclusive — a name that is not in GSM just
 # 404s harmlessly, whereas a missing name would silently lose a live secret.
@@ -75,12 +83,14 @@ def _gsm_client():  # pragma: no cover - exercised only on the legacy fallback p
 
 
 class GCPSecretManagerSource(PydanticBaseSettingsSource):
-    """Pydantic settings source: legacy Google Secret Manager fallback.
+    """Pydantic settings source: Google Secret Manager — the home for real secrets.
 
-    Lowest priority — env vars and .env win (see
-    ``Settings.settings_customise_sources``). Anything those already supplied is
-    skipped here, so once every secret lives in the environment no Secret Manager
-    client is ever constructed and no network call is made.
+    Lowest priority, so env vars and .env still win (see
+    ``Settings.settings_customise_sources``); anything they supply is skipped here
+    and no Secret Manager client is constructed for it. That ordering exists to let
+    local dev and tests override without touching GCP — in production a secret is
+    expected to reach this source, and an .env entry that shadows one is a
+    misconfiguration, not a migration.
     """
 
     def __init__(
@@ -102,7 +112,13 @@ class GCPSecretManagerSource(PydanticBaseSettingsSource):
     def __call__(self) -> Dict[str, Any]:
         missing = [f for f in _GSM_FIELDS if f not in self._resolved]
         if not missing:
-            logger.info("config: all secrets served from the environment; skipping GSM")
+            # Every field was shadowed by env/.env. Under the current policy that means
+            # secrets are sitting on disk rather than in GSM — worth flagging, not
+            # celebrating.
+            logger.warning(
+                "config: every secret was supplied by the environment; GSM not consulted "
+                "(real secrets belong in GSM — see src/config_loader.py policy note)"
+            )
             return {}
 
         project_id = os.getenv("GCP_PROJECT_ID")
@@ -127,9 +143,9 @@ class GCPSecretManagerSource(PydanticBaseSettingsSource):
             try:
                 response = client.access_secret_version(request={"name": name})
                 secrets[field_name] = response.payload.data.decode("UTF-8")
-                logger.warning(
-                    f"config: {secret_id} source=gsm (migrate it into compose/backend/.env)"
-                )
+                # Expected path for real secrets — not a warning. See the policy note
+                # at the top of this module.
+                logger.info(f"config: {secret_id} source=gsm")
             except exceptions.NotFound:
                 continue
             except exceptions.PermissionDenied:
