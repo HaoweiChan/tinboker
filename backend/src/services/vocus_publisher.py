@@ -46,10 +46,9 @@ VOCUS_API_BASE = "https://api.vocus.cc"
 
 # Observed live: PATCH .../status/1 is what the editor sends with publishMethod=draft.
 STATUS_DRAFT = 1
-# INFERRED, never observed. Two independent enum shapes in vocus's bundle agree
-# (`DRAFT:1/PUBLISHED:2` and `public:2`), but nothing has confirmed it against the live
-# API — which is exactly why _verify_published() reads the article back afterwards
-# instead of trusting the write. If publishing starts failing verification, check here first.
+# Confirmed live 2026-08-11: after a full publish the article appears in the status=2
+# bucket. _verify_published() still checks every time — an undocumented API can accept
+# every write and change nothing, and that must never read as success.
 STATUS_PUBLIC = 2
 
 # Warn while there is still time to act, rather than at the moment posting breaks.
@@ -136,6 +135,17 @@ def token_status(token: Optional[str] = None) -> dict:
     }
 
 
+def _lexical_field(lexical: dict) -> str:
+    """vocus wants the editor state as a JSON *string*, on both create and draft-save.
+
+    Worth stating because the capture said otherwise: the interceptor used to map the
+    payload re-parsed nested strings, so a stringified value looked like a nested object.
+    The API is unambiguous — ``model.Draft.LexicalObj: ReadString: expects " or n, but
+    found {`` is what an object gets you.
+    """
+    return json.dumps(lexical, ensure_ascii=False)
+
+
 class VocusClient:
     """Thin async client over the endpoints the vocus editor itself calls."""
 
@@ -161,7 +171,12 @@ class VocusClient:
             # Overwhelmingly the 7-day token, so say so instead of a bare HTTP code.
             raise VocusError("credential_expired")
         if resp.status_code >= 400:
-            raise VocusError(f"http_{resp.status_code}")
+            # Carry a slice of the body: against an undocumented API "http_400" alone
+            # tells you nothing, and the response is usually the only hint about which
+            # field it disliked. Never contains the credential — only our own payload.
+            detail = (resp.text or "")[:300].replace("\n", " ")
+            logger.warning("vocus %s %s -> %s %s", method, path, resp.status_code, detail)
+            raise VocusError(f"http_{resp.status_code}: {detail}" if detail else f"http_{resp.status_code}")
         try:
             return resp.json()
         except ValueError:
@@ -169,7 +184,7 @@ class VocusClient:
 
     async def create_article(self, client: httpx.AsyncClient, title: str, lexical: dict) -> str:
         data = await self._request(client, "POST", "/api/articles", {
-            "title": title, "lexicalObj": lexical,
+            "title": title, "lexicalObj": _lexical_field(lexical),
             "userId": self._user_id, "status": STATUS_DRAFT,
         })
         article_id = (data or {}).get("_id") or (data or {}).get("id") or (data or {}).get("articleId")
@@ -179,8 +194,8 @@ class VocusClient:
 
     async def save_body(self, client: httpx.AsyncClient, article_id: str, title: str, lexical: dict) -> None:
         await self._request(client, "PATCH", f"/api/articles/{article_id}/draft", {
-            "title": title, "lexicalObj": lexical, "articleId": article_id,
-            "draftType": "draft", "commandLogs": [],
+            "title": title, "lexicalObj": _lexical_field(lexical), "articleId": article_id,
+            "draftType": "draft", "commandLogs": "[]",  # also a JSON string, not an array
         })
 
     async def save_settings(self, client: httpx.AsyncClient, article_id: str, *, title: str,
@@ -204,8 +219,22 @@ class VocusClient:
     async def set_status(self, client: httpx.AsyncClient, article_id: str, status: int) -> None:
         await self._request(client, "PATCH", f"/api/articles/{article_id}/status/{status}", None)
 
-    async def get_article(self, client: httpx.AsyncClient, article_id: str) -> Any:
-        return await self._request(client, "GET", f"/api/articles/{article_id}", None)
+    async def list_article_ids(self, client: httpx.AsyncClient, status: int, limit: int = 20) -> list[str]:
+        """Ids of this user's articles in one status bucket.
+
+        There is no single-article read: GET /api/articles/{id} 404s in every shape we
+        tried, so "is it public yet?" has to be answered by asking which bucket it is in.
+        """
+        data = await self._request(
+            client, "GET",
+            f"/api/articles?num={limit}&order=desc&page=1&sort=updatedAt"
+            f"&status={status}&userId={self._user_id}",
+        )
+        items = data if isinstance(data, list) else (data or {}).get("articles") or (data or {}).get("data") or []
+        return [str(a.get("_id") or a.get("id")) for a in items if isinstance(a, dict)]
+
+    async def delete_article(self, client: httpx.AsyncClient, article_id: str) -> None:
+        await self._request(client, "DELETE", f"/api/articles/{article_id}", None)
 
 
 def article_url(article_id: str) -> str:
@@ -219,13 +248,9 @@ async def _verify_published(client: VocusClient, http: httpx.AsyncClient, articl
     nothing. Without this check a broken publisher reports success indefinitely.
     """
     try:
-        data = await client.get_article(http, article_id)
+        return article_id in await client.list_article_ids(http, STATUS_PUBLIC)
     except VocusError:
         return False
-    if not isinstance(data, dict):
-        return False
-    article = data.get("article") if isinstance(data.get("article"), dict) else data
-    return article.get("status") == STATUS_PUBLIC
 
 
 async def publish_summary(

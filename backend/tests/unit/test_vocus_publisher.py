@@ -118,8 +118,8 @@ async def test_writes_that_succeed_but_do_not_go_public_are_not_reported_as_post
     async def _ok(self, method, url, **kw):
         req = httpx.Request(method, url)
         if method == "GET":
-            # Read-back says it is still a draft.
-            return httpx.Response(200, json={"status": vp.STATUS_DRAFT}, request=req)
+            # The public bucket does not contain our article.
+            return httpx.Response(200, json={"articles": [{"_id": "someone-else"}]}, request=req)
         return httpx.Response(200, json={"_id": "art123"}, request=req)
 
     monkeypatch.setattr(httpx.AsyncClient, "request", _ok)
@@ -137,7 +137,8 @@ async def test_a_verified_publish_reports_posted_with_the_article_url(monkeypatc
     async def _ok(self, method, url, **kw):
         req = httpx.Request(method, url)
         if method == "GET":
-            return httpx.Response(200, json={"status": vp.STATUS_PUBLIC}, request=req)
+            # Verification lists the status=2 bucket; ours is in it.
+            return httpx.Response(200, json={"articles": [{"_id": "art123"}]}, request=req)
         return httpx.Response(200, json={"_id": "art123"}, request=req)
 
     monkeypatch.setattr(httpx.AsyncClient, "request", _ok)
@@ -164,3 +165,12 @@ def test_boot_time_value_is_used_when_secret_manager_is_unreachable(monkeypatch)
     vp._token_cache = None
 
     assert vp.token_status()["expired"] is False
+
+
+def test_lexical_and_command_logs_are_sent_as_json_strings():
+    """vocus rejects an object here: `model.Draft.LexicalObj: ReadString: expects " or n,
+    but found {`. Both the create and draft-save payloads hit this, so it is pinned."""
+    import json as _json
+    field = vp._lexical_field({"root": {"children": []}})
+    assert isinstance(field, str)
+    assert _json.loads(field)["root"]["children"] == []
