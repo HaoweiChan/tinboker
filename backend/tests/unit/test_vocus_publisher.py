@@ -15,6 +15,19 @@ import pytest
 from src.services import vocus_publisher as vp
 
 
+@pytest.fixture(autouse=True)
+def _isolate_token_source(monkeypatch):
+    """No live Secret Manager call, and no token cached across tests.
+
+    current_token() prefers a fresh GSM read so a rotated token takes effect without a
+    restart; in tests that must be inert, or a stale cache silently decides the result.
+    """
+    monkeypatch.setattr(vp, "_fetch_token_from_gsm", lambda: None)
+    monkeypatch.setattr(vp, "_token_cache", None, raising=False)
+    yield
+    vp._token_cache = None
+
+
 def _token(exp_offset: int) -> str:
     """A token shaped like vocus's, with a chosen expiry. Never signed — the publisher
     only reads `exp`, it does not verify anything."""
@@ -131,3 +144,23 @@ async def test_a_verified_publish_reports_posted_with_the_article_url(monkeypatc
     result = await vp.publish_summary("ep1", "T", "# 標題\n\n內容", dry_run=False)
     assert result["posted"] is True
     assert result["url"] == "https://vocus.cc/article/art123"
+
+
+def test_a_rotated_token_takes_effect_without_a_restart(monkeypatch):
+    """The whole point of the live GSM read: replacing the weekly token must not
+    require redeploying the backend."""
+    monkeypatch.setattr(vp.settings, "vocus_id_token", _token(-60), raising=False)  # stale boot value
+    fresh = _token(6 * 24 * 3600)
+    monkeypatch.setattr(vp, "_fetch_token_from_gsm", lambda: fresh)
+    vp._token_cache = None
+
+    assert vp.current_token() == fresh
+    assert vp.token_status()["expired"] is False
+
+
+def test_boot_time_value_is_used_when_secret_manager_is_unreachable(monkeypatch):
+    monkeypatch.setattr(vp.settings, "vocus_id_token", _token(3600), raising=False)
+    monkeypatch.setattr(vp, "_fetch_token_from_gsm", lambda: None)
+    vp._token_cache = None
+
+    assert vp.token_status()["expired"] is False

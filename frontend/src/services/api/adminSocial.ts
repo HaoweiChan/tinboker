@@ -224,3 +224,54 @@ export async function publishScheduledPostNow(postId: number): Promise<{ id: num
   return res.data;
 }
 
+
+// ── 方格子 (vocus) syndication ────────────────────────────────────────────────
+// vocus has no developer API, so publishing rides an undocumented endpoint set behind
+// a token that expires every 7 days. The token status drives an admin banner: the
+// operator should learn the credential is dying from the UI, not from a week of
+// articles quietly failing to publish.
+
+export interface VocusTokenStatus {
+  configured: boolean;
+  expired: boolean;
+  expires_at: number | null;
+  seconds_left: number | null;
+  expiring_soon: boolean;
+}
+
+export interface VocusPublishResult {
+  platform: 'vocus';
+  configured: boolean;
+  dry_run: boolean;
+  episode_id: string;
+  posted: boolean;
+  reason?: string;
+  article_id?: string;
+  url?: string;
+  token?: VocusTokenStatus;
+  preview?: { title: string; canonical_url: string; block_count: number };
+}
+
+export async function getVocusTokenStatus(): Promise<VocusTokenStatus> {
+  const res = await apiClient.get<VocusTokenStatus>(
+    '/api/admin/threads/vocus/token-status',
+    adminAuthConfig(),
+  );
+  return res.data;
+}
+
+export async function publishEpisodeToVocus(
+  episodeId: string,
+  opts: { dryRun?: boolean } = {},
+): Promise<VocusPublishResult> {
+  const res = await apiClient.post<VocusPublishResult>(
+    `/api/admin/threads/episodes/${encodeURIComponent(episodeId)}/publish-vocus`,
+    null,
+    {
+      ...adminAuthConfig(),
+      timeout: LLM_REQUEST_TIMEOUT_MS,
+      params: { dry_run: opts.dryRun ?? true },
+    },
+  );
+  return res.data;
+}

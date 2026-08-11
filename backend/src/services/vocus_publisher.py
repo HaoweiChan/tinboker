@@ -30,6 +30,7 @@ import base64
 import binascii
 import json
 import logging
+import os
 import time
 from typing import Any, Optional
 
@@ -54,9 +55,49 @@ STATUS_PUBLIC = 2
 # Warn while there is still time to act, rather than at the moment posting breaks.
 TOKEN_WARN_SECONDS = 2 * 24 * 3600
 
+_TOKEN_CACHE_SECONDS = 60
+_token_cache: Optional[tuple[Optional[str], float]] = None
+
 
 class VocusError(RuntimeError):
     """A vocus API call failed or the credential is unusable."""
+
+
+def _fetch_token_from_gsm() -> Optional[str]:
+    """Read VOCUS_ID_TOKEN straight from Secret Manager, bypassing the startup cache.
+
+    Every other secret here is stable for months, so reading it once at boot is fine.
+    This one is replaced roughly weekly, and requiring a backend restart after each
+    rotation would make the whole thing not worth operating. Failures are swallowed:
+    the caller falls back to the boot-time value.
+    """
+    project = os.getenv("GCP_PROJECT_ID")
+    if not project:
+        return None
+    try:
+        from google.cloud import secretmanager
+
+        client = secretmanager.SecretManagerServiceClient()
+        name = f"projects/{project}/secrets/VOCUS_ID_TOKEN/versions/latest"
+        return client.access_secret_version(request={"name": name}).payload.data.decode("utf-8").strip()
+    except Exception as e:  # noqa: BLE001 — never let a GSM blip break publishing outright
+        logger.debug("vocus: live GSM token read failed (%s); using boot-time value", e)
+        return None
+
+
+def current_token() -> Optional[str]:
+    """The token to publish with — freshest first, cached for a minute.
+
+    A minute is long enough that a publish run does not hammer GSM, and short enough
+    that a token pasted in the admin UI takes effect while the operator is still there.
+    """
+    global _token_cache
+    now = time.time()
+    if _token_cache and now - _token_cache[1] < _TOKEN_CACHE_SECONDS:
+        return _token_cache[0]
+    token = _fetch_token_from_gsm() or settings.vocus_id_token
+    _token_cache = (token, now)
+    return token
 
 
 def _jwt_exp(token: str) -> Optional[int]:
@@ -76,7 +117,7 @@ def _jwt_exp(token: str) -> Optional[int]:
 def token_status(token: Optional[str] = None) -> dict:
     """``{configured, expired, expires_at, seconds_left, expiring_soon}`` — safe to
     surface in the admin UI: it reports *about* the token, never its value."""
-    tok = token if token is not None else settings.vocus_id_token
+    tok = token if token is not None else current_token()
     if not tok:
         return {"configured": False, "expired": True, "expires_at": None,
                 "seconds_left": None, "expiring_soon": False}
@@ -100,7 +141,7 @@ class VocusClient:
 
     def __init__(self, token: Optional[str] = None, user_id: Optional[str] = None,
                  salon_id: Optional[str] = None, base: str = VOCUS_API_BASE):
-        self._token = token if token is not None else settings.vocus_id_token
+        self._token = token if token is not None else current_token()
         self._user_id = user_id if user_id is not None else settings.vocus_user_id
         self._salon_id = salon_id if salon_id is not None else settings.vocus_salon_id
         self._base = base.rstrip("/")
