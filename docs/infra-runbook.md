@@ -243,13 +243,20 @@ To get a new key if lost:
 
 ### 2.2 GCP Secret Manager — full secrets list
 
-> **P6 (2026-08): Secret Manager is a FALLBACK, not the source.** Runtime secrets come
-> from `compose/backend/.env` (backend) and `/root/tinboker/pipelines/.env` (pipelines);
-> CI/CD secrets come from GitHub Actions repo secrets. `GCPSecretManagerSource` only
-> fetches what the environment did not supply, and logs `source=gsm` when it does.
-> Canonical migration table and cleanup order: `docs/firestore-contract.md` § 11.8.
-> The authoritative field list is `_GSM_FIELDS` in `backend/src/config_loader.py`; the
-> table below is a subset kept for context.
+> **Secret Manager is the HOME for real secrets (2026-08-10, supersedes P6).** A
+> credential on the VPS filesystem is a larger attack surface than one in GSM, which
+> gives rotation, an access audit log, and instant revocation; GSM costs ~NT$4/month
+> at this scale. So: **real secrets → GSM; non-confidential configuration → `.env`.**
+> CI/CD secrets stay in GitHub Actions repo secrets (CI does not read GSM).
+>
+> Backend precedence is env → `.env` → GSM, which means **an `.env` entry silently
+> shadows GSM** — leave real secrets out of every `.env`. `source=gsm` in the logs is
+> the expected state, not a migration warning.
+>
+> The authoritative field list is `_GSM_FIELDS` in `backend/src/config_loader.py` (an
+> explicit allowlist — a field that is absent is never read from GSM); the table below
+> is a subset kept for context. ⚠️ `docs/firestore-contract.md` § 11.8 step 5 (delete
+> `GCPSecretManagerSource`) is **cancelled** — see that section.
 
 The backend falls back to these secrets from Secret Manager **at runtime** (loaded by
 `GCPSecretManagerSource` in `src/config_loader.py`). Secret name = uppercase of the

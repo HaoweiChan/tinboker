@@ -54,6 +54,8 @@ export interface SocialEpisodeBundle {
   theme_cards: SocialThemeCard[];
   marp_markdown: string;
   marp_size: string;
+  /** Long-form episode summary (human-edited version preferred), for syndication. */
+  summary_markdown: string;
   composed: ComposedThread;
   has_copy: boolean;
   posted: PostedStatus;
