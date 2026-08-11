@@ -20,7 +20,7 @@ from src.auth.admin_auth import AdminAccess, get_admin_access, get_social_access
 from src.config import settings
 from src.database.models import PromoDraft, ScheduledSocialPost
 from src.database.postgres import get_session
-from src.services import facebook_publisher, promo_publisher, threads_publisher
+from src.services import facebook_publisher, promo_publisher, threads_publisher, vocus_publisher
 from src.services.gcs_content import GCSContentService, media_url
 from src.services.podcast import PodcastService
 from src.services.facebook_insights_service import FacebookInsightsService
@@ -348,6 +348,49 @@ async def publish_social_episode(
             logger.exception("%s publish failed for %s", name, episode_id)
             results[name] = {"platform": name, "error": str(e)}
     return {"episode_id": episode_id, "platforms": results}
+
+
+@router.get("/vocus/token-status")
+async def vocus_token_status(_: AdminAccess = Depends(get_social_access)):
+    """How long the 方格子 credential has left.
+
+    It lives 7 days with no refresh endpoint, so the admin page shows this as a banner:
+    the operator learns the token is dying while there is still time to replace it,
+    rather than by noticing that nothing has published for a week. Reports *about* the
+    token — expiry and configured-ness — never its value.
+    """
+    return vocus_publisher.token_status()
+
+
+@router.post("/episodes/{episode_id}/publish-vocus")
+async def publish_episode_to_vocus(
+    episode_id: str,
+    dry_run: bool = Query(default=True, description="Convert only; do not publish (default)"),
+    _: AdminAccess = Depends(get_social_access),
+):
+    """Publish one episode's long-form summary to 方格子.
+
+    Separate from ``/publish`` because this is a different kind of thing: that one posts
+    short social copy plus card images to Threads/Facebook, this one syndicates the whole
+    article. Defaults to dry-run, which converts the markdown and reports the block count
+    without creating anything.
+    """
+    episode = await podcast_service.get_episode_admin(episode_id)
+    if not episode:
+        raise HTTPException(status_code=404, detail=f"Episode {episode_id} not found")
+
+    summary = getattr(episode, "modified_summary_content", None) or getattr(episode, "summary_content", None) or ""
+    title = (getattr(episode, "episode_title", None) or "").strip() or episode_id
+    tags = [t for t in (getattr(episode, "tags", None) or []) if isinstance(t, str)][:5]
+
+    return await vocus_publisher.publish_summary(
+        episode_id,
+        title,
+        summary,
+        abstract=(getattr(episode, "summary_excerpt", None) or "").strip(),
+        tags=tags,
+        dry_run=dry_run,
+    )
 
 
 def _marp_size(marp_markdown: str) -> str:
