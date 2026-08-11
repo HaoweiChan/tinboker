@@ -114,6 +114,16 @@ class Settings(BaseSettings):
     facebook_page_access_token: Optional[str] = None
     facebook_api_base: str = "https://graph.facebook.com/v21.0"
 
+    # ==================== 方格子 (vocus) syndication ====================
+    # vocus publishes no developer API; we drive the endpoints its own editor uses.
+    # VOCUS_ID_TOKEN is a vocus-signed JWT read from localStorage after signing in —
+    # it lives only 7 DAYS and has no refresh endpoint, so it must be replaced by hand
+    # roughly weekly. Store it in GSM (never a .env — see src/config_loader.py).
+    # The user/salon ids are public identifiers, not secrets.
+    vocus_id_token: Optional[str] = None
+    vocus_user_id: Optional[str] = None
+    vocus_salon_id: Optional[str] = None
+
     # Bucket for ad-hoc promo media (admin "promo" composer uploads). Stored private;
     # Meta fetches each file via a short-lived V4 signed URL at publish time.
     promo_media_bucket: str = "graphfolio-articles"

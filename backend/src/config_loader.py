@@ -51,6 +51,10 @@ _GSM_FIELDS: Tuple[str, ...] = (
     "threads_user_id",
     "facebook_page_id",
     "facebook_page_access_token",
+    # 方格子 — the token expires every 7 days and is replaced by hand; the ids are public.
+    "vocus_id_token",
+    "vocus_user_id",
+    "vocus_salon_id",
     # GCP / GCS article store — still needed, see docs/firestore-contract.md §11.8
     "google_application_credentials",
     "gsc_site_url",
