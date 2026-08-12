@@ -1,41 +1,16 @@
-"""Convert summary markdown into a Lexical editor state, which is what 方格子 stores.
+"""Neutral markdown blocks -> the Lexical editor state vocus's API stores.
 
-vocus's editor is Lexical, and its API takes the article body as a serialized editor
-state (``lexicalObj.root.children[]``) — not HTML and not markdown. So syndicating there
-means building that tree ourselves.
-
-Scope is deliberately the subset the content pipeline actually emits (see
-``pipelines/.../nodes/markdown_transform.py``): ``#``/``##``/``###`` headings, paragraphs,
-bullet and ordered lists, blockquotes, horizontal rules, and inline bold / italic / links.
-No tables, no images, no code blocks — the pipeline does not write them, and a converter
-for constructs that never arrive is a liability, not a feature. Anything unrecognised
-falls through as paragraph text rather than being dropped, so a future pipeline change
-degrades to plain prose instead of losing content silently.
-
-⚠️ Unverified against a live vocus round-trip: these are standard Lexical node shapes.
-If vocus registered custom nodes, it may drop what it does not recognise. Publish one
-draft and open it in their editor before trusting this with real articles.
+Node shapes here are load-bearing and were confirmed by a live publish that rendered
+correctly on vocus.cc; tests/unit/test_markdown_blocks.py pins the exact output.
 """
-
 from __future__ import annotations
 
-import re
 from typing import Any
 
-# Lexical's inline format bitmask.
+from src.services.markdown_blocks import Block, Span, parse_blocks
+
 FORMAT_BOLD = 1
 FORMAT_ITALIC = 2
-
-_HEADING = re.compile(r"^(#{1,6})\s+(.*)$")
-_BULLET = re.compile(r"^\s*[-*+]\s+(.*)$")
-_ORDERED = re.compile(r"^\s*(\d+)[.)]\s+(.*)$")
-_QUOTE = re.compile(r"^>\s?(.*)$")
-_HR = re.compile(r"^\s*(?:-{3,}|\*{3,}|_{3,})\s*$")
-
-# Inline: links first (their label may itself contain emphasis), then emphasis.
-_LINK = re.compile(r"\[([^\]]*)\]\(([^)\s]+)\)")
-_STRONG = re.compile(r"\*\*(.+?)\*\*|__(.+?)__")
-_EM = re.compile(r"(?<!\*)\*([^*]+)\*(?!\*)|(?<!_)_([^_]+)_(?!_)")
 
 
 def _text_node(text: str, fmt: int = 0) -> dict[str, Any]:
@@ -62,125 +37,55 @@ def _block(node_type: str, children: list[dict], **extra: Any) -> dict[str, Any]
     }
 
 
-def _emphasis_nodes(text: str, base_fmt: int = 0) -> list[dict]:
-    """Split a run of plain text into bold/italic text nodes."""
-    if not text:
-        return []
-    m = _STRONG.search(text)
-    if m:
-        inner = m.group(1) if m.group(1) is not None else m.group(2)
-        return [
-            *_emphasis_nodes(text[: m.start()], base_fmt),
-            *_emphasis_nodes(inner, base_fmt | FORMAT_BOLD),
-            *_emphasis_nodes(text[m.end():], base_fmt),
-        ]
-    m = _EM.search(text)
-    if m:
-        inner = m.group(1) if m.group(1) is not None else m.group(2)
-        return [
-            *_emphasis_nodes(text[: m.start()], base_fmt),
-            *_emphasis_nodes(inner, base_fmt | FORMAT_ITALIC),
-            *_emphasis_nodes(text[m.end():], base_fmt),
-        ]
-    return [_text_node(text, base_fmt)]
+def _span_node(span: Span) -> dict[str, Any]:
+    fmt = (FORMAT_BOLD if span.bold else 0) | (FORMAT_ITALIC if span.italic else 0)
+    return _text_node(span.text, fmt)
 
 
-def inline_nodes(text: str) -> list[dict]:
-    """Markdown inline syntax -> Lexical text and link nodes."""
+def _inline_nodes(spans: list[Span]) -> list[dict]:
+    """Spans -> text nodes, with consecutive same-href spans folded into one link node."""
     nodes: list[dict] = []
-    pos = 0
-    for m in _LINK.finditer(text):
-        nodes.extend(_emphasis_nodes(text[pos:m.start()]))
-        label, url = m.group(1), m.group(2)
-        nodes.append(
-            _block(
-                "link",
-                _emphasis_nodes(label) or [_text_node(url)],
-                rel="noreferrer",
-                target="_blank",
-                title=None,
-                url=url,
-            )
-        )
-        pos = m.end()
-    nodes.extend(_emphasis_nodes(text[pos:]))
+    run: list[Span] = []
+
+    def flush() -> None:
+        if run:
+            nodes.append(_block("link", [_span_node(s) for s in run],
+                                rel="noreferrer", target="_blank", title=None, url=run[0].href))
+            run.clear()
+
+    for span in spans:
+        if span.href:
+            if run and run[0].href != span.href:
+                flush()
+            run.append(span)
+            continue
+        flush()
+        nodes.append(_span_node(span))
+    flush()
     return nodes or [_text_node("")]
 
 
-def _list_block(items: list[str], ordered: bool) -> dict[str, Any]:
-    children = [
-        _block("listitem", inline_nodes(item), value=i + 1)
-        for i, item in enumerate(items)
-    ]
-    return _block(
-        "list",
-        children,
-        listType="number" if ordered else "bullet",
-        start=1,
-        tag="ol" if ordered else "ul",
-    )
+def _render(block: Block) -> dict[str, Any]:
+    if block.kind == "hr":
+        return {"type": "horizontalrule", "version": 1}
+    if block.kind == "heading":
+        # Every heading shifts down one level, not just h1: vocus renders the article
+        # title above the body, so the body must not contain an h1, and shifting the
+        # whole hierarchy keeps the relative structure instead of flattening it.
+        return _block("heading", _inline_nodes(block.spans), tag=f"h{min(block.level + 1, 6)}")
+    if block.kind == "list":
+        children = [_block("listitem", _inline_nodes(item), value=i + 1)
+                    for i, item in enumerate(block.items)]
+        return _block("list", children, listType="number" if block.ordered else "bullet",
+                      start=1, tag="ol" if block.ordered else "ul")
+    if block.kind == "quote":
+        return _block("quote", _inline_nodes(block.spans))
+    return _block("paragraph", _inline_nodes(block.spans), textFormat=0)
 
 
 def markdown_to_lexical(markdown: str) -> dict[str, Any]:
     """Build the ``{"root": ...}`` editor state vocus's API expects."""
-    blocks: list[dict] = []
-    lines = (markdown or "").replace("\r\n", "\n").split("\n")
-    i = 0
-
-    while i < len(lines):
-        line = lines[i]
-
-        if not line.strip():
-            i += 1
-            continue
-
-        if _HR.match(line):
-            blocks.append({"type": "horizontalrule", "version": 1})
-            i += 1
-            continue
-
-        m = _HEADING.match(line)
-        if m:
-            # h1 becomes h2: the article title is already rendered by vocus above the
-            # body, so a second h1 inside it would be a duplicate top-level heading.
-            level = min(max(len(m.group(1)), 1), 6)
-            tag = f"h{min(level + 1, 6)}"
-            blocks.append(_block("heading", inline_nodes(m.group(2).strip()), tag=tag))
-            i += 1
-            continue
-
-        if _BULLET.match(line) or _ORDERED.match(line):
-            ordered = bool(_ORDERED.match(line))
-            items: list[str] = []
-            while i < len(lines):
-                bm = _ORDERED.match(lines[i]) if ordered else _BULLET.match(lines[i])
-                if not bm:
-                    break
-                items.append((bm.group(2) if ordered else bm.group(1)).strip())
-                i += 1
-            blocks.append(_list_block(items, ordered))
-            continue
-
-        if _QUOTE.match(line):
-            quoted: list[str] = []
-            while i < len(lines) and _QUOTE.match(lines[i]):
-                quoted.append(_QUOTE.match(lines[i]).group(1).strip())
-                i += 1
-            blocks.append(_block("quote", inline_nodes(" ".join(quoted).strip())))
-            continue
-
-        # Paragraph: consume until a blank line or the start of another block.
-        para: list[str] = []
-        while i < len(lines) and lines[i].strip():
-            nxt = lines[i]
-            if para and (_HEADING.match(nxt) or _BULLET.match(nxt) or _ORDERED.match(nxt)
-                         or _QUOTE.match(nxt) or _HR.match(nxt)):
-                break
-            para.append(nxt.strip())
-            i += 1
-        blocks.append(_block("paragraph", inline_nodes(" ".join(para)), textFormat=0))
-
+    blocks = [_render(b) for b in parse_blocks(markdown)]
     if not blocks:
         blocks = [_block("paragraph", [_text_node("")], textFormat=0)]
-
     return {"root": _block("root", blocks)}

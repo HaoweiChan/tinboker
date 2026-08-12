@@ -20,7 +20,8 @@ from src.auth.admin_auth import AdminAccess, get_admin_access, get_social_access
 from src.config import settings
 from src.database.models import PromoDraft, ScheduledSocialPost
 from src.database.postgres import get_session
-from src.services import facebook_publisher, promo_publisher, threads_publisher, vocus_publisher
+from src.services import (facebook_publisher, promo_publisher, substack_publisher,
+                          threads_publisher, vocus_publisher)
 from src.services.gcs_content import GCSContentService, media_url
 from src.services.podcast import PodcastService
 from src.services.facebook_insights_service import FacebookInsightsService
@@ -389,6 +390,35 @@ async def publish_episode_to_vocus(
         summary,
         abstract=(getattr(episode, "summary_excerpt", None) or "").strip(),
         tags=tags,
+        dry_run=dry_run,
+    )
+
+
+@router.post("/episodes/{episode_id}/draft-substack")
+async def draft_episode_to_substack(
+    episode_id: str,
+    dry_run: bool = Query(default=True, description="Convert only; do not create the draft (default)"),
+    _: AdminAccess = Depends(get_social_access),
+):
+    """Stage one episode's summary as a Substack DRAFT.
+
+    Named ``draft-`` rather than ``publish-`` because it deliberately stops short of
+    publishing: on Substack that emails every subscriber the instant it succeeds and
+    cannot be undone, so the final click stays human. The response carries the draft's
+    edit URL to make that click one step away.
+    """
+    episode = await podcast_service.get_episode_admin(episode_id)
+    if not episode:
+        raise HTTPException(status_code=404, detail=f"Episode {episode_id} not found")
+
+    summary = getattr(episode, "modified_summary_content", None) or getattr(episode, "summary_content", None) or ""
+    title = (getattr(episode, "episode_title", None) or "").strip() or episode_id
+
+    return await substack_publisher.create_summary_draft(
+        episode_id,
+        title,
+        summary,
+        subtitle=(getattr(episode, "summary_excerpt", None) or "").strip()[:140],
         dry_run=dry_run,
     )
 

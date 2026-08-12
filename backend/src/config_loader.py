@@ -63,6 +63,10 @@ _GSM_FIELDS: Tuple[str, ...] = (
     "vocus_id_token",
     "vocus_user_id",
     "vocus_salon_id",
+    # Substack — the session cookie lasts months, so no live re-read; the rest is public.
+    "substack_sid",
+    "substack_subdomain",
+    "substack_user_id",
     # GCP / GCS article store — still needed, see docs/firestore-contract.md §11.8
     "google_application_credentials",
     "gsc_site_url",
