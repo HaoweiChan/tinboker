@@ -32,6 +32,17 @@ logger = logging.getLogger(__name__)
 
 REQUEST_TIMEOUT = 30.0
 
+# Substack sits behind an edge that rejects a default python-httpx User-Agent outright.
+# These are not an attempt to look like something we are not — the calls are the account
+# owner's own, authenticated with their own cookie — they are the minimum the edge needs
+# to route the request to the API instead of a challenge page.
+_HEADERS = {
+    "content-type": "application/json",
+    "user-agent": ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+                   "(KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"),
+    "accept": "application/json, text/plain, */*",
+}
+
 
 class SubstackError(RuntimeError):
     """A Substack API call failed or the session cookie is unusable."""
@@ -56,12 +67,20 @@ class SubstackClient:
         resp = await client.request(
             method, f"{self.base}{path}",
             json=payload,
-            headers={"content-type": "application/json"},
+            headers=_HEADERS | {"origin": self.base, "referer": f"{self.base}/publish/posts"},
             cookies={"substack.sid": self._sid or ""},
             timeout=REQUEST_TIMEOUT,
         )
-        if resp.status_code == 401 or resp.status_code == 403:
-            raise SubstackError("credential_expired")
+        if resp.status_code in (401, 403):
+            # A stale cookie and a bot-blocked request look identical from here, and the
+            # operator's next move is different for each: replace the cookie, or fix the
+            # request. The body distinguishes them — Cloudflare returns HTML, Substack
+            # returns JSON — so pass it along instead of collapsing both to one reason.
+            body = (resp.text or "")[:200].replace("\n", " ")
+            edge = "<html" in body.lower() or "cloudflare" in body.lower()
+            logger.warning("substack %s %s -> %s (%s) %s", method, path, resp.status_code,
+                           "edge-block" if edge else "auth", body)
+            raise SubstackError("blocked_by_edge" if edge else "credential_expired")
         if resp.status_code >= 400:
             # Substack names the offending field in the body; without it a 400 is a
             # guessing game. This is how draft_bylines was found.
