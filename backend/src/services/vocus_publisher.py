@@ -45,6 +45,11 @@ logger = logging.getLogger(__name__)
 VOCUS_API_BASE = "https://api.vocus.cc"
 
 # Observed live: PATCH .../status/1 is what the editor sends with publishMethod=draft.
+# 投資理財 — vocus's own category id, from the publish wizard's dropdown. One publication,
+# one category; make it a setting if that ever stops being true.
+VOCUS_CATEGORY_ID = "5a978e00fd897800016874cc"
+VOCUS_CATEGORY_TITLE = "投資理財"
+
 STATUS_DRAFT = 1
 # Confirmed live 2026-08-11: after a full publish the article appears in the status=2
 # bucket. _verify_published() still checks every time — an undocumented API can accept
@@ -199,11 +204,22 @@ class VocusClient:
         })
 
     async def save_settings(self, client: httpx.AsyncClient, article_id: str, *, title: str,
-                            abstract: str, canonical_url: str, tags: list[str]) -> None:
+                            abstract: str, canonical_url: str, tags: list[str],
+                            thumbnail_url: str = "") -> None:
         await self._request(client, "PATCH", f"/api/articles/{article_id}", {
             "title": title,
             "abstract": abstract[:200],
-            "tags": tags,
+            # model.TagInfo, whose display field is `title`. Two traps in one field: a
+            # list of strings is rejected outright ("cannot unmarshal string into ...
+            # Article.ArticleInfo.tags"), but an object with the WRONG keys is accepted
+            # with a 200 and stored as {"title": "", "totalScore": 0} — five blank chips
+            # in the publish wizard and no error anywhere. Read tags back, do not trust
+            # the status code.
+            "tags": [{"title": t} for t in tags],
+            # 分類 is required by the publish wizard and blocks it when unset. It is a
+            # model.BertClassify object — a bare id string is rejected — so send the
+            # whole {_id, title, score} shape the API stores.
+            "newCategory": {"_id": VOCUS_CATEGORY_ID, "title": VOCUS_CATEGORY_TITLE, "score": 0},
             "canonicalURL": canonical_url,
             # The whole article also lives on tinboker.com. Pointing canonical home is
             # what keeps three full-text copies from competing with each other.
@@ -212,7 +228,10 @@ class VocusClient:
             "showCatalog": True,
             "setIsPay": False,
             "salonId": self._salon_id,
-            "coverSource": "article",
+            "thumbnailUrl": thumbnail_url,
+            # "custom" when we supply one; "article" makes vocus hunt for an image in the
+            # body, and the body has none — that is what leaves the placeholder cover.
+            "coverSource": "custom" if thumbnail_url else "article",
             "ogImageType": "thumbnail",
         })
 
@@ -257,9 +276,11 @@ async def publish_summary(
     episode_id: str,
     title: str,
     summary_markdown: str,
+    podcast_name: str = "",
     *,
     abstract: str = "",
     tags: Optional[list[str]] = None,
+    thumbnail_url: str = "",
     dry_run: bool = True,
 ) -> dict:
     """Publish one episode summary to vocus.
@@ -298,7 +319,8 @@ async def publish_summary(
             await client.save_body(http, article_id, title, lexical)
             await client.save_settings(http, article_id, title=title,
                                        abstract=abstract or title,
-                                       canonical_url=canonical, tags=tags or [])
+                                       canonical_url=canonical, tags=tags or [],
+                                       thumbnail_url=thumbnail_url)
             await client.set_status(http, article_id, STATUS_PUBLIC)
             verified = await _verify_published(client, http, article_id)
     except VocusError as e:

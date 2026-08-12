@@ -23,6 +23,8 @@ from src.database.postgres import get_session
 from src.services import (facebook_publisher, promo_publisher, substack_publisher,
                           threads_publisher, vocus_publisher)
 from src.services.gcs_content import GCSContentService, media_url
+from src.services.syndication_markdown import podcast_short_name, syndication_title
+from src.tag_registry import canonical_label
 from src.services.podcast import PodcastService
 from src.services.facebook_insights_service import FacebookInsightsService
 from src.services.threads_insights_service import ThreadsInsightsService
@@ -381,15 +383,32 @@ async def publish_episode_to_vocus(
         raise HTTPException(status_code=404, detail=f"Episode {episode_id} not found")
 
     summary = getattr(episode, "modified_summary_content", None) or getattr(episode, "summary_content", None) or ""
-    title = (getattr(episode, "episode_title", None) or "").strip() or episode_id
-    tags = [t for t in (getattr(episode, "tags", None) or []) if isinstance(t, str)][:5]
+    podcast_name = (getattr(episode, "podcast_name", None) or "").strip()
+    raw_title = (getattr(episode, "episode_title", None) or "").strip() or episode_id
+    title = syndication_title(podcast_name, raw_title)
+
+    # zh-TW labels, not raw slugs: a vocus reader searches 台股, never "twstocks", and the
+    # podcast's own name leads so the post lands on the tag page its audience reads.
+    labels = [canonical_label(t) for t in (getattr(episode, "tags", None) or []) if isinstance(t, str)]
+    short = podcast_short_name(podcast_name)
+    # The podcast name is attribution, not a topic — it sits outside the 5-topic budget so
+    # naming the show never costs a subject tag.
+    tags = list(dict.fromkeys(([short] if short else []) + labels[:5]))
+
+    # Our own generated cover, not the show's artwork and not the episode's
+    # summary_image. Borrowing the podcast's logo would make a summary look like the
+    # podcast's own post, and summary_image is a "Placeholder Chart" SVG on every episode
+    # checked. See services/og_image.py.
+    thumbnail_url = f"{settings.public_api_url.rstrip('/')}/api/og/episode/{episode_id}.svg"
 
     return await vocus_publisher.publish_summary(
         episode_id,
         title,
         summary,
+        podcast_name=podcast_name,
         abstract=(getattr(episode, "summary_excerpt", None) or "").strip(),
         tags=tags,
+        thumbnail_url=thumbnail_url,
         dry_run=dry_run,
     )
 
@@ -412,12 +431,15 @@ async def draft_episode_to_substack(
         raise HTTPException(status_code=404, detail=f"Episode {episode_id} not found")
 
     summary = getattr(episode, "modified_summary_content", None) or getattr(episode, "summary_content", None) or ""
-    title = (getattr(episode, "episode_title", None) or "").strip() or episode_id
+    podcast_name = (getattr(episode, "podcast_name", None) or "").strip()
+    raw_title = (getattr(episode, "episode_title", None) or "").strip() or episode_id
+    title = syndication_title(podcast_name, raw_title)
 
     return await substack_publisher.create_summary_draft(
         episode_id,
         title,
         summary,
+        podcast_name=podcast_name,
         subtitle=(getattr(episode, "summary_excerpt", None) or "").strip()[:140],
         dry_run=dry_run,
     )

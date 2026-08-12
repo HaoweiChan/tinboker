@@ -142,6 +142,7 @@ async def create_summary_draft(
     title: str,
     summary_markdown: str,
     *,
+    podcast_name: str = "",
     subtitle: str = "",
     dry_run: bool = True,
 ) -> dict:
@@ -158,7 +159,7 @@ async def create_summary_draft(
         result["reason"] = "not_configured"
         return result
 
-    markdown = to_syndication_markdown(summary_markdown, episode_id, settings.site_url)
+    markdown = to_syndication_markdown(summary_markdown, episode_id, settings.site_url, podcast_name)
     doc = markdown_to_prosemirror(markdown)
 
     if dry_run:

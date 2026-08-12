@@ -12,6 +12,7 @@ from src.routers.stock import router as stock_router
 from src.routers.graph import router as graph_router
 from src.routers.company import router as company_router
 from src.routers.content import router as content_router
+from src.routers.og import router as og_router
 from src.routers.websocket import router as websocket_router
 from src.routers.visual_graph import router as visual_graph_router
 from src.routers.websocket_prices import router as websocket_prices_router
@@ -409,6 +410,7 @@ app.include_router(websocket_router)
 app.include_router(websocket_prices_router)
 app.include_router(news_router)
 app.include_router(visual_graph_router)
+app.include_router(og_router)
 app.include_router(podcast_router)
 app.include_router(episodes_router)
 app.include_router(tags_router)

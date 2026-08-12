@@ -174,3 +174,71 @@ def test_lexical_and_command_logs_are_sent_as_json_strings():
     field = vp._lexical_field({"root": {"children": []}})
     assert isinstance(field, str)
     assert _json.loads(field)["root"]["children"] == []
+
+
+@pytest.mark.asyncio
+async def test_tags_are_sent_as_taginfo_objects_not_strings():
+    """Two failure modes, only one of which is loud.
+
+    A list of strings is rejected: "cannot unmarshal string into Go struct field
+    Article.ArticleInfo.tags of type model.TagInfo". An object with the wrong keys is
+    ACCEPTED with a 200 and silently stored as {"title": "", "totalScore": 0} — the
+    wizard then shows blank chips and nothing anywhere reports a problem. An empty list
+    unmarshals either way, which is how both survived every earlier smoke test."""
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        import json
+        if request.method == "PATCH" and request.url.path.count("/") == 3:
+            seen.update(json.loads(request.content))
+        return httpx.Response(200, json={})
+
+    client = vp.VocusClient(token="t", user_id="u", salon_id="s")
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        await client.save_settings(http, "art1", title="T", abstract="A",
+                                   canonical_url="https://tinboker.com/episode/EP1",
+                                   tags=["股癌", "台股"])
+
+    assert seen["tags"] == [{"title": "股癌"}, {"title": "台股"}]
+    # newCategory is a model.BertClassify object; a bare id string is rejected with
+    # "cannot unmarshal string into ... newCategory of type model.BertClassify".
+    assert seen["newCategory"] == {"_id": vp.VOCUS_CATEGORY_ID,
+                                   "title": vp.VOCUS_CATEGORY_TITLE, "score": 0}
+
+
+@pytest.mark.asyncio
+async def test_a_thumbnail_switches_the_cover_source_to_custom():
+    """coverSource="article" makes vocus look for an image inside the body; our bodies have
+    none, which is what left the vocus placeholder cover on the first real draft."""
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        import json
+        if request.method == "PATCH":
+            seen.update(json.loads(request.content))
+        return httpx.Response(200, json={})
+
+    client = vp.VocusClient(token="t", user_id="u", salon_id="s")
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        await client.save_settings(http, "a", title="T", abstract="A",
+                                   canonical_url="https://tinboker.com/episode/EP1",
+                                   tags=[], thumbnail_url="https://img.test/cover.jpg")
+    assert seen["thumbnailUrl"] == "https://img.test/cover.jpg"
+    assert seen["coverSource"] == "custom"
+
+
+@pytest.mark.asyncio
+async def test_without_a_thumbnail_vocus_is_left_to_find_one():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        import json
+        if request.method == "PATCH":
+            seen.update(json.loads(request.content))
+        return httpx.Response(200, json={})
+
+    client = vp.VocusClient(token="t", user_id="u", salon_id="s")
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        await client.save_settings(http, "a", title="T", abstract="A",
+                                   canonical_url="https://tinboker.com/episode/EP1", tags=[])
+    assert seen["coverSource"] == "article"
