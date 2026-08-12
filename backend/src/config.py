@@ -114,6 +114,25 @@ class Settings(BaseSettings):
     facebook_page_access_token: Optional[str] = None
     facebook_api_base: str = "https://graph.facebook.com/v21.0"
 
+    # ==================== 方格子 (vocus) syndication ====================
+    # vocus publishes no developer API; we drive the endpoints its own editor uses.
+    # VOCUS_ID_TOKEN is a vocus-signed JWT read from localStorage after signing in —
+    # it lives only 7 DAYS and has no refresh endpoint, so it must be replaced by hand
+    # roughly weekly. Store it in GSM (never a .env — see src/config_loader.py).
+    # The user/salon ids are public identifiers, not secrets.
+    vocus_id_token: Optional[str] = None
+    vocus_user_id: Optional[str] = None
+    vocus_salon_id: Optional[str] = None
+
+    # ==================== Substack syndication ====================
+    # Also undocumented; we drive the endpoints Substack's own editor uses. SUBSTACK_SID
+    # is the substack.sid session cookie, which lasts months — unlike the vocus token it
+    # needs no live re-read. Publishing is deliberately NOT automated: it emails the
+    # subscriber list irreversibly, so the pipeline stops at a draft.
+    substack_sid: Optional[str] = None
+    substack_subdomain: Optional[str] = None
+    substack_user_id: Optional[int] = None
+
     # Bucket for ad-hoc promo media (admin "promo" composer uploads). Stored private;
     # Meta fetches each file via a short-lived V4 signed URL at publish time.
     promo_media_bucket: str = "graphfolio-articles"
@@ -376,11 +395,13 @@ class Settings(BaseSettings):
         1. Constructor arguments (init_settings)
         2. Environment variables (env_settings)
         3. .env file (dotenv_settings)
-        4. GCP Secret Manager (GCPSecretManagerSource) — legacy P6 fallback
+        4. GCP Secret Manager (GCPSecretManagerSource) — the home for real secrets
 
         The GSM source is told up front which fields (2) and (3) already supply,
         so it skips them entirely; when the environment is complete it never
-        constructs a Secret Manager client. See src/config_loader.py.
+        constructs a Secret Manager client. Note the consequence: an .env entry
+        shadows GSM silently, so real secrets must be left out of .env files
+        entirely. See the policy note in src/config_loader.py.
         """
         resolved = set(dotenv_settings()) | set(env_settings())
         return (

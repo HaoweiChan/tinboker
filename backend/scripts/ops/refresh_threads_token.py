@@ -7,8 +7,10 @@ at least 24h old — each refresh extends validity another 60 days. Run on a sch
 ``THREADS_ACCESS_TOKEN``; the new token value is never printed.
 
 The backend reads the token at startup, so a refreshed token takes effect on the
-next deploy/restart. The companion workflow restarts the prod backend after a
-successful refresh so it's effective immediately.
+next deploy/restart — which lands well inside the 60-day window on a normal merge
+cadence. (An earlier version of this docstring claimed the companion workflow
+restarts the prod backend on a successful refresh; it does not. The ``changed``
+output written below is what such a step would gate on, and is currently unused.)
 
 Exit codes: 0 = refreshed or nothing-to-do (don't fail the schedule on a too-new /
 unset token); 1 = a real error (can't read the secret, write failed).
@@ -84,6 +86,21 @@ def main() -> int:
     except Exception as e:  # noqa: BLE001
         print(f"::error::failed to write new {SECRET} version: {e}")
         return 1
+
+    # Prune superseded versions (keep newest only) — each undestroyed version
+    # bills $0.06/mo forever, and this weekly cron was accumulating one per run.
+    try:
+        parent = f"projects/{PROJECT}/secrets/{SECRET}"
+        live = [
+            v for v in client.list_secret_versions(request={"parent": parent})
+            if v.state.name != "DESTROYED"
+        ]
+        live.sort(key=lambda v: int(v.name.rsplit("/", 1)[-1]), reverse=True)
+        for v in live[1:]:
+            client.destroy_secret_version(request={"name": v.name})
+            print(f"pruned old version {v.name.rsplit('/', 1)[-1]}")
+    except Exception as e:  # noqa: BLE001
+        print(f"::warning::version pruning failed (non-fatal): {e}")
 
     days = int(expires_in) // 86400 if expires_in else "?"
     print(f"✓ refreshed {SECRET} (expires_in={expires_in}s ≈ {days}d)")

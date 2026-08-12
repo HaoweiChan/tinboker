@@ -107,7 +107,7 @@ Meaning:
 
 ```yaml
 id: TKB-001
-status: ready
+status: in_progress
 priority: P0
 area:
 - pipelines
@@ -118,7 +118,7 @@ effort: L
 risk: medium
 github_issue: https://github.com/HaoweiChan/tinboker/issues/405
 github_project_item: PVTI_lAHOAP_gz84BcROAzgxhes4
-pr: null
+pr: https://github.com/HaoweiChan/tinboker/compare/develop...feat/ticker-mention-performance
 ```
 
 ### Goal
@@ -148,16 +148,16 @@ It can power:
 
 ### Acceptance criteria
 
-- [ ] Extract ticker / company / sector mentions from episode transcripts and summaries.
-- [ ] Store mentions in PostgreSQL.
-- [ ] Store source episode, timestamp if available, confidence score, and extraction method.
-- [ ] Support TW stocks and US stocks.
-- [ ] Calculate 1D / 5D / 20D / 60D return after mention date.
-- [ ] Expose backend API for ticker mentions and sector mentions.
-- [ ] Show mention performance on ticker and/or sector pages.
-- [ ] Include disclaimer that podcast mentions are not investment recommendations.
-- [ ] Add basic tests for extraction and API output.
-- [ ] Add migration script for new database tables.
+- [x] Extract ticker / company / sector mentions from episode transcripts and summaries.
+- [x] Store mentions in PostgreSQL.
+- [x] Store source episode, timestamp if available, confidence score, and extraction method.
+- [x] Support TW stocks and US stocks.
+- [x] Calculate 1D / 5D / 20D / 60D return after mention date.
+- [x] Expose backend API for ticker mentions and sector mentions.
+- [x] Show mention performance on ticker and/or sector pages.
+- [x] Include disclaimer that podcast mentions are not investment recommendations.
+- [x] Add basic tests for extraction and API output.
+- [x] Add migration script for new database tables.
 
 ### Suggested implementation
 
@@ -207,6 +207,14 @@ Potential surfaces:
 Start simple. First version can be daily batch only.
 
 Do not build real-time tracking yet.
+
+**2026-07-03 (branch `feat/ticker-mention-performance`):** Implemented daily-batch only, per the note above.
+
+- Mentions are *derived*, not re-extracted: the pipelines already extract per-episode ticker insights (LLM) and sector exposures (alias matching), so a backend sync job (`backend/src/services/mention_sync.py`, every 6h) folds both into a new `content_mentions` table, stamping `extraction_method` (`pipeline_llm` / `alias_match`) and `confidence` (0.9 for LLM rows until the extractor emits per-row scores; the exposures' own score otherwise). Sources: the pipeline-written Postgres `ticker_insights` table + the existing projected episode scan (no new Firestore read paths).
+- 1D/5D/20D/60D are **trading-day** windows computed from `stock_daily_closes` into `ticker_performance_snapshots` / `sector_performance_snapshots` (sector = equal-weight average of resolved members). Windows stay NULL until elapsed; recompute stops ~130 days post-mention. Coverage is bounded by the close-warmer's tracked set (~400 tickers).
+- API: `GET /api/tickers/{ticker}/mentions`, `/api/sectors/{exposure_id}/mentions`, `/api/episodes/{episode_id}/mentions` — every response carries a zh-TW non-investment-advice `disclaimer`.
+- UI: ticker page 「播客提及後續表現」 section, episode rail 「提及後續表現」 block, `/picks` inline disclaimer → `/disclaimer`. Return chips use the user's stock color convention.
+- Migration: `backend/src/database/migrations/add_mention_tables.py` (also auto-created on startup). Tests: `backend/tests/unit/test_mention_sync.py`, `test_mentions_api.py`.
 
 ---
 

@@ -12,7 +12,8 @@
     "generate-pwa-icons": "node scripts/generate-pwa-icons.mjs",
     "generate-screenshots": "node scripts/generate-screenshots.mjs",
     "validate:mocks": "tsx --tsconfig tsconfig.app.json scripts/validate-mocks.ts",
-    "validate:api": "tsx --tsconfig tsconfig.app.json scripts/validate-api-responses.ts"
+    "validate:api": "tsx --tsconfig tsconfig.app.json scripts/validate-api-responses.ts",
+    "validate:syndication": "tsx --tsconfig tsconfig.app.json scripts/validate-syndication.ts"
   },
   "dependencies": {
     "@marp-team/marp-core": "^4.2.0",

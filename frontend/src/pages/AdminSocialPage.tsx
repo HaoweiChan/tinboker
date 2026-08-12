@@ -6,7 +6,8 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { RefreshCw, Save, Check, MessageSquare, Image as ImageIcon, Eye, Wand2, Send, AlertCircle, ExternalLink, Plus, Trash2, Clock, Play } from 'lucide-react';
+import { RefreshCw, Save, Check, MessageSquare, Image as ImageIcon, Eye, Wand2, Send, AlertCircle, ExternalLink, Plus, Trash2, Clock, Play, ClipboardCopy, BookUp, FileEdit } from 'lucide-react';
+import { copySyndicationToClipboard } from '@/utils/syndicationHtml';
 import { SlideViewer } from '@/components/common/SlideViewer';
 import { PromoComposer } from '@/components/admin/PromoComposer';
 import {
@@ -16,6 +17,10 @@ import {
   generateSocialEpisode,
   renderSocialCards,
   publishSocialEpisode,
+  getVocusTokenStatus,
+  publishEpisodeToVocus,
+  draftEpisodeToSubstack,
+  type VocusTokenStatus,
   schedulePost,
   listScheduledPosts,
   deleteScheduledPost,
@@ -75,6 +80,7 @@ export const AdminSocialPage: React.FC = () => {
   const [loadingList, setLoadingList] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [bundle, setBundle] = useState<SocialEpisodeBundle | null>(null);
+  const [copied, setCopied] = useState<'html' | 'markdown' | null>(null);
   const [loadingBundle, setLoadingBundle] = useState(false);
   const [post, setPost] = useState('');
   const [comments, setComments] = useState<SocialComment[]>([]);
@@ -83,6 +89,9 @@ export const AdminSocialPage: React.FC = () => {
   const [generating, setGenerating] = useState(false);
   const [rendering, setRendering] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [vocusToken, setVocusToken] = useState<VocusTokenStatus | null>(null);
+  const [vocusBusy, setVocusBusy] = useState(false);
+  const [substackBusy, setSubstackBusy] = useState(false);
   const [publishResult, setPublishResult] = useState<PublishResult | null>(null);
   const [publishError, setPublishError] = useState<string | null>(null);
   const [showComposed, setShowComposed] = useState(false);
@@ -240,6 +249,76 @@ export const AdminSocialPage: React.FC = () => {
       setRendering(false);
     }
   }, [selectedId, selectEpisode]);
+
+  // 方格子's credential lives 7 days with no refresh endpoint. Surfacing it here is the
+  // only thing standing between a lapsed token and a week of articles that silently
+  // never published.
+  useEffect(() => {
+    getVocusTokenStatus().then(setVocusToken).catch(() => setVocusToken(null));
+  }, []);
+
+  const handlePublishVocus = useCallback(async () => {
+    if (!selectedId) return;
+    if (!window.confirm('確定發佈這集摘要到方格子？\n（會建立一篇新文章並公開）')) return;
+    setVocusBusy(true);
+    try {
+      const r = await publishEpisodeToVocus(selectedId, { dryRun: false });
+      if (r.posted) {
+        alert(`已發佈到方格子：\n${r.url}`);
+      } else if (r.reason === 'credential_expired') {
+        alert('方格子 token 已過期，沒有發佈任何東西。請重新登入方格子取得新 token 並更新 GSM。');
+      } else if (r.reason === 'publish_unverified') {
+        alert(`寫入成功，但方格子回報文章仍非公開狀態 — 請人工確認：\n${r.url}`);
+      } else {
+        alert(`未發佈：${r.reason ?? '未知原因'}`);
+      }
+      getVocusTokenStatus().then(setVocusToken).catch(() => {});
+    } catch (e) {
+      console.error('[social] vocus publish failed', e);
+      alert('方格子發佈請求失敗，請看 console');
+    } finally {
+      setVocusBusy(false);
+    }
+  }, [selectedId]);
+
+  // 方格子 and Substack have no usable publishing API, so syndication is a paste.
+  // Both editors ingest HTML, which is what the clipboard write below carries.
+  const handleCopySyndication = useCallback(async () => {
+    if (!selectedId || !bundle?.summary_markdown) return;
+    try {
+      const flavour = await copySyndicationToClipboard(bundle.summary_markdown, selectedId);
+      setCopied(flavour);
+      setTimeout(() => setCopied(null), 4000);
+    } catch (e) {
+      console.error('[social] copy for syndication failed', e);
+      alert('複製失敗，請看 console');
+    }
+  }, [selectedId, bundle]);
+
+  const handleDraftSubstack = useCallback(async () => {
+    if (!selectedId) return;
+    setSubstackBusy(true);
+    try {
+      const r = await draftEpisodeToSubstack(selectedId, { dryRun: false });
+      if (r.posted && r.url) {
+        // Deliberately not auto-opening: the operator should decide when to review.
+        if (window.confirm(`草稿已建立（尚未發布、未寄信）。\n要現在開啟編輯器嗎？\n${r.url}`)) {
+          window.open(r.url, '_blank', 'noopener');
+        }
+      } else if (r.reason === 'credential_expired') {
+        alert('Substack session cookie 已失效，沒有建立任何東西。請重新取得 substack.sid 並更新 GSM。');
+      } else if (r.reason === 'not_configured') {
+        alert('尚未設定 Substack（需要 SUBSTACK_SID / SUBSTACK_SUBDOMAIN / SUBSTACK_USER_ID）。');
+      } else {
+        alert(`未建立草稿：${r.reason ?? '未知原因'}`);
+      }
+    } catch (e) {
+      console.error('[social] substack draft failed', e);
+      alert('Substack 草稿請求失敗，請看 console');
+    } finally {
+      setSubstackBusy(false);
+    }
+  }, [selectedId]);
 
   const handlePublish = useCallback(async () => {
     if (!selectedId) return;
@@ -492,7 +571,40 @@ export const AdminSocialPage: React.FC = () => {
                     <Send className={`h-4 w-4 ${publishing ? 'animate-pulse' : ''}`} />
                     {publishing ? '發佈中…' : '發佈'}
                   </button>
+                  <button
+                    onClick={handleCopySyndication}
+                    disabled={!bundle.summary_markdown}
+                    title={bundle.summary_markdown
+                      ? '複製整篇摘要（站內連結已轉成絕對網址、時間戳轉純文字），可直接貼到方格子／Substack'
+                      : '這集還沒有摘要正文'}
+                    className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-base font-semibold text-foreground hover:bg-muted disabled:opacity-60"
+                  >
+                    {copied ? <Check className="h-4 w-4" /> : <ClipboardCopy className="h-4 w-4" />}
+                    {copied === 'html' ? '已複製（含格式）'
+                      : copied === 'markdown' ? '已複製（純 Markdown）'
+                      : '複製站外版'}
+                  </button>
 
+                  <button
+                    onClick={handlePublishVocus}
+                    disabled={vocusBusy || !vocusToken?.configured || vocusToken?.expired}
+                    title={!vocusToken?.configured ? '尚未設定方格子 token'
+                      : vocusToken?.expired ? '方格子 token 已過期，請先更新'
+                      : '把整篇摘要發佈到方格子（canonical 指回 tinboker）'}
+                    className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-base font-semibold text-foreground hover:bg-muted disabled:opacity-60"
+                  >
+                    <BookUp className={`h-4 w-4 ${vocusBusy ? 'animate-pulse' : ''}`} />
+                    {vocusBusy ? '發佈中…' : '發佈到方格子'}
+                  </button>
+                  <button
+                    onClick={handleDraftSubstack}
+                    disabled={substackBusy}
+                    title="在 Substack 建立草稿（不會發布、不會寄信給訂閱者）"
+                    className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-base font-semibold text-foreground hover:bg-muted disabled:opacity-60"
+                  >
+                    <FileEdit className={`h-4 w-4 ${substackBusy ? 'animate-pulse' : ''}`} />
+                    {substackBusy ? '建立中…' : 'Substack 草稿'}
+                  </button>
                   {/* Scheduling UI */}
                   <div className="flex items-center gap-2 border-l border-border pl-2">
                     <input
