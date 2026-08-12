@@ -277,3 +277,30 @@ export async function publishEpisodeToVocus(
   );
   return res.data;
 }
+
+
+// ── Substack syndication ──────────────────────────────────────────────────────
+// Stops at a draft on purpose: publishing on Substack emails every subscriber the
+// instant it succeeds and cannot be undone, so the last click stays human.
+export interface SubstackDraftResult {
+  platform: 'substack';
+  configured: boolean;
+  dry_run: boolean;
+  episode_id: string;
+  posted: boolean;
+  reason?: string;
+  draft_id?: number;
+  url?: string;
+  block_count?: number;
+}
+
+export async function draftEpisodeToSubstack(
+  episodeId: string,
+  opts: { dryRun?: boolean } = {},
+): Promise<SubstackDraftResult> {
+  const res = await apiClient.post<SubstackDraftResult>(
+    `/api/admin/threads/episodes/${encodeURIComponent(episodeId)}/draft-substack`
+      + `?dry_run=${opts.dryRun === false ? 'false' : 'true'}`,
+  );
+  return res.data;
+}

@@ -124,6 +124,15 @@ class Settings(BaseSettings):
     vocus_user_id: Optional[str] = None
     vocus_salon_id: Optional[str] = None
 
+    # ==================== Substack syndication ====================
+    # Also undocumented; we drive the endpoints Substack's own editor uses. SUBSTACK_SID
+    # is the substack.sid session cookie, which lasts months — unlike the vocus token it
+    # needs no live re-read. Publishing is deliberately NOT automated: it emails the
+    # subscriber list irreversibly, so the pipeline stops at a draft.
+    substack_sid: Optional[str] = None
+    substack_subdomain: Optional[str] = None
+    substack_user_id: Optional[int] = None
+
     # Bucket for ad-hoc promo media (admin "promo" composer uploads). Stored private;
     # Meta fetches each file via a short-lived V4 signed URL at publish time.
     promo_media_bucket: str = "graphfolio-articles"
