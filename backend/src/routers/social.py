@@ -23,7 +23,8 @@ from src.database.postgres import get_session
 from src.services import (facebook_publisher, promo_publisher, substack_publisher,
                           threads_publisher, vocus_publisher)
 from src.services.gcs_content import GCSContentService, media_url
-from src.services.syndication_markdown import podcast_short_name, syndication_title
+from src.services.syndication_markdown import (podcast_short_name, syndication_excerpt,
+                                               syndication_title)
 from src.tag_registry import canonical_label
 from src.services.podcast import PodcastService
 from src.services.facebook_insights_service import FacebookInsightsService
@@ -406,7 +407,10 @@ async def publish_episode_to_vocus(
         title,
         summary,
         podcast_name=podcast_name,
-        abstract=(getattr(episode, "summary_excerpt", None) or "").strip(),
+        # summary_excerpt is None on every episode checked, so derive the lead from the
+        # summary itself rather than shipping an empty field.
+        abstract=((getattr(episode, "summary_excerpt", None) or "").strip()
+                  or syndication_excerpt(summary)),
         tags=tags,
         thumbnail_url=thumbnail_url,
         dry_run=dry_run,
@@ -440,7 +444,8 @@ async def draft_episode_to_substack(
         title,
         summary,
         podcast_name=podcast_name,
-        subtitle=(getattr(episode, "summary_excerpt", None) or "").strip()[:140],
+        subtitle=((getattr(episode, "summary_excerpt", None) or "").strip()
+                  or syndication_excerpt(summary, limit=140)),
         dry_run=dry_run,
     )
 

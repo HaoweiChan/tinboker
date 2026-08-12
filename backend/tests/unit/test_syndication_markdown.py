@@ -184,3 +184,58 @@ def test_attribution_stays_generic_when_the_podcast_is_unknown():
     from src.services.syndication_markdown import attribution_markdown
     line = attribution_markdown("EP1", "https://tinboker.com")
     assert "《》" not in line and "podcast" in line
+
+
+# ── Excerpt for the platforms' 摘要 / subtitle field ──────────────────────────
+
+_SUMMARY = """# 從Situational Awareness爆倉看AI股多空反轉：市場降槓桿與投資哲學的再思考
+
+近期台股、韓股與美股經歷了劇烈的下跌與反彈，市場普遍認為這是一次全市場的降槓桿事件。核心導火線指向知名對沖基金的爆倉。
+
+## 第一段標題 (#time:587074)
+
+內文第二段。
+"""
+
+
+def test_excerpt_takes_the_lead_paragraph_not_the_heading():
+    from src.services.syndication_markdown import syndication_excerpt
+    x = syndication_excerpt(_SUMMARY)
+    assert x.startswith("近期台股")
+    assert "從Situational" not in x   # the h1 is the title, not the excerpt
+
+
+def test_excerpt_is_plain_text_with_markers_resolved_away():
+    from src.services.syndication_markdown import syndication_excerpt
+    x = syndication_excerpt("看好 [台積電](#ticker:2330) 與 **記憶體** (#time:754000)。")
+    assert x == "看好 台積電 與 記憶體。"
+
+
+def test_excerpt_cuts_on_a_sentence_boundary_when_it_can():
+    from src.services.syndication_markdown import syndication_excerpt
+    body = "第一句話寫得夠長所以句點落在後半段這裡結束。" + "第二句非常長" * 30
+    x = syndication_excerpt(body, limit=40)
+    assert len(x) <= 40
+    assert x.endswith("。")
+
+
+def test_a_sentence_break_too_early_is_ignored_in_favour_of_using_the_space():
+    """Cutting at a full stop 7 characters in would throw away most of the budget, so a
+    break in the first half of the window does not count."""
+    from src.services.syndication_markdown import syndication_excerpt
+    x = syndication_excerpt("短句。" + "後面很長的內容" * 30, limit=40)
+    assert x.endswith("…")
+    assert len(x) > 10
+
+
+def test_excerpt_ellipsises_when_no_sentence_break_is_near():
+    from src.services.syndication_markdown import syndication_excerpt
+    x = syndication_excerpt("無句點的超長段落" * 30, limit=40)
+    assert len(x) <= 40
+    assert x.endswith("…")
+
+
+def test_a_summary_with_only_headings_yields_no_excerpt():
+    """Better an empty field than a heading masquerading as a lead."""
+    from src.services.syndication_markdown import syndication_excerpt
+    assert syndication_excerpt("# 只有標題\n\n## 還是標題\n") == ""

@@ -318,7 +318,9 @@ async def publish_summary(
             article_id = await client.create_article(http, title, lexical)
             await client.save_body(http, article_id, title, lexical)
             await client.save_settings(http, article_id, title=title,
-                                       abstract=abstract or title,
+                                       # No title fallback: repeating the headline wastes
+                                       # the one line a reader skims before clicking.
+                                       abstract=abstract,
                                        canonical_url=canonical, tags=tags or [],
                                        thumbnail_url=thumbnail_url)
             await client.set_status(http, article_id, STATUS_PUBLIC)

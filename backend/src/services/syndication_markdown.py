@@ -28,6 +28,10 @@ from src.config import settings
 # placeholders (1, 2, 3…), not real offsets, and must not become bogus 0:00 badges.
 _REAL_MARKER_MIN_MS = 1000
 
+from src.services.markdown_blocks import (  # noqa: E402 — patterns shared with the tokenizer
+    _BULLET, _EM, _HR, _LINK, _ORDERED, _STRONG,
+)
+
 _LINKED_TIME = re.compile(r"\[([^\]]*)\]\(#time:(\d+)\)")
 _BARE_TIME = re.compile(r"\s*\(#time:(\d+)\)")
 _TICKER = re.compile(r"\]\(#ticker:([^)]+)\)")
@@ -137,6 +141,50 @@ def attribution_markdown(episode_id: str, site_url: str | None = None,
     subject = f"《{short}》" if short else " podcast "
     return (f"\n\n---\n\n本文是 [TinBoker]({base}) 為{subject}整理的重點摘要，"
             f"原文與可點擊的逐段時間軸在 [{url}]({url})。")
+
+
+# vocus's 摘要 field caps at 150 characters; Substack's subtitle is shorter in practice.
+EXCERPT_LIMIT = 150
+
+
+def _plain_text(markdown_line: str) -> str:
+    """Markdown inline syntax stripped down to the words, for a plain-text field."""
+    out = _LINKED_TIME.sub(lambda m: m.group(1), markdown_line)
+    out = _BARE_TIME.sub("", out)
+    out = _LINK.sub(r"\1", out)                       # [label](url) -> label
+    out = _STRONG.sub(lambda m: m.group(1) or m.group(2), out)
+    out = _EM.sub(lambda m: m.group(1) or m.group(2), out)
+    return " ".join(out.split())
+
+
+def syndication_excerpt(content: str, limit: int = EXCERPT_LIMIT) -> str:
+    """The summary's opening paragraph, as plain text, for a platform's excerpt field.
+
+    Episodes carry no ``summary_excerpt`` — it is None on every episode checked — and the
+    publishers used to fall back to the title, which spends the one field a reader skims
+    on text they have already read. The summary's first paragraph is written as a lead
+    and is the right thing to put there.
+
+    Cut on a sentence boundary when one is near the limit, so the excerpt does not end
+    mid-clause.
+    """
+    for raw in (content or "").replace("\r\n", "\n").split("\n\n"):
+        line = raw.strip()
+        if not line or line.startswith("#") or line.startswith(">") or _HR.match(line):
+            continue
+        if _BULLET.match(line) or _ORDERED.match(line):
+            continue
+        text = _plain_text(line)
+        if not text:
+            continue
+        if len(text) <= limit:
+            return text
+        window = text[:limit]
+        cut = max(window.rfind("。"), window.rfind("！"), window.rfind("？"))
+        if cut >= limit // 2:
+            return window[: cut + 1]
+        return window[: limit - 1].rstrip() + "…"
+    return ""
 
 
 def to_syndication_markdown(content: str, episode_id: str, site_url: str | None = None,
