@@ -161,15 +161,17 @@ def test_a_latin_only_podcast_keeps_its_whole_name():
     assert podcast_short_name("") == ""
 
 
-def test_syndication_title_leads_with_the_podcast():
-    """A tag page is a wall of episode numbers; a bare "EP684" says nothing about whose."""
+def test_syndication_title_leads_with_the_podcast_and_says_it_is_a_summary():
+    """A tag page is a wall of episode numbers; a bare "EP684" says neither whose episode
+    it is nor that this is a write-up rather than a repost."""
     from src.services.syndication_markdown import syndication_title
-    assert syndication_title("Gooaye 股癌", "EP684 | 🔦") == "股癌 EP684 | 🔦"
+    assert syndication_title("Gooaye 股癌", "EP684 | 🔦") == "股癌 EP684 | 🔦 摘要"
 
 
-def test_a_title_that_already_names_the_podcast_is_not_doubled():
+def test_neither_the_podcast_name_nor_the_suffix_is_doubled():
     from src.services.syndication_markdown import syndication_title
-    assert syndication_title("Gooaye 股癌", "股癌 EP684") == "股癌 EP684"
+    assert syndication_title("Gooaye 股癌", "股癌 EP684") == "股癌 EP684 摘要"
+    assert syndication_title("Gooaye 股癌", "股癌 EP684 摘要") == "股癌 EP684 摘要"
 
 
 def test_attribution_names_the_podcast_when_known():

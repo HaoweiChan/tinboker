@@ -88,6 +88,9 @@ def episode_url(episode_id: str, site_url: str | None = None) -> str:
     return f"{(site_url or settings.site_url).rstrip('/')}/episode/{episode_id}"
 
 
+SUMMARY_SUFFIX = "摘要"
+
+
 def podcast_short_name(podcast_name: str) -> str:
     """The name readers on syndication sites actually search for.
 
@@ -112,9 +115,12 @@ def syndication_title(podcast_name: str, episode_title: str) -> str:
     """
     short = podcast_short_name(podcast_name)
     title = (episode_title or "").strip()
-    if not short:
-        return title
-    return title if title.startswith(short) else f"{short} {title}".strip()
+    if short and not title.startswith(short):
+        title = f"{short} {title}".strip()
+    # Say what the post is. An episode title alone ("EP684 | 🔦") reads as a repost of the
+    # episode rather than a write-up of it; the tag page is full of 筆記/心得/整理 suffixes
+    # for the same reason.
+    return title if title.endswith(SUMMARY_SUFFIX) else f"{title} {SUMMARY_SUFFIX}".strip()
 
 
 def attribution_markdown(episode_id: str, site_url: str | None = None,

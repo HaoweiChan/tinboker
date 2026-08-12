@@ -391,7 +391,15 @@ async def publish_episode_to_vocus(
     # podcast's own name leads so the post lands on the tag page its audience reads.
     labels = [canonical_label(t) for t in (getattr(episode, "tags", None) or []) if isinstance(t, str)]
     short = podcast_short_name(podcast_name)
-    tags = list(dict.fromkeys(([short] if short else []) + labels))[:5]
+    # The podcast name is attribution, not a topic — it sits outside the 5-topic budget so
+    # naming the show never costs a subject tag.
+    tags = list(dict.fromkeys(([short] if short else []) + labels[:5]))
+
+    # Our own generated cover, not the show's artwork and not the episode's
+    # summary_image. Borrowing the podcast's logo would make a summary look like the
+    # podcast's own post, and summary_image is a "Placeholder Chart" SVG on every episode
+    # checked. See services/og_image.py.
+    thumbnail_url = f"{settings.public_api_url.rstrip('/')}/api/og/episode/{episode_id}.svg"
 
     return await vocus_publisher.publish_summary(
         episode_id,
@@ -400,6 +408,7 @@ async def publish_episode_to_vocus(
         podcast_name=podcast_name,
         abstract=(getattr(episode, "summary_excerpt", None) or "").strip(),
         tags=tags,
+        thumbnail_url=thumbnail_url,
         dry_run=dry_run,
     )
 

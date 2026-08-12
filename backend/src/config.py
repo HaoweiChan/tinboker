@@ -141,6 +141,10 @@ class Settings(BaseSettings):
     # Public site origin — used to build episode permalinks in Threads posts and
     # the dynamic sitemap. No trailing slash.
     site_url: str = "https://tinboker.com"
+    # Public origin of THIS API. Syndication platforms fetch the generated cover image
+    # from here, so it has to be the externally reachable host, not localhost. Per-env:
+    # api / dev-api / staging-api .tinboker.com.
+    public_api_url: str = "https://api.tinboker.com"
     # Google Search Console property to read analytics for. Domain properties use
     # the "sc-domain:tinboker.com" form; URL-prefix properties use the full URL.
     # Unset = SEO monitoring disabled.
