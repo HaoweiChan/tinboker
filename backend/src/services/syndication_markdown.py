@@ -88,19 +88,56 @@ def episode_url(episode_id: str, site_url: str | None = None) -> str:
     return f"{(site_url or settings.site_url).rstrip('/')}/episode/{episode_id}"
 
 
-def attribution_markdown(episode_id: str, site_url: str | None = None) -> str:
+def podcast_short_name(podcast_name: str) -> str:
+    """The name readers on syndication sites actually search for.
+
+    Feed names carry a Latin prefix the audience does not use — "Gooaye 股癌" is 股癌 to
+    every reader and every vocus tag. Matching that name is what puts a post on the right
+    tag page, so it is the name used in titles and tags rather than the raw feed name.
+
+    ponytail: longest CJK run, which covers every podcast currently ingested. A feed whose
+    real name is genuinely Latin falls through to the full name, which is also right. If a
+    feed ever needs a hand-picked name, add a display column rather than growing this.
+    """
+    runs = re.findall(r"[\u4e00-\u9fff]+", podcast_name or "")
+    return max(runs, key=len) if runs else (podcast_name or "").strip()
+
+
+def syndication_title(podcast_name: str, episode_title: str) -> str:
+    """Title for an off-site copy: the podcast name leads.
+
+    Every 股癌 summary on vocus is titled this way ("股癌EP686 —— 學習筆記",
+    "股癌 EP686 聽後心得：…") because a tag page is a wall of episode numbers otherwise —
+    a bare "EP684 | 🔦" is the one entry that does not say whose episode it summarises.
+    """
+    short = podcast_short_name(podcast_name)
+    title = (episode_title or "").strip()
+    if not short:
+        return title
+    return title if title.startswith(short) else f"{short} {title}".strip()
+
+
+def attribution_markdown(episode_id: str, site_url: str | None = None,
+                         podcast_name: str | None = None) -> str:
     """Trailing attribution line. Full text goes to several sites, so each copy has to
     say which one is the original — vocus also accepts a real ``canonicalURL``, and the
-    publisher sets both."""
+    publisher sets both. It also names the podcast: a reader who arrives from a tag page
+    should not have to infer whose episode this summarises."""
     base = (site_url or settings.site_url).rstrip("/")
     url = episode_url(episode_id, base)
-    return f"\n\n---\n\n本文為 [TinBoker]({base}) 的 podcast 重點整理，原文與可點擊的逐段時間軸在 [{url}]({url})。"
+    short = podcast_short_name(podcast_name or "")
+    # No spaces around 《》 — CJK punctuation carries its own spacing, and the padded form
+    # reads as a typo to a Chinese reader.
+    subject = f"《{short}》" if short else " podcast "
+    return (f"\n\n---\n\n本文是 [TinBoker]({base}) 為{subject}整理的重點摘要，"
+            f"原文與可點擊的逐段時間軸在 [{url}]({url})。")
 
 
-def to_syndication_markdown(content: str, episode_id: str, site_url: str | None = None) -> str:
+def to_syndication_markdown(content: str, episode_id: str, site_url: str | None = None,
+                            podcast_name: str | None = None) -> str:
     """Markers resolved, attribution appended. Empty in, empty out — a blank summary
     must not produce a lone attribution line with nothing above it."""
     body = rewrite_markers(content, site_url)
     if not body.strip():
         return ""
-    return body.rstrip() + attribution_markdown(episode_id, site_url)
+    return body.rstrip() + attribution_markdown(episode_id, site_url, podcast_name)

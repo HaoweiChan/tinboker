@@ -257,6 +257,7 @@ async def publish_summary(
     episode_id: str,
     title: str,
     summary_markdown: str,
+    podcast_name: str = "",
     *,
     abstract: str = "",
     tags: Optional[list[str]] = None,
