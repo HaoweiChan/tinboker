@@ -166,25 +166,26 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"Warning: tag registry seed/consolidate skipped: {e}")
 
-    # Backfill podcast cover art (Spotify oEmbed) in the background — best-effort,
-    # must NOT block startup/health (external HTTP).
-    async def _backfill_covers_bg():
+    # Mirror podcast cover art into our media store in the background — best-effort,
+    # must NOT block startup/health (external HTTP on the first pass per show; no
+    # network at all once every row points at the media host).
+    async def _mirror_covers_bg():
         def _run() -> int:
             from src.database.postgres import get_session
             from src.services.content_source_service import ContentSourceService
             result = 0
             for session in get_session():
-                result = ContentSourceService(session).backfill_missing_covers()
+                result = ContentSourceService(session).mirror_podcast_covers()
                 break
             return result
         try:
             covered = await asyncio.to_thread(_run)
             if covered:
-                print(f"Backfilled {covered} podcast cover image(s).")
+                print(f"Mirrored {covered} podcast cover image(s).")
         except Exception as e:
-            print(f"Warning: cover backfill skipped: {e}")
+            print(f"Warning: cover mirror skipped: {e}")
 
-    asyncio.create_task(_backfill_covers_bg())
+    asyncio.create_task(_mirror_covers_bg())
 
     # Keep the permanent stock_daily_closes table warm for trending tickers so the
     # homepage can serve EOD prices from Postgres instead of hammering the rate-limited
