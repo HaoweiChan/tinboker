@@ -15,7 +15,12 @@ trap vocus set. ``draft_bylines`` is required on create and must be a list of ob
 a bare list of ids is rejected with ``draft_bylines[0].id: Invalid value``.
 
 Auth is the ``substack.sid`` session cookie, which unlike the vocus token lives for
-months, so it is read from settings at boot like every other stable secret.
+months, so it is read from settings at boot like every other stable secret. It is
+httpOnly, so unlike the vocus token it cannot be lifted out of the page by script and no
+scheduled job can rotate it — it is installed by hand from DevTools. Take the row named
+exactly ``substack.sid`` on the ``.substack.com`` domain: a correct value is ~80
+characters and begins ``s%3A``. A value beginning ``g.`` is Google's ``SID`` cookie,
+which sits next to it in the same DevTools list and produces a 403 "Not authorized".
 """
 from __future__ import annotations
 
