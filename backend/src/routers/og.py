@@ -17,7 +17,7 @@ from src.cache.redis_client import cache_get, cache_set
 from src.services.gcs_content import GCSContentService, media_path
 from src.services.og_image import episode_cover_png, episode_cover_svg
 from src.services.podcast import PodcastService
-from src.services.syndication_markdown import podcast_short_name
+from src.services.syndication_markdown import podcast_short_name, syndication_title
 
 logger = logging.getLogger(__name__)
 
@@ -92,8 +92,17 @@ async def _episode_svg(episode_id: str) -> str:
     if not episode:
         raise HTTPException(status_code=404, detail=f"Episode {episode_id} not found")
     podcast_name = (getattr(episode, "podcast_name", None) or "").strip()
-    title = (getattr(episode, "episode_title", None) or "").strip() or episode_id
-    return episode_cover_svg(title, kicker=podcast_short_name(podcast_name),
+    raw_title = (getattr(episode, "episode_title", None) or "").strip() or episode_id
+
+    # The cover has to say what the post is called, so it is built from the same
+    # syndication_title() the publishers use — reading episode_title directly meant the
+    # cover said "EP684 | 🔦" while the post was "股癌 EP684 | 🔦 摘要". The show's name
+    # is then dropped from the line because the kicker above it already carries it.
+    short = podcast_short_name(podcast_name)
+    full = syndication_title(podcast_name, raw_title)
+    title = full[len(short):].strip() if short and full.startswith(short) else full
+
+    return episode_cover_svg(title, kicker=short,
                              cover_data_uri=await _cover_data_uri(podcast_name))
 
 
