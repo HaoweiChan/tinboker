@@ -153,3 +153,42 @@ async def test_no_cover_key_is_sent_when_there_is_no_cover():
     async with _client(handler) as http:
         await client.save_draft(http, 1, title="T", subtitle="S", doc={"type": "doc"})
     assert "cover_image" not in seen
+
+
+def test_the_image_node_matches_what_the_editor_writes():
+    """Transcribed from a real insert, not guessed. Substack stores any node type without
+    validating it — three guessed shapes were all accepted and then hung the editor when
+    the draft was opened — so the only trustworthy source is what its own editor emits."""
+    n = sp.image_node("https://substack-post-media.s3.amazonaws.com/x.png", 1200, 600, 61401)
+    assert n["type"] == "captionedImage"
+    inner = n["content"][0]
+    assert inner["type"] == "image2"
+    assert inner["attrs"]["src"].endswith("x.png")
+    assert (inner["attrs"]["width"], inner["attrs"]["height"]) == (1200, 600)
+    assert inner["attrs"]["bytes"] == 61401
+    assert inner["attrs"]["type"] == "image/png"
+
+
+@pytest.mark.asyncio
+async def test_upload_returns_substacks_own_url():
+    def handler(request: httpx.Request) -> httpx.Response:
+        import json
+        assert json.loads(request.content)["image"].startswith("data:image/png;base64,")
+        return httpx.Response(200, json={"url": "https://substack-post-media.s3.amazonaws.com/a.png"})
+
+    client = sp.SubstackClient(sid="x", subdomain="tinboker", user_id=7)
+    async with _client(handler) as http:
+        url = await client.upload_image(http, b"\x89PNG")
+    assert url.endswith("a.png")
+
+
+@pytest.mark.asyncio
+async def test_an_upload_with_no_url_is_an_error_not_a_silent_pass():
+    """A 200 carrying nothing usable is the failure mode this integration keeps hitting."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={})
+
+    client = sp.SubstackClient(sid="x", subdomain="tinboker", user_id=7)
+    async with _client(handler) as http:
+        with pytest.raises(sp.SubstackError, match="no_url"):
+            await client.upload_image(http, b"\x89PNG")
