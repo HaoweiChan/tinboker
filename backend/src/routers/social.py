@@ -5,6 +5,7 @@ admin JWT, so the agents' podcast pipeline can call it right after an ingest run
 fan the new episode out to Threads. It is idempotent and dry-run by default.
 """
 
+import asyncio
 import logging
 import mimetypes
 import uuid
@@ -448,6 +449,74 @@ async def draft_episode_to_substack(
                   or syndication_excerpt(summary, limit=140)),
         dry_run=dry_run,
     )
+
+
+@router.post("/episodes/{episode_id}/syndicate")
+async def syndicate_episode(
+    episode_id: str,
+    platforms: str = Query(default="vocus,substack", description="Comma list: vocus, substack"),
+    dry_run: bool = Query(default=True, description="Convert only; create nothing (default)"),
+    publish: bool = Query(default=False, description="vocus only: go public instead of staying a draft"),
+    _: AdminAccess = Depends(get_social_access),
+):
+    """Stage one episode on every syndication target at once.
+
+    Drafts on both by default. Reviewing the same summary on two platforms means opening
+    two editors, and doing that from one action is the whole point — firing them
+    separately guarantees the two copies drift while you fiddle.
+
+    ``publish=true`` only affects vocus. Substack is never published from here: it emails
+    the entire subscriber list on publish and cannot be undone.
+
+    Each platform reports independently. One failing does not roll back or block the
+    other — two half-finished drafts you can see beat one silent skip.
+    """
+    selected = [p.strip().lower() for p in platforms.split(",") if p.strip()]
+    unknown = [p for p in selected if p not in ("vocus", "substack")]
+    if unknown:
+        raise HTTPException(status_code=422, detail=f"Unknown platform(s): {', '.join(unknown)}")
+    if not selected:
+        raise HTTPException(status_code=422, detail="No platforms selected")
+
+    episode = await podcast_service.get_episode_admin(episode_id)
+    if not episode:
+        raise HTTPException(status_code=404, detail=f"Episode {episode_id} not found")
+
+    summary = getattr(episode, "modified_summary_content", None) or getattr(episode, "summary_content", None) or ""
+    podcast_name = (getattr(episode, "podcast_name", None) or "").strip()
+    raw_title = (getattr(episode, "episode_title", None) or "").strip() or episode_id
+    title = syndication_title(podcast_name, raw_title)
+    excerpt = ((getattr(episode, "summary_excerpt", None) or "").strip()
+               or syndication_excerpt(summary))
+
+    async def _vocus() -> dict:
+        labels = [canonical_label(t) for t in (getattr(episode, "tags", None) or []) if isinstance(t, str)]
+        short = podcast_short_name(podcast_name)
+        tags = list(dict.fromkeys(([short] if short else []) + labels[:5]))
+        return await vocus_publisher.publish_summary(
+            episode_id, title, summary, podcast_name=podcast_name, abstract=excerpt,
+            tags=tags,
+            thumbnail_url=f"{settings.public_api_url.rstrip('/')}/api/og/episode/{episode_id}.svg",
+            as_draft=not publish, dry_run=dry_run,
+        )
+
+    async def _substack() -> dict:
+        return await substack_publisher.create_summary_draft(
+            episode_id, title, summary, podcast_name=podcast_name,
+            subtitle=excerpt[:140], dry_run=dry_run,
+        )
+
+    runners = {"vocus": _vocus, "substack": _substack}
+    settled = await asyncio.gather(*(runners[p]() for p in selected), return_exceptions=True)
+
+    results: dict[str, Any] = {}
+    for name, outcome in zip(selected, settled):
+        if isinstance(outcome, BaseException):
+            logger.exception("syndicate: %s failed for %s", name, episode_id)
+            results[name] = {"platform": name, "posted": False, "reason": f"error: {outcome}"}
+        else:
+            results[name] = outcome
+    return {"episode_id": episode_id, "title": title, "platforms": results}
 
 
 def _marp_size(marp_markdown: str) -> str:

@@ -281,6 +281,7 @@ async def publish_summary(
     abstract: str = "",
     tags: Optional[list[str]] = None,
     thumbnail_url: str = "",
+    as_draft: bool = False,
     dry_run: bool = True,
 ) -> dict:
     """Publish one episode summary to vocus.
@@ -323,8 +324,14 @@ async def publish_summary(
                                        abstract=abstract,
                                        canonical_url=canonical, tags=tags or [],
                                        thumbnail_url=thumbnail_url)
-            await client.set_status(http, article_id, STATUS_PUBLIC)
-            verified = await _verify_published(client, http, article_id)
+            if as_draft:
+                # create_article already left it at STATUS_DRAFT; skipping the status
+                # change is what keeps it unpublished. There is nothing to verify —
+                # "did it go public?" is the wrong question for a draft.
+                verified = True
+            else:
+                await client.set_status(http, article_id, STATUS_PUBLIC)
+                verified = await _verify_published(client, http, article_id)
     except VocusError as e:
         reason = str(e)
         logger.warning("vocus publish failed for %s: %s", episode_id, reason)
@@ -341,4 +348,7 @@ async def publish_summary(
         return {**base, "posted": False, "reason": "publish_unverified",
                 "article_id": article_id, "url": article_url(article_id)}
 
-    return {**base, "posted": True, "article_id": article_id, "url": article_url(article_id)}
+    url = (f"https://vocus.cc/publish-v2/{article_id}" if as_draft
+           else article_url(article_id))
+    return {**base, "posted": True, "article_id": article_id, "url": url,
+            **({"note": "draft_only_publish_manually"} if as_draft else {})}
