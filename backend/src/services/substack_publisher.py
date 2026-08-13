@@ -24,6 +24,7 @@ which sits next to it in the same DevTools list and produces a 403 "Not authoriz
 """
 from __future__ import annotations
 
+import base64
 import logging
 from typing import Any, Optional
 
@@ -41,6 +42,9 @@ REQUEST_TIMEOUT = 30.0
 # "param: limit, msg: Invalid value". An exclusive max, so callers are clamped rather
 # than left to discover it as a 400 mid-cleanup.
 MAX_DRAFT_LIMIT = 49
+
+# Matches services/og_image.py; the node carries the real pixel size.
+COVER_WIDTH, COVER_HEIGHT = 1200, 600
 
 # Substack sits behind an edge that rejects a default python-httpx User-Agent outright.
 # These are not an attempt to look like something we are not — the calls are the account
@@ -132,6 +136,22 @@ class SubstackClient:
             payload["cover_image"] = cover_image
         await self._request(client, "PUT", f"/api/v1/drafts/{draft_id}", payload)
 
+    async def upload_image(self, client: httpx.AsyncClient, data: bytes,
+                           content_type: str = "image/png") -> str:
+        """Put an image on Substack's own storage and return their URL.
+
+        The editor uploads rather than linking, and the node it writes carries an
+        ``s3.amazonaws.com`` src — captured from a real insert rather than guessed. Going
+        through here means a published post depends on Substack for its images, not on
+        our host, which also retires the dev-vs-prod URL problem for anything published.
+        """
+        uri = f"data:{content_type};base64,{base64.b64encode(data).decode()}"
+        res = await self._request(client, "POST", "/api/v1/image", {"image": uri})
+        url = (res or {}).get("url")
+        if not url:
+            raise SubstackError("image_upload_returned_no_url")
+        return url
+
     async def delete_draft(self, client: httpx.AsyncClient, draft_id: int) -> None:
         await self._request(client, "DELETE", f"/api/v1/drafts/{draft_id}")
 
@@ -147,6 +167,42 @@ class SubstackClient:
         data = await self._request(client, "GET", f"/api/v1/drafts?limit={limit}")
         items = data if isinstance(data, list) else (data or {}).get("posts") or []
         return [int(d["id"]) for d in items if isinstance(d, dict) and d.get("id")]
+
+
+def image_node(src: str, width: int, height: int, size_bytes: int,
+               content_type: str = "image/png") -> dict:
+    """The node Substack's editor writes for an inserted image.
+
+    Shape captured from a real insert. Substack accepts any node type on save without
+    validating it — three guessed shapes were all stored happily and then hung the
+    editor when opened — so this is transcribed, not inferred.
+    """
+    return {
+        "type": "captionedImage",
+        "content": [{
+            "type": "image2",
+            "attrs": {
+                "src": src,
+                "srcNoWatermark": None,
+                "fullscreen": None,
+                "imageSize": None,
+                "height": height,
+                "width": width,
+                "resizeWidth": None,
+                "bytes": size_bytes,
+                "alt": None,
+                "title": None,
+                "type": content_type,
+                "href": None,
+                "belowTheFold": False,
+                "topImage": True,
+                "internalRedirect": None,
+                "isProcessing": False,
+                "align": None,
+                "offset": False,
+            },
+        }],
+    }
 
 
 def _body_field(doc: dict) -> str:
@@ -194,9 +250,29 @@ async def create_summary_draft(
 
     try:
         async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as http:
+            # The cover goes in the BODY, not just the cover_image field: on Substack the
+            # first body image is what the feed thumbnail and the share card come from —
+            # a reference post's og:image and its first body image are the same asset.
+            # Uploading also moves the file onto Substack's storage, so the published post
+            # stops depending on our host.
+            hosted = ""
+            if cover_image_url:
+                try:
+                    resp = await http.get(cover_image_url)
+                    if resp.status_code == 200 and resp.content:
+                        hosted = await client.upload_image(http, resp.content)
+                        doc = {**doc, "content": [
+                            image_node(hosted, COVER_WIDTH, COVER_HEIGHT, len(resp.content)),
+                            *doc.get("content", []),
+                        ]}
+                except (httpx.HTTPError, SubstackError) as e:
+                    # A post without its cover is still a post; losing the whole draft over
+                    # an image is the worse trade.
+                    logger.warning("substack: cover upload failed for %s (%s)", episode_id, e)
+
             draft_id = await client.create_draft(http, doc)
             await client.save_draft(http, draft_id, title=title, subtitle=subtitle, doc=doc,
-                                    cover_image=cover_image_url, send_email=send_email)
+                                    cover_image=hosted or cover_image_url, send_email=send_email)
     except SubstackError as e:
         logger.warning("substack draft failed for %s: %s", episode_id, e)
         result["reason"] = str(e)
