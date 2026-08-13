@@ -422,6 +422,7 @@ async def publish_episode_to_vocus(
 @router.post("/episodes/{episode_id}/draft-substack")
 async def draft_episode_to_substack(
     episode_id: str,
+    request: Request,
     dry_run: bool = Query(default=True, description="Convert only; do not create the draft (default)"),
     _: AdminAccess = Depends(get_social_access),
 ):
@@ -446,6 +447,8 @@ async def draft_episode_to_substack(
         title,
         summary,
         podcast_name=podcast_name,
+        cover_image_url=f"{_public_base_url(request)}/api/og/episode/{episode_id}.svg",
+        send_email=False,
         subtitle=((getattr(episode, "summary_excerpt", None) or "").strip()
                   or syndication_excerpt(summary, limit=140)),
         dry_run=dry_run,
@@ -505,7 +508,13 @@ async def syndicate_episode(
     async def _substack() -> dict:
         return await substack_publisher.create_summary_draft(
             episode_id, title, summary, podcast_name=podcast_name,
-            subtitle=excerpt[:140], dry_run=dry_run,
+            subtitle=excerpt[:140],
+            # The same cover both platforms show, so one summary does not look like two.
+            cover_image_url=f"{_public_base_url(request)}/api/og/episode/{episode_id}.svg",
+            # Never primed to mail the list. Publishing web-only is reversible; an email
+            # is not, and that choice stays with whoever clicks Publish.
+            send_email=False,
+            dry_run=dry_run,
         )
 
     runners = {"vocus": _vocus, "substack": _substack}
