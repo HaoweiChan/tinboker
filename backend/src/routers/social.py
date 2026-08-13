@@ -13,7 +13,7 @@ from datetime import datetime
 from typing import List, Optional, Any
 
 import httpx
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -370,6 +370,7 @@ async def vocus_token_status(_: AdminAccess = Depends(get_social_access)):
 @router.post("/episodes/{episode_id}/publish-vocus")
 async def publish_episode_to_vocus(
     episode_id: str,
+    request: Request,
     dry_run: bool = Query(default=True, description="Convert only; do not publish (default)"),
     _: AdminAccess = Depends(get_social_access),
 ):
@@ -401,7 +402,7 @@ async def publish_episode_to_vocus(
     # summary_image. Borrowing the podcast's logo would make a summary look like the
     # podcast's own post, and summary_image is a "Placeholder Chart" SVG on every episode
     # checked. See services/og_image.py.
-    thumbnail_url = f"{settings.public_api_url.rstrip('/')}/api/og/episode/{episode_id}.svg"
+    thumbnail_url = f"{_public_base_url(request)}/api/og/episode/{episode_id}.svg"
 
     return await vocus_publisher.publish_summary(
         episode_id,
@@ -454,6 +455,7 @@ async def draft_episode_to_substack(
 @router.post("/episodes/{episode_id}/syndicate")
 async def syndicate_episode(
     episode_id: str,
+    request: Request,
     platforms: str = Query(default="vocus,substack", description="Comma list: vocus, substack"),
     dry_run: bool = Query(default=True, description="Convert only; create nothing (default)"),
     publish: bool = Query(default=False, description="vocus only: go public instead of staying a draft"),
@@ -496,7 +498,7 @@ async def syndicate_episode(
         return await vocus_publisher.publish_summary(
             episode_id, title, summary, podcast_name=podcast_name, abstract=excerpt,
             tags=tags,
-            thumbnail_url=f"{settings.public_api_url.rstrip('/')}/api/og/episode/{episode_id}.svg",
+            thumbnail_url=f"{_public_base_url(request)}/api/og/episode/{episode_id}.svg",
             as_draft=not publish, dry_run=dry_run,
         )
 
@@ -517,6 +519,25 @@ async def syndicate_episode(
         else:
             results[name] = outcome
     return {"episode_id": episode_id, "title": title, "platforms": results}
+
+
+def _public_base_url(request: Request) -> str:
+    """The origin an outside fetcher should use to reach this API.
+
+    Derived from the request rather than configured: a setting has one value across dev,
+    staging and production, so the dev backend handed vocus a production URL for an
+    endpoint production did not have yet — a 404 and a broken thumbnail. Behind Cloudflare
+    the forwarded headers carry the public host; settings.public_api_url is the last
+    resort for callers that arrive without them.
+    """
+    proto = request.headers.get("x-forwarded-proto", "").split(",")[0].strip()
+    host = request.headers.get("x-forwarded-host", "").split(",")[0].strip()
+    if host:
+        return f"{proto or 'https'}://{host}"
+    base = str(request.base_url).rstrip("/")
+    if base and "localhost" not in base and "127.0.0.1" not in base:
+        return base
+    return settings.public_api_url.rstrip("/")
 
 
 def _marp_size(marp_markdown: str) -> str:

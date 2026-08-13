@@ -37,6 +37,11 @@ logger = logging.getLogger(__name__)
 
 REQUEST_TIMEOUT = 30.0
 
+# Probed against the live API: limit=49 is accepted, limit=50 is rejected with
+# "param: limit, msg: Invalid value". An exclusive max, so callers are clamped rather
+# than left to discover it as a 400 mid-cleanup.
+MAX_DRAFT_LIMIT = 49
+
 # Substack sits behind an edge that rejects a default python-httpx User-Agent outright.
 # These are not an attempt to look like something we are not — the calls are the account
 # owner's own, authenticated with their own cookie — they are the minimum the edge needs
@@ -121,6 +126,7 @@ class SubstackClient:
         await self._request(client, "DELETE", f"/api/v1/drafts/{draft_id}")
 
     async def draft_ids(self, client: httpx.AsyncClient, limit: int = 20) -> list[int]:
+        limit = max(1, min(limit, MAX_DRAFT_LIMIT))
         data = await self._request(client, "GET", f"/api/v1/drafts?limit={limit}")
         items = data if isinstance(data, list) else (data or {}).get("drafts") or []
         return [int(d["id"]) for d in items if isinstance(d, dict) and d.get("id")]
