@@ -68,3 +68,19 @@ async def test_unconfigured_reports_instead_of_calling_out():
 def test_draft_url_points_at_the_editor_not_the_public_post():
     """The operator's next action is reviewing and publishing, so the link is the editor."""
     assert sp.draft_url("tinboker", 42) == "https://tinboker.substack.com/publish/post/42"
+
+
+@pytest.mark.asyncio
+async def test_the_draft_limit_is_clamped_to_what_the_api_accepts():
+    """Probed live: limit=49 is accepted, limit=50 is rejected with "Invalid value". An
+    exclusive max, so a caller asking for more gets clamped instead of a 400."""
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["limit"] = request.url.params.get("limit")
+        return httpx.Response(200, json=[])
+
+    client = sp.SubstackClient(sid="x", subdomain="tinboker", user_id=7)
+    async with _client(handler) as http:
+        await client.draft_ids(http, limit=500)
+    assert seen["limit"] == str(sp.MAX_DRAFT_LIMIT)
