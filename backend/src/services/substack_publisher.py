@@ -115,12 +115,22 @@ class SubstackClient:
         return int(draft_id)
 
     async def save_draft(self, client: httpx.AsyncClient, draft_id: int, *,
-                         title: str, subtitle: str, doc: dict) -> None:
-        await self._request(client, "PUT", f"/api/v1/drafts/{draft_id}", {
+                         title: str, subtitle: str, doc: dict,
+                         cover_image: str = "", send_email: bool = False) -> None:
+        payload: dict[str, Any] = {
             "draft_title": title,
             "draft_subtitle": subtitle,
             "draft_body": _body_field(doc),
-        })
+            # A created draft carries should_send_email=True by default, so a human who
+            # hits Publish without noticing mails the entire list. That decision belongs
+            # to the caller, explicitly, not to the platform's default.
+            "should_send_email": send_email,
+            # Fills the search-engine description; the lead paragraph is written for it.
+            "search_engine_description": subtitle[:300],
+        }
+        if cover_image:
+            payload["cover_image"] = cover_image
+        await self._request(client, "PUT", f"/api/v1/drafts/{draft_id}", payload)
 
     async def delete_draft(self, client: httpx.AsyncClient, draft_id: int) -> None:
         await self._request(client, "DELETE", f"/api/v1/drafts/{draft_id}")
@@ -157,6 +167,8 @@ async def create_summary_draft(
     *,
     podcast_name: str = "",
     subtitle: str = "",
+    cover_image_url: str = "",
+    send_email: bool = False,
     dry_run: bool = True,
 ) -> dict:
     """Stage one episode summary as a Substack draft. Never publishes."""
@@ -183,7 +195,8 @@ async def create_summary_draft(
     try:
         async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as http:
             draft_id = await client.create_draft(http, doc)
-            await client.save_draft(http, draft_id, title=title, subtitle=subtitle, doc=doc)
+            await client.save_draft(http, draft_id, title=title, subtitle=subtitle, doc=doc,
+                                    cover_image=cover_image_url, send_email=send_email)
     except SubstackError as e:
         logger.warning("substack draft failed for %s: %s", episode_id, e)
         result["reason"] = str(e)
@@ -194,6 +207,7 @@ async def create_summary_draft(
         "draft_id": draft_id,
         "url": draft_url(client._subdomain, draft_id),
         "note": "draft_only_publish_manually",
+        "sends_email_on_publish": send_email,
     })
     logger.info("substack draft %s staged for %s", draft_id, episode_id)
     return result

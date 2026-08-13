@@ -12,7 +12,14 @@ add one, not the call sites.
 """
 from __future__ import annotations
 
+import functools
+import logging
+import re
+import shutil
+import subprocess
 from xml.sax.saxutils import escape
+
+logger = logging.getLogger(__name__)
 
 WIDTH, HEIGHT = 1200, 600
 
@@ -31,6 +38,70 @@ INK = "#e0e6eb"         # --foreground
 AMBER = "#fbac23"       # --primary
 MUTED = "#8a97a8"       # --muted-foreground
 BORDER = "#1c2531"      # --border
+
+# cairosvg does NO font fallback: it renders with one family and turns every glyph that
+# family lacks into a tofu box. A CSS stack like "system-ui, ..., sans-serif" therefore
+# produces a cover with Latin text and □□□ where the Chinese should be — confirmed by
+# rendering it. So the family is resolved at runtime to one that actually has the glyphs.
+_FALLBACK_FAMILY = "Noto Sans CJK TC"      # what fonts-noto-cjk installs in the container
+_FALLBACK_EMOJI = "Noto Color Emoji"       # what fonts-noto-color-emoji installs
+
+# Episode titles really do carry emoji ("EP684 | 🔦"), and no CJK face has those glyphs.
+# Since there is no fallback, emoji runs are emitted in their own tspan naming an emoji
+# family — cairo then renders them in full colour. Covers the common pictographic blocks
+# plus the joiners, so a ZWJ sequence stays one run instead of fragmenting.
+_EMOJI = re.compile(
+    "([\U0001F300-\U0001FAFF\U00002600-\U000027BF\U0001F1E6-\U0001F1FF"
+    "\U00002B00-\U00002BFF\U0000FE0F\U0000200D\U0001F900-\U0001F9FF]+)"
+)
+
+
+@functools.lru_cache(maxsize=1)
+def emoji_font_family() -> str:
+    """A font family on this machine that has colour emoji glyphs."""
+    if shutil.which("fc-match"):
+        try:
+            out = subprocess.run(["fc-match", "-f", "%{family[0]}", "emoji"],
+                                 capture_output=True, text=True, timeout=5, check=True).stdout.strip()
+            if out:
+                return out
+        except (subprocess.SubprocessError, OSError) as e:
+            logger.info("og: emoji fc-match failed (%s); using %s", e, _FALLBACK_EMOJI)
+    return _FALLBACK_EMOJI
+
+
+def _runs(text: str, emoji_family: str) -> str:
+    """Text as SVG, with emoji stretches switched to a font that can draw them."""
+    out = []
+    for part in _EMOJI.split(text):
+        if not part:
+            continue
+        if _EMOJI.fullmatch(part):
+            out.append(f'<tspan font-family="{emoji_family}">{escape(part)}</tspan>')
+        else:
+            out.append(escape(part))
+    return "".join(out)
+
+
+@functools.lru_cache(maxsize=1)
+def cjk_font_family() -> str:
+    """A font family present on this machine that covers Traditional Chinese.
+
+    Asked of fontconfig rather than hard-coded, so the same code renders on a developer's
+    Mac (Heiti TC) and in the Debian image (Noto Sans CJK TC). Browsers viewing the SVG
+    fall back to their own default when the name is unknown to them, which is fine —
+    only the server-side raster is picky.
+    """
+    if shutil.which("fc-match"):
+        try:
+            out = subprocess.run(["fc-match", "-f", "%{family[0]}", "sans-serif:lang=zh-tw"],
+                                 capture_output=True, text=True, timeout=5, check=True).stdout.strip()
+            if out:
+                return out
+        except (subprocess.SubprocessError, OSError) as e:
+            logger.info("og: fc-match failed (%s); using %s", e, _FALLBACK_FAMILY)
+    return _FALLBACK_FAMILY
+
 
 # Artwork square on the right; the title column stops short of it.
 ART_SIZE = 260
@@ -68,12 +139,14 @@ def episode_cover_svg(title: str, kicker: str = "", footer: str = "tinboker.com"
     inside an SVG is at the mercy of the renderer's CSP and of whether it rasterises
     server-side, and a silently missing image is worse than no image at all.
     """
+    font = escape(cjk_font_family(), {'"': "&quot;"})
+    emoji = escape(emoji_font_family(), {'"': "&quot;"})
     lines = _wrap(title, TITLE_CHARS_PER_LINE, TITLE_MAX_LINES)
     line_height = 76
     block_top = HEIGHT / 2 - (len(lines) - 1) * line_height / 2 - 8
 
     title_tspans = "".join(
-        f'<tspan x="80" y="{block_top + i * line_height:.0f}">{escape(line)}</tspan>'
+        f'<tspan x="80" y="{block_top + i * line_height:.0f}">{_runs(line, emoji)}</tspan>'
         for i, line in enumerate(lines)
     )
 
@@ -101,10 +174,20 @@ viewBox="0 0 {WIDTH} {HEIGHT}" role="img" aria-label="{escape(title)}">
   <rect width="{WIDTH}" height="{HEIGHT}" fill="url(#bg)"/>
   <rect width="{WIDTH}" height="6" fill="{AMBER}"/>
   {art}
-  <text x="80" y="120" font-family="system-ui,-apple-system,'PingFang TC','Noto Sans TC',sans-serif" \
-font-size="26" fill="{AMBER}" letter-spacing="2">{escape(kicker)}</text>
-  <text font-family="system-ui,-apple-system,'PingFang TC','Noto Sans TC',sans-serif" \
-font-size="56" font-weight="700" fill="{INK}">{title_tspans}</text>
-  <text x="80" y="{HEIGHT - 60}" font-family="system-ui,-apple-system,'PingFang TC','Noto Sans TC',sans-serif" \
-font-size="24" fill="{MUTED}">{escape(footer)}</text>
+  <text x="80" y="120" font-family="{font}" font-size="26" fill="{AMBER}" letter-spacing="2">{_runs(kicker, emoji)}</text>
+  <text font-family="{font}" font-size="56" font-weight="700" fill="{INK}">{title_tspans}</text>
+  <text x="80" y="{HEIGHT - 60}" font-family="{font}" font-size="24" fill="{MUTED}">{escape(footer)}</text>
 </svg>"""
+
+
+def episode_cover_png(svg: str) -> bytes:
+    """Rasterise a cover for platforms whose share cards cannot use SVG.
+
+    og:image is not honoured as SVG by the social crawlers, so a card built from the SVG
+    URL comes out blank. cairosvg is imported here rather than at module scope: the SVG
+    path must keep working (and its tests must keep running) on machines without libcairo.
+    """
+    import cairosvg  # noqa: PLC0415 — optional at import time, see docstring
+
+    return cairosvg.svg2png(bytestring=svg.encode("utf-8"),
+                            output_width=WIDTH, output_height=HEIGHT)

@@ -98,3 +98,58 @@ async def test_draft_ids_reads_the_posts_key_the_api_actually_returns():
     client = sp.SubstackClient(sid="x", subdomain="tinboker", user_id=7)
     async with _client(handler) as http:
         assert await client.draft_ids(http) == [1, 2]
+
+
+@pytest.mark.asyncio
+async def test_a_saved_draft_is_never_primed_to_mail_the_list():
+    """A created draft carries should_send_email=True. Left alone, whoever clicks Publish
+    mails every subscriber without choosing to — so the field is always sent explicitly."""
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        import json
+        if request.method == "PUT":
+            seen.update(json.loads(request.content))
+        return httpx.Response(200, json={})
+
+    client = sp.SubstackClient(sid="x", subdomain="tinboker", user_id=7)
+    async with _client(handler) as http:
+        await client.save_draft(http, 1, title="T", subtitle="S", doc={"type": "doc"})
+    assert seen["should_send_email"] is False
+
+
+@pytest.mark.asyncio
+async def test_the_cover_and_seo_description_travel_with_the_draft():
+    """Same cover as vocus, so one summary does not look like two things."""
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        import json
+        if request.method == "PUT":
+            seen.update(json.loads(request.content))
+        return httpx.Response(200, json={})
+
+    client = sp.SubstackClient(sid="x", subdomain="tinboker", user_id=7)
+    async with _client(handler) as http:
+        await client.save_draft(http, 1, title="T", subtitle="導言。", doc={"type": "doc"},
+                                cover_image="https://api.test/og.svg", send_email=True)
+    assert seen["cover_image"] == "https://api.test/og.svg"
+    assert seen["search_engine_description"] == "導言。"
+    assert seen["should_send_email"] is True
+
+
+@pytest.mark.asyncio
+async def test_no_cover_key_is_sent_when_there_is_no_cover():
+    """Sending an empty string would blank an existing cover rather than leave it alone."""
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        import json
+        if request.method == "PUT":
+            seen.update(json.loads(request.content))
+        return httpx.Response(200, json={})
+
+    client = sp.SubstackClient(sid="x", subdomain="tinboker", user_id=7)
+    async with _client(handler) as http:
+        await client.save_draft(http, 1, title="T", subtitle="S", doc={"type": "doc"})
+    assert "cover_image" not in seen
