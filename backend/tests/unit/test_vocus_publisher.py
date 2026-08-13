@@ -242,3 +242,25 @@ async def test_without_a_thumbnail_vocus_is_left_to_find_one():
         await client.save_settings(http, "a", title="T", abstract="A",
                                    canonical_url="https://tinboker.com/episode/EP1", tags=[])
     assert seen["coverSource"] == "article"
+
+
+@pytest.mark.asyncio
+async def test_as_draft_skips_the_status_change_and_links_the_editor(monkeypatch):
+    """create_article already leaves the article at STATUS_DRAFT; not touching status is
+    what keeps it unpublished. The public permalink 404s until publish, so a draft's URL
+    has to be the editor."""
+    monkeypatch.setattr(vp.settings, "vocus_id_token", _token(3600), raising=False)
+    monkeypatch.setattr(vp.settings, "vocus_user_id", "u1", raising=False)
+    calls = []
+
+    async def _ok(self, method, url, **kw):
+        calls.append(f"{method} {httpx.URL(url).path}")
+        return httpx.Response(200, json={"_id": "art9"}, request=httpx.Request(method, url))
+
+    monkeypatch.setattr(httpx.AsyncClient, "request", _ok)
+    r = await vp.publish_summary("ep1", "T", "內文一段。", as_draft=True, dry_run=False)
+
+    assert r["posted"] is True
+    assert r["note"] == "draft_only_publish_manually"
+    assert r["url"] == "https://vocus.cc/publish-v2/art9"
+    assert not any("/status/" in c for c in calls)
