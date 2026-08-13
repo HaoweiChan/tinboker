@@ -28,6 +28,7 @@ _COVER_MAX_BYTES = 4 * 1024 * 1024
 # from the *response* content type and never from the URL. Anything not on this list
 # (notably SVG, which would be a scriptable document on the media origin) is refused.
 _COVER_EXT = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
+_USER_AGENT = "Mozilla/5.0 (compatible; TinBoker/1.0; +https://tinboker.com)"
 
 
 def slugify(name: str) -> str:
@@ -42,10 +43,21 @@ def slugify(name: str) -> str:
     return slug or "source"
 
 
+def _urlopen(url: str, timeout: float):
+    """Open ``url`` identifying ourselves.
+
+    urllib's default ``Python-urllib/x.y`` agent is 403'd outright by some artwork
+    hosts — SoundOn, which serves the covers for two of the seeded shows, is one — so
+    the agent is not cosmetic: without it those shows can never be mirrored.
+    """
+    request = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
+    return urllib.request.urlopen(request, timeout=timeout)
+
+
 def _oembed_thumbnail(spotify_url: str, timeout: float) -> str:
     """The show's artwork URL from Spotify's public oEmbed endpoint (no auth)."""
     api = "https://open.spotify.com/oembed?url=" + urllib.parse.quote(spotify_url, safe="")
-    with urllib.request.urlopen(api, timeout=timeout) as resp:
+    with _urlopen(api, timeout) as resp:
         return (json.load(resp).get("thumbnail_url") or "").strip()
 
 
@@ -55,7 +67,7 @@ def _fetch_image(url: str, timeout: float) -> Tuple[bytes, str]:
     Reads one byte past the cap so the caller can tell "exactly at the limit" from
     "truncated", rather than silently storing a half image.
     """
-    with urllib.request.urlopen(url, timeout=timeout) as resp:
+    with _urlopen(url, timeout) as resp:
         ctype = (resp.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
         return resp.read(_COVER_MAX_BYTES + 1), ctype
 

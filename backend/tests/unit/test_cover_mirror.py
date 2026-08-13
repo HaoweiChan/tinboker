@@ -137,6 +137,32 @@ def test_one_unreachable_show_does_not_abort_the_pass(session, monkeypatch):
     assert second.cover_image_url.startswith(BASE)
 
 
+def test_artwork_is_fetched_with_a_real_user_agent(monkeypatch):
+    """SoundOn 403s urllib's default agent, so two seeded shows could never mirror."""
+    seen = {}
+
+    class _Resp:
+        headers = {"Content-Type": "image/jpeg"}
+
+        def read(self, n):
+            return JPEG
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def _urlopen(request, timeout=None):
+        seen["ua"] = request.get_header("User-agent")
+        return _Resp()
+
+    monkeypatch.setattr(mod.urllib.request, "urlopen", _urlopen)
+    mod._fetch_image("https://files.soundon.fm/cover.jpeg", 8.0)
+
+    assert seen["ua"] and "python-urllib" not in seen["ua"].lower()
+
+
 @pytest.mark.asyncio
 async def test_og_reads_a_mirrored_cover_off_disk_without_any_http_call(tmp_path, monkeypatch):
     monkeypatch.setenv("MEDIA_STORAGE_ROOT", str(tmp_path))
