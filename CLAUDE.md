@@ -55,6 +55,7 @@ TinBoker (聽播客) — Taiwanese stock & podcast intelligence platform. Monore
 | QA, bug repro, smoke suite, browser dev-bypass | `docs/workflows/qa-flow.md` + `docs/agents/qa-tester.md` |
 | Firestore schema or data change | `docs/workflows/firestore-data-change.md` + `docs/firestore-contract.md` (shared contract) |
 | Anything under `pipelines/` | `pipelines/AGENTS.md` (+ `pipelines/docs/wiki-schema.md`) |
+| Syndication to 方格子 / Substack (publishing, covers, account settings) | `docs/workflows/syndication-setup.md` |
 | Parallel agents / git worktrees | `docs/workflows/parallel-agents.md` |
 | Python style & backend file map | `backend/AGENTS.md` |
 | UI conventions, zh-TW localization, icons, TS style | `frontend/AGENTS.md` |
