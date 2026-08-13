@@ -126,9 +126,16 @@ class SubstackClient:
         await self._request(client, "DELETE", f"/api/v1/drafts/{draft_id}")
 
     async def draft_ids(self, client: httpx.AsyncClient, limit: int = 20) -> list[int]:
+        """Ids of the publication's drafts.
+
+        The response is ``{posts, hasMore, nextCursor}`` — the key is **posts**, not
+        "drafts". Guessing it wrong cost nothing visible: the endpoint returns 200, the
+        lookup misses, and the function reports an empty publication forever. Verified
+        against the live response rather than inferred from the path.
+        """
         limit = max(1, min(limit, MAX_DRAFT_LIMIT))
         data = await self._request(client, "GET", f"/api/v1/drafts?limit={limit}")
-        items = data if isinstance(data, list) else (data or {}).get("drafts") or []
+        items = data if isinstance(data, list) else (data or {}).get("posts") or []
         return [int(d["id"]) for d in items if isinstance(d, dict) and d.get("id")]
 
 

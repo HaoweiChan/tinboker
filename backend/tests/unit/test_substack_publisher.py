@@ -84,3 +84,17 @@ async def test_the_draft_limit_is_clamped_to_what_the_api_accepts():
     async with _client(handler) as http:
         await client.draft_ids(http, limit=500)
     assert seen["limit"] == str(sp.MAX_DRAFT_LIMIT)
+
+
+@pytest.mark.asyncio
+async def test_draft_ids_reads_the_posts_key_the_api_actually_returns():
+    """The response is {posts, hasMore, nextCursor}. Reading "drafts" instead returned an
+    empty list on every call, with a 200 and no error — a cleanup pass silently deleted
+    nothing at all."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"posts": [{"id": 1}, {"id": 2}],
+                                         "hasMore": False, "nextCursor": None})
+
+    client = sp.SubstackClient(sid="x", subdomain="tinboker", user_id=7)
+    async with _client(handler) as http:
+        assert await client.draft_ids(http) == [1, 2]
