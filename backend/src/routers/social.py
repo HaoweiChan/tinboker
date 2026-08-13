@@ -402,7 +402,7 @@ async def publish_episode_to_vocus(
     # summary_image. Borrowing the podcast's logo would make a summary look like the
     # podcast's own post, and summary_image is a "Placeholder Chart" SVG on every episode
     # checked. See services/og_image.py.
-    thumbnail_url = f"{_public_base_url(request)}/api/og/episode/{episode_id}.svg"
+    thumbnail_url = f"{_public_base_url(request)}/api/og/episode/{episode_id}.png"
 
     return await vocus_publisher.publish_summary(
         episode_id,
@@ -447,7 +447,7 @@ async def draft_episode_to_substack(
         title,
         summary,
         podcast_name=podcast_name,
-        cover_image_url=f"{_public_base_url(request)}/api/og/episode/{episode_id}.svg",
+        cover_image_url=f"{_public_base_url(request)}/api/og/episode/{episode_id}.png",
         send_email=False,
         subtitle=((getattr(episode, "summary_excerpt", None) or "").strip()
                   or syndication_excerpt(summary, limit=140)),
@@ -501,7 +501,7 @@ async def syndicate_episode(
         return await vocus_publisher.publish_summary(
             episode_id, title, summary, podcast_name=podcast_name, abstract=excerpt,
             tags=tags,
-            thumbnail_url=f"{_public_base_url(request)}/api/og/episode/{episode_id}.svg",
+            thumbnail_url=f"{_public_base_url(request)}/api/og/episode/{episode_id}.png",
             as_draft=not publish, dry_run=dry_run,
         )
 
@@ -510,7 +510,7 @@ async def syndicate_episode(
             episode_id, title, summary, podcast_name=podcast_name,
             subtitle=excerpt[:140],
             # The same cover both platforms show, so one summary does not look like two.
-            cover_image_url=f"{_public_base_url(request)}/api/og/episode/{episode_id}.svg",
+            cover_image_url=f"{_public_base_url(request)}/api/og/episode/{episode_id}.png",
             # Never primed to mail the list. Publishing web-only is reversible; an email
             # is not, and that choice stays with whoever clicks Publish.
             send_email=False,

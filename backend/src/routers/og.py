@@ -15,7 +15,7 @@ from fastapi.responses import Response
 
 from src.cache.redis_client import cache_get, cache_set
 from src.services.gcs_content import GCSContentService, media_path
-from src.services.og_image import episode_cover_svg
+from src.services.og_image import episode_cover_png, episode_cover_svg
 from src.services.podcast import PodcastService
 from src.services.syndication_markdown import podcast_short_name
 
@@ -87,16 +87,36 @@ async def _cover_data_uri(podcast_name: str) -> str:
     return uri
 
 
-@router.get("/episode/{episode_id}.svg")
-async def episode_cover(episode_id: str) -> Response:
-    """The cover drawn for one episode's off-site copies."""
+async def _episode_svg(episode_id: str) -> str:
     episode = await podcast_service.get_episode_admin(episode_id)
     if not episode:
         raise HTTPException(status_code=404, detail=f"Episode {episode_id} not found")
-
     podcast_name = (getattr(episode, "podcast_name", None) or "").strip()
     title = (getattr(episode, "episode_title", None) or "").strip() or episode_id
-    svg = episode_cover_svg(title, kicker=podcast_short_name(podcast_name),
-                            cover_data_uri=await _cover_data_uri(podcast_name))
-    return Response(content=svg, media_type="image/svg+xml",
+    return episode_cover_svg(title, kicker=podcast_short_name(podcast_name),
+                             cover_data_uri=await _cover_data_uri(podcast_name))
+
+
+@router.get("/episode/{episode_id}.svg")
+async def episode_cover(episode_id: str) -> Response:
+    """The cover as SVG. Kept because already-published articles reference this URL."""
+    return Response(content=await _episode_svg(episode_id), media_type="image/svg+xml",
+                    headers={"Cache-Control": _CACHE_CONTROL})
+
+
+@router.get("/episode/{episode_id}.png")
+async def episode_cover_raster(episode_id: str) -> Response:
+    """The cover as PNG — what social crawlers need, since og:image ignores SVG.
+
+    A failure here is loud on purpose. Serving the SVG instead would produce a 200 with
+    a card that silently never renders, and silent success is the failure mode that has
+    cost the most time on this integration.
+    """
+    svg = await _episode_svg(episode_id)
+    try:
+        png = await asyncio.to_thread(episode_cover_png, svg)
+    except Exception as e:  # noqa: BLE001 — surfaced, never swapped for the SVG
+        logger.exception("og: PNG rasterisation failed for %s", episode_id)
+        raise HTTPException(status_code=500, detail=f"cover rasterisation failed: {e}") from e
+    return Response(content=png, media_type="image/png",
                     headers={"Cache-Control": _CACHE_CONTROL})
