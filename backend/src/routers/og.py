@@ -4,14 +4,17 @@ Deliberately unauthenticated: the whole point is that vocus, Substack, and any s
 card crawler can fetch the URL we hand them. It exposes nothing an episode page does not
 already show — the podcast name and the episode title.
 """
+import asyncio
 import base64
 import logging
+import mimetypes
 
 import httpx
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
 
 from src.cache.redis_client import cache_get, cache_set
+from src.services.gcs_content import GCSContentService, media_path
 from src.services.og_image import episode_cover_svg
 from src.services.podcast import PodcastService
 from src.services.syndication_markdown import podcast_short_name
@@ -26,21 +29,38 @@ podcast_service = PodcastService()
 _CACHE_CONTROL = "public, max-age=86400"
 
 # Show artwork changes about never, and it is inlined into every cover we draw, so the
-# fetch is cached rather than repeated per request.
-# ponytail: content_sources.cover_image_url stores Spotify's CDN *link*, not the bytes —
-# nothing in the repo mirrors cover art, though episode summary images do live in our own
-# GCS bucket. Mirroring covers at ingest would remove this third-party fetch; deferred
-# deliberately, since a weekly per-show request with a working degrade path is cheap.
-# The degrade path stays either way: reading our own bucket is still a network call.
+# result is cached rather than rebuilt per request.
 _ART_CACHE_TTL = 7 * 24 * 3600
 _ART_MAX_BYTES = 512 * 1024
+
+
+async def _cover_bytes(url: str) -> tuple[bytes, str]:
+    """Artwork as ``(bytes, content_type)`` — off our own disk when it is mirrored.
+
+    ``content_sources.cover_image_url`` points at the media host once
+    ``mirror_podcast_covers`` has run, and that maps to a file on the disk this process
+    already has mounted, so the common path is a local read with no network at all. The
+    HTTP branch stays for rows the mirror has not reached yet (it runs in the
+    background after boot) and for anything pointing somewhere else entirely.
+    """
+    parsed = GCSContentService.parse_gs_url(url)
+    if parsed:
+        path = media_path(*parsed)
+        data = await asyncio.to_thread(path.read_bytes)
+        return data, mimetypes.guess_type(path.name)[0] or ""
+    async with httpx.AsyncClient(timeout=10) as http:
+        resp = await http.get(url)
+    if resp.status_code != 200:
+        return b"", ""
+    return resp.content, resp.headers.get("content-type", "").split(";", 1)[0].strip()
 
 
 async def _cover_data_uri(podcast_name: str) -> str:
     """Show artwork as a data: URI, or "" if it cannot be had.
 
-    Never raises: a cover without artwork is a perfectly good cover, and an image fetch
-    is not a reason to fail the request.
+    Never raises: a cover without artwork is a perfectly good cover, and neither a
+    missing file nor a failed fetch is a reason to fail the request — this endpoint is
+    what the syndication crawlers hit, so it degrades rather than 500s.
     """
     if not podcast_name:
         return ""
@@ -53,15 +73,13 @@ async def _cover_data_uri(podcast_name: str) -> str:
         url = (covers or {}).get(podcast_name, "")
         if not url:
             return ""
-        async with httpx.AsyncClient(timeout=10) as http:
-            resp = await http.get(url)
-        content_type = resp.headers.get("content-type", "")
-        if resp.status_code != 200 or not content_type.startswith("image/"):
+        data, content_type = await _cover_bytes(url)
+        if not data or not content_type.startswith("image/"):
             return ""
-        if len(resp.content) > _ART_MAX_BYTES:
-            logger.info("og: artwork for %s too large (%d bytes)", podcast_name, len(resp.content))
+        if len(data) > _ART_MAX_BYTES:
+            logger.info("og: artwork for %s too large (%d bytes)", podcast_name, len(data))
             return ""
-        uri = f"data:{content_type};base64,{base64.b64encode(resp.content).decode()}"
+        uri = f"data:{content_type};base64,{base64.b64encode(data).decode()}"
     except Exception as e:  # noqa: BLE001 — the cover degrades, it does not fail
         logger.info("og: artwork fetch failed for %s (%s)", podcast_name, e)
         return ""
