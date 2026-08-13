@@ -5,6 +5,7 @@ admin JWT, so the agents' podcast pipeline can call it right after an ingest run
 fan the new episode out to Threads. It is idempotent and dry-run by default.
 """
 
+import asyncio
 import logging
 import mimetypes
 import uuid
@@ -12,7 +13,7 @@ from datetime import datetime
 from typing import List, Optional, Any
 
 import httpx
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -23,6 +24,9 @@ from src.database.postgres import get_session
 from src.services import (facebook_publisher, promo_publisher, substack_publisher,
                           threads_publisher, vocus_publisher)
 from src.services.gcs_content import GCSContentService, media_url
+from src.services.syndication_markdown import (podcast_short_name, syndication_excerpt,
+                                               syndication_title)
+from src.tag_registry import canonical_label
 from src.services.podcast import PodcastService
 from src.services.facebook_insights_service import FacebookInsightsService
 from src.services.threads_insights_service import ThreadsInsightsService
@@ -366,6 +370,7 @@ async def vocus_token_status(_: AdminAccess = Depends(get_social_access)):
 @router.post("/episodes/{episode_id}/publish-vocus")
 async def publish_episode_to_vocus(
     episode_id: str,
+    request: Request,
     dry_run: bool = Query(default=True, description="Convert only; do not publish (default)"),
     _: AdminAccess = Depends(get_social_access),
 ):
@@ -381,15 +386,35 @@ async def publish_episode_to_vocus(
         raise HTTPException(status_code=404, detail=f"Episode {episode_id} not found")
 
     summary = getattr(episode, "modified_summary_content", None) or getattr(episode, "summary_content", None) or ""
-    title = (getattr(episode, "episode_title", None) or "").strip() or episode_id
-    tags = [t for t in (getattr(episode, "tags", None) or []) if isinstance(t, str)][:5]
+    podcast_name = (getattr(episode, "podcast_name", None) or "").strip()
+    raw_title = (getattr(episode, "episode_title", None) or "").strip() or episode_id
+    title = syndication_title(podcast_name, raw_title)
+
+    # zh-TW labels, not raw slugs: a vocus reader searches 台股, never "twstocks", and the
+    # podcast's own name leads so the post lands on the tag page its audience reads.
+    labels = [canonical_label(t) for t in (getattr(episode, "tags", None) or []) if isinstance(t, str)]
+    short = podcast_short_name(podcast_name)
+    # The podcast name is attribution, not a topic — it sits outside the 5-topic budget so
+    # naming the show never costs a subject tag.
+    tags = list(dict.fromkeys(([short] if short else []) + labels[:5]))
+
+    # Our own generated cover, not the show's artwork and not the episode's
+    # summary_image. Borrowing the podcast's logo would make a summary look like the
+    # podcast's own post, and summary_image is a "Placeholder Chart" SVG on every episode
+    # checked. See services/og_image.py.
+    thumbnail_url = f"{_public_base_url(request)}/api/og/episode/{episode_id}.png"
 
     return await vocus_publisher.publish_summary(
         episode_id,
         title,
         summary,
-        abstract=(getattr(episode, "summary_excerpt", None) or "").strip(),
+        podcast_name=podcast_name,
+        # summary_excerpt is None on every episode checked, so derive the lead from the
+        # summary itself rather than shipping an empty field.
+        abstract=((getattr(episode, "summary_excerpt", None) or "").strip()
+                  or syndication_excerpt(summary)),
         tags=tags,
+        thumbnail_url=thumbnail_url,
         dry_run=dry_run,
     )
 
@@ -397,6 +422,7 @@ async def publish_episode_to_vocus(
 @router.post("/episodes/{episode_id}/draft-substack")
 async def draft_episode_to_substack(
     episode_id: str,
+    request: Request,
     dry_run: bool = Query(default=True, description="Convert only; do not create the draft (default)"),
     _: AdminAccess = Depends(get_social_access),
 ):
@@ -412,15 +438,115 @@ async def draft_episode_to_substack(
         raise HTTPException(status_code=404, detail=f"Episode {episode_id} not found")
 
     summary = getattr(episode, "modified_summary_content", None) or getattr(episode, "summary_content", None) or ""
-    title = (getattr(episode, "episode_title", None) or "").strip() or episode_id
+    podcast_name = (getattr(episode, "podcast_name", None) or "").strip()
+    raw_title = (getattr(episode, "episode_title", None) or "").strip() or episode_id
+    title = syndication_title(podcast_name, raw_title)
 
     return await substack_publisher.create_summary_draft(
         episode_id,
         title,
         summary,
-        subtitle=(getattr(episode, "summary_excerpt", None) or "").strip()[:140],
+        podcast_name=podcast_name,
+        cover_image_url=f"{_public_base_url(request)}/api/og/episode/{episode_id}.png",
+        send_email=False,
+        subtitle=((getattr(episode, "summary_excerpt", None) or "").strip()
+                  or syndication_excerpt(summary, limit=140)),
         dry_run=dry_run,
     )
+
+
+@router.post("/episodes/{episode_id}/syndicate")
+async def syndicate_episode(
+    episode_id: str,
+    request: Request,
+    platforms: str = Query(default="vocus,substack", description="Comma list: vocus, substack"),
+    dry_run: bool = Query(default=True, description="Convert only; create nothing (default)"),
+    publish: bool = Query(default=False, description="vocus only: go public instead of staying a draft"),
+    _: AdminAccess = Depends(get_social_access),
+):
+    """Stage one episode on every syndication target at once.
+
+    Drafts on both by default. Reviewing the same summary on two platforms means opening
+    two editors, and doing that from one action is the whole point — firing them
+    separately guarantees the two copies drift while you fiddle.
+
+    ``publish=true`` only affects vocus. Substack is never published from here: it emails
+    the entire subscriber list on publish and cannot be undone.
+
+    Each platform reports independently. One failing does not roll back or block the
+    other — two half-finished drafts you can see beat one silent skip.
+    """
+    selected = [p.strip().lower() for p in platforms.split(",") if p.strip()]
+    unknown = [p for p in selected if p not in ("vocus", "substack")]
+    if unknown:
+        raise HTTPException(status_code=422, detail=f"Unknown platform(s): {', '.join(unknown)}")
+    if not selected:
+        raise HTTPException(status_code=422, detail="No platforms selected")
+
+    episode = await podcast_service.get_episode_admin(episode_id)
+    if not episode:
+        raise HTTPException(status_code=404, detail=f"Episode {episode_id} not found")
+
+    summary = getattr(episode, "modified_summary_content", None) or getattr(episode, "summary_content", None) or ""
+    podcast_name = (getattr(episode, "podcast_name", None) or "").strip()
+    raw_title = (getattr(episode, "episode_title", None) or "").strip() or episode_id
+    title = syndication_title(podcast_name, raw_title)
+    excerpt = ((getattr(episode, "summary_excerpt", None) or "").strip()
+               or syndication_excerpt(summary))
+
+    async def _vocus() -> dict:
+        labels = [canonical_label(t) for t in (getattr(episode, "tags", None) or []) if isinstance(t, str)]
+        short = podcast_short_name(podcast_name)
+        tags = list(dict.fromkeys(([short] if short else []) + labels[:5]))
+        return await vocus_publisher.publish_summary(
+            episode_id, title, summary, podcast_name=podcast_name, abstract=excerpt,
+            tags=tags,
+            thumbnail_url=f"{_public_base_url(request)}/api/og/episode/{episode_id}.png",
+            as_draft=not publish, dry_run=dry_run,
+        )
+
+    async def _substack() -> dict:
+        return await substack_publisher.create_summary_draft(
+            episode_id, title, summary, podcast_name=podcast_name,
+            subtitle=excerpt[:140],
+            # The same cover both platforms show, so one summary does not look like two.
+            cover_image_url=f"{_public_base_url(request)}/api/og/episode/{episode_id}.png",
+            # Never primed to mail the list. Publishing web-only is reversible; an email
+            # is not, and that choice stays with whoever clicks Publish.
+            send_email=False,
+            dry_run=dry_run,
+        )
+
+    runners = {"vocus": _vocus, "substack": _substack}
+    settled = await asyncio.gather(*(runners[p]() for p in selected), return_exceptions=True)
+
+    results: dict[str, Any] = {}
+    for name, outcome in zip(selected, settled):
+        if isinstance(outcome, BaseException):
+            logger.exception("syndicate: %s failed for %s", name, episode_id)
+            results[name] = {"platform": name, "posted": False, "reason": f"error: {outcome}"}
+        else:
+            results[name] = outcome
+    return {"episode_id": episode_id, "title": title, "platforms": results}
+
+
+def _public_base_url(request: Request) -> str:
+    """The origin an outside fetcher should use to reach this API.
+
+    Derived from the request rather than configured: a setting has one value across dev,
+    staging and production, so the dev backend handed vocus a production URL for an
+    endpoint production did not have yet — a 404 and a broken thumbnail. Behind Cloudflare
+    the forwarded headers carry the public host; settings.public_api_url is the last
+    resort for callers that arrive without them.
+    """
+    proto = request.headers.get("x-forwarded-proto", "").split(",")[0].strip()
+    host = request.headers.get("x-forwarded-host", "").split(",")[0].strip()
+    if host:
+        return f"{proto or 'https'}://{host}"
+    base = str(request.base_url).rstrip("/")
+    if base and "localhost" not in base and "127.0.0.1" not in base:
+        return base
+    return settings.public_api_url.rstrip("/")
 
 
 def _marp_size(marp_markdown: str) -> str:

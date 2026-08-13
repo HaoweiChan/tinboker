@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { RefreshCw, Save, Check, MessageSquare, Image as ImageIcon, Eye, Wand2, Send, AlertCircle, ExternalLink, Plus, Trash2, Clock, Play, ClipboardCopy, BookUp, FileEdit } from 'lucide-react';
+import { RefreshCw, Save, Check, MessageSquare, Image as ImageIcon, Eye, Wand2, Send, AlertCircle, ExternalLink, Plus, Trash2, Clock, Play, ClipboardCopy, BookUp, FileEdit, Layers } from 'lucide-react';
 import { copySyndicationToClipboard } from '@/utils/syndicationHtml';
 import { SlideViewer } from '@/components/common/SlideViewer';
 import { PromoComposer } from '@/components/admin/PromoComposer';
@@ -20,6 +20,7 @@ import {
   getVocusTokenStatus,
   publishEpisodeToVocus,
   draftEpisodeToSubstack,
+  syndicateEpisode,
   type VocusTokenStatus,
   schedulePost,
   listScheduledPosts,
@@ -92,6 +93,7 @@ export const AdminSocialPage: React.FC = () => {
   const [vocusToken, setVocusToken] = useState<VocusTokenStatus | null>(null);
   const [vocusBusy, setVocusBusy] = useState(false);
   const [substackBusy, setSubstackBusy] = useState(false);
+  const [syndicateBusy, setSyndicateBusy] = useState(false);
   const [publishResult, setPublishResult] = useState<PublishResult | null>(null);
   const [publishError, setPublishError] = useState<string | null>(null);
   const [showComposed, setShowComposed] = useState(false);
@@ -317,6 +319,28 @@ export const AdminSocialPage: React.FC = () => {
       alert('Substack 草稿請求失敗，請看 console');
     } finally {
       setSubstackBusy(false);
+    }
+  }, [selectedId]);
+
+  const handleSyndicateBoth = useCallback(async () => {
+    if (!selectedId) return;
+    setSyndicateBusy(true);
+    try {
+      const r = await syndicateEpisode(selectedId, { dryRun: false });
+      // Report per platform. One failing must not hide the other succeeding.
+      const lines = Object.entries(r.platforms).map(([name, p]) =>
+        p.posted ? `✅ ${name}: ${p.url}` : `❌ ${name}: ${p.reason ?? '未知原因'}`);
+      const opened = Object.values(r.platforms).filter((p) => p.posted && p.url);
+      if (opened.length && window.confirm(`${lines.join('\n')}\n\n要開啟這 ${opened.length} 個草稿嗎？`)) {
+        opened.forEach((p) => window.open(p.url, '_blank', 'noopener'));
+      } else if (!opened.length) {
+        alert(lines.join('\n'));
+      }
+    } catch (e) {
+      console.error('[social] syndicate failed', e);
+      alert('同步請求失敗，請看 console');
+    } finally {
+      setSyndicateBusy(false);
     }
   }, [selectedId]);
 
@@ -604,6 +628,15 @@ export const AdminSocialPage: React.FC = () => {
                   >
                     <FileEdit className={`h-4 w-4 ${substackBusy ? 'animate-pulse' : ''}`} />
                     {substackBusy ? '建立中…' : 'Substack 草稿'}
+                  </button>
+                  <button
+                    onClick={handleSyndicateBoth}
+                    disabled={syndicateBusy}
+                    title="同時在方格子與 Substack 建立草稿（兩邊都不會公開）"
+                    className="inline-flex items-center gap-2 rounded-lg border border-primary/60 px-3 py-2 text-base font-semibold text-foreground hover:bg-muted disabled:opacity-60"
+                  >
+                    <Layers className={`h-4 w-4 ${syndicateBusy ? 'animate-pulse' : ''}`} />
+                    {syndicateBusy ? '建立中…' : '兩邊建草稿'}
                   </button>
                   {/* Scheduling UI */}
                   <div className="flex items-center gap-2 border-l border-border pl-2">

@@ -2,8 +2,11 @@
 Service for managing content sources (followed podcast shows + news RSS feeds).
 """
 
+import json
 import re
 import logging
+import urllib.parse
+import urllib.request
 from typing import Optional, List, Tuple
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -12,8 +15,20 @@ from src.schemas.content_source import (
     ContentSourceCreate,
     ContentSourceUpdate,
 )
+from src.services.gcs_content import public_base, store_bytes
 
 logger = logging.getLogger(__name__)
+
+# Show artwork is mirrored into the articles media directory, next to the episode
+# summary images. Covers are small (Spotify's oEmbed thumbnail is 640px); the cap is
+# there to stop a redirect-to-something-huge, not because real covers approach it.
+_COVER_BUCKET = "graphfolio-articles"
+_COVER_MAX_BYTES = 4 * 1024 * 1024
+# The extension decides how the media host serves the bytes back, so it is derived
+# from the *response* content type and never from the URL. Anything not on this list
+# (notably SVG, which would be a scriptable document on the media origin) is refused.
+_COVER_EXT = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
+_USER_AGENT = "Mozilla/5.0 (compatible; TinBoker/1.0; +https://tinboker.com)"
 
 
 def slugify(name: str) -> str:
@@ -26,6 +41,35 @@ def slugify(name: str) -> str:
     slug = re.sub(r"[^\w]+", "-", (name or "").strip(), flags=re.UNICODE)
     slug = slug.strip("-").lower()
     return slug or "source"
+
+
+def _urlopen(url: str, timeout: float):
+    """Open ``url`` identifying ourselves.
+
+    urllib's default ``Python-urllib/x.y`` agent is 403'd outright by some artwork
+    hosts — SoundOn, which serves the covers for two of the seeded shows, is one — so
+    the agent is not cosmetic: without it those shows can never be mirrored.
+    """
+    request = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
+    return urllib.request.urlopen(request, timeout=timeout)
+
+
+def _oembed_thumbnail(spotify_url: str, timeout: float) -> str:
+    """The show's artwork URL from Spotify's public oEmbed endpoint (no auth)."""
+    api = "https://open.spotify.com/oembed?url=" + urllib.parse.quote(spotify_url, safe="")
+    with _urlopen(api, timeout) as resp:
+        return (json.load(resp).get("thumbnail_url") or "").strip()
+
+
+def _fetch_image(url: str, timeout: float) -> Tuple[bytes, str]:
+    """Download an image as ``(bytes, content_type)``.
+
+    Reads one byte past the cap so the caller can tell "exactly at the limit" from
+    "truncated", rather than silently storing a half image.
+    """
+    with _urlopen(url, timeout) as resp:
+        ctype = (resp.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
+        return resp.read(_COVER_MAX_BYTES + 1), ctype
 
 
 class ContentSourceService:
@@ -187,40 +231,58 @@ class ContentSourceService:
                 self.db.rollback()
         return inserted
 
-    def backfill_missing_covers(self, timeout: float = 8.0) -> int:
-        """Populate cover_image_url for podcast sources that have a spotify_url but no
-        cover yet, using Spotify's public oEmbed (no auth). Best-effort, idempotent.
-        Returns the number of rows updated.
-        """
-        import json as _json
-        import urllib.request
-        import urllib.parse
+    def mirror_podcast_covers(self, timeout: float = 8.0) -> int:
+        """Mirror every podcast's show artwork into our own media store.
 
+        Both cases run through this one pass, because the predicate is "the stored URL
+        is not ours" rather than "the row has no cover":
+
+          - ingest: a newly seeded source has no cover at all → resolve it from
+            Spotify's public oEmbed (no auth), then store the bytes;
+          - backfill: an existing row already has a cover somewhere off-site (Spotify's
+            CDN, or the SoundOn URLs some seeded rows carry) → fetch that URL and
+            re-host it. The stored URL is used as-is, so this does not assume Spotify.
+
+        Idempotent: a row already pointing at the media host is skipped without any
+        network call, so re-running on every boot costs nothing once mirrored.
+        Best-effort — a show whose artwork cannot be fetched keeps whatever it had, and
+        one bad source never aborts the pass. Returns the number of rows re-pointed.
+        """
         rows = (
             self.db.query(ContentSource)
-            .filter(
-                ContentSource.source_type == "podcast",
-                ContentSource.spotify_url.isnot(None),
-                (ContentSource.cover_image_url.is_(None)) | (ContentSource.cover_image_url == ""),
-            )
+            .filter(ContentSource.source_type == "podcast")
             .all()
         )
+        ours = public_base() + "/"
         updated = 0
         for src in rows:
+            current = (src.cover_image_url or "").strip()
+            if current.startswith(ours):
+                continue  # already mirrored
             try:
-                oembed = "https://open.spotify.com/oembed?url=" + urllib.parse.quote(src.spotify_url, safe="")
-                with urllib.request.urlopen(oembed, timeout=timeout) as resp:
-                    data = _json.load(resp)
-                thumb = data.get("thumbnail_url")
-                if thumb:
-                    src.cover_image_url = thumb
-                    updated += 1
+                url = current or (
+                    _oembed_thumbnail(src.spotify_url, timeout) if src.spotify_url else ""
+                )
+                # Only ever fetch https: the URL comes out of the database, and the
+                # oEmbed response is a third party's JSON. This also drops the
+                # nothing-to-mirror case (no cover and no Spotify link) without noise.
+                if not url.startswith("https://"):
+                    continue
+                data, ctype = _fetch_image(url, timeout)
+                ext = _COVER_EXT.get(ctype)
+                if not ext or not data or len(data) > _COVER_MAX_BYTES:
+                    logger.warning(
+                        "cover mirror: %s — unusable artwork (%s, %d bytes)", src.name, ctype, len(data)
+                    )
+                    continue
+                src.cover_image_url = store_bytes(_COVER_BUCKET, f"covers/{src.id}{ext}", data)
+                updated += 1
             except Exception as e:
-                logger.warning("cover backfill: %s failed: %s", src.name, e)
+                logger.warning("cover mirror: %s failed: %s", src.name, e)
                 continue
         if updated:
             self.db.commit()
-            logger.info("Backfilled cover_image_url for %d podcast source(s)", updated)
+            logger.info("Mirrored cover art for %d podcast source(s)", updated)
         return updated
 
     def get_stats(self) -> dict:

@@ -304,3 +304,32 @@ export async function draftEpisodeToSubstack(
   );
   return res.data;
 }
+
+
+// ── Both syndication targets in one action ────────────────────────────────────
+// Reviewing the same summary on two platforms means opening two editors; doing that
+// from one action is the point. Drafts on both by default — Substack is never published
+// from here (it emails every subscriber, irreversibly).
+export interface SyndicateResult {
+  episode_id: string;
+  title: string;
+  platforms: Record<string, {
+    platform: string;
+    posted: boolean;
+    reason?: string;
+    url?: string;
+    note?: string;
+  }>;
+}
+
+export async function syndicateEpisode(
+  episodeId: string,
+  opts: { dryRun?: boolean; platforms?: string } = {},
+): Promise<SyndicateResult> {
+  const platforms = opts.platforms ?? 'vocus,substack';
+  const res = await apiClient.post<SyndicateResult>(
+    `/api/admin/threads/episodes/${encodeURIComponent(episodeId)}/syndicate`
+      + `?platforms=${encodeURIComponent(platforms)}&dry_run=${opts.dryRun === false ? 'false' : 'true'}`,
+  );
+  return res.data;
+}

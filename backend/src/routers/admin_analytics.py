@@ -16,7 +16,7 @@ from src.database.models import AnalyticsSnapshot, User
 from src.database.postgres import get_session, session_scope
 from src.services.cloudflare_analytics_service import CloudflareAnalyticsService
 from src.services.facebook_insights_service import FacebookInsightsService
-from src.services.firestore_service import FirestoreService
+from src.services.postgres_mirror_service import content_read_service
 from src.services.threads_insights_service import ThreadsInsightsService
 from src.tag_registry import canonical_label, display_map
 
@@ -105,10 +105,17 @@ async def get_member_analytics(
     top_ep_ids = [eid for eid, _ in episodes.most_common(top)]
     ep_titles: dict[str, str] = {}
     if top_ep_ids:
-        # Content read — still goes through the content service (out of P3 scope).
-        fs = FirestoreService()
-        docs = await asyncio.to_thread(fs.get_documents_batch, "episodes", top_ep_ids)
-        ep_titles = {d["id"]: (d.get("title") or d["id"]) for d in docs}
+        # Content read — goes through the same seam as every other content read
+        # (Postgres mirror, not Firestore). ponytail: titles are cosmetic, so a
+        # lookup failure degrades to episode ids instead of blanking the panel.
+        try:
+            svc = content_read_service()
+            docs = await asyncio.to_thread(svc.get_documents_batch, "episodes", top_ep_ids)
+            ep_titles = {
+                d["id"]: (d.get("episode_title") or d.get("title") or d["id"]) for d in docs
+            }
+        except Exception as e:
+            logger.warning("member analytics: episode title lookup failed: %s", e)
 
     tag_labels = display_map(db)
 

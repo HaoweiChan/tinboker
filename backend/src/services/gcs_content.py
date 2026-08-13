@@ -96,6 +96,17 @@ def _atomic_write(dest: Path, data: bytes) -> None:
         raise
 
 
+def store_bytes(bucket_name: str, blob_path: str, data: bytes) -> str:
+    """Write bytes into the media store and return the public URL — synchronous.
+
+    The async ``GCSContentService.upload_bytes_public`` is the same operation for
+    callers already inside an event loop; this one exists for the startup jobs that
+    run in a worker thread and would otherwise need a loop to write one file.
+    """
+    _atomic_write(media_path(bucket_name, blob_path), data)
+    return media_url(bucket_name, blob_path)
+
+
 class GCSContentService:
     """Reads and writes episode artifacts on the VPS media disk."""
 
