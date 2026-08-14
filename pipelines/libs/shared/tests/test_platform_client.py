@@ -173,3 +173,22 @@ def test_all_requests_carry_the_self_identifying_user_agent(monkeypatch):
     platform_client.fetch_sectors_universe()
 
     assert captured == [platform_client.USER_AGENT] * 4
+
+
+def test_syndication_trigger_is_opt_in_like_the_others(monkeypatch):
+    """No env vars, no network call — the same rule the Threads trigger follows."""
+    from shared import platform_client as pc
+
+    monkeypatch.delenv("TINBOKER_PLATFORM_API_URL", raising=False)
+    monkeypatch.delenv("TINBOKER_SOCIAL_TOKEN", raising=False)
+    assert pc.trigger_syndication("EP1") is None
+
+
+def test_syndication_needs_an_episode_id(monkeypatch):
+    """It is per-episode, not "recent N": the platform creates a new draft every call, so
+    there is nothing sensible to do without knowing which episode."""
+    from shared import platform_client as pc
+
+    monkeypatch.setenv("TINBOKER_PLATFORM_API_URL", "https://api.test")
+    monkeypatch.setenv("TINBOKER_SOCIAL_TOKEN", "t")
+    assert pc.trigger_syndication("") is None

@@ -22,6 +22,7 @@ from .steps import (
     render_social_cards,
     transcribe_episode,
     trigger_social_publish,
+    trigger_syndicate,
     upload_to_gcs,
     validate_episode,
 )
@@ -150,6 +151,9 @@ class EpisodeProcessor:
 
             # Step 5e: Trigger the platform to fan the new episode out to Threads (best-effort)
             trigger_social_publish(self.config, self.services, episode_data)
+
+            # Step 5f: Stage the summary on 方格子 + Substack (best-effort, off by default)
+            trigger_syndicate(self.config, self.services, episode_data)
 
             # Step 6: Validate
             validate_episode(self.config, self.services, episode_data)

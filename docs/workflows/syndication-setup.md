@@ -36,6 +36,25 @@ to readers. This has caught us twice: once for `og:image`, once for the body ima
 
 Consequence: get the post right **before** first publish. Nothing after it is automatic.
 
+### From the pipeline, automatically
+
+`pipelines/services/podcast/src/pipeline/steps/syndicate.py` (Step 5f) fires the same
+endpoint after a fresh ingest, so a new summary reaches both platforms without anyone
+opening the admin page.
+
+| Env var | Effect |
+|---|---|
+| `SYNDICATE_AUTOPUBLISH` | **Required.** Unset = the step is a no-op and prints where to do it by hand. |
+| `SYNDICATE_VOCUS_PUBLISH` | vocus goes public instead of staying a draft. |
+| `TINBOKER_PLATFORM_API_URL` + `TINBOKER_SOCIAL_TOKEN` | already needed by the Threads trigger |
+
+**There is no switch that auto-publishes to Substack**, deliberately: publishing there
+emails every subscriber and cannot be undone, so it stays a human's click.
+
+The step never fires on reruns or backfills. Unlike the Threads trigger, the platform does
+NOT dedupe this — every call creates fresh drafts — so re-processing an old episode would
+republish it.
+
 ---
 
 ## Covers
