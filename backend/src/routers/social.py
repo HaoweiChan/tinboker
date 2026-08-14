@@ -470,8 +470,12 @@ async def syndicate_episode(
     two editors, and doing that from one action is the whole point — firing them
     separately guarantees the two copies drift while you fiddle.
 
-    ``publish=true`` only affects vocus. Substack is never published from here: it emails
-    the entire subscriber list on publish and cannot be undone.
+    ``publish`` covers vocus, ``publish_substack`` covers Substack. Separate switches on
+    purpose: turning one on should never quietly turn the other on.
+
+    Publishing to Substack here NEVER emails subscribers — the publisher hard-wires
+    ``send_email: false`` and exposes no way to change it. A web-only post can be taken
+    down; a newsletter cannot be recalled.
 
     Each platform reports independently. One failing does not roll back or block the
     other — two half-finished drafts you can see beat one silent skip.

@@ -152,6 +152,20 @@ class SubstackClient:
             raise SubstackError("image_upload_returned_no_url")
         return url
 
+    async def publish_draft(self, client: httpx.AsyncClient, draft_id: int) -> None:
+        """Publish a draft to the web WITHOUT emailing anybody.
+
+        ``send_email`` is hard-wired False and there is no parameter to flip it. Mailing
+        the subscriber list is irreversible; making it reachable from a config flag means
+        one typo in an env file sends a newsletter. If it is ever wanted, that should be a
+        deliberate code change with its own review, not a value someone can set.
+
+        Verified live: this returns the post with ``is_published: true`` and
+        ``email_sent_at: null``.
+        """
+        await self._request(client, "POST", f"/api/v1/drafts/{draft_id}/publish",
+                            {"send_email": False})
+
     async def delete_draft(self, client: httpx.AsyncClient, draft_id: int) -> None:
         await self._request(client, "DELETE", f"/api/v1/drafts/{draft_id}")
 
@@ -212,6 +226,12 @@ def _body_field(doc: dict) -> str:
     return json.dumps(doc, ensure_ascii=False)
 
 
+def public_url(subdomain: str, post: dict | None) -> str:
+    """The reader-facing URL of a published post, from the slug Substack assigned."""
+    slug = ((post or {}).get("slug") or "").strip()
+    return f"https://{subdomain}.substack.com/p/{slug}" if slug else f"https://{subdomain}.substack.com/"
+
+
 def draft_url(subdomain: str, draft_id: int) -> str:
     return f"https://{subdomain}.substack.com/publish/post/{draft_id}"
 
@@ -225,6 +245,7 @@ async def create_summary_draft(
     subtitle: str = "",
     cover_image_url: str = "",
     send_email: bool = False,
+    publish: bool = False,
     dry_run: bool = True,
 ) -> dict:
     """Stage one episode summary as a Substack draft. Never publishes."""
@@ -278,12 +299,29 @@ async def create_summary_draft(
         result["reason"] = str(e)
         return result
 
+    published, back = False, None
+    if publish:
+        try:
+            async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as http:
+                await client.publish_draft(http, draft_id)
+                # Read back rather than trust the write: this is the one call whose
+                # failure mode would be a newsletter nobody meant to send.
+                back = await client._request(http, "GET", f"/api/v1/drafts/{draft_id}")
+            published = bool((back or {}).get("is_published"))
+            if (back or {}).get("email_sent_at"):
+                logger.error("substack: %s was emailed despite send_email=False", draft_id)
+        except SubstackError as e:
+            logger.warning("substack publish failed for %s: %s", episode_id, e)
+            result["reason"] = f"published_failed: {e}"
+
     result.update({
         "posted": True,
         "draft_id": draft_id,
-        "url": draft_url(client._subdomain, draft_id),
-        "note": "draft_only_publish_manually",
-        "sends_email_on_publish": send_email,
+        "url": (public_url(client._subdomain, back) if published
+                else draft_url(client._subdomain, draft_id)),
+        "published": published,
+        "emailed": False,
+        "note": None if published else "draft_only_publish_manually",
     })
     logger.info("substack draft %s staged for %s", draft_id, episode_id)
     return result
