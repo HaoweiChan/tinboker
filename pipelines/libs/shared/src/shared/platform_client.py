@@ -110,6 +110,52 @@ def trigger_threads_publish(
         return None
 
 
+def trigger_syndication(
+    episode_id: str, *, platforms: str = "vocus,substack", publish_vocus: bool = False,
+    publish_substack: bool = False, dry_run: bool = False, timeout: float = 60.0,
+) -> dict[str, Any] | None:
+    """Ask the platform to stage one episode on the long-form syndication targets.
+
+    ``POST {base}/api/admin/threads/episodes/{id}/syndicate`` with the
+    ``TINBOKER_SOCIAL_TOKEN`` bearer token, same opt-in rule as
+    :func:`trigger_threads_publish`: nothing happens unless both env vars are set.
+
+    Per-episode rather than "recent N" because this is not idempotent on the platform
+    side — every call creates a new draft. The caller fires it once, on the episode it
+    just ingested.
+
+    ``publish_substack`` publishes to the Substack **web** only — the platform hard-wires
+    ``send_email: false`` and offers no way to email subscribers, so this cannot send a
+    newsletter no matter how it is called.
+
+    A longer timeout than the Threads trigger: this renders a cover, uploads it, and
+    talks to two APIs.
+    """
+    base = platform_base_url()
+    token = os.environ.get("TINBOKER_SOCIAL_TOKEN")
+    if not base or not token or not episode_id:
+        return None
+    query = urllib.parse.urlencode({
+        "platforms": platforms,
+        "dry_run": str(bool(dry_run)).lower(),
+        "publish": str(bool(publish_vocus)).lower(),
+        "publish_substack": str(bool(publish_substack)).lower(),
+    })
+    url = f"{base}/api/admin/threads/episodes/{urllib.parse.quote(episode_id)}/syndicate?{query}"
+    try:
+        req = urllib.request.Request(
+            url, data=b"", method="POST",
+            headers=_headers({"Authorization": f"Bearer {token}", "Accept": "application/json"}),
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            if getattr(resp, "status", 200) >= 400:
+                return None
+            return json.loads(resp.read().decode("utf-8"))
+    except (urllib.error.URLError, TimeoutError, ValueError, OSError) as exc:
+        print(f"Warning: syndication trigger failed ({exc})")
+        return None
+
+
 def fetch_sectors_universe(*, timeout: float = 10.0) -> dict[str, Any] | None:
     """Get full compiled sectors/themes universe from platform API.
 

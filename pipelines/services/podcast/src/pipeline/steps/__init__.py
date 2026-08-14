@@ -11,6 +11,7 @@ from .postgres_episode import persist_episode
 from .social_cards_render import render_social_cards
 from .social_publish import trigger_social_publish
 from .summarize import generate_summary
+from .syndicate import trigger_syndicate
 from .ticker_insights_export import export_ticker_insights
 from .transcribe import transcribe_episode
 from .validate import validate_episode
@@ -29,6 +30,7 @@ __all__ = [
     "export_ticker_insights",
     "render_social_cards",
     "trigger_social_publish",
+    "trigger_syndicate",
 ]
 
 
