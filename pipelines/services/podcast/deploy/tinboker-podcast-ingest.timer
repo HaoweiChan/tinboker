@@ -1,0 +1,15 @@
+[Unit]
+Description=Look for new podcast episodes a few times a day
+
+[Timer]
+# Shows publish on their own schedule, so this polls rather than aiming at a release
+# time. Four times a day keeps the worst-case delay at six hours while leaving most
+# ticks with nothing to do — --fill-limit makes an empty tick nearly free.
+OnCalendar=02,08,14,20:10
+# A missed window (host reboot) runs on the next start rather than waiting for the
+# following slot.
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

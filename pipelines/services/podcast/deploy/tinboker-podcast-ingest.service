@@ -1,0 +1,17 @@
+[Unit]
+Description=TinBoker podcast ingest — new episodes to summary, then syndication
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/tinboker/pipelines/services/podcast
+ExecStart=/root/tinboker/pipelines/services/podcast/scripts/run_scheduled_ingest.sh
+# Pipeline secrets, including SYNDICATE_AUTOPUBLISH. Leading "-" = optional, so the unit
+# still starts before the operator has created it and shared.secrets falls back to GSM.
+EnvironmentFile=-/root/tinboker/pipelines/.env
+Environment=GOOGLE_APPLICATION_CREDENTIALS=/root/tinboker/pipelines/services/podcast/gcp-service-account.json
+Environment=TINBOKER_PLATFORM_API_URL=https://api.tinboker.com
+# Transcription of a long episode is slow; this is a ceiling against a wedged run holding
+# the timer, not a target.
+TimeoutStartSec=7200
