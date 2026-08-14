@@ -12,6 +12,10 @@ ExecStart=/root/tinboker/pipelines/services/podcast/scripts/run_scheduled_ingest
 EnvironmentFile=-/root/tinboker/pipelines/.env
 Environment=GOOGLE_APPLICATION_CREDENTIALS=/root/tinboker/pipelines/services/podcast/gcp-service-account.json
 Environment=TINBOKER_PLATFORM_API_URL=https://api.tinboker.com
+# Admin endpoints (/api/admin/*) are mounted on dev and staging only — production skips
+# them so api.tinboker.com exposes no admin surface. All envs share one database, so
+# staging does the same work to the same data.
+Environment=TINBOKER_ADMIN_API_URL=https://staging-api.tinboker.com
 # Transcription of a long episode is slow; this is a ceiling against a wedged run holding
 # the timer, not a target.
 TimeoutStartSec=7200

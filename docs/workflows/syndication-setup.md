@@ -48,6 +48,14 @@ opening the admin page.
 | `SYNDICATE_VOCUS_PUBLISH` | vocus goes public instead of staying a draft. |
 | `SYNDICATE_SUBSTACK_PUBLISH` | Substack goes public **on the web**. Cannot email — see below. |
 | `TINBOKER_PLATFORM_API_URL` + `TINBOKER_SOCIAL_TOKEN` | already needed by the Threads trigger |
+| `TINBOKER_ADMIN_API_URL` | Where `/api/admin/*` calls go. **Must not be production** — see below. |
+
+**Production mounts no admin routers.** `backend/src/main.py` guards every `/api/admin/*`
+router with `if not settings.is_production`, so `api.tinboker.com` answers 404 for all of
+them on purpose — the admin surface is not exposed on the public host. Any pipeline
+trigger aimed there fails, which is why `TINBOKER_ADMIN_API_URL` points at
+`staging-api.tinboker.com`. All environments share one database, so staging does exactly
+the same work to the same data. The pinned value lives in the systemd units.
 
 **Nothing here can email subscribers.** `SubstackClient.publish_draft` sends
 `send_email: false` and takes no parameter that could change it, so no combination of
