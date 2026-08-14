@@ -132,6 +132,11 @@ jobs:
             chmod +x "$REPO_DIR/services/news/scripts/run_news.sh"
             cp "$REPO_DIR/services/news/deploy/tinboker-news.service" /etc/systemd/system/tinboker-news.service
             cp "$REPO_DIR/services/news/deploy/tinboker-news.timer" /etc/systemd/system/tinboker-news.timer
+
+            echo "→ Installing the podcast ingest timer..."
+            chmod +x "$REPO_DIR/services/podcast/scripts/run_scheduled_ingest.sh"
+            cp "$REPO_DIR/services/podcast/deploy/tinboker-podcast-ingest.service" /etc/systemd/system/tinboker-podcast-ingest.service
+            cp "$REPO_DIR/services/podcast/deploy/tinboker-podcast-ingest.timer" /etc/systemd/system/tinboker-podcast-ingest.timer
             
             systemctl daemon-reload
             
@@ -141,6 +146,12 @@ jobs:
             
             echo "→ Restarting tinboker-news.timer..."
             systemctl enable --now tinboker-news.timer
+
+            # enable --now arms the timer without running the ingest; the unit is
+            # oneshot and fires on its own schedule.
+            echo "→ Arming tinboker-podcast-ingest.timer..."
+            systemctl enable --now tinboker-podcast-ingest.timer
+            systemctl list-timers tinboker-podcast-ingest.timer --no-pager || true
             
             echo "→ Waiting for service to start..."
             sleep 5

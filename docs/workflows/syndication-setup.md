@@ -51,6 +51,11 @@ opening the admin page.
 **There is no switch that auto-publishes to Substack**, deliberately: publishing there
 emails every subscriber and cannot be undone, so it stays a human's click.
 
+The ingest itself runs on `tinboker-podcast-ingest.timer` (four times a day,
+`services/podcast/deploy/`), so a new episode goes feed → summary → both platforms with
+nobody involved. The runner passes `--fill-limit`, which is what keeps a tick that finds
+nothing from re-transcribing episodes already done — an expensive way to do nothing.
+
 The step never fires on reruns or backfills. Unlike the Threads trigger, the platform does
 NOT dedupe this — every call creates fresh drafts — so re-processing an old episode would
 republish it.
