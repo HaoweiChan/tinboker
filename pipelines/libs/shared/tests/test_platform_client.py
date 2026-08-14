@@ -192,3 +192,23 @@ def test_syndication_needs_an_episode_id(monkeypatch):
     monkeypatch.setenv("TINBOKER_PLATFORM_API_URL", "https://api.test")
     monkeypatch.setenv("TINBOKER_SOCIAL_TOKEN", "t")
     assert pc.trigger_syndication("") is None
+
+
+def test_admin_calls_go_to_a_host_that_mounts_admin_routes(monkeypatch):
+    """Production mounts no /api/admin/* routers at all (backend/src/main.py), so pointing
+    admin traffic at api.tinboker.com is a guaranteed 404 — by design, not by accident."""
+    from shared import platform_client as pc
+
+    monkeypatch.setenv("TINBOKER_PLATFORM_API_URL", "https://api.tinboker.com")
+    monkeypatch.setenv("TINBOKER_ADMIN_API_URL", "https://staging-api.tinboker.com")
+    assert pc.admin_base_url() == "https://staging-api.tinboker.com"
+    assert pc.platform_base_url() == "https://api.tinboker.com"
+
+
+def test_admin_base_falls_back_to_the_platform_url(monkeypatch):
+    """Right for a local run against a dev backend."""
+    from shared import platform_client as pc
+
+    monkeypatch.delenv("TINBOKER_ADMIN_API_URL", raising=False)
+    monkeypatch.setenv("TINBOKER_PLATFORM_API_URL", "http://localhost:5174")
+    assert pc.admin_base_url() == "http://localhost:5174"
