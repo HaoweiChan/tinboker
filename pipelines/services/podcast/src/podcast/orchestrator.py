@@ -100,6 +100,15 @@ def create_podcast_config_mapping(config_path: Path) -> Dict[str, Dict]:
         return {}
 
 
+class PipelineRunError(RuntimeError):
+    """At least one show failed. Raised so the process exits non-zero — a scheduled run
+    that accomplished nothing must not report success."""
+
+    def __init__(self, shows: List[str]):
+        super().__init__(f"{len(shows)} show(s) failed: {', '.join(shows)}")
+        self.shows = shows
+
+
 def run_pipeline(
     config_file: Path = Path("podcasts_tw.json"),
     rerun_from: Optional[str] = None,
@@ -326,8 +335,9 @@ def _handle_api_mode(
         temp_dir.mkdir(parents=True, exist_ok=True)
         base_config.temp_dir = temp_dir
 
+    failed_shows: List[str] = []
     for podcast in podcasts:
-        _process_single_podcast(
+        ok = _process_single_podcast(
             podcast=podcast,
             config_file=config_file,
             rerun_from=rerun_from,
@@ -338,6 +348,8 @@ def _handle_api_mode(
             base_config=base_config,
             service_container=service_container,
         )
+        if not ok:
+            failed_shows.append(str(podcast.get("name") or "?"))
 
     if not use_file_mode and base_config.temp_dir and base_config.temp_dir.exists():
         try:
@@ -348,6 +360,14 @@ def _handle_api_mode(
             print(f"Warning: Failed to clean up temp directory: {e}")
 
     print("\n" + "=" * 60)
+    if failed_shows:
+        # Said "completed" and exited 0 no matter what, which is how the hourly DB-URL
+        # failure went unnoticed: every show erroring still looked like a healthy run to
+        # systemd and to anyone reading the last line.
+        print(f"Pipeline finished with {len(failed_shows)} failing show(s): "
+              f"{', '.join(failed_shows)}")
+        print("=" * 60)
+        raise PipelineRunError(failed_shows)
     print("Pipeline completed!")
     print("=" * 60)
 
@@ -440,7 +460,7 @@ def _process_single_podcast(
 
         if not episodes:
             print("No episodes to process")
-            return
+            return True
 
         successful = 0
         failed = 0
@@ -469,9 +489,15 @@ def _process_single_podcast(
             except Exception as e:  # noqa: BLE001
                 print(f"  [reconcile] skipped for {name} (non-critical): {e}")
 
+        return True
+
     except Exception as e:
+        # Keep going: one unreachable feed should not stop the rest of the roster. The
+        # caller counts this and the process exits non-zero, so a scheduled run that
+        # accomplished nothing is not reported as a success.
         print(f"Error processing podcast {name}: {e}")
         traceback.print_exc()
+        return False
 
 
 def _parse_episode_date(value) -> Optional[datetime]:
