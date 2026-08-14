@@ -18,6 +18,8 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from shared.db import libpq_url
+
 from src.secrets_bootstrap import bootstrap
 
 # Load secrets from GSM (idempotent — safe if already bootstrapped at entry point).
@@ -67,7 +69,7 @@ def _write_podcast_show_to_postgres(doc_id: str, metadata: Dict) -> None:
         raise RuntimeError(
             "EPISODE_DATABASE_URL is not set — cannot persist the podcast show doc."
         )
-    with psycopg.connect(url, autocommit=True) as conn, conn.cursor() as cur:
+    with psycopg.connect(libpq_url(url), autocommit=True) as conn, conn.cursor() as cur:
         cur.execute(postgres_mirror.DDL_PODCASTS)
         postgres_mirror.upsert_podcast_show(cur, doc_id, metadata)
     print(f"  ✓ Persisted show: {postgres_mirror.SCHEMA}.podcasts/{doc_id}")
@@ -278,7 +280,7 @@ class FirebaseService:
             raise RuntimeError(
                 "EPISODE_DATABASE_URL is not set — cannot update episode fields."
             )
-        with psycopg.connect(url, autocommit=True) as conn, conn.cursor() as cur:
+        with psycopg.connect(libpq_url(url), autocommit=True) as conn, conn.cursor() as cur:
             if not postgres_mirror.merge_episode_doc(cur, episode_id, fields):
                 raise RuntimeError(
                     f"Failed to update episode {episode_id}: no such row in "

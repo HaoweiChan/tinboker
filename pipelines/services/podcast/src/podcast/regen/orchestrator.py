@@ -27,6 +27,8 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
+from shared.db import libpq_url
+
 from ..content_builder.nodes import (
     extractor,
     key_insights_extractor,
@@ -200,7 +202,7 @@ def _write_doc_update(episode_id: str, fields: dict[str, Any]) -> None:
             "EPISODE_DATABASE_URL is not set — cannot commit the regen (Postgres is "
             "the only content store since P4)."
         )
-    with psycopg.connect(url, autocommit=True) as conn, conn.cursor() as cur:
+    with psycopg.connect(libpq_url(url), autocommit=True) as conn, conn.cursor() as cur:
         if not postgres_mirror.merge_episode_doc(cur, episode_id, fields):
             raise RegenError(
                 f"No {postgres_mirror.SCHEMA}.episodes row for episode_id={episode_id} "

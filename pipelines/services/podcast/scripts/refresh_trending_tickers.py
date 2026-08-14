@@ -21,6 +21,8 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from shared.db import libpq_url
+
 _SERVICE_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_SERVICE_ROOT))
 
@@ -35,7 +37,7 @@ def _connect():
     url = os.getenv("EPISODE_DATABASE_URL")
     if not url:
         raise RuntimeError("EPISODE_DATABASE_URL is not set — cannot refresh trending.")
-    return psycopg.connect(url, autocommit=True)
+    return psycopg.connect(libpq_url(url), autocommit=True)
 
 
 def _read_all_insights() -> list[dict]:
