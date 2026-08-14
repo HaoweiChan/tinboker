@@ -123,6 +123,8 @@ jobs:
             Environment=PIPELINE_LLM_MODEL=openrouter:deepseek/deepseek-v4-pro
             # Use the platform source-of-truth show list (same as run_nightly.sh).
             Environment=TINBOKER_PLATFORM_API_URL=https://api.tinboker.com
+            # /api/admin/* is not mounted in production by design; staging shares the DB.
+            Environment=TINBOKER_ADMIN_API_URL=https://staging-api.tinboker.com
 
             [Install]
             WantedBy=multi-user.target

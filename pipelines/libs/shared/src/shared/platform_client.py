@@ -35,6 +35,22 @@ def platform_base_url() -> str | None:
     return base.rstrip("/") if base else None
 
 
+def admin_base_url() -> str | None:
+    """Where to send ``/api/admin/*`` calls.
+
+    Production deliberately mounts no admin routers at all — see the
+    ``if not settings.is_production`` guard in backend/src/main.py — so
+    api.tinboker.com answers 404 for every admin path by design, not by accident. Every
+    environment shares one database, so calling staging does exactly the same work to the
+    same data while leaving that surface off the public host.
+
+    Falls back to TINBOKER_PLATFORM_API_URL, which is right for local runs against a dev
+    backend and wrong (harmlessly, as a 404) if it ever points at production.
+    """
+    base = os.environ.get("TINBOKER_ADMIN_API_URL") or os.environ.get("TINBOKER_PLATFORM_API_URL")
+    return base.rstrip("/") if base else None
+
+
 def _get_items(path: str, *, timeout: float = 10.0, what: str = "data") -> list[dict[str, Any]] | None:
     """GET ``{base}{path}`` and return the response's ``items`` list, or ``None``.
 
@@ -90,7 +106,7 @@ def trigger_threads_publish(
     so it cannot break ingestion. Idempotency + the recency window live on the platform
     side, so repeated/batched triggers are safe.
     """
-    base = platform_base_url()
+    base = admin_base_url()
     token = os.environ.get("TINBOKER_SOCIAL_TOKEN")
     if not base or not token:
         return None
@@ -131,7 +147,7 @@ def trigger_syndication(
     A longer timeout than the Threads trigger: this renders a cover, uploads it, and
     talks to two APIs.
     """
-    base = platform_base_url()
+    base = admin_base_url()
     token = os.environ.get("TINBOKER_SOCIAL_TOKEN")
     if not base or not token or not episode_id:
         return None
