@@ -29,6 +29,7 @@ from pathlib import Path
 
 import psycopg
 from google.cloud import firestore
+from shared.db import libpq_url
 
 # Make `src.podcast.exporters.postgres_mirror` importable (the ticker_insights /
 # trending_tickers DDL+upsert SQL shared with the live dual-write paths), same
@@ -163,7 +164,7 @@ def main() -> int:
         return 0
 
     url = _database_url(args)
-    with psycopg.connect(url, autocommit=False) as conn, conn.cursor() as cur:
+    with psycopg.connect(libpq_url(url), autocommit=False) as conn, conn.cursor() as cur:
         cur.execute(f'CREATE SCHEMA IF NOT EXISTS "{args.schema}"')
         for coll, table, pk, promoted in COLLECTIONS:
             cols = (

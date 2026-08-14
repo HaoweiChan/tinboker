@@ -29,6 +29,8 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from shared.db import libpq_url
+
 # Make shared importable when run as a plain script (also pip-installed in venv)
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _SERVICE_ROOT = Path(__file__).resolve().parents[1]
@@ -223,7 +225,7 @@ def main() -> int:
     import psycopg  # type: ignore[import-untyped]
     import psycopg.rows  # type: ignore[import-untyped]
 
-    src_conn = psycopg.connect(mirror_url, row_factory=psycopg.rows.dict_row)
+    src_conn = psycopg.connect(libpq_url(mirror_url), row_factory=psycopg.rows.dict_row)
     print("  OK\n")
 
     # ------------------------------------------------------------------

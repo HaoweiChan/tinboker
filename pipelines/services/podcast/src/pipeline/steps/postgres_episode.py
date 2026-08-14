@@ -28,6 +28,7 @@ import os
 
 import psycopg
 from psycopg.types.json import Jsonb
+from shared.db import libpq_url
 
 from src.podcast.exporters.postgres_mirror import DDL_EPISODES_MIRROR_INDEXES
 from src.podcast.exporters.postgres_mirror import SCHEMA as _SCHEMA
@@ -212,10 +213,10 @@ def persist_episode(
     # a ShareLock held until commit, so running it inside the write transaction
     # below would have it queue behind (and deadlock with) the backend's
     # patch_episode_doc row lock and any concurrent persist.
-    with psycopg.connect(url, autocommit=True) as conn, conn.cursor() as cur:
+    with psycopg.connect(libpq_url(url), autocommit=True) as conn, conn.cursor() as cur:
         cur.execute(_DDL)
 
-    with psycopg.connect(url) as conn, conn.cursor() as cur:
+    with psycopg.connect(libpq_url(url)) as conn, conn.cursor() as cur:
         cur.execute(_SELECT_STORED, (episode_id,))
         stored = cur.fetchone()
         if stored:

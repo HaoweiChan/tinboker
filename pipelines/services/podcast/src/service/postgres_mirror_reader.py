@@ -25,6 +25,8 @@ import os
 import re
 from typing import Any, Optional
 
+from shared.db import libpq_url
+
 from src.podcast.exporters.postgres_mirror import SCHEMA as _SCHEMA
 
 # Same sanitizing FirebaseService.upsert_podcast_show applies before using a
@@ -45,7 +47,7 @@ def _url() -> str:
             "EPISODE_DATABASE_URL is not set — cannot read firestore_mirror. "
             "This read path was repointed off Firestore in P2; check secrets_bootstrap."
         )
-    return url
+    return libpq_url(url)
 
 
 def _connect():
