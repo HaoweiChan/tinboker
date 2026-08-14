@@ -18,14 +18,14 @@ APIs actually accept.
 shared fields **once** and hands the same values to both publishers. Admin page: the
 「兩邊建草稿」 button.
 
-Drafts on both by default. `publish=true` affects **vocus only**; Substack is never
-published from here.
+Drafts on both by default. `publish` covers vocus and `publish_substack` covers Substack —
+separate switches, so turning one on never quietly turns the other on.
 
 | | vocus | Substack |
 |---|---|---|
 | Draft URL | `vocus.cc/publish-v2/{id}` | `{sub}.substack.com/publish/post/{id}` |
-| Publishing | `publish=true`, or the wizard | **Human clicks Publish** |
-| Emails on publish | no such thing | only if `should_send_email` — we always send `false` |
+| Publishing | `publish=true`, or the wizard | `publish_substack=true`, or the editor |
+| Emails on publish | no such thing | **never from here** — `send_email` is hard-wired `false` |
 
 ### Substack: drafts and published posts are separate records
 
@@ -46,10 +46,17 @@ opening the admin page.
 |---|---|
 | `SYNDICATE_AUTOPUBLISH` | **Required.** Unset = the step is a no-op and prints where to do it by hand. |
 | `SYNDICATE_VOCUS_PUBLISH` | vocus goes public instead of staying a draft. |
+| `SYNDICATE_SUBSTACK_PUBLISH` | Substack goes public **on the web**. Cannot email — see below. |
 | `TINBOKER_PLATFORM_API_URL` + `TINBOKER_SOCIAL_TOKEN` | already needed by the Threads trigger |
 
-**There is no switch that auto-publishes to Substack**, deliberately: publishing there
-emails every subscriber and cannot be undone, so it stays a human's click.
+**Nothing here can email subscribers.** `SubstackClient.publish_draft` sends
+`send_email: false` and takes no parameter that could change it, so no combination of
+flags or query params sends a newsletter. That is deliberate: a web-only post can be
+taken down, a newsletter cannot be recalled, so enabling email should require a code
+change and a review rather than an env var someone typo'd.
+
+Verified live before shipping: publishing a throwaway draft this way returned
+`is_published: true` with `email_sent_at: null`.
 
 The ingest itself runs on `tinboker-podcast-ingest.timer` (four times a day,
 `services/podcast/deploy/`), so a new episode goes feed → summary → both platforms with

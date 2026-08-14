@@ -192,3 +192,56 @@ async def test_an_upload_with_no_url_is_an_error_not_a_silent_pass():
     async with _client(handler) as http:
         with pytest.raises(sp.SubstackError, match="no_url"):
             await client.upload_image(http, b"\x89PNG")
+
+
+@pytest.mark.asyncio
+async def test_publishing_never_offers_a_way_to_email():
+    """send_email is hard-wired False with no parameter to flip it. A newsletter cannot be
+    recalled, so reaching it should take a code change and a review — not an env var
+    somebody typo'd."""
+    import inspect
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        import json
+        if request.url.path.endswith("/publish"):
+            seen.update(json.loads(request.content))
+        return httpx.Response(200, json={})
+
+    client = sp.SubstackClient(sid="x", subdomain="tinboker", user_id=7)
+    async with _client(handler) as http:
+        await client.publish_draft(http, 42)
+
+    assert seen == {"send_email": False}
+    assert "send_email" not in inspect.signature(sp.SubstackClient.publish_draft).parameters
+
+
+@pytest.mark.asyncio
+async def test_a_published_post_reports_the_reader_facing_url():
+    """The editor link is right for a draft and wrong for something readers can open."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST" and request.url.path.endswith("/publish"):
+            return httpx.Response(200, json={})
+        if request.method == "GET":
+            return httpx.Response(200, json={"is_published": True, "slug": "ep684",
+                                             "email_sent_at": None})
+        return httpx.Response(200, json={"id": 42})
+
+    import unittest.mock as mock
+    real_client = httpx.AsyncClient   # captured before the patch, or the lambda recurses
+    with mock.patch.object(sp.SubstackClient, "is_configured", return_value=True), \
+         mock.patch("httpx.AsyncClient", lambda *a, **k: real_client(
+             transport=httpx.MockTransport(handler))), \
+         mock.patch.object(sp.settings, "substack_subdomain", "tinboker"), \
+         mock.patch.object(sp.settings, "substack_sid", "s"), \
+         mock.patch.object(sp.settings, "substack_user_id", 7):
+        r = await sp.create_summary_draft("EP1", "T", "內文一段。", publish=True, dry_run=False)
+
+    assert r["published"] is True
+    assert r["emailed"] is False
+    assert r["url"] == "https://tinboker.substack.com/p/ep684"
+
+
+def test_the_public_url_falls_back_to_the_publication_without_a_slug():
+    assert sp.public_url("tinboker", {"slug": "x"}) == "https://tinboker.substack.com/p/x"
+    assert sp.public_url("tinboker", {}) == "https://tinboker.substack.com/"

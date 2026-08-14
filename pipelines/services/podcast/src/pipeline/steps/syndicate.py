@@ -12,8 +12,10 @@ What "on" means, per platform:
 - **方格子** — a draft, unless ``SYNDICATE_VOCUS_PUBLISH`` is also set. Publishing there is
   reversible and mails nobody, so auto-publishing is a reasonable choice; it is still
   opt-in because it puts writing in front of strangers without a human reading it first.
-- **Substack** — always a draft. Publishing emails the entire subscriber list and cannot
-  be undone, so no environment variable turns that into an automated step.
+- **Substack** — a draft, unless ``SYNDICATE_SUBSTACK_PUBLISH`` is set. Publishing there
+  goes to the **web only**: the publisher hard-wires ``send_email: false`` and exposes no
+  parameter to change it, so no combination of flags can mail the subscriber list. A
+  web-only post can be taken down; a newsletter cannot be recalled.
 
 Unlike the Threads trigger this is **not idempotent on the platform side**: each call
 creates new drafts. So it fires once, for the episode just ingested, and never on
@@ -30,6 +32,7 @@ from ..service_container import ServiceContainer
 
 _AUTOPUBLISH_ENV = "SYNDICATE_AUTOPUBLISH"
 _VOCUS_PUBLISH_ENV = "SYNDICATE_VOCUS_PUBLISH"
+_SUBSTACK_PUBLISH_ENV = "SYNDICATE_SUBSTACK_PUBLISH"
 _TRUTHY = {"1", "true", "yes", "on"}
 
 
@@ -63,7 +66,11 @@ def trigger_syndicate(
 
     try:
         from shared.platform_client import trigger_syndication
-        result = trigger_syndication(episode_id, publish_vocus=_enabled(_VOCUS_PUBLISH_ENV))
+        result = trigger_syndication(
+            episode_id,
+            publish_vocus=_enabled(_VOCUS_PUBLISH_ENV),
+            publish_substack=_enabled(_SUBSTACK_PUBLISH_ENV),
+        )
     except Exception as e:  # noqa: BLE001 — ingestion must not fail over syndication
         print(f"  ⚠ Syndication trigger skipped: {e}")
         return

@@ -67,12 +67,14 @@ def test_fires_once_for_the_ingested_episode(monkeypatch):
     sy.trigger_syndicate(_cfg(None), None, _ep(episode_id="EP42"))
     assert seen["episode_id"] == "EP42"
     assert seen["publish_vocus"] is False
+    assert seen["publish_substack"] is False
 
 
-def test_vocus_publishing_needs_its_own_switch(monkeypatch):
-    """Substack has no equivalent switch at all: publishing there emails the whole list."""
+def test_each_platform_has_its_own_publish_switch(monkeypatch):
+    """Separate on purpose: turning one on must never quietly turn the other on."""
     monkeypatch.setenv("SYNDICATE_AUTOPUBLISH", "1")
     monkeypatch.setenv("SYNDICATE_VOCUS_PUBLISH", "true")
+    monkeypatch.delenv("SYNDICATE_SUBSTACK_PUBLISH", raising=False)
     seen = {}
 
     def _fake(episode_id, **kw):
@@ -82,6 +84,7 @@ def test_vocus_publishing_needs_its_own_switch(monkeypatch):
     _inject_fake_client(monkeypatch, _fake)
     sy.trigger_syndicate(_cfg(None), None, _ep())
     assert seen["publish_vocus"] is True
+    assert seen["publish_substack"] is False
 
 
 def test_one_platform_failing_does_not_hide_the_other(monkeypatch, capsys):
@@ -104,3 +107,21 @@ def test_a_client_error_never_breaks_ingestion(monkeypatch):
 
     _inject_fake_client(monkeypatch, _boom)
     sy.trigger_syndicate(_cfg(None), None, _ep())   # must not raise
+
+
+def test_substack_publishing_has_its_own_switch(monkeypatch):
+    """And even switched on it cannot email: send_email is hard-wired False in the
+    publisher, with no parameter reaching it from here."""
+    monkeypatch.setenv("SYNDICATE_AUTOPUBLISH", "1")
+    monkeypatch.setenv("SYNDICATE_SUBSTACK_PUBLISH", "1")
+    monkeypatch.delenv("SYNDICATE_VOCUS_PUBLISH", raising=False)
+    seen = {}
+
+    def _fake(episode_id, **kw):
+        seen.update(kw)
+        return {"platforms": {}}
+
+    _inject_fake_client(monkeypatch, _fake)
+    sy.trigger_syndicate(_cfg(None), None, _ep())
+    assert seen["publish_substack"] is True
+    assert seen["publish_vocus"] is False
