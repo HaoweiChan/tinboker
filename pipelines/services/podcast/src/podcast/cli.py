@@ -53,7 +53,7 @@ def main():
     from src.secrets_bootstrap import bootstrap
     bootstrap()
 
-    from src.podcast.orchestrator import run_pipeline
+    from src.podcast.orchestrator import PipelineRunError, run_pipeline
 
     parser = build_parser()
     args = parser.parse_args()
@@ -71,6 +71,11 @@ def main():
         )
     except KeyboardInterrupt:
         print("\n\nPipeline interrupted by user.")
+        sys.exit(1)
+    except PipelineRunError as e:
+        # Already reported per show, with its own traceback. Exit non-zero so systemd
+        # marks the unit failed instead of showing a green run that did nothing.
+        print(f"\n✗ {e}")
         sys.exit(1)
     except Exception as e:
         print(f"\n✗ Fatal error: {e}")
