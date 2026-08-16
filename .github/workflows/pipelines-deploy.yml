@@ -113,14 +113,24 @@ jobs:
             Environment=PORT=8003
             # Still required: the article store reads GCS with this service account.
             Environment=GOOGLE_APPLICATION_CREDENTIALS=/root/tinboker/pipelines/services/podcast/gcp-service-account.json
-            # content_builder LLM model — ONE switch var for every role (extractor,
-            # writer, marp, ticker, key-insights). No per-role model names are pinned
-            # here; to switch models change just this line (or the admin config plane,
-            # which overrides it without a redeploy). The weak per-role gemini pins
+            # content_builder LLM model — the default for every role (extractor,
+            # writer, marp, ticker, key-insights); social_copy_writer is pinned
+            # separately below. To switch the rest, change just this line (or the admin
+            # config plane, which overrides it without a redeploy). The weak per-role gemini pins
             # that used to live here mislabelled long chitchat (e.g. a red-wine tangent)
             # as "analysis", so the segment filter kept it — deepseek-v4-pro types it
             # correctly. A per-role override is still possible via e.g. WRITER_MODEL=.
             Environment=PIPELINE_LLM_MODEL=openrouter:deepseek/deepseek-v4-pro
+            # The one per-role pin. The Threads copy is the only output judged on voice
+            # rather than accuracy, and deepseek keeps breaking that prompt's rules:
+            # 翻案句 ("不是A是B") three times per post, metaphor pile-ups, and one run
+            # that came back in 简体 — a hard fail on the prompt's first rule. Measured
+            # on 股癌 EP687, 3 runs each: gemini and sonnet tied on rule compliance;
+            # gemini's register is more colloquial TW, it never lifted the prompt's own
+            # example opening, it kept the comment headings intact (the admin editor
+            # aligns them to the carousel cards), and it costs ~1/5 of sonnet per run.
+            # Every other role stays on deepseek.
+            Environment=SOCIAL_COPY_WRITER_MODEL=openrouter:google/gemini-3.7-flash
             # Use the platform source-of-truth show list (same as run_nightly.sh).
             Environment=TINBOKER_PLATFORM_API_URL=https://api.tinboker.com
             # /api/admin/* is not mounted in production by design; staging shares the DB.
