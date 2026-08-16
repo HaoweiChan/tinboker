@@ -89,6 +89,12 @@ def analyze_transcript_with_workflow_api(
         "tags": result.get("tags") or [],
         "related_tickers": result.get("related_tickers") or [],
         "social_cards": result.get("social_cards") or [],
+        # The write_social_copy node's {post, comments} for the Threads thread. It
+        # always ran, but nothing downstream mapped it, so every episode reached
+        # Postgres with social_thread null and the publisher fell back to the
+        # mechanical 【title】+bullets compose. None (not {}) when the graph produced
+        # nothing, so the platform-owned merge keeps any hand-edited copy.
+        "social_thread": result.get("social_thread") or None,
         "skipped_segments": result.get("skipped_segments") or [],
         "sector_exposures": result.get("sector_exposures") or [],
         "unresolved_market_trends": result.get("unresolved_market_trends") or [],
