@@ -385,7 +385,13 @@ def _process_single_podcast(
 ) -> None:
     name = podcast.get("name")
     link = podcast.get("link")
-    limit = podcast.get("limit", 2)
+    # ``or 2`` not ``get(..., 2)``: the platform /api/sources path always writes a
+    # "limit" key (from max_episodes, which is optional there), so the key exists with
+    # value None and the get-default never fires. That None reached
+    # _filter_unprocessed_episodes and raised on ``len(...) >= None``, failing every
+    # show on every scheduled run. Guarding here covers all three sources of this dict
+    # (platform API, Postgres registry, JSON config).
+    limit = podcast.get("limit") or 2
     lookback_days = podcast.get("lookback_days")
     max_episodes = podcast.get("max_episodes")
     spotify_show_link = podcast.get("spotify_show_link")

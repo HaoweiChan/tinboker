@@ -11,6 +11,12 @@ ExecStart=/root/tinboker/pipelines/services/podcast/scripts/run_scheduled_ingest
 # still starts before the operator has created it and shared.secrets falls back to GSM.
 EnvironmentFile=-/root/tinboker/pipelines/.env
 Environment=GOOGLE_APPLICATION_CREDENTIALS=/root/tinboker/pipelines/services/podcast/gcp-service-account.json
+# content_builder models. podcast-api.service carries the same two lines; this unit runs
+# the LangGraph pipeline in-process, so without them the scheduled run resolves no model
+# for any role. Keep the pair in sync with .github/workflows/pipelines-deploy.yml — the
+# per-role pin exists because the Threads copy is judged on voice, not accuracy.
+Environment=PIPELINE_LLM_MODEL=openrouter:deepseek/deepseek-v4-pro
+Environment=SOCIAL_COPY_WRITER_MODEL=openrouter:google/gemini-3.7-flash
 Environment=TINBOKER_PLATFORM_API_URL=https://api.tinboker.com
 # Admin endpoints (/api/admin/*) are mounted on dev and staging only — production skips
 # them so api.tinboker.com exposes no admin surface. All envs share one database, so
