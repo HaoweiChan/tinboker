@@ -271,7 +271,11 @@ class WhisperService(SpeechToTextService):
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True
+                text=True,
+                # ffmpeg/ffprobe echo the file's ID3 metadata to stderr, and podcast
+                # MP3s carry non-UTF-8 (e.g. Big5) tag bytes — strict decoding turns a
+                # cosmetic log line into a UnicodeDecodeError that kills the episode.
+                errors="replace",
             )
             
             if result.returncode == 0:
@@ -355,7 +359,11 @@ class WhisperService(SpeechToTextService):
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True
+                text=True,
+                # ffmpeg/ffprobe echo the file's ID3 metadata to stderr, and podcast
+                # MP3s carry non-UTF-8 (e.g. Big5) tag bytes — strict decoding turns a
+                # cosmetic log line into a UnicodeDecodeError that kills the episode.
+                errors="replace",
             )
             
             if result.returncode != 0:
@@ -865,7 +873,11 @@ class GroqService(SpeechToTextService):
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True
+                text=True,
+                # ffmpeg/ffprobe echo the file's ID3 metadata to stderr, and podcast
+                # MP3s carry non-UTF-8 (e.g. Big5) tag bytes — strict decoding turns a
+                # cosmetic log line into a UnicodeDecodeError that kills the episode.
+                errors="replace",
             )
             
             if result.returncode == 0:
@@ -949,7 +961,11 @@ class GroqService(SpeechToTextService):
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True
+                text=True,
+                # ffmpeg/ffprobe echo the file's ID3 metadata to stderr, and podcast
+                # MP3s carry non-UTF-8 (e.g. Big5) tag bytes — strict decoding turns a
+                # cosmetic log line into a UnicodeDecodeError that kills the episode.
+                errors="replace",
             )
             
             if result.returncode != 0:

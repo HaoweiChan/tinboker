@@ -143,3 +143,28 @@ async def test_render_cards_requires_inline_theme(monkeypatch):
     with pytest.raises(HTTPException) as e:
         await svc.render_social_card_pngs("EP1")
     assert e.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_syndicate_passes_publish_substack_through(monkeypatch):
+    """The pipeline has sent publish_substack=true since Step 5f shipped; the endpoint
+    used to drop the unknown query param silently, leaving every episode a draft."""
+    seen = {}
+
+    async def _fake_get_episode(episode_id):
+        return _ep(episode_id)
+
+    async def _fake_substack(episode_id, title, summary, **kw):
+        seen.update(kw)
+        return {"platform": "substack", "posted": True}
+
+    monkeypatch.setattr(social.podcast_service, "get_episode_admin", _fake_get_episode)
+    monkeypatch.setattr(social.substack_publisher, "create_summary_draft", _fake_substack)
+    monkeypatch.setattr(social, "_public_base_url", lambda request: "https://api.test")
+
+    await social.syndicate_episode(
+        "EP1", request=None, platforms="substack",
+        dry_run=True, publish=False, publish_substack=True, _=None,
+    )
+    assert seen["publish"] is True
+    assert seen["send_email"] is False

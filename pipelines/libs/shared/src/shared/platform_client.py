@@ -95,7 +95,7 @@ def fetch_translation_aliases(*, timeout: float = 10.0) -> list[dict[str, Any]] 
 
 
 def trigger_threads_publish(
-    *, limit: int = 5, dry_run: bool = False, timeout: float = 20.0
+    *, limit: int = 5, dry_run: bool = False, timeout: float = 300.0
 ) -> dict[str, Any] | None:
     """Ask the platform to post recent episodes to Threads (post-ingest trigger).
 
@@ -105,6 +105,12 @@ def trigger_threads_publish(
     platform's JSON response, or ``None`` when disabled / on any error — never raises,
     so it cannot break ingestion. Idempotency + the recency window live on the platform
     side, so repeated/batched triggers are safe.
+
+    The generous timeout is load-bearing, not padding: the platform posts each episode
+    as a main post plus a reply chain (≈6–12 Graph API calls per episode, up to
+    ``limit`` episodes), and uvicorn cancels the whole publish coroutine if this client
+    disconnects early. A 20s timeout meant every real catch-up run was cancelled
+    mid-flight with nothing posted.
     """
     base = admin_base_url()
     token = os.environ.get("TINBOKER_SOCIAL_TOKEN")
