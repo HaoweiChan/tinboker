@@ -16,10 +16,12 @@ def _cfg(rerun=None):
     return types.SimpleNamespace(rerun_from=rerun)
 
 
-def _ep(summary="內文一段。", episode_id="EP1"):
+def _ep(summary="內文一段。", episode_id="EP1", key="summary_text"):
+    # ``summary_text`` is the key the real pipeline writes (summarize.py). A fake shaped
+    # with a key production never uses is how the silent-skip bug survived these tests.
     return types.SimpleNamespace(
         episode_id=episode_id,
-        summary_result=({"summary_content": summary} if summary is not None else None),
+        summary_result=({key: summary} if summary is not None else None),
     )
 
 
@@ -36,9 +38,26 @@ def test_skips_on_rerun():
     sy.trigger_syndicate(_cfg("summarize"), None, _ep())
 
 
-def test_skips_without_a_summary():
+def test_skips_without_a_summary(capsys):
     sy.trigger_syndicate(_cfg(None), None, _ep(None))
     sy.trigger_syndicate(_cfg(None), None, _ep("   "))
+    # The skip must be visible in the run log — a silent return hid a total outage.
+    assert "Syndication skipped" in capsys.readouterr().out
+
+
+def test_fires_for_every_summary_key_the_pipeline_uses(monkeypatch):
+    """summary_text (the live ingest shape), markdown_report and summary_content all count."""
+    monkeypatch.setenv("SYNDICATE_AUTOPUBLISH", "1")
+    for key in ("summary_text", "markdown_report", "summary_content"):
+        called = {"n": 0}
+
+        def _fake(episode_id, **kw):
+            called["n"] += 1
+            return {"platforms": {}}
+
+        _inject_fake_client(monkeypatch, _fake)
+        sy.trigger_syndicate(_cfg(None), None, _ep(key=key))
+        assert called["n"] == 1, key
 
 
 def test_skips_when_disabled(monkeypatch):
