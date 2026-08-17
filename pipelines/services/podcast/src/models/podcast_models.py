@@ -50,6 +50,7 @@ class PodcastEpisode:
     tags: List[str] = field(default_factory=list)  # Canonical tag slugs (contract §2.1: always present, may be empty)
     key_insights: List[str] = field(default_factory=list)  # 3–8 plain-text zh-TW takeaways
     social_cards: List[Dict] = field(default_factory=list)  # AlphaMemo-style cards (cover + per theme)
+    social_thread: Optional[Dict] = None  # {post, comments} for the Threads thread
     skipped_segments: List[Dict] = field(default_factory=list)  # Dropped segments (timing+label) for player "skip" chips
     sector_exposures: List[Dict] = field(default_factory=list)  # Broad sector/theme exposure metadata
     unresolved_market_trends: List[Dict] = field(default_factory=list)  # Demand-driven curation candidates
@@ -184,6 +185,12 @@ class PodcastEpisode:
         if self.social_cards:
             result['social_cards'] = self.social_cards
 
+        # And for the Threads copy: emit it only when this run actually wrote one, so a
+        # run that produced none leaves the operator's hand-edited thread untouched
+        # (postgres_episode treats social_thread as platform-owned on that basis).
+        if self.social_thread:
+            result['social_thread'] = self.social_thread
+
         # Merge-safe too: a regen path that didn't compute skip segments must not
         # wipe a previously-stored value.
         if self.skipped_segments:
@@ -296,6 +303,7 @@ class PodcastEpisode:
             related_tickers=data.get('related_tickers', []),
             key_insights=data.get('key_insights', []),
             social_cards=data.get('social_cards', []),
+            social_thread=data.get('social_thread'),
             skipped_segments=data.get('skipped_segments', []),
             sector_exposures=data.get('sector_exposures', []),
             unresolved_market_trends=data.get('unresolved_market_trends', []),
