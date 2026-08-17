@@ -462,6 +462,10 @@ async def syndicate_episode(
     platforms: str = Query(default="vocus,substack", description="Comma list: vocus, substack"),
     dry_run: bool = Query(default=True, description="Convert only; create nothing (default)"),
     publish: bool = Query(default=False, description="vocus only: go public instead of staying a draft"),
+    publish_substack: bool = Query(
+        default=False,
+        description="Substack only: publish to the web (never emails) instead of staying a draft",
+    ),
     _: AdminAccess = Depends(get_social_access),
 ):
     """Stage one episode on every syndication target at once.
@@ -518,6 +522,10 @@ async def syndicate_episode(
             # Never primed to mail the list. Publishing web-only is reversible; an email
             # is not, and that choice stays with whoever clicks Publish.
             send_email=False,
+            # The pipeline has sent publish_substack=true since Step 5f shipped, but the
+            # endpoint silently dropped the unknown query param — every "published"
+            # episode was actually a draft nobody saw.
+            publish=publish_substack,
             dry_run=dry_run,
         )
 
