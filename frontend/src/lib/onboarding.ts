@@ -42,6 +42,14 @@ export interface ChangelogEntry {
 //   docs/workflows/deploy-flow.md § "In-app changelog (What's new)".
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.11.5',
+    date: '2026-08',
+    items: [
+      '節目封面圖示恢復顯示：首頁、節目列表與你訂閱的節目都能正常看到頻道封面。',
+      '單集音檔與重點摘要恢復正常載入，播放與閱讀不再中斷。',
+    ],
+  },
+  {
     version: '0.6.3',
     date: '2026-06',
     items: [
