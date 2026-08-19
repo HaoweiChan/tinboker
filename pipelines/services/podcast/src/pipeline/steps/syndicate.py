@@ -52,7 +52,18 @@ def trigger_syndicate(
         return
 
     summary_result = episode_data.summary_result or {}
-    if not (summary_result.get("summary_content") or "").strip():
+    # The pipeline's summary_result carries the text as summary_text (see summarize.py /
+    # gcs_upload.py); markdown_report/summary_content appear on other paths. Same
+    # fallback chain as utils.build_podcast_episode — checking only one key here once
+    # made this step silently skip every episode.
+    summary_text = (
+        summary_result.get("markdown_report")
+        or summary_result.get("summary_content")
+        or summary_result.get("summary_text")
+        or ""
+    )
+    if not summary_text.strip():
+        print("  ⚠ Syndication skipped: episode has no summary text")
         return
 
     episode_id = getattr(episode_data, "episode_id", None) or summary_result.get("episode_id")

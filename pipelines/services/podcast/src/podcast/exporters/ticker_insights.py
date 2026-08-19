@@ -23,6 +23,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Iterable
 
+from shared.db import libpq_url
 from shared.tickers import canonical_symbol, is_valid_ticker_symbol, lookup_ticker
 
 SCHEMA_VERSION = 3
@@ -321,7 +322,7 @@ def write_episode_insights_postgres(episode_id: str, docs: dict[str, dict[str, A
         raise RuntimeError(
             "EPISODE_DATABASE_URL is not set — cannot persist ticker insights."
         )
-    with psycopg.connect(url, autocommit=True) as conn, conn.cursor() as cur:
+    with psycopg.connect(libpq_url(url), autocommit=True) as conn, conn.cursor() as cur:
         cur.execute(postgres_mirror.DDL_TICKER_INSIGHTS)
         return postgres_mirror.upsert_ticker_insights(cur, episode_id, docs)
 

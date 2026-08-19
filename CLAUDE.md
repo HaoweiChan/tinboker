@@ -131,6 +131,12 @@ GCS `graphfolio-articles`, Cloud SQL `34.14.119.47:5432/podcast_db`).
   `backend/AGENTS.md`.
 - TypeScript: Zod-validated API responses, Zustand state, no `any` —
   `frontend/AGENTS.md` § Code conventions.
+- **Repo artifacts are written in English**: commit messages, PR titles and bodies,
+  issue titles and bodies, code comments, and docs. This holds regardless of the
+  language the session is being conducted in — chat with the user may be zh-TW, the
+  artifact still is not. User-facing product copy is the exception and stays zh-TW
+  (`frontend/AGENTS.md` § Traditional Chinese (zh-TW) Localization; podcast summaries
+  and social copy are zh-TW by design).
 
 ## Env vars & release scoping
 

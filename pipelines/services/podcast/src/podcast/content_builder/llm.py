@@ -178,34 +178,52 @@ def _is_openrouter(model: str) -> bool:
     return model.startswith(_OPENROUTER_PREFIX)
 
 
-def get_model(role: str):
+def get_model(role: str, *, disable_reasoning: bool = True):
     """Get a configured LangChain chat model for a pipeline role.
 
     Always returns a ``ChatOpenAI`` pointed at OpenRouter. The ``openrouter:``
     prefix is stripped from the model id before sending; bare model ids (no
     prefix) are forwarded to OpenRouter as-is.
+
+    ``disable_reasoning=False`` is the fallback for endpoints that refuse to run
+    without reasoning — see the retry in ``invoke_json``.
     """
     from langchain_openai import ChatOpenAI
 
     model = _model_name(role)
     temperature = _TEMPERATURE_MAP.get(role, 0.2)
     or_model = model[len(_OPENROUTER_PREFIX):] if _is_openrouter(model) else model
+    max_tokens = _MAX_TOKENS_MAP.get(role, 4096)
+
+    extra_body: dict[str, Any] = {}
+    if disable_reasoning:
+        # Every role emits structured JSON; disable hidden reasoning so it can't burn
+        # the max_tokens budget and truncate the JSON mid-array (reasoning-capable
+        # models like deepseek-v4-flash). Non-reasoning models ignore this field.
+        extra_body = {"reasoning": {"enabled": False}}
+    else:
+        # Reasoning tokens come out of the same completion budget, so a forced-reasoning
+        # endpoint needs headroom or the JSON truncates mid-array — the exact failure
+        # disabling it was meant to prevent.
+        max_tokens *= 2
 
     return ChatOpenAI(
         model=or_model,
         temperature=temperature,
-        max_tokens=_MAX_TOKENS_MAP.get(role, 4096),
+        max_tokens=max_tokens,
         base_url=_OPENROUTER_BASE_URL,
         api_key=os.getenv("OPENROUTER_API_KEY"),
         default_headers={
             "HTTP-Referer": os.getenv("OPENROUTER_SITE_URL", "https://tinboker.com"),
             "X-Title": "TinBoker content pipeline",
         },
-        # Every role emits structured JSON; disable hidden reasoning so it can't burn
-        # the max_tokens budget and truncate the JSON mid-array (reasoning-capable
-        # models like deepseek-v4-flash). Non-reasoning models ignore this field.
-        extra_body={"reasoning": {"enabled": False}},
+        extra_body=extra_body,
     )
+
+
+# OpenRouter's wording when an endpoint refuses ``reasoning.enabled=false``
+# (deepseek-v4-pro started returning this, which stalled every summary).
+_REASONING_MANDATORY_RE = re.compile(r"reasoning is mandatory", re.IGNORECASE)
 
 
 def _sanitize_json_text(text: str) -> str:
@@ -236,12 +254,23 @@ def invoke_json(role: str, messages: list[dict], schema: dict | None = None) -> 
     model_obj = get_model(role)
     model_name = _model_name(role)
     json_kwargs = _json_kwargs(model_name)
+    reasoning_disabled = True
     last_err: Exception | None = None
 
     for attempt in range(_MAX_RETRIES + 1):
         try:
             response = model_obj.invoke(messages, **json_kwargs)
-        except Exception as exc:  # noqa: BLE001 — some models reject the JSON-mode kwarg
+        except Exception as exc:  # noqa: BLE001 — some models reject our request shape
+            if reasoning_disabled and _REASONING_MANDATORY_RE.search(str(exc)):
+                # The reasoning switch lives on the client, not in the call kwargs, so
+                # dropping json_kwargs below can never clear it — the retry just hit the
+                # same 400 and every episode fell back to the placeholder summarizer.
+                # Rebuild the client with reasoning allowed instead.
+                print("  ⚠ endpoint mandates reasoning; rebuilding the client with it enabled")
+                reasoning_disabled = False
+                model_obj = get_model(role, disable_reasoning=False)
+                last_err = exc
+                continue
             if json_kwargs:
                 print(f"  ⚠ JSON-mode kwarg rejected ({exc}); retrying without it")
                 json_kwargs = {}

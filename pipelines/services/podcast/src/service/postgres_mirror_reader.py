@@ -25,6 +25,8 @@ import os
 import re
 from typing import Any, Optional
 
+from shared.db import libpq_url
+
 from src.podcast.exporters.postgres_mirror import SCHEMA as _SCHEMA
 
 # Same sanitizing FirebaseService.upsert_podcast_show applies before using a
@@ -45,7 +47,7 @@ def _url() -> str:
             "EPISODE_DATABASE_URL is not set — cannot read firestore_mirror. "
             "This read path was repointed off Firestore in P2; check secrets_bootstrap."
         )
-    return url
+    return libpq_url(url)
 
 
 def _connect():
@@ -82,7 +84,11 @@ def get_episode_by_fields(
     if episode_number is not None:
         sql += " AND episode_number = %s"
         params.append(episode_number)
-    sql += " LIMIT 1"
+    # Deterministic pick: the same title can exist under two episode_ids (the id scheme
+    # changed once, and persist upserts by episode_id so the old row never goes away).
+    # An unordered LIMIT 1 let the planner hand back the stale incomplete row, which made
+    # the processed-check re-ingest — and re-syndicate — the episode on every tick.
+    sql += " ORDER BY created_time DESC NULLS LAST LIMIT 1"
     with _connect() as conn, conn.cursor() as cur:
         row = cur.execute(sql, params).fetchone()
     return _row_to_dict(*row) if row else None
@@ -96,7 +102,8 @@ def get_episode_by_title_and_number(
     if episode_number is not None:
         sql += " AND episode_number = %s"
         params.append(episode_number)
-    sql += " LIMIT 1"
+    # Same deterministic pick as get_episode_by_fields — see the comment there.
+    sql += " ORDER BY created_time DESC NULLS LAST LIMIT 1"
     with _connect() as conn, conn.cursor() as cur:
         row = cur.execute(sql, params).fetchone()
     return _row_to_dict(*row) if row else None
