@@ -171,6 +171,14 @@ class PipelineState(TypedDict, total=False):
     # {"post": str, "comments": [{"heading": str, "text": str}, ...]}
     social_thread: dict[str, Any]
 
+    # One written headline for every off-site copy of this episode: the vocus and
+    # Substack article title, the cover image, and the Threads post's first line. Feed
+    # titles are unusable as-is at both extremes — "EP689 | 🏐" says nothing, and a
+    # 70-character keyword dump buries whatever the episode was about. Written by the
+    # same node as social_thread; syndication_title() composes the show name and the
+    # 摘要 suffix around it, so this value carries neither.
+    summary_headline: str
+
     # Ticker insights (parallel branch). The ticker deck is built deterministically
     # from ticker_insights (overview grid + focus-analysis cards) — no LLM slide step.
     ticker_insights: dict[str, Any]

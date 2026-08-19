@@ -110,7 +110,7 @@ def podcast_short_name(podcast_name: str) -> str:
     return max(runs, key=len) if runs else (podcast_name or "").strip()
 
 
-def syndication_title(podcast_name: str, episode_title: str) -> str:
+def syndication_title(podcast_name: str, episode_title: str, headline: str | None = None) -> str:
     """Title for an off-site copy: the podcast name leads.
 
     Every 股癌 summary on vocus is titled this way ("股癌EP686 —— 學習筆記",
@@ -118,7 +118,11 @@ def syndication_title(podcast_name: str, episode_title: str) -> str:
     a bare "EP684 | 🔦" is the one entry that does not say whose episode it summarises.
     """
     short = podcast_short_name(podcast_name)
-    title = (episode_title or "").strip()
+    # The written headline when the pipeline produced one. Feed titles fail at both
+    # extremes — "EP689 | 🏐" names nothing, and a 70-character keyword dump pushes the
+    # 摘要 suffix past where anyone reads. Falling back to the feed title keeps the
+    # behaviour that shipped before headlines existed.
+    title = (headline or "").strip() or (episode_title or "").strip()
     if short and not title.startswith(short):
         title = f"{short} {title}".strip()
     # Say what the post is. An episode title alone ("EP684 | 🔦") reads as a repost of the
