@@ -403,13 +403,18 @@ export const TopicsCloud: React.FC = () => {
         </div>
 
         {/* ── THEME BOARD (collapsed to a preview so the tags below stay reachable) ── */}
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center justify-between mb-1.5">
           <div className="flex items-center gap-2">
             <SectionIcon icon={<LayoutGrid size={15} />} tone="info" />
             <h2 className={`${type.sectionTitle} font-semibold`}>題材總覽</h2>
           </div>
           <Segmented options={SORT_OPTIONS} value={sortKey} onChange={setSortKey} />
         </div>
+        {/* Each sort key has a different time window — spell them out so the bare
+            percentages on the cards aren't mistaken for a longer horizon. */}
+        <p className={`mb-3 ${type.meta} text-muted-foreground`}>
+          今日表現＝最近一個交易日漲跌；討論熱度＝累計相關集數；資金流入＝近 5 日外資買賣超；綜合熱度＝當日表現與討論熱度的綜合排序。
+        </p>
         <BoardGrid
           loading={loading}
           items={boardExpanded ? sortedThemeBoard : sortedThemeBoard.slice(0, BOARD_PREVIEW)}
