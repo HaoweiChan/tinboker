@@ -99,7 +99,8 @@ async def _episode_svg(episode_id: str) -> str:
     # cover said "EP684 | 🔦" while the post was "股癌 EP684 | 🔦 摘要". The show's name
     # is then dropped from the line because the kicker above it already carries it.
     short = podcast_short_name(podcast_name)
-    full = syndication_title(podcast_name, raw_title)
+    full = syndication_title(podcast_name, raw_title,
+                             getattr(episode, "summary_headline", None))
     title = full[len(short):].strip() if short and full.startswith(short) else full
 
     return episode_cover_svg(title, kicker=short,

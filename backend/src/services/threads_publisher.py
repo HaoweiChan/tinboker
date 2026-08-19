@@ -104,6 +104,18 @@ def _has_human_thread(episode: Any) -> bool:
     )
 
 
+def headline_line(episode: Any) -> str:
+    """The written headline, as the post's own first line.
+
+    The same string titles the vocus and Substack copies and the cover image, so a
+    reader who meets the episode on any of them meets it under one name. It is a title
+    line, not an opening sentence: the body underneath still starts in the voice the
+    copy was written in (the prompt is explicit that the post must not open with a
+    designed hook), and the blank line keeps the two from reading as one paragraph.
+    """
+    return (_field(episode, "summary_headline") or "").strip()
+
+
 def compose_post(episode: Any, *, count_line: str = "", with_link: bool = True) -> dict:
     """Build a Threads post draft from an episode. Always <= THREADS_MAX_CHARS chars.
 
@@ -114,7 +126,8 @@ def compose_post(episode: Any, *, count_line: str = "", with_link: bool = True) 
     link as the first comment instead. Returns ``{episode_id, text, image_url, url}``.
     """
     episode_id = _field(episode, "id") or _field(episode, "episode_id") or ""
-    title = (_field(episode, "episode_title") or "").strip()
+    # Same name as every other copy of this episode; the feed title is the fallback.
+    title = headline_line(episode) or (_field(episode, "episode_title") or "").strip()
     podcast_name = (_field(episode, "podcast_name") or "").strip()
     insights = [s.strip() for s in (_field(episode, "key_insights") or []) if s and s.strip()]
     image_url = _field(episode, "summary_image_public_url") or None
@@ -162,13 +175,20 @@ def _compose_reply(title: str, bullets: list[str]) -> str:
 
 
 def _finalize_post_text(episode: Any, body: str, count_line: str = "") -> str:
-    """Clamp the human-authored grand-summary post to THREADS_MAX_CHARS, appending only
-    the count line. No hashtags and no permalink — the permalink goes in the first
-    comment (see ``compose_thread``)."""
+    """Clamp the human-authored grand-summary post to THREADS_MAX_CHARS, prefixing the
+    headline and appending only the count line. No hashtags and no permalink — the
+    permalink goes in the first comment (see ``compose_thread``)."""
     count_seg = f"\n\n{count_line}" if count_line else ""
-    budget = THREADS_MAX_CHARS - len(count_seg)
-    body = (body or "").strip()[:max(0, budget)].rstrip()
-    return f"{body}{count_seg}"
+    body = (body or "").strip()
+    headline = headline_line(episode)
+    # Skip the prefix when the copy already opens with it, so a hand-edited post that
+    # includes its own title does not get it twice.
+    head_seg = f"{headline}\n\n" if headline and not body.startswith(headline) else ""
+    # The headline is the part worth keeping if anything has to go, so it is reserved
+    # before the body rather than trimmed with it.
+    budget = THREADS_MAX_CHARS - len(count_seg) - len(head_seg)
+    body = body[:max(0, budget)].rstrip()
+    return f"{head_seg}{body}{count_seg}"
 
 
 def compose_thread(episode: Any) -> dict:

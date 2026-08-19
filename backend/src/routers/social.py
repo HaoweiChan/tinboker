@@ -388,7 +388,8 @@ async def publish_episode_to_vocus(
     summary = getattr(episode, "modified_summary_content", None) or getattr(episode, "summary_content", None) or ""
     podcast_name = (getattr(episode, "podcast_name", None) or "").strip()
     raw_title = (getattr(episode, "episode_title", None) or "").strip() or episode_id
-    title = syndication_title(podcast_name, raw_title)
+    title = syndication_title(podcast_name, raw_title,
+                              getattr(episode, "summary_headline", None))
 
     # zh-TW labels, not raw slugs: a vocus reader searches 台股, never "twstocks", and the
     # podcast's own name leads so the post lands on the tag page its audience reads.
@@ -440,7 +441,8 @@ async def draft_episode_to_substack(
     summary = getattr(episode, "modified_summary_content", None) or getattr(episode, "summary_content", None) or ""
     podcast_name = (getattr(episode, "podcast_name", None) or "").strip()
     raw_title = (getattr(episode, "episode_title", None) or "").strip() or episode_id
-    title = syndication_title(podcast_name, raw_title)
+    title = syndication_title(podcast_name, raw_title,
+                              getattr(episode, "summary_headline", None))
 
     return await substack_publisher.create_summary_draft(
         episode_id,
@@ -498,7 +500,8 @@ async def syndicate_episode(
     summary = getattr(episode, "modified_summary_content", None) or getattr(episode, "summary_content", None) or ""
     podcast_name = (getattr(episode, "podcast_name", None) or "").strip()
     raw_title = (getattr(episode, "episode_title", None) or "").strip() or episode_id
-    title = syndication_title(podcast_name, raw_title)
+    title = syndication_title(podcast_name, raw_title,
+                              getattr(episode, "summary_headline", None))
     excerpt = ((getattr(episode, "summary_excerpt", None) or "").strip()
                or syndication_excerpt(summary))
 

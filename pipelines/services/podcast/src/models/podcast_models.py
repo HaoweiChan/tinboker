@@ -51,6 +51,7 @@ class PodcastEpisode:
     key_insights: List[str] = field(default_factory=list)  # 3–8 plain-text zh-TW takeaways
     social_cards: List[Dict] = field(default_factory=list)  # AlphaMemo-style cards (cover + per theme)
     social_thread: Optional[Dict] = None  # {post, comments} for the Threads thread
+    summary_headline: Optional[str] = None  # written title for every off-site copy
     skipped_segments: List[Dict] = field(default_factory=list)  # Dropped segments (timing+label) for player "skip" chips
     sector_exposures: List[Dict] = field(default_factory=list)  # Broad sector/theme exposure metadata
     unresolved_market_trends: List[Dict] = field(default_factory=list)  # Demand-driven curation candidates
@@ -191,6 +192,11 @@ class PodcastEpisode:
         if self.social_thread:
             result['social_thread'] = self.social_thread
 
+        # Merge-safe on the same rule: a run that wrote no headline leaves the stored
+        # one alone rather than blanking the title on every syndicated copy.
+        if self.summary_headline:
+            result['summary_headline'] = self.summary_headline
+
         # Merge-safe too: a regen path that didn't compute skip segments must not
         # wipe a previously-stored value.
         if self.skipped_segments:
@@ -304,6 +310,7 @@ class PodcastEpisode:
             key_insights=data.get('key_insights', []),
             social_cards=data.get('social_cards', []),
             social_thread=data.get('social_thread'),
+            summary_headline=data.get('summary_headline'),
             skipped_segments=data.get('skipped_segments', []),
             sector_exposures=data.get('sector_exposures', []),
             unresolved_market_trends=data.get('unresolved_market_trends', []),

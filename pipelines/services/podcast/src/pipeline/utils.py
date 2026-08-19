@@ -289,6 +289,7 @@ def create_episode_object(
         key_insights=key_insights,
         social_cards=summary_result.get('social_cards', []) if summary_result else [],
         social_thread=summary_result.get('social_thread') if summary_result else None,
+        summary_headline=summary_result.get('summary_headline') if summary_result else None,
         skipped_segments=summary_result.get('skipped_segments', []) if summary_result else [],
         sector_exposures=summary_result.get('sector_exposures', []) if summary_result else [],
         unresolved_market_trends=summary_result.get('unresolved_market_trends', []) if summary_result else [],

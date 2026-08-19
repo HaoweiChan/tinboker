@@ -164,12 +164,39 @@ def build_messages(state: PipelineState) -> list[dict[str, str]]:
     ]
 
 
+# A headline that runs past this is a keyword dump, which is the failure being fixed —
+# better to fall back to the feed title than to publish a worse version of it.
+MAX_HEADLINE_CHARS = 60
+
+# Emoji-only feed titles ("EP689 | 🏐") are the case the headline exists for, so a model
+# that just echoes the source title has not done the job.
+_STRIPPED_TITLE = re.compile(r"[\s|｜\-–—]+")
+
+
+def _clean_headline(value: Any, state: PipelineState) -> str:
+    """The written headline, or "" when the model gave nothing usable.
+
+    Empty is a valid answer: syndication_title() then falls back to the feed title, which
+    is what shipped before this node wrote headlines at all.
+    """
+    text = (value or "").strip() if isinstance(value, str) else ""
+    if not text or len(text) > MAX_HEADLINE_CHARS:
+        return ""
+    # An echo of the feed title adds nothing and costs the fallback its clarity.
+    source = _STRIPPED_TITLE.sub("", (state.get("episode_title") or ""))
+    if source and _STRIPPED_TITLE.sub("", text) == source:
+        return ""
+    return text
+
+
 def postprocess(result: Any, state: PipelineState) -> dict[str, Any]:
-    """Normalise the LLM/agent output into a clean ``social_thread`` dict."""
+    """Normalise the LLM/agent output into ``social_thread`` + ``summary_headline``."""
     post = ""
+    headline = ""
     comments: list[dict[str, str]] = []
     if isinstance(result, dict):
         post = (result.get("post") or "").strip()
+        headline = _clean_headline(result.get("headline"), state)
         for item in result.get("comments") or []:
             if isinstance(item, dict):
                 text = (item.get("text") or "").strip()
@@ -178,10 +205,13 @@ def postprocess(result: Any, state: PipelineState) -> dict[str, Any]:
                 text, heading = str(item).strip(), ""
             if text:
                 comments.append({"heading": heading, "text": text})
-    return {"social_thread": {"post": post, "comments": comments}}
+    return {
+        "social_thread": {"post": post, "comments": comments},
+        "summary_headline": headline,
+    }
 
 
 def write_social_copy(state: PipelineState) -> dict[str, Any]:
-    """Generate the human-tone Threads post + per-section comments."""
+    """Generate the headline, the human-tone Threads post, and per-section comments."""
     result = invoke_json("social_copy_writer", build_messages(state))
     return postprocess(result, state)

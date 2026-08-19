@@ -95,6 +95,9 @@ def analyze_transcript_with_workflow_api(
         # mechanical 【title】+bullets compose. None (not {}) when the graph produced
         # nothing, so the platform-owned merge keeps any hand-edited copy.
         "social_thread": result.get("social_thread") or None,
+        # The one written headline every off-site copy uses. None (not "") when the
+        # graph produced none, so the episode keeps whatever title it already had.
+        "summary_headline": result.get("summary_headline") or None,
         "skipped_segments": result.get("skipped_segments") or [],
         "sector_exposures": result.get("sector_exposures") or [],
         "unresolved_market_trends": result.get("unresolved_market_trends") or [],

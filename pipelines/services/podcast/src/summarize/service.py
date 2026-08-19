@@ -112,6 +112,9 @@ class SummarizeService:
                     # The zh-TW Threads post + per-section comments. Same reason as
                     # social_cards: carry it through or it never reaches the episode.
                     social_thread = api_result.get("social_thread") or None
+                    # Titles the vocus/Substack post, the cover, and the Threads
+                    # first line — one value, four consumers.
+                    summary_headline = api_result.get("summary_headline") or None
                     sector_exposures = api_result.get("sector_exposures") or []
                     unresolved_market_trends = api_result.get("unresolved_market_trends") or []
                     sector_exposure_ids = api_result.get("sector_exposure_ids") or []
@@ -133,6 +136,7 @@ class SummarizeService:
                     key_insights = None
                     social_cards = []
                     social_thread = None
+                    summary_headline = None
                     sector_exposures = []
                     unresolved_market_trends = []
                     sector_exposure_ids = []
@@ -167,6 +171,7 @@ class SummarizeService:
                     # mechanical compose. None when the graph produced none, which
                     # leaves any operator-written copy in place.
                     'social_thread': social_thread,
+                    'summary_headline': summary_headline,
                     # Broad sector/theme exposure metadata. These are intentionally
                     # separate from related_tickers and ticker_insights so inferred
                     # baskets never trigger direct-mention behavior.
