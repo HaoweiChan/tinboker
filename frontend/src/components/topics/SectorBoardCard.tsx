@@ -80,6 +80,12 @@ interface SectorBoardCardProps {
   sector: SectorBoardItem;
   /** 三大法人 net flow (5d), shown under the name. Omitted for the industry drawer. */
   netFlow?: SectorNetFlow;
+  /**
+   * 一週 avg member trailing return (%). When provided (even null = loading/no
+   * data) the header metric shows this with a 一週 label instead of the 1-day
+   * avg_change; omit entirely to keep the 1-day behavior.
+   */
+  weeklyChange?: number | null;
 }
 
 /**
@@ -88,10 +94,12 @@ interface SectorBoardCardProps {
  * - Optional 5d 外資/法人 net-flow line under the name
  * - Up to 4 member rows with individual sparklines and change %
  */
-export const SectorBoardCard: React.FC<SectorBoardCardProps> = ({ sector, netFlow }) => {
-  const trend = useStockTrendColor(sector.avg_change ?? 0);
+export const SectorBoardCard: React.FC<SectorBoardCardProps> = ({ sector, netFlow, weeklyChange }) => {
+  const isWeekly = weeklyChange !== undefined;
+  const change = isWeekly ? weeklyChange : sector.avg_change;
+  const trend = useStockTrendColor(change ?? 0);
   const foreignTrend = useStockTrendColor(netFlow?.foreign5d ?? 0);
-  const hasChange = sector.avg_change != null && Number.isFinite(sector.avg_change);
+  const hasChange = change != null && Number.isFinite(change);
   const hasFlow = !!netFlow && (netFlow.foreign5d != null || netFlow.total5d != null);
   const topMembers = sector.members.slice(0, 4);
   const type = TOPICS_TYPOGRAPHY.className;
@@ -145,12 +153,17 @@ export const SectorBoardCard: React.FC<SectorBoardCardProps> = ({ sector, netFlo
 
         {/* Right: aggregate change + episode count */}
         <div className="shrink-0 flex flex-col items-end gap-1 pt-0.5">
-          <ChangePct
-            value={sector.avg_change}
-            sizeClass={type.cardMetric}
-            showArrow
-            skeleton={false}
-          />
+          <div className="flex items-center gap-1.5">
+            {isWeekly && (
+              <span className={`${type.micro} text-muted-foreground/60`}>一週</span>
+            )}
+            <ChangePct
+              value={change}
+              sizeClass={type.cardMetric}
+              showArrow
+              skeleton={isWeekly}
+            />
+          </div>
           <span className={`${type.meta} text-muted-foreground font-mono tabular-nums`}>
             {sector.episode_count} 集
           </span>
