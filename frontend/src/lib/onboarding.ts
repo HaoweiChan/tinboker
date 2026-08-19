@@ -42,6 +42,15 @@ export interface ChangelogEntry {
 //   docs/workflows/deploy-flow.md § "In-app changelog (What's new)".
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.11.6',
+    date: '2026-08',
+    items: [
+      '話題排行的題材泡泡圖恢復顯示，資料不完整時也會呈現所有題材。',
+      '題材總覽改以一週表現顯示漲跌，並清楚標明各指標的統計期間。',
+      '「討論熱度 → 未來報酬驗證」新增一句白話結論，一眼看出熱度是否具有預測力。',
+    ],
+  },
+  {
     version: '0.11.5',
     date: '2026-08',
     items: [
