@@ -109,6 +109,9 @@ def _atomic_write(dest: Path, data: bytes) -> None:
     try:
         with os.fdopen(fd, "wb") as f:
             f.write(data)
+        # mkstemp creates 0600 and os.replace keeps it; Caddy runs as another
+        # user and serves this tree, so 0600 files come back as 403.
+        os.chmod(tmp, 0o644)
         os.replace(tmp, dest)
     except BaseException:
         Path(tmp).unlink(missing_ok=True)
@@ -122,6 +125,9 @@ def _atomic_copy(src: Path, dest: Path) -> None:
     os.close(fd)
     try:
         shutil.copyfile(src, tmp)
+        # mkstemp creates 0600 and os.replace keeps it; Caddy runs as another
+        # user and serves this tree, so 0600 files come back as 403.
+        os.chmod(tmp, 0o644)
         os.replace(tmp, dest)
     except BaseException:
         Path(tmp).unlink(missing_ok=True)

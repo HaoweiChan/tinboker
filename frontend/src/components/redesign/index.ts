@@ -5,6 +5,7 @@ export { Change } from './Change';
 export { SentimentChip } from './SentimentChip';
 export { SentBar } from './SentBar';
 export { PodMark, type PodMarkKind } from './PodMark';
+export { PodAvatar } from './PodAvatar';
 export { FilterPills } from './FilterPills';
 export { Segmented } from './Segmented';
 export { RailCard } from './RailCard';
