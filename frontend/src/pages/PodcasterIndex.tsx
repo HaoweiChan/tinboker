@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Search } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
-import { Segmented, PodMark } from '@/components/redesign';
+import { Segmented, PodAvatar } from '@/components/redesign';
 import { getSortedPodcasts, type Podcast } from '@/services/api/podcasts';
 import { fetchWithFallback } from '@/services/api/migration';
 
@@ -79,11 +79,7 @@ export const PodcasterIndex: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {list.map((p) => (
               <Link key={p.id || p.name} to={`/podcaster/${encodeURIComponent(p.name)}`} className="flex items-center gap-3.5 bg-card border border-border rounded-md p-4 transition-colors hover:border-foreground/25">
-                {p.image_url ? (
-                  <img src={p.image_url} alt="" className="w-12 h-12 rounded-[10px] object-cover shrink-0" />
-                ) : (
-                  <PodMark label={(p.name || '?').charAt(0)} kind="mute" size={48} />
-                )}
+                <PodAvatar src={p.image_url} name={p.name} size={48} className="w-12 h-12 rounded-[10px] object-cover shrink-0" />
                 <div className="min-w-0 flex-1">
                   <div className="text-lg font-semibold tracking-[-0.01em] truncate">{p.name}</div>
                   <div className="text-2xs text-muted-foreground font-mono tabular-nums mt-1">{(p.episode_count || 0).toLocaleString('en-US')} 集已分析</div>

@@ -141,3 +141,18 @@ def test_default_root_falls_back_when_prod_path_absent(monkeypatch):
     monkeypatch.setattr(mod, "DEFAULT_MEDIA_ROOT", "/nonexistent-media-root-for-test")
     root = mod.media_root()
     assert root.name == ".media" and not str(root).startswith("/nonexistent")
+
+
+def test_written_files_are_world_readable_so_caddy_can_serve_them(svc, tmp_path):
+    """mkstemp defaults to 0600; Caddy is a different user and would 403 on those."""
+    src = tmp_path / "episode.mp3"
+    src.write_bytes(b"ID3fake-audio")
+
+    svc.upload_episode_files(
+        episode_id=EPISODE, podcast_name=PODCAST, mp3_path=src, summary_content="# 摘要"
+    )
+
+    copied = tmp_path / BUCKET / f"mp3/{_hash(PODCAST)}/{EPISODE}.mp3"
+    written = tmp_path / BUCKET / f"summaries/{_hash(PODCAST)}/{EPISODE}.md"
+    assert copied.stat().st_mode & 0o004, oct(copied.stat().st_mode)
+    assert written.stat().st_mode & 0o004, oct(written.stat().st_mode)

@@ -2,7 +2,8 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useTagLabels, tagLabelFor } from '@/hooks/useTagLabels';
-import { PodMark, type PodMarkKind } from './PodMark';
+import { PodAvatar } from './PodAvatar';
+import { type PodMarkKind } from './PodMark';
 import { ShareMenu } from './ShareMenu';
 import { TickerRow, type TickerRowData } from './TickerRow';
 
@@ -70,11 +71,13 @@ export const EpisodeCardV2: React.FC<EpisodeCardV2Props> = ({
     >
       {/* Podcaster header */}
       <div className="flex items-center gap-2.5 mb-3">
-        {podcasterImageUrl ? (
-          <img src={podcasterImageUrl} alt="" className="w-7 h-7 rounded-[6px] object-cover shrink-0" />
-        ) : (
-          <PodMark label={podcasterInitial} kind={highlight ? 'solid' : podcasterKind} size={28} />
-        )}
+        <PodAvatar
+          src={podcasterImageUrl}
+          name={podcasterInitial}
+          kind={highlight ? 'solid' : podcasterKind}
+          size={28}
+          className="w-7 h-7 rounded-[6px] object-cover shrink-0"
+        />
         <div className="min-w-0 flex-1 text-base truncate">
           <span className="font-semibold text-foreground">{podcasterName}</span>
           <span className="text-muted-foreground ml-1.5">

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { ChevronDown, ChevronUp, Play, Mic, Layers } from 'lucide-react';
 import { Card } from '@/components/ui';
-import { Change, SentimentChip, ShareMenu, PodMark } from '@/components/redesign';
+import { Change, SentimentChip, ShareMenu, PodAvatar } from '@/components/redesign';
 import { normalizeSentiment } from '@/lib/sentiment';
 import { formatDate } from '@/lib/date';
 import { cn } from '@/lib/utils';
@@ -77,11 +77,13 @@ export const PickCard: React.FC<PickCardProps> = ({
     <Card className={cn('p-4', className)}>
       {/* Header: channel + ticker + sentiment + share */}
       <div className="flex items-start gap-3">
-        {podcastImage ? (
-          <img src={podcastImage} alt={podcaster} className="w-9 h-9 rounded-md object-cover shrink-0" />
-        ) : (
-          <PodMark label={(podcaster || pick.ticker || '?').charAt(0)} kind="solid" size={36} />
-        )}
+        <PodAvatar
+          src={podcastImage}
+          name={podcaster || pick.ticker}
+          kind="solid"
+          size={36}
+          className="w-9 h-9 rounded-md object-cover shrink-0"
+        />
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs text-muted-foreground truncate">{podcaster}</span>
