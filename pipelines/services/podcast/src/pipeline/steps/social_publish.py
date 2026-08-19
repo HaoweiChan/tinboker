@@ -56,7 +56,11 @@ def trigger_social_publish(
         return
 
     if result:
+        # The platform wraps per-platform results: {"platforms": {"threads": {...}}}.
+        # Reading the top level here once printed posted=0 while five threads went live.
+        threads = (result.get("platforms") or {}).get("threads") or {}
         print(
             f"  ✓ Threads publish triggered "
-            f"(posted={result.get('posted_count', 0)}, dry_run={result.get('dry_run')})"
+            f"(posted={threads.get('posted_count', 0)}, "
+            f"candidates={threads.get('candidates', 0)}, dry_run={threads.get('dry_run')})"
         )

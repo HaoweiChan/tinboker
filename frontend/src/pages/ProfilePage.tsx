@@ -4,7 +4,7 @@ import { Search, Star } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
 import { Modal } from '@/components/ui/Modal';
-import { EpisodeCardV2, PodMark } from '@/components/redesign';
+import { EpisodeCardV2, PodAvatar } from '@/components/redesign';
 import { apiEpisodeToCardV2 } from '@/components/redesign/episodeAdapter';
 import { SubscribedTickers } from '@/components/profile/SubscribedTickers';
 import { SubscribedTopics } from '@/components/profile/SubscribedTopics';
@@ -263,7 +263,7 @@ export const ProfilePage: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {podcasters.map((p) => (
                 <button key={p.id || p.name} type="button" onClick={() => navigate(`/podcaster/${encodeURIComponent(p.name)}`)} className="flex items-center gap-3 bg-card border border-border rounded-md p-4 text-left transition-colors hover:border-foreground/25">
-                  {p.image_url ? <img src={p.image_url} alt="" className="w-10 h-10 rounded-[9px] object-cover shrink-0" /> : <PodMark label={(p.name || '?').charAt(0)} kind="mute" size={40} />}
+                  <PodAvatar src={p.image_url} name={p.name} size={40} className="w-10 h-10 rounded-[9px] object-cover shrink-0" />
                   <div className="min-w-0">
                     <div className="text-lg font-semibold truncate">{p.name}</div>
                     <div className="text-2xs text-muted-foreground font-mono tabular-nums">{p.episode_count ?? '—'} 集</div>

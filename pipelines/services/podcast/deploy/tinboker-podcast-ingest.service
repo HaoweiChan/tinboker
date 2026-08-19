@@ -20,8 +20,11 @@ Environment=SOCIAL_COPY_WRITER_MODEL=openrouter:google/gemini-3.7-flash
 Environment=TINBOKER_PLATFORM_API_URL=https://api.tinboker.com
 # Admin endpoints (/api/admin/*) are mounted on dev and staging only — production skips
 # them so api.tinboker.com exposes no admin surface. All envs share one database, so
-# staging does the same work to the same data.
-Environment=TINBOKER_ADMIN_API_URL=https://staging-api.tinboker.com
+# staging does the same work to the same data. The staging container publishes
+# 127.0.0.1:8002 on this same host; going direct skips Cloudflare, whose 100s edge
+# timeout 524'd the Threads catch-up publish (the origin kept working, so the run log
+# showed a failure while the posts went live).
+Environment=TINBOKER_ADMIN_API_URL=http://127.0.0.1:8002
 # Transcription of a long episode is slow; this is a ceiling against a wedged run holding
 # the timer, not a target.
 TimeoutStartSec=7200

@@ -48,12 +48,17 @@ def test_skips_when_autopublish_disabled(monkeypatch):
     assert called["n"] == 0
 
 
-def test_fires_on_fresh_run_with_cards(monkeypatch):
+def test_fires_on_fresh_run_with_cards(monkeypatch, capsys):
     monkeypatch.setenv("SOCIAL_AUTOPUBLISH", "true")
     seen = {}
-    _inject_fake_client(monkeypatch, lambda **k: seen.update(k) or {"posted_count": 1, "dry_run": False})
+    # Real envelope: per-platform results nested under "platforms". A flat fake here
+    # let the step print posted=0 while five threads went live.
+    _inject_fake_client(monkeypatch, lambda **k: seen.update(k) or {
+        "platforms": {"threads": {"posted_count": 5, "candidates": 5, "dry_run": False}},
+    })
     sp.trigger_social_publish(_cfg(None), None, _ep([{"kind": "cover"}]))
     assert seen == {"limit": 5, "dry_run": False}
+    assert "posted=5" in capsys.readouterr().out
 
 
 def test_fire_is_non_fatal_on_client_error(monkeypatch):

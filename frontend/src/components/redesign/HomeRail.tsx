@@ -5,7 +5,7 @@ import { fetchWithFallback } from '@/services/api/migration';
 import { RailCard } from './RailCard';
 import { SentBar } from './SentBar';
 import { SentimentChip } from './SentimentChip';
-import { PodMark } from './PodMark';
+import { PodAvatar } from './PodAvatar';
 import { StockIdentity } from '@/components/common/StockIdentity';
 import { normalizeSentiment } from '@/lib/sentiment';
 
@@ -127,11 +127,7 @@ function TopPodcasters({ podcasts }: { podcasts: Podcast[] }) {
             to={`/podcaster/${encodeURIComponent(p.name)}`}
             className="grid grid-cols-[28px_1fr_auto] gap-2.5 items-center py-2 border-t border-border first:border-t-0 hover:opacity-80 transition-opacity"
           >
-            {p.image_url ? (
-              <img src={p.image_url} alt="" className="w-7 h-7 rounded-[6px] object-cover shrink-0" />
-            ) : (
-              <PodMark label={(p.name || '?').charAt(0)} kind="mute" size={28} />
-            )}
+            <PodAvatar src={p.image_url} name={p.name} size={28} className="w-7 h-7 rounded-[6px] object-cover shrink-0" />
             <span className="text-sm font-medium truncate">{p.name}</span>
             <span className="text-2xs text-muted-foreground font-mono tabular-nums">{p.episode_count} 集</span>
           </Link>

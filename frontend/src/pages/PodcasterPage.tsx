@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { Plus, Check } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
-import { EpisodeCardV2, PodMark } from '@/components/redesign';
+import { EpisodeCardV2, PodAvatar } from '@/components/redesign';
 import { apiEpisodeToCardV2 } from '@/components/redesign/episodeAdapter';
 import { PickCard } from '@/components/financial/PickCard';
 import { cn } from '@/lib/utils';
@@ -138,11 +138,7 @@ export const PodcasterPage: React.FC = () => {
       <PageContent>
         {/* Hero */}
         <div className="flex items-start gap-5 bg-card border border-border rounded-md p-5 sm:p-6 mb-[18px]">
-          {imageUrl ? (
-            <img src={imageUrl} alt={name} className="w-[72px] h-[72px] rounded-md object-cover shrink-0" />
-          ) : (
-            <PodMark label={(name || '?').charAt(0)} kind="solid" size={72} />
-          )}
+          <PodAvatar src={imageUrl} name={name} kind="solid" size={72} className="w-[72px] h-[72px] rounded-md object-cover shrink-0" />
           <div className="flex-1 min-w-0">
             <div className="flex items-start justify-between gap-3 flex-wrap">
               <div className="min-w-0">

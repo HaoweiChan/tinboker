@@ -53,9 +53,12 @@ opening the admin page.
 **Production mounts no admin routers.** `backend/src/main.py` guards every `/api/admin/*`
 router with `if not settings.is_production`, so `api.tinboker.com` answers 404 for all of
 them on purpose — the admin surface is not exposed on the public host. Any pipeline
-trigger aimed there fails, which is why `TINBOKER_ADMIN_API_URL` points at
-`staging-api.tinboker.com`. All environments share one database, so staging does exactly
-the same work to the same data. The pinned value lives in the systemd units.
+trigger aimed there fails, which is why `TINBOKER_ADMIN_API_URL` points at the staging
+backend. It points at staging's **direct origin** (`http://127.0.0.1:8002`, same host),
+not `staging-api.tinboker.com`: Cloudflare's 100s edge timeout 524'd the Threads
+catch-up publish while the origin kept posting, so the run log reported failures for
+publishes that actually went live. All environments share one database, so staging does
+exactly the same work to the same data. The pinned value lives in the systemd units.
 
 **Nothing here can email subscribers.** `SubstackClient.publish_draft` sends
 `send_email: false` and takes no parameter that could change it, so no combination of

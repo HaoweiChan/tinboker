@@ -178,3 +178,11 @@ def test_promo_upload_rejects_scriptable_or_unknown_types(ctype):
     with pytest.raises(HTTPException) as e:
         _safe_extension(ctype)
     assert e.value.status_code == 415
+
+
+def test_written_files_are_world_readable_so_caddy_can_serve_them(svc, tmp_path):
+    """mkstemp defaults to 0600; Caddy is a different user and would 403 on those."""
+    mod.store_bytes(BUCKET, "covers/1.jpg", b"\xff\xd8\xff\xe0")
+
+    dest = tmp_path / BUCKET / "covers" / "1.jpg"
+    assert dest.stat().st_mode & 0o004, oct(dest.stat().st_mode)
