@@ -151,6 +151,16 @@ podcast-api.tinboker.com {
 		file_server
 	}
 
+	# The pipelines app has no prod/dev split of its own (single instance), so its
+	# Swagger/ReDoc and schema are blocked here rather than in app code. They map
+	# every route incl. the key-gated write endpoints (/api/wiki/ingest/episode,
+	# /api/watcher/trigger, ...). The backend's own docs are gated in main.py by
+	# settings.is_production instead.
+	@apidocs path /docs /docs/* /redoc /redoc/* /openapi.json
+	handle @apidocs {
+		respond 404
+	}
+
 	# Content API
 	handle {
 		reverse_proxy localhost:8003

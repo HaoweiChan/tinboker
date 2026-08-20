@@ -366,6 +366,12 @@ app = FastAPI(
     description="Backend API for TinBoker - Financial podcast insights platform",
     version=settings.api_version,
     lifespan=lifespan,
+    # Swagger/ReDoc and the schema they read hand out a complete map of every
+    # endpoint and parameter. Useful on dev/staging, needless exposure in prod —
+    # the same reasoning that already keeps the admin routers unmounted there.
+    docs_url=None if settings.is_production else "/docs",
+    redoc_url=None if settings.is_production else "/redoc",
+    openapi_url=None if settings.is_production else "/openapi.json",
     servers=[
         {
             "url": f"http://localhost:{settings.port}",
