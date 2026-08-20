@@ -170,6 +170,16 @@ class Settings(BaseSettings):
     # Cloudflare Analytics (from GSM: CLOUDFLARE_API_TOKEN, CLOUDFLARE_ZONE_TAG)
     cloudflare_api_token: Optional[str] = None  # Cloudflare API token for analytics
     cloudflare_zone_tag: Optional[str] = None  # Cloudflare zone ID for tinboker.com
+
+    # Google AdSense monetization reporting (from GSM: ADSENSE_OAUTH_JSON).
+    # AdSense has no service-account support, so this is an *authorized-user* OAuth
+    # JSON (client_id/client_secret/refresh_token) with the adsense.readonly scope —
+    # see src/services/adsense_service.py for how to mint it. Unset = falls back to
+    # local ADC on a dev box, and to "not connected" in the admin UI everywhere else.
+    adsense_oauth_json: Optional[str] = None
+    # AdSense publisher id ("pub-..."). Unset = use the first account the credential
+    # can see (we only have one).
+    adsense_account_id: Optional[str] = None
     
     @field_validator("jwt_expiration_hours", mode="before")
     @classmethod

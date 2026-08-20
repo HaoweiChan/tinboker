@@ -73,6 +73,8 @@ _GSM_FIELDS: Tuple[str, ...] = (
     # Cloudflare
     "cloudflare_api_token",
     "cloudflare_zone_tag",
+    # AdSense — an authorized-user OAuth JSON; AdSense has no service-account support.
+    "adsense_oauth_json",
     # Datastores
     "postgres_url",
     "postgres_password",
