@@ -11,7 +11,7 @@
 // Every path is wrapped so any failure falls back to the unmodified SPA: this
 // middleware can never break a page.
 
-const CRAWLER = /bot|crawl|spider|facebookexternalhit|facebot|twitterbot|\bline\b|slackbot|whatsapp|telegrambot|discordbot|pinterest|linkedinbot|redditbot|embedly|quora|skypeuripreview|applebot|googlebot|bingbot|baiduspider|yandex|duckduckbot/i;
+const CRAWLER = /bot|crawl|spider|mediapartners|facebookexternalhit|facebot|twitterbot|\bline\b|slackbot|whatsapp|telegrambot|discordbot|pinterest|linkedinbot|redditbot|embedly|quora|skypeuripreview|applebot|googlebot|bingbot|baiduspider|yandex|duckduckbot/i;
 
 const BRAND_IMG = 'https://tinboker.com/brand/tinboker-square-dark-1080.png';
 const SITE = '聽播客 TinBoker';
