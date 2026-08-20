@@ -10,5 +10,11 @@ services:
     image: marp-flask-service:latest
     container_name: marp-flask-service
     ports:
-      - "5004:5004"
+      # Loopback ONLY. A bare "5004:5004" publishes to 0.0.0.0 and Docker inserts that
+      # rule ahead of ufw, so the service ends up on the public internet even though
+      # ufw denies by default — /convert and /render-png take arbitrary markdown and
+      # run marp (headless Chromium, --allow-local-files) with no auth or rate limit.
+      # The only caller is social_cards_render.py on this same host (MARP_SERVICE_URL
+      # defaults to http://localhost:5004).
+      - "127.0.0.1:5004:5004"
     restart: unless-stopped
