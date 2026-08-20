@@ -1,6 +1,6 @@
 /**
- * API client for admin analytics: Cloudflare traffic, Google Search Console (SEO),
- * and Threads engagement insights. All endpoints require an admin Bearer token and
+ * API client for admin analytics: Cloudflare traffic, AdSense monetization, Google
+ * Search Console (SEO), and Threads engagement insights. All endpoints require an admin Bearer token and
  * always return 200 with `configured`/`available` flags when an upstream is missing.
  */
 
@@ -26,6 +26,46 @@ export interface CloudflareOverview {
 
 export async function getCloudflareOverview(days = 7): Promise<CloudflareOverview> {
     const res = await apiClient.get<CloudflareOverview>('/api/admin/analytics/overview', {
+        ...adminAuthConfig(),
+        params: { days },
+    });
+    return res.data;
+}
+
+// ── Google AdSense monetization ────────────────────────────────────────────
+export interface AdSenseRow {
+    url: string | null;
+    earnings: number;
+    pageViews: number;
+    rpm: number;
+}
+
+export interface AdSenseOverview {
+    configured: boolean;
+    available: boolean;
+    detail?: string;
+    account?: string;
+    /** `state` is GETTING_READY while the site is still under AdSense review. */
+    site?: { domain: string | null; state: string | null; autoAdsEnabled: boolean | null };
+    range?: { start: string; end: string; days: number };
+    currency?: string;
+    totals?: {
+        earnings: number;
+        pageViews: number;
+        rpm: number;
+        impressions: number;
+        clicks: number;
+        ctr: number;
+        coverage: number;
+        viewability: number;
+    };
+    series?: { date: string; earnings: number; pageViews: number; rpm: number }[];
+    top_pages?: AdSenseRow[];
+    dashboard: string;
+}
+
+export async function getAdSenseOverview(days = 28): Promise<AdSenseOverview> {
+    const res = await apiClient.get<AdSenseOverview>('/api/admin/analytics/adsense', {
         ...adminAuthConfig(),
         params: { days },
     });

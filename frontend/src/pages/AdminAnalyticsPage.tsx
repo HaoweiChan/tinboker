@@ -1,9 +1,9 @@
 /**
  * Admin Analytics Page — live traffic + SEO + social engagement.
  *
- * Pulls Cloudflare zone analytics, Google Search Console (clicks/impressions/CTR +
- * top queries & pages), and Threads + Facebook Page engagement insights, and renders
- * them inline.
+ * Pulls Cloudflare zone analytics, AdSense monetization (earnings/RPM/fill rate),
+ * Google Search Console (clicks/impressions/CTR + top queries & pages), and Threads +
+ * Facebook Page engagement insights, and renders them inline.
  * Each source degrades to a "not connected" note + dashboard link when its upstream
  * credentials aren't configured, so the page is always safe to open.
  */
@@ -31,17 +31,23 @@ import {
     Star,
     Bookmark,
     UserPlus,
+    DollarSign,
+    Gauge,
+    Percent,
 } from 'lucide-react';
 import {
     getCloudflareOverview,
+    getAdSenseOverview,
     getSeoOverview,
     getThreadsInsights,
     getFacebookInsights,
     getMemberAnalytics,
     getAnalyticsHistory,
     type CloudflareOverview,
+    type AdSenseOverview,
     type SeoOverview,
     type SeoRow,
+    type AdSenseRow,
     type ThreadsInsights,
     type FacebookInsights,
     type MemberAnalytics,
@@ -55,6 +61,10 @@ const fmt = (n: number | null | undefined): string =>
     n === null || n === undefined ? '—' : nf.format(n);
 const pct = (ctr: number | null | undefined): string =>
     ctr === null || ctr === undefined ? '—' : `${(ctr * 100).toFixed(2)}%`;
+const money = (n: number | null | undefined, currency = 'USD'): string =>
+    n === null || n === undefined
+        ? '—'
+        : new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(n);
 const shortPath = (url: string | null): string => {
     if (!url) return '—';
     try {
@@ -160,6 +170,44 @@ const SeoTable: React.FC<{ title: string; rows: SeoRow[]; isPage?: boolean }> = 
     </div>
 );
 
+const AdsPagesTable: React.FC<{ rows: AdSenseRow[]; currency: string }> = ({ rows, currency }) => (
+    <div>
+        <h4 className="mb-2 text-base font-semibold text-foreground">Top Earning Pages</h4>
+        <div className="overflow-x-auto rounded-lg border border-border">
+            <table className="min-w-full text-base">
+                <thead className="bg-muted text-xs uppercase text-muted-foreground">
+                    <tr>
+                        <th className="px-3 py-2 text-left font-medium">Page</th>
+                        <th className="px-3 py-2 text-right font-medium">Earnings</th>
+                        <th className="px-3 py-2 text-right font-medium">Views</th>
+                        <th className="px-3 py-2 text-right font-medium">RPM</th>
+                    </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                    {rows.length === 0 ? (
+                        <tr>
+                            <td colSpan={4} className="px-3 py-4 text-center text-muted-foreground">
+                                No data in this period
+                            </td>
+                        </tr>
+                    ) : (
+                        rows.map((r, i) => (
+                            <tr key={i} className="text-foreground">
+                                <td className="max-w-xs truncate px-3 py-2" title={r.url || ''}>
+                                    {shortPath(r.url)}
+                                </td>
+                                <td className="px-3 py-2 text-right tabular-nums">{money(r.earnings, currency)}</td>
+                                <td className="px-3 py-2 text-right tabular-nums">{fmt(r.pageViews)}</td>
+                                <td className="px-3 py-2 text-right tabular-nums">{money(r.rpm, currency)}</td>
+                            </tr>
+                        ))
+                    )}
+                </tbody>
+            </table>
+        </div>
+    </div>
+);
+
 // Top-N ranked list of saved-interest items (label + count), with a relative bar.
 const RankList: React.FC<{
     icon: React.ReactNode;
@@ -232,11 +280,13 @@ const TrackingItem: React.FC<TrackingItemProps> = ({ label, detail, status }) =>
 );
 
 const CF_DASH = 'https://dash.cloudflare.com/?to=/:account/web-analytics';
+const ADSENSE_DASH = 'https://www.google.com/adsense/new/u/0/home';
 const GSC_DASH = 'https://search.google.com/search-console?resource_id=sc-domain:tinboker.com';
 const GA_DASH = 'https://analytics.google.com/analytics/web/#/p464726391/reports/intelligenthome';
 
 export const AdminAnalyticsPage: React.FC = () => {
     const [cf, setCf] = useState<CloudflareOverview | null>(null);
+    const [ads, setAds] = useState<AdSenseOverview | null>(null);
     const [seo, setSeo] = useState<SeoOverview | null>(null);
     const [threads, setThreads] = useState<ThreadsInsights | null>(null);
     const [fb, setFb] = useState<FacebookInsights | null>(null);
@@ -247,8 +297,9 @@ export const AdminAnalyticsPage: React.FC = () => {
     const load = useCallback(async () => {
         setLoading(true);
         // Independent sources — settle each on its own so one failure never blanks the page.
-        const [cfRes, seoRes, thRes, fbRes, memRes, histRes] = await Promise.allSettled([
+        const [cfRes, adsRes, seoRes, thRes, fbRes, memRes, histRes] = await Promise.allSettled([
             getCloudflareOverview(28),
+            getAdSenseOverview(28),
             getSeoOverview(28),
             getThreadsInsights(28, 5),
             getFacebookInsights(28),
@@ -256,6 +307,7 @@ export const AdminAnalyticsPage: React.FC = () => {
             getAnalyticsHistory(90),
         ]);
         if (cfRes.status === 'fulfilled') setCf(cfRes.value);
+        if (adsRes.status === 'fulfilled') setAds(adsRes.value);
         if (seoRes.status === 'fulfilled') setSeo(seoRes.value);
         if (thRes.status === 'fulfilled') setThreads(thRes.value);
         if (fbRes.status === 'fulfilled') setFb(fbRes.value);
@@ -397,6 +449,92 @@ export const AdminAnalyticsPage: React.FC = () => {
                         }
                         href={cf?.dashboards.cloudflare || CF_DASH}
                         cta="Open Cloudflare dashboard"
+                    />
+                )}
+            </SectionCard>
+
+            {/* AdSense monetization */}
+            <SectionCard
+                icon={<DollarSign className="h-5 w-5 text-sentiment-bull" />}
+                title="AdSense Revenue"
+                subtitle={
+                    ads?.range
+                        ? `Google AdSense · last ${ads.range.days} days (${ads.range.start} → ${ads.range.end})`
+                        : 'Estimated earnings, page RPM, fill rate & viewability'
+                }
+            >
+                {ads?.available && ads.totals ? (
+                    <>
+                        {/* Until the site clears review no data exists at all — say so, so a
+                            row of zeros doesn't read as "ads are broken". */}
+                        {ads.site?.state && ads.site.state !== 'READY' && (
+                            <div className="mt-4 flex items-start gap-2 rounded-lg border border-dashed border-border bg-muted/50 p-3 text-base text-muted-foreground">
+                                <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-primary" />
+                                <span>
+                                    {ads.site.domain} is <span className="font-medium text-foreground">{ads.site.state}</span> —
+                                    still under AdSense review, so no ads are serving and every metric below is zero.
+                                </span>
+                            </div>
+                        )}
+                        <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                            <Stat
+                                icon={<DollarSign className="h-4 w-4" />}
+                                label="Est. Earnings"
+                                value={money(ads.totals.earnings, ads.currency)}
+                            />
+                            <Stat
+                                icon={<TrendingUp className="h-4 w-4" />}
+                                label="Page RPM"
+                                value={money(ads.totals.rpm, ads.currency)}
+                            />
+                            {/* Coverage = share of ad requests that got filled; a drop here is
+                                the first sign something is wrong with serving. */}
+                            <Stat
+                                icon={<Percent className="h-4 w-4" />}
+                                label="Fill Rate"
+                                value={pct(ads.totals.coverage)}
+                            />
+                            {/* Low viewability means Auto ads placed units below the fold. */}
+                            <Stat
+                                icon={<Gauge className="h-4 w-4" />}
+                                label="Viewability"
+                                value={pct(ads.totals.viewability)}
+                            />
+                        </div>
+                        <div className="mt-4 grid gap-4 sm:grid-cols-3">
+                            <Stat icon={<Eye className="h-4 w-4" />} label="Ad Impressions" value={fmt(ads.totals.impressions)} />
+                            <Stat icon={<MousePointerClick className="h-4 w-4" />} label="Clicks" value={fmt(ads.totals.clicks)} />
+                            <Stat icon={<Hash className="h-4 w-4" />} label="Impr. CTR" value={pct(ads.totals.ctr)} />
+                        </div>
+                        {ads.series && ads.series.length >= 2 && (
+                            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                                <ChartBox title="Estimated Earnings">
+                                    <TrendChart series={[{ name: 'Earnings', colorClass: 'text-sentiment-bull', points: ptsFrom(ads.series, 'earnings') }]} />
+                                </ChartBox>
+                                <ChartBox title="Page RPM">
+                                    <TrendChart series={[{ name: 'RPM', colorClass: 'text-primary', points: ptsFrom(ads.series, 'rpm') }]} />
+                                </ChartBox>
+                            </div>
+                        )}
+                        <div className="mt-6">
+                            <AdsPagesTable rows={ads.top_pages || []} currency={ads.currency || 'USD'} />
+                        </div>
+                        <div className="mt-4 flex justify-end">
+                            <a
+                                href={ads.dashboard || ADSENSE_DASH}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-base text-muted-foreground hover:text-foreground"
+                            >
+                                Open AdSense dashboard <ExternalLink className="h-4 w-4" />
+                            </a>
+                        </div>
+                    </>
+                ) : (
+                    <NotConnected
+                        detail={ads?.detail || (loading ? 'Loading…' : 'AdSense credential not configured.')}
+                        href={ads?.dashboard || ADSENSE_DASH}
+                        cta="Open AdSense dashboard"
                     />
                 )}
             </SectionCard>
