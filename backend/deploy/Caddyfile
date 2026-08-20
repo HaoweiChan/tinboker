@@ -161,6 +161,26 @@ podcast-api.tinboker.com {
 		respond 404
 	}
 
+	# /api/* has no public consumer: neither the frontend nor the main backend calls
+	# this host, and three months of access log show anonymous /api traffic is almost
+	# entirely scanners (/api/.env, /api/v1/.env, TLM-Audit-Scanner — 333 of 431 hits
+	# were 404s) plus operator curl. The write routes already require X-API-Key; this
+	# extends the same gate to reads so the wiki/episode corpus is not free to scrape.
+	#
+	# /media/* deliberately stays public below — article covers are fetched by real
+	# browsers, Googlebot-Image and facebookexternalhit, and by the cover pipeline.
+	#
+	# Only the *presence* of the header is checked here; the app still verifies the
+	# value, so no secret belongs in this file.
+	@api_anon {
+		path /api/*
+		not header X-API-Key *
+		not remote_ip 127.0.0.1 ::1 private_ranges
+	}
+	handle @api_anon {
+		respond 403
+	}
+
 	# Content API
 	handle {
 		reverse_proxy localhost:8003
