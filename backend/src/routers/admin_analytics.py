@@ -1,5 +1,6 @@
 """
-Admin Analytics API - live traffic (Cloudflare) + daily audience-growth snapshots.
+Admin Analytics API - live traffic (Cloudflare), AdSense monetization, and daily
+audience-growth snapshots.
 """
 import asyncio
 import json
@@ -15,6 +16,7 @@ from src.cache.redis_client import cache_get, cache_set
 from src.database.models import AnalyticsSnapshot, User
 from src.database.postgres import get_session, session_scope
 from src.services.cloudflare_analytics_service import CloudflareAnalyticsService
+from src.services.adsense_service import AdSenseService
 from src.services.facebook_insights_service import FacebookInsightsService
 from src.services.postgres_mirror_service import content_read_service
 from src.services.threads_insights_service import ThreadsInsightsService
@@ -170,6 +172,30 @@ async def get_analytics_overview(
             "googleAnalytics": "https://analytics.google.com",
         },
     }
+
+
+
+@router.get("/adsense")
+async def get_adsense_overview(
+    days: int = Query(default=28, ge=1, le=365),
+    admin: AdminAccess = Depends(get_admin_access),
+):
+    """AdSense monetization overview — earnings, RPM, fill rate, viewability.
+
+    Always 200: returns ``configured``/``available`` flags with a ``detail`` when the
+    credential or upstream is missing, so the admin UI falls back to the AdSense
+    dashboard link. Cached 30 min — AdSense report data only settles a few times a day,
+    and every call costs an OAuth token refresh.
+    """
+    cache_key = f"admin:adsense:{days}"
+    cached = await cache_get(cache_key)
+    if cached is not None:
+        return json.loads(cached)
+
+    data = await AdSenseService().overview(days=days)
+    if data.get("available"):
+        await cache_set(cache_key, json.dumps(data), ttl=1800)
+    return data
 
 
 @router.post("/snapshot")

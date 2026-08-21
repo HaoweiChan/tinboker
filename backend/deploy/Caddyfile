@@ -151,6 +151,37 @@ podcast-api.tinboker.com {
 		file_server
 	}
 
+	# The pipelines app has no prod/dev split of its own (single instance), so its
+	# Swagger/ReDoc and schema are blocked here rather than in app code. They map
+	# every route incl. the key-gated write endpoints (/api/wiki/ingest/episode,
+	# /api/watcher/trigger, ...). The backend's own docs are gated in main.py by
+	# settings.is_production instead.
+	@apidocs path /docs /docs/* /redoc /redoc/* /openapi.json
+	handle @apidocs {
+		respond 404
+	}
+
+	# /api/* is not reachable from outside this host. No public consumer exists:
+	# neither the frontend nor the main backend calls this hostname, and three months
+	# of access log show anonymous /api traffic is almost entirely scanners
+	# (/api/.env, /api/v1/.env, TLM-Audit-Scanner — 333 of 431 hits were 404s).
+	#
+	# Deliberately NOT an X-API-Key check: only the write routes verify the key, the
+	# read routes have no auth dependency at all, so a header check would let any
+	# value through — and this repo is public, so that bypass would be documented
+	# here. Network scope is the honest gate. To reach it from a workstation:
+	#   ssh -L 8003:localhost:8003 root@<vps>   then curl localhost:8003
+	#
+	# /media/* deliberately stays public below — article covers are fetched by real
+	# browsers, Googlebot-Image and facebookexternalhit, and by the cover pipeline.
+	@api_external {
+		path /api/*
+		not remote_ip 127.0.0.1 ::1 private_ranges
+	}
+	handle @api_external {
+		respond 403
+	}
+
 	# Content API
 	handle {
 		reverse_proxy localhost:8003

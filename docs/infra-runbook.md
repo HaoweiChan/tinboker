@@ -273,6 +273,8 @@ Python settings field name.
 | `MASSIVE_API_KEY` | Massive API (US market data) | Yes |
 | `CLOUDFLARE_API_TOKEN` | Cloudflare API token (cache purge) | Optional |
 | `CLOUDFLARE_ZONE_TAG` | Cloudflare zone ID for tinboker.com | Optional |
+| `ADSENSE_OAUTH_JSON` | Authorized-user OAuth JSON (adsense.readonly) for the admin AdSense panel | Optional |
+| `ADSENSE_ACCOUNT_ID` | AdSense publisher id (`pub-…`); unset = first account the credential sees | Optional |
 
 **Setting a secret:**
 
@@ -311,6 +313,7 @@ Settings → Secrets and variables → Actions → New repository secret:
 |---|---|
 | `GCP_SA_KEY` | GCP Console → IAM → Service Accounts → your SA → Keys → Add Key → JSON. Paste the entire JSON content. Used ONLY by `refresh-social-tokens.yml`, the last GSM writer. |
 | `CLOUDFLARE_API_TOKEN` | Cloudflare → My Profile → API Tokens → Create Token → "Edit Cloudflare Workers" template, scoped to tinboker.com |
+| `ADSENSE_OAUTH_JSON` | AdSense has **no service-account support** — mint a user credential instead: `gcloud auth application-default login --scopes=https://www.googleapis.com/auth/adsense.readonly,https://www.googleapis.com/auth/cloud-platform`, then paste the resulting `application_default_credentials.json` in as the secret value. Its refresh token does not self-expire (gcloud's OAuth client is a published app). Calls also need `GCP_PROJECT_ID` set, since AdSense bills quota to a project. |
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare dashboard → right sidebar when on tinboker.com overview |
 
 > P6: everything in § 2.3 is a repo secret too. Create those before merging a P6 branch —
