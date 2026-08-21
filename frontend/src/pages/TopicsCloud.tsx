@@ -52,7 +52,7 @@ const TF_OPTIONS = [
 
 const SORT_OPTIONS: { value: SortKey; label: string }[] = [
   { value: 'hotness', label: '綜合熱度' },
-  { value: 'avg_change', label: '今日表現' },
+  { value: 'avg_change', label: '一週表現' },
   { value: 'episode_count', label: '討論熱度' },
   { value: 'money_flow', label: '資金流入' },
 ];
@@ -267,6 +267,21 @@ export const TopicsCloud: React.FC = () => {
     };
   }, [trailing, trailingLoading, membersByExposure, tf]);
 
+  // exposure_id → 一週 (d7) avg member return, same trailing source as the bubble Y —
+  // the board cards' headline % (the 1-day avg_change was too short next to the 5日 flow line).
+  const weeklyByExposure = useMemo(() => {
+    const ready = Object.keys(trailing).length > 0 && !trailingLoading;
+    const m: Record<string, number | null> = {};
+    for (const [id, tickers] of Object.entries(membersByExposure)) {
+      if (!ready) { m[id] = null; continue; }
+      const vals = tickers
+        .map((t) => trailing[t]?.d7)
+        .filter((v): v is number => v != null);
+      m[id] = vals.length ? +(vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2) : null;
+    }
+    return m;
+  }, [trailing, trailingLoading, membersByExposure]);
+
   const tfLabel = TF_OPTIONS.find((o) => o.value === tf)?.label ?? '';
   const yAxisLabel = `近期漲跌 %（${tfLabel}）`;
 
@@ -334,8 +349,16 @@ export const TopicsCloud: React.FC = () => {
         return bv - av;
       });
     }
+    if (sortKey === 'avg_change') {
+      // 一週表現 — sort by the weekly figure the cards display (1-day fallback while loading).
+      return [...themeBoard].sort((a, b) => {
+        const av = weeklyByExposure[a.exposure_id] ?? a.avg_change ?? -Infinity;
+        const bv = weeklyByExposure[b.exposure_id] ?? b.avg_change ?? -Infinity;
+        return bv - av;
+      });
+    }
     return sortBoard(themeBoard, sortKey);
-  }, [themeBoard, sortKey, netFlowByExposure]);
+  }, [themeBoard, sortKey, netFlowByExposure, weeklyByExposure]);
   // Industry drawer is secondary — always hotness-sorted, no own control.
   const sortedIndustryBoard = useMemo(() => sortBoard(industryBoard, 'hotness'), [industryBoard]);
 
@@ -403,18 +426,24 @@ export const TopicsCloud: React.FC = () => {
         </div>
 
         {/* ── THEME BOARD (collapsed to a preview so the tags below stay reachable) ── */}
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center justify-between mb-1.5">
           <div className="flex items-center gap-2">
             <SectionIcon icon={<LayoutGrid size={15} />} tone="info" />
             <h2 className={`${type.sectionTitle} font-semibold`}>題材總覽</h2>
           </div>
           <Segmented options={SORT_OPTIONS} value={sortKey} onChange={setSortKey} />
         </div>
+        {/* Each sort key has a different time window — spell them out so the bare
+            percentages on the cards aren't mistaken for a longer horizon. */}
+        <p className={`mb-3 ${type.meta} text-muted-foreground`}>
+          一週表現＝成分股近一週平均漲跌；討論熱度＝累計相關集數；資金流入＝近 5 日外資買賣超；綜合熱度＝當日漲跌與討論熱度的綜合排序。
+        </p>
         <BoardGrid
           loading={loading}
           items={boardExpanded ? sortedThemeBoard : sortedThemeBoard.slice(0, BOARD_PREVIEW)}
           empty="目前沒有題材資料。"
           netFlowByExposure={netFlowByExposure}
+          weeklyByExposure={weeklyByExposure}
         />
         {!loading && sortedThemeBoard.length > BOARD_PREVIEW && (
           <ShowAllToggle expanded={boardExpanded} total={sortedThemeBoard.length} unit="題材" onToggle={() => setBoardExpanded((v) => !v)} />
@@ -454,6 +483,7 @@ export const TopicsCloud: React.FC = () => {
               loading={loading}
               items={industryExpanded ? sortedIndustryBoard : sortedIndustryBoard.slice(0, BOARD_PREVIEW)}
               empty="目前沒有產業資料。"
+              weeklyByExposure={weeklyByExposure}
             />
             {sortedIndustryBoard.length > BOARD_PREVIEW && (
               <ShowAllToggle expanded={industryExpanded} total={sortedIndustryBoard.length} unit="產業" onToggle={() => setIndustryExpanded((v) => !v)} />
@@ -465,11 +495,12 @@ export const TopicsCloud: React.FC = () => {
   );
 };
 
-function BoardGrid({ loading, items, empty, netFlowByExposure }: {
+function BoardGrid({ loading, items, empty, netFlowByExposure, weeklyByExposure }: {
   loading: boolean;
   items: SectorBoardItem[];
   empty: string;
   netFlowByExposure?: Record<string, SectorNetFlow>;
+  weeklyByExposure?: Record<string, number | null>;
 }) {
   const type = TOPICS_TYPOGRAPHY.className;
   if (loading) {
@@ -489,7 +520,12 @@ function BoardGrid({ loading, items, empty, netFlowByExposure }: {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
       {items.map((s) => (
-        <SectorBoardCard key={s.exposure_id} sector={s} netFlow={netFlowByExposure?.[s.exposure_id]} />
+        <SectorBoardCard
+          key={s.exposure_id}
+          sector={s}
+          netFlow={netFlowByExposure?.[s.exposure_id]}
+          weeklyChange={weeklyByExposure ? weeklyByExposure[s.exposure_id] ?? null : undefined}
+        />
       ))}
     </div>
   );
