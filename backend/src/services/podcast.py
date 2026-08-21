@@ -1,5 +1,6 @@
 """Podcast service for managing podcast data from Firestore"""
 import hashlib
+import math
 import os
 import json
 import asyncio
@@ -1883,6 +1884,12 @@ class PodcastService:
         board = await self.sector_board()
         if not board:
             return []
+
+        def _fin(v) -> float:
+            # One NaN member (FinMind/numpy artifacts survive the JSON cache round-trip)
+            # must not poison a whole exposure's sum — int(round(nan)) 500s the endpoint.
+            return v if isinstance(v, (int, float)) and math.isfinite(v) else 0.0
+
         all_tickers = [
             (m.get("ticker") or "").strip()
             for sector in board
@@ -1903,24 +1910,24 @@ class PodcastService:
             members = s.get("members") or []
             is_industry = s.get("exposure_type") == "industry"
             total_mc = sum(
-                caps.get((m.get("ticker") or "").strip(), 0.0)
-                + us_caps.get((m.get("ticker") or "").strip().upper(), 0.0)
+                _fin(caps.get((m.get("ticker") or "").strip(), 0.0))
+                + _fin(us_caps.get((m.get("ticker") or "").strip().upper(), 0.0))
                 for m in members
             ) if is_industry else 0.0
             exposure_tvals = {
                 window: sum(
-                    values.get((m.get("ticker") or "").strip(), 0.0)
-                    + us_trading_windows.get(window, {}).get((m.get("ticker") or "").strip().upper(), 0.0)
+                    _fin(values.get((m.get("ticker") or "").strip(), 0.0))
+                    + _fin(us_trading_windows.get(window, {}).get((m.get("ticker") or "").strip().upper(), 0.0))
                     for m in members
                 )
                 for window, values in trading_windows.items()
             }
             net_total = {
-                window: sum(values.get((m.get("ticker") or "").strip(), 0.0) for m in members)
+                window: sum(_fin(values.get((m.get("ticker") or "").strip(), 0.0)) for m in members)
                 for window, values in inst_total.items()
             }
             net_foreign = {
-                window: sum(values.get((m.get("ticker") or "").strip(), 0.0) for m in members)
+                window: sum(_fin(values.get((m.get("ticker") or "").strip(), 0.0)) for m in members)
                 for window, values in inst_foreign.items()
             }
             # Round server-side so the chart/tooltips get clean numbers (no float noise).
@@ -1936,9 +1943,9 @@ class PodcastService:
                 "display_name": s["display_name"],
                 "color_hex": s.get("color_hex"),
                 "market_cap_twd": int(round(total_mc)) or None,
-                "return_pct": round(float(avg), 2) if avg is not None else None,
+                "return_pct": round(float(avg), 2) if avg is not None and math.isfinite(avg) else None,
                 "episode_count": s.get("episode_count", 0),
-                "heat": round(float(heat), 2) if heat is not None else None,
+                "heat": round(float(heat), 2) if heat is not None and math.isfinite(heat) else None,
                 # raw components + constituent count -> weights/normalisation are
                 # retunable from these without a rescan.
                 "heat_direct": s.get("direct_heat"),

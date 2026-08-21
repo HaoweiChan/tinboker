@@ -76,6 +76,10 @@ export const HeatReturnValidation: React.FC = () => {
   const horizon = data?.horizons?.[hz];
   const buckets = horizon?.buckets ?? [];
   const maxAbs = buckets.reduce((m, b) => Math.max(m, Math.abs(b.mean_return)), 0);
+  // Headline takeaway: hottest-vs-coldest spread — the panel's whole point in one number.
+  const spread = buckets.length >= 2
+    ? buckets[buckets.length - 1].mean_return - buckets[0].mean_return
+    : null;
 
   if (loading) {
     return <div className="rounded-xl border border-border bg-card p-4 h-56 animate-pulse bg-muted/20" />;
@@ -121,7 +125,16 @@ export const HeatReturnValidation: React.FC = () => {
               <BucketRow key={b.bucket} b={b} total={buckets.length} maxAbs={maxAbs} />
             ))}
           </div>
-          <p className={`mt-3 ${type.micro} text-muted-foreground/60 font-mono tabular-nums`}>
+          {spread != null && (
+            <p className={`mt-3 ${type.meta} text-foreground/80`}>
+              {spread > 0 ? (
+                <>目前結論：討論最熱組的 {hz} 日超額報酬平均比最冷組高 <strong className="font-semibold">{spread.toFixed(2)}%</strong>，這段期間熱度具有預測力。</>
+              ) : (
+                <>目前結論：討論最熱組未跑贏最冷組（差距 {spread.toFixed(2)}%），這段期間熱度不具預測力。</>
+              )}
+            </p>
+          )}
+          <p className={`mt-1.5 ${type.micro} text-muted-foreground/60 font-mono tabular-nums`}>
             {horizon?.n ?? 0} 筆觀察 · {data.as_of_count} 個交易日
             {data.date_span.start && data.date_span.end ? ` · ${data.date_span.start}~${data.date_span.end}` : ''}
           </p>

@@ -156,10 +156,15 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({
     if (value == null) return 'text-slate-400';
     return value > 0 ? 'text-emerald-500' : 'text-red-500';
   };
-  const chartData = useMemo(
-    () => rawData.filter((item) => item.returnRate != null && radiusValue(item) > 0),
-    [rawData],
-  );
+  const chartData = useMemo(() => {
+    const withReturn = rawData.filter((item) => item.returnRate != null);
+    // All-zero radii (missing trading values, or the perf-endpoint board fallback)
+    // used to drop every bubble — bare axes, no error. Fall back to uniform
+    // min-radius bubbles so the chart still reads instead of looking dead.
+    return withReturn.some((item) => radiusValue(item) > 0)
+      ? withReturn.filter((item) => radiusValue(item) > 0)
+      : withReturn;
+  }, [rawData]);
 
   // Scales — derived from the data so live numbers and the mock both render sensibly
   // without hardcoded bounds.
