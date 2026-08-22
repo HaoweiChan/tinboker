@@ -175,3 +175,12 @@ async def test_publish_episode_skips_when_no_content(temp_db):
     res = await fbp.publish_episode(ep, dry_run=False)
     assert res["posted"] is False
     assert res["reason"] == "no_postable_content"
+
+
+@pytest.mark.asyncio
+async def test_publish_episode_skips_show_with_social_disabled(temp_db, monkeypatch):
+    """The per-show kill switch mutes Facebook the same way it mutes Threads."""
+    monkeypatch.setattr(fbp, "social_enabled_for", lambda name: False)
+    res = await fbp.publish_episode(_ep("EP910"), dry_run=False)
+    assert res["posted"] is False
+    assert res["reason"] == "social_disabled_for_show"

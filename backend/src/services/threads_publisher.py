@@ -22,6 +22,7 @@ from typing import Any, Optional
 
 from src.config import settings
 from src.database.db import get_connection
+from src.services.content_source_service import social_enabled_for
 from src.services.podcast import PodcastService
 from src.services.threads_service import THREADS_MAX_CHARS, ThreadsError, ThreadsService
 
@@ -343,6 +344,9 @@ async def publish_recent(
         if already_posted(episode_id):
             skipped.append({"episode_id": episode_id, "reason": "already_posted"})
             continue
+        if not social_enabled_for(_field(episode, "podcast_name")):
+            skipped.append({"episode_id": episode_id, "reason": "social_disabled_for_show"})
+            continue
         rel_ms = _release_ms(episode)
         if cutoff_ms is not None and (rel_ms is None or rel_ms < cutoff_ms):
             skipped.append({"episode_id": episode_id, "reason": "outside_recency_window"})
@@ -417,6 +421,8 @@ async def publish_episode(episode: Any, dry_run: bool = True) -> dict:
         return {**base, "posted": False, "reason": "no_episode_id"}
     if already_posted(episode_id):
         return {**base, "posted": False, "reason": "already_posted", "url": episode_url(episode_id)}
+    if not social_enabled_for(_field(episode, "podcast_name")):
+        return {**base, "posted": False, "reason": "social_disabled_for_show"}
     has_cards = bool(_field(episode, "social_cards"))
     if not (has_cards or _field(episode, "key_insights") or _field(episode, "episode_title")):
         return {**base, "posted": False, "reason": "no_postable_content"}

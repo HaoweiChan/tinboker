@@ -168,3 +168,32 @@ async def test_syndicate_passes_publish_substack_through(monkeypatch):
     )
     assert seen["publish"] is True
     assert seen["send_email"] is False
+
+
+@pytest.mark.asyncio
+async def test_syndicate_skips_show_with_publishing_disabled(monkeypatch):
+    """A muted show is skipped before either syndication target is contacted."""
+    calls = []
+
+    async def _fake_get_episode(episode_id):
+        return _ep(episode_id)
+
+    async def _boom(*a, **kw):
+        calls.append(a)
+        return {"posted": True}
+
+    monkeypatch.setattr(social.podcast_service, "get_episode_admin", _fake_get_episode)
+    monkeypatch.setattr(social.substack_publisher, "create_summary_draft", _boom)
+    monkeypatch.setattr(social.vocus_publisher, "publish_summary", _boom)
+    monkeypatch.setattr(social, "social_enabled_for", lambda name: False)
+    monkeypatch.setattr(social, "_public_base_url", lambda request: "https://api.test")
+
+    result = await social.syndicate_episode(
+        "EP1", request=None, platforms="vocus,substack",
+        dry_run=False, publish=True, publish_substack=True, _=None,
+    )
+    assert calls == []
+    assert {p: r["reason"] for p, r in result["platforms"].items()} == {
+        "vocus": "social_disabled_for_show",
+        "substack": "social_disabled_for_show",
+    }

@@ -18,6 +18,8 @@ export interface ContentSource {
   transcript_service: string | null;
   transcript_model: string | null;
   active: boolean;
+  /** Publish this show's episodes to Threads/Facebook/方格子/Substack. Podcast sources only. */
+  social_enabled: boolean;
   extra: Record<string, unknown> | null;
   last_updated_by: string | null;
   last_updated_at: string | null;
@@ -36,6 +38,7 @@ export interface ContentSourceCreate {
   transcript_service?: string | null;
   transcript_model?: string | null;
   active?: boolean;
+  social_enabled?: boolean;
 }
 
 export interface ContentSourceUpdate {
@@ -49,6 +52,7 @@ export interface ContentSourceUpdate {
   transcript_service?: string | null;
   transcript_model?: string | null;
   active?: boolean;
+  social_enabled?: boolean;
 }
 
 export interface ContentSourceListResponse {
