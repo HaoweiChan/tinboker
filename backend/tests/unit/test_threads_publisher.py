@@ -346,3 +346,28 @@ async def test_publish_episode_skips_when_no_content(temp_db):
     res = await threads_publisher.publish_episode(ep, dry_run=False)
     assert res["posted"] is False
     assert res["reason"] == "no_postable_content"
+
+
+# ── per-show social kill switch (content_sources.social_enabled) ──────
+
+@pytest.mark.asyncio
+async def test_publish_skips_shows_with_social_disabled(temp_db, monkeypatch):
+    """A muted show is skipped by both the batch scan and the admin 發佈 button."""
+    monkeypatch.setattr(
+        threads_publisher, "social_enabled_for", lambda name: name != "財經一路發"
+    )
+    muted = _ep("EP900", insights=["重點"])
+    muted.podcast_name = "財經一路發"
+    allowed = _ep("EP901", insights=["重點"])  # 股癌
+    monkeypatch.setattr(
+        threads_publisher.podcast_service, "get_recent_episodes", await _fake_recent([muted, allowed])
+    )
+
+    batch = await threads_publisher.publish_recent(limit=10, dry_run=True)
+    reasons = {s["episode_id"]: s["reason"] for s in batch["skipped"]}
+    assert reasons["EP900"] == "social_disabled_for_show"
+    assert [p["episode_id"] for p in batch["posted"]] == ["EP901"]
+
+    single = await threads_publisher.publish_episode(muted, dry_run=False)
+    assert single["posted"] is False
+    assert single["reason"] == "social_disabled_for_show"

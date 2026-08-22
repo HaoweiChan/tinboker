@@ -23,6 +23,7 @@ class ContentSourceBase(BaseModel):
     transcript_service: Optional[str] = Field(None, max_length=20, description="groq | whisper | openai")
     transcript_model: Optional[str] = Field(None, max_length=50, description="STT model, e.g. whisper-large-v3")
     active: bool = True
+    social_enabled: bool = Field(True, description="Publish this show's episodes to external platforms (Threads, Facebook, 方格子, Substack)")
     extra: Optional[Dict[str, Any]] = None
 
 
@@ -44,6 +45,7 @@ class ContentSourceUpdate(BaseModel):
     transcript_service: Optional[str] = Field(None, max_length=20)
     transcript_model: Optional[str] = Field(None, max_length=50)
     active: Optional[bool] = None
+    social_enabled: Optional[bool] = None
     extra: Optional[Dict[str, Any]] = None
 
 
@@ -84,6 +86,9 @@ class ContentSourcePublic(BaseModel):
     max_episodes: Optional[int] = None
     transcript_service: Optional[str] = None
     transcript_model: Optional[str] = None
+    # The pipeline reads this to skip generating social copy + cards for muted shows,
+    # so the LLM call and the Marp render are never paid for in the first place.
+    social_enabled: bool = True
 
     class Config:
         from_attributes = True

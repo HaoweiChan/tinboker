@@ -23,6 +23,7 @@ from src.database.models import PromoDraft, ScheduledSocialPost
 from src.database.postgres import get_session
 from src.services import (facebook_publisher, promo_publisher, substack_publisher,
                           threads_publisher, vocus_publisher)
+from src.services.content_source_service import social_enabled_for
 from src.services.gcs_content import GCSContentService, media_url
 from src.services.syndication_markdown import (podcast_short_name, syndication_excerpt,
                                                syndication_title)
@@ -73,6 +74,12 @@ def _parse_platforms(platforms: str) -> list[str]:
 def _posted_status(episode_id: str) -> dict:
     """Whether this episode has already been posted, per platform (idempotency ledgers)."""
     return {name: pub.already_posted(episode_id) for name, pub in _PUBLISHERS.items()}
+
+
+def _social_off_result(platform: str, episode_id: str) -> dict:
+    """The skip a muted show gets, in the shape every publish handler already renders."""
+    return {"platform": platform, "episode_id": episode_id,
+            "posted": False, "reason": "social_disabled_for_show"}
 
 
 def _social_list_item(episode, posted_sets: dict[str, set]) -> dict:
@@ -389,6 +396,8 @@ async def publish_episode_to_vocus(
     podcast_name = (getattr(episode, "podcast_name", None) or "").strip()
     raw_title = (getattr(episode, "episode_title", None) or "").strip() or episode_id
     title = syndication_title(podcast_name, raw_title)
+    if not social_enabled_for(podcast_name):
+        return _social_off_result("vocus", episode_id)
 
     # zh-TW labels, not raw slugs: a vocus reader searches 台股, never "twstocks", and the
     # podcast's own name leads so the post lands on the tag page its audience reads.
@@ -441,6 +450,8 @@ async def draft_episode_to_substack(
     podcast_name = (getattr(episode, "podcast_name", None) or "").strip()
     raw_title = (getattr(episode, "episode_title", None) or "").strip() or episode_id
     title = syndication_title(podcast_name, raw_title)
+    if not social_enabled_for(podcast_name):
+        return _social_off_result("substack", episode_id)
 
     return await substack_publisher.create_summary_draft(
         episode_id,
@@ -499,6 +510,9 @@ async def syndicate_episode(
     podcast_name = (getattr(episode, "podcast_name", None) or "").strip()
     raw_title = (getattr(episode, "episode_title", None) or "").strip() or episode_id
     title = syndication_title(podcast_name, raw_title)
+    if not social_enabled_for(podcast_name):
+        return {"episode_id": episode_id, "title": title,
+                "platforms": {p: _social_off_result(p, episode_id) for p in selected}}
     excerpt = ((getattr(episode, "summary_excerpt", None) or "").strip()
                or syndication_excerpt(summary))
 

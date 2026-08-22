@@ -1,5 +1,5 @@
 /**
- * Content-source table with inline editing, active toggle, and row actions.
+ * Content-source table with inline editing, active + publish toggles, and row actions.
  */
 
 import React, { useState } from 'react';
@@ -95,6 +95,15 @@ export const SourceTable: React.FC<SourceTableProps> = ({
     }
   };
 
+  const toggleSocial = async (source: ContentSource) => {
+    setSaving(source.id);
+    try {
+      await onUpdate(source.id, { social_enabled: !source.social_enabled });
+    } finally {
+      setSaving(null);
+    }
+  };
+
   const handleDelete = async (id: number) => {
     if (!confirm('Are you sure you want to delete this source?')) return;
     setDeleting(id);
@@ -141,6 +150,9 @@ export const SourceTable: React.FC<SourceTableProps> = ({
               Last ingested
             </th>
             <th className={thCls}>Active</th>
+            <th className={thCls} title="Publish this show's episodes to Threads, Facebook, 方格子 and Substack (podcasts only)">
+              Publish
+            </th>
             <th className={thCls}>Actions</th>
           </tr>
         </thead>
@@ -262,6 +274,34 @@ export const SourceTable: React.FC<SourceTableProps> = ({
                       }`}
                     />
                   </button>
+                </td>
+                {/* Outbound-publishing toggle (podcast shows only) */}
+                <td className="whitespace-nowrap px-4 py-3">
+                  {source.source_type === 'podcast' ? (
+                    <button
+                      onClick={() => toggleSocial(source)}
+                      disabled={isSaving}
+                      role="switch"
+                      aria-checked={source.social_enabled}
+                      aria-label={`Outbound publishing for ${source.name}`}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors disabled:opacity-50 ${
+                        source.social_enabled ? 'bg-sentiment-bull' : 'bg-muted-foreground/40'
+                      }`}
+                      title={
+                        source.social_enabled
+                          ? 'Publishes to Threads/Facebook/方格子/Substack — click to mute'
+                          : 'Muted — episodes are still ingested but never published anywhere'
+                      }
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-card transition-transform ${
+                          source.social_enabled ? 'translate-x-6' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                  ) : (
+                    <span className="italic text-muted-foreground/60">—</span>
+                  )}
                 </td>
                 {/* Actions */}
                 <td className="whitespace-nowrap px-4 py-3">

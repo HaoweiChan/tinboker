@@ -36,9 +36,13 @@ import {
 
 const PLATFORM_LABELS: Record<string, string> = { threads: 'Threads', facebook: 'Facebook' };
 
+/** Shown wherever a show's 對外發佈 switch (content_sources.social_enabled) is off. */
+const SOCIAL_OFF_HINT = '此頻道已關閉對外發佈（可於「內容來源」重新開啟）';
+
 /** Map a raw backend reason/error to an actionable zh-TW hint. */
 function friendlyReason(raw?: string): string {
   const s = raw || '未知錯誤';
+  if (s === 'social_disabled_for_show') return SOCIAL_OFF_HINT;
   if (/svg|media|download|requirements|不符/i.test(s))
     return '圖片格式不支援（卡片為 SVG，平台只接受 PNG/JPEG）— 改以純文字發佈';
   if (/190|session has expired|token|expired/i.test(s)) return '存取權杖失效，請更新金鑰';
@@ -53,6 +57,7 @@ function platformStatusText(r: PublishPlatformResult): string {
     return n != null ? `已發佈（含 ${n} 則留言）` : '已發佈';
   }
   if (r.reason === 'already_posted') return '先前已發佈過，略過';
+  if (r.reason === 'social_disabled_for_show') return SOCIAL_OFF_HINT;
   if (r.reason === 'no_postable_content') return '沒有可發佈內容';
   if (r.dry_run && r.configured === false) return '尚未設定金鑰，未發佈';
   return `發佈失敗：${friendlyReason(r.reason || r.error)}`;
@@ -272,7 +277,7 @@ export const AdminSocialPage: React.FC = () => {
       } else if (r.reason === 'publish_unverified') {
         alert(`寫入成功，但方格子回報文章仍非公開狀態 — 請人工確認：\n${r.url}`);
       } else {
-        alert(`未發佈：${r.reason ?? '未知原因'}`);
+        alert(`未發佈：${friendlyReason(r.reason)}`);
       }
       getVocusTokenStatus().then(setVocusToken).catch(() => {});
     } catch (e) {
@@ -312,7 +317,7 @@ export const AdminSocialPage: React.FC = () => {
       } else if (r.reason === 'not_configured') {
         alert('尚未設定 Substack（需要 SUBSTACK_SID / SUBSTACK_SUBDOMAIN / SUBSTACK_USER_ID）。');
       } else {
-        alert(`未建立草稿：${r.reason ?? '未知原因'}`);
+        alert(`未建立草稿：${friendlyReason(r.reason)}`);
       }
     } catch (e) {
       console.error('[social] substack draft failed', e);
@@ -329,7 +334,7 @@ export const AdminSocialPage: React.FC = () => {
       const r = await syndicateEpisode(selectedId, { dryRun: false });
       // Report per platform. One failing must not hide the other succeeding.
       const lines = Object.entries(r.platforms).map(([name, p]) =>
-        p.posted ? `✅ ${name}: ${p.url}` : `❌ ${name}: ${p.reason ?? '未知原因'}`);
+        p.posted ? `✅ ${name}: ${p.url}` : `❌ ${name}: ${friendlyReason(p.reason)}`);
       const opened = Object.values(r.platforms).filter((p) => p.posted && p.url);
       if (opened.length && window.confirm(`${lines.join('\n')}\n\n要開啟這 ${opened.length} 個草稿嗎？`)) {
         opened.forEach((p) => window.open(p.url, '_blank', 'noopener'));
