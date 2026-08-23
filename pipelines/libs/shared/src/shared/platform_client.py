@@ -83,6 +83,30 @@ def fetch_sources(source_type: str, *, timeout: float = 10.0) -> list[dict[str, 
     return _get_items(f"/api/sources?{query}", timeout=timeout, what=f"/api/sources?type={source_type}")
 
 
+# Resolved once per process: the pipeline is a short-lived per-show run, and every node
+# that asks is asking about the same show.
+_SOCIAL_ENABLED_CACHE: dict[str, bool] | None = None
+
+
+def social_enabled_for(podcast_name: str | None, *, timeout: float = 10.0) -> bool:
+    """Whether ``podcast_name``'s episodes are published to any external platform.
+
+    Mirrors ``content_sources.social_enabled`` on the platform. Fails OPEN: when the
+    platform pull is disabled or unreachable we keep generating social copy + cards,
+    because losing them silently for every show is worse than generating a few that the
+    platform will refuse to publish anyway.
+    """
+    global _SOCIAL_ENABLED_CACHE
+    if _SOCIAL_ENABLED_CACHE is None:
+        items = fetch_sources("podcast", timeout=timeout)
+        _SOCIAL_ENABLED_CACHE = {
+            str(i.get("name")): bool(i.get("social_enabled", True))
+            for i in (items or [])
+            if i.get("name")
+        }
+    return _SOCIAL_ENABLED_CACHE.get((podcast_name or "").strip(), True)
+
+
 def fetch_translation_aliases(*, timeout: float = 10.0) -> list[dict[str, Any]] | None:
     """Translations that carry curated aliases, for the news alias index.
 

@@ -131,3 +131,15 @@ def test_write_social_copy_invokes_llm(monkeypatch):
     assert captured["role"] == "social_copy_writer"
     assert result["social_thread"]["post"] == "P"
     assert result["social_thread"]["comments"] == [{"heading": "h", "text": "t"}]
+
+
+def test_write_social_copy_skips_llm_when_publishing_disabled(monkeypatch):
+    """A muted show must not cost an LLM call — nothing would ever post the copy."""
+    def _boom(*a, **k):  # pragma: no cover — must not be called
+        raise AssertionError("LLM invoked for a muted show")
+
+    monkeypatch.setattr(scw, "invoke_json", _boom)
+    monkeypatch.setattr(scw, "social_enabled_for", lambda name: False)
+    assert scw.write_social_copy({"source": "財經一路發"}) == {
+        "social_thread": {"post": "", "comments": []}
+    }

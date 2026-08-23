@@ -5,6 +5,7 @@ Service for managing content sources (followed podcast shows + news RSS feeds).
 import json
 import re
 import logging
+import time
 import urllib.parse
 import urllib.request
 from typing import Optional, List, Tuple
@@ -70,6 +71,55 @@ def _fetch_image(url: str, timeout: float) -> Tuple[bytes, str]:
     with _urlopen(url, timeout) as resp:
         ctype = (resp.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
         return resp.read(_COVER_MAX_BYTES + 1), ctype
+
+
+# ---------------------------------------------------------------------------
+# Per-show outbound-publishing kill switch
+# ---------------------------------------------------------------------------
+# Read on every publish candidate, so it is cached rather than queried per episode.
+# ponytail: 60s process-local TTL, no invalidation hook — a toggle in the admin UI
+# takes effect within a minute. Wire it to the source-cache invalidation in
+# routers/admin_sources.py if that ever needs to be instant.
+_SOCIAL_OFF_TTL_SECONDS = 60.0
+_social_off_cache: Tuple[float, frozenset] = (0.0, frozenset())
+
+
+def social_disabled_shows() -> frozenset:
+    """Display names of podcasts that must NOT be published to any external platform.
+
+    Fails open to the last known set: a DB blip should not silently mute publishing
+    for every show, and the set is re-read within the minute anyway.
+    """
+    global _social_off_cache
+    from src.database.postgres import SessionLocal  # local: avoids an import cycle
+
+    now = time.monotonic()
+    fetched_at, cached = _social_off_cache
+    if fetched_at and now - fetched_at < _SOCIAL_OFF_TTL_SECONDS:
+        return cached
+    try:
+        db = SessionLocal()
+        try:
+            rows = (
+                db.query(ContentSource.name)
+                .filter(
+                    ContentSource.source_type == "podcast",
+                    ContentSource.social_enabled.is_(False),
+                )
+                .all()
+            )
+        finally:
+            db.close()
+        cached = frozenset(name for (name,) in rows)
+        _social_off_cache = (now, cached)
+    except Exception as e:  # noqa: BLE001 — never break publishing on a read failure
+        logger.warning("social_disabled_shows read failed, reusing cached set: %s", e)
+    return cached
+
+
+def social_enabled_for(podcast_name: Optional[str]) -> bool:
+    """Whether episodes of ``podcast_name`` may be published to external platforms."""
+    return (podcast_name or "") not in social_disabled_shows()
 
 
 class ContentSourceService:

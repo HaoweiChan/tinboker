@@ -155,6 +155,10 @@ def create_all_tables():
                 "ALTER TABLE IF EXISTS content_sources "
                 "ADD COLUMN IF NOT EXISTS cover_image_url TEXT"
             ))
+            conn.execute(text(
+                "ALTER TABLE IF EXISTS content_sources "
+                "ADD COLUMN IF NOT EXISTS social_enabled BOOLEAN NOT NULL DEFAULT TRUE"
+            ))
             # Unified topic registry: tag rows pre-date these columns.
             conn.execute(text(
                 "ALTER TABLE IF EXISTS tag_registry "
