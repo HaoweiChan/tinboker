@@ -55,6 +55,18 @@ def sanitize_filename(filename: str) -> str:
     return filename
 
 
+# 408 Request Timeout and 429 Too Many Requests are the two 4xx codes that mean "try
+# again", so they stay on the retry path with the 5xx and transport errors.
+_RETRYABLE_4XX = {408, 429}
+
+
+def _is_permanent_http_error(exc: requests.exceptions.RequestException) -> bool:
+    """True when the server answered with a 4xx that retrying cannot fix."""
+    response = getattr(exc, "response", None)
+    status = getattr(response, "status_code", None)
+    return bool(status and 400 <= status < 500 and status not in _RETRYABLE_4XX)
+
+
 def download_file(url: str, filepath: Path, episode_title: str, max_retries: int = 3, check_existing: bool = True) -> bool:
     """
     Download a file from URL to filepath.
@@ -133,9 +145,17 @@ def download_file(url: str, filepath: Path, episode_title: str, max_retries: int
             return True
         
         except requests.exceptions.RequestException as e:
-            print(f"  ✗ Error downloading {episode_title}: {e}")
             if filepath.exists():
                 filepath.unlink()  # Remove partial file
+            if _is_permanent_http_error(e):
+                # The host answered, and its answer was "this is gone". Retrying cannot
+                # change that — old back-catalogue episodes whose audio the host has
+                # deleted were burning three requests each on every scheduled tick.
+                status = e.response.status_code
+                print(f"  ✗ Audio permanently unavailable (HTTP {status}), not retrying: "
+                      f"{episode_title} — {url}")
+                return False
+            print(f"  ✗ Error downloading {episode_title}: {e}")
             if attempt < max_retries - 1:
                 time.sleep(2)  # Wait before retry
                 continue
