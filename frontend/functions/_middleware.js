@@ -244,7 +244,10 @@ async function handle(context, url) {
     // host — and without this the SPA fallback answered /sitemap.xml with index.html
     // (200 text/html), so a submission there silently indexes nothing. Proxy it so
     // both hosts serve the same XML.
-    if (url.pathname === '/sitemap.xml') {
+    // `api !== url.origin` guards recursion: apiBase only rewrites *.tinboker.com and
+    // returns any other host unchanged, so on a host it doesn't know the proxy would
+    // fetch itself, re-enter this Function, and spin until the subrequest cap.
+    if (url.pathname === '/sitemap.xml' && api !== url.origin) {
       const r = await fetch(`${api}/sitemap.xml`, CACHE_1H);
       if (!r.ok) return next();
       return new Response(r.body, {
