@@ -6,11 +6,8 @@ costing three requests each on every scheduled ingest tick, forever.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 import requests
-
 from src.service.download_podcasts import download_file
 
 
