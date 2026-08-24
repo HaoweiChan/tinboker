@@ -198,10 +198,12 @@ services:
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U podcast_user -d podcast_db"]
-      interval: 10s
+      # Same exec-churn reasoning as redis below.
+      interval: 30s
       timeout: 5s
       retries: 5
       start_period: 30s
+      start_interval: 1s
 
   # Shared Redis
   redis:
@@ -216,9 +218,15 @@ services:
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
+      # Every healthcheck is a `docker exec`: a fresh process + namespace + cgroup that
+      # dockerd and containerd must set up and tear down. At 10s this one alone was the
+      # most frequent exec on the host. 30s steady-state, with start_interval keeping
+      # `depends_on: service_healthy` fast on a cold start.
+      interval: 30s
       timeout: 3s
       retries: 3
+      start_period: 30s
+      start_interval: 1s
 
   # Shared Netdata Monitoring
   netdata:
