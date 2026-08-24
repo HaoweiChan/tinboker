@@ -96,6 +96,12 @@ jobs:
           retention-days: 1
 
   # ── 3. Deploy Cloudflare Pages preview ───────────────────────────────────────
+  # NOTE: this deploys `frontend/dist` only, so the preview does NOT run Pages
+  # Functions — frontend/functions/ is a sibling of dist, not inside it, and
+  # wrangler only picks it up from frontend/ (see frontend-deploy.yml). Anything
+  # the crawler-meta middleware does is therefore invisible on a preview URL and
+  # must be checked on dev after merge; `npm run validate:seo` is the pre-merge
+  # check. Do not read a generic <title> on a preview as a broken middleware.
   preview:
     needs: [changed, build]
     # Only run when frontend changed and the build passed.
