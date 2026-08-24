@@ -92,6 +92,11 @@ class ContentSource(Base):
     transcript_service = Column(String(20), nullable=True)  # podcast only: groq|whisper|openai
     transcript_model = Column(String(50), nullable=True)  # podcast only: e.g. whisper-large-v3
     active = Column(Boolean, nullable=False, default=True, index=True)
+    # Per-show outbound-publishing kill switch: when False, this show's episodes are
+    # never pushed to any external platform (Threads, Facebook, 方格子, Substack).
+    # Independent of `active` — we keep ingesting the show and it still feeds the site,
+    # we just stop publishing about it anywhere else.
+    social_enabled = Column(Boolean, nullable=False, default=True)
     extra = Column(JSON, nullable=True)  # type-specific overflow / future-proofing
     last_updated_by = Column(String(100), nullable=True)
     last_updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

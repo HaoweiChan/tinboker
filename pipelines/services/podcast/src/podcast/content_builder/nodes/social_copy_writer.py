@@ -18,6 +18,8 @@ import json
 import re
 from typing import Any
 
+from shared.platform_client import social_enabled_for
+
 from ..llm import invoke_json, load_prompt
 from ..state import PipelineState
 from .social_cards_builder import cards_from_marp_slides
@@ -182,6 +184,13 @@ def postprocess(result: Any, state: PipelineState) -> dict[str, Any]:
 
 
 def write_social_copy(state: PipelineState) -> dict[str, Any]:
-    """Generate the human-tone Threads post + per-section comments."""
+    """Generate the human-tone Threads post + per-section comments.
+
+    Skipped entirely — no LLM call — for shows whose platform-side publishing switch is
+    off, since nothing would ever post the copy.
+    """
+    if not social_enabled_for(state.get("source")):
+        print(f"  ⏸ Social copy skipped: publishing is off for {state.get('source')}")
+        return {"social_thread": {"post": "", "comments": []}}
     result = invoke_json("social_copy_writer", build_messages(state))
     return postprocess(result, state)

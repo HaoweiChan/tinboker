@@ -16,6 +16,7 @@ import logging
 import re
 from typing import Any, Optional
 
+from shared.platform_client import social_enabled_for
 from shared.tickers import canonical_symbol, lookup_ticker
 
 from ...exporters.ticker_insights import market_for_ticker, score_to_label
@@ -321,5 +322,12 @@ def assemble_social_cards(state: PipelineState) -> list[dict[str, Any]]:
 
 
 def build_social_cards(state: PipelineState) -> dict[str, Any]:
-    """Join node: the unified deck for the Threads carousel + on-page episode deck."""
+    """Join node: the unified deck for the Threads carousel + on-page episode deck.
+
+    Shows whose platform-side publishing switch is off get no cards at all — that also
+    short-circuits the Marp render step downstream, which skips on empty ``social_cards``.
+    """
+    if not social_enabled_for(state.get("source")):
+        print(f"  ⏸ Social cards skipped: publishing is off for {state.get('source')}")
+        return {"social_cards": []}
     return {"social_cards": assemble_social_cards(state)}

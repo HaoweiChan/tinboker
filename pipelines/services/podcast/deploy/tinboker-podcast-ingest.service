@@ -25,6 +25,10 @@ Environment=TINBOKER_PLATFORM_API_URL=https://api.tinboker.com
 # timeout 524'd the Threads catch-up publish (the origin kept working, so the run log
 # showed a failure while the posts went live).
 Environment=TINBOKER_ADMIN_API_URL=http://127.0.0.1:8002
-# Transcription of a long episode is slow; this is a ceiling against a wedged run holding
-# the timer, not a target.
-TimeoutStartSec=7200
+# A ceiling against a wedged run holding the timer, not a target — so it has to sit above
+# the longest legitimate run and below the timer's 6h cadence. 2h was under the real
+# envelope: a tick with a back-catalogue backlog works through ~6 shows in 2h (10 shows x
+# up to 10 unprocessed episodes each), so runs land anywhere from ~1h20 to well past 2h
+# and systemd was SIGTERMing healthy runs mid-episode. 5h clears the observed worst case
+# and still leaves an hour before the next tick.
+TimeoutStartSec=18000

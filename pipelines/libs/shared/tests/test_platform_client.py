@@ -212,3 +212,21 @@ def test_admin_base_falls_back_to_the_platform_url(monkeypatch):
     monkeypatch.delenv("TINBOKER_ADMIN_API_URL", raising=False)
     monkeypatch.setenv("TINBOKER_PLATFORM_API_URL", "http://localhost:5174")
     assert pc.admin_base_url() == "http://localhost:5174"
+
+
+def test_social_enabled_for_reads_switch_and_fails_open(monkeypatch):
+    """Muted shows report False; unknown shows and an unreachable platform report True."""
+    monkeypatch.setattr(platform_client, "_SOCIAL_ENABLED_CACHE", None)
+    monkeypatch.setattr(
+        platform_client, "fetch_sources",
+        lambda *a, **k: [{"name": "財經一路發", "social_enabled": False},
+                         {"name": "股癌", "social_enabled": True}],
+    )
+    assert platform_client.social_enabled_for("財經一路發") is False
+    assert platform_client.social_enabled_for("股癌") is True
+    assert platform_client.social_enabled_for("沒登記的節目") is True
+
+    # Platform unreachable (fetch_sources returns None) → everything stays enabled.
+    monkeypatch.setattr(platform_client, "_SOCIAL_ENABLED_CACHE", None)
+    monkeypatch.setattr(platform_client, "fetch_sources", lambda *a, **k: None)
+    assert platform_client.social_enabled_for("財經一路發") is True
