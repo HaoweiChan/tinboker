@@ -164,9 +164,13 @@ export const SectorPage: React.FC = () => {
 
   return (
     <>
+      {/* The sector's own description is the paragraph rendered under the H1 below —
+          unique per sector, so it makes a far better meta description than the
+          template did (81 sector pages otherwise read as near-identical to Google). */}
       <SEO
         title={titleText}
-        description={`所有關於「${titleText}」產業 / 題材的 Podcast 摘要與市場討論。`}
+        description={sectorDescription || `所有關於「${titleText}」產業 / 題材的 Podcast 摘要與市場討論。`}
+        url={typeof window !== 'undefined' ? window.location.origin + window.location.pathname : undefined}
       />
       <PageContent>
         <div className="flex items-start gap-5 bg-card border border-border rounded-md p-5 sm:p-6 mb-[18px]">

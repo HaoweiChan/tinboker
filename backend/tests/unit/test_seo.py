@@ -66,3 +66,35 @@ def test_gsc_row_normalization():
         "ctr": 0.0353,
         "position": 4.3,
     }
+
+
+@pytest.mark.asyncio
+async def test_sitemap_lists_visible_sectors_and_skips_hidden_tags(monkeypatch):
+    """Sector pages ship; admin-hidden sectors and tags stay out.
+
+    Sector pages were absent from the sitemap entirely, which is why they never got
+    indexed. The two exclusions matter as much as the inclusion: the site hides those
+    from its own listings, so a crawler that follows them lands on an empty page.
+    """
+    async def _no_episodes(*args, **kwargs):
+        return []
+
+    async def _sectors(*args, **kwargs):
+        return [{"exposure_id": "sector_mlcc"}, {"exposure_id": "sector_retired"}]
+
+    async def _tags(*args, **kwargs):
+        return [{"id": "ai"}, {"id": "junk_tag"}]
+
+    monkeypatch.setattr(seo.podcast_service, "get_recent_episodes", _no_episodes)
+    monkeypatch.setattr(seo.podcast_service, "list_sectors", _sectors)
+    monkeypatch.setattr(seo.podcast_service, "get_all_tags", _tags)
+    monkeypatch.setattr(seo, "served_sector_exposure_ids", lambda db: {"sector_mlcc"})
+    monkeypatch.setattr(seo, "hidden_tag_slugs", lambda db: {"junktag"})
+    monkeypatch.setattr(settings, "site_url", "https://tinboker.com")
+
+    body = (await seo.sitemap(limit=10, db=object())).body.decode()
+
+    assert "<loc>https://tinboker.com/sector/sector_mlcc</loc>" in body
+    assert "sector_retired" not in body
+    assert "<loc>https://tinboker.com/topics/ai</loc>" in body
+    assert "junk_tag" not in body

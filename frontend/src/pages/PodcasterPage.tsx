@@ -134,7 +134,7 @@ export const PodcasterPage: React.FC = () => {
 
   return (
     <>
-      <SEO title={`${name} · Podcast 頻道`} description={`追蹤 ${name} 的最新 Podcast 摘要與相關個股分析。`} url={typeof window !== 'undefined' ? window.location.href : undefined} />
+      <SEO title={`${name} · Podcast 頻道`} description={`追蹤 ${name} 的最新 Podcast 摘要與相關個股分析。`} url={typeof window !== 'undefined' ? window.location.origin + window.location.pathname : undefined} />
       <PageContent>
         {/* Hero */}
         <div className="flex items-start gap-5 bg-card border border-border rounded-md p-5 sm:p-6 mb-[18px]">

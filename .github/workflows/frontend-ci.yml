@@ -62,6 +62,14 @@ jobs:
         env:
           VITE_GOOGLE_CLIENT_ID: ${{ env.VITE_GOOGLE_CLIENT_ID }}
 
+      # functions/ is a Cloudflare Pages Function — outside src/, so neither tsc nor the
+      # changed-files lint below ever sees it. This is the only check that does, and a
+      # content route silently dropping out of it means those pages go back to serving
+      # index.html's generic title to Googlebot.
+      - name: Validate crawler meta (SEO)
+        working-directory: frontend
+        run: npm run validate:seo
+
       # Lint only the .ts/.tsx files touched in this PR — new code must be clean.
       - name: Lint changed TypeScript files
         working-directory: frontend
