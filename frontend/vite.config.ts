@@ -44,6 +44,13 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        // The Marp slide renderer is 3.5 MB — over half the precache — and it is
+        // behind `await import()` in marpParser, reached only from SlideViewer on
+        // /report. Precaching it made every first-time visitor download it in the
+        // background, competing for bandwidth with the page they actually opened.
+        // The runtimeCaching rule below still caches it the first time it is really
+        // used, so offline slide viewing survives after one visit to a report.
+        globIgnores: ['**/assets/marp-*.js'],
         // Prompt flow: the new SW WAITS (skipWaiting off) until the user taps 更新,
         // which posts SKIP_WAITING. clientsClaim MUST be on so the freshly-activated
         // worker claims this page → `controllerchange` fires → we reload. With it off,
@@ -79,6 +86,17 @@ export default defineConfig({
               cacheName: 'google-fonts-webfonts-v1',
               cacheableResponse: { statuses: [0, 200] },
               expiration: { maxEntries: 30, maxAgeSeconds: 60 * 60 * 24 * 365 }
+            }
+          },
+          {
+            urlPattern: /\/assets\/marp-.*\.js$/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'marp-chunk-v1',
+              cacheableResponse: { statuses: [0, 200] },
+              // Content-hashed filename, so a new build is a new URL — one entry is
+              // the live one and the expiry just sweeps up the superseded chunk.
+              expiration: { maxEntries: 2, maxAgeSeconds: 60 * 60 * 24 * 30 }
             }
           },
           {
