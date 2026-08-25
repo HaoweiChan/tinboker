@@ -1,5 +1,7 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://api.tinboker.com/sitemap.xml
-
+# Same-origin — functions/_middleware.js proxies this to the API's generated sitemap.
+# Pointing at api.tinboker.com worked, but a cross-host sitemap only counts for hosts
+# that are separately verified in Search Console; this one always counts.
+Sitemap: https://tinboker.com/sitemap.xml
