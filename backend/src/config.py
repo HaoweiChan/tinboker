@@ -52,6 +52,7 @@ class Settings(BaseSettings):
     massive_api_keys: Optional[str] = None
     usd_twd_rate: float = 32.0
     podcast_api_key: Optional[str] = None  # API key for external podcast API (Netcup server)
+    openrouter_api_key: Optional[str] = None  # OpenRouter key (comment triage, pipeline trial runs)
     
     # Google OAuth Configuration
     google_client_id: Optional[str] = None
@@ -125,6 +126,16 @@ class Settings(BaseSettings):
     social_publish_slots: str = ""
     # How many recent episodes each slot scans (the ledger decides what actually posts).
     social_publish_scan_limit: int = 10
+
+    # How often to pull new Threads comments, in minutes. 0 (the default) = never.
+    # Same rule as the slots: set it on EXACTLY ONE environment.
+    social_comment_sync_minutes: int = 0
+    # How many recent threads to walk for new comments on each sync.
+    social_comment_scan_posts: int = 25
+    # Model used to triage a comment and draft a reply.
+    social_comment_model: str = "google/gemini-2.5-flash"
+    # Cap on unattended replies per sync — a runaway classifier cannot flood the account.
+    social_comment_auto_reply_cap: int = 3
 
     # ==================== 方格子 (vocus) syndication ====================
     # vocus publishes no developer API; we drive the endpoints its own editor uses.

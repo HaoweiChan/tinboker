@@ -658,3 +658,38 @@ class SocialPostLedger(Base):
 
     def __repr__(self) -> str:
         return f"<SocialPostLedger({self.platform}, {self.episode_id})>"
+
+
+class ThreadsComment(Base):
+    """An external reply on one of our Threads posts, with its triage verdict.
+
+    Only comments actually addressed to us land here: replies aimed at another
+    commenter further down the tree are filtered out before insert, as are our own
+    reply-chain posts and known bots.
+    """
+    __tablename__ = "threads_comments"
+
+    id = Column(String(255), primary_key=True)            # the reply's Threads media id
+    root_post_id = Column(String(255), nullable=False, index=True)
+    replied_to_id = Column(String(255), nullable=True)    # our post/comment it answers
+    username = Column(String(255), nullable=True)
+    text = Column(Text, nullable=False, default="")
+    posted_at = Column(DateTime, nullable=True)           # when the commenter wrote it
+
+    # Triage
+    category = Column(String(30), nullable=True)          # praise|question|substantive|hostile|noise|promo|bot
+    verdict = Column(String(20), nullable=True)           # auto_reply|needs_review|ignore
+    reason = Column(Text, nullable=True)                  # one line, why
+    draft = Column(Text, nullable=True)                   # proposed reply, empty when ignoring
+
+    # Outcome
+    status = Column(String(20), nullable=False, default="pending", index=True)
+    # pending | replied | skipped | ignored
+    reply_media_id = Column(String(255), nullable=True)
+    replied_at = Column(DateTime, nullable=True)
+    auto = Column(Boolean, nullable=False, default=False)  # sent without human review
+
+    synced_at = Column(DateTime, default=datetime.utcnow)
+
+    def __repr__(self) -> str:
+        return f"<ThreadsComment({self.id}, {self.category}, {self.status})>"
