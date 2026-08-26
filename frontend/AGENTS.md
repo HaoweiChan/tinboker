@@ -30,6 +30,38 @@ of a full reinstall: `ln -sfn ../../../frontend/node_modules node_modules` (adju
 To point at a **local** backend instead, put `VITE_API_BASE_URL=http://localhost:5174` in a
 gitignored `frontend/.env.local` (never commit env files).
 
+### A bare `npm run build` matches no deployed environment
+
+CI always builds with `VITE_STAGE` set (`DEV` / `STAGING` / `PRODUCTION`). A local
+`npm run build` leaves it undefined, and two gates read it:
+
+- `App.tsx` — `ADMIN_ENABLED = VITE_STAGE !== 'PRODUCTION'`, and `undefined !== 'PRODUCTION'`
+  is **true**, so a bare local build registers the whole admin dashboard.
+- `EpisodeDetail.tsx` — `IS_DEV` guards the `<SlideViewer>` block.
+
+Both are the only reachable paths to `SlideViewer` → `marpParser` → `@marp-team/marp-core`,
+so a bare local build emits a 3.5 MB Marp chunk that the production build does not have.
+The numbers, same commit, `npm ci` either way:
+
+| `VITE_STAGE` | precache |
+|---|---|
+| unset (bare local build) | 42 entries, 6357 KiB |
+| `PRODUCTION` (what ships) | 41 entries, 2613 KiB |
+
+Both transform the same 3913 modules — the difference is entirely tree-shaking, which is
+why it does not show up as a warning anywhere.
+
+So never compare a local build's bundle or precache against production — pass the same
+stage CI does:
+
+```bash
+VITE_STAGE=PRODUCTION VITE_GOOGLE_CLIENT_ID=x npm run build
+```
+
+Reading a bare local build as production is what made PR #549 (since closed) look like a
+real 3.5 MB regression. Production never shipped that chunk; dev and staging do, because
+`ADMIN_ENABLED` is true there by design.
+
 ---
 
 ## UI Conventions
