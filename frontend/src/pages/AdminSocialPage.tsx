@@ -10,6 +10,7 @@ import { RefreshCw, Save, Check, MessageSquare, Image as ImageIcon, Eye, Wand2, 
 import { copySyndicationToClipboard } from '@/utils/syndicationHtml';
 import { SlideViewer } from '@/components/common/SlideViewer';
 import { PromoComposer } from '@/components/admin/PromoComposer';
+import { CommentTriage } from '@/components/admin/CommentTriage';
 import {
   listSocialEpisodes,
   getSocialEpisode,
@@ -102,7 +103,7 @@ export const AdminSocialPage: React.FC = () => {
   const [publishResult, setPublishResult] = useState<PublishResult | null>(null);
   const [publishError, setPublishError] = useState<string | null>(null);
   const [showComposed, setShowComposed] = useState(false);
-  const [tab, setTab] = useState<'episodes' | 'promo'>('episodes');
+  const [tab, setTab] = useState<'episodes' | 'promo' | 'comments'>('episodes');
 
   const [scheduledPosts, setScheduledPosts] = useState<ScheduledPost[]>([]);
   const [scheduling, setScheduling] = useState(false);
@@ -400,7 +401,9 @@ export const AdminSocialPage: React.FC = () => {
           <p className="text-base text-muted-foreground">
             {tab === 'episodes'
               ? '自動生成 Threads／Facebook 文案 — 可編輯、預覽卡片圖，按「發佈」即同步貼到兩個平台。'
-              : '自己寫一則宣傳貼文，附圖片／影片，一鍵同步貼到 Threads + Facebook。'}
+              : tab === 'promo'
+                ? '自己寫一則宣傳貼文，附圖片／影片，一鍵同步貼到 Threads + Facebook。'
+                : '別人在我們貼文下的留言。機器人和回給其他留言者的已自動排除，敵意與情緒留言標為略過。'}
           </p>
         </div>
         {tab === 'episodes' && (
@@ -415,7 +418,7 @@ export const AdminSocialPage: React.FC = () => {
 
       {/* Tabs: episode social copy vs. free-form promo composer */}
       <div className="mb-6 flex gap-1 border-b border-border">
-        {([['episodes', '節目文案'], ['promo', '宣傳貼文']] as const).map(([key, txt]) => (
+        {([['episodes', '節目文案'], ['promo', '宣傳貼文'], ['comments', '留言']] as const).map(([key, txt]) => (
           <button
             key={key}
             onClick={() => setTab(key)}
@@ -431,6 +434,8 @@ export const AdminSocialPage: React.FC = () => {
       </div>
 
       {tab === 'promo' && <PromoComposer onScheduled={fetchScheduled} />}
+
+      {tab === 'comments' && <CommentTriage />}
 
       {tab === 'episodes' && (
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[320px_1fr]">

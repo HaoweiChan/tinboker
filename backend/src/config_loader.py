@@ -43,6 +43,7 @@ _GSM_FIELDS: Tuple[str, ...] = (
     "massive_api_keys",
     # Content tier
     "podcast_api_key",
+    "openrouter_api_key",
     # Auth
     "google_client_id",
     "google_client_secret",

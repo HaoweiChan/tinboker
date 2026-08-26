@@ -234,6 +234,32 @@ async def publish_due_slots() -> int:
     return posted
 
 
+_last_comment_sync: list[datetime] = []
+
+
+async def sync_comments_if_due() -> int:
+    """Pull + triage new Threads comments on the configured interval.
+
+    Off unless ``SOCIAL_COMMENT_SYNC_MINUTES`` is set, and — like the posting slots —
+    only one environment may own it.
+    """
+    minutes = settings.social_comment_sync_minutes
+    if minutes <= 0:
+        return 0
+    now = datetime.now(TW)
+    if _last_comment_sync and (now - _last_comment_sync[0]) < timedelta(minutes=minutes):
+        return 0
+    _last_comment_sync[:] = [now]
+
+    from src.services import threads_comments_service
+    res = await threads_comments_service.sync_and_triage()
+    if res.get("new"):
+        logger.info("comment sync: new=%s auto_replied=%s needs_review=%s ignored=%s",
+                    res.get("new"), res.get("auto_replied"),
+                    res.get("needs_review"), res.get("ignored"))
+    return res.get("new", 0)
+
+
 async def run_periodic_scheduled_posts(interval_seconds: float = 60.0) -> None:
     """Loop to periodically run the scheduled posts processor."""
     logger.info("Starting scheduled social posts background worker (interval=%.1fs)", interval_seconds)
@@ -246,4 +272,8 @@ async def run_periodic_scheduled_posts(interval_seconds: float = 60.0) -> None:
             await publish_due_slots()
         except Exception:
             logger.exception("slot publish cycle encountered an error")
+        try:
+            await sync_comments_if_due()
+        except Exception:
+            logger.exception("comment sync cycle encountered an error")
         await asyncio.sleep(interval_seconds)

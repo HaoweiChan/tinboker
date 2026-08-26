@@ -120,6 +120,7 @@ without printing tokens. It reads the app creds (`APP_ID`, `APP_SECRET`, `THREAD
 mint_social_tokens.sh social-token                       # → TINBOKER_SOCIAL_TOKEN
 mint_social_tokens.sh threads-url   <redirect_uri>        # prints the Threads authorize URL
 mint_social_tokens.sh threads       <code> <redirect_uri> # → THREADS_ACCESS_TOKEN + THREADS_USER_ID
+mint_social_tokens.sh facebook-url  <redirect_uri>               # login URL with the right scopes
 mint_social_tokens.sh facebook      <short_lived_user_token>     # → FACEBOOK_PAGE_ID + ..._ACCESS_TOKEN
 mint_social_tokens.sh facebook-code <code> <redirect_uri>       # same, from an OAuth code
 ```
@@ -158,7 +159,9 @@ https://threads.net/oauth/authorize?client_id=4336105959996578&redirect_uri=http
 **Step 2 — authorize in a browser, signed in as the brand account.** Open the URL. On the
 consent screen ("Tinboker is requesting access to … Create and share posts on Threads
 profile") click **Continue As tinboker**. Keep the *Optional* "Create and share posts"
-permission enabled — that is `threads_content_publish`, required to post.
+permission enabled — that is `threads_content_publish`, required to post. Replying to
+someone else's comment needs no extra scope. (`threads_manage_replies`, which hides a
+reply on our own post, is deliberately NOT requested — we answer or ignore, never hide.)
 
 **Step 3 — capture the `code`.** The browser redirects to
 `https://tinboker.com/oauth/callback?code=AQ…` and the SPA immediately rewrites the URL to
@@ -204,10 +207,18 @@ USER token** with Page scopes, then read `/me/accounts` — a Page token derived
 (`developers.facebook.com/tools/explorer`) with:
 - **Meta App:** Tinboker (`2682941075440578`)
 - **User or Page:** *User Token*
-- **Permissions:** `pages_show_list`, `pages_read_engagement`, `pages_manage_posts`
+- **Permissions:** `pages_show_list`, `pages_read_engagement`, `pages_manage_posts`,
+  **`read_insights`**
 - click **Generate Access Token**, approve, copy the token.
 
-(Or do a normal Facebook Login OAuth and capture the `code`, then use `facebook-code`.)
+`read_insights` is the one that is easy to miss and hard to notice missing: posting works
+without it, but every `/insights` call 400s with *"must be a valid insights metric"*, so
+the admin page shows "—" for reach and there is no way to tell whether anyone is seeing
+the posts. The token minted before 2026-08-27 did not have it.
+
+(Or do a normal Facebook Login OAuth and capture the `code`, then use `facebook-code`.
+`mint_social_tokens.sh facebook-url <redirect_uri>` prints the login URL with the right
+scopes already in it.)
 
 **Step 2 — exchange + pick the Page + store:**
 ```bash
@@ -228,7 +239,8 @@ The script writes `FACEBOOK_PAGE_ID` and `FACEBOOK_PAGE_ACCESS_TOKEN`.
 ```bash
 PT=$(gcloud secrets versions access latest --secret=FACEBOOK_PAGE_ACCESS_TOKEN --project=gen-lang-client-0901363254)
 curl -s "https://graph.facebook.com/v21.0/debug_token?input_token=$PT&access_token=$APP_ID|$APP_SECRET"
-# expect: "type":"PAGE", "is_valid":true, "expires_at":0, scopes include "pages_manage_posts"
+# expect: "type":"PAGE", "is_valid":true, "expires_at":0,
+#         scopes include "pages_manage_posts" AND "read_insights"
 ```
 
 > Pitfall: if `debug_token` shows `"type":"USER"` with `pages_*` scopes, you stored the

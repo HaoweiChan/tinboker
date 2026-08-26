@@ -168,19 +168,30 @@ export async function publishSocialEpisode(
   return res.data;
 }
 
+/** Media snapshot stored on a scheduled post (see PromoMedia in adminPromo). */
+export interface ScheduledMedia {
+  type: 'image' | 'video';
+  url?: string | null;
+  path?: string | null;
+  filename?: string | null;
+}
+
+/** Promo posts carry plain comment strings; episode posts carry {heading,text}. */
+export type ScheduledComment = string | SocialComment;
+
 export interface ScheduledPost {
   id: number;
   post_type: 'episode' | 'promo';
   episode_id: string | null;
   text: string;
-  media: any[];
-  comments: any[];
+  media: ScheduledMedia[];
+  comments: ScheduledComment[];
   platforms: string[];
   scheduled_for: string; // ISO-8601 string
   status: 'pending' | 'processing' | 'posted' | 'failed';
   error_message: string | null;
   posted_at: string | null;
-  published_results: any;
+  published_results: Record<string, unknown> | null;
   created_by: string | null;
   created_at: string;
 }
@@ -189,8 +200,8 @@ export async function schedulePost(payload: {
   post_type: 'episode' | 'promo';
   episode_id?: string | null;
   text?: string;
-  media?: any[] | null;
-  comments?: any[] | null;
+  media?: ScheduledMedia[] | null;
+  comments?: ScheduledComment[] | null;
   platforms: string[];
   scheduled_for: string; // ISO string
 }): Promise<{ id: number; status: string }> {
@@ -330,6 +341,77 @@ export async function syndicateEpisode(
   const res = await apiClient.post<SyndicateResult>(
     `/api/admin/threads/episodes/${encodeURIComponent(episodeId)}/syndicate`
       + `?platforms=${encodeURIComponent(platforms)}&dry_run=${opts.dryRun === false ? 'false' : 'true'}`,
+  );
+  return res.data;
+}
+
+
+// ── Comment triage ────────────────────────────────────────────────────────────
+// Replies people leave on our Threads posts, classified so the ones worth answering
+// surface with a draft. Only plain praise is answered unattended; anything with a
+// factual claim, a question or a position waits here.
+
+export type CommentCategory =
+  | 'praise' | 'question' | 'substantive' | 'hostile' | 'noise' | 'promo' | 'bot' | null;
+
+export type CommentStatus = 'pending' | 'replied' | 'skipped' | 'ignored';
+
+export interface ThreadsCommentItem {
+  id: string;
+  root_post_id: string;
+  username: string | null;
+  text: string;
+  posted_at: string | null;
+  category: CommentCategory;
+  verdict: 'auto_reply' | 'needs_review' | 'ignore' | null;
+  reason: string | null;
+  draft: string;
+  status: CommentStatus;
+  auto: boolean;
+  reply_media_id: string | null;
+  permalink: string;
+}
+
+export async function listThreadsComments(
+  status: CommentStatus | 'all' = 'pending',
+): Promise<ThreadsCommentItem[]> {
+  const res = await apiClient.get<{ comments: ThreadsCommentItem[] }>(
+    `/api/admin/threads/comments?status=${status}`,
+    adminAuthConfig(),
+  );
+  return res.data.comments;
+}
+
+export interface CommentSyncResult {
+  configured: boolean;
+  scanned: number;
+  new: number;
+  auto_replied: number;
+  needs_review: number;
+  ignored: number;
+}
+
+export async function syncThreadsComments(): Promise<CommentSyncResult> {
+  const res = await apiClient.post<CommentSyncResult>(
+    '/api/admin/threads/comments/sync', undefined, adminAuthConfig(),
+  );
+  return res.data;
+}
+
+export async function replyToComment(
+  commentId: string, text: string,
+): Promise<{ replied: boolean; reply_media_id?: string; reason?: string }> {
+  const res = await apiClient.post(
+    `/api/admin/threads/comments/${encodeURIComponent(commentId)}/reply`,
+    { text }, adminAuthConfig(),
+  );
+  return res.data;
+}
+
+export async function skipComment(commentId: string): Promise<{ ok: boolean }> {
+  const res = await apiClient.post(
+    `/api/admin/threads/comments/${encodeURIComponent(commentId)}/skip`,
+    undefined, adminAuthConfig(),
   );
   return res.data;
 }
