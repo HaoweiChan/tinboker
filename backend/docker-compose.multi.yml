@@ -62,7 +62,14 @@ services:
       # Comment triage on the same production-only rule. Only "praise" replies go out
       # unattended; anything with a factual claim, a question or a position lands in
       # the admin 留言 tab for a human.
-      SOCIAL_COMMENT_SYNC_MINUTES: "30"
+      #
+      # Held at 0 for its first release. Because the sync is production-only by design,
+      # staging cannot exercise it — flipping it on at deploy time would make the live
+      # brand account the first place this code ever runs unattended. Turn it on
+      # deliberately (set to "30") once the admin 留言 tab shows the triage is
+      # classifying real comments the way it should. Everything else about the feature
+      # ships now: the tab, the sync/reply/skip endpoints, and manual replies all work.
+      SOCIAL_COMMENT_SYNC_MINUTES: "0"
       CORS_ORIGINS: '["https://tinboker.com","https://www.tinboker.com"]'
       # Marp render service runs as separate infra on its own docker network, only
       # reachable via its host-published :5004 — so go through the host gateway.
