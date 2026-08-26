@@ -154,3 +154,53 @@ class FacebookInsightsService:
             "series": series,
             **({"detail": detail} if detail and not available else {}),
         }
+
+
+# Per-post reach. The Page-level numbers above answer "is the page alive"; these answer
+# the question that actually decides whether Facebook is worth publishing to at all —
+# is anyone seeing the posts. Both need the ``read_insights`` scope on the user token
+# the Page token was derived from; without it Meta 400s and the UI shows "—".
+POST_METRICS = ["post_impressions", "post_impressions_unique", "post_engaged_users"]
+
+
+async def recent_post_insights(limit: int = 10) -> list[dict]:
+    """Reach + engagement for the most recent Page posts, newest first.
+
+    Never raises: a post whose insights call fails comes back with ``metrics: {}`` and a
+    ``detail``, so one bad post cannot blank the whole table.
+    """
+    svc = FacebookInsightsService()
+    if not svc.is_configured:
+        return []
+    out: list[dict] = []
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            feed = await svc._get(
+                client, f"{svc._page_id}/feed",
+                {"fields": "id,created_time,message,permalink_url", "limit": limit},
+            )
+        except Exception as e:
+            logger.warning("Facebook feed fetch failed: %s", e)
+            return []
+
+        for post in (feed.get("data") or []):
+            row = {
+                "id": post.get("id"),
+                "created_time": post.get("created_time"),
+                "permalink": post.get("permalink_url"),
+                "excerpt": (post.get("message") or "").split("\n", 1)[0][:80],
+                "metrics": {},
+            }
+            try:
+                payload = await svc._get(
+                    client, f"{post['id']}/insights", {"metric": ",".join(POST_METRICS)},
+                )
+                for item in (payload.get("data") or []):
+                    if item.get("name"):
+                        row["metrics"][item["name"]] = FacebookInsightsService._sum_metric(item)
+                for requested in POST_METRICS:
+                    row["metrics"].setdefault(requested, 0)
+            except Exception as e:
+                row["detail"] = str(e)[:200]
+            out.append(row)
+    return out

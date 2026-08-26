@@ -684,7 +684,7 @@ class ThreadsComment(Base):
 
     # Outcome
     status = Column(String(20), nullable=False, default="pending", index=True)
-    # pending | replied | skipped | ignored | hidden
+    # pending | replied | skipped | ignored
     reply_media_id = Column(String(255), nullable=True)
     replied_at = Column(DateTime, nullable=True)
     auto = Column(Boolean, nullable=False, default=False)  # sent without human review

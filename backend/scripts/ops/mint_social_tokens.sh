@@ -63,7 +63,16 @@ case "$cmd" in
   threads-url)
     redirect="${2:?usage: threads-url <redirect_uri>}"
     app_id="$(sec THREADS_APP_ID)"
-    echo "https://threads.net/oauth/authorize?client_id=${app_id}&redirect_uri=${redirect}&scope=threads_basic,threads_content_publish,threads_manage_replies&response_type=code"
+    echo "https://threads.net/oauth/authorize?client_id=${app_id}&redirect_uri=${redirect}&scope=threads_basic,threads_content_publish&response_type=code"
+    ;;
+
+  facebook-url)
+    # read_insights is what makes page/post reach readable. The token minted before
+    # 2026-08-27 lacks it, so every insights call 400s and the admin page shows "—".
+    redirect="${2:?usage: facebook-url <redirect_uri>}"
+    app_id="$(sec APP_ID)"
+    scopes="pages_show_list,pages_read_engagement,pages_read_user_content,pages_manage_posts,pages_manage_engagement,read_insights"
+    echo "https://www.facebook.com/v21.0/dialog/oauth?client_id=${app_id}&redirect_uri=${redirect}&scope=${scopes}&response_type=code"
     ;;
 
   threads)
@@ -99,7 +108,7 @@ case "$cmd" in
     ;;
 
   *)
-    echo "usage: $0 {social-token | threads-url <redirect_uri> | threads <code> <redirect_uri> | facebook <short_user_token> | facebook-code <code> <redirect_uri>}" >&2
+    echo "usage: $0 {social-token | threads-url <redirect_uri> | threads <code> <redirect_uri> | facebook-url <redirect_uri> | facebook <short_user_token> | facebook-code <code> <redirect_uri>}" >&2
     exit 2
     ;;
 esac

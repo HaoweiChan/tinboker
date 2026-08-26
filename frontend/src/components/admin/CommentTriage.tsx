@@ -2,7 +2,8 @@
  * Admin → Social → 留言: the replies people leave on our Threads posts, triaged.
  *
  * Rules live on the backend, not here: bots and replies aimed at another commenter
- * never arrive; hostile/noise/promo arrive already marked 略過. What lands in 待處理
+ * never arrive; hostile/noise/promo arrive already marked 略過. There is no hide action —
+ * a comment is answered or it is ignored. What lands in 待處理
  * is what someone judged worth answering, with a draft to edit. Only plain praise is
  * ever answered unattended — anything carrying a factual claim, a question, or a
  * position waits for this screen, because a wrong number from a finance account is
@@ -10,13 +11,12 @@
  */
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { RefreshCw, Send, EyeOff, X, ExternalLink, Check } from 'lucide-react';
+import { RefreshCw, Send, X, ExternalLink, Check } from 'lucide-react';
 import {
   listThreadsComments,
   syncThreadsComments,
   replyToComment,
   skipComment,
-  hideComment,
   type ThreadsCommentItem,
   type CommentStatus,
 } from '@/services/api/adminSocial';
@@ -197,14 +197,6 @@ export const CommentTriage: React.FC = () => {
                     className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-base text-foreground hover:bg-muted disabled:opacity-50"
                   >
                     <X className="h-4 w-4" /> 略過
-                  </button>
-                  <button
-                    onClick={() => act(c.id, () => hideComment(c.id), '已隱藏')}
-                    disabled={busyId === c.id}
-                    className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-base text-muted-foreground hover:bg-muted disabled:opacity-50"
-                    title="在 Threads 上隱藏這則留言（需要 threads_manage_replies 權限）"
-                  >
-                    <EyeOff className="h-4 w-4" /> 隱藏
                   </button>
                 </div>
               </>

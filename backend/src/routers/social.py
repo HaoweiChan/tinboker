@@ -29,7 +29,8 @@ from src.services.syndication_markdown import (podcast_short_name, syndication_e
                                                syndication_title)
 from src.tag_registry import canonical_label
 from src.services.podcast import PodcastService
-from src.services.facebook_insights_service import FacebookInsightsService
+from src.services.facebook_insights_service import (FacebookInsightsService,
+                                                     recent_post_insights as facebook_recent_post_insights)
 from src.services.threads_insights_service import ThreadsInsightsService
 from src.services import threads_comments_service
 
@@ -167,14 +168,19 @@ async def threads_insights(
 @facebook_router.get("/insights")
 async def facebook_insights(
     days: int = Query(default=28, ge=1, le=90),
+    posts: int = Query(default=10, ge=0, le=25, description="How many recent posts to include"),
     _: AdminAccess = Depends(get_admin_access),
 ):
-    """Facebook Page insights: audience (fans/followers) + engagement totals.
+    """Facebook Page insights: audience, engagement totals, and per-post reach.
 
     Always 200 — when the page isn't configured (or the Graph API errors) the payload
     reports ``available: false`` so the admin UI shows a "not connected" state.
+    ``recent_posts`` is what answers "is anyone seeing these"; it needs the
+    ``read_insights`` scope and is an empty list without it.
     """
-    return await FacebookInsightsService().account_summary(days=days)
+    summary = await FacebookInsightsService().account_summary(days=days)
+    recent = await facebook_recent_post_insights(limit=posts) if posts else []
+    return {**summary, "recent_posts": recent}
 
 
 # ── Comment triage (replies people leave on our posts) ────────────────────────
@@ -226,19 +232,6 @@ def skip_threads_comment(comment_id: str, _: AdminAccess = Depends(get_admin_acc
         return threads_comments_service.set_status(comment_id, "skipped")
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
-
-
-@router.post("/comments/{comment_id}/hide")
-async def hide_threads_comment(
-    comment_id: str,
-    hidden: bool = Query(default=True),
-    _: AdminAccess = Depends(get_admin_access),
-):
-    """Hide a reply on our post. Requires the ``threads_manage_replies`` token scope."""
-    try:
-        return await threads_comments_service.hide(comment_id, hidden=hidden)
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=str(e))
 
 
 # ── Social copy management (the human-tone post + per-theme comments) ──────────

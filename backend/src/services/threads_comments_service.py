@@ -286,24 +286,6 @@ def set_status(comment_id: str, status: str) -> dict:
     return {"ok": True, "status": status}
 
 
-async def hide(comment_id: str, hidden: bool = True) -> dict:
-    """Hide (or unhide) a reply on our post. Needs the ``threads_manage_replies`` scope."""
-    base = settings.threads_api_base.rstrip("/")
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        resp = await client.post(
-            f"{base}/{comment_id}/manage_reply",
-            data={"hide": str(bool(hidden)).lower(),
-                  "access_token": settings.threads_access_token},
-        )
-    if resp.status_code >= 400:
-        raise ThreadsError(f"hide failed ({resp.status_code}): {resp.text[:300]}")
-    with session_scope() as db:
-        row = db.get(ThreadsComment, comment_id)
-        if row is not None and row.status != "replied":
-            row.status = "hidden" if hidden else "pending"
-    return {"ok": True, "hidden": hidden}
-
-
 def list_comments(status: str = "pending", limit: int = 50) -> list[dict]:
     with session_scope() as db:
         q = db.query(ThreadsComment)

@@ -354,7 +354,7 @@ export async function syndicateEpisode(
 export type CommentCategory =
   | 'praise' | 'question' | 'substantive' | 'hostile' | 'noise' | 'promo' | 'bot' | null;
 
-export type CommentStatus = 'pending' | 'replied' | 'skipped' | 'ignored' | 'hidden';
+export type CommentStatus = 'pending' | 'replied' | 'skipped' | 'ignored';
 
 export interface ThreadsCommentItem {
   id: string;
@@ -411,14 +411,6 @@ export async function replyToComment(
 export async function skipComment(commentId: string): Promise<{ ok: boolean }> {
   const res = await apiClient.post(
     `/api/admin/threads/comments/${encodeURIComponent(commentId)}/skip`,
-    undefined, adminAuthConfig(),
-  );
-  return res.data;
-}
-
-export async function hideComment(commentId: string): Promise<{ ok: boolean }> {
-  const res = await apiClient.post(
-    `/api/admin/threads/comments/${encodeURIComponent(commentId)}/hide?hidden=true`,
     undefined, adminAuthConfig(),
   );
   return res.data;

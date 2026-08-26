@@ -120,8 +120,8 @@ Measured against the 33 real comments from 2026-06-15 to 08-26: 6 excluded by ru
 plain praise essentially does not occur on this account. The unattended lane exists,
 but in practice a human sees everything.
 
-Hiding a reply needs the `threads_manage_replies` scope; see
-`docs/social-publishing-tokens.md`.
+There is no hide action: a comment is answered or it is ignored. `threads_manage_replies`
+is deliberately not in the token's scopes.
 
 ### The idempotency ledger
 
