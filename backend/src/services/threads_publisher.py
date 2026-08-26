@@ -7,21 +7,21 @@ composes a zh-TW post from the contract fields the agents pipeline writes
 ``{site_url}/episode/{id}``, and publishes it.
 
 Two guards keep it safe to run on a schedule:
-  * an idempotency table (one row per posted episode) so a re-run never double-posts;
-  * a recency window so even a wiped idempotency store can only ever touch episodes
-    from the last few days.
+  * a shared Postgres idempotency ledger, claimed *before* posting, so neither a
+    re-run nor two overlapping triggers can double-post (``social_ledger``);
+  * a recency window so even a wiped ledger can only ever touch episodes from the
+    last few days.
 
 With no Threads credentials configured the run is forced to ``dry_run`` — it composes
 and returns the drafts without publishing — so the endpoint is always safe to call.
 """
 
-import json
 import logging
 from datetime import datetime
 from typing import Any, Optional
 
 from src.config import settings
-from src.database.db import get_connection
+from src.services import social_ledger
 from src.services.content_source_service import social_enabled_for
 from src.services.podcast import PodcastService
 from src.services.threads_service import THREADS_MAX_CHARS, ThreadsError, ThreadsService
@@ -32,31 +32,6 @@ podcast_service = PodcastService()
 
 MAX_INSIGHTS = 3
 MAX_CARDS = 20  # Threads carousel hard limit (cover + up to 19 themes)
-
-
-def _ensure_table() -> None:
-    conn = get_connection()
-    try:
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS threads_posts (
-                episode_id TEXT PRIMARY KEY,
-                media_id   TEXT,
-                url        TEXT,
-                reply_ids  TEXT,
-                posted_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-            """
-        )
-        # Additive migration for DBs created before the thread (carousel+replies) work.
-        # SQLite has no ADD COLUMN IF NOT EXISTS, so swallow the duplicate-column error.
-        try:
-            conn.execute("ALTER TABLE threads_posts ADD COLUMN reply_ids TEXT")
-        except Exception:
-            pass
-        conn.commit()
-    finally:
-        conn.close()
 
 
 def _field(episode: Any, name: str, default=None):
@@ -264,51 +239,21 @@ def _release_ms(episode: Any) -> Optional[int]:
     return _field(episode, "released_at_ms") or _field(episode, "created_time")
 
 
+PLATFORM = "threads"
+
+
 def already_posted(episode_id: str) -> bool:
-    _ensure_table()
-    conn = get_connection()
-    try:
-        row = conn.execute(
-            "SELECT 1 FROM threads_posts WHERE episode_id = ?", (episode_id,)
-        ).fetchone()
-        return row is not None
-    finally:
-        conn.close()
+    return social_ledger.already_posted(PLATFORM, episode_id)
 
 
 def _record(episode_id: str, media_id: str, url: str, reply_ids: Optional[list[str]] = None) -> None:
-    conn = get_connection()
-    try:
-        conn.execute(
-            "INSERT OR REPLACE INTO threads_posts (episode_id, media_id, url, reply_ids, posted_at) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (episode_id, media_id, url, json.dumps(reply_ids or []), datetime.utcnow().isoformat()),
-        )
-        conn.commit()
-    finally:
-        conn.close()
+    social_ledger.record(PLATFORM, episode_id, media_id, url, reply_ids)
 
 
 def list_posted(limit: int = 50) -> list[dict]:
-    _ensure_table()
-    conn = get_connection()
-    try:
-        rows = conn.execute(
-            "SELECT episode_id, media_id, url, reply_ids, posted_at FROM threads_posts "
-            "ORDER BY posted_at DESC LIMIT ?",
-            (limit,),
-        ).fetchall()
-        out = []
-        for r in rows:
-            d = dict(r)
-            try:
-                d["reply_ids"] = json.loads(d.get("reply_ids") or "[]")
-            except (TypeError, ValueError):
-                d["reply_ids"] = []
-            out.append(d)
-        return out
-    finally:
-        conn.close()
+    """Recent ledger rows, newest first (``reply_ids`` keeps the published API shape)."""
+    rows = social_ledger.list_posted(PLATFORM, limit)
+    return [{**r, "reply_ids": r["child_ids"]} for r in rows]
 
 
 async def publish_recent(
@@ -321,7 +266,6 @@ async def publish_recent(
     Returns a summary with the drafts that were (or would be) posted and the
     reasons others were skipped. Safe to call repeatedly; idempotent per episode.
     """
-    _ensure_table()
     service = ThreadsService()
     configured = service.is_configured
     effective_dry_run = dry_run or not configured
@@ -368,6 +312,9 @@ async def publish_recent(
                     "reply_count": len(thread["replies"]), "dry_run": True,
                 })
                 continue
+            if not social_ledger.claim(PLATFORM, episode_id):
+                skipped.append({"episode_id": episode_id, "reason": "already_posted"})
+                continue
             try:
                 res = await publish_thread(service, thread)
                 _record(episode_id, res["root_media_id"], thread["url"], res["reply_ids"])
@@ -375,6 +322,7 @@ async def publish_recent(
                 logger.info("Posted thread for %s (root=%s, %d replies)",
                             episode_id, res["root_media_id"], res["reply_count"])
             except ThreadsError as e:
+                social_ledger.release(PLATFORM, episode_id)
                 skipped.append({"episode_id": episode_id, "reason": f"publish_failed: {e}"})
             continue
 
@@ -382,12 +330,16 @@ async def publish_recent(
         if effective_dry_run:
             posted.append({**draft, "dry_run": True})
             continue
+        if not social_ledger.claim(PLATFORM, episode_id):
+            skipped.append({"episode_id": episode_id, "reason": "already_posted"})
+            continue
         try:
             media_id = await service.publish(draft["text"], image_url=draft["image_url"])
             _record(episode_id, media_id, draft["url"])
             posted.append({**draft, "media_id": media_id, "dry_run": False})
             logger.info("Posted episode %s to Threads (%s)", episode_id, media_id)
         except ThreadsError as e:
+            social_ledger.release(PLATFORM, episode_id)
             skipped.append({"episode_id": episode_id, "reason": f"publish_failed: {e}"})
 
     return {
@@ -410,7 +362,6 @@ async def publish_episode(episode: Any, dry_run: bool = True) -> dict:
     flat result: ``{platform, configured, dry_run, episode_id, posted, ...}`` with
     ``posted`` True only on a real publish, else a ``reason`` for the skip/preview.
     """
-    _ensure_table()
     service = ThreadsService()
     configured = service.is_configured
     effective_dry_run = dry_run or not configured
@@ -433,9 +384,12 @@ async def publish_episode(episode: Any, dry_run: bool = True) -> dict:
             return {**base, "posted": False, "reason": "dry_run", "url": thread["url"],
                     "main_text": thread["main_text"], "image_count": len(thread["image_urls"]),
                     "reply_count": len(thread["replies"])}
+        if not social_ledger.claim(PLATFORM, episode_id):
+            return {**base, "posted": False, "reason": "already_posted", "url": thread["url"]}
         try:
             res = await publish_thread(service, thread)
         except ThreadsError as e:
+            social_ledger.release(PLATFORM, episode_id)
             return {**base, "posted": False, "reason": f"publish_failed: {e}", "url": thread["url"]}
         _record(episode_id, res["root_media_id"], thread["url"], res["reply_ids"])
         logger.info("Posted thread for %s (root=%s, %d replies)", episode_id, res["root_media_id"], res["reply_count"])
@@ -444,9 +398,12 @@ async def publish_episode(episode: Any, dry_run: bool = True) -> dict:
     draft = compose_post(episode)
     if effective_dry_run:
         return {**base, "posted": False, "reason": "dry_run", **draft}
+    if not social_ledger.claim(PLATFORM, episode_id):
+        return {**base, "posted": False, "reason": "already_posted", "url": draft["url"]}
     try:
         media_id = await service.publish(draft["text"], image_url=draft["image_url"])
     except ThreadsError as e:
+        social_ledger.release(PLATFORM, episode_id)
         return {**base, "posted": False, "reason": f"publish_failed: {e}", "url": draft["url"]}
     _record(episode_id, media_id, draft["url"])
     logger.info("Posted episode %s to Threads (%s)", episode_id, media_id)

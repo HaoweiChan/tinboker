@@ -7,17 +7,16 @@ Facebook's post+comments model:
   - the carousel images  → a multi-photo album post (the summary is the caption)
   - the reply chain      → comments on that post (one per theme card)
 
-Idempotency is tracked in a separate ``facebook_posts`` ledger so an episode posts
-once per platform (Threads and Facebook are recorded independently).
+Idempotency lives in the shared ``social_ledger`` under its own ``facebook`` platform
+key, so an episode posts once per platform (Threads and Facebook are independent).
 """
 
-import json
 import logging
 from datetime import datetime
 from typing import Optional
 
 from src.config import settings
-from src.database.db import get_connection
+from src.services import social_ledger
 from src.services.content_source_service import social_enabled_for
 from src.services.facebook_service import FacebookError, FacebookService
 from src.services.threads_publisher import (
@@ -32,70 +31,21 @@ from src.services.threads_publisher import (
 logger = logging.getLogger(__name__)
 
 
-def _ensure_table() -> None:
-    conn = get_connection()
-    try:
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS facebook_posts (
-                episode_id  TEXT PRIMARY KEY,
-                post_id     TEXT,
-                url         TEXT,
-                comment_ids TEXT,
-                posted_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-            """
-        )
-        conn.commit()
-    finally:
-        conn.close()
+PLATFORM = "facebook"
 
 
 def already_posted(episode_id: str) -> bool:
-    _ensure_table()
-    conn = get_connection()
-    try:
-        row = conn.execute(
-            "SELECT 1 FROM facebook_posts WHERE episode_id = ?", (episode_id,)
-        ).fetchone()
-        return row is not None
-    finally:
-        conn.close()
+    return social_ledger.already_posted(PLATFORM, episode_id)
 
 
 def _record(episode_id: str, post_id: str, url: str, comment_ids: Optional[list[str]] = None) -> None:
-    conn = get_connection()
-    try:
-        conn.execute(
-            "INSERT OR REPLACE INTO facebook_posts (episode_id, post_id, url, comment_ids, posted_at) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (episode_id, post_id, url, json.dumps(comment_ids or []), datetime.utcnow().isoformat()),
-        )
-        conn.commit()
-    finally:
-        conn.close()
+    social_ledger.record(PLATFORM, episode_id, post_id, url, comment_ids)
 
 
 def list_posted(limit: int = 50) -> list[dict]:
-    _ensure_table()
-    conn = get_connection()
-    try:
-        rows = conn.execute(
-            "SELECT episode_id, post_id, url, comment_ids, posted_at FROM facebook_posts "
-            "ORDER BY posted_at DESC LIMIT ?",
-            (limit,),
-        ).fetchall()
-        out = []
-        for r in rows:
-            d = dict(r)
-            try:
-                d["comment_ids"] = json.loads(d.get("comment_ids") or "[]")
-            except (TypeError, ValueError):
-                d["comment_ids"] = []
-            out.append(d)
-        return out
-    finally:
-        conn.close()
+    """Recent ledger rows, newest first (``comment_ids`` for API-shape compatibility)."""
+    rows = social_ledger.list_posted(PLATFORM, limit)
+    return [{**r, "post_id": r["media_id"], "comment_ids": r["child_ids"]} for r in rows]
 
 
 async def publish_thread(service: FacebookService, draft: dict) -> dict:
@@ -140,7 +90,6 @@ async def publish_recent(
     Mirrors threads_publisher.publish_recent: same recency + content guards and the
     same composed draft, but a separate idempotency ledger. Idempotent per episode.
     """
-    _ensure_table()
     service = FacebookService()
     configured = service.is_configured
     effective_dry_run = dry_run or not configured
@@ -184,6 +133,9 @@ async def publish_recent(
                     "comment_count": len(thread["replies"]), "dry_run": True,
                 })
                 continue
+            if not social_ledger.claim(PLATFORM, episode_id):
+                skipped.append({"episode_id": episode_id, "reason": "already_posted"})
+                continue
             try:
                 res = await publish_thread(service, thread)
                 _record(episode_id, res["root_post_id"], thread["url"], res["comment_ids"])
@@ -191,12 +143,16 @@ async def publish_recent(
                 logger.info("Posted FB album for %s (post=%s, %d comments)",
                             episode_id, res["root_post_id"], res["comment_count"])
             except FacebookError as e:
+                social_ledger.release(PLATFORM, episode_id)
                 skipped.append({"episode_id": episode_id, "reason": f"publish_failed: {e}"})
             continue
 
         draft = compose_post(episode)
         if effective_dry_run:
             posted.append({**draft, "dry_run": True})
+            continue
+        if not social_ledger.claim(PLATFORM, episode_id):
+            skipped.append({"episode_id": episode_id, "reason": "already_posted"})
             continue
         try:
             if draft.get("image_url"):
@@ -207,6 +163,7 @@ async def publish_recent(
             posted.append({**draft, "post_id": post_id, "dry_run": False})
             logger.info("Posted episode %s to Facebook (%s)", episode_id, post_id)
         except FacebookError as e:
+            social_ledger.release(PLATFORM, episode_id)
             skipped.append({"episode_id": episode_id, "reason": f"publish_failed: {e}"})
 
     return {
@@ -224,10 +181,9 @@ async def publish_episode(episode, dry_run: bool = True) -> dict:
     """Publish one already-fetched episode to the Facebook Page (admin "發佈" button).
 
     Mirrors :func:`threads_publisher.publish_episode`: single explicit episode, no
-    recency window, idempotent against the ``facebook_posts`` ledger, dry-run forced
+    recency window, idempotent against the shared social ledger, dry-run forced
     when unconfigured. Returns ``{platform, configured, dry_run, episode_id, posted, ...}``.
     """
-    _ensure_table()
     service = FacebookService()
     configured = service.is_configured
     effective_dry_run = dry_run or not configured
@@ -250,9 +206,12 @@ async def publish_episode(episode, dry_run: bool = True) -> dict:
             return {**base, "posted": False, "reason": "dry_run", "url": thread["url"],
                     "main_text": thread["main_text"], "image_count": len(thread["image_urls"]),
                     "comment_count": len(thread["replies"])}
+        if not social_ledger.claim(PLATFORM, episode_id):
+            return {**base, "posted": False, "reason": "already_posted", "url": thread["url"]}
         try:
             res = await publish_thread(service, thread)
         except FacebookError as e:
+            social_ledger.release(PLATFORM, episode_id)
             return {**base, "posted": False, "reason": f"publish_failed: {e}", "url": thread["url"]}
         _record(episode_id, res["root_post_id"], thread["url"], res["comment_ids"])
         logger.info("Posted FB album for %s (post=%s, %d comments)", episode_id, res["root_post_id"], res["comment_count"])
@@ -261,12 +220,15 @@ async def publish_episode(episode, dry_run: bool = True) -> dict:
     draft = compose_post(episode)
     if effective_dry_run:
         return {**base, "posted": False, "reason": "dry_run", **draft}
+    if not social_ledger.claim(PLATFORM, episode_id):
+        return {**base, "posted": False, "reason": "already_posted", "url": draft["url"]}
     try:
         if draft.get("image_url"):
             post_id = await service.publish_photo(draft["text"], draft["image_url"])
         else:
             post_id = await service.publish_text(draft["text"])
     except FacebookError as e:
+        social_ledger.release(PLATFORM, episode_id)
         return {**base, "posted": False, "reason": f"publish_failed: {e}", "url": draft["url"]}
     _record(episode_id, post_id, draft["url"])
     logger.info("Posted episode %s to Facebook (%s)", episode_id, post_id)

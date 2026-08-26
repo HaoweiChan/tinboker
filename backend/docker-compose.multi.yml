@@ -55,6 +55,10 @@ services:
       FIRESTORE_DATABASE_ID: graphfolio-db
       RELEASE_EPISODE_MAX_AGE_DAYS: "60"
       TAXONOMY_REQUIRE_MEMBER_REASONS: "true"
+      # Threads/Facebook auto-posting, TW time. PRODUCTION ONLY: all three envs load the
+      # same publishing tokens from GSM, so a second env with this set would double-post.
+      # Ingest keeps its own 02/08/14/20:10 timer — posting no longer rides on it.
+      SOCIAL_PUBLISH_SLOTS: "11:30,15:30,20:30"
       CORS_ORIGINS: '["https://tinboker.com","https://www.tinboker.com"]'
       # Marp render service runs as separate infra on its own docker network, only
       # reachable via its host-published :5004 — so go through the host gateway.

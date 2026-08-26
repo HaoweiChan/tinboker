@@ -9,7 +9,6 @@ from .gcs_upload import upload_to_gcs
 from .initialize import initialize_services, initialize_stt_service
 from .postgres_episode import persist_episode
 from .social_cards_render import render_social_cards
-from .social_publish import trigger_social_publish
 from .summarize import generate_summary
 from .syndicate import trigger_syndicate
 from .ticker_insights_export import export_ticker_insights
@@ -29,7 +28,6 @@ __all__ = [
     "ingest_into_wiki",
     "export_ticker_insights",
     "render_social_cards",
-    "trigger_social_publish",
     "trigger_syndicate",
 ]
 
