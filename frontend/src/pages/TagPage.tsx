@@ -89,7 +89,15 @@ export const TagPage: React.FC = () => {
 
   return (
     <>
-      <SEO title={`#${displayLabel}`} description={`所有關於「${displayLabel}」的 Podcast 摘要與市場討論。`} />
+      {/* Canonical is pinned to /topics/ — App.tsx routes both /topics/:tag and the
+          legacy /tag/:tag here, so without this the same page competes with itself in
+          search. Built from cleanTag rather than location.href for the same reason:
+          a ?ref= on a shared link must not fork the canonical. */}
+      <SEO
+        title={`#${displayLabel}`}
+        description={`所有關於「${displayLabel}」的 Podcast 摘要與市場討論。`}
+        url={typeof window !== 'undefined' ? `${window.location.origin}/topics/${encodeURIComponent(cleanTag)}` : undefined}
+      />
       <PageContent>
         <div className="flex items-start gap-5 bg-card border border-border rounded-md p-5 sm:p-6 mb-[18px]">
           {(() => {

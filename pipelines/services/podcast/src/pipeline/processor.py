@@ -21,7 +21,6 @@ from .steps import (
     persist_episode,
     render_social_cards,
     transcribe_episode,
-    trigger_social_publish,
     trigger_syndicate,
     upload_to_gcs,
     validate_episode,
@@ -132,7 +131,8 @@ class EpisodeProcessor:
             upload_to_gcs(self.config, self.services, episode_data)
 
             # Step 4b: Render + upload social-card PNGs — ONLY when auto-publish is on
-            # (its only consumer). In the default manual flow the brand reviews each
+            # (its only consumer: the platform posts on its own TW slot schedule, see
+            # SOCIAL_PUBLISH_SLOTS; ingest no longer triggers posting itself). In the default manual flow the brand reviews each
             # episode on the admin Social page, where the platform renders the PNGs on
             # demand ("產生卡片圖" button / auto-on-publish) — so we don't pre-render +
             # store cards for every episode that never gets posted. The social_cards
@@ -148,9 +148,6 @@ class EpisodeProcessor:
 
             # Step 5d: Export ticker insights per platform contract
             export_ticker_insights(self.config, self.services, episode_data)
-
-            # Step 5e: Trigger the platform to fan the new episode out to Threads (best-effort)
-            trigger_social_publish(self.config, self.services, episode_data)
 
             # Step 5f: Stage the summary on 方格子 + Substack (best-effort, off by default)
             trigger_syndicate(self.config, self.services, episode_data)

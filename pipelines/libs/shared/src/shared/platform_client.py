@@ -118,44 +118,6 @@ def fetch_translation_aliases(*, timeout: float = 10.0) -> list[dict[str, Any]] 
     )
 
 
-def trigger_threads_publish(
-    *, limit: int = 5, dry_run: bool = False, timeout: float = 300.0
-) -> dict[str, Any] | None:
-    """Ask the platform to post recent episodes to Threads (post-ingest trigger).
-
-    ``POST {base}/api/admin/threads/publish?dry_run=<bool>&limit=<n>`` with the
-    ``TINBOKER_SOCIAL_TOKEN`` bearer token. Opt-in: fires only when BOTH
-    ``TINBOKER_PLATFORM_API_URL`` and ``TINBOKER_SOCIAL_TOKEN`` are set. Returns the
-    platform's JSON response, or ``None`` when disabled / on any error — never raises,
-    so it cannot break ingestion. Idempotency + the recency window live on the platform
-    side, so repeated/batched triggers are safe.
-
-    The generous timeout is load-bearing, not padding: the platform posts each episode
-    as a main post plus a reply chain (≈6–12 Graph API calls per episode, up to
-    ``limit`` episodes), and uvicorn cancels the whole publish coroutine if this client
-    disconnects early. A 20s timeout meant every real catch-up run was cancelled
-    mid-flight with nothing posted.
-    """
-    base = admin_base_url()
-    token = os.environ.get("TINBOKER_SOCIAL_TOKEN")
-    if not base or not token:
-        return None
-    query = urllib.parse.urlencode({"dry_run": str(bool(dry_run)).lower(), "limit": int(limit)})
-    url = f"{base}/api/admin/threads/publish?{query}"
-    try:
-        req = urllib.request.Request(
-            url, data=b"", method="POST",
-            headers=_headers({"Authorization": f"Bearer {token}", "Accept": "application/json"}),
-        )
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            if getattr(resp, "status", 200) >= 400:
-                return None
-            return json.loads(resp.read().decode("utf-8"))
-    except (urllib.error.URLError, TimeoutError, ValueError, OSError) as exc:
-        print(f"Warning: Threads publish trigger failed ({exc})")
-        return None
-
-
 def trigger_syndication(
     episode_id: str, *, platforms: str = "vocus,substack", publish_vocus: bool = False,
     publish_substack: bool = False, dry_run: bool = False, timeout: float = 60.0,
@@ -163,8 +125,8 @@ def trigger_syndication(
     """Ask the platform to stage one episode on the long-form syndication targets.
 
     ``POST {base}/api/admin/threads/episodes/{id}/syndicate`` with the
-    ``TINBOKER_SOCIAL_TOKEN`` bearer token, same opt-in rule as
-    :func:`trigger_threads_publish`: nothing happens unless both env vars are set.
+    ``TINBOKER_SOCIAL_TOKEN`` bearer token, opt-in: nothing happens unless both env
+    vars are set.
 
     Per-episode rather than "recent N" because this is not idempotent on the platform
     side — every call creates a new draft. The caller fires it once, on the episode it

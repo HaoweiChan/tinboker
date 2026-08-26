@@ -9,6 +9,11 @@ services:
     build: .
     image: marp-flask-service:latest
     container_name: marp-flask-service
+    # marp spawns headless Chromium per render; PID 1 here is `python main.py`, which
+    # never reaps them. Without an init, exited children pile up as zombies — 1148 of
+    # them over 4 days on the VPS (2026-08-24), enough to bloat the process table and
+    # every cgroup walk over it. `init: true` runs tini as PID 1, which reaps them.
+    init: true
     ports:
       # Loopback ONLY. A bare "5004:5004" publishes to 0.0.0.0 and Docker inserts that
       # rule ahead of ufw, so the service ends up on the public internet even though

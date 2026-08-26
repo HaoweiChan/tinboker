@@ -1,9 +1,10 @@
 """Step 5f: stage the new episode's summary on 方格子 and Substack (best-effort).
 
-Sibling of :mod:`social_publish`, and deliberately separate: that step fans short social
-copy out to Threads/Facebook, this one republishes the whole article. Different content,
-different platforms, different enable switch — sharing one flag would mean turning on
-subscriber-facing posts to enable a Threads post, or the reverse.
+Deliberately separate from the platform's own Threads/Facebook posting (which runs on
+its own TW slot schedule, see ``SOCIAL_PUBLISH_SLOTS``): that fans short social copy out,
+this one republishes the whole article. Different content, different platforms, different
+enable switch — sharing one flag would mean turning on subscriber-facing posts to enable
+a Threads post, or the reverse.
 
 **Off by default**, behind ``SYNDICATE_AUTOPUBLISH``. Without it this is a no-op.
 

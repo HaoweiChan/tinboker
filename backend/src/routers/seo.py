@@ -24,6 +24,12 @@ from src.services.article_service import ArticleService
 from src.services.insight_service import InsightService
 from src.services.podcast import PodcastService
 from src.services.search_console_service import SearchConsoleService
+from src.tag_registry import (
+    hidden_sector_exposure_ids,
+    hidden_tag_slugs,
+    normalize_tag_slug,
+    served_sector_exposure_ids,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -79,14 +85,14 @@ async def sitemap(
     db: Session = Depends(get_session),
 ):
     """Dynamic XML sitemap: static routes + episode / article / stock / podcaster /
-    tag permalinks.
+    tag / sector permalinks.
 
     Each content source is enumerated in its own try/except, so one failing source
     (Firestore hiccup, empty table) degrades to a partial sitemap rather than a 500
     to Googlebot. The assembled XML is cached in Redis for an hour; the per-source
     service calls are themselves cached, and the CDN edge caches the response.
     """
-    cache_key = f"sitemap:xml:v2:{limit}"
+    cache_key = f"sitemap:xml:v3:{limit}"
     cached = await cache_get(cache_key)
     if cached:
         return Response(content=cached, media_type="application/xml",
@@ -123,14 +129,41 @@ async def sitemap(
     except Exception as e:
         logger.warning("Sitemap podcaster enumeration failed: %s", e)
 
-    # Topic tags
+    # Topic tags — minus the ones an admin hid. The site filters those out of its own
+    # tag chips, so listing them here only spends crawl budget on pages users can't
+    # reach. Compared normalized, the same way hidden_tag_slugs returns them.
     try:
+        # Defaulting to "hide nothing" on a DB blip: listing a few hidden tags for an
+        # hour is cheaper than dropping all ~166 topic URLs out of the sitemap.
+        try:
+            hidden_tags = hidden_tag_slugs(db)
+        except Exception:
+            hidden_tags = set()
         for tag in await podcast_service.get_all_tags():
             tid = tag.get("id")
-            if tid:
+            if tid and normalize_tag_slug(str(tid)) not in hidden_tags:
                 entries.append(_url_entry(f"{base}/topics/{quote(str(tid))}", None, "weekly", "0.5"))
     except Exception as e:
         logger.warning("Sitemap tag enumeration failed: %s", e)
+
+    # Sector / theme pages. Each carries a hand-written zh-TW description and 100+
+    # episodes, and none of them were in the sitemap at all — Google had no way to
+    # discover 80-odd of the site's richest pages. Visibility filtering mirrors
+    # GET /api/sectors exactly so the sitemap never lists a page that renders empty.
+    try:
+        sectors = await podcast_service.list_sectors()
+        served = served_sector_exposure_ids(db)
+        if served is None:  # bootstrap window: registry empty — fall back to blocklist
+            hidden = hidden_sector_exposure_ids(db)
+            visible = [s for s in sectors if s.get("exposure_id") not in hidden]
+        else:
+            visible = [s for s in sectors if s.get("exposure_id") in served]
+        for sec in visible:
+            sid = sec.get("exposure_id")
+            if sid:
+                entries.append(_url_entry(f"{base}/sector/{quote(str(sid))}", None, "weekly", "0.6"))
+    except Exception as e:
+        logger.warning("Sitemap sector enumeration failed: %s", e)
 
     # Trending stock pages — a bounded, high-value set that definitely has content.
     # The /stock index page (in STATIC_PATHS) covers discovery of the long tail.

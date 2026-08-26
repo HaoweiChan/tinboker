@@ -633,3 +633,28 @@ class UserNotification(Base):
 
     def __repr__(self) -> str:
         return f"<UserNotification(id={self.id}, user_id={self.user_id}, read={self.is_read})>"
+
+
+class SocialPostLedger(Base):
+    """Which episodes have already been posted, per platform (idempotency ledger).
+
+    Lives in Postgres rather than the container-local SQLite this replaced: that file
+    had no volume, so every backend redeploy wiped the ledger and re-posted everything
+    still inside the recency window (24 of 63 Threads posts in Aug 2026). Postgres is
+    also shared across dev/staging/prod, which all carry the same publishing tokens —
+    one ledger now covers all three.
+
+    The row is inserted *before* posting (see ``social_ledger.claim``), so two
+    overlapping triggers cannot both pass the check and double-post.
+    """
+    __tablename__ = "social_posts"
+
+    platform = Column(String(20), primary_key=True)     # "threads" | "facebook"
+    episode_id = Column(String(255), primary_key=True)
+    media_id = Column(String(255), nullable=True)       # root post/media id, set after publishing
+    url = Column(Text, nullable=True)                   # the episode URL that was posted
+    child_ids = Column(JSON, nullable=False, default=list)  # reply/comment ids
+    posted_at = Column(DateTime, default=datetime.utcnow)
+
+    def __repr__(self) -> str:
+        return f"<SocialPostLedger({self.platform}, {self.episode_id})>"

@@ -55,6 +55,10 @@ services:
       FIRESTORE_DATABASE_ID: graphfolio-db
       RELEASE_EPISODE_MAX_AGE_DAYS: "60"
       TAXONOMY_REQUIRE_MEMBER_REASONS: "true"
+      # Threads/Facebook auto-posting, TW time. PRODUCTION ONLY: all three envs load the
+      # same publishing tokens from GSM, so a second env with this set would double-post.
+      # Ingest keeps its own 02/08/14/20:10 timer — posting no longer rides on it.
+      SOCIAL_PUBLISH_SLOTS: "11:30,15:30,20:30"
       CORS_ORIGINS: '["https://tinboker.com","https://www.tinboker.com"]'
       # Marp render service runs as separate infra on its own docker network, only
       # reachable via its host-published :5004 — so go through the host gateway.
@@ -198,10 +202,12 @@ services:
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U podcast_user -d podcast_db"]
-      interval: 10s
+      # Same exec-churn reasoning as redis below.
+      interval: 30s
       timeout: 5s
       retries: 5
       start_period: 30s
+      start_interval: 1s
 
   # Shared Redis
   redis:
@@ -216,9 +222,15 @@ services:
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
+      # Every healthcheck is a `docker exec`: a fresh process + namespace + cgroup that
+      # dockerd and containerd must set up and tear down. At 10s this one alone was the
+      # most frequent exec on the host. 30s steady-state, with start_interval keeping
+      # `depends_on: service_healthy` fast on a cold start.
+      interval: 30s
       timeout: 3s
       retries: 3
+      start_period: 30s
+      start_interval: 1s
 
   # Shared Netdata Monitoring
   netdata:

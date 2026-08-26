@@ -1,6 +1,6 @@
 """Unit tests for the post-ingest syndication trigger (Step 5f).
 
-Same shape as test_social_publish.py: the step imports ``shared.platform_client`` lazily,
+The step imports ``shared.platform_client`` lazily,
 so the skip paths return before that import and the fire paths inject a fake module.
 """
 

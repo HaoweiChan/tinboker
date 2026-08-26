@@ -29,13 +29,6 @@ def _ep(ep_id: str, *, title="本集重點", insights=None, tickers=None, releas
     )
 
 
-@pytest.fixture
-def temp_db(tmp_path, monkeypatch):
-    """Point the SQLite store at a throwaway file so the ledger tests are isolated."""
-    monkeypatch.setattr(settings, "database_path", str(tmp_path / "test.db"))
-    yield
-
-
 # ── compose_post ─────────────────────────────────────────────────────
 
 def test_compose_post_includes_link_and_insights_no_hashtags():
@@ -79,7 +72,6 @@ def test_compose_post_drops_svg_image():
 
 def test_ledger_record_and_list(temp_db):
     assert threads_publisher.already_posted("EP300") is False
-    threads_publisher._ensure_table()
     threads_publisher._record("EP300", "media_123", "https://tinboker.com/episode/EP300")
     assert threads_publisher.already_posted("EP300") is True
     posts = threads_publisher.list_posted()
@@ -124,7 +116,6 @@ async def test_publish_recent_skips_already_posted_and_old(temp_db, monkeypatch)
     monkeypatch.setattr(
         threads_publisher.podcast_service, "get_recent_episodes", await _fake_recent(eps)
     )
-    threads_publisher._ensure_table()
     threads_publisher._record("EP500", "m", "u")  # pretend already posted
 
     result = await threads_publisher.publish_recent(limit=10, dry_run=True, max_age_days=4)

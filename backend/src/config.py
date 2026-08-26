@@ -114,6 +114,18 @@ class Settings(BaseSettings):
     facebook_page_access_token: Optional[str] = None
     facebook_api_base: str = "https://graph.facebook.com/v21.0"
 
+    # Auto-posting slots, TW time (Asia/Taipei), comma-separated "HH:MM". Empty (the
+    # default) means this env never auto-posts — set it on EXACTLY ONE environment,
+    # since dev/staging/prod all load the same publishing tokens.
+    #
+    # Posting used to piggyback on the ingest timer (02/08/14/20:10), so a third of
+    # the output landed at 01:00-03:00 TW — the worst-performing window by a wide
+    # margin (median 376 views vs 762 at 20:00, Aug 2026). Ingest stays on its own
+    # schedule for site freshness; posting now waits for a slot people are awake for.
+    social_publish_slots: str = ""
+    # How many recent episodes each slot scans (the ledger decides what actually posts).
+    social_publish_scan_limit: int = 10
+
     # ==================== 方格子 (vocus) syndication ====================
     # vocus publishes no developer API; we drive the endpoints its own editor uses.
     # VOCUS_ID_TOKEN is a vocus-signed JWT read from localStorage after signing in —

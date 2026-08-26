@@ -1,7 +1,8 @@
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
+from src.config import settings
 from src.database.postgres import SessionLocal
 from src.database.models import ScheduledSocialPost
 from src.services import facebook_publisher, threads_publisher, promo_publisher
@@ -170,6 +171,69 @@ async def process_scheduled_posts() -> int:
         db.close()
 
 
+TW = timezone(timedelta(hours=8))
+_fired_slots: set[str] = set()
+
+
+def _parse_slots(raw: str) -> list[str]:
+    """"11:30, 15:30" -> ["11:30", "15:30"]; silently drops anything malformed."""
+    slots = []
+    for part in (raw or "").split(","):
+        part = part.strip()
+        try:
+            datetime.strptime(part, "%H:%M")
+        except ValueError:
+            continue
+        slots.append(part)
+    return sorted(slots)
+
+
+def _due_slots(now_tw: datetime) -> list[str]:
+    """Slot keys that have come due today and have not fired yet in this process.
+
+    Re-firing a slot is harmless — the ledger makes publishing idempotent — so this
+    only needs to stop a tight 60s loop from re-scanning, not to be exactly-once.
+    """
+    today = now_tw.strftime("%Y-%m-%d")
+    due = []
+    for slot in _parse_slots(settings.social_publish_slots):
+        key = f"{today} {slot}"
+        if key in _fired_slots:
+            continue
+        hh, mm = slot.split(":")
+        if now_tw >= now_tw.replace(hour=int(hh), minute=int(mm), second=0, microsecond=0):
+            due.append(key)
+    return due
+
+
+async def publish_due_slots() -> int:
+    """Post newly-ingested episodes when a configured TW posting slot comes due.
+
+    Off unless ``SOCIAL_PUBLISH_SLOTS`` is set — see the config note: exactly one
+    environment may own this, because all of them carry the same tokens.
+    """
+    due = _due_slots(datetime.now(TW))
+    if not due:
+        return 0
+    _fired_slots.update(due)
+    # Only today's keys matter; anything older can never come due again.
+    today = datetime.now(TW).strftime("%Y-%m-%d")
+    _fired_slots.intersection_update({k for k in _fired_slots if k.startswith(today)})
+
+    posted = 0
+    for name, pub in _PUBLISHERS.items():
+        try:
+            res = await pub.publish_recent(
+                limit=settings.social_publish_scan_limit, dry_run=False
+            )
+            posted += res.get("posted_count", 0)
+            logger.info("slot publish (%s): posted=%s candidates=%s",
+                        name, res.get("posted_count"), res.get("candidates"))
+        except Exception:
+            logger.exception("slot publish failed for %s", name)
+    return posted
+
+
 async def run_periodic_scheduled_posts(interval_seconds: float = 60.0) -> None:
     """Loop to periodically run the scheduled posts processor."""
     logger.info("Starting scheduled social posts background worker (interval=%.1fs)", interval_seconds)
@@ -178,4 +242,8 @@ async def run_periodic_scheduled_posts(interval_seconds: float = 60.0) -> None:
             await process_scheduled_posts()
         except Exception:
             logger.exception("scheduled social posts worker cycle encountered an error")
+        try:
+            await publish_due_slots()
+        except Exception:
+            logger.exception("slot publish cycle encountered an error")
         await asyncio.sleep(interval_seconds)
