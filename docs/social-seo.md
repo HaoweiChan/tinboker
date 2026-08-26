@@ -64,6 +64,8 @@ Example composed post (181/500 chars):
 | `THREADS_USER_ID` | to post | Numeric Threads account id. |
 | `TINBOKER_SOCIAL_TOKEN` | for headless trigger | `openssl rand -hex 32`. Lets the agents pipeline call publish without an admin JWT. Scoped to the publish endpoint only. |
 | `THREADS_MAX_AGE_DAYS` | no (default 4) | Recency guard — only post episodes published within N days. Caps blast radius even if the ledger is wiped. |
+| `SOCIAL_PUBLISH_SLOTS` | to auto-post | TW times, e.g. `11:30,15:30,20:30`. Empty ⇒ this env never auto-posts. **Set it on exactly one environment** — dev/staging/prod all load the same tokens. |
+| `SOCIAL_PUBLISH_SCAN_LIMIT` | no (default 10) | How many recent episodes each slot scans; the ledger decides what actually posts. |
 | `SITE_URL` | no (default `https://tinboker.com`) | Origin used for episode permalinks. |
 
 ### Endpoints
@@ -73,24 +75,28 @@ Example composed post (181/500 chars):
 | POST | `/api/admin/threads/publish?dry_run=true&limit=10` | admin JWT **or** `TINBOKER_SOCIAL_TOKEN` | Dry-run by default — returns composed drafts. `dry_run=false` posts. |
 | GET | `/api/admin/threads/posts` | admin JWT | The idempotency ledger (what's been posted). |
 
-### Wiring the agents pipeline (other repo)
+### When posting happens
 
-The agents runners already have `TINBOKER_PLATFORM_API_URL`. After an ingest run, add:
+The backend posts on its own schedule (`SOCIAL_PUBLISH_SLOTS`, TW time), checked by the
+60s social worker. Ingest no longer triggers posting: it runs four times a day
+(02/08/14/20:10) for site freshness, and a third of the output used to land at
+01:00–03:00 TW — the worst-performing window measured (median 376 views vs 762 at
+20:00, Aug 2026). Episodes ingested overnight now wait for the next daytime slot.
 
-```bash
-curl -fsS -X POST "$TINBOKER_PLATFORM_API_URL/api/admin/threads/publish?dry_run=false" \
-  -H "Authorization: Bearer $TINBOKER_SOCIAL_TOKEN"
-```
+`SOCIAL_AUTOPUBLISH` stays in the pipeline's `.env`, but its only remaining job is
+pre-rendering social-card PNGs at ingest so a slot has something to post.
 
-Idempotency + the recency window make this safe to call every run. Until you trust
-it, run with `dry_run=true` and inspect the drafts.
+### The idempotency ledger
 
-### Durability note
+One Postgres table, `social_posts`, keyed `(platform, episode_id)` — shared by Threads
+and Facebook and by all three environments. A row is inserted **before** posting
+(`social_ledger.claim`), so two overlapping triggers cannot both start on the same
+episode; a failed publish releases the claim so the next slot retries.
 
-The `threads_posts` ledger lives in the backend SQLite store (`data/tinboker.db`),
-same as comments/news. If that store is ever reset, the recency window
-(`THREADS_MAX_AGE_DAYS`) bounds re-posting to the last few days rather than the whole
-back catalog.
+It used to be two SQLite tables inside the container, with no volume — every redeploy
+wiped it and re-posted everything still inside `THREADS_MAX_AGE_DAYS` (24 of 63 Threads
+posts in Aug 2026 were duplicates). `backend/scripts/ops/seed_social_ledger.py` is the
+one-off that rebuilt the ledger from what was already live on each platform.
 
 ---
 

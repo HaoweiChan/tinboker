@@ -6,7 +6,6 @@ from datetime import datetime
 
 import pytest
 
-from src.config import settings
 from src.models.podcast import Episode
 from src.services import facebook_publisher as fbp
 
@@ -30,12 +29,6 @@ def _ep(ep_id, cards=None, **kw) -> Episode:
         related_tickers=["2330"], created_time=_now_ms(),
         released_at_ms=kw.get("released_ms", _now_ms()),
     )
-
-
-@pytest.fixture
-def temp_db(tmp_path, monkeypatch):
-    monkeypatch.setattr(settings, "database_path", str(tmp_path / "test.db"))
-    yield
 
 
 class _FakeFB:
