@@ -148,6 +148,13 @@ podcast-api.tinboker.com {
 	# Static media files (Phase E: GCS -> VPS blob store)
 	handle /media/* {
 		root * /var/lib/tinboker
+		# Measured from Taiwan: 0.89s to first byte, on every request, with no
+		# cache anywhere between the listener and this box (no CDN in front of
+		# podcast-api, and only etag/last-modified were being sent — so a resume
+		# after pause cost a full revalidation round trip). Media filenames embed
+		# a content hash and are never rewritten in place, so they are safe to
+		# treat as immutable.
+		header Cache-Control "public, max-age=31536000, immutable"
 		file_server
 	}
 
