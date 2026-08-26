@@ -152,13 +152,17 @@ bash backend/scripts/ops/mint_social_tokens.sh threads-url "https://tinboker.com
 ```
 Produces:
 ```
-https://threads.net/oauth/authorize?client_id=4336105959996578&redirect_uri=https://tinboker.com/oauth/callback&scope=threads_basic,threads_content_publish&response_type=code
+https://threads.net/oauth/authorize?client_id=4336105959996578&redirect_uri=https://tinboker.com/oauth/callback&scope=threads_basic,threads_content_publish,threads_manage_replies&response_type=code
 ```
 
 **Step 2 — authorize in a browser, signed in as the brand account.** Open the URL. On the
 consent screen ("Tinboker is requesting access to … Create and share posts on Threads
 profile") click **Continue As tinboker**. Keep the *Optional* "Create and share posts"
 permission enabled — that is `threads_content_publish`, required to post.
+`threads_manage_replies` is the third scope: replying to someone needs only
+`threads_content_publish`, but **hiding** a reply on our own post needs this one. A
+token minted before 2026-08-26 does not carry it — the admin 留言 tab's 隱藏 button
+403s until the token is re-minted with the URL above.
 
 **Step 3 — capture the `code`.** The browser redirects to
 `https://tinboker.com/oauth/callback?code=AQ…` and the SPA immediately rewrites the URL to

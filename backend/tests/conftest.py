@@ -174,18 +174,19 @@ def sample_news_data():
 
 @pytest.fixture
 def temp_db(tmp_path, monkeypatch):
-    """Point the ORM at a throwaway SQLite file so social-ledger tests are isolated.
+    """Point the ORM at a throwaway SQLite file so the social tables are isolated.
 
-    The publishers' idempotency ledger lives in the ``social_posts`` table (Postgres in
-    every deployed env, SQLite here) rather than the old container-local SQLite file.
+    The publishers' idempotency ledger (``social_posts``) and the comment triage queue
+    (``threads_comments``) live in Postgres in every deployed env, SQLite here.
     """
     from src.database import postgres as pg
-    from src.database.models import SocialPostLedger
+    from src.database.models import SocialPostLedger, ThreadsComment
 
     monkeypatch.setattr(settings, "use_postgres", False)
     monkeypatch.setattr(settings, "database_path", str(tmp_path / "ledger.db"))
     monkeypatch.setattr(pg, "engine", None)
     monkeypatch.setattr(pg, "SessionLocal", None)
     pg.init_engine()
-    SocialPostLedger.__table__.create(bind=pg.engine, checkfirst=True)
+    for model in (SocialPostLedger, ThreadsComment):
+        model.__table__.create(bind=pg.engine, checkfirst=True)
     yield

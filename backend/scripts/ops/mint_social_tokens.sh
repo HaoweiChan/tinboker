@@ -63,7 +63,7 @@ case "$cmd" in
   threads-url)
     redirect="${2:?usage: threads-url <redirect_uri>}"
     app_id="$(sec THREADS_APP_ID)"
-    echo "https://threads.net/oauth/authorize?client_id=${app_id}&redirect_uri=${redirect}&scope=threads_basic,threads_content_publish&response_type=code"
+    echo "https://threads.net/oauth/authorize?client_id=${app_id}&redirect_uri=${redirect}&scope=threads_basic,threads_content_publish,threads_manage_replies&response_type=code"
     ;;
 
   threads)

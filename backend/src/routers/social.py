@@ -31,6 +31,7 @@ from src.tag_registry import canonical_label
 from src.services.podcast import PodcastService
 from src.services.facebook_insights_service import FacebookInsightsService
 from src.services.threads_insights_service import ThreadsInsightsService
+from src.services import threads_comments_service
 
 _MAX_MEDIA_BYTES = 200 * 1024 * 1024  # 200 MB per file
 _gcs = GCSContentService()
@@ -174,6 +175,70 @@ async def facebook_insights(
     reports ``available: false`` so the admin UI shows a "not connected" state.
     """
     return await FacebookInsightsService().account_summary(days=days)
+
+
+# ── Comment triage (replies people leave on our posts) ────────────────────────
+
+class CommentReply(BaseModel):
+    text: str = Field("", description="Reply body; defaults to the stored draft when empty")
+
+
+@router.get("/comments")
+def list_threads_comments(
+    status: str = Query(default="pending", description="pending | replied | skipped | ignored | hidden | all"),
+    limit: int = Query(default=50, ge=1, le=200),
+    _: AdminAccess = Depends(get_admin_access),
+):
+    """Triaged comments on our Threads posts, newest first."""
+    return {"comments": threads_comments_service.list_comments(status=status, limit=limit)}
+
+
+@router.post("/comments/sync")
+async def sync_threads_comments(
+    scan_posts: int = Query(default=None, ge=1, le=100),
+    _: AdminAccess = Depends(get_social_access),
+):
+    """Pull new comments, triage them, and auto-reply to the safe ones."""
+    return await threads_comments_service.sync_and_triage(scan_posts=scan_posts)
+
+
+@router.post("/comments/{comment_id}/reply")
+async def reply_to_threads_comment(
+    comment_id: str,
+    body: CommentReply,
+    _: AdminAccess = Depends(get_admin_access),
+):
+    """Post a reply to one comment — the edited draft, or the stored one when blank."""
+    text = (body.text or "").strip()
+    if not text:
+        stored = threads_comments_service.list_comments(status="all", limit=200)
+        match = next((c for c in stored if c["id"] == comment_id), None)
+        text = (match or {}).get("draft") or ""
+    try:
+        return await threads_comments_service.send_reply(comment_id, text)
+    except ValueError as e:
+        raise HTTPException(status_code=404 if "unknown" in str(e) else 422, detail=str(e))
+
+
+@router.post("/comments/{comment_id}/skip")
+def skip_threads_comment(comment_id: str, _: AdminAccess = Depends(get_admin_access)):
+    try:
+        return threads_comments_service.set_status(comment_id, "skipped")
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/comments/{comment_id}/hide")
+async def hide_threads_comment(
+    comment_id: str,
+    hidden: bool = Query(default=True),
+    _: AdminAccess = Depends(get_admin_access),
+):
+    """Hide a reply on our post. Requires the ``threads_manage_replies`` token scope."""
+    try:
+        return await threads_comments_service.hide(comment_id, hidden=hidden)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
 
 
 # ── Social copy management (the human-tone post + per-theme comments) ──────────

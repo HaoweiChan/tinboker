@@ -66,6 +66,9 @@ Example composed post (181/500 chars):
 | `THREADS_MAX_AGE_DAYS` | no (default 4) | Recency guard — only post episodes published within N days. Caps blast radius even if the ledger is wiped. |
 | `SOCIAL_PUBLISH_SLOTS` | to auto-post | TW times, e.g. `11:30,15:30,20:30`. Empty ⇒ this env never auto-posts. **Set it on exactly one environment** — dev/staging/prod all load the same tokens. |
 | `SOCIAL_PUBLISH_SCAN_LIMIT` | no (default 10) | How many recent episodes each slot scans; the ledger decides what actually posts. |
+| `SOCIAL_COMMENT_SYNC_MINUTES` | to answer comments | How often to pull + triage new comments. 0 (default) = off. Same one-environment rule. |
+| `SOCIAL_COMMENT_MODEL` | no (default `google/gemini-2.5-flash`) | OpenRouter model used to classify a comment and draft a reply. |
+| `SOCIAL_COMMENT_AUTO_REPLY_CAP` | no (default 3) | Most unattended replies per sync. |
 | `SITE_URL` | no (default `https://tinboker.com`) | Origin used for episode permalinks. |
 
 ### Endpoints
@@ -85,6 +88,40 @@ The backend posts on its own schedule (`SOCIAL_PUBLISH_SLOTS`, TW time), checked
 
 `SOCIAL_AUTOPUBLISH` stays in the pipeline's `.env`, but its only remaining job is
 pre-rendering social-card PNGs at ingest so a slot has something to post.
+
+### Comment triage
+
+`threads_comments` holds every reply that is actually addressed to us, with a category,
+a verdict and a draft. The admin Social page's 留言 tab is where they get answered.
+
+Three filters run before the model, and cost nothing:
+
+* our own reply-chain posts (`is_reply_owned_by_me`);
+* known bots — `@meta.ai` answered two of our commenters unprompted, and replying starts
+  a bot-to-bot thread in public;
+* replies whose parent is not our post or one of our own chain comments. Threads'
+  `/conversation` returns the whole tree, so most entries in a busy thread are people
+  talking to each other; answering those reads as barging in.
+
+What survives gets one model call: category (`praise` / `question` / `substantive` /
+`hostile` / `noise` / `promo` / `bot`), whether it carries a checkable factual claim,
+whether it asks something, and a draft reply in the house voice.
+
+`decide()` routes it, and that routing is deliberately in Python rather than in the
+prompt — it is the part that must not drift:
+
+* `hostile` / `noise` / `promo` / `bot` → ignored, no draft;
+* plain `praise` with no factual claim, no question and nothing that looks like a
+  position (a ticker, 買/賣/停損/目標價 …) → replied unattended;
+* everything else → the 留言 tab.
+
+Measured against the 33 real comments from 2026-06-15 to 08-26: 6 excluded by rule,
+7 ignored (1 hostile, 5 noise, 1 promo), 20 queued for review, **0 auto-replied** —
+plain praise essentially does not occur on this account. The unattended lane exists,
+but in practice a human sees everything.
+
+Hiding a reply needs the `threads_manage_replies` scope; see
+`docs/social-publishing-tokens.md`.
 
 ### The idempotency ledger
 
