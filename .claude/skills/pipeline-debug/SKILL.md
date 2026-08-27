@@ -49,6 +49,13 @@ export GCP_PROJECT_ID=gen-lang-client-0901363254   # ADC via `gcloud auth` for F
 
 ## 1. Run one episode through the real pipeline (offline, no writes)
 
+> **`run_episode_offline.py` reads the transcript from Firestore, and Firestore is gone**
+> (`gcloud firestore databases list` → 0; the P1–P5 migration finished). Until it is
+> ported, pull transcripts from the media host instead —
+> `GET <transcript_public_url>` returns `{"sentences": [{index, content, start, end}, …]}`,
+> which is exactly the `sentences` state key. `scripts/extractor_model_ab.py` does this and
+> needs no GCP at all; it is also the harness that justified the extractor model pin.
+
 `scripts/run_episode_offline.py` (in this skill dir) sets every `*_MODEL` env to the
 chosen OpenRouter model BEFORE importing `llm`, loads the episode transcript from
 Firestore, runs extractor→…→markdown, and prints/saves the result. **Writes nothing to
