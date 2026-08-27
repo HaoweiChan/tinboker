@@ -15,6 +15,40 @@ from .auth import get_access_token  # noqa: E402
 from .parser import SpotifyPodcastParser  # noqa: E402
 
 
+def extract_metadata(episode: Optional[Dict]) -> Optional[Dict]:
+    """Spotify episode object -> the metadata dict the pipeline stores.
+
+    Shared with scripts/backfill_spotify_metadata.py, which pages a show's catalogue
+    once and matches many titles against it, so it needs the extraction without the
+    per-episode fetch that get_spotify_metadata performs.
+    """
+    if not episode:
+        return None
+    metadata = {
+        'release_date': episode.get('release_date'),  # Format: YYYY-MM-DD
+        'embed_url': episode.get('embed_url'),
+        'spotify_id': episode.get('id'),
+        # `or {}` / `or []`, not a .get default: Spotify returns an explicit null for
+        # these on region-restricted or unavailable episodes, and a null default is not
+        # substituted — .get('external_urls', {}) hands back None and the chained .get()
+        # raises. Seen live on 游庭皓的財經皓角 during the backfill dry-run.
+        'spotify_url': (episode.get('external_urls') or {}).get('spotify'),
+        'description': episode.get('description'),
+        'duration_ms': episode.get('duration_ms'),
+        'images': [img.get('url') for img in (episode.get('images') or []) if img and img.get('url')],
+    }
+    release = metadata['release_date']
+    if release:
+        for fmt, length in (('%Y-%m-%d', 10), ('%Y-%m', 7), ('%Y', 4)):
+            if len(release) == length:
+                try:
+                    metadata['release_datetime'] = datetime.strptime(release, fmt)
+                except ValueError:
+                    metadata['release_datetime'] = None
+                break
+    return metadata
+
+
 def get_spotify_metadata(spotify_show_link: str, episode_title: str, limit: int = 100) -> Optional[Dict]:
     """
     Fetch Spotify metadata for an episode by matching its title.
@@ -69,37 +103,7 @@ def get_spotify_metadata(spotify_show_link: str, episode_title: str, limit: int 
             print(f"  ⚠ Warning: Episode '{episode_title}' not found in Spotify")
             return None
         
-        # Extract relevant metadata
-        metadata = {
-            'release_date': episode.get('release_date'),  # Format: YYYY-MM-DD
-            'embed_url': episode.get('embed_url'),
-            'spotify_id': episode.get('id'),
-            # `or {}` / `or []`, not a .get default: Spotify returns an explicit null for
-            # these on region-restricted or unavailable episodes, and a null default is
-            # not substituted — .get('external_urls', {}) hands back None and the chained
-            # .get() raises. Seen live on 游庭皓的財經皓角 during the backfill dry-run.
-            'spotify_url': (episode.get('external_urls') or {}).get('spotify'),
-            'description': episode.get('description'),
-            'duration_ms': episode.get('duration_ms'),
-            'images': [img.get('url') for img in (episode.get('images') or []) if img and img.get('url')],
-        }
-        
-        # Parse release_date to datetime if available
-        if metadata['release_date']:
-            try:
-                # Spotify returns dates in YYYY-MM-DD format
-                release_date_str = metadata['release_date']
-                if len(release_date_str) == 10:  # YYYY-MM-DD
-                    metadata['release_datetime'] = datetime.strptime(release_date_str, '%Y-%m-%d')
-                elif len(release_date_str) == 7:  # YYYY-MM
-                    metadata['release_datetime'] = datetime.strptime(release_date_str, '%Y-%m')
-                elif len(release_date_str) == 4:  # YYYY
-                    metadata['release_datetime'] = datetime.strptime(release_date_str, '%Y')
-            except ValueError:
-                # If parsing fails, just keep the string
-                metadata['release_datetime'] = None
-        
-        return metadata
+        return extract_metadata(episode)
         
     except Exception as e:
         print(f"  ⚠ Warning: Error fetching Spotify metadata: {e}")

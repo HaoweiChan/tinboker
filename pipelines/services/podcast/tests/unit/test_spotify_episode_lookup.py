@@ -148,3 +148,32 @@ def test_null_items_do_not_break_pagination_offsets():
     # EP60 sits on page 2; a first page of pure nulls must not stall the offset at 0.
     assert p.find_episode_by_title("show", "EP60", limit=200)["name"] == "EP60"
     assert 50 in p.offsets, f"offset never advanced past the null page: {p.offsets}"
+
+
+def test_many_titles_cost_one_pagination_not_one_each():
+    """The reason fetching and matching are separate functions.
+
+    The first backfill called get_spotify_metadata per episode, which paged the whole
+    show every time — roughly 27,000 requests for the backlog, and Spotify began
+    returning 429 after about a hundred. Paging once per show and matching in memory is
+    what makes the backfill runnable at all.
+    """
+    titles = [f"EP{i}" for i in range(120)]
+    p = _FakeParser(titles)
+
+    catalogue = p.get_all_episodes("show", limit=200)
+    fetches_after_paging = len(p.offsets)
+
+    found = [p.match_title(catalogue, t) for t in titles[:50]]
+
+    assert all(f is not None for f in found), "in-memory matching must find them all"
+    assert len(p.offsets) == fetches_after_paging, (
+        f"match_title performed I/O: offsets grew to {p.offsets}"
+    )
+    assert fetches_after_paging <= 4, f"one show should be a handful of pages, got {p.offsets}"
+
+
+def test_find_episode_by_title_still_works_through_the_split():
+    # The single-title entry point is now a thin wrapper; keep it honest.
+    p = _FakeParser([f"EP{i}" for i in range(120)])
+    assert p.find_episode_by_title("show", "EP101", limit=200)["name"] == "EP101"

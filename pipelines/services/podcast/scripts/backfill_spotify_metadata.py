@@ -22,6 +22,11 @@ re-fires ``new_episode`` notifications.
 
 Only fills episodes whose ``doc->>'spotify_url'`` is empty, unless ``--overwrite``.
 
+Each show's catalogue is paged ONCE and every one of its episodes is matched against it
+in memory. The first version called get_spotify_metadata per episode, which paged the
+whole show each time — roughly 27,000 requests for the full backlog, and Spotify started
+returning 429 after about a hundred. This way it is one pagination per show.
+
 DRY-RUN BY DEFAULT: prints what it WOULD write and changes nothing. Pass ``--apply``.
 
 Requires:
@@ -53,7 +58,9 @@ from src.secrets_bootstrap import bootstrap  # noqa: E402
 
 bootstrap()
 
-from src.spotify_podcast.metadata_helper import get_spotify_metadata  # noqa: E402
+from src.spotify_podcast.auth import get_access_token  # noqa: E402
+from src.spotify_podcast.metadata_helper import extract_metadata  # noqa: E402
+from src.spotify_podcast.parser import SpotifyPodcastParser  # noqa: E402
 
 # EPISODE_DATABASE_URL first: that is what shared/db/factory.py reads and what the VPS
 # actually sets in pipelines/.env. The others are fallbacks for local runs.
@@ -159,8 +166,10 @@ def main() -> int:
                     help="also refresh episodes that already have a spotify_url")
     ap.add_argument("--podcast", help="restrict to one show")
     ap.add_argument("--limit", type=int, help="process at most N episodes")
-    ap.add_argument("--search-depth", type=int, default=400,
-                    help="how many episodes back to search per show (default: 400)")
+    ap.add_argument("--search-depth", type=int, default=1200,
+                    help="episodes to page per show (default: 1200). The deepest backlog"
+                         " here is ~460 episodes for one show, so this covers it in one"
+                         " pass; ~24 requests per show, not per episode.")
     ap.add_argument("--postgres-url")
     ap.add_argument("--config", action="append",
                     help="show config to read (repeatable; defaults to podcasts_tw + podcasts_en)")
@@ -173,37 +182,60 @@ def main() -> int:
         print(f"No shows with spotify_show_link in {[str(c) for c in configs]}", file=sys.stderr)
         return 1
 
+    token = get_access_token(os.getenv("SPOTIFY_ID") or os.getenv("SPOTIFY_CLIENT_ID"),
+                             os.getenv("SPOTIFY_SECRET") or os.getenv("SPOTIFY_CLIENT_SECRET"))
+    if not token:
+        print("Spotify credentials missing or rejected", file=sys.stderr)
+        return 1
+    parser = SpotifyPodcastParser(access_token=token)
+
     engine = sa.create_engine(_postgres_url(args.postgres_url))
     with engine.connect() as conn:
         rows = select_episodes(conn, args.podcast, args.limit, args.overwrite)
         print(f"{len(rows)} episode(s) to process "
               f"({'apply' if args.apply else 'DRY RUN — nothing will be written'})")
 
-        matched = skipped_no_link = not_found = 0
+        by_show: dict[str, list] = {}
         for row in rows:
-            link = show_links.get(row.podcast_name)
+            by_show.setdefault(row.podcast_name, []).append(row)
+
+        matched = skipped_no_link = not_found = 0
+        for show_name, show_rows in by_show.items():
+            link = show_links.get(show_name)
             if not link:
-                skipped_no_link += 1
+                skipped_no_link += len(show_rows)
+                print(f"— {show_name}: no spotify_show_link, skipping {len(show_rows)}")
                 continue
-            meta = get_spotify_metadata(link, row.episode_title or "", limit=args.search_depth)
-            if not meta:
-                not_found += 1
-                print(f"  ✗ {row.podcast_name} · {(row.episode_title or '')[:44]}")
+            show_id = parser.extract_show_id(link)
+            if not show_id:
+                skipped_no_link += len(show_rows)
+                print(f"— {show_name}: unusable show link {link}")
                 continue
-            updates = build_updates(meta)
-            if not updates:
-                not_found += 1
+            try:
+                catalogue = parser.get_all_episodes(show_id, limit=args.search_depth)
+            except Exception as e:  # noqa: BLE001 - one bad show must not sink the run
+                skipped_no_link += len(show_rows)
+                print(f"— {show_name}: catalogue fetch failed ({e})")
                 continue
-            matched += 1
-            print(f"  ✓ {row.podcast_name} · {(row.episode_title or '')[:44]}"
-                  f" → {updates.get('spotify_url')}")
-            if args.apply:
-                # JSONB merge: sets exactly the keys in the patch, leaves the rest alone.
-                conn.execute(
-                    sa.text(f"UPDATE {_TABLE} SET doc = doc || CAST(:patch AS jsonb)"
-                            " WHERE episode_id = :id"),
-                    {"patch": json.dumps(updates, ensure_ascii=False), "id": row.episode_id},
-                )
+            print(f"— {show_name}: {len(catalogue)} episode(s) on Spotify,"
+                  f" matching {len(show_rows)}")
+
+            for row in show_rows:
+                episode = parser.match_title(catalogue, row.episode_title or "")
+                updates = build_updates(extract_metadata(episode)) if episode else {}
+                if not updates:
+                    not_found += 1
+                    print(f"  ✗ {(row.episode_title or '')[:52]}")
+                    continue
+                matched += 1
+                print(f"  ✓ {(row.episode_title or '')[:52]} → {updates.get('spotify_url')}")
+                if args.apply:
+                    # JSONB merge: sets exactly the keys in the patch, leaves the rest.
+                    conn.execute(
+                        sa.text(f"UPDATE {_TABLE} SET doc = doc || CAST(:patch AS jsonb)"
+                                " WHERE episode_id = :id"),
+                        {"patch": json.dumps(updates, ensure_ascii=False), "id": row.episode_id},
+                    )
         if args.apply:
             conn.commit()
 
