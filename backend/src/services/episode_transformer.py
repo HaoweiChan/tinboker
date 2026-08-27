@@ -8,6 +8,7 @@ from typing import Optional, Collection
 from datetime import datetime
 from src.models.podcast import Episode
 from src.services.gcs_content import GCSContentService
+from src.tag_registry import normalize_tag_slug
 
 
 logger = logging.getLogger(__name__)
@@ -253,8 +254,16 @@ class EpisodeTransformer:
         for field in ('summary_content', 'events_markdown_content', 'sentences_markdown_content'):
             extracted.update(self.extract_tags_from_text(episode_dict.get(field, '')))
         existing = set(episode_dict.get('tags', []) or [])
+        # Dedupe on the canonical lookup key: prose links are PascalCase while stored
+        # tags are lowercased, so a case-sensitive union served both (EP687 served 13
+        # such pairs). The stored spelling wins so served slugs/URLs stay unchanged.
+        seen: dict[str, str] = {}
+        for tag in sorted(existing) + sorted(extracted):
+            key = normalize_tag_slug(tag)
+            if key and key not in seen:
+                seen[key] = tag
         all_tags = filter_tags_against_sectors(
-            [t for t in existing.union(extracted) if t],
+            list(seen.values()),
             episode_dict.get('sector_exposures') or [],
         )
 

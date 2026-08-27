@@ -73,3 +73,25 @@ async def test_to_episode_filters_prose_reintroduced_tags():
     episode = await transformer.to_episode(raw, enrich_content=False)
     assert set(episode.tags) == {"Inflation", "TWStocks"}
     assert episode.summary_content == summary  # prose links never stripped
+
+
+@pytest.mark.asyncio
+async def test_to_episode_dedupes_prose_tag_casing():
+    """EP691/EP687 shape: stored tags are lowercased, prose links are PascalCase.
+
+    The union used to be case-sensitive, so the served payload carried both
+    spellings (EP687 served 26 tags, 13 of them case dupes). The stored spelling
+    wins; a tag that only exists in prose still surfaces.
+    """
+    transformer = EpisodeTransformer(gcs_service=object())
+    episode = await transformer.to_episode(
+        {
+            "id": "Gooaye_95c6dff51109061e",
+            "podcast_name": "Gooaye 股癌",
+            "created_time": 1,
+            "summary_content": "[生成式AI](#tag:GenerativeAI)、[EPS](#tag:EPS)",
+            "tags": ["generativeai"],
+        },
+        enrich_content=False,
+    )
+    assert sorted(episode.tags) == ["EPS", "generativeai"]
