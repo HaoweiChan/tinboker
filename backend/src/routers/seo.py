@@ -24,12 +24,7 @@ from src.services.article_service import ArticleService
 from src.services.insight_service import InsightService
 from src.services.podcast import PodcastService
 from src.services.search_console_service import SearchConsoleService
-from src.tag_registry import (
-    hidden_sector_exposure_ids,
-    hidden_tag_slugs,
-    normalize_tag_slug,
-    served_sector_exposure_ids,
-)
+from src.tag_registry import hidden_sector_exposure_ids, served_sector_exposure_ids
 
 logger = logging.getLogger(__name__)
 
@@ -85,14 +80,14 @@ async def sitemap(
     db: Session = Depends(get_session),
 ):
     """Dynamic XML sitemap: static routes + episode / article / stock / podcaster /
-    tag / sector permalinks.
+    sector permalinks. Topic-tag pages are excluded on purpose — see below.
 
     Each content source is enumerated in its own try/except, so one failing source
     (Firestore hiccup, empty table) degrades to a partial sitemap rather than a 500
     to Googlebot. The assembled XML is cached in Redis for an hour; the per-source
     service calls are themselves cached, and the CDN edge caches the response.
     """
-    cache_key = f"sitemap:xml:v3:{limit}"
+    cache_key = f"sitemap:xml:v4:{limit}"
     cached = await cache_get(cache_key)
     if cached:
         return Response(content=cached, media_type="application/xml",
@@ -129,22 +124,17 @@ async def sitemap(
     except Exception as e:
         logger.warning("Sitemap podcaster enumeration failed: %s", e)
 
-    # Topic tags — minus the ones an admin hid. The site filters those out of its own
-    # tag chips, so listing them here only spends crawl budget on pages users can't
-    # reach. Compared normalized, the same way hidden_tag_slugs returns them.
-    try:
-        # Defaulting to "hide nothing" on a DB blip: listing a few hidden tags for an
-        # hour is cheaper than dropping all ~166 topic URLs out of the sitemap.
-        try:
-            hidden_tags = hidden_tag_slugs(db)
-        except Exception:
-            hidden_tags = set()
-        for tag in await podcast_service.get_all_tags():
-            tid = tag.get("id")
-            if tid and normalize_tag_slug(str(tid)) not in hidden_tags:
-                entries.append(_url_entry(f"{base}/topics/{quote(str(tid))}", None, "weekly", "0.5"))
-    except Exception as e:
-        logger.warning("Sitemap tag enumeration failed: %s", e)
+    # Topic tags are deliberately NOT listed. Measured on the live site, /topics/:tag
+    # renders 7,304 characters of which 7,207 sit inside episode cards — 97 characters
+    # are the page's own, and those are nav chrome plus one sentence
+    # ("瀏覽所有關於「X」的 Podcast 摘要與市場討論 · N 集。") that is identical across all ~166
+    # of them bar the tag name. A template plus a link list, 166 times over, is the
+    # shape AdSense called "low value content" when it suspended tinboker.com.
+    #
+    # The pages stay — they are useful navigation — they are just not submitted for
+    # indexing, and the crawler middleware serves them noindex. Sector pages are the
+    # deliberate contrast: those carry a hand-written thesis, inclusion criteria and
+    # per-constituent descriptions, so they stay in the sitemap.
 
     # Sector / theme pages. Each carries a hand-written zh-TW description and 100+
     # episodes, and none of them were in the sitemap at all — Google had no way to
