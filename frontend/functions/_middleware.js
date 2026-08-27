@@ -25,6 +25,14 @@ const SITE = '聽播客 TinBoker';
 // staging., <pr>.pages.dev) is a copy of it.
 const PROD_HOSTS = new Set(['tinboker.com', 'www.tinboker.com']);
 
+// Routes served noindex even on production. /topics/:tag renders 97 characters of its
+// own — nav chrome plus one sentence that is identical across all ~166 tag pages — around
+// a list of links to episode summaries. That is the "low value content" shape AdSense
+// suspended the site over. The pages stay for navigation; they just stop being something
+// Google evaluates. Sector pages are deliberately NOT here: their hand-written thesis and
+// per-constituent descriptions are the curation the same policy asks for.
+export const NOINDEX_ROUTE = /^\/(?:topics|tag)\/[^/]+\/?$/;
+
 function apiBase(hostname) {
   const h = hostname.replace(/^www\./, '');
   const apiHost = h === 'tinboker.com'
@@ -211,16 +219,23 @@ export async function metaFor(pathname, origin, api) {
   return null;
 }
 
-// dev./staging./<pr>.pages.dev serve the same pages as production with nothing stopping
-// Google indexing them — three more copies of every URL competing with tinboker.com for
-// the same queries. Stamped as a header rather than a robots.txt Disallow on purpose: a
-// disallowed page can't be crawled, so the noindex would never be read and an
-// already-indexed copy would just sit there. Applied last so the meta injection above
-// still runs on those hosts — that is how the social-card previews get tested.
+// Two reasons a response gets noindex.
+//
+// Host: dev./staging./<pr>.pages.dev serve the same pages as production with nothing
+// stopping Google indexing them — three more copies of every URL competing with
+// tinboker.com for the same queries.
+//
+// Route: NOINDEX_ROUTE, thin pages that should not be evaluated on any host.
+//
+// A header rather than a robots.txt Disallow in both cases, on purpose: a disallowed
+// page can't be crawled, so the noindex would never be read and an already-indexed copy
+// would just sit there. Applied last so the meta injection above still runs — that is
+// how social-card previews keep working on dev, and why a shared /topics link still
+// gets a proper card even though the page is not indexed.
 export async function onRequest(context) {
   const url = new URL(context.request.url);
   const res = await handle(context, url);
-  if (PROD_HOSTS.has(url.hostname)) return res;
+  if (PROD_HOSTS.has(url.hostname) && !NOINDEX_ROUTE.test(url.pathname)) return res;
   try {
     // next()'s headers are immutable; re-wrap to get a mutable copy. Guarded because
     // some statuses (304 and friends) reject a re-wrap — a missing noindex on one

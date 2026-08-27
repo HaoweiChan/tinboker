@@ -15,7 +15,7 @@ import { dirname, resolve } from 'node:path';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const mw = await import(resolve(here, '../functions/_middleware.js'));
-const { metaFor, isCandidate, normalizeTagSlug, tagLabelFallback } = mw;
+const { metaFor, isCandidate, normalizeTagSlug, tagLabelFallback, NOINDEX_ROUTE } = mw;
 
 const ORIGIN = 'https://tinboker.com';
 const API = 'https://api.tinboker.com';
@@ -108,6 +108,18 @@ try {
   // The gate and the resolver must agree, or a covered route silently never runs.
   for (const [path] of cases) {
     assert.ok(isCandidate(path), `${path} resolves meta but the gate rejects it`);
+  }
+
+  // --- 3. thin routes are noindex, valuable ones are not -------------------------
+  // Topic pages carry 97 characters of their own around a link list, repeated across
+  // ~166 of them. They keep their social card (meta still resolves) but must not be
+  // offered to Google. Sector pages are the contrast and must stay indexable.
+  for (const p of ['/topics/ai', '/topics/ai/', '/tag/ai']) {
+    assert.ok(NOINDEX_ROUTE.test(p), `${p} should be noindex`);
+    assert.ok(await metaFor(p, ORIGIN, API), `${p} should still resolve a social card`);
+  }
+  for (const p of ['/sector/sector_mlcc', '/episode/abc123', '/topics', '/', '/stock/2330']) {
+    assert.ok(!NOINDEX_ROUTE.test(p), `${p} must stay indexable`);
   }
 } finally {
   globalThis.fetch = originalFetch;
