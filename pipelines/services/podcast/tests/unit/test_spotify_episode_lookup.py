@@ -177,3 +177,86 @@ def test_find_episode_by_title_still_works_through_the_split():
     # The single-title entry point is now a thin wrapper; keep it honest.
     p = _FakeParser([f"EP{i}" for i in range(120)])
     assert p.find_episode_by_title("show", "EP101", limit=200)["name"] == "EP101"
+
+
+# These exercise the real get_episodes by faking `requests`, not by subclassing it.
+# The earlier null-item tests replaced get_episodes wholesale, so they never reached the
+# embed-URL loop inside it — which was still crashing on the same nulls.
+
+class _Resp:
+    def __init__(self, status=200, payload=None, retry_after=None):
+        self.status_code = status
+        self._payload = payload or {"items": [], "next": None}
+        self.headers = {"Retry-After": retry_after} if retry_after else {}
+
+    def json(self):
+        return self._payload
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            import requests
+            raise requests.exceptions.HTTPError(f"{self.status_code} Client Error")
+
+
+def test_get_episodes_survives_null_items(monkeypatch):
+    from src.spotify_podcast import parser as parser_mod
+
+    payload = {"items": [None, {"id": "e1", "name": "EP1"}, None], "next": None}
+    monkeypatch.setattr(parser_mod.requests, "get", lambda *a, **k: _Resp(200, payload))
+
+    p = parser_mod.SpotifyPodcastParser(access_token="t")
+    data = p.get_episodes("show")
+
+    assert [e for e in data["items"] if e][0]["embed_url"].endswith("/e1")
+
+
+def test_get_episodes_honours_retry_after_then_succeeds(monkeypatch):
+    from src.spotify_podcast import parser as parser_mod
+
+    calls = {"n": 0}
+    slept = []
+
+    def fake_get(*a, **k):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return _Resp(429, retry_after="2")
+        return _Resp(200, {"items": [{"id": "e1", "name": "EP1"}], "next": None})
+
+    monkeypatch.setattr(parser_mod.requests, "get", fake_get)
+    monkeypatch.setattr(parser_mod.time, "sleep", slept.append)
+
+    p = parser_mod.SpotifyPodcastParser(access_token="t")
+    data = p.get_episodes("show")
+
+    assert data["items"][0]["id"] == "e1"
+    assert slept == [2], f"should have waited exactly the Retry-After, waited {slept}"
+
+
+def test_get_episodes_gives_up_and_says_it_was_rate_limited(monkeypatch):
+    from src.spotify_podcast import parser as parser_mod
+
+    monkeypatch.setattr(parser_mod.requests, "get", lambda *a, **k: _Resp(429, retry_after="1"))
+    monkeypatch.setattr(parser_mod.time, "sleep", lambda _s: None)
+
+    p = parser_mod.SpotifyPodcastParser(access_token="t")
+    try:
+        p.get_episodes("show")
+    except ValueError as e:
+        assert "rate limited" in str(e), f"a throttle must not read as a miss: {e}"
+    else:
+        raise AssertionError("expected a ValueError naming the rate limit")
+
+
+def test_retry_wait_is_capped(monkeypatch):
+    from src.spotify_podcast import parser as parser_mod
+
+    slept = []
+    monkeypatch.setattr(parser_mod.requests, "get", lambda *a, **k: _Resp(429, retry_after="99999"))
+    monkeypatch.setattr(parser_mod.time, "sleep", slept.append)
+
+    p = parser_mod.SpotifyPodcastParser(access_token="t")
+    try:
+        p.get_episodes("show")
+    except ValueError:
+        pass
+    assert all(w <= parser_mod.SpotifyPodcastParser.MAX_RETRY_WAIT for w in slept), slept

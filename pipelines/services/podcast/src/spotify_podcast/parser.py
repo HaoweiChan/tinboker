@@ -2,6 +2,7 @@
 Core parser for Spotify podcast shows and episodes.
 """
 
+import time
 from typing import Dict, List, Optional
 
 import requests
@@ -11,6 +12,8 @@ class SpotifyPodcastParser:
     """Parser for Spotify podcast shows and episodes."""
     
     BASE_URL = "https://api.spotify.com/v1"
+    MAX_RETRIES = 4
+    MAX_RETRY_WAIT = 60  # seconds; a longer Retry-After is honoured up to this cap
     
     def __init__(self, access_token: Optional[str] = None):
         """
@@ -90,17 +93,34 @@ class SpotifyPodcastParser:
         params = {"limit": min(limit, 50), "offset": offset}
         
         try:
-            response = requests.get(url, headers=self.headers, params=params)
+            # Spotify rate-limits hard and answers 429 with Retry-After in seconds.
+            # Without this a burst — the backfill pages ~24 requests per show — dies
+            # partway through and the caller cannot tell a throttle from a real miss.
+            for attempt in range(self.MAX_RETRIES):
+                response = requests.get(url, headers=self.headers, params=params)
+                if response.status_code != 429:
+                    break
+                if attempt == self.MAX_RETRIES - 1:
+                    raise ValueError(
+                        f"Error fetching episodes: rate limited after {self.MAX_RETRIES}"
+                        f" attempts (Retry-After: {response.headers.get('Retry-After')})"
+                    )
+                wait = min(int(response.headers.get("Retry-After") or 5), self.MAX_RETRY_WAIT)
+                time.sleep(wait)
             response.raise_for_status()
             data = response.json()
-            
-            # Add embed URLs to episodes
+
+            # `if episode` guards the nulls Spotify returns for episodes unavailable in
+            # the token's market — this loop is upstream of every other null filter, so
+            # without it get_episodes raises before a caller can drop them.
             if "items" in data:
                 for episode in data["items"]:
+                    if not episode:
+                        continue
                     episode_id = episode.get('id')
                     if episode_id:
                         episode['embed_url'] = f"https://open.spotify.com/embed/episode/{episode_id}"
-            
+
             return data
         except requests.exceptions.RequestException as e:
             raise ValueError(f"Error fetching episodes: {e}") from e
