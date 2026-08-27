@@ -75,3 +75,76 @@ def test_blank_search_title_returns_none_without_calling_the_api():
     p = _FakeParser(["EP1"])
     assert p.find_episode_by_title("show", "   ", limit=100) is None
     assert p.offsets == []
+
+
+def test_null_external_urls_does_not_crash(monkeypatch):
+    """Spotify returns an explicit null for these on unavailable episodes.
+
+    `.get('external_urls', {})` hands back None in that case — the default is only used
+    when the key is absent, not when its value is null — and the chained .get() raised,
+    which get_spotify_metadata then swallowed as a bare "Error fetching Spotify
+    metadata". Seen live on 游庭皓的財經皓角 during the backfill dry-run.
+    """
+    from src.spotify_podcast import metadata_helper as mh
+
+    episode = {"id": "abc", "external_urls": None, "images": None,
+               "release_date": "2026-08-24", "description": "d", "duration_ms": 1}
+
+    monkeypatch.setenv("SPOTIFY_ID", "x")
+    monkeypatch.setenv("SPOTIFY_SECRET", "y")
+    monkeypatch.setattr(mh, "get_access_token", lambda *a, **k: "token")
+
+    class _Parser:
+        def __init__(self, *a, **k):
+            pass
+
+        def extract_show_id(self, link):
+            return "show"
+
+        def find_episode_by_title(self, show_id, title, limit=100):
+            return episode
+
+    monkeypatch.setattr(mh, "SpotifyPodcastParser", _Parser)
+
+    meta = mh.get_spotify_metadata("https://open.spotify.com/show/x", "EP1", limit=100)
+
+    assert meta is not None, "a null external_urls must not sink the whole fetch"
+    assert meta["spotify_url"] is None
+    assert meta["images"] == []
+    assert meta["spotify_id"] == "abc"
+
+
+def test_null_items_in_the_page_do_not_crash():
+    """Spotify puts a literal null in `items` for market-unavailable episodes.
+
+    Iterating those raised AttributeError, which get_spotify_metadata swallowed as a
+    bare "Error fetching Spotify metadata" — the failure seen against
+    游庭皓的財經皓角 (353 episodes) in the backfill dry-run.
+    """
+    class _NullyParser(_FakeParser):
+        def get_episodes(self, show_id, limit=50, offset=0):
+            page = super().get_episodes(show_id, limit=limit, offset=offset)
+            # Every other entry comes back as null.
+            page["items"] = [item if i % 2 else None for i, item in enumerate(page["items"])]
+            return page
+
+    p = _NullyParser([f"EP{i}" for i in range(120)])
+
+    found = p.find_episode_by_title("show", "EP101", limit=200)
+
+    assert found is not None and found["name"] == "EP101"
+
+
+def test_null_items_do_not_break_pagination_offsets():
+    class _AllNullFirstPage(_FakeParser):
+        def get_episodes(self, show_id, limit=50, offset=0):
+            page = super().get_episodes(show_id, limit=limit, offset=offset)
+            if offset == 0:
+                page["items"] = [None] * len(page["items"])
+            return page
+
+    p = _AllNullFirstPage([f"EP{i}" for i in range(120)])
+
+    # EP60 sits on page 2; a first page of pure nulls must not stall the offset at 0.
+    assert p.find_episode_by_title("show", "EP60", limit=200)["name"] == "EP60"
+    assert 50 in p.offsets, f"offset never advanced past the null page: {p.offsets}"

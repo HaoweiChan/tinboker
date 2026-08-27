@@ -84,7 +84,7 @@
     "limit": 10,
     "lookback_days": 60,
     "max_episodes": 20,
-    "spotify_show_link": "https://open.spotify.com/show/36S9s4P2x93o11w4t6s04t",
+    "spotify_show_link": "https://open.spotify.com/show/6cMUsVRnTCrCqo4rs8LBjQ",
     "transcript_option": {
       "transcript_service": "groq",
       "model": "whisper-large-v3"

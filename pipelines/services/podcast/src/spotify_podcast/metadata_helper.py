@@ -74,10 +74,14 @@ def get_spotify_metadata(spotify_show_link: str, episode_title: str, limit: int 
             'release_date': episode.get('release_date'),  # Format: YYYY-MM-DD
             'embed_url': episode.get('embed_url'),
             'spotify_id': episode.get('id'),
-            'spotify_url': episode.get('external_urls', {}).get('spotify'),
+            # `or {}` / `or []`, not a .get default: Spotify returns an explicit null for
+            # these on region-restricted or unavailable episodes, and a null default is
+            # not substituted — .get('external_urls', {}) hands back None and the chained
+            # .get() raises. Seen live on 游庭皓的財經皓角 during the backfill dry-run.
+            'spotify_url': (episode.get('external_urls') or {}).get('spotify'),
             'description': episode.get('description'),
             'duration_ms': episode.get('duration_ms'),
-            'images': [img.get('url') for img in episode.get('images', []) if img.get('url')],
+            'images': [img.get('url') for img in (episode.get('images') or []) if img and img.get('url')],
         }
         
         # Parse release_date to datetime if available

@@ -168,9 +168,14 @@ class SpotifyPodcastParser:
             if not result or not result.get("items"):
                 break
             batch = result["items"]
-            episodes.extend(batch)
+            # Spotify puts a literal null in `items` for episodes unavailable in the
+            # token's market, and iterating those raised AttributeError inside
+            # get_spotify_metadata — which swallowed it as a bare "Error fetching
+            # Spotify metadata". Seen on 游庭皓的財經皓角, 353 episodes.
+            episodes.extend(e for e in batch if e)
             if not result.get("next") or not batch:
                 break
+            # Advance by the RAW batch length: the nulls still occupy those offsets.
             offset += len(batch)
 
         if not episodes:

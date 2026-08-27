@@ -7,9 +7,7 @@ selection must skip episodes that already have a link unless --overwrite is pass
 
 import json
 
-import pytest
-import sqlalchemy as sa
-from scripts.backfill_spotify_metadata import build_updates, load_show_links, select_episodes
+from scripts.backfill_spotify_metadata import _TABLE, build_updates, load_show_links, select_sql
 
 
 def test_build_updates_drops_missing_fields():
@@ -50,34 +48,58 @@ def test_load_show_links_keeps_only_configured_links(tmp_path):
     assert links == {"有連結": "https://open.spotify.com/show/a"}
 
 
-@pytest.fixture()
-def conn():
-    engine = sa.create_engine("sqlite://")
-    with engine.connect() as c:
-        c.execute(sa.text(
-            "CREATE TABLE episodes (id TEXT, podcast_name TEXT, episode_title TEXT,"
-            " spotify_url TEXT, created_time INTEGER)"
-        ))
-        for i, (pod, url) in enumerate([
-            ("A", None), ("A", ""), ("A", "https://open.spotify.com/episode/has"), ("B", None),
-        ]):
-            c.execute(sa.text(
-                "INSERT INTO episodes VALUES (:id, :p, :t, :u, :ct)"
-            ), {"id": f"e{i}", "p": pod, "t": f"EP{i}", "u": url, "ct": i})
-        yield c
+# Selection is asserted through the generated SQL rather than a live query: the real
+# store is a JSONB `doc` column in Postgres, which SQLite cannot model, and standing up
+# Postgres in unit tests to check one predicate is not worth it. This catches the things
+# that actually broke — wrong table, wrong column, missing filter — and would not catch
+# a Postgres-specific syntax error. The dry-run is what covers that.
+
+def test_targets_the_mirror_table_not_the_typed_one():
+    sql, _ = select_sql(podcast=None, limit=None, overwrite=False)
+    assert _TABLE == "firestore_mirror.episodes"
+    assert f"FROM {_TABLE}" in sql
+    assert "FROM episodes" not in sql, "the typed episodes table does not exist in this DB"
 
 
-def test_select_skips_episodes_that_already_have_a_link(conn):
-    rows = select_episodes(conn, podcast=None, limit=None, overwrite=False)
-    ids = {r.id for r in rows}
-    assert ids == {"e0", "e1", "e3"}, "an episode with a spotify_url must not be reprocessed"
+def test_skips_episodes_that_already_have_a_link():
+    sql, params = select_sql(podcast=None, limit=None, overwrite=False)
+    assert "coalesce(doc->>'spotify_url', '') = ''" in sql
+    assert params == {}
 
 
-def test_select_overwrite_includes_everything(conn):
-    rows = select_episodes(conn, podcast=None, limit=None, overwrite=True)
-    assert len(rows) == 4
+def test_overwrite_drops_the_filter():
+    sql, _ = select_sql(podcast=None, limit=None, overwrite=True)
+    assert "spotify_url" not in sql.split("FROM")[1], "overwrite must not filter on the link"
 
 
-def test_select_can_restrict_to_one_show(conn):
-    rows = select_episodes(conn, podcast="B", limit=None, overwrite=False)
-    assert [r.id for r in rows] == ["e3"]
+def test_restricting_to_one_show_is_parameterised():
+    sql, params = select_sql(podcast="Gooaye 股癌", limit=5, overwrite=False)
+    assert "podcast_name = :podcast" in sql
+    assert params["podcast"] == "Gooaye 股癌"
+    assert params["limit"] == 5
+    assert "Gooaye" not in sql, "show name must be bound, not interpolated"
+
+
+def test_load_show_links_merges_several_configs(tmp_path):
+    # The English shows live in podcasts_en.json and are 278 of the episodes missing a
+    # link; reading only the TW config skipped every one of them.
+    tw = tmp_path / "tw.json"
+    en = tmp_path / "en.json"
+    tw.write_text(json.dumps([{"name": "財報狗", "spotify_show_link": "https://open.spotify.com/show/tw"}]),
+                  encoding="utf-8")
+    en.write_text(json.dumps([{"name": "The Long View", "spotify_show_link": "https://open.spotify.com/show/en"}]),
+                  encoding="utf-8")
+
+    links = load_show_links(tw, en)
+
+    assert set(links) == {"財報狗", "The Long View"}
+
+
+def test_load_show_links_tolerates_a_missing_config(tmp_path):
+    present = tmp_path / "tw.json"
+    present.write_text(json.dumps([{"name": "A", "spotify_show_link": "https://open.spotify.com/show/a"}]),
+                       encoding="utf-8")
+
+    assert load_show_links(present, tmp_path / "nope.json") == {
+        "A": "https://open.spotify.com/show/a"
+    }
