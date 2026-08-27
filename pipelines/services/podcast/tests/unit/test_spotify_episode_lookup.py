@@ -232,7 +232,7 @@ def test_get_episodes_honours_retry_after_then_succeeds(monkeypatch):
     assert slept == [2], f"should have waited exactly the Retry-After, waited {slept}"
 
 
-def test_get_episodes_gives_up_and_says_it_was_rate_limited(monkeypatch):
+def test_get_episodes_gives_up_and_says_how_long_to_wait(monkeypatch):
     from src.spotify_podcast import parser as parser_mod
 
     monkeypatch.setattr(parser_mod.requests, "get", lambda *a, **k: _Resp(429, retry_after="1"))
@@ -243,20 +243,29 @@ def test_get_episodes_gives_up_and_says_it_was_rate_limited(monkeypatch):
         p.get_episodes("show")
     except ValueError as e:
         assert "rate limited" in str(e), f"a throttle must not read as a miss: {e}"
+        assert "retry in 1s" in str(e), f"the wait must be actionable: {e}"
     else:
         raise AssertionError("expected a ValueError naming the rate limit")
 
 
-def test_retry_wait_is_capped(monkeypatch):
+def test_a_quota_window_fails_fast_instead_of_sleeping_through_it(monkeypatch):
+    """Spotify answered Retry-After: 2101 after the first backfill attempt.
+
+    That is a quota window, not a burst. Sleeping through it would hang a batch job for
+    35 minutes, and retrying anyway just spends more requests against a closed window —
+    which is what kept the window open while I was probing every 5 minutes.
+    """
     from src.spotify_podcast import parser as parser_mod
 
     slept = []
-    monkeypatch.setattr(parser_mod.requests, "get", lambda *a, **k: _Resp(429, retry_after="99999"))
+    monkeypatch.setattr(parser_mod.requests, "get", lambda *a, **k: _Resp(429, retry_after="2101"))
     monkeypatch.setattr(parser_mod.time, "sleep", slept.append)
 
     p = parser_mod.SpotifyPodcastParser(access_token="t")
     try:
         p.get_episodes("show")
-    except ValueError:
-        pass
-    assert all(w <= parser_mod.SpotifyPodcastParser.MAX_RETRY_WAIT for w in slept), slept
+    except ValueError as e:
+        assert "retry in 2101s" in str(e), e
+    else:
+        raise AssertionError("expected a ValueError")
+    assert slept == [], f"must not sleep through a quota window, slept {slept}"

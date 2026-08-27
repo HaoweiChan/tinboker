@@ -100,12 +100,17 @@ class SpotifyPodcastParser:
                 response = requests.get(url, headers=self.headers, params=params)
                 if response.status_code != 429:
                     break
-                if attempt == self.MAX_RETRIES - 1:
+                wait = int(response.headers.get("Retry-After") or 5)
+                # A long Retry-After is a quota window, not a burst. Spotify answered
+                # 2101 seconds after the first backfill attempt — sleeping through that
+                # in-process would hang a batch job for 35 minutes, and retrying anyway
+                # just spends more requests against a closed window. Say how long and
+                # let the caller come back.
+                if wait > self.MAX_RETRY_WAIT or attempt == self.MAX_RETRIES - 1:
                     raise ValueError(
-                        f"Error fetching episodes: rate limited after {self.MAX_RETRIES}"
-                        f" attempts (Retry-After: {response.headers.get('Retry-After')})"
+                        f"Error fetching episodes: rate limited, retry in {wait}s"
+                        f" (attempt {attempt + 1}/{self.MAX_RETRIES})"
                     )
-                wait = min(int(response.headers.get("Retry-After") or 5), self.MAX_RETRY_WAIT)
                 time.sleep(wait)
             response.raise_for_status()
             data = response.json()
