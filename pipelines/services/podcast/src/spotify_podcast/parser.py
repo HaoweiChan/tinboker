@@ -140,50 +140,59 @@ class SpotifyPodcastParser:
     
     def find_episode_by_title(self, show_id: str, episode_title: str, limit: int = 100) -> Optional[Dict]:
         """
-        Find an episode by matching its title.
-        
+        Find an episode by matching its title, paging until ``limit`` is reached.
+
         Args:
             show_id: Spotify show ID
             episode_title: Episode title to search for (e.g., "EP617 | 👾")
             limit: Maximum number of episodes to search through (default: 100)
-        
+
         Returns:
             Episode dictionary if found, None otherwise
+
+        The previous implementation hand-unrolled exactly two pages, so it could never
+        see past the newest 100 episodes — on a daily show that is about four months,
+        which is why most of the back catalogue had no Spotify metadata at all. It also
+        returned a partial match found on page 1 without ever looking at page 2, so a
+        loose match could beat an exact one. Both are fixed here: page until ``limit``,
+        then prefer an exact title across everything collected.
         """
-        # Normalize the search title (remove extra spaces, lowercase for comparison)
         normalized_search = episode_title.strip().lower()
-        
-        # Fetch episodes (up to limit)
-        result = self.get_episodes(show_id, limit=min(limit, 50), offset=0)
-        if not result or "items" not in result:
+        if not normalized_search:
             return None
-        
-        episodes = result["items"]
-        
-        # Try exact match first
+
+        episodes: list[Dict] = []
+        offset = 0
+        while len(episodes) < limit:
+            result = self.get_episodes(show_id, limit=min(limit - len(episodes), 50), offset=offset)
+            if not result or not result.get("items"):
+                break
+            batch = result["items"]
+            episodes.extend(batch)
+            if not result.get("next") or not batch:
+                break
+            offset += len(batch)
+
+        if not episodes:
+            return None
+
+        # Exact title wins, and it has to win globally — not just within the first page.
         for episode in episodes:
-            episode_name = episode.get('name', '').strip()
-            if episode_name.lower() == normalized_search:
+            if (episode.get('name') or '').strip().lower() == normalized_search:
                 return episode
-        
-        # Try partial match (in case of slight differences)
+
+        # Fall back to containment either way round. Guarded on length: a Spotify title
+        # like "EP1" is a substring of half the back catalogue, and matching it would
+        # attach the wrong episode's URL — worse than attaching none.
+        MIN_PARTIAL = 8
         for episode in episodes:
-            episode_name = episode.get('name', '').strip()
-            # Check if the normalized search title is contained in episode name or vice versa
-            if normalized_search in episode_name.lower() or episode_name.lower() in normalized_search:
+            name = (episode.get('name') or '').strip().lower()
+            if not name:
+                continue
+            if len(normalized_search) >= MIN_PARTIAL and normalized_search in name:
                 return episode
-        
-        # If not found in first batch and there are more episodes, search more
-        if result.get("next") and limit > 50:
-            # Get more episodes
-            result2 = self.get_episodes(show_id, limit=min(limit - 50, 50), offset=50)
-            if result2 and "items" in result2:
-                for episode in result2["items"]:
-                    episode_name = episode.get('name', '').strip()
-                    if episode_name.lower() == normalized_search:
-                        return episode
-                    if normalized_search in episode_name.lower() or episode_name.lower() in normalized_search:
-                        return episode
-        
+            if len(name) >= MIN_PARTIAL and name in normalized_search:
+                return episode
+
         return None
 
