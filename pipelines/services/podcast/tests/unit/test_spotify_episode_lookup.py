@@ -75,3 +75,40 @@ def test_blank_search_title_returns_none_without_calling_the_api():
     p = _FakeParser(["EP1"])
     assert p.find_episode_by_title("show", "   ", limit=100) is None
     assert p.offsets == []
+
+
+def test_null_external_urls_does_not_crash(monkeypatch):
+    """Spotify returns an explicit null for these on unavailable episodes.
+
+    `.get('external_urls', {})` hands back None in that case — the default is only used
+    when the key is absent, not when its value is null — and the chained .get() raised,
+    which get_spotify_metadata then swallowed as a bare "Error fetching Spotify
+    metadata". Seen live on 游庭皓的財經皓角 during the backfill dry-run.
+    """
+    from src.spotify_podcast import metadata_helper as mh
+
+    episode = {"id": "abc", "external_urls": None, "images": None,
+               "release_date": "2026-08-24", "description": "d", "duration_ms": 1}
+
+    monkeypatch.setenv("SPOTIFY_ID", "x")
+    monkeypatch.setenv("SPOTIFY_SECRET", "y")
+    monkeypatch.setattr(mh, "get_access_token", lambda *a, **k: "token")
+
+    class _Parser:
+        def __init__(self, *a, **k):
+            pass
+
+        def extract_show_id(self, link):
+            return "show"
+
+        def find_episode_by_title(self, show_id, title, limit=100):
+            return episode
+
+    monkeypatch.setattr(mh, "SpotifyPodcastParser", _Parser)
+
+    meta = mh.get_spotify_metadata("https://open.spotify.com/show/x", "EP1", limit=100)
+
+    assert meta is not None, "a null external_urls must not sink the whole fetch"
+    assert meta["spotify_url"] is None
+    assert meta["images"] == []
+    assert meta["spotify_id"] == "abc"
