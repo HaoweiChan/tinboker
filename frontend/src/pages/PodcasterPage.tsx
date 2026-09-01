@@ -117,7 +117,7 @@ export const PodcasterPage: React.FC = () => {
     }
     const spotifyUri = ep.spotify_id ? `spotify:episode:${ep.spotify_id}` : undefined;
     const mp3Url = ep.podcast_name && (ep.mp3_url || ep.mp3_public_url)
-      ? getEpisodeAudioUrl(ep.podcast_name, ep.id)
+      ? getEpisodeAudioUrl(ep.podcast_name, ep.id, ep.spotify_url)
       : undefined;
     playEpisode(
       {

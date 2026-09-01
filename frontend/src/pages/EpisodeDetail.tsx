@@ -321,7 +321,7 @@ export const EpisodeDetail: React.FC = () => {
       coverUrl: episode.spotify_images?.[0] || undefined,
       spotifyUri,
       mp3Url: episode.podcast_name && (episode.mp3_url || episode.mp3_public_url)
-        ? getEpisodeAudioUrl(episode.podcast_name, episode.id)
+        ? getEpisodeAudioUrl(episode.podcast_name, episode.id, episode.spotify_url)
         : undefined,
       timestampedSections: playerSections,
     });
@@ -433,9 +433,17 @@ export const EpisodeDetail: React.FC = () => {
                   </div>
                 </div>
                 <div className="flex w-full items-center gap-2 overflow-x-auto pb-1 sm:w-auto sm:shrink-0 sm:overflow-visible sm:pb-0">
-                  <button type="button" onClick={onPlay} className="inline-flex shrink-0 items-center gap-1.5 px-4 py-2 rounded-full bg-foreground text-background text-sm font-medium hover:opacity-90 transition-opacity">
-                    <Play size={14} className="fill-current" /> 播放本集
-                  </button>
+                  {/* No in-house player when we can point at the source. The episode
+                      audio is the podcaster's, re-hosted on our own domain, and serving
+                      it with ads around it is what AdSense flagged as replicated
+                      content. Where a spotify_url exists the Spotify button below is
+                      the way to listen; the player stays only for the ~7% of episodes
+                      with no source link, which would otherwise have no way to play. */}
+                  {!episode.spotify_url && (
+                    <button type="button" onClick={onPlay} className="inline-flex shrink-0 items-center gap-1.5 px-4 py-2 rounded-full bg-foreground text-background text-sm font-medium hover:opacity-90 transition-opacity">
+                      <Play size={14} className="fill-current" /> 播放本集
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={onBookmark}
@@ -456,8 +464,10 @@ export const EpisodeDetail: React.FC = () => {
                     {shareCopied ? '已複製' : '分享'}
                   </button>
                   {episode.spotify_url && (
-                    <a href={episode.spotify_url} target="_blank" rel="noopener noreferrer" className="inline-flex shrink-0 items-center gap-1.5 px-3.5 py-2 rounded-full bg-card border border-border text-sm font-medium hover:bg-muted transition-colors">
-                      <ExternalLink size={13} /> Spotify
+                    /* Primary styling: with the player gone this is the listen action,
+                       not a secondary link. */
+                    <a href={episode.spotify_url} target="_blank" rel="noopener noreferrer" className="inline-flex shrink-0 items-center gap-1.5 px-4 py-2 rounded-full bg-foreground text-background text-sm font-medium hover:opacity-90 transition-opacity">
+                      <ExternalLink size={13} /> 在 Spotify 收聽
                     </a>
                   )}
                 </div>
