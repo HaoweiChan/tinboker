@@ -97,3 +97,33 @@ def test_cover_tiers_match_css():
 def test_cover_children_never_shrink():
     """The squeeze is what clipped mid-glyph; the tiers only work if it stays off."""
     assert "section.cover > * { flex: 0 0 auto; }" in cd.CARD_THEME_CSS
+
+
+# --- Cover title provenance ----------------------------------------------------------
+
+
+def test_cover_card_title_is_the_show_name_not_the_llm_deck_title():
+    """marp_writer hallucinates a famous show; the stored card must not repeat it.
+
+    13 of 83 recent covers had "股癌" stored as the title on episodes belonging to six
+    other podcasts. The render always overrode it, so nothing user-facing broke — but a
+    field named `title` that quietly lies is a trap for the next consumer.
+    """
+    from podcast.content_builder.nodes.social_cards_builder import cards_from_marp_slides
+
+    cards = cards_from_marp_slides(
+        {"title": "股癌 EP1172｜輝達破除魔咒", "slides": []},
+        ["重點一"],
+        "EP1172｜輝達破除魔咒，台股創反彈新高！",
+        show_name="兆華與股惑仔",
+    )
+    assert cards[0]["kind"] == "cover"
+    assert cards[0]["title"] == "兆華與股惑仔"
+    assert "股癌" not in cards[0]["title"]
+
+
+def test_cover_card_title_falls_back_to_episode_title_without_a_show_name():
+    from podcast.content_builder.nodes.social_cards_builder import cards_from_marp_slides
+
+    cards = cards_from_marp_slides({"title": "股癌 EP9", "slides": []}, [], "EP9 標題")
+    assert cards[0]["title"] == "EP9 標題"

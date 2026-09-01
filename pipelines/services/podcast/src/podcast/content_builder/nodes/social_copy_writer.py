@@ -56,6 +56,7 @@ def _cards_for_copy(state: PipelineState) -> list[dict[str, Any]]:
         state.get("marp_slides") or {},
         state.get("key_insights") or [],
         state.get("episode_title") or "",
+        show_name=(state.get("source") or state.get("podcast_name") or "").strip(),
     )
 
 

@@ -82,6 +82,7 @@ def cards_from_marp_slides(
     marp_slides: Optional[dict[str, Any]],
     key_insights: Optional[list[str]] = None,
     episode_title: str = "",
+    show_name: str = "",
 ) -> list[dict[str, Any]]:
     """Build the ordered cover+theme card list from structured marp slides.
 
@@ -96,7 +97,12 @@ def cards_from_marp_slides(
     """
     marp = marp_slides or {}
     insights = [s.strip() for s in (key_insights or []) if s and s.strip()]
-    deck_title = (marp.get("title") or episode_title or "").strip()
+    # The cover's title is the show name, never the LLM's deck title: marp_writer
+    # hallucinates a famous show (股癌 in 13 of 83 recent episodes, across six podcasts
+    # that are not 股癌). _cover_slide already renders `show_name` and ignores this
+    # field, so storing the hallucination only left a lie in the database waiting for
+    # the next consumer to trust a field named "title".
+    deck_title = (show_name or episode_title or "").strip()
 
     cards: list[dict[str, Any]] = [{
         "kind": "cover",
@@ -315,6 +321,7 @@ def assemble_social_cards(state: PipelineState) -> list[dict[str, Any]]:
     title = state.get("episode_title") or ""
     base = cards_from_marp_slides(
         state.get("marp_slides") or {}, state.get("key_insights") or [], title,
+        show_name=(state.get("source") or state.get("podcast_name") or "").strip(),
     )
     if len(base) == 1 and not base[0]["bullets"]:
         return []
