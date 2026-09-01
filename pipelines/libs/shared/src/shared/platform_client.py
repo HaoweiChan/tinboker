@@ -118,6 +118,29 @@ def fetch_translation_aliases(*, timeout: float = 10.0) -> list[dict[str, Any]] 
     )
 
 
+def fetch_translations_batch(
+    tickers: list[str], *, timeout: float = 10.0
+) -> list[dict[str, Any]] | None:
+    """Localized labels for an explicit ticker list — the operator-curated table.
+
+    ``GET {base}/api/stocks/translations/batch?tickers=A,B,C`` → the ``items`` list,
+    each with ``ticker``, ``market``, ``name_en``, ``name_zh_tw`` and ``display_name``.
+
+    Unlike ``fetch_translation_aliases`` (which only returns rows carrying curated
+    aliases — a few dozen at most), this resolves whatever symbols are asked for, so
+    it is the path for "what do we call 3037 on a card". Endpoint caps at 500.
+    """
+    symbols = [t.strip() for t in tickers if str(t).strip()][:500]
+    if not symbols:
+        return []
+    query = urllib.parse.urlencode({"tickers": ",".join(symbols)})
+    return _get_items(
+        f"/api/stocks/translations/batch?{query}",
+        timeout=timeout,
+        what="/api/stocks/translations/batch",
+    )
+
+
 def trigger_syndication(
     episode_id: str, *, platforms: str = "vocus,substack", publish_vocus: bool = False,
     publish_substack: bool = False, dry_run: bool = False, timeout: float = 60.0,

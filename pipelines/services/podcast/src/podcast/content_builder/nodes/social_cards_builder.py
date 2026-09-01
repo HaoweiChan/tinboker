@@ -17,7 +17,7 @@ import re
 from typing import Any, Optional
 
 from shared.platform_client import social_enabled_for
-from shared.tickers import canonical_symbol, lookup_ticker
+from shared.tickers import canonical_symbol, lookup_ticker, prime_tickers
 
 from ...exporters.ticker_insights import market_for_ticker, score_to_label
 from ..state import PipelineState
@@ -295,6 +295,15 @@ def cards_from_ticker_insights(
     return cards
 
 
+def _deck_tickers(state: PipelineState) -> set[str]:
+    """Every symbol the deck may print a name for: the canonical list + insight rows."""
+    from ...exporters.ticker_insights import iter_insight_tickers
+    symbols = canonical_ticker_set(state.get("related_tickers"))
+    return symbols | {
+        canonical_symbol(str(t)) for t in iter_insight_tickers(state.get("ticker_insights") or {})
+    }
+
+
 def assemble_social_cards(state: PipelineState) -> list[dict[str, Any]]:
     """Assemble the unified deck (≤~8 slides) shared by the PNG carousel and the
     on-page episode Marp — so the two are byte-for-byte the same card set.
@@ -311,6 +320,10 @@ def assemble_social_cards(state: PipelineState) -> list[dict[str, Any]]:
         return []
 
     cover, themes = base[0], base[1:MAX_THEME_CARDS + 1]
+    # Pull the operator-curated zh-TW names for this episode's symbols before any card
+    # renders one: without it a TW listing resolves to nothing and the card shows the
+    # bare code ("3037") where "欣興" belongs.
+    prime_tickers(_deck_tickers(state))
     ticker_cards = cards_from_ticker_insights(
         state.get("ticker_insights") or {}, title,
         canonical_ticker_set(state.get("related_tickers")),

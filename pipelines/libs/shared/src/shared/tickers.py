@@ -6,6 +6,8 @@ The registry data lives in ``shared/data/tickers.json``. This module loads it on
   canonical symbol (``"2330"``); unknown symbols return ``raw.strip().upper()`` unchanged.
 - :func:`lookup_ticker` — return :class:`TickerInfo` for a symbol/alias, or ``None`` if not in the
   registry.
+- :func:`prime_tickers` — pull the platform's curated zh-TW names for a specific symbol list
+  (the ``/translations/batch`` table) and merge them into the index before rendering.
 
 Consumer: ``shared.wiki_builder.ingest_episode`` (to set real names + market on entity pages).
 Extend ``tickers.json`` freely.
@@ -14,10 +16,11 @@ Extend ``tickers.json`` freely.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from functools import lru_cache
 
-from shared.platform_client import fetch_translation_aliases
+from shared.platform_client import fetch_translation_aliases, fetch_translations_batch
 
 
 @dataclass(frozen=True)
@@ -44,39 +47,57 @@ def _norm(raw: str) -> str:
     return s
 
 
+# Symbols already asked of /translations/batch this process — one round trip per
+# symbol, and a miss stays a miss (no retry storm on an episode full of junk codes).
+_PRIMED: set[str] = set()
+
+
+def _register(out: dict[str, TickerInfo], info: TickerInfo, *, override: bool) -> None:
+    """Index ``info`` under its symbol, aliases and normalized forms."""
+    keys = {info.symbol, _norm(info.symbol), *info.aliases, *(_norm(a) for a in info.aliases)}
+    for k in keys:
+        if not k:
+            continue
+        if override:
+            out[k] = info
+        else:
+            out.setdefault(k, info)
+
+
+def _info_from_translation(item: dict) -> TickerInfo | None:
+    """Build a :class:`TickerInfo` from one ``/api/stocks/translations`` row."""
+    symbol = (item.get("ticker") or "").strip().upper()
+    if not symbol:
+        return None
+    aliases = item.get("aliases") or []
+    return TickerInfo(
+        symbol=symbol,
+        name=item.get("name_zh_tw") or item.get("name_en") or symbol,
+        name_en=item.get("name_en") or item.get("name_zh_tw") or symbol,
+        market=item.get("market", ""),
+        sector="",
+        type="company",
+        aliases=tuple(aliases),
+    )
+
+
 @lru_cache(maxsize=1)
 def _index() -> dict[str, TickerInfo]:
-    """Flat lookup index: every canonical symbol, alias, and normalized form -> TickerInfo."""
+    """Flat lookup index: every canonical symbol, alias, and normalized form -> TickerInfo.
+
+    The local seed is the floor and the platform rows are the overlay. Merging rather
+    than choosing matters: ``/translations/aliases`` only returns rows that carry a
+    curated alias — a few dozen — so treating a successful-but-thin response as the
+    whole registry left every TW listing unresolved, and cards rendered a bare "3037"
+    where the name belonged.
+    """
     out: dict[str, TickerInfo] = {}
 
-    # 1. Try to fetch from platform API
-    items = fetch_translation_aliases()
-    if items is not None:
-        for item in items:
-            symbol = item.get("ticker", "").strip().upper()
-            if not symbol:
-                continue
-            aliases = item.get("aliases", []) or []
-            info = TickerInfo(
-                symbol=symbol,
-                name=item.get("name_zh_tw") or item.get("name_en") or symbol,
-                name_en=item.get("name_en") or item.get("name_zh_tw") or symbol,
-                market=item.get("market", ""),
-                sector="",
-                type="company",
-                aliases=tuple(aliases),
-            )
-            keys = {symbol, _norm(symbol), *aliases, *(_norm(a) for a in aliases)}
-            for k in keys:
-                if k:
-                    out.setdefault(k, info)
-        return out
-
-    # 2. Fall back to local seed backup
+    # 1. Local seed backup — broad, offline, possibly stale.
     from shared.tickers_seed_backup import TICKERS_SEED
     for symbol, meta in TICKERS_SEED.items():
         aliases = meta.get("aliases", []) or []
-        info = TickerInfo(
+        _register(out, TickerInfo(
             symbol=symbol,
             name=meta.get("name", symbol),
             name_en=meta.get("name_en", symbol),
@@ -84,12 +105,45 @@ def _index() -> dict[str, TickerInfo]:
             sector=meta.get("sector", ""),
             type=meta.get("type", "company"),
             aliases=tuple(aliases),
-        )
-        keys = {symbol, _norm(symbol), *aliases, *(_norm(a) for a in aliases)}
-        for k in keys:
-            if k:
-                out.setdefault(k, info)
+        ), override=False)
+
+    # 2. Platform rows win where they exist — that table is the operator-curated one.
+    for item in fetch_translation_aliases() or []:
+        info = _info_from_translation(item)
+        if info:
+            _register(out, info, override=True)
     return out
+
+
+def prime_tickers(symbols: Iterable[str]) -> None:
+    """Merge the platform's translations for ``symbols`` into the lookup index.
+
+    ``/translations/aliases`` carries only alias-bearing rows, so a symbol we are
+    about to render (a card, a wiki page) may resolve to nothing but itself. This
+    asks the translations table for exactly the symbols in hand and folds the answer
+    into the shared index, so ``lookup_ticker`` returns the operator-curated zh-TW
+    name instead of the seed's (or the raw code).
+
+    Best-effort: a missing base URL or an unreachable platform leaves the index as-is.
+    """
+    wanted = {s.strip().upper() for s in symbols if str(s).strip()}
+    if not wanted:
+        return
+    idx = _index()
+    missing = sorted(w for w in wanted if w not in _PRIMED)
+    if not missing:
+        return
+    _PRIMED.update(missing)
+    for item in fetch_translations_batch(missing) or []:
+        info = _info_from_translation(item)
+        if not info:
+            continue
+        # One symbol can carry both a TW and a US row (2454 is listed as both). Keep
+        # the one whose market matches the symbol's shape; numeric codes are TW.
+        expected = "TW" if info.symbol.rstrip("ABC").isdigit() else "US"
+        if (info.market or expected).upper() != expected and info.symbol in idx:
+            continue
+        _register(idx, info, override=True)
 
 
 def lookup_ticker(raw: str) -> TickerInfo | None:

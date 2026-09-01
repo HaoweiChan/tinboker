@@ -179,7 +179,7 @@ def run_pipeline(
         result.get("tags", []), result.get("sector_exposures", [])
     )
 
-    return {
+    outputs = {
         "markdown_report": result.get("markdown_report", ""),
         "events_markdown": result.get("events_markdown", ""),
         "marp_markdown": result.get("marp_markdown", ""),
@@ -196,3 +196,18 @@ def run_pipeline(
         "sector_ids": result.get("sector_ids", []),
         "unresolved_market_trend_ids": result.get("unresolved_market_trend_ids", []),
     }
+
+    # One proper-noun pass over everything the reader sees. It has to run here, after
+    # the join: the branches correct the ASR's mishearings independently (only the
+    # writer is even told to), so an episode reaches this point holding two spellings
+    # of the same company. One map applied to every artifact is what makes them agree.
+    from shared.tickers import lookup_ticker
+
+    from .name_normalizer import normalize_names
+
+    ticker_names = [
+        info.name for info in (lookup_ticker(str(t)) for t in related_tickers) if info
+    ]
+    return normalize_names(
+        outputs, source=source, episode_title=episode_title, ticker_names=ticker_names
+    )
