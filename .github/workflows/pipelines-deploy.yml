@@ -131,6 +131,19 @@ jobs:
             # aligns them to the carousel cards), and it costs ~1/5 of sonnet per run.
             # Every other role stays on deepseek.
             Environment=SOCIAL_COPY_WRITER_MODEL=openrouter:google/gemini-3.7-flash
+            # extractor pinned to flash: it is the ONLY role that receives {sentences} (the raw
+            # transcript), so it alone accounts for the bulk of prompt-token spend — 30 days of
+            # v4-pro was 175M prompt tokens, 84% of the whole OpenRouter bill. Measured on 4
+            # episodes (537 / 800 / 1102 / 2732 sentences), flash-0731 matched v4-pro on every
+            # correctness axis that matters here — 100% sentence coverage, no out-of-range index
+            # ranges, no off-vocabulary segment_type, no simplified glyphs — and consolidate_chapters
+            # normalised the higher raw event count to the SAME chapter count (4 vs 4, 8 vs 8),
+            # because _target_chapter_count is driven by duration, not by how finely the extractor
+            # split. Cost per episode fell 93-98%. The 2026-06 bake-off that chose v4-pro judged
+            # tag vocabulary and ticker linking — both the writer's and ticker_extractor's job, on
+            # {events}, not the transcript — so the role burning the tokens was never the one the
+            # decision was about. Those roles stay on v4-pro via PIPELINE_LLM_MODEL above.
+            Environment=EXTRACTOR_MODEL=openrouter:deepseek/deepseek-v4-flash-0731
             # Use the platform source-of-truth show list (same as run_nightly.sh).
             Environment=TINBOKER_PLATFORM_API_URL=https://api.tinboker.com
             # /api/admin/* is not mounted in production by design; staging shares the DB.
