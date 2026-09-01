@@ -70,6 +70,10 @@ def _get_items(path: str, *, timeout: float = 10.0, what: str = "data") -> list[
     except (urllib.error.URLError, TimeoutError, ValueError, OSError) as exc:
         print(f"Warning: platform {what} unavailable ({exc}); falling back to local config")
         return None
+    # Most endpoints wrap rows in {"items": [...]}; a few (ticker-insights/trending)
+    # return the bare list. Accept either so callers don't need two fetchers.
+    if isinstance(payload, list):
+        return payload
     items = payload.get("items") if isinstance(payload, dict) else None
     return items if isinstance(items, list) else None
 
@@ -138,6 +142,23 @@ def fetch_translations_batch(
         f"/api/stocks/translations/batch?{query}",
         timeout=timeout,
         what="/api/stocks/translations/batch",
+    )
+
+
+def fetch_trending_tickers(
+    *, days: int = 30, limit: int = 100, timeout: float = 10.0
+) -> list[dict[str, Any]] | None:
+    """The tickers our shows have actually been talking about, most-mentioned first.
+
+    ``GET {base}/api/ticker-insights/trending?days=&limit=`` → rows of
+    ``{ticker, count, sentiment_label, last_mentioned}``. Refreshed hourly platform-side,
+    so it is a free, self-maintaining answer to "what vocabulary is in play this month".
+    """
+    query = urllib.parse.urlencode({"days": days, "limit": limit})
+    return _get_items(
+        f"/api/ticker-insights/trending?{query}",
+        timeout=timeout,
+        what="/api/ticker-insights/trending",
     )
 
 

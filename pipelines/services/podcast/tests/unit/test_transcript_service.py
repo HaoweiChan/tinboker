@@ -2,6 +2,7 @@
 Unit tests for transcript service initialization and configuration.
 """
 
+import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -52,8 +53,33 @@ class TestTranscriptService:
         service = initialize_stt_service(config)
         
         assert service == mock_service
-        mock_groq_class.assert_called_once_with(model="whisper-large-v3")
+        # The vocabulary hint rides along with the model, but is opt-in — see
+        # pipeline/stt_prompt.py for the measurements behind that default.
+        (_, kwargs) = mock_groq_class.call_args
+        assert kwargs["model"] == "whisper-large-v3"
+        assert kwargs["prompt"] is None
     
+    @patch.dict(os.environ, {"STT_VOCAB_PROMPT": "1"})
+    @patch('src.service.speech_to_text.GroqService')
+    def test_groq_gets_the_vocabulary_hint_when_enabled(self, mock_groq_class):
+        """With the switch on, the recurring names reach the API call."""
+        from src.pipeline.stt_prompt import build_stt_prompt
+        build_stt_prompt.cache_clear()
+        mock_groq_class.return_value = MagicMock()
+        config = PipelineConfig(
+            config_file=Path("test.json"),
+            podcast_name="Test",
+            podcast_link="https://test.com",
+            stt_service_name="groq",
+            stt_model="whisper-large-v3",
+        )
+        try:
+            initialize_stt_service(config)
+            (_, kwargs) = mock_groq_class.call_args
+            assert "華許" in kwargs["prompt"]
+        finally:
+            build_stt_prompt.cache_clear()
+
     @patch('src.service.speech_to_text.WhisperService')
     def test_initialize_whisper_service(self, mock_whisper_class):
         """Test initializing WhisperService."""
