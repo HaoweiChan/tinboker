@@ -87,10 +87,7 @@ interface BackendStockEvent {
  * Transform backend NodeData to frontend StockNodeData
  * Generates missing fields like history (sparkline data) from chartData if available
  */
-function transformNodeData(
-  backendData: BackendNode['data'],
-  _ticker: string
-): Partial<StockNodeData> {
+function transformNodeData(backendData: BackendNode['data']): Partial<StockNodeData> {
   return {
     label: backendData.label,
     ticker: backendData.ticker,
@@ -104,7 +101,7 @@ function transformNodeData(
  * Transform backend Node to frontend GraphNode
  */
 export function transformNode(backendNode: BackendNode): GraphNode {
-  const nodeData = transformNodeData(backendNode.data, backendNode.data.ticker);
+  const nodeData = transformNodeData(backendNode.data);
   // Extract marketCap and revenue separately to ensure they're numbers
   const { marketCap: rawMarketCap, revenue: rawRevenue, ...restNodeData } = nodeData;
   const marketCap = rawMarketCap !== undefined
@@ -348,7 +345,7 @@ export function transformApiEpisodeToMock(apiEpisode: ApiEpisode): MockEpisode |
     // otherwise getEpisodeAudioUrl() would produce /api/podcast//episodes/{id}/audio
     // (or .../undefined/...) which 404s and silently breaks playback.
     mp3Url: podcastName && (apiEpisode.mp3_url || apiEpisode.mp3_public_url)
-      ? getEpisodeAudioUrl(podcastName, apiEpisode.id)
+      ? getEpisodeAudioUrl(podcastName, apiEpisode.id, apiEpisode.spotify_url)
       : undefined,
     keyInsights: apiEpisode.key_insights || [],
   };
