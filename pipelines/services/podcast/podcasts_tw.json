@@ -16,7 +16,8 @@
     "transcript_option": {
       "transcript_service": "groq",
       "model": "whisper-large-v3"
-    }
+    },
+    "spotify_show_link": "https://open.spotify.com/show/3q2hc5Zsk9nFEYxXmMqVDW"
   },
   {
     "name": "游庭皓的財經皓角",
@@ -96,11 +97,10 @@
     "limit": 10,
     "lookback_days": 60,
     "max_episodes": 20,
-    "spotify_show_link": "https://open.spotify.com/show/7nZ5g4M8L9G2fXz1k4JpQW",
+    "spotify_show_link": "https://open.spotify.com/show/66ENh5UtNA3pPNOT0IZjO1",
     "transcript_option": {
       "transcript_service": "groq",
       "model": "whisper-large-v3"
     }
   }
 ]
-

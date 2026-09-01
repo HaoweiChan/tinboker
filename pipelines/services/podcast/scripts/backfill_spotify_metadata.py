@@ -199,7 +199,7 @@ def main() -> int:
         for row in rows:
             by_show.setdefault(row.podcast_name, []).append(row)
 
-        matched = skipped_no_link = not_found = 0
+        matched = skipped_no_link = show_unreachable = not_found = 0
         for show_name, show_rows in by_show.items():
             link = show_links.get(show_name)
             if not link:
@@ -208,14 +208,14 @@ def main() -> int:
                 continue
             show_id = parser.extract_show_id(link)
             if not show_id:
-                skipped_no_link += len(show_rows)
+                show_unreachable += len(show_rows)
                 print(f"— {show_name}: unusable show link {link}")
                 continue
             try:
                 catalogue = parser.get_all_episodes(show_id, limit=args.search_depth)
             except Exception as e:  # noqa: BLE001 - one bad show must not sink the run
-                skipped_no_link += len(show_rows)
-                print(f"— {show_name}: catalogue fetch failed ({e})")
+                show_unreachable += len(show_rows)
+                print(f"— {show_name}: catalogue fetch FAILED — {e}")
                 continue
             print(f"— {show_name}: {len(catalogue)} episode(s) on Spotify,"
                   f" matching {len(show_rows)}")
@@ -239,7 +239,14 @@ def main() -> int:
         if args.apply:
             conn.commit()
 
-    print(f"\nmatched={matched}  not_found={not_found}  no_show_link={skipped_no_link}")
+    # Kept apart on purpose. Collapsing them read as "not configured" for
+    # 韭菜畢業班, whose link WAS configured and simply 404s — the same dead-link
+    # failure 兆華與股惑仔 had. One label hid a fixable bug behind a known gap.
+    print(f"\nmatched={matched}  not_found={not_found}"
+          f"  no_show_link={skipped_no_link}  show_unreachable={show_unreachable}")
+    if show_unreachable:
+        print("  ^ a configured show link is dead or its catalogue failed — check the"
+              " show ids above, not the episode titles.")
     if not args.apply:
         print("Dry run — re-run with --apply to write.")
     return 0
