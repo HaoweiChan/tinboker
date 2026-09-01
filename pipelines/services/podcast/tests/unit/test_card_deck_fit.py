@@ -48,3 +48,52 @@ def test_cover_renders_show_name_and_episode_subtitle():
 def test_cover_without_subtitle_omits_div():
     md = cd._cover_slide({"kind": "cover", "subtitle": "", "bullets": []}, show_name="某節目", date_str="")
     assert 'class="subtitle"' not in md
+
+
+# --- Cover auto-fit -----------------------------------------------------------------
+# The cover had no fit logic at all: the episode subtitle and the hook are both
+# unbounded (feed title, three joined insights), so a long episode overflowed the
+# 864px content box and the flex layout squeezed .subtitle until overflow:hidden
+# sliced it through the middle of a glyph row. 55 of 83 recent covers did this.
+
+
+def test_short_cover_stays_full_size():
+    assert cd._cover_fit_suffix("股癌", "2026/6/27 蘋果漲價潮", "重點一，重點二。") == ""
+
+
+def test_long_cover_shrinks():
+    suffix = cd._cover_fit_suffix(
+        "兆華與股惑仔",
+        "EP1173｜華許說完讓升息機率大增，9月魔咒能破嗎？MSCI拉尾，Q4還有做夢行情！"
+        "欣興賣不掉怎辦，盤點各利空該有的跌幅？ft.題材獵人 林漢偉",
+        # the real hook: three key insights joined, as _cover_slide builds it
+        "欣興電子遭搜索，財務面合理跌幅約20%，但若涉洗產地恐引發美方制裁與法人永久性賣壓，"
+        "聯準會主席華許刻意不給前瞻指引，政策不確定性將持續壓抑科技股與成長股評價，"
+        "MSCI意外調升台股三項權重，被動資金尾盤大舉進場，顯示國際資金對台股配置需求強勁。",
+    )
+    assert suffix in {"fit-s", "fit-xs", "fit-xxs"}
+
+
+def test_cover_fit_is_monotonic_in_content_volume():
+    order = [t[0] for t in cd._COVER_TIERS]
+    small = cd._cover_fit_suffix("節目", "短標題", "短鉤子。")
+    big = cd._cover_fit_suffix("節目", "長標題" * 30, "很長的鉤子" * 40)
+    assert order.index(big) >= order.index(small)
+
+
+def test_cover_fit_class_is_emitted_in_slide_markdown():
+    card = {"kind": "cover", "subtitle": "長標題" * 30, "bullets": ["重點" * 40] * 3}
+    md = cd._cover_slide(card, "兆華與股惑仔", "2026.08.31")
+    assert md.startswith("<!-- _class: cover ")
+    assert any(s in md for s in ("fit-s", "fit-xs", "fit-xxs"))
+
+
+def test_cover_tiers_match_css():
+    for suffix, *_ in cd._COVER_TIERS:
+        if suffix:
+            assert f"section.cover.{suffix} .subtitle" in cd.CARD_THEME_CSS
+
+
+def test_cover_children_never_shrink():
+    """The squeeze is what clipped mid-glyph; the tiers only work if it stays off."""
+    assert "section.cover > * { flex: 0 0 auto; }" in cd.CARD_THEME_CSS
