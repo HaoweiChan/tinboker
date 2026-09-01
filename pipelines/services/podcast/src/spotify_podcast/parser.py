@@ -2,6 +2,7 @@
 Core parser for Spotify podcast shows and episodes.
 """
 
+import time
 from typing import Dict, List, Optional
 
 import requests
@@ -11,6 +12,8 @@ class SpotifyPodcastParser:
     """Parser for Spotify podcast shows and episodes."""
     
     BASE_URL = "https://api.spotify.com/v1"
+    MAX_RETRIES = 4
+    MAX_RETRY_WAIT = 60  # seconds; a longer Retry-After is honoured up to this cap
     
     def __init__(self, access_token: Optional[str] = None):
         """
@@ -90,100 +93,122 @@ class SpotifyPodcastParser:
         params = {"limit": min(limit, 50), "offset": offset}
         
         try:
-            response = requests.get(url, headers=self.headers, params=params)
+            # Spotify rate-limits hard and answers 429 with Retry-After in seconds.
+            # Without this a burst — the backfill pages ~24 requests per show — dies
+            # partway through and the caller cannot tell a throttle from a real miss.
+            for attempt in range(self.MAX_RETRIES):
+                response = requests.get(url, headers=self.headers, params=params)
+                if response.status_code != 429:
+                    break
+                wait = int(response.headers.get("Retry-After") or 5)
+                # A long Retry-After is a quota window, not a burst. Spotify answered
+                # 2101 seconds after the first backfill attempt — sleeping through that
+                # in-process would hang a batch job for 35 minutes, and retrying anyway
+                # just spends more requests against a closed window. Say how long and
+                # let the caller come back.
+                if wait > self.MAX_RETRY_WAIT or attempt == self.MAX_RETRIES - 1:
+                    raise ValueError(
+                        f"Error fetching episodes: rate limited, retry in {wait}s"
+                        f" (attempt {attempt + 1}/{self.MAX_RETRIES})"
+                    )
+                time.sleep(wait)
             response.raise_for_status()
             data = response.json()
-            
-            # Add embed URLs to episodes
+
+            # `if episode` guards the nulls Spotify returns for episodes unavailable in
+            # the token's market — this loop is upstream of every other null filter, so
+            # without it get_episodes raises before a caller can drop them.
             if "items" in data:
                 for episode in data["items"]:
+                    if not episode:
+                        continue
                     episode_id = episode.get('id')
                     if episode_id:
                         episode['embed_url'] = f"https://open.spotify.com/embed/episode/{episode_id}"
-            
+
             return data
         except requests.exceptions.RequestException as e:
             raise ValueError(f"Error fetching episodes: {e}") from e
     
-    def get_all_episodes(self, show_id: str) -> List[Dict]:
+    def get_all_episodes(self, show_id: str, limit: Optional[int] = None) -> List[Dict]:
         """
-        Get all episodes for a show (handles pagination).
-        
+        Get a show's episodes, paginating until exhausted or ``limit`` is collected.
+
         Args:
             show_id: Spotify show ID
-        
+            limit: stop once this many episodes are collected (None = the whole show)
+
         Returns:
-            List of all episodes with embed URLs added
+            List of episodes, nulls removed
+
+        Spotify puts a literal null in ``items`` for episodes unavailable in the token's
+        market. Callers iterate these and ``episode.get(...)`` raises, which
+        get_spotify_metadata swallowed as a bare "Error fetching Spotify metadata" — the
+        failure seen against 游庭皓的財經皓角. The offset still advances by the raw batch
+        length, because those nulls occupy their positions.
         """
-        all_episodes = []
+        all_episodes: List[Dict] = []
         offset = 0
-        limit = 50
-        
+        page = 50
+
         while True:
-            result = self.get_episodes(show_id, limit=limit, offset=offset)
+            want = page if limit is None else min(page, limit - len(all_episodes))
+            if want <= 0:
+                break
+            result = self.get_episodes(show_id, limit=want, offset=offset)
             if not result or "items" not in result:
                 break
-            
+
             episodes = result["items"]
             if not episodes:
                 break
-            
-            all_episodes.extend(episodes)
-            
-            # Check if there are more pages
+
+            all_episodes.extend(e for e in episodes if e)
+
             if not result.get("next"):
                 break
-            
-            offset += limit
-        
+
+            offset += len(episodes)
+
         return all_episodes
     
-    def find_episode_by_title(self, show_id: str, episode_title: str, limit: int = 100) -> Optional[Dict]:
+    @staticmethod
+    def match_title(episodes: list[Dict], episode_title: str) -> Optional[Dict]:
+        """Pick the episode whose title matches, exact first across the whole list.
+
+        Separated from fetching so a caller with many titles for one show can page the
+        catalogue once and match against it in memory. Doing it per title cost one full
+        pagination each, which rate-limited Spotify at around 100 episodes.
         """
-        Find an episode by matching its title.
-        
-        Args:
-            show_id: Spotify show ID
-            episode_title: Episode title to search for (e.g., "EP617 | 👾")
-            limit: Maximum number of episodes to search through (default: 100)
-        
-        Returns:
-            Episode dictionary if found, None otherwise
-        """
-        # Normalize the search title (remove extra spaces, lowercase for comparison)
-        normalized_search = episode_title.strip().lower()
-        
-        # Fetch episodes (up to limit)
-        result = self.get_episodes(show_id, limit=min(limit, 50), offset=0)
-        if not result or "items" not in result:
+        normalized_search = (episode_title or "").strip().lower()
+        if not normalized_search:
             return None
-        
-        episodes = result["items"]
-        
-        # Try exact match first
+
         for episode in episodes:
-            episode_name = episode.get('name', '').strip()
-            if episode_name.lower() == normalized_search:
+            if (episode.get("name") or "").strip().lower() == normalized_search:
                 return episode
-        
-        # Try partial match (in case of slight differences)
+
+        # Containment either way round, guarded on length: a Spotify title like "EP1" is
+        # a substring of half a back catalogue, and attaching the wrong episode's URL is
+        # worse than attaching none.
+        MIN_PARTIAL = 8
         for episode in episodes:
-            episode_name = episode.get('name', '').strip()
-            # Check if the normalized search title is contained in episode name or vice versa
-            if normalized_search in episode_name.lower() or episode_name.lower() in normalized_search:
+            name = (episode.get("name") or "").strip().lower()
+            if not name:
+                continue
+            if len(normalized_search) >= MIN_PARTIAL and normalized_search in name:
                 return episode
-        
-        # If not found in first batch and there are more episodes, search more
-        if result.get("next") and limit > 50:
-            # Get more episodes
-            result2 = self.get_episodes(show_id, limit=min(limit - 50, 50), offset=50)
-            if result2 and "items" in result2:
-                for episode in result2["items"]:
-                    episode_name = episode.get('name', '').strip()
-                    if episode_name.lower() == normalized_search:
-                        return episode
-                    if normalized_search in episode_name.lower() or episode_name.lower() in normalized_search:
-                        return episode
-        
+            if len(name) >= MIN_PARTIAL and name in normalized_search:
+                return episode
         return None
+
+    def find_episode_by_title(self, show_id: str, episode_title: str, limit: int = 100) -> Optional[Dict]:
+        """Find one episode by title. Pages the catalogue, so do not call it in a loop.
+
+        For many titles from the same show use ``get_all_episodes`` once and
+        ``match_title`` per title — see scripts/backfill_spotify_metadata.py.
+        """
+        if not (episode_title or "").strip():
+            return None
+        return self.match_title(self.get_all_episodes(show_id, limit=limit), episode_title)
 

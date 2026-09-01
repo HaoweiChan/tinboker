@@ -89,12 +89,15 @@ async def test_sitemap_lists_visible_sectors_and_skips_hidden_tags(monkeypatch):
     monkeypatch.setattr(seo.podcast_service, "list_sectors", _sectors)
     monkeypatch.setattr(seo.podcast_service, "get_all_tags", _tags)
     monkeypatch.setattr(seo, "served_sector_exposure_ids", lambda db: {"sector_mlcc"})
-    monkeypatch.setattr(seo, "hidden_tag_slugs", lambda db: {"junktag"})
     monkeypatch.setattr(settings, "site_url", "https://tinboker.com")
 
     body = (await seo.sitemap(limit=10, db=object())).body.decode()
 
     assert "<loc>https://tinboker.com/sector/sector_mlcc</loc>" in body
     assert "sector_retired" not in body
-    assert "<loc>https://tinboker.com/topics/ai</loc>" in body
-    assert "junk_tag" not in body
+
+    # No per-tag URLs at all. /topics/:tag is 97 characters of its own content around a
+    # link list, repeated across ~166 pages — the shape AdSense suspended the site over.
+    # The /topics index stays (STATIC_PATHS); the individual tag pages do not.
+    assert "/topics/" not in body
+    assert "<loc>https://tinboker.com/topics</loc>" in body
