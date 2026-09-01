@@ -194,6 +194,28 @@ def _count_hits(doc: dict, mapping: dict[str, str]) -> dict[str, int]:
     return hits
 
 
+def _write_doc(conn, episode_id: str, fields: dict) -> None:
+    """Merge ``fields`` into the episode's stored doc (a partial JSONB update)."""
+    from psycopg.types.json import Jsonb
+    from src.podcast.exporters.postgres_mirror import SCHEMA
+    with conn.cursor() as cur:
+        cur.execute(
+            f'UPDATE "{SCHEMA}".episodes SET doc = doc || %s WHERE episode_id = %s',
+            (Jsonb(fields), episode_id),
+        )
+    conn.commit()
+
+
+def _restore(conn, path: str) -> int:
+    """Put back every value saved in a backup file."""
+    saved = json.load(open(path, encoding="utf-8"))
+    for episode_id, fields in saved.items():
+        _write_doc(conn, episode_id, fields)
+        print(f"  ↩ restored {episode_id} ({', '.join(sorted(fields))})")
+    print(f"\n{len(saved)} episodes restored from {path}")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -205,16 +227,23 @@ def main() -> int:
                     help="write the proposed corrections to a JSON file for review")
     ap.add_argument("--from-plan", metavar="FILE",
                     help="use an approved plan file instead of asking the model again")
+    ap.add_argument("--backup-out", metavar="FILE", default="name-backfill-backup.json",
+                    help="where --apply saves the pre-change values (default: %(default)s)")
+    ap.add_argument("--restore", metavar="FILE",
+                    help="put back the values saved in a backup file and exit")
     ap.add_argument("--limit", type=int, default=200, help="max episodes to examine")
     ap.add_argument("--podcast", help="restrict to one show")
     ap.add_argument("--episode", help="restrict to one episode id")
     args = ap.parse_args()
 
     conn = _connect()
-    if args.apply and conn is None:
-        print("ERROR: --apply needs EPISODE_DATABASE_URL to resolve. Refusing to "
+    if (args.apply or args.restore) and conn is None:
+        print("ERROR: writing needs EPISODE_DATABASE_URL to resolve. Refusing to "
               "pretend: run this where the database is reachable.")
         return 2
+
+    if args.restore:
+        return _restore(conn, args.restore)
 
     if conn is not None:
         from src.podcast.exporters.postgres_mirror import SCHEMA
@@ -252,6 +281,7 @@ def main() -> int:
     changed = 0
     total_occurrences = 0
     plan: dict[str, dict[str, str]] = {}
+    backup: dict[str, dict] = {}
     for ep in episodes:
         if args.from_plan:
             # Trust the reviewed file verbatim — no second opinion, no drift between
@@ -272,17 +302,20 @@ def main() -> int:
         print("    fields: " + ", ".join(f"{k}×{v}" for k, v in sorted(hits.items())))
 
         if args.apply:
-            updated = {k: apply_corrections(_loads(ep.get(k)), mapping)
-                       for k in DOC_FIELDS if ep.get(k)}
-            from psycopg.types.json import Jsonb
-            from src.podcast.exporters.postgres_mirror import SCHEMA
-            with conn.cursor() as cur:  # type: ignore[union-attr]
-                cur.execute(
-                    f'UPDATE "{SCHEMA}".episodes SET doc = doc || %s WHERE episode_id = %s',
-                    (Jsonb(updated), ep["id"]),
-                )
-            conn.commit()  # type: ignore[union-attr]
+            touched = [k for k in DOC_FIELDS if ep.get(k)]
+            # Snapshot before overwriting. A correction map is cheap to re-derive; the
+            # prose it rewrote is not, and this writes to the one database every
+            # environment shares.
+            backup[ep["id"]] = {k: _loads(ep.get(k)) for k in touched}
+            updated = {k: apply_corrections(_loads(ep.get(k)), mapping) for k in touched}
+            _write_doc(conn, ep["id"], updated)
             print("    ✓ written")
+
+    if backup:
+        with open(args.backup_out, "w", encoding="utf-8") as f:
+            json.dump(backup, f, ensure_ascii=False)
+        print(f"\nbackup of the previous values: {args.backup_out}")
+        print(f"  undo with: --restore {args.backup_out}")
 
     if args.plan_out:
         with open(args.plan_out, "w", encoding="utf-8") as f:
