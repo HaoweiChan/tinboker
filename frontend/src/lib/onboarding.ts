@@ -42,6 +42,14 @@ export interface ChangelogEntry {
 //   docs/workflows/deploy-flow.md § "In-app changelog (What's new)".
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.11.11',
+    date: '2026-09',
+    items: [
+      '單集頁新增「在 Spotify 收聽」，直接前往節目的原始來源收聽。',
+      '摘要、投影片與社群卡片的公司名與人名誤植大幅減少，同一集各處的寫法也統一了。',
+    ],
+  },
+  {
     version: '0.11.6',
     date: '2026-08',
     items: [
