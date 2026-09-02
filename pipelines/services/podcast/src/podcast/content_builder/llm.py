@@ -50,6 +50,7 @@ _ROLE_ENV: dict[str, str] = {
     "key_insights_extractor": "KEY_INSIGHTS_EXTRACTOR_MODEL",
     "social_copy_writer": "SOCIAL_COPY_WRITER_MODEL",
     "sector_verifier": "SECTOR_VERIFIER_MODEL",
+    "name_normalizer": "NAME_NORMALIZER_MODEL",
 }
 
 

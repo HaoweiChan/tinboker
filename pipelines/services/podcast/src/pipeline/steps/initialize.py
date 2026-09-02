@@ -22,11 +22,16 @@ def initialize_stt_service(config: PipelineConfig) -> object:
     from src.service.speech_to_text import GroqService, WhisperService
     service_name_lower = config.stt_service_name.lower()
     if service_name_lower in ["whisper", "openai"]:
+        # No vocabulary hint here: OpenAI's client wrapper takes no prompt and every
+        # configured show runs on Groq. Wire it through if that ever changes.
         return WhisperService()
     elif service_name_lower == "groq":
         # Use model from config if provided, otherwise default to "whisper-large-v3-turbo"
         model = config.stt_model if config.stt_model else "whisper-large-v3-turbo"
-        return GroqService(model=model)
+        # Bias the decoder toward names it cannot infer from audio alone (欣興 vs 新興,
+        # Warsh vs Walsh). Empty string ⇒ no prompt, so a platform outage is harmless.
+        from src.pipeline.stt_prompt import build_stt_prompt
+        return GroqService(model=model, prompt=build_stt_prompt() or None)
     else:
         # Default to Whisper if service name is not recognized
         print(f"⚠ Warning: Unknown STT service '{config.stt_service_name}', defaulting to Whisper")

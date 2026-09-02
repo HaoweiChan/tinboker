@@ -1059,38 +1059,66 @@ class GroqService(SpeechToTextService):
         else:
             return self._transcribe_file_direct(audio_path, language)
     
-    def _transcribe_file_direct(self, audio_path: Path, language: Optional[str]) -> Dict[str, Any]:
-        """Transcribe a file directly without chunking."""
+    # A vocabulary prompt biases Whisper toward names it cannot infer from audio, but it
+    # can also derail the decoder entirely: on a randomly chosen 32s clip of ordinary
+    # market commentary (164 characters un-prompted) a 14-term prompt returned
+    # "詞曲 李宗盛主要的負擔是" and nothing else — a hallucinated song credit.
+    #
+    # Segment coverage is NOT the signal: Whisper reports a segment spanning the full 32
+    # seconds while emitting twelve characters. Density is. Mandarin speech in these shows
+    # runs 4.5–5.6 characters per second; every collapse measured came in under 2.
+    _MIN_CHARS_PER_SECOND = 2.5
+
+    def _looks_collapsed(self, transcription_dict: dict) -> bool:
+        """True if the transcript is far too sparse for the audio it claims to cover."""
         try:
-            # Prepare transcription parameters
+            duration = float(transcription_dict.get("duration"))
+        except (TypeError, ValueError):
+            return False
+        if duration <= 0:
+            return False
+        text = (transcription_dict.get("text") or "").strip()
+        return len(text) / duration < self._MIN_CHARS_PER_SECOND
+
+    def _transcribe_call(self, audio_path: Path, label: str = "") -> dict:
+        """One Groq transcription, re-run without the vocabulary prompt if it looks lost.
+
+        Keeps whichever attempt produced more text, so a false alarm on a genuinely quiet
+        stretch costs one extra call and can never make the transcript worse. Losing a
+        name is a typo; losing the audio is an outage, so the prompt is what gets dropped.
+        """
+        def call(prompt: Optional[str]) -> dict:
             with open(audio_path, "rb") as audio_file:
-                transcription_params = {
+                params = {
                     "file": audio_file,
                     "model": self.model,
                     "response_format": "verbose_json",
-                    "temperature": self.temperature
+                    "temperature": self.temperature,
                 }
-                
-                if language:
-                    # Note: Groq API may not support language parameter, but include it if provided
-                    pass  # Groq API doesn't have explicit language parameter
-                
-                if self.prompt:
-                    transcription_params["prompt"] = self.prompt
-                
+                if prompt:
+                    params["prompt"] = prompt
                 if self.timestamp_granularities:
-                    transcription_params["timestamp_granularities"] = self.timestamp_granularities
-                
-                # Call Groq Whisper API
-                transcription = self.client.audio.transcriptions.create(**transcription_params)
-            
-            # Convert response to dict if needed
-            if hasattr(transcription, 'model_dump'):
-                transcription_dict = transcription.model_dump()
-            elif hasattr(transcription, 'dict'):
-                transcription_dict = transcription.dict()
-            else:
-                transcription_dict = dict(transcription)
+                    params["timestamp_granularities"] = self.timestamp_granularities
+                transcription = self.client.audio.transcriptions.create(**params)
+            if hasattr(transcription, "model_dump"):
+                return transcription.model_dump()
+            if hasattr(transcription, "dict"):
+                return transcription.dict()
+            return dict(transcription)
+
+        result = call(self.prompt)
+        if not self.prompt or not self._looks_collapsed(result):
+            return result
+        print(f"  ⚠ sparse transcript{label}; re-running without the vocabulary prompt")
+        plain = call(None)
+        return plain if len(plain.get("text") or "") > len(result.get("text") or "") else result
+
+    def _transcribe_file_direct(self, audio_path: Path, language: Optional[str]) -> Dict[str, Any]:
+        """Transcribe a file directly without chunking."""
+        try:
+            # Groq has no explicit language parameter; `language` is accepted for
+            # signature parity with WhisperService and deliberately unused here.
+            transcription_dict = self._transcribe_call(audio_path)
             
             # Apply traditional Chinese conversion
             transcription_dict = convert_json_to_traditional_chinese(transcription_dict)
@@ -1139,30 +1167,10 @@ class GroqService(SpeechToTextService):
             for i, (chunk_path, chunk_start) in enumerate(chunks):
                 print(f"  🎤 Transcribing chunk {i+1}/{len(chunks)}...")
                 try:
-                    # Transcribe chunk
-                    with open(chunk_path, "rb") as chunk_file:
-                        transcription_params = {
-                            "file": chunk_file,
-                            "model": self.model,
-                            "response_format": "verbose_json",
-                            "temperature": self.temperature
-                        }
-                        
-                        if self.prompt:
-                            transcription_params["prompt"] = self.prompt
-                        
-                        if self.timestamp_granularities:
-                            transcription_params["timestamp_granularities"] = self.timestamp_granularities
-                        
-                        transcription = self.client.audio.transcriptions.create(**transcription_params)
-                    
-                    # Convert response to dict
-                    if hasattr(transcription, 'model_dump'):
-                        transcription_dict = transcription.model_dump()
-                    elif hasattr(transcription, 'dict'):
-                        transcription_dict = transcription.dict()
-                    else:
-                        transcription_dict = dict(transcription)
+                    # Transcribe chunk (collapse-guarded, same as the direct path)
+                    transcription_dict = self._transcribe_call(
+                        chunk_path, label=f" on chunk {i+1}"
+                    )
                     
                     # Apply traditional Chinese conversion
                     transcription_dict = convert_json_to_traditional_chinese(transcription_dict)
