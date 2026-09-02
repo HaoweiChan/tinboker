@@ -104,18 +104,18 @@ def _media_paths(doc: dict) -> dict:
     Empty when the media tree is not mounted — which is the case anywhere but the host
     that serves it, and the reason --apply has to run there.
     """
-    try:
-        from src.service.gcs_storage_service import GCSStorageService
-        svc = GCSStorageService()
-    except Exception:  # noqa: BLE001 — no media root here; dry run still reports
-        return {}
+    # The module-level resolver, not GCSStorageService: constructing the service builds
+    # a Google client and dies with DefaultCredentialsError, which made this silently
+    # report "no media files" on the very host that has them.
+    from src.service.gcs_storage_service import path_for_media_url
+
     out = {}
     for field in MEDIA_URL_FIELDS:
         url = doc.get(field)
         if not url:
             continue
         try:
-            path = svc.path_for_url(url)
+            path = path_for_media_url(url)
         except ValueError:
             continue
         if path and path.is_file():
