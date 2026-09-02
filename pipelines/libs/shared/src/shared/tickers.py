@@ -134,16 +134,30 @@ def prime_tickers(symbols: Iterable[str]) -> None:
     if not missing:
         return
     _PRIMED.update(missing)
+    # Group first: a symbol usually comes back once, and that row is authoritative.
+    # Only a genuine collision needs a tie-break — and the tie-break must not fire on
+    # single rows, or it starts overruling the table with a guess. 000660 (SK Hynix)
+    # is the case that proves it: Korean listings are numeric like Taiwanese ones, so
+    # "numeric ⇒ TW" mislabels every KR row it touches.
+    by_symbol: dict[str, list[TickerInfo]] = {}
     for item in fetch_translations_batch(missing) or []:
         info = _info_from_translation(item)
-        if not info:
-            continue
-        # One symbol can carry both a TW and a US row (2454 is listed as both). Keep
-        # the one whose market matches the symbol's shape; numeric codes are TW.
-        expected = "TW" if info.symbol.rstrip("ABC").isdigit() else "US"
-        if (info.market or expected).upper() != expected and info.symbol in idx:
-            continue
-        _register(idx, info, override=True)
+        if info:
+            by_symbol.setdefault(info.symbol, []).append(info)
+
+    for symbol, rows in by_symbol.items():
+        if len(rows) > 1:
+            # The table carries the same code in two markets — real dual listings, but
+            # also stubs that `GET /translations/{t}?market=` auto-creates on a wrong
+            # guess (000660 and 005930 are Korean and each has a phantom TW row).
+            # The registry we already hold is the better arbiter than any shape rule:
+            # numeric means Taiwan *or* Korea, so guessing from digits mislabels KR.
+            known = idx.get(symbol)
+            preferred = (known.market or "").upper() if known else ""
+            if not preferred:
+                preferred = "TW" if symbol.rstrip("ABC").isdigit() else "US"
+            rows = [r for r in rows if (r.market or "").upper() == preferred] or rows
+        _register(idx, rows[0], override=True)
 
 
 def lookup_ticker(raw: str) -> TickerInfo | None:

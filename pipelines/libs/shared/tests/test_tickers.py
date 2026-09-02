@@ -111,3 +111,56 @@ def test_valid_tickers_filters_canonicalizes_and_dedupes():
     assert valid_tickers(raw) == ["2330", "NVDA"]
     assert valid_tickers([]) == []
     assert valid_tickers(None) == []
+
+
+# --- prime_tickers: the /translations/batch overlay ---------------------------------
+
+
+def _fresh_prime(monkeypatch, rows):
+    """Run prime_tickers over `rows` with a clean per-process cache."""
+    from shared import tickers as t
+
+    monkeypatch.setattr(t, "fetch_translations_batch", lambda syms, **kw: rows)
+    monkeypatch.setattr(t, "_PRIMED", set())
+    return t
+
+
+def test_prime_prefers_the_market_the_registry_already_knows(monkeypatch):
+    """The table carries phantom rows: 000660 is Korean but also has a TW stub.
+
+    `GET /translations/{ticker}?market=` auto-creates a pending row on a wrong guess, so
+    a numeric code can come back as both TW and KR. Digits cannot break that tie —
+    Taiwanese and Korean listings are both numeric — but the registry already holds the
+    right market, so it arbitrates.
+    """
+    t = _fresh_prime(monkeypatch, [
+        {"ticker": "000660", "market": "TW", "name_zh_tw": "SK海力士"},
+        {"ticker": "000660", "market": "KR", "name_zh_tw": "SK海力士"},
+    ])
+    t.prime_tickers(["000660"])
+    assert t.lookup_ticker("000660").market == "KR"
+
+
+def test_prime_falls_back_to_shape_for_an_unknown_symbol(monkeypatch):
+    t = _fresh_prime(monkeypatch, [
+        {"ticker": "9997", "market": "US", "name_zh_tw": "假美股"},
+        {"ticker": "9997", "market": "TW", "name_zh_tw": "假台股"},
+    ])
+    t.prime_tickers(["9997"])
+    assert t.lookup_ticker("9997").market == "TW"
+
+
+def test_prime_trusts_a_single_row_without_second_guessing(monkeypatch):
+    t = _fresh_prime(monkeypatch, [
+        {"ticker": "9998", "market": "KR", "name_zh_tw": "只有一列"},
+    ])
+    t.prime_tickers(["9998"])
+    info = t.lookup_ticker("9998")
+    assert (info.name, info.market) == ("只有一列", "KR")
+
+
+def test_prime_is_a_no_op_when_the_platform_is_unreachable(monkeypatch):
+    t = _fresh_prime(monkeypatch, None)
+    before = t.lookup_ticker("2330")
+    t.prime_tickers(["2330"])
+    assert t.lookup_ticker("2330").name == before.name
