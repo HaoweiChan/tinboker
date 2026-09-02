@@ -104,8 +104,16 @@ _TEMPERATURE_MAP: dict[str, float] = {
 _MAX_TOKENS_MAP: dict[str, int] = {
     # Long episodes (1000+ sentences) produce a topic list whose JSON exceeded the
     # old 2048 cap — the reply truncated mid-array, failed to parse, and the episode
-    # ended up with zero events (no chapters). 8192 covers even very long shows.
-    "extractor": 8192,
+    # ended up with zero events (no chapters). 8192 then covered every show, until the
+    # role was pinned to deepseek-v4-flash-0731: it segments far more finely than
+    # v4-pro did (55 events vs 23 on the same 800-sentence chunk), so the same
+    # transcript yields a much longer array and the cap came back into reach. The first
+    # ingest run after that pin logged two `completion_tokens=8192 … length limit was
+    # reached`, and the parse error that followed pointed at char 23992 — a reply cut
+    # off exactly at the ceiling, not a malformed one. Raised to match the two roles
+    # that already needed the headroom; on flash, completion is $0.10/M, so the extra
+    # room costs essentially nothing even when it is used.
+    "extractor": 16384,
     "writer": 8192,
     "marp_writer": 16384,
     # Verbose models emit ticker reasons/risks whose JSON, on long & ticker-dense
