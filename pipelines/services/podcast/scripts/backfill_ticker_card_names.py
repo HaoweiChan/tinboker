@@ -51,6 +51,7 @@ try:
 except Exception as _e:  # noqa: BLE001 — local runs may already have the env vars
     print(f"  (secrets_bootstrap skipped: {_e})")
 
+from shared.platform_client import platform_base_url  # noqa: E402
 from shared.tickers import prime_tickers  # noqa: E402
 from src.podcast.content_builder.nodes.social_cards_builder import (  # noqa: E402
     _ticker_name_code,
@@ -147,6 +148,15 @@ def main() -> int:
                     help="where --apply saves the previous cards (default: %(default)s)")
     ap.add_argument("--restore", metavar="FILE", help="put back a backup file and exit")
     args = ap.parse_args()
+
+    # Without the platform URL, prime_tickers is a silent no-op and every name comes
+    # from the local seed — which is stale: it calls GOOGL "Alphabet" where the live
+    # table says 谷歌. A run like that looks like a success and rewrites good names into
+    # worse ones, so refuse rather than repeat it.
+    if not platform_base_url():
+        print("TINBOKER_PLATFORM_API_URL is not set. Names would come from the stale "
+              "local seed instead of the translations table — refusing.")
+        return 2
 
     conn = _connect()
     if conn is None:
