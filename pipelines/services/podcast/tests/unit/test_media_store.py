@@ -156,3 +156,45 @@ def test_written_files_are_world_readable_so_caddy_can_serve_them(svc, tmp_path)
     written = tmp_path / BUCKET / f"summaries/{_hash(PODCAST)}/{EPISODE}.md"
     assert copied.stat().st_mode & 0o004, oct(copied.stat().st_mode)
     assert written.stat().st_mode & 0o004, oct(written.stat().st_mode)
+
+
+# --- credential-free path resolution -----------------------------------------------
+# Constructing GCSStorageService builds a Google client and raises
+# DefaultCredentialsError where none are configured. Working out where a file lives is
+# pure arithmetic, so it must not need that: the name backfill reported "media tree not
+# mounted" on the very host holding /srv/tinboker-media, because the constructor threw.
+
+
+def test_path_for_media_url_needs_no_client(monkeypatch, tmp_path):
+    from src.service import gcs_storage_service as g
+
+    monkeypatch.setenv("MEDIA_STORAGE_ROOT", str(tmp_path))
+    monkeypatch.setenv("MEDIA_PUBLIC_BASE", "https://media.example/media")
+    url = "https://media.example/media/graphfolio-articles/summaries/ab/ep1.md"
+    assert g.path_for_media_url(url) == tmp_path / "graphfolio-articles/summaries/ab/ep1.md"
+
+
+def test_path_for_media_url_rejects_an_unknown_bucket(monkeypatch, tmp_path):
+    import pytest
+    from src.service import gcs_storage_service as g
+
+    monkeypatch.setenv("MEDIA_STORAGE_ROOT", str(tmp_path))
+    monkeypatch.setenv("MEDIA_PUBLIC_BASE", "https://media.example/media")
+    with pytest.raises(ValueError, match="Unknown media bucket"):
+        g.path_for_media_url("https://media.example/media/not-a-bucket/x.md")
+
+
+def test_resolve_media_path_refuses_to_escape_the_root(monkeypatch, tmp_path):
+    import pytest
+    from src.service import gcs_storage_service as g
+
+    monkeypatch.setenv("MEDIA_STORAGE_ROOT", str(tmp_path))
+    with pytest.raises(ValueError, match="escapes"):
+        g.resolve_media_path("graphfolio-articles", "../../etc/passwd")
+
+
+def test_path_for_media_url_ignores_a_foreign_url(monkeypatch, tmp_path):
+    from src.service import gcs_storage_service as g
+
+    monkeypatch.setenv("MEDIA_STORAGE_ROOT", str(tmp_path))
+    assert g.path_for_media_url("https://example.com/nope.md") is None

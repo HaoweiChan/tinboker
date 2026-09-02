@@ -16,7 +16,8 @@
     "transcript_option": {
       "transcript_service": "groq",
       "model": "whisper-large-v3"
-    }
+    },
+    "spotify_show_link": "https://open.spotify.com/show/3q2hc5Zsk9nFEYxXmMqVDW"
   },
   {
     "name": "游庭皓的財經皓角",
@@ -91,16 +92,15 @@
     }
   },
   {
-    "name": "韭菜畢業班",
+    "_spotify_note": "No spotify_show_link on purpose. The old id 7nZ5g4M8L9G2fXz1k4JpQW 404s, and open.spotify.com/show/66ENh5UtNA3pPNOT0IZjO1 is a DIFFERENT show with the same name (its EP169 is a market recap; ours is Ep169|60億變一兆，么壽). Find the real one before setting this.", "name": "韭菜畢業班",
     "link": "https://podcasttomp3.com/podcasts/v2/99999902",
     "limit": 10,
     "lookback_days": 60,
     "max_episodes": 20,
-    "spotify_show_link": "https://open.spotify.com/show/7nZ5g4M8L9G2fXz1k4JpQW",
+   
     "transcript_option": {
       "transcript_service": "groq",
       "model": "whisper-large-v3"
     }
   }
 ]
-

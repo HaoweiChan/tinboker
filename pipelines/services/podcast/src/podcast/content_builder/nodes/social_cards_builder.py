@@ -17,9 +17,9 @@ import re
 from typing import Any, Optional
 
 from shared.platform_client import social_enabled_for
-from shared.tickers import canonical_symbol, lookup_ticker
+from shared.tickers import canonical_symbol, lookup_ticker, prime_tickers
 
-from ...exporters.ticker_insights import market_for_ticker, score_to_label
+from ...exporters.ticker_insights import score_to_label
 from ..state import PipelineState
 
 logger = logging.getLogger(__name__)
@@ -49,7 +49,6 @@ _SENTIMENT_BADGE = {
     "BEARISH": ("看空", "sent-bear"),
     "STRONG_BEARISH": ("看空", "sent-bear"),
 }
-_MARKET_ZH = {"TW": "台股", "US": "美股", "HK": "港股", "KR": "韓股", "EU": "歐股"}
 _SEVERITY_ZH = {"HIGH": "高", "MEDIUM": "中", "LOW": "低"}
 
 # Detects a bullet that already carries its own trailing [MM:SS]/[HH:MM:SS] stamp
@@ -82,6 +81,7 @@ def cards_from_marp_slides(
     marp_slides: Optional[dict[str, Any]],
     key_insights: Optional[list[str]] = None,
     episode_title: str = "",
+    show_name: str = "",
 ) -> list[dict[str, Any]]:
     """Build the ordered cover+theme card list from structured marp slides.
 
@@ -96,7 +96,12 @@ def cards_from_marp_slides(
     """
     marp = marp_slides or {}
     insights = [s.strip() for s in (key_insights or []) if s and s.strip()]
-    deck_title = (marp.get("title") or episode_title or "").strip()
+    # The cover's title is the show name, never the LLM's deck title: marp_writer
+    # hallucinates a famous show (股癌 in 13 of 83 recent episodes, across six podcasts
+    # that are not 股癌). _cover_slide already renders `show_name` and ignores this
+    # field, so storing the hallucination only left a lie in the database waiting for
+    # the next consumer to trust a field named "title".
+    deck_title = (show_name or episode_title or "").strip()
 
     cards: list[dict[str, Any]] = [{
         "kind": "cover",
@@ -189,7 +194,6 @@ def _ticker_row(insight: dict[str, Any]) -> Optional[dict[str, str]]:
     name, code = _ticker_name_code(ticker)
     sentiment, sentiment_class = _sentiment_badge(insight.get("sentiment_score"))
     return {
-        "group": _MARKET_ZH.get(market_for_ticker(ticker), "其他"),
         "name": name, "code": code,
         "sentiment": sentiment, "sentiment_class": sentiment_class,
         "risk": _risk_factor(insight.get("risks")),
@@ -295,6 +299,15 @@ def cards_from_ticker_insights(
     return cards
 
 
+def _deck_tickers(state: PipelineState) -> set[str]:
+    """Every symbol the deck may print a name for: the canonical list + insight rows."""
+    from ...exporters.ticker_insights import iter_insight_tickers
+    symbols = canonical_ticker_set(state.get("related_tickers"))
+    return symbols | {
+        canonical_symbol(str(t)) for t in iter_insight_tickers(state.get("ticker_insights") or {})
+    }
+
+
 def assemble_social_cards(state: PipelineState) -> list[dict[str, Any]]:
     """Assemble the unified deck (≤~8 slides) shared by the PNG carousel and the
     on-page episode Marp — so the two are byte-for-byte the same card set.
@@ -306,11 +319,16 @@ def assemble_social_cards(state: PipelineState) -> list[dict[str, Any]]:
     title = state.get("episode_title") or ""
     base = cards_from_marp_slides(
         state.get("marp_slides") or {}, state.get("key_insights") or [], title,
+        show_name=(state.get("source") or state.get("podcast_name") or "").strip(),
     )
     if len(base) == 1 and not base[0]["bullets"]:
         return []
 
     cover, themes = base[0], base[1:MAX_THEME_CARDS + 1]
+    # Pull the operator-curated zh-TW names for this episode's symbols before any card
+    # renders one: without it a TW listing resolves to nothing and the card shows the
+    # bare code ("3037") where "欣興" belongs.
+    prime_tickers(_deck_tickers(state))
     ticker_cards = cards_from_ticker_insights(
         state.get("ticker_insights") or {}, title,
         canonical_ticker_set(state.get("related_tickers")),

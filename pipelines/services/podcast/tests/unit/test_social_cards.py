@@ -31,8 +31,9 @@ def test_format_timestamp_unknown():
 
 # --- build_social_cards -----------------------------------------------------
 
-def _state(marp_slides, key_insights):
-    return {"marp_slides": marp_slides, "key_insights": key_insights, "episode_title": "EP"}
+def _state(marp_slides, key_insights, source="測試節目"):
+    return {"marp_slides": marp_slides, "key_insights": key_insights,
+            "episode_title": "EP", "source": source}
 
 
 def test_cover_then_theme_cards_with_timestamp_on_last_bullet():
@@ -45,7 +46,9 @@ def test_cover_then_theme_cards_with_timestamp_on_last_bullet():
     )
     cards = sc.build_social_cards(state)["social_cards"]
 
-    assert cards[0] == {"kind": "cover", "title": "本集重點", "subtitle": "EP",
+    # The cover title is the show name, never the LLM deck title ("本集重點") — see
+    # test_card_deck_fit.test_cover_card_title_is_the_show_name_not_the_llm_deck_title.
+    assert cards[0] == {"kind": "cover", "title": "測試節目", "subtitle": "EP",
                         "bullets": ["台積電優於預期", "AI 續強"], "start_time_ms": None, "image_url": None}
     assert cards[1]["kind"] == "theme"
     assert cards[1]["title"] == "台積電法說會"

@@ -72,6 +72,10 @@ section::before {{
 }}
 /* ---- Cover ---- */
 section.cover {{ justify-content: center; }}
+/* Never let a flex item be squeezed: a shrunk box with overflow:hidden clips its text
+   through the middle of a glyph row, which is what sliced cover subtitles in half. With
+   shrink off, the fit tiers below decide the size and every visible line is whole. */
+section.cover > * {{ flex: 0 0 auto; }}
 section.cover .label {{
   font-size: 30px; font-weight: 800; letter-spacing: 8px;
   color: {accent}; text-transform: uppercase; margin-bottom: 28px;
@@ -83,7 +87,22 @@ section.cover .subtitle {{
 }}
 section.cover .date {{ font-size: 34px; color: {MUTED}; margin-bottom: 36px; }}
 section.cover .rule {{ width: 132px; height: 10px; background: {accent}; border-radius: 6px; margin-bottom: 40px; }}
-section.cover .hook {{ font-size: 40px; line-height: 1.6; font-weight: 500; color: {SOFT}; }}
+section.cover .hook {{
+  font-size: 40px; line-height: 1.6; font-weight: 500; color: {SOFT};
+  display: -webkit-box; -webkit-line-clamp: 7; -webkit-box-orient: vertical; overflow: hidden;
+}}
+/* Cover fit tiers (chosen per card by char volume in _cover_slide) — the episode title
+   and the hook are both unbounded in length, so the type scales to fit the canvas
+   instead of the canvas silently eating the text. Keep in sync with _COVER_TIERS. */
+section.cover.fit-s h1 {{ font-size: 112px; }}
+section.cover.fit-s .subtitle {{ font-size: 42px; }}
+section.cover.fit-s .hook {{ font-size: 35px; }}
+section.cover.fit-xs h1 {{ font-size: 96px; }}
+section.cover.fit-xs .subtitle {{ font-size: 38px; }}
+section.cover.fit-xs .hook {{ font-size: 31px; }}
+section.cover.fit-xxs h1 {{ font-size: 84px; }}
+section.cover.fit-xxs .subtitle {{ font-size: 34px; }}
+section.cover.fit-xxs .hook {{ font-size: 27px; }}
 /* ---- Theme card ---- */
 section.theme h2 {{
   font-size: 52px; font-weight: 800; line-height: 1.3; margin: 0 0 36px; color: {TEXT};
@@ -125,10 +144,8 @@ section.ticker-table .row {{
   display: flex; align-items: center; gap: 22px;
   padding: 22px 6px; border-bottom: 1px solid {BORDER};
 }}
-section.ticker-table .grp {{
-  flex: 0 0 132px; font-size: 26px; font-weight: 700; color: {MUTED};
-  letter-spacing: 1px;
-}}
+/* No market column: the code beside the name already says which exchange it is, and
+   dropping it gives the 132px back to long company names. */
 section.ticker-table .name {{ flex: 1 1 auto; font-size: 38px; font-weight: 600; color: {TEXT}; }}
 section.ticker-table .name .code {{ color: {MUTED}; font-weight: 500; font-size: .8em; margin-left: 10px; }}
 section.ticker-table .risk {{ flex: 0 0 168px; text-align: right; font-size: 28px; color: {SOFT}; }}
@@ -191,6 +208,48 @@ def _wrap_timestamp(bullet: str) -> str:
     return f'{body} <span class="ts">{html.escape(m.group(1))}</span>'
 
 
+# Per-tier cover metrics — MUST match the `section.cover.fit-*` CSS above.
+# (class suffix, h1 font px, subtitle font px, hook font px)
+_COVER_TIERS = [
+    ("",        132, 46, 40),
+    ("fit-s",   112, 42, 35),
+    ("fit-xs",   96, 38, 31),
+    ("fit-xxs",  84, 34, 27),
+]
+# Cover furniture that does not scale: label (30px + 28 margin), date (34px + 36
+# margin), and the accent rule (10px + 40 margin), each with its line box.
+_COVER_FIXED_PX = (30 * 1.2 + 28) + (34 * 1.2 + 36) + (10 + 40)
+_COVER_SUBTITLE_MAX_LINES = 3   # matches -webkit-line-clamp on .subtitle
+_COVER_HOOK_MAX_LINES = 7       # matches -webkit-line-clamp on .hook
+
+
+def _cover_fit_suffix(title: str, subtitle: str, hook: str) -> str:
+    """Pick the largest cover tier whose estimated height fits the canvas.
+
+    Same deterministic estimate as :func:`_theme_fit_suffix` (≈1 CJK glyph per font-px
+    of width). The cover needs it for the same reason the theme cards did: the episode
+    title arrives from the show's own feed and can be any length, and the hook is three
+    key insights joined — together they routinely overflow 864px at full size.
+    """
+    import math
+
+    width = 1080 - _SIDE_PAD_PX
+    for suffix, h1f, subf, hookf in _COVER_TIERS:
+        height = _COVER_FIXED_PX
+        height += max(1, math.ceil(len(title) / max(1, width // h1f))) * h1f * 1.04 + 18
+        if subtitle:
+            lines = min(_COVER_SUBTITLE_MAX_LINES,
+                        max(1, math.ceil(len(subtitle) / max(1, width // subf))))
+            height += lines * subf * 1.34 + 36
+        if hook:
+            lines = min(_COVER_HOOK_MAX_LINES,
+                        max(1, math.ceil(len(hook) / max(1, width // hookf))))
+            height += lines * hookf * 1.6
+        if height <= _THEME_BUDGET_PX:
+            return suffix
+    return _COVER_TIERS[-1][0]
+
+
 def _cover_slide(card: dict, show_name: str, date_str: str) -> str:
     # Show name wins: the LLM marp deck title hallucinates famous brands (e.g. 股癌)
     # for unrelated shows, so the cover must use the deterministic podcast name.
@@ -200,7 +259,8 @@ def _cover_slide(card: dict, show_name: str, date_str: str) -> str:
     if hook:
         hook += "。"
     subtitle = html.escape((card.get("subtitle") or "").strip())
-    lines = ["<!-- _class: cover -->", "", '<div class="label">Podcast Memo</div>', "", f"# {title}", ""]
+    cls = f"cover {_cover_fit_suffix(title, subtitle, hook)}".strip()
+    lines = [f"<!-- _class: {cls} -->", "", '<div class="label">Podcast Memo</div>', "", f"# {title}", ""]
     if subtitle:
         lines.append(f'<div class="subtitle">{subtitle}</div>')
     if date_str:
@@ -267,7 +327,6 @@ def _ticker_table_slide(card: dict) -> str:
     heading = html.escape((card.get("title") or "本期提及標的").strip())
     rows = []
     for r in card.get("rows") or []:
-        grp = html.escape((r.get("group") or "").strip())
         name = html.escape((r.get("name") or "").strip())
         code = html.escape((r.get("code") or "").strip())
         risk = html.escape((r.get("risk") or "—").strip())
@@ -275,7 +334,6 @@ def _ticker_table_slide(card: dict) -> str:
         code_html = f'<span class="code">{code}</span>' if code else ""
         rows.append(
             '<div class="row">'
-            f'<span class="grp">{grp}</span>'
             f'<span class="name">{name}{code_html}</span>'
             f'{badge}'
             f'<span class="risk">風險 <b>{risk}</b></span>'

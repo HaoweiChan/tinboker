@@ -76,6 +76,30 @@ def public_base() -> str:
     return os.getenv("MEDIA_PUBLIC_BASE", DEFAULT_PUBLIC_BASE).rstrip("/")
 
 
+def resolve_media_path(bucket: str, blob_path: str) -> Path:
+    """Absolute on-disk path for ``bucket/blob_path``, with both safety guards.
+
+    Module-level and credential-free on purpose: working out where a file lives is
+    pure arithmetic over the media root, and needing a GCS client for it means an ops
+    script that only wants to read a summary has to authenticate to Google first.
+    """
+    if bucket not in MEDIA_BUCKETS:
+        raise ValueError(
+            f"Unknown media bucket {bucket!r} (expected one of {sorted(MEDIA_BUCKETS)})"
+        )
+    root = media_root().resolve()
+    path = (root / bucket / blob_path).resolve()
+    if not path.is_relative_to(root):
+        raise ValueError(f"Media path escapes {root}: {bucket}/{blob_path}")
+    return path
+
+
+def path_for_media_url(url: str) -> Optional[Path]:
+    """On-disk path for a gs:// / storage.googleapis.com / media URL, or ``None``."""
+    parsed = split_media_url(url)
+    return resolve_media_path(parsed[0], parsed[1]) if parsed else None
+
+
 def split_media_url(url: str) -> Optional[Tuple[str, str]]:
     """``(bucket, blob_path)`` from a gs://, storage.googleapis.com or media URL.
 
@@ -165,26 +189,15 @@ class GCSStorageService:
     def local_path(self, blob_path: str, bucket: Optional[str] = None) -> Path:
         """Absolute on-disk path for a blob path in ``bucket`` (default: ours).
 
-        The single gate for every read and write, so both guards live here: the
-        bucket must be one of the two real media directories, and the resolved path
-        must stay inside the media root (``path_for_url`` feeds this from stored doc
-        URLs, so ``../`` has to be closed off).
+        Delegates to :func:`resolve_media_path`, which holds both guards — the bucket
+        allow-list and the escape-the-root check — so instance and module callers
+        cannot drift apart.
         """
-        bucket = bucket or self.bucket_name
-        if bucket not in MEDIA_BUCKETS:
-            raise ValueError(
-                f"Unknown media bucket {bucket!r} (expected one of {sorted(MEDIA_BUCKETS)})"
-            )
-        root = self.media_root.resolve()
-        path = (root / bucket / blob_path).resolve()
-        if not path.is_relative_to(root):
-            raise ValueError(f"Media path escapes {root}: {bucket}/{blob_path}")
-        return path
+        return resolve_media_path(bucket or self.bucket_name, blob_path)
 
     def path_for_url(self, url: str) -> Optional[Path]:
         """On-disk path for a gs:// / storage.googleapis.com / media URL."""
-        parsed = split_media_url(url)
-        return self.local_path(parsed[1], parsed[0]) if parsed else None
+        return path_for_media_url(url)
 
     def generate_gcs_url(self, blob_path: str) -> str:
         """The artifact's public URL. gs:// is dead — this is the https URL."""
