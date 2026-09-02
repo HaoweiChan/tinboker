@@ -144,10 +144,8 @@ section.ticker-table .row {{
   display: flex; align-items: center; gap: 22px;
   padding: 22px 6px; border-bottom: 1px solid {BORDER};
 }}
-section.ticker-table .grp {{
-  flex: 0 0 132px; font-size: 26px; font-weight: 700; color: {MUTED};
-  letter-spacing: 1px;
-}}
+/* No market column: the code beside the name already says which exchange it is, and
+   dropping it gives the 132px back to long company names. */
 section.ticker-table .name {{ flex: 1 1 auto; font-size: 38px; font-weight: 600; color: {TEXT}; }}
 section.ticker-table .name .code {{ color: {MUTED}; font-weight: 500; font-size: .8em; margin-left: 10px; }}
 section.ticker-table .risk {{ flex: 0 0 168px; text-align: right; font-size: 28px; color: {SOFT}; }}
@@ -329,7 +327,6 @@ def _ticker_table_slide(card: dict) -> str:
     heading = html.escape((card.get("title") or "本期提及標的").strip())
     rows = []
     for r in card.get("rows") or []:
-        grp = html.escape((r.get("group") or "").strip())
         name = html.escape((r.get("name") or "").strip())
         code = html.escape((r.get("code") or "").strip())
         risk = html.escape((r.get("risk") or "—").strip())
@@ -337,7 +334,6 @@ def _ticker_table_slide(card: dict) -> str:
         code_html = f'<span class="code">{code}</span>' if code else ""
         rows.append(
             '<div class="row">'
-            f'<span class="grp">{grp}</span>'
             f'<span class="name">{name}{code_html}</span>'
             f'{badge}'
             f'<span class="risk">風險 <b>{risk}</b></span>'

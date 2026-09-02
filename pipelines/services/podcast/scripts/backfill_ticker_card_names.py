@@ -10,9 +10,10 @@ across the last 97 episodes were like that.
 
 Deterministic and cheap: no LLM, no regeneration of anything an LLM wrote. Each row
 already carries its symbol (``code`` when it resolved, ``name`` when it did not), so the
-repair is to look the symbol up again with the fixed registry and rewrite three derived
-fields — ``name``, ``code`` and the ``group`` market label. Every other field, and every
-theme card, is left byte-for-byte alone.
+repair is to look the symbol up again with the fixed registry and rewrite the two
+derived fields ``name`` and ``code``. It also drops the stored ``group`` (台股/美股):
+the card no longer renders a market column, so that value is dead weight. Every other
+field, and every theme card, is left byte-for-byte alone.
 
 It also corrects the cover card's ``title``, which stored the marp deck title — the
 LLM's hallucinated show name (股癌 on 13 of 83 covers belonging to six other podcasts).
@@ -52,10 +53,8 @@ except Exception as _e:  # noqa: BLE001 — local runs may already have the env 
 
 from shared.tickers import prime_tickers  # noqa: E402
 from src.podcast.content_builder.nodes.social_cards_builder import (  # noqa: E402
-    _MARKET_ZH,
     _ticker_name_code,
 )
-from src.podcast.exporters.ticker_insights import market_for_ticker  # noqa: E402
 
 
 def _symbol(entry: dict) -> str:
@@ -95,17 +94,16 @@ def repair_cards(cards: list, show_name: str) -> tuple[list, list[str]]:
             if not symbol:
                 continue
             name, code = _ticker_name_code(symbol)
-            group = _MARKET_ZH.get(market_for_ticker(symbol), "其他")
-            before = (entry.get("name"), entry.get("code"), entry.get("group"))
-            after = (name, code, group if "group" in entry else entry.get("group"))
-            if before[:2] == after[:2] and before[2] == after[2]:
+            # `group` (台股/美股) is dropped rather than refreshed: the card no longer
+            # renders a market column, so the stored value is dead weight.
+            dropped = entry.pop("group", None)
+            if (entry.get("name"), entry.get("code")) == (name, code) and dropped is None:
                 continue
+            before = (entry.get("name"), entry.get("code"))
             entry["name"], entry["code"] = name, code
-            if "group" in entry:
-                entry["group"] = group
             changes.append(
-                f"{symbol}: {before[0]!r}/{before[1]!r}/{before[2]!r} → "
-                f"{after[0]!r}/{after[1]!r}/{after[2]!r}"
+                f"{symbol}: {before[0]!r}/{before[1]!r} → {name!r}/{code!r}"
+                + (f"  (dropped group {dropped!r})" if dropped is not None else "")
             )
     return cards, changes
 

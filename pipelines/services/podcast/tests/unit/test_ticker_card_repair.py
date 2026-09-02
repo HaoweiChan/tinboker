@@ -3,7 +3,8 @@
 A card's company name is resolved when the card is built and written into the row, so
 fixing the registry only helps future episodes. 股癌 EP693 (2026-09-02) shipped with
 rows reading `2454` / `NVDA` / `AVGO` / `2330`. These lock what the repair may touch —
-three derived fields and the cover title — and, just as importantly, what it may not.
+`name`, `code`, the dropped `group`, and the cover title — and, just as importantly,
+what it may not.
 """
 
 import copy
@@ -39,22 +40,32 @@ def _fake_registry(monkeypatch, mapping):
         rc, "_ticker_name_code",
         lambda t: (mapping[t], t) if t in mapping else (t, ""),
     )
-    monkeypatch.setattr(rc, "market_for_ticker", lambda t: "TW" if t.isdigit() else "US")
 
 
 def test_bare_code_gets_its_name_and_code(monkeypatch):
     _fake_registry(monkeypatch, {"2330": "台積電", "GOOGL": "谷歌"})
     new, diffs = rc.repair_cards(_deck(), "Gooaye 股癌")
     row = new[1]["rows"][0]
-    assert (row["name"], row["code"], row["group"]) == ("台積電", "2330", "台股")
+    assert (row["name"], row["code"]) == ("台積電", "2330")
     assert any("2330" in d for d in diffs)
 
 
-def test_an_already_correct_row_is_left_alone(monkeypatch):
+def test_the_market_column_is_dropped(monkeypatch):
+    """The card stopped rendering 台股/美股, so the stored value is dead weight."""
     _fake_registry(monkeypatch, {"2330": "台積電", "GOOGL": "谷歌"})
     new, diffs = rc.repair_cards(_deck(), "Gooaye 股癌")
-    assert new[1]["rows"][1] == _deck()[1]["rows"][1]
-    assert not any("GOOGL" in d for d in diffs)
+    assert all("group" not in r for r in new[1]["rows"])
+    assert any("dropped group" in d for d in diffs)
+
+
+def test_an_already_correct_row_only_loses_its_group(monkeypatch):
+    _fake_registry(monkeypatch, {"2330": "台積電", "GOOGL": "谷歌"})
+    new, diffs = rc.repair_cards(_deck(), "Gooaye 股癌")
+    expected = {k: v for k, v in _deck()[1]["rows"][1].items() if k != "group"}
+    assert new[1]["rows"][1] == expected
+    # Its only diff line is the group drop — the name/code were already right.
+    googl = [d for d in diffs if d.startswith("GOOGL")]
+    assert googl == ["GOOGL: '谷歌'/'GOOGL' → '谷歌'/'GOOGL'  (dropped group '美股')"]
 
 
 def test_cover_title_becomes_the_show_name(monkeypatch):
@@ -64,7 +75,7 @@ def test_cover_title_becomes_the_show_name(monkeypatch):
     assert any("cover title" in d for d in diffs)
 
 
-def test_nothing_outside_the_three_fields_moves(monkeypatch):
+def test_nothing_outside_those_fields_moves(monkeypatch):
     """The blast radius is the whole point: theme cards and every other key stay put."""
     _fake_registry(monkeypatch, {"2330": "台積電", "GOOGL": "谷歌"})
     before = _deck()
@@ -88,10 +99,9 @@ def test_nothing_outside_the_three_fields_moves(monkeypatch):
 def test_unknown_symbol_stays_a_bare_code(monkeypatch):
     """No registry entry means no invention — the row keeps the symbol it had."""
     _fake_registry(monkeypatch, {})
-    new, diffs = rc.repair_cards(_deck(), "Gooaye 股癌")
+    new, _ = rc.repair_cards(_deck(), "Gooaye 股癌")
     row = new[1]["rows"][0]
     assert (row["name"], row["code"]) == ("2330", "")
-    assert not any(d.startswith("2330") for d in diffs)
 
 
 def test_focus_items_without_a_group_key_do_not_gain_one(monkeypatch):

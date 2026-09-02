@@ -19,7 +19,7 @@ from typing import Any, Optional
 from shared.platform_client import social_enabled_for
 from shared.tickers import canonical_symbol, lookup_ticker, prime_tickers
 
-from ...exporters.ticker_insights import market_for_ticker, score_to_label
+from ...exporters.ticker_insights import score_to_label
 from ..state import PipelineState
 
 logger = logging.getLogger(__name__)
@@ -49,7 +49,6 @@ _SENTIMENT_BADGE = {
     "BEARISH": ("看空", "sent-bear"),
     "STRONG_BEARISH": ("看空", "sent-bear"),
 }
-_MARKET_ZH = {"TW": "台股", "US": "美股", "HK": "港股", "KR": "韓股", "EU": "歐股"}
 _SEVERITY_ZH = {"HIGH": "高", "MEDIUM": "中", "LOW": "低"}
 
 # Detects a bullet that already carries its own trailing [MM:SS]/[HH:MM:SS] stamp
@@ -195,7 +194,6 @@ def _ticker_row(insight: dict[str, Any]) -> Optional[dict[str, str]]:
     name, code = _ticker_name_code(ticker)
     sentiment, sentiment_class = _sentiment_badge(insight.get("sentiment_score"))
     return {
-        "group": _MARKET_ZH.get(market_for_ticker(ticker), "其他"),
         "name": name, "code": code,
         "sentiment": sentiment, "sentiment_class": sentiment_class,
         "risk": _risk_factor(insight.get("risks")),
