@@ -69,21 +69,58 @@ from src.podcast.content_builder.name_normalizer import (  # noqa: E402
 
 PUBLIC_API = os.getenv("TINBOKER_PLATFORM_API_URL", "https://api.tinboker.com")
 
-# Stored doc fields to correct — the reader-visible ones. Keep in sync with
-# name_normalizer._TARGETS (same set, under the storage layer's field names).
+# The episode's content lives in two places, and the split is not obvious: the JSONB
+# doc holds the short structured fields, while the long-form markdown is a FILE in the
+# media tree that the doc only points at. ``summary_content`` and friends look like doc
+# fields because the read API inlines the file under that name — but nothing is stored
+# there, so writing to them corrects nothing. Measured on the 22 planned episodes:
+# 43 occurrences in the doc, 117 in the files.
 DOC_FIELDS = (
-    "summary_content",
-    "modified_summary_content",
-    "events_markdown_content",
-    "marp_markdown_content",
-    "ticker_marp_markdown_content",
-    "ticker_insights_content",
     "key_insights",
     "social_cards",
     "social_thread",
 )
-# What the model reads to propose the map: the short, name-dense fields.
+
+# Doc fields holding a URL whose *file* carries correctable prose. `summary_url` and
+# `summary_public_url` are the same file in practice; resolving both and de-duplicating
+# by on-disk path keeps it to one rewrite.
+MEDIA_URL_FIELDS = (
+    "summary_url",
+    "summary_public_url",
+    "modified_summary_url",
+    "events_markdown_public_url",
+    "marp_markdown_public_url",
+    "ticker_marp_markdown_public_url",
+)
+# What the model reads to propose the map: the short, name-dense fields. The read API
+# inlines the media files under these names, which is why the proposal step is happy to
+# run from either source even though only the doc half is writable through the DB.
 SAMPLE_FIELDS = ("key_insights", "social_cards", "social_thread", "events_markdown_content")
+
+
+def _media_paths(doc: dict) -> dict:
+    """On-disk media files for one episode, keyed by path (de-duplicated).
+
+    Empty when the media tree is not mounted — which is the case anywhere but the host
+    that serves it, and the reason --apply has to run there.
+    """
+    try:
+        from src.service.gcs_storage_service import GCSStorageService
+        svc = GCSStorageService()
+    except Exception:  # noqa: BLE001 — no media root here; dry run still reports
+        return {}
+    out = {}
+    for field in MEDIA_URL_FIELDS:
+        url = doc.get(field)
+        if not url:
+            continue
+        try:
+            path = svc.path_for_url(url)
+        except ValueError:
+            continue
+        if path and path.is_file():
+            out[str(path)] = path
+    return out
 
 
 def _get_json(url: str):
@@ -181,7 +218,7 @@ def _plan(doc: dict) -> tuple[dict[str, str], dict[str, int]]:
 
 
 def _count_hits(doc: dict, mapping: dict[str, str]) -> dict[str, int]:
-    """Occurrences of the map's wrong forms, per stored field."""
+    """Occurrences of the map's wrong forms, per stored doc field."""
     hits: dict[str, int] = {}
     for name in DOC_FIELDS:
         value = _loads(doc.get(name))
@@ -191,6 +228,20 @@ def _count_hits(doc: dict, mapping: dict[str, str]) -> dict[str, int]:
         n = sum(blob.count(w) for w in mapping)
         if n:
             hits[name] = n
+    return hits
+
+
+def _count_media(doc: dict, mapping: dict[str, str]) -> dict[str, int]:
+    """Occurrences in the episode's media files, per file name (on-disk only)."""
+    hits: dict[str, int] = {}
+    for key, path in _media_paths(doc).items():
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        n = sum(text.count(w) for w in mapping)
+        if n:
+            hits[path.name] = n
     return hits
 
 
@@ -207,11 +258,16 @@ def _write_doc(conn, episode_id: str, fields: dict) -> None:
 
 
 def _restore(conn, path: str) -> int:
-    """Put back every value saved in a backup file."""
+    """Put back every doc field and media file saved in a backup."""
     saved = json.load(open(path, encoding="utf-8"))
-    for episode_id, fields in saved.items():
-        _write_doc(conn, episode_id, fields)
-        print(f"  ↩ restored {episode_id} ({', '.join(sorted(fields))})")
+    for episode_id, entry in saved.items():
+        doc_fields = entry.get("doc") or {}
+        if doc_fields:
+            _write_doc(conn, episode_id, doc_fields)
+        for file_path, text in (entry.get("files") or {}).items():
+            Path(file_path).write_text(text, encoding="utf-8")
+        print(f"  ↩ restored {episode_id} "
+              f"({len(doc_fields)} doc fields, {len(entry.get('files') or {})} files)")
     print(f"\n{len(saved)} episodes restored from {path}")
     return 0
 
@@ -299,17 +355,34 @@ def main() -> int:
         print(f"  {(ep.get('episode_title') or '')[:72]}")
         for wrong, right in mapping.items():
             print(f"    {wrong}  →  {right}")
-        print("    fields: " + ", ".join(f"{k}×{v}" for k, v in sorted(hits.items())))
+        media = _count_media(ep, mapping)
+        total_occurrences += sum(media.values())
+        if hits:
+            print("    doc:   " + ", ".join(f"{k}×{v}" for k, v in sorted(hits.items())))
+        if media:
+            print("    files: " + ", ".join(f"{k}×{v}" for k, v in sorted(media.items())))
+        else:
+            print("    files: (media tree not mounted here — --apply must run on the "
+                  "host that serves /media)")
 
         if args.apply:
             touched = [k for k in DOC_FIELDS if ep.get(k)]
             # Snapshot before overwriting. A correction map is cheap to re-derive; the
             # prose it rewrote is not, and this writes to the one database every
             # environment shares.
-            backup[ep["id"]] = {k: _loads(ep.get(k)) for k in touched}
-            updated = {k: apply_corrections(_loads(ep.get(k)), mapping) for k in touched}
-            _write_doc(conn, ep["id"], updated)
-            print("    ✓ written")
+            backup[ep["id"]] = {"doc": {k: _loads(ep.get(k)) for k in touched}, "files": {}}
+            _write_doc(conn, ep["id"],
+                       {k: apply_corrections(_loads(ep.get(k)), mapping) for k in touched})
+
+            for path in _media_paths(ep).values():
+                before = path.read_text(encoding="utf-8")
+                after = apply_corrections(before, mapping)
+                if after == before:
+                    continue
+                backup[ep["id"]]["files"][str(path)] = before
+                path.write_text(after, encoding="utf-8")
+            n_files = len(backup[ep["id"]]["files"])
+            print(f"    ✓ written ({len(touched)} doc fields, {n_files} media files)")
 
     if backup:
         with open(args.backup_out, "w", encoding="utf-8") as f:
