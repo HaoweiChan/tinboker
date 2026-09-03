@@ -7,8 +7,8 @@ card data while the deck keeps the *old* table: after the ticker repair, one epi
 stored deck still read ``name">3037<`` and ``grp">台股<`` even though its cards had
 resolved 欣興 and dropped the market column.
 
-That matters because ``render_social_card_pngs`` renders the **stored deck**, not the
-cards. Re-rendering PNGs without this step reproduces the old table faithfully.
+That matters because the PNG render reads the **stored deck**, not the cards.
+Re-rendering without this step reproduces the old table faithfully.
 
 Rebuilding is deterministic — ``build_inline_deck_markdown`` over the stored cards, the
 same call ``marp_converter.convert_marp`` makes in the pipeline — so no LLM runs and

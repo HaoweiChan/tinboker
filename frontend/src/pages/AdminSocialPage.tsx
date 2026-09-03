@@ -16,7 +16,6 @@ import {
   getSocialEpisode,
   saveSocialEpisode,
   generateSocialEpisode,
-  renderSocialCards,
   publishSocialEpisode,
   getVocusTokenStatus,
   publishEpisodeToVocus,
@@ -94,7 +93,6 @@ export const AdminSocialPage: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [generating, setGenerating] = useState(false);
-  const [rendering, setRendering] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [vocusToken, setVocusToken] = useState<VocusTokenStatus | null>(null);
   const [vocusBusy, setVocusBusy] = useState(false);
@@ -241,22 +239,6 @@ export const AdminSocialPage: React.FC = () => {
       setGenerating(false);
     }
   }, [selectedId, bundle, selectEpisode]);
-
-  const handleRenderCards = useCallback(async () => {
-    if (!selectedId) return;
-    setRendering(true);
-    try {
-      await renderSocialCards(selectedId);
-      await selectEpisode(selectedId); // re-read so the PNG grid shows the fresh cards
-      setEpisodes((prev) => prev.map((e) =>
-        e.episode_id === selectedId ? { ...e, has_images: true } : e));
-    } catch (e) {
-      console.error('[social] render cards failed', e);
-      alert('產生卡片圖失敗，請看 console');
-    } finally {
-      setRendering(false);
-    }
-  }, [selectedId, selectEpisode]);
 
   // 方格子's credential lives 7 days with no refresh endpoint. Surfacing it here is the
   // only thing standing between a lapsed token and a week of articles that silently
@@ -721,22 +703,14 @@ export const AdminSocialPage: React.FC = () => {
                   : <div className="text-base text-muted-foreground">這集還沒有 marp 投影片</div>}
               </div>
 
-              {/* Actual PNGs that will be posted (rendered by the pipeline, stored in GCS).
-                  Empty for older episodes processed before card rendering — they post text-only. */}
+              {/* Actual PNGs that will be posted. The ingest pipeline is the only
+                  renderer, so this panel is read-only — older episodes processed before
+                  card rendering stay empty and post text-only. */}
               <div className={`${card} p-4`}>
                 <div className="mb-2 flex items-center justify-between gap-2">
                   <div className={`${label} flex items-center gap-1.5`}>
                     <ImageIcon className="h-3.5 w-3.5" /> 卡片圖 PNG（實際發佈）
                   </div>
-                  <button
-                    onClick={handleRenderCards}
-                    disabled={rendering || generating || saving || publishing}
-                    title="從卡片圖（Marp）渲染 PNG 並儲存（發佈時也會自動產生）"
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-base font-medium text-foreground hover:bg-muted disabled:opacity-60"
-                  >
-                    <ImageIcon className={`h-4 w-4 ${rendering ? 'animate-pulse' : ''}`} />
-                    {rendering ? '產生中…' : bundle.composed.image_urls.length ? '重新產生卡片圖' : '產生卡片圖'}
-                  </button>
                 </div>
                 {bundle.composed.image_urls.length ? (
                   <>
@@ -764,7 +738,7 @@ export const AdminSocialPage: React.FC = () => {
                   </>
                 ) : (
                   <div className="text-base text-muted-foreground">
-                    還沒產生卡片圖 PNG。按上方「產生卡片圖」即可從卡片圖（Marp）渲染並儲存；發佈時也會自動產生。
+                    這集沒有卡片圖 PNG（在卡片圖渲染上線前處理的舊集數），發佈時會以純文字貼出。
                   </div>
                 )}
               </div>

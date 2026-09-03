@@ -5,14 +5,15 @@ The PNGs are baked at render time, so every fix upstream of them — resolved ti
 names, the dropped market column, the cover auto-fit, the proper-noun corrections —
 only reaches a reader once the images are made again.
 
-Runs on the media host rather than through the admin endpoint on purpose. That endpoint
-does the same work, but the backend containers cannot reach the Marp service: it is
-published on ``127.0.0.1:5004`` only, so a container resolving ``host.docker.internal``
-connects to the docker gateway address where nothing is listening. The pipelines run on
-the host, where that port is simply local.
+Runs on the media host, which is the only place rendering works: the Marp service is
+published on ``127.0.0.1:5004`` only, so a backend container resolving
+``host.docker.internal`` connects to the docker gateway address where nothing is
+listening. The pipelines run on the host, where that port is simply local. (The
+platform's on-demand render path was deleted for exactly this reason; ingest is now the
+only renderer.)
 
-Only episodes that already have rendered images are touched — the render is on-demand
-elsewhere in the system, and an episode that never had PNGs does not want them now.
+Only episodes that already have rendered images are touched — this repairs what exists
+rather than backfilling images onto episodes that never had them.
 
 Usage:
     uv run python services/podcast/scripts/backfill_render_cards.py --dry-run
