@@ -27,11 +27,25 @@ from .social_cards_builder import cards_from_marp_slides
 # How many sections the writer gets to choose from, and how many comments it may keep.
 #
 # These used to be one number: one comment per section, up to ten. With the link comment
-# on top that published eleven replies under a single post, which reads as a wall rather
-# than a thread — and nothing asked for it. references/platform.md puts the algorithmic
-# threshold at "20 讚 + 4 則以上深度留言", so four substantive comments is the target and
-# the rest was volume for its own sake. The writer still sees every section so it can
-# pick the good ones; it just no longer transcribes all of them.
+# on top that published eleven replies under a single post, and nobody had ever chosen
+# eleven — it was the section count leaking into the output.
+#
+# Measured before cutting it, over 74 posts with insights (Spearman, controlling for
+# post age, since newer posts happened to carry longer chains):
+#
+#     chain length vs views            +0.07  (p 0.52)
+#     chain length vs likes            +0.18  (p 0.12)
+#     chain length vs external replies +0.04  (p 0.77)
+#
+# At n=74 a rho of 0.23 would be needed for significance, so this rules out a large
+# effect and not a small one. What it does establish is that a longer chain does not
+# measurably grow the root post's reach, which is where discovery happens.
+#
+# The tail is NOT unread, and it would be convenient to pretend otherwise: per-reply
+# insights over 30 posts put replies 6-11 at 5-7% of the root post's views each, about
+# what replies 2-5 get. Cutting to four costs the median post ~180 reply-views. That is
+# the deliberate trade — a little tail reach for a thread that does not read as a wall.
+# references/platform.md wants "20 讚 + 4 則以上深度留言"; four clears that.
 MAX_TOPICS = 10
 MAX_COMMENTS = 4
 SECTION_BODY_CHARS = 1200
