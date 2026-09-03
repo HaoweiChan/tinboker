@@ -149,7 +149,25 @@ async def get_translation(
             aliases=translation.aliases,
             name_preference=getattr(translation, "name_preference", None) or "auto",
         )
-    # Not found - auto-create pending entry if enabled
+    # The same symbol already catalogued under another market means the caller guessed
+    # the market wrong, not that a new listing exists. Auto-creating anyway is what put
+    # phantom TW rows on Korean codes (000660, 005930) and phantom US rows on Taiwanese
+    # ones (2330, 2454, 3443, 3661) — duplicates that then have to be tie-broken by
+    # every consumer, and that `shared.tickers.prime_tickers` once resolved the wrong
+    # way round. Return the row we have instead of minting a contradictory one.
+    existing = service.get_any_market(ticker.upper())
+    if existing:
+        return TranslationPublicResponse(
+            ticker=existing.ticker,
+            market=existing.market,
+            name_en=existing.name_en,
+            name_zh_tw=existing.name_zh_tw,
+            brand_color=existing.brand_color,
+            aliases=existing.aliases,
+            name_preference=getattr(existing, "name_preference", None) or "auto",
+        )
+
+    # Not found in any market - auto-create pending entry if enabled
     if auto_create:
         try:
             create_data = TranslationCreate(

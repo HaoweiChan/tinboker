@@ -7,6 +7,22 @@
 
 ---
 
+## 2026-09-03 — CLAUDE.md described three GCP services that no longer exist
+- **Situation:** needed to reach `podcast_db` to run a backfill. CLAUDE.md:98 said
+  "Cloud SQL `34.14.119.47:5432/podcast_db`", so I hunted for a Cloud SQL instance and a
+  proxy binary, then burned a fail2ban lockout probing SSH usernames to find the host.
+- **Wrong assumption / failure:** there is no Cloud SQL. `gcloud sql instances list` is
+  empty across all 5 projects on the account and `describe tinboker-db` 404s;
+  `gcloud firestore databases describe --database=graphfolio-db` returns NOT_FOUND and
+  `gcloud storage ls gs://graphfolio-articles` 404s. `podcast_db` is a `postgres:16-alpine`
+  container on the VPS bound to `127.0.0.1:5433` (`docker ps` on 152.53.136.182), and the
+  media tree is `/srv/tinboker-media` served by Caddy — `graphfolio-articles` survives only
+  as a directory name (`service/gcs_storage_service.py:53` MEDIA_BUCKETS).
+- **Rule:** A migration is not finished until the docs that name the old infrastructure
+  are changed in the same PR; when a doc names a hosted resource, verify it with a
+  `describe`/`ls` before building on it, because a stale name costs more than a missing one.
+- **Status:** logged; CLAUDE.md:25 and :96–98 fixed 2026-09-03 (Tier A, evidence above).
+
 ## 2026-07-05 — FinMind silent-zero signature struck a third time (/topics blank)
 - **Situation:** /topics bubbles empty; `/api/sectors/performance` served all-zero
   `trading_value_windows_twd` for 139 exposures while heat/returns were healthy.
