@@ -24,8 +24,16 @@ from ..llm import invoke_json, load_prompt
 from ..state import PipelineState
 from .social_cards_builder import cards_from_marp_slides
 
-# Comment thread length cap, and how much real text to feed per topic / for the post.
+# How many sections the writer gets to choose from, and how many comments it may keep.
+#
+# These used to be one number: one comment per section, up to ten. With the link comment
+# on top that published eleven replies under a single post, which reads as a wall rather
+# than a thread — and nothing asked for it. references/platform.md puts the algorithmic
+# threshold at "20 讚 + 4 則以上深度留言", so four substantive comments is the target and
+# the rest was volume for its own sake. The writer still sees every section so it can
+# pick the good ones; it just no longer transcribes all of them.
 MAX_TOPICS = 10
+MAX_COMMENTS = 4
 SECTION_BODY_CHARS = 1200
 OVERVIEW_CHARS = 1000
 
@@ -181,7 +189,7 @@ def postprocess(result: Any, state: PipelineState) -> dict[str, Any]:
                 text, heading = str(item).strip(), ""
             if text:
                 comments.append({"heading": heading, "text": text})
-    return {"social_thread": {"post": post, "comments": comments}}
+    return {"social_thread": {"post": post, "comments": comments[:MAX_COMMENTS]}}
 
 
 def write_social_copy(state: PipelineState) -> dict[str, Any]:

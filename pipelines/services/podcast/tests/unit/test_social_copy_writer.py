@@ -143,3 +143,35 @@ def test_write_social_copy_skips_llm_when_publishing_disabled(monkeypatch):
     assert scw.write_social_copy({"source": "財經一路發"}) == {
         "social_thread": {"post": "", "comments": []}
     }
+
+
+# --- comment-chain length ------------------------------------------------------------
+# One comment per summary section, up to ten, plus threads_publisher's link comment
+# published eleven replies under a single post. references/platform.md puts the useful
+# threshold at "20 讚 + 4 則以上深度留言"; the rest was volume.
+
+
+def test_comments_are_capped(monkeypatch):
+    from src.podcast.content_builder.nodes import social_copy_writer as w
+
+    raw = {"post": "主文", "comments": [{"heading": f"H{i}", "text": f"第{i}則"} for i in range(10)]}
+    out = w.postprocess(raw, {})["social_thread"]
+    assert len(out["comments"]) == w.MAX_COMMENTS
+    # The cap keeps the leading ones, so the model's ordering still decides.
+    assert [c["text"] for c in out["comments"]] == ["第0則", "第1則", "第2則", "第3則"]
+
+
+def test_a_short_chain_is_left_alone(monkeypatch):
+    from src.podcast.content_builder.nodes import social_copy_writer as w
+
+    raw = {"post": "主文", "comments": [{"heading": "H", "text": "只有一則"}]}
+    assert len(w.postprocess(raw, {})["social_thread"]["comments"]) == 1
+
+
+def test_prompt_asks_for_a_selection_not_every_section():
+    from src.podcast.content_builder.llm import load_prompt
+
+    p = load_prompt("social_copy_writer")
+    body = p["system"] + p["user"]
+    assert "一段一則" not in body, "the one-per-section instruction is what produced 10 comments"
+    assert "最多 4 則" in body
