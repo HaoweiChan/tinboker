@@ -80,6 +80,60 @@ republish it.
 
 ---
 
+## Reading stats
+
+Both platforms are read back as well as written to, so syndication is no longer
+write-only. `backend/src/services/{vocus,substack}_insights_service.py` read the
+counters, two admin endpoints serve them, and the Analytics page renders a panel each.
+
+| Endpoint | Returns |
+|---|---|
+| `GET /api/admin/vocus/insights?posts=10` | lifetime reads/likes/bookmarks + article count, and the newest articles with their own counters |
+| `GET /api/admin/substack/insights?posts=10` | lifetime views/reactions/comments + post count, and the newest posts |
+
+Both reuse the publishers' clients, so the vocus 7-day token and the `substack.sid`
+cookie are maintained in exactly one place. Both always return 200 and report
+`available: false` with a `detail` when a credential is missing or expired.
+
+**The counts are lifetime, not windowed.** Neither platform exposes history — each
+article carries a running counter — so "reads this week" is not answerable from one
+call. That is what the daily snapshot is for: `POST /api/admin/analytics/snapshot`
+(the `Snapshot Social Metrics` workflow, 04:00 UTC) now also records `vocus_reads`,
+`vocus_articles`, `substack_reads` and `substack_posts`, and the growth chart draws
+them. **A day's reading is the difference between two rows.**
+
+### The field names are ranked guesses, and the code says so
+
+Neither API documents which key holds the read count, and neither could be captured
+while this was written. So each count is resolved against a ranked candidate list
+(`READ_KEYS` / `VIEW_KEYS`, plus `LIST_ENDPOINTS` for Substack's published-post list),
+and **the resolution is reported with the number**:
+
+- Working: the response carries `field_map` (`{"reads": "readCount"}`) and, for
+  Substack, the `source` endpoint that answered. Both show up in the Analytics page's
+  Tracking Configuration list.
+- Not working: articles were found but no candidate key matched → `available: false`
+  plus `sample_keys`, the field names the platform actually sent, rendered under the
+  panel.
+
+That distinction is the point. A read counter that silently reports **0** is worse than
+none — it reads as "nobody opened it" and invites the conclusion that syndication is
+not working — so a mapping miss is never allowed to render as a zero, in the panel or
+in a snapshot row (the snapshot writes only when `available` is true).
+
+**First run against live credentials is a verification step, not a smoke test.** Open
+`/admin/analytics`: if both panels show numbers, note the `field_map` values and pin
+them at the head of each candidate list. If a panel shows `Fields returned: …`, the
+right key is in that list — move it to the front of `READ_KEYS`/`VIEW_KEYS` and delete
+the guesses. Paging (`page` on vocus, `offset` on Substack) is unverified too, so both
+readers dedupe by id across pages: an ignored paging parameter stops the walk instead
+of multiplying the total.
+
+Scope caps: 200 articles/posts per read (`MAX_ARTICLES` / `MAX_POSTS`), reported as
+`truncated: true` rather than a quietly low number.
+
+---
+
 ## Covers
 
 `GET /api/og/episode/{id}.png` (public, no auth) draws the cover — see

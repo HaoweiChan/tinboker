@@ -238,19 +238,27 @@ class VocusClient:
     async def set_status(self, client: httpx.AsyncClient, article_id: str, status: int) -> None:
         await self._request(client, "PATCH", f"/api/articles/{article_id}/status/{status}", None)
 
-    async def list_article_ids(self, client: httpx.AsyncClient, status: int, limit: int = 20) -> list[str]:
-        """Ids of this user's articles in one status bucket.
+    async def list_articles(self, client: httpx.AsyncClient, status: int, limit: int = 20,
+                            page: int = 1) -> list[dict]:
+        """One page of this user's articles in a status bucket, as the API returns them.
 
-        There is no single-article read: GET /api/articles/{id} 404s in every shape we
-        tried, so "is it public yet?" has to be answered by asking which bucket it is in.
+        The list response is the only place an article's own fields can be read: there
+        is no single-article read (GET /api/articles/{id} 404s in every shape we tried),
+        which is why both "is it public yet?" and "how many people opened it?" are
+        answered from here.
         """
         data = await self._request(
             client, "GET",
-            f"/api/articles?num={limit}&order=desc&page=1&sort=updatedAt"
+            f"/api/articles?num={limit}&order=desc&page={page}&sort=updatedAt"
             f"&status={status}&userId={self._user_id}",
         )
         items = data if isinstance(data, list) else (data or {}).get("articles") or (data or {}).get("data") or []
-        return [str(a.get("_id") or a.get("id")) for a in items if isinstance(a, dict)]
+        return [a for a in items if isinstance(a, dict)]
+
+    async def list_article_ids(self, client: httpx.AsyncClient, status: int, limit: int = 20) -> list[str]:
+        """Ids of this user's articles in one status bucket."""
+        articles = await self.list_articles(client, status, limit)
+        return [str(a.get("_id") or a.get("id")) for a in articles]
 
     async def delete_article(self, client: httpx.AsyncClient, article_id: str) -> None:
         await self._request(client, "DELETE", f"/api/articles/{article_id}", None)
