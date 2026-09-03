@@ -31,7 +31,9 @@ from src.tag_registry import canonical_label
 from src.services.podcast import PodcastService
 from src.services.facebook_insights_service import (FacebookInsightsService,
                                                      recent_post_insights as facebook_recent_post_insights)
+from src.services.substack_insights_service import SubstackInsightsService
 from src.services.threads_insights_service import ThreadsInsightsService
+from src.services.vocus_insights_service import VocusInsightsService
 from src.services import threads_comments_service
 
 _MAX_MEDIA_BYTES = 200 * 1024 * 1024  # 200 MB per file
@@ -44,6 +46,10 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/admin/threads", tags=["admin", "social"])
 # Facebook insights live under their own prefix (parallel to the threads endpoints).
 facebook_router = APIRouter(prefix="/api/admin/facebook", tags=["admin", "social"])
+# Syndication targets read their own stats; the publishing endpoints for both stay on
+# the threads router, where the "one action, two platforms" flow lives.
+vocus_router = APIRouter(prefix="/api/admin/vocus", tags=["admin", "social"])
+substack_router = APIRouter(prefix="/api/admin/substack", tags=["admin", "social"])
 
 podcast_service = PodcastService()
 
@@ -180,6 +186,42 @@ async def facebook_insights(
     """
     summary = await FacebookInsightsService().account_summary(days=days)
     recent = await facebook_recent_post_insights(limit=posts) if posts else []
+    return {**summary, "recent_posts": recent}
+
+
+@vocus_router.get("/insights")
+async def vocus_insights(
+    posts: int = Query(default=10, ge=0, le=50, description="How many recent articles to include"),
+    _: AdminAccess = Depends(get_admin_access),
+):
+    """方格子 (vocus) reading stats: lifetime totals + per-article reads.
+
+    Counts are **lifetime**, not windowed — vocus keeps a running counter per article
+    and no history, so "reads this month" comes from the daily snapshot chart, not from
+    here.
+
+    Always 200. When the credential is missing or expired, or the read-count field has
+    moved, the payload reports ``available: false`` with a ``detail`` (and
+    ``sample_keys`` for the field case) so the admin UI shows why rather than a zero.
+    """
+    svc = VocusInsightsService()
+    summary = await svc.account_summary()
+    recent = await svc.recent_post_insights(limit=posts) if posts else []
+    return {**summary, "recent_posts": recent}
+
+
+@substack_router.get("/insights")
+async def substack_insights(
+    posts: int = Query(default=10, ge=0, le=49, description="How many recent posts to include"),
+    _: AdminAccess = Depends(get_admin_access),
+):
+    """Substack reading stats: lifetime view totals + per-post views.
+
+    Same shape and the same lifetime caveat as the vocus endpoint above.
+    """
+    svc = SubstackInsightsService()
+    summary = await svc.account_summary()
+    recent = await svc.recent_post_insights(limit=posts) if posts else []
     return {**summary, "recent_posts": recent}
 
 

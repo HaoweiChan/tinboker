@@ -340,6 +340,12 @@ def create_all_tables():
                 "ALTER TABLE IF EXISTS stock_institutional_daily "
                 "ADD COLUMN IF NOT EXISTS trust_net_shares DOUBLE PRECISION"
             ))
+            # analytics_snapshots predates syndication read counts; rows before the
+            # first snapshot that records them stay NULL, which the growth chart skips.
+            for column in ("vocus_reads", "vocus_articles", "substack_reads", "substack_posts"):
+                conn.execute(text(
+                    f"ALTER TABLE IF EXISTS analytics_snapshots ADD COLUMN IF NOT EXISTS {column} INTEGER"
+                ))
             conn.commit()
     elif engine.dialect.name == "sqlite":
         # SQLite has no "ADD COLUMN IF NOT EXISTS" — check PRAGMA first.
@@ -351,6 +357,11 @@ def create_all_tables():
             if cols and "name_preference" not in cols:
                 conn.execute(text("ALTER TABLE stock_translations ADD COLUMN name_preference VARCHAR(10) DEFAULT 'auto'"))
                 conn.commit()
+            snap_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(analytics_snapshots)"))}
+            for column in ("vocus_reads", "vocus_articles", "substack_reads", "substack_posts"):
+                if snap_cols and column not in snap_cols:
+                    conn.execute(text(f"ALTER TABLE analytics_snapshots ADD COLUMN {column} INTEGER"))
+                    conn.commit()
             cs_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(content_sources)"))}
             if cs_cols and "cover_image_url" not in cs_cols:
                 conn.execute(text("ALTER TABLE content_sources ADD COLUMN cover_image_url TEXT"))

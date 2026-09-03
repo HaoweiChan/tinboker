@@ -411,12 +411,17 @@ class TagRegistryAudit(Base):
 
 
 class AnalyticsSnapshot(Base):
-    """Daily point-in-time audience snapshot, for follower/fan growth charts.
+    """Daily point-in-time audience snapshot, for follower/fan/read growth charts.
 
-    Meta's APIs return only the *current* follower/fan count (no history), so we record
-    them once a day (cron → POST /api/admin/analytics/snapshot) and chart the
+    Meta's APIs return only the *current* follower/fan count (no history), and vocus
+    and Substack likewise expose a running read counter per article with no history, so
+    we record them once a day (cron → POST /api/admin/analytics/snapshot) and chart the
     accumulation. One row per UTC day (``day`` unique, upserted). Shared across envs
     (one Postgres), so it doesn't matter which env's cron writes it.
+
+    The syndication columns hold **lifetime totals across all published articles**, not
+    that day's reads: the day's reading is the difference between two rows, which is
+    exactly what the growth chart draws.
     """
     __tablename__ = "analytics_snapshots"
 
@@ -425,6 +430,10 @@ class AnalyticsSnapshot(Base):
     threads_followers = Column(Integer, nullable=True)
     fb_followers = Column(Integer, nullable=True)
     fb_fans = Column(Integer, nullable=True)
+    vocus_reads = Column(Integer, nullable=True)       # 方格子 lifetime reads, all articles
+    vocus_articles = Column(Integer, nullable=True)    # published article count
+    substack_reads = Column(Integer, nullable=True)    # Substack lifetime views, all posts
+    substack_posts = Column(Integer, nullable=True)    # published post count
     captured_at = Column(DateTime, default=datetime.utcnow)
 
     def __repr__(self) -> str:

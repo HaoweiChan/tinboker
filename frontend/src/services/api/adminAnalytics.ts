@@ -1,6 +1,7 @@
 /**
  * API client for admin analytics: Cloudflare traffic, AdSense monetization, Google
- * Search Console (SEO), and Threads engagement insights. All endpoints require an admin Bearer token and
+ * Search Console (SEO), Threads/Facebook engagement, and 方格子/Substack reading
+ * stats. All endpoints require an admin Bearer token and
  * always return 200 with `configured`/`available` flags when an upstream is missing.
  */
 
@@ -150,6 +151,68 @@ export async function getFacebookInsights(days = 28): Promise<FacebookInsights> 
     return res.data;
 }
 
+// ── Syndication reading stats (方格子 / Substack) ────────────────────────────
+// Counts are lifetime totals, not windowed: both platforms keep a running counter per
+// article and no history, so growth comes from the daily snapshot chart below.
+export interface SyndicationPostInsight {
+    title: string;
+    url: string | null;
+    /** vocus */
+    article_id?: string | null;
+    reads?: number | null;
+    likes?: number | null;
+    /** Substack */
+    post_id?: string | null;
+    views?: number | null;
+    reactions?: number | null;
+}
+
+interface SyndicationInsightsBase {
+    configured: boolean;
+    available: boolean;
+    detail?: string;
+    lifetime?: boolean;
+    truncated?: boolean;
+    /** Which response key each number came from — the API is undocumented. */
+    field_map?: Record<string, string>;
+    /** Keys the platform actually sent, when no count field matched. */
+    sample_keys?: string[];
+    recent_posts?: SyndicationPostInsight[];
+}
+
+export interface VocusInsights extends SyndicationInsightsBase {
+    articles?: number;
+    reads?: number;
+    likes?: number;
+    bookmarks?: number;
+    token?: { configured: boolean; expired: boolean; expiring_soon: boolean; seconds_left: number | null };
+}
+
+export interface SubstackInsights extends SyndicationInsightsBase {
+    posts?: number;
+    views?: number;
+    reactions?: number;
+    comments?: number;
+    /** The list endpoint that answered; the path is not documented. */
+    source?: string | null;
+}
+
+export async function getVocusInsights(posts = 10): Promise<VocusInsights> {
+    const res = await apiClient.get<VocusInsights>('/api/admin/vocus/insights', {
+        ...adminAuthConfig(),
+        params: { posts },
+    });
+    return res.data;
+}
+
+export async function getSubstackInsights(posts = 10): Promise<SubstackInsights> {
+    const res = await apiClient.get<SubstackInsights>('/api/admin/substack/insights', {
+        ...adminAuthConfig(),
+        params: { posts },
+    });
+    return res.data;
+}
+
 // ── Registered-member analytics (first-party, from the users collection) ─────
 export interface MemberAnalytics {
     total_users: number;
@@ -174,6 +237,11 @@ export interface AnalyticsSnapshot {
     threads_followers: number | null;
     fb_followers: number | null;
     fb_fans: number | null;
+    /** Lifetime reads across all published articles, as of that day. */
+    vocus_reads: number | null;
+    vocus_articles: number | null;
+    substack_reads: number | null;
+    substack_posts: number | null;
 }
 
 export async function getAnalyticsHistory(days = 90): Promise<AnalyticsSnapshot[]> {

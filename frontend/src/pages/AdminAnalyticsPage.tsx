@@ -2,8 +2,9 @@
  * Admin Analytics Page — live traffic + SEO + social engagement.
  *
  * Pulls Cloudflare zone analytics, AdSense monetization (earnings/RPM/fill rate),
- * Google Search Console (clicks/impressions/CTR + top queries & pages), and Threads +
- * Facebook Page engagement insights, and renders them inline.
+ * Google Search Console (clicks/impressions/CTR + top queries & pages), Threads +
+ * Facebook Page engagement insights, and 方格子/Substack reading stats, and renders
+ * them inline.
  * Each source degrades to a "not connected" note + dashboard link when its upstream
  * credentials aren't configured, so the page is always safe to open.
  */
@@ -34,6 +35,8 @@ import {
     DollarSign,
     Gauge,
     Percent,
+    BookOpen,
+    Mail,
 } from 'lucide-react';
 import {
     getCloudflareOverview,
@@ -43,6 +46,8 @@ import {
     getFacebookInsights,
     getMemberAnalytics,
     getAnalyticsHistory,
+    getVocusInsights,
+    getSubstackInsights,
     type CloudflareOverview,
     type AdSenseOverview,
     type SeoOverview,
@@ -52,6 +57,9 @@ import {
     type FacebookInsights,
     type MemberAnalytics,
     type AnalyticsSnapshot,
+    type VocusInsights,
+    type SubstackInsights,
+    type SyndicationPostInsight,
 } from '@/services/api/adminAnalytics';
 import { TrendChart, type TrendPoint } from '@/components/admin/TrendChart';
 
@@ -103,6 +111,59 @@ const ChartBox: React.FC<{ title: string; children: React.ReactNode }> = ({ titl
         {children}
     </div>
 );
+
+// Both syndication platforms return the same row shape under different names, so one
+// table renders either — the caller says which field is the read count.
+const SyndicationTable: React.FC<{
+    rows: SyndicationPostInsight[];
+    countLabel: string;
+    count: (r: SyndicationPostInsight) => number | null | undefined;
+    engagementLabel: string;
+    engagement: (r: SyndicationPostInsight) => number | null | undefined;
+}> = ({ rows, countLabel, count, engagementLabel, engagement }) => (
+    <div className="mt-6 overflow-x-auto rounded-lg border border-border">
+        <table className="min-w-full text-base">
+            <thead className="bg-muted text-xs uppercase text-muted-foreground">
+                <tr>
+                    <th className="px-3 py-2 text-left font-medium">Recent Article</th>
+                    <th className="px-3 py-2 text-right font-medium">{countLabel}</th>
+                    <th className="px-3 py-2 text-right font-medium">{engagementLabel}</th>
+                </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+                {rows.map((r, i) => (
+                    <tr key={i} className="text-foreground">
+                        <td className="max-w-md truncate px-3 py-2" title={r.title}>
+                            {r.url ? (
+                                <a
+                                    href={r.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-accent-info hover:underline"
+                                >
+                                    {r.title || r.article_id || r.post_id}
+                                </a>
+                            ) : (
+                                r.title || '—'
+                            )}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums">{fmt(count(r))}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{fmt(engagement(r))}</td>
+                    </tr>
+                ))}
+            </tbody>
+        </table>
+    </div>
+);
+
+// When a platform answers but no read-count field matched, the keys it *did* send are
+// the fix — showing them turns "why is this empty?" into a one-line code change.
+const SampleKeys: React.FC<{ keys?: string[] }> = ({ keys }) =>
+    keys && keys.length > 0 ? (
+        <p className="mt-2 break-words text-xs text-muted-foreground">
+            Fields returned: <code>{keys.join(', ')}</code>
+        </p>
+    ) : null;
 
 const NotConnected: React.FC<{ detail?: string; href: string; cta: string }> = ({
     detail,
@@ -290,6 +351,8 @@ export const AdminAnalyticsPage: React.FC = () => {
     const [seo, setSeo] = useState<SeoOverview | null>(null);
     const [threads, setThreads] = useState<ThreadsInsights | null>(null);
     const [fb, setFb] = useState<FacebookInsights | null>(null);
+    const [vocus, setVocus] = useState<VocusInsights | null>(null);
+    const [substack, setSubstack] = useState<SubstackInsights | null>(null);
     const [members, setMembers] = useState<MemberAnalytics | null>(null);
     const [history, setHistory] = useState<AnalyticsSnapshot[]>([]);
     const [loading, setLoading] = useState(true);
@@ -297,20 +360,25 @@ export const AdminAnalyticsPage: React.FC = () => {
     const load = useCallback(async () => {
         setLoading(true);
         // Independent sources — settle each on its own so one failure never blanks the page.
-        const [cfRes, adsRes, seoRes, thRes, fbRes, memRes, histRes] = await Promise.allSettled([
-            getCloudflareOverview(28),
-            getAdSenseOverview(28),
-            getSeoOverview(28),
-            getThreadsInsights(28, 5),
-            getFacebookInsights(28),
-            getMemberAnalytics(10),
-            getAnalyticsHistory(90),
-        ]);
+        const [cfRes, adsRes, seoRes, thRes, fbRes, voRes, suRes, memRes, histRes] =
+            await Promise.allSettled([
+                getCloudflareOverview(28),
+                getAdSenseOverview(28),
+                getSeoOverview(28),
+                getThreadsInsights(28, 5),
+                getFacebookInsights(28),
+                getVocusInsights(10),
+                getSubstackInsights(10),
+                getMemberAnalytics(10),
+                getAnalyticsHistory(90),
+            ]);
         if (cfRes.status === 'fulfilled') setCf(cfRes.value);
         if (adsRes.status === 'fulfilled') setAds(adsRes.value);
         if (seoRes.status === 'fulfilled') setSeo(seoRes.value);
         if (thRes.status === 'fulfilled') setThreads(thRes.value);
         if (fbRes.status === 'fulfilled') setFb(fbRes.value);
+        if (voRes.status === 'fulfilled') setVocus(voRes.value);
+        if (suRes.status === 'fulfilled') setSubstack(suRes.value);
         if (memRes.status === 'fulfilled') setMembers(memRes.value);
         if (histRes.status === 'fulfilled') setHistory(histRes.value);
         setLoading(false);
@@ -322,6 +390,22 @@ export const AdminAnalyticsPage: React.FC = () => {
 
     const tm = threads?.metrics || {};
     const fm = fb?.metrics || {};
+
+    // Reads are a cumulative counter, so a day with no value means "not measured",
+    // never "reads went to zero" — carry the last known value forward. Both series
+    // share one window so TrendChart's index-aligned x-axis stays honest.
+    const firstReadDay = history.findIndex(
+        (s) => s.vocus_reads !== null || s.substack_reads !== null,
+    );
+    const readHistory = firstReadDay < 0 ? [] : history.slice(firstReadDay);
+    const readPoints = (pick: (s: AnalyticsSnapshot) => number | null): TrendPoint[] => {
+        let last = 0;
+        return readHistory.map((s) => {
+            const value = pick(s);
+            if (value !== null) last = value;
+            return { x: s.day.slice(5), y: last };
+        });
+    };
 
     return (
         <div className="mx-auto max-w-7xl space-y-8">
@@ -713,6 +797,91 @@ export const AdminAnalyticsPage: React.FC = () => {
                 )}
             </SectionCard>
 
+            {/* 方格子 (vocus) reading */}
+            <SectionCard
+                icon={<BookOpen className="h-5 w-5 text-primary" />}
+                title="方格子 Reading"
+                subtitle="Lifetime reads across published articles — vocus keeps a running counter, so the trend lives in the growth chart below"
+            >
+                {vocus?.available ? (
+                    <>
+                        <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                            <Stat icon={<BookOpen className="h-4 w-4" />} label="Reads" value={fmt(vocus.reads)} />
+                            <Stat icon={<Hash className="h-4 w-4" />} label="Articles" value={fmt(vocus.articles)} />
+                            <Stat icon={<Heart className="h-4 w-4" />} label="Likes" value={fmt(vocus.likes)} />
+                            <Stat icon={<Bookmark className="h-4 w-4" />} label="Bookmarks" value={fmt(vocus.bookmarks)} />
+                        </div>
+                        {vocus.token?.expiring_soon && (
+                            <p className="mt-3 text-xs text-primary">
+                                方格子 token 即將到期，過期後閱讀數與發佈都會停止。
+                            </p>
+                        )}
+                        {vocus.recent_posts && vocus.recent_posts.length > 0 && (
+                            <SyndicationTable
+                                rows={vocus.recent_posts}
+                                countLabel="Reads"
+                                count={(r) => r.reads}
+                                engagementLabel="Likes"
+                                engagement={(r) => r.likes}
+                            />
+                        )}
+                    </>
+                ) : (
+                    <>
+                        <NotConnected
+                            detail={
+                                vocus?.detail ||
+                                (loading ? 'Loading…' : 'Set VOCUS_ID_TOKEN and VOCUS_USER_ID to enable vocus insights.')
+                            }
+                            href="https://vocus.cc/salon/tinboker"
+                            cta="Open the vocus salon"
+                        />
+                        <SampleKeys keys={vocus?.sample_keys} />
+                    </>
+                )}
+            </SectionCard>
+
+            {/* Substack reading */}
+            <SectionCard
+                icon={<Mail className="h-5 w-5 text-orange-500" />}
+                title="Substack Reading"
+                subtitle="Lifetime views across published posts"
+            >
+                {substack?.available ? (
+                    <>
+                        <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                            <Stat icon={<Eye className="h-4 w-4" />} label="Views" value={fmt(substack.views)} />
+                            <Stat icon={<Hash className="h-4 w-4" />} label="Posts" value={fmt(substack.posts)} />
+                            <Stat icon={<Heart className="h-4 w-4" />} label="Reactions" value={fmt(substack.reactions)} />
+                            <Stat icon={<MessageCircle className="h-4 w-4" />} label="Comments" value={fmt(substack.comments)} />
+                        </div>
+                        {substack.recent_posts && substack.recent_posts.length > 0 && (
+                            <SyndicationTable
+                                rows={substack.recent_posts}
+                                countLabel="Views"
+                                count={(r) => r.views}
+                                engagementLabel="Reactions"
+                                engagement={(r) => r.reactions}
+                            />
+                        )}
+                    </>
+                ) : (
+                    <>
+                        <NotConnected
+                            detail={
+                                substack?.detail ||
+                                (loading
+                                    ? 'Loading…'
+                                    : 'Set SUBSTACK_SID, SUBSTACK_SUBDOMAIN and SUBSTACK_USER_ID to enable Substack insights.')
+                            }
+                            href="https://tinboker.substack.com/publish/posts"
+                            cta="Open Substack"
+                        />
+                        <SampleKeys keys={substack?.sample_keys} />
+                    </>
+                )}
+            </SectionCard>
+
             {/* Audience growth (daily snapshots) */}
             <SectionCard
                 icon={<TrendingUp className="h-5 w-5 text-sentiment-bull" />}
@@ -733,6 +902,22 @@ export const AdminAnalyticsPage: React.FC = () => {
                             每天自動記錄一次粉絲數，累積後即可看出成長曲線（剛啟用時為空）。
                         </p>
                     )}
+                </div>
+                {/* Reads are cumulative and an order of magnitude apart from follower
+                    counts, so they get their own axis rather than flattening that one. */}
+                <div className="mt-6">
+                    <ChartBox title="Syndication Reads (lifetime)">
+                        <TrendChart
+                            height={140}
+                            series={[
+                                { name: '方格子 閱讀', colorClass: 'text-primary', points: readPoints((s) => s.vocus_reads) },
+                                { name: 'Substack 閱讀', colorClass: 'text-orange-500', points: readPoints((s) => s.substack_reads) },
+                            ]}
+                        />
+                    </ChartBox>
+                    <p className="mt-2 text-xs text-muted-foreground">
+                        累計閱讀數（每日快照）；兩點之間的差就是那天的閱讀量。
+                    </p>
                 </div>
             </SectionCard>
 
@@ -788,6 +973,20 @@ export const AdminAnalyticsPage: React.FC = () => {
                         label="Facebook Page (Meta)"
                         detail={fb?.available ? 'Connected (Graph API)' : 'Set FACEBOOK_PAGE_ACCESS_TOKEN to enable'}
                         status={fb?.available ? 'active' : 'pending'}
+                    />
+                    <TrackingItem
+                        label="方格子 (vocus)"
+                        detail={vocus?.available
+                            ? `Connected (reads via ${vocus.field_map?.reads || 'article list'})`
+                            : vocus?.detail || 'Set VOCUS_ID_TOKEN to enable'}
+                        status={vocus?.available ? 'active' : 'pending'}
+                    />
+                    <TrackingItem
+                        label="Substack"
+                        detail={substack?.available
+                            ? `Connected (views via ${substack.field_map?.views || 'post list'})`
+                            : substack?.detail || 'Set SUBSTACK_SID to enable'}
+                        status={substack?.available ? 'active' : 'pending'}
                     />
                 </ul>
             </div>
