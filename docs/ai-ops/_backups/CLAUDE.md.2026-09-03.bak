@@ -22,9 +22,8 @@ TinBoker (聽播客) — Taiwanese stock & podcast intelligence platform. Monore
   sentiment, wiki graph. uv workspace; serves `/api/wiki` + `/api/podcast` on `:8003`.
   **Content/infra only — never build UI here.**
 - `mcp-servers/` — agent tooling (`stock-translations`, `article-authoring`)
-- Data: Postgres `podcast_db` — **one instance, shared by dev/staging/prod** (SQLite
-  only for a local checkout) · Redis cache · media files on the VPS disk · Google
-  OAuth → JWT
+- Data: SQLite (dev) / Cloud SQL Postgres (staging+prod) · Redis cache · Firestore
+  (`graphfolio-db`) · Google OAuth → JWT
 - External APIs: Massive (US stocks), FinMind (TW stocks), Spotify + Tavily (pipelines)
 
 ## How to operate (AI sessions — read before working)
@@ -94,17 +93,9 @@ uv run --package tinboker-podcast pytest
 | Staging | staging.tinboker.com | staging-api.tinboker.com | 8002 | merge to `main` |
 | Production | tinboker.com | api.tinboker.com | 8000 | tag `v*` on `main` |
 
-VPS `152.53.136.182` (Netcup, Debian 13), Caddy reverse proxy. The data lives there:
-Postgres in Docker (`tinboker-postgres`, bound to `127.0.0.1:5433` — reach it with
-`ssh -L 5433:127.0.0.1:5433 root@152.53.136.182`), and the media tree
-`/srv/tinboker-media` that Caddy serves at `podcast-api.tinboker.com/media`. The
-`graphfolio-articles` path segment in media URLs is a directory name left over from
-GCS, not a bucket.
-
-GCP project `gen-lang-client-0901363254` is **Secret Manager only**. Firestore, GCS and
-Cloud SQL are gone — verified 2026-09-03, `gcloud firestore databases describe
---database=graphfolio-db` and `gcloud storage ls gs://graphfolio-articles` both 404, and
-`gcloud sql instances list` is empty across every project on the account.
+VPS `152.53.136.182` (Netcup, Debian 13), Caddy reverse proxy.
+GCP project `gen-lang-client-0901363254` (Secret Manager, Firestore `graphfolio-db`,
+GCS `graphfolio-articles`, Cloud SQL `34.14.119.47:5432/podcast_db`).
 
 ## Deployment — non-negotiables
 

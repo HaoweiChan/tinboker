@@ -115,6 +115,20 @@ class TranslationService:
             StockTranslation.market == market.upper()
         ).first()
 
+    def get_any_market(self, ticker: str) -> Optional[StockTranslation]:
+        """The catalogued row for ``ticker`` under any market, approved first.
+
+        A symbol lives in exactly one market in practice; a second row means someone
+        asked with the wrong one. Approved rows win so a curated entry is never shadowed
+        by an auto-created stub for the same symbol.
+        """
+        rows = self.db.query(StockTranslation).filter(
+            StockTranslation.ticker == ticker.upper()
+        ).all()
+        if not rows:
+            return None
+        return next((r for r in rows if r.translation_status == "approved"), rows[0])
+
     def apply_known_name_corrections(self) -> int:
         """Fix rows whose approved zh name belongs to a different company.
 
