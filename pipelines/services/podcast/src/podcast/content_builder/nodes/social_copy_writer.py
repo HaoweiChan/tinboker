@@ -189,6 +189,23 @@ def build_messages(state: PipelineState) -> list[dict[str, str]]:
     ]
 
 
+# The account is openly automated, so it does not get a first person: "我聽完覺得" from a
+# thing that never listened is the one claim in a post that is definitely false. The
+# prompt forbids it; this only reports slips, because the mechanical fix ("我覺得X" → "X")
+# breaks grammar often enough that a wrong edit would be worse than a visible warning.
+_FIRST_PERSON = re.compile(r"我")
+
+
+def _report_first_person(post: str, comments: list[dict[str, str]]) -> None:
+    hits = []
+    if _FIRST_PERSON.search(post or ""):
+        hits.append("post")
+    hits += [f"comment {i}" for i, c in enumerate(comments, 1)
+             if _FIRST_PERSON.search(c.get("text") or "")]
+    if hits:
+        print(f"  ⚠ first person slipped into {', '.join(hits)} — the prompt forbids 我")
+
+
 def postprocess(result: Any, state: PipelineState) -> dict[str, Any]:
     """Normalise the LLM/agent output into a clean ``social_thread`` dict."""
     post = ""
@@ -203,7 +220,9 @@ def postprocess(result: Any, state: PipelineState) -> dict[str, Any]:
                 text, heading = str(item).strip(), ""
             if text:
                 comments.append({"heading": heading, "text": text})
-    return {"social_thread": {"post": post, "comments": comments[:MAX_COMMENTS]}}
+    comments = comments[:MAX_COMMENTS]
+    _report_first_person(post, comments)
+    return {"social_thread": {"post": post, "comments": comments}}
 
 
 def write_social_copy(state: PipelineState) -> dict[str, Any]:
