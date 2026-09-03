@@ -4,7 +4,6 @@ Episode Processor
 This module contains the EpisodeProcessor class that orchestrates all processing steps.
 """
 
-import os
 from typing import Dict
 
 from src.models.podcast_models import PodcastEpisode
@@ -130,15 +129,17 @@ class EpisodeProcessor:
             # Step 4: Upload to GCS
             upload_to_gcs(self.config, self.services, episode_data)
 
-            # Step 4b: Render + upload social-card PNGs — ONLY when auto-publish is on
-            # (its only consumer: the platform posts on its own TW slot schedule, see
-            # SOCIAL_PUBLISH_SLOTS; ingest no longer triggers posting itself). In the default manual flow the brand reviews each
-            # episode on the admin Social page, where the platform renders the PNGs on
-            # demand ("產生卡片圖" button / auto-on-publish) — so we don't pre-render +
-            # store cards for every episode that never gets posted. The social_cards
-            # DATA + marp_markdown are always built (cheap) and drive the admin preview.
-            if os.environ.get("SOCIAL_AUTOPUBLISH", "").strip().lower() in ("1", "true", "yes", "on"):
-                render_social_cards(self.config, self.services, episode_data)
+            # Step 4b: Render + upload social-card PNGs. Unconditional, and the only
+            # renderer there is: the platform's on-demand path was deleted because the
+            # backend containers cannot reach the Marp service (it is published on
+            # 127.0.0.1:5004, so a container resolving host.docker.internal lands on the
+            # docker gateway where nothing listens). Ingest runs on the host, where that
+            # port is local, so rendering here is the one place it actually works.
+            #
+            # Previously this was gated on SOCIAL_AUTOPUBLISH to avoid storing cards for
+            # episodes that never get posted. ~1.2MB of PNGs per episode at a few
+            # episodes a day is not worth a second, broken code path.
+            render_social_cards(self.config, self.services, episode_data)
 
             # Step 5: Persist the episode doc into Postgres (the only content store)
             persist_episode(self.config, self.services, episode_data)

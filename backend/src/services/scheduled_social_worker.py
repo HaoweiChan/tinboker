@@ -94,18 +94,6 @@ async def process_scheduled_posts() -> int:
                     if not episode:
                         raise ValueError(f"Episode {post.episode_id} not found in store")
 
-                    # Auto-render card PNGs if needed
-                    cards = getattr(episode, "social_cards", None) or []
-                    if cards and not any(c.get("image_url") for c in cards):
-                        try:
-                            episode = await podcast_service.render_social_card_pngs(post.episode_id)
-                        except Exception as render_err:
-                            logger.warning(
-                                "auto-render before scheduled publish failed for episode %s: %s",
-                                post.episode_id,
-                                render_err
-                            )
-
                     # Publish to selected platforms
                     for platform_name in post.platforms:
                         pub = _PUBLISHERS.get(platform_name)
