@@ -47,6 +47,7 @@ opening the admin page.
 | `SYNDICATE_AUTOPUBLISH` | **Required.** Unset = the step is a no-op and prints where to do it by hand. |
 | `SYNDICATE_VOCUS_PUBLISH` | vocus goes public instead of staying a draft. |
 | `SYNDICATE_SUBSTACK_PUBLISH` | Substack goes public **on the web**. Cannot email — see below. |
+| `SYNDICATE_MAX_AGE_DAYS` | Only syndicate episodes published within this many days. Default **7**; `0` disables the gate for a deliberate backfill. |
 | `TINBOKER_PLATFORM_API_URL` + `TINBOKER_SOCIAL_TOKEN` | already needed by the Threads trigger |
 | `TINBOKER_ADMIN_API_URL` | Where `/api/admin/*` calls go. **Must not be production** — see below. |
 
@@ -59,6 +60,26 @@ not `staging-api.tinboker.com`: Cloudflare's 100s edge timeout 524'd the Threads
 catch-up publish while the origin kept posting, so the run log reported failures for
 publishes that actually went live. All environments share one database, so staging does
 exactly the same work to the same data. The pinned value lives in the systemd units.
+
+**Two guards, and they answer different questions.**
+
+*Has this episode already gone out?* — the shared `social_posts` ledger
+(`services/social_ledger.py`), the same one Threads and Facebook use. Every syndication
+call claims `(platform, episode_id)` before publishing and records the article id after,
+so a re-ingest, an overlapping trigger, or a *different environment* is refused. That
+last one is not hypothetical: dev, staging and production share this Postgres **and** the
+vocus/Substack credentials, and the three duplicate vocus articles from Aug 2026 differ
+only in whether the cover URL says `api.` or `staging-api.` — two environments published
+the same episode minutes apart.
+
+*Is it new enough to be worth sending?* — `SYNDICATE_MAX_AGE_DAYS`. The ledger cannot
+help here, because the back catalogue is all first-time syndications: ingest pulls the
+last 10 episodes per show and walks backwards, so ~50 of the ~60 episodes it touches
+each day are years old. Unchecked that is ~44 posts a day. (Threads has had the same
+recency guard from the start — `settings.threads_max_age_days`, 4 days.)
+
+An episode with **no** resolvable publish time is skipped, not published: a wrong skip
+costs one article the admin page can still stage by hand, a wrong publish is public.
 
 **Nothing here can email subscribers.** `SubstackClient.publish_draft` sends
 `send_email: false` and takes no parameter that could change it, so no combination of

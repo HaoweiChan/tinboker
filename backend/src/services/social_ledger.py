@@ -1,7 +1,12 @@
-"""Shared idempotency ledger for social publishing (Threads + Facebook).
+"""Shared idempotency ledger for social publishing (Threads, Facebook, vocus, Substack).
 
 One table, one row per (platform, episode_id). Replaces the two container-local
 SQLite ledgers that were lost on every redeploy.
+
+Because dev, staging and production share this Postgres *and* the publishing
+credentials, the ledger is also what stops two environments from posting the same
+episode twice — which is exactly how vocus ended up with duplicate articles whose only
+difference was an ``api.`` versus ``staging-api.`` cover URL.
 
 The contract is claim-then-publish:
 
@@ -74,6 +79,17 @@ def release(platform: str, episode_id: str) -> None:
 def already_posted(platform: str, episode_id: str) -> bool:
     with session_scope() as db:
         return db.get(SocialPostLedger, (platform, episode_id)) is not None
+
+
+def posted_record(platform: str, episode_id: str) -> Optional[dict]:
+    """The ledger row for one episode, or None. Read for the URL a refused claim points at."""
+    with session_scope() as db:
+        row = db.get(SocialPostLedger, (platform, episode_id))
+        if row is None:
+            return None
+        return {"platform": row.platform, "episode_id": row.episode_id,
+                "media_id": row.media_id, "url": row.url,
+                "posted_at": row.posted_at.isoformat() if row.posted_at else None}
 
 
 def list_posted(platform: str, limit: int = 50) -> list[dict]:

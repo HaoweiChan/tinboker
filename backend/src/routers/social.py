@@ -34,7 +34,7 @@ from src.services.facebook_insights_service import (FacebookInsightsService,
 from src.services.substack_insights_service import SubstackInsightsService
 from src.services.threads_insights_service import ThreadsInsightsService
 from src.services.vocus_insights_service import VocusInsightsService
-from src.services import threads_comments_service
+from src.services import social_ledger, threads_comments_service
 
 _MAX_MEDIA_BYTES = 200 * 1024 * 1024  # 200 MB per file
 _gcs = GCSContentService()
@@ -82,6 +82,42 @@ def _parse_platforms(platforms: str) -> list[str]:
 def _posted_status(episode_id: str) -> dict:
     """Whether this episode has already been posted, per platform (idempotency ledgers)."""
     return {name: pub.already_posted(episode_id) for name, pub in _PUBLISHERS.items()}
+
+
+async def _syndicate_once(platform: str, episode_id: str, run, dry_run: bool) -> dict:
+    """Run one syndication publisher at most once per (platform, episode), ever.
+
+    vocus and Substack create a fresh article on every call — they dedupe nothing — so
+    the only thing standing between a re-ingest and a second public copy is this ledger.
+    It is shared Postgres, which matters more than it sounds: dev, staging and production
+    all carry the same publishing credentials, and the duplicate vocus articles differ
+    only in whether the cover points at ``api.`` or ``staging-api.``, i.e. two
+    environments published the same episode minutes apart.
+
+    Claim-then-publish, as in ``threads_publisher``: the row goes in *before* the post,
+    and comes back out unless something was actually created. "Created" is an id, not
+    ``posted`` — a vocus article whose publish could not be verified still exists, and
+    releasing that claim would mint a duplicate on the next run.
+    """
+    if dry_run:  # converts and reports; nothing reaches the platform, so nothing to claim
+        return await run()
+    if not await asyncio.to_thread(social_ledger.claim, platform, episode_id):
+        prior = await asyncio.to_thread(social_ledger.posted_record, platform, episode_id) or {}
+        return {"platform": platform, "episode_id": episode_id, "posted": False,
+                "reason": "already_syndicated", "url": prior.get("url"),
+                "posted_at": prior.get("posted_at")}
+    try:
+        result = await run()
+    except BaseException:
+        await asyncio.to_thread(social_ledger.release, platform, episode_id)
+        raise
+    created = result.get("article_id") or result.get("draft_id")
+    if created:
+        await asyncio.to_thread(social_ledger.record, platform, episode_id,
+                                str(created), result.get("url") or "")
+    else:
+        await asyncio.to_thread(social_ledger.release, platform, episode_id)
+    return result
 
 
 def _social_off_result(platform: str, episode_id: str) -> dict:
@@ -486,7 +522,7 @@ async def publish_episode_to_vocus(
     # checked. See services/og_image.py.
     thumbnail_url = f"{_public_base_url(request)}/api/og/episode/{episode_id}.png"
 
-    return await vocus_publisher.publish_summary(
+    return await _syndicate_once("vocus", episode_id, lambda: vocus_publisher.publish_summary(
         episode_id,
         title,
         summary,
@@ -498,7 +534,7 @@ async def publish_episode_to_vocus(
         tags=tags,
         thumbnail_url=thumbnail_url,
         dry_run=dry_run,
-    )
+    ), dry_run)
 
 
 @router.post("/episodes/{episode_id}/draft-substack")
@@ -526,7 +562,7 @@ async def draft_episode_to_substack(
     if not social_enabled_for(podcast_name):
         return _social_off_result("substack", episode_id)
 
-    return await substack_publisher.create_summary_draft(
+    return await _syndicate_once("substack", episode_id, lambda: substack_publisher.create_summary_draft(
         episode_id,
         title,
         summary,
@@ -536,7 +572,7 @@ async def draft_episode_to_substack(
         subtitle=((getattr(episode, "summary_excerpt", None) or "").strip()
                   or syndication_excerpt(summary, limit=140)),
         dry_run=dry_run,
-    )
+    ), dry_run)
 
 
 @router.post("/episodes/{episode_id}/syndicate")
@@ -617,7 +653,10 @@ async def syndicate_episode(
         )
 
     runners = {"vocus": _vocus, "substack": _substack}
-    settled = await asyncio.gather(*(runners[p]() for p in selected), return_exceptions=True)
+    settled = await asyncio.gather(
+        *(_syndicate_once(p, episode_id, runners[p], dry_run) for p in selected),
+        return_exceptions=True,
+    )
 
     results: dict[str, Any] = {}
     for name, outcome in zip(selected, settled):
