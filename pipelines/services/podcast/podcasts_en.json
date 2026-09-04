@@ -9,7 +9,7 @@
     "name": "Exchanges at Goldman Sachs",
     "link": "https://podcasttomp3.com/podcasts/v2/753888",
     "limit": 10,
-    "spotify_show_link": "https://open.spotify.com/episode/2qNxiLun8EvNNnowUp3iaN"
+    "spotify_show_link": "https://open.spotify.com/show/1T6xOGR2S5tY6bZ7XbpAC3"
   },
   {
     "name": "CNBC's Fast Money",
@@ -57,7 +57,7 @@
     "name": "Motley Fool Money",
     "link": "https://podcasttomp3.com/podcasts/v2/51305",
     "limit": 10,
-    "spotify_show_link": "https://open.spotify.com/show/7tXRc97C1fA0epHAGQuJOE"
+    "_spotify_note": "No spotify_show_link on purpose. 7tXRc97C1fA0epHAGQuJOE is \"Motley Fool Hidden Gems Investing\", a DIFFERENT show — the backfill matched 0 of 53 episodes against it. Ours is the Australian feed (Scott Phillips: \"Stocks In Focus: JB HiFi\", Woodside, Pilbara Minerals, AFIC), not the US show. Find the real one before setting this."
   },
   {
     "name": "Private Equity Funcast",
