@@ -21,6 +21,5 @@ export interface Episode {
   summary: SummaryPoint[];
   imageUrl?: string;
   spotifyUri?: string;
-  mp3Url?: string;
   keyInsights?: string[];
 }

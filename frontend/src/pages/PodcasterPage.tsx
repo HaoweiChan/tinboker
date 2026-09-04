@@ -8,7 +8,7 @@ import { apiEpisodeToCardV2 } from '@/components/redesign/episodeAdapter';
 import { PickCard } from '@/components/financial/PickCard';
 import { cn } from '@/lib/utils';
 import { getPodcastByName, getPodcastEpisodes, type Podcast, type Episode as ApiEpisode } from '@/services/api';
-import { getInsightsByPodcaster, getEpisodeAudioUrl } from '@/services/api/podcasts';
+import { getInsightsByPodcaster } from '@/services/api/podcasts';
 import { fetchWithFallback } from '@/services/api/migration';
 import { useStockPriceMap } from '@/hooks/useStockPriceMap';
 import { useStockPriceSinceMap } from '@/hooks/useStockPriceSinceMap';
@@ -116,9 +116,6 @@ export const PodcasterPage: React.FC = () => {
       return;
     }
     const spotifyUri = ep.spotify_id ? `spotify:episode:${ep.spotify_id}` : undefined;
-    const mp3Url = ep.podcast_name && (ep.mp3_url || ep.mp3_public_url)
-      ? getEpisodeAudioUrl(ep.podcast_name, ep.id, ep.spotify_url)
-      : undefined;
     playEpisode(
       {
         id: ep.id,
@@ -126,9 +123,8 @@ export const PodcasterPage: React.FC = () => {
         showName: name,
         coverUrl: ep.spotify_images?.[0] || imageUrl,
         spotifyUri,
-        mp3Url,
       },
-      spotifyUri || mp3Url ? { seekTo: seconds } : undefined,
+      spotifyUri ? { seekTo: seconds } : undefined,
     );
   };
 

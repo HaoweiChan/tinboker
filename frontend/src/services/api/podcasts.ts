@@ -11,27 +11,6 @@ function adminAuthConfig() {
   return { headers: { Authorization: `Bearer ${token}` } };
 }
 
-/**
- * Streaming URL for an episode's MP3, or undefined when the episode has a source link.
- *
- * The audio is the podcaster's, re-hosted on our domain, and serving it with ads around
- * it is what AdSense flagged as replicated content. `spotifyUrl` is required rather than
- * optional on purpose: every play surface routes through here — EpisodeDetail, PicksPage,
- * the card adapter, TickerInsightCard, the Marp slides — and making it a required
- * argument means a new caller cannot quietly reintroduce the hosted player. Pass
- * null/undefined only for the ~7% of episodes with no source link, which would otherwise
- * have no way to play at all.
- */
-export function getEpisodeAudioUrl(
-  podcastName: string,
-  episodeId: string,
-  spotifyUrl: string | null | undefined,
-): string | undefined {
-  if (spotifyUrl) return undefined;
-  return `${apiClient.defaults.baseURL || ''}/api/podcast/${encodeURIComponent(podcastName)}/episodes/${encodeURIComponent(episodeId)}/audio`;
-}
-
-
 export interface Podcast {
   id: string;
   name: string;
