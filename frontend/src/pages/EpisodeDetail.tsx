@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useSearchParams, Link, useNavigate } from 'react-router-dom';
-import { ChevronLeft, Play, ExternalLink, Bookmark, Share2, Check } from 'lucide-react';
+import { ChevronLeft, ExternalLink, Bookmark, Share2, Check } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
 import { PodcastAvatar } from '@/components/common/PodcastAvatar';
 import { PageContent } from '@/components/layout/PageContent';
 import { TickerRow } from '@/components/redesign';
 import { cn } from '@/lib/utils';
-import { getEpisodeById, getEpisodeByIdOnly, getEpisodeAudioUrl, getPodcastByName, type Episode as ApiEpisode } from '@/services';
+import { getEpisodeById, getEpisodeByIdOnly, getPodcastByName, type Episode as ApiEpisode } from '@/services';
 import { getSectorBoard, type SectorBoardItem } from '@/services/api/podcasts';
 import { getEpisodeMentions, type ContentMention } from '@/services/api/mentions';
 import { MentionReturnChips } from '@/components/financial/MentionReturnChips';
@@ -112,7 +112,7 @@ export const EpisodeDetail: React.FC = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const podcastName = searchParams.get('podcast') || '';
-  const { playEpisode, requestSeek } = usePlayerStore();
+  const { requestSeek } = usePlayerStore();
   const { toggleEpisodeBookmark } = useAppStore();
   const { guard } = useRequireAuth();
   const episodeBookmarks = useEpisodeBookmarks();
@@ -312,21 +312,6 @@ export const EpisodeDetail: React.FC = () => {
   const bookmarkKey = episode ? `${episode.podcast_name}_${episode.id}` : '';
   const isBookmarked = episodeBookmarks.includes(bookmarkKey);
 
-  const onPlay = () => {
-    if (!episode) return;
-    playEpisode({
-      id: episode.id,
-      title,
-      showName: name,
-      coverUrl: episode.spotify_images?.[0] || undefined,
-      spotifyUri,
-      mp3Url: episode.podcast_name && (episode.mp3_url || episode.mp3_public_url)
-        ? getEpisodeAudioUrl(episode.podcast_name, episode.id, episode.spotify_url)
-        : undefined,
-      timestampedSections: playerSections,
-    });
-  };
-
   const [shareCopied, setShareCopied] = useState(false);
 
   const onBookmark = () => {
@@ -433,17 +418,12 @@ export const EpisodeDetail: React.FC = () => {
                   </div>
                 </div>
                 <div className="flex w-full items-center gap-2 overflow-x-auto pb-1 sm:w-auto sm:shrink-0 sm:overflow-visible sm:pb-0">
-                  {/* No in-house player when we can point at the source. The episode
-                      audio is the podcaster's, re-hosted on our own domain, and serving
-                      it with ads around it is what AdSense flagged as replicated
-                      content. Where a spotify_url exists the Spotify button below is
-                      the way to listen; the player stays only for the ~7% of episodes
-                      with no source link, which would otherwise have no way to play. */}
-                  {!episode.spotify_url && (
-                    <button type="button" onClick={onPlay} className="inline-flex shrink-0 items-center gap-1.5 px-4 py-2 rounded-full bg-foreground text-background text-sm font-medium hover:opacity-90 transition-opacity">
-                      <Play size={14} className="fill-current" /> 播放本集
-                    </button>
-                  )}
+                  {/* No in-house player at all. The episode audio is the podcaster's,
+                      re-hosted on our own domain, and serving it with ads around it is
+                      what AdSense flagged as replicated content — that holds whether or
+                      not we have a source link to offer instead. Where a spotify_url
+                      exists the Spotify button below is the way to listen; where it does
+                      not, the page offers the summary and no playback. */}
                   <button
                     type="button"
                     onClick={onBookmark}

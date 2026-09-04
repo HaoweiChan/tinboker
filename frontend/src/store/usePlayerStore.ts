@@ -16,7 +16,6 @@ interface EpisodeData {
   showName: string;
   coverUrl?: string;
   spotifyUri?: string;
-  mp3Url?: string;
   timestampedSections?: TimestampedSection[];
 }
 

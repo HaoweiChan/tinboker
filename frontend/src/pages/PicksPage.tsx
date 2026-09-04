@@ -10,7 +10,6 @@ import {
   getInsightsByPodcaster,
   getSortedPodcasts,
   getEpisodeByIdOnly,
-  getEpisodeAudioUrl,
   type Podcast,
 } from '@/services/api/podcasts';
 import { fetchWithFallback } from '@/services/api/migration';
@@ -226,9 +225,6 @@ export const PicksPage: React.FC = () => {
       const ep = await getEpisodeByIdOnly(episodeId);
       if (!ep) throw new Error('episode not found');
       const spotifyUri = ep.spotify_id ? `spotify:episode:${ep.spotify_id}` : undefined;
-      const mp3Url = ep.podcast_name && (ep.mp3_url || ep.mp3_public_url)
-        ? getEpisodeAudioUrl(ep.podcast_name, ep.id, ep.spotify_url)
-        : undefined;
       playEpisode(
         {
           id: ep.id,
@@ -236,9 +232,8 @@ export const PicksPage: React.FC = () => {
           showName: ep.podcast_name || '',
           coverUrl: ep.spotify_images?.[0] || podcastImageMap.get(ep.podcast_name || '') || undefined,
           spotifyUri,
-          mp3Url,
         },
-        spotifyUri || mp3Url ? { seekTo: seconds } : undefined,
+        spotifyUri ? { seekTo: seconds } : undefined,
       );
     } catch {
       window.open(`https://open.spotify.com/search/${encodeURIComponent(episodeId)}`, '_blank');

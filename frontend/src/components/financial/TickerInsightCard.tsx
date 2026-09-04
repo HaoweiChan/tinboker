@@ -130,9 +130,8 @@ export const TickerInsightCard: React.FC<TickerInsightCardProps> = ({ insight, e
                 showName: episode.showName,
                 coverUrl: episode.imageUrl,
                 spotifyUri: episode.spotifyUri,
-                mp3Url: episode.mp3Url,
             },
-            episode.spotifyUri || episode.mp3Url ? { seekTo: seconds } : undefined
+            episode.spotifyUri ? { seekTo: seconds } : undefined
         );
     };
 
