@@ -37,8 +37,16 @@ logger = logging.getLogger(__name__)
 # Ranked candidates for the list of published posts. The first is the publication
 # dashboard's own list (most likely to carry stats); the second is the public archive,
 # which at least yields the post set when the first path changes.
+# `order_by` and `order_direction` are REQUIRED on post_management/published, and the
+# values are validated: post_date/desc are accepted, publishedAt and DESC are both
+# rejected. Sending neither returns 400 with
+#   {"errors":[{"param":"order_by","msg":"Invalid value"}, …]}
+# which used to fall through to /api/v1/posts — a public endpoint that answers 200 and
+# carries no engagement fields at all, so the summary reported nothing and looked
+# merely empty rather than broken.
 LIST_ENDPOINTS = (
-    "/api/v1/post_management/published?offset={offset}&limit={limit}",
+    "/api/v1/post_management/published"
+    "?offset={offset}&limit={limit}&order_by=post_date&order_direction=desc",
     "/api/v1/posts?offset={offset}&limit={limit}",
 )
 
@@ -158,6 +166,11 @@ class SubstackInsightsService:
         reactions, reaction_key, _ = sum_int(posts, REACTION_KEYS)
         comments, comment_key, _ = sum_int(posts, COMMENT_KEYS)
 
+        # Keep this diagnostic: views do arrive today, on `stats.views`, so an unmatched
+        # key means the shape changed and wants pinning — not that the publication has
+        # no views. (It is the only analytics this credential can reach either way:
+        # /api/v1/posts/{id}/stats and /api/v1/post_management/stats 404, and
+        # /api/v1/publication/stats answers 403 Not authorized.)
         if posts and not matched:
             return {
                 "configured": True, "available": False, "lifetime": True,
