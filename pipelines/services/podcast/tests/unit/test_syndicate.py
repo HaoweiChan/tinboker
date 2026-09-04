@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import sys
 import types
+from datetime import datetime, timedelta, timezone
 
 from src.pipeline.steps import syndicate as sy
 
@@ -16,12 +17,22 @@ def _cfg(rerun=None):
     return types.SimpleNamespace(rerun_from=rerun)
 
 
-def _ep(summary="內文一段。", episode_id="EP1", key="summary_text"):
-    # ``summary_text`` is the key the real pipeline writes (summarize.py). A fake shaped
-    # with a key production never uses is how the silent-skip bug survived these tests.
+def _ep(summary="內文一段。", episode_id="EP1", key="summary_text", age_days=1,
+        with_model=True):
+    """An episode fake shaped like the one step 5f actually sees.
+
+    ``summary_text`` is the key the real pipeline writes (summarize.py); a fake shaped
+    with a key production never uses is how the silent-skip bug survived these tests.
+    ``age_days`` is how long ago it was published — the whole point of the gate.
+    """
+    released = datetime.now(timezone.utc) - timedelta(days=age_days)
+    ms = int(released.timestamp() * 1000)
     return types.SimpleNamespace(
         episode_id=episode_id,
         summary_result=({key: summary} if summary is not None else None),
+        episode=(types.SimpleNamespace(resolved_publish_ms=lambda: ms) if with_model else None),
+        spotify_metadata=None,
+        created_time=None,
     )
 
 
@@ -144,3 +155,72 @@ def test_substack_publishing_has_its_own_switch(monkeypatch):
     sy.trigger_syndicate(_cfg(None), None, _ep())
     assert seen["publish_substack"] is True
     assert seen["publish_vocus"] is False
+
+
+def test_the_back_catalogue_does_not_get_syndicated(monkeypatch, capsys):
+    """Ingest pulls the last 10 episodes per show and walks backwards, so most of what
+    it touches is years old. Every one of those is a first-time syndication no ledger
+    would stop — 44 posts a day onto a publication nobody asked to flood."""
+    monkeypatch.setenv("SYNDICATE_AUTOPUBLISH", "1")
+    called = {"n": 0}
+    _inject_fake_client(monkeypatch, lambda episode_id, **kw: called.__setitem__("n", called["n"] + 1))
+    sy.trigger_syndicate(_cfg(None), None, _ep(age_days=1500))
+    assert called["n"] == 0
+    assert "1500 days old" in capsys.readouterr().out
+
+
+def test_a_fresh_episode_still_goes_out(monkeypatch):
+    monkeypatch.setenv("SYNDICATE_AUTOPUBLISH", "1")
+    called = {"n": 0}
+
+    def _fake(episode_id, **kw):
+        called["n"] += 1
+        return {"platforms": {}}
+
+    _inject_fake_client(monkeypatch, _fake)
+    sy.trigger_syndicate(_cfg(None), None, _ep(age_days=6))
+    assert called["n"] == 1
+
+
+def test_the_window_is_configurable_and_zero_turns_it_off(monkeypatch):
+    """0 is the deliberate-backfill escape hatch: without it, syndicating the archive
+    on purpose would mean editing code."""
+    monkeypatch.setenv("SYNDICATE_AUTOPUBLISH", "1")
+    calls = []
+    _inject_fake_client(monkeypatch, lambda episode_id, **kw: calls.append(episode_id))
+
+    monkeypatch.setenv("SYNDICATE_MAX_AGE_DAYS", "30")
+    sy.trigger_syndicate(_cfg(None), None, _ep(episode_id="in-window", age_days=20))
+    monkeypatch.setenv("SYNDICATE_MAX_AGE_DAYS", "0")
+    sy.trigger_syndicate(_cfg(None), None, _ep(episode_id="gate-off", age_days=1500))
+    assert calls == ["in-window", "gate-off"]
+
+
+def test_an_unknown_publish_time_is_not_treated_as_new(monkeypatch, capsys):
+    """Publishing is public and irreversible; a wrong skip costs one article the admin
+    Social page can still stage by hand."""
+    monkeypatch.setenv("SYNDICATE_AUTOPUBLISH", "1")
+    called = {"n": 0}
+    _inject_fake_client(monkeypatch, lambda episode_id, **kw: called.__setitem__("n", called["n"] + 1))
+    sy.trigger_syndicate(_cfg(None), None, _ep(with_model=False))
+    assert called["n"] == 0
+    assert "no publish time" in capsys.readouterr().out
+
+
+def test_the_release_datetime_is_used_when_the_model_is_missing(monkeypatch):
+    """Same fallback chain as ticker_insights_export — and no now() at the end of it,
+    which would date the whole back catalogue to the run and open the gate for all of it."""
+    monkeypatch.setenv("SYNDICATE_AUTOPUBLISH", "1")
+    calls = []
+    _inject_fake_client(monkeypatch, lambda episode_id, **kw: calls.append(episode_id))
+
+    old = datetime.now(timezone.utc) - timedelta(days=900)
+    ep = _ep(episode_id="from-spotify", with_model=False)
+    ep.spotify_metadata = {"release_datetime": old}
+    sy.trigger_syndicate(_cfg(None), None, ep)
+
+    fresh = _ep(episode_id="from-created-time", with_model=False)
+    fresh.created_time = datetime.now(timezone.utc) - timedelta(days=2)
+    sy.trigger_syndicate(_cfg(None), None, fresh)
+
+    assert calls == ["from-created-time"]

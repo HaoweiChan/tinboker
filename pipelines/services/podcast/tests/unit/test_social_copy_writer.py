@@ -175,3 +175,45 @@ def test_prompt_asks_for_a_selection_not_every_section():
     body = p["system"] + p["user"]
     assert "一段一則" not in body, "the one-per-section instruction is what produced 10 comments"
     assert "最多 4 則" in body
+
+
+# --- no first person ----------------------------------------------------------------
+# The account is openly automated. "我聽完覺得" from something that never listened is the
+# one claim in a post that is certainly false, and the prompt used to ask for it by name.
+# Judgment stays; the person goes.
+
+
+def test_prompt_forbids_the_first_person():
+    from src.podcast.content_builder.llm import load_prompt
+
+    body = load_prompt("social_copy_writer")["system"]
+    assert "不准出現「我」" in body
+    # The instructions that used to require it must be gone.
+    for gone in ("你剛聽完一集", "你自己的反應", "我本來沒什麼感覺", "這邊我還沒想通"):
+        assert gone not in body, f"{gone!r} still asks the writer for a first person"
+
+
+def test_prompt_still_demands_a_judgment():
+    """Dropping 我 must not turn the post into a news summary — that is the failure mode."""
+    body = load_prompt_system()
+    assert "判斷一定要講出來" in body
+
+
+def load_prompt_system():
+    from src.podcast.content_builder.llm import load_prompt
+
+    return load_prompt("social_copy_writer")["system"]
+
+
+def test_first_person_slip_is_reported(capsys):
+    from src.podcast.content_builder.nodes import social_copy_writer as w
+
+    w.postprocess({"post": "我覺得這件事很怪", "comments": [{"heading": "H", "text": "沒有人稱"}]}, {})
+    assert "first person slipped into post" in capsys.readouterr().out
+
+
+def test_clean_copy_reports_nothing(capsys):
+    from src.podcast.content_builder.nodes import social_copy_writer as w
+
+    w.postprocess({"post": "這兩邊完全卡住", "comments": [{"heading": "H", "text": "這數字誇張"}]}, {})
+    assert "first person" not in capsys.readouterr().out

@@ -47,6 +47,7 @@ opening the admin page.
 | `SYNDICATE_AUTOPUBLISH` | **Required.** Unset = the step is a no-op and prints where to do it by hand. |
 | `SYNDICATE_VOCUS_PUBLISH` | vocus goes public instead of staying a draft. |
 | `SYNDICATE_SUBSTACK_PUBLISH` | Substack goes public **on the web**. Cannot email — see below. |
+| `SYNDICATE_MAX_AGE_DAYS` | Only syndicate episodes published within this many days. Default **7**; `0` disables the gate for a deliberate backfill. |
 | `TINBOKER_PLATFORM_API_URL` + `TINBOKER_SOCIAL_TOKEN` | already needed by the Threads trigger |
 | `TINBOKER_ADMIN_API_URL` | Where `/api/admin/*` calls go. **Must not be production** — see below. |
 
@@ -59,6 +60,26 @@ not `staging-api.tinboker.com`: Cloudflare's 100s edge timeout 524'd the Threads
 catch-up publish while the origin kept posting, so the run log reported failures for
 publishes that actually went live. All environments share one database, so staging does
 exactly the same work to the same data. The pinned value lives in the systemd units.
+
+**Two guards, and they answer different questions.**
+
+*Has this episode already gone out?* — the shared `social_posts` ledger
+(`services/social_ledger.py`), the same one Threads and Facebook use. Every syndication
+call claims `(platform, episode_id)` before publishing and records the article id after,
+so a re-ingest, an overlapping trigger, or a *different environment* is refused. That
+last one is not hypothetical: dev, staging and production share this Postgres **and** the
+vocus/Substack credentials, and the three duplicate vocus articles from Aug 2026 differ
+only in whether the cover URL says `api.` or `staging-api.` — two environments published
+the same episode minutes apart.
+
+*Is it new enough to be worth sending?* — `SYNDICATE_MAX_AGE_DAYS`. The ledger cannot
+help here, because the back catalogue is all first-time syndications: ingest pulls the
+last 10 episodes per show and walks backwards, so ~50 of the ~60 episodes it touches
+each day are years old. Unchecked that is ~44 posts a day. (Threads has had the same
+recency guard from the start — `settings.threads_max_age_days`, 4 days.)
+
+An episode with **no** resolvable publish time is skipped, not published: a wrong skip
+costs one article the admin page can still stage by hand, a wrong publish is public.
 
 **Nothing here can email subscribers.** `SubstackClient.publish_draft` sends
 `send_email: false` and takes no parameter that could change it, so no combination of
@@ -77,6 +98,60 @@ nothing from re-transcribing episodes already done — an expensive way to do no
 The step never fires on reruns or backfills. Unlike the Threads trigger, the platform does
 NOT dedupe this — every call creates fresh drafts — so re-processing an old episode would
 republish it.
+
+---
+
+## Reading stats
+
+Both platforms are read back as well as written to, so syndication is no longer
+write-only. `backend/src/services/{vocus,substack}_insights_service.py` read the
+counters, two admin endpoints serve them, and the Analytics page renders a panel each.
+
+| Endpoint | Returns |
+|---|---|
+| `GET /api/admin/vocus/insights?posts=10` | lifetime reads/likes/bookmarks + article count, and the newest articles with their own counters |
+| `GET /api/admin/substack/insights?posts=10` | lifetime views/reactions/comments + post count, and the newest posts |
+
+Both reuse the publishers' clients, so the vocus 7-day token and the `substack.sid`
+cookie are maintained in exactly one place. Both always return 200 and report
+`available: false` with a `detail` when a credential is missing or expired.
+
+**The counts are lifetime, not windowed.** Neither platform exposes history — each
+article carries a running counter — so "reads this week" is not answerable from one
+call. That is what the daily snapshot is for: `POST /api/admin/analytics/snapshot`
+(the `Snapshot Social Metrics` workflow, 04:00 UTC) now also records `vocus_reads`,
+`vocus_articles`, `substack_reads` and `substack_posts`, and the growth chart draws
+them. **A day's reading is the difference between two rows.**
+
+### The field names are ranked guesses, and the code says so
+
+Neither API documents which key holds the read count, and neither could be captured
+while this was written. So each count is resolved against a ranked candidate list
+(`READ_KEYS` / `VIEW_KEYS`, plus `LIST_ENDPOINTS` for Substack's published-post list),
+and **the resolution is reported with the number**:
+
+- Working: the response carries `field_map` (`{"reads": "readCount"}`) and, for
+  Substack, the `source` endpoint that answered. Both show up in the Analytics page's
+  Tracking Configuration list.
+- Not working: articles were found but no candidate key matched → `available: false`
+  plus `sample_keys`, the field names the platform actually sent, rendered under the
+  panel.
+
+That distinction is the point. A read counter that silently reports **0** is worse than
+none — it reads as "nobody opened it" and invites the conclusion that syndication is
+not working — so a mapping miss is never allowed to render as a zero, in the panel or
+in a snapshot row (the snapshot writes only when `available` is true).
+
+**First run against live credentials is a verification step, not a smoke test.** Open
+`/admin/analytics`: if both panels show numbers, note the `field_map` values and pin
+them at the head of each candidate list. If a panel shows `Fields returned: …`, the
+right key is in that list — move it to the front of `READ_KEYS`/`VIEW_KEYS` and delete
+the guesses. Paging (`page` on vocus, `offset` on Substack) is unverified too, so both
+readers dedupe by id across pages: an ignored paging parameter stops the walk instead
+of multiplying the total.
+
+Scope caps: 200 articles/posts per read (`MAX_ARTICLES` / `MAX_POSTS`), reported as
+`truncated: true` rather than a quietly low number.
 
 ---
 

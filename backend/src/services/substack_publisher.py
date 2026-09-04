@@ -73,6 +73,10 @@ class SubstackClient:
     def base(self) -> str:
         return f"https://{self._subdomain}.substack.com"
 
+    @property
+    def subdomain(self) -> str:
+        return self._subdomain or ""
+
     def is_configured(self) -> bool:
         return bool(self._sid and self._subdomain and self._user_id)
 
@@ -105,6 +109,15 @@ class SubstackClient:
             return resp.json()
         except ValueError:
             return None
+
+    async def get_json(self, client: httpx.AsyncClient, path: str) -> Any:
+        """GET one authenticated endpoint. The public seam for readers of this account.
+
+        Everything Substack exposes about a publication's own posts sits behind the
+        session cookie and these headers, so a reader that rebuilt them would drift
+        from the publisher the first time the edge changed its mind.
+        """
+        return await self._request(client, "GET", path)
 
     async def create_draft(self, client: httpx.AsyncClient, doc: dict) -> int:
         data = await self._request(client, "POST", "/api/v1/drafts", {
@@ -306,7 +319,7 @@ async def create_summary_draft(
                 await client.publish_draft(http, draft_id)
                 # Read back rather than trust the write: this is the one call whose
                 # failure mode would be a newsletter nobody meant to send.
-                back = await client._request(http, "GET", f"/api/v1/drafts/{draft_id}")
+                back = await client.get_json(http, f"/api/v1/drafts/{draft_id}")
             published = bool((back or {}).get("is_published"))
             if (back or {}).get("email_sent_at"):
                 logger.error("substack: %s was emailed despite send_email=False", draft_id)
