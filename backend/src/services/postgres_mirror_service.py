@@ -328,6 +328,9 @@ class PostgresMirrorService:
             elif op == "in":
                 where.append(f"{col} = ANY(CAST(:{key} AS text[]))")
                 params[key] = _pg_text_array(list(value or []))
+            elif op == ">=":
+                where.append(f"{col} >= :{key}")
+                params[key] = str(value)
             else:
                 raise NotImplementedError(
                     f"Postgres mirror: ticker_insights filter operator {op!r} is not supported"
