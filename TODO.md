@@ -987,7 +987,7 @@ does not compute; left as a follow-up idea.
 
 ```yaml
 id: TKB-013
-status: in_progress
+status: review
 priority: P2
 area:
 - frontend
@@ -998,7 +998,7 @@ effort: L
 risk: medium
 github_issue: null
 github_project_item: null
-pr: null
+pr: https://github.com/HaoweiChan/tinboker/pull/602
 ```
 
 ### Goal
@@ -1017,6 +1017,16 @@ Plan and evidence: `docs/seo-data-presentation-plan.md`.
 ### Implementation notes
 
 Tag `noindex` lives in `frontend/functions/_middleware.js:28-34` and `backend/src/routers/seo.py:127-137`. Post-mention N-day return charts are deliberately excluded here: they depend on TKB-001 populating `content_mentions` in production (0 rows on 2026-09-05).
+
+Shipped in PR #602 (merged to `develop` 2026-09-06, both dev deploys green). Verified
+on dev with a crawler UA: `/weekly/2026-W36` 14,668 chars + Article/BreadcrumbList
+JSON-LD (35 episodes, 7 podcasts, NVDA 21 / 2454 15 / 2330 15); `/topics/ai` 2,214
+chars (indexable, 90 tag pages now in the sitemap); `/topics/quantumcomputing` 649
+chars (noindex). Sitemap: 9 weekly pages. Co-mention graph captured on
+/sector/sector_pcb_substrate. Deviations: the tag floor is "≥ 5 scoped episodes" only —
+no tag has a registry description (0 of 1,588) — and the graph is plain SVG + d3-force,
+not the retired ReactFlow ForceGraph. Still open in this task: the Search Console /
+AdSense check 14 days after the production release, and post-mention returns (TKB-001).
 
 ---
 
