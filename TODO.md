@@ -1,6 +1,6 @@
 # Tinboker TODO
 
-Last updated: 2026-07-02
+Last updated: 2026-09-05
 
 ## North Star
 
@@ -91,13 +91,17 @@ Meaning:
 
 ## P1: Discovery and distribution
 
-5. TKB-004 Threads topic discovery and clustering
-6. TKB-005 Ticker / sector discussion pages
+5. TKB-010 SEO: crawler-visible content, JSON-LD, wider stock sitemap
+6. TKB-011 Stock page charts: price × mention overlay, sentiment split
+7. TKB-012 Institutional-flow chart, sector and podcaster charts
+8. TKB-013 Weekly rollup pages, selective tag indexing, co-mention graph
+9. TKB-004 Threads topic discovery and clustering
+10. TKB-005 Ticker / sector discussion pages
 
 ## P2: AI analysis layer
 
-7. TKB-006 TradingAgents Lite
-8. TKB-007 Full TradingAgents-style multi-agent report
+11. TKB-006 TradingAgents Lite
+12. TKB-007 Full TradingAgents-style multi-agent report
 
 ---
 
@@ -839,6 +843,154 @@ file:line). Read the plan before writing any code.
 - v3 (Postgres-as-truth) is a deliberate IP decision: this repo is PUBLIC and the curated taxonomy/reasons are proprietary — nothing taxonomy-shaped gets committed to git anymore (the pre-v3 snapshot in git history is an accepted loss). `generate_sector_reasons.py` and the Chain-B scripts are dead code — never run them.
 - Industry roll-ups (POL-1) visibly change /topics industry cards (member counts grow ~7x for semiconductor); flagged as D4 for Willy.
 - Audit Part-2 judgments are INFERRED market calls — every purge/merge beyond the pre-approved defaults goes through Willy's line-by-line review in M2.2.
+
+---
+
+## TKB-010 SEO: crawler-visible content, JSON-LD, wider stock sitemap
+
+```yaml
+id: TKB-010
+status: ready
+priority: P0
+area:
+- frontend
+- backend
+- seo
+type: feature
+effort: M
+risk: low
+github_issue: null
+github_project_item: null
+pr: null
+```
+
+### Goal
+
+Every public data page currently serves an empty body and zero JSON-LD to crawlers (verified 2026-09-05: ~600 chars of script residue per page). Render the entity the middleware already fetches as real HTML inside `#root` plus schema.org JSON-LD, make stock descriptions live, and index every ticker mentioned by at least 2 episodes in the release window.
+
+Plan and evidence: `docs/seo-data-presentation-plan.md`.
+
+### Acceptance criteria
+
+- [ ] `curl -A Googlebot` on one URL each of `/episode`, `/stock`, `/sector`, `/podcaster`, `/` returns ≥2,000 body characters and ≥1 `application/ld+json` block.
+- [ ] `/stock/:ticker` description contains live mention counts and sentiment tally, not the template string.
+- [ ] Sitemap `/stock` family lists every ticker with ≥2 mentions in the window (expected ≥250 URLs, was 101).
+- [ ] `/articles` linked from the sidebar; `/contact` and `/disclaimer` linked from the footer.
+- [ ] `scripts/validate-crawler-meta.mjs` asserts body length and JSON-LD presence per family; `npm run validate:seo` green in CI.
+- [ ] Post-deploy crawler-UA check on production recorded in the PR.
+
+### Implementation notes
+
+Single file for the crawler block: `frontend/functions/_middleware.js`. Sitemap change in `backend/src/routers/seo.py:160-166`. Copy the sector-page pattern (`_middleware.js:186-205`), which is the only family already doing this right. No React component changes needed.
+
+---
+
+## TKB-011 Stock page charts: price × mention overlay, sentiment split
+
+```yaml
+id: TKB-011
+status: ready
+priority: P1
+area:
+- frontend
+type: feature
+effort: M
+risk: low
+github_issue: null
+github_project_item: null
+pr: null
+```
+
+### Goal
+
+Put the two charts with the best SEO-value-to-cost ratio on `/stock/:ticker`: daily candles with a marker at every podcast mention coloured by sentiment (hover shows the thesis and podcaster), and a 30/90-day bullish/neutral/bearish plus time-horizon split.
+
+Plan and evidence: `docs/seo-data-presentation-plan.md`.
+
+### Acceptance criteria
+
+- [ ] Mention markers render on the existing `lightweight-charts` price chart from `/api/ticker-insights/by-ticker/{t}`; no new charting dependency.
+- [ ] Sentiment and time-horizon split renders for any ticker with ≥1 insight; empty state for the rest.
+- [ ] The tally numbers are the same ones the TKB-010 crawler sentence uses (one source).
+- [ ] `npm run build && npm run lint` green; screenshot of both charts on dev attached to the PR.
+
+### Implementation notes
+
+Data already public: `/api/stocks/{t}` chartData + `/api/ticker-insights/by-ticker/{t}`. Use series markers, not a second chart. Reuse `SimpleSparkline` / existing chart components before adding anything.
+
+---
+
+## TKB-012 Institutional-flow chart, sector and podcaster charts
+
+```yaml
+id: TKB-012
+status: ready
+priority: P1
+area:
+- frontend
+- backend
+type: feature
+effort: M
+risk: low
+github_issue: null
+github_project_item: null
+pr: null
+```
+
+### Goal
+
+Surface three datasets that exist but have no page: 三大法人 daily net buy/sell (`stock_institutional_daily`, 2,089 tickers, internal-key only today), per-sector heat-vs-return on `/sector/:id` (from `/api/sectors/board`), and podcaster top-10 tickers + sector mix on `/podcaster/:id` (from `/api/ticker-insights/by-podcaster`).
+
+Plan and evidence: `docs/seo-data-presentation-plan.md`.
+
+### Acceptance criteria
+
+- [ ] Public read path for institutional data (fold into `/api/stocks/{ticker}/history` or add `/api/stocks/{ticker}/institutional`), cached with the same TTL as OHLC; returns rows for 2330 on staging.
+- [ ] Net buy/sell bar chart on `/stock/:ticker` under the price chart.
+- [ ] `HeatReturnValidation` single-sector variant on every `/sector/:id`.
+- [ ] Top-10 tickers + sector-mix chart on every `/podcaster/:id`.
+- [ ] Backend tests for the new endpoint; `npm run build && npm run lint` green.
+
+### Implementation notes
+
+`stock_daily_ohlc` and `stock_institutional_daily` models: `backend/src/database/models.py:227-282`. Internal-key gate to keep: `backend/src/routers/stock.py:77,110` — add a separate public per-ticker path rather than removing the gate on the bulk endpoints.
+
+---
+
+## TKB-013 Weekly rollup pages, selective tag indexing, co-mention graph
+
+```yaml
+id: TKB-013
+status: ready
+priority: P2
+area:
+- frontend
+- backend
+- seo
+type: feature
+effort: L
+risk: medium
+github_issue: null
+github_project_item: null
+pr: null
+```
+
+### Goal
+
+Add dated `/weekly/YYYY-Www` pages (episode count, top tickers, sentiment shifts, sector heat) built from the payload syndication already composes; lift the blanket `noindex` on `/topics/:tag` for tags with a description and ≥5 episodes in the window; revive `ForceGraph` for ticker co-mention on sector pages.
+
+Plan and evidence: `docs/seo-data-presentation-plan.md`.
+
+### Acceptance criteria
+
+- [ ] `/weekly/*` in the sitemap with crawler-visible content and `Article` JSON-LD.
+- [ ] Tag pages meeting the threshold are indexable; others stay `noindex`; validator updated.
+- [ ] Search Console impressions for `/weekly/*` and `/topics/*` reviewed 14 days after deploy; AdSense low-value-content status unchanged.
+- [ ] Co-mention graph renders on sector pages from `related_tickers`; no SEO dependency.
+
+### Implementation notes
+
+Tag `noindex` lives in `frontend/functions/_middleware.js:28-34` and `backend/src/routers/seo.py:127-137`. Post-mention N-day return charts are deliberately excluded here: they depend on TKB-001 populating `content_mentions` in production (0 rows on 2026-09-05).
 
 ---
 
