@@ -23,7 +23,6 @@ from src.routers.auth import router as auth_router
 from src.routers.user import router as user_router
 from src.routers.search import router as search_router, init_search_index
 from src.routers.analytics import router as analytics_router
-from src.routers.recommendations import router as recommendations_router
 from src.routers.ticker_insights import router as ticker_insights_router
 from src.routers.mentions import router as mentions_router
 from src.routers.translations import router as translations_router
@@ -76,17 +75,6 @@ async def lifespan(app: FastAPI):
             from src.database.postgres import init_engine as init_orm_engine, create_all_tables
             init_orm_engine()
             create_all_tables()
-
-    rec_conn_str = settings.postgres_connection_string
-    if rec_conn_str:
-        try:
-            from src.database import insight_db
-            insight_db.init_pool()
-            print("Insight Postgres pool initialized.")
-        except Exception as e:
-            print(f"Warning: Could not initialize insight Postgres: {e}")
-    else:
-        print("Info: Insight Postgres not configured.")
 
     await RedisClient.initialize()
     await init_search_index()
@@ -355,11 +343,6 @@ async def lifespan(app: FastAPI):
 
     # --- Shutdown ---
     await RedisClient.close_all()
-    try:
-        from src.database import insight_db
-        insight_db.close_pool()
-    except Exception:
-        pass
 
 
 app = FastAPI(
@@ -425,7 +408,6 @@ app.include_router(tags_router)
 app.include_router(auth_router)
 app.include_router(user_router)
 app.include_router(search_router)
-app.include_router(recommendations_router)
 app.include_router(ticker_insights_router)
 app.include_router(mentions_router)
 app.include_router(analytics_router, prefix="/api/analytics", tags=["analytics"])
@@ -515,19 +497,6 @@ async def health_check():
             db_status["status"] = "error"
             db_status["error"] = str(e)
     
-    # Check insight DB (podcast_db) connectivity
-    rec_db_status = {"status": "unknown"}
-    try:
-        from src.database.insight_db import is_available as rec_is_available
-        if rec_is_available():
-            rec_db_status["status"] = "connected"
-        else:
-            rec_conn_str = settings.postgres_connection_string
-            rec_db_status["status"] = "not_configured" if not rec_conn_str else "pool_not_initialized"
-    except Exception as e:
-        rec_db_status["status"] = "error"
-        rec_db_status["error"] = str(e)
-
     # Determine overall health
     overall_status = "healthy"
     if db_status["status"] != "connected":
@@ -537,7 +506,6 @@ async def health_check():
         "status": overall_status,
         "timestamp": datetime.utcnow().isoformat() + "Z",
         "database": db_status,
-        "recommendation_db": rec_db_status,
         "redis": {
             "available": redis_available,
             "status": "connected" if redis_available else "disconnected",

@@ -193,12 +193,12 @@ curl -s -H "Authorization: Bearer invalid_token" "{API}/user/me"
 - [ ] `/user/me` with invalid token returns 401 (not 500)
 - [ ] `/auth/check` endpoint exists and returns 401 without token
 
-### 2.6 Recommendations Endpoint
+### 2.6 Ticker Insights Endpoint
 
 ```bash
-curl -s "{API}/api/recommendations/by-ticker/2330"
-# Also test the WRONG url to confirm 404
-curl -s "{API}/api/recommendations/ticker/2330" -o /dev/null -w "%{http_code}"
+curl -s "{API}/api/ticker-insights/by-ticker/2330"
+# Legacy aliases were removed 2026-09-06 — confirm 404
+curl -s "{API}/api/recommendations/by-ticker/2330" -o /dev/null -w "%{http_code}"
 ```
 
 **Checks:**

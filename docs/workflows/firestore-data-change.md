@@ -87,7 +87,7 @@ These are documented in [`../firestore-contract.md`](../firestore-contract.md) �
 Per [`../firestore-contract.md`](../firestore-contract.md) §7:
 
 - **Phase A** (`trending_tickers` → Firestore) — in progress. Unblocks the empty Stock Index in prod (Postgres `pool_not_initialized`).
-- **Phase B** (`ticker_insights` → Firestore, replacing per-episode Postgres recs) — in progress. New router [`backend/src/routers/ticker_insights.py`](../../backend/src/routers/ticker_insights.py) and service [`backend/src/services/insight_service.py`](../../backend/src/services/insight_service.py) coexist with legacy [`backend/src/routers/recommendations.py`](../../backend/src/routers/recommendations.py).
+- **Phase B** (`ticker_insights` → Firestore, replacing per-episode Postgres recs) — in progress. New router [`backend/src/routers/ticker_insights.py`](../../backend/src/routers/ticker_insights.py) and service [`backend/src/services/insight_service.py`](../../backend/src/services/insight_service.py) are the only read path; the legacy `/api/recommendations/*` router and its psycopg2 pool were deleted 2026-09-06 (Phase B6).
 - **Phase C** (episode-shape cleanups) — not started.
 
 If your change touches `ticker_insights` or `trending_tickers`, treat the in-progress migration as live work — bring proposals to the contract before adding to either path.

@@ -19,7 +19,7 @@ from src.services.postgres_mirror_service import content_read_service
 
 logger = logging.getLogger(__name__)
 
-TRENDING_TTL = 7200  # 2h, matches recommendation_service
+TRENDING_TTL = 7200  # 2h
 INSIGHT_TTL = 7200  # 2h
 RECENT_TTL = 600  # 10 min — /recent is a live feed; align with the ~10-min pipeline pull
 SCHEMA_VERSION = 3
