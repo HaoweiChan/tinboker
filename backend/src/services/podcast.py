@@ -90,6 +90,22 @@ def _sector_query_ids(canonical_id: str) -> list[str]:
     return list(dict.fromkeys(ids))
 
 
+def _strip_exposure_tickers(episode: dict) -> dict:
+    """Slim an episode for the by-sector list payload.
+
+    Each exposure entry keeps every key, but ``resolved_tickers`` is emptied: it was
+    77% of the response bytes (1.87 MB for limit=50, measured 2026-09-05) and no list
+    consumer reads it — SectorPage renders cards from the top-level fields and takes
+    the sector's tickers from the response-level ``resolved_tickers``;
+    functions/_middleware.js reads only display_name/description.
+    """
+    episode["sector_exposures"] = [
+        {**entry, "resolved_tickers": []} if isinstance(entry, dict) else entry
+        for entry in episode.get("sector_exposures") or []
+    ]
+    return episode
+
+
 def _read_close_series(tickers: list[str], limit: int = 12) -> dict[str, list[float]]:
     """Read the trailing ``limit`` daily closes per ticker from Postgres.
 
@@ -1062,7 +1078,7 @@ class PodcastService:
                 "total": 0,
             }
 
-        cache_key = f"sector:episodes:v4:{exposure_id}:{offset}:{limit}:{self._scope_tag()}"
+        cache_key = f"sector:episodes:v5:{exposure_id}:{offset}:{limit}:{self._scope_tag()}"
         cached = await cache_get(cache_key)
         if cached:
             try:
@@ -1084,8 +1100,13 @@ class PodcastService:
                     self.firestore_service.query_collection,
                     "episodes",
                     [("sector_exposure_ids", "array-contains", query_id)],
-                    None,       # no Firestore-side ordering — sort in Python to avoid composite index
-                    None,
+                    # Newest-ingested first (indexed promoted column), so the LIMIT is
+                    # deterministic — unordered it took the first fetch_limit rows in
+                    # physical order and could miss the newest episodes of a big sector
+                    # (sector_financials has 2000+). Final ordering by publish time
+                    # still happens in Python below.
+                    "created_time",
+                    "DESCENDING",
                     fetch_limit,
                 ))
             seen_doc_ids: set[str] = set()
@@ -1190,7 +1211,7 @@ class PodcastService:
             "icon_id": visual.get("icon_id"),
             "color_hex": visual.get("color_hex"),
             "resolved_tickers": resolved_tickers,
-            "episodes": [ep.dict() for ep in paged],
+            "episodes": [_strip_exposure_tickers(ep.dict()) for ep in paged],
             "total": len(episodes),
         }
 
