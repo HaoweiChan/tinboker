@@ -6,6 +6,7 @@ import { PageContent } from '@/components/layout/PageContent';
 import { SentBar } from '@/components/redesign';
 import { SectorIcon } from '@/components/topics/SectorIcon';
 import { getWeek } from '@/services/api/weekly';
+import { useTranslationMap } from '@/hooks/useTranslationMap';
 import type { Weekly, WeeklyTicker } from '@/validation/schemas';
 
 const WEEK_RE = /^(\d{4})-W(\d{2})$/;
@@ -50,6 +51,12 @@ export const WeeklyPage: React.FC = () => {
       .catch(() => { if (alive) setState('missing'); });
     return () => { alive = false; };
   }, [week]);
+
+  // US tickers carry no name in the rollup (names come from TW sector baskets);
+  // the translation map fills them in the same way the stock index does.
+  const tickerList = useMemo(() => (data ? data.tickers.map((t) => t.ticker) : []), [data]);
+  const translations = useTranslationMap(tickerList);
+  const nameOf = (t: WeeklyTicker) => t.name || translations.get(t.ticker)?.displayName || null;
 
   const prev = useMemo(() => shiftWeek(week, -1), [week]);
   const next = useMemo(() => shiftWeek(week, 1), [week]);
@@ -107,11 +114,11 @@ export const WeeklyPage: React.FC = () => {
                     return (
                       <div key={t.ticker} className="flex items-center gap-3 py-2 min-w-0">
                         <Link to={`/stock/${encodeURIComponent(t.ticker)}`} className="w-36 shrink-0 truncate text-sm font-medium hover:text-primary transition-colors">
-                          {t.name ? `${t.name} ${t.ticker}` : t.ticker}
+                          {nameOf(t) ? `${nameOf(t)} ${t.ticker}` : t.ticker}
                         </Link>
                         <span className="w-10 shrink-0 text-xs font-mono tabular-nums text-muted-foreground">{t.episodes} 集</span>
                         <div className="flex-1 min-w-0">{total > 0 ? <SentBar bull={t.bull} neutral={t.neu} bear={t.bear} /> : <div className="sent-bar opacity-30" />}</div>
-                        <span className="w-24 shrink-0 text-right text-xs tabular-nums">
+                        <span className="w-32 shrink-0 text-right text-xs tabular-nums whitespace-nowrap">
                           {total > 0 ? <><span className="text-sentiment-bull">多 {t.bull}</span> · <span className="text-muted-foreground">中 {t.neu}</span> · <span className="text-sentiment-bear">空 {t.bear}</span></> : <span className="text-muted-foreground">—</span>}
                         </span>
                         <span className={`w-14 shrink-0 text-right text-2xs font-medium ${s.cls}`}>{s.label}</span>
