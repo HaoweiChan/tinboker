@@ -21,7 +21,6 @@ from src.cache.redis_client import cache_get, cache_set
 from src.config import settings
 from src.database.postgres import get_session
 from src.services.article_service import ArticleService
-from src.services.insight_service import InsightService
 from src.services.podcast import PodcastService
 from src.services.search_console_service import SearchConsoleService
 from src.tag_registry import hidden_sector_exposure_ids, served_sector_exposure_ids
@@ -34,10 +33,11 @@ router = APIRouter(tags=["seo"])
 admin_router = APIRouter(tags=["seo", "admin"])
 
 podcast_service = PodcastService()
-insight_service = InsightService()
 
 # Public top-level routes that should always be in the sitemap (mirrors the routes
 # in frontend/src/App.tsx). Episodes are appended dynamically below.
+MIN_TICKER_EPISODES = 2
+
 STATIC_PATHS = [
     ("/", "1.0", "daily"),
     ("/podcaster", "0.8", "weekly"),
@@ -87,7 +87,7 @@ async def sitemap(
     to Googlebot. The assembled XML is cached in Redis for an hour; the per-source
     service calls are themselves cached, and the CDN edge caches the response.
     """
-    cache_key = f"sitemap:xml:v4:{limit}"
+    cache_key = f"sitemap:xml:v5:{limit}"
     cached = await cache_get(cache_key)
     if cached:
         return Response(content=cached, media_type="application/xml",
@@ -99,11 +99,16 @@ async def sitemap(
     # Episodes — get_recent_episodes already applies the release scoping
     # (RELEASE_PODCAST_LANGUAGES / RELEASE_EPISODE_MAX_AGE_DAYS), so we never list a
     # page that 404s for users. The canonical episode URL has no query string.
+    # The same scoped list decides which /stock pages exist (below), so one fetch
+    # serves both families and they can never disagree about the window.
+    ticker_episodes: dict[str, int] = {}
     try:
         for ep in await podcast_service.get_recent_episodes(limit=limit, enrich_content=False):
             ep_id = getattr(ep, "id", None) or (ep.get("id") if isinstance(ep, dict) else None)
             if ep_id:
                 entries.append(_url_entry(f"{base}/episode/{ep_id}", _lastmod(ep), "monthly", "0.7"))
+            for tk in getattr(ep, "related_tickers", None) or []:
+                ticker_episodes[str(tk)] = ticker_episodes.get(str(tk), 0) + 1
     except Exception as e:
         logger.warning("Sitemap episode enumeration failed: %s", e)
 
@@ -155,15 +160,15 @@ async def sitemap(
     except Exception as e:
         logger.warning("Sitemap sector enumeration failed: %s", e)
 
-    # Trending stock pages — a bounded, high-value set that definitely has content.
-    # The /stock index page (in STATIC_PATHS) covers discovery of the long tail.
-    try:
-        for row in await insight_service.get_trending(days=30, limit=100):
-            tk = row.get("ticker")
-            if tk:
-                entries.append(_url_entry(f"{base}/stock/{quote(str(tk))}", None, "daily", "0.6"))
-    except Exception as e:
-        logger.warning("Sitemap ticker enumeration failed: %s", e)
+    # Stock pages: every ticker at least MIN_TICKER_EPISODES scoped episodes discuss.
+    # Measured 2026-09-05: 514 tickers were mentioned inside the release window but only
+    # the trending top-100 had a sitemap entry, so ~400 pages with real podcast content
+    # were undiscoverable. The floor keeps single-mention pages (one thesis line) out.
+    # Counting the scoped episode list, not trending_tickers, guarantees every listed
+    # page has episodes to show — trending counts include out-of-window mentions.
+    for tk in sorted(ticker_episodes):
+        if ticker_episodes[tk] >= MIN_TICKER_EPISODES:
+            entries.append(_url_entry(f"{base}/stock/{quote(tk)}", None, "daily", "0.6"))
 
     xml = (
         '<?xml version="1.0" encoding="UTF-8"?>\n'

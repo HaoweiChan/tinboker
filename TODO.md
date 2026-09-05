@@ -850,7 +850,7 @@ file:line). Read the plan before writing any code.
 
 ```yaml
 id: TKB-010
-status: ready
+status: in_progress
 priority: P0
 area:
 - frontend
