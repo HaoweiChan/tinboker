@@ -74,11 +74,13 @@ def _parse_start_s(reasons: Any) -> Optional[float]:
         return None
     if isinstance(raw, (int, float)):
         return float(raw) / 1000.0
-    parts = str(raw).strip().split(":")
+    text = str(raw).strip()
     try:
+        if ":" not in text:  # a few docs stringify the ms integer ("3695725")
+            return float(text) / 1000.0
         secs = 0.0
-        for p in parts:
-            secs = secs * 60 + float(p)
+        for part in text.split(":"):
+            secs = secs * 60 + float(part)
         return secs
     except ValueError:
         return None

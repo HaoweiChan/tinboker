@@ -124,6 +124,15 @@ def test_sync_ticker_mentions_heals_start_s_of_existing_rows(session, monkeypatc
     assert ms.sync_ticker_mentions(session) == 0  # second pass changes nothing
 
 
+def test_parse_start_s_shapes():
+    assert ms._parse_start_s([{"start_time": 1575708}]) == pytest.approx(1575.708)
+    assert ms._parse_start_s([{"start_time": "3695725"}]) == pytest.approx(3695.725)  # ms as string
+    assert ms._parse_start_s([{"start_time": "00:06:00.233"}]) == pytest.approx(360.233)
+    assert ms._parse_start_s([{"start_time": "12:30"}]) == pytest.approx(750.0)
+    assert ms._parse_start_s([{"start_time": "n/a"}]) is None
+    assert ms._parse_start_s("[]") is None
+
+
 def test_sync_ticker_mentions_skips_incomplete_rows(session, monkeypatch):
     rows = [
         _insight_row(ticker=""),
