@@ -861,7 +861,7 @@ effort: M
 risk: low
 github_issue: null
 github_project_item: null
-pr: null
+pr: https://github.com/HaoweiChan/tinboker/pull/591
 ```
 
 ### Goal
