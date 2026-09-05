@@ -2,7 +2,7 @@
 Mention sync + post-mention performance snapshots (TKB-001).
 
 Derives content_mentions rows from the two mention sources the pipelines
-already produce — the Postgres ticker_insights table (per-episode LLM ticker
+already produce — the mirrored ticker_insights docs (per-episode LLM ticker
 extraction) and episode sector_exposures (deterministic alias matching) — then
 computes 1D/5D/20D/60D trading-day returns from the warm stock_daily_closes
 table. Daily-batch only by design (TKB-001: no real-time tracking).
@@ -87,59 +87,26 @@ def _parse_start_s(reasons: Any) -> Optional[float]:
 # Source 1: ticker mentions from the pipeline-written ticker_insights table
 # ---------------------------------------------------------------------------
 
-def _insight_label_column() -> Optional[str]:
-    """The deployed ticker_insights table is either the content-store shape
-    (sentiment_label) or the legacy one (sentiment) — detect once per cycle."""
-    from src.database.insight_db import get_connection, is_available
-
-    if not is_available():
-        return None
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            "SELECT column_name FROM information_schema.columns WHERE table_name = 'ticker_insights'"
-        )
-        cols = {r[0] for r in cur.fetchall()}
-    if "sentiment_label" in cols:
-        return "sentiment_label"
-    if "sentiment" in cols:
-        return "sentiment"
-    return None
-
-
 def _fetch_recent_insight_rows(days: int) -> List[dict]:
-    """Recent ticker_insights rows from the shared podcast_db (pipeline-written)."""
-    import psycopg2.extras
+    """Recent ticker_insights docs via the same read path /api/ticker-insights
+    uses (Postgres mirror, or Firestore when the mirror flag is off). The flat
+    public.ticker_insights table this used to query never existed on the VPS."""
+    from src.services.postgres_mirror_service import content_read_service
 
-    from src.database.insight_db import get_connection, is_available
-
-    if not is_available():
-        return []
-    label_col = _insight_label_column()
-    if label_col is None:
-        logger.warning("mention sync: ticker_insights table not found or unrecognised shape")
-        return []
     cutoff = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%dT00:00:00")
-    try:
-        with get_connection() as conn:
-            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                cur.execute(
-                    f"""
-                    SELECT episode_id, ticker, podcaster, podcast_launch_time,
-                           bluf_thesis, {label_col} AS sentiment_label, reasons
-                    FROM ticker_insights
-                    WHERE podcast_launch_time >= %s
-                    """,
-                    (cutoff,),
-                )
-                return [dict(r) for r in cur.fetchall()]
-    except Exception as e:
-        logger.warning("mention sync: ticker_insights fetch failed: %s", e)
-        return []
+    return content_read_service().query_collection_group(
+        "tickers", filters=[("podcast_launch_time", ">=", cutoff)],
+    )
+
+
+def _existing_keys(db: Session) -> set:
+    return {k for (k,) in db.query(ContentMention.mention_key).all()}
 
 
 def sync_ticker_mentions(db: Session, days: int = SYNC_LOOKBACK_DAYS) -> int:
     """Upsert ticker mentions into content_mentions. Returns rows inserted."""
     rows = _fetch_recent_insight_rows(days)
+    seen = _existing_keys(db)
     inserted = 0
     for row in rows:
         ticker = _canonical_ticker(row.get("ticker") or "")
@@ -148,9 +115,9 @@ def sync_ticker_mentions(db: Session, days: int = SYNC_LOOKBACK_DAYS) -> int:
         if not ticker or not episode_id or mentioned_at is None:
             continue
         key = f"{episode_id}:ticker:{ticker}"
-        existing = db.query(ContentMention).filter(ContentMention.mention_key == key).first()
-        if existing:
+        if key in seen:
             continue
+        seen.add(key)
         db.add(ContentMention(
             mention_key=key,
             episode_id=episode_id,
@@ -223,14 +190,18 @@ def sync_sector_mentions(db: Session, days: int = SYNC_LOOKBACK_DAYS) -> int:
         logger.warning("mention sync: sector exposure scan failed: %s", e)
         return 0
     cutoff = datetime.utcnow() - timedelta(days=days)
+    seen = _existing_keys(db)
     inserted = 0
     for rec in records:
         if rec["mentioned_at"] < cutoff:
             continue
+        # Episodes list the same exposure_id more than once (2,179 pairs on
+        # 2026-09-05); with autoflush off a per-row lookup missed those and the
+        # whole pass died on the unique key at commit.
         key = f"{rec['episode_id']}:sector:{rec['exposure_id']}"
-        existing = db.query(ContentMention).filter(ContentMention.mention_key == key).first()
-        if existing:
+        if key in seen:
             continue
+        seen.add(key)
         confidence = rec.get("confidence")
         db.add(ContentMention(
             mention_key=key,
@@ -380,25 +351,32 @@ def _snapshot_incomplete_sector(snap) -> bool:
 # ---------------------------------------------------------------------------
 
 def run_sync_cycle() -> dict:
-    """One full sync + snapshot pass. Sync (blocking DB/IO) — call off-loop."""
+    """One full sync + snapshot pass. Sync (blocking DB/IO) — call off-loop.
+
+    ponytail: dev/staging/prod all run this against the one shared table; the
+    loser of a same-key race rolls back and simply catches up next cycle."""
     stats = {"ticker_mentions": 0, "sector_mentions": 0, "ticker_snapshots": 0, "sector_snapshots": 0}
     for session in get_session():
         try:
             stats["ticker_mentions"] = sync_ticker_mentions(session)
         except Exception as e:
             logger.warning("mention sync: ticker mention pass failed: %s", e)
+            session.rollback()
         try:
             stats["sector_mentions"] = sync_sector_mentions(session)
         except Exception as e:
             logger.warning("mention sync: sector mention pass failed: %s", e)
+            session.rollback()
         try:
             stats["ticker_snapshots"] = compute_ticker_snapshots(session)
         except Exception as e:
             logger.warning("mention sync: ticker snapshot pass failed: %s", e)
+            session.rollback()
         try:
             stats["sector_snapshots"] = compute_sector_snapshots(session)
         except Exception as e:
             logger.warning("mention sync: sector snapshot pass failed: %s", e)
+            session.rollback()
         break
     return stats
 

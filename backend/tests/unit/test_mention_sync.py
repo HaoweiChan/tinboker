@@ -149,6 +149,21 @@ def test_sync_sector_mentions_inserts_and_is_idempotent(session, monkeypatch):
     assert m.payload["members"] == ["2330", "2454"]
 
 
+def test_sync_sector_mentions_dedups_within_one_batch(session, monkeypatch):
+    """Prod episodes list the same exposure_id twice; with autoflush off the
+    old per-row lookup never saw the first insert and the commit died on the
+    unique key — taking every row of the pass with it."""
+    record = {
+        "episode_id": "ep1", "podcaster": "股癌", "exposure_id": "ai-servers",
+        "display_name": "AI 伺服器", "confidence": 0.8,
+        "mentioned_at": datetime.utcnow() - timedelta(days=3),
+        "members": ["2330", "2382"], "mention_text": "AI 伺服器",
+    }
+    monkeypatch.setattr(ms, "_scan_sector_exposures", lambda: [record, dict(record)])
+    assert ms.sync_sector_mentions(session) == 1
+    assert session.query(ContentMention).count() == 1
+
+
 def test_sync_sector_mentions_respects_lookback(session, monkeypatch):
     record = {
         "episode_id": "old_ep",
