@@ -850,7 +850,7 @@ file:line). Read the plan before writing any code.
 
 ```yaml
 id: TKB-010
-status: in_progress
+status: review
 priority: P0
 area:
 - frontend
@@ -882,6 +882,14 @@ Plan and evidence: `docs/seo-data-presentation-plan.md`.
 ### Implementation notes
 
 Single file for the crawler block: `frontend/functions/_middleware.js`. Sitemap change in `backend/src/routers/seo.py:160-166`. Copy the sector-page pattern (`_middleware.js:186-205`), which is the only family already doing this right. No React component changes needed.
+
+Shipped in PR #591 (merged to `develop` 2026-09-05). Verified on dev.tinboker.com with
+`curl -A Googlebot` after deploy: episode 14,263 crawler-visible chars / 2 JSON-LD
+blocks / 7 Clips; stock 5,266 chars; home 2,382; sector 3,521 (warm API) or title +
+description only when `by-sector` misses its 8 s deadline; podcaster 1,110 (10 episode
+titles + top tickers — below the 2,000 floor, the payload has no summaries to show).
+Dev sitemap `/stock` family 250 URLs (was 101). Remaining: the same check on
+production after the next `v*` tag, then Search Console sitemap resubmit.
 
 ---
 
