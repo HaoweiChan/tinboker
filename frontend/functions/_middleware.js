@@ -122,7 +122,17 @@ const stockLink = (t, name) => a(`/stock/${encodeURIComponent(t)}`, name ? `${na
 const episodeLink = (e) => a(`/episode/${encodeURIComponent(e.id)}`, e.episode_title || `EP ${e.episode_number ?? ''}`);
 const sectorLink = (s) => a(`/sector/${encodeURIComponent(s.exposure_id)}`, s.display_name || s.exposure_id);
 const podcasterLink = (name) => a(`/podcaster/${encodeURIComponent(name)}`, name);
-const SENTIMENT = { BULLISH: '看多', BEARISH: '看空', NEUTRAL: '中立' };
+// Mirrors normalizeSentiment in src/lib/sentiment.ts: the pipeline also emits
+// STRONG_BULLISH / STRONG_BEARISH and older BULL/BEAR/POSITIVE/NEGATIVE/MIXED labels.
+export function normSentiment(raw) {
+  const s = String(raw ?? '').trim().toUpperCase();
+  if (['BULLISH', 'BULL', 'POSITIVE', 'STRONG_BULLISH'].includes(s)) return 'BULLISH';
+  if (['BEARISH', 'BEAR', 'NEGATIVE', 'STRONG_BEARISH'].includes(s)) return 'BEARISH';
+  if (['NEUTRAL', 'NEUT', 'MIXED'].includes(s)) return 'NEUTRAL';
+  return null;
+}
+const SENTIMENT_ZH = { BULLISH: '看多', BEARISH: '看空', NEUTRAL: '中立' };
+const sentimentZh = (raw) => SENTIMENT_ZH[normSentiment(raw)] || '';
 const day = (iso) => (iso ? String(iso).slice(0, 10) : '');
 const hms = (sec) => {
   const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
@@ -170,7 +180,7 @@ export function chapters(md) {
 export function tally(insights, days = 30) {
   const since = Date.now() - days * 86400e3;
   const recent = (insights || []).filter((i) => Date.parse(i.podcast_launch_time || '') >= since);
-  const n = (label) => recent.filter((i) => i.sentiment_label === label).length;
+  const n = (label) => recent.filter((i) => normSentiment(i.sentiment_label) === label).length;
   return { days, total: recent.length, bull: n('BULLISH'), neu: n('NEUTRAL'), bear: n('BEARISH') };
 }
 const tallySentence = (name, t) =>
@@ -208,7 +218,7 @@ const INDEX_BODY = {
     const eps = (rec && rec.episodes) || [];
     return {
       body: `<h2>最新集數</h2>${ul(eps.map((e) => `${podcasterLink(e.podcast_name)} · ${episodeLink(e)}`))}`
-        + `<h2>近 30 天熱門個股</h2>${ul((tr || []).map((r) => `${stockLink(r.ticker)} · ${r.count} 集 · ${SENTIMENT[r.sentiment_label] || ''}`))}`,
+        + `<h2>近 30 天熱門個股</h2>${ul((tr || []).map((r) => `${stockLink(r.ticker)} · ${r.count} 集 · ${sentimentZh(r.sentiment_label)}`))}`,
       ld: [
         { '@context': 'https://schema.org', '@type': 'WebSite', name: SITE, url: `${origin}/` },
         { '@context': 'https://schema.org', '@type': 'Organization', name: SITE, url: `${origin}/`, logo: BRAND_IMG },
@@ -217,7 +227,7 @@ const INDEX_BODY = {
   },
   '/stock': async (api) => {
     const tr = await getJson(`${api}/api/ticker-insights/trending?limit=100`, CACHE_1H);
-    return { body: ul((tr || []).map((r) => `${stockLink(r.ticker)} · ${r.count} 集 · ${SENTIMENT[r.sentiment_label] || ''}`)) };
+    return { body: ul((tr || []).map((r) => `${stockLink(r.ticker)} · ${r.count} 集 · ${sentimentZh(r.sentiment_label)}`)) };
   },
   '/podcaster': async (api) => {
     const pods = await getJson(`${api}/api/podcast`, CACHE_1H);
@@ -351,7 +361,7 @@ export async function metaFor(pathname, origin, api) {
     const body = (insights.length ? `<p>${esc(tallySentence(name, t))}</p>` : '')
       + (members.length ? `<h2>產業 / 題材</h2>${ul(members.map((s) => `${sectorLink(s)}${s.reason ? `：${esc(s.reason)}` : ''}`))}` : '')
       + (insights.length ? `<h2>Podcast 觀點</h2>${ul(insights.map((i) =>
-        `${esc(day(i.podcast_launch_time))} · ${podcasterLink(i.podcaster)} · ${esc(SENTIMENT[i.sentiment_label] || '')}`
+        `${esc(day(i.podcast_launch_time))} · ${podcasterLink(i.podcaster)} · ${esc(sentimentZh(i.sentiment_label))}`
         + `${i.time_horizon ? ` · ${esc(i.time_horizon)}` : ''} · ${a(`/episode/${encodeURIComponent(i.episode_id)}`, i.bluf_thesis || '')}`))}` : '');
     return {
       title: `${name} · 股價與相關 Podcast`,
