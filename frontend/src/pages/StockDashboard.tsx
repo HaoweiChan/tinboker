@@ -18,6 +18,7 @@ import type { CompanyDetail, RealTimePriceUpdate, TimeframeOption, TickerInsight
 import { priceWebSocketClient } from '@/services/websocket/priceWebSocket';
 import TradingViewChart, { type ChartMarker } from '@/components/charts/TradingViewChart';
 import { MentionSplitCard } from '@/components/stock/MentionSplitCard';
+import { InstitutionalFlowCard } from '@/components/stock/InstitutionalFlowCard';
 import { ChartControls } from '@/components/charts/ChartControls';
 import { getInsightsByTicker, getRecentBuzz, getSortedPodcasts, type Podcast } from '@/services/api/podcasts';
 import { getTickerMentions, type TickerMentionsResponse } from '@/services/api/mentions';
@@ -341,6 +342,7 @@ const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[] }> =
             ))}
           </div>
         </div>
+        {market === 'TW' && <InstitutionalFlowCard symbol={symbol} className="lg:col-span-2" />}
         <MentionSplitCard insights={insights} />
         <TickerSectorsCard symbol={symbol} />
       </div>

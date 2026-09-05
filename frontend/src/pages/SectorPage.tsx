@@ -20,6 +20,7 @@ import { useStockPriceSinceMap } from '@/hooks/useStockPriceSinceMap';
 import { useTranslationMap } from '@/hooks/useTranslationMap';
 import { SectorTickerCard, type Timeframe } from '@/components/topics/SectorTickerCard';
 import { SectorIcon } from '@/components/topics/SectorIcon';
+import { SectorHeatCard } from '@/components/topics/SectorHeatCard';
 import { Plus, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAppStore, useTagSubscriptions } from '@/store/useAppStore';
@@ -211,6 +212,8 @@ export const SectorPage: React.FC = () => {
             </button>
           )}
         </div>
+
+        {!loading && exposureId && <SectorHeatCard exposureId={exposureId} />}
 
         {/* ── Constituent performance — one timeframe at a time via the toggle ── */}
         {loading ? (

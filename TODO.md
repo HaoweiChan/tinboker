@@ -941,7 +941,7 @@ Follow-up idea, not scheduled: aggregate dots per week when the visible range ex
 
 ```yaml
 id: TKB-012
-status: ready
+status: in_progress
 priority: P1
 area:
 - frontend

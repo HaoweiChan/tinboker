@@ -336,6 +336,22 @@ export const SectorsByTickerResponseSchema = z.object({
 export type SectorByTickerItem = z.infer<typeof SectorByTickerItemSchema>;
 export type SectorsByTickerResponse = z.infer<typeof SectorsByTickerResponseSchema>;
 
+// GET /api/stocks/{ticker}/institutional — 三大法人 daily net shares, oldest → newest.
+export const InstitutionalRowSchema = z.object({
+  date: z.string(),
+  foreign_net_shares: z.number().nullable(),
+  trust_net_shares: z.number().nullable(),
+  total_net_shares: z.number().nullable(),
+});
+
+export const InstitutionalResponseSchema = z.object({
+  ticker: z.string(),
+  rows: z.array(InstitutionalRowSchema),
+});
+
+export type InstitutionalRow = z.infer<typeof InstitutionalRowSchema>;
+export type InstitutionalResponse = z.infer<typeof InstitutionalResponseSchema>;
+
 // ============================================
 // Interactive Model Schemas
 // ============================================
