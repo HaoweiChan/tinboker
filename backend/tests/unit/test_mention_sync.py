@@ -104,6 +104,26 @@ def test_sync_ticker_mentions_inserts_and_is_idempotent(session, monkeypatch):
     assert m.mentioned_at == datetime(2026, 6, 1, 8, 0, 0)
 
 
+def test_sync_ticker_mentions_numeric_start_time_is_ms(session, monkeypatch):
+    row = {**_insight_row(), "reasons": [{"start_time": 1575708, "title": "無稀土馬達"}]}
+    monkeypatch.setattr(ms, "_fetch_recent_insight_rows", lambda days: [row])
+    ms.sync_ticker_mentions(session)
+    assert session.query(ContentMention).one().mention_start_s == pytest.approx(1575.708)
+
+
+def test_sync_ticker_mentions_heals_start_s_of_existing_rows(session, monkeypatch):
+    """Rows written before the ms fix hold values 1000x too large; a later
+    pass re-sets them from the source without re-inserting."""
+    row = {**_insight_row(), "reasons": [{"start_time": 1575708, "title": "x"}]}
+    monkeypatch.setattr(ms, "_fetch_recent_insight_rows", lambda days: [row])
+    ms.sync_ticker_mentions(session)
+    session.query(ContentMention).update({"mention_start_s": 1575708.0})
+    session.commit()
+    assert ms.sync_ticker_mentions(session) == 0
+    assert session.query(ContentMention).one().mention_start_s == pytest.approx(1575.708)
+    assert ms.sync_ticker_mentions(session) == 0  # second pass changes nothing
+
+
 def test_sync_ticker_mentions_skips_incomplete_rows(session, monkeypatch):
     rows = [
         _insight_row(ticker=""),
