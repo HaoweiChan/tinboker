@@ -60,7 +60,8 @@ def _parse_iso(value: Any) -> Optional[datetime]:
 
 
 def _parse_start_s(reasons: Any) -> Optional[float]:
-    """First reason's start_time as seconds — accepts numbers or H:MM:SS strings."""
+    """First reason's start_time as seconds. The pipeline writes numbers in
+    milliseconds (regen/schemas.py: "int — ms"); older docs carry H:MM:SS."""
     if isinstance(reasons, str):
         try:
             reasons = json.loads(reasons)
@@ -72,7 +73,7 @@ def _parse_start_s(reasons: Any) -> Optional[float]:
     if raw is None:
         return None
     if isinstance(raw, (int, float)):
-        return float(raw)
+        return float(raw) / 1000.0
     parts = str(raw).strip().split(":")
     try:
         secs = 0.0
@@ -104,10 +105,15 @@ def _existing_keys(db: Session) -> set:
 
 
 def sync_ticker_mentions(db: Session, days: int = SYNC_LOOKBACK_DAYS) -> int:
-    """Upsert ticker mentions into content_mentions. Returns rows inserted."""
+    """Upsert ticker mentions into content_mentions. Returns rows inserted.
+
+    Existing rows whose mention_start_s no longer matches the source get it
+    re-set (heals the rows written while ms were stored as seconds); after
+    the first pass that is a no-op."""
     rows = _fetch_recent_insight_rows(days)
-    seen = _existing_keys(db)
-    inserted = 0
+    stored = dict(db.query(ContentMention.mention_key, ContentMention.mention_start_s).all())
+    seen = set(stored)
+    inserted = healed = 0
     for row in rows:
         ticker = _canonical_ticker(row.get("ticker") or "")
         episode_id = (row.get("episode_id") or "").strip()
@@ -115,7 +121,13 @@ def sync_ticker_mentions(db: Session, days: int = SYNC_LOOKBACK_DAYS) -> int:
         if not ticker or not episode_id or mentioned_at is None:
             continue
         key = f"{episode_id}:ticker:{ticker}"
+        start_s = _parse_start_s(row.get("reasons"))
         if key in seen:
+            if start_s is not None and stored[key] != start_s:
+                db.query(ContentMention).filter(ContentMention.mention_key == key).update(
+                    {"mention_start_s": start_s}
+                )
+                healed += 1
             continue
         seen.add(key)
         db.add(ContentMention(
@@ -127,14 +139,14 @@ def sync_ticker_mentions(db: Session, days: int = SYNC_LOOKBACK_DAYS) -> int:
             ticker=ticker,
             market=infer_market(ticker),
             mentioned_at=mentioned_at,
-            mention_start_s=_parse_start_s(row.get("reasons")),
+            mention_start_s=start_s,
             confidence=LLM_TICKER_CONFIDENCE,
             extraction_method="pipeline_llm",
             sentiment_label=row.get("sentiment_label"),
             thesis=row.get("bluf_thesis"),
         ))
         inserted += 1
-    if inserted:
+    if inserted or healed:
         db.commit()
     return inserted
 
