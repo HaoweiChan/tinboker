@@ -30,6 +30,8 @@ import { AdminTagsPage } from '@/pages/AdminTagsPage';
 import { AdminSocialPage } from '@/pages/AdminSocialPage';
 import { ArticleDetail } from '@/pages/ArticleDetail';
 import { ArticleList } from '@/pages/ArticleList';
+import { WeeklyPage } from '@/pages/WeeklyPage';
+import { WeeklyIndex } from '@/pages/WeeklyIndex';
 import { DevPortalPage } from '@/pages/DevPortalPage';
 import { DevGrafanaPage } from '@/pages/DevGrafanaPage';
 import { DevPodcasterListPage } from '@/pages/DevPodcasterListPage';
@@ -120,6 +122,8 @@ function App() {
                 comment) prompt login on click via useRequireAuth(). */}
             <Route path="/stock/:ticker" element={<StockDashboard />} />
             <Route path="/topics" element={<TopicsCloud />} />
+            <Route path="/weekly" element={<WeeklyIndex />} />
+            <Route path="/weekly/:week" element={<WeeklyPage />} />
             <Route path="/topics/:tag" element={<TagPage />} />
             <Route path="/tag/:tag" element={<TagPage />} />
             <Route path="/episode/:id" element={<EpisodeDetail />} />

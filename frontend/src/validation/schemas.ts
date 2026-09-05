@@ -578,3 +578,49 @@ export function parseResponse<T>(schema: z.ZodType<T>, data: unknown): T {
     throw error;
   }
 }
+
+// GET /api/weekly and /api/weekly/{week} — the weekly rollup (TKB-013).
+export const WeeklyTickerSchema = z.object({
+  ticker: z.string(),
+  name: z.string().nullable().optional(),
+  episodes: z.number(),
+  bull: z.number(),
+  neu: z.number(),
+  bear: z.number(),
+  prev_bull: z.number(),
+  prev_neu: z.number(),
+  prev_bear: z.number(),
+});
+
+export const WeeklySchema = z.object({
+  week: z.string(),
+  start: z.string(),
+  end: z.string(),
+  episode_count: z.number(),
+  podcasts: z.array(z.object({ name: z.string(), episodes: z.number() })),
+  tickers: z.array(WeeklyTickerSchema),
+  sectors: z.array(z.object({
+    exposure_id: z.string(),
+    episodes: z.number(),
+    display_name: z.string(),
+    icon_id: z.string().nullable().optional(),
+    color_hex: z.string().nullable().optional(),
+  })),
+  episodes: z.array(z.object({
+    id: z.string(),
+    podcast_name: z.string(),
+    episode_title: z.string().nullable().optional(),
+    episode_number: z.number().nullable().optional(),
+    released_at_ms: z.number().nullable().optional(),
+    key_insights: z.array(z.string()),
+    related_tickers: z.array(z.string()),
+  })),
+});
+
+export const WeeklyListSchema = z.object({
+  weeks: z.array(z.object({ week: z.string(), start: z.string(), end: z.string(), episode_count: z.number() })),
+});
+
+export type Weekly = z.infer<typeof WeeklySchema>;
+export type WeeklyTicker = z.infer<typeof WeeklyTickerSchema>;
+export type WeeklyList = z.infer<typeof WeeklyListSchema>;

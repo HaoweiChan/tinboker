@@ -17,7 +17,7 @@ import { dirname, resolve } from 'node:path';
 const here = dirname(fileURLToPath(import.meta.url));
 const mw = await import(resolve(here, '../functions/_middleware.js'));
 const {
-  metaFor, isCandidate, normalizeTagSlug, tagLabelFallback, NOINDEX_ROUTE,
+  metaFor, isCandidate, normalizeTagSlug, tagLabelFallback, TAG_ROUTE, tagNoindex, MIN_TAG_EPISODES,
   renderPage, mdToHtml, chapters, tally, normSentiment,
 } = mw;
 
@@ -95,6 +95,22 @@ globalThis.fetch = async (url) => {
     });
   }
   if (u.includes('/api/episodes/recent')) return json({ episodes: [EPISODE] });
+  if (u.includes('/api/episodes/by-tag/')) {
+    // 'ai' is a rich tag (>= MIN_TAG_EPISODES); anything else is thin.
+    const rich = /by-tag\/ai\b/.test(u);
+    const n = rich ? MIN_TAG_EPISODES + 2 : 2;
+    return json({ tag: 'x', total: n, episodes: Array.from({ length: n }, (_, i) => ({ ...EPISODE, id: `t${i}`, episode_title: `EP${i} 主題` })) });
+  }
+  if (/\/api\/weekly\/[^/?]+/.test(u)) {
+    return json({
+      week: '2026-W36', start: '2026-08-31', end: '2026-09-06', episode_count: 12,
+      podcasts: [{ name: '股癌', episodes: 7 }, { name: '財經一路發', episodes: 5 }],
+      tickers: [{ ticker: '2330', name: '台積電', episodes: 6, bull: 4, neu: 1, bear: 0, prev_bull: 1, prev_neu: 0, prev_bear: 2 }],
+      sectors: [{ exposure_id: 'sector_mlcc', display_name: '被動元件 MLCC', episodes: 3 }],
+      episodes: [{ id: 'abc123', podcast_name: '股癌', episode_title: 'EP500 測試', key_insights: ['升息機率驟降'] }],
+    });
+  }
+  if (u.endsWith('/api/weekly')) return json({ weeks: [{ week: '2026-W36', start: '2026-08-31', end: '2026-09-06', episode_count: 12 }] });
   if (u.includes('/api/episodes/')) return json(EPISODE);
   if (u.includes('/api/articles/')) return json({ title: '測試文章', subtitle: '這是一段夠長的文章副標，會直接當成 meta description 使用', key_points: ['第一點'] });
   if (u.includes('/api/tags/registry')) return json({ tags: [{ slug: 'ai', display_zh: '人工智慧' }] });
@@ -121,6 +137,8 @@ try {
     ['/topics/ai', '#人工智慧'],
     ['/topics/AI', '#人工智慧'],                       // normalizer path
     ['/topics/quantum-computing', '#quantum computing'], // registry miss → fallback
+    ['/weekly', 'Podcast 週報'],
+    ['/weekly/2026-W36', '2026/08/31 – 09/06 Podcast 週報'],
     ['/podcaster/Gooaye%20%E8%82%A1%E7%99%8C', 'Gooaye 股癌 · Podcast 頻道'],
     ['/sector/sector_mlcc', '被動元件 MLCC'],
     ['/podcaster', '所有節目'],
@@ -225,6 +243,16 @@ try {
   assert.equal(legacy.url, `${ORIGIN}/topics/ai`);
   assert.equal(legacy.title, '#人工智慧');
 
+  // Weekly pages: Article JSON-LD, links into stock / sector / episode pages.
+  const weekly = await metaFor('/weekly/2026-W36', ORIGIN, API);
+  const weeklyPage = renderPage(weekly);
+  for (const needle of ['<h2>本週熱門個股</h2>', '台積電（2330）', '4 看多', 'href="/sector/sector_mlcc"', 'href="/episode/abc123"', '升息機率驟降']) {
+    assert.ok(weeklyPage.includes(needle), `weekly body missing ${needle}`);
+  }
+  assert.deepEqual(ldTypes(weekly), ['Article', 'BreadcrumbList']);
+  assert.equal(weekly.type, 'article');
+  assert.ok(renderPage(await metaFor('/weekly', ORIGIN, API)).includes('href="/weekly/2026-W36"'), '/weekly index links its weeks');
+
   // Everything else stays untouched — the middleware is not a router.
   for (const path of ['/watchlist', '/assets/index.js', '/episode/a/b', '/admin/tags', '/profile']) {
     assert.equal(await metaFor(path, ORIGIN, API), null, `${path} should not be rewritten`);
@@ -236,17 +264,25 @@ try {
     assert.ok(isCandidate(path), `${path} resolves meta but the gate rejects it`);
   }
 
-  // --- 4. thin routes are noindex, valuable ones are not -------------------------
-  // Topic pages carry 97 characters of their own around a link list, repeated across
-  // ~166 of them. They keep their social card (meta still resolves) but must not be
-  // offered to Google. Sector pages are the contrast and must stay indexable.
-  for (const p of ['/topics/ai', '/topics/ai/', '/tag/ai']) {
-    assert.ok(NOINDEX_ROUTE.test(p), `${p} should be noindex`);
-    assert.ok(await metaFor(p, ORIGIN, API), `${p} should still resolve a social card`);
+  // --- 4. tag pages: indexable only above the episode floor -------------------------
+  // A tag with >= MIN_TAG_EPISODES scoped episodes renders those episodes' key insights
+  // and is offered to Google; a thin one keeps its social card but stays noindex.
+  for (const p of ['/topics/ai', '/topics/ai/', '/tag/ai', '/topics/quantum-computing']) {
+    assert.ok(TAG_ROUTE.test(p), `${p} is a tag route`);
   }
-  for (const p of ['/sector/sector_mlcc', '/episode/abc123', '/topics', '/', '/stock/2330']) {
-    assert.ok(!NOINDEX_ROUTE.test(p), `${p} must stay indexable`);
+  assert.ok(!TAG_ROUTE.test('/topics') && !TAG_ROUTE.test('/sector/sector_mlcc'), 'index and sector pages are not tag routes');
+  const rich = await metaFor('/topics/ai', ORIGIN, API);
+  assert.equal(rich.noindex, false, 'a tag with enough episodes is indexable');
+  const richPage = renderPage(rich);
+  for (const needle of ['<h2>相關集數</h2>', 'EP0 主題', '升息機率驟降', 'href="/episode/t0"']) {
+    assert.ok(richPage.includes(needle), `rich tag body missing ${needle}`);
   }
+  assert.ok(rich.description.startsWith(`近期 ${MIN_TAG_EPISODES + 2} 集 Podcast 談到「人工智慧」`), `tag description is live: ${rich.description}`);
+  assert.deepEqual(ldTypes(rich), ['BreadcrumbList']);
+  const thin = await metaFor('/topics/quantum-computing', ORIGIN, API);
+  assert.equal(thin.noindex, true, 'a thin tag stays noindex');
+  assert.equal(tagNoindex(undefined), true, 'no data → noindex');
+  assert.equal(tagNoindex(MIN_TAG_EPISODES), false);
 } finally {
   globalThis.fetch = originalFetch;
 }

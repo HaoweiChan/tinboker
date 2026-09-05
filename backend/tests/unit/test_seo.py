@@ -9,13 +9,14 @@ from src.routers import seo
 from src.services.search_console_service import SearchConsoleService, _row
 
 
-def _ep(ep_id: str, tickers: list[str] | None = None) -> Episode:
+def _ep(ep_id: str, tickers: list[str] | None = None, tags: list[str] | None = None) -> Episode:
     return Episode(
         id=ep_id,
         podcast_name="股癌",
         episode_title="重點",
         created_time=int(datetime.utcnow().timestamp() * 1000),
         related_tickers=tickers or [],
+        tags=tags or [],
     )
 
 
@@ -35,7 +36,8 @@ async def test_sitemap_lists_static_routes_and_episodes(monkeypatch):
     assert "<loc>https://tinboker.com/</loc>" in body
     assert "<loc>https://tinboker.com/episode/EP600</loc>" in body
     assert "<loc>https://tinboker.com/episode/EP601</loc>" in body
-    assert body.count("<url>") == len(seo.STATIC_PATHS) + 2
+    # + 1: the /weekly page for the week both episodes fall in
+    assert body.count("<url>") == len(seo.STATIC_PATHS) + 2 + 1
 
 
 @pytest.mark.asyncio
@@ -97,9 +99,7 @@ async def test_sitemap_lists_visible_sectors_and_skips_hidden_tags(monkeypatch):
     assert "<loc>https://tinboker.com/sector/sector_mlcc</loc>" in body
     assert "sector_retired" not in body
 
-    # No per-tag URLs at all. /topics/:tag is 97 characters of its own content around a
-    # link list, repeated across ~166 pages — the shape AdSense suspended the site over.
-    # The /topics index stays (STATIC_PATHS); the individual tag pages do not.
+    # With no episodes there are no tag pages to list; the /topics index stays.
     assert "/topics/" not in body
     assert "<loc>https://tinboker.com/topics</loc>" in body
 
@@ -122,4 +122,23 @@ async def test_sitemap_lists_tickers_with_two_or_more_scoped_episodes(monkeypatc
     assert "<loc>https://tinboker.com/stock/2330</loc>" in body
     assert "/stock/NVDA" not in body
     assert "/stock/2327" not in body
-    assert body.count("<url>") == len(seo.STATIC_PATHS) + 3 + 1
+    # 3 episodes + 1 stock page + 1 weekly page
+    assert body.count("<url>") == len(seo.STATIC_PATHS) + 3 + 1 + 1
+
+
+@pytest.mark.asyncio
+async def test_sitemap_lists_tags_above_the_floor_and_the_weeks_with_episodes(monkeypatch):
+    """A tag page is listed once >= MIN_TAG_EPISODES scoped episodes carry it; every
+    week with a scoped episode gets its /weekly page."""
+    async def _recent(*args, **kwargs):
+        return [_ep(f"E{i}", tags=["ai"] + (["niche"] if i == 0 else [])) for i in range(5)]
+
+    monkeypatch.setattr(seo.podcast_service, "get_recent_episodes", _recent)
+    monkeypatch.setattr(settings, "site_url", "https://tinboker.com")
+
+    body = (await seo.sitemap(limit=1000)).body.decode()
+
+    assert "<loc>https://tinboker.com/topics/ai</loc>" in body
+    assert "/topics/niche" not in body
+    assert "<loc>https://tinboker.com/weekly</loc>" in body
+    assert body.count("<loc>https://tinboker.com/weekly/20") == 1

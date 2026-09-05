@@ -21,6 +21,7 @@ import { useTranslationMap } from '@/hooks/useTranslationMap';
 import { SectorTickerCard, type Timeframe } from '@/components/topics/SectorTickerCard';
 import { SectorIcon } from '@/components/topics/SectorIcon';
 import { SectorHeatCard } from '@/components/topics/SectorHeatCard';
+import { CoMentionGraph } from '@/components/topics/CoMentionGraph';
 import { Plus, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAppStore, useTagSubscriptions } from '@/store/useAppStore';
@@ -246,6 +247,8 @@ export const SectorPage: React.FC = () => {
             </div>
           </div>
         ) : null}
+
+        {!loading && episodes.length > 0 && <CoMentionGraph episodes={episodes} names={translationMap} />}
 
         <h2 className="text-sm font-semibold text-muted-foreground mb-3">相關集數</h2>
         {loading ? (
