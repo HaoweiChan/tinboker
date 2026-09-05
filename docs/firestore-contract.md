@@ -411,8 +411,7 @@ Old `/api/recommendations/*` paths remain as deprecation aliases for one release
 ### 4.5 Backend rename status
 
 - Current reader: `backend/src/services/insight_service.py`, `backend/src/routers/ticker_insights.py`, prefix `/api/ticker-insights`.
-- Deprecated aliases: `backend/src/routers/recommendations.py` keeps `/api/recommendations/*` with deprecation headers for one release.
-- Legacy Postgres cleanup: delete `backend/src/database/recommendation_queries.py`, `backend/src/database/recommendation_db.py`, and the old `ticker_recommendations` table once § 7 Phase B6 completes.
+- Deprecated aliases: removed 2026-09-06 (Phase B6) — `/api/recommendations/*` is gone along with `backend/src/database/insight_queries.py` + `insight_db.py`.
 
 ### 4.6 Frontend rename status
 
@@ -565,7 +564,7 @@ Highest priority. Stock Index is empty in production today because the Postgres 
 | B3. Platform adds new endpoints under `/api/ticker-insights/*`, behind flag | platform | TBD | Reads from Firestore. |
 | B4. Frontend renames type/service, switches consumers | platform | TBD | See § 4.6 list. |
 | B5. Flip flag in prod, soak for 7 days | both | TBD | |
-| B6. Drop Postgres `ticker_recommendations` table; delete `recommendation_queries.py` + `recommendation_db.py`; remove `/api/recommendations/*` aliases | platform | TBD | |
+| B6. Drop Postgres `ticker_recommendations` table; delete `insight_queries.py` + `insight_db.py`; remove `/api/recommendations/*` aliases | platform | Done 2026-09-06 (code); the flat table never existed on the VPS Postgres, nothing to drop | |
 
 ### Phase C — Episode shape cleanups
 

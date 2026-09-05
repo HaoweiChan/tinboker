@@ -298,7 +298,7 @@ The API is organised into 33 routers under `src/routers/`:
 | Group | Routers |
 |-------|---------|
 | Stocks & markets | `stock`, `company`, `ticker_insights`, `translations`, `screener`, `websocket_prices`, `websocket` |
-| Content | `episodes`, `podcast`, `comments`, `news`, `articles`, `content`, `recommendations` |
+| Content | `episodes`, `podcast`, `comments`, `news`, `articles`, `content` |
 | Discovery | `search`, `tags`, `graph`, `visual_graph` |
 | Platform | `auth`, `user`, `notifications`, `analytics`, `seo`, `social`, `sources` |
 | Admin / config | `admin_system`, `admin_analytics`, `admin_articles`, `admin_pipeline`, `admin_pipeline_trial`, `admin_sources`, `admin_tags`, `admin_translations` |

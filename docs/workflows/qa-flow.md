@@ -38,7 +38,7 @@ is in [`../agents/qa-tester.md`](../agents/qa-tester.md):
 | BUG-5 (Zod marketCapTier) | Open `/story` in browser; console must not show `Schema validation failed: data.nodes.0.data.marketCapTier` | [`../agents/graph-visuals.md`](../agents/graph-visuals.md) |
 | BUG-7 (fabricated stats) | Load `/stock/AAPL`; verify Open is NOT exactly `price × 0.98`, P/E is NOT exactly `15.4` | [`../agents/stock-data.md`](../agents/stock-data.md) |
 | BUG-9 (stale CORS) | `curl -H "Origin: https://trendbrief.xyz" -X OPTIONS https://api.tinboker.com/api/stocks -I` → must NOT echo that origin | [`../agents/devops-infra.md`](../agents/devops-infra.md) |
-| BUG-10 (recs 404) | `curl -s "{API}/api/recommendations/by-ticker/2330"` → 200; `/api/recommendations/ticker/2330` → 404 | [`../agents/podcast-domain.md`](../agents/podcast-domain.md), [`../agents/stock-data.md`](../agents/stock-data.md) |
+| BUG-10 (recs 404) | `curl -s "{API}/api/ticker-insights/by-ticker/2330"` → 200; `/api/recommendations/by-ticker/2330` → 404 (aliases removed 2026-09-06) | [`../agents/podcast-domain.md`](../agents/podcast-domain.md), [`../agents/stock-data.md`](../agents/stock-data.md) |
 | BUG-11 (Redis URL leak) | `curl -s {API}/health \| python3 -c "import sys,json; r=json.load(sys.stdin)['redis']; print('FAIL' if 'connection_string' in r else 'PASS')"` → `PASS` | [`../agents/devops-infra.md`](../agents/devops-infra.md) |
 
 ## Browser MCP / Playwright dev-bypass flow
