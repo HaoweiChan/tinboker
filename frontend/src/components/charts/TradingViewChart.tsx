@@ -1,11 +1,30 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ColorType, CrosshairMode, createChart, type IChartApi, type ISeriesApi } from 'lightweight-charts';
+import { ColorType, CrosshairMode, createChart, type IChartApi, type ISeriesApi, type SeriesMarker, type SeriesType, type UTCTimestamp } from 'lightweight-charts';
 import { RSI, MACD, Stochastic } from 'technicalindicators';
 import type { PricePoint } from '@/utils/priceSeries';
 import type { ChartDataPoint } from '@/services/types';
 
+// The chart accepts two point shapes; these are the optional fields the legacy
+// code reads off either without narrowing first.
+type LoosePoint = { date?: string; volume?: number; price?: number; timestamp?: number; time?: number | string };
+// What a crosshair lookup can return for any series: bar or line fields.
+type SeriesValue = { value: number; open: number; high: number; low: number; close: number } | undefined;
+
+/** A dot drawn on the main series at `time` (unix seconds); snapped forward to the
+ *  first bar at or after that time, dropped if it falls outside the loaded bars. */
+export interface ChartMarker {
+  id: string;
+  time: number;
+  color: string;
+  /** Marker size multiplier (lightweight-charts `size`, default 1). */
+  size?: number;
+  text?: string;
+  tooltip?: React.ReactNode;
+}
+
 interface TradingViewChartProps {
   data: (PricePoint | ChartDataPoint)[];
+  markers?: ChartMarker[];
   theme: 'light' | 'dark';
   height?: number;
   className?: string;
@@ -43,9 +62,9 @@ function calculateSMA(data: (ChartDataPoint | PricePoint)[], count: number) {
     let time = 0;
     if ('timestamp' in p) time = p.timestamp / 1000;
     else if ('time' in p) time = typeof p.time === 'number' ? p.time : new Date(p.time).getTime() / 1000;
-    else if ('date' in p) time = new Date((p as any).date!).getTime() / 1000;
+    else if ('date' in p) time = new Date((p as LoosePoint).date!).getTime() / 1000;
 
-    result.push({ time: time as any, value: val });
+    result.push({ time: time as UTCTimestamp, value: val });
   }
   return result;
 }
@@ -66,14 +85,17 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
   onLoadMore,
   isLoadingMore = false,
   showPriceLines = false,
+  markers,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [hoverMarker, setHoverMarker] = useState<{ id: string; x: number; y: number } | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const legendRef = useRef<HTMLDivElement>(null);
-  const loadMoreDebounceRef = useRef<any>(null);
+  const loadMoreDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isLoadingRef = useRef(false);
   const isFrozenRef = useRef(false); // Hoisted ref for freeze state
   const frozenTimeRef = useRef<number | null>(null); // Store time to re-calc position on scroll
+  const infiniteScrollUnsubscribeRef = useRef<(() => void) | null>(null);
   const [frozenX, setFrozenX] = useState<number | null>(null); // State for rendering the line
 
   // Normalize props
@@ -87,7 +109,7 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
     }
 
     let resizeObserver: ResizeObserver | null = null;
-    let seriesMap: Record<string, ISeriesApi<any>> = {};
+    const seriesMap: Record<string, ISeriesApi<SeriesType>> = {};
 
     try {
       // 1. Initialize Chart
@@ -103,7 +125,6 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
           background: { type: ColorType.Solid, color: 'transparent' },
           textColor: theme === 'dark' ? '#94a3b8' : '#64748b',
           fontFamily: "'Inter', sans-serif",
-          // @ts-ignore
           attributionLogo: false,
         },
         grid: {
@@ -137,7 +158,7 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
         const getTs = (p: PricePoint | ChartDataPoint) => {
           if ('timestamp' in p) return p.timestamp;
           if ('time' in p) return typeof p.time === 'number' ? p.time * 1000 : new Date(p.time).getTime(); // PricePoint time is usually seconds or date string
-          if ('date' in p) return new Date((p as any).date!).getTime();
+          if ('date' in p) return new Date((p as LoosePoint).date!).getTime();
           return 0;
         };
         return getTs(a) - getTs(b);
@@ -156,7 +177,7 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
       const getSeconds = (p: PricePoint | ChartDataPoint) => {
         if ('timestamp' in p) return p.timestamp / 1000;
         if ('time' in p) return typeof p.time === 'number' ? p.time : new Date(p.time).getTime() / 1000;
-        if ('date' in p) return new Date((p as any).date!).getTime() / 1000;
+        if ('date' in p) return new Date((p as LoosePoint).date!).getTime() / 1000;
         return 0;
       };
 
@@ -184,14 +205,14 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
           } else if ('value' in p) {
             vol = 0;
           } else if ('price' in p) {
-            vol = (p as any).volume || 0;
+            vol = (p as LoosePoint).volume || 0;
           }
 
           const finalColor = isUp
             ? '#ef4444' // Red
             : '#22c55e'; // Green
 
-          return { time: time as any, value: vol, color: finalColor };
+          return { time: time as UTCTimestamp, value: vol, color: finalColor };
         });
         volSeries.setData(volData);
         seriesMap['Volume'] = volSeries;
@@ -215,7 +236,7 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
         const diff = sortedData.length - rsiValues.length;
         for (let i = 0; i < rsiValues.length; i++) {
           const time = getSeconds(sortedData[i + diff]);
-          rsiData.push({ time: time as any, value: rsiValues[i] });
+          rsiData.push({ time: time as UTCTimestamp, value: rsiValues[i] });
         }
         rsiSeries.setData(rsiData);
 
@@ -252,12 +273,12 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
         for (let i = 0; i < macdResult.length; i++) {
           const time = getSeconds(sortedData[i + diff]);
 
-          macdData.push({ time: time as any, value: macdResult[i].MACD });
-          signalData.push({ time: time as any, value: macdResult[i].signal });
+          macdData.push({ time: time as UTCTimestamp, value: macdResult[i].MACD });
+          signalData.push({ time: time as UTCTimestamp, value: macdResult[i].signal });
 
           const histVal = macdResult[i].histogram;
           histData.push({
-            time: time as any,
+            time: time as UTCTimestamp,
             value: histVal,
             color: (histVal || 0) >= 0 ? '#ef4444' : '#22c55e'
           });
@@ -274,8 +295,8 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
         chart.priceScale('kd').applyOptions({ scaleMargins: { top: 0.75, bottom: 0 } });
 
         const input = {
-          high: sortedData.map(d => 'high' in d ? d.high! : ('value' in d ? d.value : (d as any).price || 0)),
-          low: sortedData.map(d => 'low' in d ? d.low! : ('value' in d ? d.value : (d as any).price || 0)),
+          high: sortedData.map(d => 'high' in d ? d.high! : ('value' in d ? d.value : (d as LoosePoint).price || 0)),
+          low: sortedData.map(d => 'low' in d ? d.low! : ('value' in d ? d.value : (d as LoosePoint).price || 0)),
           close: closeValues,
           period: 9,
           signalPeriod: 3
@@ -285,8 +306,8 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
         const kData = [], dData = [];
         for (let i = 0; i < stochResult.length; i++) {
           const time = getSeconds(sortedData[i + diff]);
-          kData.push({ time: time as any, value: stochResult[i].k });
-          dData.push({ time: time as any, value: stochResult[i].d });
+          kData.push({ time: time as UTCTimestamp, value: stochResult[i].k });
+          dData.push({ time: time as UTCTimestamp, value: stochResult[i].d });
         }
         kSeries.setData(kData);
         dSeries.setData(dData);
@@ -309,7 +330,7 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
           const close = closeValues[i];
           const bias = ((close - ma) / ma) * 100;
           const time = getSeconds(sortedData[i]);
-          biasData.push({ time: time as any, value: bias });
+          biasData.push({ time: time as UTCTimestamp, value: bias });
         }
         biasSeries.setData(biasData);
         seriesMap['Bias'] = biasSeries;
@@ -317,7 +338,7 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
 
 
       // 3. Main Series
-      let mainSeries: ISeriesApi<any>;
+      let mainSeries: ISeriesApi<SeriesType>;
       if (isCandlestick) {
         mainSeries = chart.addCandlestickSeries({
           upColor: '#ef4444',
@@ -329,9 +350,9 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
         });
         const candleData = sortedData.map(p => {
           const time = getSeconds(p);
-          const c = p as any; // Cast to access open/high/low/close safely
+          const c = p as Partial<ChartDataPoint> & { value?: number }; // either point shape
           return {
-            time: time as any,
+            time: time as UTCTimestamp,
             open: c.open || c.value || 0,
             high: c.high || c.value || 0,
             low: c.low || c.value || 0,
@@ -349,11 +370,25 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
         });
         const areaData = sortedData.map((p, i) => {
           const time = getSeconds(p);
-          return { time: time as any, value: closeValues[i] };
+          return { time: time as UTCTimestamp, value: closeValues[i] };
         });
         mainSeries.setData(areaData);
       }
       seriesMap['Main'] = mainSeries;
+
+      // 3b. Markers (podcast mentions). Times snap forward to the next bar so a
+      // weekend episode lands on Monday's candle; markers must be time-sorted.
+      if (markers && markers.length > 0) {
+        const barTimes = sortedData.map(getSeconds);
+        const placed: SeriesMarker<UTCTimestamp>[] = [];
+        for (const m of markers) {
+          const t = barTimes.find((bt) => bt >= m.time);
+          if (t === undefined) continue;
+          placed.push({ time: t as UTCTimestamp, position: 'aboveBar', shape: 'circle', color: m.color, id: m.id, text: m.text, size: m.size ?? 1 });
+        }
+        placed.sort((a, b) => a.time - b.time);
+        mainSeries.setMarkers(placed);
+      }
 
       // 4. Moving Averages
       if (effectiveIndicators.includes('MA5')) {
@@ -388,7 +423,7 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
         if (isFrozen) {
           // Freeze: Capture time and calculate X
           frozenTimeRef.current = param.time as number;
-          const x = chart.timeScale().timeToCoordinate(param.time as any);
+          const x = chart.timeScale().timeToCoordinate(param.time as UTCTimestamp);
           setFrozenX(x);
         } else {
           // Unfreeze
@@ -400,12 +435,21 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
       // Update frozen line position on scroll/zoom
       chart.timeScale().subscribeVisibleTimeRangeChange(() => {
         if (isFrozenRef.current && frozenTimeRef.current !== null) {
-          const x = chart.timeScale().timeToCoordinate(frozenTimeRef.current as any);
+          const x = chart.timeScale().timeToCoordinate(frozenTimeRef.current as UTCTimestamp);
           setFrozenX(x);
         }
       });
 
       chart.subscribeCrosshairMove(param => {
+        // Marker hover → tooltip; independent of the legend/freeze logic below.
+        if (markers && markers.length > 0) {
+          const id = typeof param.hoveredObjectId === 'string' ? param.hoveredObjectId : null;
+          setHoverMarker((prev) => {
+            if (!id || !param.point) return prev ? null : prev;
+            if (prev && prev.id === id) return prev;
+            return { id, x: param.point.x, y: param.point.y };
+          });
+        }
         if (!legendRef.current) return;
 
         // If frozen, do NOT update the legend
@@ -430,7 +474,7 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
 
         // Get values
         // Main Series (OHLC)
-        const mainData = param.seriesData.get(mainSeries) as any;
+        const mainData = param.seriesData.get(mainSeries) as SeriesValue;
         let ohlcHtml = '';
         let changeHtml = '';
 
@@ -462,7 +506,7 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
         let maHtml = '';
         ['MA5', 'MA20', 'MA60'].forEach(ma => {
           if (seriesMap[ma]) {
-            const val = param.seriesData.get(seriesMap[ma]) as any;
+            const val = param.seriesData.get(seriesMap[ma]) as SeriesValue;
             if (val) {
               const color = ma === 'MA5' ? 'text-[#ff9800]' : ma === 'MA20' ? 'text-[#a78bfa]' : 'text-[#00bcd4]';
               maHtml += `<span class="${color} mr-4">${ma} ${val.value.toFixed(2)}</span>`;
@@ -473,20 +517,20 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
         // Sub-Chart Legend (Row 3 or Side)
         let subHtml = '';
         if (effectiveSubChart === 'Volume' && seriesMap['Volume']) {
-          const val = param.seriesData.get(seriesMap['Volume']) as any;
+          const val = param.seriesData.get(seriesMap['Volume']) as SeriesValue;
           if (val) subHtml = `<span class="text-slate-500 ml-4">Vol ${val.value.toLocaleString()}</span>`;
         } else if (effectiveSubChart === 'RSI' && seriesMap['RSI']) {
-          const val = param.seriesData.get(seriesMap['RSI']) as any;
+          const val = param.seriesData.get(seriesMap['RSI']) as SeriesValue;
           if (val) subHtml = `<span class="text-[#8b5cf6] ml-4">RSI ${val.value.toFixed(2)}</span>`;
         } else if (effectiveSubChart === 'MACD' && seriesMap['MACD']) {
-          const val = param.seriesData.get(seriesMap['MACD']) as any;
+          const val = param.seriesData.get(seriesMap['MACD']) as SeriesValue;
           if (val) subHtml = `<span class="text-[#a78bfa] ml-4">MACD ${val.value.toFixed(2)}</span>`;
         } else if (effectiveSubChart === 'KD') {
-          const kVal = seriesMap['KD_K'] ? param.seriesData.get(seriesMap['KD_K']) as any : null;
-          const dVal = seriesMap['KD_D'] ? param.seriesData.get(seriesMap['KD_D']) as any : null;
+          const kVal = seriesMap['KD_K'] ? param.seriesData.get(seriesMap['KD_K']) as SeriesValue : null;
+          const dVal = seriesMap['KD_D'] ? param.seriesData.get(seriesMap['KD_D']) as SeriesValue : null;
           if (kVal && dVal) subHtml = `<span class="text-[#ff9800] ml-4">K ${kVal.value.toFixed(2)}</span> <span class="text-[#a78bfa] ml-2">D ${dVal.value.toFixed(2)}</span>`;
         } else if (effectiveSubChart === 'Bias' && seriesMap['Bias']) {
-          const val = param.seriesData.get(seriesMap['Bias']) as any;
+          const val = param.seriesData.get(seriesMap['Bias']) as SeriesValue;
           if (val) subHtml = `<span class="text-[#e91e63] ml-4">Bias ${val.value.toFixed(2)}%</span>`;
         }
 
@@ -520,7 +564,7 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
       if (onLoadMore && !minimal) {
         const LOAD_MORE_THRESHOLD = 10; // Load more when less than 10 bars remain unseen on left
 
-        const unsubscribe = chart.timeScale().subscribeVisibleLogicalRangeChange((logicalRange) => {
+        const onRangeChange = (logicalRange: { from: number; to: number } | null) => {
           if (!logicalRange || isLoadingRef.current || isLoadingMore) return;
 
           // logicalRange.from is the leftmost visible bar index (can be negative if scrolled past data)
@@ -536,7 +580,7 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
                 // Get the oldest data point's timestamp
                 const oldestPoint = sortedData[0];
                 let oldestTimestamp = 0;
-                const op = oldestPoint as any;
+                const op = oldestPoint as LoosePoint;
                 if (op.timestamp) oldestTimestamp = op.timestamp;
                 else if (op.time) oldestTimestamp = typeof op.time === 'number' ? op.time * 1000 : new Date(op.time).getTime();
                 else if (op.date) oldestTimestamp = new Date(op.date).getTime();
@@ -552,10 +596,10 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
               }
             }, 500); // 500ms debounce
           }
-        });
-
-        // Store unsubscribe function for cleanup
-        (chart as any)._infiniteScrollUnsubscribe = unsubscribe;
+        };
+        chart.timeScale().subscribeVisibleLogicalRangeChange(onRangeChange);
+        // subscribe returns void; keep the matching unsubscribe for cleanup.
+        infiniteScrollUnsubscribeRef.current = () => chart.timeScale().unsubscribeVisibleLogicalRangeChange(onRangeChange);
       }
 
     } catch (err) {
@@ -569,15 +613,18 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
       if (resizeObserver) resizeObserver.disconnect();
       if (chartRef.current) {
         // Unsubscribe from infinite scroll listener
-        if ((chartRef.current as any)._infiniteScrollUnsubscribe) {
-          (chartRef.current as any)._infiniteScrollUnsubscribe();
+        if (infiniteScrollUnsubscribeRef.current) {
+          infiniteScrollUnsubscribeRef.current();
+          infiniteScrollUnsubscribeRef.current = null;
         }
         chartRef.current.remove();
         chartRef.current = null;
       }
     };
 
-  }, [data, theme, height, minimal, activeIndicators, effectiveSubChart, onLoadMore, isLoadingMore, showPriceLines]);
+  }, [data, theme, height, minimal, activeIndicators, effectiveSubChart, onLoadMore, isLoadingMore, showPriceLines, markers]);
+
+  const hovered = hoverMarker && markers ? markers.find((m) => m.id === hoverMarker.id) : undefined;
 
   return (
     <div className={`relative ${className || ''}`} style={{ height }}>
@@ -595,6 +642,17 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
         />
       )}
       <div ref={containerRef} className="w-full h-full" />
+      {hovered && hovered.tooltip && hoverMarker && (
+        <div
+          className="absolute z-30 pointer-events-none max-w-[280px] rounded-md border border-border bg-popover text-popover-foreground shadow-md p-2.5 text-xs"
+          style={{
+            left: Math.min(hoverMarker.x + 12, Math.max(0, (containerRef.current?.clientWidth ?? 0) - 290)),
+            top: Math.max(8, hoverMarker.y - 8),
+          }}
+        >
+          {hovered.tooltip}
+        </div>
+      )}
     </div>
   );
 };

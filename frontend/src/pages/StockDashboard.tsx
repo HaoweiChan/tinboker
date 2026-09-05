@@ -16,7 +16,8 @@ import { getStockByTicker, getEpisodesByTicker, type Episode as ApiEpisode } fro
 import { fetchWithFallback } from '@/services/api/migration';
 import type { CompanyDetail, RealTimePriceUpdate, TimeframeOption, TickerInsight, TickerTrending } from '@/services/types';
 import { priceWebSocketClient } from '@/services/websocket/priceWebSocket';
-import TradingViewChart from '@/components/charts/TradingViewChart';
+import TradingViewChart, { type ChartMarker } from '@/components/charts/TradingViewChart';
+import { MentionSplitCard } from '@/components/stock/MentionSplitCard';
 import { ChartControls } from '@/components/charts/ChartControls';
 import { getInsightsByTicker, getRecentBuzz, getSortedPodcasts, type Podcast } from '@/services/api/podcasts';
 import { getTickerMentions, type TickerMentionsResponse } from '@/services/api/mentions';
@@ -39,7 +40,12 @@ function countsToBreakdown(counts: TickerTrending['sentiment_counts']): Sentimen
   return { total, bull, neutral, bear, avgScore: null };
 }
 
-const StockHeaderCard: React.FC<{ symbol: string }> = ({ symbol }) => {
+// Semantic sentiment colours (green bull / red bear), matching the chart dots and
+// the SentBar rather than the market price convention.
+const SENT_CLASS = { BULLISH: 'text-sentiment-bull', BEARISH: 'text-sentiment-bear', NEUTRAL: 'text-muted-foreground' } as const;
+const SENT_LABEL = { BULLISH: '看多', BEARISH: '看空', NEUTRAL: '中立' } as const;
+
+const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[] }> = ({ symbol, insights }) => {
   const [stockData, setStockData] = useState<CompanyDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -135,6 +141,51 @@ const StockHeaderCard: React.FC<{ symbol: string }> = ({ symbol }) => {
   const displayChange = stockData?.change ?? 0;
   const displayChangePercent = stockData?.changePercent ?? 0;
   const trend = useStockTrendColor(displayChange);
+
+  // One dot per day a podcast discussed this ticker, coloured by that day's dominant
+  // sentiment (semantic tokens: green bull / red bear, independent of the candle
+  // colours). Hover lists the episodes behind the dot.
+  const mentionMarkers = useMemo<ChartMarker[]>(() => {
+    if (insights.length === 0) return [];
+    const css = (name: string) => {
+      const v = typeof document !== 'undefined' ? getComputedStyle(document.documentElement).getPropertyValue(name).trim() : '';
+      return v ? `hsl(${v.split(/\s+/).join(', ')})` : '#9ca3af';
+    };
+    const colors = { BULLISH: css('--sentiment-bull'), BEARISH: css('--sentiment-bear'), NEUTRAL: css('--sentiment-neutral') };
+    const byDay = new Map<string, TickerInsight[]>();
+    for (const i of insights) {
+      const day = i.podcast_launch_time.slice(0, 10);
+      if (!byDay.has(day)) byDay.set(day, []);
+      byDay.get(day)!.push(i);
+    }
+    return [...byDay.entries()].map(([day, list]) => {
+      const b = aggregateSentiment(list.map((i) => ({ sentiment_label: i.sentiment_label })));
+      const dominant = b.bull > b.bear ? 'BULLISH' : b.bear > b.bull ? 'BEARISH' : 'NEUTRAL';
+      return {
+        id: `mention:${day}`,
+        time: Date.parse(day) / 1000,
+        color: colors[dominant],
+        // Dots only: count labels pile up on daily-discussed tickers at a 1Y zoom.
+        size: list.length >= 3 ? 1.6 : list.length === 2 ? 1.3 : 1,
+        tooltip: (
+          <div className="flex flex-col gap-1.5">
+            <div className="text-2xs text-muted-foreground tabular-nums">{day.replace(/-/g, '/')} · {list.length} 集提及</div>
+            {list.slice(0, 4).map((i) => (
+              <div key={i.episode_id} className="leading-snug">
+                <span className="font-medium">{i.podcaster || '—'}</span>{' '}
+                <span className={cn('ml-1 font-medium', SENT_CLASS[normalizeSentiment(i.sentiment_label) ?? 'NEUTRAL'])}>{SENT_LABEL[normalizeSentiment(i.sentiment_label) ?? 'NEUTRAL']}</span>
+                {i.time_horizon && <span className="text-muted-foreground ml-1">{i.time_horizon}</span>}
+                <div className="text-muted-foreground line-clamp-2">{i.bluf_thesis}</div>
+              </div>
+            ))}
+            {list.length > 4 && <div className="text-2xs text-muted-foreground">還有 {list.length - 4} 集</div>}
+          </div>
+        ),
+      };
+    });
+    // `theme` is read indirectly: the sentiment CSS variables change with it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [insights, theme]);
 
   const rawChart = stockData?.chartData;
   const chartData = useMemo(() => {
@@ -261,6 +312,7 @@ const StockHeaderCard: React.FC<{ symbol: string }> = ({ symbol }) => {
                 activeSubChart={subChart}
                 onLoadMore={handleLoadMore}
                 isLoadingMore={isLoadingMore}
+                markers={mentionMarkers}
               />
             </div>
           ) : market !== 'TW' && market !== 'US' ? (
@@ -289,6 +341,7 @@ const StockHeaderCard: React.FC<{ symbol: string }> = ({ symbol }) => {
             ))}
           </div>
         </div>
+        <MentionSplitCard insights={insights} />
         <TickerSectorsCard symbol={symbol} />
       </div>
     </>
@@ -342,7 +395,10 @@ export const StockDashboard: React.FC = () => {
   useEffect(() => {
     if (!symbol) return;
     let cancelled = false;
-    getInsightsByTicker(symbol)
+    // The API defaults to the last 7 days; the chart markers and the 30/90-day split
+    // need the same 90-day window the crawler description is built from.
+    const iso = (d: Date) => d.toISOString().slice(0, 10);
+    getInsightsByTicker(symbol, { start_date: iso(new Date(Date.now() - 90 * 86400e3)), end_date: iso(new Date()) })
       .then((recs) => {
         if (!cancelled) setInsights(Array.isArray(recs) ? recs : []);
       })
@@ -452,7 +508,7 @@ export const StockDashboard: React.FC = () => {
         url={typeof window !== 'undefined' ? window.location.href : undefined}
       />
       <PageContent>
-        <StockHeaderCard symbol={symbol} />
+        <StockHeaderCard symbol={symbol} insights={insights} />
 
         <div className="mb-[18px]">
           <StatGroup items={stats} />
