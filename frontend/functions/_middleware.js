@@ -329,8 +329,12 @@ export async function metaFor(pathname, origin, api) {
   if (m) {
     const sym = decodeURIComponent(m[1]);
     const enc = encodeURIComponent(sym);
+    // by-ticker defaults to the last 7 days; ask for the 90 days the page itself
+    // shows (StockDashboard), so the 30-day tally below counts the same rows.
+    const iso = (d) => d.toISOString().slice(0, 10);
+    const since = iso(new Date(Date.now() - 90 * 86400e3));
     const [ins, secs, basic] = await Promise.all([
-      getJson(`${api}/api/ticker-insights/by-ticker/${enc}?limit=30`),
+      getJson(`${api}/api/ticker-insights/by-ticker/${enc}?start_date=${since}&end_date=${iso(new Date())}`),
       getJson(`${api}/api/sectors/by-ticker/${enc}`),
       getJson(`${api}/api/stocks/${enc}/basic`),
     ]);

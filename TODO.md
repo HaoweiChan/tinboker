@@ -897,7 +897,7 @@ production after the next `v*` tag, then Search Console sitemap resubmit.
 
 ```yaml
 id: TKB-011
-status: ready
+status: in_progress
 priority: P1
 area:
 - frontend
