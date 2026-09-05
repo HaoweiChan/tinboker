@@ -9,12 +9,13 @@ from src.routers import seo
 from src.services.search_console_service import SearchConsoleService, _row
 
 
-def _ep(ep_id: str) -> Episode:
+def _ep(ep_id: str, tickers: list[str] | None = None) -> Episode:
     return Episode(
         id=ep_id,
         podcast_name="股癌",
         episode_title="重點",
         created_time=int(datetime.utcnow().timestamp() * 1000),
+        related_tickers=tickers or [],
     )
 
 
@@ -101,3 +102,24 @@ async def test_sitemap_lists_visible_sectors_and_skips_hidden_tags(monkeypatch):
     # The /topics index stays (STATIC_PATHS); the individual tag pages do not.
     assert "/topics/" not in body
     assert "<loc>https://tinboker.com/topics</loc>" in body
+
+
+@pytest.mark.asyncio
+async def test_sitemap_lists_tickers_with_two_or_more_scoped_episodes(monkeypatch):
+    """/stock pages come from the scoped episode list, floored at MIN_TICKER_EPISODES.
+
+    The trending top-100 left ~400 discussed tickers out of the sitemap; a single
+    mention is one thesis line, which is the thin page the floor keeps out.
+    """
+    async def _recent(*args, **kwargs):
+        return [_ep("E1", ["2330", "NVDA"]), _ep("E2", ["2330", "2327"]), _ep("E3", ["2330"])]
+
+    monkeypatch.setattr(seo.podcast_service, "get_recent_episodes", _recent)
+    monkeypatch.setattr(settings, "site_url", "https://tinboker.com")
+
+    body = (await seo.sitemap(limit=1000)).body.decode()
+
+    assert "<loc>https://tinboker.com/stock/2330</loc>" in body
+    assert "/stock/NVDA" not in body
+    assert "/stock/2327" not in body
+    assert body.count("<url>") == len(seo.STATIC_PATHS) + 3 + 1
