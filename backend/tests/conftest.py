@@ -190,3 +190,14 @@ def temp_db(tmp_path, monkeypatch):
     for model in (SocialPostLedger, ThreadsComment):
         model.__table__.create(bind=pg.engine, checkfirst=True)
     yield
+
+
+@pytest.fixture(autouse=True)
+def _reset_sector_redirects_memo():
+    """sector_redirects() memoises the registry map for 60s in-process; never let one
+    test's snapshot (or a cached empty map from a DB-less test) leak into the next."""
+    from src import tag_registry
+
+    tag_registry._redirects_cache = (0.0, {})
+    yield
+    tag_registry._redirects_cache = (0.0, {})
