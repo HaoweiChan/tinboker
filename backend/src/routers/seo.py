@@ -22,6 +22,7 @@ from src.config import settings
 from src.database.postgres import get_session
 from src.services.article_service import ArticleService
 from src.services.podcast import PodcastService
+from src.routers.weekly import week_of_ms
 from src.services.search_console_service import SearchConsoleService
 from src.tag_registry import hidden_sector_exposure_ids, served_sector_exposure_ids
 
@@ -37,12 +38,15 @@ podcast_service = PodcastService()
 # Public top-level routes that should always be in the sitemap (mirrors the routes
 # in frontend/src/App.tsx). Episodes are appended dynamically below.
 MIN_TICKER_EPISODES = 2
+# /topics/:tag pages are listed only above this many scoped episodes — see the tag block below.
+MIN_TAG_EPISODES = 5
 
 STATIC_PATHS = [
     ("/", "1.0", "daily"),
     ("/podcaster", "0.8", "weekly"),
     ("/stock", "0.8", "weekly"),
     ("/topics", "0.8", "weekly"),
+    ("/weekly", "0.8", "weekly"),
     ("/articles", "0.7", "weekly"),
     ("/about", "0.5", "monthly"),
     ("/contact", "0.5", "monthly"),
@@ -102,6 +106,8 @@ async def sitemap(
     # The same scoped list decides which /stock pages exist (below), so one fetch
     # serves both families and they can never disagree about the window.
     ticker_episodes: dict[str, int] = {}
+    tag_episodes: dict[str, int] = {}
+    week_last: dict[str, str] = {}
     try:
         for ep in await podcast_service.get_recent_episodes(limit=limit, enrich_content=False):
             ep_id = getattr(ep, "id", None) or (ep.get("id") if isinstance(ep, dict) else None)
@@ -109,8 +115,18 @@ async def sitemap(
                 entries.append(_url_entry(f"{base}/episode/{ep_id}", _lastmod(ep), "monthly", "0.7"))
             for tk in getattr(ep, "related_tickers", None) or []:
                 ticker_episodes[str(tk)] = ticker_episodes.get(str(tk), 0) + 1
+            for tag in getattr(ep, "tags", None) or []:
+                tag_episodes[str(tag)] = tag_episodes.get(str(tag), 0) + 1
+            ms = getattr(ep, "released_at_ms", None) or getattr(ep, "created_time", None)
+            if ms:
+                wk = week_of_ms(ms)
+                week_last[wk] = max(week_last.get(wk, ""), _date_from_ms(ms) or "")
     except Exception as e:
         logger.warning("Sitemap episode enumeration failed: %s", e)
+
+    # Weekly rollups (TKB-013): one dated page per week that has scoped episodes.
+    for wk in sorted(week_last, reverse=True):
+        entries.append(_url_entry(f"{base}/weekly/{wk}", week_last[wk] or None, "weekly", "0.7"))
 
     # Published articles
     try:
@@ -129,17 +145,16 @@ async def sitemap(
     except Exception as e:
         logger.warning("Sitemap podcaster enumeration failed: %s", e)
 
-    # Topic tags are deliberately NOT listed. Measured on the live site, /topics/:tag
-    # renders 7,304 characters of which 7,207 sit inside episode cards — 97 characters
-    # are the page's own, and those are nav chrome plus one sentence
-    # ("瀏覽所有關於「X」的 Podcast 摘要與市場討論 · N 集。") that is identical across all ~166
-    # of them bar the tag name. A template plus a link list, 166 times over, is the
-    # shape AdSense called "low value content" when it suspended tinboker.com.
-    #
-    # The pages stay — they are useful navigation — they are just not submitted for
-    # indexing, and the crawler middleware serves them noindex. Sector pages are the
-    # deliberate contrast: those carry a hand-written thesis, inclusion criteria and
-    # per-constituent descriptions, so they stay in the sitemap.
+    # Topic tags: only those with >= MIN_TAG_EPISODES scoped episodes. Until 2026-09 no
+    # tag page was listed at all — 97 characters of the page's own text around a link
+    # list, 166 times over, was the shape AdSense called "low value content". The
+    # crawler middleware now renders each episode's key insights into the tag page and
+    # applies the same threshold for noindex, so a listed tag page is real, unique text;
+    # a thin one still is not offered to Google. (No tag carries a description in the
+    # registry — 0 of 1,588 on 2026-09-06 — so the count is the only usable signal.)
+    for tag in sorted(tag_episodes):
+        if tag_episodes[tag] >= MIN_TAG_EPISODES:
+            entries.append(_url_entry(f"{base}/topics/{quote(tag)}", None, "weekly", "0.5"))
 
     # Sector / theme pages. Each carries a hand-written zh-TW description and 100+
     # episodes, and none of them were in the sitemap at all — Google had no way to

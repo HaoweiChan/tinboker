@@ -43,6 +43,7 @@ from src.routers.admin_sectors import router as admin_sectors_router
 from src.routers.social import (router as social_router, facebook_router, promo_router,
                                 substack_router, vocus_router)
 from src.routers.seo import router as seo_router, admin_router as admin_seo_router
+from src.routers.weekly import router as weekly_router
 from src.routers.screener import router as screener_router
 from src.middleware.cloudflare import CloudflareMiddleware
 
@@ -418,6 +419,7 @@ app.include_router(comments_router)
 app.include_router(comments_delete_router)
 app.include_router(articles_router)
 app.include_router(seo_router)  # public /sitemap.xml — stays on every env
+app.include_router(weekly_router)  # /api/weekly — public weekly rollups (TKB-013)
 app.include_router(screener_router)  # X-Internal-Key gated — stays on every env
 
 # Admin dashboard is developer-only and consolidated onto the dev/staging envs. Skip

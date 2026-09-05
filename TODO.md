@@ -987,7 +987,7 @@ does not compute; left as a follow-up idea.
 
 ```yaml
 id: TKB-013
-status: ready
+status: in_progress
 priority: P2
 area:
 - frontend

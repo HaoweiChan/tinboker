@@ -31,13 +31,15 @@ const SITE = '聽播客 TinBoker';
 // staging., <pr>.pages.dev) is a copy of it.
 const PROD_HOSTS = new Set(['tinboker.com', 'www.tinboker.com']);
 
-// Routes served noindex even on production. /topics/:tag renders 97 characters of its
-// own — nav chrome plus one sentence that is identical across all ~166 tag pages — around
-// a list of links to episode summaries. That is the "low value content" shape AdSense
-// suspended the site over. The pages stay for navigation; they just stop being something
-// Google evaluates. Sector pages are deliberately NOT here: their hand-written thesis and
-// per-constituent descriptions are the curation the same policy asks for.
-export const NOINDEX_ROUTE = /^\/(?:topics|tag)\/[^/]+\/?$/;
+// /topics/:tag used to be noindex wholesale: 97 characters of its own text around a link
+// list, ~166 times over — the "low value content" shape AdSense suspended the site over.
+// Since 2026-09 the crawler body carries each episode's key insights, so a tag with at
+// least MIN_TAG_EPISODES scoped episodes is real, unique text and is offered to Google;
+// thinner ones keep noindex. The sitemap applies the same floor (backend seo.py). No tag
+// has a registry description (0 of 1,588 on 2026-09-06), so the count is the only signal.
+export const TAG_ROUTE = /^\/(?:topics|tag)\/[^/]+\/?$/;
+export const MIN_TAG_EPISODES = 5;
+export const tagNoindex = (total) => !(Number(total) >= MIN_TAG_EPISODES);
 
 function apiBase(hostname) {
   const h = hostname.replace(/^www\./, '');
@@ -203,6 +205,7 @@ const STATIC_META = {
   '/podcaster': ['所有節目', 'TinBoker 持續結構化分析的中文財經 Podcast。'],
   '/stock': ['所有個股', '最近被 TinBoker 追蹤的 Podcast 提及的所有個股，依提及次數排序。'],
   '/topics': ['話題排行', '今日最強題材焦點 — 依題材聚合，顯示漲跌幅、資金流與相關個股表現。'],
+  '/weekly': ['Podcast 週報', '每週一頁：台灣財經 Podcast 這一週聊了哪些個股與題材、多空怎麼變，由 TinBoker 結構化整理。'],
   '/articles': ['文章', '深度分析與市場觀察 — TinBoker 的財經文章。'],
   '/about': ['關於 TinBoker', 'TinBoker（聽播客）— 結合 Podcast 觀點與即時數據的財經平台。'],
   '/contact': ['聯絡我們', '產品建議、合作想法或使用疑問 — 歡迎與 TinBoker 聯繫。'],
@@ -237,6 +240,10 @@ const INDEX_BODY = {
     const s = await getJson(`${api}/api/sectors`, CACHE_1H);
     return { body: ul(((s && s.sectors) || []).map((x) => `${sectorLink(x)}：${esc(x.description || '')}`)) };
   },
+  '/weekly': async (api) => {
+    const w = await getJson(`${api}/api/weekly`, CACHE_1H);
+    return { body: ul(((w && w.weeks) || []).map((x) => `${a(`/weekly/${encodeURIComponent(x.week)}`, `${x.start.replace(/-/g, '/')} – ${x.end.slice(5).replace('-', '/')}`)} · ${x.episode_count} 集`)) };
+  },
 };
 
 const staticKey = (p) => (p === '/' ? '/' : p.replace(/\/$/, ''));
@@ -244,7 +251,7 @@ const staticKey = (p) => (p === '/' ? '/' : p.replace(/\/$/, ''));
 // A path is a candidate if it is a single-segment content route or an index page.
 // Kept as one predicate so onRequest's cheap early-out and metaFor can never disagree
 // about which paths are covered.
-const CONTENT_ROUTE = /^\/(?:episode|article|stock|topics|tag|sector|podcaster)\/[^/]+\/?$/;
+const CONTENT_ROUTE = /^\/(?:episode|article|stock|topics|tag|sector|podcaster|weekly)\/[^/]+\/?$/;
 export function isCandidate(pathname) {
   return CONTENT_ROUTE.test(pathname) || staticKey(pathname) in STATIC_META;
 }
@@ -377,15 +384,53 @@ export async function metaFor(pathname, origin, api) {
   // the legacy /tag/ URL competes with its own twin in search.
   m = pathname.match(/^\/(?:topics|tag)\/([^/]+)\/?$/);
   if (m) {
-    // Mirrors TagPage's <SEO title={`#${displayLabel}`} .../>.
+    // Mirrors TagPage's <SEO title={`#${displayLabel}`} .../>. by-tag is the page's own
+    // query (getEpisodesByTag default limit) and its `total` decides indexability.
     const raw = decodeURIComponent(m[1]).replace(/^#/, '');
-    const label = await tagLabel(raw, api);
+    const [label, byTag] = await Promise.all([
+      tagLabel(raw, api),
+      getJson(`${api}/api/episodes/by-tag/${encodeURIComponent(raw)}?limit=50&offset=0`),
+    ]);
+    const eps = (byTag && byTag.episodes) || [];
+    const total = byTag ? Number(byTag.total || eps.length) : 0;
+    const body = (eps.length ? `<p>${esc(`近期 ${total} 集 Podcast 談到「${label}」。`)}</p><h2>相關集數</h2>${ul(eps.slice(0, 20).map((e) =>
+      `${podcasterLink(e.podcast_name)} · ${episodeLink(e)}${(e.key_insights || []).length ? `<ul>${e.key_insights.slice(0, 2).map((k) => `<li>${esc(k)}</li>`).join('')}</ul>` : ''}`))}` : '');
     return {
       title: `#${label}`,
-      description: `所有關於「${label}」的 Podcast 摘要與市場討論。`,
+      description: total ? `近期 ${total} 集 Podcast 談到「${label}」：${eps.slice(0, 3).map((e) => e.episode_title).filter(Boolean).join('／')}`.slice(0, 160) : `所有關於「${label}」的 Podcast 摘要與市場討論。`,
       image: BRAND_IMG,
       type: 'website',
       url: `${origin}/topics/${encodeURIComponent(raw)}`,
+      body,
+      noindex: tagNoindex(total),
+      ld: [crumbs([['話題排行', `${origin}/topics`], [`#${label}`, `${origin}/topics/${encodeURIComponent(raw)}`]])],
+    };
+  }
+  m = pathname.match(/^\/weekly\/([^/]+)\/?$/);
+  if (m) {
+    const week = decodeURIComponent(m[1]);
+    const w = await getJson(`${api}/api/weekly/${encodeURIComponent(week)}`, CACHE_1H);
+    if (!w) return null;
+    const url = `${origin}/weekly/${encodeURIComponent(week)}`;
+    const range = `${w.start.replace(/-/g, '/')} – ${w.end.slice(5).replace('-', '/')}`;
+    const title = `${range} Podcast 週報`;
+    const tickerName = (t) => (t.name ? `${t.name}（${t.ticker}）` : t.ticker);
+    const description = `${w.start.replace(/-/g, '/')} 到 ${w.end.replace(/-/g, '/')}，${(w.podcasts || []).length} 個節目共 ${w.episode_count} 集。本週最常提到：${(w.tickers || []).slice(0, 5).map(tickerName).join('、')}。`;
+    const body = `<p>${esc(description)}</p>`
+      + `<h2>本週熱門個股</h2>${ul((w.tickers || []).map((t) => `${stockLink(t.ticker, t.name)} · ${t.episodes} 集 · ${t.bull} 看多 · ${t.neu} 中立 · ${t.bear} 看空`))}`
+      + `<h2>本週產業與題材</h2>${ul((w.sectors || []).map((s) => `${sectorLink(s)} · ${s.episodes} 集`))}`
+      + `<h2>本週集數</h2>${ul((w.episodes || []).map((e) => `${podcasterLink(e.podcast_name)} · ${episodeLink(e)}${(e.key_insights || []).length ? `<ul>${e.key_insights.map((k) => `<li>${esc(k)}</li>`).join('')}</ul>` : ''}`))}`;
+    return {
+      title,
+      description: description.slice(0, 160),
+      image: BRAND_IMG,
+      type: 'article',
+      url,
+      body,
+      ld: [
+        { '@context': 'https://schema.org', '@type': 'Article', headline: title, url, datePublished: `${w.end}T23:59:00+08:00`, publisher: { '@type': 'Organization', name: SITE, logo: BRAND_IMG } },
+        crumbs([['Podcast 週報', `${origin}/weekly`], [title, url]]),
+      ],
     };
   }
   m = pathname.match(/^\/sector\/([^/]+)\/?$/);
@@ -474,8 +519,8 @@ export function renderPage(meta) {
 // gets a proper card even though the page is not indexed.
 export async function onRequest(context) {
   const url = new URL(context.request.url);
-  const res = await handle(context, url);
-  if (PROD_HOSTS.has(url.hostname) && !NOINDEX_ROUTE.test(url.pathname)) return res;
+  const { res, noindex } = await handle(context, url);
+  if (PROD_HOSTS.has(url.hostname) && !noindex) return res;
   try {
     // next()'s headers are immutable; re-wrap to get a mutable copy. Guarded because
     // some statuses (304 and friends) reject a re-wrap — a missing noindex on one
@@ -488,8 +533,12 @@ export async function onRequest(context) {
   }
 }
 
+// Returns { res, noindex }. noindex is true for thin tag pages (crawler requests decide
+// it from the by-tag total; human requests on a tag route keep the conservative default,
+// which only matters on non-prod hosts where every response is noindex anyway).
 async function handle(context, url) {
   const { request, next, env } = context;
+  const wrap = (res, noindex = false) => ({ res, noindex });
   try {
     // API origin: derived from the request host (prod), overridable via a Pages
     // env var (mirrors the frontend's VITE_API_BASE_URL; also used in local dev).
@@ -504,23 +553,24 @@ async function handle(context, url) {
     // fetch itself, re-enter this Function, and spin until the subrequest cap.
     if (url.pathname === '/sitemap.xml' && api !== url.origin) {
       const r = await fetch(`${api}/sitemap.xml`, CACHE_1H);
-      if (!r.ok) return next();
-      return new Response(r.body, {
+      if (!r.ok) return wrap(await next());
+      return wrap(new Response(r.body, {
         status: 200,
         headers: { 'content-type': 'application/xml', 'cache-control': 'public, max-age=3600' },
-      });
+      }));
     }
 
     // Only covered routes are candidates; everything else (assets, account pages)
     // passes straight through with just a cheap regex test.
-    if (!isCandidate(url.pathname)) return next();
+    const isTag = TAG_ROUTE.test(url.pathname);
+    if (!isCandidate(url.pathname)) return wrap(await next());
     const ua = request.headers.get('user-agent') || '';
-    if (!CRAWLER.test(ua)) return next();
+    if (!CRAWLER.test(ua)) return wrap(await next(), isTag);
 
     const meta = await metaFor(url.pathname, url.origin, api);
     const res = await next();
-    if (!meta) return res;
-    if (!(res.headers.get('content-type') || '').includes('text/html')) return res;
+    if (!meta) return wrap(res, isTag);
+    if (!(res.headers.get('content-type') || '').includes('text/html')) return wrap(res, isTag);
 
     const full = meta.title ? `${meta.title} | ${SITE}` : SITE;
     const head = [
@@ -543,16 +593,16 @@ async function handle(context, url) {
 
     // Strip the static placeholders so crawlers see exactly one of each tag,
     // then append the per-route block to <head> and fill #root.
-    return new HTMLRewriter()
+    return wrap(new HTMLRewriter()
       .on('title', { element: (el) => el.remove() })
       .on('meta[name="description"]', { element: (el) => el.remove() })
       .on('meta[property^="og:"]', { element: (el) => el.remove() })
       .on('meta[name^="twitter:"]', { element: (el) => el.remove() })
       .on('head', { element: (el) => el.append(head, { html: true }) })
       .on('#root', { element: (el) => el.setInnerContent(body, { html: true }) })
-      .transform(res);
+      .transform(res), !!meta.noindex);
   } catch (_err) {
     // Meta injection must never break a page — fall back to the untouched SPA.
-    return next();
+    return wrap(await next(), TAG_ROUTE.test(url.pathname));
   }
 }
