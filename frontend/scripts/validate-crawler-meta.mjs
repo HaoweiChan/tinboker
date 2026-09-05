@@ -18,7 +18,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const mw = await import(resolve(here, '../functions/_middleware.js'));
 const {
   metaFor, isCandidate, normalizeTagSlug, tagLabelFallback, NOINDEX_ROUTE,
-  renderPage, mdToHtml, chapters, tally,
+  renderPage, mdToHtml, chapters, tally, normSentiment,
 } = mw;
 
 const ORIGIN = 'https://tinboker.com';
@@ -61,8 +61,13 @@ const INSIGHTS = [
   { episode_id: 'e1', podcaster: 'Gooaye 股癌', podcast_launch_time: daysAgo(1), ticker: '2330', sentiment_label: 'BULLISH', time_horizon: '長期', bluf_thesis: '台積電是 AI 供應鏈核心持股，長期 EPS 趨勢向上。' },
   { episode_id: 'e2', podcaster: '財經一路發', podcast_launch_time: daysAgo(10), ticker: '2330', sentiment_label: 'NEUTRAL', time_horizon: '中期', bluf_thesis: '估值已高，等待回檔。' },
   { episode_id: 'e3', podcaster: '財經一路發', podcast_launch_time: daysAgo(45), ticker: '2330', sentiment_label: 'BEARISH', time_horizon: '短期', bluf_thesis: '短線過熱。' },
+  // The pipeline also emits STRONG_* labels; production had 6 of 67 for 2330 on 2026-09-06.
+  { episode_id: 'e4', podcaster: '財報狗', podcast_launch_time: daysAgo(2), ticker: '2330', sentiment_label: 'STRONG_BULLISH', time_horizon: '長期', bluf_thesis: '長期看好。' },
 ];
-assert.deepEqual(tally(INSIGHTS), { days: 30, total: 2, bull: 1, neu: 1, bear: 0 });
+assert.deepEqual(tally(INSIGHTS), { days: 30, total: 3, bull: 2, neu: 1, bear: 0 });
+assert.equal(normSentiment('strong_bearish'), 'BEARISH');
+assert.equal(normSentiment('MIXED'), 'NEUTRAL');
+assert.equal(normSentiment(undefined), null);
 assert.deepEqual(tally([]).total, 0);
 
 // --- 3. every sitemap route family resolves meta + body + JSON-LD ----------------
@@ -157,7 +162,7 @@ try {
 
   const stock = await metaFor('/stock/2330', ORIGIN, API);
   const stockPage = renderPage(stock);
-  assert.ok(stock.description.startsWith('台積電（2330） 近 30 天 2 集 Podcast 提及：1 看多 · 1 中立 · 0 看空。'), `stock description is live data: ${stock.description}`);
+  assert.ok(stock.description.startsWith('台積電（2330） 近 30 天 3 集 Podcast 提及：2 看多 · 1 中立 · 0 看空。'), `stock description is live data: ${stock.description}`);
   assert.ok(stock.description.length <= 160, 'stock description fits a snippet');
   for (const needle of ['<h2>Podcast 觀點</h2>', 'href="/episode/e1"', 'href="/podcaster/Gooaye%20%E8%82%A1%E7%99%8C"', 'href="/sector/sector_mlcc"', '看空']) {
     assert.ok(stockPage.includes(needle), `stock body missing ${needle}`);
@@ -195,7 +200,7 @@ try {
 
   const podcaster = await metaFor('/podcaster/Gooaye%20%E8%82%A1%E7%99%8C', ORIGIN, API);
   const podPage = renderPage(podcaster);
-  for (const needle of ['<h2>最新集數</h2>', 'href="/episode/abc123"', '<h2>最常提到的個股</h2>', 'href="/stock/2330"', '3 次']) {
+  for (const needle of ['<h2>最新集數</h2>', 'href="/episode/abc123"', '<h2>最常提到的個股</h2>', 'href="/stock/2330"', '4 次']) {
     assert.ok(podPage.includes(needle), `podcaster body missing ${needle}`);
   }
   assert.ok(podcaster.description.includes('最常提到：2330'), `podcaster description is live: ${podcaster.description}`);
