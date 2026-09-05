@@ -897,7 +897,7 @@ production after the next `v*` tag, then Search Console sitemap resubmit.
 
 ```yaml
 id: TKB-011
-status: in_progress
+status: review
 priority: P1
 area:
 - frontend
@@ -906,7 +906,7 @@ effort: M
 risk: low
 github_issue: null
 github_project_item: null
-pr: null
+pr: https://github.com/HaoweiChan/tinboker/pull/593
 ```
 
 ### Goal
@@ -925,6 +925,15 @@ Plan and evidence: `docs/seo-data-presentation-plan.md`.
 ### Implementation notes
 
 Data already public: `/api/stocks/{t}` chartData + `/api/ticker-insights/by-ticker/{t}`. Use series markers, not a second chart. Reuse `SimpleSparkline` / existing chart components before adding anything.
+
+Shipped in PR #593 (merged to `develop` 2026-09-06, dev deploy green, bundle carries the
+new card). `TradingViewChart` got a `markers` prop; `MentionSplitCard` is the new card.
+by-ticker insights now request an explicit 90-day window (API default is 7 days), and the
+crawler middleware asks for the same window, so page and description count the same
+rows. Verified in headless Chrome against dev-api: 2330 (222 insights) and 2327 (79)
+render dots + hover tooltip; tsc, eslint, production build, validate:seo all clean.
+Follow-up idea, not scheduled: aggregate dots per week when the visible range exceeds
+~6 months, since daily-discussed tickers still cluster at a 1Y zoom.
 
 ---
 
