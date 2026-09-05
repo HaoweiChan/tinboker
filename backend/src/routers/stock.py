@@ -741,6 +741,55 @@ async def get_stock_basic_info(ticker: str):
     return stock_info
 
 
+@router.get("/{ticker}/institutional")
+async def get_stock_institutional(
+    ticker: str,
+    days: int = Query(60, ge=5, le=_MAX_RANGE_DAYS, description="Trading-day window, newest last"),
+    db: Session = Depends(get_session),
+):
+    """Public per-ticker 三大法人 daily net shares for the stock page chart (TW only).
+
+    Reads the warm ``stock_institutional_daily`` table — the same rows the internal
+    ``/daily-institutional`` bulk feed serves, scoped to one ticker so it needs no key.
+    US tickers and tickers with no rows return an empty list rather than 404: the card
+    is additive and simply hides.
+    """
+    sym = ticker.upper()
+    if infer_market(sym) != "TW":
+        return {"ticker": sym, "rows": []}
+    cache_key = f"stock:institutional:v1:{sym}:{days}"
+    cached = await cache_get(cache_key)
+    if cached:
+        try:
+            return json.loads(cached)
+        except Exception:
+            pass
+    rows = (
+        db.query(StockInstitutionalDaily)
+        .filter(StockInstitutionalDaily.ticker == sym)
+        .order_by(StockInstitutionalDaily.date.desc())
+        .limit(days)
+        .all()
+    )
+    payload = {
+        "ticker": sym,
+        "rows": [
+            {
+                "date": r.date,
+                "foreign_net_shares": r.foreign_net_shares,
+                "trust_net_shares": r.trust_net_shares,
+                "total_net_shares": r.total_net_shares,
+            }
+            for r in reversed(rows)
+        ],
+    }
+    try:
+        await cache_set(cache_key, json.dumps(payload), CACHE_TTL["stock_history"])
+    except Exception:
+        pass
+    return payload
+
+
 @router.get("/{ticker}/history")
 async def get_stock_history(
     ticker: str,

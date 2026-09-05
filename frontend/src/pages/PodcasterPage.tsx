@@ -6,6 +6,7 @@ import { PageContent } from '@/components/layout/PageContent';
 import { EpisodeCardV2, PodAvatar } from '@/components/redesign';
 import { apiEpisodeToCardV2 } from '@/components/redesign/episodeAdapter';
 import { PickCard } from '@/components/financial/PickCard';
+import { PodcasterFocusCard } from '@/components/podcaster/PodcasterFocusCard';
 import { cn } from '@/lib/utils';
 import { getPodcastByName, getPodcastEpisodes, type Podcast, type Episode as ApiEpisode } from '@/services/api';
 import { getInsightsByPodcaster } from '@/services/api/podcasts';
@@ -158,6 +159,8 @@ export const PodcasterPage: React.FC = () => {
             <p className="text-base text-muted-foreground mt-3 max-w-[60ch] leading-[1.55]">{name} 的節目摘要 — 由 TinBoker 結構化分析關鍵重點與提及的個股。</p>
           </div>
         </div>
+
+        {!loading && <PodcasterFocusCard insights={picks} episodes={episodes} translationMap={translationMap} />}
 
         {IS_DEV_ENV && picks.length > 0 && (
           <>
