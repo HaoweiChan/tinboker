@@ -456,10 +456,12 @@ export const StockDashboard: React.FC = () => {
     };
   }, [symbol]);
 
-  const insightBreakdown = useMemo(
-    () => aggregateSentiment(insights.map((r) => ({ sentiment_label: r.sentiment_label }))),
-    [insights],
-  );
+  // The stat tile is labelled as a 30-day figure; `insights` spans 90 days for the
+  // chart markers and the split card, so narrow it here.
+  const insightBreakdown = useMemo(() => {
+    const since = Date.now() - 30 * 86400e3;
+    return aggregateSentiment(insights.filter((r) => Date.parse(r.podcast_launch_time) >= since).map((r) => ({ sentiment_label: r.sentiment_label })));
+  }, [insights]);
   const buzzBreakdown = useMemo(() => countsToBreakdown(buzzTicker?.sentiment_counts), [buzzTicker]);
   const breakdown = buzzBreakdown ?? insightBreakdown;
   const overallSentiment = normalizeSentiment(buzzTicker?.sentiment_label) ?? dominantSentiment(breakdown);

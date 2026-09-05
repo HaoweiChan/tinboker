@@ -941,7 +941,7 @@ Follow-up idea, not scheduled: aggregate dots per week when the visible range ex
 
 ```yaml
 id: TKB-012
-status: in_progress
+status: review
 priority: P1
 area:
 - frontend
@@ -951,7 +951,7 @@ effort: M
 risk: low
 github_issue: null
 github_project_item: null
-pr: null
+pr: https://github.com/HaoweiChan/tinboker/pull/598
 ```
 
 ### Goal
@@ -971,6 +971,15 @@ Plan and evidence: `docs/seo-data-presentation-plan.md`.
 ### Implementation notes
 
 `stock_daily_ohlc` and `stock_institutional_daily` models: `backend/src/database/models.py:227-282`. Internal-key gate to keep: `backend/src/routers/stock.py:77,110` — add a separate public per-ticker path rather than removing the gate on the bulk endpoints.
+
+Shipped in PR #598 (merged to `develop` 2026-09-06, both dev deploys green).
+`GET /api/stocks/{ticker}/institutional` live on dev-api (2330 returns rows, AAPL
+returns `[]`). Verified in headless Chrome against dev-api: institutional card on
+/stock/2330 (06/12–09/04 bars, 近 5 日 -1.2 萬張, 近 20 日 +5,931 張); sector heat
+card on /sector/sector_pcb_substrate (#1 / 95); podcaster focus cards on Gooaye 股癌.
+The sector card is board-rank based, not the per-sector heat-vs-forward-return
+variant the plan sketched — that needs a per-sector validation series the backend
+does not compute; left as a follow-up idea.
 
 ---
 
