@@ -16,7 +16,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import List, Optional
 
-from src.database.models import StockDailyClose
+from src.database.models import StockDailyOHLC, StockDailyClose
 from src.database.postgres import get_session
 from src.services.finmind_service import is_tw_ticker as _is_tw
 from src.services.finmind_service import list_yahoo_tw_daily_range
@@ -141,7 +141,7 @@ def _warm_us_slow_data(ticker: str, yf_provider, mas_provider) -> bool:
     only when we don't already have one stored — collapsing the per-request logo 429 storm
     to roughly one Massive call per ticker, ever.
     """
-    from src.database.models import StockDailyOHLC, StockProfile
+    from src.database.models import StockProfile
 
     wrote = False
     profile = yf_provider.get_profile(ticker)  # best-effort; may be None on scraper hiccup
@@ -191,32 +191,121 @@ def _warm_us_slow_data(ticker: str, yf_provider, mas_provider) -> bool:
     end = (datetime.utcnow() + timedelta(days=1)).strftime("%Y-%m-%d")
     start = (datetime.utcnow() - timedelta(days=_US_OHLC_LOOKBACK_DAYS)).strftime("%Y-%m-%d")
     bars = yf_provider.get_daily_ohlc(ticker, start, end)
-    if bars:
+    if bars and _store_ohlc_bars(ticker, bars):
+        wrote = True
+    return wrote
+
+
+def _store_ohlc_bars(ticker: str, bars) -> int:
+    """Insert the bars stock_daily_ohlc does not have yet. Returns rows inserted."""
+    inserted = 0
+    for session in get_session():
+        try:
+            for b in bars:
+                exists = (
+                    session.query(StockDailyOHLC.id)
+                    .filter(StockDailyOHLC.ticker == ticker, StockDailyOHLC.date == b.date)
+                    .first()
+                )
+                if not exists:
+                    session.add(
+                        StockDailyOHLC(
+                            ticker=ticker, date=b.date, open=b.open, high=b.high,
+                            low=b.low, close=b.close, volume=b.volume,
+                        )
+                    )
+                    inserted += 1
+            if inserted:
+                session.commit()
+        except Exception as e:
+            session.rollback()
+            logger.debug(f"ohlc upsert failed for {ticker}: {e}")
+            inserted = 0
+        break
+    return inserted
+
+
+# ── US history for podcast-mentioned tickers ────────────────────────────────────────
+# The per-ticker close refresher only looks 7 days back and the whole-market US warmer is
+# off (incident 2026-07-15), so a US name a podcast discussed in 2025 has no bars around
+# that date and its call can never be scored. yfinance is keyless; one history call per
+# ticker, once. 436 mentioned US tickers × 1.5 s ≈ 11 min on the first run, then one cheap
+# query per ticker per cycle.
+_US_HISTORY_GAP_SECONDS = 1.5
+_US_HISTORY_PAD_DAYS = 10  # before the earliest mention: baseline = last close on/before
+
+
+def _us_mention_tickers(db) -> List[tuple]:
+    """(ticker, earliest mention date) for every US ticker a podcast has mentioned."""
+    from sqlalchemy import func
+    from src.database.models import ContentMention
+
+    rows = (
+        db.query(ContentMention.ticker, func.min(ContentMention.mentioned_at))
+        .filter(ContentMention.mention_type == "ticker", ContentMention.market == "US")
+        .group_by(ContentMention.ticker)
+        .all()
+    )
+    return [(t, d.strftime("%Y-%m-%d")) for t, d in rows if t and d]
+
+
+def _has_bar_on_or_before(db, ticker: str, date: str) -> bool:
+    return (
+        db.query(StockDailyOHLC.id)
+        .filter(StockDailyOHLC.ticker == ticker, StockDailyOHLC.date <= date)
+        .first()
+    ) is not None
+
+
+def backfill_us_mention_history(provider=None, gap_seconds: float = _US_HISTORY_GAP_SECONDS) -> int:
+    """One pass: fetch yfinance daily bars back to each mentioned US ticker's earliest
+    mention, for tickers that have no bar that old yet. Sync — run off-loop. Returns
+    bars inserted. Never raises.
+
+    ponytail: a ticker yfinance cannot resolve returns no bars and is retried every
+    cycle (one call, 1.5 s); bounded by the mentioned-ticker count, so left alone.
+    """
+    import time
+
+    targets: List[tuple] = []
+    for session in get_session():
+        try:
+            targets = _us_mention_tickers(session)
+        except Exception as e:
+            logger.warning("us-history: could not list mentioned tickers: %s", e)
+        break
+    if not targets:
+        return 0
+    if provider is None:
+        from src.services.providers import YFinanceProvider
+        provider = YFinanceProvider()
+
+    end = (datetime.utcnow() + timedelta(days=1)).strftime("%Y-%m-%d")  # yfinance end is exclusive
+    inserted = fetched = 0
+    for ticker, earliest in targets:
+        have = False
         for session in get_session():
             try:
-                inserted = 0
-                for b in bars:
-                    exists = (
-                        session.query(StockDailyOHLC.id)
-                        .filter(StockDailyOHLC.ticker == ticker, StockDailyOHLC.date == b.date)
-                        .first()
-                    )
-                    if not exists:
-                        session.add(
-                            StockDailyOHLC(
-                                ticker=ticker, date=b.date, open=b.open, high=b.high,
-                                low=b.low, close=b.close, volume=b.volume,
-                            )
-                        )
-                        inserted += 1
-                if inserted:
-                    session.commit()
-                    wrote = True
+                have = _has_bar_on_or_before(session, ticker, earliest)
             except Exception as e:
-                session.rollback()
-                logger.debug(f"slow-data: ohlc upsert failed for {ticker}: {e}")
+                logger.debug("us-history: skip-check failed for %s: %s", ticker, e)
+                have = True  # do not hammer yfinance on a DB hiccup
             break
-    return wrote
+        if have:
+            continue
+        start = (datetime.strptime(earliest, "%Y-%m-%d") - timedelta(days=_US_HISTORY_PAD_DAYS)).strftime("%Y-%m-%d")
+        try:
+            bars = provider.get_daily_ohlc(ticker, start, end)
+        except Exception as e:
+            logger.debug("us-history: fetch failed for %s: %s", ticker, e)
+            bars = []
+        fetched += 1
+        if bars:
+            inserted += _store_ohlc_bars(ticker, bars)
+        time.sleep(gap_seconds)
+    if fetched:
+        logger.info("us-history: fetched %d ticker(s), inserted %d bar(s).", fetched, inserted)
+    return inserted
 
 
 def _profile_is_fresh(db, ticker: str, cutoff: datetime) -> bool:
