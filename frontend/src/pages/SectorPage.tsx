@@ -22,6 +22,8 @@ import { SectorTickerCard, type Timeframe } from '@/components/topics/SectorTick
 import { SectorIcon } from '@/components/topics/SectorIcon';
 import { SectorHeatCard } from '@/components/topics/SectorHeatCard';
 import { CoMentionGraph } from '@/components/topics/CoMentionGraph';
+import { WhoTalksTile } from '@/components/stock/WhoTalksTile';
+import { Tile } from '@/components/redesign/Tile';
 import { Plus, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAppStore, useTagSubscriptions } from '@/store/useAppStore';
@@ -175,30 +177,26 @@ export const SectorPage: React.FC = () => {
         url={typeof window !== 'undefined' ? window.location.origin + window.location.pathname : undefined}
       />
       <PageContent>
-        <div className="flex items-start gap-5 bg-card border border-border rounded-md p-5 sm:p-6 mb-[18px]">
+        {/* Header row — icon, name, follow; the description sits under it as prose. */}
+        <div className="flex items-center gap-3 flex-wrap mb-2">
           {loading ? (
-            <div className="w-11 h-11 rounded-md bg-muted animate-pulse shrink-0" />
+            <div className="w-9 h-9 rounded-md bg-muted animate-pulse shrink-0" />
           ) : (
             <SectorIcon
               exposureId={exposureId ?? ''}
               iconId={data?.icon_id}
               color={data?.color_hex}
-              size={26}
+              size={22}
               variant="chip"
             />
           )}
-          <div className="flex-1 min-w-0">
-            {loading ? (
-              <div className="h-7 w-40 bg-muted rounded animate-pulse" />
-            ) : (
-              <h1 className="text-2xl font-semibold tracking-[-0.02em]">{titleText}</h1>
-            )}
-            <p className="text-base text-muted-foreground mt-1 max-w-[56ch] leading-[1.55]">
-              {loading
-                ? '載入中…'
-                : sectorDescription || `瀏覽所有關於「${titleText}」的 Podcast 摘要與市場討論 · ${episodes.length} 集。`}
-            </p>
-          </div>
+          {loading ? (
+            <div className="h-7 w-40 bg-muted rounded animate-pulse" />
+          ) : (
+            <h1 className="text-2xl font-semibold tracking-[-0.02em]">{titleText}</h1>
+          )}
+          {!loading && <span className="text-sm text-muted-foreground tabular-nums">{episodes.length} 集</span>}
+          <span className="flex-1" />
           {!loading && displayName && (
             <button
               type="button"
@@ -213,42 +211,50 @@ export const SectorPage: React.FC = () => {
             </button>
           )}
         </div>
+        <p className="text-sm text-muted-foreground max-w-[72ch] leading-[1.6] mb-4">
+          {loading
+            ? '載入中…'
+            : sectorDescription || `瀏覽所有關於「${titleText}」的 Podcast 摘要與市場討論 · ${episodes.length} 集。`}
+        </p>
 
-        {!loading && exposureId && <SectorHeatCard exposureId={exposureId} />}
-
-        {/* ── Constituent performance — one timeframe at a time via the toggle ── */}
+        {/* Bento: heat + constituents lead, co-mention graph + who talks below. */}
         {loading ? (
-          <div className="mb-7">
-            <div className="h-4 w-24 bg-muted rounded animate-pulse mb-3" />
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">
-              {Array.from({ length: 8 }).map((_, i) => (
-                <div key={i} className="bg-card border border-border dark:border-white/[0.08] rounded-lg h-[72px] animate-pulse" />
-              ))}
-            </div>
+          <div className="grid grid-cols-1 md:grid-cols-6 gap-3.5 mb-[18px]">
+            <div className="md:col-span-2 md:row-span-2 bg-card border border-border rounded-[10px] h-[300px] animate-pulse" />
+            <div className="md:col-span-4 md:row-span-2 bg-card border border-border rounded-[10px] h-[300px] animate-pulse" />
           </div>
-        ) : members.length > 0 ? (
-          <div className="mb-7">
-            <div className="flex items-center justify-between gap-3 mb-3">
-              <h2 className="text-sm font-semibold text-muted-foreground">成分股表現</h2>
-              <TimeframeToggle value={timeframe} onChange={setTimeframe} />
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">
-              {members.map((t) => (
-                <SectorTickerCard
-                  key={t.ticker}
-                  ticker={t.ticker}
-                  name={resolvedTickerName(t, translationMap)}
-                  perf={perfMap[t.ticker.toUpperCase()]}
-                  timeframe={timeframe}
-                  loading={perfLoading}
-                  reason={t.reason}
-                />
-              ))}
-            </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-6 gap-3.5 mb-[18px]">
+            {exposureId && <SectorHeatCard exposureId={exposureId} className="md:col-span-2" />}
+            {members.length > 0 && (
+              <Tile title="成分股表現" aside={<TimeframeToggle value={timeframe} onChange={setTimeframe} />} className="md:col-span-4 md:row-span-2">
+                <div className="grid grid-cols-2 lg:grid-cols-3 gap-2.5">
+                  {members.map((t) => (
+                    <SectorTickerCard
+                      key={t.ticker}
+                      ticker={t.ticker}
+                      name={resolvedTickerName(t, translationMap)}
+                      perf={perfMap[t.ticker.toUpperCase()]}
+                      timeframe={timeframe}
+                      loading={perfLoading}
+                      reason={t.reason}
+                    />
+                  ))}
+                </div>
+              </Tile>
+            )}
+            {episodes.length > 0 && (
+              <WhoTalksTile
+                rows={episodes.map((ep) => ({ name: ep.podcast_name, n: 1 }))}
+                title="誰在談這個題材"
+                unit=" 集"
+                max={6}
+                className="md:col-span-2"
+              />
+            )}
+            {episodes.length > 0 && <CoMentionGraph episodes={episodes} names={translationMap} className="md:col-span-6" />}
           </div>
-        ) : null}
-
-        {!loading && episodes.length > 0 && <CoMentionGraph episodes={episodes} names={translationMap} />}
+        )}
 
         <h2 className="text-sm font-semibold text-muted-foreground mb-3">相關集數</h2>
         {loading ? (

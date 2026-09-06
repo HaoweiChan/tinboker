@@ -56,10 +56,10 @@ export const PodcasterFocusCard: React.FC<PodcasterFocusCardProps> = ({ insights
   const epCount = episodes.length || 1;
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
+    <>
       {tickers.length > 0 && (
-        <div className="bg-card border border-border rounded-md p-5">
-          <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground mb-3.5">最常提到的個股 · 近 180 天</h3>
+        <div className="bg-card border border-border rounded-[10px] p-5 flex flex-col gap-3 md:col-span-2 md:row-span-2 min-w-0">
+          <h3 className="text-xs text-muted-foreground">最常提到的個股 · 近 180 天</h3>
           <div className="flex flex-col gap-2">
             {tickers.map((t, i) => (
               <Link key={t.ticker} to={`/stock/${encodeURIComponent(t.ticker)}`} className="group flex items-center gap-3 min-w-0">
@@ -77,8 +77,8 @@ export const PodcasterFocusCard: React.FC<PodcasterFocusCardProps> = ({ insights
         </div>
       )}
       {sectors.length > 0 && (
-        <div className="bg-card border border-border rounded-md p-5">
-          <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground mb-3.5">常聊的產業與題材 · 最近 {episodes.length} 集</h3>
+        <div className="bg-card border border-border rounded-[10px] p-5 flex flex-col gap-3 md:col-span-2 md:row-span-2 min-w-0">
+          <h3 className="text-xs text-muted-foreground">常聊的產業與題材 · 最近 {episodes.length} 集</h3>
           <div className="flex flex-col gap-2">
             {sectors.map((s, i) => (
               <Link key={s.exposure_id} to={`/sector/${encodeURIComponent(s.exposure_id)}`} className="group flex items-center gap-2.5 min-w-0">
@@ -93,6 +93,6 @@ export const PodcasterFocusCard: React.FC<PodcasterFocusCardProps> = ({ insights
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 };

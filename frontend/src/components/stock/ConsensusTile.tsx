@@ -9,6 +9,8 @@ import type { TickerInsight } from '@/services/types';
 interface ConsensusTileProps {
   insights: TickerInsight[];
   className?: string;
+  /** Tile label; the stock page says 近 30 天 Podcast 共識, a show page says 近 30 天立場. */
+  title?: string;
 }
 
 const DAY_MS = 86400e3;
@@ -20,7 +22,7 @@ const weekOf = (ms: number) => { const d = new Date(ms); const dow = (d.getUTCDa
 
 /** The page's headline tile: how the podcasts lean on this ticker over the last 30 days,
  *  with the 90-day time-horizon mix underneath. Tinted by the dominant stance. */
-export const ConsensusTile: React.FC<ConsensusTileProps> = ({ insights, className }) => {
+export const ConsensusTile: React.FC<ConsensusTileProps> = ({ insights, className, title = '近 30 天 Podcast 共識' }) => {
   const b = useMemo(() => {
     const since = Date.now() - 30 * DAY_MS;
     return aggregateSentiment(insights.filter((i) => Date.parse(i.podcast_launch_time) >= since).map((i) => ({ sentiment_label: i.sentiment_label })));
@@ -57,14 +59,15 @@ export const ConsensusTile: React.FC<ConsensusTileProps> = ({ insights, classNam
 
   return (
     <div className={cn('rounded-[10px] border p-5 flex flex-col justify-between gap-4', tint, className)}>
-      <div className={cn('text-sm', lean === 'bull' ? 'text-sentiment-bull' : lean === 'bear' ? 'text-sentiment-bear' : 'text-muted-foreground')}>近 30 天 Podcast 共識</div>
+      <div className={cn('text-xs', lean === 'bull' ? 'text-sentiment-bull' : lean === 'bear' ? 'text-sentiment-bear' : 'text-muted-foreground')}>{title}</div>
       {b.total > 0 ? (
         <div className="flex flex-col gap-1">
-          <div className={cn('font-mono tabular-nums font-semibold leading-none text-[72px] lg:text-[88px]', bigCls)}><CountUp value={big} /></div>
-          <div className="text-base lg:text-lg">
-            {bigLabel}，<span className="text-muted-foreground">
-              {lean === 'bear' ? <>{b.bull} 集看多，</> : null}{b.neutral} 集中立{lean !== 'bear' ? <>，{b.bear} 集看空</> : null}
-            </span>
+          <div className="flex items-baseline gap-2 flex-wrap">
+            <span className={cn('font-mono tabular-nums font-semibold leading-none text-[44px] lg:text-[52px]', bigCls)}><CountUp value={big} /></span>
+            <span className="text-base">{bigLabel}</span>
+          </div>
+          <div className="text-sm text-muted-foreground">
+            {lean === 'bear' ? <>{b.bull} 集看多，</> : null}{b.neutral} 集中立{lean !== 'bear' ? <>，{b.bear} 集看空</> : null}
           </div>
         </div>
       ) : (

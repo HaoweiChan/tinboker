@@ -7,6 +7,7 @@ import { EpisodeCardV2, PodAvatar } from '@/components/redesign';
 import { apiEpisodeToCardV2 } from '@/components/redesign/episodeAdapter';
 import { PickCard } from '@/components/financial/PickCard';
 import { PodcasterFocusCard } from '@/components/podcaster/PodcasterFocusCard';
+import { ConsensusTile } from '@/components/stock/ConsensusTile';
 import { CountUp } from '@/components/common/CountUp';
 import { cn } from '@/lib/utils';
 import { getPodcastByName, getPodcastEpisodes, type Podcast, type Episode as ApiEpisode } from '@/services/api';
@@ -134,17 +135,14 @@ export const PodcasterPage: React.FC = () => {
     <>
       <SEO title={`${name} · Podcast 頻道`} description={`追蹤 ${name} 的最新 Podcast 摘要與相關個股分析。`} url={typeof window !== 'undefined' ? window.location.origin + window.location.pathname : undefined} />
       <PageContent>
-        {/* Hero */}
-        <div className="flex items-start gap-5 bg-card border border-border rounded-md p-5 sm:p-6 mb-[18px]">
-          <PodAvatar src={imageUrl} name={name} kind="solid" size={72} className="w-[72px] h-[72px] rounded-md object-cover shrink-0" />
-          <div className="flex-1 min-w-0">
-            <div className="flex items-start justify-between gap-3 flex-wrap">
-              <div className="min-w-0">
-                <h1 className="text-2xl font-semibold tracking-[-0.02em] truncate">{name}</h1>
-                <div className="flex gap-2 mt-2 flex-wrap">
-                  <span className="text-xs px-3 py-1 rounded-full bg-muted text-muted-foreground"><strong className="font-mono text-foreground mr-1 tabular-nums">{loading ? '…' : <CountUp value={episodeCount} />}</strong>集已分析</span>
-                </div>
-              </div>
+        {/* Header row — avatar, name, count, subscribe. */}
+        <div className="flex items-center gap-4 flex-wrap mb-4">
+          <PodAvatar src={imageUrl} name={name} kind="solid" size={56} className="w-14 h-14 rounded-md object-cover shrink-0" />
+          <div className="min-w-0 flex-1">
+            <h1 className="text-2xl font-semibold tracking-[-0.02em] truncate">{name}</h1>
+            <div className="text-sm text-muted-foreground mt-0.5"><strong className="font-mono text-foreground mr-1 tabular-nums">{loading ? '…' : <CountUp value={episodeCount} />}</strong>集已分析 · 由 TinBoker 結構化分析關鍵重點與提及的個股</div>
+          </div>
+          <div className="flex items-center gap-3">
               <button
                 type="button"
                 onClick={() => toggleSubscription(name)}
@@ -156,12 +154,15 @@ export const PodcasterPage: React.FC = () => {
                 {isSubscribed ? <Check size={14} /> : <Plus size={14} />}
                 {isSubscribed ? '已訂閱' : '訂閱'}
               </button>
-            </div>
-            <p className="text-base text-muted-foreground mt-3 max-w-[60ch] leading-[1.55]">{name} 的節目摘要 — 由 TinBoker 結構化分析關鍵重點與提及的個股。</p>
           </div>
         </div>
 
-        {!loading && <PodcasterFocusCard insights={picks} episodes={episodes} translationMap={translationMap} />}
+        {!loading && (picks.length > 0 || episodes.length > 0) && (
+          <div className="grid grid-cols-1 md:grid-cols-6 gap-3.5 mb-[18px]">
+            {picks.length > 0 && <ConsensusTile key={picks.length} insights={picks} title="近 30 天立場" className="md:col-span-2 md:row-span-2" />}
+            <PodcasterFocusCard insights={picks} episodes={episodes} translationMap={translationMap} />
+          </div>
+        )}
 
         {IS_DEV_ENV && picks.length > 0 && (
           <>
