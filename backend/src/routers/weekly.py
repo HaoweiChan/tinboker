@@ -148,23 +148,58 @@ async def build_week(week: str) -> Optional[dict]:
     }
 
 
+LIST_TOP = 3
+
+
 async def list_weeks() -> list[dict]:
-    """Weeks that have at least one scoped episode, newest first."""
+    """Weeks that have at least one scoped episode, newest first, each with its show
+    count and the three most-discussed tickers and sectors — enough for an index card
+    without fetching every week's rollup."""
     counts: Counter = Counter()
+    shows: dict[str, set] = defaultdict(set)
+    tickers: dict[str, Counter] = defaultdict(Counter)
+    sectors: dict[str, Counter] = defaultdict(Counter)
+    sector_names: dict[str, str] = {}
+    names: dict[str, str] = {}
     for ep in await podcast_service.get_recent_episodes(limit=5000, enrich_content=False):
         ms = _released_ms(ep)
-        if ms:
-            counts[week_of_ms(ms)] += 1
+        if not ms:
+            continue
+        wk = week_of_ms(ms)
+        counts[wk] += 1
+        if getattr(ep, "podcast_name", None):
+            shows[wk].add(ep.podcast_name)
+        for tk in getattr(ep, "related_tickers", None) or []:
+            tickers[wk][str(tk)] += 1
+        seen: set[str] = set()
+        for s in getattr(ep, "sector_exposures", None) or []:
+            get = (lambda k: s.get(k)) if isinstance(s, dict) else (lambda k: getattr(s, k, None))
+            sid = get("exposure_id")
+            if not sid or sid in seen:
+                continue
+            seen.add(sid)
+            sectors[wk][sid] += 1
+            sector_names.setdefault(sid, get("display_name") or sid)
+            for t in get("resolved_tickers") or []:
+                tk = t.get("ticker") if isinstance(t, dict) else getattr(t, "ticker", None)
+                nm = t.get("name") if isinstance(t, dict) else getattr(t, "name", None)
+                if tk and nm:
+                    names.setdefault(str(tk), nm)
     out = []
     for wk, n in sorted(counts.items(), reverse=True):
         s, e = week_bounds(wk)
-        out.append({"week": wk, "start": s.isoformat(), "end": e.isoformat(), "episode_count": n})
+        out.append({
+            "week": wk, "start": s.isoformat(), "end": e.isoformat(), "episode_count": n,
+            "podcast_count": len(shows[wk]),
+            "top_tickers": [{"ticker": tk, "name": names.get(tk), "episodes": c} for tk, c in tickers[wk].most_common(LIST_TOP)],
+            "top_sectors": [{"exposure_id": sid, "display_name": sector_names.get(sid, sid), "episodes": c} for sid, c in sectors[wk].most_common(LIST_TOP)],
+        })
     return out
 
 
 @router.get("")
 async def get_weeks():
-    cache_key = f"weekly:list:v1:{PodcastService._scope_tag()}"
+    cache_key = f"weekly:list:v2:{PodcastService._scope_tag()}"
     cached = await cache_get(cache_key)
     if cached:
         try:

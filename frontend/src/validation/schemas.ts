@@ -612,7 +612,15 @@ export const WeeklySchema = z.object({
 });
 
 export const WeeklyListSchema = z.object({
-  weeks: z.array(z.object({ week: z.string(), start: z.string(), end: z.string(), episode_count: z.number() })),
+  weeks: z.array(z.object({
+    week: z.string(),
+    start: z.string(),
+    end: z.string(),
+    episode_count: z.number(),
+    podcast_count: z.number().default(0),
+    top_tickers: z.array(z.object({ ticker: z.string(), name: z.string().nullable().optional(), episodes: z.number() })).default([]),
+    top_sectors: z.array(z.object({ exposure_id: z.string(), display_name: z.string(), episodes: z.number() })).default([]),
+  })),
 });
 
 export type Weekly = z.infer<typeof WeeklySchema>;

@@ -27,6 +27,7 @@ from src.schemas.sector import (
 from src.services.podcast import PodcastService
 from src.services.translation_discovery import schedule_ticker_discovery
 from src.tag_registry import (
+    auto_register_sectors,
     hidden_offvocab_slugs,
     hidden_sector_exposure_ids,
     served_sector_exposure_ids,
@@ -158,6 +159,9 @@ async def list_sectors(db: Session = Depends(get_session)):
     """
     try:
         sectors = await podcast_service.list_sectors()
+        # Exposures the pipeline emits that the registry does not know yet get a row,
+        # so their pages are reachable from the directory, the board and the sitemap.
+        auto_register_sectors(db, sectors)
         served = served_sector_exposure_ids(db)
         if served is None:  # bootstrap window: registry empty — fall back to blocklist
             hidden = hidden_sector_exposure_ids(db)

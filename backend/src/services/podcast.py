@@ -55,7 +55,12 @@ logger = logging.getLogger(__name__)
 # (功率半導體 / 矽光子 / 先進封裝 / 半導體設備 …). Existing episodes still carry the
 # stamp in Firestore; this serve-time filter removes it without a backfill, and the
 # compiled universe drops it too so new episodes stop being tagged with it.
-EXCLUDED_EXPOSURE_IDS: frozenset[str] = frozenset({"sector_semiconductor"})
+# Umbrella exposures kept OFF the heat board and the heat validation (they dominate on
+# mention count alone and say little there) but still served as pages and directory
+# entries: episodes carry them, and the weekly / podcaster / stock pages link to them.
+# Until 2026-09-06 the page and the directory were suppressed too, which left
+# /sector/sector_semiconductor empty.
+BOARD_EXCLUDED_EXPOSURE_IDS: frozenset[str] = frozenset({"sector_semiconductor"})
 
 # Podcasts hidden from every public surface (channel list, feed, search, by-name).
 # "曲博科技教室" is a near-dormant show with only ~2 analysed episodes; it adds noise
@@ -1049,19 +1054,6 @@ class PodcastService:
         """
         exposure_id = resolve_sector_exposure_id(exposure_id)
 
-        # Suppressed umbrella exposures (e.g. the broad 半導體 sector) resolve to an
-        # empty page — the frontend renders the standard "no episodes" state.
-        if exposure_id in EXCLUDED_EXPOSURE_IDS:
-            return {
-                "exposure_id": exposure_id,
-                "display_name": "",
-                "exposure_type": "industry",
-                "description": None,
-                "resolved_tickers": [],
-                "episodes": [],
-                "total": 0,
-            }
-
         cache_key = f"sector:episodes:v4:{exposure_id}:{offset}:{limit}:{self._scope_tag()}"
         cached = await cache_get(cache_key)
         if cached:
@@ -1270,7 +1262,7 @@ class PodcastService:
             if cutoff is not None and self._dict_release_ms(doc) < cutoff:
                 continue
             for entry in doc.get("sector_exposures") or []:
-                if resolve_sector_exposure_id(entry.get("exposure_id")) in EXCLUDED_EXPOSURE_IDS:
+                if resolve_sector_exposure_id(entry.get("exposure_id")) in BOARD_EXCLUDED_EXPOSURE_IDS:
                     continue
                 for rt in entry.get("resolved_tickers") or []:
                     t = str(rt.get("ticker") or "").strip().upper()
@@ -1390,7 +1382,7 @@ class PodcastService:
             eid = resolve_sector_exposure_id(raw_eid)
             if normalize_exposure_id(raw_eid) != eid:
                 continue  # redirect-source row — the canonical row is authoritative
-            if not eid or eid in EXCLUDED_EXPOSURE_IDS:
+            if not eid or eid in BOARD_EXCLUDED_EXPOSURE_IDS:
                 continue
             etype = r.exposure_type or "theme"
             meta[eid] = {
@@ -1416,7 +1408,7 @@ class PodcastService:
             attr_size[eid] = len(tickers) or 1
             if etype == "theme":
                 parent = resolve_sector_exposure_id(r.parent_id) if r.parent_id else None
-                parent = parent if parent and parent not in EXCLUDED_EXPOSURE_IDS else None
+                parent = parent if parent and parent not in BOARD_EXCLUDED_EXPOSURE_IDS else None
                 for t in tickers:
                     s = ticker_to_sectors.setdefault(t, set())
                     s.add(eid)
@@ -1495,7 +1487,7 @@ class PodcastService:
             direct_eids: set[str] = set()
             for entry in doc.get("sector_exposures") or []:
                 eid = resolve_sector_exposure_id(entry.get("exposure_id"))
-                if not eid or eid in EXCLUDED_EXPOSURE_IDS:
+                if not eid or eid in BOARD_EXCLUDED_EXPOSURE_IDS:
                     continue
                 direct_eids.add(eid)
                 if eid not in meta:
@@ -1802,7 +1794,7 @@ class PodcastService:
             direct_eids: set[str] = set()
             for entry in doc.get("sector_exposures") or []:
                 eid = _resolve(entry.get("exposure_id"))
-                if eid and eid not in EXCLUDED_EXPOSURE_IDS:
+                if eid and eid not in BOARD_EXCLUDED_EXPOSURE_IDS:
                     direct_eids.add(eid)
             implied_eids: set[str] = set()
             for tk in doc.get("related_tickers") or []:
@@ -2411,7 +2403,7 @@ class PodcastService:
                 continue
             for entry in doc.get("sector_exposures") or []:
                 eid = resolve_sector_exposure_id(entry.get("exposure_id"))
-                if not eid or eid in EXCLUDED_EXPOSURE_IDS:
+                if not eid:
                     continue
                 counts[eid] = counts.get(eid, 0) + 1
                 if eid not in meta:
