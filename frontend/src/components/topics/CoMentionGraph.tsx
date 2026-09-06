@@ -2,8 +2,10 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation, type SimulationLinkDatum, type SimulationNodeDatum } from 'd3-force';
 import type { Episode as ApiEpisode } from '@/services/api';
+import { cn } from '@/lib/utils';
 
 interface CoMentionGraphProps {
+  className?: string;
   episodes: ApiEpisode[];
   /** Ticker → display name (translation map). */
   names?: Map<string, string>;
@@ -18,7 +20,7 @@ const W = 640, H = 360;
 /** Which tickers get discussed together in this sector's episodes: nodes are tickers
  *  (sized by episode count), edges are episodes that mention both (weight >= 2 only).
  *  Layout is a one-shot d3-force run at render time — no animation, no chart library. */
-export const CoMentionGraph: React.FC<CoMentionGraphProps> = ({ episodes, names, maxNodes = 24 }) => {
+export const CoMentionGraph: React.FC<CoMentionGraphProps> = ({ className, episodes, names, maxNodes = 24 }) => {
   const graph = useMemo(() => {
     const count = new Map<string, number>();
     const pair = new Map<string, number>();
@@ -91,9 +93,9 @@ export const CoMentionGraph: React.FC<CoMentionGraphProps> = ({ episodes, names,
   const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
   return (
-    <div className="bg-card border border-border rounded-md p-5 mb-7">
-      <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground mb-1">同集共同提及</h3>
-      <p className="text-2xs text-muted-foreground/70 mb-3">節點大小 = 被提到的集數；連線粗細 = 同一集一起被提到的次數（至少 2 集）。</p>
+    <div className={cn('bg-card border border-border rounded-[10px] p-5 flex flex-col gap-1 min-w-0', className)}>
+      <h3 className="text-xs text-muted-foreground">同集共同提及</h3>
+      <p className="text-2xs text-muted-foreground/70 mb-2">節點大小 = 被提到的集數；連線粗細 = 同一集一起被提到的次數（至少 2 集）。</p>
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" role="img" aria-label="個股共同提及網路圖">
         <g style={{ opacity: settled ? 1 : 0.35, transition: 'opacity 500ms ease-out' }}>
         {edges.map((e, i) => {

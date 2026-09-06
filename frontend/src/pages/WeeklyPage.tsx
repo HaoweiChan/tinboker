@@ -13,6 +13,8 @@ import { useStockPriceSinceMap } from '@/hooks/useStockPriceSinceMap';
 import { useTranslationMap } from '@/hooks/useTranslationMap';
 import type { Weekly, WeeklyTicker } from '@/validation/schemas';
 import { useGrowIn } from '@/hooks/useMotion';
+import { Tile } from '@/components/redesign/Tile';
+import { CountUp } from '@/components/common/CountUp';
 
 const WEEK_RE = /^(\d{4})-W(\d{2})$/;
 
@@ -116,48 +118,62 @@ export const WeeklyPage: React.FC = () => {
         )}
         {state === 'ok' && data && (
           <>
-            <div className="bg-card border border-border rounded-md p-5 sm:p-6 mb-[18px]">
+            <div className="mb-4">
               <h1 className="text-2xl font-semibold tracking-[-0.02em]">{title}</h1>
-              <p className="text-base text-muted-foreground mt-1 max-w-[60ch] leading-[1.55]">{description}</p>
-              <div className="flex flex-wrap gap-2 mt-3">
-                {data.podcasts.map((p) => (
-                  <Link key={p.name} to={`/podcaster/${encodeURIComponent(p.name)}`} className="text-xs px-3 py-1 rounded-full bg-muted text-muted-foreground hover:text-foreground">
-                    {p.name} <strong className="font-mono text-foreground ml-1 tabular-nums">{p.episodes}</strong>
-                  </Link>
-                ))}
-              </div>
+              <p className="text-sm text-muted-foreground mt-1 max-w-[72ch] leading-[1.6]">{description}</p>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-[18px]">
-              <div className="lg:col-span-2 bg-card border border-border rounded-md p-5">
-                <h2 className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground mb-3.5">本週熱門個股</h2>
+            <div className="grid grid-cols-1 md:grid-cols-6 gap-3.5 mb-[18px]">
+              {/* Week summary tile */}
+              <Tile title="本週" className="md:col-span-2 justify-between">
+                <div className="flex items-baseline gap-2 flex-wrap">
+                  <span className="font-mono tabular-nums font-semibold leading-none text-[44px] lg:text-[52px]"><CountUp value={data.episode_count} /></span>
+                  <span className="text-base">集已分析</span>
+                </div>
+                <div className="text-sm text-muted-foreground">{data.podcasts.length} 個節目 · {data.start.replace(/-/g, '/')} – {data.end.slice(5).replace('-', '/')}</div>
+                {(() => { const s = data.tickers.reduce((a, t) => ({ bull: a.bull + t.bull, neu: a.neu + t.neu, bear: a.bear + t.bear }), { bull: 0, neu: 0, bear: 0 }); const total = s.bull + s.neu + s.bear; return total > 0 ? (
+                  <div className="flex flex-col gap-1.5">
+                    <SentBar bull={s.bull} neutral={s.neu} bear={s.bear} />
+                    <div className="text-xs text-muted-foreground tabular-nums">熱門個股觀點 <span className="text-sentiment-bull">多 {s.bull}</span> · 中 {s.neu} · <span className="text-sentiment-bear">空 {s.bear}</span></div>
+                  </div>
+                ) : null; })()}
+                <div className="flex flex-wrap gap-1.5">
+                  {data.podcasts.map((p) => (
+                    <Link key={p.name} to={`/podcaster/${encodeURIComponent(p.name)}`} className="text-2xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground hover:text-foreground">
+                      {p.name} <strong className="font-mono text-foreground ml-0.5 tabular-nums">{p.episodes}</strong>
+                    </Link>
+                  ))}
+                </div>
+              </Tile>
+
+              <Tile title="本週熱門個股" className="md:col-span-4 md:row-span-2">
                 <div className="divide-y divide-border/60">
                   {data.tickers.map((t, i) => {
                     const s = stance(t);
                     const total = t.bull + t.neu + t.bear;
                     return (
-                      <div key={t.ticker} className="flex items-center gap-3 py-2 min-w-0">
+                      <div key={t.ticker} className="flex items-center gap-x-3 gap-y-1 py-2 min-w-0 flex-wrap sm:flex-nowrap">
                         <Link to={`/stock/${encodeURIComponent(t.ticker)}`} className="w-36 shrink-0 truncate text-sm font-medium hover:text-primary transition-colors">
                           {nameOf(t) ? `${nameOf(t)} ${t.ticker}` : t.ticker}
                         </Link>
                         <span className="w-10 shrink-0 text-xs font-mono tabular-nums text-muted-foreground">{t.episodes} 集</span>
+                        <span className={`sm:order-last w-14 shrink-0 text-right text-2xs font-medium ml-auto sm:ml-0 ${s.cls}`}>{s.label}</span>
+                        {/* On phones the bar and counts drop together to a second line. */}
+                        <span className="basis-full sm:hidden" aria-hidden />
                         <div className="flex-1 min-w-0">{total > 0 ? <SentBar bull={t.bull} neutral={t.neu} bear={t.bear} delayMs={i * 40} /> : <div className="sent-bar opacity-30" />}</div>
-                        {/* Three fixed columns so the counts line up down the list. */}
                         <span className="grid grid-cols-3 w-36 shrink-0 text-xs font-mono tabular-nums">
                           <span className="text-right text-sentiment-bull">多 {total > 0 ? t.bull : '–'}</span>
                           <span className="text-right text-muted-foreground">中 {total > 0 ? t.neu : '–'}</span>
                           <span className="text-right text-sentiment-bear">空 {total > 0 ? t.bear : '–'}</span>
                         </span>
-                        <span className={`w-14 shrink-0 text-right text-2xs font-medium ${s.cls}`}>{s.label}</span>
                       </div>
                     );
                   })}
                 </div>
-              </div>
-              <div className="bg-card border border-border rounded-md p-5">
-                <h2 className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground mb-3.5">本週產業與題材</h2>
+              </Tile>
+              <Tile title="本週產業與題材" className="md:col-span-2">
                 <SectorMix key={data.week} sectors={data.sectors} total={data.episode_count} />
-              </div>
+              </Tile>
             </div>
 
             <h2 className="text-sm font-semibold text-muted-foreground mb-3">本週集數</h2>
