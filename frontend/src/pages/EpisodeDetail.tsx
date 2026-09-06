@@ -326,7 +326,7 @@ export const EpisodeDetail: React.FC = () => {
       />
       <PageContent
         rail={
-          (tickers.length > 0 || mentionPerf.length > 0 || (episode?.sector_exposures?.length ?? 0) > 0) ? (
+          (tickers.length > 0 || (episode?.sector_exposures?.length ?? 0) > 0) ? (
             <nav className="bg-card border border-border rounded-md p-3 max-h-[calc(100vh-96px)] overflow-y-auto scrollbar-thin" aria-label="集數導覽">
               {tickers.length > 0 && (
                 <section aria-labelledby="episode-rail-tickers">
