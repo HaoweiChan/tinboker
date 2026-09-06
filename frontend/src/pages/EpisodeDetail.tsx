@@ -8,8 +8,6 @@ import { TickerRow } from '@/components/redesign';
 import { cn } from '@/lib/utils';
 import { getEpisodeById, getEpisodeByIdOnly, getPodcastByName, type Episode as ApiEpisode } from '@/services';
 import { getSectorBoard, type SectorBoardItem } from '@/services/api/podcasts';
-import { getEpisodeMentions, type ContentMention } from '@/services/api/mentions';
-import { MentionReturnChips } from '@/components/financial/MentionReturnChips';
 import { SectorExposureList } from '@/components/episode/SectorExposureList';
 import { fetchWithFallback } from '@/services/api/migration';
 import { parseSummaryTopicSections, parseTimestampedSections, skippableSectionsFromSegments, type TimestampedSection } from '@/utils/parseTimestampedSections';
@@ -127,26 +125,9 @@ export const EpisodeDetail: React.FC = () => {
   // change without a bespoke price fetch.
   const [sectorPerf, setSectorPerf] = useState<Map<string, SectorBoardItem>>(new Map());
   const [sectorPerfLoading, setSectorPerfLoading] = useState(false);
-  // Post-mention 1/5/20/60 trading-day performance for this episode's ticker
-  // mentions (TKB-001) + the mandatory zh-TW disclaimer.
-  const [mentionPerf, setMentionPerf] = useState<ContentMention[]>([]);
-  const [mentionDisclaimer, setMentionDisclaimer] = useState<string>('');
-
-  useEffect(() => {
-    if (!id) return;
-    let alive = true;
-    setMentionPerf([]);
-    getEpisodeMentions(id)
-      .then((res) => {
-        if (!alive) return;
-        setMentionPerf(res.ticker_mentions.filter((m) => m.performance != null && m.ticker));
-        setMentionDisclaimer(res.disclaimer);
-      })
-      .catch(() => {
-        if (alive) setMentionPerf([]);
-      });
-    return () => { alive = false; };
-  }, [id]);
+  // Post-mention performance (TKB-001) deliberately does NOT render here: the rail is
+  // for what the episode talks about, and per-ticker return chips made it noisy. The
+  // stock page keeps its 播客提及後續表現 section.
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -357,30 +338,8 @@ export const EpisodeDetail: React.FC = () => {
                   </div>
                 </section>
               )}
-              {mentionPerf.length > 0 && (
-                <section aria-labelledby="episode-rail-mention-perf" className={tickers.length > 0 ? 'mt-4' : ''}>
-                  <h4 id="episode-rail-mention-perf" className="text-2xs font-semibold tracking-[0.08em] uppercase text-muted-foreground px-2 mb-2">提及後續表現</h4>
-                  <div className="flex flex-col gap-2.5 px-2">
-                    {mentionPerf.map((m, idx) => (
-                      <div key={`${m.ticker}-${idx}`}>
-                        <button
-                          type="button"
-                          onClick={() => navigate(`/stock/${encodeURIComponent(m.ticker!)}`)}
-                          className="font-mono text-sm font-semibold text-foreground hover:text-accent-info transition-colors"
-                        >
-                          {m.ticker}
-                        </button>
-                        <MentionReturnChips performance={m.performance} className="mt-1" />
-                      </div>
-                    ))}
-                  </div>
-                  {mentionDisclaimer && (
-                    <p className="text-2xs text-muted-foreground/70 leading-relaxed px-2 mt-2.5">{mentionDisclaimer}</p>
-                  )}
-                </section>
-              )}
               {(episode?.sector_exposures?.length ?? 0) > 0 && (
-                <section aria-labelledby="episode-rail-sectors" className={(tickers.length > 0 || mentionPerf.length > 0) ? 'mt-4' : ''}>
+                <section aria-labelledby="episode-rail-sectors" className={tickers.length > 0 ? 'mt-4' : ''}>
                   <h4 id="episode-rail-sectors" className="text-2xs font-semibold tracking-[0.08em] uppercase text-muted-foreground px-2 mb-2">提及產業</h4>
                   <SectorExposureList
                     exposures={episode!.sector_exposures!}
