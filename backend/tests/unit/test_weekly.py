@@ -58,7 +58,8 @@ async def test_build_week_aggregates_tickers_sectors_and_sentiment_shift(monkeyp
     assert (top["prev_bull"], top["prev_bear"]) == (0, 2)  # two podcasters × one bearish insight
     assert wk["sectors"] == [{"exposure_id": "sector_mlcc", "episodes": 1, "display_name": "被動元件 MLCC", "icon_id": None, "color_hex": None}]
     assert [e["id"] for e in wk["episodes"]] == ["E2", "E1"]  # newest first
-    assert wk["episodes"][0]["key_insights"] == ["一", "二", "三"]
+    assert wk["episodes"][0]["key_insights"] == ["一", "二", "三", "四"]
+    assert wk["episodes"][0]["podcast_name"] == "財經一路發"  # full Episode shape
 
     assert await weekly.build_week("2026-W30") is None
 

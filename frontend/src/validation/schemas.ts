@@ -606,15 +606,9 @@ export const WeeklySchema = z.object({
     icon_id: z.string().nullable().optional(),
     color_hex: z.string().nullable().optional(),
   })),
-  episodes: z.array(z.object({
-    id: z.string(),
-    podcast_name: z.string(),
-    episode_title: z.string().nullable().optional(),
-    episode_number: z.number().nullable().optional(),
-    released_at_ms: z.number().nullable().optional(),
-    key_insights: z.array(z.string()),
-    related_tickers: z.array(z.string()),
-  })),
+  // Full Episode objects (same shape as /episodes/by-sector); validated loosely here and
+  // rendered through the shared EpisodeCardV2 adapter.
+  episodes: z.array(z.object({ id: z.string(), podcast_name: z.string() }).passthrough()),
 });
 
 export const WeeklyListSchema = z.object({
