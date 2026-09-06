@@ -3,10 +3,9 @@ import { Link, useParams } from 'react-router-dom';
 import { Star, Plus } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
-import { Change, SentimentChip, EpisodeCardV2 } from '@/components/redesign';
+import { Change, EpisodeCardV2 } from '@/components/redesign';
 import { apiEpisodeToCardV2 } from '@/components/redesign/episodeAdapter';
 import { TickerInsightCard } from '@/components/financial/TickerInsightCard';
-import { MentionReturnChips } from '@/components/financial/MentionReturnChips';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/store/useAppStore';
 import { useRequireAuth } from '@/hooks/useRequireAuth';
@@ -24,14 +23,16 @@ import { InstitutionalFlowCard } from '@/components/stock/InstitutionalFlowCard'
 import { ChartControls } from '@/components/charts/ChartControls';
 import { getInsightsByTicker, getSortedPodcasts, type Podcast } from '@/services/api/podcasts';
 import { getTickerMentions, type TickerMentionsResponse } from '@/services/api/mentions';
-import { formatDate } from '@/lib/date';
 import { transformApiEpisodeToMock } from '@/services/api/transformers';
 import { useStockPriceMap } from '@/hooks/useStockPriceMap';
 import { useStockPriceSinceMap } from '@/hooks/useStockPriceSinceMap';
 import { useEpisodeSentimentMap } from '@/hooks/useEpisodeSentimentMap';
 import { useTranslationMap } from '@/hooks/useTranslationMap';
 import { getStockLabel, inferStockMarket } from '@/utils/stockDisplay';
-import { TickerSectorsCard } from '@/components/stock/TickerSectorsCard';
+import { Tile } from '@/components/redesign/Tile';
+import { SectorIcon } from '@/components/topics/SectorIcon';
+import { getSectorsByTicker } from '@/services/api/stocks';
+import type { SectorByTickerItem } from '@/validation/schemas';
 
 
 // Semantic sentiment colours (green bull / red bear), matching the chart dots and
@@ -44,6 +45,17 @@ const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[]; epi
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const { watchlist, toggleWatchlist, theme } = useAppStore();
+  // Sector membership drives both the chips tile and the row layout below.
+  const [sectors, setSectors] = useState<SectorByTickerItem[]>([]);
+  useEffect(() => {
+    if (!symbol) return;
+    let cancelled = false;
+    setSectors([]);
+    getSectorsByTicker(symbol)
+      .then((r) => { if (!cancelled) setSectors(r.items); })
+      .catch(() => { if (!cancelled) setSectors([]); });
+    return () => { cancelled = true; };
+  }, [symbol]);
   const { guard } = useRequireAuth();
   const [timeframe, setTimeframe] = useState<TimeframeOption>('1D');
   const [activeIndicators, setActiveIndicators] = useState<string[]>(['MA5', 'MA20', 'MA60']);
@@ -375,10 +387,28 @@ const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[]; epi
           </div>
         </div>
 
+        {/* Spans adapt so a US ticker (no 三大法人) or a ticker outside every sector still
+            fills its rows. */}
         {market === 'TW' && <InstitutionalFlowCard symbol={symbol} compact className="md:col-span-2" />}
-        <WhoTalksTile insights={insights} className="md:col-span-2" />
-        <TickerSectorsCard symbol={symbol} variant="chips" className="md:col-span-2" />
-        <CoMentionTile symbol={symbol} episodes={episodes} className="md:col-span-4" max={10} />
+        <WhoTalksTile insights={insights} className={market === 'TW' ? 'md:col-span-2' : 'md:col-span-4'} />
+        {sectors.length > 0 && (
+          <Tile title="所屬題材" className="md:col-span-2">
+            <div className="flex flex-wrap gap-2">
+              {sectors.map((item) => (
+                <Link
+                  key={item.exposure_id}
+                  to={`/sector/${encodeURIComponent(item.exposure_id)}`}
+                  title={item.reason || undefined}
+                  className="inline-flex items-center gap-1.5 rounded-md bg-accent-info-soft text-accent-info px-2.5 py-1 text-xs font-medium hover:opacity-80 transition-opacity"
+                >
+                  <SectorIcon exposureId={item.exposure_id} iconId={item.icon_id} color={item.color_hex} size={12} variant="chip" />
+                  {item.display_name}
+                </Link>
+              ))}
+            </div>
+          </Tile>
+        )}
+        <CoMentionTile symbol={symbol} episodes={episodes} className={sectors.length > 0 ? 'md:col-span-4' : 'md:col-span-6'} max={sectors.length > 0 ? 10 : 14} />
       </div>
     </>
   );
@@ -403,8 +433,14 @@ export const StockDashboard: React.FC = () => {
     () => episodes.map(transformApiEpisodeToMock).filter((e): e is NonNullable<typeof e> => e != null),
     [episodes],
   );
-  // Post-mention 1/5/20/60 trading-day performance (TKB-001); null hides the section.
+  // Post-mention 1/5/20/60 trading-day performance (TKB-001), shown inline on the 觀點 rows.
   const [tickerMentions, setTickerMentions] = useState<TickerMentionsResponse | null>(null);
+  const perfByEpisode = useMemo(() => {
+    const m = new Map<string, TickerMentionsResponse['mentions'][number]['performance']>();
+    for (const x of tickerMentions?.mentions ?? []) if (x.performance) m.set(x.episode_id, x.performance);
+    return m;
+  }, [tickerMentions]);
+  const anyReturns = useMemo(() => [...perfByEpisode.values()].some((p) => p && [p.r1d, p.r5d, p.r20d, p.r60d].some((v) => typeof v === 'number')), [perfByEpisode]);
   const [podcasts, setPodcasts] = useState<Podcast[]>([]);
   const [episodesLoading, setEpisodesLoading] = useState(true);
   const podcastImageMap = useMemo(() => {
@@ -503,6 +539,7 @@ export const StockDashboard: React.FC = () => {
                   key={`${rec.episode_id}-${rec.ticker}-${rec.podcaster ?? ''}`}
                   insight={rec}
                   episodes={mockEpisodes}
+                  performance={perfByEpisode.get(rec.episode_id) ?? null}
                 />
               ))}
             </div>
@@ -515,29 +552,9 @@ export const StockDashboard: React.FC = () => {
                 顯示更多（還有 {insights.length - insightLimit} 則）
               </button>
             )}
-          </section>
-        )}
-
-        {tickerMentions && tickerMentions.mentions.length > 0 && (
-          <section className="mb-[18px]">
-            <h2 className="text-sm font-semibold text-muted-foreground mb-3">播客提及後續表現</h2>
-            <div className="bg-card border border-border rounded-md divide-y divide-border">
-              {tickerMentions.mentions.slice(0, 10).map((m, idx) => (
-                <Link
-                  key={`${m.episode_id}-${idx}`}
-                  to={`/episode/${encodeURIComponent(m.episode_id)}`}
-                  className="block px-4 py-3 hover:bg-muted/40 transition-colors"
-                >
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm font-medium text-foreground truncate">{m.podcaster || '—'}</span>
-                    <span className="text-xs text-muted-foreground tabular-nums shrink-0">{formatDate(m.mentioned_at)}</span>
-                    <SentimentChip sentiment={normalizeSentiment(m.sentiment_label)} />
-                  </div>
-                  <MentionReturnChips performance={m.performance} className="mt-2 max-w-sm" />
-                </Link>
-              ))}
-            </div>
-            <p className="text-2xs text-muted-foreground/70 leading-relaxed mt-2">{tickerMentions.disclaimer}</p>
+            {anyReturns && tickerMentions?.disclaimer && (
+              <p className="text-2xs text-muted-foreground/70 leading-relaxed mt-2">{tickerMentions.disclaimer}</p>
+            )}
           </section>
         )}
 
