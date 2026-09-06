@@ -20,7 +20,7 @@ from fastapi import APIRouter, HTTPException
 
 from src.cache.redis_client import cache_get, cache_set
 from src.services.insight_service import InsightService
-from src.services.podcast import PodcastService
+from src.services.podcast import UMBRELLA_EXPOSURE_IDS, PodcastService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/weekly", tags=["weekly"])
@@ -113,7 +113,7 @@ async def build_week(week: str) -> Optional[dict]:
         seen: set[str] = set()
         for s in getattr(ep, "sector_exposures", None) or []:
             sid = s.get("exposure_id") if isinstance(s, dict) else getattr(s, "exposure_id", None)
-            if not sid or sid in seen:
+            if not sid or sid in seen or sid in UMBRELLA_EXPOSURE_IDS:
                 continue
             seen.add(sid)
             sector_eps[sid] += 1
@@ -175,7 +175,7 @@ async def list_weeks() -> list[dict]:
         for s in getattr(ep, "sector_exposures", None) or []:
             get = (lambda k: s.get(k)) if isinstance(s, dict) else (lambda k: getattr(s, k, None))
             sid = get("exposure_id")
-            if not sid or sid in seen:
+            if not sid or sid in seen or sid in UMBRELLA_EXPOSURE_IDS:
                 continue
             seen.add(sid)
             sectors[wk][sid] += 1

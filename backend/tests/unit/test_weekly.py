@@ -34,6 +34,7 @@ async def test_build_week_aggregates_tickers_sectors_and_sentiment_shift(monkeyp
         _ep("E1", "2026-09-01T02:00:00", ["2330", "NVDA"], sectors=[
             {"exposure_id": "sector_mlcc", "display_name": "被動元件 MLCC", "resolved_tickers": [{"ticker": "2327", "name": "國巨"}]},
             {"exposure_id": "sector_mlcc", "display_name": "被動元件 MLCC", "resolved_tickers": []},  # same sector twice = one vote
+            {"exposure_id": "sector_semiconductor", "display_name": "半導體", "resolved_tickers": []},  # umbrella → never listed
         ]),
         _ep("E2", "2026-09-03T02:00:00", ["2330"], podcast="財經一路發"),
         _ep("OLD", "2026-08-25T02:00:00", ["2330"]),  # previous week — excluded

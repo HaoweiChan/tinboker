@@ -194,11 +194,10 @@ async def test_metadata_derived_even_when_all_episodes_scoped_out():
 
 
 @pytest.mark.asyncio
-async def test_umbrella_exposure_serves_its_page():
-    """The broad 半導體 umbrella stays off the heat board, but its page is a real query:
-    episodes carry it and the weekly / stock pages link to it (it was empty before)."""
+async def test_umbrella_exposure_returns_empty_without_querying():
+    """Umbrella exposures (the broad 半導體 sector) are too wide to be a page: they
+    short-circuit to an empty payload and never hit Firestore; nothing links to them."""
     mock_fs = MagicMock()
-    mock_fs.query_collection.return_value = []
 
     svc = PodcastService(firestore_service=mock_fs)
 
@@ -209,8 +208,10 @@ async def test_umbrella_exposure_serves_its_page():
     ):
         result = await svc.get_episodes_by_sector("sector_semiconductor")
 
+    assert result["resolved_tickers"] == []
+    assert result["episodes"] == []
     assert result["total"] == 0
-    assert mock_fs.query_collection.called
+    mock_fs.query_collection.assert_not_called()
 
 
 @pytest.mark.asyncio
