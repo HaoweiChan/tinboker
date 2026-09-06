@@ -467,9 +467,13 @@ class InsightService:
             logger.warning("Insight cache set failed: %s", e)
         return rows
 
-    async def get_recent(self, limit: int = 100) -> List[dict]:
+    async def get_recent(self, limit: int = 100, before: Optional[date] = None) -> List[dict]:
         """
         Recent TickerInsight[] across ALL podcasters, newest-first (blended feed).
+
+        ``before`` caps ``podcast_launch_time`` at the end of that day, so /picks 已揭曉
+        can page straight to picks old enough for a 7/30/90-day window to have settled
+        instead of hoping they fit in the newest 200 (they don't: ~50 picks land per day).
 
         Collection-group query on the `tickers` subcollection ordered by
         `podcast_launch_time` DESC with a hard limit — the /picks blended timeline.
@@ -481,7 +485,7 @@ class InsightService:
         # `:v2` namespace — the response now carries episode_title; bumping the key
         # also sidesteps any rows cached before that field existed. The scope tag
         # isolates the cache per release window.
-        cache_key = f"ticker_insights:recent:v2:{_scope_tag()}:{limit}"
+        cache_key = f"ticker_insights:recent:v2:{_scope_tag()}:{limit}:{before.isoformat() if before else 'now'}"
         cached = await cache_get(cache_key)
         if cached:
             try:
@@ -495,7 +499,7 @@ class InsightService:
         docs = await asyncio.to_thread(
             self._fs.query_collection_group,
             INSIGHTS_SUBCOLLECTION,
-            None,
+            [("podcast_launch_time", "<=", f"{before.isoformat()}T23:59:59Z")] if before else None,
             "podcast_launch_time",
             "DESCENDING",
             limit * 2,

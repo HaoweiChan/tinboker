@@ -66,6 +66,10 @@ export const PicksPage: React.FC = () => {
   // recent-100 blended feed) so older, settled picks surface. Keyed off `selected`.
   const [channelHistory, setChannelHistory] = useState<TickerInsight[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  // 已揭曉 without a channel filter: the blended /recent (newest 200 ≈ 4 days) never
+  // reaches picks a window has settled on, so page to launches ≥ tier days ago.
+  const [settledPicks, setSettledPicks] = useState<Record<number, TickerInsight[]>>({});
+  const [settledLoading, setSettledLoading] = useState(false);
   // Feed controls: 最新 (all, newest) vs 已揭曉 (picks old enough for a window to
   // have settled). 已揭曉 has a 7/30/90-day sub-tier — default 7D for density,
   // and sorting flips to "highest return over that window".
@@ -120,6 +124,21 @@ export const PicksPage: React.FC = () => {
     return () => { alive = false; };
   }, [selected]);
 
+  useEffect(() => {
+    if (view !== 'settled' || selected.size > 0 || settledPicks[settledTier]) return;
+    let alive = true;
+    setSettledLoading(true);
+    const before = new Date(Date.now() - settledTier * DAY_MS).toISOString().slice(0, 10);
+    getRecentInsights(200, before)
+      .catch(() => [] as TickerInsight[])
+      .then((rows) => {
+        if (!alive) return;
+        setSettledPicks((prev) => ({ ...prev, [settledTier]: Array.isArray(rows) ? rows : [] }));
+        setSettledLoading(false);
+      });
+    return () => { alive = false; };
+  }, [view, settledTier, selected, settledPicks]);
+
   const podcastImageMap = useMemo(() => {
     const m = new Map<string, string>();
     for (const p of podcasters) if (p.name && p.image_url) m.set(p.name, p.image_url);
@@ -143,9 +162,9 @@ export const PicksPage: React.FC = () => {
   // selected channels' full history when filtered. Repeated calls of the same
   // canonical ticker by one podcaster within 14 days fold into one card.
   const groups = useMemo(() => {
-    const src = selected.size === 0 ? picks : channelHistory;
+    const src = selected.size > 0 ? channelHistory : view === 'settled' ? (settledPicks[settledTier] ?? []) : picks;
     return groupPicks(src.filter((p) => isLikelyTradeable(p.ticker)));
-  }, [picks, channelHistory, selected]);
+  }, [picks, channelHistory, selected, view, settledTier, settledPicks]);
 
   // 已揭曉 keeps only cards whose master mention is old enough for the active tier
   // to have settled, so the chosen window's return is always populated.
@@ -286,7 +305,7 @@ export const PicksPage: React.FC = () => {
           )}
         </div>
 
-        {loading || historyLoading ? (
+        {loading || historyLoading || settledLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {Array.from({ length: 6 }).map((_, i) => (
               <div key={i} className="bg-card border border-border rounded-md h-[180px] animate-pulse" />

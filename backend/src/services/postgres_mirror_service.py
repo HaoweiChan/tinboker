@@ -328,8 +328,8 @@ class PostgresMirrorService:
             elif op == "in":
                 where.append(f"{col} = ANY(CAST(:{key} AS text[]))")
                 params[key] = _pg_text_array(list(value or []))
-            elif op == ">=":
-                where.append(f"{col} >= :{key}")
+            elif op in (">=", "<="):
+                where.append(f"{col} {op} :{key}")
                 params[key] = str(value)
             else:
                 raise NotImplementedError(

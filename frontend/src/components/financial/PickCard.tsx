@@ -120,9 +120,10 @@ export const PickCard: React.FC<PickCardProps> = ({
           const v = windows ? windows[key] : null;
           let content: React.ReactNode;
           if (key === 'since') {
-            // "Since mention" has no return on the day of mention.
-            content = deltaDays < 1
-              ? <span className="text-2xs text-muted-foreground/50">今日</span>
+            // "Since mention" has no return until the market has closed after the
+            // mention (the backend leaves it null over a weekend / same day).
+            content = v == null
+              ? <span className="text-2xs text-muted-foreground/50">待收盤</span>
               : <Change value={v} />;
           } else if (v != null) {
             content = <Change value={v} />;
