@@ -154,26 +154,32 @@ const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[] }> =
       return v ? `hsl(${v.split(/\s+/).join(', ')})` : '#9ca3af';
     };
     const colors = { BULLISH: css('--sentiment-bull'), BEARISH: css('--sentiment-bear'), NEUTRAL: css('--sentiment-neutral') };
-    const byDay = new Map<string, TickerInsight[]>();
+    // One dot per ISO week (Monday's bar), not per day: a daily-discussed ticker at a
+    // 1Y zoom otherwise turns into a ribbon of dots along the price line.
+    const byWeek = new Map<string, TickerInsight[]>();
     for (const i of insights) {
-      const day = i.podcast_launch_time.slice(0, 10);
-      if (!byDay.has(day)) byDay.set(day, []);
-      byDay.get(day)!.push(i);
+      const d = new Date(i.podcast_launch_time.slice(0, 10));
+      if (Number.isNaN(d.getTime())) continue;
+      d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+      const monday = d.toISOString().slice(0, 10);
+      if (!byWeek.has(monday)) byWeek.set(monday, []);
+      byWeek.get(monday)!.push(i);
     }
-    return [...byDay.entries()].map(([day, list]) => {
+    return [...byWeek.entries()].map(([monday, list]) => {
       const b = aggregateSentiment(list.map((i) => ({ sentiment_label: i.sentiment_label })));
       const dominant = b.bull > b.bear ? 'BULLISH' : b.bear > b.bull ? 'BEARISH' : 'NEUTRAL';
+      const sunday = new Date(Date.parse(monday) + 6 * 86400e3).toISOString().slice(5, 10).replace('-', '/');
+      const sorted = [...list].sort((x, y) => Date.parse(y.podcast_launch_time) - Date.parse(x.podcast_launch_time));
       return {
-        id: `mention:${day}`,
-        time: Date.parse(day) / 1000,
+        id: `mention:${monday}`,
+        time: Date.parse(monday) / 1000,
         color: colors[dominant],
-        // Dots only: count labels pile up on daily-discussed tickers at a 1Y zoom.
-        size: list.length >= 3 ? 1.6 : list.length === 2 ? 1.3 : 1,
+        size: list.length >= 6 ? 1.8 : list.length >= 3 ? 1.4 : 1,
         tooltip: (
           <div className="flex flex-col gap-1.5">
-            <div className="text-2xs text-muted-foreground tabular-nums">{day.replace(/-/g, '/')} · {list.length} 集提及</div>
-            {list.slice(0, 4).map((i) => (
-              <div key={i.episode_id} className="leading-snug">
+            <div className="text-2xs text-muted-foreground tabular-nums whitespace-nowrap">{monday.replace(/-/g, '/')} – {sunday} · {list.length} 集 · <span className="text-sentiment-bull">多 {b.bull}</span> <span className="text-sentiment-bear">空 {b.bear}</span></div>
+            {sorted.slice(0, 4).map((i) => (
+              <div key={`${i.episode_id}-${i.podcaster}`} className="leading-snug">
                 <span className="font-medium">{i.podcaster || '—'}</span>{' '}
                 <span className={cn('ml-1 font-medium', SENT_CLASS[normalizeSentiment(i.sentiment_label) ?? 'NEUTRAL'])}>{SENT_LABEL[normalizeSentiment(i.sentiment_label) ?? 'NEUTRAL']}</span>
                 {i.time_horizon && <span className="text-muted-foreground ml-1">{i.time_horizon}</span>}
@@ -212,18 +218,42 @@ const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[] }> =
     return [];
   }, [rawChart]);
 
-  const latest = (chartData.length > 0 ? chartData[chartData.length - 1] : null) as { open?: number; high?: number; low?: number; volume?: number } | null;
   const formatPositiveNumber = (value: number | null | undefined, options?: Intl.NumberFormatOptions) => {
     if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return '—';
     return value.toLocaleString('en-US', options);
   };
   const hasDisplayPrice = typeof displayPrice === 'number' && Number.isFinite(displayPrice) && displayPrice > 0;
-  const keyStats: { label: string; value: string }[] = [
-    { label: '開盤', value: formatPositiveNumber(latest?.open) },
-    { label: '最高', value: formatPositiveNumber(latest?.high) },
-    { label: '最低', value: formatPositiveNumber(latest?.low) },
-    { label: '成交量', value: latest?.volume || stockData?.stats?.volume ? `${(((latest?.volume ?? stockData?.stats?.volume) || 0) / 1000).toFixed(1)}K` : '—' },
-    { label: '市值', value: stockData?.marketCap ? `${(stockData.marketCap / 1e9).toFixed(2)}B` : '—' },
+  // Period stats from the close history, not the day's open/high/low: the feed is
+  // delayed, so intraday numbers read as live when they are not, and a 1-year window
+  // is what the chart shows anyway.
+  const periodStats = useMemo(() => {
+    const closes = chartData.map((p) => ({ t: p.timestamp as number, c: (('close' in p ? p.close : undefined) ?? ('price' in p ? p.price : undefined) ?? 0) as number, v: ('volume' in p ? p.volume : undefined) as number | undefined }))
+      .filter((p) => p.c > 0);
+    if (closes.length === 0) return null;
+    const last = closes[closes.length - 1];
+    const pctSince = (days: number): number | null => {
+      const cutoff = last.t - days * 86400e3;
+      let base: typeof last | null = null;
+      for (const p of closes) { if (p.t <= cutoff) base = p; else break; }
+      return base ? ((last.c - base.c) / base.c) * 100 : null;
+    };
+    const year = closes.filter((p) => p.t >= last.t - 365 * 86400e3);
+    const hi = Math.max(...year.map((p) => p.c)), lo = Math.min(...year.map((p) => p.c));
+    const vols = closes.slice(-20).map((p) => p.v).filter((v): v is number => typeof v === 'number' && v > 0);
+    return {
+      w1: pctSince(7), m1: pctSince(30), m3: pctSince(90),
+      hi, lo, pos: hi > lo ? ((last.c - lo) / (hi - lo)) * 100 : null,
+      avgVol: vols.length ? vols.reduce((a, b) => a + b, 0) / vols.length : null,
+    };
+  }, [chartData]);
+  const fmtVol = (v: number) => (v >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : `${(v / 1e3).toFixed(0)}K`);
+  const keyStats: { label: string; value: React.ReactNode }[] = [
+    { label: '近 1 週', value: periodStats?.w1 != null ? <Change value={periodStats.w1} /> : '—' },
+    { label: '近 1 月', value: periodStats?.m1 != null ? <Change value={periodStats.m1} /> : '—' },
+    { label: '近 3 月', value: periodStats?.m3 != null ? <Change value={periodStats.m3} /> : '—' },
+    { label: '52 週區間', value: periodStats ? `${periodStats.lo.toLocaleString('en-US')} – ${periodStats.hi.toLocaleString('en-US')}` : '—' },
+    { label: '距 52 週高點', value: periodStats?.pos != null && periodStats.hi > 0 ? <Change value={((displayPrice ?? periodStats.hi) - periodStats.hi) / periodStats.hi * 100} /> : '—' },
+    { label: '20 日均量', value: periodStats?.avgVol ? fmtVol(periodStats.avgVol) : '—' },
     { label: '本益比', value: stockData?.pe ? stockData.pe.toFixed(1) : '—' },
   ];
 
@@ -333,7 +363,7 @@ const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[] }> =
           )}
         </div>
         <div className="bg-card border border-border rounded-md p-5">
-          <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground mb-3.5">關鍵數據</h3>
+          <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground mb-3.5">區間表現</h3>
           <div className="divide-y divide-border">
             {keyStats.map((s) => (
               <div key={s.label} className="flex justify-between items-center py-2.5">

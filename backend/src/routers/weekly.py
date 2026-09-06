@@ -142,15 +142,9 @@ async def build_week(week: str) -> Optional[dict]:
         "podcasts": [{"name": n, "episodes": c} for n, c in Counter(ep.podcast_name for ep in episodes).most_common()],
         "tickers": [ticker_row(tk, n) for tk, n in ticker_eps.most_common(TOP_TICKERS)],
         "sectors": [{"exposure_id": sid, "episodes": n, **sector_meta[sid]} for sid, n in sector_eps.most_common(TOP_SECTORS)],
-        "episodes": [
-            {
-                "id": ep.id, "podcast_name": ep.podcast_name, "episode_title": ep.episode_title,
-                "episode_number": getattr(ep, "episode_number", None), "released_at_ms": _released_ms(ep),
-                "key_insights": (getattr(ep, "key_insights", None) or [])[:3],
-                "related_tickers": (getattr(ep, "related_tickers", None) or [])[:8],
-            }
-            for ep in sorted(episodes, key=lambda e: _released_ms(e) or 0, reverse=True)
-        ],
+        # Full Episode shape (same as /episodes/by-sector) so the page renders the same
+        # EpisodeCardV2 as every other list; content fields are empty (enrich_content=False).
+        "episodes": [ep.model_dump(mode="json") for ep in sorted(episodes, key=lambda e: _released_ms(e) or 0, reverse=True)],
     }
 
 

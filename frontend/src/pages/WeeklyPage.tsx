@@ -3,9 +3,13 @@ import { Link, useParams } from 'react-router-dom';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
-import { SentBar } from '@/components/redesign';
+import { EpisodeCardV2, SentBar } from '@/components/redesign';
+import { apiEpisodeToCardV2 } from '@/components/redesign/episodeAdapter';
 import { SectorIcon } from '@/components/topics/SectorIcon';
 import { getWeek } from '@/services/api/weekly';
+import { getSortedPodcasts, type Episode as ApiEpisode, type Podcast } from '@/services/api';
+import { useStockPriceMap } from '@/hooks/useStockPriceMap';
+import { useStockPriceSinceMap } from '@/hooks/useStockPriceSinceMap';
 import { useTranslationMap } from '@/hooks/useTranslationMap';
 import type { Weekly, WeeklyTicker } from '@/validation/schemas';
 import { useGrowIn } from '@/hooks/useMotion';
@@ -53,11 +57,30 @@ export const WeeklyPage: React.FC = () => {
     return () => { alive = false; };
   }, [week]);
 
+  // Same card + maps as SectorPage / PodcasterPage so the list looks like every other list.
+  const episodes = useMemo(() => (data ? (data.episodes as unknown as ApiEpisode[]) : []), [data]);
+  const episodeTickers = useMemo(() => episodes.flatMap((ep) => ep.related_tickers ?? []), [episodes]);
+  const priceMap = useStockPriceMap(episodeTickers);
+  const priceSinceMap = useStockPriceSinceMap(episodes);
+  const [podcasts, setPodcasts] = useState<Podcast[]>([]);
+  useEffect(() => {
+    getSortedPodcasts({ sortBy: 'updated_at', order: 'desc', limit: 200 }).then(setPodcasts).catch(() => {});
+  }, []);
+  const podcastImageMap = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const p of podcasts) if (p.name && p.image_url) m.set(p.name, p.image_url);
+    return m;
+  }, [podcasts]);
   // US tickers carry no name in the rollup (names come from TW sector baskets);
   // the translation map fills them in the same way the stock index does.
-  const tickerList = useMemo(() => (data ? data.tickers.map((t) => t.ticker) : []), [data]);
-  const translations = useTranslationMap(tickerList);
-  const nameOf = (t: WeeklyTicker) => t.name || translations.get(t.ticker)?.displayName || null;
+  const tickerList = useMemo(() => [...new Set([...(data ? data.tickers.map((t) => t.ticker) : []), ...episodeTickers])], [data, episodeTickers]);
+  const rawTranslations = useTranslationMap(tickerList);
+  const translationMap = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const [k, v] of rawTranslations) m.set(k, v.displayName);
+    return m;
+  }, [rawTranslations]);
+  const nameOf = (t: WeeklyTicker) => t.name || rawTranslations.get(t.ticker)?.displayName || null;
 
   const prev = useMemo(() => shiftWeek(week, -1), [week]);
   const next = useMemo(() => shiftWeek(week, 1), [week]);
@@ -139,18 +162,8 @@ export const WeeklyPage: React.FC = () => {
 
             <h2 className="text-sm font-semibold text-muted-foreground mb-3">本週集數</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {data.episodes.map((ep) => (
-                <Link key={ep.id} to={`/episode/${encodeURIComponent(ep.id)}`} className="block bg-card border border-border rounded-md p-4 hover:bg-muted/40 transition-colors">
-                  <div className="text-2xs text-muted-foreground tabular-nums mb-1">
-                    {ep.podcast_name}{ep.released_at_ms ? ` · ${new Date(ep.released_at_ms).toISOString().slice(5, 10).replace('-', '/')}` : ''}
-                  </div>
-                  <div className="text-sm font-medium leading-snug">{ep.episode_title || (ep.episode_number != null ? `EP ${ep.episode_number}` : ep.id)}</div>
-                  {ep.key_insights.length > 0 && (
-                    <ul className="mt-2 text-xs text-muted-foreground leading-relaxed list-disc pl-4">
-                      {ep.key_insights.map((k, i) => <li key={i}>{k}</li>)}
-                    </ul>
-                  )}
-                </Link>
+              {episodes.map((ep) => (
+                <EpisodeCardV2 key={ep.id} {...apiEpisodeToCardV2(ep, priceMap, podcastImageMap, translationMap, undefined, priceSinceMap)} />
               ))}
             </div>
           </>
