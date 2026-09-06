@@ -83,7 +83,11 @@ async def test_sitemap_lists_visible_sectors_and_skips_hidden_tags(monkeypatch):
         return []
 
     async def _sectors(*args, **kwargs):
-        return [{"exposure_id": "sector_mlcc"}, {"exposure_id": "sector_retired"}]
+        return [
+            {"exposure_id": "sector_mlcc", "count": 12},
+            {"exposure_id": "sector_retired", "count": 40},
+            {"exposure_id": "sector_thin", "count": 1},  # served, but one episode is not a page
+        ]
 
     async def _tags(*args, **kwargs):
         return [{"id": "ai"}, {"id": "junk_tag"}]
@@ -91,7 +95,7 @@ async def test_sitemap_lists_visible_sectors_and_skips_hidden_tags(monkeypatch):
     monkeypatch.setattr(seo.podcast_service, "get_recent_episodes", _no_episodes)
     monkeypatch.setattr(seo.podcast_service, "list_sectors", _sectors)
     monkeypatch.setattr(seo.podcast_service, "get_all_tags", _tags)
-    monkeypatch.setattr(seo, "served_sector_exposure_ids", lambda db: {"sector_mlcc"})
+    monkeypatch.setattr(seo, "served_sector_exposure_ids", lambda db: {"sector_mlcc", "sector_thin"})
     monkeypatch.setattr(seo, "auto_register_sectors", lambda db, sectors: 0)
     monkeypatch.setattr(settings, "site_url", "https://tinboker.com")
 
@@ -99,6 +103,7 @@ async def test_sitemap_lists_visible_sectors_and_skips_hidden_tags(monkeypatch):
 
     assert "<loc>https://tinboker.com/sector/sector_mlcc</loc>" in body
     assert "sector_retired" not in body
+    assert "sector_thin" not in body
 
     # With no episodes there are no tag pages to list; the /topics index stays.
     assert "/topics/" not in body

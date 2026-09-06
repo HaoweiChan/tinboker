@@ -17,7 +17,7 @@ import { dirname, resolve } from 'node:path';
 const here = dirname(fileURLToPath(import.meta.url));
 const mw = await import(resolve(here, '../functions/_middleware.js'));
 const {
-  metaFor, isCandidate, normalizeTagSlug, tagLabelFallback, TAG_ROUTE, tagNoindex, MIN_TAG_EPISODES,
+  metaFor, isCandidate, normalizeTagSlug, tagLabelFallback, TAG_ROUTE, tagNoindex, MIN_TAG_EPISODES, sectorNoindex,
   renderPage, mdToHtml, chapters, tally, normSentiment,
 } = mw;
 
@@ -92,6 +92,7 @@ globalThis.fetch = async (url) => {
       description: '  被動元件 MLCC 題材涵蓋積層陶瓷電容與主要被動元件供應鏈。  ',
       resolved_tickers: [{ ticker: '2327', name: '國巨', reason: '全球最大晶片電阻供應商。' }],
       episodes: [{ id: 'abc123', podcast_name: '股癌', episode_title: 'EP500 測試' }],
+      total: 12,
     });
   }
   if (u.includes('/api/episodes/recent')) return json({ episodes: [EPISODE] });
@@ -204,6 +205,11 @@ try {
     assert.ok(sectorPage.includes(needle), `sector body missing ${needle}`);
   }
   assert.deepEqual(ldTypes(sector), ['BreadcrumbList']);
+  // Sector pages follow the sitemap's two-episode floor; an unknown total stays indexable.
+  assert.equal(sector.noindex, false, 'a sector with enough episodes is indexable');
+  assert.equal(sectorNoindex(1), true);
+  assert.equal(sectorNoindex(2), false);
+  assert.equal(sectorNoindex(null), false);
   // A cold by-sector query can take 20-50 s on the API; when it misses the deadline the
   // page still gets its title and description from the cached sector list.
   globalThis.fetch = ((inner) => async (url) => {
