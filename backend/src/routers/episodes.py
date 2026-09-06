@@ -101,6 +101,22 @@ async def get_recent_buzz(
         raise HTTPException(status_code=500, detail=f"Error fetching recent buzz: {str(e)}")
 
 
+@router.get("/attention")
+@cdn_cache_trending
+async def get_attention(
+    limit: int = Query(default=8, ge=1, le=50, description="Tickers in the most-discussed list"),
+    narratives: int = Query(default=5, ge=1, le=20, description="Narrative rows (top n-1 + one rising slot)"),
+    rising_limit: int = Query(default=6, ge=1, le=50, description="Rows in the rising board"),
+):
+    """Home-page attention: what the recent feed is talking about (narrative tags),
+    which tickers are most discussed (30d vs prior 30d) and which are heating up
+    (7d vs prior 7d, momentum-scored with volume floors). Rolling windows, not ISO weeks."""
+    try:
+        return await trending_service.get_attention(limit=limit, narratives=narratives, rising_limit=rising_limit)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching attention: {str(e)}")
+
+
 @router.get("/by-ticker/{ticker}")
 @cdn_cache_podcast
 async def get_episodes_by_ticker(

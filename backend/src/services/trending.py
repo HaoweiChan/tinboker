@@ -4,6 +4,7 @@ Trending service for aggregating trending data from platform activity
 import logging
 import json
 import asyncio
+import math
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict
 from collections import Counter
@@ -13,6 +14,8 @@ from src.services.stock import StockService
 from src.cache.redis_client import cache_get, cache_set, get_redis
 from src.schemas.search import SearchResultItem
 from src.database.models import StockTranslation
+from src.database.postgres import get_session
+from src.tag_registry import canonical_label, canonical_tag_slugs, hidden_tag_slugs, normalize_tag_slug
 
 
 def _infer_market(ticker: str) -> str:
@@ -33,6 +36,32 @@ logger = logging.getLogger(__name__)
 TRENDING_CACHE_TTL = 3600
 # Cache TTL for translations (24 hours - translations rarely change)
 TRANSLATION_CACHE_TTL = 86400
+
+# ── Home-page attention (narratives + ticker momentum) ─────────────────────
+# Index / valuation-metric tags are canonical vocabulary but not market narratives;
+# the home hero lists what the market is *talking about*, so they never surface there.
+NON_NARRATIVE_TAGS = frozenset({"sp500", "nasdaq", "dowjones", "semiconductorindex", "eps", "peratio"})
+# Floors for the "rising" board: a 2 → 4 jump is noise, not a signal.
+ATTENTION_MIN_7D = 3
+ATTENTION_MIN_30D = 5
+
+
+def momentum_score(now: int, prev: int) -> float:
+    """(Δ mentions) × log(1 + now): favours real volume changes over low-base % jumps
+    (3 → 6 no longer outranks 12 → 18)."""
+    return (now - prev) * math.log1p(now)
+
+
+def pick_narratives(rows: List[dict], n: int) -> List[dict]:
+    """Top n-1 narratives by 7-day count plus one "rising" slot: the biggest
+    week-over-week grower (≥ ATTENTION_MIN_7D mentions) not already in the top. The
+    slot row carries rising=True so the UI can badge it. `rows` sorted by count_7d desc."""
+    top = [dict(r) for r in rows[: max(n - 1, 0)]]
+    rest = [r for r in rows[max(n - 1, 0):] if r["count_7d"] >= ATTENTION_MIN_7D and r["count_7d"] > r["prev_7d"]]
+    if not rest:
+        return rows[:n]
+    rising = max(rest, key=lambda r: (r["count_7d"] - r["prev_7d"]) / max(r["prev_7d"], 1))
+    return top + [dict(rising, rising=True)]
 
 class TrendingService:
     """Service for aggregating trending stocks and podcasters"""
@@ -252,6 +281,98 @@ class TrendingService:
             })
         if new_tickers_list:
             result["new_tickers"] = new_tickers_list
+        try:
+            await cache_set(cache_key, json.dumps(result), 1800)
+        except Exception:
+            pass
+        return result
+
+    async def get_attention(self, limit: int = 8, narratives: int = 5, rising_limit: int = 6) -> dict:
+        """What the recent feed is paying attention to, for the home page.
+
+        One pass over the recent episodes (same scoped feed as get_recent_buzz) yields
+        rolling-window counts — 7d vs the prior 7d, 30d vs the prior 30d — per ticker
+        and per canonical narrative tag. Rolling windows on purpose: ISO weeks make
+        "this week" nearly empty on a Monday.
+
+        Returns {episode_count_7d, podcast_count_7d,
+                 tickers: top `limit` by 30d count,
+                 rising: tickers above the floors ordered by momentum_score,
+                 narratives: pick_narratives(top tags by 7d count) with 6 weekly buckets}
+        """
+        cache_key = f"attention:v1:{limit}:{narratives}:{rising_limit}"
+        cached = await cache_get(cache_key)
+        if cached:
+            try:
+                return json.loads(cached)
+            except Exception:
+                pass
+
+        episodes = await self.podcast_service.get_recent_episodes(limit=500, enrich_content=False)
+        now = datetime.now()
+        day_ms = 86_400_000
+        now_ms = int(now.timestamp() * 1000)
+        d7, d14, d30, d60 = (now_ms - n * day_ms for n in (7, 14, 30, 60))
+        weeks = 6
+        t30, t30p, t7, t7p = Counter(), Counter(), Counter(), Counter()
+        g7, g7p = Counter(), Counter()
+        weekly: Dict[str, list] = {}
+        episodes_7d = 0
+        podcasts_7d: set = set()
+        for ep in episodes:
+            rel = ep.released_at_ms if ep.released_at_ms is not None else (ep.created_time or 0)
+            if rel < d60:
+                continue
+            tickers = {str(t).upper() for t in (ep.related_tickers or [])}
+            tags = {normalize_tag_slug(t) for t in (ep.tags or [])}
+            if rel >= d7:
+                episodes_7d += 1
+                podcasts_7d.add(ep.podcast_name)
+            for tu in tickers:
+                if rel >= d30:
+                    t30[tu] += 1
+                else:
+                    t30p[tu] += 1
+                if rel >= d7:
+                    t7[tu] += 1
+                elif rel >= d14:
+                    t7p[tu] += 1
+            for g in tags:
+                if rel >= d7:
+                    g7[g] += 1
+                elif rel >= d14:
+                    g7p[g] += 1
+                bucket = max(0, now_ms - rel) // (7 * day_ms)  # clamp: feeds occasionally post-date releases
+                if bucket < weeks:
+                    weekly.setdefault(g, [0] * weeks)[weeks - 1 - bucket] += 1
+
+        top = [t for t, _ in t30.most_common(limit)]
+        rising_rows = sorted(
+            (t for t in t7 if t7[t] >= ATTENTION_MIN_7D and t30[t] >= ATTENTION_MIN_30D and t7[t] > t7p[t]),
+            key=lambda t: momentum_score(t7[t], t7p[t]), reverse=True,
+        )[:rising_limit]
+        names = await self._get_translations_batch(list(set(top + rising_rows)))
+        row = lambda t: {"ticker": t, "name": names.get(t) or None, "count_30d": t30[t], "prev_30d": t30p[t], "count_7d": t7[t], "prev_7d": t7p[t]}  # noqa: E731
+
+        canon = canonical_tag_slugs()
+        try:
+            hidden = await asyncio.to_thread(lambda: hidden_tag_slugs(next(get_session())))
+        except Exception:
+            logger.warning("attention: hidden-tag lookup failed; showing all canonical tags", exc_info=True)
+            hidden = set()
+        tag_rows = sorted(
+            ({"id": g, "name": canonical_label(g), "count_7d": g7[g], "prev_7d": g7p[g], "weekly": weekly.get(g, [0] * weeks)}
+             for g in set(g7) | set(g7p) if g in canon and g not in hidden and g not in NON_NARRATIVE_TAGS and g7[g] > 0),
+            key=lambda r: (r["count_7d"], r["count_7d"] - r["prev_7d"]), reverse=True,
+        )
+
+        result = {
+            "episode_count_7d": episodes_7d,
+            "podcast_count_7d": len(podcasts_7d),
+            "tickers": [row(t) for t in top],
+            "rising": [row(t) for t in rising_rows],
+            "narratives": pick_narratives(tag_rows, narratives),
+        }
         try:
             await cache_set(cache_key, json.dumps(result), 1800)
         except Exception:

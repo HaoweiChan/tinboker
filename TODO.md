@@ -95,6 +95,7 @@ Meaning:
 6. TKB-011 Stock page charts: price × mention overlay, sentiment split
 7. TKB-012 Institutional-flow chart, sector and podcaster charts
 8. TKB-013 Weekly rollup pages, selective tag indexing, co-mention graph
+8b. TKB-014 Narrative-first home page (attention endpoint)
 9. TKB-004 Threads topic discovery and clustering
 10. TKB-005 Ticker / sector discussion pages
 
@@ -1027,6 +1028,53 @@ chars (noindex). Sitemap: 9 weekly pages. Co-mention graph captured on
 no tag has a registry description (0 of 1,588) — and the graph is plain SVG + d3-force,
 not the retired ReactFlow ForceGraph. Still open in this task: the Search Console /
 AdSense check 14 days after the production release, and post-mention returns (TKB-001).
+
+## TKB-014 Narrative-first home page (attention endpoint)
+
+```yaml
+id: TKB-014
+status: review
+priority: P2
+area:
+- frontend
+- backend
+type: feature
+effort: M
+risk: low
+github_issue: null
+github_project_item: null
+pr: null
+```
+
+### Goal
+
+Replace the home page's card-only feed with three layers that answer "what is the
+market talking about, which tickers, what should I listen to": narrative tags of the
+last 7 days (top 4 + one rising slot), most-discussed tickers (30d vs prior 30d) beside
+a rising board (7d vs prior 7d, momentum-scored with volume floors), then the episode
+feed. Clicking a narrative or ticker filters the feed. Design iterations and the
+rationale for dropping the treemaps, the 8-week heatmap and the consensus map live in
+the session artifact (2026-09-06).
+
+### Acceptance criteria
+
+- [x] `GET /api/episodes/attention` returns 7d/30d rolling counts per ticker and per
+      canonical narrative tag, with `momentum_score` ordering and `pick_narratives`
+      covered by `tests/unit/test_attention.py`.
+- [x] Home renders hero + 2 tiles + feed on desktop and phone; bars/sparklines grow in
+      and cards float in; reduced-motion disables both.
+- [x] Clicking a row filters the feed; thin local matches are topped up from the
+      by-tag / by-ticker endpoints.
+- [ ] Verified on dev after merge (real endpoint, not the fixture).
+
+### Implementation notes
+
+`backend/src/services/trending.py::get_attention` reuses the buzz feed
+(`get_recent_episodes(limit=500)`); index / valuation tags are excluded through
+`NON_NARRATIVE_TAGS`. Rolling windows on purpose: ISO weeks make "this week" empty on a
+Monday. `HomeRail` was removed with the page; `RailCard` stays for DesignPreview.
+Pre-merge visual check used the algorithm run offline on the dev feed (36 episodes /
+8 podcasts in the last 7 days; rising board led by 2454 15 vs 6).
 
 ---
 
