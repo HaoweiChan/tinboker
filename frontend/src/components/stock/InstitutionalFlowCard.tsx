@@ -3,6 +3,7 @@ import { cn } from '@/lib/utils';
 import { useStockTrendColor } from '@/hooks/useStockTrendColor';
 import { getStockInstitutional } from '@/services/api/stocks';
 import type { InstitutionalRow } from '@/validation/schemas';
+import { useGrowIn } from '@/hooks/useMotion';
 
 interface InstitutionalFlowCardProps {
   symbol: string;
@@ -26,10 +27,12 @@ const fmtLots = (shares: number) => {
 };
 
 // A diverging bar: buy above the axis, sell below, in the market's up/down colours.
-const Bar: React.FC<{ value: number; maxAbs: number; x: number; w: number; mid: number; half: number; title: string }> = ({ value, maxAbs, x, w, mid, half, title }) => {
+const Bar: React.FC<{ value: number; maxAbs: number; x: number; w: number; mid: number; half: number; title: string; grown: boolean; delayMs: number }> = ({ value, maxAbs, x, w, mid, half, title, grown, delayMs }) => {
   const trend = useStockTrendColor(value);
   const h = maxAbs > 0 ? (Math.abs(value) / maxAbs) * half : 0;
-  return <rect x={x} y={value >= 0 ? mid - h : mid} width={w} height={Math.max(h, value === 0 ? 0 : 1)} fill={trend.lineColor} opacity={0.85}><title>{title}</title></rect>;
+  // Scale out of the axis (transform-origin on the mid line, in viewBox units).
+  const style = { transform: `scaleY(${grown ? 1 : 0})`, transformOrigin: `0px ${mid}px`, transition: 'transform 600ms cubic-bezier(0.22, 1, 0.36, 1)', transitionDelay: `${delayMs}ms` } as const;
+  return <rect x={x} y={value >= 0 ? mid - h : mid} width={w} height={Math.max(h, value === 0 ? 0 : 1)} fill={trend.lineColor} opacity={0.85} style={style}><title>{title}</title></rect>;
 };
 
 /** 三大法人 daily net buy/sell for one TW ticker, from the warmed institutional table.
@@ -65,10 +68,6 @@ export const InstitutionalFlowCard: React.FC<InstitutionalFlowCardProps> = ({ sy
 
   if (rows.length === 0) return null;
 
-  const W = 600, H = 140, PAD = 4;
-  const mid = H / 2, half = H / 2 - PAD;
-  const slot = (W - PAD * 2) / values.length;
-  const barW = Math.max(1, slot * 0.7);
   const first = values[0]?.date.slice(5).replace('-', '/');
   const last = values[values.length - 1]?.date.slice(5).replace('-', '/');
 
@@ -89,12 +88,8 @@ export const InstitutionalFlowCard: React.FC<InstitutionalFlowCardProps> = ({ sy
           ))}
         </div>
       </div>
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-[140px]" role="img" aria-label={`${SERIES.find((s) => s.key === series)!.label}近 ${values.length} 個交易日買賣超`}>
-        <line x1={0} x2={W} y1={mid} y2={mid} className="stroke-border" strokeWidth={1} />
-        {values.map((p, i) => (
-          <Bar key={p.date} value={p.v} maxAbs={maxAbs} x={PAD + i * slot + (slot - barW) / 2} w={barW} mid={mid} half={half} title={`${p.date} ${fmtLots(p.v)}`} />
-        ))}
-      </svg>
+      {/* key: remount so the bars grow out of the axis again when the data or series changes. */}
+      <Bars key={`${series}:${values.length}`} values={values} maxAbs={maxAbs} label={SERIES.find((s) => s.key === series)!.label} />
       <div className="flex items-center justify-between text-2xs text-muted-foreground tabular-nums mt-1">
         <span>{first}</span>
         <span>{last}</span>
@@ -112,6 +107,22 @@ export const InstitutionalFlowCard: React.FC<InstitutionalFlowCardProps> = ({ sy
         ))}
       </div>
     </div>
+  );
+};
+
+const W = 600, H = 140, PAD = 4;
+const Bars: React.FC<{ values: { date: string; v: number }[]; maxAbs: number; label: string }> = ({ values, maxAbs, label }) => {
+  const grown = useGrowIn();
+  const mid = H / 2, half = H / 2 - PAD;
+  const slot = (W - PAD * 2) / values.length;
+  const barW = Math.max(1, slot * 0.7);
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-[140px]" role="img" aria-label={`${label}近 ${values.length} 個交易日買賣超`}>
+      <line x1={0} x2={W} y1={mid} y2={mid} className="stroke-border" strokeWidth={1} />
+      {values.map((p, i) => (
+        <Bar key={p.date} value={p.v} maxAbs={maxAbs} x={PAD + i * slot + (slot - barW) / 2} w={barW} mid={mid} half={half} title={`${p.date} ${fmtLots(p.v)}`} grown={grown} delayMs={i * 10} />
+      ))}
+    </svg>
   );
 };
 

@@ -8,6 +8,7 @@ import { SectorIcon } from '@/components/topics/SectorIcon';
 import { getWeek } from '@/services/api/weekly';
 import { useTranslationMap } from '@/hooks/useTranslationMap';
 import type { Weekly, WeeklyTicker } from '@/validation/schemas';
+import { useGrowIn } from '@/hooks/useMotion';
 
 const WEEK_RE = /^(\d{4})-W(\d{2})$/;
 
@@ -108,7 +109,7 @@ export const WeeklyPage: React.FC = () => {
               <div className="lg:col-span-2 bg-card border border-border rounded-md p-5">
                 <h2 className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground mb-3.5">本週熱門個股</h2>
                 <div className="divide-y divide-border/60">
-                  {data.tickers.map((t) => {
+                  {data.tickers.map((t, i) => {
                     const s = stance(t);
                     const total = t.bull + t.neu + t.bear;
                     return (
@@ -117,7 +118,7 @@ export const WeeklyPage: React.FC = () => {
                           {nameOf(t) ? `${nameOf(t)} ${t.ticker}` : t.ticker}
                         </Link>
                         <span className="w-10 shrink-0 text-xs font-mono tabular-nums text-muted-foreground">{t.episodes} 集</span>
-                        <div className="flex-1 min-w-0">{total > 0 ? <SentBar bull={t.bull} neutral={t.neu} bear={t.bear} /> : <div className="sent-bar opacity-30" />}</div>
+                        <div className="flex-1 min-w-0">{total > 0 ? <SentBar bull={t.bull} neutral={t.neu} bear={t.bear} delayMs={i * 40} /> : <div className="sent-bar opacity-30" />}</div>
                         {/* Three fixed columns so the counts line up down the list. */}
                         <span className="grid grid-cols-3 w-36 shrink-0 text-xs font-mono tabular-nums">
                           <span className="text-right text-sentiment-bull">多 {total > 0 ? t.bull : '–'}</span>
@@ -132,18 +133,7 @@ export const WeeklyPage: React.FC = () => {
               </div>
               <div className="bg-card border border-border rounded-md p-5">
                 <h2 className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground mb-3.5">本週產業與題材</h2>
-                <div className="flex flex-col gap-2">
-                  {data.sectors.map((sec) => (
-                    <Link key={sec.exposure_id} to={`/sector/${encodeURIComponent(sec.exposure_id)}`} className="group flex items-center gap-2.5 min-w-0">
-                      <SectorIcon exposureId={sec.exposure_id} iconId={sec.icon_id} color={sec.color_hex} size={13} variant="chip" />
-                      <span className="flex-1 truncate text-sm font-medium group-hover:text-primary transition-colors">{sec.display_name}</span>
-                      <span className="relative w-20 h-2 rounded-full bg-muted overflow-hidden shrink-0">
-                        <span className="absolute inset-y-0 left-0 rounded-full" style={{ width: `${(sec.episodes / data.episode_count) * 100}%`, backgroundColor: sec.color_hex || 'hsl(var(--primary) / 0.6)' }} />
-                      </span>
-                      <span className="w-8 shrink-0 text-right text-xs font-mono tabular-nums text-muted-foreground">{sec.episodes}</span>
-                    </Link>
-                  ))}
-                </div>
+                <SectorMix key={data.week} sectors={data.sectors} total={data.episode_count} />
               </div>
             </div>
 
@@ -167,6 +157,25 @@ export const WeeklyPage: React.FC = () => {
         )}
       </PageContent>
     </>
+  );
+};
+
+// Keyed by week in the parent so the bars grow in again on every week change.
+const SectorMix: React.FC<{ sectors: Weekly['sectors']; total: number }> = ({ sectors, total }) => {
+  const grown = useGrowIn();
+  return (
+    <div className="flex flex-col gap-2">
+      {sectors.map((sec, i) => (
+        <Link key={sec.exposure_id} to={`/sector/${encodeURIComponent(sec.exposure_id)}`} className="group flex items-center gap-2.5 min-w-0">
+          <SectorIcon exposureId={sec.exposure_id} iconId={sec.icon_id} color={sec.color_hex} size={13} variant="chip" />
+          <span className="flex-1 truncate text-sm font-medium group-hover:text-primary transition-colors">{sec.display_name}</span>
+          <span className="relative w-20 h-2 rounded-full bg-muted overflow-hidden shrink-0">
+            <span className="absolute inset-y-0 left-0 rounded-full" style={{ width: grown ? `${(sec.episodes / total) * 100}%` : '0%', backgroundColor: sec.color_hex || 'hsl(var(--primary) / 0.6)', transition: 'width 600ms cubic-bezier(0.22, 1, 0.36, 1)', transitionDelay: `${i * 40}ms` }} />
+          </span>
+          <span className="w-8 shrink-0 text-right text-xs font-mono tabular-nums text-muted-foreground">{sec.episodes}</span>
+        </Link>
+      ))}
+    </div>
   );
 };
 

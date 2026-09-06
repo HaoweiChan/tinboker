@@ -19,6 +19,7 @@ import { priceWebSocketClient } from '@/services/websocket/priceWebSocket';
 import TradingViewChart, { type ChartMarker } from '@/components/charts/TradingViewChart';
 import { MentionSplitCard } from '@/components/stock/MentionSplitCard';
 import { InstitutionalFlowCard } from '@/components/stock/InstitutionalFlowCard';
+import { CountUp } from '@/components/common/CountUp';
 import { ChartControls } from '@/components/charts/ChartControls';
 import { getInsightsByTicker, getRecentBuzz, getSortedPodcasts, type Podcast } from '@/services/api/podcasts';
 import { getTickerMentions, type TickerMentionsResponse } from '@/services/api/mentions';
@@ -343,7 +344,8 @@ const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[] }> =
           </div>
         </div>
         {market === 'TW' && <InstitutionalFlowCard symbol={symbol} className="lg:col-span-2" />}
-        <MentionSplitCard insights={insights} />
+        {/* key: remount (and re-animate) when the insight list arrives or changes. */}
+        <MentionSplitCard key={insights.length} insights={insights} />
         <TickerSectorsCard symbol={symbol} />
       </div>
     </>
@@ -476,7 +478,7 @@ export const StockDashboard: React.FC = () => {
   const stats: StatItem[] = [
     {
       label: '近 30 天提及',
-      value: <>{mentionCount}<span className="text-base text-muted-foreground ml-1">集</span></>,
+      value: <><CountUp value={mentionCount} /><span className="text-base text-muted-foreground ml-1">集</span></>,
     },
     {
       label: '情緒比例',
@@ -499,7 +501,7 @@ export const StockDashboard: React.FC = () => {
     },
     {
       label: '相關話題',
-      value: relatedTags.length,
+      value: <CountUp value={relatedTags.length} />,
       sub: relatedTags.length ? relatedTags.slice(0, 3).map((t) => `#${t}`).join(' ') + (relatedTags.length > 3 ? ` +${relatedTags.length - 3}` : '') : '—',
     },
   ];

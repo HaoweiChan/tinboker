@@ -7,6 +7,7 @@ import { EpisodeCardV2, PodAvatar } from '@/components/redesign';
 import { apiEpisodeToCardV2 } from '@/components/redesign/episodeAdapter';
 import { PickCard } from '@/components/financial/PickCard';
 import { PodcasterFocusCard } from '@/components/podcaster/PodcasterFocusCard';
+import { CountUp } from '@/components/common/CountUp';
 import { cn } from '@/lib/utils';
 import { getPodcastByName, getPodcastEpisodes, type Podcast, type Episode as ApiEpisode } from '@/services/api';
 import { getInsightsByPodcaster } from '@/services/api/podcasts';
@@ -141,7 +142,7 @@ export const PodcasterPage: React.FC = () => {
               <div className="min-w-0">
                 <h1 className="text-2xl font-semibold tracking-[-0.02em] truncate">{name}</h1>
                 <div className="flex gap-2 mt-2 flex-wrap">
-                  <span className="text-xs px-3 py-1 rounded-full bg-muted text-muted-foreground"><strong className="font-mono text-foreground mr-1 tabular-nums">{loading ? '…' : episodeCount.toLocaleString('en-US')}</strong>集已分析</span>
+                  <span className="text-xs px-3 py-1 rounded-full bg-muted text-muted-foreground"><strong className="font-mono text-foreground mr-1 tabular-nums">{loading ? '…' : <CountUp value={episodeCount} />}</strong>集已分析</span>
                 </div>
               </div>
               <button

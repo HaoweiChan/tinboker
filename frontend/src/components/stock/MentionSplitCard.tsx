@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { SentBar } from '@/components/redesign';
 import { aggregateSentiment, type SentimentBreakdown } from '@/lib/sentiment';
 import type { TickerInsight } from '@/services/types';
+import { useGrowIn } from '@/hooks/useMotion';
 
 interface MentionSplitCardProps {
   insights: TickerInsight[];
@@ -43,6 +44,7 @@ export const MentionSplitCard: React.FC<MentionSplitCardProps> = ({ insights }) 
     return { total, items: order.map((k) => ({ label: k, n: counts.get(k) ?? 0, pct: total ? ((counts.get(k) ?? 0) / total) * 100 : 0 })) };
   }, [insights]);
 
+  const grown = useGrowIn();
   if (insights.length === 0) return null;
 
   const counts = (b: SentimentBreakdown) => (
@@ -56,13 +58,13 @@ export const MentionSplitCard: React.FC<MentionSplitCardProps> = ({ insights }) 
     <div className="bg-card border border-border rounded-md p-5">
       <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground mb-3.5">Podcast 觀點分佈</h3>
       <div className="flex flex-col gap-3">
-        {rows.map(({ days, b }) => (
+        {rows.map(({ days, b }, i) => (
           <div key={days}>
             <div className="flex items-center justify-between mb-1.5">
               <span className="text-2xs font-medium uppercase tracking-wider text-muted-foreground">近 {days} 天 · {b.total} 集</span>
               {b.total > 0 ? counts(b) : <span className="text-xs text-muted-foreground">—</span>}
             </div>
-            {b.total > 0 ? <SentBar bull={b.bull} neutral={b.neutral} bear={b.bear} /> : <div className="sent-bar opacity-30" />}
+            {b.total > 0 ? <SentBar bull={b.bull} neutral={b.neutral} bear={b.bear} delayMs={i * 80} /> : <div className="sent-bar opacity-30" />}
           </div>
         ))}
         <div className="pt-3 border-t border-border/60">
@@ -79,7 +81,7 @@ export const MentionSplitCard: React.FC<MentionSplitCardProps> = ({ insights }) 
           </div>
           <div className="flex h-2 w-full overflow-hidden rounded-full bg-muted" aria-label={horizons.items.map((h) => `${h.label} ${h.n}`).join(' / ')}>
             {horizons.items.map((h) => (
-              <span key={h.label} className={HORIZON_CLASS[h.label]} style={{ width: `${h.pct}%` }} />
+              <span key={h.label} className={HORIZON_CLASS[h.label]} style={{ width: grown ? `${h.pct}%` : '0%', transition: 'width 700ms cubic-bezier(0.22, 1, 0.36, 1) 160ms' }} />
             ))}
           </div>
         </div>
