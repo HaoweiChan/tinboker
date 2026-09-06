@@ -40,6 +40,11 @@ const PROD_HOSTS = new Set(['tinboker.com', 'www.tinboker.com']);
 export const TAG_ROUTE = /^\/(?:topics|tag)\/[^/]+\/?$/;
 export const MIN_TAG_EPISODES = 5;
 export const tagNoindex = (total) => !(Number(total) >= MIN_TAG_EPISODES);
+// Sector pages: same idea with a lower floor (they carry a hand-written description and
+// constituent reasons). Mirrors MIN_SECTOR_EPISODES in the sitemap. Unknown total
+// (the by-sector enrichment missed its deadline) stays indexable.
+export const MIN_SECTOR_EPISODES = 2;
+export const sectorNoindex = (total) => total != null && Number(total) < MIN_SECTOR_EPISODES;
 
 function apiBase(hostname) {
   const h = hostname.replace(/^www\./, '');
@@ -465,6 +470,7 @@ export async function metaFor(pathname, origin, api) {
       image: BRAND_IMG,
       type: 'website',
       url,
+      noindex: sectorNoindex(full ? full.total : null),
       body,
       ld: [crumbs([['話題排行', `${origin}/topics`], [name, url]])],
     };

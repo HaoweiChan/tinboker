@@ -40,6 +40,9 @@ podcast_service = PodcastService()
 MIN_TICKER_EPISODES = 2
 # /topics/:tag pages are listed only above this many scoped episodes — see the tag block below.
 MIN_TAG_EPISODES = 5
+# Sector pages need at least this many scoped episodes to be listed — a one-episode
+# sector page is a description plus one card.
+MIN_SECTOR_EPISODES = 2
 
 STATIC_PATHS = [
     ("/", "1.0", "daily"),
@@ -171,7 +174,7 @@ async def sitemap(
             visible = [s for s in sectors if s.get("exposure_id") in served]
         for sec in visible:
             sid = sec.get("exposure_id")
-            if sid:
+            if sid and (sec.get("count") or 0) >= MIN_SECTOR_EPISODES:
                 entries.append(_url_entry(f"{base}/sector/{quote(str(sid))}", None, "weekly", "0.6"))
     except Exception as e:
         logger.warning("Sitemap sector enumeration failed: %s", e)
