@@ -1043,7 +1043,7 @@ effort: M
 risk: low
 github_issue: null
 github_project_item: null
-pr: null
+pr: https://github.com/HaoweiChan/tinboker/pull/620
 ```
 
 ### Goal
@@ -1065,7 +1065,7 @@ the session artifact (2026-09-06).
       and cards float in; reduced-motion disables both.
 - [x] Clicking a row filters the feed; thin local matches are topped up from the
       by-tag / by-ticker endpoints.
-- [ ] Verified on dev after merge (real endpoint, not the fixture).
+- [x] Verified on dev after merge (real endpoint, not the fixture).
 
 ### Implementation notes
 
@@ -1074,7 +1074,10 @@ the session artifact (2026-09-06).
 `NON_NARRATIVE_TAGS`. Rolling windows on purpose: ISO weeks make "this week" empty on a
 Monday. `HomeRail` was removed with the page; `RailCard` stays for DesignPreview.
 Pre-merge visual check used the algorithm run offline on the dev feed (36 episodes /
-8 podcasts in the last 7 days; rising board led by 2454 15 vs 6).
+8 podcasts in the last 7 days; rising board led by 2454 15 vs 6). Merged to `develop`
+2026-09-07 (PR #620, both dev deploys green); the live endpoint returns the same
+numbers, 200 in 0.42 s warm, and the home page rendered against dev-api at 1440 and
+390 matches the pre-merge captures.
 
 ---
 
