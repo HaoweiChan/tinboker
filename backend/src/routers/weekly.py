@@ -199,7 +199,7 @@ async def list_weeks() -> list[dict]:
 
 @router.get("")
 async def get_weeks():
-    cache_key = f"weekly:list:v2:{PodcastService._scope_tag()}"
+    cache_key = f"weekly:list:v3:{PodcastService._scope_tag()}"
     cached = await cache_get(cache_key)
     if cached:
         try:
@@ -220,7 +220,7 @@ async def get_week(week: str):
         week_bounds(week)
     except ValueError:
         raise HTTPException(status_code=400, detail="week must look like 2026-W36")
-    cache_key = f"weekly:v1:{PodcastService._scope_tag()}:{week}"
+    cache_key = f"weekly:v2:{PodcastService._scope_tag()}:{week}"
     cached = await cache_get(cache_key)
     if cached:
         try:
