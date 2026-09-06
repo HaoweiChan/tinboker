@@ -623,6 +623,34 @@ export const WeeklyListSchema = z.object({
   })),
 });
 
+const AttentionTickerSchema = z.object({
+  ticker: z.string(),
+  name: z.string().nullable().optional(),
+  count_30d: z.number(),
+  prev_30d: z.number(),
+  count_7d: z.number(),
+  prev_7d: z.number(),
+});
+
+export const AttentionSchema = z.object({
+  episode_count_7d: z.number(),
+  podcast_count_7d: z.number(),
+  tickers: z.array(AttentionTickerSchema),
+  rising: z.array(AttentionTickerSchema),
+  narratives: z.array(z.object({
+    id: z.string(),
+    name: z.string(),
+    count_7d: z.number(),
+    prev_7d: z.number(),
+    weekly: z.array(z.number()),
+    rising: z.boolean().optional(),
+  })),
+});
+
+export type Attention = z.infer<typeof AttentionSchema>;
+export type AttentionTicker = z.infer<typeof AttentionTickerSchema>;
+export type AttentionNarrative = Attention['narratives'][number];
+
 export type Weekly = z.infer<typeof WeeklySchema>;
 export type WeeklyTicker = z.infer<typeof WeeklyTickerSchema>;
 export type WeeklyList = z.infer<typeof WeeklyListSchema>;
