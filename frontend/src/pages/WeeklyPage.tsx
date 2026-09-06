@@ -118,8 +118,11 @@ export const WeeklyPage: React.FC = () => {
                         </Link>
                         <span className="w-10 shrink-0 text-xs font-mono tabular-nums text-muted-foreground">{t.episodes} 集</span>
                         <div className="flex-1 min-w-0">{total > 0 ? <SentBar bull={t.bull} neutral={t.neu} bear={t.bear} /> : <div className="sent-bar opacity-30" />}</div>
-                        <span className="w-32 shrink-0 text-right text-xs tabular-nums whitespace-nowrap">
-                          {total > 0 ? <><span className="text-sentiment-bull">多 {t.bull}</span> · <span className="text-muted-foreground">中 {t.neu}</span> · <span className="text-sentiment-bear">空 {t.bear}</span></> : <span className="text-muted-foreground">—</span>}
+                        {/* Three fixed columns so the counts line up down the list. */}
+                        <span className="grid grid-cols-3 w-36 shrink-0 text-xs font-mono tabular-nums">
+                          <span className="text-right text-sentiment-bull">多 {total > 0 ? t.bull : '–'}</span>
+                          <span className="text-right text-muted-foreground">中 {total > 0 ? t.neu : '–'}</span>
+                          <span className="text-right text-sentiment-bear">空 {total > 0 ? t.bear : '–'}</span>
                         </span>
                         <span className={`w-14 shrink-0 text-right text-2xs font-medium ${s.cls}`}>{s.label}</span>
                       </div>
