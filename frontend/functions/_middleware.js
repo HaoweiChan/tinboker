@@ -122,7 +122,11 @@ const a = (href, text) => `<a href="${esc(href)}">${esc(text)}</a>`;
 const ul = (items) => (items.length ? `<ul>${items.map((i) => `<li>${i}</li>`).join('')}</ul>` : '');
 const stockLink = (t, name) => a(`/stock/${encodeURIComponent(t)}`, name ? `${name}（${t}）` : t);
 const episodeLink = (e) => a(`/episode/${encodeURIComponent(e.id)}`, e.episode_title || `EP ${e.episode_number ?? ''}`);
-const sectorLink = (s) => a(`/sector/${encodeURIComponent(s.exposure_id)}`, s.display_name || s.exposure_id);
+// Umbrella exposures have no page (UMBRELLA_EXPOSURE_IDS in the backend): plain text.
+const UMBRELLA_SECTORS = new Set(['sector_semiconductor']);
+const sectorLink = (s) => (UMBRELLA_SECTORS.has(s.exposure_id)
+  ? esc(s.display_name || s.exposure_id)
+  : a(`/sector/${encodeURIComponent(s.exposure_id)}`, s.display_name || s.exposure_id));
 const podcasterLink = (name) => a(`/podcaster/${encodeURIComponent(name)}`, name);
 // Mirrors normalizeSentiment in src/lib/sentiment.ts: the pipeline also emits
 // STRONG_BULLISH / STRONG_BEARISH and older BULL/BEAR/POSITIVE/NEGATIVE/MIXED labels.

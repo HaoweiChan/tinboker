@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { isUmbrellaSector } from '@/lib/sectors';
 import { ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SectorIcon } from '@/components/topics/SectorIcon';
@@ -34,12 +35,17 @@ const SectorExposureRow: React.FC<SectorExposureRowProps> = ({ exp, perf, loadin
           size={13}
           variant="chip"
         />
-        <Link
-          to={`/sector/${encodeURIComponent(exp.exposure_id)}`}
-          className="text-sm font-medium hover:underline truncate flex-1 min-w-0 leading-snug"
-        >
-          {exp.display_name}
-        </Link>
+        {isUmbrellaSector(exp.exposure_id) ? (
+          // Umbrella sectors (半導體) have no page: label only.
+          <span className="text-sm font-medium truncate flex-1 min-w-0 leading-snug">{exp.display_name}</span>
+        ) : (
+          <Link
+            to={`/sector/${encodeURIComponent(exp.exposure_id)}`}
+            className="text-sm font-medium hover:underline truncate flex-1 min-w-0 leading-snug"
+          >
+            {exp.display_name}
+          </Link>
+        )}
         <ChangePct value={perf?.avg_change ?? null} sizeClass="text-xs" skeleton={loading && !perf} />
         {hasTickers && (
           <button

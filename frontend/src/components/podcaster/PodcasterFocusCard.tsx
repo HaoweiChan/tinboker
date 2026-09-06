@@ -5,6 +5,7 @@ import { aggregateSentiment, dominantSentiment } from '@/lib/sentiment';
 import type { Episode as ApiEpisode } from '@/services/api';
 import type { TickerInsight } from '@/services/types';
 import { useGrowIn } from '@/hooks/useMotion';
+import { isUmbrellaSector } from '@/lib/sectors';
 
 interface PodcasterFocusCardProps {
   insights: TickerInsight[];
@@ -39,7 +40,8 @@ export const PodcasterFocusCard: React.FC<PodcasterFocusCardProps> = ({ insights
     for (const ep of episodes) {
       const seen = new Set<string>();
       for (const s of ep.sector_exposures ?? []) {
-        if (!s.exposure_id || seen.has(s.exposure_id)) continue;
+        // Umbrella sectors (半導體) have no page and would top every show's list.
+        if (!s.exposure_id || seen.has(s.exposure_id) || isUmbrellaSector(s.exposure_id)) continue;
         seen.add(s.exposure_id);
         const cur = counts.get(s.exposure_id);
         if (cur) cur.n += 1;
