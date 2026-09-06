@@ -6,10 +6,8 @@ import { apiEpisodeToCardV2 } from '@/components/redesign/episodeAdapter';
 import { NarrativeHero } from '@/components/home/NarrativeHero';
 import { BuzzRank } from '@/components/home/BuzzRank';
 import { RisingTable } from '@/components/home/RisingTable';
-import type { Focus } from '@/components/home/attention';
-import { getEpisodesByTag, getEpisodesByTicker, getRecentEpisodes, getSortedPodcasts, type Episode as ApiEpisode, type Podcast } from '@/services/api/podcasts';
+import { getRecentEpisodes, getSortedPodcasts, type Episode as ApiEpisode, type Podcast } from '@/services/api/podcasts';
 import { getAttention } from '@/services/api/attention';
-import { normalizeTagSlug } from '@/hooks/useTagLabels';
 import type { Attention } from '@/validation/schemas';
 import { fetchWithFallback } from '@/services/api/migration';
 import { useSubscriptions, useEpisodeBookmarks, useAppStore } from '@/store/useAppStore';
@@ -27,11 +25,6 @@ type Filter = (typeof FILTERS)[number];
 // ponytail: in-memory only; SWR self-heals, no persistence needed.
 let homeSnapshot: { episodes: ApiEpisode[]; podcasts: Podcast[]; attention: Attention | null } | null = null;
 
-/** Does this episode belong to the focused narrative / ticker? */
-function matchesFocus(ep: ApiEpisode, focus: Focus): boolean {
-  if (focus.kind === 'ticker') return (ep.related_tickers ?? []).some((t) => t.toUpperCase().split('.')[0] === focus.key);
-  return (ep.tags ?? []).some((t) => normalizeTagSlug(t) === focus.key);
-}
 
 function CardSkeleton() {
   return (
@@ -54,10 +47,6 @@ export const HomeFeed: React.FC = () => {
   const [attention, setAttention] = useState<Attention | null>(() => homeSnapshot?.attention ?? null);
   const [loading, setLoading] = useState(() => !homeSnapshot);
   const [filter, setFilter] = useState<Filter>('最新');
-  // A narrative / ticker picked in the attention blocks narrows the feed below.
-  const [focus, setFocus] = useState<Focus | null>(null);
-  // Episodes fetched for a focus the loaded feed can't satisfy (older than the last 60).
-  const [focusExtra, setFocusExtra] = useState<ApiEpisode[]>([]);
   const subscriptions = useSubscriptions();
   const episodeBookmarks = useEpisodeBookmarks();
   const { toggleEpisodeBookmark } = useAppStore();
@@ -111,26 +100,8 @@ export const HomeFeed: React.FC = () => {
     };
   }, []);
 
-  // Top up a focus the last-60 feed can't fill: the by-tag / by-ticker endpoints reach
-  // further back. Only when the local hit count is thin, so most clicks stay client-side.
-  useEffect(() => {
-    setFocusExtra([]);
-    if (!focus) return;
-    if (episodes.filter((e) => matchesFocus(e, focus)).length >= 4) return;
-    let alive = true;
-    const req = focus.kind === 'tag'
-      ? getEpisodesByTag(focus.key, 10, 0, false).then((r) => r.episodes)
-      : getEpisodesByTicker(focus.key, { limit: 10, includeContent: false });
-    req.then((extra) => { if (alive) setFocusExtra(extra); }).catch(() => {});
-    return () => { alive = false; };
-  }, [focus, episodes]);
-
   const filtered = useMemo(() => {
     let list = episodes;
-    if (focus) {
-      const seen = new Set(episodes.map((e) => e.id));
-      list = [...episodes, ...focusExtra.filter((e) => !seen.has(e.id))].filter((e) => matchesFocus(e, focus));
-    }
     if (filter === '追蹤') {
       const subs = new Set(subscriptions);
       list = subs.size ? list.filter((e) => subs.has(e.podcast_name)) : [];
@@ -150,7 +121,7 @@ export const HomeFeed: React.FC = () => {
       list = [...list].sort((a, b) => (b.released_at_ms ?? 0) - (a.released_at_ms ?? 0));
     }
     return list.slice(0, 30);
-  }, [episodes, filter, subscriptions, focus, focusExtra]);
+  }, [episodes, filter, subscriptions]);
 
   // Per-(episode, ticker) sentiment for the visible cards (async; chips populate after render).
   const visibleEpisodeIds = useMemo(() => filtered.map((e) => e.id), [filtered]);
@@ -161,23 +132,17 @@ export const HomeFeed: React.FC = () => {
       <SEO description="聽播客 TinBoker — 最新的財經 Podcast 摘要、情緒與相關個股。" />
       <PageContent>
         {/* ① what the market is talking about → ② which tickers → ③ what to listen to.
-            Each block floats in after the previous one; the bars/lines grow once landed. */}
+            Each block floats in after the previous one; the bars/lines grow once landed.
+            Rows link to the topic / stock pages — the blocks are navigation, not a filter. */}
         <div className="float-in" style={{ animationDelay: '0ms' }}>
-          <NarrativeHero data={attention} focus={focus} onFocus={setFocus} />
+          <NarrativeHero data={attention} />
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 mt-3.5">
-          <div className="float-in" style={{ animationDelay: '90ms' }}><BuzzRank rows={attention?.tickers ?? []} focus={focus} onFocus={setFocus} /></div>
-          <div className="float-in" style={{ animationDelay: '160ms' }}><RisingTable rows={attention?.rising ?? []} focus={focus} onFocus={setFocus} /></div>
+          <div className="float-in" style={{ animationDelay: '90ms' }}><BuzzRank rows={attention?.tickers ?? []} /></div>
+          <div className="float-in" style={{ animationDelay: '160ms' }}><RisingTable rows={attention?.rising ?? []} /></div>
         </div>
 
-        <div className="flex items-center gap-3 flex-wrap mt-6 mb-3.5">
-          <h2 className="text-lg font-semibold tracking-[-0.02em]">今天聽什麼</h2>
-          {focus && (
-            <button type="button" onClick={() => setFocus(null)} className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded border border-primary text-primary hover:bg-primary/10 transition-colors">
-              {focus.label} 相關 · <span className="font-mono tabular-nums">{filtered.length}</span> 集<span className="opacity-70">✕</span>
-            </button>
-          )}
-        </div>
+        <h2 className="text-lg font-semibold tracking-[-0.02em] mt-6 mb-3.5">今天聽什麼</h2>
         <FilterPills items={FILTERS} value={filter} onChange={setFilter} meta={loading ? null : <span>整理了 <span className="font-mono tabular-nums">{filtered.length}</span> 集</span>} />
 
         {loading ? (
@@ -188,7 +153,7 @@ export const HomeFeed: React.FC = () => {
           </div>
         ) : filtered.length === 0 ? (
           <div className="bg-card border border-border rounded-md p-10 text-center text-sm text-muted-foreground">
-            {focus ? `最近沒有提到「${focus.label}」的集數。` : filter === '追蹤' ? '尚未追蹤任何節目，去「節目」頁追蹤幾個吧。' : '目前沒有集數。'}
+            {filter === '追蹤' ? '尚未追蹤任何節目，去「節目」頁追蹤幾個吧。' : '目前沒有集數。'}
           </div>
         ) : (
           <>
