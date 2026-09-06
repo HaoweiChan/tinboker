@@ -1052,7 +1052,7 @@ Replace the home page's card-only feed with three layers that answer "what is th
 market talking about, which tickers, what should I listen to": narrative tags of the
 last 7 days (top 4 + one rising slot), most-discussed tickers (30d vs prior 30d) beside
 a rising board (7d vs prior 7d, momentum-scored with volume floors), then the episode
-feed. Clicking a narrative or ticker filters the feed. Design iterations and the
+feed. Every narrative / ticker row links to its topic or stock page. Design iterations and the
 rationale for dropping the treemaps, the 8-week heatmap and the consensus map live in
 the session artifact (2026-09-06).
 
@@ -1063,8 +1063,9 @@ the session artifact (2026-09-06).
       covered by `tests/unit/test_attention.py`.
 - [x] Home renders hero + 2 tiles + feed on desktop and phone; bars/sparklines grow in
       and cards float in; reduced-motion disables both.
-- [x] Clicking a row filters the feed; thin local matches are topped up from the
-      by-tag / by-ticker endpoints.
+- [x] Narrative rows link to `/topics/:tag`, ticker rows to `/stock/:ticker` (the
+      click-to-filter from PR #620 was replaced in the follow-up: the blocks are
+      navigation, not a feed filter).
 - [x] Verified on dev after merge (real endpoint, not the fixture).
 
 ### Implementation notes
