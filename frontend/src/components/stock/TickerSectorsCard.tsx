@@ -1,14 +1,18 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { cn } from '@/lib/utils';
 import { SectorIcon } from '@/components/topics/SectorIcon';
 import { getSectorsByTicker } from '@/services/api/stocks';
 import type { SectorByTickerItem } from '@/validation/schemas';
 
 interface TickerSectorsCardProps {
   symbol: string;
+  className?: string;
+  /** 'chips': bento tile with just the sector chips (cyan), no reasons. */
+  variant?: 'full' | 'chips';
 }
 
-export const TickerSectorsCard: React.FC<TickerSectorsCardProps> = ({ symbol }) => {
+export const TickerSectorsCard: React.FC<TickerSectorsCardProps> = ({ symbol, className, variant = 'full' }) => {
   const [items, setItems] = useState<SectorByTickerItem[]>([]);
   const [visible, setVisible] = useState(false);
 
@@ -34,8 +38,29 @@ export const TickerSectorsCard: React.FC<TickerSectorsCardProps> = ({ symbol }) 
 
   if (!visible) return null;
 
+  if (variant === 'chips') {
+    return (
+      <div className={cn('bg-card border border-border rounded-[10px] p-5 flex flex-col gap-2.5', className)}>
+        <div className="text-xs text-muted-foreground">所屬題材</div>
+        <div className="flex flex-wrap gap-2">
+          {items.map((item) => (
+            <Link
+              key={item.exposure_id}
+              to={`/sector/${encodeURIComponent(item.exposure_id)}`}
+              title={item.reason || undefined}
+              className="inline-flex items-center gap-1.5 rounded-md bg-accent-info-soft text-accent-info px-2.5 py-1 text-xs font-medium hover:opacity-80 transition-opacity"
+            >
+              <SectorIcon exposureId={item.exposure_id} iconId={item.icon_id} color={item.color_hex} size={12} variant="chip" />
+              {item.display_name}
+            </Link>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="bg-card border border-border rounded-md p-5">
+    <div className={cn('bg-card border border-border rounded-md p-5', className)}>
       <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground mb-3.5">所屬產業與題材</h3>
       <div className="flex flex-col gap-2.5">
         {items.map((item) => (

@@ -8,6 +8,8 @@ import { useGrowIn } from '@/hooks/useMotion';
 interface InstitutionalFlowCardProps {
   symbol: string;
   className?: string;
+  /** Bento tile: shorter chart, stats on one line. */
+  compact?: boolean;
 }
 
 type Series = 'total' | 'foreign' | 'trust';
@@ -37,7 +39,7 @@ const Bar: React.FC<{ value: number; maxAbs: number; x: number; w: number; mid: 
 
 /** 三大法人 daily net buy/sell for one TW ticker, from the warmed institutional table.
  *  Hidden for US tickers and for tickers with no rows. */
-export const InstitutionalFlowCard: React.FC<InstitutionalFlowCardProps> = ({ symbol, className }) => {
+export const InstitutionalFlowCard: React.FC<InstitutionalFlowCardProps> = ({ symbol, className, compact = false }) => {
   const [rows, setRows] = useState<InstitutionalRow[]>([]);
   const [series, setSeries] = useState<Series>('total');
 
@@ -72,9 +74,9 @@ export const InstitutionalFlowCard: React.FC<InstitutionalFlowCardProps> = ({ sy
   const last = values[values.length - 1]?.date.slice(5).replace('-', '/');
 
   return (
-    <div className={cn('bg-card border border-border rounded-md p-5', className)}>
-      <div className="flex items-center justify-between gap-3 mb-3.5 flex-wrap">
-        <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">三大法人買賣超</h3>
+    <div className={cn('bg-card border border-border p-5', compact ? 'rounded-[10px] flex flex-col justify-between gap-2' : 'rounded-md', className)}>
+      <div className={cn('flex items-center justify-between gap-3 flex-wrap', compact ? '' : 'mb-3.5')}>
+        <h3 className={cn('text-xs text-muted-foreground', compact ? '' : 'font-semibold uppercase tracking-[0.08em]')}>{compact ? '三大法人 · 60 日' : '三大法人買賣超'}</h3>
         <div className="flex items-center gap-0.5 text-2xs">
           {SERIES.map((s) => (
             <button
@@ -89,7 +91,15 @@ export const InstitutionalFlowCard: React.FC<InstitutionalFlowCardProps> = ({ sy
         </div>
       </div>
       {/* key: remount so the bars grow out of the axis again when the data or series changes. */}
-      <Bars key={`${series}:${values.length}`} values={values} maxAbs={maxAbs} label={SERIES.find((s) => s.key === series)!.label} />
+      <Bars key={`${series}:${values.length}`} values={values} maxAbs={maxAbs} label={SERIES.find((s) => s.key === series)!.label} height={compact ? 64 : 140} />
+      {compact ? (
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground tabular-nums">
+          <span>近 5 日 <Stat value={net5} inline /></span>
+          <span>近 20 日 <Stat value={net20} inline /></span>
+          <span>連續 <Stat value={streak} inline text={streak === 0 ? '—' : `${Math.abs(streak)} 日${streak > 0 ? '買超' : '賣超'}`} /></span>
+        </div>
+      ) : (
+      <>
       <div className="flex items-center justify-between text-2xs text-muted-foreground tabular-nums mt-1">
         <span>{first}</span>
         <span>{last}</span>
@@ -106,18 +116,20 @@ export const InstitutionalFlowCard: React.FC<InstitutionalFlowCardProps> = ({ sy
           </div>
         ))}
       </div>
+      </>
+      )}
     </div>
   );
 };
 
 const W = 600, H = 140, PAD = 4;
-const Bars: React.FC<{ values: { date: string; v: number }[]; maxAbs: number; label: string }> = ({ values, maxAbs, label }) => {
+const Bars: React.FC<{ values: { date: string; v: number }[]; maxAbs: number; label: string; height?: number }> = ({ values, maxAbs, label, height = H }) => {
   const grown = useGrowIn();
-  const mid = H / 2, half = H / 2 - PAD;
+  const mid = height / 2, half = height / 2 - PAD;
   const slot = (W - PAD * 2) / values.length;
   const barW = Math.max(1, slot * 0.7);
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-[140px]" role="img" aria-label={`${label}近 ${values.length} 個交易日買賣超`}>
+    <svg viewBox={`0 0 ${W} ${height}`} preserveAspectRatio="none" className="w-full" style={{ height }} role="img" aria-label={`${label}近 ${values.length} 個交易日買賣超`}>
       <line x1={0} x2={W} y1={mid} y2={mid} className="stroke-border" strokeWidth={1} />
       {values.map((p, i) => (
         <Bar key={p.date} value={p.v} maxAbs={maxAbs} x={PAD + i * slot + (slot - barW) / 2} w={barW} mid={mid} half={half} title={`${p.date} ${fmtLots(p.v)}`} grown={grown} delayMs={i * 10} />
@@ -126,7 +138,8 @@ const Bars: React.FC<{ values: { date: string; v: number }[]; maxAbs: number; la
   );
 };
 
-const Stat: React.FC<{ value: number; text?: string }> = ({ value, text }) => {
+const Stat: React.FC<{ value: number; text?: string; inline?: boolean }> = ({ value, text, inline }) => {
   const trend = useStockTrendColor(value);
-  return <div className="text-sm font-mono tabular-nums font-semibold" style={{ color: value === 0 ? undefined : trend.lineColor }}>{text ?? fmtLots(value)}</div>;
+  const Tag = inline ? 'span' : 'div';
+  return <Tag className={cn('font-mono tabular-nums font-semibold', inline ? 'text-xs' : 'text-sm')} style={{ color: value === 0 ? undefined : trend.lineColor }}>{text ?? fmtLots(value)}</Tag>;
 };

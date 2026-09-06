@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { Star, Plus } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
-import { Change, StatGroup, SentBar, SentimentChip, EpisodeCardV2, type StatItem } from '@/components/redesign';
+import { Change, SentimentChip, EpisodeCardV2 } from '@/components/redesign';
 import { apiEpisodeToCardV2 } from '@/components/redesign/episodeAdapter';
 import { TickerInsightCard } from '@/components/financial/TickerInsightCard';
 import { MentionReturnChips } from '@/components/financial/MentionReturnChips';
@@ -11,17 +11,18 @@ import { cn } from '@/lib/utils';
 import { useAppStore } from '@/store/useAppStore';
 import { useRequireAuth } from '@/hooks/useRequireAuth';
 import { useStockTrendColor } from '@/hooks/useStockTrendColor';
-import { aggregateSentiment, dominantSentiment, normalizeSentiment, type SentimentBreakdown } from '@/lib/sentiment';
+import { aggregateSentiment, normalizeSentiment } from '@/lib/sentiment';
 import { getStockByTicker, getEpisodesByTicker, type Episode as ApiEpisode } from '@/services/api';
 import { fetchWithFallback } from '@/services/api/migration';
-import type { CompanyDetail, RealTimePriceUpdate, TimeframeOption, TickerInsight, TickerTrending } from '@/services/types';
+import type { CompanyDetail, RealTimePriceUpdate, TimeframeOption, TickerInsight } from '@/services/types';
 import { priceWebSocketClient } from '@/services/websocket/priceWebSocket';
 import TradingViewChart, { type ChartMarker } from '@/components/charts/TradingViewChart';
-import { MentionSplitCard } from '@/components/stock/MentionSplitCard';
+import { ConsensusTile } from '@/components/stock/ConsensusTile';
+import { WhoTalksTile } from '@/components/stock/WhoTalksTile';
+import { CoMentionTile } from '@/components/stock/CoMentionTile';
 import { InstitutionalFlowCard } from '@/components/stock/InstitutionalFlowCard';
-import { CountUp } from '@/components/common/CountUp';
 import { ChartControls } from '@/components/charts/ChartControls';
-import { getInsightsByTicker, getRecentBuzz, getSortedPodcasts, type Podcast } from '@/services/api/podcasts';
+import { getInsightsByTicker, getSortedPodcasts, type Podcast } from '@/services/api/podcasts';
 import { getTickerMentions, type TickerMentionsResponse } from '@/services/api/mentions';
 import { formatDate } from '@/lib/date';
 import { transformApiEpisodeToMock } from '@/services/api/transformers';
@@ -32,22 +33,13 @@ import { useTranslationMap } from '@/hooks/useTranslationMap';
 import { getStockLabel, inferStockMarket } from '@/utils/stockDisplay';
 import { TickerSectorsCard } from '@/components/stock/TickerSectorsCard';
 
-function countsToBreakdown(counts: TickerTrending['sentiment_counts']): SentimentBreakdown | null {
-  if (!counts) return null;
-  const bull = counts.bull || 0;
-  const neutral = counts.neutral || 0;
-  const bear = counts.bear || 0;
-  const total = bull + neutral + bear;
-  if (total <= 0) return null;
-  return { total, bull, neutral, bear, avgScore: null };
-}
 
 // Semantic sentiment colours (green bull / red bear), matching the chart dots and
 // the SentBar rather than the market price convention.
 const SENT_CLASS = { BULLISH: 'text-sentiment-bull', BEARISH: 'text-sentiment-bear', NEUTRAL: 'text-muted-foreground' } as const;
 const SENT_LABEL = { BULLISH: '看多', BEARISH: '看空', NEUTRAL: '中立' } as const;
 
-const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[] }> = ({ symbol, insights }) => {
+const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[]; episodes: ApiEpisode[] }> = ({ symbol, insights, episodes }) => {
   const [stockData, setStockData] = useState<CompanyDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -257,6 +249,8 @@ const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[] }> =
     { label: '本益比', value: stockData?.pe ? stockData.pe.toFixed(1) : '—' },
   ];
 
+  const stat = (label: string) => keyStats.find((k) => k.label === label)?.value ?? '—';
+
   // Resolve names independently of the price API so labels still show when price
   // data is rate-limited / unavailable (stockData is null).
   const translationMap = useTranslationMap([symbol]);
@@ -280,46 +274,45 @@ const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[] }> =
 
   return (
     <>
-      {/* Hero */}
-      <div className="flex items-start gap-5 bg-card border border-border rounded-md p-5 sm:p-6 mb-[18px]">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-3 flex-wrap mb-1.5">
+      {/* Header row — name and price, no card around it */}
+      <div className="flex items-end justify-between gap-4 flex-wrap mb-4">
+        <div className="min-w-0">
+          <div className="flex items-baseline gap-3 flex-wrap">
             <h1 className="text-2xl font-semibold tracking-[-0.02em]">{primaryLabel}</h1>
-            <span className={cn('text-xs px-3 py-1 rounded-full', marketBadge.cls)}>{marketBadge.label}</span>
-          </div>
-          {subLines.length > 0 && (
-            <div className="mb-1.5 leading-tight">
-              {subLines.map((line) => (
-                <p key={line.text} className={cn('text-sm text-muted-foreground', line.mono && 'font-mono')}>
-                  {line.text}
-                </p>
-              ))}
-            </div>
-          )}
-          <div className="flex items-baseline gap-3.5 flex-wrap">
-            <span className={cn('font-mono tabular-nums text-3xl font-semibold tracking-[-0.02em]', hasDisplayPrice ? trend.text : 'text-muted-foreground')}>
-              {isLoading ? '…' : formatPositiveNumber(displayPrice, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </span>
-            {hasDisplayPrice && <Change value={displayChangePercent} big />}
-            <span className="text-xs text-muted-foreground">{hasDisplayPrice ? '即時行情 · 延遲 15 分鐘' : '行情資料暫無'}</span>
+            {subLines.map((line) => (
+              <span key={line.text} className={cn('text-sm text-muted-foreground', line.mono && 'font-mono')}>{line.text}</span>
+            ))}
+            <span className={cn('text-xs px-2.5 py-0.5 rounded-full', marketBadge.cls)}>{marketBadge.label}</span>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={() => guard(() => toggleWatchlist(symbol))}
-          className={cn(
-            'inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium transition-colors shrink-0',
-            isWatchlisted ? 'bg-card border border-border text-foreground hover:bg-muted' : 'bg-foreground text-background hover:opacity-90',
-          )}
-        >
-          {isWatchlisted ? <Star size={14} className="fill-current" /> : <Plus size={14} />}
-          {isWatchlisted ? '已加入' : '加入自選'}
-        </button>
+        <div className="flex items-baseline gap-3 flex-wrap">
+          <span className={cn('font-mono tabular-nums text-2xl font-semibold tracking-[-0.02em]', hasDisplayPrice ? trend.text : 'text-muted-foreground')}>
+            {isLoading ? '…' : formatPositiveNumber(displayPrice, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </span>
+          {hasDisplayPrice && <Change value={displayChangePercent} />}
+          <span className="text-xs text-muted-foreground">{hasDisplayPrice ? '延遲 15 分鐘' : '行情資料暫無'}</span>
+          <button
+            type="button"
+            onClick={() => guard(() => toggleWatchlist(symbol))}
+            className={cn(
+              'inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-sm font-medium transition-colors shrink-0',
+              isWatchlisted ? 'bg-card border border-border text-foreground hover:bg-muted' : 'bg-foreground text-background hover:opacity-90',
+            )}
+          >
+            {isWatchlisted ? <Star size={14} className="fill-current" /> : <Plus size={14} />}
+            {isWatchlisted ? '已加入' : '加入自選'}
+          </button>
+        </div>
       </div>
 
-      {/* Chart + key stats */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-[18px]">
-        <div className="lg:col-span-2 bg-card border border-border rounded-md p-4">
+      {/* Bento: unequal tiles, the consensus number and the chart lead. Colours stay on the
+          site's tokens: card/border surfaces, amber primary for emphasis, semantic
+          sentiment green/red, cyan only on sector chips. */}
+      <div className="grid grid-cols-1 md:grid-cols-6 gap-3.5 mb-[18px]">
+        {/* key: remount (and re-animate) when the insight list arrives or changes. */}
+        <ConsensusTile key={insights.length} insights={insights} className="md:col-span-2 md:row-span-2" />
+
+        <div className="md:col-span-4 md:row-span-2 bg-card border border-border rounded-[10px] p-4 flex flex-col">
           <ChartControls
             timeframe={timeframe}
             onTimeframeChange={setTimeframe}
@@ -329,16 +322,16 @@ const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[] }> =
             onToggleIndicator={(ind, active) => setActiveIndicators((prev) => (active ? [...prev, ind] : prev.filter((i) => i !== ind)))}
           />
           {isLoading ? (
-            <div className="h-[380px] w-full mt-3 rounded-md bg-muted/30 animate-pulse" />
+            <div className="h-[320px] w-full mt-3 rounded-md bg-muted/30 animate-pulse" />
           ) : chartData.length > 0 ? (
-            <div className="h-[380px] w-full mt-3">
+            <div className="h-[320px] w-full mt-3">
               <TradingViewChart
                 data={chartData}
                 theme={theme === 'dark' ? 'dark' : 'light'}
                 lineColor={trend.lineColor}
                 topColor={trend.topColor}
                 bottomColor="transparent"
-                height={380}
+                height={320}
                 className="w-full"
                 activeIndicators={activeIndicators}
                 activeSubChart={subChart}
@@ -362,21 +355,30 @@ const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[] }> =
             </div>
           )}
         </div>
-        <div className="bg-card border border-border rounded-md p-5">
-          <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground mb-3.5">區間表現</h3>
-          <div className="divide-y divide-border">
-            {keyStats.map((s) => (
-              <div key={s.label} className="flex justify-between items-center py-2.5">
-                <span className="text-2xs font-medium uppercase tracking-wider text-muted-foreground">{s.label}</span>
-                <span className="text-sm font-mono tabular-nums font-semibold">{s.value}</span>
+
+        {/* Range tile */}
+        <div className="md:col-span-2 bg-card border border-border rounded-[10px] p-5 flex flex-col justify-between gap-3">
+          <div className="text-xs text-muted-foreground">區間表現</div>
+          <div className="grid grid-cols-3 gap-2">
+            {['近 1 週', '近 1 月', '近 3 月'].map((l) => (
+              <div key={l}>
+                <div className="text-2xs text-muted-foreground mb-0.5">{l.replace('近 ', '')}</div>
+                <div className="text-xl font-mono tabular-nums font-semibold">{stat(l)}</div>
               </div>
             ))}
           </div>
+          <div className="text-xs text-muted-foreground tabular-nums flex flex-wrap gap-x-3 gap-y-1">
+            <span>52 週 <span className="text-foreground font-mono">{stat('52 週區間')}</span></span>
+            <span>距高點 <span className="font-mono">{stat('距 52 週高點')}</span></span>
+            <span>均量 <span className="text-foreground font-mono">{stat('20 日均量')}</span></span>
+            <span>本益比 <span className="text-foreground font-mono">{stat('本益比')}</span></span>
+          </div>
         </div>
-        {market === 'TW' && <InstitutionalFlowCard symbol={symbol} className="lg:col-span-2" />}
-        {/* key: remount (and re-animate) when the insight list arrives or changes. */}
-        <MentionSplitCard key={insights.length} insights={insights} />
-        <TickerSectorsCard symbol={symbol} />
+
+        {market === 'TW' && <InstitutionalFlowCard symbol={symbol} compact className="md:col-span-2" />}
+        <WhoTalksTile insights={insights} className="md:col-span-2" />
+        <TickerSectorsCard symbol={symbol} variant="chips" className="md:col-span-2" />
+        <CoMentionTile symbol={symbol} episodes={episodes} className="md:col-span-4" max={10} />
       </div>
     </>
   );
@@ -403,7 +405,6 @@ export const StockDashboard: React.FC = () => {
   );
   // Post-mention 1/5/20/60 trading-day performance (TKB-001); null hides the section.
   const [tickerMentions, setTickerMentions] = useState<TickerMentionsResponse | null>(null);
-  const [buzzTicker, setBuzzTicker] = useState<TickerTrending | null>(null);
   const [podcasts, setPodcasts] = useState<Podcast[]>([]);
   const [episodesLoading, setEpisodesLoading] = useState(true);
   const podcastImageMap = useMemo(() => {
@@ -413,24 +414,6 @@ export const StockDashboard: React.FC = () => {
     }
     return map;
   }, [podcasts]);
-
-  useEffect(() => {
-    if (!symbol) return;
-    let cancelled = false;
-    setBuzzTicker(null);
-    getRecentBuzz({ days: 30, limit: 1, ticker: symbol })
-      .then((buzz) => {
-        if (cancelled) return;
-        const item = buzz.tickers.find((t) => t.ticker.toUpperCase() === symbol) ?? null;
-        setBuzzTicker(item);
-      })
-      .catch(() => {
-        if (!cancelled) setBuzzTicker(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [symbol]);
 
   useEffect(() => {
     if (!symbol) return;
@@ -497,51 +480,6 @@ export const StockDashboard: React.FC = () => {
 
   // The stat tile is labelled as a 30-day figure; `insights` spans 90 days for the
   // chart markers and the split card, so narrow it here.
-  const insightBreakdown = useMemo(() => {
-    const since = Date.now() - 30 * 86400e3;
-    return aggregateSentiment(insights.filter((r) => Date.parse(r.podcast_launch_time) >= since).map((r) => ({ sentiment_label: r.sentiment_label })));
-  }, [insights]);
-  const buzzBreakdown = useMemo(() => countsToBreakdown(buzzTicker?.sentiment_counts), [buzzTicker]);
-  const breakdown = buzzBreakdown ?? insightBreakdown;
-  const overallSentiment = normalizeSentiment(buzzTicker?.sentiment_label) ?? dominantSentiment(breakdown);
-  const mentionCount = buzzTicker?.count ?? episodes.length;
-  const relatedTags = useMemo(() => {
-    const set = new Set<string>();
-    for (const e of episodes) for (const t of e.tags ?? []) set.add(t);
-    return [...set];
-  }, [episodes]);
-  const newestEp = episodes[0];
-
-  const stats: StatItem[] = [
-    {
-      label: '近 30 天提及',
-      value: <><CountUp value={mentionCount} /><span className="text-base text-muted-foreground ml-1">集</span></>,
-    },
-    {
-      label: '情緒比例',
-      textValue: true,
-      value: breakdown.total > 0 ? <SentBar bull={breakdown.bull} neutral={breakdown.neutral} bear={breakdown.bear} width={88} /> : <span className="text-muted-foreground text-base">—</span>,
-      sub:
-        breakdown.total > 0 ? (
-          <span>
-            <span className="text-sentiment-bull">多 {breakdown.bull}</span> · <span className="text-muted-foreground">中 {breakdown.neutral}</span> · <span className="text-sentiment-bear">空 {breakdown.bear}</span>
-          </span>
-        ) : (
-          '尚無分析'
-        ),
-    },
-    {
-      label: '整體情緒',
-      textValue: true,
-      value: breakdown.total > 0 || buzzTicker ? <SentimentChip sentiment={overallSentiment} /> : <span className="text-muted-foreground text-base">—</span>,
-      sub: newestEp ? `最新：${newestEp.podcast_name}${newestEp.episode_number != null ? ` EP ${newestEp.episode_number}` : ''}` : '無資料',
-    },
-    {
-      label: '相關話題',
-      value: <CountUp value={relatedTags.length} />,
-      sub: relatedTags.length ? relatedTags.slice(0, 3).map((t) => `#${t}`).join(' ') + (relatedTags.length > 3 ? ` +${relatedTags.length - 3}` : '') : '—',
-    },
-  ];
 
   return (
     <>
@@ -551,11 +489,7 @@ export const StockDashboard: React.FC = () => {
         url={typeof window !== 'undefined' ? window.location.href : undefined}
       />
       <PageContent>
-        <StockHeaderCard symbol={symbol} insights={insights} />
-
-        <div className="mb-[18px]">
-          <StatGroup items={stats} />
-        </div>
+        <StockHeaderCard symbol={symbol} insights={insights} episodes={episodes} />
 
         {insights.length > 0 && (
           <section className="mb-[18px]">
