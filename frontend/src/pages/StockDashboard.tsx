@@ -395,6 +395,12 @@ export const StockDashboard: React.FC = () => {
   const episodeIds = useMemo(() => episodes.map((e) => e.id), [episodes]);
   const sentimentMap = useEpisodeSentimentMap(episodeIds);
   const [insights, setInsights] = useState<TickerInsight[]>([]);
+  // The 觀點 list is long on popular tickers (200+ over 90 days); page it.
+  const [insightLimit, setInsightLimit] = useState(8);
+  const mockEpisodes = useMemo(
+    () => episodes.map(transformApiEpisodeToMock).filter((e): e is NonNullable<typeof e> => e != null),
+    [episodes],
+  );
   // Post-mention 1/5/20/60 trading-day performance (TKB-001); null hides the section.
   const [tickerMentions, setTickerMentions] = useState<TickerMentionsResponse | null>(null);
   const [buzzTicker, setBuzzTicker] = useState<TickerTrending | null>(null);
@@ -432,6 +438,7 @@ export const StockDashboard: React.FC = () => {
     // The API defaults to the last 7 days; the chart markers and the 30/90-day split
     // need the same 90-day window the crawler description is built from.
     const iso = (d: Date) => d.toISOString().slice(0, 10);
+    setInsightLimit(8);
     getInsightsByTicker(symbol, { start_date: iso(new Date(Date.now() - 90 * 86400e3)), end_date: iso(new Date()) })
       .then((recs) => {
         if (!cancelled) setInsights(Array.isArray(recs) ? recs : []);
@@ -552,16 +559,28 @@ export const StockDashboard: React.FC = () => {
 
         {insights.length > 0 && (
           <section className="mb-[18px]">
-            <h2 className="text-sm font-semibold text-muted-foreground mb-3">分析師觀點 & 投資摘要</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {insights.map((rec) => (
+            <div className="flex items-baseline justify-between gap-3 mb-3">
+              <h2 className="text-sm font-semibold text-muted-foreground">Podcast 觀點</h2>
+              <span className="text-xs text-muted-foreground tabular-nums">近 90 天 · {insights.length} 則</span>
+            </div>
+            <div className="bg-card border border-border rounded-md divide-y divide-border overflow-hidden">
+              {insights.slice(0, insightLimit).map((rec) => (
                 <TickerInsightCard
-                  key={`${rec.episode_id}-${rec.ticker}`}
+                  key={`${rec.episode_id}-${rec.ticker}-${rec.podcaster ?? ''}`}
                   insight={rec}
-                  episodes={episodes.map(transformApiEpisodeToMock).filter((e): e is NonNullable<typeof e> => e != null)}
+                  episodes={mockEpisodes}
                 />
               ))}
             </div>
+            {insights.length > insightLimit && (
+              <button
+                type="button"
+                onClick={() => setInsightLimit((n) => n + 12)}
+                className="mt-2 w-full rounded-md border border-border bg-card py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
+              >
+                顯示更多（還有 {insights.length - insightLimit} 則）
+              </button>
+            )}
           </section>
         )}
 
