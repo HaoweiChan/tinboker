@@ -4,6 +4,7 @@ import { SectorIcon } from '@/components/topics/SectorIcon';
 import { aggregateSentiment, dominantSentiment } from '@/lib/sentiment';
 import type { Episode as ApiEpisode } from '@/services/api';
 import type { TickerInsight } from '@/services/types';
+import { useGrowIn } from '@/hooks/useMotion';
 
 interface PodcasterFocusCardProps {
   insights: TickerInsight[];
@@ -48,8 +49,10 @@ export const PodcasterFocusCard: React.FC<PodcasterFocusCardProps> = ({ insights
     return [...counts.entries()].map(([exposure_id, v]) => ({ exposure_id, ...v })).sort((a, b) => b.n - a.n).slice(0, 8);
   }, [episodes]);
 
+  const grown = useGrowIn();
   if (tickers.length === 0 && sectors.length === 0) return null;
   const maxN = tickers[0]?.n ?? 1;
+  const grow = (i: number) => ({ transition: 'width 600ms cubic-bezier(0.22, 1, 0.36, 1)', transitionDelay: `${i * 40}ms` });
   const epCount = episodes.length || 1;
 
   return (
@@ -58,13 +61,13 @@ export const PodcasterFocusCard: React.FC<PodcasterFocusCardProps> = ({ insights
         <div className="bg-card border border-border rounded-md p-5">
           <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground mb-3.5">最常提到的個股 · 近 180 天</h3>
           <div className="flex flex-col gap-2">
-            {tickers.map((t) => (
+            {tickers.map((t, i) => (
               <Link key={t.ticker} to={`/stock/${encodeURIComponent(t.ticker)}`} className="group flex items-center gap-3 min-w-0">
                 <span className="w-28 shrink-0 truncate text-sm font-medium group-hover:text-primary transition-colors">
                   {translationMap.get(t.ticker) ? `${t.ticker} ${translationMap.get(t.ticker)}` : t.ticker}
                 </span>
                 <span className="relative flex-1 h-2 rounded-full bg-muted overflow-hidden">
-                  <span className="absolute inset-y-0 left-0 rounded-full bg-primary/60" style={{ width: `${(t.n / maxN) * 100}%` }} />
+                  <span className="absolute inset-y-0 left-0 rounded-full bg-primary/60" style={{ width: grown ? `${(t.n / maxN) * 100}%` : '0%', ...grow(i) }} />
                 </span>
                 <span className="w-8 shrink-0 text-right text-xs font-mono tabular-nums text-muted-foreground">{t.n}</span>
                 <span className={`w-8 shrink-0 text-right text-2xs font-medium ${SENT_CLASS[t.stance]}`}>{SENT_LABEL[t.stance]}</span>
@@ -77,12 +80,12 @@ export const PodcasterFocusCard: React.FC<PodcasterFocusCardProps> = ({ insights
         <div className="bg-card border border-border rounded-md p-5">
           <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground mb-3.5">常聊的產業與題材 · 最近 {episodes.length} 集</h3>
           <div className="flex flex-col gap-2">
-            {sectors.map((s) => (
+            {sectors.map((s, i) => (
               <Link key={s.exposure_id} to={`/sector/${encodeURIComponent(s.exposure_id)}`} className="group flex items-center gap-2.5 min-w-0">
                 <SectorIcon exposureId={s.exposure_id} iconId={s.icon_id} color={s.color_hex} size={13} variant="chip" />
                 <span className="w-32 shrink-0 truncate text-sm font-medium group-hover:text-primary transition-colors">{s.display_name}</span>
                 <span className="relative flex-1 h-2 rounded-full bg-muted overflow-hidden">
-                  <span className="absolute inset-y-0 left-0 rounded-full" style={{ width: `${(s.n / epCount) * 100}%`, backgroundColor: s.color_hex || 'hsl(var(--primary) / 0.6)' }} />
+                  <span className="absolute inset-y-0 left-0 rounded-full" style={{ width: grown ? `${(s.n / epCount) * 100}%` : '0%', backgroundColor: s.color_hex || 'hsl(var(--primary) / 0.6)', ...grow(i) }} />
                 </span>
                 <span className="w-12 shrink-0 text-right text-xs font-mono tabular-nums text-muted-foreground">{Math.round((s.n / epCount) * 100)}%</span>
               </Link>

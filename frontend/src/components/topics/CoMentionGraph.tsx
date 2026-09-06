@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation, type SimulationLinkDatum, type SimulationNodeDatum } from 'd3-force';
 import type { Episode as ApiEpisode } from '@/services/api';
@@ -43,19 +43,50 @@ export const CoMentionGraph: React.FC<CoMentionGraphProps> = ({ episodes, names,
     const nodes: Node[] = [...keep].filter((t) => linked.has(t)).map((id) => ({ id, n: count.get(id) ?? 0 }));
     if (nodes.length < 3) return null;
 
+    const maxW = edges.reduce((m, e) => Math.max(m, e.w), 1);
+    const maxN = nodes.reduce((m, d) => Math.max(m, d.n), 1);
+    return { nodes, edges, maxW, maxN };
+  }, [episodes, maxNodes]);
+
+  // The layout settles on screen: each simulation tick re-renders, so nodes drift into
+  // place instead of appearing fixed. Under reduced motion the whole run happens before
+  // the first paint.
+  const [frame, setFrame] = useState(0);
+  const [settled, setSettled] = useState(false);
+  useEffect(() => {
+    if (!graph) return;
+    const { nodes, edges } = graph;
     const sim = forceSimulation<Node>(nodes)
       .force('link', forceLink<Node, Edge>(edges).id((d) => d.id).distance((e) => 90 - Math.min(e.w, 8) * 6))
       .force('charge', forceManyBody().strength(-260))
       .force('center', forceCenter(W / 2, H / 2))
       .force('collide', forceCollide<Node>((d) => 22 + Math.sqrt(d.n) * 3))
       .stop();
-    for (let i = 0; i < 200; i++) sim.tick();
-    const maxW = edges.reduce((m, e) => Math.max(m, e.w), 1);
-    const maxN = nodes.reduce((m, d) => Math.max(m, d.n), 1);
-    return { nodes, edges, maxW, maxN };
-  }, [episodes, maxNodes]);
+    setSettled(false);
+    const reduced = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (reduced) {
+      for (let i = 0; i < 200; i++) sim.tick();
+      setFrame((f) => f + 1);
+      setSettled(true);
+      return;
+    }
+    // Warm up off-screen so the first frame is already a rough layout, then animate.
+    for (let i = 0; i < 30; i++) sim.tick();
+    let n = 0;
+    let id = 0;
+    const step = () => {
+      sim.tick(3);
+      n += 3;
+      setFrame((f) => f + 1);
+      if (n < 170) id = requestAnimationFrame(step);
+      else setSettled(true);
+    };
+    id = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(id);
+  }, [graph]);
 
   if (!graph) return null;
+  void frame;
   const { nodes, edges, maxW, maxN } = graph;
   const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
@@ -64,10 +95,12 @@ export const CoMentionGraph: React.FC<CoMentionGraphProps> = ({ episodes, names,
       <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground mb-1">同集共同提及</h3>
       <p className="text-2xs text-muted-foreground/70 mb-3">節點大小 = 被提到的集數；連線粗細 = 同一集一起被提到的次數（至少 2 集）。</p>
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" role="img" aria-label="個股共同提及網路圖">
+        <g style={{ opacity: settled ? 1 : 0.35, transition: 'opacity 500ms ease-out' }}>
         {edges.map((e, i) => {
           const s = e.source as Node, t = e.target as Node;
           return <line key={i} x1={s.x} y1={s.y} x2={t.x} y2={t.y} className="stroke-muted-foreground" strokeOpacity={0.2 + (e.w / maxW) * 0.5} strokeWidth={0.8 + (e.w / maxW) * 3} />;
         })}
+        </g>
         {nodes.map((d) => {
           const r = 4 + Math.sqrt(d.n / maxN) * 9;
           const x = clamp(d.x ?? W / 2, r + 2, W - r - 2), y = clamp(d.y ?? H / 2, r + 2, H - r - 2);

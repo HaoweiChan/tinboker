@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Flame } from 'lucide-react';
 import { SimpleSparkline } from '@/components/charts/SimpleSparkline';
 import { ChangePct } from '@/components/topics/ChangePct';
+import { CountUp } from '@/components/common/CountUp';
 import { useStockTrendColor } from '@/hooks/useStockTrendColor';
 import { getSectorBoard, type SectorBoardItem } from '@/services/api/podcasts';
 
@@ -52,9 +53,9 @@ export const SectorHeatCard: React.FC<SectorHeatCardProps> = ({ exposureId }) =>
         <div>
           <div className="text-2xs uppercase tracking-wider text-muted-foreground mb-1">討論熱度排名</div>
           <div className="text-2xl font-mono tabular-nums font-semibold">
-            #{rankHeat}<span className="text-sm text-muted-foreground font-normal"> / {total}</span>
+            #<CountUp value={rankHeat} /><span className="text-sm text-muted-foreground font-normal"> / {total}</span>
           </div>
-          <div className="text-2xs text-muted-foreground mt-0.5">近期 {me.episode_count} 集提及</div>
+          <div className="text-2xs text-muted-foreground mt-0.5">近期 <CountUp value={me.episode_count} /> 集提及</div>
         </div>
         <div>
           <div className="text-2xs uppercase tracking-wider text-muted-foreground mb-1">成分股平均漲跌</div>
