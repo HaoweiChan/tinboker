@@ -94,7 +94,7 @@ async def sitemap(
     to Googlebot. The assembled XML is cached in Redis for an hour; the per-source
     service calls are themselves cached, and the CDN edge caches the response.
     """
-    cache_key = f"sitemap:xml:v5:{limit}"
+    cache_key = f"sitemap:xml:v6:{limit}"
     cached = await cache_get(cache_key)
     if cached:
         return Response(content=cached, media_type="application/xml",
