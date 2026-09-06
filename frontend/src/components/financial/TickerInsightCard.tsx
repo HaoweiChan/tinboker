@@ -4,6 +4,8 @@ import type { Reason, Risk, SentimentLabel, TickerInsight } from '@/services/typ
 import { normalizeSentiment } from '@/lib/sentiment';
 import { cn } from '@/lib/utils';
 import { formatDate } from '@/lib/date';
+import { Change } from '@/components/redesign';
+import type { MentionPerformance } from '@/validation/schemas';
 import { usePlayerStore } from '@/store/usePlayerStore';
 import type { Episode as MockEpisode } from '@/data/mockData';
 
@@ -11,7 +13,13 @@ interface TickerInsightCardProps {
     insight: TickerInsight;
     /** Episodes for this ticker (from StockDashboard). Used to launch podcast at reason/risk timestamp. */
     episodes?: MockEpisode[];
+    /** Post-mention 1/5/20/60 trading-day returns for this episode (TKB-001), when computed. */
+    performance?: MentionPerformance | null;
 }
+
+const WINDOWS: { key: keyof MentionPerformance; label: string }[] = [
+    { key: 'r1d', label: '1日' }, { key: 'r5d', label: '5日' }, { key: 'r20d', label: '20日' }, { key: 'r60d', label: '60日' },
+];
 
 // Semantic stance colours (green bull / red bear), matching the rail, the chart dots
 // and the SentBar — not the market's price colours.
@@ -50,7 +58,7 @@ const mmss = (ms: number) => {
  * button when the pipeline kept a timestamp). Rows, not cards: the stock page lists
  * dozens of these and the old two-column cards with a 20px thesis were mostly air.
  */
-export const TickerInsightCard: React.FC<TickerInsightCardProps> = ({ insight, episodes = [] }) => {
+export const TickerInsightCard: React.FC<TickerInsightCardProps> = ({ insight, episodes = [], performance }) => {
     const [expanded, setExpanded] = useState(false);
     const playEpisode = usePlayerStore((s) => s.playEpisode);
 
@@ -58,6 +66,9 @@ export const TickerInsightCard: React.FC<TickerInsightCardProps> = ({ insight, e
     const reasons: Reason[] = insight.reasons.filter((r) => hasText(r.title) || hasText(r.description));
     const risks: Risk[] = insight.risks.filter((r) => hasText(r.title) || hasText(r.description));
     const hasDetail = reasons.length > 0 || risks.length > 0;
+    // Only windows that have elapsed; a fresh mention shows nothing rather than four dashes.
+    const returns = WINDOWS.filter((w) => typeof performance?.[w.key] === 'number');
+    const toggle = () => { if (hasDetail) setExpanded((v) => !v); };
 
     // Backend provides start_time in milliseconds; convert to seconds for GlobalPlayer
     const handlePlay = (startTimeMs: number) => {
@@ -76,7 +87,7 @@ export const TickerInsightCard: React.FC<TickerInsightCardProps> = ({ insight, e
     const Jump: React.FC<{ ms: number; tone: 'bull' | 'bear' }> = ({ ms, tone }) => (
         <button
             type="button"
-            onClick={() => handlePlay(ms)}
+            onClick={(e) => { e.stopPropagation(); handlePlay(ms); }}
             title="跳轉至音檔"
             className={cn(
                 'inline-flex items-center gap-1 shrink-0 rounded px-1.5 py-0.5 text-2xs font-mono tabular-nums transition-colors',
@@ -89,19 +100,32 @@ export const TickerInsightCard: React.FC<TickerInsightCardProps> = ({ insight, e
     );
 
     return (
-        <article className="relative px-4 py-3 hover:bg-muted/30 transition-colors">
+        <article
+            className={cn('relative px-4 py-3 hover:bg-muted/30 transition-colors', hasDetail && 'cursor-pointer')}
+            onClick={toggle}
+            onKeyDown={(e) => { if (hasDetail && (e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) { e.preventDefault(); toggle(); } }}
+            tabIndex={hasDetail ? 0 : undefined}
+            aria-expanded={hasDetail ? expanded : undefined}
+        >
             <span className={cn('absolute left-0 top-3 bottom-3 w-0.5 rounded-full', RAIL[kind])} aria-hidden />
             <div className="flex items-center gap-x-2.5 gap-y-1 flex-wrap text-xs text-muted-foreground">
                 <span className="text-sm font-medium text-foreground">{insight.podcaster || insight.episode_id.split('_')[0] || '—'}</span>
                 <span className="tabular-nums">{formatDate(insight.podcast_launch_time)}</span>
                 <span className={cn('font-medium', STANCE[kind].cls)}>{STANCE[kind].label}</span>
                 {insight.time_horizon && <span>{insight.time_horizon}</span>}
+                {returns.length > 0 && (
+                    <span className="inline-flex items-center gap-2 tabular-nums" title="提及後 N 個交易日的報酬">
+                        {returns.map((w) => (
+                            <span key={w.key} className="inline-flex items-baseline gap-1"><span className="text-muted-foreground/70">{w.label}</span><Change value={performance![w.key]} /></span>
+                        ))}
+                    </span>
+                )}
                 {hasDetail && (
                     <button
                         type="button"
-                        onClick={() => setExpanded((v) => !v)}
+                        onClick={(e) => { e.stopPropagation(); toggle(); }}
                         className="ml-auto inline-flex items-center gap-0.5 text-2xs text-muted-foreground/80 hover:text-foreground transition-colors"
-                        aria-expanded={expanded}
+                        tabIndex={-1}
                     >
                         {expanded ? '收起' : '分析邏輯'}
                         {reasons.length > 0 && !expanded && <span className="font-mono tabular-nums">{reasons.length}</span>}
