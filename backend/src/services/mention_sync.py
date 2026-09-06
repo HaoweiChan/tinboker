@@ -13,6 +13,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any, List, Optional
 
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from src.database.postgres import get_session
@@ -20,6 +21,7 @@ from src.database.models import (
     ContentMention,
     SectorPerformanceSnapshot,
     StockDailyClose,
+    StockDailyOHLC,
     TickerPerformanceSnapshot,
 )
 from src.utils.market import infer_market
@@ -240,6 +242,27 @@ def sync_sector_mentions(db: Session, days: int = SYNC_LOOKBACK_DAYS) -> int:
 # Post-mention returns (1D / 5D / 20D / 60D trading days)
 # ---------------------------------------------------------------------------
 
+def _closes_from(db: Session, ticker: str, since: str) -> List[tuple]:
+    """(date, close) pairs for a ticker from ``since`` on, ascending, from BOTH warm
+    tables: ``stock_daily_closes`` (per-tracked-ticker, thin before mid-2026) and
+    ``stock_daily_ohlc`` (whole TW market from the TWSE/TPEx history feeds, plus the
+    yfinance bars the US warmers write). The close-only table wins on a shared date."""
+    merged: dict[str, float] = {}
+    for row in (
+        db.query(StockDailyOHLC.date, StockDailyOHLC.close)
+        .filter(StockDailyOHLC.ticker == ticker, StockDailyOHLC.date >= since)
+        .all()
+    ):
+        merged[row[0]] = row[1]
+    for row in (
+        db.query(StockDailyClose.date, StockDailyClose.close)
+        .filter(StockDailyClose.ticker == ticker, StockDailyClose.date >= since)
+        .all()
+    ):
+        merged[row[0]] = row[1]
+    return sorted(merged.items())
+
+
 def compute_trading_day_returns(db: Session, ticker: str, mention_date: str) -> dict:
     """Baseline close + rN percent returns for the given (ticker, mention date).
 
@@ -253,41 +276,53 @@ def compute_trading_day_returns(db: Session, ticker: str, mention_date: str) -> 
     window_start = (
         datetime.strptime(mention_date, "%Y-%m-%d") - timedelta(days=7)
     ).strftime("%Y-%m-%d")
-    rows = (
-        db.query(StockDailyClose)
-        .filter(StockDailyClose.ticker == ticker, StockDailyClose.date >= window_start)
-        .order_by(StockDailyClose.date.asc())
-        .all()
-    )
-    baseline = None
-    following: List[StockDailyClose] = []
-    for row in rows:
-        if row.date <= mention_date:
-            baseline = row
+    baseline: Optional[float] = None
+    following: List[float] = []
+    for date, close in _closes_from(db, ticker, window_start):
+        if date <= mention_date:
+            baseline = close
         else:
-            following.append(row)
-    if baseline is None or not baseline.close or baseline.close <= 0:
+            following.append(close)
+    if not baseline or baseline <= 0:
         return out
-    out["baseline_close"] = baseline.close
+    out["baseline_close"] = baseline
     for n in TRADING_WINDOWS:
-        if len(following) >= n and following[n - 1].close:
-            out[f"r{n}d"] = round((following[n - 1].close - baseline.close) / baseline.close * 100, 2)
+        if len(following) >= n and following[n - 1]:
+            out[f"r{n}d"] = round((following[n - 1] - baseline) / baseline * 100, 2)
     return out
 
 
-def _snapshot_incomplete(snap) -> bool:
-    return any(getattr(snap, f"r{n}d") is None for n in TRADING_WINDOWS) or snap.baseline_close is None
+def _mentions_needing_snapshot(db: Session, mention_type: str, snap_model, no_data_col, limit: int):
+    """Mentions whose snapshot is missing, has no price data yet (``no_data_col`` is
+    NULL/0 — closes may have been backfilled since), or is incomplete and still young
+    enough for a window to fill. Newest first, capped per cycle.
 
-
-def compute_ticker_snapshots(db: Session, limit: int = 2000) -> int:
-    """(Re)compute ticker performance snapshots for mentions that still need one."""
+    The previous shape — "the newest ``limit`` mentions, skip the done ones" — meant a
+    mention older than the newest 2,000 never got a snapshot at all: 11,000 of the
+    13,750 rows on 2026-09-06 had none. Selecting the needy ones lets every cycle
+    chew through the backlog instead."""
     horizon = datetime.utcnow() - timedelta(days=RECOMPUTE_HORIZON_DAYS)
-    mentions = (
+    incomplete = or_(*[getattr(snap_model, f"r{n}d").is_(None) for n in TRADING_WINDOWS])
+    return (
         db.query(ContentMention)
-        .filter(ContentMention.mention_type == "ticker")
+        .outerjoin(snap_model, snap_model.mention_id == ContentMention.id)
+        .filter(ContentMention.mention_type == mention_type)
+        .filter(or_(
+            snap_model.id.is_(None),
+            no_data_col.is_(None),
+            no_data_col == 0,
+            and_(incomplete, ContentMention.mentioned_at >= horizon),
+        ))
         .order_by(ContentMention.mentioned_at.desc())
         .limit(limit)
         .all()
+    )
+
+
+def compute_ticker_snapshots(db: Session, limit: int = 5000) -> int:
+    """(Re)compute ticker performance snapshots for mentions that still need one."""
+    mentions = _mentions_needing_snapshot(
+        db, "ticker", TickerPerformanceSnapshot, TickerPerformanceSnapshot.baseline_close, limit,
     )
     updated = 0
     for mention in mentions:
@@ -296,8 +331,6 @@ def compute_ticker_snapshots(db: Session, limit: int = 2000) -> int:
             .filter(TickerPerformanceSnapshot.mention_id == mention.id)
             .first()
         )
-        if snap is not None and (not _snapshot_incomplete(snap) or mention.mentioned_at < horizon):
-            continue
         mention_date = mention.mentioned_at.strftime("%Y-%m-%d")
         returns = compute_trading_day_returns(db, mention.ticker, mention_date)
         if snap is None:
@@ -315,15 +348,10 @@ def compute_ticker_snapshots(db: Session, limit: int = 2000) -> int:
     return updated
 
 
-def compute_sector_snapshots(db: Session, limit: int = 2000) -> int:
+def compute_sector_snapshots(db: Session, limit: int = 5000) -> int:
     """(Re)compute sector snapshots: equal-weight average over resolved members."""
-    horizon = datetime.utcnow() - timedelta(days=RECOMPUTE_HORIZON_DAYS)
-    mentions = (
-        db.query(ContentMention)
-        .filter(ContentMention.mention_type == "sector")
-        .order_by(ContentMention.mentioned_at.desc())
-        .limit(limit)
-        .all()
+    mentions = _mentions_needing_snapshot(
+        db, "sector", SectorPerformanceSnapshot, SectorPerformanceSnapshot.member_count, limit,
     )
     updated = 0
     for mention in mentions:
@@ -332,8 +360,6 @@ def compute_sector_snapshots(db: Session, limit: int = 2000) -> int:
             .filter(SectorPerformanceSnapshot.mention_id == mention.id)
             .first()
         )
-        if snap is not None and (not _snapshot_incomplete_sector(snap) or mention.mentioned_at < horizon):
-            continue
         members = ((mention.payload or {}).get("members") or [])[:MAX_SECTOR_MEMBERS]
         mention_date = mention.mentioned_at.strftime("%Y-%m-%d")
         member_returns = [
@@ -356,10 +382,6 @@ def compute_sector_snapshots(db: Session, limit: int = 2000) -> int:
     return updated
 
 
-def _snapshot_incomplete_sector(snap) -> bool:
-    return snap.member_count == 0 or any(getattr(snap, f"r{n}d") is None for n in TRADING_WINDOWS)
-
-
 # ---------------------------------------------------------------------------
 # Periodic runner
 # ---------------------------------------------------------------------------
@@ -369,7 +391,8 @@ def run_sync_cycle() -> dict:
 
     ponytail: dev/staging/prod all run this against the one shared table; the
     loser of a same-key race rolls back and simply catches up next cycle."""
-    stats = {"ticker_mentions": 0, "sector_mentions": 0, "ticker_snapshots": 0, "sector_snapshots": 0}
+    stats = {"ticker_mentions": 0, "sector_mentions": 0, "us_history_bars": 0,
+             "ticker_snapshots": 0, "sector_snapshots": 0}
     for session in get_session():
         try:
             stats["ticker_mentions"] = sync_ticker_mentions(session)
@@ -381,6 +404,12 @@ def run_sync_cycle() -> dict:
         except Exception as e:
             logger.warning("mention sync: sector mention pass failed: %s", e)
             session.rollback()
+        try:
+            # Closes first, so the snapshots below can score old US calls this cycle.
+            from src.services.stock_close_refresh import backfill_us_mention_history
+            stats["us_history_bars"] = backfill_us_mention_history()
+        except Exception as e:
+            logger.warning("mention sync: US history backfill failed: %s", e)
         try:
             stats["ticker_snapshots"] = compute_ticker_snapshots(session)
         except Exception as e:

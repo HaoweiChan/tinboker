@@ -45,7 +45,10 @@ _ROC_YEAR_OFFSET = 1911  # ROC year 115 → 2026
 # return {tables:[{fields:[...], data:[[...]]}]}; find the per-stock table by its code field.
 _TWSE_HIST_URL = "https://www.twse.com.tw/exchangeReport/MI_INDEX"       # date=YYYYMMDD, type=ALL
 _TPEX_HIST_URL = "https://www.tpex.org.tw/www/zh-tw/afterTrading/dailyQuotes"  # date=YYYY/MM/DD
-_BACKFILL_DAYS = 90
+# 400, not 90: mention_sync scores podcast calls up to SYNC_LOOKBACK_DAYS (400) back, and a
+# call without closes around its date can never be scored. ~285 weekdays, ~2 calls each,
+# once per deploy (filled days are skipped by _rows_for_date) — about ten minutes.
+_BACKFILL_DAYS = 400
 # A real TW trading day yields ~2,100 filtered rows; below this a date is "not yet backfilled"
 # (0 for weekends/holidays — harmlessly re-probed). Makes backfill idempotent and resumable.
 _MIN_ROWS_PER_DAY = 500

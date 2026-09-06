@@ -11,6 +11,7 @@ from src.database.models import (
     ContentMention,
     SectorPerformanceSnapshot,
     StockDailyClose,
+    StockDailyOHLC,
     TickerPerformanceSnapshot,
 )
 
@@ -18,7 +19,8 @@ from src.database.models import (
 @pytest.fixture
 def session():
     engine = create_engine("sqlite:///:memory:")
-    for model in (ContentMention, TickerPerformanceSnapshot, SectorPerformanceSnapshot, StockDailyClose):
+    for model in (ContentMention, TickerPerformanceSnapshot, SectorPerformanceSnapshot,
+                  StockDailyClose, StockDailyOHLC):
         model.__table__.create(bind=engine)
     db = sessionmaker(bind=engine)()
     yield db
@@ -245,3 +247,67 @@ def test_compute_sector_snapshots_averages_members(session):
     assert snap.member_count == 2  # 9999 has no close data
     assert snap.r1d == pytest.approx(15.0)
     assert snap.r60d is None  # windows not elapsed
+
+
+# ── backfill: closes from the whole-market OHLC table, needy-mention selection ──
+
+def _seed_ohlc(db, ticker: str, start: str, closes: list[float]):
+    day = datetime.strptime(start, "%Y-%m-%d")
+    for close in closes:
+        while day.weekday() >= 5:
+            day += timedelta(days=1)
+        db.add(StockDailyOHLC(ticker=ticker, date=day.strftime("%Y-%m-%d"), close=close, source="twse"))
+        day += timedelta(days=1)
+    db.commit()
+
+
+def test_window_returns_read_the_whole_market_ohlc_table_too(session):
+    """stock_daily_closes is thin before mid-2026; the TWSE/TPEx history lands in
+    stock_daily_ohlc. A call with closes only there must still be scorable."""
+    _seed_ohlc(session, "2330", "2026-03-02", [100.0, 110.0, 120.0, 130.0, 140.0, 150.0, 160.0])
+    out = ms.compute_trading_day_returns(session, "2330", "2026-03-02")
+    assert out["baseline_close"] == 100.0
+    assert out["r1d"] == 10.0 and out["r5d"] == 50.0
+
+
+def test_close_only_table_wins_when_both_have_a_date(session):
+    _seed_ohlc(session, "2330", "2026-03-02", [100.0, 111.0])
+    _seed_closes(session, "2330", "2026-03-02", [100.0, 110.0])
+    assert ms.compute_trading_day_returns(session, "2330", "2026-03-02")["r1d"] == 10.0
+
+
+def _mention(db, ticker: str, when: datetime, key: str) -> ContentMention:
+    m = ContentMention(
+        mention_key=key, episode_id=key, mention_type="ticker", ticker=ticker, market="TW",
+        mentioned_at=when, extraction_method="pipeline_llm", sentiment_label="BULLISH",
+    )
+    db.add(m)
+    db.commit()
+    return m
+
+
+def test_old_mentions_get_snapshots_even_past_the_per_cycle_limit(session):
+    """The old shape scanned only the newest `limit` mentions, so anything older never
+    got a snapshot. Selecting the needy ones must reach the old row when the new one
+    is already complete."""
+    _seed_closes(session, "2330", "2025-09-01", [100.0] * 70)
+    old = _mention(session, "2330", datetime(2025, 9, 1), "old")
+    new = _mention(session, "2330", datetime(2025, 9, 2), "new")
+    assert ms.compute_ticker_snapshots(session, limit=1) == 1  # newest first: `new`
+    assert ms.compute_ticker_snapshots(session, limit=1) == 1  # then `old`, not `new` again
+    assert {s.mention_id for s in session.query(TickerPerformanceSnapshot).all()} == {old.id, new.id}
+    assert ms.compute_ticker_snapshots(session, limit=1) == 0  # both complete → nothing to do
+
+
+def test_a_snapshot_without_price_data_is_retried_once_closes_arrive(session):
+    """A mention older than the recompute horizon whose snapshot has no baseline was
+    frozen forever; a later history backfill must be able to fill it."""
+    m = _mention(session, "2330", datetime(2025, 9, 1), "m")
+    assert ms.compute_ticker_snapshots(session) == 1
+    snap = session.query(TickerPerformanceSnapshot).filter_by(mention_id=m.id).one()
+    assert snap.baseline_close is None
+    _seed_ohlc(session, "2330", "2025-09-01", [100.0] * 70)
+    assert ms.compute_ticker_snapshots(session) == 1
+    session.refresh(snap)
+    assert snap.baseline_close == 100.0 and snap.r60d == 0.0
+    assert ms.compute_ticker_snapshots(session) == 0
