@@ -9,7 +9,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.models.podcast import Episode
 from src.services.podcast import PodcastService
 
 
@@ -195,10 +194,11 @@ async def test_metadata_derived_even_when_all_episodes_scoped_out():
 
 
 @pytest.mark.asyncio
-async def test_excluded_exposure_returns_empty_without_querying():
-    """Suppressed umbrella exposures (e.g. the broad 半導體 sector) short-circuit to
-    an empty payload and never hit Firestore."""
+async def test_umbrella_exposure_serves_its_page():
+    """The broad 半導體 umbrella stays off the heat board, but its page is a real query:
+    episodes carry it and the weekly / stock pages link to it (it was empty before)."""
     mock_fs = MagicMock()
+    mock_fs.query_collection.return_value = []
 
     svc = PodcastService(firestore_service=mock_fs)
 
@@ -209,10 +209,8 @@ async def test_excluded_exposure_returns_empty_without_querying():
     ):
         result = await svc.get_episodes_by_sector("sector_semiconductor")
 
-    assert result["resolved_tickers"] == []
-    assert result["episodes"] == []
     assert result["total"] == 0
-    mock_fs.query_collection.assert_not_called()
+    assert mock_fs.query_collection.called
 
 
 @pytest.mark.asyncio

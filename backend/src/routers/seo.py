@@ -24,7 +24,7 @@ from src.services.article_service import ArticleService
 from src.services.podcast import PodcastService
 from src.routers.weekly import week_of_ms
 from src.services.search_console_service import SearchConsoleService
-from src.tag_registry import hidden_sector_exposure_ids, served_sector_exposure_ids
+from src.tag_registry import hidden_sector_exposure_ids, served_sector_exposure_ids, auto_register_sectors
 
 logger = logging.getLogger(__name__)
 
@@ -162,6 +162,7 @@ async def sitemap(
     # GET /api/sectors exactly so the sitemap never lists a page that renders empty.
     try:
         sectors = await podcast_service.list_sectors()
+        auto_register_sectors(db, sectors)
         served = served_sector_exposure_ids(db)
         if served is None:  # bootstrap window: registry empty — fall back to blocklist
             hidden = hidden_sector_exposure_ids(db)

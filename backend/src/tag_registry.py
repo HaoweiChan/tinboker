@@ -362,6 +362,44 @@ def hidden_offvocab_slugs(db: Session) -> set[str]:
     return hidden_tag_slugs(db) - canonical_tag_slugs()
 
 
+def auto_register_sectors(db: Session, sectors: list[dict]) -> int:
+    """Add a trending sector row for every exposure the scoped episodes use that the
+    registry does not know yet. Returns the number of rows inserted.
+
+    The taxonomy is DB-managed (TKB-009 M2.5) and served as an allowlist, so an
+    exposure the pipeline started emitting after the last admin sync (sector_memory,
+    sector_energy, …) had working pages but was missing from /api/sectors, the board
+    and the sitemap. `sectors` is the output of PodcastService.list_sectors(): canonical
+    ids (redirects resolved) with display_name / exposure_type / icon / color from the
+    episode payloads. Rows that exist under any tier are left alone, so admin hides and
+    merges stand.
+    """
+    known = {r[0] for r in db.query(TagRegistry.exposure_id).filter(TagRegistry.exposure_id.isnot(None)).all()}
+    redirects = _seed_sector_redirects()
+    added = 0
+    for s in sectors:
+        eid = str(s.get("exposure_id") or "").strip()
+        if not eid or eid in known or eid in redirects:
+            continue
+        db.add(TagRegistry(
+            slug=eid,
+            display_zh=str(s.get("display_name") or eid),
+            tier=TIER_TRENDING,
+            kind=KIND_SECTOR,
+            exposure_id=eid,
+            exposure_type=s.get("exposure_type"),
+            icon_id=s.get("icon_id"),
+            color_hex=s.get("color_hex"),
+            description=s.get("description"),
+        ))
+        known.add(eid)
+        added += 1
+    if added:
+        db.commit()
+        logger.info("Auto-registered %d sector exposures seen in episodes", added)
+    return added
+
+
 def hidden_sector_exposure_ids(db: Session) -> set[str]:
     """Exposure IDs of sectors the admin has HIDDEN — excluded from the public board.
 

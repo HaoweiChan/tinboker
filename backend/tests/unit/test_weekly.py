@@ -67,9 +67,17 @@ async def test_build_week_aggregates_tickers_sectors_and_sentiment_shift(monkeyp
 @pytest.mark.asyncio
 async def test_list_weeks_counts_scoped_episodes_newest_first(monkeypatch):
     async def _recent(*a, **k):
-        return [_ep("A", "2026-09-01T02:00:00", []), _ep("B", "2026-09-02T02:00:00", []), _ep("C", "2026-08-25T02:00:00", [])]
+        return [
+            _ep("A", "2026-09-01T02:00:00", ["2330", "NVDA"], sectors=[{"exposure_id": "sector_mlcc", "display_name": "被動元件 MLCC", "resolved_tickers": [{"ticker": "2330", "name": "台積電"}]}]),
+            _ep("B", "2026-09-02T02:00:00", ["2330"], podcast="財經一路發"),
+            _ep("C", "2026-08-25T02:00:00", []),
+        ]
 
     monkeypatch.setattr(weekly.podcast_service, "get_recent_episodes", _recent)
     weeks = await weekly.list_weeks()
     assert [(w["week"], w["episode_count"]) for w in weeks] == [("2026-W36", 2), ("2026-W35", 1)]
     assert weeks[0]["start"] == "2026-08-31"
+    assert weeks[0]["podcast_count"] == 2
+    assert weeks[0]["top_tickers"][0] == {"ticker": "2330", "name": "台積電", "episodes": 2}
+    assert weeks[0]["top_sectors"] == [{"exposure_id": "sector_mlcc", "display_name": "被動元件 MLCC", "episodes": 1}]
+    assert weeks[1]["top_tickers"] == [] and weeks[1]["podcast_count"] == 1

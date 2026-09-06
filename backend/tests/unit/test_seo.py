@@ -92,6 +92,7 @@ async def test_sitemap_lists_visible_sectors_and_skips_hidden_tags(monkeypatch):
     monkeypatch.setattr(seo.podcast_service, "list_sectors", _sectors)
     monkeypatch.setattr(seo.podcast_service, "get_all_tags", _tags)
     monkeypatch.setattr(seo, "served_sector_exposure_ids", lambda db: {"sector_mlcc"})
+    monkeypatch.setattr(seo, "auto_register_sectors", lambda db, sectors: 0)
     monkeypatch.setattr(settings, "site_url", "https://tinboker.com")
 
     body = (await seo.sitemap(limit=10, db=object())).body.decode()
