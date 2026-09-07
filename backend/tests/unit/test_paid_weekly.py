@@ -78,3 +78,14 @@ def test_no_resolved_calls_says_so_instead_of_an_empty_table():
     assert "本期無篩選器資料" in out["markdown"]
     assert out["stats"] == {"episodes": 3, "calls_scored": 0, "screener_rows": 0}
     assert out["title"] == "聽播客週報 Pro 2026-W36｜誰講對了、篩選器前十"
+
+
+def test_translation_names_fill_the_gaps_the_rollup_leaves():
+    md = pw.render_markdown(ROLLUP, RECORD, SCREENER, names={"2454": "聯發科", "3008": "大立光", "2330": "IGNORED"})["markdown"]
+    assert "| 1 | 聯發科（2454） |" in md          # screener row named from translations
+    assert "A 對 聯發科（2454） 看空" in md         # call line too
+    assert "台積電（2330）" in md and "IGNORED" not in md  # the rollup's own name wins
+
+
+def test_cited_tickers_covers_all_three_sections():
+    assert pw.cited_tickers(ROLLUP, RECORD, SCREENER) == {"2330", "2454", "3008"}
