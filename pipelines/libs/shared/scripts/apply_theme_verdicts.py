@@ -11,7 +11,10 @@ The payload is partial on purpose (``full: false``): each sector carries only th
 we actually reviewed, so display names, icons, colours, aliases, tiers, redirects and
 every industry roll-up keep whatever the live table already holds. ``description`` is
 written only for themes that had none — an existing description is somebody's copy and
-is not overwritten by a generated definition.
+is not overwritten by a generated definition. ``description_override`` is the deliberate
+exception: a reviewer who found the stored description itself wrong (it is what the
+membership was judged against, so a wrong one poisons the whole theme) can replace it,
+and every override is printed for a human to see.
 
 A verdict marked ``"status": "insufficient"`` is left out of the payload entirely: the
 reviewer is saying the theme could not be filled, so the live rows stay as they are and
@@ -62,6 +65,7 @@ def main() -> None:
         live[row["exposure_id"]] = row
 
     sectors, thin, unknown, insufficient = [], [], [], []
+    filled, overridden = [], []
     added = kept = dropped = 0
     for fname in sorted(os.listdir(args.merged)):
         if not fname.endswith(".json"):
@@ -93,8 +97,12 @@ def main() -> None:
             thin.append((eid, len(members)))
 
         sector = {"exposure_id": eid, "members": members}
-        if not (row.get("description") or "").strip() and v.get("definition"):
+        if (v.get("description_override") or "").strip():
+            sector["description"] = v["description_override"]
+            overridden.append(eid)
+        elif not (row.get("description") or "").strip() and v.get("definition"):
             sector["description"] = v["definition"]
+            filled.append(eid)
         sectors.append(sector)
 
     if unknown:
@@ -109,9 +117,12 @@ def main() -> None:
     payload = {"sectors": sectors, "redirects": {}, "full": False,
                "actor": args.actor, "entry": args.entry, "rationale": args.rationale}
     json.dump(payload, open(args.out, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
-    described = sum(1 for s in sectors if "description" in s)
+    for eid in overridden:
+        print(f"DESCRIPTION REPLACED {eid}: the stored description was judged wrong — "
+              f"read the new one before publishing")
     print(f"themes {len(sectors)}  members {sum(len(s['members']) for s in sectors)} "
-          f"(kept {kept}, added {added}, dropped {dropped})  descriptions written {described}")
+          f"(kept {kept}, added {added}, dropped {dropped})  "
+          f"descriptions filled {len(filled)}, replaced {len(overridden)}")
     print(f"wrote {args.out} — review the diff returned by /api/admin/taxonomy/bulk before publishing")
 
 
