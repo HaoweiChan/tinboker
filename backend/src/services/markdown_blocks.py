@@ -20,6 +20,8 @@ _BULLET = re.compile(r"^\s*[-*+]\s+(.*)$")
 _ORDERED = re.compile(r"^\s*(\d+)[.)]\s+(.*)$")
 _QUOTE = re.compile(r"^>\s?(.*)$")
 _HR = re.compile(r"^\s*(?:-{3,}|\*{3,}|_{3,})\s*$")
+_TABLE_ROW = re.compile(r"^\s*\|.*\|\s*$")
+_TABLE_SEP = re.compile(r"^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$")  # |---|--:|:-:| — any dash count
 _LINK = re.compile(r"\[([^\]]*)\]\(([^)\s]+)\)")
 _STRONG = re.compile(r"\*\*(.+?)\*\*|__(.+?)__")
 _EM = re.compile(r"(?<!\*)\*([^*]+)\*(?!\*)|(?<!_)_([^_]+)_(?!_)")
@@ -74,6 +76,15 @@ def inline_spans(text: str) -> list[Span]:
     return spans or [Span("")]
 
 
+def _cells(row: str) -> list[str]:
+    inner = row.strip()
+    if inner.startswith("|"):
+        inner = inner[1:]
+    if inner.endswith("|"):
+        inner = inner[:-1]
+    return [c.strip() for c in inner.split("|")]
+
+
 def parse_blocks(markdown: str) -> list[Block]:
     blocks: list[Block] = []
     lines = (markdown or "").replace("\r\n", "\n").split("\n")
@@ -89,6 +100,27 @@ def parse_blocks(markdown: str) -> list[Block]:
         if _HR.match(line):
             blocks.append(Block("hr"))
             i += 1
+            continue
+
+        # A pipe table becomes a bullet list, one item per row: "first cell：header
+        # value、header value…". Neither vocus's Lexical editor nor Substack's
+        # ProseMirror is known to accept a table node from the API (an unregistered
+        # node type can wreck the whole article, and a 200 proves nothing), and a
+        # table left as prose is one unreadable paragraph of pipes. Lists render
+        # everywhere and read fine on a phone.
+        if _TABLE_ROW.match(line) and i + 1 < len(lines) and _TABLE_SEP.match(lines[i + 1]):
+            header = _cells(line)
+            i += 2
+            items: list[list[Span]] = []
+            while i < len(lines) and _TABLE_ROW.match(lines[i]):
+                cells = _cells(lines[i])
+                i += 1
+                if not cells:
+                    continue
+                label, rest = cells[0], cells[1:]
+                pairs = [f"{h} {c}" if h else c for h, c in zip(header[1:], rest) if c]
+                items.append(inline_spans(f"{label}：{'、'.join(pairs)}" if pairs else label))
+            blocks.append(Block("list", ordered=False, items=items))
             continue
 
         m = _HEADING.match(line)

@@ -68,8 +68,8 @@ def test_track_record_scores_direction_and_averages_everything():
 
 def test_screener_rows_cross_reference_this_weeks_mentions():
     md = pw.render_markdown(ROLLUP, RECORD, SCREENER)["markdown"]
-    assert "| 1 | 2454 | 0.91 | +8.0% | 2.3x | ✓ |  | 1 |" in md  # ret_5d stored as a fraction
-    assert "| 2 | 3008 | 0.80 | — | — |  | ✓ | 0 |" in md
+    assert "| 2454 | 0.91 | +8.0% | 2.3x | ✓ |  | 1 |" in md  # ret_5d stored as a fraction
+    assert "| 3008 | 0.80 | — | — |  | ✓ | 0 |" in md
 
 
 def test_no_resolved_calls_says_so_instead_of_an_empty_table():
@@ -82,7 +82,7 @@ def test_no_resolved_calls_says_so_instead_of_an_empty_table():
 
 def test_translation_names_fill_the_gaps_the_rollup_leaves():
     md = pw.render_markdown(ROLLUP, RECORD, SCREENER, names={"2454": "聯發科", "3008": "大立光", "2330": "IGNORED"})["markdown"]
-    assert "| 1 | 聯發科（2454） |" in md          # screener row named from translations
+    assert "| 聯發科（2454） | 0.91 |" in md          # screener row named from translations
     assert "A 對 聯發科（2454） 看空" in md         # call line too
     assert "台積電（2330）" in md and "IGNORED" not in md  # the rollup's own name wins
 
