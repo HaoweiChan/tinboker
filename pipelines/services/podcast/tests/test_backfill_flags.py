@@ -51,3 +51,33 @@ def test_backfilled_episode_counts_as_done():
     required = required_artifact_urls(skip_summarize=True, store_audio=False)
     assert all(stored.get(f) for f in required)
     assert not all(stored.get(f) for f in required_artifact_urls())
+
+
+def test_placeholder_detection_does_not_flag_normally_summarised_episodes(monkeypatch):
+    """The backfill work queue must contain only episodes that actually need content.
+
+    ``summary_content`` is written only by the regen tool; the normal pipeline keeps
+    the markdown as an artifact and leaves the inline field empty. Testing the inline
+    field alone made every normally-processed episode look like an empty placeholder.
+    """
+    from src.podcast.regen import orchestrator as ro
+
+    rows = [
+        # normal pipeline output: no inline summary, artifact URL present
+        {"episode_id": "done", "transcript_url": "u", "summary_url": "s"},
+        # --skip-summarize backfill: transcript only, nothing generated yet
+        {"episode_id": "todo", "transcript_url": "u"},
+        # a real placeholder that was written inline
+        {"episode_id": "bad", "transcript_url": "u", "summary_url": "s",
+         "summary_content": "Placeholder summary will be generated"},
+    ]
+
+    class FakeFS:
+        def query_collection(self, *a, **k):
+            return rows
+
+    monkeypatch.setattr(ro, "_firestore", lambda: FakeFS())
+    monkeypatch.setattr(ro, "is_placeholder_summary", lambda text: "Placeholder summary" in text)
+
+    ids = [c["episode_id"] for c in ro.find_candidates(only_placeholder=True)["candidates"]]
+    assert ids == ["todo", "bad"], ids
