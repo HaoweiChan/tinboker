@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Home, Mic, LineChart, TrendingUp, Hash, Info, MessageSquareText, Bookmark, Headphones, Heart, Bell, Mail, ScrollText, CalendarDays } from 'lucide-react';
+import { Home, Mic, LineChart, TrendingUp, Hash, Info, MessageSquareText, Bookmark, Headphones, Heart, Bell, CalendarDays } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { AppLogo } from '@/components/logo/AppLogo';
 import { useUser } from '@/store/useAppStore';
@@ -54,12 +54,9 @@ const SECTIONS: readonly NavSection[] = [
   {
     title: '支援',
     items: [
-      { to: '/report', label: '意見回饋', icon: MessageSquareText },
+      // One page: 關於 / 聯絡 / 免責聲明 / 意見回饋 are sections of /about.
       { to: '/about', label: '關於', icon: Info },
-      // /contact and /disclaimer had no inbound link anywhere in the app (2026-09-05
-      // SEO audit) — orphan pages that only the sitemap knew about.
-      { to: '/contact', label: '聯絡我們', icon: Mail },
-      { to: '/disclaimer', label: '免責聲明', icon: ScrollText },
+      { to: '/about#feedback', label: '意見回饋', icon: MessageSquareText },
     ],
   },
 ];
@@ -69,7 +66,9 @@ function isActive(pathname: string, search: string, item: NavItem): boolean {
     return pathname === '/profile' && new URLSearchParams(search).get('tab') === item.tab;
   }
   if (item.to === '/') return pathname === '/';
-  return item.prefix ? pathname === item.to || pathname.startsWith(item.to + '/') : pathname === item.to;
+  const [base, hash] = item.to.split('#');
+  if (hash) return pathname === base && window.location.hash === `#${hash}`;
+  return item.prefix ? pathname === base || pathname.startsWith(base + '/') : pathname === base;
 }
 
 /**

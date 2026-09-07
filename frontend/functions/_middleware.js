@@ -150,9 +150,8 @@ const hms = (sec) => {
   const mm = `${m}`.padStart(2, '0'), ss = `${s}`.padStart(2, '0');
   return h ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 };
-// Same three links the sidebar carries; also the only inbound links /contact and
-// /disclaimer have from content pages.
-const FOOTER = `<footer>${a('/about', '關於 TinBoker')} · ${a('/contact', '聯絡我們')} · ${a('/disclaimer', '免責聲明')}</footer>`;
+// Footer links into the consolidated /about page (關於 / 聯絡 / 免責聲明 sections).
+const FOOTER = `<footer>${a('/about', '關於 TinBoker')} · ${a('/about#contact', '聯絡我們')} · ${a('/about#disclaimer', '免責聲明')}</footer>`;
 
 // Summary markdown → HTML. Only the constructs the pipeline emits: '#'/'##' headings
 // carrying '(#time:ms)' anchors, '[text](#tag:x)' links, paragraphs. The client strips the
@@ -216,12 +215,18 @@ const STATIC_META = {
   '/topics': ['話題排行', '今日最強題材焦點 — 依題材聚合，顯示漲跌幅、資金流與相關個股表現。'],
   '/weekly': ['Podcast 週報', '每週一頁：台灣財經 Podcast 這一週聊了哪些個股與題材、多空怎麼變，由 TinBoker 結構化整理。'],
   '/articles': ['文章', '深度分析與市場觀察 — TinBoker 的財經文章。'],
-  '/about': ['關於 TinBoker', 'TinBoker（聽播客）— 結合 Podcast 觀點與即時數據的財經平台。'],
-  '/contact': ['聯絡我們', '產品建議、合作想法或使用疑問 — 歡迎與 TinBoker 聯繫。'],
-  '/disclaimer': ['免責聲明', 'TinBoker 免責聲明 — 所有資訊僅供參考與學習用途。'],
+  '/about': ['關於 TinBoker', 'TinBoker（聽播客）— 結合 Podcast 觀點與即時數據的財經平台。聯絡方式、免責聲明與意見回饋都在這一頁。'],
 };
 
+// Old standalone support pages → sections of /about. 301 so crawlers fold them.
+const LEGACY_REDIRECT = { '/contact': '/about#contact', '/disclaimer': '/about#disclaimer', '/report': '/about#feedback' };
+
 const INDEX_BODY = {
+  '/about': async () => ({
+    body: '<h2>聯絡我們</h2><p>電子郵件 contact@tinboker.com · Threads @tinboker · 客服回覆時間：週一至週五 11:00–17:00。</p>'
+      + '<h2>免責聲明</h2><p>本網站所提供之所有資訊、數據、觀點與分析，僅供參考與學習用途，不構成任何形式的投資建議、要約、誘導或推薦。金融市場具有高度風險，過去的績效不代表未來的表現；TinBoker 團隊不對因使用本網站資訊而產生的任何損失負責。</p>'
+      + '<h2>意見回饋</h2><p>登入後可在此留言：bug 回報、功能許願或任何想法。</p>',
+  }),
   '/': async (api, origin) => {
     const [rec, tr] = await Promise.all([
       getJson(`${api}/api/episodes/recent?limit=10`, CACHE_1H),
@@ -569,6 +574,9 @@ async function handle(context, url) {
         headers: { 'content-type': 'application/xml', 'cache-control': 'public, max-age=3600' },
       }));
     }
+
+    const legacy = LEGACY_REDIRECT[staticKey(url.pathname)];
+    if (legacy) return wrap(Response.redirect(`${url.origin}${legacy}`, 301));
 
     // Only covered routes are candidates; everything else (assets, account pages)
     // passes straight through with just a cheap regex test.

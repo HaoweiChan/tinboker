@@ -104,7 +104,7 @@ export const UserMenu: React.FC = () => {
               the small redundancy with the sidebar makes them more findable. */}
           <div className="border-t border-border py-2">
             <button
-              onClick={() => handleNavigation('/report')}
+              onClick={() => handleNavigation('/about#feedback')}
               className="w-full flex items-center gap-3 px-4 py-3 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
             >
               <MessageSquareText size={18} />
