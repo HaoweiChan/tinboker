@@ -306,8 +306,10 @@ async def reply_to_threads_comment(
 
 @router.post("/comments/{comment_id}/skip")
 def skip_threads_comment(comment_id: str, _: AdminAccess = Depends(get_admin_access)):
+    """Drop a comment without answering — same bucket the auto-ignored ones land in,
+    which is the one the 已略過 tab reads."""
     try:
-        return threads_comments_service.set_status(comment_id, "skipped")
+        return threads_comments_service.set_status(comment_id, "ignored")
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 

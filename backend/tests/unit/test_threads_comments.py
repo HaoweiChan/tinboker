@@ -71,3 +71,43 @@ def test_unknown_category_falls_back_to_review():
 async def test_reply_refuses_empty_text(temp_db):
     with pytest.raises(ValueError):
         await svc.send_reply("c1", "   ")
+
+
+# ── the sync loop ────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_sync_stores_each_comment_once(temp_db, monkeypatch):
+    """/me/threads returns our own chain replies too, so one comment shows up under
+    several posts. Storing it twice hits the primary key and 500s the whole sync."""
+    conv = [
+        {"id": "own", "is_reply_owned_by_me": True, "replied_to": {"id": "p1"}},
+        {"id": "c1", "username": "someone", "text": "群聯的方案不能推理",
+         "timestamp": "2026-09-01T10:00:00+0000", "replied_to": {"id": "p1"}},
+        {"id": "c2", "username": "meta.ai", "text": "翻譯", "replied_to": {"id": "p1"}},
+        {"id": "c3", "username": "bystander", "text": "回別人的", "replied_to": {"id": "c1"}},
+    ]
+
+    class FakeResponse:
+        def __init__(self, payload): self._payload = payload
+        def json(self): return self._payload
+
+    class FakeClient:
+        async def get(self, url, params=None):
+            if url.endswith("/me/threads"):
+                return FakeResponse({"data": [{"id": "p1", "text": "貼文"},
+                                              {"id": "own", "text": "自己的回覆"}]})
+            return FakeResponse({"data": conv})
+        async def __aenter__(self): return self
+        async def __aexit__(self, *_): return False
+
+    monkeypatch.setattr(svc.httpx, "AsyncClient", lambda **_: FakeClient())
+    monkeypatch.setattr(svc.ThreadsService, "is_configured", property(lambda self: True))
+    async def fake_triage(_client, _post, _text):
+        return {"category": "substantive", "has_factual_claim": True,
+                "asks_question": False, "reason": "r", "draft": "d"}
+    monkeypatch.setattr(svc, "_triage", fake_triage)
+
+    counts = await svc.sync_and_triage()
+    assert counts["scanned"] == 2
+    assert counts["new"] == 1 and counts["needs_review"] == 1  # bot + side-thread dropped
+    assert [c["id"] for c in svc.list_comments(status="pending")] == ["c1"]
