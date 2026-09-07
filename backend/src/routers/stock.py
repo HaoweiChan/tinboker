@@ -240,6 +240,28 @@ def _read_close_before(ticker: str, ref_date_str: str) -> Optional[float]:
     return None
 
 
+def _read_close_date_before(ticker: str, ref_date_str: str) -> Optional[str]:
+    """Date of the close :func:`_read_close_before` would return, or None when the DB has
+    no row in the window (API-fetched closes are not dated here — see ``_window_returns``)."""
+    window_start = (datetime.strptime(ref_date_str, "%Y-%m-%d") - timedelta(days=7)).strftime("%Y-%m-%d")
+    try:
+        for session in get_session():
+            row = (
+                session.query(StockDailyClose.date)
+                .filter(
+                    StockDailyClose.ticker == ticker,
+                    StockDailyClose.date >= window_start,
+                    StockDailyClose.date <= ref_date_str,
+                )
+                .order_by(StockDailyClose.date.desc())
+                .first()
+            )
+            return row[0] if row is not None else None
+    except Exception:
+        logger.debug("close date lookup failed for %s@%s", ticker, ref_date_str, exc_info=True)
+    return None
+
+
 def _persist_close(ticker: str, date: str, close: float) -> None:
     """Store a fetched close so this (ticker, date) never needs an API call again.
 
@@ -432,6 +454,15 @@ async def _window_returns(
             result[f"d{n}"] = round((end_close - baseline) / baseline * 100, 2)
 
     if current_price and current_price > 0:
+        # A mention on Friday night or a weekend has no close after its baseline yet:
+        # "since" would be the baseline against itself (+0.00%). Leave it None so the
+        # card says the market hasn't closed since, instead of showing a fake flat.
+        base_date, latest_date = await asyncio.gather(
+            asyncio.to_thread(_read_close_date_before, ticker, mention_dt.strftime("%Y-%m-%d")),
+            asyncio.to_thread(_read_close_date_before, ticker, now.strftime("%Y-%m-%d")),
+        )
+        if base_date and latest_date and latest_date <= base_date:
+            return result
         result["since"] = round((current_price - baseline) / baseline * 100, 2)
     return result
 

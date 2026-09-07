@@ -271,8 +271,12 @@ export async function getInsightsByPodcaster(
 }
 
 /** Recent picks across ALL podcasters, newest-first — the blended /picks timeline. */
-export async function getRecentInsights(limit = 100): Promise<TickerInsight[]> {
-  const response = await apiClient.get('/api/ticker-insights/recent', { params: { limit } });
+/** Blended newest-first picks; `before` (YYYY-MM-DD) caps the launch day so 已揭曉 can
+ *  page straight to picks old enough for a window to have settled. */
+export async function getRecentInsights(limit = 100, before?: string): Promise<TickerInsight[]> {
+  const params: Record<string, string | number> = { limit };
+  if (before) params.before = before;
+  const response = await apiClient.get('/api/ticker-insights/recent', { params });
   return Array.isArray(response.data) ? response.data : [];
 }
 
