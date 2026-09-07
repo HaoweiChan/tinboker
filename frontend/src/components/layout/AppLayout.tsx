@@ -35,18 +35,12 @@ function pageTitle(pathname: string): [string, string] {
       return ['個人檔案', '訂閱、收藏與留言'];
     case '/settings':
       return ['帳號設定', '顯示、通知與偏好'];
-    case '/report':
-      return ['意見回饋', '幫助我們把 TinBoker 做得更好'];
     case '/story':
       return ['探索', '知識圖譜'];
     case '/industry':
       return ['產業', '產業概覽'];
     case '/about':
-      return ['關於', '關於 TinBoker'];
-    case '/contact':
-      return ['聯絡我們', ''];
-    case '/disclaimer':
-      return ['免責聲明', ''];
+      return ['關於', '聯絡我們 · 免責聲明'];
     default:
       return ['TinBoker', ''];
   }

@@ -147,8 +147,6 @@ try {
     ['/topics', '話題排行'],
     ['/articles', '文章'],
     ['/about', '關於 TinBoker'],
-    ['/contact', '聯絡我們'],
-    ['/disclaimer', '免責聲明'],
   ];
   const titles = new Set();
   for (const [path, expected] of cases) {
@@ -158,7 +156,7 @@ try {
     assert.ok(meta.description && meta.description.length > 10, `${path} needs a real description`);
     assert.ok(meta.url.startsWith(ORIGIN + '/'), `${path} canonical must be absolute`);
     const page = renderPage(meta);
-    assert.ok(page.includes('<h1>') && page.includes('href="/disclaimer"'), `${path} body must carry the H1 and footer links`);
+    assert.ok(page.includes('<h1>') && page.includes('href="/about#disclaimer"'), `${path} body must carry the H1 and footer links`);
     titles.add(meta.title);
   }
   // The whole point: distinct pages must not share a title.

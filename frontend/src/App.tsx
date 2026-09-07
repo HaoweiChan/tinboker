@@ -3,7 +3,6 @@ import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom
 import { Toaster } from 'sonner';
 import { HomeFeed } from '@/pages/HomeFeed';
 import { About } from '@/pages/About';
-import { ContactPage } from '@/pages/ContactPage';
 import { StockDashboard } from '@/pages/StockDashboard';
 import { EpisodeDetail } from '@/pages/EpisodeDetail';
 import { NewsRedirect } from '@/pages/NewsRedirect';
@@ -12,8 +11,6 @@ import { TagPage } from '@/pages/TagPage';
 import { SectorPage } from '@/pages/SectorPage';
 import { ProfilePage } from '@/pages/ProfilePage';
 import { SettingsPage } from '@/pages/SettingsPage';
-import { ReportPage } from '@/pages/ReportPage';
-import { DisclaimerPage } from '@/pages/DisclaimerPage';
 import { PodcasterIndex } from '@/pages/PodcasterIndex';
 import { StockIndex } from '@/pages/StockIndex';
 import { TopicsCloud } from '@/pages/TopicsCloud';
@@ -113,9 +110,10 @@ function App() {
                 to the catch-all → home. */}
             {IS_DEV_ENV && <Route path="/picks" element={<PicksPage />} />}
             <Route path="/about" element={<About />} />
-            <Route path="/contact" element={<ContactPage />} />
-            <Route path="/disclaimer" element={<DisclaimerPage />} />
-            <Route path="/report" element={<ReportPage />} />
+            {/* Former standalone support pages — now sections of /about. */}
+            <Route path="/contact" element={<Navigate to="/about#contact" replace />} />
+            <Route path="/disclaimer" element={<Navigate to="/about#disclaimer" replace />} />
+            <Route path="/report" element={<Navigate to="/about#contact" replace />} />
 
             {/* Public content — browsable without login so visitors + crawlers
                 can read it (soft wall). Personalized actions (bookmark, watchlist,
