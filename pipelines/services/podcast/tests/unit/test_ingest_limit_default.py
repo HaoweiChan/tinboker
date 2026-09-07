@@ -31,7 +31,7 @@ def test_a_none_limit_falls_back_to_two_instead_of_raising(monkeypatch, tmp_path
 
     seen = {}
 
-    def fake_filter(episodes, name, limit, service_container):
+    def fake_filter(episodes, name, limit, service_container, **kwargs):
         seen["limit"] = limit
         return []
 

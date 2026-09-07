@@ -12,6 +12,7 @@ from typing import Dict, List, Optional
 from src.pipeline import EpisodeProcessor, PipelineConfig
 from src.pipeline.reconcile import reconcile_show_released_at_ms
 from src.pipeline.steps import initialize_services
+from src.pipeline.utils import required_artifact_urls
 
 from .firestore_reprocessor import process_firestore_episode
 
@@ -118,6 +119,9 @@ def run_pipeline(
     episode_id: Optional[str] = None,
     fill_limit: bool = False,
     only_shows: Optional[List[str]] = None,
+    since: Optional[str] = None,
+    skip_summarize: bool = False,
+    store_audio: bool = True,
 ) -> None:
     """Run the full podcast processing pipeline.
 
@@ -201,6 +205,9 @@ def run_pipeline(
         use_file_mode=use_file_mode,
         reuse_existing_transcript=reuse_existing_transcript,
         fill_limit=fill_limit,
+        since=since,
+        skip_summarize=skip_summarize,
+        store_audio=store_audio,
         base_config=base_config,
         service_container=service_container,
     )
@@ -319,6 +326,9 @@ def _handle_api_mode(
     fill_limit: bool,
     base_config: PipelineConfig,
     service_container,
+    since: Optional[str] = None,
+    skip_summarize: bool = False,
+    store_audio: bool = True,
 ) -> None:
     if not podcasts:
         try:
@@ -345,6 +355,9 @@ def _handle_api_mode(
             use_file_mode=use_file_mode,
             reuse_existing_transcript=reuse_existing_transcript,
             fill_limit=fill_limit,
+            since=since,
+            skip_summarize=skip_summarize,
+            store_audio=store_audio,
             base_config=base_config,
             service_container=service_container,
         )
@@ -382,6 +395,9 @@ def _process_single_podcast(
     fill_limit: bool,
     base_config: PipelineConfig,
     service_container,
+    since: Optional[str] = None,
+    skip_summarize: bool = False,
+    store_audio: bool = True,
 ) -> None:
     name = podcast.get("name")
     link = podcast.get("link")
@@ -431,9 +447,17 @@ def _process_single_podcast(
         # window/limit narrowing below — the reconcile pass needs all of it.
         feed_episodes = list(episodes)
 
+        if since:
+            kept = _apply_backfill_floor(episodes, since)
+            print(f"Backfill floor {since}: kept {len(kept)} of {len(episodes)} episode(s)")
+            episodes = kept
+
         if fill_limit:
             episodes = _filter_unprocessed_episodes(
-                episodes, name, max_episodes or limit, service_container
+                episodes, name, max_episodes or limit, service_container,
+                required_urls=required_artifact_urls(
+                    skip_summarize=skip_summarize, store_audio=store_audio
+                ),
             )
         elif lookback_days or max_episodes:
             episodes = _select_recent_episodes(
@@ -459,6 +483,8 @@ def _process_single_podcast(
             reuse_existing_transcript=reuse_existing_transcript,
             use_file_mode=use_file_mode,
             fill_limit=fill_limit,
+            skip_summarize=skip_summarize,
+            store_audio=store_audio,
             temp_dir=base_config.temp_dir,
         )
 
@@ -525,6 +551,24 @@ def _parse_episode_date(value) -> Optional[datetime]:
     return dt
 
 
+def _apply_backfill_floor(episodes: List[Dict], since: str) -> List[Dict]:
+    """Drop feed episodes published before ``since`` (``YYYY-MM-DD``, UTC).
+
+    The floor for this roster is 2020-02-27 — Gooaye 股癌 EP1. Some shows' feeds
+    reach further back than that; without a floor a backfill run would walk into
+    content older than anything the site covers.
+
+    An episode with no parseable date is KEPT: silently skipping undated content
+    would be worse than processing a few episodes past the line, and the dedup
+    check downstream still stops anything being processed twice.
+    """
+    floor = datetime.fromisoformat(since).replace(tzinfo=timezone.utc)
+    return [
+        ep for ep in episodes
+        if (_parse_episode_date(ep.get("datePublished")) or floor) >= floor
+    ]
+
+
 def _select_recent_episodes(
     episodes: List[Dict],
     *,
@@ -561,7 +605,9 @@ def _select_recent_episodes(
     return episodes
 
 
-def _filter_unprocessed_episodes(episodes, name, limit, service_container) -> list:
+def _filter_unprocessed_episodes(
+    episodes, name, limit, service_container, required_urls=None
+) -> list:
     total_episodes = len(episodes)
     non_processed = []
     checked_count = 0
@@ -578,13 +624,8 @@ def _filter_unprocessed_episodes(episodes, name, limit, service_container) -> li
                     episode_title=episode.get("title"),
                     episode_number=episode.get("episodeNumber"),
                 )
-            if (
-                existing
-                and existing.get("mp3_url")
-                and existing.get("transcript_url")
-                and existing.get("summary_url")
-                and existing.get("summary_image_url")
-            ):
+            required = required_urls or required_artifact_urls()
+            if existing and all(existing.get(f) for f in required):
                 continue
         non_processed.append(episode)
         if len(non_processed) >= limit:

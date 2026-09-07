@@ -40,6 +40,29 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skip processed episodes; process exactly 'limit' non-processed ones",
     )
     parser.add_argument(
+        "--since", type=str, default=None, metavar="YYYY-MM-DD",
+        help=(
+            "Backfill floor: ignore feed episodes published before this date. "
+            "The roster's floor is 2020-02-27 (Gooaye 股癌 EP1)."
+        ),
+    )
+    parser.add_argument(
+        "--skip-summarize", action="store_true", dest="skip_summarize",
+        help=(
+            "Transcribe and persist the episode, but generate no LLM content. "
+            "The summary/insights/tickers are produced afterwards by a Claude "
+            "session via the podcast_regen MCP server instead of OpenRouter."
+        ),
+    )
+    parser.add_argument(
+        "--no-store-audio", action="store_false", dest="store_audio",
+        help=(
+            "Do not keep the MP3 in the media tree (transcribe from the temp copy "
+            "and discard it). Backfilled episodes are outside the public 60-day "
+            "window and the player prefers the Spotify embed."
+        ),
+    )
+    parser.add_argument(
         "--show", action="append", default=None, dest="shows", metavar="NAME",
         help=(
             "Only process the show(s) with these exact names (repeatable). "
@@ -68,6 +91,9 @@ def main():
             episode_id=args.episode,
             fill_limit=args.fill_limit,
             only_shows=args.shows,
+            since=args.since,
+            skip_summarize=args.skip_summarize,
+            store_audio=args.store_audio,
         )
     except KeyboardInterrupt:
         print("\n\nPipeline interrupted by user.")
