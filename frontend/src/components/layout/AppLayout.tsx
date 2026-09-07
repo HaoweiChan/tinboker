@@ -40,7 +40,7 @@ function pageTitle(pathname: string): [string, string] {
     case '/industry':
       return ['產業', '產業概覽'];
     case '/about':
-      return ['關於', '聯絡 · 免責聲明 · 意見回饋'];
+      return ['關於', '聯絡與回饋 · 免責聲明'];
     default:
       return ['TinBoker', ''];
   }

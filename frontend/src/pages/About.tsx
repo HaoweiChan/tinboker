@@ -1,18 +1,18 @@
 import { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Mail, Clock, MessageCircle, AtSign, ShieldAlert, MessageSquareText } from 'lucide-react';
+import { Mail, Clock, MessageCircle, AtSign, ShieldAlert } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
 import { AppLogo } from '@/components/logo/AppLogo';
-import { CommentSection } from '@/components/episode/CommentSection';
 
 /** One page for everything that used to be /about, /contact, /disclaimer and /report:
- *  the old paths redirect here with a hash, so deep links keep working. */
+ *  the old paths redirect here with a hash, so deep links keep working. The /report
+ *  comment board was retired — it never received a comment on any environment — so
+ *  feedback is simply part of 聯絡. */
 const NAV: { id: string; label: string }[] = [
   { id: 'about', label: '關於' },
-  { id: 'contact', label: '聯絡' },
+  { id: 'contact', label: '聯絡與回饋' },
   { id: 'disclaimer', label: '免責聲明' },
-  { id: 'feedback', label: '意見回饋' },
 ];
 
 function Section({ id, title, children }: { id: string; title: string; children: React.ReactNode }) {
@@ -51,11 +51,6 @@ const DISCLAIMER: { title: string; body: string }[] = [
   },
 ];
 
-// Site-wide feedback board: reuses the episode comment infrastructure with a sentinel
-// key, so threaded comments work with no backend change.
-const FEEDBACK_PODCAST = '__site_feedback__';
-const FEEDBACK_THREAD = 'general';
-
 function ContactRow({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
   return (
     <div className="flex items-start gap-3.5">
@@ -80,7 +75,7 @@ export const About: React.FC = () => {
 
   return (
     <>
-      <SEO title="關於 TinBoker" description="TinBoker（聽播客）— 結合 Podcast 觀點與即時數據的財經平台。聯絡方式、免責聲明與意見回饋都在這一頁。" />
+      <SEO title="關於 TinBoker" description="TinBoker（聽播客）— 結合 Podcast 觀點與即時數據的財經平台。聯絡方式與免責聲明都在這一頁。" />
       <PageContent className="max-w-3xl">
         <div className="flex items-center justify-center gap-2 mb-2 pt-4">
           <span className="text-2xl font-semibold tracking-[-0.02em]">關於</span>
@@ -117,15 +112,15 @@ export const About: React.FC = () => {
             </ul>
           </Section>
 
-          <Section id="contact" title="聯絡我們">
-            <p>我們重視每一位使用者的聲音。若您有任何產品建議、合作想法或使用疑問，歡迎隨時與我們聯繫。</p>
+          <Section id="contact" title="聯絡與意見回饋">
+            <p>TinBoker 還在很早期的階段，一定有很多不完美的地方。bug 回報、功能許願、產品建議、合作想法或使用疑問，寫信或在 Threads 留言都可以，我們都會看。</p>
             <div className="flex items-center gap-2 text-xs bg-muted px-3.5 py-2.5 rounded-md w-fit">
               <Clock size={14} className="text-accent-info shrink-0" />
               <span>客服回覆時間：週一至週五 11:00–17:00（國定及例假日除外）</span>
             </div>
             <div className="space-y-5 pt-1">
               <ContactRow icon={<Mail size={18} />} title="電子郵件">
-                <a href="mailto:contact@tinboker.com" className="text-accent-info hover:underline">contact@tinboker.com</a>
+                <a href="mailto:contact@tinboker.com?subject=TinBoker%20%E6%84%8F%E8%A6%8B%E5%9B%9E%E9%A5%8B" className="text-accent-info hover:underline">contact@tinboker.com</a>
               </ContactRow>
               <ContactRow icon={<MessageCircle size={18} />} title="官方 Line 帳號">
                 <span>@tinboker</span>
@@ -149,13 +144,6 @@ export const About: React.FC = () => {
             ))}
           </Section>
 
-          <Section id="feedback" title="意見回饋">
-            <p className="flex items-start gap-2">
-              <MessageSquareText size={18} className="shrink-0 mt-1" />
-              TinBoker 還在很早期的階段，一定有很多不完美的地方。歡迎登入後在這裡留言 —— 不論是 bug 回報、功能許願，還是任何想法，我們都會看。留言可以互相回覆，一起把這個平台變得更好。
-            </p>
-            <CommentSection podcastName={FEEDBACK_PODCAST} episodeId={FEEDBACK_THREAD} allowPrivate />
-          </Section>
         </div>
 
         <div className="text-center text-2xs text-muted-foreground/50 tabular-nums mt-8 pb-4">

@@ -113,7 +113,7 @@ function App() {
             {/* Former standalone support pages — now sections of /about. */}
             <Route path="/contact" element={<Navigate to="/about#contact" replace />} />
             <Route path="/disclaimer" element={<Navigate to="/about#disclaimer" replace />} />
-            <Route path="/report" element={<Navigate to="/about#feedback" replace />} />
+            <Route path="/report" element={<Navigate to="/about#contact" replace />} />
 
             {/* Public content — browsable without login so visitors + crawlers
                 can read it (soft wall). Personalized actions (bookmark, watchlist,

@@ -215,17 +215,16 @@ const STATIC_META = {
   '/topics': ['話題排行', '今日最強題材焦點 — 依題材聚合，顯示漲跌幅、資金流與相關個股表現。'],
   '/weekly': ['Podcast 週報', '每週一頁：台灣財經 Podcast 這一週聊了哪些個股與題材、多空怎麼變，由 TinBoker 結構化整理。'],
   '/articles': ['文章', '深度分析與市場觀察 — TinBoker 的財經文章。'],
-  '/about': ['關於 TinBoker', 'TinBoker（聽播客）— 結合 Podcast 觀點與即時數據的財經平台。聯絡方式、免責聲明與意見回饋都在這一頁。'],
+  '/about': ['關於 TinBoker', 'TinBoker（聽播客）— 結合 Podcast 觀點與即時數據的財經平台。聯絡方式與免責聲明都在這一頁。'],
 };
 
 // Old standalone support pages → sections of /about. 301 so crawlers fold them.
-const LEGACY_REDIRECT = { '/contact': '/about#contact', '/disclaimer': '/about#disclaimer', '/report': '/about#feedback' };
+const LEGACY_REDIRECT = { '/contact': '/about#contact', '/disclaimer': '/about#disclaimer', '/report': '/about#contact' };
 
 const INDEX_BODY = {
   '/about': async () => ({
-    body: '<h2>聯絡我們</h2><p>電子郵件 contact@tinboker.com · Threads @tinboker · 客服回覆時間：週一至週五 11:00–17:00。</p>'
-      + '<h2>免責聲明</h2><p>本網站所提供之所有資訊、數據、觀點與分析，僅供參考與學習用途，不構成任何形式的投資建議、要約、誘導或推薦。金融市場具有高度風險，過去的績效不代表未來的表現；TinBoker 團隊不對因使用本網站資訊而產生的任何損失負責。</p>'
-      + '<h2>意見回饋</h2><p>登入後可在此留言：bug 回報、功能許願或任何想法。</p>',
+    body: '<h2>聯絡與意見回饋</h2><p>bug 回報、功能許願、產品建議或合作想法：電子郵件 contact@tinboker.com · Threads @tinboker · 客服回覆時間：週一至週五 11:00–17:00。</p>'
+      + '<h2>免責聲明</h2><p>本網站所提供之所有資訊、數據、觀點與分析，僅供參考與學習用途，不構成任何形式的投資建議、要約、誘導或推薦。金融市場具有高度風險，過去的績效不代表未來的表現；TinBoker 團隊不對因使用本網站資訊而產生的任何損失負責。</p>',
   }),
   '/': async (api, origin) => {
     const [rec, tr] = await Promise.all([
