@@ -30,7 +30,7 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from src.database.models import ContentMention, ScreenerCandidate, TickerPerformanceSnapshot
+from src.database.models import ContentMention, ScreenerCandidate, StockTranslation, TickerPerformanceSnapshot
 from src.database.postgres import get_session
 from src.routers.weekly import build_week, week_bounds
 
@@ -111,6 +111,20 @@ def query_screener(db: Session, top: int = SCREENER_TOP) -> dict:
     }
 
 
+def query_names(db: Session, tickers: set[str]) -> dict[str, str]:
+    """zh-TW display names from stock_translations for the tickers an issue cites.
+    The rollup only names tickers that appear in a sector exposure; a paid issue
+    that prints bare codes like 6173 reads unfinished."""
+    if not tickers:
+        return {}
+    rows = (
+        db.query(StockTranslation.ticker, StockTranslation.name_zh_tw)
+        .filter(StockTranslation.ticker.in_(sorted(tickers)), StockTranslation.name_zh_tw.isnot(None))
+        .all()
+    )
+    return {t: n for t, n in rows if n}
+
+
 # ── render (pure) ──────────────────────────────────────────────────────────────
 
 def _pct(x: Optional[float]) -> str:
@@ -135,10 +149,19 @@ def _episode_mentions(rollup: dict) -> Counter:
     return c
 
 
-def render_markdown(rollup: dict, record: dict, screener: dict) -> dict:
+def cited_tickers(rollup: dict, record: dict, screener: dict) -> set[str]:
+    return (
+        {t["ticker"] for t in rollup.get("tickers") or []}
+        | {c["ticker"] for c in record.get("calls") or [] if c.get("ticker")}
+        | {c["ticker"] for c in screener.get("candidates") or []}
+    )
+
+
+def render_markdown(rollup: dict, record: dict, screener: dict, names: Optional[dict[str, str]] = None) -> dict:
     """``{title, markdown, excerpt, stats}`` for one week. Pure."""
     week = rollup["week"]
-    names = {t["ticker"]: t.get("name") for t in rollup.get("tickers") or [] if t.get("name")}
+    names = {**(names or {}),
+             **{t["ticker"]: t.get("name") for t in rollup.get("tickers") or [] if t.get("name")}}
     out: list[str] = []
 
     # 1. focus
@@ -231,10 +254,11 @@ def _call_line(c: dict, names: dict[str, str]) -> str:
 
 # ── entry ──────────────────────────────────────────────────────────────────────
 
-def _query_all(week: str) -> tuple[dict, dict]:
+def _query_all(week: str, rollup: dict) -> tuple[dict, dict, dict]:
     for db in get_session():
-        return query_track_record(db, lagged_week(week)), query_screener(db)
-    return {"week": lagged_week(week), "start": "", "end": "", "calls": []}, {"date": None, "candidates": []}
+        record, screener = query_track_record(db, lagged_week(week)), query_screener(db)
+        return record, screener, query_names(db, cited_tickers(rollup, record, screener))
+    return {"week": lagged_week(week), "start": "", "end": "", "calls": []}, {"date": None, "candidates": []}, {}
 
 
 async def build_paid_weekly(week: str) -> Optional[dict]:
@@ -242,5 +266,5 @@ async def build_paid_weekly(week: str) -> Optional[dict]:
     rollup = await build_week(week)
     if rollup is None:
         return None
-    record, screener = await asyncio.to_thread(_query_all, week)
-    return {"week": week, **render_markdown(rollup, record, screener)}
+    record, screener, names = await asyncio.to_thread(_query_all, week, rollup)
+    return {"week": week, **render_markdown(rollup, record, screener, names)}
