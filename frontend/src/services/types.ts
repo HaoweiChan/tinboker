@@ -139,7 +139,7 @@ export interface ConceptMetadata {
 export type ConceptType = string;
 
 // Top movers data
-export interface TopMover extends Pick<Company, 'ticker' | 'name' | 'change' | 'changePercent' | 'price' | 'icon_url'> { }
+export type TopMover = Pick<Company, 'ticker' | 'name' | 'change' | 'changePercent' | 'price' | 'icon_url'>;
 
 // Tag data
 export interface Tag {
@@ -156,7 +156,7 @@ export interface TagsResponse {
 // Episodes by tag response
 export interface EpisodesByTagResponse {
   tag: string;
-  episodes: any[]; // Episode[] - using any to avoid circular dependency
+  episodes: unknown[]; // Episode[] — kept loose to avoid a circular import; api/podcasts.ts has the typed shape
   total: number;
 }
 
@@ -267,7 +267,7 @@ export interface UnifiedGraphResponse {
   description: string;
   visualization_type: VisualizationType;
   timestamp: string;
-  data: any; // Payload varies by visualization_type
+  data: unknown; // Payload varies by visualization_type
 }
 
 export const DisplayMode = {
@@ -495,6 +495,9 @@ export interface TickerInsight {
   /** Source episode title — populated by /recent (blended feed) so the card can
    *  show which episode mentioned the ticker. */
   episode_title?: string;
+  /** False when the episode window no longer serves the source episode (picks read
+   *  further back than episodes) — render the title as text, not a link. */
+  episode_public?: boolean;
 }
 
 // Forward price return per pick, from /api/stocks/batch-prices-windows.

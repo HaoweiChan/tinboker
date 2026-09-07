@@ -117,22 +117,32 @@ def _in_range(iso_str: str, start: date, end: date) -> bool:
 
 
 def _release_recency_floor() -> Optional[date]:
-    """Earliest publish date the launch release window allows, or None when off.
+    """Earliest pick launch date the picks window allows, or None when off.
 
-    Mirrors ``PodcastService`` recency scoping (``release_episode_max_age_days``)
-    so the /picks surfaces only show insights from RELEASED episodes — old
-    back-catalogue picks stay hidden until that window is widened. ``0`` (the
-    default) disables the floor, preserving the full-history behaviour.
+    Picks have their own window (``release_picks_max_age_days``, default 0 = full
+    history) — deliberately NOT the episode window: a 90-day return needs picks at
+    least 90 days old, and the 60-day episode window would hide every one of them.
+    Whether the source episode is still publicly served is reported per row as
+    ``episode_public`` (see :func:`_episode_public`).
     """
-    days = getattr(settings, "release_episode_max_age_days", 0) or 0
+    days = getattr(settings, "release_picks_max_age_days", 0) or 0
     if days <= 0:
         return None
     return date.today() - timedelta(days=days)
 
 
+def _episode_public(launch_iso: str) -> bool:
+    """True when the episode window (``release_episode_max_age_days``) still serves the
+    pick's source episode, so the UI knows whether to link to it."""
+    days = getattr(settings, "release_episode_max_age_days", 0) or 0
+    if days <= 0:
+        return True
+    return _in_range(launch_iso or "", date.today() - timedelta(days=days), date.today())
+
+
 def _scope_tag() -> str:
     """Release-scope signature for cache-key isolation (busts on env change)."""
-    return f"r{getattr(settings, 'release_episode_max_age_days', 0) or 0}"
+    return f"p{getattr(settings, 'release_picks_max_age_days', 0) or 0}e{getattr(settings, 'release_episode_max_age_days', 0) or 0}"
 
 
 def _safe_int(value: Any) -> int:
@@ -230,6 +240,7 @@ def _doc_to_insight(doc: dict) -> dict:
             _clean_risk(r) for r in (doc.get("risks") or []) if isinstance(r, dict)
         ],
         "created_at": doc.get("created_at") or "",
+        "episode_public": _episode_public(doc.get("podcast_launch_time") or ""),
     }
 
 

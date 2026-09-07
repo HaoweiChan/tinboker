@@ -465,6 +465,7 @@ there falls back to GCP Secret Manager at runtime via `src/config_loader.py`, wh
 | `CORS_ORIGINS` | `["https://tinboker.com",...]` | Set per environment in compose file |
 | `RELEASE_PODCAST_LANGUAGES` | `zh-TW` | Release scoping (launch subset) — only show `content_sources` podcasts in these languages ("" = all) |
 | `RELEASE_EPISODE_MAX_AGE_DAYS` | `0` | Release scoping — hide episodes older than N days (0=off; flip to 30 once `released_at_ms` is backfilled on existing episodes — see `docs/firestore-contract.md` § contract cleanups) |
+| `RELEASE_PICKS_MAX_AGE_DAYS` | `0` | Picks window (ticker_insights reads: /picks, stock-page 觀點, podcaster picks). Independent of the episode window so 7/30/90-day returns can settle; rows carry `episode_public` for linking. 0=full history |
 
 For **local development** (not Docker), copy `backend/.env.example` to `backend/.env`
 and fill in values. The app loads `.env` before falling back to Secret Manager.

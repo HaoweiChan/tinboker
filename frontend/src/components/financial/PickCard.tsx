@@ -194,7 +194,9 @@ export const PickCard: React.FC<PickCardProps> = ({
                     <span className="tabular-nums shrink-0">
                       {formatDate(m.podcast_launch_time)}
                     </span>
-                    {m.episode_title && (
+                    {m.episode_title && (m.episode_public === false ? (
+                      <span className="truncate" title={m.episode_title}>{m.episode_title}</span>
+                    ) : (
                       <Link
                         to={`/episode/${encodeURIComponent(m.episode_id)}`}
                         className="truncate hover:text-accent-info"
@@ -202,7 +204,7 @@ export const PickCard: React.FC<PickCardProps> = ({
                       >
                         {m.episode_title}
                       </Link>
-                    )}
+                    ))}
                   </div>
                   {m.bluf_thesis && (
                     <p className="text-xs text-muted-foreground/90 leading-relaxed mt-0.5 line-clamp-2">
@@ -216,7 +218,14 @@ export const PickCard: React.FC<PickCardProps> = ({
         </div>
       )}
 
-      {episodeTitle && (
+      {/* Picks read further back than the public episode window: an old pick's
+          episode may no longer be served, so show its title without a link. */}
+      {episodeTitle && (pick.episode_public === false ? (
+        <span className="flex items-center gap-1 text-2xs text-muted-foreground/80 mt-3 min-w-0" title={episodeTitle}>
+          <Mic size={11} className="shrink-0" />
+          <span className="truncate">{episodeTitle}</span>
+        </span>
+      ) : (
         <Link
           to={`/episode/${encodeURIComponent(pick.episode_id)}`}
           className="flex items-center gap-1 text-2xs text-muted-foreground/80 hover:text-accent-info mt-3 min-w-0"
@@ -225,7 +234,7 @@ export const PickCard: React.FC<PickCardProps> = ({
           <Mic size={11} className="shrink-0" />
           <span className="truncate">{episodeTitle}</span>
         </Link>
-      )}
+      ))}
     </Card>
   );
 };
