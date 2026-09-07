@@ -223,7 +223,7 @@ const LEGACY_REDIRECT = { '/contact': '/about#contact', '/disclaimer': '/about#d
 
 const INDEX_BODY = {
   '/about': async () => ({
-    body: '<h2>聯絡與意見回饋</h2><p>bug 回報、功能許願、產品建議或合作想法：電子郵件 contact@tinboker.com · Threads @tinboker · 客服回覆時間：週一至週五 11:00–17:00。</p>'
+    body: '<h2>聯絡我們</h2><p>bug 回報、功能許願、產品建議或合作想法：電子郵件 contact@tinboker.com · Threads @tinboker · 客服回覆時間：週一至週五 11:00–17:00。</p>'
       + '<h2>免責聲明</h2><p>本網站所提供之所有資訊、數據、觀點與分析，僅供參考與學習用途，不構成任何形式的投資建議、要約、誘導或推薦。金融市場具有高度風險，過去的績效不代表未來的表現；TinBoker 團隊不對因使用本網站資訊而產生的任何損失負責。</p>',
   }),
   '/': async (api, origin) => {

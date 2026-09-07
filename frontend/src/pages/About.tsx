@@ -8,13 +8,7 @@ import { AppLogo } from '@/components/logo/AppLogo';
 /** One page for everything that used to be /about, /contact, /disclaimer and /report:
  *  the old paths redirect here with a hash, so deep links keep working. The /report
  *  comment board was retired — it never received a comment on any environment — so
- *  feedback is simply part of 聯絡. */
-const NAV: { id: string; label: string }[] = [
-  { id: 'about', label: '關於' },
-  { id: 'contact', label: '聯絡與回饋' },
-  { id: 'disclaimer', label: '免責聲明' },
-];
-
+ *  feedback is simply part of 聯絡我們. */
 function Section({ id, title, children }: { id: string; title: string; children: React.ReactNode }) {
   return (
     <section id={id} className="bg-card border border-border rounded-md p-5 sm:p-6 scroll-mt-24">
@@ -81,14 +75,9 @@ export const About: React.FC = () => {
           <span className="text-2xl font-semibold tracking-[-0.02em]">關於</span>
           <AppLogo size={28} />
         </div>
-        <p className="text-center text-base text-muted-foreground max-w-xl mx-auto mb-5 leading-[1.65]">
+        <p className="text-center text-base text-muted-foreground max-w-xl mx-auto mb-6 leading-[1.65]">
           TinBoker（聽播客）把財經 Podcast 的觀點結構化、和即時市場數據對照，幫你用更短的時間掌握重點。
         </p>
-        <nav className="flex justify-center gap-2 flex-wrap mb-6" aria-label="頁內導覽">
-          {NAV.map((n) => (
-            <a key={n.id} href={`#${n.id}`} className="filter-pill" data-active={hash === `#${n.id}` || undefined}>{n.label}</a>
-          ))}
-        </nav>
 
         <div className="space-y-4">
           <Section id="about" title="核心功能">
@@ -112,7 +101,7 @@ export const About: React.FC = () => {
             </ul>
           </Section>
 
-          <Section id="contact" title="聯絡與意見回饋">
+          <Section id="contact" title="聯絡我們">
             <p>TinBoker 還在很早期的階段，一定有很多不完美的地方。bug 回報、功能許願、產品建議、合作想法或使用疑問，寫信或在 Threads 留言都可以，我們都會看。</p>
             <div className="flex items-center gap-2 text-xs bg-muted px-3.5 py-2.5 rounded-md w-fit">
               <Clock size={14} className="text-accent-info shrink-0" />

@@ -54,7 +54,7 @@ const SECTIONS: readonly NavSection[] = [
   {
     title: '支援',
     items: [
-      // One page: 關於 / 聯絡與回饋 / 免責聲明 are sections of /about.
+      // One page: 關於 / 聯絡我們 / 免責聲明 are sections of /about.
       { to: '/about', label: '關於', icon: Info },
     ],
   },
