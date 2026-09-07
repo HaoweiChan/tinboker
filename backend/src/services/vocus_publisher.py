@@ -225,6 +225,10 @@ class VocusClient:
             # what keeps three full-text copies from competing with each other.
             "openCanonical": True,
             "setInvestment": True,   # investment-content disclosure; this is a finance publication
+            # AI-assisted content disclosure. Every article we send is LLM-derived — the
+            # episode summaries outright, the weekly's theses and sentiment labels by
+            # extraction — and the Threads account is openly automated already.
+            "setAISupport": True,
             "showCatalog": True,
             # Salon paywall. True only publishes behind the wall if the salon has a
             # paid plan configured on vocus; the API accepts the flag either way, so

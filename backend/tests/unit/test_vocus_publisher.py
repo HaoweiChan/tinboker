@@ -329,4 +329,5 @@ async def test_episode_summaries_stay_free(monkeypatch):
     monkeypatch.setattr(httpx.AsyncClient, "request", _ok)
     result = await vp.publish_summary("ep1", "T", "# 標題\n\n內容", dry_run=False)
     assert sent["setIsPay"] is False and "paid_verified" not in result
+    assert sent["setAISupport"] is True and sent["setInvestment"] is True  # both disclosures, every article
     assert sent["canonicalURL"].endswith("/episode/ep1")
