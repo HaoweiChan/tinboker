@@ -81,35 +81,47 @@ export const HeatReturnValidation: React.FC = () => {
     ? buckets[buckets.length - 1].mean_return - buckets[0].mean_return
     : null;
 
+  const header = (
+    <div className="flex items-center justify-between gap-2 mb-2.5">
+      <div className="flex items-center gap-2">
+        <span className="inline-grid place-items-center rounded-lg bg-accent-info/10 text-accent-info shrink-0" style={{ width: 26, height: 26 }}>
+          <FlaskConical size={15} />
+        </span>
+        <h2 className={`${type.sectionTitle} font-semibold`}>討論熱度 → 未來報酬驗證</h2>
+      </div>
+      <div className={`flex shrink-0 items-center gap-0.5 ${type.micro}`}>
+        {HZ.map((h) => (
+          <button
+            key={h}
+            type="button"
+            onClick={() => setHz(h)}
+            className={`rounded px-1.5 py-0.5 transition-colors ${
+              hz === h ? 'bg-primary/15 font-semibold text-primary' : 'text-muted-foreground/70 hover:text-foreground'
+            }`}
+          >
+            {h}日
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
   if (loading) {
-    return <div className="rounded-xl border border-border bg-card p-4 h-56 animate-pulse bg-muted/20" />;
+    return (
+      <>
+        {header}
+        <div className="rounded-xl border border-border bg-card h-56 animate-pulse bg-muted/20" />
+      </>
+    );
   }
   if (!data) return null; // endpoint unavailable — panel is additive, fail silent
 
   return (
-    <div className="rounded-xl border border-border bg-card p-4">
-      <div className="flex items-center justify-between gap-2 mb-1">
-        <div className="flex items-center gap-2">
-          <span className="inline-grid place-items-center rounded-lg bg-accent-info/10 text-accent-info shrink-0" style={{ width: 26, height: 26 }}>
-            <FlaskConical size={15} />
-          </span>
-          <h2 className={`${type.sectionTitle} font-semibold`}>討論熱度 → 未來報酬驗證</h2>
-        </div>
-        <div className={`flex shrink-0 items-center gap-0.5 ${type.micro}`}>
-          {HZ.map((h) => (
-            <button
-              key={h}
-              type="button"
-              onClick={() => setHz(h)}
-              className={`rounded px-1.5 py-0.5 transition-colors ${
-                hz === h ? 'bg-primary/15 font-semibold text-primary' : 'text-muted-foreground/70 hover:text-foreground'
-              }`}
-            >
-              {h}日
-            </button>
-          ))}
-        </div>
-      </div>
+    <>
+      {/* Title and horizon toggle sit outside the frame, like every other section
+          header on /topics (題材泡泡圖, 題材總覽) — inside the card it read as a
+          different kind of block. */}
+      {header}
 
       <p className={`mb-3 flex items-start gap-1.5 ${type.meta} text-muted-foreground`}>
         <Info size={12} className="mt-0.5 shrink-0" />
@@ -118,6 +130,7 @@ export const HeatReturnValidation: React.FC = () => {
         </span>
       </p>
 
+      <div className="rounded-xl border border-border bg-card p-4">
       {buckets.length > 0 ? (
         <>
           <div className="divide-y divide-border/20">
@@ -144,6 +157,7 @@ export const HeatReturnValidation: React.FC = () => {
           {hz} 日觀察資料不足（價格歷史約 90 日，長天期樣本較少）。
         </div>
       )}
-    </div>
+      </div>
+    </>
   );
 };
