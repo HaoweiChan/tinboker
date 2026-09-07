@@ -81,3 +81,47 @@ def test_placeholder_detection_does_not_flag_normally_summarised_episodes(monkey
 
     ids = [c["episode_id"] for c in ro.find_candidates(only_placeholder=True)["candidates"]]
     assert ids == ["todo", "bad"], ids
+
+
+def test_skip_summarize_persists_the_transcript_and_runs_no_llm_steps(monkeypatch):
+    """--skip-summarize must still write the episode row (regen needs one to exist),
+    and must not run any step that derives from a summary that was never generated.
+    """
+    from pathlib import Path
+
+    from src.pipeline import processor as p
+    from src.pipeline.config import PipelineConfig
+
+    called = []
+
+    def _record(name):
+        def _fn(config, services, episode_data):
+            called.append(name)
+
+        return _fn
+
+    for step in (
+        "download_episode", "transcribe_episode", "generate_summary", "upload_to_gcs",
+        "render_social_cards", "persist_episode", "ingest_into_wiki",
+        "export_ticker_insights", "trigger_syndicate", "validate_episode",
+    ):
+        monkeypatch.setattr(p, step, _record(step))
+
+    config = PipelineConfig(
+        config_file=Path("c.json"), podcast_name="Gooaye 股癌", podcast_link="l",
+        skip_summarize=True, store_audio=False, use_file_mode=True,
+    )
+    proc = p.EpisodeProcessor.__new__(p.EpisodeProcessor)
+    proc.config = config
+    proc.services = object()
+    monkeypatch.setattr(p.EpisodeProcessor, "_load_existing_data", lambda self, ed: None)
+    monkeypatch.setattr(p.EpisodeProcessor, "_should_skip_episode", lambda self, ed: False)
+
+    assert proc.process_episode({"title": "EP1 |( *・ω・)╰—╯✄", "episodeNumber": 1}) is True
+
+    assert called == ["download_episode", "transcribe_episode", "upload_to_gcs", "persist_episode"]
+    assert "generate_summary" not in called
+    # Nothing below summarize can run: it is all derived from content that does not
+    # exist yet, and syndicating/notifying on an empty episode would be user-visible.
+    for derived in ("render_social_cards", "export_ticker_insights", "trigger_syndicate"):
+        assert derived not in called
