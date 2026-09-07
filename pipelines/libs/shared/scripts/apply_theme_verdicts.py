@@ -13,6 +13,12 @@ every industry roll-up keep whatever the live table already holds. ``description
 written only for themes that had none — an existing description is somebody's copy and
 is not overwritten by a generated definition.
 
+A verdict marked ``"status": "insufficient"`` is left out of the payload entirely: the
+reviewer is saying the theme could not be filled, so the live rows stay as they are and
+a human decides whether that theme should exist at all. Every other theme that comes
+back thinner than ``--min-members`` aborts the run — that is the unexpected case, and
+shipping a one-member sector page is worse than shipping nothing.
+
     python apply_theme_verdicts.py --merged verdicts/merged --taxonomy live.jsonl \
         --out draft_payload.json
 
@@ -55,7 +61,7 @@ def main() -> None:
         row = json.loads(line)
         live[row["exposure_id"]] = row
 
-    sectors, thin, unknown = [], [], []
+    sectors, thin, unknown, insufficient = [], [], [], []
     added = kept = dropped = 0
     for fname in sorted(os.listdir(args.merged)):
         if not fname.endswith(".json"):
@@ -65,6 +71,9 @@ def main() -> None:
         row = live.get(eid)
         if row is None or row.get("redirect_to") or row.get("exposure_type") != "theme":
             unknown.append(eid)
+            continue
+        if v.get("status") == "insufficient":
+            insufficient.append((eid, len(v.get("members") or [])))
             continue
 
         before = {m["ticker"]: m for m in (row.get("members") or [])}
@@ -93,6 +102,9 @@ def main() -> None:
     if thin:
         sys.exit("themes below --min-members (raise the floor deliberately or re-review): "
                  + ", ".join(f"{e}={n}" for e, n in thin))
+    for eid, n in insufficient:
+        print(f"SKIPPED {eid}: marked insufficient ({n} member(s) found) — live rows untouched, "
+              f"decide whether this theme should exist")
 
     payload = {"sectors": sectors, "redirects": {}, "full": False,
                "actor": args.actor, "entry": args.entry, "rationale": args.rationale}
