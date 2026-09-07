@@ -220,13 +220,16 @@ def render_markdown(rollup: dict, record: dict, screener: dict, names: Optional[
         out.append("全市場動能／籌碼異常篩選的前十名，最後一欄是本週有幾集節目提到它。"
                    "有分數、沒人講的，和大家都在講、分數也高的，是兩種不同的東西。")
         out.append("")
-        out.append("| # | 個股 | 分數 | 5 日 | 量能倍數 | 60 日新高 | 擁擠 | 本週提及集數 |")
-        out.append("|--:|---|---:|---:|---:|:-:|:-:|---:|")
+        # No rank column: rows are already in rank order, and the syndication
+        # tokenizer turns a table into "first cell：…" list items, so the first
+        # cell must be the name.
+        out.append("| 個股 | 分數 | 5 日 | 量能倍數 | 60 日新高 | 擁擠 | 本週提及集數 |")
+        out.append("|---|---:|---:|---:|:-:|:-:|---:|")
         for c in screener["candidates"]:
             f = c["factors"]
             ret5 = f.get("ret_5d")
             vol = f.get("vol_mult")
-            out.append(f"| {c['rank']} | {_name(c['ticker'], names)} | {c['final_score']:.2f}"
+            out.append(f"| {_name(c['ticker'], names)} | {c['final_score']:.2f}"
                        f" | {_pct(None if ret5 is None else ret5 * 100)}"  # screener stores a fraction
                        f" | {'—' if vol is None else f'{vol:.1f}x'}"
                        f" | {'✓' if c['is_60d_high'] else ''} | {'✓' if c['crowded'] else ''}"
