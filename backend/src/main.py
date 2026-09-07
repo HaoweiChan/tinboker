@@ -40,6 +40,7 @@ from src.routers.admin_articles import router as admin_articles_router
 from src.routers.admin_tags import router as admin_tags_router
 from src.routers.admin_taxonomy import router as admin_taxonomy_router
 from src.routers.admin_sectors import router as admin_sectors_router
+from src.routers.admin_weekly import router as admin_weekly_router
 from src.routers.social import (router as social_router, facebook_router, promo_router,
                                 substack_router, vocus_router)
 from src.routers.seo import router as seo_router, admin_router as admin_seo_router
@@ -438,6 +439,7 @@ if not settings.is_production:
     app.include_router(admin_tags_router)
     app.include_router(admin_taxonomy_router)
     app.include_router(admin_sectors_router)  # /api/admin/sectors/theme-candidates
+    app.include_router(admin_weekly_router)  # /api/admin/weekly/{week}/paid|publish-vocus
     app.include_router(social_router)       # /api/admin/threads/*
     app.include_router(facebook_router)     # /api/admin/facebook/*
     app.include_router(vocus_router)        # /api/admin/vocus/*

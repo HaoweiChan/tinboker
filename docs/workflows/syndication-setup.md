@@ -101,6 +101,28 @@ republish it.
 
 ---
 
+## The paid weekly (salon members only)
+
+`GET /api/admin/weekly/{week}/paid` renders the member issue from data the site
+already computes — the public weekly rollup, the four-week-old mentions whose 20-day
+forward return has resolved (per-show hit rate, best/worst calls), and the anomaly
+screener's top ten cross-referenced with this week's episode mentions
+(`services/paid_weekly.py`). `POST /api/admin/weekly/{week}/publish-vocus` sends it
+through `vocus_publisher.publish_markdown(..., paid=True)`; `dry_run=true` and
+`as_draft=true` are the defaults, so the first real run is a draft you open in the
+wizard. The ledger key is `weekly:{week}` — one article per week, ever, across
+environments.
+
+Two things the code cannot do for you:
+
+- **The salon needs a paid plan first.** `setIsPay` only puts an article behind a wall
+  that exists; configure 付費方案 in the vocus salon dashboard before the first publish.
+- **`paid_verified` in the result is the read-back, not the request.** `None` means vocus
+  did not echo the flag under any key in `vocus_publisher.PAID_KEYS`; the response then
+  carries `paid_readback_keys` — pin the right one at the head of the list, same
+  discipline as `READ_KEYS` below. `False` means the article went out free: fix the
+  salon plan, then delete and republish (the ledger row must be released by hand).
+
 ## Reading stats
 
 Both platforms are read back as well as written to, so syndication is no longer
