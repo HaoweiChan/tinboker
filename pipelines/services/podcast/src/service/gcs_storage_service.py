@@ -34,6 +34,7 @@ import os
 import re
 import shutil
 import tempfile
+import urllib.request
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
@@ -297,15 +298,39 @@ class GCSStorageService:
 
     # ── reads ─────────────────────────────────────────────────────────────
 
+    def _read_artifact(self, gcs_url: str) -> bytes:
+        """Bytes of an artifact, from the media tree if present, else over HTTPS.
+
+        On the VPS the media tree is mounted and the local read wins. Anywhere else
+        (a laptop running the regen MCP server, a CI box) that directory does not
+        exist, and every read used to fail — which meant the agent-driven regen
+        could only ever run on the VPS. The same artifacts are already published
+        read-only by Caddy at ``podcast-api.tinboker.com/media/…``, so fall back to
+        fetching the public URL rather than requiring the mount.
+        """
+        path = self.path_for_url(gcs_url)
+        if path is None and not str(gcs_url).startswith(("http://", "https://")):
+            raise ValueError(f"Unrecognised media URL: {gcs_url}")
+        if path is not None:
+            try:
+                return path.read_bytes()
+            except FileNotFoundError:
+                pass  # not mounted here — fall through to the public URL
+            except Exception as e:
+                raise Exception(f"Failed to read media object {gcs_url} ({path}): {e}") from e
+
+        url = self.generate_public_url(gcs_url) if not str(gcs_url).startswith(("http://", "https://")) else gcs_url
+        if not url.startswith(("http://", "https://")):
+            raise Exception(f"Media object not present locally and not fetchable: {gcs_url}")
+        try:
+            with urllib.request.urlopen(url, timeout=60) as resp:
+                return resp.read()
+        except Exception as e:
+            raise Exception(f"Failed to read media object {gcs_url} (local miss, {url}): {e}") from e
+
     def download_text_by_gcs_url(self, gcs_url: str, encoding: str = "utf-8") -> str:
         """Read a text artifact by URL (gs://, storage.googleapis.com or media)."""
-        path = self.path_for_url(gcs_url)
-        if not path:
-            raise ValueError(f"Unrecognised media URL: {gcs_url}")
-        try:
-            return path.read_bytes().decode(encoding)
-        except Exception as e:
-            raise Exception(f"Failed to read media object {gcs_url} ({path}): {e}") from e
+        return self._read_artifact(gcs_url).decode(encoding)
 
     def download_transcript_by_gcs_url(self, gcs_url: str, encoding: str = "utf-8") -> Dict[str, Any]:
         """Read a transcript artifact; auto-detects JSON vs plain text.
@@ -328,16 +353,21 @@ class GCSStorageService:
         }
 
     def download_file_by_gcs_url(self, gcs_url: str, output_path: Path) -> Path:
-        """Copy a binary artifact (e.g. an mp3) out of the media tree."""
+        """Copy a binary artifact (e.g. an mp3) out of the media tree.
+
+        Same local-then-public fallback as :meth:`_read_artifact` — an mp3 fetched
+        this way is ~28 MiB, so it stays a local copy whenever the tree is mounted.
+        """
         path = self.path_for_url(gcs_url)
-        if not path:
-            raise ValueError(f"Unrecognised media URL: {gcs_url}")
-        try:
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(path, output_path)
-            return output_path
-        except Exception as e:
-            raise Exception(f"Failed to read media file {gcs_url} ({path}): {e}") from e
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        if path is not None and path.exists():
+            try:
+                shutil.copyfile(path, output_path)
+                return output_path
+            except Exception as e:
+                raise Exception(f"Failed to read media file {gcs_url} ({path}): {e}") from e
+        output_path.write_bytes(self._read_artifact(gcs_url))
+        return output_path
 
     # ── the one call the pipeline actually makes ──────────────────────────
 
