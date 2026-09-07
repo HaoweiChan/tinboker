@@ -28,7 +28,6 @@ export interface SectorResolvedTicker {
   name: string;
   name_en?: string;
   market: 'TW' | 'US' | string;
-  source: string;
   reason?: string; // short zh-TW note on how this ticker relates to the sector/theme
 }
 

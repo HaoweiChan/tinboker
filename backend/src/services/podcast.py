@@ -1166,7 +1166,6 @@ class PodcastService:
                             "name": rt.get("name") or "",
                             "name_en": rt.get("name_en"),
                             "market": rt.get("market") or "",
-                            "source": rt.get("source") or "",
                         }
                 # Track exposure_type alongside display_name for the winner
                 # Store as tuple (display_name, exposure_type) frequency
