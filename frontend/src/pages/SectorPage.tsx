@@ -21,7 +21,6 @@ import { useTranslationMap } from '@/hooks/useTranslationMap';
 import { SectorTickerCard, type Timeframe } from '@/components/topics/SectorTickerCard';
 import { SectorIcon } from '@/components/topics/SectorIcon';
 import { SectorHeatCard } from '@/components/topics/SectorHeatCard';
-import { CoMentionGraph } from '@/components/topics/CoMentionGraph';
 import { WhoTalksTile } from '@/components/stock/WhoTalksTile';
 import { Tile } from '@/components/redesign/Tile';
 import { Plus, Check } from 'lucide-react';
@@ -217,7 +216,7 @@ export const SectorPage: React.FC = () => {
             : sectorDescription || `瀏覽所有關於「${titleText}」的 Podcast 摘要與市場討論 · ${episodes.length} 集。`}
         </p>
 
-        {/* Bento: heat + constituents lead, co-mention graph + who talks below. */}
+        {/* Bento: heat + constituents lead, who talks below. */}
         {loading ? (
           <div className="grid grid-cols-1 md:grid-cols-6 gap-3.5 mb-[18px]">
             <div className="md:col-span-2 md:row-span-2 bg-card border border-border rounded-[10px] h-[300px] animate-pulse" />
@@ -252,7 +251,6 @@ export const SectorPage: React.FC = () => {
                 className="md:col-span-2"
               />
             )}
-            {episodes.length > 0 && <CoMentionGraph episodes={episodes} names={translationMap} className="md:col-span-6" />}
           </div>
         )}
 
