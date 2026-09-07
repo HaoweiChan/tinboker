@@ -32,6 +32,7 @@ Then, with an admin token:
 from __future__ import annotations
 
 import argparse
+import collections
 import json
 import os
 import sys
@@ -57,6 +58,8 @@ def main() -> None:
     ap.add_argument("--rationale", default=RATIONALE)
     ap.add_argument("--min-members", type=int, default=3,
                     help="abort if a theme would end up thinner than this (0 disables)")
+    ap.add_argument("--max-fanout", type=int, default=5,
+                    help="abort if one company would sit in more themes than this (0 disables)")
     args = ap.parse_args()
 
     live = {}
@@ -113,6 +116,14 @@ def main() -> None:
     for eid, n in insufficient:
         print(f"SKIPPED {eid}: marked insufficient ({n} member(s) found) — live rows untouched, "
               f"decide whether this theme should exist")
+
+    # A company in too many themes makes every one of those pages say less. The review
+    # caps this, but a hand-swapped verdict file can breach it, so the check runs here too.
+    if args.max_fanout:
+        fanout = collections.Counter(m["ticker"] for s in sectors for m in s["members"])
+        over = [(t, n) for t, n in fanout.most_common() if n > args.max_fanout]
+        if over:
+            sys.exit("companies over --max-fanout: " + ", ".join(f"{t} in {n} themes" for t, n in over))
 
     payload = {"sectors": sectors, "redirects": {}, "full": False,
                "actor": args.actor, "entry": args.entry, "rationale": args.rationale}
