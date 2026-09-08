@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { Star, Plus } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
@@ -16,7 +16,9 @@ import type { CompanyDetail, RealTimePriceUpdate, TimeframeOption, TickerInsight
 import { priceWebSocketClient } from '@/services/websocket/priceWebSocket';
 import TradingViewChart, { type MentionSeries } from '@/components/charts/TradingViewChart';
 import { ConsensusTile } from '@/components/stock/ConsensusTile';
+import { WhoTalksTile } from '@/components/stock/WhoTalksTile';
 import { CoMentionTile } from '@/components/stock/CoMentionTile';
+import { InstitutionalFlowCard } from '@/components/stock/InstitutionalFlowCard';
 import { ChartControls } from '@/components/charts/ChartControls';
 import { getInsightsByTicker, getSortedPodcasts, type Podcast } from '@/services/api/podcasts';
 import { getMentionHeat, getTickerMentions, type MentionHeatResponse, type TickerMentionsResponse } from '@/services/api/mentions';
@@ -27,6 +29,10 @@ import { useEpisodeSentimentMap } from '@/hooks/useEpisodeSentimentMap';
 import { useIsDesktop } from '@/hooks/useIsDesktop';
 import { useTranslationMap } from '@/hooks/useTranslationMap';
 import { getStockLabel, inferStockMarket } from '@/utils/stockDisplay';
+import { Tile } from '@/components/redesign/Tile';
+import { SectorIcon } from '@/components/topics/SectorIcon';
+import { getSectorsByTicker } from '@/services/api/stocks';
+import type { SectorByTickerItem } from '@/validation/schemas';
 
 
 // Semantic sentiment colours (green bull / red bear), matching the chart dots and
@@ -37,6 +43,17 @@ const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[]; epi
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const { watchlist, toggleWatchlist, theme } = useAppStore();
+  // Sector membership drives both the chips tile and the row layout below.
+  const [sectors, setSectors] = useState<SectorByTickerItem[]>([]);
+  useEffect(() => {
+    if (!symbol) return;
+    let cancelled = false;
+    setSectors([]);
+    getSectorsByTicker(symbol)
+      .then((r) => { if (!cancelled) setSectors(r.items); })
+      .catch(() => { if (!cancelled) setSectors([]); });
+    return () => { cancelled = true; };
+  }, [symbol]);
   const { guard } = useRequireAuth();
   // A phone is tall and narrow; a chart that keeps its desktop height there pushes
   // everything else off the screen. The value is a number the canvas needs, so it comes
@@ -227,6 +244,39 @@ const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[]; epi
     if (label.secondary) subLines.push({ text: label.secondary, mono: label.secondary === symbol });
   }
 
+  const periodStats = useMemo(() => {
+    const closes = chartData.map((p) => ({ t: p.timestamp as number, c: (('close' in p ? p.close : undefined) ?? ('price' in p ? p.price : undefined) ?? 0) as number, v: ('volume' in p ? p.volume : undefined) as number | undefined }))
+      .filter((p) => p.c > 0);
+    if (closes.length === 0) return null;
+    const last = closes[closes.length - 1];
+    const pctSince = (days: number): number | null => {
+      const cutoff = last.t - days * 86400e3;
+      let base: typeof last | null = null;
+      for (const p of closes) { if (p.t <= cutoff) base = p; else break; }
+      return base ? ((last.c - base.c) / base.c) * 100 : null;
+    };
+    const year = closes.filter((p) => p.t >= last.t - 365 * 86400e3);
+    const hi = Math.max(...year.map((p) => p.c)), lo = Math.min(...year.map((p) => p.c));
+    const vols = closes.slice(-20).map((p) => p.v).filter((v): v is number => typeof v === 'number' && v > 0);
+    return {
+      w1: pctSince(7), m1: pctSince(30), m3: pctSince(90),
+      hi, lo, pos: hi > lo ? ((last.c - lo) / (hi - lo)) * 100 : null,
+      avgVol: vols.length ? vols.reduce((a, b) => a + b, 0) / vols.length : null,
+    };
+  }, [chartData]);
+  const fmtVol = (v: number) => (v >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : `${(v / 1e3).toFixed(0)}K`);
+  const keyStats: { label: string; value: React.ReactNode }[] = [
+    { label: '近 1 週', value: periodStats?.w1 != null ? <Change value={periodStats.w1} /> : '—' },
+    { label: '近 1 月', value: periodStats?.m1 != null ? <Change value={periodStats.m1} /> : '—' },
+    { label: '近 3 月', value: periodStats?.m3 != null ? <Change value={periodStats.m3} /> : '—' },
+    { label: '52 週區間', value: periodStats ? `${periodStats.lo.toLocaleString('en-US')} – ${periodStats.hi.toLocaleString('en-US')}` : '—' },
+    { label: '距 52 週高點', value: periodStats?.pos != null && periodStats.hi > 0 ? <Change value={((displayPrice ?? periodStats.hi) - periodStats.hi) / periodStats.hi * 100} /> : '—' },
+    { label: '20 日均量', value: periodStats?.avgVol ? fmtVol(periodStats.avgVol) : '—' },
+    { label: '本益比', value: stockData?.pe ? stockData.pe.toFixed(1) : '—' },
+  ];
+
+  const stat = (label: string) => keyStats.find((k) => k.label === label)?.value ?? '—';
+
   return (
     <>
       {/* Header — identity and the action on one line, price on its own beneath it.
@@ -319,12 +369,47 @@ const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[]; epi
         {/* key: remount (and re-animate) when the insight list arrives or changes. */}
         <ConsensusTile key={insights.length} insights={insights} className="md:col-span-3 md:row-span-2" />
 
-        {/* The 區間表現 / 三大法人 / 誰在談 / 所屬題材 tiles were removed: four cards of
-            secondary detail directly under the chart competed with it for attention and
-            made the page read as a dashboard rather than as one stock's story. Their
-            components still exist and are used elsewhere; only this page stopped
-            rendering them. Restoring the row is a revert of this commit. */}
-        <CoMentionTile symbol={symbol} episodes={episodes} className="md:col-span-6" max={14} />
+        {/* Range tile */}
+        <div className="md:col-span-2 bg-card border border-border rounded-[10px] p-5 flex flex-col justify-between gap-3">
+          <div className="text-xs text-muted-foreground">區間表現</div>
+          <div className="grid grid-cols-3 gap-2">
+            {['近 1 週', '近 1 月', '近 3 月'].map((l) => (
+              <div key={l}>
+                <div className="text-2xs text-muted-foreground mb-0.5">{l.replace('近 ', '')}</div>
+                <div className="text-xl font-mono tabular-nums font-semibold">{stat(l)}</div>
+              </div>
+            ))}
+          </div>
+          <div className="text-xs text-muted-foreground tabular-nums flex flex-wrap gap-x-3 gap-y-1">
+            <span>52 週 <span className="text-foreground font-mono">{stat('52 週區間')}</span></span>
+            <span>距高點 <span className="font-mono">{stat('距 52 週高點')}</span></span>
+            <span>均量 <span className="text-foreground font-mono">{stat('20 日均量')}</span></span>
+            <span>本益比 <span className="text-foreground font-mono">{stat('本益比')}</span></span>
+          </div>
+        </div>
+
+        {/* Spans adapt so a US ticker (no 三大法人) or a ticker outside every sector still
+            fills its rows. */}
+        {market === 'TW' && <InstitutionalFlowCard symbol={symbol} compact className="md:col-span-2" />}
+        <WhoTalksTile insights={insights} className={market === 'TW' ? 'md:col-span-2' : 'md:col-span-4'} />
+        {sectors.length > 0 && (
+          <Tile title="所屬題材" className="md:col-span-2">
+            <div className="flex flex-wrap gap-2">
+              {sectors.map((item) => (
+                <Link
+                  key={item.exposure_id}
+                  to={`/sector/${encodeURIComponent(item.exposure_id)}`}
+                  title={item.reason || undefined}
+                  className="inline-flex items-center gap-1.5 rounded-md bg-accent-info-soft text-accent-info px-2.5 py-1 text-xs font-medium hover:opacity-80 transition-opacity"
+                >
+                  <SectorIcon exposureId={item.exposure_id} iconId={item.icon_id} color={item.color_hex} size={12} variant="chip" />
+                  {item.display_name}
+                </Link>
+              ))}
+            </div>
+          </Tile>
+        )}
+        <CoMentionTile symbol={symbol} episodes={episodes} className={sectors.length > 0 ? 'md:col-span-4' : 'md:col-span-6'} max={sectors.length > 0 ? 10 : 14} />
       </div>
     </>
   );

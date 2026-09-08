@@ -412,6 +412,7 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
           wickUpColor: '#ef4444',
           wickDownColor: '#22c55e',
           priceLineVisible: showPriceLines,
+          lastValueVisible: false,
         });
         const candleData = sortedData.map(p => {
           const time = getSeconds(p);
@@ -432,6 +433,7 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
           bottomColor: bottomColor ?? `${lineColor}15`,
           lineWidth: 2,
           priceLineVisible: showPriceLines,
+          lastValueVisible: false,
         });
         const areaData = sortedData.map((p, i) => {
           const time = getSeconds(p);
@@ -535,19 +537,19 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
       // 4. Moving Averages
       if (effectiveIndicators.includes('MA5')) {
         const maData = calculateSMA(sortedData as ChartDataPoint[], 5);
-        const series = chart.addLineSeries({ color: '#ff9800', lineWidth: 1, crosshairMarkerVisible: false, title: '', priceLineVisible: false });
+        const series = chart.addLineSeries({ color: '#ff9800', lineWidth: 1, crosshairMarkerVisible: false, title: '', priceLineVisible: false, lastValueVisible: false });
         series.setData(maData);
         seriesMap['MA5'] = series;
       }
       if (effectiveIndicators.includes('MA20')) {
         const maData = calculateSMA(sortedData as ChartDataPoint[], 20);
-        const series = chart.addLineSeries({ color: '#a78bfa', lineWidth: 1, crosshairMarkerVisible: false, title: '', priceLineVisible: false });
+        const series = chart.addLineSeries({ color: '#a78bfa', lineWidth: 1, crosshairMarkerVisible: false, title: '', priceLineVisible: false, lastValueVisible: false });
         series.setData(maData);
         seriesMap['MA20'] = series;
       }
       if (effectiveIndicators.includes('MA60')) {
         const maData = calculateSMA(sortedData as ChartDataPoint[], 60);
-        const series = chart.addLineSeries({ color: '#00bcd4', lineWidth: 1, crosshairMarkerVisible: false, title: '', priceLineVisible: false });
+        const series = chart.addLineSeries({ color: '#00bcd4', lineWidth: 1, crosshairMarkerVisible: false, title: '', priceLineVisible: false, lastValueVisible: false });
         series.setData(maData);
         seriesMap['MA60'] = series;
       }
