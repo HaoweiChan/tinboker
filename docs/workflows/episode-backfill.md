@@ -137,6 +137,24 @@ the surviving `*_url` artifacts are what gets served. **When both paths have bee
 one episode, the pipeline's output is the one that stands** — the agent path only earns a
 commit once it has been shown to match the corpus.
 
+### Two things that fail silently
+
+**`start_regen` twice wipes the draft.** Calling it again after you have begun submitting
+discards every completed step with no warning; you find out at the next step's
+"needs 'extractor'" error. Two sessions hit this and had to replay their saved JSON.
+Call it exactly once per episode and keep each step's JSON on disk.
+
+**Without `TINBOKER_PLATFORM_API_URL` the show roster silently shrinks.** The loader
+tries the platform (`GET /api/sources?type=podcast&active=true`, which returns all ten TW
+shows), and when that variable is unset the fetch is skipped entirely and it falls back
+to the pipelines' own DB registry — which carries only six. The four missing ones
+(M觀點, 兆華與股惑仔, 曲博科技教室, 韭菜畢業班) then fail `--show` with
+"not found in active roster" even though they are `active = t` in `content_sources`
+and ingest normally every night. Between them 兆華 and M觀點 are over half the TW gap,
+so a backfill run that omits them looks fine and quietly does a third of the work.
+Export the variable for any manual run. It is safe with `--skip-summarize`: its only
+other consumer is sector derivation, which that mode never reaches.
+
 ### Calibration
 
 An agent writing to these prompts overshoots the pipeline's own model on every axis.
