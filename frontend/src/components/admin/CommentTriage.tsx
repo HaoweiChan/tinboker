@@ -1,12 +1,12 @@
 /**
  * Admin → Social → 留言: the replies people leave on our Threads posts, triaged.
  *
- * Rules live on the backend, not here: bots and replies aimed at another commenter
- * never arrive; hostile/noise/promo arrive already marked 略過. There is no hide action —
- * a comment is answered or it is ignored. What lands in 待處理
- * is what someone judged worth answering, with a draft to edit. Only plain praise is
- * ever answered unattended — anything carrying a factual claim, a question, or a
- * position waits for this screen, because a wrong number from a finance account is
+ * Rules live on the backend, not here: bots, empty replies and replies aimed at another
+ * commenter never arrive; hostile/noise/promo and contentless praise arrive already
+ * marked 略過. There is no hide action — a comment is answered or it is ignored.
+ * What lands in 待處理 is what someone judged worth answering, with a draft to edit.
+ * Nothing is ever sent from here without a human pressing 送出回覆: the model classifies
+ * and drafts, it does not post. A wrong number or a wrong tone from a finance account is
  * worse than a slow reply.
  */
 
@@ -79,7 +79,7 @@ export const CommentTriage: React.FC = () => {
     try {
       const r = await syncThreadsComments();
       setNote(r.configured
-        ? `掃了 ${r.scanned} 篇貼文，新留言 ${r.new} 則（自動回覆 ${r.auto_replied}、待處理 ${r.needs_review}、略過 ${r.ignored}）`
+        ? `掃了 ${r.scanned} 篇貼文，新留言 ${r.new} 則（待處理 ${r.needs_review}、略過 ${r.ignored}）`
         : 'Threads 未設定，無法抓留言');
       await fetchList();
     } catch (e) {
@@ -148,11 +148,6 @@ export const CommentTriage: React.FC = () => {
               {c.category && (
                 <span className={`rounded px-1.5 py-0.5 font-medium ${CATEGORY_TONE[c.category] ?? 'bg-muted'}`}>
                   {CATEGORY_LABELS[c.category] ?? c.category}
-                </span>
-              )}
-              {c.auto && (
-                <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 font-medium text-emerald-600">
-                  自動回覆
                 </span>
               )}
               {c.posted_at && <span>{c.posted_at.slice(0, 16).replace('T', ' ')}</span>}

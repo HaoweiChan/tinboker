@@ -282,7 +282,7 @@ async def sync_threads_comments(
     scan_posts: int = Query(default=None, ge=1, le=100),
     _: AdminAccess = Depends(get_social_access),
 ):
-    """Pull new comments, triage them, and auto-reply to the safe ones."""
+    """Pull new comments and triage them into the 留言 tab. Posts nothing."""
     return await threads_comments_service.sync_and_triage(scan_posts=scan_posts)
 
 

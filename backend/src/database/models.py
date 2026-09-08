@@ -687,7 +687,7 @@ class ThreadsComment(Base):
 
     # Triage
     category = Column(String(30), nullable=True)          # praise|question|substantive|hostile|noise|promo|bot
-    verdict = Column(String(20), nullable=True)           # auto_reply|needs_review|ignore
+    verdict = Column(String(20), nullable=True)           # needs_review|ignore
     reason = Column(Text, nullable=True)                  # one line, why
     draft = Column(Text, nullable=True)                   # proposed reply, empty when ignoring
 
@@ -696,7 +696,7 @@ class ThreadsComment(Base):
     # pending | replied | skipped | ignored
     reply_media_id = Column(String(255), nullable=True)
     replied_at = Column(DateTime, nullable=True)
-    auto = Column(Boolean, nullable=False, default=False)  # sent without human review
+    auto = Column(Boolean, nullable=False, default=False)  # never set: no reply is sent unattended
 
     synced_at = Column(DateTime, default=datetime.utcnow)
 

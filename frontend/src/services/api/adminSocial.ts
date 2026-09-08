@@ -347,11 +347,10 @@ export interface ThreadsCommentItem {
   text: string;
   posted_at: string | null;
   category: CommentCategory;
-  verdict: 'auto_reply' | 'needs_review' | 'ignore' | null;
+  verdict: 'needs_review' | 'ignore' | null;
   reason: string | null;
   draft: string;
   status: CommentStatus;
-  auto: boolean;
   reply_media_id: string | null;
   permalink: string;
 }
@@ -370,7 +369,6 @@ export interface CommentSyncResult {
   configured: boolean;
   scanned: number;
   new: number;
-  auto_replied: number;
   needs_review: number;
   ignored: number;
 }
