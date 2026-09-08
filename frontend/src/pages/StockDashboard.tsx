@@ -10,12 +10,12 @@ import { cn } from '@/lib/utils';
 import { useAppStore } from '@/store/useAppStore';
 import { useRequireAuth } from '@/hooks/useRequireAuth';
 import { useStockTrendColor } from '@/hooks/useStockTrendColor';
-import { aggregateSentiment, normalizeSentiment } from '@/lib/sentiment';
+import { normalizeSentiment } from '@/lib/sentiment';
 import { getStockByTicker, getEpisodesByTicker, type Episode as ApiEpisode } from '@/services/api';
 import { fetchWithFallback } from '@/services/api/migration';
 import type { CompanyDetail, RealTimePriceUpdate, TimeframeOption, TickerInsight } from '@/services/types';
 import { priceWebSocketClient } from '@/services/websocket/priceWebSocket';
-import TradingViewChart, { type ChartMarker } from '@/components/charts/TradingViewChart';
+import TradingViewChart, { type MentionBar } from '@/components/charts/TradingViewChart';
 import { ConsensusTile } from '@/components/stock/ConsensusTile';
 import { WhoTalksTile } from '@/components/stock/WhoTalksTile';
 import { CoMentionTile } from '@/components/stock/CoMentionTile';
@@ -37,8 +37,6 @@ import type { SectorByTickerItem } from '@/validation/schemas';
 
 // Semantic sentiment colours (green bull / red bear), matching the chart dots and
 // the SentBar rather than the market price convention.
-const SENT_CLASS = { BULLISH: 'text-sentiment-bull', BEARISH: 'text-sentiment-bear', NEUTRAL: 'text-muted-foreground' } as const;
-const SENT_LABEL = { BULLISH: '看多', BEARISH: '看空', NEUTRAL: '中立' } as const;
 
 const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[]; episodes: ApiEpisode[] }> = ({ symbol, insights, episodes }) => {
   const [stockData, setStockData] = useState<CompanyDetail | null>(null);
@@ -149,55 +147,47 @@ const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[]; epi
   const trend = useStockTrendColor(displayChange);
 
   // One dot per day a podcast discussed this ticker, coloured by that day's dominant
-  // sentiment (semantic tokens: green bull / red bear, independent of the candle
-  // colours). Hover lists the episodes behind the dot.
-  const mentionMarkers = useMemo<ChartMarker[]>(() => {
-    if (insights.length === 0) return [];
-    const css = (name: string) => {
-      const v = typeof document !== 'undefined' ? getComputedStyle(document.documentElement).getPropertyValue(name).trim() : '';
-      return v ? `hsl(${v.split(/\s+/).join(', ')})` : '#9ca3af';
-    };
-    const colors = { BULLISH: css('--sentiment-bull'), BEARISH: css('--sentiment-bear'), NEUTRAL: css('--sentiment-neutral') };
-    // One dot per ISO week (Monday's bar), not per day: a daily-discussed ticker at a
-    // 1Y zoom otherwise turns into a ribbon of dots along the price line.
-    const byWeek = new Map<string, TickerInsight[]>();
-    for (const i of insights) {
-      const d = new Date(i.podcast_launch_time.slice(0, 10));
-      if (Number.isNaN(d.getTime())) continue;
-      d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
-      const monday = d.toISOString().slice(0, 10);
-      if (!byWeek.has(monday)) byWeek.set(monday, []);
-      byWeek.get(monday)!.push(i);
+  // One bar per DAY for the chart's mention pane. Dots on the candles were removed:
+  // placing a mark on a specific bar reads as a claim that the talk moved that bar, and
+  // measured over 40 heavily-discussed tickers, mention volume correlates -0.02 with the
+  // next day's return. A parallel strip below makes no such claim.
+  //
+  // Fetched separately from `insights` rather than reusing it: that one is a fixed
+  // 90-day window feeding the consensus and "誰在談" cards, whose labels say 30/90 天,
+  // so widening it would quietly change what those cards mean. The chart opens on a
+  // multi-year view, and a strip that stops 90 days from the right edge looks broken.
+  const [mentionHistory, setMentionHistory] = useState<TickerInsight[]>([]);
+  useEffect(() => {
+    if (!symbol) return;
+    let alive = true;
+    const end = new Date();
+    const start = new Date(end.getTime() - 730 * 86400e3);
+    getInsightsByTicker(symbol, {
+      start_date: start.toISOString().slice(0, 10),
+      end_date: end.toISOString().slice(0, 10),
+    })
+      .then((rows) => { if (alive) setMentionHistory(rows); })
+      .catch(() => { if (alive) setMentionHistory([]); });
+    return () => { alive = false; };
+  }, [symbol]);
+
+  const mentionBars = useMemo<MentionBar[]>(() => {
+    const rows = mentionHistory;
+    if (rows.length === 0) return [];
+    const byDay = new Map<string, { bull: number; neutral: number; bear: number }>();
+    for (const i of rows) {
+      const day = i.podcast_launch_time.slice(0, 10);
+      const t = Date.parse(day);
+      if (Number.isNaN(t)) continue;
+      const acc = byDay.get(day) ?? { bull: 0, neutral: 0, bear: 0 };
+      const label = normalizeSentiment(i.sentiment_label);
+      if (label === 'BULLISH') acc.bull += 1;
+      else if (label === 'BEARISH') acc.bear += 1;
+      else acc.neutral += 1;
+      byDay.set(day, acc);
     }
-    return [...byWeek.entries()].map(([monday, list]) => {
-      const b = aggregateSentiment(list.map((i) => ({ sentiment_label: i.sentiment_label })));
-      const dominant = b.bull > b.bear ? 'BULLISH' : b.bear > b.bull ? 'BEARISH' : 'NEUTRAL';
-      const sunday = new Date(Date.parse(monday) + 6 * 86400e3).toISOString().slice(5, 10).replace('-', '/');
-      const sorted = [...list].sort((x, y) => Date.parse(y.podcast_launch_time) - Date.parse(x.podcast_launch_time));
-      return {
-        id: `mention:${monday}`,
-        time: Date.parse(monday) / 1000,
-        color: colors[dominant],
-        size: list.length >= 6 ? 1.8 : list.length >= 3 ? 1.4 : 1,
-        tooltip: (
-          <div className="flex flex-col gap-1.5">
-            <div className="text-2xs text-muted-foreground tabular-nums whitespace-nowrap">{monday.replace(/-/g, '/')} – {sunday} · {list.length} 集 · <span className="text-sentiment-bull">多 {b.bull}</span> <span className="text-sentiment-bear">空 {b.bear}</span></div>
-            {sorted.slice(0, 4).map((i) => (
-              <div key={`${i.episode_id}-${i.podcaster}`} className="leading-snug">
-                <span className="font-medium">{i.podcaster || '—'}</span>{' '}
-                <span className={cn('ml-1 font-medium', SENT_CLASS[normalizeSentiment(i.sentiment_label) ?? 'NEUTRAL'])}>{SENT_LABEL[normalizeSentiment(i.sentiment_label) ?? 'NEUTRAL']}</span>
-                {i.time_horizon && <span className="text-muted-foreground ml-1">{i.time_horizon}</span>}
-                <div className="text-muted-foreground line-clamp-2">{i.bluf_thesis}</div>
-              </div>
-            ))}
-            {list.length > 4 && <div className="text-2xs text-muted-foreground">還有 {list.length - 4} 集</div>}
-          </div>
-        ),
-      };
-    });
-    // `theme` is read indirectly: the sentiment CSS variables change with it.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [insights, theme]);
+    return [...byDay.entries()].map(([day, v]) => ({ time: Date.parse(day) / 1000, ...v }));
+  }, [mentionHistory]);
 
   const rawChart = stockData?.chartData;
   const chartData = useMemo(() => {
@@ -334,22 +324,22 @@ const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[]; epi
             onToggleIndicator={(ind, active) => setActiveIndicators((prev) => (active ? [...prev, ind] : prev.filter((i) => i !== ind)))}
           />
           {isLoading ? (
-            <div className="h-[320px] w-full mt-3 rounded-md bg-muted/30 animate-pulse" />
+            <div className="h-[380px] w-full mt-3 rounded-md bg-muted/30 animate-pulse" />
           ) : chartData.length > 0 ? (
-            <div className="h-[320px] w-full mt-3">
+            <div className="h-[380px] w-full mt-3">
               <TradingViewChart
                 data={chartData}
                 theme={theme === 'dark' ? 'dark' : 'light'}
                 lineColor={trend.lineColor}
                 topColor={trend.topColor}
                 bottomColor="transparent"
-                height={320}
+                height={380}
                 className="w-full"
                 activeIndicators={activeIndicators}
                 activeSubChart={subChart}
                 onLoadMore={handleLoadMore}
                 isLoadingMore={isLoadingMore}
-                markers={mentionMarkers}
+                mentions={mentionBars}
               />
             </div>
           ) : market !== 'TW' && market !== 'US' ? (

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ColorType, CrosshairMode, createChart, type IChartApi, type ISeriesApi, type SeriesMarker, type SeriesType, type UTCTimestamp } from 'lightweight-charts';
+import { ColorType, CrosshairMode, createChart, type IChartApi, type ISeriesApi, type SeriesType, type UTCTimestamp } from 'lightweight-charts';
 import { RSI, MACD, Stochastic } from 'technicalindicators';
 import type { PricePoint } from '@/utils/priceSeries';
 import type { ChartDataPoint } from '@/services/types';
@@ -10,21 +10,19 @@ type LoosePoint = { date?: string; volume?: number; price?: number; timestamp?: 
 // What a crosshair lookup can return for any series: bar or line fields.
 type SeriesValue = { value: number; open: number; high: number; low: number; close: number } | undefined;
 
-/** A dot drawn on the main series at `time` (unix seconds); snapped forward to the
- *  first bar at or after that time, dropped if it falls outside the loaded bars. */
-export interface ChartMarker {
-  id: string;
+/** One day's podcast mentions, drawn as a histogram bar under the price.
+ *  `time` is unix seconds; the bar is snapped forward to the first session at or after
+ *  it, so a weekend episode lands on Monday. */
+export interface MentionBar {
   time: number;
-  color: string;
-  /** Marker size multiplier (lightweight-charts `size`, default 1). */
-  size?: number;
-  text?: string;
-  tooltip?: React.ReactNode;
+  bull: number;
+  neutral: number;
+  bear: number;
 }
 
 interface TradingViewChartProps {
   data: (PricePoint | ChartDataPoint)[];
-  markers?: ChartMarker[];
+  mentions?: MentionBar[];
   theme: 'light' | 'dark';
   height?: number;
   className?: string;
@@ -85,10 +83,9 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
   onLoadMore,
   isLoadingMore = false,
   showPriceLines = false,
-  markers,
+  mentions,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [hoverMarker, setHoverMarker] = useState<{ id: string; x: number; y: number } | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const legendRef = useRef<HTMLDivElement>(null);
   const loadMoreDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -181,6 +178,16 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
         return 0;
       };
 
+      // Sub-panes are separate price scales overlaid on the bottom of the same canvas.
+      // The mention pane SPLITS the bottom quarter with the selected sub-indicator
+      // rather than claiming new space below it: the main price scale is deliberately
+      // left alone, because widening its bottom margin makes the axis extrapolate past
+      // zero and print negative price labels. Without mentions the sub-indicator keeps
+      // the whole quarter — an empty strip on a ticker nobody discussed is wasted height.
+      const hasMentions = (mentions?.length ?? 0) > 0;
+      const SUB_MARGINS = hasMentions ? { top: 0.72, bottom: 0.15 } : { top: 0.75, bottom: 0 };
+      const MENTION_MARGINS = { top: 0.88, bottom: 0 };
+
       // 2. Sub-Charts (Bottom Pane)
       if (effectiveSubChart === 'Volume') {
         const volSeries = chart.addHistogramSeries({
@@ -190,7 +197,7 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
           priceLineVisible: false,
         });
         chart.priceScale('volume').applyOptions({
-          scaleMargins: { top: 0.75, bottom: 0 }, // Bottom 25%
+          scaleMargins: SUB_MARGINS,
         });
 
         const volData = sortedData.map(p => {
@@ -226,7 +233,7 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
           priceLineVisible: false,
         });
         chart.priceScale('rsi').applyOptions({
-          scaleMargins: { top: 0.75, bottom: 0 },
+          scaleMargins: SUB_MARGINS,
         });
 
         // Calculate RSI using technicalindicators
@@ -253,7 +260,7 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
         const histSeries = chart.addHistogramSeries({ color: '#26a69a', priceScaleId: 'macd', title: 'Hist', priceLineVisible: false });
 
         chart.priceScale('macd').applyOptions({
-          scaleMargins: { top: 0.75, bottom: 0 },
+          scaleMargins: SUB_MARGINS,
         });
 
         const macdResult = MACD.calculate({
@@ -292,7 +299,7 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
       else if (effectiveSubChart === 'KD') {
         const kSeries = chart.addLineSeries({ color: '#ff9800', lineWidth: 1, priceScaleId: 'kd', title: 'K', priceLineVisible: false });
         const dSeries = chart.addLineSeries({ color: '#a78bfa', lineWidth: 1, priceScaleId: 'kd', title: 'D', priceLineVisible: false });
-        chart.priceScale('kd').applyOptions({ scaleMargins: { top: 0.75, bottom: 0 } });
+        chart.priceScale('kd').applyOptions({ scaleMargins: SUB_MARGINS });
 
         const input = {
           high: sortedData.map(d => 'high' in d ? d.high! : ('value' in d ? d.value : (d as LoosePoint).price || 0)),
@@ -316,7 +323,7 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
       }
       else if (effectiveSubChart === 'Bias') {
         const biasSeries = chart.addLineSeries({ color: '#e91e63', lineWidth: 1, priceScaleId: 'bias', title: 'Bias', priceLineVisible: false });
-        chart.priceScale('bias').applyOptions({ scaleMargins: { top: 0.75, bottom: 0 } });
+        chart.priceScale('bias').applyOptions({ scaleMargins: SUB_MARGINS });
 
         const period = 20;
         // Simple manual calculation for efficient single loop
@@ -376,18 +383,43 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
       }
       seriesMap['Main'] = mainSeries;
 
-      // 3b. Markers (podcast mentions). Times snap forward to the next bar so a
-      // weekend episode lands on Monday's candle; markers must be time-sorted.
-      if (markers && markers.length > 0) {
+      // 3b. Podcast mention pane — always below whatever sub-indicator is selected,
+      // not an option in the dropdown: it is the one thing here no price app can show,
+      // and hiding it behind a picker is the same as not having it.
+      //
+      // Stacked by drawing three histograms largest-first on one scale: the total in the
+      // bearish colour, then bull+neutral over it, then bull over that. lightweight-charts
+      // has no stacked histogram, and three series is less machinery than faking one.
+      if (mentions && mentions.length > 0) {
         const barTimes = sortedData.map(getSeconds);
-        const placed: SeriesMarker<UTCTimestamp>[] = [];
-        for (const m of markers) {
-          const t = barTimes.find((bt) => bt >= m.time);
-          if (t === undefined) continue;
-          placed.push({ time: t as UTCTimestamp, position: 'aboveBar', shape: 'circle', color: m.color, id: m.id, text: m.text, size: m.size ?? 1 });
+        const snapped = mentions
+          .map((m) => ({ ...m, t: barTimes.find((bt) => bt >= m.time) }))
+          .filter((m): m is typeof m & { t: number } => m.t !== undefined);
+        const byBar = new Map<number, { bull: number; neutral: number; bear: number }>();
+        for (const m of snapped) {
+          const acc = byBar.get(m.t) ?? { bull: 0, neutral: 0, bear: 0 };
+          acc.bull += m.bull; acc.neutral += m.neutral; acc.bear += m.bear;
+          byBar.set(m.t, acc);
         }
-        placed.sort((a, b) => a.time - b.time);
-        mainSeries.setMarkers(placed);
+        const bars = [...byBar.entries()].sort((a, b) => a[0] - b[0]);
+        const layers: [string, (v: { bull: number; neutral: number; bear: number }) => number][] = [
+          ['#22c55e', (v) => v.bull + v.neutral + v.bear],  // total, bearish colour showing at the top
+          ['#64748b', (v) => v.bull + v.neutral],           // neutral
+          ['#ef4444', (v) => v.bull],                       // bullish, drawn last so it sits at the base
+        ];
+        layers.forEach(([color, pick], i) => {
+          const s = chart.addHistogramSeries({
+            color,
+            priceScaleId: 'mentions',
+            priceLineVisible: false,
+            lastValueVisible: false,
+          });
+          s.setData(bars
+            .map(([t, v]) => ({ time: t as UTCTimestamp, value: pick(v) }))
+            .filter((d) => d.value > 0));
+          if (i === 0) seriesMap['Mentions'] = s;
+        });
+        chart.priceScale('mentions').applyOptions({ scaleMargins: MENTION_MARGINS });
       }
 
       // 4. Moving Averages
@@ -441,15 +473,6 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
       });
 
       chart.subscribeCrosshairMove(param => {
-        // Marker hover → tooltip; independent of the legend/freeze logic below.
-        if (markers && markers.length > 0) {
-          const id = typeof param.hoveredObjectId === 'string' ? param.hoveredObjectId : null;
-          setHoverMarker((prev) => {
-            if (!id || !param.point) return prev ? null : prev;
-            if (prev && prev.id === id) return prev;
-            return { id, x: param.point.x, y: param.point.y };
-          });
-        }
         if (!legendRef.current) return;
 
         // If frozen, do NOT update the legend
@@ -532,6 +555,13 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
         } else if (effectiveSubChart === 'Bias' && seriesMap['Bias']) {
           const val = param.seriesData.get(seriesMap['Bias']) as SeriesValue;
           if (val) subHtml = `<span class="text-[#e91e63] ml-4">Bias ${val.value.toFixed(2)}%</span>`;
+        }
+
+        // Mentions sit outside that chain: the pane is always on, not one of the
+        // dropdown's mutually exclusive options.
+        if (seriesMap['Mentions']) {
+          const val = param.seriesData.get(seriesMap['Mentions']) as SeriesValue;
+          if (val && val.value > 0) subHtml += `<span class="text-slate-400 ml-4">提及 ${val.value}</span>`;
         }
 
         // Update Legend DOM - Two Rows
@@ -622,9 +652,8 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
       }
     };
 
-  }, [data, theme, height, minimal, activeIndicators, effectiveSubChart, onLoadMore, isLoadingMore, showPriceLines, markers]);
+  }, [data, theme, height, minimal, activeIndicators, effectiveSubChart, onLoadMore, isLoadingMore, showPriceLines, mentions]);
 
-  const hovered = hoverMarker && markers ? markers.find((m) => m.id === hoverMarker.id) : undefined;
 
   return (
     <div className={`relative ${className || ''}`} style={{ height }}>
@@ -642,17 +671,6 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
         />
       )}
       <div ref={containerRef} className="w-full h-full" />
-      {hovered && hovered.tooltip && hoverMarker && (
-        <div
-          className="absolute z-30 pointer-events-none max-w-[280px] rounded-md border border-border bg-popover text-popover-foreground shadow-md p-2.5 text-xs"
-          style={{
-            left: Math.min(hoverMarker.x + 12, Math.max(0, (containerRef.current?.clientWidth ?? 0) - 290)),
-            top: Math.max(8, hoverMarker.y - 8),
-          }}
-        >
-          {hovered.tooltip}
-        </div>
-      )}
     </div>
   );
 };
