@@ -68,7 +68,7 @@ Example composed post (181/500 chars):
 | `SOCIAL_PUBLISH_SCAN_LIMIT` | no (default 10) | How many recent episodes each slot scans; the ledger decides what actually posts. |
 | `SOCIAL_COMMENT_SYNC_MINUTES` | to answer comments | How often to pull + triage new comments. 0 (default) = off. Same one-environment rule. **Currently 0 on production** — held off for the feature's first release, since the production-only rule means no other environment can exercise it first. Flip to `30` once the admin 留言 tab shows the triage classifying real comments correctly. |
 | `SOCIAL_COMMENT_MODEL` | no (default `google/gemini-2.5-flash`) | OpenRouter model used to classify a comment and draft a reply. |
-| `SOCIAL_COMMENT_AUTO_REPLY_CAP` | no (default 3) | Most unattended replies per sync. |
+| `SOCIAL_COMMENT_AUTO_REPLY_CAP` | to answer anything unattended | Most unattended replies per sync. **0 (default) = nothing goes out without a human**; a praise comment the classifier would have answered just waits in 待處理 instead. Raise it (e.g. `3`) only after watching the triage handle real comments. |
 | `SITE_URL` | no (default `https://tinboker.com`) | Origin used for episode permalinks. |
 
 ### Endpoints

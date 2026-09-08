@@ -13,6 +13,7 @@ Hence the split:
   * only the safest category auto-replies, everything substantive waits for a human.
 """
 
+import asyncio
 import json
 import logging
 import re
@@ -185,58 +186,79 @@ async def sync_and_triage(scan_posts: Optional[int] = None) -> dict:
             f"{base}/me/threads",
             params={"fields": "id,text", "limit": limit, "access_token": token},
         )).json().get("data", [])
+        counts["scanned"] = len(posts)
 
         with session_scope() as db:
             known = {c.id for c in db.query(ThreadsComment.id).all()}
 
-        for post in posts:
-            counts["scanned"] += 1
-            conv = (await client.get(
+        async def conversation(post: dict) -> list[dict]:
+            r = await client.get(
                 f"{base}/{post['id']}/conversation",
                 params={"fields": "id,text,username,timestamp,replied_to,is_reply_owned_by_me",
                         "access_token": token},
-            )).json().get("data", [])
+            )
+            return r.json().get("data", [])
 
+        # Fetch and triage concurrently. Serially this is ~15s of HTTP plus one model
+        # call per new comment, which on a first run (40 comments) blows past both the
+        # admin page's 30s client timeout and Cloudflare's 100s edge cap — the button
+        # could never finish, so the tab stayed empty.
+        convs = await asyncio.gather(*(conversation(p) for p in posts))
+
+        seen = set(known)
+        candidates: list[tuple[dict, dict]] = []
+        for post, conv in zip(posts, convs):
             our_ids = {post["id"]} | {c["id"] for c in conv if c.get("is_reply_owned_by_me")}
             for entry in conv:
-                if entry.get("is_reply_owned_by_me") or entry["id"] in known:
+                # /me/threads returns our own chain replies too, so the same comment can
+                # surface under two posts — dedupe here or the insert hits the PK.
+                if entry.get("is_reply_owned_by_me") or entry["id"] in seen:
                     continue
                 if _is_bot(entry.get("username")) or not _addressed_to_us(entry, our_ids):
                     continue
+                seen.add(entry["id"])
+                candidates.append((post, entry))
 
-                t = await _triage(client, post.get("text") or "", entry.get("text") or "")
-                verdict = (
-                    decide(t["category"], t.get("has_factual_claim", False),
-                           t.get("asks_question", False), entry.get("text") or "")
-                    if t["category"] else "needs_review"
-                )
-                draft = t.get("draft") or ""
-                row = ThreadsComment(
-                    id=entry["id"], root_post_id=post["id"],
-                    replied_to_id=(entry.get("replied_to") or {}).get("id"),
-                    username=entry.get("username"), text=entry.get("text") or "",
-                    posted_at=_parse_ts(entry.get("timestamp")),
-                    category=t["category"], verdict=verdict,
-                    reason=t.get("reason"), draft=draft,
-                    status="ignored" if verdict == "ignore" else "pending",
-                )
-                with session_scope() as db:
-                    db.add(row)
-                known.add(entry["id"])
-                counts["new"] += 1
+        gate = asyncio.Semaphore(5)
 
-                if verdict == "ignore":
-                    counts["ignored"] += 1
-                elif verdict == "auto_reply" and draft and auto_budget > 0:
-                    try:
-                        await send_reply(entry["id"], draft, auto=True, service=service)
-                        auto_budget -= 1
-                        counts["auto_replied"] += 1
-                    except ThreadsError as e:
-                        logger.warning("auto-reply to %s failed: %s", entry["id"], e)
-                        counts["needs_review"] += 1
-                else:
+        async def triage(post: dict, entry: dict) -> dict:
+            async with gate:
+                return await _triage(client, post.get("text") or "", entry.get("text") or "")
+
+        triaged = await asyncio.gather(*(triage(p, e) for p, e in candidates))
+
+        for (post, entry), t in zip(candidates, triaged):
+            verdict = (
+                decide(t["category"], t.get("has_factual_claim", False),
+                       t.get("asks_question", False), entry.get("text") or "")
+                if t["category"] else "needs_review"
+            )
+            draft = t.get("draft") or ""
+            row = ThreadsComment(
+                id=entry["id"], root_post_id=post["id"],
+                replied_to_id=(entry.get("replied_to") or {}).get("id"),
+                username=entry.get("username"), text=entry.get("text") or "",
+                posted_at=_parse_ts(entry.get("timestamp")),
+                category=t["category"], verdict=verdict,
+                reason=t.get("reason"), draft=draft,
+                status="ignored" if verdict == "ignore" else "pending",
+            )
+            with session_scope() as db:
+                db.add(row)
+            counts["new"] += 1
+
+            if verdict == "ignore":
+                counts["ignored"] += 1
+            elif verdict == "auto_reply" and draft and auto_budget > 0:
+                try:
+                    await send_reply(entry["id"], draft, auto=True, service=service)
+                    auto_budget -= 1
+                    counts["auto_replied"] += 1
+                except ThreadsError as e:
+                    logger.warning("auto-reply to %s failed: %s", entry["id"], e)
                     counts["needs_review"] += 1
+            else:
+                counts["needs_review"] += 1
 
     return counts
 

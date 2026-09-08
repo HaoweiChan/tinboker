@@ -136,7 +136,7 @@ export const CommentTriage: React.FC = () => {
 
       {!loading && items.length === 0 && (
         <div className={`${card} p-8 text-center text-base text-muted-foreground`}>
-          沒有留言。
+          沒有留言。留言要先按右上角「抓新留言」抓回來才會出現在這裡。
         </div>
       )}
 
