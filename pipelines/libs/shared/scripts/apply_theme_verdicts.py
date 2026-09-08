@@ -16,9 +16,10 @@ exception: a reviewer who found the stored description itself wrong (it is what 
 membership was judged against, so a wrong one poisons the whole theme) can replace it,
 and every override is printed for a human to see.
 
-A verdict marked ``"status": "insufficient"`` is left out of the payload entirely: the
-reviewer is saying the theme could not be filled, so the live rows stay as they are and
-a human decides whether that theme should exist at all. Every other theme that comes
+A verdict marked ``"status": "insufficient"`` (a theme the reviewer could not fill) or
+``"untouched"`` (an exposure this pass deliberately did not review) is left out of the
+payload entirely, so its live rows stay exactly as they are and a human decides what
+should happen to it. Every other theme that comes
 back thinner than ``--min-members`` aborts the run — that is the unexpected case, and
 shipping a one-member sector page is worse than shipping nothing.
 
@@ -70,7 +71,7 @@ def main() -> None:
         row = json.loads(line)
         live[row["exposure_id"]] = row
 
-    sectors, thin, unknown, insufficient = [], [], [], []
+    sectors, thin, unknown, skipped_status = [], [], [], []
     filled, overridden = [], []
     added = kept = dropped = 0
     for fname in sorted(os.listdir(args.merged)):
@@ -79,11 +80,11 @@ def main() -> None:
         v = json.load(open(os.path.join(args.merged, fname), encoding="utf-8"))
         eid = v["exposure_id"]
         row = live.get(eid)
-        if row is None or row.get("redirect_to") or row.get("exposure_type") != "theme":
+        if row is None or row.get("redirect_to") or row.get("exposure_type") not in ("theme", "industry"):
             unknown.append(eid)
             continue
-        if v.get("status") == "insufficient":
-            insufficient.append((eid, len(v.get("members") or [])))
+        if v.get("status") in ("insufficient", "untouched"):
+            skipped_status.append((eid, v.get("status"), len(v.get("members") or [])))
             continue
 
         before = {m["ticker"]: m for m in (row.get("members") or [])}
@@ -116,14 +117,18 @@ def main() -> None:
     if thin:
         sys.exit("themes below --min-members (raise the floor deliberately or re-review): "
                  + ", ".join(f"{e}={n}" for e, n in thin))
-    for eid, n in insufficient:
-        print(f"SKIPPED {eid}: marked insufficient ({n} member(s) found) — live rows untouched, "
-              f"decide whether this theme should exist")
+    for eid, status, n in skipped_status:
+        print(f"SKIPPED {eid}: marked {status} ({n} member(s)) — live rows untouched")
 
     # A company in too many themes makes every one of those pages say less. The review
     # caps this, but a hand-swapped verdict file can breach it, so the check runs here too.
+    # Industries are excluded: they roll their child themes up, so every theme member sits
+    # in its parent industry by construction and counting both would flag the whole market.
     if args.max_fanout:
-        fanout = collections.Counter(m["ticker"] for s in sectors for m in s["members"])
+        fanout = collections.Counter(
+            m["ticker"] for s in sectors if live[s["exposure_id"]].get("exposure_type") == "theme"
+            for m in s["members"]
+        )
         over = [(t, n) for t, n in fanout.most_common() if n > args.max_fanout]
         if over:
             sys.exit("companies over --max-fanout: " + ", ".join(f"{t} in {n} themes" for t, n in over))
@@ -136,7 +141,8 @@ def main() -> None:
     for eid in overridden:
         print(f"DESCRIPTION REPLACED {eid}: the stored description was judged wrong — "
               f"read the new one before publishing")
-    print(f"themes {len(sectors)}  members {sum(len(s['members']) for s in sectors)} "
+    by_type = collections.Counter(live[s["exposure_id"]]["exposure_type"] for s in sectors)
+    print(f"exposures {len(sectors)} ({by_type.get('theme', 0)} themes, {by_type.get('industry', 0)} industries)  members {sum(len(s['members']) for s in sectors)} "
           f"(kept {kept}, added {added}, dropped {dropped})  "
           f"descriptions filled {len(filled)}, replaced {len(overridden)}")
     print(f"wrote {args.out} — review the diff returned by /api/admin/taxonomy/bulk before publishing")
