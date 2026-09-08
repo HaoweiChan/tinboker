@@ -311,8 +311,8 @@ const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[]; epi
 
           Colours stay on the site's tokens: card/border surfaces, amber primary for
           emphasis, semantic sentiment green/red, cyan only on sector chips. */}
-      <div className="grid grid-cols-1 md:grid-cols-6 gap-3.5 mb-[18px]">
-        <div className="md:col-span-4 md:row-span-2 bg-card border border-border rounded-[10px] p-4 flex flex-col">
+      <div className="grid grid-cols-1 md:grid-cols-10 gap-3.5 mb-[18px]">
+        <div className="md:col-span-7 md:row-span-2 md:bg-card md:border md:border-border md:rounded-[10px] md:p-4 flex flex-col">
           <ChartControls
             timeframe={timeframe}
             onTimeframeChange={setTimeframe}
@@ -322,16 +322,16 @@ const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[]; epi
             onToggleIndicator={(ind, active) => setActiveIndicators((prev) => (active ? [...prev, ind] : prev.filter((i) => i !== ind)))}
           />
           {isLoading ? (
-            <div className="h-[380px] w-full mt-3 rounded-md bg-muted/30 animate-pulse" />
+            <div className="h-[400px] w-full mt-1 rounded-md bg-muted/30 animate-pulse" />
           ) : chartData.length > 0 ? (
-            <div className="h-[380px] w-full mt-3">
+            <div className="h-[400px] w-full mt-1">
               <TradingViewChart
                 data={chartData}
                 theme={theme === 'dark' ? 'dark' : 'light'}
                 lineColor={trend.lineColor}
                 topColor={trend.topColor}
                 bottomColor="transparent"
-                height={380}
+                height={400}
                 className="w-full"
                 activeIndicators={activeIndicators}
                 activeSubChart={subChart}
@@ -357,7 +357,7 @@ const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[]; epi
         </div>
 
         {/* key: remount (and re-animate) when the insight list arrives or changes. */}
-        <ConsensusTile key={insights.length} insights={insights} className="md:col-span-2 md:row-span-2" />
+        <ConsensusTile key={insights.length} insights={insights} className="md:col-span-3 md:row-span-2" />
 
         {/* Range tile */}
         <div className="md:col-span-2 bg-card border border-border rounded-[10px] p-5 flex flex-col justify-between gap-3">

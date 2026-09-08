@@ -62,12 +62,12 @@ export const ConsensusTile: React.FC<ConsensusTileProps> = ({ insights, classNam
   const bigLabel = lean === 'bear' ? '集看空' : '集看多';
 
   return (
-    <div className={cn('rounded-[10px] border p-5 flex flex-col justify-between gap-4', tint, className)}>
+    <div className={cn('rounded-[10px] border p-4 md:p-5 flex flex-col justify-between gap-3', tint, className)}>
       <div className={cn('text-xs', lean === 'bull' ? 'text-sentiment-bull' : lean === 'bear' ? 'text-sentiment-bear' : 'text-muted-foreground')}>{title}</div>
       {b.total > 0 ? (
         <div className="flex flex-col gap-1">
           <div className="flex items-baseline gap-2 flex-wrap">
-            <span className={cn('font-mono tabular-nums font-semibold leading-none text-[44px] lg:text-[52px]', bigCls)}><CountUp value={big} /></span>
+            <span className={cn('font-mono tabular-nums font-semibold leading-none text-[34px] lg:text-[44px]', bigCls)}><CountUp value={big} /></span>
             <span className="text-base">{bigLabel}</span>
           </div>
           <div className="text-sm text-muted-foreground">
