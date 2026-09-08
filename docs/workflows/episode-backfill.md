@@ -119,6 +119,33 @@ Roughly 560 KB of prompt across the four steps for a ~50-minute episode (measure
 股癌 EP683: extractor 194 KB, writer 175 KB, key_insights 22 KB, ticker_extractor
 169 KB) — on the order of 250K input tokens per episode. Size batches accordingly.
 
+### Never run both paths over the same episode
+
+The two paths write the summary to *different places*. The automated pipeline stores the
+markdown as an artifact and sets `summary_url`, leaving the inline `summary_content`
+field alone; only the regen tool writes `summary_content`. The backend renders the inline
+field when it is non-empty and hydrates from the URL otherwise. Persistence is a merge.
+
+So running the pipeline over an episode that a session already wrote leaves a **mixed
+document that reports no error**: the old inline summary still renders, while
+`related_tickers`, `tags` and `sector_exposures` have been replaced by the pipeline's.
+Observed on 股癌 EP127 — a body linking 40 tickers next to a `related_tickers` list of 11.
+
+If you do need to move an episode from one path to the other, clear the regen-only inline
+fields (`summary_content`, `events_markdown`, `marp_markdown`, `ticker_marp_markdown`) so
+the surviving `*_url` artifacts are what gets served. **When both paths have been run over
+one episode, the pipeline's output is the one that stands** — the agent path only earns a
+commit once it has been shown to match the corpus.
+
+### Calibration
+
+An agent writing to these prompts overshoots the pipeline's own model on every axis.
+`regen/schemas.py` carries the measured bands (summary ~4,300 characters within
+3,400–4,900; 8 sections; ~7 tickers; ~7–8 tags), taken from the 60 most recent
+pipeline-written 股癌 episodes, and `submit_role("writer", …)` returns a warning naming
+whatever drifted. **Resubmit `writer` until it comes back clean** before moving on —
+resubmitting is cheap, and every episode in the first batch would have been flagged.
+
 ## Sequencing — the one that can cause harm
 
 **Do not widen `RELEASE_EPISODE_MAX_AGE_DAYS` while a backfill batch is still unscanned
