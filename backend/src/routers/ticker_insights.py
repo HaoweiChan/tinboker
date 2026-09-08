@@ -4,6 +4,7 @@ Ticker insights router.
 Firestore-backed replacement for /api/recommendations/*.
 Contract: docs/firestore-contract.md §§ 4–5.
 """
+from datetime import date
 from typing import List, Optional
 
 from fastapi import APIRouter, Query
@@ -38,6 +39,7 @@ async def get_trending(
 @cdn_cache_trending
 async def get_recent(
     limit: int = Query(default=100, ge=1, le=200, description="Max picks, newest first"),
+    before: Optional[date] = Query(default=None, description="ISO date; only picks launched on or before this day (已揭曉 paging)"),
 ) -> List[dict]:
     """
     Recent TickerInsight[] across ALL podcasters, newest-first (blended timeline).
@@ -49,7 +51,7 @@ async def get_recent(
 
     CDN Cache: 5 minutes.
     """
-    return await insight_service.get_recent(limit=limit)
+    return await insight_service.get_recent(limit=limit, before=before)
 
 
 @router.get("/by-ticker/{ticker}")

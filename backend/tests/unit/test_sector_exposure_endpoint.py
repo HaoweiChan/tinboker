@@ -9,7 +9,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.models.podcast import Episode
 from src.services.podcast import PodcastService
 
 
@@ -195,9 +194,9 @@ async def test_metadata_derived_even_when_all_episodes_scoped_out():
 
 
 @pytest.mark.asyncio
-async def test_excluded_exposure_returns_empty_without_querying():
-    """Suppressed umbrella exposures (e.g. the broad 半導體 sector) short-circuit to
-    an empty payload and never hit Firestore."""
+async def test_umbrella_exposure_returns_empty_without_querying():
+    """Umbrella exposures (the broad 半導體 sector) are too wide to be a page: they
+    short-circuit to an empty payload and never hit Firestore; nothing links to them."""
     mock_fs = MagicMock()
 
     svc = PodcastService(firestore_service=mock_fs)
@@ -321,3 +320,35 @@ async def test_pagination_offset_and_limit():
     # total = full matched count (for pagination); episodes = this page slice.
     assert result["total"] == 10
     assert len(result["episodes"]) == 3
+
+
+@pytest.mark.asyncio
+async def test_fetch_is_ordered_and_list_payload_drops_exposure_tickers():
+    """The over-fetch is ordered newest-ingested first (a bare LIMIT took physical
+    order and could miss a big sector's newest episodes), and each episode's
+    sector_exposures keep their keys but carry no resolved_tickers — that list was
+    77% of the payload and only the response-level resolved_tickers is consumed."""
+    doc = _raw_doc("ep-001", tickers=[
+        {"ticker": "2327", "name": "國巨", "name_en": None, "market": "TW", "source": "curated"},
+    ])
+    mock_fs = MagicMock()
+    mock_fs.query_collection.return_value = [doc]
+    svc = PodcastService(firestore_service=mock_fs)
+
+    with (
+        patch("src.services.podcast.cache_get", new=AsyncMock(return_value=None)),
+        patch("src.services.podcast.cache_set", new=AsyncMock()),
+        patch("src.services.podcast._sector_redirects", return_value={}),
+        patch.object(svc, "_allowed_podcast_names", new=AsyncMock(return_value=None)),
+    ):
+        result = await svc.get_episodes_by_sector("sector_passive_components", limit=50)
+
+    args = mock_fs.query_collection.call_args.args
+    assert args[2:4] == ("created_time", "DESCENDING")
+    assert args[4] >= 50
+
+    assert [t["ticker"] for t in result["resolved_tickers"]] == ["2327"]
+    (entry,) = result["episodes"][0]["sector_exposures"]
+    assert entry["exposure_id"] == "sector_passive_components"
+    assert entry["display_name"] == "被動元件"
+    assert entry["resolved_tickers"] == []

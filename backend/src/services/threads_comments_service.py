@@ -1,4 +1,4 @@
-"""Triage the replies people leave on our Threads posts, and answer the good ones.
+"""Triage the replies people leave on our Threads posts, so a human answers the good ones.
 
 Shape of the problem, from the first 63 posts (2026-06-15 → 08-26, 33 external
 replies): ~14 were real arguments or direct questions, ~9 were one-line reactions,
@@ -8,11 +8,17 @@ troll defence; it is not talking to bots, not barging into someone else's sub-th
 and not letting a model improvise financial claims in public.
 
 Hence the split:
-  * objective exclusions are rules (ours / bots / not addressed to us) — no model call;
+  * objective exclusions are rules (ours / bots / empty / not addressed to us) — no model call;
   * the judgement call is one model call per new comment;
-  * only the safest category auto-replies, everything substantive waits for a human.
+  * nothing is ever posted unattended — the model classifies and drafts, a human sends.
+
+The model has no send button on purpose. On the first run against real comments it
+called four of them plain "praise", one being 「一堆傻子根本沒弄清楚…」 — that is the
+category that used to be allowed out on its own. A wrong tone or a wrong number from a
+finance account is worse than a slow reply, and none of this is urgent.
 """
 
+import asyncio
 import json
 import logging
 import re
@@ -24,7 +30,7 @@ import httpx
 from src.config import settings
 from src.database.models import ThreadsComment
 from src.database.postgres import session_scope
-from src.services.threads_service import ThreadsError, ThreadsService
+from src.services.threads_service import ThreadsService
 
 logger = logging.getLogger(__name__)
 
@@ -44,11 +50,13 @@ CATEGORIES = ("praise", "question", "substantive", "hostile", "noise", "promo", 
 TRIAGE_SYSTEM = """你是台灣財經 podcast 摘要帳號 @tinboker 的社群編輯。判斷一則留言該不該回、怎麼回。
 
 分類（category 只能是其中一個）：
-- praise：單純稱讚、打招呼、表示認同，沒有提出主張也沒有問題
+- praise：**完全沒有內容**的稱讚、打招呼、按讚式回應（例：「推」「感謝整理」「皓哥出品必屬精品」）。
+  留言只要對主題表達了看法、補充、比喻或評論，就算語氣是稱讚也不是 praise，是 substantive
 - question：直接問我們問題，想要一個答案
 - substantive：提出論點、反駁、補充資料，值得對話
 - hostile：人身攻擊、單純謾罵
-- noise：一句話情緒或梗，沒有可回應的內容（例：「我就空」「就賭爛」）
+- noise：一句話情緒或梗，沒有可回應的內容（例：「我就空」「就賭爛」）。
+  指出我們講錯的地方（人名、數字、錯字）不是 noise，是 substantive —— 那是要修正的
 - promo：主要目的是推自己的連結或帳號
 - bot：留言者是機器人
 
@@ -56,7 +64,7 @@ TRIAGE_SYSTEM = """你是台灣財經 podcast 摘要帳號 @tinboker 的社群�
 - has_factual_claim：留言裡有可被查證的具體事實或數字（研究報告、毛利率、產能時程…）
 - asks_question：留言在等一個回答
 
-draft：只有 category 是 praise / question / substantive 才寫，其他留空字串。
+draft：只有 category 是 question / substantive 才寫，其他一律留空字串。
 這個帳號是公開的自動整理帳號，不假裝是人。回覆有立場但沒有第一人稱：
 - **不准出現「我」**（我覺得、我聽完、我也沒想通… 全部不行）。立場照樣要有，
   只是不掛在一個人身上：「這個講法站不住」而不是「我覺得這個講法站不住」
@@ -97,7 +105,10 @@ def decide(category: str, has_factual_claim: bool, asks_question: bool, text: st
         and not asks_question
         and not POSITION_RE.search(text or "")
     ):
-        return "auto_reply"
+        # 「推」「感謝整理」— there is nothing to answer, so it does not belong in a queue
+        # a human works through. Praise carrying a claim, a question or a position is a
+        # conversation, and falls through to review.
+        return "ignore"
     return "needs_review"
 
 
@@ -164,89 +175,100 @@ def _parse_ts(value: Optional[str]) -> Optional[datetime]:
 
 
 async def sync_and_triage(scan_posts: Optional[int] = None) -> dict:
-    """Pull new comments on recent posts, triage them, auto-reply to the safe ones.
+    """Pull new comments on recent posts and triage them. Posts nothing.
 
-    Returns ``{scanned, new, auto_replied, needs_review, ignored}``.
+    Returns ``{scanned, new, needs_review, ignored}``.
     """
-    service = ThreadsService()
-    if not service.is_configured:
+    if not ThreadsService().is_configured:
         return {"configured": False, "scanned": 0, "new": 0,
-                "auto_replied": 0, "needs_review": 0, "ignored": 0}
+                "needs_review": 0, "ignored": 0}
 
     limit = scan_posts or settings.social_comment_scan_posts
     base = settings.threads_api_base.rstrip("/")
     token = settings.threads_access_token
     counts = {"configured": True, "scanned": 0, "new": 0,
-              "auto_replied": 0, "needs_review": 0, "ignored": 0}
-    auto_budget = settings.social_comment_auto_reply_cap
+              "needs_review": 0, "ignored": 0}
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         posts = (await client.get(
             f"{base}/me/threads",
             params={"fields": "id,text", "limit": limit, "access_token": token},
         )).json().get("data", [])
+        counts["scanned"] = len(posts)
 
         with session_scope() as db:
             known = {c.id for c in db.query(ThreadsComment.id).all()}
 
-        for post in posts:
-            counts["scanned"] += 1
-            conv = (await client.get(
+        async def conversation(post: dict) -> list[dict]:
+            r = await client.get(
                 f"{base}/{post['id']}/conversation",
-                params={"fields": "id,text,username,timestamp,replied_to,is_reply_owned_by_me",
+                params={"fields": "id,text,username,timestamp,replied_to,permalink,"
+                                  "is_reply_owned_by_me",
                         "access_token": token},
-            )).json().get("data", [])
+            )
+            return r.json().get("data", [])
 
+        # Fetch and triage concurrently. Serially this is ~15s of HTTP plus one model
+        # call per new comment, which on a first run (40 comments) blows past both the
+        # admin page's 30s client timeout and Cloudflare's 100s edge cap — the button
+        # could never finish, so the tab stayed empty.
+        convs = await asyncio.gather(*(conversation(p) for p in posts))
+
+        seen = set(known)
+        candidates: list[tuple[dict, dict]] = []
+        for post, conv in zip(posts, convs):
             our_ids = {post["id"]} | {c["id"] for c in conv if c.get("is_reply_owned_by_me")}
             for entry in conv:
-                if entry.get("is_reply_owned_by_me") or entry["id"] in known:
+                # /me/threads returns our own chain replies too, so the same comment can
+                # surface under two posts — dedupe here or the insert hits the PK.
+                if entry.get("is_reply_owned_by_me") or entry["id"] in seen:
                     continue
                 if _is_bot(entry.get("username")) or not _addressed_to_us(entry, our_ids):
                     continue
+                if not (entry.get("text") or "").strip():
+                    continue  # a sticker or image reply — nothing to read, nothing to answer
+                seen.add(entry["id"])
+                candidates.append((post, entry))
 
-                t = await _triage(client, post.get("text") or "", entry.get("text") or "")
-                verdict = (
-                    decide(t["category"], t.get("has_factual_claim", False),
-                           t.get("asks_question", False), entry.get("text") or "")
-                    if t["category"] else "needs_review"
-                )
-                draft = t.get("draft") or ""
-                row = ThreadsComment(
-                    id=entry["id"], root_post_id=post["id"],
-                    replied_to_id=(entry.get("replied_to") or {}).get("id"),
-                    username=entry.get("username"), text=entry.get("text") or "",
-                    posted_at=_parse_ts(entry.get("timestamp")),
-                    category=t["category"], verdict=verdict,
-                    reason=t.get("reason"), draft=draft,
-                    status="ignored" if verdict == "ignore" else "pending",
-                )
-                with session_scope() as db:
-                    db.add(row)
-                known.add(entry["id"])
-                counts["new"] += 1
+        gate = asyncio.Semaphore(5)
 
-                if verdict == "ignore":
-                    counts["ignored"] += 1
-                elif verdict == "auto_reply" and draft and auto_budget > 0:
-                    try:
-                        await send_reply(entry["id"], draft, auto=True, service=service)
-                        auto_budget -= 1
-                        counts["auto_replied"] += 1
-                    except ThreadsError as e:
-                        logger.warning("auto-reply to %s failed: %s", entry["id"], e)
-                        counts["needs_review"] += 1
-                else:
-                    counts["needs_review"] += 1
+        async def triage(post: dict, entry: dict) -> dict:
+            async with gate:
+                return await _triage(client, post.get("text") or "", entry.get("text") or "")
+
+        triaged = await asyncio.gather(*(triage(p, e) for p, e in candidates))
+
+        for (post, entry), t in zip(candidates, triaged):
+            verdict = (
+                decide(t["category"], t.get("has_factual_claim", False),
+                       t.get("asks_question", False), entry.get("text") or "")
+                if t["category"] else "needs_review"
+            )
+            draft = t.get("draft") or ""
+            row = ThreadsComment(
+                id=entry["id"], root_post_id=post["id"],
+                replied_to_id=(entry.get("replied_to") or {}).get("id"),
+                username=entry.get("username"), text=entry.get("text") or "",
+                posted_at=_parse_ts(entry.get("timestamp")),
+                permalink=entry.get("permalink"),
+                category=t["category"], verdict=verdict,
+                reason=t.get("reason"), draft=draft,
+                status="ignored" if verdict == "ignore" else "pending",
+            )
+            with session_scope() as db:
+                db.add(row)
+            counts["new"] += 1
+
+            counts["ignored" if verdict == "ignore" else "needs_review"] += 1
 
     return counts
 
 
-async def send_reply(comment_id: str, text: str, *, auto: bool = False,
+async def send_reply(comment_id: str, text: str,
                      service: Optional[ThreadsService] = None) -> dict:
     """Post ``text`` as a reply to ``comment_id`` and mark the row replied.
 
-    The status check is the guard against double-replying — the admin button and the
-    unattended path both land here.
+    Only the admin button reaches this — the status check guards against a double tap.
     """
     text = (text or "").strip()
     if not text:
@@ -269,9 +291,8 @@ async def send_reply(comment_id: str, text: str, *, auto: bool = False,
         row.draft = text
         row.reply_media_id = media_id
         row.replied_at = datetime.utcnow()
-        row.auto = auto
-    logger.info("replied to comment %s (%s)", comment_id, "auto" if auto else "manual")
-    return {"replied": True, "reply_media_id": media_id, "auto": auto}
+    logger.info("replied to comment %s", comment_id)
+    return {"replied": True, "reply_media_id": media_id}
 
 
 def set_status(comment_id: str, status: str) -> dict:
@@ -301,7 +322,7 @@ def list_comments(status: str = "pending", limit: int = 50) -> list[dict]:
                 "category": r.category, "verdict": r.verdict, "reason": r.reason,
                 "draft": r.draft, "status": r.status, "auto": r.auto,
                 "reply_media_id": r.reply_media_id,
-                "permalink": f"https://www.threads.com/@tinboker/post/{r.root_post_id}",
+                "permalink": r.permalink,
             }
             for r in rows
         ]

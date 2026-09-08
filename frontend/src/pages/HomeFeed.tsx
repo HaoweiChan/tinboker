@@ -3,8 +3,12 @@ import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
 import { EpisodeCardV2, FilterPills } from '@/components/redesign';
 import { apiEpisodeToCardV2 } from '@/components/redesign/episodeAdapter';
-import { HomeRail } from '@/components/redesign/HomeRail';
+import { NarrativeHero } from '@/components/home/NarrativeHero';
+import { BuzzRank } from '@/components/home/BuzzRank';
+import { RisingTable } from '@/components/home/RisingTable';
 import { getRecentEpisodes, getSortedPodcasts, type Episode as ApiEpisode, type Podcast } from '@/services/api/podcasts';
+import { getAttention } from '@/services/api/attention';
+import type { Attention } from '@/validation/schemas';
 import { fetchWithFallback } from '@/services/api/migration';
 import { useSubscriptions, useEpisodeBookmarks, useAppStore } from '@/store/useAppStore';
 import { useStockPriceMap } from '@/hooks/useStockPriceMap';
@@ -19,7 +23,8 @@ type Filter = (typeof FILTERS)[number];
 // (no skeleton flash) and revalidates in the background. Mirrors the module-level
 // caches in useStockPriceMap / useEpisodeSentimentMap / fetchWithFallback.
 // ponytail: in-memory only; SWR self-heals, no persistence needed.
-let homeSnapshot: { episodes: ApiEpisode[]; podcasts: Podcast[] } | null = null;
+let homeSnapshot: { episodes: ApiEpisode[]; podcasts: Podcast[]; attention: Attention | null } | null = null;
+
 
 function CardSkeleton() {
   return (
@@ -39,6 +44,7 @@ function CardSkeleton() {
 export const HomeFeed: React.FC = () => {
   const [episodes, setEpisodes] = useState<ApiEpisode[]>(() => homeSnapshot?.episodes ?? []);
   const [podcasts, setPodcasts] = useState<Podcast[]>(() => homeSnapshot?.podcasts ?? []);
+  const [attention, setAttention] = useState<Attention | null>(() => homeSnapshot?.attention ?? null);
   const [loading, setLoading] = useState(() => !homeSnapshot);
   const [filter, setFilter] = useState<Filter>('最新');
   const subscriptions = useSubscriptions();
@@ -67,7 +73,7 @@ export const HomeFeed: React.FC = () => {
     // No setLoading(true) here: a warm return paints from homeSnapshot and revalidates
     // silently. The skeleton only shows on a cold start (loading inits to !homeSnapshot).
     (async () => {
-      const [data, podcastList] = await Promise.all([
+      const [data, podcastList, att] = await Promise.all([
         fetchWithFallback<ApiEpisode[]>(
           () => getRecentEpisodes({ limit: 60, sortBy: 'released_at_ms', order: 'desc', includeContent: false }),
           [],
@@ -78,13 +84,15 @@ export const HomeFeed: React.FC = () => {
           [],
           'getSortedPodcasts',
         ).catch(() => [] as Podcast[]),
+        getAttention().catch(() => null),
       ]);
       if (!alive) return;
       const eps = Array.isArray(data) ? data : [];
       const pods = Array.isArray(podcastList) ? podcastList : [];
       setEpisodes(eps);
       setPodcasts(pods);
-      if (eps.length || pods.length) homeSnapshot = { episodes: eps, podcasts: pods };
+      setAttention(att);
+      if (eps.length || pods.length) homeSnapshot = { episodes: eps, podcasts: pods, attention: att };
       setLoading(false);
     })();
     return () => {
@@ -96,10 +104,10 @@ export const HomeFeed: React.FC = () => {
     let list = episodes;
     if (filter === '追蹤') {
       const subs = new Set(subscriptions);
-      list = subs.size ? episodes.filter((e) => subs.has(e.podcast_name)) : [];
+      list = subs.size ? list.filter((e) => subs.has(e.podcast_name)) : [];
     } else if (filter === '熱門') {
       const now = Date.now();
-      list = [...episodes].sort((a, b) => {
+      list = [...list].sort((a, b) => {
         const scoreOf = (ep: ApiEpisode) => {
           const engagement = (ep.num_likes ?? 0) + (ep.number_click ?? 0);
           const releaseMs = ep.released_at_ms ?? 0;
@@ -110,7 +118,7 @@ export const HomeFeed: React.FC = () => {
       });
     } else {
       // "最新" — defensive chronological sort by release time
-      list = [...episodes].sort((a, b) => (b.released_at_ms ?? 0) - (a.released_at_ms ?? 0));
+      list = [...list].sort((a, b) => (b.released_at_ms ?? 0) - (a.released_at_ms ?? 0));
     }
     return list.slice(0, 30);
   }, [episodes, filter, subscriptions]);
@@ -122,8 +130,19 @@ export const HomeFeed: React.FC = () => {
   return (
     <>
       <SEO description="聽播客 TinBoker — 最新的財經 Podcast 摘要、情緒與相關個股。" />
-      <PageContent rail={<HomeRail episodeCount={episodes.length} podcasts={podcasts} />}>
-        <h1 className="text-2xl font-semibold tracking-[-0.02em] mb-3.5">今天聽什麼</h1>
+      <PageContent>
+        {/* ① what the market is talking about → ② which tickers → ③ what to listen to.
+            Each block floats in after the previous one; the bars/lines grow once landed.
+            Rows link to the topic / stock pages — the blocks are navigation, not a filter. */}
+        <div className="float-in" style={{ animationDelay: '0ms' }}>
+          <NarrativeHero data={attention} />
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 mt-3.5">
+          <div className="float-in" style={{ animationDelay: '90ms' }}><BuzzRank rows={attention?.tickers ?? []} /></div>
+          <div className="float-in" style={{ animationDelay: '160ms' }}><RisingTable rows={attention?.rising ?? []} /></div>
+        </div>
+
+        <h2 className="text-lg font-semibold tracking-[-0.02em] mt-6 mb-3.5">今天聽什麼</h2>
         <FilterPills items={FILTERS} value={filter} onChange={setFilter} meta={loading ? null : <span>整理了 <span className="font-mono tabular-nums">{filtered.length}</span> 集</span>} />
 
         {loading ? (
@@ -139,15 +158,16 @@ export const HomeFeed: React.FC = () => {
         ) : (
           <>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {filtered.map((ep) => {
+              {filtered.map((ep, i) => {
                 const bookmarkKey = `${ep.podcast_name}_${ep.id}`;
                 return (
+                  <div key={ep.id} className="float-in" style={{ animationDelay: `${220 + Math.min(i, 8) * 60}ms` }}>
                   <EpisodeCardV2
-                    key={ep.id}
                     {...apiEpisodeToCardV2(ep, priceMap, podcastImageMap, translationMap, sentimentMap.get(ep.id), priceSinceMap)}
                     isBookmarked={episodeBookmarks.includes(bookmarkKey)}
                     onBookmark={() => toggleEpisodeBookmark(ep.podcast_name, ep.id)}
                   />
+                  </div>
                 );
               })}
             </div>

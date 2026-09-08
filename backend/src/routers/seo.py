@@ -21,10 +21,10 @@ from src.cache.redis_client import cache_get, cache_set
 from src.config import settings
 from src.database.postgres import get_session
 from src.services.article_service import ArticleService
-from src.services.insight_service import InsightService
 from src.services.podcast import PodcastService
+from src.routers.weekly import week_of_ms
 from src.services.search_console_service import SearchConsoleService
-from src.tag_registry import hidden_sector_exposure_ids, served_sector_exposure_ids
+from src.tag_registry import hidden_sector_exposure_ids, served_sector_exposure_ids, auto_register_sectors
 
 logger = logging.getLogger(__name__)
 
@@ -34,19 +34,24 @@ router = APIRouter(tags=["seo"])
 admin_router = APIRouter(tags=["seo", "admin"])
 
 podcast_service = PodcastService()
-insight_service = InsightService()
 
 # Public top-level routes that should always be in the sitemap (mirrors the routes
 # in frontend/src/App.tsx). Episodes are appended dynamically below.
+MIN_TICKER_EPISODES = 2
+# /topics/:tag pages are listed only above this many scoped episodes — see the tag block below.
+MIN_TAG_EPISODES = 5
+# Sector pages need at least this many scoped episodes to be listed — a one-episode
+# sector page is a description plus one card.
+MIN_SECTOR_EPISODES = 2
+
 STATIC_PATHS = [
     ("/", "1.0", "daily"),
     ("/podcaster", "0.8", "weekly"),
     ("/stock", "0.8", "weekly"),
     ("/topics", "0.8", "weekly"),
+    ("/weekly", "0.8", "weekly"),
     ("/articles", "0.7", "weekly"),
     ("/about", "0.5", "monthly"),
-    ("/contact", "0.5", "monthly"),
-    ("/disclaimer", "0.3", "yearly"),
 ]
 
 
@@ -87,7 +92,7 @@ async def sitemap(
     to Googlebot. The assembled XML is cached in Redis for an hour; the per-source
     service calls are themselves cached, and the CDN edge caches the response.
     """
-    cache_key = f"sitemap:xml:v4:{limit}"
+    cache_key = f"sitemap:xml:v7:{limit}"  # v7: /contact + /disclaimer folded into /about
     cached = await cache_get(cache_key)
     if cached:
         return Response(content=cached, media_type="application/xml",
@@ -99,13 +104,30 @@ async def sitemap(
     # Episodes — get_recent_episodes already applies the release scoping
     # (RELEASE_PODCAST_LANGUAGES / RELEASE_EPISODE_MAX_AGE_DAYS), so we never list a
     # page that 404s for users. The canonical episode URL has no query string.
+    # The same scoped list decides which /stock pages exist (below), so one fetch
+    # serves both families and they can never disagree about the window.
+    ticker_episodes: dict[str, int] = {}
+    tag_episodes: dict[str, int] = {}
+    week_last: dict[str, str] = {}
     try:
         for ep in await podcast_service.get_recent_episodes(limit=limit, enrich_content=False):
             ep_id = getattr(ep, "id", None) or (ep.get("id") if isinstance(ep, dict) else None)
             if ep_id:
                 entries.append(_url_entry(f"{base}/episode/{ep_id}", _lastmod(ep), "monthly", "0.7"))
+            for tk in getattr(ep, "related_tickers", None) or []:
+                ticker_episodes[str(tk)] = ticker_episodes.get(str(tk), 0) + 1
+            for tag in getattr(ep, "tags", None) or []:
+                tag_episodes[str(tag)] = tag_episodes.get(str(tag), 0) + 1
+            ms = getattr(ep, "released_at_ms", None) or getattr(ep, "created_time", None)
+            if ms:
+                wk = week_of_ms(ms)
+                week_last[wk] = max(week_last.get(wk, ""), _date_from_ms(ms) or "")
     except Exception as e:
         logger.warning("Sitemap episode enumeration failed: %s", e)
+
+    # Weekly rollups (TKB-013): one dated page per week that has scoped episodes.
+    for wk in sorted(week_last, reverse=True):
+        entries.append(_url_entry(f"{base}/weekly/{wk}", week_last[wk] or None, "weekly", "0.7"))
 
     # Published articles
     try:
@@ -124,17 +146,16 @@ async def sitemap(
     except Exception as e:
         logger.warning("Sitemap podcaster enumeration failed: %s", e)
 
-    # Topic tags are deliberately NOT listed. Measured on the live site, /topics/:tag
-    # renders 7,304 characters of which 7,207 sit inside episode cards — 97 characters
-    # are the page's own, and those are nav chrome plus one sentence
-    # ("瀏覽所有關於「X」的 Podcast 摘要與市場討論 · N 集。") that is identical across all ~166
-    # of them bar the tag name. A template plus a link list, 166 times over, is the
-    # shape AdSense called "low value content" when it suspended tinboker.com.
-    #
-    # The pages stay — they are useful navigation — they are just not submitted for
-    # indexing, and the crawler middleware serves them noindex. Sector pages are the
-    # deliberate contrast: those carry a hand-written thesis, inclusion criteria and
-    # per-constituent descriptions, so they stay in the sitemap.
+    # Topic tags: only those with >= MIN_TAG_EPISODES scoped episodes. Until 2026-09 no
+    # tag page was listed at all — 97 characters of the page's own text around a link
+    # list, 166 times over, was the shape AdSense called "low value content". The
+    # crawler middleware now renders each episode's key insights into the tag page and
+    # applies the same threshold for noindex, so a listed tag page is real, unique text;
+    # a thin one still is not offered to Google. (No tag carries a description in the
+    # registry — 0 of 1,588 on 2026-09-06 — so the count is the only usable signal.)
+    for tag in sorted(tag_episodes):
+        if tag_episodes[tag] >= MIN_TAG_EPISODES:
+            entries.append(_url_entry(f"{base}/topics/{quote(tag)}", None, "weekly", "0.5"))
 
     # Sector / theme pages. Each carries a hand-written zh-TW description and 100+
     # episodes, and none of them were in the sitemap at all — Google had no way to
@@ -142,6 +163,7 @@ async def sitemap(
     # GET /api/sectors exactly so the sitemap never lists a page that renders empty.
     try:
         sectors = await podcast_service.list_sectors()
+        auto_register_sectors(db, sectors)
         served = served_sector_exposure_ids(db)
         if served is None:  # bootstrap window: registry empty — fall back to blocklist
             hidden = hidden_sector_exposure_ids(db)
@@ -150,20 +172,20 @@ async def sitemap(
             visible = [s for s in sectors if s.get("exposure_id") in served]
         for sec in visible:
             sid = sec.get("exposure_id")
-            if sid:
+            if sid and (sec.get("count") or 0) >= MIN_SECTOR_EPISODES:
                 entries.append(_url_entry(f"{base}/sector/{quote(str(sid))}", None, "weekly", "0.6"))
     except Exception as e:
         logger.warning("Sitemap sector enumeration failed: %s", e)
 
-    # Trending stock pages — a bounded, high-value set that definitely has content.
-    # The /stock index page (in STATIC_PATHS) covers discovery of the long tail.
-    try:
-        for row in await insight_service.get_trending(days=30, limit=100):
-            tk = row.get("ticker")
-            if tk:
-                entries.append(_url_entry(f"{base}/stock/{quote(str(tk))}", None, "daily", "0.6"))
-    except Exception as e:
-        logger.warning("Sitemap ticker enumeration failed: %s", e)
+    # Stock pages: every ticker at least MIN_TICKER_EPISODES scoped episodes discuss.
+    # Measured 2026-09-05: 514 tickers were mentioned inside the release window but only
+    # the trending top-100 had a sitemap entry, so ~400 pages with real podcast content
+    # were undiscoverable. The floor keeps single-mention pages (one thesis line) out.
+    # Counting the scoped episode list, not trending_tickers, guarantees every listed
+    # page has episodes to show — trending counts include out-of-window mentions.
+    for tk in sorted(ticker_episodes):
+        if ticker_episodes[tk] >= MIN_TICKER_EPISODES:
+            entries.append(_url_entry(f"{base}/stock/{quote(tk)}", None, "daily", "0.6"))
 
     xml = (
         '<?xml version="1.0" encoding="UTF-8"?>\n'

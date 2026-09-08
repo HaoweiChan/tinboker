@@ -5,6 +5,8 @@ import {
   SectorsByTickerResponseSchema,
   parseResponse,
   type SectorsByTickerResponse,
+  InstitutionalResponseSchema,
+  type InstitutionalResponse,
 } from '../../validation/schemas';
 
 function isNumberArray(value: unknown): value is number[] {
@@ -99,6 +101,14 @@ export async function getStockHistory(
     return { data: payload.data };
   }
   return { data: [] };
+}
+
+export async function getStockInstitutional(ticker: string, days = 60): Promise<InstitutionalResponse> {
+  const response = await apiClient.get(`/api/stocks/${encodeURIComponent(ticker)}/institutional`, {
+    params: { days },
+    headers: { 'X-Silent-Error': 'true' },
+  });
+  return parseResponse(InstitutionalResponseSchema, response.data);
 }
 
 export async function getSectorsByTicker(ticker: string): Promise<SectorsByTickerResponse> {

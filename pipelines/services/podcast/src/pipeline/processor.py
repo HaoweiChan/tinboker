@@ -24,7 +24,7 @@ from .steps import (
     upload_to_gcs,
     validate_episode,
 )
-from .utils import determine_language
+from .utils import determine_language, required_artifact_urls
 
 
 class EpisodeProcessor:
@@ -124,6 +124,18 @@ class EpisodeProcessor:
             transcribe_episode(self.config, self.services, episode_data)
 
             # Step 3: Summarize
+            if self.config.skip_summarize:
+                # Backfill path: store the transcript + episode metadata and stop.
+                # The LLM content is generated later by a Claude session through the
+                # podcast_regen MCP server, which needs exactly this much to exist:
+                # a persisted episode row with a transcript_url. Everything below
+                # (social cards, ticker insights, wiki, syndication, validate) is
+                # derived from the summary and has nothing to work from yet.
+                upload_to_gcs(self.config, self.services, episode_data)
+                persist_episode(self.config, self.services, episode_data)
+                print(f"  ✓ Transcribed + persisted (no summary): {episode_title}\n")
+                return True
+
             generate_summary(self.config, self.services, episode_data)
 
             # Step 4: Upload to GCS
@@ -375,12 +387,13 @@ class EpisodeProcessor:
             if self.config.reuse_existing_transcript:
                 return False
             # Check if we have all required data (GCS URLs indicate complete processing)
-            if episode_data.gcs_urls and all([
-                episode_data.gcs_urls.get('mp3_url'),
-                episode_data.gcs_urls.get('transcript_url'),
-                episode_data.gcs_urls.get('summary_url'),
-                episode_data.gcs_urls.get('summary_image_url'),
-            ]):
+            required = required_artifact_urls(
+                skip_summarize=self.config.skip_summarize,
+                store_audio=self.config.store_audio,
+            )
+            if episode_data.gcs_urls and all(
+                episode_data.gcs_urls.get(f) for f in required
+            ):
                 print(f"  ⏭ Skipping existing episode (already fully processed): {episode_info}")
                 return True
 

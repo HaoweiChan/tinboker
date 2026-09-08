@@ -19,4 +19,10 @@ fi
 PY="$REPO_ROOT/.venv/bin/python"
 [ -x "$PY" ] || PY="$(command -v python3)"
 
-exec "$PY" main.py --config podcasts_tw.json --fill-limit "$@"
+# Taiwanese shows first, then the English roster. Two runs, not one config: a feed or
+# transcription failure on one side must not stop the other, and the TW run is the one
+# the product depends on. The English shows are ingested and summarised (the prompts
+# already write zh-TW from an English transcript) but stay unpublished until they are
+# registered in content_sources with language "en" and RELEASE_PODCAST_LANGUAGES allows it.
+"$PY" main.py --config podcasts_tw.json --fill-limit "$@"
+"$PY" main.py --config podcasts_en.json --fill-limit "$@"

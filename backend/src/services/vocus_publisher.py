@@ -205,7 +205,7 @@ class VocusClient:
 
     async def save_settings(self, client: httpx.AsyncClient, article_id: str, *, title: str,
                             abstract: str, canonical_url: str, tags: list[str],
-                            thumbnail_url: str = "") -> None:
+                            thumbnail_url: str = "", paid: bool = False) -> None:
         await self._request(client, "PATCH", f"/api/articles/{article_id}", {
             "title": title,
             "abstract": abstract[:200],
@@ -225,8 +225,15 @@ class VocusClient:
             # what keeps three full-text copies from competing with each other.
             "openCanonical": True,
             "setInvestment": True,   # investment-content disclosure; this is a finance publication
+            # AI-assisted content disclosure. Every article we send is LLM-derived — the
+            # episode summaries outright, the weekly's theses and sentiment labels by
+            # extraction — and the Threads account is openly automated already.
+            "setAISupport": True,
             "showCatalog": True,
-            "setIsPay": False,
+            # Salon paywall. True only publishes behind the wall if the salon has a
+            # paid plan configured on vocus; the API accepts the flag either way, so
+            # publish_markdown reads the article back to confirm.
+            "setIsPay": paid,
             "salonId": self._salon_id,
             "thumbnailUrl": thumbnail_url,
             # "custom" when we supply one; "article" makes vocus hunt for an image in the
@@ -268,16 +275,38 @@ def article_url(article_id: str) -> str:
     return f"https://vocus.cc/article/{article_id}"
 
 
-async def _verify_published(client: VocusClient, http: httpx.AsyncClient, article_id: str) -> bool:
-    """Read the article back and confirm vocus agrees it is public.
+async def _read_back(client: VocusClient, http: httpx.AsyncClient, article_id: str,
+                     status: int) -> Optional[dict]:
+    """The article as vocus now holds it, from the given status bucket, or None.
 
     The status integer is inferred, and an undocumented API can accept a write and do
-    nothing. Without this check a broken publisher reports success indefinitely.
+    nothing. Without this read-back a broken publisher reports success indefinitely.
     """
     try:
-        return article_id in await client.list_article_ids(http, STATUS_PUBLIC)
+        for a in await client.list_articles(http, status):
+            if str(a.get("_id") or a.get("id")) == article_id:
+                return a
     except VocusError:
-        return False
+        pass
+    return None
+
+
+# Ranked guesses, same discipline as vocus_insights_service.READ_KEYS: the API does not
+# document which key echoes setIsPay, so a miss is reported with the keys it did send
+# rather than rendered as "not paid".
+PAID_KEYS = ("isPay", "setIsPay", "is_pay", "paid", "isPaid")
+
+
+def _paid_flag(article: Optional[dict]) -> Optional[bool]:
+    for k in PAID_KEYS:
+        if article and k in article:
+            return bool(article[k])
+    return None
+
+
+async def _verify_published(client: VocusClient, http: httpx.AsyncClient, article_id: str) -> bool:
+    """Read the article back and confirm vocus agrees it is public."""
+    return await _read_back(client, http, article_id, STATUS_PUBLIC) is not None
 
 
 async def publish_summary(
@@ -306,6 +335,36 @@ async def publish_summary(
     body_markdown = to_syndication_markdown(summary_markdown, episode_id)
     if not body_markdown:
         return {**base, "posted": False, "reason": "no_summary_content"}
+    return await publish_markdown(
+        episode_id, title, body_markdown,
+        canonical_url=f"{settings.site_url.rstrip('/')}/episode/{episode_id}",
+        abstract=abstract, tags=tags, thumbnail_url=thumbnail_url,
+        as_draft=as_draft, dry_run=dry_run,
+    )
+
+
+async def publish_markdown(
+    key: str,
+    title: str,
+    body_markdown: str,
+    *,
+    canonical_url: str,
+    abstract: str = "",
+    tags: Optional[list[str]] = None,
+    thumbnail_url: str = "",
+    as_draft: bool = False,
+    dry_run: bool = True,
+    paid: bool = False,
+) -> dict:
+    """Publish one markdown document to vocus. ``key`` is whatever the caller's ledger
+    dedupes on (an episode id, ``weekly:2026-W36``); it is echoed as ``episode_id`` so
+    every publisher result keeps one shape. ``paid`` puts the article behind the salon
+    paywall and reports ``paid_verified`` from the read-back — None when vocus's echo
+    key is unknown, with the keys it did send, never a silent False.
+    """
+    tok = token_status()
+    base = {"platform": "vocus", "configured": tok["configured"], "dry_run": dry_run,
+            "episode_id": key, "token": tok, "paid": paid}
 
     if not tok["configured"]:
         return {**base, "posted": False, "reason": "not_configured"}
@@ -314,7 +373,7 @@ async def publish_summary(
         return {**base, "posted": False, "reason": "credential_expired"}
 
     lexical = markdown_to_lexical(body_markdown)
-    canonical = f"{settings.site_url.rstrip('/')}/episode/{episode_id}"
+    canonical = canonical_url
 
     if dry_run:
         return {**base, "posted": False, "reason": "dry_run",
@@ -331,22 +390,32 @@ async def publish_summary(
                                        # the one line a reader skims before clicking.
                                        abstract=abstract,
                                        canonical_url=canonical, tags=tags or [],
-                                       thumbnail_url=thumbnail_url)
+                                       thumbnail_url=thumbnail_url, paid=paid)
             if as_draft:
                 # create_article already left it at STATUS_DRAFT; skipping the status
-                # change is what keeps it unpublished. There is nothing to verify —
-                # "did it go public?" is the wrong question for a draft.
+                # change is what keeps it unpublished. "Did it go public?" is the wrong
+                # question for a draft, but "did the paywall flag stick?" still applies.
                 verified = True
+                article = await _read_back(client, http, article_id, STATUS_DRAFT) if paid else None
             else:
                 await client.set_status(http, article_id, STATUS_PUBLIC)
-                verified = await _verify_published(client, http, article_id)
+                article = await _read_back(client, http, article_id, STATUS_PUBLIC)
+                verified = article is not None
     except VocusError as e:
         reason = str(e)
-        logger.warning("vocus publish failed for %s: %s", episode_id, reason)
+        logger.warning("vocus publish failed for %s: %s", key, reason)
         return {**base, "posted": False, "reason": reason}
     except httpx.HTTPError as e:
-        logger.warning("vocus publish transport error for %s: %s", episode_id, e)
+        logger.warning("vocus publish transport error for %s: %s", key, e)
         return {**base, "posted": False, "reason": "transport_error"}
+
+    if paid:
+        flag = _paid_flag(article)
+        base["paid_verified"] = flag
+        if flag is None:
+            base["paid_readback_keys"] = sorted(article.keys()) if article else []
+        elif not flag:
+            logger.error("vocus article %s was published but read-back says it is NOT paid", article_id)
 
     if not verified:
         # The writes succeeded but the article is not public. Surfaced as a distinct

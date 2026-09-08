@@ -23,7 +23,6 @@ from src.cache.cdn_cache import (
     purge_cdn_cache,
     purge_podcast_cache,
     purge_news_cache,
-    purge_recommendations_cache,
 )
 
 __all__ = [
@@ -49,6 +48,5 @@ __all__ = [
     "purge_cdn_cache",
     "purge_podcast_cache",
     "purge_news_cache",
-    "purge_recommendations_cache",
 ]
 

@@ -59,16 +59,12 @@ services:
       # same publishing tokens from GSM, so a second env with this set would double-post.
       # Ingest keeps its own 02/08/14/20:10 timer — posting no longer rides on it.
       SOCIAL_PUBLISH_SLOTS: "11:30,15:30,20:30"
-      # Comment triage on the same production-only rule. Only "praise" replies go out
-      # unattended; anything with a factual claim, a question or a position lands in
-      # the admin 留言 tab for a human.
-      #
-      # Held at 0 for its first release. Because the sync is production-only by design,
-      # staging cannot exercise it — flipping it on at deploy time would make the live
-      # brand account the first place this code ever runs unattended. Turn it on
-      # deliberately (set to "30") once the admin 留言 tab shows the triage is
-      # classifying real comments the way it should. Everything else about the feature
-      # ships now: the tab, the sync/reply/skip endpoints, and manual replies all work.
+      # Comment triage on the same production-only rule (all three envs share the token,
+      # so a second env syncing would just duplicate the work). The sync posts nothing —
+      # it classifies new comments into the admin 留言 tab, and only the 送出回覆 button
+      # there sends anything. Held at 0: pressing 抓新留言 fills the tab on demand, which
+      # is enough while the queue is a handful of comments a week. Set "30" when you want
+      # it kept warm without pressing the button.
       SOCIAL_COMMENT_SYNC_MINUTES: "0"
       CORS_ORIGINS: '["https://tinboker.com","https://www.tinboker.com"]'
       # Marp render service runs as separate infra on its own docker network, only

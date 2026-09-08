@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -289,13 +290,30 @@ def sync_sectors(db: Session, sectors: list[dict]) -> int:
     return new_count
 
 
+# ponytail: 60s process-local TTL, no invalidation hook (same idiom as
+# content_source_service.social_disabled_shows) — an admin redirect edit lands within
+# a minute. resolve_sector_exposure_id() calls sector_redirects() once per exposure
+# entry, so the uncached read was one fresh session + full tag_registry scan per
+# entry: a cold /episodes/by-sector fired thousands of them (21-50s, 2026-09-05) and
+# the board scan hundreds per second (incident 2026-07-15).
+_REDIRECTS_TTL_SECONDS = 60.0
+_redirects_cache: tuple[float, dict[str, str]] = (0.0, {})
+
+
 def sector_redirects(db: Session | None = None) -> dict[str, str]:
     """Read exposure redirects from tag_registry.redirect_to.
 
     The seed fallback is used only for the completely empty bootstrap window.
+    Without an explicit session the map is memoised for _REDIRECTS_TTL_SECONDS;
+    a failed read is not cached, so it retries on the next call.
     """
+    global _redirects_cache
     if db is not None:
         return _sector_redirects_from_session(db)
+    fetched_at, cached = _redirects_cache
+    now = time.monotonic()
+    if fetched_at and now - fetched_at < _REDIRECTS_TTL_SECONDS:
+        return cached
     try:
         from src.database import postgres
 
@@ -303,12 +321,14 @@ def sector_redirects(db: Session | None = None) -> dict[str, str]:
             postgres.init_engine()
         session = postgres.SessionLocal()
         try:
-            return _sector_redirects_from_session(session)
+            redirects = _sector_redirects_from_session(session)
         finally:
             session.close()
     except Exception as exc:  # noqa: BLE001
         logger.warning("sector_redirects: registry read failed: %s", exc)
         return {}
+    _redirects_cache = (now, redirects)
+    return redirects
 
 
 def _sector_redirects_from_session(db: Session) -> dict[str, str]:
@@ -360,6 +380,44 @@ def hidden_offvocab_slugs(db: Session) -> set[str]:
     separately.
     """
     return hidden_tag_slugs(db) - canonical_tag_slugs()
+
+
+def auto_register_sectors(db: Session, sectors: list[dict]) -> int:
+    """Add a trending sector row for every exposure the scoped episodes use that the
+    registry does not know yet. Returns the number of rows inserted.
+
+    The taxonomy is DB-managed (TKB-009 M2.5) and served as an allowlist, so an
+    exposure the pipeline started emitting after the last admin sync (sector_memory,
+    sector_energy, …) had working pages but was missing from /api/sectors, the board
+    and the sitemap. `sectors` is the output of PodcastService.list_sectors(): canonical
+    ids (redirects resolved) with display_name / exposure_type / icon / color from the
+    episode payloads. Rows that exist under any tier are left alone, so admin hides and
+    merges stand.
+    """
+    known = {r[0] for r in db.query(TagRegistry.exposure_id).filter(TagRegistry.exposure_id.isnot(None)).all()}
+    redirects = _seed_sector_redirects()
+    added = 0
+    for s in sectors:
+        eid = str(s.get("exposure_id") or "").strip()
+        if not eid or eid in known or eid in redirects:
+            continue
+        db.add(TagRegistry(
+            slug=eid,
+            display_zh=str(s.get("display_name") or eid),
+            tier=TIER_TRENDING,
+            kind=KIND_SECTOR,
+            exposure_id=eid,
+            exposure_type=s.get("exposure_type"),
+            icon_id=s.get("icon_id"),
+            color_hex=s.get("color_hex"),
+            description=s.get("description"),
+        ))
+        known.add(eid)
+        added += 1
+    if added:
+        db.commit()
+        logger.info("Auto-registered %d sector exposures seen in episodes", added)
+    return added
 
 
 def hidden_sector_exposure_ids(db: Session) -> set[str]:

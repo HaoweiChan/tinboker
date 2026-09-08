@@ -50,7 +50,7 @@ Boundaries: episode-level content rendering and the "mentioned in episodes" list
 ## Common pitfalls
 
 - **BUG-7 (medium):** [`frontend/src/pages/StockDashboard.tsx`](../../frontend/src/pages/StockDashboard.tsx) historically fabricated "Key Statistics" (Open = price × 0.98, P/E = 15.4). Any change to that section must read from actual OHLC data, not multipliers.
-- **BUG-10 (medium):** Frontend recommendation client called `/api/recommendations/ticker/2330` but the real route is `/api/recommendations/by-ticker/2330`. The new flow uses `/api/ticker-insights/*` — prefer those when wiring new consumers. See [`../firestore-contract.md`](../firestore-contract.md) §4.
+- **BUG-10 (medium, closed):** Frontend once called `/api/recommendations/ticker/2330`; the whole `/api/recommendations/*` alias family was removed 2026-09-06. Wire consumers to `/api/ticker-insights/*` only. See [`../firestore-contract.md`](../firestore-contract.md) §4.
 - **`marketCapTier` Zod validation.** [`frontend/src/validation/schemas.ts`](../../frontend/src/validation/schemas.ts) requires `large | medium | small` but the API returns other values on some nodes. Either keep the field optional or fix the producer — not both with a fallback that masks the error.
 - **Postgres pool DNS error in prod.** The legacy recommendation Postgres reports `pool_not_initialized` because `docker-db_postgres-1` is unreachable. Migrating reads to Firestore (via ticker-insights) is the actual fix, not a Postgres workaround. See [`../firestore-contract.md`](../firestore-contract.md) Phase A.
 - **TradingView logo URLs are external.** Render with a graceful broken-image state; don't block on logo load.
@@ -60,7 +60,7 @@ Boundaries: episode-level content rendering and the "mentioned in episodes" list
 - **FinMind** (`FINMIND_API_KEY` from Secret Manager) — Taiwan stock prices, OHLCV history.
 - **Massive API** (`MASSIVE_API_KEY` from Secret Manager) — US market data, including WebSocket price stream.
 - **Firestore** `graphfolio-db` — ticker_insights, trending_tickers (per [`../firestore-contract.md`](../firestore-contract.md)).
-- **PostgreSQL** Cloud SQL (`POSTGRES_HOST`, `POSTGRES_PASSWORD`) — stock translations + legacy recommendations.
+- **PostgreSQL** Cloud SQL (`POSTGRES_HOST`, `POSTGRES_PASSWORD`) — stock translations + the `firestore_mirror` content schema.
 - **TradingView** — public-CDN ticker logos; lookup table in `tradingview_logo_service.py`.
 
 ## Cross-references

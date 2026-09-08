@@ -240,6 +240,28 @@ def _read_close_before(ticker: str, ref_date_str: str) -> Optional[float]:
     return None
 
 
+def _read_close_date_before(ticker: str, ref_date_str: str) -> Optional[str]:
+    """Date of the close :func:`_read_close_before` would return, or None when the DB has
+    no row in the window (API-fetched closes are not dated here — see ``_window_returns``)."""
+    window_start = (datetime.strptime(ref_date_str, "%Y-%m-%d") - timedelta(days=7)).strftime("%Y-%m-%d")
+    try:
+        for session in get_session():
+            row = (
+                session.query(StockDailyClose.date)
+                .filter(
+                    StockDailyClose.ticker == ticker,
+                    StockDailyClose.date >= window_start,
+                    StockDailyClose.date <= ref_date_str,
+                )
+                .order_by(StockDailyClose.date.desc())
+                .first()
+            )
+            return row[0] if row is not None else None
+    except Exception:
+        logger.debug("close date lookup failed for %s@%s", ticker, ref_date_str, exc_info=True)
+    return None
+
+
 def _persist_close(ticker: str, date: str, close: float) -> None:
     """Store a fetched close so this (ticker, date) never needs an API call again.
 
@@ -432,6 +454,15 @@ async def _window_returns(
             result[f"d{n}"] = round((end_close - baseline) / baseline * 100, 2)
 
     if current_price and current_price > 0:
+        # A mention on Friday night or a weekend has no close after its baseline yet:
+        # "since" would be the baseline against itself (+0.00%). Leave it None so the
+        # card says the market hasn't closed since, instead of showing a fake flat.
+        base_date, latest_date = await asyncio.gather(
+            asyncio.to_thread(_read_close_date_before, ticker, mention_dt.strftime("%Y-%m-%d")),
+            asyncio.to_thread(_read_close_date_before, ticker, now.strftime("%Y-%m-%d")),
+        )
+        if base_date and latest_date and latest_date <= base_date:
+            return result
         result["since"] = round((current_price - baseline) / baseline * 100, 2)
     return result
 
@@ -739,6 +770,55 @@ async def get_stock_basic_info(ticker: str):
     if not stock_info:
         raise HTTPException(status_code=404, detail=f"Stock {ticker} not found")
     return stock_info
+
+
+@router.get("/{ticker}/institutional")
+async def get_stock_institutional(
+    ticker: str,
+    days: int = Query(60, ge=5, le=_MAX_RANGE_DAYS, description="Trading-day window, newest last"),
+    db: Session = Depends(get_session),
+):
+    """Public per-ticker 三大法人 daily net shares for the stock page chart (TW only).
+
+    Reads the warm ``stock_institutional_daily`` table — the same rows the internal
+    ``/daily-institutional`` bulk feed serves, scoped to one ticker so it needs no key.
+    US tickers and tickers with no rows return an empty list rather than 404: the card
+    is additive and simply hides.
+    """
+    sym = ticker.upper()
+    if infer_market(sym) != "TW":
+        return {"ticker": sym, "rows": []}
+    cache_key = f"stock:institutional:v1:{sym}:{days}"
+    cached = await cache_get(cache_key)
+    if cached:
+        try:
+            return json.loads(cached)
+        except Exception:
+            pass
+    rows = (
+        db.query(StockInstitutionalDaily)
+        .filter(StockInstitutionalDaily.ticker == sym)
+        .order_by(StockInstitutionalDaily.date.desc())
+        .limit(days)
+        .all()
+    )
+    payload = {
+        "ticker": sym,
+        "rows": [
+            {
+                "date": r.date,
+                "foreign_net_shares": r.foreign_net_shares,
+                "trust_net_shares": r.trust_net_shares,
+                "total_net_shares": r.total_net_shares,
+            }
+            for r in reversed(rows)
+        ],
+    }
+    try:
+        await cache_set(cache_key, json.dumps(payload), CACHE_TTL["stock_history"])
+    except Exception:
+        pass
+    return payload
 
 
 @router.get("/{ticker}/history")

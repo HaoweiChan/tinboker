@@ -65,3 +65,29 @@ def test_empty_markdown_still_produces_a_valid_document():
     """Both APIs reject an empty content array."""
     assert markdown_to_prosemirror("")["content"]
     assert markdown_to_lexical("")["root"]["children"]
+
+
+def test_a_pipe_table_becomes_one_list_item_per_row():
+    md = (
+        "| 節目 | 提及 | 命中 | 平均 |\n"
+        "|---|---:|---:|---:|\n"
+        "| 股癌 | 16 | 6/8 | +4.4% |\n"
+        "| 財報狗 | 11 |  | -1.0% |\n"   # an empty cell is skipped, not printed as "命中 "
+    )
+    blocks = parse_blocks(md)
+    assert [b.kind for b in blocks] == ["list"]
+    rows = ["".join(s.text for s in item) for item in blocks[0].items]
+    assert rows == ["股癌：提及 16、命中 6/8、平均 +4.4%", "財報狗：提及 11、平均 -1.0%"]
+
+
+def test_a_table_renders_as_a_bullet_list_in_both_editors():
+    md = "| a | b |\n|---|---|\n| **x** | 1 |\n\n後文"
+    lex = markdown_to_lexical(md)["root"]["children"]
+    assert [n["type"] for n in lex] == ["list", "paragraph"]
+    assert lex[0]["children"][0]["children"][0]["format"] == 1  # bold survives inside the cell
+    pm = markdown_to_prosemirror(md)["content"]
+    assert [n["type"] for n in pm] == ["bulletList", "paragraph"]
+
+
+def test_a_lone_pipe_line_is_still_a_paragraph():
+    assert [b.kind for b in parse_blocks("| not a table |")] == ["paragraph"]

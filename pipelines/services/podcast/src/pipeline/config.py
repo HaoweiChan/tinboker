@@ -35,6 +35,14 @@ class PipelineConfig:
     # Mode
     use_file_mode: bool = False  # If True, use file-based mode
     fill_limit: bool = False  # If True, skip processed episodes and process exactly limit non-processed ones
+
+    # Backfill knobs. `skip_summarize` stops after transcribe+persist so the LLM
+    # content is produced later by a Claude session through the podcast_regen MCP
+    # server instead of OpenRouter. `store_audio=False` never writes the MP3 to the
+    # media tree — a backfilled episode is outside the public 60-day window, the
+    # player prefers the Spotify embed, and audio is ~165x the size of a transcript.
+    skip_summarize: bool = False
+    store_audio: bool = True
     
     # File paths (for file mode)
     downloads_dir: Path = Path("./data/downloads")

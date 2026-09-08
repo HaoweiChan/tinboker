@@ -374,9 +374,3 @@ async def purge_news_cache(news_id: Optional[str] = None):
     if news_id:
         return await purge_cdn_cache(urls=[f"{base}/api/news/{news_id}", f"{base}/api/news"])
     return await purge_cdn_cache(prefixes=[f"{base}/api/news"])
-
-
-async def purge_recommendations_cache():
-    """Purge recommendations CDN cache"""
-    base = os.getenv("API_BASE_URL", "https://api.tinboker.com")
-    return await purge_cdn_cache(prefixes=[f"{base}/api/recommendations/"])

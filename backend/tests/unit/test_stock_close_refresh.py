@@ -69,3 +69,36 @@ def test_eod_change_db_error_is_none(monkeypatch):
     monkeypatch.setattr(r, "get_session", _gen)
     # Must never raise into the request path.
     assert asyncio.run(r.get_eod_change_pct("AAPL")) is None
+
+
+# ── backfill_us_mention_history ───────────────────────────────────────────────
+
+class _Bars:
+    def __init__(self, n):
+        self.n = n
+        self.calls = []
+
+    def get_daily_ohlc(self, ticker, start, end):
+        self.calls.append((ticker, start))
+        from src.services.providers.base import Bar
+        return [Bar(date=f"2025-08-{d:02d}", open=1, high=1, low=1, close=1, volume=0) for d in range(1, self.n + 1)]
+
+
+def test_us_history_fetches_only_tickers_without_a_bar_that_old(monkeypatch):
+    monkeypatch.setattr(r, "_us_mention_tickers", lambda db: [("NVDA", "2025-08-05"), ("MSFT", "2025-09-01")])
+    monkeypatch.setattr(r, "_has_bar_on_or_before", lambda db, t, d: t == "MSFT")  # MSFT already has history
+    stored = {}
+    monkeypatch.setattr(r, "_store_ohlc_bars", lambda t, bars: stored.setdefault(t, len(bars)))
+    _patch_session(monkeypatch, [])
+    provider = _Bars(3)
+    assert r.backfill_us_mention_history(provider=provider, gap_seconds=0) == 3
+    assert provider.calls == [("NVDA", "2025-07-26")]  # 10-day pad before the earliest mention
+    assert stored == {"NVDA": 3}
+
+
+def test_us_history_with_nothing_mentioned_makes_no_provider_call(monkeypatch):
+    monkeypatch.setattr(r, "_us_mention_tickers", lambda db: [])
+    _patch_session(monkeypatch, [])
+    provider = _Bars(3)
+    assert r.backfill_us_mention_history(provider=provider, gap_seconds=0) == 0
+    assert provider.calls == []

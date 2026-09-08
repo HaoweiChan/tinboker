@@ -264,3 +264,70 @@ async def test_as_draft_skips_the_status_change_and_links_the_editor(monkeypatch
     assert r["note"] == "draft_only_publish_manually"
     assert r["url"] == "https://vocus.cc/publish-v2/art9"
     assert not any("/status/" in c for c in calls)
+
+
+# ── paid (salon paywall) ─────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_paid_publish_sends_the_flag_and_reads_it_back(monkeypatch):
+    monkeypatch.setattr(vp.settings, "vocus_id_token", _token(3600), raising=False)
+    monkeypatch.setattr(vp.settings, "vocus_user_id", "u1", raising=False)
+    sent = {}
+
+    async def _ok(self, method, url, **kw):
+        req = httpx.Request(method, url)
+        if method == "PATCH" and url.endswith("/api/articles/art123"):
+            sent.update(kw.get("json") or {})
+        if method == "GET":
+            return httpx.Response(200, json={"articles": [{"_id": "art123", "isPay": True}]}, request=req)
+        return httpx.Response(200, json={"_id": "art123"}, request=req)
+
+    monkeypatch.setattr(httpx.AsyncClient, "request", _ok)
+    result = await vp.publish_markdown("weekly:2026-W36", "T", "# 標題\n\n內容",
+                                       canonical_url="https://tinboker.com/weekly/2026-W36",
+                                       dry_run=False, paid=True)
+    assert sent["setIsPay"] is True
+    assert result["posted"] is True and result["paid_verified"] is True
+    assert result["episode_id"] == "weekly:2026-W36"
+
+
+@pytest.mark.asyncio
+async def test_paid_flag_the_api_does_not_echo_is_reported_as_unknown_not_false(monkeypatch):
+    """A 200 from vocus means nothing; if no known key carries the paywall state the
+    result must say 'unknown' and show the keys it got, never a silent False."""
+    monkeypatch.setattr(vp.settings, "vocus_id_token", _token(3600), raising=False)
+    monkeypatch.setattr(vp.settings, "vocus_user_id", "u1", raising=False)
+
+    async def _ok(self, method, url, **kw):
+        req = httpx.Request(method, url)
+        if method == "GET":
+            return httpx.Response(200, json={"articles": [{"_id": "art123", "title": "T", "readCount": 0}]}, request=req)
+        return httpx.Response(200, json={"_id": "art123"}, request=req)
+
+    monkeypatch.setattr(httpx.AsyncClient, "request", _ok)
+    result = await vp.publish_markdown("k", "T", "# 標題\n\n內容", canonical_url="https://x/y",
+                                       dry_run=False, paid=True)
+    assert result["posted"] is True
+    assert result["paid_verified"] is None
+    assert result["paid_readback_keys"] == ["_id", "readCount", "title"]
+
+
+@pytest.mark.asyncio
+async def test_episode_summaries_stay_free(monkeypatch):
+    monkeypatch.setattr(vp.settings, "vocus_id_token", _token(3600), raising=False)
+    monkeypatch.setattr(vp.settings, "vocus_user_id", "u1", raising=False)
+    sent = {}
+
+    async def _ok(self, method, url, **kw):
+        req = httpx.Request(method, url)
+        if method == "PATCH" and url.endswith("/api/articles/art123"):
+            sent.update(kw.get("json") or {})
+        if method == "GET":
+            return httpx.Response(200, json={"articles": [{"_id": "art123"}]}, request=req)
+        return httpx.Response(200, json={"_id": "art123"}, request=req)
+
+    monkeypatch.setattr(httpx.AsyncClient, "request", _ok)
+    result = await vp.publish_summary("ep1", "T", "# 標題\n\n內容", dry_run=False)
+    assert sent["setIsPay"] is False and "paid_verified" not in result
+    assert sent["setAISupport"] is True and sent["setInvestment"] is True  # both disclosures, every article
+    assert sent["canonicalURL"].endswith("/episode/ep1")

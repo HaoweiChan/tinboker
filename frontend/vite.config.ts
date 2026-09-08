@@ -3,11 +3,26 @@ import { VitePWA } from 'vite-plugin-pwa'
 import react from '@vitejs/plugin-react'
 import path from 'path'
 
+// dev and staging are built as their own bundles (VITE_STAGE, set per-ref in
+// .github/workflows/frontend-deploy.yml) and both sit behind EnvGate, which walls the
+// WHOLE site behind a Google login + admin check. There is no public surface there, so
+// their manifest is the back office: installing dev.tinboker.com to a home screen gives
+// you an app that opens on /admin, not on the public homepage. Same icons as the public
+// app — the origin is different, so the two installs never collide.
+const IS_ADMIN_BUILD = process.env.VITE_STAGE !== 'PRODUCTION'
 
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
     react(),
+    {
+      // iOS reads this for the home-screen name, not the manifest.
+      name: 'admin-build-apple-title',
+      transformIndexHtml: (html: string) => IS_ADMIN_BUILD
+        ? html.replace('name="apple-mobile-web-app-title" content="聽播客"',
+                       'name="apple-mobile-web-app-title" content="聽播客後台"')
+        : html,
+    },
     VitePWA({
       // 'prompt': when a new deploy is detected we surface a styled toast
       // (PWAUpdatePrompt) whose 更新 button calls updateServiceWorker(true) → posts
@@ -18,17 +33,20 @@ export default defineConfig({
       registerType: 'prompt',
       includeAssets: ['favicon.png', 'robots.txt', 'sitemap.xml'],
       manifest: {
-        name: 'TinBoker - 聽播客',
-        short_name: '聽播客',
-        description: '結合 Podcast 觀點與即時數據的財經平台',
+        name: IS_ADMIN_BUILD ? 'TinBoker 後台' : 'TinBoker - 聽播客',
+        short_name: IS_ADMIN_BUILD ? '聽播客後台' : '聽播客',
+        description: IS_ADMIN_BUILD
+          ? 'TinBoker 管理後台 — 留言、社群、內容、翻譯'
+          : '結合 Podcast 觀點與即時數據的財經平台',
         theme_color: '#0e1014',
         background_color: '#0f1117',
         display: 'standalone',
         orientation: 'portrait-primary',
-        start_url: '/',
+        // Opens on the back office; scope stays '/' so every route still runs in-app.
+        start_url: IS_ADMIN_BUILD ? '/admin' : '/',
         scope: '/',
         lang: 'zh-TW',
-        categories: ['finance', 'business', 'news'],
+        categories: IS_ADMIN_BUILD ? ['productivity'] : ['finance', 'business', 'news'],
         icons: [
           { src: '/icons/pwa/icon-72x72.png', sizes: '72x72', type: 'image/png' },
           { src: '/icons/pwa/icon-96x96.png', sizes: '96x96', type: 'image/png' },

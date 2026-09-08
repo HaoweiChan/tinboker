@@ -347,13 +347,12 @@ export interface ThreadsCommentItem {
   text: string;
   posted_at: string | null;
   category: CommentCategory;
-  verdict: 'auto_reply' | 'needs_review' | 'ignore' | null;
+  verdict: 'needs_review' | 'ignore' | null;
   reason: string | null;
   draft: string;
   status: CommentStatus;
-  auto: boolean;
   reply_media_id: string | null;
-  permalink: string;
+  permalink: string | null;  // absent on comments synced before we stored it
 }
 
 export async function listThreadsComments(
@@ -370,14 +369,15 @@ export interface CommentSyncResult {
   configured: boolean;
   scanned: number;
   new: number;
-  auto_replied: number;
   needs_review: number;
   ignored: number;
 }
 
 export async function syncThreadsComments(): Promise<CommentSyncResult> {
   const res = await apiClient.post<CommentSyncResult>(
-    '/api/admin/threads/comments/sync', undefined, adminAuthConfig(),
+    // A backlog of unseen comments is one model call each; 30s (the client default)
+    // is not enough. Stays under Cloudflare's 100s edge cap.
+    '/api/admin/threads/comments/sync', undefined, { ...adminAuthConfig(), timeout: 90_000 },
   );
   return res.data;
 }

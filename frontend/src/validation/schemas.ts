@@ -336,6 +336,22 @@ export const SectorsByTickerResponseSchema = z.object({
 export type SectorByTickerItem = z.infer<typeof SectorByTickerItemSchema>;
 export type SectorsByTickerResponse = z.infer<typeof SectorsByTickerResponseSchema>;
 
+// GET /api/stocks/{ticker}/institutional — 三大法人 daily net shares, oldest → newest.
+export const InstitutionalRowSchema = z.object({
+  date: z.string(),
+  foreign_net_shares: z.number().nullable(),
+  trust_net_shares: z.number().nullable(),
+  total_net_shares: z.number().nullable(),
+});
+
+export const InstitutionalResponseSchema = z.object({
+  ticker: z.string(),
+  rows: z.array(InstitutionalRowSchema),
+});
+
+export type InstitutionalRow = z.infer<typeof InstitutionalRowSchema>;
+export type InstitutionalResponse = z.infer<typeof InstitutionalResponseSchema>;
+
 // ============================================
 // Interactive Model Schemas
 // ============================================
@@ -562,3 +578,79 @@ export function parseResponse<T>(schema: z.ZodType<T>, data: unknown): T {
     throw error;
   }
 }
+
+// GET /api/weekly and /api/weekly/{week} — the weekly rollup (TKB-013).
+export const WeeklyTickerSchema = z.object({
+  ticker: z.string(),
+  name: z.string().nullable().optional(),
+  episodes: z.number(),
+  bull: z.number(),
+  neu: z.number(),
+  bear: z.number(),
+  prev_bull: z.number(),
+  prev_neu: z.number(),
+  prev_bear: z.number(),
+});
+
+export const WeeklySchema = z.object({
+  week: z.string(),
+  start: z.string(),
+  end: z.string(),
+  episode_count: z.number(),
+  podcasts: z.array(z.object({ name: z.string(), episodes: z.number() })),
+  tickers: z.array(WeeklyTickerSchema),
+  sectors: z.array(z.object({
+    exposure_id: z.string(),
+    episodes: z.number(),
+    display_name: z.string(),
+    icon_id: z.string().nullable().optional(),
+    color_hex: z.string().nullable().optional(),
+  })),
+  // Full Episode objects (same shape as /episodes/by-sector); validated loosely here and
+  // rendered through the shared EpisodeCardV2 adapter.
+  episodes: z.array(z.object({ id: z.string(), podcast_name: z.string() }).passthrough()),
+});
+
+export const WeeklyListSchema = z.object({
+  weeks: z.array(z.object({
+    week: z.string(),
+    start: z.string(),
+    end: z.string(),
+    episode_count: z.number(),
+    podcast_count: z.number().default(0),
+    top_tickers: z.array(z.object({ ticker: z.string(), name: z.string().nullable().optional(), episodes: z.number() })).default([]),
+    top_sectors: z.array(z.object({ exposure_id: z.string(), display_name: z.string(), episodes: z.number() })).default([]),
+  })),
+});
+
+const AttentionTickerSchema = z.object({
+  ticker: z.string(),
+  name: z.string().nullable().optional(),
+  count_30d: z.number(),
+  prev_30d: z.number(),
+  count_7d: z.number(),
+  prev_7d: z.number(),
+});
+
+export const AttentionSchema = z.object({
+  episode_count_7d: z.number(),
+  podcast_count_7d: z.number(),
+  tickers: z.array(AttentionTickerSchema),
+  rising: z.array(AttentionTickerSchema),
+  narratives: z.array(z.object({
+    id: z.string(),
+    name: z.string(),
+    count_7d: z.number(),
+    prev_7d: z.number(),
+    weekly: z.array(z.number()),
+    rising: z.boolean().optional(),
+  })),
+});
+
+export type Attention = z.infer<typeof AttentionSchema>;
+export type AttentionTicker = z.infer<typeof AttentionTickerSchema>;
+export type AttentionNarrative = Attention['narratives'][number];
+
+export type Weekly = z.infer<typeof WeeklySchema>;
+export type WeeklyTicker = z.infer<typeof WeeklyTickerSchema>;
+export type WeeklyList = z.infer<typeof WeeklyListSchema>;

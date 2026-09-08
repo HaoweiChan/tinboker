@@ -1,7 +1,6 @@
 import React from 'react';
 import { usePlayerStore } from '@/store/usePlayerStore';
 import { SpotifyEmbed, type SpotifyEmbedRef } from '@/components/podcast/SpotifyEmbed';
-import { AudioEmbed } from '@/components/player/AudioEmbed';
 import { X, ChevronDown, ChevronUp, Play, Pause, Clock, RotateCcw, RotateCw, SkipForward } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -324,14 +323,6 @@ export const GlobalPlayer: React.FC = () => {
                                 key={player.currentEpisodeData.spotifyUri}
                                 uri={player.currentEpisodeData.spotifyUri}
                                 height={152}
-                                ref={spotifyEmbedRef}
-                                onPlayerReady={() => setIsEmbedReady(true)}
-                                onPlaybackUpdate={handlePlaybackUpdate}
-                            />
-                        ) : player.currentEpisodeData.mp3Url ? (
-                            <AudioEmbed
-                                key={player.currentEpisodeData.mp3Url}
-                                src={player.currentEpisodeData.mp3Url}
                                 ref={spotifyEmbedRef}
                                 onPlayerReady={() => setIsEmbedReady(true)}
                                 onPlaybackUpdate={handlePlaybackUpdate}

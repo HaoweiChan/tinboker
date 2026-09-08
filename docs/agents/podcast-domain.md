@@ -17,7 +17,6 @@ Boundaries: stock-data, search, and the knowledge-graph visualizations are **sep
 | Podcast/episode listing + detail API | [`backend/src/routers/podcast.py`](../../backend/src/routers/podcast.py), [`backend/src/routers/episodes.py`](../../backend/src/routers/episodes.py) |
 | Content/article API (GCS-backed) | [`backend/src/routers/content.py`](../../backend/src/routers/content.py) |
 | Episode comments | [`backend/src/routers/comments.py`](../../backend/src/routers/comments.py), [`backend/src/database/comment_db.py`](../../backend/src/database/comment_db.py) |
-| Recommendations (legacy Postgres) | [`backend/src/routers/recommendations.py`](../../backend/src/routers/recommendations.py), [`backend/src/services/recommendation_service.py`](../../backend/src/services/recommendation_service.py) |
 | Ticker insights (new Firestore-backed) | [`backend/src/routers/ticker_insights.py`](../../backend/src/routers/ticker_insights.py), [`backend/src/services/insight_service.py`](../../backend/src/services/insight_service.py) |
 | News aggregation | [`backend/src/routers/news.py`](../../backend/src/routers/news.py), [`backend/src/services/news.py`](../../backend/src/services/news.py) |
 | Firestore I/O | [`backend/src/services/firestore_service.py`](../../backend/src/services/firestore_service.py) |
@@ -52,7 +51,7 @@ Boundaries: stock-data, search, and the knowledge-graph visualizations are **sep
 - **`spotify_release_date` is sometimes a number, sometimes a string.** Frontend type is `string | number | null`. Spec wants string `YYYY-MM-DD`; normalize defensively when parsing.
 - **Episode comments table schema and Comment Pydantic model can drift.** Recent commits (`e7f2348 fix(types): add missing Comment fields and CommentForm props to fix CI build`) point to this — add new fields to both `backend/src/database/comment_db.py` AND the model, plus the frontend `Comment` type, in the same change.
 - **Don't bypass `episode_transformer.py`.** It normalizes raw Firestore docs into the canonical `Episode` shape. Adding a new field requires updating the transformer plus the Pydantic model plus the frontend type.
-- **Two recommendation paths exist in parallel.** Legacy `/api/recommendations/*` (Postgres-backed, **soft-deprecated** — `deprecated=True`, kept as an alias for one release) and new `/api/ticker-insights/*` (Firestore-backed). New work goes through ticker-insights.
+- **Ticker insights have one read path.** The legacy `/api/recommendations/*` aliases (flat Postgres `ticker_insights` table, which never existed on the VPS) were removed 2026-09-06; `/api/ticker-insights/*` reads `firestore_mirror.ticker_insights` via `content_read_service()`.
 
 ## Financial content rules
 

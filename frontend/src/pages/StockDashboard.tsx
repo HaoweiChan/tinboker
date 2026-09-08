@@ -3,47 +3,59 @@ import { Link, useParams } from 'react-router-dom';
 import { Star, Plus } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
-import { Change, StatGroup, SentBar, SentimentChip, EpisodeCardV2, type StatItem } from '@/components/redesign';
+import { Change, EpisodeCardV2 } from '@/components/redesign';
 import { apiEpisodeToCardV2 } from '@/components/redesign/episodeAdapter';
 import { TickerInsightCard } from '@/components/financial/TickerInsightCard';
-import { MentionReturnChips } from '@/components/financial/MentionReturnChips';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/store/useAppStore';
 import { useRequireAuth } from '@/hooks/useRequireAuth';
 import { useStockTrendColor } from '@/hooks/useStockTrendColor';
-import { aggregateSentiment, dominantSentiment, normalizeSentiment, type SentimentBreakdown } from '@/lib/sentiment';
+import { aggregateSentiment, normalizeSentiment } from '@/lib/sentiment';
 import { getStockByTicker, getEpisodesByTicker, type Episode as ApiEpisode } from '@/services/api';
 import { fetchWithFallback } from '@/services/api/migration';
-import type { CompanyDetail, RealTimePriceUpdate, TimeframeOption, TickerInsight, TickerTrending } from '@/services/types';
+import type { CompanyDetail, RealTimePriceUpdate, TimeframeOption, TickerInsight } from '@/services/types';
 import { priceWebSocketClient } from '@/services/websocket/priceWebSocket';
-import TradingViewChart from '@/components/charts/TradingViewChart';
+import TradingViewChart, { type ChartMarker } from '@/components/charts/TradingViewChart';
+import { ConsensusTile } from '@/components/stock/ConsensusTile';
+import { WhoTalksTile } from '@/components/stock/WhoTalksTile';
+import { CoMentionTile } from '@/components/stock/CoMentionTile';
+import { InstitutionalFlowCard } from '@/components/stock/InstitutionalFlowCard';
 import { ChartControls } from '@/components/charts/ChartControls';
-import { getInsightsByTicker, getRecentBuzz, getSortedPodcasts, type Podcast } from '@/services/api/podcasts';
+import { getInsightsByTicker, getSortedPodcasts, type Podcast } from '@/services/api/podcasts';
 import { getTickerMentions, type TickerMentionsResponse } from '@/services/api/mentions';
-import { formatDate } from '@/lib/date';
 import { transformApiEpisodeToMock } from '@/services/api/transformers';
 import { useStockPriceMap } from '@/hooks/useStockPriceMap';
 import { useStockPriceSinceMap } from '@/hooks/useStockPriceSinceMap';
 import { useEpisodeSentimentMap } from '@/hooks/useEpisodeSentimentMap';
 import { useTranslationMap } from '@/hooks/useTranslationMap';
 import { getStockLabel, inferStockMarket } from '@/utils/stockDisplay';
-import { TickerSectorsCard } from '@/components/stock/TickerSectorsCard';
+import { Tile } from '@/components/redesign/Tile';
+import { SectorIcon } from '@/components/topics/SectorIcon';
+import { getSectorsByTicker } from '@/services/api/stocks';
+import type { SectorByTickerItem } from '@/validation/schemas';
 
-function countsToBreakdown(counts: TickerTrending['sentiment_counts']): SentimentBreakdown | null {
-  if (!counts) return null;
-  const bull = counts.bull || 0;
-  const neutral = counts.neutral || 0;
-  const bear = counts.bear || 0;
-  const total = bull + neutral + bear;
-  if (total <= 0) return null;
-  return { total, bull, neutral, bear, avgScore: null };
-}
 
-const StockHeaderCard: React.FC<{ symbol: string }> = ({ symbol }) => {
+// Semantic sentiment colours (green bull / red bear), matching the chart dots and
+// the SentBar rather than the market price convention.
+const SENT_CLASS = { BULLISH: 'text-sentiment-bull', BEARISH: 'text-sentiment-bear', NEUTRAL: 'text-muted-foreground' } as const;
+const SENT_LABEL = { BULLISH: '看多', BEARISH: '看空', NEUTRAL: '中立' } as const;
+
+const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[]; episodes: ApiEpisode[] }> = ({ symbol, insights, episodes }) => {
   const [stockData, setStockData] = useState<CompanyDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const { watchlist, toggleWatchlist, theme } = useAppStore();
+  // Sector membership drives both the chips tile and the row layout below.
+  const [sectors, setSectors] = useState<SectorByTickerItem[]>([]);
+  useEffect(() => {
+    if (!symbol) return;
+    let cancelled = false;
+    setSectors([]);
+    getSectorsByTicker(symbol)
+      .then((r) => { if (!cancelled) setSectors(r.items); })
+      .catch(() => { if (!cancelled) setSectors([]); });
+    return () => { cancelled = true; };
+  }, [symbol]);
   const { guard } = useRequireAuth();
   const [timeframe, setTimeframe] = useState<TimeframeOption>('1D');
   const [activeIndicators, setActiveIndicators] = useState<string[]>(['MA5', 'MA20', 'MA60']);
@@ -136,6 +148,57 @@ const StockHeaderCard: React.FC<{ symbol: string }> = ({ symbol }) => {
   const displayChangePercent = stockData?.changePercent ?? 0;
   const trend = useStockTrendColor(displayChange);
 
+  // One dot per day a podcast discussed this ticker, coloured by that day's dominant
+  // sentiment (semantic tokens: green bull / red bear, independent of the candle
+  // colours). Hover lists the episodes behind the dot.
+  const mentionMarkers = useMemo<ChartMarker[]>(() => {
+    if (insights.length === 0) return [];
+    const css = (name: string) => {
+      const v = typeof document !== 'undefined' ? getComputedStyle(document.documentElement).getPropertyValue(name).trim() : '';
+      return v ? `hsl(${v.split(/\s+/).join(', ')})` : '#9ca3af';
+    };
+    const colors = { BULLISH: css('--sentiment-bull'), BEARISH: css('--sentiment-bear'), NEUTRAL: css('--sentiment-neutral') };
+    // One dot per ISO week (Monday's bar), not per day: a daily-discussed ticker at a
+    // 1Y zoom otherwise turns into a ribbon of dots along the price line.
+    const byWeek = new Map<string, TickerInsight[]>();
+    for (const i of insights) {
+      const d = new Date(i.podcast_launch_time.slice(0, 10));
+      if (Number.isNaN(d.getTime())) continue;
+      d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+      const monday = d.toISOString().slice(0, 10);
+      if (!byWeek.has(monday)) byWeek.set(monday, []);
+      byWeek.get(monday)!.push(i);
+    }
+    return [...byWeek.entries()].map(([monday, list]) => {
+      const b = aggregateSentiment(list.map((i) => ({ sentiment_label: i.sentiment_label })));
+      const dominant = b.bull > b.bear ? 'BULLISH' : b.bear > b.bull ? 'BEARISH' : 'NEUTRAL';
+      const sunday = new Date(Date.parse(monday) + 6 * 86400e3).toISOString().slice(5, 10).replace('-', '/');
+      const sorted = [...list].sort((x, y) => Date.parse(y.podcast_launch_time) - Date.parse(x.podcast_launch_time));
+      return {
+        id: `mention:${monday}`,
+        time: Date.parse(monday) / 1000,
+        color: colors[dominant],
+        size: list.length >= 6 ? 1.8 : list.length >= 3 ? 1.4 : 1,
+        tooltip: (
+          <div className="flex flex-col gap-1.5">
+            <div className="text-2xs text-muted-foreground tabular-nums whitespace-nowrap">{monday.replace(/-/g, '/')} – {sunday} · {list.length} 集 · <span className="text-sentiment-bull">多 {b.bull}</span> <span className="text-sentiment-bear">空 {b.bear}</span></div>
+            {sorted.slice(0, 4).map((i) => (
+              <div key={`${i.episode_id}-${i.podcaster}`} className="leading-snug">
+                <span className="font-medium">{i.podcaster || '—'}</span>{' '}
+                <span className={cn('ml-1 font-medium', SENT_CLASS[normalizeSentiment(i.sentiment_label) ?? 'NEUTRAL'])}>{SENT_LABEL[normalizeSentiment(i.sentiment_label) ?? 'NEUTRAL']}</span>
+                {i.time_horizon && <span className="text-muted-foreground ml-1">{i.time_horizon}</span>}
+                <div className="text-muted-foreground line-clamp-2">{i.bluf_thesis}</div>
+              </div>
+            ))}
+            {list.length > 4 && <div className="text-2xs text-muted-foreground">還有 {list.length - 4} 集</div>}
+          </div>
+        ),
+      };
+    });
+    // `theme` is read indirectly: the sentiment CSS variables change with it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [insights, theme]);
+
   const rawChart = stockData?.chartData;
   const chartData = useMemo(() => {
     if (rawChart && rawChart.length > 0) {
@@ -159,20 +222,46 @@ const StockHeaderCard: React.FC<{ symbol: string }> = ({ symbol }) => {
     return [];
   }, [rawChart]);
 
-  const latest = (chartData.length > 0 ? chartData[chartData.length - 1] : null) as { open?: number; high?: number; low?: number; volume?: number } | null;
   const formatPositiveNumber = (value: number | null | undefined, options?: Intl.NumberFormatOptions) => {
     if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return '—';
     return value.toLocaleString('en-US', options);
   };
   const hasDisplayPrice = typeof displayPrice === 'number' && Number.isFinite(displayPrice) && displayPrice > 0;
-  const keyStats: { label: string; value: string }[] = [
-    { label: '開盤', value: formatPositiveNumber(latest?.open) },
-    { label: '最高', value: formatPositiveNumber(latest?.high) },
-    { label: '最低', value: formatPositiveNumber(latest?.low) },
-    { label: '成交量', value: latest?.volume || stockData?.stats?.volume ? `${(((latest?.volume ?? stockData?.stats?.volume) || 0) / 1000).toFixed(1)}K` : '—' },
-    { label: '市值', value: stockData?.marketCap ? `${(stockData.marketCap / 1e9).toFixed(2)}B` : '—' },
+  // Period stats from the close history, not the day's open/high/low: the feed is
+  // delayed, so intraday numbers read as live when they are not, and a 1-year window
+  // is what the chart shows anyway.
+  const periodStats = useMemo(() => {
+    const closes = chartData.map((p) => ({ t: p.timestamp as number, c: (('close' in p ? p.close : undefined) ?? ('price' in p ? p.price : undefined) ?? 0) as number, v: ('volume' in p ? p.volume : undefined) as number | undefined }))
+      .filter((p) => p.c > 0);
+    if (closes.length === 0) return null;
+    const last = closes[closes.length - 1];
+    const pctSince = (days: number): number | null => {
+      const cutoff = last.t - days * 86400e3;
+      let base: typeof last | null = null;
+      for (const p of closes) { if (p.t <= cutoff) base = p; else break; }
+      return base ? ((last.c - base.c) / base.c) * 100 : null;
+    };
+    const year = closes.filter((p) => p.t >= last.t - 365 * 86400e3);
+    const hi = Math.max(...year.map((p) => p.c)), lo = Math.min(...year.map((p) => p.c));
+    const vols = closes.slice(-20).map((p) => p.v).filter((v): v is number => typeof v === 'number' && v > 0);
+    return {
+      w1: pctSince(7), m1: pctSince(30), m3: pctSince(90),
+      hi, lo, pos: hi > lo ? ((last.c - lo) / (hi - lo)) * 100 : null,
+      avgVol: vols.length ? vols.reduce((a, b) => a + b, 0) / vols.length : null,
+    };
+  }, [chartData]);
+  const fmtVol = (v: number) => (v >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : `${(v / 1e3).toFixed(0)}K`);
+  const keyStats: { label: string; value: React.ReactNode }[] = [
+    { label: '近 1 週', value: periodStats?.w1 != null ? <Change value={periodStats.w1} /> : '—' },
+    { label: '近 1 月', value: periodStats?.m1 != null ? <Change value={periodStats.m1} /> : '—' },
+    { label: '近 3 月', value: periodStats?.m3 != null ? <Change value={periodStats.m3} /> : '—' },
+    { label: '52 週區間', value: periodStats ? `${periodStats.lo.toLocaleString('en-US')} – ${periodStats.hi.toLocaleString('en-US')}` : '—' },
+    { label: '距 52 週高點', value: periodStats?.pos != null && periodStats.hi > 0 ? <Change value={((displayPrice ?? periodStats.hi) - periodStats.hi) / periodStats.hi * 100} /> : '—' },
+    { label: '20 日均量', value: periodStats?.avgVol ? fmtVol(periodStats.avgVol) : '—' },
     { label: '本益比', value: stockData?.pe ? stockData.pe.toFixed(1) : '—' },
   ];
+
+  const stat = (label: string) => keyStats.find((k) => k.label === label)?.value ?? '—';
 
   // Resolve names independently of the price API so labels still show when price
   // data is rate-limited / unavailable (stockData is null).
@@ -197,46 +286,45 @@ const StockHeaderCard: React.FC<{ symbol: string }> = ({ symbol }) => {
 
   return (
     <>
-      {/* Hero */}
-      <div className="flex items-start gap-5 bg-card border border-border rounded-md p-5 sm:p-6 mb-[18px]">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-3 flex-wrap mb-1.5">
+      {/* Header row — name and price, no card around it */}
+      <div className="flex items-end justify-between gap-4 flex-wrap mb-4">
+        <div className="min-w-0">
+          <div className="flex items-baseline gap-3 flex-wrap">
             <h1 className="text-2xl font-semibold tracking-[-0.02em]">{primaryLabel}</h1>
-            <span className={cn('text-xs px-3 py-1 rounded-full', marketBadge.cls)}>{marketBadge.label}</span>
-          </div>
-          {subLines.length > 0 && (
-            <div className="mb-1.5 leading-tight">
-              {subLines.map((line) => (
-                <p key={line.text} className={cn('text-sm text-muted-foreground', line.mono && 'font-mono')}>
-                  {line.text}
-                </p>
-              ))}
-            </div>
-          )}
-          <div className="flex items-baseline gap-3.5 flex-wrap">
-            <span className={cn('font-mono tabular-nums text-3xl font-semibold tracking-[-0.02em]', hasDisplayPrice ? trend.text : 'text-muted-foreground')}>
-              {isLoading ? '…' : formatPositiveNumber(displayPrice, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </span>
-            {hasDisplayPrice && <Change value={displayChangePercent} big />}
-            <span className="text-xs text-muted-foreground">{hasDisplayPrice ? '即時行情 · 延遲 15 分鐘' : '行情資料暫無'}</span>
+            {subLines.map((line) => (
+              <span key={line.text} className={cn('text-sm text-muted-foreground', line.mono && 'font-mono')}>{line.text}</span>
+            ))}
+            <span className={cn('text-xs px-2.5 py-0.5 rounded-full', marketBadge.cls)}>{marketBadge.label}</span>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={() => guard(() => toggleWatchlist(symbol))}
-          className={cn(
-            'inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium transition-colors shrink-0',
-            isWatchlisted ? 'bg-card border border-border text-foreground hover:bg-muted' : 'bg-foreground text-background hover:opacity-90',
-          )}
-        >
-          {isWatchlisted ? <Star size={14} className="fill-current" /> : <Plus size={14} />}
-          {isWatchlisted ? '已加入' : '加入自選'}
-        </button>
+        <div className="flex items-baseline gap-3 flex-wrap">
+          <span className={cn('font-mono tabular-nums text-2xl font-semibold tracking-[-0.02em]', hasDisplayPrice ? trend.text : 'text-muted-foreground')}>
+            {isLoading ? '…' : formatPositiveNumber(displayPrice, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </span>
+          {hasDisplayPrice && <Change value={displayChangePercent} />}
+          <span className="text-xs text-muted-foreground">{hasDisplayPrice ? '延遲 15 分鐘' : '行情資料暫無'}</span>
+          <button
+            type="button"
+            onClick={() => guard(() => toggleWatchlist(symbol))}
+            className={cn(
+              'inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-sm font-medium transition-colors shrink-0',
+              isWatchlisted ? 'bg-card border border-border text-foreground hover:bg-muted' : 'bg-foreground text-background hover:opacity-90',
+            )}
+          >
+            {isWatchlisted ? <Star size={14} className="fill-current" /> : <Plus size={14} />}
+            {isWatchlisted ? '已加入' : '加入自選'}
+          </button>
+        </div>
       </div>
 
-      {/* Chart + key stats */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-[18px]">
-        <div className="lg:col-span-2 bg-card border border-border rounded-md p-4">
+      {/* Bento: unequal tiles, the consensus number and the chart lead. Colours stay on the
+          site's tokens: card/border surfaces, amber primary for emphasis, semantic
+          sentiment green/red, cyan only on sector chips. */}
+      <div className="grid grid-cols-1 md:grid-cols-6 gap-3.5 mb-[18px]">
+        {/* key: remount (and re-animate) when the insight list arrives or changes. */}
+        <ConsensusTile key={insights.length} insights={insights} className="md:col-span-2 md:row-span-2" />
+
+        <div className="md:col-span-4 md:row-span-2 bg-card border border-border rounded-[10px] p-4 flex flex-col">
           <ChartControls
             timeframe={timeframe}
             onTimeframeChange={setTimeframe}
@@ -246,21 +334,22 @@ const StockHeaderCard: React.FC<{ symbol: string }> = ({ symbol }) => {
             onToggleIndicator={(ind, active) => setActiveIndicators((prev) => (active ? [...prev, ind] : prev.filter((i) => i !== ind)))}
           />
           {isLoading ? (
-            <div className="h-[380px] w-full mt-3 rounded-md bg-muted/30 animate-pulse" />
+            <div className="h-[320px] w-full mt-3 rounded-md bg-muted/30 animate-pulse" />
           ) : chartData.length > 0 ? (
-            <div className="h-[380px] w-full mt-3">
+            <div className="h-[320px] w-full mt-3">
               <TradingViewChart
                 data={chartData}
                 theme={theme === 'dark' ? 'dark' : 'light'}
                 lineColor={trend.lineColor}
                 topColor={trend.topColor}
                 bottomColor="transparent"
-                height={380}
+                height={320}
                 className="w-full"
                 activeIndicators={activeIndicators}
                 activeSubChart={subChart}
                 onLoadMore={handleLoadMore}
                 isLoadingMore={isLoadingMore}
+                markers={mentionMarkers}
               />
             </div>
           ) : market !== 'TW' && market !== 'US' ? (
@@ -278,18 +367,48 @@ const StockHeaderCard: React.FC<{ symbol: string }> = ({ symbol }) => {
             </div>
           )}
         </div>
-        <div className="bg-card border border-border rounded-md p-5">
-          <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground mb-3.5">關鍵數據</h3>
-          <div className="divide-y divide-border">
-            {keyStats.map((s) => (
-              <div key={s.label} className="flex justify-between items-center py-2.5">
-                <span className="text-2xs font-medium uppercase tracking-wider text-muted-foreground">{s.label}</span>
-                <span className="text-sm font-mono tabular-nums font-semibold">{s.value}</span>
+
+        {/* Range tile */}
+        <div className="md:col-span-2 bg-card border border-border rounded-[10px] p-5 flex flex-col justify-between gap-3">
+          <div className="text-xs text-muted-foreground">區間表現</div>
+          <div className="grid grid-cols-3 gap-2">
+            {['近 1 週', '近 1 月', '近 3 月'].map((l) => (
+              <div key={l}>
+                <div className="text-2xs text-muted-foreground mb-0.5">{l.replace('近 ', '')}</div>
+                <div className="text-xl font-mono tabular-nums font-semibold">{stat(l)}</div>
               </div>
             ))}
           </div>
+          <div className="text-xs text-muted-foreground tabular-nums flex flex-wrap gap-x-3 gap-y-1">
+            <span>52 週 <span className="text-foreground font-mono">{stat('52 週區間')}</span></span>
+            <span>距高點 <span className="font-mono">{stat('距 52 週高點')}</span></span>
+            <span>均量 <span className="text-foreground font-mono">{stat('20 日均量')}</span></span>
+            <span>本益比 <span className="text-foreground font-mono">{stat('本益比')}</span></span>
+          </div>
         </div>
-        <TickerSectorsCard symbol={symbol} />
+
+        {/* Spans adapt so a US ticker (no 三大法人) or a ticker outside every sector still
+            fills its rows. */}
+        {market === 'TW' && <InstitutionalFlowCard symbol={symbol} compact className="md:col-span-2" />}
+        <WhoTalksTile insights={insights} className={market === 'TW' ? 'md:col-span-2' : 'md:col-span-4'} />
+        {sectors.length > 0 && (
+          <Tile title="所屬題材" className="md:col-span-2">
+            <div className="flex flex-wrap gap-2">
+              {sectors.map((item) => (
+                <Link
+                  key={item.exposure_id}
+                  to={`/sector/${encodeURIComponent(item.exposure_id)}`}
+                  title={item.reason || undefined}
+                  className="inline-flex items-center gap-1.5 rounded-md bg-accent-info-soft text-accent-info px-2.5 py-1 text-xs font-medium hover:opacity-80 transition-opacity"
+                >
+                  <SectorIcon exposureId={item.exposure_id} iconId={item.icon_id} color={item.color_hex} size={12} variant="chip" />
+                  {item.display_name}
+                </Link>
+              ))}
+            </div>
+          </Tile>
+        )}
+        <CoMentionTile symbol={symbol} episodes={episodes} className={sectors.length > 0 ? 'md:col-span-4' : 'md:col-span-6'} max={sectors.length > 0 ? 10 : 14} />
       </div>
     </>
   );
@@ -308,9 +427,20 @@ export const StockDashboard: React.FC = () => {
   const episodeIds = useMemo(() => episodes.map((e) => e.id), [episodes]);
   const sentimentMap = useEpisodeSentimentMap(episodeIds);
   const [insights, setInsights] = useState<TickerInsight[]>([]);
-  // Post-mention 1/5/20/60 trading-day performance (TKB-001); null hides the section.
+  // The 觀點 list is long on popular tickers (200+ over 90 days); page it.
+  const [insightLimit, setInsightLimit] = useState(8);
+  const mockEpisodes = useMemo(
+    () => episodes.map(transformApiEpisodeToMock).filter((e): e is NonNullable<typeof e> => e != null),
+    [episodes],
+  );
+  // Post-mention 1/5/20/60 trading-day performance (TKB-001), shown inline on the 觀點 rows.
   const [tickerMentions, setTickerMentions] = useState<TickerMentionsResponse | null>(null);
-  const [buzzTicker, setBuzzTicker] = useState<TickerTrending | null>(null);
+  const perfByEpisode = useMemo(() => {
+    const m = new Map<string, TickerMentionsResponse['mentions'][number]['performance']>();
+    for (const x of tickerMentions?.mentions ?? []) if (x.performance) m.set(x.episode_id, x.performance);
+    return m;
+  }, [tickerMentions]);
+  const anyReturns = useMemo(() => [...perfByEpisode.values()].some((p) => p && [p.r1d, p.r5d, p.r20d, p.r60d].some((v) => typeof v === 'number')), [perfByEpisode]);
   const [podcasts, setPodcasts] = useState<Podcast[]>([]);
   const [episodesLoading, setEpisodesLoading] = useState(true);
   const podcastImageMap = useMemo(() => {
@@ -324,25 +454,11 @@ export const StockDashboard: React.FC = () => {
   useEffect(() => {
     if (!symbol) return;
     let cancelled = false;
-    setBuzzTicker(null);
-    getRecentBuzz({ days: 30, limit: 1, ticker: symbol })
-      .then((buzz) => {
-        if (cancelled) return;
-        const item = buzz.tickers.find((t) => t.ticker.toUpperCase() === symbol) ?? null;
-        setBuzzTicker(item);
-      })
-      .catch(() => {
-        if (!cancelled) setBuzzTicker(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [symbol]);
-
-  useEffect(() => {
-    if (!symbol) return;
-    let cancelled = false;
-    getInsightsByTicker(symbol)
+    // The API defaults to the last 7 days; the chart markers and the 30/90-day split
+    // need the same 90-day window the crawler description is built from.
+    const iso = (d: Date) => d.toISOString().slice(0, 10);
+    setInsightLimit(8);
+    getInsightsByTicker(symbol, { start_date: iso(new Date(Date.now() - 90 * 86400e3)), end_date: iso(new Date()) })
       .then((recs) => {
         if (!cancelled) setInsights(Array.isArray(recs) ? recs : []);
       })
@@ -398,51 +514,8 @@ export const StockDashboard: React.FC = () => {
     };
   }, [symbol]);
 
-  const insightBreakdown = useMemo(
-    () => aggregateSentiment(insights.map((r) => ({ sentiment_label: r.sentiment_label }))),
-    [insights],
-  );
-  const buzzBreakdown = useMemo(() => countsToBreakdown(buzzTicker?.sentiment_counts), [buzzTicker]);
-  const breakdown = buzzBreakdown ?? insightBreakdown;
-  const overallSentiment = normalizeSentiment(buzzTicker?.sentiment_label) ?? dominantSentiment(breakdown);
-  const mentionCount = buzzTicker?.count ?? episodes.length;
-  const relatedTags = useMemo(() => {
-    const set = new Set<string>();
-    for (const e of episodes) for (const t of e.tags ?? []) set.add(t);
-    return [...set];
-  }, [episodes]);
-  const newestEp = episodes[0];
-
-  const stats: StatItem[] = [
-    {
-      label: '近 30 天提及',
-      value: <>{mentionCount}<span className="text-base text-muted-foreground ml-1">集</span></>,
-    },
-    {
-      label: '情緒比例',
-      textValue: true,
-      value: breakdown.total > 0 ? <SentBar bull={breakdown.bull} neutral={breakdown.neutral} bear={breakdown.bear} width={88} /> : <span className="text-muted-foreground text-base">—</span>,
-      sub:
-        breakdown.total > 0 ? (
-          <span>
-            <span className="text-sentiment-bull">多 {breakdown.bull}</span> · <span className="text-muted-foreground">中 {breakdown.neutral}</span> · <span className="text-sentiment-bear">空 {breakdown.bear}</span>
-          </span>
-        ) : (
-          '尚無分析'
-        ),
-    },
-    {
-      label: '整體情緒',
-      textValue: true,
-      value: breakdown.total > 0 || buzzTicker ? <SentimentChip sentiment={overallSentiment} /> : <span className="text-muted-foreground text-base">—</span>,
-      sub: newestEp ? `最新：${newestEp.podcast_name}${newestEp.episode_number != null ? ` EP ${newestEp.episode_number}` : ''}` : '無資料',
-    },
-    {
-      label: '相關話題',
-      value: relatedTags.length,
-      sub: relatedTags.length ? relatedTags.slice(0, 3).map((t) => `#${t}`).join(' ') + (relatedTags.length > 3 ? ` +${relatedTags.length - 3}` : '') : '—',
-    },
-  ];
+  // The stat tile is labelled as a 30-day figure; `insights` spans 90 days for the
+  // chart markers and the split card, so narrow it here.
 
   return (
     <>
@@ -452,47 +525,36 @@ export const StockDashboard: React.FC = () => {
         url={typeof window !== 'undefined' ? window.location.href : undefined}
       />
       <PageContent>
-        <StockHeaderCard symbol={symbol} />
-
-        <div className="mb-[18px]">
-          <StatGroup items={stats} />
-        </div>
+        <StockHeaderCard symbol={symbol} insights={insights} episodes={episodes} />
 
         {insights.length > 0 && (
           <section className="mb-[18px]">
-            <h2 className="text-sm font-semibold text-muted-foreground mb-3">分析師觀點 & 投資摘要</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {insights.map((rec) => (
+            <div className="flex items-baseline justify-between gap-3 mb-3">
+              <h2 className="text-sm font-semibold text-muted-foreground">Podcast 觀點</h2>
+              <span className="text-xs text-muted-foreground tabular-nums">近 90 天 · {insights.length} 則</span>
+            </div>
+            <div className="bg-card border border-border rounded-md divide-y divide-border overflow-hidden">
+              {insights.slice(0, insightLimit).map((rec) => (
                 <TickerInsightCard
-                  key={`${rec.episode_id}-${rec.ticker}`}
+                  key={`${rec.episode_id}-${rec.ticker}-${rec.podcaster ?? ''}`}
                   insight={rec}
-                  episodes={episodes.map(transformApiEpisodeToMock).filter((e): e is NonNullable<typeof e> => e != null)}
+                  episodes={mockEpisodes}
+                  performance={perfByEpisode.get(rec.episode_id) ?? null}
                 />
               ))}
             </div>
-          </section>
-        )}
-
-        {tickerMentions && tickerMentions.mentions.length > 0 && (
-          <section className="mb-[18px]">
-            <h2 className="text-sm font-semibold text-muted-foreground mb-3">播客提及後續表現</h2>
-            <div className="bg-card border border-border rounded-md divide-y divide-border">
-              {tickerMentions.mentions.slice(0, 10).map((m, idx) => (
-                <Link
-                  key={`${m.episode_id}-${idx}`}
-                  to={`/episode/${encodeURIComponent(m.episode_id)}`}
-                  className="block px-4 py-3 hover:bg-muted/40 transition-colors"
-                >
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm font-medium text-foreground truncate">{m.podcaster || '—'}</span>
-                    <span className="text-xs text-muted-foreground tabular-nums shrink-0">{formatDate(m.mentioned_at)}</span>
-                    <SentimentChip sentiment={normalizeSentiment(m.sentiment_label)} />
-                  </div>
-                  <MentionReturnChips performance={m.performance} className="mt-2 max-w-sm" />
-                </Link>
-              ))}
-            </div>
-            <p className="text-2xs text-muted-foreground/70 leading-relaxed mt-2">{tickerMentions.disclaimer}</p>
+            {insights.length > insightLimit && (
+              <button
+                type="button"
+                onClick={() => setInsightLimit((n) => n + 12)}
+                className="mt-2 w-full rounded-md border border-border bg-card py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
+              >
+                顯示更多（還有 {insights.length - insightLimit} 則）
+              </button>
+            )}
+            {anyReturns && tickerMentions?.disclaimer && (
+              <p className="text-2xs text-muted-foreground/70 leading-relaxed mt-2">{tickerMentions.disclaimer}</p>
+            )}
           </section>
         )}
 

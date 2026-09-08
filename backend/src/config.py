@@ -134,8 +134,6 @@ class Settings(BaseSettings):
     social_comment_scan_posts: int = 25
     # Model used to triage a comment and draft a reply.
     social_comment_model: str = "google/gemini-2.5-flash"
-    # Cap on unattended replies per sync — a runaway classifier cannot flood the account.
-    social_comment_auto_reply_cap: int = 3
 
     # ==================== 方格子 (vocus) syndication ====================
     # vocus publishes no developer API; we drive the endpoints its own editor uses.
@@ -299,6 +297,11 @@ class Settings(BaseSettings):
     # reliable released_at_ms (created_time is ingestion time, not publish time);
     # then flip RELEASE_EPISODE_MAX_AGE_DAYS=30 to enable the 1-month window.
     release_episode_max_age_days: int = 0
+    # Picks (/picks 走勢, stock-page 觀點, podcaster picks) track forward 7/30/90-day
+    # returns, so they read the full ticker_insights history regardless of the
+    # episode window above. 0 = no cap. Rows still flag `episode_public` so the UI
+    # only links to episodes the window actually serves.
+    release_picks_max_age_days: int = 0
 
     @field_validator("release_podcast_languages", mode="before")
     @classmethod

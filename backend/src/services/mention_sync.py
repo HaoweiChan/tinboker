@@ -2,7 +2,7 @@
 Mention sync + post-mention performance snapshots (TKB-001).
 
 Derives content_mentions rows from the two mention sources the pipelines
-already produce — the Postgres ticker_insights table (per-episode LLM ticker
+already produce — the mirrored ticker_insights docs (per-episode LLM ticker
 extraction) and episode sector_exposures (deterministic alias matching) — then
 computes 1D/5D/20D/60D trading-day returns from the warm stock_daily_closes
 table. Daily-batch only by design (TKB-001: no real-time tracking).
@@ -13,6 +13,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any, List, Optional
 
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from src.database.postgres import get_session
@@ -20,6 +21,7 @@ from src.database.models import (
     ContentMention,
     SectorPerformanceSnapshot,
     StockDailyClose,
+    StockDailyOHLC,
     TickerPerformanceSnapshot,
 )
 from src.utils.market import infer_market
@@ -60,7 +62,8 @@ def _parse_iso(value: Any) -> Optional[datetime]:
 
 
 def _parse_start_s(reasons: Any) -> Optional[float]:
-    """First reason's start_time as seconds — accepts numbers or H:MM:SS strings."""
+    """First reason's start_time as seconds. The pipeline writes numbers in
+    milliseconds (regen/schemas.py: "int — ms"); older docs carry H:MM:SS."""
     if isinstance(reasons, str):
         try:
             reasons = json.loads(reasons)
@@ -72,12 +75,14 @@ def _parse_start_s(reasons: Any) -> Optional[float]:
     if raw is None:
         return None
     if isinstance(raw, (int, float)):
-        return float(raw)
-    parts = str(raw).strip().split(":")
+        return float(raw) / 1000.0
+    text = str(raw).strip()
     try:
+        if ":" not in text:  # a few docs stringify the ms integer ("3695725")
+            return float(text) / 1000.0
         secs = 0.0
-        for p in parts:
-            secs = secs * 60 + float(p)
+        for part in text.split(":"):
+            secs = secs * 60 + float(part)
         return secs
     except ValueError:
         return None
@@ -87,60 +92,32 @@ def _parse_start_s(reasons: Any) -> Optional[float]:
 # Source 1: ticker mentions from the pipeline-written ticker_insights table
 # ---------------------------------------------------------------------------
 
-def _insight_label_column() -> Optional[str]:
-    """The deployed ticker_insights table is either the content-store shape
-    (sentiment_label) or the legacy one (sentiment) — detect once per cycle."""
-    from src.database.insight_db import get_connection, is_available
-
-    if not is_available():
-        return None
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            "SELECT column_name FROM information_schema.columns WHERE table_name = 'ticker_insights'"
-        )
-        cols = {r[0] for r in cur.fetchall()}
-    if "sentiment_label" in cols:
-        return "sentiment_label"
-    if "sentiment" in cols:
-        return "sentiment"
-    return None
-
-
 def _fetch_recent_insight_rows(days: int) -> List[dict]:
-    """Recent ticker_insights rows from the shared podcast_db (pipeline-written)."""
-    import psycopg2.extras
+    """Recent ticker_insights docs via the same read path /api/ticker-insights
+    uses (Postgres mirror, or Firestore when the mirror flag is off). The flat
+    public.ticker_insights table this used to query never existed on the VPS."""
+    from src.services.postgres_mirror_service import content_read_service
 
-    from src.database.insight_db import get_connection, is_available
-
-    if not is_available():
-        return []
-    label_col = _insight_label_column()
-    if label_col is None:
-        logger.warning("mention sync: ticker_insights table not found or unrecognised shape")
-        return []
     cutoff = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%dT00:00:00")
-    try:
-        with get_connection() as conn:
-            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                cur.execute(
-                    f"""
-                    SELECT episode_id, ticker, podcaster, podcast_launch_time,
-                           bluf_thesis, {label_col} AS sentiment_label, reasons
-                    FROM ticker_insights
-                    WHERE podcast_launch_time >= %s
-                    """,
-                    (cutoff,),
-                )
-                return [dict(r) for r in cur.fetchall()]
-    except Exception as e:
-        logger.warning("mention sync: ticker_insights fetch failed: %s", e)
-        return []
+    return content_read_service().query_collection_group(
+        "tickers", filters=[("podcast_launch_time", ">=", cutoff)],
+    )
+
+
+def _existing_keys(db: Session) -> set:
+    return {k for (k,) in db.query(ContentMention.mention_key).all()}
 
 
 def sync_ticker_mentions(db: Session, days: int = SYNC_LOOKBACK_DAYS) -> int:
-    """Upsert ticker mentions into content_mentions. Returns rows inserted."""
+    """Upsert ticker mentions into content_mentions. Returns rows inserted.
+
+    Existing rows whose mention_start_s no longer matches the source get it
+    re-set (heals the rows written while ms were stored as seconds); after
+    the first pass that is a no-op."""
     rows = _fetch_recent_insight_rows(days)
-    inserted = 0
+    stored = dict(db.query(ContentMention.mention_key, ContentMention.mention_start_s).all())
+    seen = set(stored)
+    inserted = healed = 0
     for row in rows:
         ticker = _canonical_ticker(row.get("ticker") or "")
         episode_id = (row.get("episode_id") or "").strip()
@@ -148,9 +125,15 @@ def sync_ticker_mentions(db: Session, days: int = SYNC_LOOKBACK_DAYS) -> int:
         if not ticker or not episode_id or mentioned_at is None:
             continue
         key = f"{episode_id}:ticker:{ticker}"
-        existing = db.query(ContentMention).filter(ContentMention.mention_key == key).first()
-        if existing:
+        start_s = _parse_start_s(row.get("reasons"))
+        if key in seen:
+            if start_s is not None and stored[key] != start_s:
+                db.query(ContentMention).filter(ContentMention.mention_key == key).update(
+                    {"mention_start_s": start_s}
+                )
+                healed += 1
             continue
+        seen.add(key)
         db.add(ContentMention(
             mention_key=key,
             episode_id=episode_id,
@@ -160,14 +143,14 @@ def sync_ticker_mentions(db: Session, days: int = SYNC_LOOKBACK_DAYS) -> int:
             ticker=ticker,
             market=infer_market(ticker),
             mentioned_at=mentioned_at,
-            mention_start_s=_parse_start_s(row.get("reasons")),
+            mention_start_s=start_s,
             confidence=LLM_TICKER_CONFIDENCE,
             extraction_method="pipeline_llm",
             sentiment_label=row.get("sentiment_label"),
             thesis=row.get("bluf_thesis"),
         ))
         inserted += 1
-    if inserted:
+    if inserted or healed:
         db.commit()
     return inserted
 
@@ -223,14 +206,18 @@ def sync_sector_mentions(db: Session, days: int = SYNC_LOOKBACK_DAYS) -> int:
         logger.warning("mention sync: sector exposure scan failed: %s", e)
         return 0
     cutoff = datetime.utcnow() - timedelta(days=days)
+    seen = _existing_keys(db)
     inserted = 0
     for rec in records:
         if rec["mentioned_at"] < cutoff:
             continue
+        # Episodes list the same exposure_id more than once (2,179 pairs on
+        # 2026-09-05); with autoflush off a per-row lookup missed those and the
+        # whole pass died on the unique key at commit.
         key = f"{rec['episode_id']}:sector:{rec['exposure_id']}"
-        existing = db.query(ContentMention).filter(ContentMention.mention_key == key).first()
-        if existing:
+        if key in seen:
             continue
+        seen.add(key)
         confidence = rec.get("confidence")
         db.add(ContentMention(
             mention_key=key,
@@ -255,6 +242,27 @@ def sync_sector_mentions(db: Session, days: int = SYNC_LOOKBACK_DAYS) -> int:
 # Post-mention returns (1D / 5D / 20D / 60D trading days)
 # ---------------------------------------------------------------------------
 
+def _closes_from(db: Session, ticker: str, since: str) -> List[tuple]:
+    """(date, close) pairs for a ticker from ``since`` on, ascending, from BOTH warm
+    tables: ``stock_daily_closes`` (per-tracked-ticker, thin before mid-2026) and
+    ``stock_daily_ohlc`` (whole TW market from the TWSE/TPEx history feeds, plus the
+    yfinance bars the US warmers write). The close-only table wins on a shared date."""
+    merged: dict[str, float] = {}
+    for row in (
+        db.query(StockDailyOHLC.date, StockDailyOHLC.close)
+        .filter(StockDailyOHLC.ticker == ticker, StockDailyOHLC.date >= since)
+        .all()
+    ):
+        merged[row[0]] = row[1]
+    for row in (
+        db.query(StockDailyClose.date, StockDailyClose.close)
+        .filter(StockDailyClose.ticker == ticker, StockDailyClose.date >= since)
+        .all()
+    ):
+        merged[row[0]] = row[1]
+    return sorted(merged.items())
+
+
 def compute_trading_day_returns(db: Session, ticker: str, mention_date: str) -> dict:
     """Baseline close + rN percent returns for the given (ticker, mention date).
 
@@ -268,41 +276,53 @@ def compute_trading_day_returns(db: Session, ticker: str, mention_date: str) -> 
     window_start = (
         datetime.strptime(mention_date, "%Y-%m-%d") - timedelta(days=7)
     ).strftime("%Y-%m-%d")
-    rows = (
-        db.query(StockDailyClose)
-        .filter(StockDailyClose.ticker == ticker, StockDailyClose.date >= window_start)
-        .order_by(StockDailyClose.date.asc())
-        .all()
-    )
-    baseline = None
-    following: List[StockDailyClose] = []
-    for row in rows:
-        if row.date <= mention_date:
-            baseline = row
+    baseline: Optional[float] = None
+    following: List[float] = []
+    for date, close in _closes_from(db, ticker, window_start):
+        if date <= mention_date:
+            baseline = close
         else:
-            following.append(row)
-    if baseline is None or not baseline.close or baseline.close <= 0:
+            following.append(close)
+    if not baseline or baseline <= 0:
         return out
-    out["baseline_close"] = baseline.close
+    out["baseline_close"] = baseline
     for n in TRADING_WINDOWS:
-        if len(following) >= n and following[n - 1].close:
-            out[f"r{n}d"] = round((following[n - 1].close - baseline.close) / baseline.close * 100, 2)
+        if len(following) >= n and following[n - 1]:
+            out[f"r{n}d"] = round((following[n - 1] - baseline) / baseline * 100, 2)
     return out
 
 
-def _snapshot_incomplete(snap) -> bool:
-    return any(getattr(snap, f"r{n}d") is None for n in TRADING_WINDOWS) or snap.baseline_close is None
+def _mentions_needing_snapshot(db: Session, mention_type: str, snap_model, no_data_col, limit: int):
+    """Mentions whose snapshot is missing, has no price data yet (``no_data_col`` is
+    NULL/0 — closes may have been backfilled since), or is incomplete and still young
+    enough for a window to fill. Newest first, capped per cycle.
 
-
-def compute_ticker_snapshots(db: Session, limit: int = 2000) -> int:
-    """(Re)compute ticker performance snapshots for mentions that still need one."""
+    The previous shape — "the newest ``limit`` mentions, skip the done ones" — meant a
+    mention older than the newest 2,000 never got a snapshot at all: 11,000 of the
+    13,750 rows on 2026-09-06 had none. Selecting the needy ones lets every cycle
+    chew through the backlog instead."""
     horizon = datetime.utcnow() - timedelta(days=RECOMPUTE_HORIZON_DAYS)
-    mentions = (
+    incomplete = or_(*[getattr(snap_model, f"r{n}d").is_(None) for n in TRADING_WINDOWS])
+    return (
         db.query(ContentMention)
-        .filter(ContentMention.mention_type == "ticker")
+        .outerjoin(snap_model, snap_model.mention_id == ContentMention.id)
+        .filter(ContentMention.mention_type == mention_type)
+        .filter(or_(
+            snap_model.id.is_(None),
+            no_data_col.is_(None),
+            no_data_col == 0,
+            and_(incomplete, ContentMention.mentioned_at >= horizon),
+        ))
         .order_by(ContentMention.mentioned_at.desc())
         .limit(limit)
         .all()
+    )
+
+
+def compute_ticker_snapshots(db: Session, limit: int = 5000) -> int:
+    """(Re)compute ticker performance snapshots for mentions that still need one."""
+    mentions = _mentions_needing_snapshot(
+        db, "ticker", TickerPerformanceSnapshot, TickerPerformanceSnapshot.baseline_close, limit,
     )
     updated = 0
     for mention in mentions:
@@ -311,8 +331,6 @@ def compute_ticker_snapshots(db: Session, limit: int = 2000) -> int:
             .filter(TickerPerformanceSnapshot.mention_id == mention.id)
             .first()
         )
-        if snap is not None and (not _snapshot_incomplete(snap) or mention.mentioned_at < horizon):
-            continue
         mention_date = mention.mentioned_at.strftime("%Y-%m-%d")
         returns = compute_trading_day_returns(db, mention.ticker, mention_date)
         if snap is None:
@@ -330,15 +348,10 @@ def compute_ticker_snapshots(db: Session, limit: int = 2000) -> int:
     return updated
 
 
-def compute_sector_snapshots(db: Session, limit: int = 2000) -> int:
+def compute_sector_snapshots(db: Session, limit: int = 5000) -> int:
     """(Re)compute sector snapshots: equal-weight average over resolved members."""
-    horizon = datetime.utcnow() - timedelta(days=RECOMPUTE_HORIZON_DAYS)
-    mentions = (
-        db.query(ContentMention)
-        .filter(ContentMention.mention_type == "sector")
-        .order_by(ContentMention.mentioned_at.desc())
-        .limit(limit)
-        .all()
+    mentions = _mentions_needing_snapshot(
+        db, "sector", SectorPerformanceSnapshot, SectorPerformanceSnapshot.member_count, limit,
     )
     updated = 0
     for mention in mentions:
@@ -347,8 +360,6 @@ def compute_sector_snapshots(db: Session, limit: int = 2000) -> int:
             .filter(SectorPerformanceSnapshot.mention_id == mention.id)
             .first()
         )
-        if snap is not None and (not _snapshot_incomplete_sector(snap) or mention.mentioned_at < horizon):
-            continue
         members = ((mention.payload or {}).get("members") or [])[:MAX_SECTOR_MEMBERS]
         mention_date = mention.mentioned_at.strftime("%Y-%m-%d")
         member_returns = [
@@ -371,34 +382,44 @@ def compute_sector_snapshots(db: Session, limit: int = 2000) -> int:
     return updated
 
 
-def _snapshot_incomplete_sector(snap) -> bool:
-    return snap.member_count == 0 or any(getattr(snap, f"r{n}d") is None for n in TRADING_WINDOWS)
-
-
 # ---------------------------------------------------------------------------
 # Periodic runner
 # ---------------------------------------------------------------------------
 
 def run_sync_cycle() -> dict:
-    """One full sync + snapshot pass. Sync (blocking DB/IO) — call off-loop."""
-    stats = {"ticker_mentions": 0, "sector_mentions": 0, "ticker_snapshots": 0, "sector_snapshots": 0}
+    """One full sync + snapshot pass. Sync (blocking DB/IO) — call off-loop.
+
+    ponytail: dev/staging/prod all run this against the one shared table; the
+    loser of a same-key race rolls back and simply catches up next cycle."""
+    stats = {"ticker_mentions": 0, "sector_mentions": 0, "us_history_bars": 0,
+             "ticker_snapshots": 0, "sector_snapshots": 0}
     for session in get_session():
         try:
             stats["ticker_mentions"] = sync_ticker_mentions(session)
         except Exception as e:
             logger.warning("mention sync: ticker mention pass failed: %s", e)
+            session.rollback()
         try:
             stats["sector_mentions"] = sync_sector_mentions(session)
         except Exception as e:
             logger.warning("mention sync: sector mention pass failed: %s", e)
+            session.rollback()
+        try:
+            # Closes first, so the snapshots below can score old US calls this cycle.
+            from src.services.stock_close_refresh import backfill_us_mention_history
+            stats["us_history_bars"] = backfill_us_mention_history()
+        except Exception as e:
+            logger.warning("mention sync: US history backfill failed: %s", e)
         try:
             stats["ticker_snapshots"] = compute_ticker_snapshots(session)
         except Exception as e:
             logger.warning("mention sync: ticker snapshot pass failed: %s", e)
+            session.rollback()
         try:
             stats["sector_snapshots"] = compute_sector_snapshots(session)
         except Exception as e:
             logger.warning("mention sync: sector snapshot pass failed: %s", e)
+            session.rollback()
         break
     return stats
 

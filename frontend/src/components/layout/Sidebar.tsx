@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Home, Mic, LineChart, TrendingUp, Hash, Info, MessageSquareText, Bookmark, Headphones, Heart, Bell } from 'lucide-react';
+import { Home, Mic, LineChart, TrendingUp, Hash, Info, Bookmark, Headphones, Heart, Bell, CalendarDays } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { AppLogo } from '@/components/logo/AppLogo';
 import { useUser } from '@/store/useAppStore';
@@ -37,6 +37,7 @@ const SECTIONS: readonly NavSection[] = [
       { to: '/stock', label: '個股', icon: LineChart, prefix: true },
       { to: '/picks', label: '走勢', icon: TrendingUp, prefix: true, devOnly: true },
       { to: '/topics', label: '話題', icon: Hash, prefix: true },
+      { to: '/weekly', label: '週報', icon: CalendarDays, prefix: true },
       // 文章 (articles) hidden from nav until at least one article is published —
       // the /articles route still works, it just isn't surfaced while empty.
     ],
@@ -53,7 +54,7 @@ const SECTIONS: readonly NavSection[] = [
   {
     title: '支援',
     items: [
-      { to: '/report', label: '意見回饋', icon: MessageSquareText },
+      // One page: 關於 / 聯絡我們 / 免責聲明 are sections of /about.
       { to: '/about', label: '關於', icon: Info },
     ],
   },
@@ -64,7 +65,9 @@ function isActive(pathname: string, search: string, item: NavItem): boolean {
     return pathname === '/profile' && new URLSearchParams(search).get('tab') === item.tab;
   }
   if (item.to === '/') return pathname === '/';
-  return item.prefix ? pathname === item.to || pathname.startsWith(item.to + '/') : pathname === item.to;
+  const [base, hash] = item.to.split('#');
+  if (hash) return pathname === base && window.location.hash === `#${hash}`;
+  return item.prefix ? pathname === base || pathname.startsWith(base + '/') : pathname === base;
 }
 
 /**

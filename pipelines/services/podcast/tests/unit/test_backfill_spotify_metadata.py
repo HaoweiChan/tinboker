@@ -103,3 +103,24 @@ def test_load_show_links_tolerates_a_missing_config(tmp_path):
     assert load_show_links(present, tmp_path / "nope.json") == {
         "A": "https://open.spotify.com/show/a"
     }
+
+
+def test_shipped_configs_point_at_shows_not_episodes():
+    """A /episode/ URL in spotify_show_link fails silently.
+
+    "Exchanges at Goldman Sachs" carried one, so its catalogue never paged and all 59
+    of its episodes kept the re-hosted player the AdSense replicated-content fix was
+    meant to remove. The backfill reports it as "unusable show link" and moves on, so
+    nothing is corrupted and nothing is fixed — the only signal is a line in a run
+    nobody reads. Assert on the shipped files instead.
+    """
+    from pathlib import Path
+
+    service_root = Path(__file__).resolve().parents[2]
+    for name in ("podcasts_tw.json", "podcasts_en.json"):
+        config = service_root / name
+        for show in json.loads(config.read_text(encoding="utf-8")):
+            link = show.get("spotify_show_link")
+            if not link:
+                continue  # deliberately unlinked shows carry a _spotify_note instead
+            assert "/show/" in link, f"{name}: {show.get('name')} -> {link}"

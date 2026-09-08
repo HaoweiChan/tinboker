@@ -308,6 +308,52 @@ def _build_messages(step: str, state: dict[str, Any]) -> list[dict[str, str]]:
     raise RegenError(f"Unknown step '{step}'")
 
 
+# Bands measured from the 60 most recent pipeline-written 股癌 episodes. An agent
+# writing to these prompts overshoots all three — 股癌 EP127 came out at 6,593 chars /
+# 40 ticker links / 24 tickers against the pipeline's 4,090 / 15 / 11 from the same
+# transcript. Episodes sit next to each other on the site, so drift of that size reads
+# as a different publication. Warned, not enforced: a genuinely dense episode is
+# allowed to exceed them, but it should be a decision rather than an accident.
+_SUMMARY_CHARS = (3400, 4900)
+_TICKER_LINKS_MAX = 20
+_TICKERS_MAX = 12
+_TAGS_MAX = 12
+
+
+def _corpus_drift_warnings(state: dict[str, Any]) -> list[str]:
+    """Flag writer output that falls outside the corpus it will be published into."""
+    out: list[str] = []
+    report = state.get("markdown_report") or ""
+    lo, hi = _SUMMARY_CHARS
+    if report and not (lo <= len(report) <= hi):
+        out.append(
+            f"summary is {len(report):,} characters; the episodes it will sit next to run "
+            f"{lo:,}-{hi:,} (median ~4,300). "
+            + ("Tighten it — cut restatement and merge thin sections — and resubmit 'writer' "
+               "if this was not deliberate." if len(report) > hi else
+               "It may be too thin; check no substantive segment was dropped.")
+        )
+    links = len(re.findall(r"#ticker:", report))
+    if links > _TICKER_LINKS_MAX:
+        out.append(
+            f"{links} inline #ticker: links; a median episode carries about 9. Link the "
+            "companies the discussion is about, not every one named in passing."
+        )
+    tickers = state.get("related_tickers") or []
+    if len(tickers) > _TICKERS_MAX:
+        out.append(
+            f"{len(tickers)} related_tickers; the corpus median is 7 and p90 is 11. "
+            "Passing analogies and examples should not become linked tickers."
+        )
+    tags = state.get("tags") or []
+    if len(tags) > _TAGS_MAX:
+        out.append(
+            f"{len(tags)} tags; the corpus median is about 8. Extra tags fragment "
+            "clustering rather than improving it."
+        )
+    return out
+
+
 def _apply(step: str, output: Any, state: dict[str, Any]) -> list[str]:
     """Apply the agent's output for ``step`` and run the unblocked non-LLM glue.
 
@@ -335,6 +381,7 @@ def _apply(step: str, output: Any, state: dict[str, Any]) -> list[str]:
         state.update(derive_tags_tickers(state))
         if not state.get("markdown_report", "").strip():
             warnings.append("writer produced an empty summary — check the returned JSON shape.")
+        warnings.extend(_corpus_drift_warnings(state))
     elif step == STEP_KEY_INSIGHTS:
         state.update(key_insights_extractor.postprocess(output, state))
     elif step == STEP_TICKER:
@@ -593,15 +640,26 @@ def find_candidates(
     only_placeholder: bool = False,
 ) -> dict[str, Any]:
     """Episodes that have a transcript but missing/placeholder generated content."""
-    fs = _firestore()
-    if podcast_name:
-        rows = fs.query_collection(
-            "episodes", filters=[("podcast_name", "==", podcast_name)], limit=limit * 4
+    if only_placeholder:
+        # The "needs content" predicate runs in SQL — see query_regen_candidates. A
+        # client-side filter over a newest-first window cannot find backfilled
+        # episodes, which carry their true old release date and sort to the bottom.
+        from src.service import postgres_mirror_reader
+
+        _firestore()  # importing bootstraps the GSM secrets the reader connects with
+        rows = postgres_mirror_reader.query_regen_candidates(
+            podcast_name=podcast_name, limit=limit
         )
     else:
-        rows = fs.query_collection(
-            "episodes", order_by="created_time", direction="DESCENDING", limit=limit * 4
-        )
+        fs = _firestore()
+        if podcast_name:
+            rows = fs.query_collection(
+                "episodes", filters=[("podcast_name", "==", podcast_name)], limit=limit * 4
+            )
+        else:
+            rows = fs.query_collection(
+                "episodes", order_by="created_time", direction="DESCENDING", limit=limit * 4
+            )
 
     out: list[dict[str, Any]] = []
     for d in rows:
@@ -614,7 +672,16 @@ def find_candidates(
         if not has_transcript:
             continue
         summary = d.get("summary_content") or ""
-        placeholder = (not summary.strip()) or is_placeholder_summary(summary)
+        # ``summary_content`` is written ONLY by this regen tool. The normal pipeline
+        # stores the real markdown as an artifact and keeps just ``summary_url`` on the
+        # doc, so testing the inline field alone reports every normally-summarised
+        # episode as an empty placeholder — which would make ``only_placeholder`` a
+        # work queue of 4,000+ episodes that are already fine.
+        stored_summary = bool(d.get("summary_url") or d.get("summary_public_url"))
+        if summary.strip():
+            placeholder = is_placeholder_summary(summary)
+        else:
+            placeholder = not stored_summary
         if only_placeholder and not placeholder:
             continue
         out.append({
@@ -623,7 +690,7 @@ def find_candidates(
             "episode_title": d.get("episode_title") or d.get("title"),
             "sentence_count": len(sentences) if sentences else None,
             "transcript_source": "inline" if sentences else ("gcs" if d.get("transcript_url") else "flat_text"),
-            "has_summary": bool(summary.strip()),
+            "has_summary": bool(summary.strip()) or stored_summary,
             "is_placeholder": placeholder,
             "key_insight_count": len(d.get("key_insights") or []),
             "ticker_count": len(d.get("related_tickers") or []),

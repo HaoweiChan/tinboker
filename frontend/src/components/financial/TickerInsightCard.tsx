@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { ChevronDown, ChevronUp, Play, TrendingUp, TrendingDown, Minus, Calendar } from 'lucide-react';
-import { Button, Card, CardContent, CardHeader, Badge } from '@/components/ui';
+import { ChevronDown, ChevronUp, Play } from 'lucide-react';
 import type { Reason, Risk, SentimentLabel, TickerInsight } from '@/services/types';
 import { normalizeSentiment } from '@/lib/sentiment';
 import { cn } from '@/lib/utils';
-import { formatDate as formatYMD } from '@/lib/date';
+import { formatDate } from '@/lib/date';
+import { Change } from '@/components/redesign';
+import type { MentionPerformance } from '@/validation/schemas';
 import { usePlayerStore } from '@/store/usePlayerStore';
 import type { Episode as MockEpisode } from '@/data/mockData';
 
@@ -12,105 +13,62 @@ interface TickerInsightCardProps {
     insight: TickerInsight;
     /** Episodes for this ticker (from StockDashboard). Used to launch podcast at reason/risk timestamp. */
     episodes?: MockEpisode[];
+    /** Post-mention 1/5/20/60 trading-day returns for this episode (TKB-001), when computed. */
+    performance?: MentionPerformance | null;
 }
 
-// Spec § 4.2: sentiment_score is internal-only; the 5-tier label is the wire
-// vocabulary, but for chip rendering we collapse to bull/bear/neutral.
-const SENTIMENT_CONFIG: Record<'BULLISH' | 'BEARISH' | 'NEUTRAL', { color: string; icon: typeof TrendingUp; label: string }> = {
-    BULLISH: { color: 'text-sentiment-bull bg-sentiment-bull-soft', icon: TrendingUp, label: '看多' },
-    BEARISH: { color: 'text-sentiment-bear bg-sentiment-bear-soft', icon: TrendingDown, label: '看空' },
-    NEUTRAL: { color: 'text-sentiment-neutral bg-muted', icon: Minus, label: '中立' },
+const WINDOWS: { key: keyof MentionPerformance; label: string }[] = [
+    { key: 'r1d', label: '1日' }, { key: 'r5d', label: '5日' }, { key: 'r20d', label: '20日' }, { key: 'r60d', label: '60日' },
+];
+
+// Semantic stance colours (green bull / red bear), matching the rail, the chart dots
+// and the SentBar — not the market's price colours.
+const RAIL: Record<'BULLISH' | 'BEARISH' | 'NEUTRAL', string> = {
+    BULLISH: 'bg-sentiment-bull',
+    BEARISH: 'bg-sentiment-bear',
+    NEUTRAL: 'bg-muted-foreground/40',
+};
+const STANCE: Record<'BULLISH' | 'BEARISH' | 'NEUTRAL', { cls: string; label: string }> = {
+    BULLISH: { cls: 'text-sentiment-bull', label: '看多' },
+    BEARISH: { cls: 'text-sentiment-bear', label: '看空' },
+    NEUTRAL: { cls: 'text-muted-foreground', label: '中立' },
 };
 
-const KNOWN_THESIS_TRANSLATIONS: Record<string, string> = {
-    'Emerging markets, particularly those in Asia with significant exposure to AI semiconductor companies, are outperforming major US indices and offer strong growth potential.':
-        '新興市場，尤其是高度曝險亞洲 AI 半導體供應鏈的市場，近期表現優於多數美股指數，並具備長期成長潛力。',
-};
-
-const SEVERITY_LABELS: Record<string, string> = {
-    HIGH: '高',
-    MEDIUM: '中',
-    LOW: '低',
-};
+const SEVERITY_LABELS: Record<string, string> = { HIGH: '高', MEDIUM: '中', LOW: '低' };
 
 const trimText = (value?: string | null) => value?.trim() ?? '';
 const hasText = (value?: string | null) => trimText(value).length > 0;
-const hasCjk = (value: string) => /[\u3400-\u9fff]/.test(value);
+const hasCjk = (value: string) => /[㐀-鿿]/.test(value);
 
 const localizeThesis = (insight: TickerInsight) => {
     const thesis = trimText(insight.bluf_thesis);
     if (!thesis) return '目前尚無明確投資摘要。';
-    if (KNOWN_THESIS_TRANSLATIONS[thesis]) return KNOWN_THESIS_TRANSLATIONS[thesis];
     if (hasCjk(thesis)) return thesis;
     return `${insight.ticker} 的投資摘要尚未完成繁中轉寫，系統已依可用資訊整理下方重點。`;
 };
 
-const hasUsableReason = (reason: Reason) => hasText(reason.title) || hasText(reason.description);
-const hasUsableRisk = (risk: Risk) => hasText(risk.title) || hasText(risk.description);
-
-const isEemAiSemiconductorInsight = (insight: TickerInsight) =>
-    insight.ticker.toUpperCase() === 'EEM' &&
-    trimText(insight.bluf_thesis) ===
-        'Emerging markets, particularly those in Asia with significant exposure to AI semiconductor companies, are outperforming major US indices and offer strong growth potential.';
-
-const withTiming = <T extends Reason | Risk>(item: Omit<T, 'start_time' | 'end_time' | 'start_index' | 'end_index'>, startTime: number): T => ({
-    ...item,
-    start_time: startTime,
-    end_time: startTime,
-    start_index: 0,
-    end_index: 0,
-} as T);
-
-const displayReasonsFor = (insight: TickerInsight): Reason[] => {
-    const reasons = insight.reasons.filter(hasUsableReason);
-    if (reasons.length > 0) return reasons;
-    if (!isEemAiSemiconductorInsight(insight)) return [];
-
-    return [
-        withTiming<Reason>({
-            title: 'EEM 結構轉向亞洲 AI 供應鏈',
-            category: 'FUNDAMENTAL',
-            description: '本集指出台積電、三星與 SK 海力士等半導體巨頭在 EEM 權重已接近三成，使 EEM 越來越像一檔亞洲 AI ETF。',
-        }, 243546),
-        withTiming<Reason>({
-            title: '全球資金流向台韓半導體',
-            category: 'FUNDAMENTAL',
-            description: 'AI 基礎建設需求推升先進製程、記憶體與亞洲供應鏈，過去 18 個月資金明顯流向台灣與韓國市場。',
-        }, 319326),
-        withTiming<Reason>({
-            title: '相對美股主要指數表現更強',
-            category: 'MOMENTUM',
-            description: '主持人比較指出，新興市場今年表現優於 QQQ 與七巨頭，反映市場正在重新評價台韓半導體曝險。',
-        }, 243546),
-    ];
+const mmss = (ms: number) => {
+    const s = Math.floor(ms / 1000);
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 };
 
-const displayRisksFor = (insight: TickerInsight): Risk[] => {
-    const risks = insight.risks.filter(hasUsableRisk);
-    if (risks.length > 0) return risks;
-    if (!isEemAiSemiconductorInsight(insight)) return [];
-
-    return [
-        withTiming<Risk>({
-            title: '短線過熱與集中度風險',
-            severity: 'MEDIUM',
-            description: '本集也提醒 EEM 指標已有些過熱，且權重高度集中於 AI 半導體鏈；若晶片股獲利了結或資金輪動加劇，ETF 可能同步承壓。',
-        }, 319326),
-    ];
-};
-
-export const TickerInsightCard: React.FC<TickerInsightCardProps> = ({ insight, episodes = [] }) => {
+/**
+ * One podcast take on a ticker, as a row in the 觀點 list: who · when · stance · horizon,
+ * the one-line thesis, and a fold-out with the reasons and risks (each with a jump-to
+ * button when the pipeline kept a timestamp). Rows, not cards: the stock page lists
+ * dozens of these and the old two-column cards with a 20px thesis were mostly air.
+ */
+export const TickerInsightCard: React.FC<TickerInsightCardProps> = ({ insight, episodes = [], performance }) => {
     const [expanded, setExpanded] = useState(false);
     const playEpisode = usePlayerStore((s) => s.playEpisode);
 
-    const sentimentKind = normalizeSentiment(insight.sentiment_label as SentimentLabel) ?? 'NEUTRAL';
-    const sentiment = SENTIMENT_CONFIG[sentimentKind];
-    const SentimentIcon = sentiment.icon;
-    const displayThesis = localizeThesis(insight);
-    const displayReasons = displayReasonsFor(insight);
-    const displayRisks = displayRisksFor(insight);
-
-    const formatDate = (dateString: string) => formatYMD(dateString);
+    const kind = normalizeSentiment(insight.sentiment_label as SentimentLabel) ?? 'NEUTRAL';
+    const reasons: Reason[] = insight.reasons.filter((r) => hasText(r.title) || hasText(r.description));
+    const risks: Risk[] = insight.risks.filter((r) => hasText(r.title) || hasText(r.description));
+    const hasDetail = reasons.length > 0 || risks.length > 0;
+    // Only windows that have elapsed; a fresh mention shows nothing rather than four dashes.
+    const returns = WINDOWS.filter((w) => typeof performance?.[w.key] === 'number');
+    const toggle = () => { if (hasDetail) setExpanded((v) => !v); };
 
     // Backend provides start_time in milliseconds; convert to seconds for GlobalPlayer
     const handlePlay = (startTimeMs: number) => {
@@ -120,149 +78,102 @@ export const TickerInsightCard: React.FC<TickerInsightCardProps> = ({ insight, e
             window.open(`https://open.spotify.com/search/${encodeURIComponent(insight.episode_id)}`, '_blank');
             return;
         }
-
-        // Always use playEpisode with seekTo - this ensures consistent behavior
-        // The SpotifyEmbed handles the play-then-seek internally
         playEpisode(
-            {
-                id: episode.id,
-                title: episode.title,
-                showName: episode.showName,
-                coverUrl: episode.imageUrl,
-                spotifyUri: episode.spotifyUri,
-                mp3Url: episode.mp3Url,
-            },
-            episode.spotifyUri || episode.mp3Url ? { seekTo: seconds } : undefined
+            { id: episode.id, title: episode.title, showName: episode.showName, coverUrl: episode.imageUrl, spotifyUri: episode.spotifyUri },
+            episode.spotifyUri ? { seekTo: seconds } : undefined,
         );
     };
 
+    const Jump: React.FC<{ ms: number; tone: 'bull' | 'bear' }> = ({ ms, tone }) => (
+        <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); handlePlay(ms); }}
+            title="跳轉至音檔"
+            className={cn(
+                'inline-flex items-center gap-1 shrink-0 rounded px-1.5 py-0.5 text-2xs font-mono tabular-nums transition-colors',
+                tone === 'bull' ? 'text-sentiment-bull hover:bg-sentiment-bull-soft' : 'text-sentiment-bear hover:bg-sentiment-bear-soft',
+            )}
+        >
+            <Play size={10} className="fill-current" />
+            {mmss(ms)}
+        </button>
+    );
+
     return (
-        <Card className="border-l-4 border-l-sentiment-bull shadow-sm hover:shadow-md transition-shadow">
-            <CardHeader className="pb-3 pt-4">
-                <div className="flex justify-between items-start">
-                    <div className="flex gap-3 items-center flex-wrap">
-                        <Badge variant="outline" className="text-muted-foreground border-border font-normal shrink-0">
-                            {insight.podcaster || insight.episode_id.split('_')[0] || 'Unknown Host'}
-                        </Badge>
-                        <Badge className={cn("px-2 py-1 flex gap-1 items-center border-0", sentiment.color)}>
-                            <SentimentIcon size={14} />
-                            {sentiment.label}
-                        </Badge>
-                        <span className="text-xs text-muted-foreground flex items-center gap-1">
-                            <Calendar size={14} />
-                            {formatDate(insight.podcast_launch_time)}
-                        </span>
-                    </div>
-                </div>
-                <div className="mt-3">
-                    <h4 className="font-bold text-xl text-foreground leading-snug">
-                        {displayThesis}
-                    </h4>
-                </div>
-            </CardHeader>
-
-            <CardContent className="pb-4">
-                {/* Toggle Expansion */}
-                <div className="flex justify-end">
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setExpanded(!expanded)}
-                        className="text-muted-foreground hover:text-foreground h-8 text-xs"
-                    >
-                        {expanded ? '收起詳情' : '查看分析邏輯'}
-                        {expanded ? <ChevronUp size={14} className="ml-1" /> : <ChevronDown size={14} className="ml-1" />}
-                    </Button>
-                </div>
-
-                {expanded && (
-                    <div className="mt-2 space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
-                        {/* Reasons Section */}
-                        {displayReasons.length > 0 && (
-                            <div className="bg-muted rounded-lg p-3">
-                                <h5 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">
-                                    投資理由
-                                </h5>
-                                <ul className="space-y-3">
-                                    {displayReasons.map((reason, idx) => (
-                                        <li key={idx} className="group">
-                                            <div className="flex justify-between items-start gap-2">
-                                                <div>
-                                                    <span className="font-semibold text-foreground block text-base">
-                                                        {reason.title}
-                                                    </span>
-                                                    <p className="text-base text-muted-foreground mt-1 leading-relaxed">
-                                                        {reason.description}
-                                                    </p>
-                                                </div>
-                                                {reason.start_time > 0 && (
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="sm"
-                                                        className="text-xs text-sentiment-bull hover:bg-sentiment-bull-soft opacity-80 group-hover:opacity-100 transition-opacity shrink-0 flex items-center gap-1"
-                                                        onClick={() => handlePlay(reason.start_time)}
-                                                        title="跳轉至音檔"
-                                                    >
-                                                        <Play size={14} className="fill-current shrink-0" />
-                                                        收聽相關段落
-                                                    </Button>
-                                                )}
-                                            </div>
-                                        </li>
-                                    ))}
-                                </ul>
-                            </div>
-                        )}
-
-                        {/* Risks Section */}
-                        {displayRisks.length > 0 && (
-                            <div className="bg-sentiment-bear-soft/50 rounded-lg p-3 border border-sentiment-bear/20">
-                                <h5 className="text-xs font-bold text-sentiment-bear/80 uppercase tracking-wider mb-2">
-                                    風險提示
-                                </h5>
-                                <ul className="space-y-3">
-                                    {displayRisks.map((risk, idx) => (
-                                        <li key={idx} className="group">
-                                            <div className="flex justify-between items-start gap-2">
-                                                <div>
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="font-semibold text-foreground block text-base">
-                                                            {risk.title}
-                                                        </span>
-                                                        {risk.severity && (
-                                                            <span className={cn(
-                                                                "text-2xs px-1.5 py-0.5 rounded uppercase font-bold",
-                                                                risk.severity === 'HIGH' ? "bg-destructive/15 text-destructive" : "bg-sentiment-bear-soft text-sentiment-bear"
-                                                            )}>
-                                                                {SEVERITY_LABELS[risk.severity] ?? risk.severity}
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                    <p className="text-base text-muted-foreground mt-1 leading-relaxed">
-                                                        {risk.description}
-                                                    </p>
-                                                </div>
-                                                {risk.start_time > 0 && (
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="sm"
-                                                        className="text-xs text-sentiment-bear hover:bg-sentiment-bear-soft opacity-80 group-hover:opacity-100 transition-opacity shrink-0 flex items-center gap-1"
-                                                        onClick={() => handlePlay(risk.start_time)}
-                                                        title="跳轉至音檔"
-                                                    >
-                                                        <Play size={14} className="fill-current shrink-0" />
-                                                        收聽相關段落
-                                                    </Button>
-                                                )}
-                                            </div>
-                                        </li>
-                                    ))}
-                                </ul>
-                            </div>
-                        )}
-                    </div>
+        <article
+            className={cn('relative px-4 py-3 hover:bg-muted/30 transition-colors', hasDetail && 'cursor-pointer')}
+            onClick={toggle}
+            onKeyDown={(e) => { if (hasDetail && (e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) { e.preventDefault(); toggle(); } }}
+            tabIndex={hasDetail ? 0 : undefined}
+            aria-expanded={hasDetail ? expanded : undefined}
+        >
+            <span className={cn('absolute left-0 top-3 bottom-3 w-0.5 rounded-full', RAIL[kind])} aria-hidden />
+            <div className="flex items-center gap-x-2.5 gap-y-1 flex-wrap text-xs text-muted-foreground">
+                <span className="text-sm font-medium text-foreground">{insight.podcaster || insight.episode_id.split('_')[0] || '—'}</span>
+                <span className="tabular-nums">{formatDate(insight.podcast_launch_time)}</span>
+                <span className={cn('font-medium', STANCE[kind].cls)}>{STANCE[kind].label}</span>
+                {insight.time_horizon && <span>{insight.time_horizon}</span>}
+                {returns.length > 0 && (
+                    <span className="inline-flex items-center gap-2 tabular-nums" title="提及後 N 個交易日的報酬">
+                        {returns.map((w) => (
+                            <span key={w.key} className="inline-flex items-baseline gap-1"><span className="text-muted-foreground/70">{w.label}</span><Change value={performance![w.key]} /></span>
+                        ))}
+                    </span>
                 )}
-            </CardContent>
-        </Card>
+                {hasDetail && (
+                    <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); toggle(); }}
+                        className="ml-auto inline-flex items-center gap-0.5 text-2xs text-muted-foreground/80 hover:text-foreground transition-colors"
+                        tabIndex={-1}
+                    >
+                        {expanded ? '收起' : '分析邏輯'}
+                        {reasons.length > 0 && !expanded && <span className="font-mono tabular-nums">{reasons.length}</span>}
+                        {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                    </button>
+                )}
+            </div>
+            <p className="mt-1.5 text-sm leading-relaxed text-foreground/90">{localizeThesis(insight)}</p>
+
+            {expanded && hasDetail && (
+                <div className="mt-2.5 grid gap-2.5 sm:grid-cols-2">
+                    {reasons.length > 0 && (
+                        <div className="rounded-md bg-muted/40 p-3">
+                            <div className="text-2xs font-semibold uppercase tracking-[0.08em] text-muted-foreground mb-1.5">投資理由</div>
+                            <ul className="space-y-2">
+                                {reasons.map((r, i) => (
+                                    <li key={i} className="text-xs leading-relaxed">
+                                        <div className="flex items-start justify-between gap-2">
+                                            <span className="font-medium text-foreground">{r.title}</span>
+                                            {r.start_time > 0 && <Jump ms={r.start_time} tone="bull" />}
+                                        </div>
+                                        {hasText(r.description) && <p className="text-muted-foreground mt-0.5">{r.description}</p>}
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+                    {risks.length > 0 && (
+                        <div className="rounded-md bg-sentiment-bear-soft/40 p-3">
+                            <div className="text-2xs font-semibold uppercase tracking-[0.08em] text-sentiment-bear/80 mb-1.5">風險提示</div>
+                            <ul className="space-y-2">
+                                {risks.map((r, i) => (
+                                    <li key={i} className="text-xs leading-relaxed">
+                                        <div className="flex items-start justify-between gap-2">
+                                            <span className="font-medium text-foreground">
+                                                {r.title}
+                                                {r.severity && <span className="ml-1.5 text-2xs text-sentiment-bear">{SEVERITY_LABELS[r.severity] ?? r.severity}</span>}
+                                            </span>
+                                            {r.start_time > 0 && <Jump ms={r.start_time} tone="bear" />}
+                                        </div>
+                                        {hasText(r.description) && <p className="text-muted-foreground mt-0.5">{r.description}</p>}
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+                </div>
+            )}
+        </article>
     );
 };

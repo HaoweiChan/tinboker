@@ -65,6 +65,10 @@ def _seed():
             ticker="2330", date="2026-07-09", source="twse",
             foreign_net_shares=10000.0, trust_net_shares=5000.0, total_net_shares=15000.0,
         ))
+        s.add(StockInstitutionalDaily(
+            ticker="2330", date="2026-07-08", source="twse",
+            foreign_net_shares=-2000.0, trust_net_shares=100.0, total_net_shares=-1900.0,
+        ))
         s.commit()
         break
 
@@ -139,3 +143,22 @@ def test_institutional_tw_returns_net_shares(data_db):
 
 def test_institutional_us_rejected(data_db):
     assert _client().get("/api/stocks/daily-institutional", params={"market": "us", "date": "2026-07-09"}, headers=HDR).status_code == 400
+
+
+# --- per-ticker institutional (public) -------------------------------------- #
+def test_ticker_institutional_is_public_and_oldest_first(data_db):
+    """The stock page reads one ticker's rows without a key; rows come oldest→newest so
+    the chart can draw them left to right, capped by ``days``."""
+    r = _client().get("/api/stocks/2330/institutional", params={"days": 5})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ticker"] == "2330"
+    assert [row["date"] for row in body["rows"]] == ["2026-07-08", "2026-07-09"]
+    assert body["rows"][0]["total_net_shares"] == -1900.0
+    # days caps from the newest side
+    assert [row["date"] for row in _client().get("/api/stocks/2330/institutional", params={"days": 5}).json()["rows"]][-1] == "2026-07-09"
+
+
+def test_ticker_institutional_us_and_unknown_are_empty(data_db):
+    assert _client().get("/api/stocks/AAPL/institutional").json() == {"ticker": "AAPL", "rows": []}
+    assert _client().get("/api/stocks/9999/institutional").json()["rows"] == []

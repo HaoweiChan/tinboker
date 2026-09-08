@@ -11,27 +11,6 @@ function adminAuthConfig() {
   return { headers: { Authorization: `Bearer ${token}` } };
 }
 
-/**
- * Streaming URL for an episode's MP3, or undefined when the episode has a source link.
- *
- * The audio is the podcaster's, re-hosted on our domain, and serving it with ads around
- * it is what AdSense flagged as replicated content. `spotifyUrl` is required rather than
- * optional on purpose: every play surface routes through here — EpisodeDetail, PicksPage,
- * the card adapter, TickerInsightCard, the Marp slides — and making it a required
- * argument means a new caller cannot quietly reintroduce the hosted player. Pass
- * null/undefined only for the ~7% of episodes with no source link, which would otherwise
- * have no way to play at all.
- */
-export function getEpisodeAudioUrl(
-  podcastName: string,
-  episodeId: string,
-  spotifyUrl: string | null | undefined,
-): string | undefined {
-  if (spotifyUrl) return undefined;
-  return `${apiClient.defaults.baseURL || ''}/api/podcast/${encodeURIComponent(podcastName)}/episodes/${encodeURIComponent(episodeId)}/audio`;
-}
-
-
 export interface Podcast {
   id: string;
   name: string;
@@ -49,7 +28,6 @@ export interface SectorResolvedTicker {
   name: string;
   name_en?: string;
   market: 'TW' | 'US' | string;
-  source: string;
   reason?: string; // short zh-TW note on how this ticker relates to the sector/theme
 }
 
@@ -292,8 +270,12 @@ export async function getInsightsByPodcaster(
 }
 
 /** Recent picks across ALL podcasters, newest-first — the blended /picks timeline. */
-export async function getRecentInsights(limit = 100): Promise<TickerInsight[]> {
-  const response = await apiClient.get('/api/ticker-insights/recent', { params: { limit } });
+/** Blended newest-first picks; `before` (YYYY-MM-DD) caps the launch day so 已揭曉 can
+ *  page straight to picks old enough for a window to have settled. */
+export async function getRecentInsights(limit = 100, before?: string): Promise<TickerInsight[]> {
+  const params: Record<string, string | number> = { limit };
+  if (before) params.before = before;
+  const response = await apiClient.get('/api/ticker-insights/recent', { params });
   return Array.isArray(response.data) ? response.data : [];
 }
 

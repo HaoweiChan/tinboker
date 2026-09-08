@@ -113,7 +113,7 @@ def upload_to_gcs(
         gcs_urls = svc.upload_episode_files(
             episode_id=episode_data.episode_id,
             podcast_name=episode_data.podcast_name,
-            mp3_path=episode_data.mp3_path,
+            mp3_path=episode_data.mp3_path if config.store_audio else None,
             transcript_data=transcript_data,
             summary_content=episode_data.summary_result.get('summary_text') if episode_data.summary_result else None,
             svg_content=episode_data.summary_result.get('svg_content') if episode_data.summary_result else None,
@@ -329,7 +329,7 @@ def upload_to_gcs(
         gcs_urls = svc.upload_episode_files(
             episode_id=episode_data.episode_id,
             podcast_name=episode_data.podcast_name,
-            mp3_path=episode_data.mp3_path,
+            mp3_path=episode_data.mp3_path if config.store_audio else None,
             transcript_data=transcript_data,
             summary_content=episode_data.summary_result.get('summary_text') if episode_data.summary_result else None,
             svg_content=episode_data.summary_result.get('svg_content') if episode_data.summary_result else None,

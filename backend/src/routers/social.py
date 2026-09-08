@@ -282,7 +282,7 @@ async def sync_threads_comments(
     scan_posts: int = Query(default=None, ge=1, le=100),
     _: AdminAccess = Depends(get_social_access),
 ):
-    """Pull new comments, triage them, and auto-reply to the safe ones."""
+    """Pull new comments and triage them into the 留言 tab. Posts nothing."""
     return await threads_comments_service.sync_and_triage(scan_posts=scan_posts)
 
 
@@ -306,8 +306,10 @@ async def reply_to_threads_comment(
 
 @router.post("/comments/{comment_id}/skip")
 def skip_threads_comment(comment_id: str, _: AdminAccess = Depends(get_admin_access)):
+    """Drop a comment without answering — same bucket the auto-ignored ones land in,
+    which is the one the 已略過 tab reads."""
     try:
-        return threads_comments_service.set_status(comment_id, "skipped")
+        return threads_comments_service.set_status(comment_id, "ignored")
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
