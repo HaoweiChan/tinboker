@@ -15,10 +15,17 @@ from shared.sectors import (
 
 from ..state import PipelineState
 
-# A6: cap on brand-new candidates manufactured purely from ticker->sector CURATED
+# A6: cap on brand-new candidates manufactured purely from ticker->sector REVIEWED
 # membership (no alias was ever spoken). Keeps a ticker-heavy episode from fanning
 # out into a huge, low-confidence verifier batch (see plan-review.md Gap 1).
 _MAX_TICKER_DERIVED_CANDIDATES = 5
+
+
+# Member provenance values that count as a deliberate editorial assignment. ``curated`` is
+# a hand-kept member; ``ictpex`` was confirmed against the TPEx industry value chain and
+# judged per company; ``twse`` is the official exchange industry roster. Anything else
+# (e.g. a bulk import) is not trusted to imply a sector from a bare ticker mention.
+_REVIEWED_MEMBER_SOURCES = frozenset({"curated", "ictpex", "twse"})
 
 
 def _ticker_derived_candidates(
@@ -32,7 +39,7 @@ def _ticker_derived_candidates(
     The string-alias matcher (``resolve_clustered_events``) only ever produces a
     candidate when the sector's own name/alias is spoken aloud — an episode that
     discusses a ticker at length but never says its sector's alias (P1) never gets
-    a candidate at all. This fills that gap using the sector universe's CURATED
+    a candidate at all. This fills that gap using the sector universe's REVIEWED
     membership only (deliberate editorial assignment, not a compiled market-cap
     list), capped at ``_MAX_TICKER_DERIVED_CANDIDATES`` total, and only for
     exposures the alias matcher didn't already find.
@@ -78,7 +85,9 @@ def _ticker_derived_candidates(
             continue
 
         curated_members = [
-            m for m in (exposure.get("members") or []) if str(m.get("source") or "") == "curated"
+            m
+            for m in (exposure.get("members") or [])
+            if str(m.get("source") or "") in _REVIEWED_MEMBER_SOURCES
         ]
         matched_ticker = next(
             (
