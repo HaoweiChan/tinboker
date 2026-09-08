@@ -42,3 +42,24 @@ export async function getEpisodeMentions(episodeId: string): Promise<EpisodeMent
   );
   return parseResponse(EpisodeMentionsResponseSchema, response.data);
 }
+
+/** Daily mention counts for one ticker AND for the whole market, over one window. */
+export interface MentionHeatResponse {
+  ticker: string;
+  half_life_days: number;
+  series: { d: string; n: number; bull: number; bear: number }[];
+  market: { d: string; n: number }[];
+}
+
+/**
+ * Both series in one call so the chart's share-of-attention has a numerator and a
+ * denominator drawn from the same population. Raw counts track how many shows we had
+ * ingested at the time, not how much attention a ticker got.
+ */
+export async function getMentionHeat(ticker: string, days = 730): Promise<MentionHeatResponse | null> {
+  const res = await apiClient.get(`/api/tickers/${encodeURIComponent(ticker)}/mention-heat`, {
+    params: { days },
+  });
+  const d = res.data;
+  return d && Array.isArray(d.series) && Array.isArray(d.market) ? (d as MentionHeatResponse) : null;
+}

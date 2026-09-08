@@ -10,9 +10,8 @@ type LoosePoint = { date?: string; volume?: number; price?: number; timestamp?: 
 // What a crosshair lookup can return for any series: bar or line fields.
 type SeriesValue = { value: number; open: number; high: number; low: number; close: number } | undefined;
 
-/** One day's podcast mentions, drawn as a histogram bar under the price.
- *  `time` is unix seconds; the bar is snapped forward to the first session at or after
- *  it, so a weekend episode lands on Monday. */
+/** One day's podcast mentions. `time` is unix seconds; the day is snapped forward to
+ *  the first session at or after it, so a weekend episode lands on Monday. */
 export interface MentionBar {
   time: number;
   bull: number;
@@ -20,9 +19,23 @@ export interface MentionBar {
   bear: number;
 }
 
+/** What the mention pane draws: one ticker's daily mentions and the whole market's,
+ *  over the same window, so the pane can plot a SHARE rather than a raw count. */
+export interface MentionSeries {
+  halfLifeDays: number;
+  ticker: MentionBar[];
+  market: { time: number; n: number }[];
+}
+
+/** Below this much market-wide heat a share is not a measurement, it is one loud day
+ *  divided by another. Against the full production history it suppresses a single day —
+ *  the corpus crossed this within a day of the first ingest — so it is a guard for thin
+ *  or newly-ingested windows rather than something that shapes the normal chart. */
+const MIN_MARKET_HEAT = 30;
+
 interface TradingViewChartProps {
   data: (PricePoint | ChartDataPoint)[];
-  mentions?: MentionBar[];
+  mentions?: MentionSeries;
   theme: 'light' | 'dark';
   height?: number;
   className?: string;
@@ -87,6 +100,11 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
+  // Raw per-session mention counts, so the crosshair can show the checkable number
+  // behind the decayed index. A ref, not state: it is filled while the chart is
+  // built and only read inside the crosshair handler, so it must not re-render.
+  const rawMentionsRef = useRef<Map<number, number>>(new Map());
+  const shareRef = useRef<Map<number, number>>(new Map());
   const legendRef = useRef<HTMLDivElement>(null);
   const loadMoreDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isLoadingRef = useRef(false);
@@ -184,7 +202,7 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
       // left alone, because widening its bottom margin makes the axis extrapolate past
       // zero and print negative price labels. Without mentions the sub-indicator keeps
       // the whole quarter — an empty strip on a ticker nobody discussed is wasted height.
-      const hasMentions = (mentions?.length ?? 0) > 0;
+      const hasMentions = (mentions?.ticker.length ?? 0) > 0 && (mentions?.market.length ?? 0) > 0;
       const SUB_MARGINS = hasMentions ? { top: 0.72, bottom: 0.15 } : { top: 0.75, bottom: 0 };
       const MENTION_MARGINS = { top: 0.88, bottom: 0 };
 
@@ -383,44 +401,95 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
       }
       seriesMap['Main'] = mainSeries;
 
-      // 3b. Podcast mention pane — always below whatever sub-indicator is selected,
+      // 3b. Podcast attention pane — always below whatever sub-indicator is selected,
       // not an option in the dropdown: it is the one thing here no price app can show,
       // and hiding it behind a picker is the same as not having it.
       //
-      // Stacked by drawing three histograms largest-first on one scale: the total in the
-      // bearish colour, then bull+neutral over it, then bull over that. lightweight-charts
-      // has no stacked histogram, and three series is less machinery than faking one.
-      if (mentions && mentions.length > 0) {
+      // Plots a SHARE of all podcast attention, not a raw count, and a decayed share at
+      // that. Two corrections, both measured against two years of production data:
+      //   · Raw daily counts are a comb — most shows publish weekly, so the shape is the
+      //     publishing calendar, not the attention. Hence the 0.5^(age/H) decay, which is
+      //     the platform's own 討論熱度 definition (backend HALF_LIFE_DAYS).
+      //   · Raw heat mostly tracks how many shows we had ingested. Over the two years to
+      //     2026-09, TSMC's heat rose 10x while the market's rose 5.7x; its actual share
+      //     sat flat between 3.5% and 5.9% the whole time. Dividing removes our own growth.
+      //
+      // Stacked by drawing three areas largest-first on one scale: lightweight-charts has
+      // no stacked series, and three overlays is less machinery than faking one.
+      const rawByBar = new Map<number, number>();
+      const shareByBar = new Map<number, number>();
+      if (mentions && mentions.ticker.length > 0 && mentions.market.length > 0) {
+        const halfLife = mentions.halfLifeDays > 0 ? mentions.halfLifeDays : 7;
         const barTimes = sortedData.map(getSeconds);
-        const snapped = mentions
-          .map((m) => ({ ...m, t: barTimes.find((bt) => bt >= m.time) }))
-          .filter((m): m is typeof m & { t: number } => m.t !== undefined);
-        const byBar = new Map<number, { bull: number; neutral: number; bear: number }>();
-        for (const m of snapped) {
-          const acc = byBar.get(m.t) ?? { bull: 0, neutral: 0, bear: 0 };
+        const snap = (t: number) => barTimes.find((bt) => bt >= t);
+
+        const tickerDaily = new Map<number, { bull: number; neutral: number; bear: number }>();
+        for (const m of mentions.ticker) {
+          const t = snap(m.time);
+          if (t === undefined) continue;
+          const acc = tickerDaily.get(t) ?? { bull: 0, neutral: 0, bear: 0 };
           acc.bull += m.bull; acc.neutral += m.neutral; acc.bear += m.bear;
-          byBar.set(m.t, acc);
+          tickerDaily.set(t, acc);
         }
-        const bars = [...byBar.entries()].sort((a, b) => a[0] - b[0]);
+        const marketDaily = new Map<number, number>();
+        for (const m of mentions.market) {
+          const t = snap(m.time);
+          if (t !== undefined) marketDaily.set(t, (marketDaily.get(t) ?? 0) + m.n);
+        }
+
+        // Walk the sessions in order, decaying by the real elapsed time — not one step
+        // per bar — so a weekend or a market holiday decays by the days it spans.
+        const heat = { bull: 0, neutral: 0, bear: 0 };
+        let market = 0;
+        let prev: number | null = null;
+        const series: { time: UTCTimestamp; bull: number; neutral: number; bear: number }[] = [];
+        for (const t of barTimes) {
+          if (prev !== null) {
+            const decay = 0.5 ** (((t - prev) / 86400) / halfLife);
+            heat.bull *= decay; heat.neutral *= decay; heat.bear *= decay;
+            market *= decay;
+          }
+          const add = tickerDaily.get(t);
+          if (add) {
+            heat.bull += add.bull; heat.neutral += add.neutral; heat.bear += add.bear;
+            rawByBar.set(t, add.bull + add.neutral + add.bear);
+          }
+          market += marketDaily.get(t) ?? 0;
+          prev = t;
+          // Before the corpus was big enough there is no denominator worth dividing by,
+          // so those sessions get no point rather than a spike invented by a small number.
+          if (market < MIN_MARKET_HEAT) continue;
+          const share = (v: number) => v / market;
+          series.push({
+            time: t as UTCTimestamp,
+            bull: share(heat.bull), neutral: share(heat.neutral), bear: share(heat.bear),
+          });
+          shareByBar.set(t, (heat.bull + heat.neutral + heat.bear) / market);
+        }
+
         const layers: [string, (v: { bull: number; neutral: number; bear: number }) => number][] = [
-          ['#22c55e', (v) => v.bull + v.neutral + v.bear],  // total, bearish colour showing at the top
-          ['#64748b', (v) => v.bull + v.neutral],           // neutral
-          ['#ef4444', (v) => v.bull],                       // bullish, drawn last so it sits at the base
+          ['#22c55e', (v) => v.bull + v.neutral + v.bear],  // bearish shows at the top
+          ['#64748b', (v) => v.bull + v.neutral],
+          ['#ef4444', (v) => v.bull],                       // bullish sits at the base
         ];
         layers.forEach(([color, pick], i) => {
-          const s = chart.addHistogramSeries({
-            color,
+          const s = chart.addAreaSeries({
+            lineColor: color,
+            topColor: color,
+            bottomColor: color,
+            lineWidth: 1,
             priceScaleId: 'mentions',
             priceLineVisible: false,
             lastValueVisible: false,
+            crosshairMarkerVisible: false,
           });
-          s.setData(bars
-            .map(([t, v]) => ({ time: t as UTCTimestamp, value: pick(v) }))
-            .filter((d) => d.value > 0));
+          s.setData(series.map((d) => ({ time: d.time, value: pick(d) })));
           if (i === 0) seriesMap['Mentions'] = s;
         });
         chart.priceScale('mentions').applyOptions({ scaleMargins: MENTION_MARGINS });
       }
+      rawMentionsRef.current = rawByBar;
+      shareRef.current = shareByBar;
 
       // 4. Moving Averages
       if (effectiveIndicators.includes('MA5')) {
@@ -558,10 +627,17 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
         }
 
         // Mentions sit outside that chain: the pane is always on, not one of the
-        // dropdown's mutually exclusive options.
+        // dropdown's mutually exclusive options. The raw count rides along because a
+        // decayed index is not a number anyone can check against the episode list.
         if (seriesMap['Mentions']) {
           const val = param.seriesData.get(seriesMap['Mentions']) as SeriesValue;
-          if (val && val.value > 0) subHtml += `<span class="text-slate-400 ml-4">提及 ${val.value}</span>`;
+          const t = typeof param.time === 'number' ? param.time : null;
+          const share = t !== null ? shareRef.current.get(t) : undefined;
+          if (val && share !== undefined) {
+            const raw = t !== null ? rawMentionsRef.current.get(t) : undefined;
+            subHtml += `<span class="text-slate-400 ml-4">聲量佔比 ${(share * 100).toFixed(1)}%</span>`;
+            if (raw) subHtml += `<span class="text-slate-500 ml-2">當日 ${raw} 集</span>`;
+          }
         }
 
         // Update Legend DOM - Two Rows

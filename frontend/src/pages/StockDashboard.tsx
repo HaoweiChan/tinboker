@@ -10,19 +10,18 @@ import { cn } from '@/lib/utils';
 import { useAppStore } from '@/store/useAppStore';
 import { useRequireAuth } from '@/hooks/useRequireAuth';
 import { useStockTrendColor } from '@/hooks/useStockTrendColor';
-import { normalizeSentiment } from '@/lib/sentiment';
 import { getStockByTicker, getEpisodesByTicker, type Episode as ApiEpisode } from '@/services/api';
 import { fetchWithFallback } from '@/services/api/migration';
 import type { CompanyDetail, RealTimePriceUpdate, TimeframeOption, TickerInsight } from '@/services/types';
 import { priceWebSocketClient } from '@/services/websocket/priceWebSocket';
-import TradingViewChart, { type MentionBar } from '@/components/charts/TradingViewChart';
+import TradingViewChart, { type MentionSeries } from '@/components/charts/TradingViewChart';
 import { ConsensusTile } from '@/components/stock/ConsensusTile';
 import { WhoTalksTile } from '@/components/stock/WhoTalksTile';
 import { CoMentionTile } from '@/components/stock/CoMentionTile';
 import { InstitutionalFlowCard } from '@/components/stock/InstitutionalFlowCard';
 import { ChartControls } from '@/components/charts/ChartControls';
 import { getInsightsByTicker, getSortedPodcasts, type Podcast } from '@/services/api/podcasts';
-import { getTickerMentions, type TickerMentionsResponse } from '@/services/api/mentions';
+import { getMentionHeat, getTickerMentions, type MentionHeatResponse, type TickerMentionsResponse } from '@/services/api/mentions';
 import { transformApiEpisodeToMock } from '@/services/api/transformers';
 import { useStockPriceMap } from '@/hooks/useStockPriceMap';
 import { useStockPriceSinceMap } from '@/hooks/useStockPriceSinceMap';
@@ -147,47 +146,44 @@ const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[]; epi
   const trend = useStockTrendColor(displayChange);
 
   // One dot per day a podcast discussed this ticker, coloured by that day's dominant
-  // One bar per DAY for the chart's mention pane. Dots on the candles were removed:
-  // placing a mark on a specific bar reads as a claim that the talk moved that bar, and
-  // measured over 40 heavily-discussed tickers, mention volume correlates -0.02 with the
-  // next day's return. A parallel strip below makes no such claim.
+  // The chart's attention pane. Two things it deliberately is NOT:
   //
-  // Fetched separately from `insights` rather than reusing it: that one is a fixed
-  // 90-day window feeding the consensus and "誰在談" cards, whose labels say 30/90 天,
-  // so widening it would quietly change what those cards mean. The chart opens on a
-  // multi-year view, and a strip that stops 90 days from the right edge looks broken.
-  const [mentionHistory, setMentionHistory] = useState<TickerInsight[]>([]);
+  //  · not dots on the candles — a mark on a bar reads as a claim that the talk moved
+  //    that bar, and measured over 40 heavily-discussed tickers, mention volume
+  //    correlates -0.02 with the next day's return;
+  //  · not a raw count — most shows publish weekly, so a daily count is a comb, and the
+  //    level mostly tracks how many shows we had ingested. The pane plots a decayed
+  //    SHARE of all podcast attention; the chart does the decay, this just supplies the
+  //    counts.
+  //
+  // Fetched separately from `insights`, which is a fixed 90-day window feeding the
+  // consensus and 誰在談 cards whose labels say 30/90 天. Widening that would quietly
+  // change what those cards mean, and a strip that stops 90 days from the right edge on
+  // a multi-year chart looks broken.
+  const [mentionHeat, setMentionHeat] = useState<MentionHeatResponse | null>(null);
   useEffect(() => {
     if (!symbol) return;
     let alive = true;
-    const end = new Date();
-    const start = new Date(end.getTime() - 730 * 86400e3);
-    getInsightsByTicker(symbol, {
-      start_date: start.toISOString().slice(0, 10),
-      end_date: end.toISOString().slice(0, 10),
-    })
-      .then((rows) => { if (alive) setMentionHistory(rows); })
-      .catch(() => { if (alive) setMentionHistory([]); });
+    getMentionHeat(symbol)
+      .then((res) => { if (alive) setMentionHeat(res); })
+      .catch(() => { if (alive) setMentionHeat(null); });
     return () => { alive = false; };
   }, [symbol]);
 
-  const mentionBars = useMemo<MentionBar[]>(() => {
-    const rows = mentionHistory;
-    if (rows.length === 0) return [];
-    const byDay = new Map<string, { bull: number; neutral: number; bear: number }>();
-    for (const i of rows) {
-      const day = i.podcast_launch_time.slice(0, 10);
-      const t = Date.parse(day);
-      if (Number.isNaN(t)) continue;
-      const acc = byDay.get(day) ?? { bull: 0, neutral: 0, bear: 0 };
-      const label = normalizeSentiment(i.sentiment_label);
-      if (label === 'BULLISH') acc.bull += 1;
-      else if (label === 'BEARISH') acc.bear += 1;
-      else acc.neutral += 1;
-      byDay.set(day, acc);
-    }
-    return [...byDay.entries()].map(([day, v]) => ({ time: Date.parse(day) / 1000, ...v }));
-  }, [mentionHistory]);
+  const mentionSeries = useMemo<MentionSeries | undefined>(() => {
+    if (!mentionHeat || mentionHeat.series.length === 0) return undefined;
+    const secs = (d: string) => Date.parse(d) / 1000;
+    return {
+      halfLifeDays: mentionHeat.half_life_days || 7,
+      ticker: mentionHeat.series.map((r) => ({
+        time: secs(r.d),
+        bull: r.bull,
+        bear: r.bear,
+        neutral: Math.max(0, r.n - r.bull - r.bear),
+      })),
+      market: mentionHeat.market.map((r) => ({ time: secs(r.d), n: r.n })),
+    };
+  }, [mentionHeat]);
 
   const rawChart = stockData?.chartData;
   const chartData = useMemo(() => {
@@ -339,7 +335,7 @@ const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[]; epi
                 activeSubChart={subChart}
                 onLoadMore={handleLoadMore}
                 isLoadingMore={isLoadingMore}
-                mentions={mentionBars}
+                mentions={mentionSeries}
               />
             </div>
           ) : market !== 'TW' && market !== 'US' ? (
