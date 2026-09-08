@@ -9,6 +9,8 @@ import type { TickerInsight } from '@/services/types';
 interface ConsensusTileProps {
   insights: TickerInsight[];
   className?: string;
+  /** 0-100 discussion heat, 100 being the busiest ticker on the site. */
+  heatIndex?: number | null;
   /** Tile label; the stock page says 近 30 天 Podcast 共識, a show page says 近 30 天立場. */
   title?: string;
 }
@@ -22,7 +24,7 @@ const weekOf = (ms: number) => { const d = new Date(ms); const dow = (d.getUTCDa
 
 /** The page's headline tile: how the podcasts lean on this ticker over the last 30 days,
  *  with the 90-day time-horizon mix underneath. Tinted by the dominant stance. */
-export const ConsensusTile: React.FC<ConsensusTileProps> = ({ insights, className, title = '近 30 天 Podcast 共識' }) => {
+export const ConsensusTile: React.FC<ConsensusTileProps> = ({ insights, className, heatIndex, title = '近 30 天 Podcast 共識' }) => {
   const b = useMemo(() => {
     const since = Date.now() - 30 * DAY_MS;
     return aggregateSentiment(insights.filter((i) => Date.parse(i.podcast_launch_time) >= since).map((i) => ({ sentiment_label: i.sentiment_label })));
@@ -63,7 +65,19 @@ export const ConsensusTile: React.FC<ConsensusTileProps> = ({ insights, classNam
 
   return (
     <div className={cn('rounded-[10px] border p-4 md:p-5 flex flex-col justify-between gap-3', tint, className)}>
-      <div className={cn('text-xs', lean === 'bull' ? 'text-sentiment-bull' : lean === 'bear' ? 'text-sentiment-bear' : 'text-muted-foreground')}>{title}</div>
+      <div className="flex items-baseline justify-between gap-3">
+        <div className={cn('text-xs', lean === 'bull' ? 'text-sentiment-bull' : lean === 'bear' ? 'text-sentiment-bear' : 'text-muted-foreground')}>{title}</div>
+        {typeof heatIndex === 'number' && (
+          // Volume, not opinion — deliberately secondary to the sentiment count beside
+          // it, which is what this tile is about. Shown as an index rather than a share
+          // because the share is unreadable: half the tickers named in a month hold
+          // 0.059% of all discussion and would print as "0.0%".
+          <div className="text-xs text-muted-foreground shrink-0" title="這檔佔全站 Podcast 討論的熱度，全站最熱的標的為 100。越近期的提及權重越高。">
+            討論熱度 <span className="font-mono tabular-nums text-primary font-semibold text-sm">{heatIndex}</span>
+            <span className="text-muted-foreground/60"> / 100</span>
+          </div>
+        )}
+      </div>
       {b.total > 0 ? (
         <div className="flex flex-col gap-1">
           <div className="flex items-baseline gap-2 flex-wrap">

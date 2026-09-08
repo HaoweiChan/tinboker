@@ -367,7 +367,7 @@ const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[]; epi
         </div>
 
         {/* key: remount (and re-animate) when the insight list arrives or changes. */}
-        <ConsensusTile key={insights.length} insights={insights} className="md:col-span-3 md:row-span-2" />
+        <ConsensusTile key={insights.length} insights={insights} heatIndex={mentionHeat?.heat_index} className="md:col-span-3 md:row-span-2" />
       </div>
 
       {/* Detail tiles get their own 6-column grid. The top row is 10 columns so the chart

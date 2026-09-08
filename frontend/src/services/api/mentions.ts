@@ -47,6 +47,9 @@ export async function getEpisodeMentions(episodeId: string): Promise<EpisodeMent
 export interface MentionHeatResponse {
   ticker: string;
   half_life_days: number;
+  /** 0-100, where 100 is the busiest ticker on the site over `heat_index_days`. */
+  heat_index: number | null;
+  heat_index_days: number;
   series: { d: string; n: number; bull: number; bear: number }[];
   market: { d: string; n: number }[];
 }
