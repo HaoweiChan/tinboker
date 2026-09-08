@@ -62,6 +62,10 @@ def main() -> None:
     ap.add_argument("--rationale", default=RATIONALE)
     ap.add_argument("--min-members", type=int, default=3,
                     help="abort if a theme would end up thinner than this (0 disables)")
+    ap.add_argument("--redirects", default=None,
+                    help="JSON file of {from_exposure_id: to_exposure_id}. A redirect DELETES the "
+                         "source exposure and points its URL at the target; this API has no partial "
+                         "way to undo one, so it is not covered by a members-and-descriptions rollback")
     ap.add_argument("--max-fanout", type=int, default=5,
                     help="abort if one company would sit in more themes than this (0 disables)")
     args = ap.parse_args()
@@ -133,7 +137,22 @@ def main() -> None:
         if over:
             sys.exit("companies over --max-fanout: " + ", ".join(f"{t} in {n} themes" for t, n in over))
 
-    payload = {"sectors": sectors, "redirects": {}, "full": False,
+    redirects = {}
+    if args.redirects:
+        redirects = json.load(open(args.redirects, encoding="utf-8"))
+        for src, dst in redirects.items():
+            row = live.get(src)
+            if row is None:
+                sys.exit(f"redirect source not in the taxonomy: {src}")
+            if dst not in live:
+                sys.exit(f"redirect target not in the taxonomy: {dst} (from {src})")
+            if row.get("members"):
+                sys.exit(f"refusing to redirect {src}: it still has {len(row['members'])} members — "
+                         f"move or drop them first, a redirect discards the row")
+            print(f"REDIRECT {src} -> {dst}: the source exposure is removed and its URL folded in; "
+                  f"this cannot be undone by the rollback payload")
+
+    payload = {"sectors": sectors, "redirects": redirects, "full": False,
                "entry": args.entry, "rationale": args.rationale}
     if args.actor:
         payload["actor"] = args.actor
