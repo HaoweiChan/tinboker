@@ -305,23 +305,26 @@ class GCSStorageService:
         (a laptop running the regen MCP server, a CI box) that directory does not
         exist, and every read used to fail — which meant the agent-driven regen
         could only ever run on the VPS. The same artifacts are already published
-        read-only by Caddy at ``podcast-api.tinboker.com/media/…``, so fall back to
-        fetching the public URL rather than requiring the mount.
-        """
-        path = self.path_for_url(gcs_url)
-        if path is None and not str(gcs_url).startswith(("http://", "https://")):
-            raise ValueError(f"Unrecognised media URL: {gcs_url}")
-        if path is not None:
-            try:
-                return path.read_bytes()
-            except FileNotFoundError:
-                pass  # not mounted here — fall through to the public URL
-            except Exception as e:
-                raise Exception(f"Failed to read media object {gcs_url} ({path}): {e}") from e
+        read-only by Caddy at ``podcast-api.tinboker.com/media/…``.
 
-        url = self.generate_public_url(gcs_url) if not str(gcs_url).startswith(("http://", "https://")) else gcs_url
-        if not url.startswith(("http://", "https://")):
-            raise Exception(f"Media object not present locally and not fetchable: {gcs_url}")
+        The public URL is rebuilt from the split ``(bucket, blob)`` rather than from
+        the input string, because episode docs carry three interchangeable forms of
+        the same address (``gs://``, storage.googleapis.com, media https) and only
+        the split normalises all of them.
+        """
+        parsed = split_media_url(gcs_url)
+        if parsed is None:
+            raise ValueError(f"Unrecognised media URL: {gcs_url}")
+        bucket, blob = parsed
+        path = resolve_media_path(bucket, blob)  # keeps the bucket + path-escape guards
+        try:
+            return path.read_bytes()
+        except FileNotFoundError:
+            pass  # not mounted here — fall through to the public URL
+        except Exception as e:
+            raise Exception(f"Failed to read media object {gcs_url} ({path}): {e}") from e
+
+        url = f"{public_base()}/{bucket}/{blob}"
         try:
             with urllib.request.urlopen(url, timeout=60) as resp:
                 return resp.read()
