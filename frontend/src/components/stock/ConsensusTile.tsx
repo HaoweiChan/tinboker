@@ -52,7 +52,11 @@ export const ConsensusTile: React.FC<ConsensusTileProps> = ({ insights, classNam
   const grown = useGrowIn();
 
   const lean = b.total === 0 ? 'none' : b.bull > b.bear ? 'bull' : b.bear > b.bull ? 'bear' : 'flat';
-  const tint = lean === 'bull' ? 'bg-sentiment-bull-soft/60 border-sentiment-bull/25' : lean === 'bear' ? 'bg-sentiment-bear-soft/60 border-sentiment-bear/25' : 'bg-card border-border';
+  // Card surface, not a sentiment-filled block. A full high-saturation fill made this
+  // tile the loudest thing on the stock page, above the price and the chart — heavier
+  // than its place in what a reader came for. The lean now shows in the border and in
+  // the big number (already coloured below), which is enough to read at a glance.
+  const tint = lean === 'bull' ? 'bg-card border-sentiment-bull/35' : lean === 'bear' ? 'bg-card border-sentiment-bear/35' : 'bg-card border-border';
   const big = lean === 'bear' ? b.bear : b.bull;
   const bigCls = lean === 'bear' ? 'text-sentiment-bear' : lean === 'bull' ? 'text-sentiment-bull' : 'text-foreground';
   const bigLabel = lean === 'bear' ? '集看空' : '集看多';

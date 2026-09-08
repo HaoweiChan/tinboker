@@ -303,13 +303,15 @@ const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[]; epi
         </div>
       </div>
 
-      {/* Bento: unequal tiles, the consensus number and the chart lead. Colours stay on the
-          site's tokens: card/border surfaces, amber primary for emphasis, semantic
-          sentiment green/red, cyan only on sector chips. */}
-      <div className="grid grid-cols-1 md:grid-cols-6 gap-3.5 mb-[18px]">
-        {/* key: remount (and re-animate) when the insight list arrives or changes. */}
-        <ConsensusTile key={insights.length} insights={insights} className="md:col-span-2 md:row-span-2" />
+      {/* Bento: unequal tiles. The CHART leads — it is first in the DOM, so it sits left
+          on desktop (where reading starts) and first on a phone (where anything below the
+          fold costs a scroll). People arrive at a stock page to see the price; the podcast
+          consensus is our differentiator but it is not what they came for, and putting it
+          first made them scroll past it to reach the thing they wanted.
 
+          Colours stay on the site's tokens: card/border surfaces, amber primary for
+          emphasis, semantic sentiment green/red, cyan only on sector chips. */}
+      <div className="grid grid-cols-1 md:grid-cols-6 gap-3.5 mb-[18px]">
         <div className="md:col-span-4 md:row-span-2 bg-card border border-border rounded-[10px] p-4 flex flex-col">
           <ChartControls
             timeframe={timeframe}
@@ -353,6 +355,9 @@ const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[]; epi
             </div>
           )}
         </div>
+
+        {/* key: remount (and re-animate) when the insight list arrives or changes. */}
+        <ConsensusTile key={insights.length} insights={insights} className="md:col-span-2 md:row-span-2" />
 
         {/* Range tile */}
         <div className="md:col-span-2 bg-card border border-border rounded-[10px] p-5 flex flex-col justify-between gap-3">
