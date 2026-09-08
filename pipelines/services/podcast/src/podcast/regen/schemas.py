@@ -166,8 +166,19 @@ STEP_OUTPUT: dict[str, dict[str, Any]] = {
                 }
             ],
             "_notes": [
+                "Follow the prompt as written: it asks for ALL tickers mentioned with the "
+                "insights expressed about them, and NEUTRAL exists for 'mixed or no clear "
+                "direction'. Do not apply extra strictness of your own — this step feeds "
+                "more than the ticker cards. A sector exposure whose constituents overlap "
+                "the tickers you emit here is auto-approved; everything else is judged by "
+                "an LLM verifier that rejects aggressively. Under-emitting therefore "
+                "silently strips the episode's sector exposures: 股癌 EP122 was written "
+                "with only 3 ticker insights and ended with ZERO sectors, against a corpus "
+                "median of about 9, which keeps it off every sector and theme page.",
                 "Keep the legacy wrapper key name: ticker_recommendations.",
-                "Only include tickers the host expressed a clear view on.",
+                "Include a ticker when the host expresses an opinion OR analysis about it — "
+                "NEUTRAL covers the mixed and undirectional cases. A passing name-drop with "
+                "nothing said about it stays out.",
             ],
         },
         "example": {
