@@ -155,6 +155,12 @@ def create_all_tables():
                 "ALTER TABLE IF EXISTS content_sources "
                 "ADD COLUMN IF NOT EXISTS cover_image_url TEXT"
             ))
+            # Comments synced before we stored the API's own permalink have none; the
+            # UI hides the link rather than guessing a URL that 404s.
+            conn.execute(text(
+                "ALTER TABLE IF EXISTS threads_comments "
+                "ADD COLUMN IF NOT EXISTS permalink TEXT"
+            ))
             conn.execute(text(
                 "ALTER TABLE IF EXISTS content_sources "
                 "ADD COLUMN IF NOT EXISTS social_enabled BOOLEAN NOT NULL DEFAULT TRUE"

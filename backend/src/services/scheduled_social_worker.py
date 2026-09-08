@@ -242,9 +242,8 @@ async def sync_comments_if_due() -> int:
     from src.services import threads_comments_service
     res = await threads_comments_service.sync_and_triage()
     if res.get("new"):
-        logger.info("comment sync: new=%s auto_replied=%s needs_review=%s ignored=%s",
-                    res.get("new"), res.get("auto_replied"),
-                    res.get("needs_review"), res.get("ignored"))
+        logger.info("comment sync: new=%s needs_review=%s ignored=%s",
+                    res.get("new"), res.get("needs_review"), res.get("ignored"))
     return res.get("new", 0)
 
 

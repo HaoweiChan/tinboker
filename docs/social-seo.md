@@ -66,9 +66,8 @@ Example composed post (181/500 chars):
 | `THREADS_MAX_AGE_DAYS` | no (default 4) | Recency guard — only post episodes published within N days. Caps blast radius even if the ledger is wiped. |
 | `SOCIAL_PUBLISH_SLOTS` | to auto-post | TW times, e.g. `11:30,15:30,20:30`. Empty ⇒ this env never auto-posts. **Set it on exactly one environment** — dev/staging/prod all load the same tokens. |
 | `SOCIAL_PUBLISH_SCAN_LIMIT` | no (default 10) | How many recent episodes each slot scans; the ledger decides what actually posts. |
-| `SOCIAL_COMMENT_SYNC_MINUTES` | to answer comments | How often to pull + triage new comments. 0 (default) = off. Same one-environment rule. **Currently 0 on production** — held off for the feature's first release, since the production-only rule means no other environment can exercise it first. Flip to `30` once the admin 留言 tab shows the triage classifying real comments correctly. |
+| `SOCIAL_COMMENT_SYNC_MINUTES` | to answer comments | How often to pull + triage new comments. 0 (default) = off. Same one-environment rule. **Currently 0 on production.** The sync posts nothing, so turning it on only fills the tab — flip to `30` on one environment once you want the queue kept warm without pressing 抓新留言. |
 | `SOCIAL_COMMENT_MODEL` | no (default `google/gemini-2.5-flash`) | OpenRouter model used to classify a comment and draft a reply. |
-| `SOCIAL_COMMENT_AUTO_REPLY_CAP` | to answer anything unattended | Most unattended replies per sync. **0 (default) = nothing goes out without a human**; a praise comment the classifier would have answered just waits in 待處理 instead. Raise it (e.g. `3`) only after watching the triage handle real comments. |
 | `SITE_URL` | no (default `https://tinboker.com`) | Origin used for episode permalinks. |
 
 ### Endpoints
@@ -94,9 +93,10 @@ pre-rendering social-card PNGs at ingest so a slot has something to post.
 `threads_comments` holds every reply that is actually addressed to us, with a category,
 a verdict and a draft. The admin Social page's 留言 tab is where they get answered.
 
-Three filters run before the model, and cost nothing:
+Four filters run before the model, and cost nothing:
 
 * our own reply-chain posts (`is_reply_owned_by_me`);
+* replies with no text at all — a sticker or an image, nothing to read or answer;
 * known bots — `@meta.ai` answered two of our commenters unprompted, and replying starts
   a bot-to-bot thread in public;
 * replies whose parent is not our post or one of our own chain comments. Threads'
@@ -111,14 +111,20 @@ whether it asks something, and a draft reply in the house voice.
 prompt — it is the part that must not drift:
 
 * `hostile` / `noise` / `promo` / `bot` → ignored, no draft;
-* plain `praise` with no factual claim, no question and nothing that looks like a
-  position (a ticker, 買/賣/停損/目標價 …) → replied unattended;
-* everything else → the 留言 tab.
+* `praise` with no factual claim, no question and nothing that looks like a position
+  (a ticker, 買/賣/停損/目標價 …) → ignored too. 「推」 has nothing in it to answer, so it
+  does not belong in a queue a human works through;
+* everything else → the 留言 tab, with a draft to edit.
 
-Measured against the 33 real comments from 2026-06-15 to 08-26: 6 excluded by rule,
-7 ignored (1 hostile, 5 noise, 1 promo), 20 queued for review, **0 auto-replied** —
-plain praise essentially does not occur on this account. The unattended lane exists,
-but in practice a human sees everything.
+**Nothing is ever posted unattended.** The model classifies and drafts; only the 送出回覆
+button in the admin tab sends. The unattended lane was removed after the first run
+against real comments: of the four the model called plain `praise`, one was
+「一堆傻子根本沒弄清楚…」 — `praise` was the one category allowed out on its own, and it
+is the one the model is worst at. A wrong tone or a wrong number from a finance account
+is worse than a slow reply.
+
+Measured against the 39 comments on the 25 posts to 2026-09-08: 9 excluded by rule,
+13 ignored (11 noise, 1 hostile, 1 bot), 26 queued for review, in 11.9s.
 
 There is no hide action: a comment is answered or it is ignored. `threads_manage_replies`
 is deliberately not in the token's scopes.

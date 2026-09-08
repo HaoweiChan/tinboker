@@ -134,10 +134,6 @@ class Settings(BaseSettings):
     social_comment_scan_posts: int = 25
     # Model used to triage a comment and draft a reply.
     social_comment_model: str = "google/gemini-2.5-flash"
-    # Cap on unattended replies per sync — a runaway classifier cannot flood the account.
-    # 0 by default: nothing goes out unattended until someone has watched the triage do
-    # its job on real comments. A capped-out auto_reply verdict just stays in 待處理.
-    social_comment_auto_reply_cap: int = 0
 
     # ==================== 方格子 (vocus) syndication ====================
     # vocus publishes no developer API; we drive the endpoints its own editor uses.
