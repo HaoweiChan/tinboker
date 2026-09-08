@@ -68,6 +68,22 @@ result is byte-identical in shape to an OpenRouter run — enforced by
 `--skip-summarize` produces exactly what that queue looks for: an episode with a
 transcript and no content.
 
+**Drive it through the MCP server, not an ad-hoc script.** The server's entry in
+`.mcp.json` sets `PIPELINE_LLM_MODEL` and `TINBOKER_PLATFORM_API_URL`, and two pipeline
+steps fail silently without them:
+
+- `derive_sector_exposures` runs an LLM verifier over its keyword matches and **fails
+  open**, so with no model configured every spurious match is kept. Measured on the first
+  batch: 19.0 sector exposures per episode against 9.3 for normally-processed ones — half
+  of them noise, written to production before anyone noticed.
+- The sector matcher falls back to a bundled backup taxonomy (99 sectors) instead of the
+  live one from `/api/sectors/universe` (119), so episodes get matched against a taxonomy
+  missing whatever was added since the snapshot.
+
+Neither announces itself as an error. If you must use a script, set both, and note that
+the verifier is an LLM and therefore stochastic — re-running it over the same ten
+episodes gave 54 kept exposures once and 61 the next time.
+
 **There are five required steps, not four.** `commit_regen` refuses when the writer ran
 but `marp_writer` did not ("would leave slides describing the OLD summary"), so a session
 that stops after `ticker_extractor` cannot commit. `ticker_marp_writer` is genuinely
