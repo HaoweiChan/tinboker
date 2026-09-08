@@ -593,15 +593,26 @@ def find_candidates(
     only_placeholder: bool = False,
 ) -> dict[str, Any]:
     """Episodes that have a transcript but missing/placeholder generated content."""
-    fs = _firestore()
-    if podcast_name:
-        rows = fs.query_collection(
-            "episodes", filters=[("podcast_name", "==", podcast_name)], limit=limit * 4
+    if only_placeholder:
+        # The "needs content" predicate runs in SQL — see query_regen_candidates. A
+        # client-side filter over a newest-first window cannot find backfilled
+        # episodes, which carry their true old release date and sort to the bottom.
+        from src.service import postgres_mirror_reader
+
+        _firestore()  # importing bootstraps the GSM secrets the reader connects with
+        rows = postgres_mirror_reader.query_regen_candidates(
+            podcast_name=podcast_name, limit=limit
         )
     else:
-        rows = fs.query_collection(
-            "episodes", order_by="created_time", direction="DESCENDING", limit=limit * 4
-        )
+        fs = _firestore()
+        if podcast_name:
+            rows = fs.query_collection(
+                "episodes", filters=[("podcast_name", "==", podcast_name)], limit=limit * 4
+            )
+        else:
+            rows = fs.query_collection(
+                "episodes", order_by="created_time", direction="DESCENDING", limit=limit * 4
+            )
 
     out: list[dict[str, Any]] = []
     for d in rows:

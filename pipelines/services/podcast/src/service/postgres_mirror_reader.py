@@ -171,6 +171,44 @@ def query_episodes(
     return get_all_episodes(order_by=order_by, descending=descending, limit=limit)
 
 
+def query_regen_candidates(
+    *,
+    podcast_name: Optional[str] = None,
+    limit: int = 20,
+) -> list[dict[str, Any]]:
+    """Episodes that have a transcript but no generated content, newest release first.
+
+    The predicate belongs in SQL, not in the caller. ``find_candidates`` used to pull a
+    fixed newest-first window and filter it in Python, which cannot work for a backfill:
+    backfilled episodes carry their true (old) release date, so they sort to the bottom
+    of the table and the window never reaches them — the queue reported 0 candidates
+    while ten freshly-transcribed episodes sat in the table.
+
+    ``summary_url`` is the pipeline's storage location for the real markdown;
+    ``summary_content`` is written only by the regen tool. An episode needs content when
+    it has neither. Ordering by release time descending walks the gap backwards, matching
+    the order the ingest fills it in.
+    """
+    sql = f"""
+        SELECT doc FROM "{_SCHEMA}".episodes
+        WHERE coalesce(doc->>'transcript_url', '') <> ''
+          AND coalesce(doc->>'summary_url', '') = ''
+          AND coalesce(doc->>'summary_content', '') = ''
+          {{name_clause}}
+        ORDER BY (doc->>'released_at_ms')::bigint DESC NULLS LAST
+        LIMIT %s
+    """
+    params: list[Any] = []
+    name_clause = ""
+    if podcast_name is not None:
+        name_clause = "AND podcast_name = %s"
+        params.append(podcast_name)
+    params.append(limit)
+    with _connect() as conn, conn.cursor() as cur:
+        rows = cur.execute(sql.format(name_clause=name_clause), tuple(params)).fetchall()
+    return [r[0] for r in rows]
+
+
 def get_existing_episode_titles(podcast_name: str) -> set[str]:
     with _connect() as conn, conn.cursor() as cur:
         rows = cur.execute(
