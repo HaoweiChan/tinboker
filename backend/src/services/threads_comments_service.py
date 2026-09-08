@@ -214,6 +214,17 @@ async def sync_and_triage(scan_posts: Optional[int] = None) -> dict:
         # could never finish, so the tab stayed empty.
         convs = await asyncio.gather(*(conversation(p) for p in posts))
 
+        # Comments synced before we stored the API's permalink have none, so the tab shows
+        # them with no way through to the thread. The walk already has the URLs in hand —
+        # fill them in rather than making someone re-sync from scratch.
+        if known:
+            urls = {e["id"]: e["permalink"] for cv in convs for e in cv if e.get("permalink")}
+            with session_scope() as db:
+                for row in db.query(ThreadsComment).filter(
+                    ThreadsComment.permalink.is_(None), ThreadsComment.id.in_(urls)
+                ):
+                    row.permalink = urls[row.id]
+
         seen = set(known)
         candidates: list[tuple[dict, dict]] = []
         for post, conv in zip(posts, convs):
