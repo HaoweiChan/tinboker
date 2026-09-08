@@ -74,12 +74,18 @@ services:
       # not GCS. Path inside the container; the host dir is bind-mounted rw below.
       MEDIA_STORAGE_ROOT: /srv/tinboker-media
       MEDIA_PUBLIC_BASE: https://podcast-api.tinboker.com/media
+      PIPELINE_PROMPTS_DIR: /app/pipeline-prompts
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
       - ./gcp-service-account.json:/app/gcp-service-account.json:ro
       # rw: the backend writes modified summaries, social-card PNGs and promo media here.
       - /srv/tinboker-media:/srv/tinboker-media:rw
+      # The admin Prompts + Trial Run tabs read the pipeline's prompt YAMLs, which live in
+      # the pipelines tier — not in this image. ro on purpose: they are versioned in git
+      # and reach the pipeline through its own deploy, so an edit written here would be
+      # reverted by the next `git pull` and never reach a real run.
+      - /root/tinboker/pipelines/services/podcast/src/podcast/content_builder/prompts:/app/pipeline-prompts:ro
     depends_on:
       redis:
         condition: service_healthy
@@ -125,12 +131,18 @@ services:
       # not GCS. Path inside the container; the host dir is bind-mounted rw below.
       MEDIA_STORAGE_ROOT: /srv/tinboker-media
       MEDIA_PUBLIC_BASE: https://podcast-api.tinboker.com/media
+      PIPELINE_PROMPTS_DIR: /app/pipeline-prompts
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
       - ./gcp-service-account.json:/app/gcp-service-account.json:ro
       # rw: the backend writes modified summaries, social-card PNGs and promo media here.
       - /srv/tinboker-media:/srv/tinboker-media:rw
+      # The admin Prompts + Trial Run tabs read the pipeline's prompt YAMLs, which live in
+      # the pipelines tier — not in this image. ro on purpose: they are versioned in git
+      # and reach the pipeline through its own deploy, so an edit written here would be
+      # reverted by the next `git pull` and never reach a real run.
+      - /root/tinboker/pipelines/services/podcast/src/podcast/content_builder/prompts:/app/pipeline-prompts:ro
     depends_on:
       redis:
         condition: service_healthy
@@ -174,12 +186,18 @@ services:
       # not GCS. Path inside the container; the host dir is bind-mounted rw below.
       MEDIA_STORAGE_ROOT: /srv/tinboker-media
       MEDIA_PUBLIC_BASE: https://podcast-api.tinboker.com/media
+      PIPELINE_PROMPTS_DIR: /app/pipeline-prompts
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
       - ./gcp-service-account.json:/app/gcp-service-account.json:ro
       # rw: the backend writes modified summaries, social-card PNGs and promo media here.
       - /srv/tinboker-media:/srv/tinboker-media:rw
+      # The admin Prompts + Trial Run tabs read the pipeline's prompt YAMLs, which live in
+      # the pipelines tier — not in this image. ro on purpose: they are versioned in git
+      # and reach the pipeline through its own deploy, so an edit written here would be
+      # reverted by the next `git pull` and never reach a real run.
+      - /root/tinboker/pipelines/services/podcast/src/podcast/content_builder/prompts:/app/pipeline-prompts:ro
     depends_on:
       redis:
         condition: service_healthy

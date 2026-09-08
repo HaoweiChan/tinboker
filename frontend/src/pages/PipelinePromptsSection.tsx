@@ -23,6 +23,8 @@ export const PipelinePromptsSection: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [available, setAvailable] = useState(true);
+  const [editable, setEditable] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -30,6 +32,8 @@ export const PipelinePromptsSection: React.FC = () => {
         const data = await getPipelinePrompts();
         setPrompts(data.prompts);
         setPromptNames(data.prompt_names);
+        setAvailable(data.available);
+        setEditable(data.editable);
         if (data.prompt_names.length > 0) {
           const first = data.prompt_names[0];
           setActivePrompt(first);
@@ -78,7 +82,7 @@ export const PipelinePromptsSection: React.FC = () => {
     <div className="rounded-lg border border-border bg-card">
       {/* Prompt tabs */}
       <div className="flex items-center justify-between border-b border-border px-4 pt-4">
-        <div className="flex gap-1 overflow-x-auto">
+        <div className="flex min-w-0 flex-1 gap-1 overflow-x-auto">
           {promptNames.map((name) => (
             <button
               key={name}
@@ -94,29 +98,41 @@ export const PipelinePromptsSection: React.FC = () => {
             </button>
           ))}
         </div>
-        <button
-          onClick={handleSave}
-          disabled={!dirty || saving}
-          className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-base font-medium transition-all ${
-            dirty
-              ? 'bg-accent-info text-accent-info-foreground hover:bg-accent-info/90'
-              : 'cursor-not-allowed text-muted-foreground'
-          }`}
-        >
-          {saving ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : saveSuccess ? (
-            <CheckCircle2 className="h-3.5 w-3.5" />
-          ) : (
-            <Save className="h-3.5 w-3.5" />
-          )}
-          {saveSuccess ? '已儲存' : '儲存'}
-        </button>
+        {editable && (
+          <button
+            onClick={handleSave}
+            disabled={!dirty || saving}
+            className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1.5 text-base font-medium transition-all ${
+              dirty
+                ? 'bg-accent-info text-accent-info-foreground hover:bg-accent-info/90'
+                : 'cursor-not-allowed text-muted-foreground'
+            }`}
+          >
+            {saving ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : saveSuccess ? (
+              <CheckCircle2 className="h-3.5 w-3.5" />
+            ) : (
+              <Save className="h-3.5 w-3.5" />
+            )}
+            {saveSuccess ? '已儲存' : '儲存'}
+          </button>
+        )}
       </div>
+
+      {/* Why there is no save button in a deployed environment */}
+      {!editable && (
+        <p className="border-b border-border px-4 py-2 text-sm text-muted-foreground">
+          {available
+            ? '唯讀 — prompts 版控在 git，改動要走 PR 才會進到 pipeline。'
+            : '這個環境讀不到 pipeline prompts（沒有掛載 PIPELINE_PROMPTS_DIR）。'}
+        </p>
+      )}
 
       {/* Editor */}
       <div className="p-4">
         <textarea
+          readOnly={!editable}
           value={editedContent}
           onChange={(e) => {
             setEditedContent(e.target.value);

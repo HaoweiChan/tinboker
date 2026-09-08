@@ -127,6 +127,12 @@ class Settings(BaseSettings):
     # How many recent episodes each slot scans (the ledger decides what actually posts).
     social_publish_scan_limit: int = 10
 
+    # Where the pipeline's prompt YAMLs live. Unset resolves to the sibling pipelines/
+    # tier in a repo checkout, which is right for local dev and wrong in the container —
+    # the image carries only backend/, so the deployed envs bind-mount the pipelines
+    # checkout and point this at it.
+    pipeline_prompts_dir: Optional[str] = None
+
     # How often to pull new Threads comments, in minutes. 0 (the default) = never.
     # Same rule as the slots: set it on EXACTLY ONE environment.
     social_comment_sync_minutes: int = 0

@@ -19,6 +19,7 @@ from pydantic import BaseModel
 from sqlalchemy import Column, DateTime, Integer, JSON, String, Text
 from sqlalchemy.orm import Session
 
+from src.config import settings
 from src.auth.admin_auth import get_admin_access, AdminAccess
 from src.database.postgres import Base, get_session
 
@@ -26,7 +27,14 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
-PROMPTS_DIR = Path(__file__).resolve().parents[3] / "pipelines" / "services" / "podcast" / "src" / "podcast" / "content_builder" / "prompts"
+# In a checkout the prompts are a few directories up; in the container they are wherever
+# the compose file mounted them (the image has no pipelines/ tier, so an unset setting
+# used to resolve to a bare "/pipelines/…" and every prompt read failed).
+PROMPTS_DIR = (
+    Path(settings.pipeline_prompts_dir) if settings.pipeline_prompts_dir
+    else Path(__file__).resolve().parents[3] / "pipelines" / "services" / "podcast"
+    / "src" / "podcast" / "content_builder" / "prompts"
+)
 
 PROMPT_NAMES = ["extractor", "writer", "marp_writer", "ticker_extractor", "key_insights_extractor"]
 
@@ -53,15 +61,22 @@ class TrialRun(Base):
 
 @router.get("/pipeline-prompts")
 async def get_pipeline_prompts(admin: AdminAccess = Depends(get_admin_access)):
-    """List all pipeline prompts (YAML content)."""
+    """List all pipeline prompts (YAML content).
+
+    ``editable`` is false wherever the prompts are mounted read-only, which is every
+    deployed environment: they are versioned in git and reach the pipeline through a
+    deploy, so a write here would be silently reverted by the next one.
+    """
     prompts = {}
     for name in PROMPT_NAMES:
         path = PROMPTS_DIR / f"{name}.yaml"
-        if path.exists():
-            prompts[name] = path.read_text(encoding="utf-8")
-        else:
-            prompts[name] = f"# Prompt file not found: {path}"
-    return {"prompts": prompts, "prompt_names": PROMPT_NAMES}
+        prompts[name] = path.read_text(encoding="utf-8") if path.exists() else ""
+    return {
+        "prompts": prompts,
+        "prompt_names": PROMPT_NAMES,
+        "available": PROMPTS_DIR.is_dir(),
+        "editable": os.access(PROMPTS_DIR, os.W_OK) if PROMPTS_DIR.is_dir() else False,
+    }
 
 
 class PromptUpdatePayload(BaseModel):
@@ -79,7 +94,12 @@ async def update_pipeline_prompt(
         raise HTTPException(status_code=404, detail=f"Unknown prompt: {name}")
     path = PROMPTS_DIR / f"{name}.yaml"
     if not path.parent.exists():
-        raise HTTPException(status_code=500, detail="Prompts directory not found")
+        raise HTTPException(status_code=503, detail="這個環境讀不到 pipeline prompts")
+    if not os.access(path.parent, os.W_OK):
+        raise HTTPException(
+            status_code=409,
+            detail="Prompts 在這個環境是唯讀的 — 它們版控在 git，改動要走 PR 才會進到 pipeline",
+        )
     path.write_text(payload.content, encoding="utf-8")
     logger.info("Prompt '%s' updated by %s", name, admin.email)
     return {"ok": True, "name": name}
