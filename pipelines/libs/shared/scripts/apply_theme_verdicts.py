@@ -53,7 +53,10 @@ def main() -> None:
     ap.add_argument("--merged", required=True, help="directory of merged verdict JSON files")
     ap.add_argument("--taxonomy", required=True, help="live taxonomy JSONL (one exposure per line)")
     ap.add_argument("--out", required=True)
-    ap.add_argument("--actor", default="bot:taxonomy-review")
+    ap.add_argument("--actor", default=None,
+                    help="omit (default) to publish as the admin whose token is used. The API "
+                         "accepts only bot:reasons-fill / bot:import as bot actors, and a bot "
+                         "actor's writes are SKIPPED on any field an admin already owns")
     ap.add_argument("--entry", default="ictpex-membership-review")
     ap.add_argument("--rationale", default=RATIONALE)
     ap.add_argument("--min-members", type=int, default=3,
@@ -126,7 +129,9 @@ def main() -> None:
             sys.exit("companies over --max-fanout: " + ", ".join(f"{t} in {n} themes" for t, n in over))
 
     payload = {"sectors": sectors, "redirects": {}, "full": False,
-               "actor": args.actor, "entry": args.entry, "rationale": args.rationale}
+               "entry": args.entry, "rationale": args.rationale}
+    if args.actor:
+        payload["actor"] = args.actor
     json.dump(payload, open(args.out, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     for eid in overridden:
         print(f"DESCRIPTION REPLACED {eid}: the stored description was judged wrong — "
