@@ -158,3 +158,31 @@ def test_the_regen_queue_asks_sql_for_candidates_not_a_python_filter(monkeypatch
     assert seen == {"podcast_name": "Gooaye 股癌", "limit": 5}
     assert [c["episode_id"] for c in out["candidates"]] == ["Gooaye_old"]
     assert out["candidates"][0]["is_placeholder"] is True
+
+
+def test_writer_submit_warns_when_output_drifts_from_the_corpus():
+    """An agent writing to these prompts overshoots the pipeline's own model on every
+    axis — 股癌 EP127 came out at 6,593 chars / 40 ticker links / 24 tickers against the
+    pipeline's 4,090 / 15 / 11 from the same transcript. Episodes sit next to each other
+    on the site, so the drift has to surface before commit.
+    """
+    from src.podcast.regen.orchestrator import _corpus_drift_warnings
+
+    ok = {
+        "markdown_report": "x" * 4300 + " [台積電](#ticker:2330)" * 9,
+        "related_tickers": ["2330"] * 7,
+        "tags": ["a"] * 8,
+    }
+    assert _corpus_drift_warnings(ok) == []
+
+    drifted = {
+        "markdown_report": "x" * 6593 + " [x](#ticker:2330)" * 40,
+        "related_tickers": ["t%d" % i for i in range(24)],
+        "tags": ["g%d" % i for i in range(18)],
+    }
+    warnings = " ".join(_corpus_drift_warnings(drifted))
+    assert "characters" in warnings and "#ticker: links" in warnings
+    assert "related_tickers" in warnings and "tags" in warnings
+
+    thin = {"markdown_report": "x" * 900, "related_tickers": [], "tags": []}
+    assert "too thin" in " ".join(_corpus_drift_warnings(thin))

@@ -30,6 +30,24 @@ RISK_SEVERITIES = ["LOW", "MEDIUM", "HIGH"]
 # Rules that apply to every step's authored JSON.
 GLOBAL_NOTES = [
     "Write all Chinese as literal UTF-8 characters — never \\uXXXX escapes.",
+    # Calibration, not style advice. A capable agent writing to these prompts produces
+    # markedly more than the pipeline's own model does from the same transcript —
+    # measured on 股癌 EP127: 6,593 chars / 10 sections / 40 ticker links / 11 tag links
+    # against the pipeline's 4,090 / 8 / 15 / 3. Episodes are read side by side on the
+    # site, so an agent-written one that runs half again as long and links three times
+    # as densely reads as a different publication. The bands below are the live corpus
+    # (60 most recent pipeline-written 股癌 episodes), not a preference.
+    "LENGTH: the assembled summary should land near 4,300 characters and stay inside "
+    "3,400-4,900. That is the whole document, not per section.",
+    "SHAPE: 8 sections is the norm (6-9 acceptable). Merge thin Q&A items rather than "
+    "giving each its own section.",
+    "LINK DENSITY: link the companies the discussion is actually about — a median "
+    "episode carries about 7 distinct tickers and rarely more than 11, with roughly 9 "
+    "inline #ticker: links. Passing name-drops used as analogies or examples do not "
+    "need a link; linking every company that appears is the most common way an "
+    "agent-written episode diverges from the corpus.",
+    "TAGS: about 7-8 tags, from the curated vocabulary. More tags fragment clustering "
+    "rather than improving it.",
 ]
 
 STEP_OUTPUT: dict[str, dict[str, Any]] = {
@@ -83,6 +101,10 @@ STEP_OUTPUT: dict[str, dict[str, Any]] = {
                 "dropped by extraction. Put Chinese in the display text only "
                 "(e.g. [供應鏈](#tag:SupplyChain), [台積電](#ticker:2330)).",
                 "tag_name in the tags array must be the same canonical ASCII slug used in the #tag: links.",
+                "Respect the LENGTH / SHAPE / LINK DENSITY / TAGS bands in global_notes — "
+                "they are measured from the episodes this one will sit next to, and "
+                "overshooting them is the single biggest source of drift in agent-written "
+                "episodes.",
             ],
         },
         "example": {
