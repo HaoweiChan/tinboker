@@ -180,14 +180,23 @@ viewBox="0 0 {WIDTH} {HEIGHT}" role="img" aria-label="{escape(title)}">
 </svg>"""
 
 
-def episode_cover_png(svg: str) -> bytes:
-    """Rasterise a cover for platforms whose share cards cannot use SVG.
+def svg_to_png(svg: str, width: int, height: int) -> bytes:
+    """Rasterise an SVG at an explicit size.
 
-    og:image is not honoured as SVG by the social crawlers, so a card built from the SVG
-    URL comes out blank. cairosvg is imported here rather than at module scope: the SVG
-    path must keep working (and its tests must keep running) on machines without libcairo.
+    cairosvg is imported here rather than at module scope: the SVG paths must keep
+    working (and their tests must keep running) on machines without libcairo. Blocking
+    and CPU-bound — call it through ``asyncio.to_thread`` from an async endpoint.
     """
     import cairosvg  # noqa: PLC0415 — optional at import time, see docstring
 
     return cairosvg.svg2png(bytestring=svg.encode("utf-8"),
-                            output_width=WIDTH, output_height=HEIGHT)
+                            output_width=width, output_height=height)
+
+
+def episode_cover_png(svg: str) -> bytes:
+    """Rasterise a cover for platforms whose share cards cannot use SVG.
+
+    og:image is not honoured as SVG by the social crawlers, so a card built from the SVG
+    URL comes out blank.
+    """
+    return svg_to_png(svg, WIDTH, HEIGHT)
