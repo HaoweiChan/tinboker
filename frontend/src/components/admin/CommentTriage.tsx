@@ -151,14 +151,16 @@ export const CommentTriage: React.FC = () => {
                 </span>
               )}
               {c.posted_at && <span>{c.posted_at.slice(0, 16).replace('T', ' ')}</span>}
-              <a
-                href={c.permalink}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1 hover:text-foreground"
-              >
-                原貼文 <ExternalLink className="h-3 w-3" />
-              </a>
+              {c.permalink && (
+                <a
+                  href={c.permalink}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 hover:text-foreground"
+                >
+                  原留言 <ExternalLink className="h-3 w-3" />
+                </a>
+              )}
             </div>
 
             <p className="whitespace-pre-wrap text-base text-foreground">{c.text}</p>

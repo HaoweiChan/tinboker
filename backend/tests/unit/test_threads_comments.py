@@ -86,7 +86,8 @@ async def test_sync_files_comments_and_posts_nothing(temp_db, monkeypatch):
     conv = [
         {"id": "own", "is_reply_owned_by_me": True, "replied_to": {"id": "p1"}},
         {"id": "c1", "username": "someone", "text": "群聯的方案不能推理",
-         "timestamp": "2026-09-01T10:00:00+0000", "replied_to": {"id": "p1"}},
+         "timestamp": "2026-09-01T10:00:00+0000", "replied_to": {"id": "p1"},
+         "permalink": "https://www.threads.com/@someone/post/Dc8IesYkqlS"},
         {"id": "c2", "username": "meta.ai", "text": "翻譯", "replied_to": {"id": "p1"}},
         {"id": "c3", "username": "bystander", "text": "回別人的", "replied_to": {"id": "c1"}},
         {"id": "c4", "username": "sticker", "text": "   ", "replied_to": {"id": "p1"}},
@@ -127,5 +128,8 @@ async def test_sync_files_comments_and_posts_nothing(temp_db, monkeypatch):
     assert counts["new"] == 2
     assert counts["needs_review"] == 1 and counts["ignored"] == 1
     assert "auto_replied" not in counts
-    assert [c["id"] for c in svc.list_comments(status="pending")] == ["c1"]
+    pending = svc.list_comments(status="pending")
+    assert [c["id"] for c in pending] == ["c1"]
+    # the API's own shortcode URL, never one built from the media id — that 404s
+    assert pending[0]["permalink"] == "https://www.threads.com/@someone/post/Dc8IesYkqlS"
     assert [c["id"] for c in svc.list_comments(status="ignored")] == ["c5"]

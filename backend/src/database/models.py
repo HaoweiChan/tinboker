@@ -684,6 +684,9 @@ class ThreadsComment(Base):
     username = Column(String(255), nullable=True)
     text = Column(Text, nullable=False, default="")
     posted_at = Column(DateTime, nullable=True)           # when the commenter wrote it
+    # The web URL, straight from the API. It is a shortcode (…/post/Dc8IesYkqlS) with no
+    # relationship to the media id, so it cannot be derived — it has to be stored.
+    permalink = Column(Text, nullable=True)
 
     # Triage
     category = Column(String(30), nullable=True)          # praise|question|substantive|hostile|noise|promo|bot

@@ -352,7 +352,7 @@ export interface ThreadsCommentItem {
   draft: string;
   status: CommentStatus;
   reply_media_id: string | null;
-  permalink: string;
+  permalink: string | null;  // absent on comments synced before we stored it
 }
 
 export async function listThreadsComments(

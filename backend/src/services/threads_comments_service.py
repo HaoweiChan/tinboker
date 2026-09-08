@@ -202,7 +202,8 @@ async def sync_and_triage(scan_posts: Optional[int] = None) -> dict:
         async def conversation(post: dict) -> list[dict]:
             r = await client.get(
                 f"{base}/{post['id']}/conversation",
-                params={"fields": "id,text,username,timestamp,replied_to,is_reply_owned_by_me",
+                params={"fields": "id,text,username,timestamp,replied_to,permalink,"
+                                  "is_reply_owned_by_me",
                         "access_token": token},
             )
             return r.json().get("data", [])
@@ -249,6 +250,7 @@ async def sync_and_triage(scan_posts: Optional[int] = None) -> dict:
                 replied_to_id=(entry.get("replied_to") or {}).get("id"),
                 username=entry.get("username"), text=entry.get("text") or "",
                 posted_at=_parse_ts(entry.get("timestamp")),
+                permalink=entry.get("permalink"),
                 category=t["category"], verdict=verdict,
                 reason=t.get("reason"), draft=draft,
                 status="ignored" if verdict == "ignore" else "pending",
@@ -320,7 +322,7 @@ def list_comments(status: str = "pending", limit: int = 50) -> list[dict]:
                 "category": r.category, "verdict": r.verdict, "reason": r.reason,
                 "draft": r.draft, "status": r.status, "auto": r.auto,
                 "reply_media_id": r.reply_media_id,
-                "permalink": f"https://www.threads.com/@tinboker/post/{r.root_post_id}",
+                "permalink": r.permalink,
             }
             for r in rows
         ]
