@@ -51,7 +51,10 @@ one-time migration source; it is gitignored and never committed.
 ## Decision tree — which module to touch?
 
 **Adding a new podcast source or tweaking download:**
-- Modify [services/podcast/podcasts_tw.json](services/podcast/podcasts_tw.json)
+- Modify [services/podcast/podcasts_tw.json](services/podcast/podcasts_tw.json) (Taiwanese shows) or
+  [services/podcast/podcasts_en.json](services/podcast/podcasts_en.json) (English shows — the scheduled
+  ingest runs both; add the show's RSS to `rss_feeds.json` too). English episodes stay unpublished until
+  the show is registered in `content_sources` with language `en` and `RELEASE_PODCAST_LANGUAGES` allows it.
 
 **Tweaking summary/extraction prompts:**
 - Content prompts: [services/podcast/src/podcast/content_builder/prompts/](services/podcast/src/podcast/content_builder/prompts/)

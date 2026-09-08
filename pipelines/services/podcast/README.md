@@ -101,7 +101,9 @@ podcast_downloader/
 │   └── images/            # Generated summary images (SVG)
 ├── tests/                  # Test files
 ├── main.py                # Main pipeline coordinator
-├── podcasts_tw.json  # Podcast configuration
+├── podcasts_tw.json  # Taiwanese show configuration
+├── podcasts_en.json  # English show configuration (both run on the schedule)
+├── rss_feeds.json    # show name -> canonical RSS (mirror fallback otherwise)
 └── requirements.txt       # Python dependencies
 ```
 
