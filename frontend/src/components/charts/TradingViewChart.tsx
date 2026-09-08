@@ -195,6 +195,28 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
         return getTs(a) - getTs(b);
       });
 
+      // The lower panes overlay the bottom of the SAME visible price scale, and
+      // lightweight-charts v4 labels a scale's whole height — so the price ladder kept
+      // running down beside the volume and mention panes (400, 0, -400), reading as if
+      // those numbers described them. There is no API to bound the labelled range; the
+      // supported hook is the formatter, so values the price series never reaches are
+      // formatted as nothing. The gridline stays, only the number goes.
+      const lows = sortedData
+        .map((p) => {
+          const c = p as Partial<ChartDataPoint> & { value?: number; price?: number };
+          return c.low ?? c.close ?? c.value ?? c.price;
+        })
+        .filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
+      if (lows.length) {
+        const floor = Math.min(...lows) - (Math.max(...lows) - Math.min(...lows) || 1) * 0.12;
+        chart.applyOptions({
+          localization: {
+            priceFormatter: (v: number) =>
+              v < floor ? '' : v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+          },
+        });
+      }
+
       const closeValues = sortedData.map(d => {
         if ('close' in d) return d.close ?? 0;
         if ('price' in d) return d.price ?? 0;
@@ -229,6 +251,7 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
           priceFormat: { type: 'volume' },
           priceScaleId: 'volume', // Separate scale
           priceLineVisible: false,
+          lastValueVisible: false,
         });
         chart.priceScale('volume').applyOptions({
           scaleMargins: SUB_MARGINS,
@@ -263,6 +286,7 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
           color: '#8b5cf6', // Violet
           lineWidth: 1,
           priceScaleId: 'rsi',
+          lastValueVisible: false,
           title: 'RSI(14)',
           priceLineVisible: false,
         });
@@ -287,11 +311,11 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
       }
       else if (effectiveSubChart === 'MACD') {
         // MACD Line
-        const macdSeries = chart.addLineSeries({ color: '#a78bfa', lineWidth: 1, priceScaleId: 'macd', title: 'MACD', priceLineVisible: false });
+        const macdSeries = chart.addLineSeries({ color: '#a78bfa', lineWidth: 1, priceScaleId: 'macd', title: 'MACD', priceLineVisible: false, lastValueVisible: false });
         // Signal Line
-        const signalSeries = chart.addLineSeries({ color: '#FF6D00', lineWidth: 1, priceScaleId: 'macd', title: 'Signal', priceLineVisible: false });
+        const signalSeries = chart.addLineSeries({ color: '#FF6D00', lineWidth: 1, priceScaleId: 'macd', title: 'Signal', priceLineVisible: false, lastValueVisible: false });
         // Histogram
-        const histSeries = chart.addHistogramSeries({ color: '#26a69a', priceScaleId: 'macd', title: 'Hist', priceLineVisible: false });
+        const histSeries = chart.addHistogramSeries({ color: '#26a69a', priceScaleId: 'macd', title: 'Hist', priceLineVisible: false, lastValueVisible: false });
 
         chart.priceScale('macd').applyOptions({
           scaleMargins: SUB_MARGINS,
@@ -331,8 +355,8 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
         seriesMap['MACD'] = macdSeries; // Store main one
       }
       else if (effectiveSubChart === 'KD') {
-        const kSeries = chart.addLineSeries({ color: '#ff9800', lineWidth: 1, priceScaleId: 'kd', title: 'K', priceLineVisible: false });
-        const dSeries = chart.addLineSeries({ color: '#a78bfa', lineWidth: 1, priceScaleId: 'kd', title: 'D', priceLineVisible: false });
+        const kSeries = chart.addLineSeries({ color: '#ff9800', lineWidth: 1, priceScaleId: 'kd', title: 'K', priceLineVisible: false, lastValueVisible: false });
+        const dSeries = chart.addLineSeries({ color: '#a78bfa', lineWidth: 1, priceScaleId: 'kd', title: 'D', priceLineVisible: false, lastValueVisible: false });
         chart.priceScale('kd').applyOptions({ scaleMargins: SUB_MARGINS });
 
         const input = {
@@ -356,7 +380,7 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
         seriesMap['KD_D'] = dSeries;
       }
       else if (effectiveSubChart === 'Bias') {
-        const biasSeries = chart.addLineSeries({ color: '#e91e63', lineWidth: 1, priceScaleId: 'bias', title: 'Bias', priceLineVisible: false });
+        const biasSeries = chart.addLineSeries({ color: '#e91e63', lineWidth: 1, priceScaleId: 'bias', title: 'Bias', priceLineVisible: false, lastValueVisible: false });
         chart.priceScale('bias').applyOptions({ scaleMargins: SUB_MARGINS });
 
         const period = 20;
