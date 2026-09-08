@@ -10,6 +10,9 @@ import path from 'path'
 // you an app that opens on /admin, not on the public homepage. Same icons as the public
 // app — the origin is different, so the two installs never collide.
 const IS_ADMIN_BUILD = process.env.VITE_STAGE !== 'PRODUCTION'
+// Same mark on the app's near-black ground — the treatment the maskable icons already
+// use, applied full-bleed. Regenerate with scripts/make-admin-icons.py.
+const ICONS = IS_ADMIN_BUILD ? '/icons/pwa/admin' : '/icons/pwa'
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -17,10 +20,13 @@ export default defineConfig({
     react(),
     {
       // iOS reads this for the home-screen name, not the manifest.
-      name: 'admin-build-apple-title',
+      name: 'admin-build-html',
       transformIndexHtml: (html: string) => IS_ADMIN_BUILD
-        ? html.replace('name="apple-mobile-web-app-title" content="聽播客"',
-                       'name="apple-mobile-web-app-title" content="聽播客後台"')
+        ? html
+            .replace('name="apple-mobile-web-app-title" content="聽播客"',
+                     'name="apple-mobile-web-app-title" content="聽播客後台"')
+            .replace('href="/icons/pwa/apple-touch-icon.png"',
+                     'href="/icons/pwa/admin/apple-touch-icon.png"')
         : html,
     },
     VitePWA({
@@ -47,18 +53,12 @@ export default defineConfig({
         scope: '/',
         lang: 'zh-TW',
         categories: IS_ADMIN_BUILD ? ['productivity'] : ['finance', 'business', 'news'],
-        icons: [
-          { src: '/icons/pwa/icon-72x72.png', sizes: '72x72', type: 'image/png' },
-          { src: '/icons/pwa/icon-96x96.png', sizes: '96x96', type: 'image/png' },
-          { src: '/icons/pwa/icon-128x128.png', sizes: '128x128', type: 'image/png' },
-          { src: '/icons/pwa/icon-144x144.png', sizes: '144x144', type: 'image/png' },
-          { src: '/icons/pwa/icon-152x152.png', sizes: '152x152', type: 'image/png' },
-          { src: '/icons/pwa/icon-192x192.png', sizes: '192x192', type: 'image/png' },
-          { src: '/icons/pwa/icon-384x384.png', sizes: '384x384', type: 'image/png' },
-          { src: '/icons/pwa/icon-512x512.png', sizes: '512x512', type: 'image/png' },
-          { src: '/icons/pwa/maskable-192x192.png', sizes: '192x192', type: 'image/png', purpose: 'maskable' },
-          { src: '/icons/pwa/maskable-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
-        ]
+        icons: [72, 96, 128, 144, 152, 192, 384, 512].map((n) => ({
+          src: `${ICONS}/icon-${n}x${n}.png`, sizes: `${n}x${n}`, type: 'image/png'
+        })).concat([192, 512].map((n) => ({
+          src: `${ICONS}/maskable-${n}x${n}.png`, sizes: `${n}x${n}`, type: 'image/png',
+          purpose: 'maskable' as const
+        })))
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
