@@ -68,6 +68,28 @@ result is byte-identical in shape to an OpenRouter run — enforced by
 `--skip-summarize` produces exactly what that queue looks for: an episode with a
 transcript and no content.
 
+**Drive it through the MCP server, not an ad-hoc script.** The server's entry in
+`.mcp.json` sets `PIPELINE_LLM_MODEL` and `TINBOKER_PLATFORM_API_URL`, and two pipeline
+steps fail silently without them:
+
+- `derive_sector_exposures` runs an LLM verifier over its keyword matches and **fails
+  open**, so with no model configured every spurious match is kept. Measured on the first
+  batch: 19.0 sector exposures per episode against 9.3 for normally-processed ones — half
+  of them noise, written to production before anyone noticed.
+- The sector matcher falls back to a bundled backup taxonomy (99 sectors) instead of the
+  live one from `/api/sectors/universe` (119), so episodes get matched against a taxonomy
+  missing whatever was added since the snapshot.
+
+Neither announces itself as an error. If you must use a script, set both, and note that
+the verifier is an LLM and therefore stochastic — re-running it over the same ten
+episodes gave 54 kept exposures once and 61 the next time.
+
+**There are five required steps, not four.** `commit_regen` refuses when the writer ran
+but `marp_writer` did not ("would leave slides describing the OLD summary"), so a session
+that stops after `ticker_extractor` cannot commit. `ticker_marp_writer` is genuinely
+optional and is skipped when `ticker_extractor` returned no recommendations — that is
+correct, not an oversight.
+
 ### Dispatching sessions
 
 One session per batch, `model: "sonnet"`. Give each batch a disjoint set of episode ids
@@ -115,6 +137,15 @@ stock-mention and topic-mention notifications for the entire batch.
 
 Order: backfill → wait for a producer cycle → then widen the flag.
 
+Measured on the first batch (10 股癌 episodes, ingested 2026-09-08 01:38–01:42): zero rows
+in `user_notifications` during the window, zero referencing those episode ids, and the
+producer's Redis mark (`notif:last_seen_first_seen_at`) stood at 01:54 — already past all
+ten. Once the mark passes a batch those rows are never re-evaluated, so widening the flag
+is permanently safe **for that batch**. There is a related note at
+`backend/src/services/notification_producer.py:105`: a content-empty placeholder that
+gains content later via regen is never notified either, so the content half cannot
+trigger anything on its way in.
+
 Syndication (方格子/Substack) and Threads/FB autopublish are unaffected either way; both
 keep their own release-date-keyed age limits (`SYNDICATE_MAX_AGE_DAYS` default 7,
 `threads_max_age_days`).
@@ -128,6 +159,29 @@ sector/board/tag scans (`backend/src/services/podcast.py:888-915, 1440, 2307, 23
 fetch the whole episodes table and apply the cutoff in Python — the backfill roughly
 doubles that scan cost on every hourly refresh and cache miss, which is the same shape
 as the July 2026 billing incident. Budget for it.
+
+## What the first batch measured
+
+10 episodes (股癌 EP123–132, 2021-03-17 → 2021-04-17), ingested with
+`--fill-limit --since 2020-02-27 --no-store-audio --skip-summarize`:
+
+- **Reverse-chronological order confirmed**: the run picked the ten newest missing
+  episodes, sitting directly below the previous oldest (EP136), and the dedup check now
+  counts them as done — the next run moves on to EP122 rather than re-transcribing.
+- **Disk unchanged**: 106 GB free before and after. Transcripts only.
+- **Summary length matches the incumbent**: median 6,174 characters across the batch
+  (range 5,831–6,593) against 6,848 and 4,272 measured on two OpenRouter-written
+  episodes — inside the existing range, not longer.
+- **The dedup scan is not a bottleneck.** `--fill-limit` issues one lookup per feed
+  episode until it finds `limit` unprocessed ones (~560 for 股癌), and each opens its own
+  connection. On the VPS that is an index scan on `ix_fm_episodes_number` at 0.145 ms, so
+  a run spends about three seconds there. Over an SSH tunnel the same loop takes twenty
+  minutes — measure this on the VPS, never through a tunnel.
+- **Delisted tickers are safe.** 2020–21 episodes legitimately reference symbols that no
+  longer exist (EP127 is the Archegos episode: VIAC and DISCA are the point of it). The
+  API degrades gracefully — `/api/episodes/by-ticker/VIAC` returns 200 with an empty
+  list. Link the symbol that was valid at the time; those pages will show episodes
+  without price data.
 
 ## Scope and gap as of 2026-09-08
 

@@ -54,11 +54,11 @@ def test_backfilled_episode_counts_as_done():
 
 
 def test_placeholder_detection_does_not_flag_normally_summarised_episodes(monkeypatch):
-    """The backfill work queue must contain only episodes that actually need content.
+    """A normally-processed episode must not read as an empty placeholder.
 
-    ``summary_content`` is written only by the regen tool; the normal pipeline keeps
-    the markdown as an artifact and leaves the inline field empty. Testing the inline
-    field alone made every normally-processed episode look like an empty placeholder.
+    ``summary_content`` is written only by the regen tool; the normal pipeline keeps the
+    markdown as an artifact and leaves the inline field empty, so testing that field
+    alone reported 4,262 of 4,551 episodes as needing a rewrite.
     """
     from src.podcast.regen import orchestrator as ro
 
@@ -79,8 +79,11 @@ def test_placeholder_detection_does_not_flag_normally_summarised_episodes(monkey
     monkeypatch.setattr(ro, "_firestore", lambda: FakeFS())
     monkeypatch.setattr(ro, "is_placeholder_summary", lambda text: "Placeholder summary" in text)
 
-    ids = [c["episode_id"] for c in ro.find_candidates(only_placeholder=True)["candidates"]]
-    assert ids == ["todo", "bad"], ids
+    # The listing path (only_placeholder=False) still classifies each row, and that
+    # classification is what a session reads to decide whether an episode needs work.
+    out = ro.find_candidates(only_placeholder=False)["candidates"]
+    flags = {c["episode_id"]: (c["has_summary"], c["is_placeholder"]) for c in out}
+    assert flags == {"done": (True, False), "todo": (False, True), "bad": (True, True)}
 
 
 def test_skip_summarize_persists_the_transcript_and_runs_no_llm_steps(monkeypatch):
@@ -125,3 +128,61 @@ def test_skip_summarize_persists_the_transcript_and_runs_no_llm_steps(monkeypatc
     # exist yet, and syndicating/notifying on an empty episode would be user-visible.
     for derived in ("render_social_cards", "export_ticker_insights", "trigger_syndicate"):
         assert derived not in called
+
+
+def test_the_regen_queue_asks_sql_for_candidates_not_a_python_filter(monkeypatch):
+    """Backfilled episodes carry their true OLD release date, so they sort to the bottom
+    of the table. Filtering a newest-first window in Python can never reach them — the
+    queue reported 0 while ten freshly-transcribed episodes sat in the table.
+    """
+    from src.podcast.regen import orchestrator as ro
+    from src.service import postgres_mirror_reader
+
+    seen = {}
+
+    def fake_query(*, podcast_name=None, limit=20):
+        seen["podcast_name"] = podcast_name
+        seen["limit"] = limit
+        return [{
+            "episode_id": "Gooaye_old", "podcast_name": "Gooaye 股癌",
+            "episode_title": "EP123 | 蘋果怎麼吃才營養",
+            "transcript_url": "https://media/t.json", "released_at_ms": 1616025600000,
+        }]
+
+    monkeypatch.setattr(postgres_mirror_reader, "query_regen_candidates", fake_query)
+    monkeypatch.setattr(ro, "_firestore", lambda: None)
+    monkeypatch.setattr(ro, "_episode_sentences", lambda d: [])
+
+    out = ro.find_candidates(podcast_name="Gooaye 股癌", limit=5, only_placeholder=True)
+
+    assert seen == {"podcast_name": "Gooaye 股癌", "limit": 5}
+    assert [c["episode_id"] for c in out["candidates"]] == ["Gooaye_old"]
+    assert out["candidates"][0]["is_placeholder"] is True
+
+
+def test_writer_submit_warns_when_output_drifts_from_the_corpus():
+    """An agent writing to these prompts overshoots the pipeline's own model on every
+    axis — 股癌 EP127 came out at 6,593 chars / 40 ticker links / 24 tickers against the
+    pipeline's 4,090 / 15 / 11 from the same transcript. Episodes sit next to each other
+    on the site, so the drift has to surface before commit.
+    """
+    from src.podcast.regen.orchestrator import _corpus_drift_warnings
+
+    ok = {
+        "markdown_report": "x" * 4300 + " [台積電](#ticker:2330)" * 9,
+        "related_tickers": ["2330"] * 7,
+        "tags": ["a"] * 8,
+    }
+    assert _corpus_drift_warnings(ok) == []
+
+    drifted = {
+        "markdown_report": "x" * 6593 + " [x](#ticker:2330)" * 40,
+        "related_tickers": ["t%d" % i for i in range(24)],
+        "tags": ["g%d" % i for i in range(18)],
+    }
+    warnings = " ".join(_corpus_drift_warnings(drifted))
+    assert "characters" in warnings and "#ticker: links" in warnings
+    assert "related_tickers" in warnings and "tags" in warnings
+
+    thin = {"markdown_report": "x" * 900, "related_tickers": [], "tags": []}
+    assert "too thin" in " ".join(_corpus_drift_warnings(thin))
