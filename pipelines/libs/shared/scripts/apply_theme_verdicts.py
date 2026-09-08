@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Turn reviewed theme membership into an admin taxonomy draft payload.
+"""Turn reviewed sector membership into an admin taxonomy draft payload.
 
-Reads one merged verdict file per theme —
+Reads one merged verdict file per exposure (theme or industry) —
 ``{definition, members: [{ticker, name, reason, source}], dropped: [...]}`` — and emits
 the body for ``POST /api/admin/taxonomy/bulk``. That endpoint is the only supported
 write path: it stores a draft plus a diff, and a second call publishes it. Nothing here
@@ -19,12 +19,12 @@ and every override is printed for a human to see.
 A verdict marked ``"status": "insufficient"`` (a theme the reviewer could not fill) or
 ``"untouched"`` (an exposure this pass deliberately did not review) is left out of the
 payload entirely, so its live rows stay exactly as they are and a human decides what
-should happen to it. Every other theme that comes
-back thinner than ``--min-members`` aborts the run — that is the unexpected case, and
-shipping a one-member sector page is worse than shipping nothing.
+should happen to it. Any other exposure that comes back thinner than ``--min-members``
+aborts the run instead — that one is a surprise, not a decision, and shipping a
+one-member sector page is worse than shipping nothing.
 
     python apply_theme_verdicts.py --merged verdicts/merged --taxonomy live.jsonl \
-        --out draft_payload.json
+        --redirects redirects.json --out draft_payload.json
 
 Then, with an admin token:
     curl -X POST .../api/admin/taxonomy/bulk -H 'Authorization: Bearer <admin jwt>' \
@@ -38,14 +38,23 @@ import json
 import os
 import sys
 
+# Goes into the taxonomy changelog verbatim, so it has to describe what this payload
+# actually does — including the parts that are judgement rather than mechanism.
 RATIONALE = (
-    "Theme membership re-reviewed against the official TPEx industry value chain "
-    "(ic.tpex.org.tw): every company already in a theme and every candidate drawn from "
-    "the segments that theme occupies was judged on one standard — a concrete, factual "
-    "product or business link to the theme, stated in the member's reason. Members "
-    "confirmed from the value-chain pool are marked source=ictpex; members kept from the "
-    "previous table that sit outside those segments are marked source=curated; the rest "
-    "were removed. Themes that had no description gained one written for this review."
+    "Sector membership rebuilt on public sources. Themes: every company already in a "
+    "theme, and every candidate drawn from the official TPEx industry value-chain "
+    "segments that theme occupies (ic.tpex.org.tw), was judged on one standard — a "
+    "concrete, factual product or business link to the theme, stated in the member's "
+    "reason; confirmed members are marked source=ictpex, members kept from the previous "
+    "table but sitting outside those segments source=curated, and the rest removed. "
+    "Industries with child themes carry the highest-turnover leaders drawn from those "
+    "themes' members, since the full roll-up is computed at read time. Industries "
+    "without child themes carry the TWSE/TPEx official industry classification "
+    "(source=twse), minus companies whose official category no longer matches their "
+    "business. Themes that had no description gained one written for this review, and "
+    "two descriptions that misdescribed their own theme were replaced. Legacy empty "
+    "industries (no members, no description) are folded by redirect into the sibling "
+    "that already covers them."
 )
 
 
@@ -117,7 +126,8 @@ def main() -> None:
         sectors.append(sector)
 
     if unknown:
-        sys.exit(f"unknown / non-theme / redirected exposure ids in verdicts: {unknown}")
+        sys.exit(f"verdicts name exposures that are unknown, redirected, or not a "
+                 f"sector/industry: {unknown}")
     if thin:
         sys.exit("themes below --min-members (raise the floor deliberately or re-review): "
                  + ", ".join(f"{e}={n}" for e, n in thin))
@@ -161,9 +171,12 @@ def main() -> None:
         print(f"DESCRIPTION REPLACED {eid}: the stored description was judged wrong — "
               f"read the new one before publishing")
     by_type = collections.Counter(live[s["exposure_id"]]["exposure_type"] for s in sectors)
-    print(f"exposures {len(sectors)} ({by_type.get('theme', 0)} themes, {by_type.get('industry', 0)} industries)  members {sum(len(s['members']) for s in sectors)} "
+    print(f"exposures {len(sectors)} ({by_type.get('theme', 0)} themes, "
+          f"{by_type.get('industry', 0)} industries)  "
+          f"members {sum(len(s['members']) for s in sectors)} "
           f"(kept {kept}, added {added}, dropped {dropped})  "
-          f"descriptions filled {len(filled)}, replaced {len(overridden)}")
+          f"descriptions filled {len(filled)}, replaced {len(overridden)}  "
+          f"redirects {len(redirects)}")
     print(f"wrote {args.out} — review the diff returned by /api/admin/taxonomy/bulk before publishing")
 
 
