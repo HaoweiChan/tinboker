@@ -162,6 +162,10 @@ def create_all_tables():
                 "ADD COLUMN IF NOT EXISTS permalink TEXT"
             ))
             conn.execute(text(
+                "ALTER TABLE IF EXISTS threads_comments "
+                "ADD COLUMN IF NOT EXISTS root_post_text TEXT"
+            ))
+            conn.execute(text(
                 "ALTER TABLE IF EXISTS content_sources "
                 "ADD COLUMN IF NOT EXISTS social_enabled BOOLEAN NOT NULL DEFAULT TRUE"
             ))
