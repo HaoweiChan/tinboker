@@ -101,6 +101,17 @@ STEP_OUTPUT: dict[str, dict[str, Any]] = {
                 "dropped by extraction. Put Chinese in the display text only "
                 "(e.g. [供應鏈](#tag:SupplyChain), [台積電](#ticker:2330)).",
                 "tag_name in the tags array must be the same canonical ASCII slug used in the #tag: links.",
+                "US/HK ticker symbols must be 2-5 letters: a single-letter symbol "
+                "(Visa V, Ford F, AT&T T) is rejected downstream and the link silently "
+                "disappears from the rendered body. Name the company in plain text "
+                "instead of leaving a dead link.",
+                "Emit EXACTLY ONE section per event in the prompt, in the same order. "
+                "The section count is not yours to choose: downstream mapping is "
+                "positional, so writing more or fewer sections than the prompt shows "
+                "shifts every #time anchor and can relabel an analysis section as Q&A. "
+                "The prompt carries the consolidated chapter events, which are fewer "
+                "than the raw clustered ones — follow what you were given, not the "
+                "extractor output you submitted earlier.",
                 "Respect the LENGTH / SHAPE / LINK DENSITY / TAGS bands in global_notes — "
                 "they are measured from the episodes this one will sit next to, and "
                 "overshooting them is the single biggest source of drift in agent-written "
@@ -166,8 +177,19 @@ STEP_OUTPUT: dict[str, dict[str, Any]] = {
                 }
             ],
             "_notes": [
+                "Follow the prompt as written: it asks for ALL tickers mentioned with the "
+                "insights expressed about them, and NEUTRAL exists for 'mixed or no clear "
+                "direction'. Do not apply extra strictness of your own — this step feeds "
+                "more than the ticker cards. A sector exposure whose constituents overlap "
+                "the tickers you emit here is auto-approved; everything else is judged by "
+                "an LLM verifier that rejects aggressively. Under-emitting therefore "
+                "silently strips the episode's sector exposures: 股癌 EP122 was written "
+                "with only 3 ticker insights and ended with ZERO sectors, against a corpus "
+                "median of about 9, which keeps it off every sector and theme page.",
                 "Keep the legacy wrapper key name: ticker_recommendations.",
-                "Only include tickers the host expressed a clear view on.",
+                "Include a ticker when the host expresses an opinion OR analysis about it — "
+                "NEUTRAL covers the mixed and undirectional cases. A passing name-drop with "
+                "nothing said about it stays out.",
             ],
         },
         "example": {

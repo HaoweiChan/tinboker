@@ -119,6 +119,51 @@ Roughly 560 KB of prompt across the four steps for a ~50-minute episode (measure
 股癌 EP683: extractor 194 KB, writer 175 KB, key_insights 22 KB, ticker_extractor
 169 KB) — on the order of 250K input tokens per episode. Size batches accordingly.
 
+### Never run both paths over the same episode
+
+The two paths write the summary to *different places*. The automated pipeline stores the
+markdown as an artifact and sets `summary_url`, leaving the inline `summary_content`
+field alone; only the regen tool writes `summary_content`. The backend renders the inline
+field when it is non-empty and hydrates from the URL otherwise. Persistence is a merge.
+
+So running the pipeline over an episode that a session already wrote leaves a **mixed
+document that reports no error**: the old inline summary still renders, while
+`related_tickers`, `tags` and `sector_exposures` have been replaced by the pipeline's.
+Observed on 股癌 EP127 — a body linking 40 tickers next to a `related_tickers` list of 11.
+
+If you do need to move an episode from one path to the other, clear the regen-only inline
+fields (`summary_content`, `events_markdown`, `marp_markdown`, `ticker_marp_markdown`) so
+the surviving `*_url` artifacts are what gets served. **When both paths have been run over
+one episode, the pipeline's output is the one that stands** — the agent path only earns a
+commit once it has been shown to match the corpus.
+
+### Two things that fail silently
+
+**`start_regen` twice wipes the draft.** Calling it again after you have begun submitting
+discards every completed step with no warning; you find out at the next step's
+"needs 'extractor'" error. Two sessions hit this and had to replay their saved JSON.
+Call it exactly once per episode and keep each step's JSON on disk.
+
+**Without `TINBOKER_PLATFORM_API_URL` the show roster silently shrinks.** The loader
+tries the platform (`GET /api/sources?type=podcast&active=true`, which returns all ten TW
+shows), and when that variable is unset the fetch is skipped entirely and it falls back
+to the pipelines' own DB registry — which carries only six. The four missing ones
+(M觀點, 兆華與股惑仔, 曲博科技教室, 韭菜畢業班) then fail `--show` with
+"not found in active roster" even though they are `active = t` in `content_sources`
+and ingest normally every night. Between them 兆華 and M觀點 are over half the TW gap,
+so a backfill run that omits them looks fine and quietly does a third of the work.
+Export the variable for any manual run. It is safe with `--skip-summarize`: its only
+other consumer is sector derivation, which that mode never reaches.
+
+### Calibration
+
+An agent writing to these prompts overshoots the pipeline's own model on every axis.
+`regen/schemas.py` carries the measured bands (summary ~4,300 characters within
+3,400–4,900; 8 sections; ~7 tickers; ~7–8 tags), taken from the 60 most recent
+pipeline-written 股癌 episodes, and `submit_role("writer", …)` returns a warning naming
+whatever drifted. **Resubmit `writer` until it comes back clean** before moving on —
+resubmitting is cheap, and every episode in the first batch would have been flagged.
+
 ## Sequencing — the one that can cause harm
 
 **Do not widen `RELEASE_EPISODE_MAX_AGE_DAYS` while a backfill batch is still unscanned
