@@ -33,6 +33,21 @@ export interface MentionSeries {
  *  or newly-ingested windows rather than something that shapes the normal chart. */
 const MIN_MARKET_HEAT = 30;
 
+/** Where each stacked pane sits inside the shared price-scale space. The overlay labels
+ *  are positioned from the same numbers, so a pane and its caption cannot drift apart. */
+const PANES = {
+  sub: { withMentions: { top: 0.72, bottom: 0.15 }, alone: { top: 0.75, bottom: 0 } },
+  mentions: { top: 0.88, bottom: 0 },
+};
+/** Height of the chart's time axis, excluded when placing overlay labels. */
+const TIME_AXIS_PX = 28;
+
+/** zh-TW names for the sub-indicators, so a pane says what it is without the reader
+ *  having to look back up at the dropdown. */
+const SUB_LABEL: Record<string, string> = {
+  Volume: '成交量', RSI: 'RSI(14)', MACD: 'MACD', KD: 'KD', Bias: '乖離率',
+};
+
 interface TradingViewChartProps {
   data: (PricePoint | ChartDataPoint)[];
   mentions?: MentionSeries;
@@ -105,6 +120,7 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
   // built and only read inside the crosshair handler, so it must not re-render.
   const rawMentionsRef = useRef<Map<number, number>>(new Map());
   const shareRef = useRef<Map<number, number>>(new Map());
+  const [mentionPaneDrawn, setMentionPaneDrawn] = useState(false);
   const legendRef = useRef<HTMLDivElement>(null);
   const loadMoreDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isLoadingRef = useRef(false);
@@ -203,8 +219,8 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
       // zero and print negative price labels. Without mentions the sub-indicator keeps
       // the whole quarter — an empty strip on a ticker nobody discussed is wasted height.
       const hasMentions = (mentions?.ticker.length ?? 0) > 0 && (mentions?.market.length ?? 0) > 0;
-      const SUB_MARGINS = hasMentions ? { top: 0.72, bottom: 0.15 } : { top: 0.75, bottom: 0 };
-      const MENTION_MARGINS = { top: 0.88, bottom: 0 };
+      const SUB_MARGINS = hasMentions ? PANES.sub.withMentions : PANES.sub.alone;
+      const MENTION_MARGINS = PANES.mentions;
 
       // 2. Sub-Charts (Bottom Pane)
       if (effectiveSubChart === 'Volume') {
@@ -490,6 +506,7 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
       }
       rawMentionsRef.current = rawByBar;
       shareRef.current = shareByBar;
+      setMentionPaneDrawn(shareByBar.size > 0);
 
       // 4. Moving Averages
       if (effectiveIndicators.includes('MA5')) {
@@ -745,6 +762,34 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
           className="absolute top-0 bottom-[30px] z-10 border-l border-primary pointer-events-none"
           style={{ left: frozenX }}
         />
+      )}
+      {/* Pane captions. lightweight-charts has no pane titles, so these are overlays
+          placed from the same PANES numbers the price scales use. Without them the chart
+          shows two anonymous histograms and a reader has no way to know the lower one is
+          a share of site-wide podcast volume rather than more price data.
+
+          Nudged above the pane's top edge and given a backdrop: on a phone the panes are
+          only ~55px tall, so a caption sitting on the pane's first pixel lands on the
+          data and neither is readable. The qualifier drops below `sm` for the same
+          reason — the name has to survive, the explanation does not. */}
+      {!minimal && (
+        <>
+          <div
+            className="absolute left-1 z-20 pointer-events-none rounded bg-card/85 px-1 text-[10px] leading-tight text-slate-500 dark:text-slate-400"
+            style={{ top: TIME_AXIS_PX + (height - TIME_AXIS_PX) * (mentionPaneDrawn ? PANES.sub.withMentions.top : PANES.sub.alone.top) - 13 }}
+          >
+            {SUB_LABEL[effectiveSubChart] ?? effectiveSubChart}
+          </div>
+          {mentionPaneDrawn && (
+            <div
+              className="absolute left-1 z-20 pointer-events-none rounded bg-card/85 px-1 text-[10px] leading-tight text-slate-500 dark:text-slate-400"
+              style={{ top: TIME_AXIS_PX + (height - TIME_AXIS_PX) * PANES.mentions.top - 13 }}
+            >
+              Podcast 討論佔比
+              <span className="ml-1.5 hidden sm:inline text-slate-400 dark:text-slate-500">佔全站聲量 · 7 日半衰</span>
+            </div>
+          )}
+        </>
       )}
       <div ref={containerRef} className="w-full h-full" />
     </div>
