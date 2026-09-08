@@ -163,6 +163,22 @@ export const CommentTriage: React.FC = () => {
               )}
             </div>
 
+            {c.root_post_text && (
+              <details className="mb-2 rounded-lg border border-border bg-muted/30 p-3">
+                {/* native marker left in: it is the only hint the block opens, and
+                    Safari shows it regardless of list-none */}
+                <summary className="cursor-pointer text-sm text-muted-foreground">
+                  <span className="font-medium text-foreground">回在這篇底下</span>
+                  <span className="ml-2 opacity-70">
+                    {c.root_post_text.replace(/\s+/g, ' ').slice(0, 28)}…
+                  </span>
+                </summary>
+                <p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">
+                  {c.root_post_text}
+                </p>
+              </details>
+            )}
+
             <p className="whitespace-pre-wrap text-base text-foreground">{c.text}</p>
             {c.reason && <p className="mt-1 text-sm text-muted-foreground">判斷：{c.reason}</p>}
 

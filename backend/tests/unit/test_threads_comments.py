@@ -133,6 +133,7 @@ async def test_sync_files_comments_and_posts_nothing(temp_db, monkeypatch):
     # the API's own shortcode URL, never one built from the media id — that 404s
     assert pending[0]["permalink"] == "https://www.threads.com/@someone/post/Dc8IesYkqlS"
     assert [c["id"] for c in svc.list_comments(status="ignored")] == ["c5"]
+    assert pending[0]["root_post_text"] == "貼文"
 
 
 @pytest.mark.asyncio
@@ -161,4 +162,6 @@ async def test_sync_backfills_a_missing_permalink(temp_db, monkeypatch):
 
     counts = await svc.sync_and_triage()
     assert counts["new"] == 0  # already known, not re-triaged
-    assert svc.list_comments()[0]["permalink"] == "https://www.threads.com/@someone/post/Dc8IesYkqlS"
+    healed = svc.list_comments()[0]
+    assert healed["permalink"] == "https://www.threads.com/@someone/post/Dc8IesYkqlS"
+    assert healed["root_post_text"] == "貼文"  # the context to answer from, not just a link

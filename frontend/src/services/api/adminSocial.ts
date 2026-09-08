@@ -345,6 +345,7 @@ export interface ThreadsCommentItem {
   root_post_id: string;
   username: string | null;
   text: string;
+  root_post_text: string | null;  // our own post, the thing being replied to
   posted_at: string | null;
   category: CommentCategory;
   verdict: 'needs_review' | 'ignore' | null;

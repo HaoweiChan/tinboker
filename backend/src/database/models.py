@@ -680,6 +680,10 @@ class ThreadsComment(Base):
 
     id = Column(String(255), primary_key=True)            # the reply's Threads media id
     root_post_id = Column(String(255), nullable=False, index=True)
+    # Our own post, stored so the triage screen can show what is being replied to. Every
+    # comment so far replies to the post itself rather than to one of our chain comments,
+    # so this is the whole context — no need to carry the parent comment as well.
+    root_post_text = Column(Text, nullable=True)
     replied_to_id = Column(String(255), nullable=True)    # our post/comment it answers
     username = Column(String(255), nullable=True)
     text = Column(Text, nullable=False, default="")
