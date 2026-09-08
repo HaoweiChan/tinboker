@@ -99,6 +99,10 @@ def main() -> None:
         if v.get("status") in ("insufficient", "untouched"):
             skipped_status.append((eid, v.get("status"), len(v.get("members") or [])))
             continue
+        # "cleared" empties an exposure that could not be filled, without deleting it: the
+        # page, its URL and its episodes stay, the stale rows go, and a later pass (or the
+        # rollback payload) can put members back. A redirect cannot be undone.
+        cleared_now = v.get("status") == "cleared"
 
         before = {m["ticker"]: m for m in (row.get("members") or [])}
         members = []
@@ -113,7 +117,10 @@ def main() -> None:
             added += m["ticker"] not in before
         dropped += len(before) - sum(1 for m in members if m["ticker"] in before)
 
-        if args.min_members and len(members) < args.min_members:
+        if cleared_now:
+            print(f"CLEARED {eid}: publishing with no members — the exposure and its URL stay, "
+                  f"and the rollback payload restores the {len(before)} row(s) removed here")
+        elif args.min_members and len(members) < args.min_members:
             thin.append((eid, len(members)))
 
         sector = {"exposure_id": eid, "members": members}
