@@ -101,6 +101,10 @@ STEP_OUTPUT: dict[str, dict[str, Any]] = {
                 "dropped by extraction. Put Chinese in the display text only "
                 "(e.g. [供應鏈](#tag:SupplyChain), [台積電](#ticker:2330)).",
                 "tag_name in the tags array must be the same canonical ASCII slug used in the #tag: links.",
+                "US/HK ticker symbols must be 2-5 letters: a single-letter symbol "
+                "(Visa V, Ford F, AT&T T) is rejected downstream and the link silently "
+                "disappears from the rendered body. Name the company in plain text "
+                "instead of leaving a dead link.",
                 "Respect the LENGTH / SHAPE / LINK DENSITY / TAGS bands in global_notes — "
                 "they are measured from the episodes this one will sit next to, and "
                 "overshooting them is the single biggest source of drift in agent-written "
