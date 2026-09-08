@@ -614,7 +614,16 @@ def find_candidates(
         if not has_transcript:
             continue
         summary = d.get("summary_content") or ""
-        placeholder = (not summary.strip()) or is_placeholder_summary(summary)
+        # ``summary_content`` is written ONLY by this regen tool. The normal pipeline
+        # stores the real markdown as an artifact and keeps just ``summary_url`` on the
+        # doc, so testing the inline field alone reports every normally-summarised
+        # episode as an empty placeholder — which would make ``only_placeholder`` a
+        # work queue of 4,000+ episodes that are already fine.
+        stored_summary = bool(d.get("summary_url") or d.get("summary_public_url"))
+        if summary.strip():
+            placeholder = is_placeholder_summary(summary)
+        else:
+            placeholder = not stored_summary
         if only_placeholder and not placeholder:
             continue
         out.append({
@@ -623,7 +632,7 @@ def find_candidates(
             "episode_title": d.get("episode_title") or d.get("title"),
             "sentence_count": len(sentences) if sentences else None,
             "transcript_source": "inline" if sentences else ("gcs" if d.get("transcript_url") else "flat_text"),
-            "has_summary": bool(summary.strip()),
+            "has_summary": bool(summary.strip()) or stored_summary,
             "is_placeholder": placeholder,
             "key_insight_count": len(d.get("key_insights") or []),
             "ticker_count": len(d.get("related_tickers") or []),

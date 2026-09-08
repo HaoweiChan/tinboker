@@ -313,3 +313,21 @@ def create_episode_object(
         spotify_duration_ms=spotify_metadata.get('duration_ms') if spotify_metadata else None,
         spotify_images=spotify_metadata.get('images', []) if spotify_metadata else []
     )
+
+
+def required_artifact_urls(*, skip_summarize: bool = False, store_audio: bool = True) -> tuple:
+    """The ``*_url`` fields whose presence means "this episode is fully processed".
+
+    Mode-dependent, and it has to be: a ``--skip-summarize`` backfill run never
+    produces summary artifacts and a ``--no-store-audio`` run never produces an
+    mp3, so the default four-field test would classify those episodes as
+    unprocessed forever and re-download + re-transcribe them on every run. Both
+    the feed-level filter (orchestrator) and the per-episode skip check
+    (processor) route through here so they cannot drift apart.
+    """
+    fields = ["transcript_url"]
+    if store_audio:
+        fields.insert(0, "mp3_url")
+    if not skip_summarize:
+        fields += ["summary_url", "summary_image_url"]
+    return tuple(fields)
