@@ -28,6 +28,7 @@ Env:
     GCS_BASE_PATH       optional path prefix inside that directory (unchanged).
 """
 
+import contextlib
 import hashlib
 import json
 import os
@@ -46,6 +47,7 @@ bootstrap()
 DEFAULT_MEDIA_ROOT = "/srv/tinboker-media"
 DEFAULT_PUBLIC_BASE = "https://podcast-api.tinboker.com/media"
 DEFAULT_BUCKET = "graphfolio-articles"
+MEDIA_HTTP_TIMEOUT = 60  # seconds, for the off-VPS https read fallback
 
 # The only two directories under the media root. These are the *full* former bucket
 # names — the live convention, matching what Caddy serves. (A stale Phase-E plan used
@@ -298,8 +300,9 @@ class GCSStorageService:
 
     # ── reads ─────────────────────────────────────────────────────────────
 
-    def _read_artifact(self, gcs_url: str) -> bytes:
-        """Bytes of an artifact, from the media tree if present, else over HTTPS.
+    @contextlib.contextmanager
+    def _open_artifact(self, gcs_url: str):
+        """Binary stream for an artifact: the media tree if mounted, else HTTPS.
 
         On the VPS the media tree is mounted and the local read wins. Anywhere else
         (a laptop running the regen MCP server, a CI box) that directory does not
@@ -310,26 +313,25 @@ class GCSStorageService:
         The public URL is rebuilt from the split ``(bucket, blob)`` rather than from
         the input string, because episode docs carry three interchangeable forms of
         the same address (``gs://``, storage.googleapis.com, media https) and only
-        the split normalises all of them.
+        the split normalises all of them. Streaming rather than returning bytes so
+        an mp3 (~28 MiB, up to 75) never has to be held in memory.
         """
         parsed = split_media_url(gcs_url)
         if parsed is None:
             raise ValueError(f"Unrecognised media URL: {gcs_url}")
         bucket, blob = parsed
         path = resolve_media_path(bucket, blob)  # keeps the bucket + path-escape guards
-        try:
-            return path.read_bytes()
-        except FileNotFoundError:
-            pass  # not mounted here — fall through to the public URL
-        except Exception as e:
-            raise Exception(f"Failed to read media object {gcs_url} ({path}): {e}") from e
-
+        if path.is_file():
+            with path.open("rb") as f:
+                yield f
+            return
         url = f"{public_base()}/{bucket}/{blob}"
-        try:
-            with urllib.request.urlopen(url, timeout=60) as resp:
-                return resp.read()
-        except Exception as e:
-            raise Exception(f"Failed to read media object {gcs_url} (local miss, {url}): {e}") from e
+        with urllib.request.urlopen(url, timeout=MEDIA_HTTP_TIMEOUT) as resp:
+            yield resp
+
+    def _read_artifact(self, gcs_url: str) -> bytes:
+        with self._open_artifact(gcs_url) as f:
+            return f.read()
 
     def download_text_by_gcs_url(self, gcs_url: str, encoding: str = "utf-8") -> str:
         """Read a text artifact by URL (gs://, storage.googleapis.com or media)."""
@@ -361,15 +363,12 @@ class GCSStorageService:
         Same local-then-public fallback as :meth:`_read_artifact` — an mp3 fetched
         this way is ~28 MiB, so it stays a local copy whenever the tree is mounted.
         """
-        path = self.path_for_url(gcs_url)
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        if path is not None and path.exists():
-            try:
-                shutil.copyfile(path, output_path)
-                return output_path
-            except Exception as e:
-                raise Exception(f"Failed to read media file {gcs_url} ({path}): {e}") from e
-        output_path.write_bytes(self._read_artifact(gcs_url))
+        try:
+            with self._open_artifact(gcs_url) as src, output_path.open("wb") as dest:
+                shutil.copyfileobj(src, dest)
+        except Exception as e:
+            raise Exception(f"Failed to read media file {gcs_url}: {e}") from e
         return output_path
 
     # ── the one call the pipeline actually makes ──────────────────────────

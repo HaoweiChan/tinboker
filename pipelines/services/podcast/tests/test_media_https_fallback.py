@@ -6,6 +6,7 @@ ever run there. The same artifacts are published read-only over HTTPS, so a loca
 miss falls back to the public URL.
 """
 
+import io
 from pathlib import Path
 
 import pytest
@@ -23,17 +24,17 @@ def svc(monkeypatch, tmp_path):
 
 
 def _fake_urlopen(payload: bytes):
-    class _Resp:
-        def read(self):
-            return payload
+    """A urlopen stand-in. `read(size)` matters: the binary path streams the
+    response through shutil.copyfileobj rather than holding an mp3 in memory."""
 
+    class _Resp(io.BytesIO):
         def __enter__(self):
             return self
 
         def __exit__(self, *a):
             return False
 
-    return lambda url, timeout=None: _Resp()
+    return lambda url, timeout=None: _Resp(payload)
 
 
 @pytest.mark.parametrize("url", [
