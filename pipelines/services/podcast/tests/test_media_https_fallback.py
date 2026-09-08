@@ -9,9 +9,7 @@ miss falls back to the public URL.
 from pathlib import Path
 
 import pytest
-
 from src.service import gcs_storage_service as g
-
 
 BUCKET = "graphfolio-articles"
 
