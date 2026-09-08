@@ -368,7 +368,13 @@ const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[]; epi
 
         {/* key: remount (and re-animate) when the insight list arrives or changes. */}
         <ConsensusTile key={insights.length} insights={insights} className="md:col-span-3 md:row-span-2" />
+      </div>
 
+      {/* Detail tiles get their own 6-column grid. The top row is 10 columns so the chart
+          can take 7 of them; these spans are written against 6 and adapt when a tile is
+          absent, so sharing one grid left them summing to 8 of 10 and stopping short of
+          the page edge. */}
+      <div className="grid grid-cols-1 md:grid-cols-6 gap-3.5 mb-[18px]">
         {/* Range tile */}
         <div className="md:col-span-2 bg-card border border-border rounded-[10px] p-5 flex flex-col justify-between gap-3">
           <div className="text-xs text-muted-foreground">區間表現</div>
