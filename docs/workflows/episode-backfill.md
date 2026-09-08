@@ -68,6 +68,35 @@ result is byte-identical in shape to an OpenRouter run — enforced by
 `--skip-summarize` produces exactly what that queue looks for: an episode with a
 transcript and no content.
 
+### Dispatching sessions
+
+One session per batch, `model: "sonnet"`. Give each batch a disjoint set of episode ids
+so two sessions never open a draft on the same episode — the working draft is keyed by
+episode id and they would clobber each other. Template:
+
+> Generate the content for these already-transcribed episodes, one at a time, using the
+> `podcast_regen` MCP tools (load them with ToolSearch first): EPISODE_IDS.
+>
+> Per episode: `start_regen` → for each of `extractor`, `writer`, `key_insights`,
+> `ticker_extractor` call `get_role_prompt`, produce the JSON that prompt asks for, and
+> `submit_role` → `preview_regen` → check it → `commit_regen`.
+>
+> Follow each prompt's own `output_schema` and `example`; write Chinese as literal UTF-8,
+> never `\uXXXX`. Tag slugs are ASCII (`[顯示名](#tag:Slug)`) and should come from the
+> curated vocabulary injected into the writer prompt — free-text Chinese tags fragment
+> clustering. Do the extractor honestly from the transcript rather than inventing
+> segment boundaries.
+>
+> `commit_regen` writes to the shared production store, so run `preview_regen` first and
+> stop and report if it looks wrong instead of committing. If an episode fails twice,
+> `discard_regen` it, move on, and list it in your report.
+>
+> Report: episodes committed, episodes skipped and why. No file dumps.
+
+Roughly 560 KB of prompt across the four steps for a ~50-minute episode (measured on
+股癌 EP683: extractor 194 KB, writer 175 KB, key_insights 22 KB, ticker_extractor
+169 KB) — on the order of 250K input tokens per episode. Size batches accordingly.
+
 ## Sequencing — the one that can cause harm
 
 **Do not widen `RELEASE_EPISODE_MAX_AGE_DAYS` while a backfill batch is still unscanned
@@ -100,10 +129,28 @@ fetch the whole episodes table and apply the cutoff in Python — the backfill r
 doubles that scan cost on every hourly refresh and cache miss, which is the same shape
 as the July 2026 billing incident. Budget for it.
 
-## Gap as of 2026-09-08
+## Scope and gap as of 2026-09-08
 
-5,103 episodes missing since the floor, across 16 channels (8 more channels 429'd
-during counting, so the true figure is higher). The largest: 兆華與股惑仔 918,
-CNBC's Fast Money 875, M觀點 613, Bloomberg Masters in Business 450, 財女珍妮 420,
-Invest Like the Best 415, Exchanges at Goldman Sachs 409, 財經一路發 380,
-Inside the Strategy Room 201, 財報狗 174, Gooaye 股癌 135 (EP1–EP135).
+5,103 episodes are missing since the floor across 16 channels (8 further channels 429'd
+during counting, so the true figure is higher). **In scope: the Taiwanese channels only,
+~2,750 episodes.** The English shows — CNBC's Fast Money 875, Bloomberg Masters in
+Business 450, Invest Like the Best 415, Exchanges at Goldman Sachs 409, Inside the
+Strategy Room 201 — are out of scope: low value to a Taiwan-market platform, and most of
+them stopped feeding in 2026-05 anyway.
+
+| Channel | Missing since floor |
+|---|---|
+| 兆華與股惑仔 | 918 |
+| M觀點 | 613 |
+| 財女珍妮 | 420 |
+| 財經一路發 | 380 |
+| 財報狗 | 174 |
+| Gooaye 股癌 | 135 (EP1–EP135) |
+| 游庭皓的財經皓角 | 79 |
+| 曲博科技教室 | 12 |
+| 韭菜畢業班 | 6 |
+| 財經M平方 | 0 (complete to EP1) |
+
+Start with a 20-episode pilot on the oldest 股癌 episodes and confirm transcript quality,
+disk delta, that the regen queue picks them up, and that no notification fired, before
+opening it up.
