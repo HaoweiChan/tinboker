@@ -14,22 +14,27 @@ import threading
 import time
 from types import SimpleNamespace
 
+import pytest
+
 import src.routers.stock as stock
+import src.services.stock_close_refresh as close_refresh
 
 
-class _Row:
-    def __init__(self, close):
-        self.close = close
+def _install_fake_sessions(monkeypatch, close=123.0, delay=0.0, tickers=("2330.TW",)):
+    """Replace get_session (in the module owning the warm-close reader) with a generator
+    handing out a fresh recording session.
 
-
-def _install_fake_sessions(monkeypatch, close=123.0, delay=0.0):
-    """Replace get_session with a generator handing out a fresh recording session.
-
-    Returns (sessions, touches) where touches is a list of (session_id, thread_id).
+    Each session answers with two dated closes per ticker, the shape
+    ``batch_read_latest_closes`` selects. Returns (sessions, touches) where touches is a
+    list of (session_id, thread_id).
     """
     sessions = []
     touches = []
     lock = threading.Lock()
+    rows = [] if close is None else [
+        row for t in tickers
+        for row in ((t, "2026-07-20", 100.0), (t, "2026-07-25", close))
+    ]
 
     def fake_get_session():
         session = SimpleNamespace()
@@ -43,19 +48,21 @@ def _install_fake_sessions(monkeypatch, close=123.0, delay=0.0):
             chain = SimpleNamespace()
             chain.filter = lambda *a, **k: chain
             chain.order_by = lambda *a, **k: chain
-            chain.first = lambda: _Row(close) if close is not None else None
+            chain.all = lambda: rows
             return chain
 
         session.query = query
         sessions.append(session)
         yield session
 
-    monkeypatch.setattr(stock, "get_session", fake_get_session)
+    monkeypatch.setattr(close_refresh, "get_session", fake_get_session)
     return sessions, touches
 
 
 def test_each_concurrent_call_gets_its_own_session(monkeypatch):
-    sessions, touches = _install_fake_sessions(monkeypatch, delay=0.05)
+    sessions, touches = _install_fake_sessions(
+        monkeypatch, delay=0.05, tickers=[f"T{i}" for i in range(8)]
+    )
 
     async def _run():
         return await asyncio.gather(
@@ -76,8 +83,12 @@ def test_each_concurrent_call_gets_its_own_session(monkeypatch):
 
 
 def test_db_lookup_does_not_block_the_event_loop(monkeypatch):
-    """A slow DB read must not stall other tasks — that was the original outage."""
-    _install_fake_sessions(monkeypatch, delay=0.3)
+    """A slow DB read must not stall other tasks — that was the original outage.
+
+    Each call now reads both warm tables (two queries, 0.15 s each = 0.3 s in the thread);
+    overlapped with the 0.3 s sleep that's ~0.3 s, while a blocked loop would take 0.6 s.
+    """
+    _install_fake_sessions(monkeypatch, delay=0.15)
 
     async def _run():
         start = time.monotonic()
@@ -94,7 +105,8 @@ def test_db_lookup_does_not_block_the_event_loop(monkeypatch):
 def test_miss_falls_through_to_the_cache_layer(monkeypatch):
     """No stored row -> must not short-circuit; it should consult Redis next.
 
-    close is NOT NULL in the model, so "no row" and "no price" are the same None.
+    Rows with a NULL close are filtered out in SQL, so "no row" and "no price" are the
+    same empty result.
     """
     _install_fake_sessions(monkeypatch, close=None)
 
@@ -110,3 +122,55 @@ def test_miss_falls_through_to_the_cache_layer(monkeypatch):
 
     assert consulted == ["stock:2330.TW:close:2026-07-27"]
     assert result == 456.0
+
+
+# ── Market routing (step 3): only TW may reach FinMind ────────────────────────
+
+def _stub_finmind(monkeypatch, calls):
+    class _FakeFinMind:
+        def list_daily_ticker_summary_range(self, ticker, start, end):
+            calls.append(ticker)
+            return []
+
+    monkeypatch.setattr("src.services.finmind_service.FinMindAPIService", _FakeFinMind)
+
+
+@pytest.fixture()
+def cold(monkeypatch):
+    """No warm row, no Redis entry — every lookup falls through to step 3. Returns the
+    list of (key, value) pairs written back to Redis."""
+    _install_fake_sessions(monkeypatch, close=None)
+    written = []
+
+    async def fake_cache_get(_key):
+        return None
+
+    async def fake_cache_set(key, value, ttl=0):
+        written.append((key, value))
+        return True
+
+    monkeypatch.setattr(stock, "cache_get", fake_cache_get)
+    monkeypatch.setattr(stock, "cache_set", fake_cache_set)
+    return written
+
+
+def test_tw_class_letter_etf_reaches_finmind(monkeypatch, cold):
+    """00878B / 00632R are TW ETFs whose code carries a trailing share-class letter. The
+    old `ticker.split(".")[0].isdigit()` check read that letter as a US symbol, so they
+    were negative-cached forever and never got a price."""
+    calls = []
+    _stub_finmind(monkeypatch, calls)
+
+    assert asyncio.run(stock._get_reference_close("00878B", "2026-07-27")) is None
+    assert calls == ["00878B"], "TW class-letter ETF must still be routed to FinMind"
+
+
+def test_six_digit_korean_code_never_reaches_finmind(monkeypatch, cold):
+    """005930 (Samsung) is Korean. FinMind serves TW only, so it must stop at the
+    negative cache instead of burning the shared hourly budget on a guaranteed miss."""
+    calls = []
+    _stub_finmind(monkeypatch, calls)
+
+    assert asyncio.run(stock._get_reference_close("005930", "2026-07-27")) is None
+    assert calls == [], f"KR code reached FinMind: {calls}"
+    assert ("stock:005930:close:2026-07-27", "__null__") in cold

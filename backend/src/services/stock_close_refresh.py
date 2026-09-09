@@ -463,30 +463,60 @@ async def get_stored_profile(ticker: str) -> Optional[dict]:
     return await loop.run_in_executor(None, read_stored_profile_sync, ticker)
 
 
-async def get_eod_change_pct(ticker: str) -> Optional[float]:
-    """End-of-day change% from the two most recent stored closes, or None if <2 rows."""
-    ticker = ticker.strip().upper()
-    loop = asyncio.get_event_loop()
+# Both warm tables hold dated closes: ``stock_daily_closes`` (this refresher's tracked-ticker
+# warmer, 7-day lookback) and ``stock_daily_ohlc`` (whole-market TW feeds + the yfinance US
+# mention backfill, years deep). They drift (INTU: closes 08-26 vs ohlc 09-04), so every
+# serving read consults both and takes the newest dated row.
+_CLOSE_TABLES = (StockDailyClose, StockDailyOHLC)
 
-    def _read() -> Optional[float]:
-        try:
-            for session in get_session():
+
+def batch_read_latest_closes(
+    tickers: List[str], days: int = 14, ref_date_str: Optional[str] = None
+) -> dict:
+    """``{ticker: [(date, close), (date, close)]}`` — the two newest dated closes per ticker
+    inside the *days*-long window ending at *ref_date_str* (default: today), merged across
+    both warm tables. Two queries total, no external call.
+
+    The single reader behind every serving path that needs "what did this recently close
+    at" (``/batch-prices``, ``/batch-prices-since``, the sector board), so one ticker can't
+    show a change% on one route and null on another. Opens its own session — callers reach
+    it through ``asyncio.to_thread`` and a SQLAlchemy Session is not thread-safe.
+    Best-effort: a DB failure yields an empty map (null prices), never a 500.
+    """
+    out: dict = {}
+    # Stored tickers are upper-case; map each row back to the spelling the caller asked
+    # with so ``result.get(t)`` works whatever case it passed in.
+    wanted = {t.strip().upper(): t for t in tickers if t and t.strip()}
+    if not wanted:
+        return out
+    end = ref_date_str or datetime.utcnow().strftime("%Y-%m-%d")
+    since = (datetime.strptime(end, "%Y-%m-%d") - timedelta(days=days)).strftime("%Y-%m-%d")
+    try:
+        for session in get_session():
+            for model in _CLOSE_TABLES:
                 rows = (
-                    session.query(StockDailyClose.close)
-                    .filter(StockDailyClose.ticker == ticker)
-                    .order_by(StockDailyClose.date.desc())
-                    .limit(2)
+                    session.query(model.ticker, model.date, model.close)
+                    .filter(
+                        model.ticker.in_(list(wanted)),
+                        model.date >= since,
+                        model.date <= end,
+                        model.close.isnot(None),
+                    )
                     .all()
                 )
-                if len(rows) < 2:
-                    return None
-                latest, prev = rows[0][0], rows[1][0]
-                if not prev:
-                    return None
-                return (latest - prev) / prev * 100.0
-        except Exception as e:
-            # Never let a DB hiccup 500 the request path — callers fall back to live data.
-            logger.debug(f"close-refresh: eod read failed for {ticker}: {e}")
-        return None
+                for ticker, date, close in rows:
+                    # Same date in both tables: the later table wins. One tie-break, one place.
+                    out.setdefault(wanted.get(ticker, ticker), {})[date] = close
+            break
+    except Exception as e:
+        logger.debug(f"close-refresh: latest-close read failed: {e}")
+        return {}
+    return {t: sorted(by_date.items())[-2:] for t, by_date in out.items()}
 
-    return await loop.run_in_executor(None, _read)
+
+def change_pct_from_pairs(pairs: Optional[list]) -> Optional[float]:
+    """End-of-day change% from a :func:`batch_read_latest_closes` entry, or None when there
+    aren't two usable closes."""
+    if pairs and len(pairs) >= 2 and pairs[-2][1]:
+        return round((pairs[-1][1] - pairs[-2][1]) / pairs[-2][1] * 100, 2)
+    return None

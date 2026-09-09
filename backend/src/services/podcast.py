@@ -1316,9 +1316,9 @@ class PodcastService:
         weights price performance equally with episode-mention frequency.
 
         Applies the same release scoping as list_sectors (retracted_at,
-        allowlist, recency cutoff).  Prices are fetched from the local
-        stock_daily_closes table via get_eod_change_pct — no external API
-        calls per request.
+        allowlist, recency cutoff).  Prices come from the same warm-table reader
+        the /batch-prices routes use (batch_read_latest_closes) — one query pair
+        for the whole board, no external API calls per request.
 
         Serving path: returns the warm Redis entry kept fresh by
         run_periodic_board_refresh (refresh-ahead), and only falls back to a
@@ -1561,8 +1561,8 @@ class PodcastService:
         if not counts:
             return []
 
-        # Gather all unique tickers and fetch EOD change% concurrently
-        from src.services.stock_close_refresh import get_eod_change_pct
+        # Gather all unique tickers and read their EOD change% in one batch
+        from src.services.stock_close_refresh import batch_read_latest_closes, change_pct_from_pairs
         from src.data.sector_visuals import visual_for
 
         live_member_map: dict[str, dict[str, str]] = {}
@@ -1586,8 +1586,13 @@ class PodcastService:
         all_tickers: list[str] = list({
             t for tickers in live_member_map.values() for t in tickers
         })
-        pcts = await asyncio.gather(*[get_eod_change_pct(t) for t in all_tickers])
-        ticker_pct: dict[str, Optional[float]] = dict(zip(all_tickers, pcts))
+        # Same reader (both warm tables, same 14-day window) as /batch-prices: the board
+        # used to hit a single table with no time bound, so one ticker could show a % on a
+        # sector card and null on the stock page.
+        latest = await asyncio.to_thread(batch_read_latest_closes, all_tickers)
+        ticker_pct: dict[str, Optional[float]] = {
+            t: change_pct_from_pairs(latest.get(t)) for t in all_tickers
+        }
 
         # Batch-read daily closes for sparkline series (last 12 per ticker)
         ticker_series: dict[str, list[float]] = {}

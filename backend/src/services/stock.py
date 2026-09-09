@@ -93,8 +93,8 @@ class StockService:
         )
         
         if stock_data:
-            # Convert to CompanyDetail format
-            result = self._convert_stock_to_company_detail(stock_data)
+            # Convert to CompanyDetail format (a pagination page never needs the logo lookup)
+            result = self._convert_stock_to_company_detail(stock_data, include_images=not before)
 
             # Apply timeframe filtering if provided (for non-standard timeframes that need date filtering)
             # 1H is handled by minute fetch
@@ -449,7 +449,7 @@ class StockService:
             # Wait before next update
             time.sleep(5)  # Send update every 5 seconds
     
-    def _convert_stock_to_company_detail(self, stock_data) -> CompanyDetail:
+    def _convert_stock_to_company_detail(self, stock_data, include_images: bool = True) -> CompanyDetail:
         """Helper to convert Stock object to CompanyDetail"""
         from src.models.stock import StockStats
         
@@ -492,7 +492,7 @@ class StockService:
         # Check if this is a Taiwan stock (numeric ticker)
         is_taiwan_stock = stock_data.stock_id.isdigit()
         
-        if not is_taiwan_stock:
+        if not is_taiwan_stock and include_images:
             # US stock - prefer the warmed profile store (logos/profile kept fresh by the
             # background slow-data warmer). This avoids a per-request Massive call on a 1-hour
             # TTL, which was the top source of upstream 429s. Fall back to a live Massive fetch
