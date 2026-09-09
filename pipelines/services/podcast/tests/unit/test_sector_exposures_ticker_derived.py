@@ -58,7 +58,8 @@ _NO_ALIAS_MATCHES = {"sector_exposures": [], "unresolved_market_trends": []}
 
 def test_only_reviewed_member_sources_imply_a_sector(monkeypatch):
     """Members confirmed by review (curated / ictpex / twse) imply their sector from a bare
-    ticker mention; a bulk-imported member (e.g. ``tide``) does not."""
+    ticker mention; a member carrying any other source does not — the allowlist is the
+    contract, so an unreviewed bulk import cannot put a ticker into a sector."""
     monkeypatch.setattr(sx, "resolve_clustered_events", lambda events: dict(_NO_ALIAS_MATCHES))
     monkeypatch.setattr(
         "src.podcast.content_builder.llm.load_prompt",
@@ -68,7 +69,7 @@ def test_only_reviewed_member_sources_imply_a_sector(monkeypatch):
         "src.podcast.content_builder.llm.invoke_json",
         lambda role, messages: {"verifications": [{"sector_id": "sector_test_0", "is_relevant": True}]},
     )
-    for source, expected in (("curated", ["sector_test_0"]), ("ictpex", ["sector_test_0"]), ("twse", ["sector_test_0"]), ("tide", [])):
+    for source, expected in (("curated", ["sector_test_0"]), ("ictpex", ["sector_test_0"]), ("twse", ["sector_test_0"]), ("bulk_import", [])):
         monkeypatch.setattr(sx, "load_universe", lambda source=source: _universe(source=source))
         assert sx.derive_sector_exposures(_state())["sector_exposure_ids"] == expected, source
 
