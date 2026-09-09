@@ -24,7 +24,7 @@ from src.database.models import (
     StockDailyOHLC,
     TickerPerformanceSnapshot,
 )
-from src.utils.market import infer_market
+from src.utils.market import infer_market, market_date
 
 logger = logging.getLogger(__name__)
 
@@ -331,13 +331,12 @@ def compute_ticker_snapshots(db: Session, limit: int = 5000) -> int:
             .filter(TickerPerformanceSnapshot.mention_id == mention.id)
             .first()
         )
-        mention_date = mention.mentioned_at.strftime("%Y-%m-%d")
+        mention_date = market_date(mention.mentioned_at, mention.market or infer_market(mention.ticker))
         returns = compute_trading_day_returns(db, mention.ticker, mention_date)
         if snap is None:
-            snap = TickerPerformanceSnapshot(
-                mention_id=mention.id, ticker=mention.ticker, mention_date=mention_date,
-            )
+            snap = TickerPerformanceSnapshot(mention_id=mention.id, ticker=mention.ticker)
             db.add(snap)
+        snap.mention_date = mention_date
         snap.baseline_close = returns["baseline_close"]
         for n in TRADING_WINDOWS:
             setattr(snap, f"r{n}d", returns[f"r{n}d"])
@@ -361,16 +360,16 @@ def compute_sector_snapshots(db: Session, limit: int = 5000) -> int:
             .first()
         )
         members = ((mention.payload or {}).get("members") or [])[:MAX_SECTOR_MEMBERS]
-        mention_date = mention.mentioned_at.strftime("%Y-%m-%d")
         member_returns = [
-            compute_trading_day_returns(db, m, mention_date) for m in members
+            compute_trading_day_returns(db, m, market_date(mention.mentioned_at, infer_market(m)))
+            for m in members
         ]
         member_returns = [r for r in member_returns if r["baseline_close"] is not None]
         if snap is None:
-            snap = SectorPerformanceSnapshot(
-                mention_id=mention.id, exposure_id=mention.exposure_id, mention_date=mention_date,
-            )
+            snap = SectorPerformanceSnapshot(mention_id=mention.id, exposure_id=mention.exposure_id)
             db.add(snap)
+        # ponytail: sector taxonomy is ic.tpex (Taiwan-only), so the row date is Taipei's.
+        snap.mention_date = market_date(mention.mentioned_at, "TW")
         snap.member_count = len(member_returns)
         for n in TRADING_WINDOWS:
             vals = [r[f"r{n}d"] for r in member_returns if r[f"r{n}d"] is not None]

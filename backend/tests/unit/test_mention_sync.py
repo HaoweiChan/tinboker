@@ -7,6 +7,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 import src.services.mention_sync as ms
+from src.utils.market import market_date
 from src.database.models import (
     ContentMention,
     SectorPerformanceSnapshot,
@@ -74,6 +75,34 @@ def test_window_returns_no_close_data(session):
     out = ms.compute_trading_day_returns(session, "0000", "2026-01-05")
     assert out["baseline_close"] is None
     assert all(out[f"r{n}d"] is None for n in ms.TRADING_WINDOWS)
+
+
+# ── market-local mention date ────────────────────────────────────────────
+
+def test_market_date_tw_late_utc_is_next_taipei_day():
+    # 23:30 UTC on the 8th is 07:30 on the 9th in Taipei.
+    assert market_date(datetime(2026, 9, 8, 23, 30), "TW") == "2026-09-09"
+    assert market_date(datetime(2026, 9, 8, 15, 59), "TW") == "2026-09-08"
+    assert market_date(datetime(2026, 9, 8, 16, 0), "TW") == "2026-09-09"
+
+
+def test_market_date_us_early_utc_is_previous_new_york_day():
+    # 01:00 UTC on the 9th is 21:00 EDT on the 8th; 05:00 UTC on Jan 9 is 00:00 EST.
+    assert market_date(datetime(2026, 9, 9, 1, 0), "US") == "2026-09-08"
+    assert market_date(datetime(2026, 1, 9, 4, 59), "US") == "2026-01-08"
+    assert market_date(datetime(2026, 1, 9, 5, 0), "US") == "2026-01-09"
+
+
+def test_ticker_snapshot_uses_taipei_date_for_tw_mention(session):
+    """A 股癌 episode released 23:30 UTC Sun 01-11 (07:30 Mon 01-12 Taipei) must be scored
+    from Monday's close, not Friday's."""
+    _seed_closes(session, "2330", "2026-01-05", [100.0, 101.0, 102.0, 103.0, 110.0, 121.0, 133.1])
+    _mention(session, "2330", datetime(2026, 1, 11, 23, 30), "sun-night")
+    assert ms.compute_ticker_snapshots(session) == 1
+    snap = session.query(TickerPerformanceSnapshot).one()
+    assert snap.mention_date == "2026-01-12"
+    assert snap.baseline_close == 121.0  # Monday 01-12, not Friday's 110
+    assert snap.r1d == pytest.approx(10.0)
 
 
 # ── sync_ticker_mentions ─────────────────────────────────────────────────
