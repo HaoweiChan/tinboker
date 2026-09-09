@@ -1,6 +1,5 @@
 """Unit tests for the daily-close refresher's read/compute helpers."""
 
-import asyncio
 import pytest
 
 import src.services.stock_close_refresh as r
@@ -44,31 +43,37 @@ def _patch_session(monkeypatch, rows):
     monkeypatch.setattr(r, "get_session", _gen)
 
 
-def test_eod_change_two_closes(monkeypatch):
-    # rows are (close,) tuples ordered date DESC: latest=110, prev=100 -> +10%
-    _patch_session(monkeypatch, [(110.0,), (100.0,)])
-    assert asyncio.run(r.get_eod_change_pct("AAPL")) == pytest.approx(10.0)
+# ── batch_read_latest_closes / change_pct_from_pairs ──────────────────────────
+# Both warm tables are queried, so the fake session answers each of the two queries with
+# the same rows — a duplicate (ticker, date) must collapse, not double up.
+
+def test_batch_read_takes_the_two_newest_per_ticker(monkeypatch):
+    _patch_session(monkeypatch, [
+        ("AAPL", "2026-09-01", 90.0),
+        ("AAPL", "2026-09-08", 110.0),
+        ("AAPL", "2026-09-05", 100.0),
+    ])
+    got = r.batch_read_latest_closes(["AAPL"], ref_date_str="2026-09-09")
+    assert got == {"AAPL": [("2026-09-05", 100.0), ("2026-09-08", 110.0)]}
+    assert r.change_pct_from_pairs(got["AAPL"]) == pytest.approx(10.0)
 
 
-def test_eod_change_needs_two_rows(monkeypatch):
-    _patch_session(monkeypatch, [(110.0,)])  # only one close
-    assert asyncio.run(r.get_eod_change_pct("AAPL")) is None
+def test_change_pct_needs_two_usable_closes():
+    assert r.change_pct_from_pairs(None) is None
+    assert r.change_pct_from_pairs([("2026-09-08", 110.0)]) is None      # only one close
+    assert r.change_pct_from_pairs([("2026-09-05", 0.0), ("2026-09-08", 110.0)]) is None  # div-by-zero
 
 
-def test_eod_change_zero_prev_is_none(monkeypatch):
-    _patch_session(monkeypatch, [(110.0,), (0.0,)])  # avoid div-by-zero
-    assert asyncio.run(r.get_eod_change_pct("AAPL")) is None
-
-
-def test_eod_change_db_error_is_none(monkeypatch):
+def test_batch_read_db_error_is_empty(monkeypatch):
     class _Boom:
         def query(self, *a, **k):
             raise RuntimeError("db down")
+
     def _gen():
         yield _Boom()
     monkeypatch.setattr(r, "get_session", _gen)
-    # Must never raise into the request path.
-    assert asyncio.run(r.get_eod_change_pct("AAPL")) is None
+    # Must never raise into the request path — a DB hiccup renders as null prices.
+    assert r.batch_read_latest_closes(["AAPL"]) == {}
 
 
 # ── backfill_us_mention_history ───────────────────────────────────────────────
