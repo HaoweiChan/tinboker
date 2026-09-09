@@ -2999,7 +2999,13 @@ TICKERS_SEED = {
         "market": "TW",
         "sector": "\u534a\u5c0e\u9ad4",
         "type": "company",
-        "aliases": ["2330.TW", "2330 TW"],
+        # "TSMC" is the company's English NAME, not a listing — the registry indexes
+        # symbols and aliases but never name_en, so a transcript saying "TSMC" resolved
+        # to nothing and 141 ticker-insight rows were written under a symbol that does
+        # not exist on any exchange. All of them came from Taiwanese shows, where TSMC
+        # means 台積電. The New York ADR keeps its own entry ("TSM", market US): this
+        # alias folds a name, not a second listing.
+        "aliases": ["2330.TW", "2330 TW", "TSMC"],
     },
     "2331": {
         "name": "精英",
