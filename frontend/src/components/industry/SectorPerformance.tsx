@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useRef, useEffect } from 'react';
 import type { CSSProperties } from 'react';
-import { Info, ChevronDown } from 'lucide-react';
+import { Info, ChevronDown, Layers } from 'lucide-react';
 import { getSectorBubbleData } from '@/services/mocks';
 import type { SectorBubbleData } from '@/services/mocks/types';
 import { resolveIcon } from '@/components/topics/SectorIcon';
@@ -314,22 +314,20 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({
       </span>
       {xHelp && <InfoHint text={xHelp} />}
       {compact && (
-        // Phone-only: everything else about the pile is width, this is the one choice
-        // the reader gets. Two words, not a control panel.
-        <span className="ml-2 flex shrink-0 items-center rounded border" style={{ borderColor: 'var(--border-default)' }}>
-          {([false, true] as const).map((all) => (
-            <button
-              key={String(all)}
-              type="button"
-              onClick={() => setShowAll(all)}
-              aria-pressed={showAll === all}
-              className={`px-1.5 py-0.5 whitespace-nowrap ${type.micro} transition-colors ${showAll === all ? 'bg-primary text-primary-foreground font-semibold rounded-[3px]' : ''}`}
-              style={showAll === all ? undefined : legendTextColor}
-            >
-              {all ? '全部' : `前 ${MOBILE_TOP}`}
-            </button>
-          ))}
-        </span>
+        // Phone-only. One icon button with the count it is showing — "15" or the full
+        // total — instead of two words that needed their own line on a 390px screen.
+        <button
+          type="button"
+          onClick={() => setShowAll((v) => !v)}
+          aria-pressed={showAll}
+          aria-label={showAll ? `顯示前 ${MOBILE_TOP} 個題材` : '顯示全部題材'}
+          title={showAll ? `只看成交值前 ${MOBILE_TOP}` : '顯示全部'}
+          className={`ml-2 inline-flex shrink-0 items-center gap-1 rounded border px-1.5 py-0.5 font-mono tabular-nums ${type.micro} transition-colors ${showAll ? 'bg-primary text-primary-foreground border-transparent font-semibold' : ''}`}
+          style={showAll ? undefined : { ...legendTextColor, borderColor: 'var(--border-default)' }}
+        >
+          <Layers size={11} strokeWidth={2.25} />
+          {showAll ? chartData.length : MOBILE_TOP}
+        </button>
       )}
     </div>
   );

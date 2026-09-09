@@ -83,7 +83,15 @@ const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[]; epi
       // Real-or-empty: never fall back to fabricated company data (BUG-7). On
       // failure stockData is null and key stats render as '—'.
       const data = await fetchWithFallback(() => getStockByTicker(ticker.toUpperCase(), tf), null, `GET /api/stocks/${ticker.toUpperCase()}?timeframe=${tf}`);
-      setStockData(data);
+      // The header quote is the DAILY one. The API recomputes change/changePercent per
+      // timeframe (weekly bars give "change since last week"), so switching the chart to
+      // 週/月 used to flip the big number's sign and colour. Only the chart series changes
+      // with the timeframe; the quote fields keep whatever 1D (and the live feed) set.
+      setStockData((prev) =>
+        tf !== '1D' && prev && data
+          ? { ...data, price: prev.price, change: prev.change, changePercent: prev.changePercent }
+          : data,
+      );
     } catch (e) {
       console.error('[StockHeaderCard] Failed to fetch stock data:', e);
       setStockData(null);
