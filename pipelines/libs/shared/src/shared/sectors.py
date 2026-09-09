@@ -13,8 +13,8 @@ import os
 import re
 import unicodedata
 from dataclasses import dataclass
-from pathlib import Path
 from functools import lru_cache
+from pathlib import Path
 from typing import Any, Iterable
 
 from shared.platform_client import fetch_sectors_universe

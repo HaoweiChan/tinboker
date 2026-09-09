@@ -1,7 +1,6 @@
 import json
 
 import pytest
-
 from shared.sectors import (
     LiveUniverseRequiredError,
     aggregate_unresolved_trends,
@@ -10,7 +9,6 @@ from shared.sectors import (
     load_universe,
     resolve_text,
 )
-
 
 # The universe used to arrive from a taxonomy fixture committed to the repo. It is now
 # fetched live and cached per machine, so these tests state the universe they mean —

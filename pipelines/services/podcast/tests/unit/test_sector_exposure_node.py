@@ -1,5 +1,4 @@
 import pytest
-
 from src.podcast.content_builder.nodes.sector_exposures import derive_sector_exposures
 
 # The universe is fetched live and cached per machine (the committed fixture it used to
