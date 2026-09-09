@@ -178,7 +178,10 @@ class StockDailyClose(Base):
 
     Once a trading day ends, the close is immutable — storing it in the DB
     means we never need to re-fetch from FinMind/Massive for the same
-    (ticker, date) pair.
+    (ticker, date) pair. Writers must not store a row for a session that is
+    still open (``stock_close_refresh.close_is_final``); the warmer overwrites
+    a same-day row whose value differs, which heals rows written before that
+    guard existed.
     """
     __tablename__ = "stock_daily_closes"
 

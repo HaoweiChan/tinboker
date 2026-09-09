@@ -13,8 +13,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta, timezone
 from typing import List, Optional
+from zoneinfo import ZoneInfo
 
 from src.database.models import StockDailyOHLC, StockDailyClose
 from src.database.postgres import get_session
@@ -34,6 +35,20 @@ _TW_GAP_SECONDS = 2.0
 _LOOKBACK_DAYS = 7
 # Bubble charts need 90-day cumulative US dollar-volume windows from warmed OHLCV.
 _US_OHLC_LOOKBACK_DAYS = 120
+# Session close per market. A daily bar fetched before this is an intraday quote, not a
+# close: Yahoo (the TW fallback) returns today's partial bar mid-session, and 0050 got
+# 109.95 stamped as its 2026-09-08 close vs TWSE's 109.65.
+_TW_CLOSE = (ZoneInfo("Asia/Taipei"), time(13, 30))
+_US_CLOSE = (ZoneInfo("America/New_York"), time(16, 0))
+
+
+def close_is_final(ticker: str, date: str, now: Optional[datetime] = None) -> bool:
+    """True once ``date``'s session has closed in the ticker's market, so a daily bar
+    dated ``date`` is the real close and safe to store as immutable."""
+    tz, close = _TW_CLOSE if _is_tw(ticker) else _US_CLOSE
+    local = (now or datetime.now(timezone.utc)).astimezone(tz)
+    today = local.strftime("%Y-%m-%d")
+    return date < today or (date == today and local.time() >= close)
 
 
 async def get_tracked_tickers(limit: int = MAX_TRACKED) -> List[str]:
@@ -107,15 +122,19 @@ def _fetch_and_store_closes(ticker: str, fin_svc, mas_svc) -> int:
             for row in rows:
                 date = row.get("date")
                 close = row.get("close")
-                if not date or close is None:
+                if not date or close is None or not close_is_final(ticker, date):
                     continue
-                exists = (
-                    session.query(StockDailyClose.id)
+                existing = (
+                    session.query(StockDailyClose)
                     .filter(StockDailyClose.ticker == ticker, StockDailyClose.date == date)
                     .first()
                 )
-                if not exists:
+                if existing is None:
                     session.add(StockDailyClose(ticker=ticker, date=date, close=close))
+                    inserted += 1
+                elif existing.close != close:
+                    # Heals rows stamped from an intraday quote before the guard existed.
+                    existing.close = close
                     inserted += 1
             if inserted:
                 session.commit()
