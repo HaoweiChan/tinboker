@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Download } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { TimeframeOption } from '@/services/types';
 
@@ -9,8 +10,37 @@ interface ChartControlsProps {
     onSubChartChange: (subChart: string) => void;
     activeIndicators: string[];
     onToggleIndicator: (indicator: string, active: boolean) => void;
+    /** Stock card PNG to offer as a download. Omit to hide the button. */
+    downloadUrl?: string;
 }
 
+const TIMEFRAMES: { value: TimeframeOption; label: string }[] = [
+    { value: '1D', label: '日' },
+    { value: '1W', label: '週' },
+    { value: '1M', label: '月' },
+];
+
+const SUB_CHARTS: Record<string, string> = {
+    Volume: '成交量', KD: 'KD', MACD: 'MACD', RSI: 'RSI', Bias: '乖離率',
+};
+
+const INDICATORS: { key: string; label: string; dot: string }[] = [
+    { key: 'MA5', label: '5MA', dot: 'bg-[#ff9800]' },
+    { key: 'MA20', label: '20MA', dot: 'bg-[#a78bfa]' },
+    { key: 'MA60', label: '60MA', dot: 'bg-[#00bcd4]' },
+];
+
+/**
+ * One row: timeframe on the left, everything else behind a single 指標 button.
+ *
+ * It used to be three stacked rows on a phone — timeframes, three MA checkboxes, then a
+ * sub-chart dropdown — which pushed the chart itself down the card and left it short and
+ * cramped. Controls are not why anyone opens a stock page.
+ *
+ * The popover opens on click rather than on hover. The old one used `group-hover`, which
+ * a touch screen has no way to trigger, so the sub-chart picker was effectively unusable
+ * on a phone.
+ */
 export const ChartControls: React.FC<ChartControlsProps> = ({
     timeframe,
     onTimeframeChange,
@@ -18,109 +48,100 @@ export const ChartControls: React.FC<ChartControlsProps> = ({
     onSubChartChange,
     activeIndicators,
     onToggleIndicator,
+    downloadUrl,
 }) => {
-    // Configuration Maps
-    const timeframeMap: Record<string, string> = {
-        '1D': '日',
-        '1W': '週',
-        '1M': '月',
-    };
-    const visibleTimeframes: TimeframeOption[] = ['1D', '1W', '1M'];
+    const [open, setOpen] = useState(false);
+    const popRef = useRef<HTMLDivElement>(null);
 
-    const subChartMap: Record<string, string> = {
-        'Volume': '成交量',
-        'KD': 'KD',
-        'MACD': 'MACD',
-        'RSI': 'RSI',
-        'Bias': '乖離率',
-    };
-    const subCharts = Object.keys(subChartMap);
-
-    const indicatorMap: Record<string, string> = {
-        'MA5': '5MA',
-        'MA20': '20MA',
-        'MA60': '60MA',
-    };
-    const indicators = Object.keys(indicatorMap);
+    useEffect(() => {
+        if (!open) return;
+        const close = (e: MouseEvent) => {
+            if (popRef.current && !popRef.current.contains(e.target as Node)) setOpen(false);
+        };
+        document.addEventListener('mousedown', close);
+        return () => document.removeEventListener('mousedown', close);
+    }, [open]);
 
     return (
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4 p-2 bg-transparent">
-            {/* Left Side: Timeframes & Indicators */}
-            <div className="flex items-center gap-4 flex-wrap">
-                {/* Timeframe Selectors */}
-                <div className="flex bg-card p-1 rounded-md border border-border">
-                    {visibleTimeframes.map((tf) => (
-                        <button
-                            key={tf}
-                            onClick={() => onTimeframeChange(tf)}
-                            className={cn(
-                                "px-3 py-1 text-base font-medium rounded transition-all whitespace-nowrap min-w-[2rem]",
-                                timeframe === tf
-                                    ? "bg-muted text-foreground shadow-sm font-bold"
-                                    : "text-muted-foreground hover:text-foreground"
-                            )}
-                        >
-                            {timeframeMap[tf]}
-                        </button>
-                    ))}
-                    {/* Placeholder for '5分' or generic dropdown if needed in future */}
-                </div>
-
-                {/* Indicators (Checkboxes) */}
-                <div className="flex items-center gap-3">
-                    {indicators.map((ind) => {
-                        const isActive = activeIndicators.includes(ind);
-                        let colorClass = "bg-muted-foreground";
-                        if (isActive) {
-                            if (ind === 'MA5') colorClass = "bg-[#ff9800] border-[#ff9800]";
-                            else if (ind === 'MA20') colorClass = "bg-[#a78bfa] border-[#a78bfa]";
-                            else if (ind === 'MA60') colorClass = "bg-[#00bcd4] border-[#00bcd4]";
-                        }
-
-                        return (
-                            <button
-                                key={ind}
-                                onClick={() => onToggleIndicator(ind, !isActive)}
-                                className="flex items-center gap-1.5 text-base font-medium text-foreground"
-                            >
-                                <div className={cn(
-                                    "w-4 h-4 rounded border flex items-center justify-center transition-colors",
-                                    isActive ? colorClass + " text-white" : "border-border bg-card"
-                                )}>
-                                    {isActive && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>}
-                                </div>
-                                {indicatorMap[ind]}
-                            </button>
-                        );
-                    })}
-                </div>
+        <div className="flex items-center justify-between gap-2 mb-1.5">
+            <div className="flex items-center gap-1">
+                {TIMEFRAMES.map((tf) => (
+                    <button
+                        key={tf.value}
+                        onClick={() => onTimeframeChange(tf.value)}
+                        className={cn(
+                            'px-2.5 py-0.5 text-sm rounded transition-colors min-w-[2rem]',
+                            timeframe === tf.value
+                                ? 'bg-primary text-primary-foreground font-semibold'
+                                : 'text-muted-foreground hover:text-foreground',
+                        )}
+                    >
+                        {tf.label}
+                    </button>
+                ))}
             </div>
 
-            {/* Right Side: SubChart Dropdown */}
             <div className="flex items-center gap-2">
-                <div className="relative group">
-                    <button className="flex items-center justify-between gap-2 min-w-[100px] px-3 py-1.5 bg-card border border-border text-foreground text-base font-medium rounded-md hover:bg-muted transition-colors">
-                        <span>{subChartMap[subChart] || subChart}</span>
-                        <svg className="w-4 h-4 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+                {downloadUrl && (
+                    // A plain anchor, not a fetch/blob dance: the backend sends
+                    // Content-Disposition, which is what actually triggers the save. The
+                    // `download` attribute is kept for the same-origin dev proxy, where
+                    // it supplies the filename; cross-origin the browser ignores it.
+                    <a
+                        href={downloadUrl}
+                        download
+                        className="flex items-center gap-1 px-1.5 py-0.5 text-sm text-muted-foreground hover:text-foreground rounded hover:bg-muted transition-colors"
+                        title="下載這檔股票的走勢圖卡"
+                    >
+                        <Download className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">圖卡</span>
+                    </a>
+                )}
+
+                <div className="relative" ref={popRef}>
+                    <button
+                        onClick={() => setOpen((v) => !v)}
+                        aria-expanded={open}
+                        className="flex items-center gap-1 px-1.5 py-0.5 text-sm text-foreground rounded hover:bg-muted transition-colors"
+                    >
+                        <span>指標</span>
+                        <span className="text-muted-foreground">{SUB_CHARTS[subChart] ?? subChart}</span>
+                        <svg className={cn('w-3 h-3 text-muted-foreground transition-transform', open && 'rotate-180')} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
                     </button>
 
-                    {/* Dropdown Menu */}
-                    <div className="absolute right-0 top-full mt-1 w-32 py-1 bg-popover rounded-md shadow-lg border border-border hidden group-hover:block z-50">
-                        {subCharts.map((sc) => (
-                            <button
-                                key={sc}
-                                onClick={() => onSubChartChange(sc)}
-                                className={cn(
-                                    "w-full text-left px-4 py-2 text-base transition-colors",
-                                    subChart === sc
-                                        ? "bg-muted text-accent-info font-medium"
-                                        : "text-muted-foreground hover:bg-muted"
-                                )}
-                            >
-                                {subChartMap[sc]}
-                            </button>
-                        ))}
-                    </div>
+                    {open && (
+                        <div className="absolute right-0 top-full mt-1 w-40 py-1.5 bg-popover rounded-md shadow-lg border border-border z-50">
+                            <div className="px-3 pb-1 text-2xs text-muted-foreground">均線</div>
+                            {INDICATORS.map((ind) => {
+                                const on = activeIndicators.includes(ind.key);
+                                return (
+                                    <button
+                                        key={ind.key}
+                                        onClick={() => onToggleIndicator(ind.key, !on)}
+                                        className="w-full flex items-center gap-2 px-3 py-1 text-xs text-left text-foreground hover:bg-muted transition-colors"
+                                    >
+                                        <span className={cn('w-3.5 h-3.5 rounded border flex items-center justify-center', on ? `${ind.dot} border-transparent` : 'border-border')}>
+                                            {on && <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>}
+                                        </span>
+                                        {ind.label}
+                                    </button>
+                                );
+                            })}
+                            <div className="mt-1.5 pt-1.5 border-t border-border px-3 pb-1 text-2xs text-muted-foreground">副圖</div>
+                            {Object.entries(SUB_CHARTS).map(([key, label]) => (
+                                <button
+                                    key={key}
+                                    onClick={() => { onSubChartChange(key); setOpen(false); }}
+                                    className={cn(
+                                        'w-full text-left px-3 py-1 text-xs transition-colors',
+                                        subChart === key ? 'bg-muted text-accent-info font-medium' : 'text-muted-foreground hover:bg-muted',
+                                    )}
+                                >
+                                    {label}
+                                </button>
+                            ))}
+                        </div>
+                    )}
                 </div>
             </div>
         </div>

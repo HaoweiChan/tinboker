@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ColorType, CrosshairMode, createChart, type IChartApi, type ISeriesApi, type SeriesMarker, type SeriesType, type UTCTimestamp } from 'lightweight-charts';
+import { ColorType, CrosshairMode, createChart, type IChartApi, type ISeriesApi, type SeriesType, type UTCTimestamp } from 'lightweight-charts';
 import { RSI, MACD, Stochastic } from 'technicalindicators';
 import type { PricePoint } from '@/utils/priceSeries';
 import type { ChartDataPoint } from '@/services/types';
@@ -10,21 +10,49 @@ type LoosePoint = { date?: string; volume?: number; price?: number; timestamp?: 
 // What a crosshair lookup can return for any series: bar or line fields.
 type SeriesValue = { value: number; open: number; high: number; low: number; close: number } | undefined;
 
-/** A dot drawn on the main series at `time` (unix seconds); snapped forward to the
- *  first bar at or after that time, dropped if it falls outside the loaded bars. */
-export interface ChartMarker {
-  id: string;
+/** One day's podcast mentions. `time` is unix seconds; the day is snapped forward to
+ *  the first session at or after it, so a weekend episode lands on Monday. */
+export interface MentionBar {
   time: number;
-  color: string;
-  /** Marker size multiplier (lightweight-charts `size`, default 1). */
-  size?: number;
-  text?: string;
-  tooltip?: React.ReactNode;
+  bull: number;
+  neutral: number;
+  bear: number;
 }
+
+/** What the mention pane draws: one ticker's daily mentions and the whole market's,
+ *  over the same window, so the pane can plot a SHARE rather than a raw count. */
+export interface MentionSeries {
+  halfLifeDays: number;
+  ticker: MentionBar[];
+  market: { time: number; n: number }[];
+}
+
+/** Below this much market-wide heat a share is not a measurement, it is one loud day
+ *  divided by another. Against the full production history it suppresses a single day —
+ *  the corpus crossed this within a day of the first ingest — so it is a guard for thin
+ *  or newly-ingested windows rather than something that shapes the normal chart. */
+const MIN_MARKET_HEAT = 30;
+
+/** Where each stacked pane sits inside the shared price-scale space. The overlay labels
+ *  are positioned from the same numbers, so a pane and its caption cannot drift apart. */
+const PANES = {
+  sub: { withMentions: { top: 0.72, bottom: 0.15 }, alone: { top: 0.75, bottom: 0 } },
+  mentions: { top: 0.88, bottom: 0 },
+};
+/** Height of the chart's time axis, excluded when placing overlay labels. */
+const TIME_AXIS_PX = 28;
+
+/** zh-TW names for the sub-indicators, so a pane says what it is without the reader
+ *  having to look back up at the dropdown. */
+const SUB_LABEL: Record<string, string> = {
+  Volume: '成交量', RSI: 'RSI(14)', MACD: 'MACD', KD: 'KD', Bias: '乖離率',
+};
 
 interface TradingViewChartProps {
   data: (PricePoint | ChartDataPoint)[];
-  markers?: ChartMarker[];
+  mentions?: MentionSeries;
+  /** Quote formatter for this instrument (tick-aware decimals). Defaults to 2dp. */
+  formatPrice?: (v: number) => string;
   theme: 'light' | 'dark';
   height?: number;
   className?: string;
@@ -85,12 +113,28 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
   onLoadMore,
   isLoadingMore = false,
   showPriceLines = false,
-  markers,
+  mentions,
+  formatPrice,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [hoverMarker, setHoverMarker] = useState<{ id: string; x: number; y: number } | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
+  // Raw per-session mention counts, so the crosshair can show the checkable number
+  // behind the decayed index. A ref, not state: it is filled while the chart is
+  // built and only read inside the crosshair handler, so it must not re-render.
+  const rawMentionsRef = useRef<Map<number, number>>(new Map());
+  const shareRef = useRef<Map<number, number>>(new Map());
+  const [mentionPaneDrawn, setMentionPaneDrawn] = useState(false);
   const legendRef = useRef<HTMLDivElement>(null);
+  // Held in a ref: the parent passes a fresh closure every render, and putting it in
+  // the chart effect's deps would tear the chart down on every render.
+  const formatPriceRef = useRef<(v: number) => string>((v) => v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+  if (formatPrice) formatPriceRef.current = formatPrice;
+  const fp = (v: number) => formatPriceRef.current(v);
+  // Latest MA values, shown in a persistent row under the price pane the way a
+  // trading terminal does; the crosshair swaps in the hovered bar's values and
+  // leaving the chart snaps back to the latest.
+  const maLatestRef = useRef<Record<string, number>>({});
+  const [maReadout, setMaReadout] = useState<Record<string, number>>({});
   const loadMoreDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isLoadingRef = useRef(false);
   const isFrozenRef = useRef(false); // Hoisted ref for freeze state
@@ -164,6 +208,28 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
         return getTs(a) - getTs(b);
       });
 
+      // The lower panes overlay the bottom of the SAME visible price scale, and
+      // lightweight-charts v4 labels a scale's whole height — so the price ladder kept
+      // running down beside the volume and mention panes (400, 0, -400), reading as if
+      // those numbers described them. There is no API to bound the labelled range; the
+      // supported hook is the formatter, so values the price series never reaches are
+      // formatted as nothing. The gridline stays, only the number goes.
+      const lows = sortedData
+        .map((p) => {
+          const c = p as Partial<ChartDataPoint> & { value?: number; price?: number };
+          return c.low ?? c.close ?? c.value ?? c.price;
+        })
+        .filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
+      if (lows.length) {
+        const floor = Math.min(...lows) - (Math.max(...lows) - Math.min(...lows) || 1) * 0.12;
+        chart.applyOptions({
+          localization: {
+            priceFormatter: (v: number) =>
+              v < floor ? '' : fp(v),
+          },
+        });
+      }
+
       const closeValues = sortedData.map(d => {
         if ('close' in d) return d.close ?? 0;
         if ('price' in d) return d.price ?? 0;
@@ -181,6 +247,16 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
         return 0;
       };
 
+      // Sub-panes are separate price scales overlaid on the bottom of the same canvas.
+      // The mention pane SPLITS the bottom quarter with the selected sub-indicator
+      // rather than claiming new space below it: the main price scale is deliberately
+      // left alone, because widening its bottom margin makes the axis extrapolate past
+      // zero and print negative price labels. Without mentions the sub-indicator keeps
+      // the whole quarter — an empty strip on a ticker nobody discussed is wasted height.
+      const hasMentions = (mentions?.ticker.length ?? 0) > 0 && (mentions?.market.length ?? 0) > 0;
+      const SUB_MARGINS = hasMentions ? PANES.sub.withMentions : PANES.sub.alone;
+      const MENTION_MARGINS = PANES.mentions;
+
       // 2. Sub-Charts (Bottom Pane)
       if (effectiveSubChart === 'Volume') {
         const volSeries = chart.addHistogramSeries({
@@ -188,9 +264,10 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
           priceFormat: { type: 'volume' },
           priceScaleId: 'volume', // Separate scale
           priceLineVisible: false,
+          lastValueVisible: false,
         });
         chart.priceScale('volume').applyOptions({
-          scaleMargins: { top: 0.75, bottom: 0 }, // Bottom 25%
+          scaleMargins: SUB_MARGINS,
         });
 
         const volData = sortedData.map(p => {
@@ -222,11 +299,12 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
           color: '#8b5cf6', // Violet
           lineWidth: 1,
           priceScaleId: 'rsi',
+          lastValueVisible: false,
           title: 'RSI(14)',
           priceLineVisible: false,
         });
         chart.priceScale('rsi').applyOptions({
-          scaleMargins: { top: 0.75, bottom: 0 },
+          scaleMargins: SUB_MARGINS,
         });
 
         // Calculate RSI using technicalindicators
@@ -246,14 +324,14 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
       }
       else if (effectiveSubChart === 'MACD') {
         // MACD Line
-        const macdSeries = chart.addLineSeries({ color: '#a78bfa', lineWidth: 1, priceScaleId: 'macd', title: 'MACD', priceLineVisible: false });
+        const macdSeries = chart.addLineSeries({ color: '#a78bfa', lineWidth: 1, priceScaleId: 'macd', title: 'MACD', priceLineVisible: false, lastValueVisible: false });
         // Signal Line
-        const signalSeries = chart.addLineSeries({ color: '#FF6D00', lineWidth: 1, priceScaleId: 'macd', title: 'Signal', priceLineVisible: false });
+        const signalSeries = chart.addLineSeries({ color: '#FF6D00', lineWidth: 1, priceScaleId: 'macd', title: 'Signal', priceLineVisible: false, lastValueVisible: false });
         // Histogram
-        const histSeries = chart.addHistogramSeries({ color: '#26a69a', priceScaleId: 'macd', title: 'Hist', priceLineVisible: false });
+        const histSeries = chart.addHistogramSeries({ color: '#26a69a', priceScaleId: 'macd', title: 'Hist', priceLineVisible: false, lastValueVisible: false });
 
         chart.priceScale('macd').applyOptions({
-          scaleMargins: { top: 0.75, bottom: 0 },
+          scaleMargins: SUB_MARGINS,
         });
 
         const macdResult = MACD.calculate({
@@ -290,9 +368,9 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
         seriesMap['MACD'] = macdSeries; // Store main one
       }
       else if (effectiveSubChart === 'KD') {
-        const kSeries = chart.addLineSeries({ color: '#ff9800', lineWidth: 1, priceScaleId: 'kd', title: 'K', priceLineVisible: false });
-        const dSeries = chart.addLineSeries({ color: '#a78bfa', lineWidth: 1, priceScaleId: 'kd', title: 'D', priceLineVisible: false });
-        chart.priceScale('kd').applyOptions({ scaleMargins: { top: 0.75, bottom: 0 } });
+        const kSeries = chart.addLineSeries({ color: '#ff9800', lineWidth: 1, priceScaleId: 'kd', title: 'K', priceLineVisible: false, lastValueVisible: false });
+        const dSeries = chart.addLineSeries({ color: '#a78bfa', lineWidth: 1, priceScaleId: 'kd', title: 'D', priceLineVisible: false, lastValueVisible: false });
+        chart.priceScale('kd').applyOptions({ scaleMargins: SUB_MARGINS });
 
         const input = {
           high: sortedData.map(d => 'high' in d ? d.high! : ('value' in d ? d.value : (d as LoosePoint).price || 0)),
@@ -315,8 +393,8 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
         seriesMap['KD_D'] = dSeries;
       }
       else if (effectiveSubChart === 'Bias') {
-        const biasSeries = chart.addLineSeries({ color: '#e91e63', lineWidth: 1, priceScaleId: 'bias', title: 'Bias', priceLineVisible: false });
-        chart.priceScale('bias').applyOptions({ scaleMargins: { top: 0.75, bottom: 0 } });
+        const biasSeries = chart.addLineSeries({ color: '#e91e63', lineWidth: 1, priceScaleId: 'bias', title: 'Bias', priceLineVisible: false, lastValueVisible: false });
+        chart.priceScale('bias').applyOptions({ scaleMargins: SUB_MARGINS });
 
         const period = 20;
         // Simple manual calculation for efficient single loop
@@ -347,6 +425,7 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
           wickUpColor: '#ef4444',
           wickDownColor: '#22c55e',
           priceLineVisible: showPriceLines,
+          lastValueVisible: false,
         });
         const candleData = sortedData.map(p => {
           const time = getSeconds(p);
@@ -367,6 +446,7 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
           bottomColor: bottomColor ?? `${lineColor}15`,
           lineWidth: 2,
           priceLineVisible: showPriceLines,
+          lastValueVisible: false,
         });
         const areaData = sortedData.map((p, i) => {
           const time = getSeconds(p);
@@ -376,38 +456,119 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
       }
       seriesMap['Main'] = mainSeries;
 
-      // 3b. Markers (podcast mentions). Times snap forward to the next bar so a
-      // weekend episode lands on Monday's candle; markers must be time-sorted.
-      if (markers && markers.length > 0) {
+      // 3b. Podcast attention pane — always below whatever sub-indicator is selected,
+      // not an option in the dropdown: it is the one thing here no price app can show,
+      // and hiding it behind a picker is the same as not having it.
+      //
+      // Plots a SHARE of all podcast attention, not a raw count, and a decayed share at
+      // that. Two corrections, both measured against two years of production data:
+      //   · Raw daily counts are a comb — most shows publish weekly, so the shape is the
+      //     publishing calendar, not the attention. Hence the 0.5^(age/H) decay, which is
+      //     the platform's own 討論熱度 definition (backend HALF_LIFE_DAYS).
+      //   · Raw heat mostly tracks how many shows we had ingested. Over the two years to
+      //     2026-09, TSMC's heat rose 10x while the market's rose 5.7x; its actual share
+      //     sat flat between 3.5% and 5.9% the whole time. Dividing removes our own growth.
+      //
+      // Stacked by drawing three areas largest-first on one scale: lightweight-charts has
+      // no stacked series, and three overlays is less machinery than faking one.
+      const rawByBar = new Map<number, number>();
+      const shareByBar = new Map<number, number>();
+      if (mentions && mentions.ticker.length > 0 && mentions.market.length > 0) {
+        const halfLife = mentions.halfLifeDays > 0 ? mentions.halfLifeDays : 7;
         const barTimes = sortedData.map(getSeconds);
-        const placed: SeriesMarker<UTCTimestamp>[] = [];
-        for (const m of markers) {
-          const t = barTimes.find((bt) => bt >= m.time);
-          if (t === undefined) continue;
-          placed.push({ time: t as UTCTimestamp, position: 'aboveBar', shape: 'circle', color: m.color, id: m.id, text: m.text, size: m.size ?? 1 });
-        }
-        placed.sort((a, b) => a.time - b.time);
-        mainSeries.setMarkers(placed);
-      }
+        const snap = (t: number) => barTimes.find((bt) => bt >= t);
 
+        const tickerDaily = new Map<number, { bull: number; neutral: number; bear: number }>();
+        for (const m of mentions.ticker) {
+          const t = snap(m.time);
+          if (t === undefined) continue;
+          const acc = tickerDaily.get(t) ?? { bull: 0, neutral: 0, bear: 0 };
+          acc.bull += m.bull; acc.neutral += m.neutral; acc.bear += m.bear;
+          tickerDaily.set(t, acc);
+        }
+        const marketDaily = new Map<number, number>();
+        for (const m of mentions.market) {
+          const t = snap(m.time);
+          if (t !== undefined) marketDaily.set(t, (marketDaily.get(t) ?? 0) + m.n);
+        }
+
+        // Walk the sessions in order, decaying by the real elapsed time — not one step
+        // per bar — so a weekend or a market holiday decays by the days it spans.
+        const heat = { bull: 0, neutral: 0, bear: 0 };
+        let market = 0;
+        let prev: number | null = null;
+        const series: { time: UTCTimestamp; bull: number; neutral: number; bear: number }[] = [];
+        for (const t of barTimes) {
+          if (prev !== null) {
+            const decay = 0.5 ** (((t - prev) / 86400) / halfLife);
+            heat.bull *= decay; heat.neutral *= decay; heat.bear *= decay;
+            market *= decay;
+          }
+          const add = tickerDaily.get(t);
+          if (add) {
+            heat.bull += add.bull; heat.neutral += add.neutral; heat.bear += add.bear;
+            rawByBar.set(t, add.bull + add.neutral + add.bear);
+          }
+          market += marketDaily.get(t) ?? 0;
+          prev = t;
+          // Before the corpus was big enough there is no denominator worth dividing by,
+          // so those sessions get no point rather than a spike invented by a small number.
+          if (market < MIN_MARKET_HEAT) continue;
+          const share = (v: number) => v / market;
+          series.push({
+            time: t as UTCTimestamp,
+            bull: share(heat.bull), neutral: share(heat.neutral), bear: share(heat.bear),
+          });
+          shareByBar.set(t, (heat.bull + heat.neutral + heat.bear) / market);
+        }
+
+        const layers: [string, (v: { bull: number; neutral: number; bear: number }) => number][] = [
+          ['#22c55e', (v) => v.bull + v.neutral + v.bear],  // bearish shows at the top
+          ['#64748b', (v) => v.bull + v.neutral],
+          ['#ef4444', (v) => v.bull],                       // bullish sits at the base
+        ];
+        layers.forEach(([color, pick], i) => {
+          const s = chart.addAreaSeries({
+            lineColor: color,
+            topColor: color,
+            bottomColor: color,
+            lineWidth: 1,
+            priceScaleId: 'mentions',
+            priceLineVisible: false,
+            lastValueVisible: false,
+            crosshairMarkerVisible: false,
+          });
+          s.setData(series.map((d) => ({ time: d.time, value: pick(d) })));
+          if (i === 0) seriesMap['Mentions'] = s;
+        });
+        chart.priceScale('mentions').applyOptions({ scaleMargins: MENTION_MARGINS });
+      }
+      rawMentionsRef.current = rawByBar;
+      shareRef.current = shareByBar;
+      setMentionPaneDrawn(shareByBar.size > 0);
+
+      maLatestRef.current = {};
       // 4. Moving Averages
       if (effectiveIndicators.includes('MA5')) {
         const maData = calculateSMA(sortedData as ChartDataPoint[], 5);
-        const series = chart.addLineSeries({ color: '#ff9800', lineWidth: 1, crosshairMarkerVisible: false, title: '', priceLineVisible: false });
+        const series = chart.addLineSeries({ color: '#ff9800', lineWidth: 1, crosshairMarkerVisible: false, title: '', priceLineVisible: false, lastValueVisible: false });
         series.setData(maData);
         seriesMap['MA5'] = series;
+        if (maData.length) maLatestRef.current['MA5'] = maData[maData.length - 1].value;
       }
       if (effectiveIndicators.includes('MA20')) {
         const maData = calculateSMA(sortedData as ChartDataPoint[], 20);
-        const series = chart.addLineSeries({ color: '#a78bfa', lineWidth: 1, crosshairMarkerVisible: false, title: '', priceLineVisible: false });
+        const series = chart.addLineSeries({ color: '#a78bfa', lineWidth: 1, crosshairMarkerVisible: false, title: '', priceLineVisible: false, lastValueVisible: false });
         series.setData(maData);
         seriesMap['MA20'] = series;
+        if (maData.length) maLatestRef.current['MA20'] = maData[maData.length - 1].value;
       }
       if (effectiveIndicators.includes('MA60')) {
         const maData = calculateSMA(sortedData as ChartDataPoint[], 60);
-        const series = chart.addLineSeries({ color: '#00bcd4', lineWidth: 1, crosshairMarkerVisible: false, title: '', priceLineVisible: false });
+        const series = chart.addLineSeries({ color: '#00bcd4', lineWidth: 1, crosshairMarkerVisible: false, title: '', priceLineVisible: false, lastValueVisible: false });
         series.setData(maData);
         seriesMap['MA60'] = series;
+        if (maData.length) maLatestRef.current['MA60'] = maData[maData.length - 1].value;
       }
 
       chart.timeScale().fitContent();
@@ -440,15 +601,19 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
         }
       });
 
+      setMaReadout({ ...maLatestRef.current });
+
       chart.subscribeCrosshairMove(param => {
-        // Marker hover → tooltip; independent of the legend/freeze logic below.
-        if (markers && markers.length > 0) {
-          const id = typeof param.hoveredObjectId === 'string' ? param.hoveredObjectId : null;
-          setHoverMarker((prev) => {
-            if (!id || !param.point) return prev ? null : prev;
-            if (prev && prev.id === id) return prev;
-            return { id, x: param.point.x, y: param.point.y };
-          });
+        // MA readout row: hovered bar's values, or the latest when the pointer leaves.
+        if (param.time) {
+          const next: Record<string, number> = {};
+          for (const ma of ['MA5', 'MA20', 'MA60']) {
+            const sv = seriesMap[ma] ? (param.seriesData.get(seriesMap[ma]) as SeriesValue) : undefined;
+            if (sv) next[ma] = sv.value;
+          }
+          setMaReadout((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
+        } else {
+          setMaReadout((prev) => (JSON.stringify(prev) === JSON.stringify(maLatestRef.current) ? prev : { ...maLatestRef.current }));
         }
         if (!legendRef.current) return;
 
@@ -488,31 +653,22 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
             const isUp = change >= 0;
             const colorClass = isUp ? 'text-red-500' : 'text-green-500'; // Red Up
 
-            changeHtml = `<span class="${colorClass} mr-4">漲跌 ${change.toFixed(2)} (${changePercent.toFixed(2)}%)</span>`;
+            changeHtml = `<span class="${colorClass} mr-4">漲跌 ${fp(change)} (${changePercent.toFixed(2)}%)</span>`;
 
             ohlcHtml = `
-                    <span class="mr-3">開 <span class="${colorClass}">${open.toFixed(2)}</span></span>
-                    <span class="mr-3">高 <span class="${colorClass}">${mainData.high.toFixed(2)}</span></span>
-                    <span class="mr-3">低 <span class="${colorClass}">${mainData.low.toFixed(2)}</span></span>
-                    <span>收 <span class="${colorClass}">${close.toFixed(2)}</span></span>
+                    <span class="mr-3">開 <span class="${colorClass}">${fp(open)}</span></span>
+                    <span class="mr-3">高 <span class="${colorClass}">${fp(mainData.high)}</span></span>
+                    <span class="mr-3">低 <span class="${colorClass}">${fp(mainData.low)}</span></span>
+                    <span>收 <span class="${colorClass}">${fp(close)}</span></span>
                   `;
           } else {
             // Line
-            ohlcHtml = `<span class="text-slate-200">Price: ${mainData.value.toFixed(2)}</span>`;
+            ohlcHtml = `<span class="text-slate-200">價格 ${fp(mainData.value)}</span>`;
           }
         }
 
         // MAs (Row 2) - Orange(#ff9800), Blue(#a78bfa), Cyan(#00bcd4)
-        let maHtml = '';
-        ['MA5', 'MA20', 'MA60'].forEach(ma => {
-          if (seriesMap[ma]) {
-            const val = param.seriesData.get(seriesMap[ma]) as SeriesValue;
-            if (val) {
-              const color = ma === 'MA5' ? 'text-[#ff9800]' : ma === 'MA20' ? 'text-[#a78bfa]' : 'text-[#00bcd4]';
-              maHtml += `<span class="${color} mr-4">${ma} ${val.value.toFixed(2)}</span>`;
-            }
-          }
-        });
+        const maHtml = '';
 
         // Sub-Chart Legend (Row 3 or Side)
         let subHtml = '';
@@ -532,6 +688,20 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
         } else if (effectiveSubChart === 'Bias' && seriesMap['Bias']) {
           const val = param.seriesData.get(seriesMap['Bias']) as SeriesValue;
           if (val) subHtml = `<span class="text-[#e91e63] ml-4">Bias ${val.value.toFixed(2)}%</span>`;
+        }
+
+        // Mentions sit outside that chain: the pane is always on, not one of the
+        // dropdown's mutually exclusive options. The raw count rides along because a
+        // decayed index is not a number anyone can check against the episode list.
+        if (seriesMap['Mentions']) {
+          const val = param.seriesData.get(seriesMap['Mentions']) as SeriesValue;
+          const t = typeof param.time === 'number' ? param.time : null;
+          const share = t !== null ? shareRef.current.get(t) : undefined;
+          if (val && share !== undefined) {
+            const raw = t !== null ? rawMentionsRef.current.get(t) : undefined;
+            subHtml += `<span class="text-slate-400 ml-4">聲量佔比 ${(share * 100).toFixed(1)}%</span>`;
+            if (raw) subHtml += `<span class="text-slate-500 ml-2">當日 ${raw} 集</span>`;
+          }
         }
 
         // Update Legend DOM - Two Rows
@@ -622,9 +792,8 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
       }
     };
 
-  }, [data, theme, height, minimal, activeIndicators, effectiveSubChart, onLoadMore, isLoadingMore, showPriceLines, markers]);
+  }, [data, theme, height, minimal, activeIndicators, effectiveSubChart, onLoadMore, isLoadingMore, showPriceLines, mentions]);
 
-  const hovered = hoverMarker && markers ? markers.find((m) => m.id === hoverMarker.id) : undefined;
 
   return (
     <div className={`relative ${className || ''}`} style={{ height }}>
@@ -641,18 +810,47 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
           style={{ left: frozenX }}
         />
       )}
-      <div ref={containerRef} className="w-full h-full" />
-      {hovered && hovered.tooltip && hoverMarker && (
-        <div
-          className="absolute z-30 pointer-events-none max-w-[280px] rounded-md border border-border bg-popover text-popover-foreground shadow-md p-2.5 text-xs"
-          style={{
-            left: Math.min(hoverMarker.x + 12, Math.max(0, (containerRef.current?.clientWidth ?? 0) - 290)),
-            top: Math.max(8, hoverMarker.y - 8),
-          }}
-        >
-          {hovered.tooltip}
-        </div>
+      {/* Pane captions. lightweight-charts has no pane titles, so these are overlays
+          placed from the same PANES numbers the price scales use. Without them the chart
+          shows two anonymous histograms and a reader has no way to know the lower one is
+          a share of site-wide podcast volume rather than more price data.
+
+          Nudged above the pane's top edge and given a backdrop: on a phone the panes are
+          only ~55px tall, so a caption sitting on the pane's first pixel lands on the
+          data and neither is readable. The qualifier drops below `sm` for the same
+          reason — the name has to survive, the explanation does not. */}
+      {!minimal && (
+        <>
+          {Object.keys(maReadout).length > 0 && (
+            <div
+              className="absolute left-1 z-20 pointer-events-none flex gap-3 rounded bg-card/85 px-1 text-[11px] leading-tight font-mono tabular-nums"
+              style={{ top: TIME_AXIS_PX + (height - TIME_AXIS_PX) * (mentionPaneDrawn ? PANES.sub.withMentions.top : PANES.sub.alone.top) - 30 }}
+            >
+              {(['MA5', 'MA20', 'MA60'] as const).map((ma) => maReadout[ma] !== undefined && (
+                <span key={ma} className={ma === 'MA5' ? 'text-[#ff9800]' : ma === 'MA20' ? 'text-[#a78bfa]' : 'text-[#00bcd4]'}>
+                  {ma.replace('MA', '')}MA {fp(maReadout[ma])}
+                </span>
+              ))}
+            </div>
+          )}
+          <div
+            className="absolute left-1 z-20 pointer-events-none rounded bg-card/85 px-1 text-[10px] leading-tight text-slate-500 dark:text-slate-400"
+            style={{ top: TIME_AXIS_PX + (height - TIME_AXIS_PX) * (mentionPaneDrawn ? PANES.sub.withMentions.top : PANES.sub.alone.top) - 13 }}
+          >
+            {SUB_LABEL[effectiveSubChart] ?? effectiveSubChart}
+          </div>
+          {mentionPaneDrawn && (
+            <div
+              className="absolute left-1 z-20 pointer-events-none rounded bg-card/85 px-1 text-[10px] leading-tight text-slate-500 dark:text-slate-400"
+              style={{ top: TIME_AXIS_PX + (height - TIME_AXIS_PX) * PANES.mentions.top - 13 }}
+            >
+              Podcast 討論佔比
+              <span className="ml-1.5 hidden sm:inline text-slate-400 dark:text-slate-500">佔全站聲量 · 7 日半衰</span>
+            </div>
+          )}
+        </>
       )}
+      <div ref={containerRef} className="w-full h-full" />
     </div>
   );
 };

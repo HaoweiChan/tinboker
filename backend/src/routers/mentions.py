@@ -6,9 +6,11 @@ Postgres, no Firestore on the request path. Every response carries a zh-TW
 disclaimer: podcast mentions are NOT investment recommendations.
 """
 import logging
+from datetime import datetime, timedelta
 from typing import List, Optional
 
 from fastapi import APIRouter, Query
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from src.cache.cdn_cache import cdn_cache_trending
@@ -160,3 +162,96 @@ async def get_episode_mentions(episode_id: str):
         "sector_mentions": [],
         "disclaimer": DISCLAIMER,
     }
+
+
+# The card's window. Matches the "近 30 天" label on the consensus tile it feeds.
+_HEAT_INDEX_DAYS = 30
+_HEAT_HALF_LIFE_DAYS = 7.0
+
+
+def _heat_index(db, ticker_variants: List[str]) -> Optional[int]:
+    """This ticker's discussion heat as 0-100, where 100 is the busiest ticker on the site.
+
+    A raw share is unreadable here: over 30 days the median mentioned ticker holds 0.059%
+    of all discussion — half of them were named exactly once — and even TSMC, second on
+    the whole site, is 3.94%. Printed as a percentage almost every stock shows "0.0%",
+    which reads as nothing rather than as "rarely discussed". Anchoring to the busiest
+    ticker spreads the same information across a range people can feel.
+
+    Decayed the same way as everything else here (0.5^(age/7)), so a ticker named once
+    yesterday outranks one named once three weeks ago.
+    """
+    age_days = func.extract("epoch", func.now() - ContentMention.mentioned_at) / 86400.0
+    heat = func.sum(func.power(0.5, age_days / _HEAT_HALF_LIFE_DAYS)).label("heat")
+    since = datetime.utcnow() - timedelta(days=_HEAT_INDEX_DAYS)
+    per_ticker = (
+        db.query(ContentMention.ticker.label("ticker"), heat)
+        .filter(ContentMention.mention_type == "ticker",
+                ContentMention.ticker.isnot(None),
+                ContentMention.mentioned_at >= since)
+        .group_by(ContentMention.ticker)
+        .subquery()
+    )
+    top = db.query(func.max(per_ticker.c.heat)).scalar()
+    mine = (
+        db.query(per_ticker.c.heat)
+        .filter(per_ticker.c.ticker.in_(ticker_variants))
+        .order_by(per_ticker.c.heat.desc())
+        .first()
+    )
+    if not top or top <= 0 or not mine or not mine[0]:
+        return None
+    return max(0, min(100, round(float(mine[0]) / float(top) * 100)))
+
+
+@router.get("/tickers/{ticker}/mention-heat")
+@cdn_cache_trending
+async def get_mention_heat(
+    ticker: str,
+    days: int = Query(default=730, ge=30, le=1825, description="Look-back window in days"),
+):
+    """Daily mention counts for one ticker AND for the whole market, over one window.
+
+    Both series come back from ONE call and ONE table on purpose. The chart plots the
+    ticker's share of all podcast attention, not its raw count, because the raw count
+    mostly tracks how many shows we had ingested at the time: over the two years to
+    2026-09, TSMC's decayed heat rose 10x while the market's rose 5.7x, and its actual
+    share sat flat between 3.5% and 5.9% the whole time. A numerator and a denominator
+    taken from different tables would silently mix two populations, so they are taken
+    together here rather than assembled by the caller from two endpoints.
+
+    Counts, not heat: the decay (0.5^(age/7), the platform's 討論熱度 definition) is
+    applied client-side against the chart's own trading sessions, so it lines up with the
+    bars actually drawn rather than with calendar days the market was shut.
+    """
+    canonical = ticker.upper().replace(".TW", "").strip()
+    since = datetime.utcnow().date() - timedelta(days=days)
+    day = func.date(ContentMention.mentioned_at)
+    for db in get_session():
+        base = db.query(day, func.count(1)).filter(
+            ContentMention.mention_type == "ticker",
+            ContentMention.mentioned_at >= since,
+        )
+        market = [{"d": str(d), "n": n} for d, n in base.group_by(day).all()]
+        rows = (
+            db.query(day, func.count(1),
+                     func.count(1).filter(ContentMention.sentiment_label.like("%BULLISH%")),
+                     func.count(1).filter(ContentMention.sentiment_label.like("%BEARISH%")))
+            .filter(ContentMention.mention_type == "ticker",
+                    ContentMention.ticker.in_([canonical, ticker.upper()]),
+                    ContentMention.mentioned_at >= since)
+            .group_by(day)
+            .all()
+        )
+        return {
+            "ticker": canonical,
+            "half_life_days": 7,
+            "heat_index": _heat_index(db, [canonical, ticker.upper()]),
+            "heat_index_days": _HEAT_INDEX_DAYS,
+            "series": [{"d": str(d), "n": n, "bull": b, "bear": r} for d, n, b, r in rows],
+            "market": market,
+            "disclaimer": DISCLAIMER,
+        }
+    return {"ticker": canonical, "half_life_days": 7, "heat_index": None,
+            "heat_index_days": _HEAT_INDEX_DAYS, "series": [], "market": [],
+            "disclaimer": DISCLAIMER}
