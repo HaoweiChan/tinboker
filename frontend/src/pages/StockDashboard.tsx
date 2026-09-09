@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Star, Plus } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
@@ -44,6 +44,7 @@ const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[]; epi
   const [stockData, setStockData] = useState<CompanyDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const noOlderDataRef = useRef(false);
   const { watchlist, toggleWatchlist, theme } = useAppStore();
   // Sector membership drives both the chips tile and the row layout below.
   const [sectors, setSectors] = useState<SectorByTickerItem[]>([]);
@@ -92,12 +93,13 @@ const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[]; epi
   }, []);
 
   useEffect(() => {
+    noOlderDataRef.current = false;
     if (symbol) fetchStockData(symbol, timeframe);
   }, [symbol, timeframe, fetchStockData]);
 
   const handleLoadMore = useCallback(
     async (beforeTimestamp: number) => {
-      if (isLoadingMore) return;
+      if (isLoadingMore || noOlderDataRef.current) return;
       setIsLoadingMore(true);
       try {
         const moreData = await getStockByTicker(symbol.toUpperCase(), timeframe, { before: beforeTimestamp });
@@ -125,7 +127,11 @@ const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[]; epi
           });
         }
       } catch (e) {
-        console.error('[StockHeaderCard] Failed to load more data:', e);
+        // 404 here means the feed has no bars older than this — the end of history,
+        // not a failure. Remember it so the chart stops asking on every scroll.
+        const status = (e as { response?: { status?: number } })?.response?.status;
+        if (status === 404) noOlderDataRef.current = true;
+        else console.error('[StockHeaderCard] Failed to load more data:', e);
       } finally {
         setIsLoadingMore(false);
       }
@@ -347,7 +353,11 @@ const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[]; epi
                 className="w-full"
                 activeIndicators={activeIndicators}
                 activeSubChart={subChart}
-                onLoadMore={handleLoadMore}
+                // Only daily bars can page. 1W/1M come from an aggregate fetch with no
+                // `before` support: every switch to 週/月 used to fire a request that could
+                // only 404 — and each one re-hit the external price API, which is exactly
+                // what was 429-ing us when the real 1W fetch failed.
+                onLoadMore={timeframe === '1D' ? handleLoadMore : undefined}
                 isLoadingMore={isLoadingMore}
                 mentions={mentionSeries}
                 formatPrice={(v) => fmtPrice(v, symbol)}
@@ -365,6 +375,16 @@ const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[]; epi
             <div className="h-[260px] w-full mt-3 rounded-md border border-dashed border-border bg-muted/20 flex flex-col items-center justify-center text-center px-6">
               <p className="text-sm font-medium text-foreground">目前沒有可顯示的股價走勢</p>
               <p className="text-xs text-muted-foreground mt-1">資料供應暫時沒有回傳有效價格，請改用較長區間或稍後再試。</p>
+              {/* A transient upstream failure (the US feed 429s under load) used to leave
+                  this state stuck: tapping the same timeframe again does not re-run the
+                  effect, so the only way out was a reload. */}
+              <button
+                type="button"
+                onClick={() => fetchStockData(symbol, timeframe)}
+                className="mt-3 px-3 py-1 text-xs rounded-md border border-border bg-card text-foreground hover:bg-muted transition-colors"
+              >
+                重試
+              </button>
             </div>
           )}
         </div>
