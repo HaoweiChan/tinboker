@@ -66,6 +66,17 @@ theater):**
   taxonomy-shaped is ever committed to this public repo again — including future audit
   reports (they go to GCS or the PR-free maintenance report path).
 
+> **2026-09-09 update.** The committed taxonomy fixtures this plan protects
+> (`backend/src/data/sectors_seed.py`, `shared/sectors_seed_backup.py`) and the tooling
+> that maintained them (`curation.py`, `curate_sectors.py`, the tide importer) are
+> deleted. They carried a full copy of the taxonomy — the thing G6 exists to keep out of
+> this public repo — and refreshing them after the 2026-09-09 membership rebuild would
+> have committed the new curation instead of the old. Pipelines now fall back to a
+> per-machine cache of the last live `/api/sectors/universe` read; a machine that has
+> never reached the API gets no taxonomy rather than a stale one. G6's private-GCS
+> destination no longer exists (the project is Secret Manager only), so the off-repo
+> export half of G6 has no home and remains open.
+
 ## 2. Current state (post-M2, PR #436) and what changes
 
 Shipped so far: **M0** (dead weekly chain retired; drift inventory), **M1** (curation

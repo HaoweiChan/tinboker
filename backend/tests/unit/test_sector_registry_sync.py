@@ -43,13 +43,10 @@ def _sector(exposure_id, display_name, members=None):
     }
 
 
-def test_sync_bootstraps_empty_registry_from_fixture(session, monkeypatch):
-    monkeypatch.setattr(
-        "src.tag_registry._seed_sector_redirects",
-        lambda: {"sector_old": "sector_new"},
+def test_sync_bootstraps_empty_registry_from_fixture(session):
+    new_count = sync_sectors(
+        session, [_sector("sector_new", "New")], redirects={"sector_old": "sector_new"}
     )
-
-    new_count = sync_sectors(session, [_sector("sector_new", "New")])
 
     rows = {
         row.exposure_id: row
@@ -76,7 +73,9 @@ def test_sync_non_empty_registry_writes_nothing(session, caplog):
     session.commit()
 
     with caplog.at_level(logging.INFO):
-        new_count = sync_sectors(session, [_sector("sector_new", "New")])
+        new_count = sync_sectors(
+        session, [_sector("sector_new", "New")], redirects={"sector_old": "sector_new"}
+    )
 
     rows = session.query(TagRegistry).filter(TagRegistry.kind == KIND_SECTOR).all()
     assert new_count == 0

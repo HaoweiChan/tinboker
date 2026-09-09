@@ -18,8 +18,11 @@ def session():
     db.close()
 
 
-def test_registers_unknown_exposures_and_leaves_known_alone(session, monkeypatch):
-    monkeypatch.setattr("src.tag_registry._seed_sector_redirects", lambda: {"sector_old_memory": "sector_memory"})
+def test_registers_unknown_exposures_and_leaves_known_alone(session):
+    # Redirects come from the registry itself now, so the redirect source is a real row.
+    session.add(TagRegistry(slug="sector_old_memory", display_zh="舊記憶體", tier=TIER_TRENDING,
+                            kind=KIND_SECTOR, exposure_id="sector_old_memory",
+                            redirect_to="sector_memory"))
     session.add(TagRegistry(slug="sector_mlcc", display_zh="被動元件 MLCC", tier=TIER_HIDDEN, kind=KIND_SECTOR, exposure_id="sector_mlcc"))
     session.commit()
 
@@ -36,7 +39,8 @@ def test_registers_unknown_exposures_and_leaves_known_alone(session, monkeypatch
     mem = rows["sector_memory"]
     assert (mem.tier, mem.kind, mem.display_zh, mem.exposure_type, mem.icon_id, mem.color_hex) == (
         TIER_TRENDING, KIND_SECTOR, "記憶體", "industry", "memory-stick", "#EF4444")
-    assert "sector_old_memory" not in rows
+    # the redirect source keeps its redirect and is never re-registered as a live sector
+    assert rows["sector_old_memory"].redirect_to == "sector_memory"
 
     # Idempotent: a second pass inserts nothing.
     assert auto_register_sectors(session, [{"exposure_id": "sector_memory", "display_name": "記憶體"}]) == 0
