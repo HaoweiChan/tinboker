@@ -84,7 +84,7 @@ def main() -> None:
         row = json.loads(line)
         live[row["exposure_id"]] = row
 
-    sectors, thin, unknown, skipped_status = [], [], [], []
+    sectors, thin, unknown, skipped_status, unsupported = [], [], [], [], []
     filled, overridden = [], []
     added = kept = dropped = 0
     for fname in sorted(os.listdir(args.merged)):
@@ -99,10 +99,14 @@ def main() -> None:
         if v.get("status") in ("insufficient", "untouched"):
             skipped_status.append((eid, v.get("status"), len(v.get("members") or [])))
             continue
-        # "cleared" empties an exposure that could not be filled, without deleting it: the
-        # page, its URL and its episodes stay, the stale rows go, and a later pass (or the
-        # rollback payload) can put members back. A redirect cannot be undone.
-        cleared_now = v.get("status") == "cleared"
+        # "cleared" asked to empty an exposure without deleting it — the page and its
+        # episodes would stay while the stale rows went. The API refuses it: a sector with
+        # no members comes back 422 "empty sectors". So the verdict is honoured as far as it
+        # can be, which is not at all, and the exposure is left alone rather than shipped in
+        # a payload the server will reject wholesale.
+        if v.get("status") == "cleared":
+            unsupported.append((eid, len(row.get("members") or [])))
+            continue
 
         before = {m["ticker"]: m for m in (row.get("members") or [])}
         members = []
@@ -117,10 +121,7 @@ def main() -> None:
             added += m["ticker"] not in before
         dropped += len(before) - sum(1 for m in members if m["ticker"] in before)
 
-        if cleared_now:
-            print(f"CLEARED {eid}: publishing with no members — the exposure and its URL stay, "
-                  f"and the rollback payload restores the {len(before)} row(s) removed here")
-        elif args.min_members and len(members) < args.min_members:
+        if args.min_members and len(members) < args.min_members:
             thin.append((eid, len(members)))
 
         sector = {"exposure_id": eid, "members": members}
@@ -140,6 +141,9 @@ def main() -> None:
                  + ", ".join(f"{e}={n}" for e, n in thin))
     for eid, status, n in skipped_status:
         print(f"SKIPPED {eid}: marked {status} ({n} member(s)) — live rows untouched")
+    for eid, n in unsupported:
+        print(f"NOT CLEARED {eid}: this API rejects a sector with no members, so its {n} existing "
+              f"row(s) stay — retire it deliberately or refill it, but it cannot be emptied")
 
     # A company in too many themes makes every one of those pages say less. The review
     # caps this, but a hand-swapped verdict file can breach it, so the check runs here too.
