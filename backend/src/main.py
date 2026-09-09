@@ -188,7 +188,11 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             print(f"Warning: stock close refresher stopped: {e}")
 
-    asyncio.create_task(_refresh_closes_bg())
+    # Production only — see the note above _refresh_board_bg. This writes
+    # stock_daily_closes in the shared Postgres, so one writer serves every env, and it
+    # spends the rate-limited FinMind/Massive quota that all three envs draw from.
+    if settings.is_production:
+        asyncio.create_task(_refresh_closes_bg())
 
     # TKB-001: derive content_mentions from the pipeline-written ticker_insights
     # table + episode sector_exposures, then compute post-mention 1/5/20/60
@@ -201,7 +205,10 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             print(f"Warning: mention sync stopped: {e}")
 
-    asyncio.create_task(_mention_sync_bg())
+    # Production only: derives content_mentions in the shared Postgres from a full
+    # ticker_insights + episode scan — the heaviest recurring allocation in the process.
+    if settings.is_production:
+        asyncio.create_task(_mention_sync_bg())
 
     # Whole-market TW daily OHLCV + 成交金額 from the official TWSE/TPEx OpenAPIs (2 free
     # calls/day) into Postgres, so /topics money-flow reads daily bars from the DB instead
@@ -220,7 +227,10 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             print(f"Warning: TW daily OHLC fetcher stopped: {e}")
 
-    asyncio.create_task(_refresh_tw_ohlc_bg())
+    # Production only: whole-market TW bars + the chained screener, both into the shared
+    # Postgres, off the official TWSE/TPEx endpoints every env would otherwise hit thrice.
+    if settings.is_production:
+        asyncio.create_task(_refresh_tw_ohlc_bg())
 
     # Whole-market US daily OHLCV warmer (issue #449): pulls the entire US market in one
     # Polygon grouped-daily call per session into stock_daily_ohlc (source='polygon'), the
