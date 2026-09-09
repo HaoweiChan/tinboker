@@ -1,9 +1,12 @@
 import React, { useMemo, useState, useRef, useEffect } from 'react';
 import type { CSSProperties } from 'react';
-import { Play, Pause, Info, ChevronDown } from 'lucide-react';
+import { Info, ChevronDown } from 'lucide-react';
 import { getSectorBubbleData } from '@/services/mocks';
 import type { SectorBubbleData } from '@/services/mocks/types';
 import { resolveIcon } from '@/components/topics/SectorIcon';
+
+/** Bubbles drawn on a phone unless the reader asks for all of them. */
+const MOBILE_TOP = 15;
 import { TOPICS_TYPOGRAPHY } from '@/components/topics/topicsTypography';
 import { useAppStore } from '@/store/useAppStore';
 import { getIndustryColor } from '@/utils/industryColors';
@@ -95,7 +98,6 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({
   const rawData = useMemo<SectorBubbleData[]>(() => data ?? getSectorBubbleData(), [data]);
   const [hoveredSectorId, setHoveredSectorId] = useState<string | null>(null);
   const [listOpen, setListOpen] = useState(false); // mobile: ranked list collapsed by default
-  const [timeValue] = useState(100);
   const { theme } = useAppStore();
   const isDark = theme === 'dark';
   const isEmbedded = variant === 'embedded';
@@ -156,15 +158,29 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({
     if (value == null) return 'text-slate-400';
     return value > 0 ? 'text-emerald-500' : 'text-red-500';
   };
+  // px-based viewBox → fonts render at true px; use the Topics typography scale so
+  // SVG text stays aligned with the surrounding page typography.
+  const compact = width < 480;
+  const chartText = compact ? TOPICS_TYPOGRAPHY.chart.compact : TOPICS_TYPOGRAPHY.chart.default;
+
+  // On a phone the plot is ~340px wide. Drawing all 86 themes there is not a chart, it
+  // is a pile: the bubbles' own diameters exceed the space between their anchors. So a
+  // phone shows the MOBILE_TOP largest by the radius metric (trading value — the same
+  // thing the bubble size already means), with 全部 one tap away and the full ranked
+  // list still below. Desktop keeps everything by default.
+  const [showAll, setShowAll] = useState(false);
+  const topOnly = compact && !showAll;
   const chartData = useMemo(() => {
     const withReturn = rawData.filter((item) => item.returnRate != null);
     // All-zero radii (missing trading values, or the perf-endpoint board fallback)
     // used to drop every bubble — bare axes, no error. Fall back to uniform
     // min-radius bubbles so the chart still reads instead of looking dead.
-    return withReturn.some((item) => radiusValue(item) > 0)
+    const base = withReturn.some((item) => radiusValue(item) > 0)
       ? withReturn.filter((item) => radiusValue(item) > 0)
       : withReturn;
-  }, [rawData]);
+    if (!topOnly) return base;
+    return [...base].sort((a, b) => radiusValue(b) - radiusValue(a)).slice(0, MOBILE_TOP);
+  }, [rawData, topOnly]);
 
   // Scales — derived from the data so live numbers and the mock both render sensibly
   // without hardcoded bounds.
@@ -181,7 +197,10 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({
   const xScaleValue = (val: number) => xScaleMode === 'log' ? Math.log1p(Math.max(0, val)) : val;
   const xScale = (val: number) => (xScaleValue(val) / xScaleMax) * graphWidth;
   const yScale = (val: number) => graphHeight - ((val - yMin) / (yMax - yMin)) * graphHeight;
-  const rScale = (vol: number) => 6 + Math.sqrt(vol / maxVol) * 26; // bounded 6..32px
+  // Radius range follows the plot width. 6..32px was sized for a ~900px desktop plot;
+  // on a 340px phone plot the same pixels are three times as crowded.
+  const [rMin, rMax] = compact ? [4, 18] : [6, 32];
+  const rScale = (vol: number) => rMin + Math.sqrt(vol / maxVol) * (rMax - rMin);
 
   const niceNum = (n: number) => (n >= 10 ? Math.round(n) : +n.toFixed(1));
   const xTicks = Array.from({ length: 6 }, (_, i) => {
@@ -192,11 +211,6 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({
     return niceNum(value);
   });
   const yTicks = Array.from({ length: 7 }, (_, i) => niceNum(yMin + ((yMax - yMin) * i) / 6));
-
-  // px-based viewBox → fonts render at true px; use the Topics typography scale so
-  // SVG text stays aligned with the surrounding page typography.
-  const compact = width < 480;
-  const chartText = compact ? TOPICS_TYPOGRAPHY.chart.compact : TOPICS_TYPOGRAPHY.chart.default;
 
   const plottedData = useMemo<PlottedSectorBubble[]>(() => {
     const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
@@ -299,6 +313,24 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({
         <span className="inline-block w-3.5 h-3.5 rounded-full border border-current opacity-70" />
       </span>
       {xHelp && <InfoHint text={xHelp} />}
+      {compact && (
+        // Phone-only: everything else about the pile is width, this is the one choice
+        // the reader gets. Two words, not a control panel.
+        <span className="ml-2 flex items-center rounded border" style={{ borderColor: 'var(--border-default)' }}>
+          {([false, true] as const).map((all) => (
+            <button
+              key={String(all)}
+              type="button"
+              onClick={() => setShowAll(all)}
+              aria-pressed={showAll === all}
+              className={`px-1.5 py-0.5 ${type.micro} transition-colors ${showAll === all ? 'bg-primary text-primary-foreground font-semibold rounded-[3px]' : ''}`}
+              style={showAll === all ? undefined : legendTextColor}
+            >
+              {all ? '全部' : `前 ${MOBILE_TOP}`}
+            </button>
+          ))}
+        </span>
+      )}
     </div>
   );
 
@@ -542,32 +574,6 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({
         </div>
       </div>
 
-      {/* Bottom Controls (Slider) — mock playback; hidden for live data */}
-      {!data && (
-      <div className="h-16 border-t px-8 flex items-center gap-6 transition-colors" style={headerSurfaceStyle}>
-         <button className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-300' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}`}>
-            {timeValue < 100 ? <Play size={18} fill="currentColor" /> : <Pause size={18} fill="currentColor" />}
-         </button>
-         
-         <div className="flex-1 relative">
-            <div className="h-1 rounded-full w-full" style={{ backgroundColor: 'var(--border-default)' }}>
-               <div className="h-full bg-indigo-500 rounded-full relative" style={{ width: `${timeValue}%` }}>
-                  <div className={`absolute right-0 top-1/2 -translate-y-1/2 w-4 h-4 bg-indigo-500 rounded-full shadow-lg transform scale-125 cursor-grab border-2 ${isDark ? 'border-slate-900' : 'border-white'}`} />
-                  <div
-                    className={`absolute right-0 -top-8 ${type.meta} font-bold px-2 py-1 rounded shadow-lg transform -translate-x-1/2`}
-                    style={{ backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)' }}
-                  >
-                     2025-09-24
-                  </div>
-               </div>
-            </div>
-         </div>
-         
-         <div className={`${type.meta} font-mono text-slate-400 w-24 text-right`}>
-            LIVE DATA
-         </div>
-      </div>
-      )}
 
     </div>
   );
