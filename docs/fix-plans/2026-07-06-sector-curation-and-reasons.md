@@ -9,8 +9,8 @@
 > `docs/fix-plans/pg-governance-research.md`, `docs/fix-plans/taxonomy-governance-research.md`.
 > Audience: implementing agents (Sonnet/Opus/Codex). Follow literally; one milestone =
 > one PR, in order. Companion evidence docs (unchanged from v2):
-> `2026-07-06-grouping-logic-spec.md`, `2026-07-06-sector-universe-audit.md`,
-> `assets/audit_sectors.py`.
+> `2026-07-06-sector-universe-audit.md`, `assets/audit_sectors.py`. The generation spec
+> that used to sit alongside them was deleted with the generator it described.
 
 ---
 
@@ -68,7 +68,7 @@ theater):**
 
 > **2026-09-09 update.** The committed taxonomy fixtures this plan protects
 > (`backend/src/data/sectors_seed.py`, `shared/sectors_seed_backup.py`) and the tooling
-> that maintained them (`curation.py`, `curate_sectors.py`, the tide importer) are
+> that maintained them (`curation.py`, `curate_sectors.py`, the seed importer) are
 > deleted. They carried a full copy of the taxonomy — the thing G6 exists to keep out of
 > this public repo — and refreshing them after the 2026-09-09 membership rebuild would
 > have committed the new curation instead of the old. Pipelines now fall back to a
@@ -152,7 +152,7 @@ Backend + one pipelines touch. No taxonomy content changes beyond the import its
    the fixture, log loudly`). Delete the seed-regeneration writers from the runtime
    path: `curate_sectors.py` survives ONLY as a dev tool operating on the fixture, or
    is deleted with its logic absorbed into the backend validators — implementer keeps
-   whichever is the smaller diff. The tide importer's runbook gains: "re-imports are
+   whichever is the smaller diff. The seed importer's runbook gains: "re-imports are
    drafted through POST /api/admin/taxonomy/bulk, never committed to git".
 5. **Read-path swap**: `reason_for(exposure_id, ticker)` and description resolution
    read from `tag_registry` (registry already reaches the relevant services;
