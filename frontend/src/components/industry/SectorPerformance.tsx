@@ -316,14 +316,14 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({
       {compact && (
         // Phone-only: everything else about the pile is width, this is the one choice
         // the reader gets. Two words, not a control panel.
-        <span className="ml-2 flex items-center rounded border" style={{ borderColor: 'var(--border-default)' }}>
+        <span className="ml-2 flex shrink-0 items-center rounded border" style={{ borderColor: 'var(--border-default)' }}>
           {([false, true] as const).map((all) => (
             <button
               key={String(all)}
               type="button"
               onClick={() => setShowAll(all)}
               aria-pressed={showAll === all}
-              className={`px-1.5 py-0.5 ${type.micro} transition-colors ${showAll === all ? 'bg-primary text-primary-foreground font-semibold rounded-[3px]' : ''}`}
+              className={`px-1.5 py-0.5 whitespace-nowrap ${type.micro} transition-colors ${showAll === all ? 'bg-primary text-primary-foreground font-semibold rounded-[3px]' : ''}`}
               style={showAll === all ? undefined : legendTextColor}
             >
               {all ? '全部' : `前 ${MOBILE_TOP}`}
