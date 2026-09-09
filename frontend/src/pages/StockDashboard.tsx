@@ -303,7 +303,7 @@ const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[]; epi
         </div>
         <div className="flex items-baseline gap-3 flex-wrap mt-1.5">
           <span className={cn('font-mono tabular-nums text-2xl font-semibold tracking-[-0.02em]', hasDisplayPrice ? trend.text : 'text-muted-foreground')}>
-            {isLoading ? '…' : hasDisplayPrice ? fmtPrice(displayPrice) : '—'}
+            {isLoading ? '…' : hasDisplayPrice ? fmtPrice(displayPrice, symbol) : '—'}
           </span>
           {hasDisplayPrice && <Change value={displayChangePercent} />}
           <span className="text-xs text-muted-foreground">{hasDisplayPrice ? '延遲 15 分鐘' : '行情資料暫無'}</span>
@@ -345,6 +345,7 @@ const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[]; epi
                 onLoadMore={handleLoadMore}
                 isLoadingMore={isLoadingMore}
                 mentions={mentionSeries}
+                formatPrice={(v) => fmtPrice(v, symbol)}
               />
             </div>
           ) : market !== 'TW' && market !== 'US' ? (

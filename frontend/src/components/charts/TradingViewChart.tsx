@@ -3,7 +3,6 @@ import { ColorType, CrosshairMode, createChart, type IChartApi, type ISeriesApi,
 import { RSI, MACD, Stochastic } from 'technicalindicators';
 import type { PricePoint } from '@/utils/priceSeries';
 import type { ChartDataPoint } from '@/services/types';
-import { fmtPrice } from '@/lib/price';
 
 // The chart accepts two point shapes; these are the optional fields the legacy
 // code reads off either without narrowing first.
@@ -52,6 +51,8 @@ const SUB_LABEL: Record<string, string> = {
 interface TradingViewChartProps {
   data: (PricePoint | ChartDataPoint)[];
   mentions?: MentionSeries;
+  /** Quote formatter for this instrument (tick-aware decimals). Defaults to 2dp. */
+  formatPrice?: (v: number) => string;
   theme: 'light' | 'dark';
   height?: number;
   className?: string;
@@ -113,6 +114,7 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
   isLoadingMore = false,
   showPriceLines = false,
   mentions,
+  formatPrice,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -123,6 +125,16 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
   const shareRef = useRef<Map<number, number>>(new Map());
   const [mentionPaneDrawn, setMentionPaneDrawn] = useState(false);
   const legendRef = useRef<HTMLDivElement>(null);
+  // Held in a ref: the parent passes a fresh closure every render, and putting it in
+  // the chart effect's deps would tear the chart down on every render.
+  const formatPriceRef = useRef<(v: number) => string>((v) => v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+  if (formatPrice) formatPriceRef.current = formatPrice;
+  const fp = (v: number) => formatPriceRef.current(v);
+  // Latest MA values, shown in a persistent row under the price pane the way a
+  // trading terminal does; the crosshair swaps in the hovered bar's values and
+  // leaving the chart snaps back to the latest.
+  const maLatestRef = useRef<Record<string, number>>({});
+  const [maReadout, setMaReadout] = useState<Record<string, number>>({});
   const loadMoreDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isLoadingRef = useRef(false);
   const isFrozenRef = useRef(false); // Hoisted ref for freeze state
@@ -213,7 +225,7 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
         chart.applyOptions({
           localization: {
             priceFormatter: (v: number) =>
-              v < floor ? '' : fmtPrice(v),
+              v < floor ? '' : fp(v),
           },
         });
       }
@@ -535,24 +547,28 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
       shareRef.current = shareByBar;
       setMentionPaneDrawn(shareByBar.size > 0);
 
+      maLatestRef.current = {};
       // 4. Moving Averages
       if (effectiveIndicators.includes('MA5')) {
         const maData = calculateSMA(sortedData as ChartDataPoint[], 5);
         const series = chart.addLineSeries({ color: '#ff9800', lineWidth: 1, crosshairMarkerVisible: false, title: '', priceLineVisible: false, lastValueVisible: false });
         series.setData(maData);
         seriesMap['MA5'] = series;
+        if (maData.length) maLatestRef.current['MA5'] = maData[maData.length - 1].value;
       }
       if (effectiveIndicators.includes('MA20')) {
         const maData = calculateSMA(sortedData as ChartDataPoint[], 20);
         const series = chart.addLineSeries({ color: '#a78bfa', lineWidth: 1, crosshairMarkerVisible: false, title: '', priceLineVisible: false, lastValueVisible: false });
         series.setData(maData);
         seriesMap['MA20'] = series;
+        if (maData.length) maLatestRef.current['MA20'] = maData[maData.length - 1].value;
       }
       if (effectiveIndicators.includes('MA60')) {
         const maData = calculateSMA(sortedData as ChartDataPoint[], 60);
         const series = chart.addLineSeries({ color: '#00bcd4', lineWidth: 1, crosshairMarkerVisible: false, title: '', priceLineVisible: false, lastValueVisible: false });
         series.setData(maData);
         seriesMap['MA60'] = series;
+        if (maData.length) maLatestRef.current['MA60'] = maData[maData.length - 1].value;
       }
 
       chart.timeScale().fitContent();
@@ -585,7 +601,20 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
         }
       });
 
+      setMaReadout({ ...maLatestRef.current });
+
       chart.subscribeCrosshairMove(param => {
+        // MA readout row: hovered bar's values, or the latest when the pointer leaves.
+        if (param.time) {
+          const next: Record<string, number> = {};
+          for (const ma of ['MA5', 'MA20', 'MA60']) {
+            const sv = seriesMap[ma] ? (param.seriesData.get(seriesMap[ma]) as SeriesValue) : undefined;
+            if (sv) next[ma] = sv.value;
+          }
+          setMaReadout((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
+        } else {
+          setMaReadout((prev) => (JSON.stringify(prev) === JSON.stringify(maLatestRef.current) ? prev : { ...maLatestRef.current }));
+        }
         if (!legendRef.current) return;
 
         // If frozen, do NOT update the legend
@@ -624,31 +653,22 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
             const isUp = change >= 0;
             const colorClass = isUp ? 'text-red-500' : 'text-green-500'; // Red Up
 
-            changeHtml = `<span class="${colorClass} mr-4">漲跌 ${fmtPrice(change)} (${changePercent.toFixed(2)}%)</span>`;
+            changeHtml = `<span class="${colorClass} mr-4">漲跌 ${fp(change)} (${changePercent.toFixed(2)}%)</span>`;
 
             ohlcHtml = `
-                    <span class="mr-3">開 <span class="${colorClass}">${fmtPrice(open)}</span></span>
-                    <span class="mr-3">高 <span class="${colorClass}">${fmtPrice(mainData.high)}</span></span>
-                    <span class="mr-3">低 <span class="${colorClass}">${fmtPrice(mainData.low)}</span></span>
-                    <span>收 <span class="${colorClass}">${fmtPrice(close)}</span></span>
+                    <span class="mr-3">開 <span class="${colorClass}">${fp(open)}</span></span>
+                    <span class="mr-3">高 <span class="${colorClass}">${fp(mainData.high)}</span></span>
+                    <span class="mr-3">低 <span class="${colorClass}">${fp(mainData.low)}</span></span>
+                    <span>收 <span class="${colorClass}">${fp(close)}</span></span>
                   `;
           } else {
             // Line
-            ohlcHtml = `<span class="text-slate-200">價格 ${fmtPrice(mainData.value)}</span>`;
+            ohlcHtml = `<span class="text-slate-200">價格 ${fp(mainData.value)}</span>`;
           }
         }
 
         // MAs (Row 2) - Orange(#ff9800), Blue(#a78bfa), Cyan(#00bcd4)
-        let maHtml = '';
-        ['MA5', 'MA20', 'MA60'].forEach(ma => {
-          if (seriesMap[ma]) {
-            const val = param.seriesData.get(seriesMap[ma]) as SeriesValue;
-            if (val) {
-              const color = ma === 'MA5' ? 'text-[#ff9800]' : ma === 'MA20' ? 'text-[#a78bfa]' : 'text-[#00bcd4]';
-              maHtml += `<span class="${color} mr-4">${ma} ${fmtPrice(val.value)}</span>`;
-            }
-          }
-        });
+        const maHtml = '';
 
         // Sub-Chart Legend (Row 3 or Side)
         let subHtml = '';
@@ -801,6 +821,18 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
           reason — the name has to survive, the explanation does not. */}
       {!minimal && (
         <>
+          {Object.keys(maReadout).length > 0 && (
+            <div
+              className="absolute left-1 z-20 pointer-events-none flex gap-3 rounded bg-card/85 px-1 text-[11px] leading-tight font-mono tabular-nums"
+              style={{ top: TIME_AXIS_PX + (height - TIME_AXIS_PX) * (mentionPaneDrawn ? PANES.sub.withMentions.top : PANES.sub.alone.top) - 30 }}
+            >
+              {(['MA5', 'MA20', 'MA60'] as const).map((ma) => maReadout[ma] !== undefined && (
+                <span key={ma} className={ma === 'MA5' ? 'text-[#ff9800]' : ma === 'MA20' ? 'text-[#a78bfa]' : 'text-[#00bcd4]'}>
+                  {ma.replace('MA', '')}MA {fp(maReadout[ma])}
+                </span>
+              ))}
+            </div>
+          )}
           <div
             className="absolute left-1 z-20 pointer-events-none rounded bg-card/85 px-1 text-[10px] leading-tight text-slate-500 dark:text-slate-400"
             style={{ top: TIME_AXIS_PX + (height - TIME_AXIS_PX) * (mentionPaneDrawn ? PANES.sub.withMentions.top : PANES.sub.alone.top) - 13 }}

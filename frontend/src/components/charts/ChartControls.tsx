@@ -64,15 +64,15 @@ export const ChartControls: React.FC<ChartControlsProps> = ({
 
     return (
         <div className="flex items-center justify-between gap-2 mb-1.5">
-            <div className="flex bg-card border border-border rounded-md p-0.5">
+            <div className="flex items-center gap-1">
                 {TIMEFRAMES.map((tf) => (
                     <button
                         key={tf.value}
                         onClick={() => onTimeframeChange(tf.value)}
                         className={cn(
-                            'px-2.5 py-0.5 text-xs font-medium rounded transition-colors min-w-[1.75rem]',
+                            'px-2.5 py-0.5 text-sm rounded transition-colors min-w-[2rem]',
                             timeframe === tf.value
-                                ? 'bg-muted text-foreground font-bold'
+                                ? 'bg-primary text-primary-foreground font-semibold'
                                 : 'text-muted-foreground hover:text-foreground',
                         )}
                     >
@@ -90,7 +90,7 @@ export const ChartControls: React.FC<ChartControlsProps> = ({
                     <a
                         href={downloadUrl}
                         download
-                        className="flex items-center gap-1 px-2 py-1 bg-card border border-border text-muted-foreground hover:text-foreground text-xs rounded-md transition-colors"
+                        className="flex items-center gap-1 px-1.5 py-0.5 text-sm text-muted-foreground hover:text-foreground rounded hover:bg-muted transition-colors"
                         title="下載這檔股票的走勢圖卡"
                     >
                         <Download className="w-3.5 h-3.5" />
@@ -102,7 +102,7 @@ export const ChartControls: React.FC<ChartControlsProps> = ({
                     <button
                         onClick={() => setOpen((v) => !v)}
                         aria-expanded={open}
-                        className="flex items-center gap-1 px-2.5 py-1 bg-card border border-border text-foreground text-xs font-medium rounded-md hover:bg-muted transition-colors"
+                        className="flex items-center gap-1 px-1.5 py-0.5 text-sm text-foreground rounded hover:bg-muted transition-colors"
                     >
                         <span>指標</span>
                         <span className="text-muted-foreground">{SUB_CHARTS[subChart] ?? subChart}</span>
