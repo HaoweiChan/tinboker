@@ -10,10 +10,31 @@ served payload (Substrate, OSAT, SemiconductorIndex, SupplyChain).
 
 import pytest
 
+from src.services import episode_transformer as et
 from src.services.episode_transformer import (
     EpisodeTransformer,
     filter_tags_against_sectors,
 )
+
+# The alias index reads tag_registry, which a unit test has no database for, so the
+# four exposures under test are injected with the aliases the live registry carries.
+_REGISTRY = {
+    "sector_pcb_substrate": {"display_name": "PCB 載板",
+                             "aliases": ["PCB 載板", "ABF", "IC 載板", "載板", "substrate", "CCL", "銅箔基板"]},
+    "sector_ospat": {"display_name": "封測代工", "aliases": ["封測代工", "封測", "封裝測試", "OSAT"]},
+    "sector_semiconductor": {"display_name": "半導體",
+                             "aliases": ["半導體", "晶片", "晶圓", "護國神山", "semiconductor", "chip", "chips"]},
+    "sector_hbm": {"display_name": "HBM 供應鏈",
+                   "aliases": ["HBM 高頻寬記憶體", "HBM", "高頻寬記憶體", "high bandwidth memory"]},
+}
+
+
+@pytest.fixture(autouse=True)
+def _registry(monkeypatch):
+    monkeypatch.setattr("src.data.sector_visuals.metadata_all", lambda: _REGISTRY)
+    et._sector_alias_index.cache_clear()
+    yield
+    et._sector_alias_index.cache_clear()
 
 # EP677-shaped fired sectors, as stored on the episode doc (display names are the
 # LIVE registry values — note HBM 供應鏈 differs from the seed's display, which is

@@ -1,3 +1,7 @@
+import json
+
+import pytest
+
 from shared.sectors import (
     LiveUniverseRequiredError,
     aggregate_unresolved_trends,
@@ -6,6 +10,56 @@ from shared.sectors import (
     load_universe,
     resolve_text,
 )
+
+
+# The universe used to arrive from a taxonomy fixture committed to the repo. It is now
+# fetched live and cached per machine, so these tests state the universe they mean —
+# aliases copied from the live registry, plus a bare "AI" on the hardware exposure so the
+# longest-match test still has a shorter alias to lose to.
+_UNIVERSE = {
+    "max_tickers": 10,
+    "exposures": [
+        {
+            "exposure_id": "sector_semiconductor",
+            "display_name": "半導體",
+            "exposure_type": "industry",
+            "aliases": ["半導體", "晶片", "晶圓", "護國神山", "semiconductor", "chip", "chips"],
+            "members": [
+                {"ticker": "2330", "name": "台積電", "market": "TW"},
+                {"ticker": "2303", "name": "聯電", "market": "TW"},
+                {"ticker": "2454", "name": "聯發科", "market": "TW"},
+                {"ticker": "3711", "name": "日月光投控", "market": "TW"},
+            ],
+        },
+        {
+            "exposure_id": "sector_ai_server",
+            "display_name": "AI 伺服器組裝",
+            "exposure_type": "theme",
+            "aliases": ["AI 伺服器組裝", "AI 伺服器", "ai server"],
+            "members": [{"ticker": "6669", "name": "緯穎", "market": "TW"}],
+        },
+        {
+            "exposure_id": "sector_ai_hardware",
+            "display_name": "AI與電子硬體",
+            "exposure_type": "industry",
+            "aliases": ["AI", "AI 硬體", "電子硬體"],
+            "members": [{"ticker": "2317", "name": "鴻海", "market": "TW"}],
+        },
+    ],
+}
+
+
+@pytest.fixture(autouse=True)
+def _live_universe(monkeypatch, tmp_path):
+    import shared.sectors as sectors
+
+    sectors._universe.cache_clear()
+    sectors._alias_index.cache_clear()
+    monkeypatch.setattr(sectors, "_CACHE_PATH", tmp_path / "sectors_universe.json")
+    monkeypatch.setattr(sectors, "fetch_sectors_universe", lambda: _UNIVERSE)
+    yield
+    sectors._universe.cache_clear()
+    sectors._alias_index.cache_clear()
 
 
 def test_resolved_tickers_are_tw_only():
@@ -96,17 +150,23 @@ def test_universe_prefers_live_platform_fetch(monkeypatch):
     assert current_exposure_ids(require_live_universe=True) == {"sector_live"}
 
 
-def test_universe_backup_fallback_warns_and_can_be_disallowed(monkeypatch, caplog):
+def test_universe_backup_fallback_warns_and_can_be_disallowed(monkeypatch, caplog, tmp_path):
     import shared.sectors as sectors
 
     sectors._universe.cache_clear()
     monkeypatch.setattr(sectors, "fetch_sectors_universe", lambda: None)
+    # The fallback is this machine's own cache of the last live read, not a fixture.
+    cache = tmp_path / "sectors_universe.json"
+    cache.write_text(json.dumps({"max_tickers": 10, "exposures": [
+        {"exposure_id": "sector_ospat", "display_name": "封測代工", "members": []},
+    ]}), encoding="utf-8")
+    monkeypatch.setattr(sectors, "_CACHE_PATH", cache)
 
     with caplog.at_level("WARNING"):
         universe = load_universe()
 
     assert universe["exposures"]
-    assert "sectors_seed_backup.py" in caplog.text
+    assert str(cache) in caplog.text
     assert "stale" in caplog.text
     try:
         load_universe(require_live_universe=True)
@@ -116,7 +176,7 @@ def test_universe_backup_fallback_warns_and_can_be_disallowed(monkeypatch, caplo
         raise AssertionError("require_live_universe should reject backup fallback")
 
 
-def test_backup_fallback_does_not_poison_live_universe_cache(monkeypatch, caplog):
+def test_backup_fallback_does_not_poison_live_universe_cache(monkeypatch, caplog, tmp_path):
     import shared.sectors as sectors
 
     live_payload = {
@@ -132,15 +192,20 @@ def test_backup_fallback_does_not_poison_live_universe_cache(monkeypatch, caplog
     }
     responses = [None, live_payload]
 
+    cache = tmp_path / "sectors_universe.json"
+    cache.write_text(json.dumps({"max_tickers": 10, "exposures": [
+        {"exposure_id": "sector_cached", "display_name": "Cached", "members": []},
+    ]}), encoding="utf-8")
     sectors._alias_index.cache_clear()
     sectors._universe.cache_clear()
+    monkeypatch.setattr(sectors, "_CACHE_PATH", cache)
     monkeypatch.setattr(sectors, "fetch_sectors_universe", lambda: responses.pop(0))
 
     with caplog.at_level("WARNING"):
         fallback = load_universe()
 
     assert fallback["exposures"]
-    assert "stale emergency sector taxonomy backup" in caplog.text
+    assert "Using the cached sector taxonomy" in caplog.text
 
     out = resolve_text("live after backup")
 

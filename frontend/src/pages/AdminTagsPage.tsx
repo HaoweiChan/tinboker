@@ -4,14 +4,13 @@
  */
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Plus, RefreshCw, Search, Trash2, Check, X, Eye, EyeOff, Radar, Layers, Pencil, Lightbulb, ChevronUp, ChevronDown } from 'lucide-react';
+import { Plus, RefreshCw, Search, Trash2, Check, X, Eye, EyeOff, Radar, Pencil, Lightbulb, ChevronUp, ChevronDown } from 'lucide-react';
 import {
   listAdminTags,
   createAdminTag,
   updateAdminTag,
   deleteAdminTag,
   discoverTags,
-  syncSectors,
   getThemeCandidates,
   type AdminTagEntry,
   type ThemeCandidate,
@@ -47,7 +46,6 @@ export const AdminTagsPage: React.FC = () => {
   const [newSlug, setNewSlug] = useState('');
   const [newDisplay, setNewDisplay] = useState('');
   const [discovering, setDiscovering] = useState(false);
-  const [syncing, setSyncing] = useState(false);
   const [discoverMsg, setDiscoverMsg] = useState('');
   const [editKey, setEditKey] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
@@ -230,21 +228,6 @@ export const AdminTagsPage: React.FC = () => {
     }
   };
 
-  const handleSyncSectors = async () => {
-    setSyncing(true);
-    setDiscoverMsg('');
-    try {
-      const res = await syncSectors();
-      setDiscoverMsg(res.message);
-      await fetchTags();
-    } catch (err) {
-      console.error('Failed to sync sectors:', err);
-      setDiscoverMsg('Sector sync failed');
-    } finally {
-      setSyncing(false);
-    }
-  };
-
   const loadCandidates = useCallback(async () => {
     setCandidatesLoading(true);
     try {
@@ -285,15 +268,6 @@ export const AdminTagsPage: React.FC = () => {
           >
             <Radar className={`h-4 w-4 ${discovering ? 'animate-spin' : ''}`} />
             Discover
-          </button>
-          <button
-            onClick={handleSyncSectors}
-            disabled={syncing}
-            className="flex items-center gap-2 whitespace-nowrap rounded-md border border-border px-3 py-2 text-base text-foreground hover:bg-muted disabled:opacity-50"
-            title="Sync sectors/themes from the pipeline universe (new ones added as visible)"
-          >
-            <Layers className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
-            同步產業
           </button>
           <button
             onClick={fetchTags}

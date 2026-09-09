@@ -129,7 +129,7 @@ def main() -> int:
     ap.add_argument(
         "--require-live-universe",
         action="store_true",
-        help="fail instead of using shared/sectors_seed_backup.py when /api/sectors/universe is unavailable",
+        help="fail instead of falling back to this machine's cached universe when /api/sectors/universe is unavailable",
     )
     args = ap.parse_args()
 

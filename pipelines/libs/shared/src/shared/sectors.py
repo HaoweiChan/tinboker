@@ -7,10 +7,13 @@ endpoints, Tavily, or scraping code. Maintenance jobs refresh the artifact.
 
 from __future__ import annotations
 
+import json
 import logging
+import os
 import re
 import unicodedata
 from dataclasses import dataclass
+from pathlib import Path
 from functools import lru_cache
 from typing import Any, Iterable
 
@@ -135,11 +138,32 @@ def _clean_member(member: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+# Where the last good universe is kept between runs. Not in the repo: this one is
+# public, and a committed taxonomy dump is both stale the day it lands and a free copy
+# of the curation. Override with TINBOKER_SECTOR_CACHE.
+_CACHE_PATH = Path(
+    os.getenv("TINBOKER_SECTOR_CACHE")
+    or Path(os.getenv("XDG_CACHE_HOME") or Path.home() / ".cache") / "tinboker" / "sectors_universe.json"
+)
+
+
+def _write_cache(universe_data: dict[str, Any]) -> None:
+    """Best-effort snapshot of a live read, so ingest survives an API outage."""
+    try:
+        _CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        tmp = _CACHE_PATH.with_suffix(".tmp")
+        tmp.write_text(json.dumps(universe_data, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(_CACHE_PATH)
+    except Exception as exc:  # noqa: BLE001 — a cache we cannot write is not fatal
+        logger.debug("sector universe cache not written (%s): %s", _CACHE_PATH, exc)
+
+
 @lru_cache(maxsize=1)
 def _universe() -> dict[str, Any]:
     universe_data = fetch_sectors_universe()
     if not universe_data:
         raise _LiveUniverseUnavailableError
+    _write_cache(universe_data)
     return _normalize_universe(universe_data)
 
 
@@ -165,17 +189,30 @@ def current_exposure_ids(*, require_live_universe: bool = False) -> set[str]:
 
 
 def _backup_universe_data() -> dict[str, Any]:
-    from shared import sectors_seed_backup
+    """The last universe this machine saw, or nothing.
 
-    backup_path = getattr(sectors_seed_backup, "__file__", "shared/sectors_seed_backup.py")
+    Replaces a taxonomy fixture that used to ship in the repo. A machine that has run
+    once keeps working through an API outage; one that never has gets no taxonomy at
+    all, which is the honest answer — better than attributing episodes against a
+    snapshot old enough that nobody remembers when it was taken.
+    """
+    try:
+        cached = json.loads(_CACHE_PATH.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001 — missing/corrupt cache is the same story
+        logger.error(
+            "Sector taxonomy unavailable: the platform API did not answer and no cached "
+            "universe exists at %s (%s). Episode sector attribution will be empty.",
+            _CACHE_PATH, exc,
+        )
+        return {"max_tickers": DEFAULT_MAX_TICKERS, "exposures": []}
     logger.warning(
-        "Using stale emergency sector taxonomy backup file %s; truth is the platform "
-        "API /api/sectors/universe, and episode backfills may write stale snapshots.",
-        backup_path,
+        "Using the cached sector taxonomy from %s; truth is the platform API "
+        "/api/sectors/universe, and episode backfills may write stale snapshots.",
+        _CACHE_PATH,
     )
     return {
-        "max_tickers": DEFAULT_MAX_TICKERS,
-        "exposures": sectors_seed_backup.SECTORS_SEED,
+        "max_tickers": int(cached.get("max_tickers") or DEFAULT_MAX_TICKERS),
+        "exposures": cached.get("exposures") or [],
     }
 
 

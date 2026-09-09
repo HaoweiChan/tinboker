@@ -45,6 +45,7 @@ def _metadata() -> dict[str, dict[str, str | None]]:
                         "description": r.description,
                         "display_name": r.display_zh,
                         "exposure_type": r.exposure_type,
+                        "aliases": list(r.aliases or []),
                     }
             return out
         finally:
@@ -55,6 +56,11 @@ def _metadata() -> dict[str, dict[str, str | None]]:
 
 
 def _visuals() -> dict[str, dict[str, str | None]]:
+    return _metadata()
+
+
+def metadata_all() -> dict[str, dict[str, str | None]]:
+    """Every non-redirected sector's metadata, keyed by exposure_id (cached query)."""
     return _metadata()
 
 

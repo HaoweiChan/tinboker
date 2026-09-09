@@ -288,23 +288,6 @@ async def lifespan(app: FastAPI):
 
     asyncio.create_task(_refresh_heat_validation_bg())
 
-    # Empty-DB bootstrap only. Once any sector row exists, taxonomy writes are managed
-    # by the admin taxonomy API and this seed sync writes nothing.
-    async def _sync_sectors_bg():
-        try:
-            from src.database.postgres import get_session
-            from src.tag_registry import sync_sectors
-            from src.data.sectors_seed import SECTORS_SEED
-            for session in get_session():
-                added = sync_sectors(session, SECTORS_SEED)
-                break
-            if added:
-                print(f"Sector sync: indexed {added} new sector(s) from seed.")
-        except Exception as e:
-            print(f"Warning: sector sync skipped: {e}")
-
-    asyncio.create_task(_sync_sectors_bg())
-
     # Sector follows are keyed by display name on the user row. M2 merges four
     # jp_* sector pages into canonical sectors, so migrate old followed names once.
     async def _migrate_sector_follows_bg():

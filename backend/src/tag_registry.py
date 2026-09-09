@@ -232,18 +232,23 @@ def consolidate_tag_registry(db: Session) -> int:
     return removed
 
 
-def sync_sectors(db: Session, sectors: list[dict]) -> int:
-    """Bootstrap sector/theme rows only when the registry has no sector rows.
+def sync_sectors(db: Session, sectors: list[dict], redirects: dict[str, str] | None = None) -> int:
+    """Insert sector/theme rows, and only into a registry that has none.
 
-    After M2.5 the taxonomy is managed in Postgres through the admin taxonomy API.
-    Startup seed sync must never overwrite DB-authored taxonomy rows again.
+    A restore path, not a startup step: the committed fixture this used to read is
+    gone (the taxonomy is DB-managed, and this repo is public), so the caller is a
+    deliberate restore of an exported taxonomy into an empty registry. Any existing
+    sector row — including a redirect, which is one — makes this a no-op, so
+    DB-authored taxonomy can never be overwritten from a file. ``redirects`` travels
+    with the sectors it belongs to for the same reason: an empty registry has none of
+    its own to read.
     """
     existing = db.query(TagRegistry.id).filter(TagRegistry.kind == KIND_SECTOR).first()
     if existing is not None:
         logger.info("taxonomy managed in DB; seed sync skipped")
         return 0
 
-    redirects = _seed_sector_redirects()
+    redirects = dict(redirects or {})
     new_count = 0
     logger.warning(
         "BOOTSTRAP ONLY: tag_registry has no sector rows; seeding %d sectors from fixture",
@@ -333,21 +338,11 @@ def sector_redirects(db: Session | None = None) -> dict[str, str]:
 
 def _sector_redirects_from_session(db: Session) -> dict[str, str]:
     rows = db.query(TagRegistry).filter(TagRegistry.kind == KIND_SECTOR).all()
-    if not rows:
-        return _seed_sector_redirects()
     return {
         str(row.exposure_id): str(row.redirect_to)
         for row in rows
         if row.exposure_id and row.redirect_to
     }
-
-
-def _seed_sector_redirects() -> dict[str, str]:
-    try:
-        from src.data.sectors_seed import SECTOR_REDIRECTS
-    except Exception:
-        return {}
-    return {str(k): str(v) for k, v in dict(SECTOR_REDIRECTS or {}).items()}
 
 
 def _sector_redirects() -> dict[str, str]:
@@ -395,7 +390,9 @@ def auto_register_sectors(db: Session, sectors: list[dict]) -> int:
     merges stand.
     """
     known = {r[0] for r in db.query(TagRegistry.exposure_id).filter(TagRegistry.exposure_id.isnot(None)).all()}
-    redirects = _seed_sector_redirects()
+    # Live redirects, not a fixture's: this runs against a populated registry, where an
+    # id that redirects today must be skipped even if no fixture ever knew about it.
+    redirects = _sector_redirects_from_session(db)
     added = 0
     for s in sectors:
         eid = str(s.get("exposure_id") or "").strip()

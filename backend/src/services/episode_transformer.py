@@ -26,22 +26,22 @@ def _norm_text(s) -> str:
 
 @lru_cache(maxsize=1)
 def _sector_alias_index() -> dict:
-    """exposure_id -> normalized display+aliases, from the in-process sectors seed.
+    """exposure_id -> normalized display+aliases, from the live tag_registry.
 
-    Zero I/O: ``SECTORS_SEED`` is committed data (same provenance as the registry
-    sync). Slightly staler than the live registry, but the fired exposure's own
-    ``display_name`` from the episode doc is always matched too, which covers
-    live-only renames.
+    Reuses ``sector_visuals`` metadata, which is one cached query for the whole
+    process, so this stays cheap on the per-episode path while following renames
+    the moment a taxonomy publish clears the caches (the committed fixture this
+    replaced could not — it went stale the day it was generated).
     """
-    from src.data.sectors_seed import SECTORS_SEED
+    from src.data.sector_visuals import metadata_all
     index: dict = {}
-    for exposure in SECTORS_SEED:
+    for exposure_id, meta in metadata_all().items():
         names = {
             _norm_text(a)
-            for a in [exposure.get("display_name"), *(exposure.get("aliases") or [])]
+            for a in [meta.get("display_name"), *(meta.get("aliases") or [])]
             if a
         }
-        index[str(exposure.get("exposure_id"))] = frozenset(n for n in names if n)
+        index[str(exposure_id)] = frozenset(n for n in names if n)
     return index
 
 
