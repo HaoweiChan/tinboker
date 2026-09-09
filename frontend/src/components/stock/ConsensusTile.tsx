@@ -116,7 +116,7 @@ export const ConsensusTile: React.FC<ConsensusTileProps> = ({ insights, classNam
         {insights.length > 0 && (
           <div className="text-xs text-muted-foreground tabular-nums">
             {horizons.map((h, i) => <React.Fragment key={h.label}>{i > 0 && ' · '}{h.label} {h.n}</React.Fragment>)}
-            {' · '}共 {insights.length} 則（90 天）
+            {' · '}<span className="whitespace-nowrap">共 {insights.length} 則（90 天）</span>
           </div>
         )}
       </div>

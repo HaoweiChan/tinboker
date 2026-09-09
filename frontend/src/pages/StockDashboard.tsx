@@ -29,6 +29,7 @@ import { useEpisodeSentimentMap } from '@/hooks/useEpisodeSentimentMap';
 import { useIsDesktop } from '@/hooks/useIsDesktop';
 import { useTranslationMap } from '@/hooks/useTranslationMap';
 import { getStockLabel, inferStockMarket } from '@/utils/stockDisplay';
+import { fmtPrice } from '@/lib/price';
 import { Tile } from '@/components/redesign/Tile';
 import { SectorIcon } from '@/components/topics/SectorIcon';
 import { getSectorsByTicker } from '@/services/api/stocks';
@@ -214,10 +215,6 @@ const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[]; epi
     return [];
   }, [rawChart]);
 
-  const formatPositiveNumber = (value: number | null | undefined, options?: Intl.NumberFormatOptions) => {
-    if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return '—';
-    return value.toLocaleString('en-US', options);
-  };
   const hasDisplayPrice = typeof displayPrice === 'number' && Number.isFinite(displayPrice) && displayPrice > 0;
   // Period stats from the close history, not the day's open/high/low: the feed is
   // delayed, so intraday numbers read as live when they are not, and a 1-year window
@@ -306,7 +303,7 @@ const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[]; epi
         </div>
         <div className="flex items-baseline gap-3 flex-wrap mt-1.5">
           <span className={cn('font-mono tabular-nums text-2xl font-semibold tracking-[-0.02em]', hasDisplayPrice ? trend.text : 'text-muted-foreground')}>
-            {isLoading ? '…' : formatPositiveNumber(displayPrice, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            {isLoading ? '…' : hasDisplayPrice ? fmtPrice(displayPrice) : '—'}
           </span>
           {hasDisplayPrice && <Change value={displayChangePercent} />}
           <span className="text-xs text-muted-foreground">{hasDisplayPrice ? '延遲 15 分鐘' : '行情資料暫無'}</span>

@@ -3,6 +3,7 @@ import { ColorType, CrosshairMode, createChart, type IChartApi, type ISeriesApi,
 import { RSI, MACD, Stochastic } from 'technicalindicators';
 import type { PricePoint } from '@/utils/priceSeries';
 import type { ChartDataPoint } from '@/services/types';
+import { fmtPrice } from '@/lib/price';
 
 // The chart accepts two point shapes; these are the optional fields the legacy
 // code reads off either without narrowing first.
@@ -212,7 +213,7 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
         chart.applyOptions({
           localization: {
             priceFormatter: (v: number) =>
-              v < floor ? '' : v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+              v < floor ? '' : fmtPrice(v),
           },
         });
       }
@@ -623,17 +624,17 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
             const isUp = change >= 0;
             const colorClass = isUp ? 'text-red-500' : 'text-green-500'; // Red Up
 
-            changeHtml = `<span class="${colorClass} mr-4">漲跌 ${change.toFixed(2)} (${changePercent.toFixed(2)}%)</span>`;
+            changeHtml = `<span class="${colorClass} mr-4">漲跌 ${fmtPrice(change)} (${changePercent.toFixed(2)}%)</span>`;
 
             ohlcHtml = `
-                    <span class="mr-3">開 <span class="${colorClass}">${open.toFixed(2)}</span></span>
-                    <span class="mr-3">高 <span class="${colorClass}">${mainData.high.toFixed(2)}</span></span>
-                    <span class="mr-3">低 <span class="${colorClass}">${mainData.low.toFixed(2)}</span></span>
-                    <span>收 <span class="${colorClass}">${close.toFixed(2)}</span></span>
+                    <span class="mr-3">開 <span class="${colorClass}">${fmtPrice(open)}</span></span>
+                    <span class="mr-3">高 <span class="${colorClass}">${fmtPrice(mainData.high)}</span></span>
+                    <span class="mr-3">低 <span class="${colorClass}">${fmtPrice(mainData.low)}</span></span>
+                    <span>收 <span class="${colorClass}">${fmtPrice(close)}</span></span>
                   `;
           } else {
             // Line
-            ohlcHtml = `<span class="text-slate-200">Price: ${mainData.value.toFixed(2)}</span>`;
+            ohlcHtml = `<span class="text-slate-200">價格 ${fmtPrice(mainData.value)}</span>`;
           }
         }
 
@@ -644,7 +645,7 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
             const val = param.seriesData.get(seriesMap[ma]) as SeriesValue;
             if (val) {
               const color = ma === 'MA5' ? 'text-[#ff9800]' : ma === 'MA20' ? 'text-[#a78bfa]' : 'text-[#00bcd4]';
-              maHtml += `<span class="${color} mr-4">${ma} ${val.value.toFixed(2)}</span>`;
+              maHtml += `<span class="${color} mr-4">${ma} ${fmtPrice(val.value)}</span>`;
             }
           }
         });
