@@ -375,9 +375,12 @@ const SectorPerformance: React.FC<SectorPerformanceProps> = ({
       )}
 
       {isEmbedded && (
-        <div className="px-3 pt-2.5 pb-1.5 flex items-center justify-between gap-2">
+        {/* Wraps: on a phone the four timeframes, the size legend and the 前 15 / 全部
+            toggle are wider than the screen, and a shrinking legend clipped the toggle's
+            last character. A second line beats a missing word. */}
+        <div className="px-3 pt-2.5 pb-1.5 flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5">
           <div className="shrink-0">{headerLeft}</div>
-          <div className="min-w-0 shrink">{legendContent}</div>
+          <div className="min-w-0">{legendContent}</div>
         </div>
       )}
 
