@@ -11,6 +11,7 @@ import { useAppStore } from '@/store/useAppStore';
 import { useRequireAuth } from '@/hooks/useRequireAuth';
 import { useStockTrendColor } from '@/hooks/useStockTrendColor';
 import { getStockByTicker, getEpisodesByTicker, type Episode as ApiEpisode } from '@/services/api';
+import { getStockCardUrl } from '@/services/api/stocks';
 import { fetchWithFallback } from '@/services/api/migration';
 import type { CompanyDetail, RealTimePriceUpdate, TimeframeOption, TickerInsight } from '@/services/types';
 import { priceWebSocketClient } from '@/services/websocket/priceWebSocket';
@@ -327,6 +328,10 @@ const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[]; epi
             onSubChartChange={setSubChart}
             activeIndicators={activeIndicators}
             onToggleIndicator={(ind, active) => setActiveIndicators((prev) => (active ? [...prev, ind] : prev.filter((i) => i !== ind)))}
+            // Only offered once there are bars to draw — the card endpoint 404s on a
+            // ticker with no price history, and a button that downloads an error is worse
+            // than no button.
+            downloadUrl={chartData.length > 0 ? getStockCardUrl(symbol, { download: true }) : undefined}
           />
           {isLoading ? (
             <div style={{ height: chartHeight }} className="w-full mt-1 rounded-md bg-muted/30 animate-pulse" />

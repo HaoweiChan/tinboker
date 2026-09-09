@@ -5,6 +5,9 @@ description = "TinBoker platform backend API (FastAPI)"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    # Rasterises the OG covers and stock cards; needs libcairo2 (see Dockerfile). Was
+    # only in requirements.txt, so `uv sync` produced a venv where every .png route 500s.
+    "cairosvg==2.7.1",
     "fastapi==0.104.1",
     "finmind>=1.9.2",
     "firebase-admin>=6.0.0",
