@@ -258,6 +258,10 @@ def _persist_close(ticker: str, date: str, close: float) -> None:
 
     Own session, same reason as :func:`_read_close_before`.
     """
+    from src.services.stock_close_refresh import close_is_final
+
+    if not close_is_final(ticker, date):
+        return  # intraday quote, not a close — the warmer stores it after the session
     for session in get_session():
         try:
             existing = (
