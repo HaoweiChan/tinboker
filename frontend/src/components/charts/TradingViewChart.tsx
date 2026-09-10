@@ -3,7 +3,6 @@ import { ColorType, CrosshairMode, createChart, type IChartApi, type ISeriesApi,
 import { RSI, MACD, Stochastic } from 'technicalindicators';
 import type { PricePoint } from '@/utils/priceSeries';
 import type { ChartDataPoint } from '@/services/types';
-import { attentionPercentile } from './attentionPercentile';
 
 // The chart accepts two point shapes; these are the optional fields the legacy
 // code reads off either without narrowing first.
@@ -26,6 +25,10 @@ export interface MentionSeries {
   halfLifeDays: number;
   ticker: MentionBar[];
   market: { time: number; n: number }[];
+  /** 聲量水位: the share's percentile inside the ticker's own trailing year, 0–100,
+   *  computed by the backend (services/attention.py) so the chart and the weekly
+   *  cannot drift into two definitions. */
+  level: { time: number; p: number }[];
 }
 
 /** Below this much market-wide heat a share is not a measurement, it is one loud day
@@ -472,10 +475,11 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
       //     sat flat between 3.5% and 5.9% the whole time. Dividing removes our own growth.
       //
       // What is DRAWN is neither: it is the share's percentile inside the ticker's own
-      // trailing year (聲量水位, see attentionPercentile.ts). The share still changes
-      // meaning whenever the roster changes and is never comparable between a name that
-      // is always discussed and one that rarely is; its own-year rank is stable on both
-      // counts. The share stays in the crosshair so the number remains checkable.
+      // trailing year (聲量水位), computed server-side (backend services/attention.py)
+      // and only snapped to sessions here. The share still changes meaning whenever the
+      // roster changes and is never comparable between a name that is always discussed
+      // and one that rarely is; its own-year rank is stable on both counts. The share is
+      // still derived below for the crosshair so the number remains checkable.
       const rawByBar = new Map<number, number>();
       const shareByBar = new Map<number, number>();
       if (mentions && mentions.ticker.length > 0 && mentions.market.length > 0) {
@@ -502,7 +506,6 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
         const heat = { bull: 0, neutral: 0, bear: 0 };
         let market = 0;
         let prev: number | null = null;
-        const shares: { time: number; share: number }[] = [];
         for (const t of barTimes) {
           if (prev !== null) {
             const decay = 0.5 ** (((t - prev) / 86400) / halfLife);
@@ -519,12 +522,16 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
           // Before the corpus was big enough there is no denominator worth dividing by,
           // so those sessions get no point rather than a spike invented by a small number.
           if (market < MIN_MARKET_HEAT) continue;
-          const share = (heat.bull + heat.neutral + heat.bear) / market;
-          shares.push({ time: t, share });
-          shareByBar.set(t, share);
+          shareByBar.set(t, (heat.bull + heat.neutral + heat.bear) / market);
         }
 
-        const pct = attentionPercentile(shares);
+        // Calendar days snap forward to the next session, so a weekend's level lands on
+        // Monday; the last day mapping to a session wins.
+        const pct = new Map<number, number>();
+        for (const l of mentions.level) {
+          const t = snap(l.time);
+          if (t !== undefined) pct.set(t, l.p);
+        }
         if (pct.size > 0) {
           const s = chart.addAreaSeries({
             lineColor: '#f59e0b',
@@ -539,7 +546,7 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
             // that never leaves 40–60 look as dramatic as one swinging 5–95.
             autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: 100 } }),
           });
-          s.setData(shares.filter((d) => pct.has(d.time)).map((d) => ({ time: d.time as UTCTimestamp, value: pct.get(d.time) as number })));
+          s.setData(barTimes.filter((t) => pct.has(t)).map((t) => ({ time: t as UTCTimestamp, value: pct.get(t) as number })));
           seriesMap['Mentions'] = s;
           chart.priceScale('mentions').applyOptions({ scaleMargins: MENTION_MARGINS });
         }
