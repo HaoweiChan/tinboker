@@ -30,6 +30,8 @@ insight_service = InsightService()
 
 TAIPEI = ZoneInfo("Asia/Taipei")
 TOP_TICKERS = 15
+FLIP_MIN_EPISODES = 5   # below this, a sentiment swing is noise wearing a big percentage
+FLIP_TOP = 3
 TOP_SECTORS = 10
 
 
@@ -88,6 +90,40 @@ def _tally(insights: list[dict]) -> dict[str, Counter]:
     return by
 
 
+def flip_rows(rows: list[dict]) -> list[dict]:
+    """The tickers whose sentiment mix moved most since last week.
+
+    Two turns toward bearish plus the strongest turn toward bullish. This is the
+    rollup's only genuinely non-obvious signal — "who got talked about most" is
+    guessable, "who the same shows changed their mind about" is not — and it is
+    what both the weekly video and the weekly Threads copy lead with. Computed
+    here, once, so those two can never disagree about which tickers they are.
+
+    Only tickers with FLIP_MIN_EPISODES episodes qualify: a 1-to-0 swing on a
+    ticker two shows mentioned is noise wearing a large percentage.
+    """
+    def share(row: dict, key: str, prefix: str = "") -> float:
+        total = row[f"{prefix}bull"] + row[f"{prefix}neu"] + row[f"{prefix}bear"]
+        return row[f"{prefix}{key}"] / total if total else 0.0
+
+    def delta(row: dict, key: str) -> float:
+        return share(row, key) - share(row, key, "prev_")
+
+    pool = [r for r in rows if r["episodes"] >= FLIP_MIN_EPISODES]
+    picks: list[dict] = []
+    for key, count in (("bear", 2), ("bull", 1)):
+        ranked = sorted(pool, key=lambda r: delta(r, key), reverse=True)
+        for row in ranked:
+            if len(picks) >= FLIP_TOP:
+                break
+            if delta(row, key) <= 0 or any(p["ticker"] == row["ticker"] for p in picks):
+                continue
+            picks.append({**row, "direction": key})
+            if sum(1 for p in picks if p["direction"] == key) >= count:
+                break
+    return picks
+
+
 async def build_week(week: str) -> Optional[dict]:
     """The rollup for one week, or None when no scoped episode falls in it."""
     start, end = week_bounds(week)
@@ -134,13 +170,15 @@ async def build_week(week: str) -> Optional[dict]:
             "prev_bull": prev["bull"], "prev_neu": prev["neu"], "prev_bear": prev["bear"],
         }
 
+    rows = [ticker_row(tk, n) for tk, n in ticker_eps.most_common(TOP_TICKERS)]
     return {
         "week": week,
         "start": start.isoformat(),
         "end": end.isoformat(),
         "episode_count": len(episodes),
         "podcasts": [{"name": n, "episodes": c} for n, c in Counter(ep.podcast_name for ep in episodes).most_common()],
-        "tickers": [ticker_row(tk, n) for tk, n in ticker_eps.most_common(TOP_TICKERS)],
+        "tickers": rows,
+        "flips": flip_rows(rows),
         "sectors": [{"exposure_id": sid, "episodes": n, **sector_meta[sid]} for sid, n in sector_eps.most_common(TOP_SECTORS)],
         # Full Episode shape (same as /episodes/by-sector) so the page renders the same
         # EpisodeCardV2 as every other list; content fields are empty (enrich_content=False).

@@ -128,7 +128,7 @@ _MAX_TOKENS_MAP: dict[str, int] = {
 }
 
 
-@lru_cache(maxsize=8)
+@lru_cache(maxsize=16)   # one entry per prompt yaml; keep ahead of the file count
 def load_prompt(name: str) -> dict[str, str]:
     """Load a prompt YAML file and return system/user templates."""
     path = _PROMPTS_DIR / f"{name}.yaml"

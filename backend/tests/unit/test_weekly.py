@@ -82,3 +82,32 @@ async def test_list_weeks_counts_scoped_episodes_newest_first(monkeypatch):
     assert weeks[0]["top_tickers"][0] == {"ticker": "2330", "name": "台積電", "episodes": 2}
     assert weeks[0]["top_sectors"] == [{"exposure_id": "sector_mlcc", "display_name": "被動元件 MLCC", "episodes": 1}]
     assert weeks[1]["top_tickers"] == [] and weeks[1]["podcast_count"] == 1
+
+
+def _row(ticker, episodes, now, prev):
+    b, n, r = now
+    pb, pn, pr = prev
+    return {"ticker": ticker, "name": None, "episodes": episodes,
+            "bull": b, "neu": n, "bear": r, "prev_bull": pb, "prev_neu": pn, "prev_bear": pr}
+
+
+def test_flip_rows_picks_two_bear_turns_and_one_bull_turn():
+    """The video and the Threads copy both lead with these — they must be one list."""
+    rows = [
+        _row("8046", 8, (1, 4, 3), (5, 2, 0)),    # strongest turn bearish
+        _row("3037", 8, (4, 3, 4), (7, 1, 0)),    # second turn bearish
+        _row("2317", 7, (2, 5, 2), (2, 4, 2)),    # flat — never picked
+        _row("SPCX", 7, (7, 8, 0), (0, 8, 0)),    # strongest turn bullish
+        _row("2330", 15, (15, 3, 0), (11, 4, 0)),  # bullish, but a smaller share move
+    ]
+    picks = weekly.flip_rows(rows)
+    assert [p["ticker"] for p in picks] == ["8046", "3037", "SPCX"]
+    assert [p["direction"] for p in picks] == ["bear", "bear", "bull"]
+
+
+def test_flip_rows_ignores_thinly_covered_tickers_and_flat_weeks():
+    """A 1→0 swing on a ticker two shows mentioned is noise wearing a big percentage."""
+    thin = _row("9999", weekly.FLIP_MIN_EPISODES - 1, (0, 0, 2), (2, 0, 0))
+    flat = _row("2330", 12, (5, 5, 0), (5, 5, 0))
+    assert weekly.flip_rows([thin, flat]) == []
+    assert len(weekly.flip_rows([thin, flat, _row("2454", 6, (0, 2, 4), (4, 2, 0))])) == 1
