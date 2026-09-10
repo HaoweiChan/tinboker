@@ -13,9 +13,28 @@ Of 15 normalisations tested on 2020–2026 data this was the only family that re
 same before and after the roster change (2026-09-10 sentiment quantamental report).
 """
 from datetime import date, timedelta
-from typing import Dict, List
+from typing import Dict, List, Optional
+
+from src.database.models import ContentMention
 
 HALF_LIFE_DAYS = 7.0
+
+
+def scope_mentions(query, allowed: Optional[frozenset]):
+    """Restrict a ContentMention query to the release roster.
+
+    `allowed` is PodcastService._allowed_podcast_names(): resolve it in the async
+    endpoint and pass it into the sync query — never call the async method from inside
+    a thread. None means no language scope is configured (filter off); an empty set
+    fails closed, matching the episode surfaces.
+
+    ContentMention reads never pass through PodcastService's read chokepoint, so every
+    reader (mention lists, heat, 聲量水位, the weekly's track record) must go through this
+    one function or an English batch landing in the store moves every TW ticker's
+    numbers — and, because the level ranks each day against a trailing year, keeps
+    moving them for a year after.
+    """
+    return query if allowed is None else query.filter(ContentMention.podcaster.in_(allowed))
 WINDOW_DAYS = 364
 # ~60 trading sessions. A freshly ingested ticker shows nothing rather than a percentile
 # computed against three weeks.

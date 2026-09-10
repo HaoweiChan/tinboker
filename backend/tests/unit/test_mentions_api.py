@@ -33,8 +33,17 @@ def session(monkeypatch):
         yield db
 
     monkeypatch.setattr(api, "get_session", _gen)
+    # Release roster: None = no language scope, so these tests see every seeded row.
+    # test_ticker_mentions_respects_release_roster overrides it.
+    monkeypatch.setattr(api.podcast_service, "_allowed_podcast_names", _roster(None))
     yield db
     db.close()
+
+
+def _roster(names):
+    async def _allowed():
+        return names
+    return _allowed
 
 
 def _call(coro) -> dict:
@@ -92,6 +101,18 @@ def test_ticker_mentions_endpoint(session):
     assert m["performance"]["baseline_close"] == 100.0
     assert m["performance"]["r1d"] == 1.0
     assert m["performance"]["r20d"] is None  # unelapsed window serialises as null
+
+
+def test_ticker_mentions_respects_release_roster(session, monkeypatch):
+    _seed_ticker_mention(session, episode_id="tw", ticker="2330")
+    m = _seed_ticker_mention(session, episode_id="en", ticker="2330", with_snapshot=False)
+    m.podcaster = "CNBC's Fast Money"
+    session.commit()
+    monkeypatch.setattr(api.podcast_service, "_allowed_podcast_names", _roster(frozenset({"Gooaye 股癌"})))
+    body = _call(api.get_ticker_mentions("2330", limit=50))
+    assert [x["episode_id"] for x in body["mentions"]] == ["tw"]
+    monkeypatch.setattr(api.podcast_service, "_allowed_podcast_names", _roster(frozenset()))
+    assert _call(api.get_ticker_mentions("2330", limit=50))["mentions"] == []  # fail closed
 
 
 def test_ticker_mentions_without_snapshot(session):

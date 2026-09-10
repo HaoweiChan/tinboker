@@ -20,7 +20,7 @@ from src.database.models import (
     SectorPerformanceSnapshot,
     TickerPerformanceSnapshot,
 )
-from src.services.attention import WINDOW_DAYS as _LEVEL_WINDOW_DAYS, attention_level
+from src.services.attention import WINDOW_DAYS as _LEVEL_WINDOW_DAYS, attention_level, scope_mentions
 from src.services.podcast import PodcastService
 
 logger = logging.getLogger(__name__)
@@ -78,9 +78,9 @@ def _mention_dict(mention: ContentMention, performance: Optional[dict]) -> dict:
     }
 
 
-def _ticker_mentions(db: Session, tickers: List[str], limit: int) -> List[dict]:
+def _ticker_mentions(db: Session, tickers: List[str], limit: int, allowed: Optional[frozenset]) -> List[dict]:
     rows = (
-        db.query(ContentMention, TickerPerformanceSnapshot)
+        scope_mentions(db.query(ContentMention, TickerPerformanceSnapshot), allowed)
         .outerjoin(TickerPerformanceSnapshot, TickerPerformanceSnapshot.mention_id == ContentMention.id)
         .filter(ContentMention.mention_type == "ticker", ContentMention.ticker.in_(tickers))
         .order_by(ContentMention.mentioned_at.desc())
@@ -98,8 +98,9 @@ async def get_ticker_mentions(
 ):
     """Podcast mentions of one ticker with post-mention 1/5/20/60 trading-day returns."""
     canonical = ticker.upper().replace(".TW", "").strip()
+    allowed = await podcast_service._allowed_podcast_names()
     for db in get_session():
-        mentions = _ticker_mentions(db, [canonical, ticker.upper()], limit)
+        mentions = _ticker_mentions(db, [canonical, ticker.upper()], limit, allowed)
         return {"ticker": canonical, "mentions": mentions, "disclaimer": DISCLAIMER}
     return {"ticker": canonical, "mentions": [], "disclaimer": DISCLAIMER}
 
@@ -111,9 +112,10 @@ async def get_sector_mentions(
     limit: int = Query(default=50, ge=1, le=200),
 ):
     """Podcast mentions of one sector/theme with post-mention member-average returns."""
+    allowed = await podcast_service._allowed_podcast_names()
     for db in get_session():
         rows = (
-            db.query(ContentMention, SectorPerformanceSnapshot)
+            scope_mentions(db.query(ContentMention, SectorPerformanceSnapshot), allowed)
             .outerjoin(SectorPerformanceSnapshot, SectorPerformanceSnapshot.mention_id == ContentMention.id)
             .filter(ContentMention.mention_type == "sector", ContentMention.exposure_id == exposure_id)
             .order_by(ContentMention.mentioned_at.desc())
@@ -129,9 +131,10 @@ async def get_sector_mentions(
 @cdn_cache_trending
 async def get_episode_mentions(episode_id: str):
     """All ticker + sector mentions extracted from one episode, with performance."""
+    allowed = await podcast_service._allowed_podcast_names()
     for db in get_session():
         rows = (
-            db.query(ContentMention)
+            scope_mentions(db.query(ContentMention), allowed)
             .filter(ContentMention.episode_id == episode_id)
             .order_by(ContentMention.mention_type, ContentMention.ticker)
             .all()
@@ -173,17 +176,6 @@ _HEAT_INDEX_DAYS = 30
 _HEAT_HALF_LIFE_DAYS = 7.0
 
 
-def _scoped(query, allowed: Optional[frozenset]):
-    """Restrict mention reads to the release roster (settings.release_podcast_languages).
-
-    ContentMention reads never pass through PodcastService's chokepoint, so without this
-    an English batch landing in the store moves every TW ticker's share — and, because
-    聲量水位 ranks each day against a trailing year, keeps moving it for a year after.
-    None means no language scope is configured; an empty set fails closed.
-    """
-    return query if allowed is None else query.filter(ContentMention.podcaster.in_(allowed))
-
-
 def _heat_index(db, ticker_variants: List[str], allowed: Optional[frozenset]) -> Optional[int]:
     """This ticker's discussion heat as 0-100, where 100 is the busiest ticker on the site.
 
@@ -200,7 +192,7 @@ def _heat_index(db, ticker_variants: List[str], allowed: Optional[frozenset]) ->
     heat = func.sum(func.power(0.5, age_days / _HEAT_HALF_LIFE_DAYS)).label("heat")
     since = datetime.utcnow() - timedelta(days=_HEAT_INDEX_DAYS)
     per_ticker = (
-        _scoped(db.query(ContentMention.ticker.label("ticker"), heat), allowed)
+        scope_mentions(db.query(ContentMention.ticker.label("ticker"), heat), allowed)
         .filter(ContentMention.mention_type == "ticker",
                 ContentMention.ticker.isnot(None),
                 ContentMention.mentioned_at >= since)
@@ -253,13 +245,13 @@ async def get_mention_heat(
     day = func.date(ContentMention.mentioned_at)
     allowed = await podcast_service._allowed_podcast_names()
     for db in get_session():
-        base = _scoped(db.query(day, func.count(1)), allowed).filter(
+        base = scope_mentions(db.query(day, func.count(1)), allowed).filter(
             ContentMention.mention_type == "ticker",
             ContentMention.mentioned_at >= since,
         )
         market_rows = base.group_by(day).all()
         rows = (
-            _scoped(db.query(day, func.count(1),
+            scope_mentions(db.query(day, func.count(1),
                              func.count(1).filter(ContentMention.sentiment_label.like("%BULLISH%")),
                              func.count(1).filter(ContentMention.sentiment_label.like("%BEARISH%"))),
                     allowed)

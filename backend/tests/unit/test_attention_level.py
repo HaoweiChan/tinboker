@@ -1,7 +1,23 @@
 import random
 from datetime import date, timedelta
 
-from src.services.attention import MIN_HISTORY_DAYS, attention_level
+from src.services.attention import MIN_HISTORY_DAYS, attention_level, scope_mentions
+
+
+class _Query:
+    def __init__(self):
+        self.filters = []
+
+    def filter(self, clause):
+        self.filters.append(str(clause))
+        return self
+
+
+def test_scope_mentions_filters_only_when_a_roster_is_configured():
+    assert scope_mentions(_Query(), None).filters == []          # no language scope: pass-through
+    q = scope_mentions(_Query(), frozenset({"Gooaye 股癌"}))
+    assert q.filters and "content_mentions.podcaster IN" in q.filters[0]
+    assert scope_mentions(_Query(), frozenset()).filters          # empty roster still filters: fail closed
 
 
 def _days(n: int, start: date = date(2025, 1, 1)):
