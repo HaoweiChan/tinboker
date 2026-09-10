@@ -91,23 +91,49 @@ def _row(ticker, episodes, now, prev):
             "bull": b, "neu": n, "bear": r, "prev_bull": pb, "prev_neu": pn, "prev_bear": pr}
 
 
-def test_flip_rows_picks_two_bear_turns_and_one_bull_turn():
-    """The video and the Threads copy both lead with these — they must be one list."""
+def test_flip_rows_needs_real_voices_not_a_share_that_moved():
+    """Absolute counts, because podcasts are not a survey — see flip_rows' docstring."""
     rows = [
-        _row("8046", 8, (1, 4, 3), (5, 2, 0)),    # strongest turn bearish
-        _row("3037", 8, (4, 3, 4), (7, 1, 0)),    # second turn bearish
-        _row("2317", 7, (2, 5, 2), (2, 4, 2)),    # flat — never picked
-        _row("SPCX", 7, (7, 8, 0), (0, 8, 0)),    # strongest turn bullish
-        _row("2330", 15, (15, 3, 0), (11, 4, 0)),  # bullish, but a smaller share move
+        _row("8046", 8, (1, 4, 3), (5, 2, 0)),    # 0 → 3 bear: a real turn
+        _row("3037", 8, (4, 3, 4), (7, 1, 0)),    # 0 → 4 bear: a bigger one
+        _row("2317", 7, (2, 5, 2), (2, 4, 2)),    # bear flat at 2 → never picked
+        _row("SPCX", 7, (7, 8, 0), (0, 8, 0)),    # 0 → 7 bull
+        _row("2330", 15, (15, 3, 0), (11, 4, 0)),  # +4 bull, but a smaller jump than SPCX
     ]
     picks = weekly.flip_rows(rows)
-    assert [p["ticker"] for p in picks] == ["8046", "3037", "SPCX"]
+    assert [p["ticker"] for p in picks] == ["3037", "8046", "SPCX"]
     assert [p["direction"] for p in picks] == ["bear", "bear", "bull"]
 
 
-def test_flip_rows_ignores_thinly_covered_tickers_and_flat_weeks():
-    """A 1→0 swing on a ticker two shows mentioned is noise wearing a big percentage."""
-    thin = _row("9999", weekly.FLIP_MIN_EPISODES - 1, (0, 0, 2), (2, 0, 0))
-    flat = _row("2330", 12, (5, 5, 0), (5, 5, 0))
-    assert weekly.flip_rows([thin, flat]) == []
-    assert len(weekly.flip_rows([thin, flat, _row("2454", 6, (0, 2, 4), (4, 2, 0))])) == 1
+def test_flip_rows_returns_nothing_when_nobody_actually_turned():
+    """The common case. Over 2026-W32..36 a share-based rule invented a lead every week;
+    printing "nobody changed their mind" beats manufacturing one."""
+    quiet = [
+        _row("TSLA", 8, (1, 5, 2), (0, 6, 1)),    # 1 → 2 bear, below FLIP_MIN_BEAR
+        _row("2303", 9, (0, 6, 1), (3, 4, 1)),    # bear unmoved; only the bulls left
+        _row("2383", 7, (4, 3, 1), (5, 2, 0)),    # a single bear voice
+        _row("9999", 3, (0, 0, 5), (5, 0, 0)),    # violent, but too thinly covered
+        _row("AAPL", 9, (4, 4, 0), (2, 5, 0)),    # +2 bull: below FLIP_MIN_BULL's jump
+    ]
+    assert weekly.flip_rows(quiet) == []
+
+
+def test_reasons_keeps_the_latest_stance_per_side_and_drops_neutral():
+    """The thesis is what makes a count arguable; neutral rows carry no direction."""
+    insights = [
+        {"ticker": "3037", "sentiment_label": "BULLISH", "bluf_thesis": "舊的看多說法",
+         "podcaster": "A", "time_horizon": "中期", "podcast_launch_time": "2026-09-01"},
+        {"ticker": "3037", "sentiment_label": "STRONG_BULLISH", "bluf_thesis": "本週最新的看多說法",
+         "podcaster": "B", "time_horizon": "長期", "podcast_launch_time": "2026-09-04"},
+        {"ticker": "3037", "sentiment_label": "BEARISH", "bluf_thesis": "載板漲價動能不足",
+         "podcaster": "C", "time_horizon": "短期", "podcast_launch_time": "2026-09-03"},
+        {"ticker": "3037", "sentiment_label": "NEUTRAL", "bluf_thesis": "持平看待",
+         "podcaster": "D", "podcast_launch_time": "2026-09-05"},
+        {"ticker": "2330", "sentiment_label": "BULLISH", "bluf_thesis": "   ",  # empty → skipped
+         "podcaster": "E", "podcast_launch_time": "2026-09-02"},
+    ]
+    why = weekly._reasons(insights)
+    assert why["3037"]["bull"] == {"thesis": "本週最新的看多說法", "podcaster": "B", "horizon": "長期"}
+    assert why["3037"]["bear"]["podcaster"] == "C"
+    assert "neu" not in why["3037"]
+    assert "2330" not in why

@@ -36,7 +36,10 @@ MAX_COMMENTS = 4         # 3 content + the link, matching the episode chain leng
 LINK_COMMENT = "完整週報：https://tinboker.com"
 
 _TICKER_KEYS = ("ticker", "name", "episodes", "bull", "neu", "bear",
-                "prev_bull", "prev_neu", "prev_bear")
+                "prev_bull", "prev_neu", "prev_bear",
+                # the stated reason behind each side, so the post can quote a show
+                # instead of reciting a scoreboard
+                "bull_why", "bear_why")
 
 
 def _slim(row: dict, keys: tuple[str, ...]) -> dict:
@@ -48,6 +51,10 @@ def build_messages(rollup: dict) -> list[dict[str, str]]:
     prompts = load_prompt("weekly_copy_writer")
     tickers = [_slim(t, _TICKER_KEYS) for t in (rollup.get("tickers") or [])[:TOP_TICKERS]]
     flips = [_slim(f, _TICKER_KEYS + ("direction",)) for f in rollup.get("flips") or []]
+    # An empty `flips` is a real, common answer (see backend flip_rows) — say so rather
+    # than leaving the model to infer that silence means nothing happened.
+    flips_note = json.dumps(flips, ensure_ascii=False, indent=2) if flips else \
+        "（本週沒有任何一檔跨過「有人改變說法」的門檻。不要硬掰轉向，就寫這件事本身。）"
     sectors = [{"name": s.get("display_name"), "episodes": s.get("episodes")}
                for s in (rollup.get("sectors") or [])[:TOP_SECTORS]]
     start, end = rollup.get("start", ""), rollup.get("end", "")
@@ -57,7 +64,7 @@ def build_messages(rollup: dict) -> list[dict[str, str]]:
         episode_count=rollup.get("episode_count", 0),
         podcast_count=len(rollup.get("podcasts") or []),
         tickers=json.dumps(tickers, ensure_ascii=False, indent=2),
-        flips=json.dumps(flips, ensure_ascii=False, indent=2),
+        flips=flips_note,
         sectors=json.dumps(sectors, ensure_ascii=False, indent=2),
         podcasts=json.dumps([p.get("name") for p in rollup.get("podcasts") or []], ensure_ascii=False),
     )
