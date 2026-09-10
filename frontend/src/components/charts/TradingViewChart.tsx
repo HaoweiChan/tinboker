@@ -25,6 +25,10 @@ export interface MentionSeries {
   halfLifeDays: number;
   ticker: MentionBar[];
   market: { time: number; n: number }[];
+  /** 聲量水位: the share's percentile inside the ticker's own trailing year, 0–100,
+   *  computed by the backend (services/attention.py) so the chart and the weekly
+   *  cannot drift into two definitions. */
+  level: { time: number; p: number }[];
 }
 
 /** Below this much market-wide heat a share is not a measurement, it is one loud day
@@ -123,6 +127,7 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
   // built and only read inside the crosshair handler, so it must not re-render.
   const rawMentionsRef = useRef<Map<number, number>>(new Map());
   const shareRef = useRef<Map<number, number>>(new Map());
+  const pctRef = useRef<Map<number, number>>(new Map());
   const [mentionPaneDrawn, setMentionPaneDrawn] = useState(false);
   const legendRef = useRef<HTMLDivElement>(null);
   // Held in a ref: the parent passes a fresh closure every render, and putting it in
@@ -469,8 +474,12 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
       //     2026-09, TSMC's heat rose 10x while the market's rose 5.7x; its actual share
       //     sat flat between 3.5% and 5.9% the whole time. Dividing removes our own growth.
       //
-      // Stacked by drawing three areas largest-first on one scale: lightweight-charts has
-      // no stacked series, and three overlays is less machinery than faking one.
+      // What is DRAWN is neither: it is the share's percentile inside the ticker's own
+      // trailing year (聲量水位), computed server-side (backend services/attention.py)
+      // and only snapped to sessions here. The share still changes meaning whenever the
+      // roster changes and is never comparable between a name that is always discussed
+      // and one that rarely is; its own-year rank is stable on both counts. The share is
+      // still derived below for the crosshair so the number remains checkable.
       const rawByBar = new Map<number, number>();
       const shareByBar = new Map<number, number>();
       if (mentions && mentions.ticker.length > 0 && mentions.market.length > 0) {
@@ -497,7 +506,6 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
         const heat = { bull: 0, neutral: 0, bear: 0 };
         let market = 0;
         let prev: number | null = null;
-        const series: { time: UTCTimestamp; bull: number; neutral: number; bear: number }[] = [];
         for (const t of barTimes) {
           if (prev !== null) {
             const decay = 0.5 ** (((t - prev) / 86400) / halfLife);
@@ -514,38 +522,39 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
           // Before the corpus was big enough there is no denominator worth dividing by,
           // so those sessions get no point rather than a spike invented by a small number.
           if (market < MIN_MARKET_HEAT) continue;
-          const share = (v: number) => v / market;
-          series.push({
-            time: t as UTCTimestamp,
-            bull: share(heat.bull), neutral: share(heat.neutral), bear: share(heat.bear),
-          });
           shareByBar.set(t, (heat.bull + heat.neutral + heat.bear) / market);
         }
 
-        const layers: [string, (v: { bull: number; neutral: number; bear: number }) => number][] = [
-          ['#22c55e', (v) => v.bull + v.neutral + v.bear],  // bearish shows at the top
-          ['#64748b', (v) => v.bull + v.neutral],
-          ['#ef4444', (v) => v.bull],                       // bullish sits at the base
-        ];
-        layers.forEach(([color, pick], i) => {
+        // Calendar days snap forward to the next session, so a weekend's level lands on
+        // Monday; the last day mapping to a session wins.
+        const pct = new Map<number, number>();
+        for (const l of mentions.level) {
+          const t = snap(l.time);
+          if (t !== undefined) pct.set(t, l.p);
+        }
+        if (pct.size > 0) {
           const s = chart.addAreaSeries({
-            lineColor: color,
-            topColor: color,
-            bottomColor: color,
+            lineColor: '#f59e0b',
+            topColor: 'rgba(245, 158, 11, 0.45)',
+            bottomColor: 'rgba(245, 158, 11, 0.05)',
             lineWidth: 1,
             priceScaleId: 'mentions',
             priceLineVisible: false,
             lastValueVisible: false,
             crosshairMarkerVisible: false,
+            // A percentile is 0–100 by definition; a floating scale would make a name
+            // that never leaves 40–60 look as dramatic as one swinging 5–95.
+            autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: 100 } }),
           });
-          s.setData(series.map((d) => ({ time: d.time, value: pick(d) })));
-          if (i === 0) seriesMap['Mentions'] = s;
-        });
-        chart.priceScale('mentions').applyOptions({ scaleMargins: MENTION_MARGINS });
+          s.setData(barTimes.filter((t) => pct.has(t)).map((t) => ({ time: t as UTCTimestamp, value: pct.get(t) as number })));
+          seriesMap['Mentions'] = s;
+          chart.priceScale('mentions').applyOptions({ scaleMargins: MENTION_MARGINS });
+        }
+        pctRef.current = pct;
       }
       rawMentionsRef.current = rawByBar;
       shareRef.current = shareByBar;
-      setMentionPaneDrawn(shareByBar.size > 0);
+      setMentionPaneDrawn(pctRef.current.size > 0);
 
       maLatestRef.current = {};
       // 4. Moving Averages
@@ -696,10 +705,12 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
         if (seriesMap['Mentions']) {
           const val = param.seriesData.get(seriesMap['Mentions']) as SeriesValue;
           const t = typeof param.time === 'number' ? param.time : null;
+          const level = t !== null ? pctRef.current.get(t) : undefined;
           const share = t !== null ? shareRef.current.get(t) : undefined;
-          if (val && share !== undefined) {
+          if (val && level !== undefined) {
             const raw = t !== null ? rawMentionsRef.current.get(t) : undefined;
-            subHtml += `<span class="text-slate-400 ml-4">聲量佔比 ${(share * 100).toFixed(1)}%</span>`;
+            subHtml += `<span class="text-[#f59e0b] ml-4">聲量水位 ${level}</span>`;
+            if (share !== undefined) subHtml += `<span class="text-slate-500 ml-2">佔比 ${(share * 100).toFixed(1)}%</span>`;
             if (raw) subHtml += `<span class="text-slate-500 ml-2">當日 ${raw} 集</span>`;
           }
         }
@@ -844,8 +855,8 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
               className="absolute left-1 z-20 pointer-events-none rounded bg-card/85 px-1 text-[10px] leading-tight text-slate-500 dark:text-slate-400"
               style={{ top: TIME_AXIS_PX + (height - TIME_AXIS_PX) * PANES.mentions.top - 13 }}
             >
-              Podcast 討論佔比
-              <span className="ml-1.5 hidden sm:inline text-slate-400 dark:text-slate-500">佔全站聲量 · 7 日半衰</span>
+              Podcast 聲量水位
+              <span className="ml-1.5 hidden sm:inline text-slate-400 dark:text-slate-500">近一年百分位 · 7 日半衰</span>
             </div>
           )}
         </>
