@@ -26,7 +26,6 @@ from src.tag_registry import (
     canonical_tag_slugs,
     normalize_tag_slug,
     seed_if_empty,
-    sync_sectors,
 )
 
 logger = logging.getLogger(__name__)
@@ -79,12 +78,6 @@ class TagUpdate(BaseModel):
 
 class DiscoverResponse(BaseModel):
     discovered: int
-    message: str
-
-
-class SyncSectorsResponse(BaseModel):
-    synced: int
-    total: int
     message: str
 
 
@@ -296,28 +289,6 @@ async def discover_tags(
         discovered=inserted,
         message=f"Auto-registered {inserted} new tags as hidden (from {len(unknown)} unknown, {len(qualifying)} with >= {min_episodes} episodes)",
     )
-
-
-@router.post("/tags/sync-sectors", response_model=SyncSectorsResponse)
-async def sync_sectors_endpoint(
-    admin: AdminAccess = Depends(get_admin_access),
-    db: Session = Depends(get_session),
-):
-    """Bootstrap sector/theme exposures only when the registry has no sector rows."""
-    try:
-        from src.data.sectors_seed import SECTORS_SEED
-        new_count = sync_sectors(db, SECTORS_SEED)
-        await _invalidate_tag_caches()
-        return SyncSectorsResponse(
-            synced=new_count,
-            total=len(SECTORS_SEED),
-            message=(
-                f"Bootstrap checked {len(SECTORS_SEED)} sectors; "
-                f"{new_count} inserted. Existing DB-managed taxonomy is never overwritten."
-            ),
-        )
-    except Exception as e:
-        raise HTTPException(500, f"Failed to sync sectors: {e}")
 
 
 @router.post("/tags", response_model=TagEntryResponse, status_code=201)

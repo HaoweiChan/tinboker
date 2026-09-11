@@ -1,5 +1,6 @@
 import { lazy, Suspense } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom';
+import { applyPwaManifest } from '@/lib/pwaManifest';
 import { Toaster } from 'sonner';
 import { HomeFeed } from '@/pages/HomeFeed';
 import { About } from '@/pages/About';
@@ -55,6 +56,15 @@ const IS_DEV_ENV = (import.meta.env.VITE_STAGE as string) === 'DEV';
 // 404. Register the routes wherever the API exists — dev + staging, i.e. non-PRODUCTION.
 const ADMIN_ENABLED = (import.meta.env.VITE_STAGE as string) !== 'PRODUCTION';
 
+// Two installable apps on one origin — the site and the back office — so the document's
+// manifest and iOS title follow the route (lib/pwaManifest.ts). Production has no
+// /admin routes and does not mount this.
+function PwaManifestSwitch() {
+  const { pathname } = useLocation();
+  useEffect(() => { applyPwaManifest(pathname); }, [pathname]);
+  return null;
+}
+
 function GatedApp() {
   return (
     <EnvGate>
@@ -76,6 +86,7 @@ function App() {
 
   return (
     <BrowserRouter>
+      {ADMIN_ENABLED && <PwaManifestSwitch />}
       <Toaster
         position="top-center"
         theme={theme}

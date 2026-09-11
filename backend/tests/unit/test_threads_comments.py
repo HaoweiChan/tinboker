@@ -133,3 +133,35 @@ async def test_sync_files_comments_and_posts_nothing(temp_db, monkeypatch):
     # the API's own shortcode URL, never one built from the media id — that 404s
     assert pending[0]["permalink"] == "https://www.threads.com/@someone/post/Dc8IesYkqlS"
     assert [c["id"] for c in svc.list_comments(status="ignored")] == ["c5"]
+    assert pending[0]["root_post_text"] == "貼文"
+
+
+@pytest.mark.asyncio
+async def test_sync_backfills_a_missing_permalink(temp_db, monkeypatch):
+    """Rows stored before we kept the permalink are dead ends in the tab; a sync heals them."""
+    from src.database.models import ThreadsComment
+    from src.database.postgres import session_scope
+    with session_scope() as db:
+        db.add(ThreadsComment(id="c1", root_post_id="p1", text="舊留言", status="pending"))
+
+    conv = [{"id": "c1", "username": "someone", "text": "舊留言", "replied_to": {"id": "p1"},
+             "permalink": "https://www.threads.com/@someone/post/Dc8IesYkqlS"}]
+
+    class FakeResponse:
+        def __init__(self, payload): self._payload = payload
+        def json(self): return self._payload
+
+    class FakeClient:
+        async def get(self, url, params=None):
+            return FakeResponse({"data": [{"id": "p1", "text": "貼文"}] if url.endswith("/me/threads") else conv})
+        async def __aenter__(self): return self
+        async def __aexit__(self, *_): return False
+
+    monkeypatch.setattr(svc.httpx, "AsyncClient", lambda **_: FakeClient())
+    monkeypatch.setattr(svc.ThreadsService, "is_configured", property(lambda self: True))
+
+    counts = await svc.sync_and_triage()
+    assert counts["new"] == 0  # already known, not re-triaged
+    healed = svc.list_comments()[0]
+    assert healed["permalink"] == "https://www.threads.com/@someone/post/Dc8IesYkqlS"
+    assert healed["root_post_text"] == "貼文"  # the context to answer from, not just a link

@@ -70,12 +70,6 @@ export interface DiscoverResponse {
   message: string;
 }
 
-export interface SyncSectorsResponse {
-  synced: number;
-  total: number;
-  message: string;
-}
-
 export async function listAdminTags(params?: {
   tier?: string;
   kind?: string;
@@ -119,14 +113,6 @@ export async function discoverTags(minEpisodes: number = 3): Promise<DiscoverRes
   return response.data;
 }
 
-export async function syncSectors(): Promise<SyncSectorsResponse> {
-  const response = await apiClient.post<SyncSectorsResponse>(
-    '/api/admin/tags/sync-sectors',
-    null,
-    adminAuthConfig(),
-  );
-  return response.data;
-}
 
 // ── Theme discovery queue (emerging concepts not yet in the universe) ─────────
 

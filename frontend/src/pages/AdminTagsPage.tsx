@@ -4,14 +4,13 @@
  */
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Plus, RefreshCw, Search, Trash2, Check, X, Eye, EyeOff, Radar, Layers, Pencil, Lightbulb, ChevronUp, ChevronDown } from 'lucide-react';
+import { Plus, RefreshCw, Search, Trash2, Check, X, Eye, EyeOff, Radar, Pencil, Lightbulb, ChevronUp, ChevronDown } from 'lucide-react';
 import {
   listAdminTags,
   createAdminTag,
   updateAdminTag,
   deleteAdminTag,
   discoverTags,
-  syncSectors,
   getThemeCandidates,
   type AdminTagEntry,
   type ThemeCandidate,
@@ -47,7 +46,6 @@ export const AdminTagsPage: React.FC = () => {
   const [newSlug, setNewSlug] = useState('');
   const [newDisplay, setNewDisplay] = useState('');
   const [discovering, setDiscovering] = useState(false);
-  const [syncing, setSyncing] = useState(false);
   const [discoverMsg, setDiscoverMsg] = useState('');
   const [editKey, setEditKey] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
@@ -230,21 +228,6 @@ export const AdminTagsPage: React.FC = () => {
     }
   };
 
-  const handleSyncSectors = async () => {
-    setSyncing(true);
-    setDiscoverMsg('');
-    try {
-      const res = await syncSectors();
-      setDiscoverMsg(res.message);
-      await fetchTags();
-    } catch (err) {
-      console.error('Failed to sync sectors:', err);
-      setDiscoverMsg('Sector sync failed');
-    } finally {
-      setSyncing(false);
-    }
-  };
-
   const loadCandidates = useCallback(async () => {
     setCandidatesLoading(true);
     try {
@@ -269,42 +252,33 @@ export const AdminTagsPage: React.FC = () => {
   return (
     <div className="mx-auto max-w-5xl">
       {/* Header */}
-      <div className="mb-6 flex items-center justify-between">
-        <div>
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
           <h1 className="text-2xl font-bold text-foreground">Topic Registry</h1>
           <p className="text-base text-muted-foreground">
             {tags.length} topics — {trendingCount} visible · {hiddenCount} hidden
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={handleDiscover}
             disabled={discovering}
-            className="flex items-center gap-2 rounded-md border border-accent-info px-3 py-2 text-base text-accent-info hover:bg-accent-info-soft disabled:opacity-50"
+            className="flex items-center gap-2 whitespace-nowrap rounded-md border border-accent-info px-3 py-2 text-base text-accent-info hover:bg-accent-info-soft disabled:opacity-50"
             title="Scan Firestore for new tags with >= 3 episodes"
           >
             <Radar className={`h-4 w-4 ${discovering ? 'animate-spin' : ''}`} />
             Discover
           </button>
           <button
-            onClick={handleSyncSectors}
-            disabled={syncing}
-            className="flex items-center gap-2 rounded-md border border-border px-3 py-2 text-base text-foreground hover:bg-muted disabled:opacity-50"
-            title="Sync sectors/themes from the pipeline universe (new ones added as visible)"
-          >
-            <Layers className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
-            同步產業
-          </button>
-          <button
             onClick={fetchTags}
-            className="flex items-center gap-2 rounded-md border border-border px-3 py-2 text-base text-foreground hover:bg-muted"
+            className="flex items-center gap-2 whitespace-nowrap rounded-md border border-border px-3 py-2 text-base text-foreground hover:bg-muted"
           >
             <RefreshCw className="h-4 w-4" />
             Refresh
           </button>
           <button
             onClick={() => setShowAddRow(true)}
-            className="flex items-center gap-2 rounded-md bg-accent-info px-3 py-2 text-base text-accent-info-foreground hover:bg-accent-info/90"
+            className="flex items-center gap-2 whitespace-nowrap rounded-md bg-accent-info px-3 py-2 text-base text-accent-info-foreground hover:bg-accent-info/90"
           >
             <Plus className="h-4 w-4" />
             Add Tag
@@ -392,8 +366,8 @@ export const AdminTagsPage: React.FC = () => {
       </div>
 
       {/* Filters */}
-      <div className="mb-4 flex items-center gap-3">
-        <div className="relative flex-1 max-w-xs">
+      <div className="mb-4 flex flex-wrap items-center gap-2 sm:gap-3">
+        <div className="relative w-full min-w-[12rem] sm:w-auto sm:flex-1 sm:max-w-xs">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input
             type="text"
@@ -428,8 +402,8 @@ export const AdminTagsPage: React.FC = () => {
       </p>
 
       {/* Table */}
-      <div className="overflow-hidden rounded-lg border border-border">
-        <table className="w-full text-base">
+      <div className="overflow-x-auto rounded-lg border border-border">
+        <table className="w-full min-w-[52rem] text-base">
           <thead className="bg-muted text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
             <tr>
               <th className="px-4 py-3">Slug</th>

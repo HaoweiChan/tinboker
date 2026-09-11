@@ -33,7 +33,13 @@ export async function updatePipelineSettings(
 
 // --- Prompts ---
 
-export async function getPipelinePrompts(): Promise<{ prompts: Record<string, string>; prompt_names: string[] }> {
+export async function getPipelinePrompts(): Promise<{
+  prompts: Record<string, string>;
+  prompt_names: string[];
+  available: boolean;
+  /** false wherever the prompts are mounted read-only — every deployed env. */
+  editable: boolean;
+}> {
   const response = await apiClient.get('/api/admin/pipeline-prompts', adminAuthConfig());
   return response.data;
 }

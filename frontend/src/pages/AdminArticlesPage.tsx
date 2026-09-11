@@ -342,8 +342,8 @@ export const AdminArticlesPage: React.FC = () => {
             <p>尚無文章</p>
           </div>
         ) : (
-          <div className="overflow-hidden rounded-lg border border-border bg-card">
-            <table className="w-full text-base">
+          <div className="overflow-x-auto rounded-lg border border-border bg-card">
+            <table className="w-full min-w-[44rem] text-base">
               <thead>
                 <tr className="border-b border-border bg-muted text-left">
                   <th className="px-4 py-3 font-medium text-muted-foreground">標題</th>

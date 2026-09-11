@@ -1,6 +1,6 @@
 """Unit tests for sector_board() and GET /api/sectors/board.
 
-Mocks FirestoreService.stream_documents_projected, get_eod_change_pct, and cache
+Mocks FirestoreService.stream_documents_projected, the warm-close reader, and cache
 so no real Firebase or DB connection is needed.  Mirrors the pattern established
 in test_list_sectors.py.
 """
@@ -36,6 +36,25 @@ def _patch_get_session(close_rows: list | None = None):
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _patch_eod(fake):
+    """Feed a per-ticker change% fake into the batched warm-close reader the board calls.
+
+    sector_board() now resolves every ticker in one batch_read_latest_closes call and
+    derives the % with the real change_pct_from_pairs, so the fake's value is handed back
+    as a synthetic (prev, latest) close pair — the arithmetic under test stays real.
+    """
+    def _batch(tickers, *args, **kwargs):
+        out = {}
+        for t in tickers:
+            pct = fake(t)
+            if pct is not None:
+                out[t] = [("2026-06-18", 100.0), ("2026-06-19", 100.0 + pct)]
+        return out
+
+    return patch("src.services.stock_close_refresh.batch_read_latest_closes", side_effect=_batch)
+
+
 
 def _ms(dt: datetime) -> int:
     return int(dt.timestamp() * 1000)
@@ -97,18 +116,18 @@ def _make_svc(docs: list, price_map: dict | None = None) -> tuple:
 
 @pytest.mark.asyncio
 async def test_members_carry_change_percent():
-    """Members include the mocked change_percent from get_eod_change_pct."""
+    """Members include the mocked change_percent from the warm-close reader."""
     docs = [_doc("ep-001")]
     svc, _ = _make_svc(docs)
 
-    async def _fake_eod(ticker: str):
+    def _fake_eod(ticker: str):
         return {"2327": 1.5}.get(ticker)
 
     with (
         patch("src.services.podcast.cache_get", new=AsyncMock(return_value=None)),
         patch("src.services.podcast.cache_set", new=AsyncMock()),
         patch.object(svc, "_allowed_podcast_names", new=AsyncMock(return_value=None)),
-        patch("src.services.stock_close_refresh.get_eod_change_pct", side_effect=_fake_eod),
+        _patch_eod(_fake_eod),
         _patch_get_session(),
     ):
         result = await svc.sector_board()
@@ -140,14 +159,14 @@ async def test_avg_change_is_mean_of_non_null():
 
     prices = {"NVDA": 3.0, "AMD": 1.0, "INTC": None}
 
-    async def _fake_eod(ticker: str):
+    def _fake_eod(ticker: str):
         return prices.get(ticker)
 
     with (
         patch("src.services.podcast.cache_get", new=AsyncMock(return_value=None)),
         patch("src.services.podcast.cache_set", new=AsyncMock()),
         patch.object(svc, "_allowed_podcast_names", new=AsyncMock(return_value=None)),
-        patch("src.services.stock_close_refresh.get_eod_change_pct", side_effect=_fake_eod),
+        _patch_eod(_fake_eod),
         _patch_get_session(),
     ):
         result = await svc.sector_board()
@@ -163,14 +182,14 @@ async def test_avg_change_none_when_all_prices_unavailable():
     docs = [_doc("ep-001")]
     svc, _ = _make_svc(docs)
 
-    async def _fake_eod(ticker: str):
+    def _fake_eod(ticker: str):
         return None
 
     with (
         patch("src.services.podcast.cache_get", new=AsyncMock(return_value=None)),
         patch("src.services.podcast.cache_set", new=AsyncMock()),
         patch.object(svc, "_allowed_podcast_names", new=AsyncMock(return_value=None)),
-        patch("src.services.stock_close_refresh.get_eod_change_pct", side_effect=_fake_eod),
+        _patch_eod(_fake_eod),
         _patch_get_session(),
     ):
         result = await svc.sector_board()
@@ -212,14 +231,14 @@ async def test_sectors_ordered_by_hotness_desc():
 
     prices = {"NVDA": 5.0, "AMD": -1.0}
 
-    async def _fake_eod(ticker: str):
+    def _fake_eod(ticker: str):
         return prices.get(ticker)
 
     with (
         patch("src.services.podcast.cache_get", new=AsyncMock(return_value=None)),
         patch("src.services.podcast.cache_set", new=AsyncMock()),
         patch.object(svc, "_allowed_podcast_names", new=AsyncMock(return_value=None)),
-        patch("src.services.stock_close_refresh.get_eod_change_pct", side_effect=_fake_eod),
+        _patch_eod(_fake_eod),
         _patch_get_session(),
     ):
         result = await svc.sector_board()
@@ -251,14 +270,14 @@ async def test_members_sorted_change_percent_desc_none_last():
 
     prices = {"A": 1.0, "B": None, "C": 3.0}
 
-    async def _fake_eod(ticker: str):
+    def _fake_eod(ticker: str):
         return prices.get(ticker)
 
     with (
         patch("src.services.podcast.cache_get", new=AsyncMock(return_value=None)),
         patch("src.services.podcast.cache_set", new=AsyncMock()),
         patch.object(svc, "_allowed_podcast_names", new=AsyncMock(return_value=None)),
-        patch("src.services.stock_close_refresh.get_eod_change_pct", side_effect=_fake_eod),
+        _patch_eod(_fake_eod),
         _patch_get_session(),
     ):
         result = await svc.sector_board()
@@ -279,14 +298,14 @@ async def test_retracted_and_out_of_scope_excluded():
     svc, _ = _make_svc(docs)
     allowed = frozenset({"Gooaye 股癌"})
 
-    async def _fake_eod(ticker: str):
+    def _fake_eod(ticker: str):
         return None
 
     with (
         patch("src.services.podcast.cache_get", new=AsyncMock(return_value=None)),
         patch("src.services.podcast.cache_set", new=AsyncMock()),
         patch.object(svc, "_allowed_podcast_names", new=AsyncMock(return_value=allowed)),
-        patch("src.services.stock_close_refresh.get_eod_change_pct", side_effect=_fake_eod),
+        _patch_eod(_fake_eod),
         _patch_get_session(),
     ):
         result = await svc.sector_board()
@@ -320,14 +339,14 @@ async def test_excluded_exposure_dropped_from_board():
     docs = [_doc("ep-001", exposures=exposures)]
     svc, _ = _make_svc(docs)
 
-    async def _fake_eod(ticker: str):
+    def _fake_eod(ticker: str):
         return 1.0
 
     with (
         patch("src.services.podcast.cache_get", new=AsyncMock(return_value=None)),
         patch("src.services.podcast.cache_set", new=AsyncMock()),
         patch.object(svc, "_allowed_podcast_names", new=AsyncMock(return_value=None)),
-        patch("src.services.stock_close_refresh.get_eod_change_pct", side_effect=_fake_eod),
+        _patch_eod(_fake_eod),
         _patch_get_session(),
     ):
         result = await svc.sector_board()
@@ -346,7 +365,7 @@ async def test_empty_when_no_docs():
         patch("src.services.podcast.cache_get", new=AsyncMock(return_value=None)),
         patch("src.services.podcast.cache_set", new=AsyncMock()),
         patch.object(svc, "_allowed_podcast_names", new=AsyncMock(return_value=None)),
-        patch("src.services.stock_close_refresh.get_eod_change_pct", new=AsyncMock(return_value=None)),
+        _patch_eod(lambda t: None),
     ):
         result = await svc.sector_board()
 
@@ -385,14 +404,14 @@ async def test_hotness_between_zero_and_one():
 
     prices = {"X": 2.5, "Y": -0.5}
 
-    async def _fake_eod(ticker: str):
+    def _fake_eod(ticker: str):
         return prices.get(ticker)
 
     with (
         patch("src.services.podcast.cache_get", new=AsyncMock(return_value=None)),
         patch("src.services.podcast.cache_set", new=AsyncMock()),
         patch.object(svc, "_allowed_podcast_names", new=AsyncMock(return_value=None)),
-        patch("src.services.stock_close_refresh.get_eod_change_pct", side_effect=_fake_eod),
+        _patch_eod(_fake_eod),
         _patch_get_session(),
     ):
         result = await svc.sector_board()
@@ -411,14 +430,14 @@ async def test_member_and_sector_series_populated():
     closes_2327 = [100.0, 102.0, 101.0, 103.0, 105.0]
     close_rows = [("2327", f"2026-06-{14 + i:02d}", c) for i, c in enumerate(closes_2327)]
 
-    async def _fake_eod(ticker: str):
+    def _fake_eod(ticker: str):
         return {"2327": 2.0}.get(ticker)
 
     with (
         patch("src.services.podcast.cache_get", new=AsyncMock(return_value=None)),
         patch("src.services.podcast.cache_set", new=AsyncMock()),
         patch.object(svc, "_allowed_podcast_names", new=AsyncMock(return_value=None)),
-        patch("src.services.stock_close_refresh.get_eod_change_pct", side_effect=_fake_eod),
+        _patch_eod(_fake_eod),
         _patch_get_session(close_rows=close_rows),
     ):
         result = await svc.sector_board()
@@ -465,7 +484,7 @@ async def test_ticker_implied_heat_and_parent_aggregation():
     ep_ticker["related_tickers"] = ["3711"]        # ...but mentions a constituent
     svc, _ = _make_svc([ep_named, ep_ticker])
 
-    async def _fake_eod(ticker: str):
+    def _fake_eod(ticker: str):
         return {"3711": 1.0}.get(ticker)
 
     with (
@@ -473,7 +492,7 @@ async def test_ticker_implied_heat_and_parent_aggregation():
         patch("src.services.podcast.cache_set", new=AsyncMock()),
         patch.object(svc, "_allowed_podcast_names", new=AsyncMock(return_value=None)),
         patch.object(PodcastService, "_sector_membership_index", return_value=_HEAT_INDEX),
-        patch("src.services.stock_close_refresh.get_eod_change_pct", side_effect=_fake_eod),
+        _patch_eod(_fake_eod),
         # Freeze the decay clock to the docs' release time. The board decays heat against
         # wall-clock now (0.5^(age/7)), while these docs are pinned to a fixed NOW_MS — so
         # with a live clock the heat shrinks a little more every day and the components,
@@ -551,7 +570,7 @@ async def test_board_members_follow_live_registry_roster_without_episode_backfil
         },
     }
 
-    async def _fake_eod(ticker: str):
+    def _fake_eod(ticker: str):
         return {"NEW1": 1.0, "NEW2": 2.0, "NEW3": 3.0, "OLD": 9.0}.get(ticker)
 
     with (
@@ -559,7 +578,7 @@ async def test_board_members_follow_live_registry_roster_without_episode_backfil
         patch("src.services.podcast.cache_set", new=AsyncMock()),
         patch.object(svc, "_allowed_podcast_names", new=AsyncMock(return_value=None)),
         patch.object(PodcastService, "_sector_membership_index", return_value=base_index),
-        patch("src.services.stock_close_refresh.get_eod_change_pct", side_effect=_fake_eod),
+        _patch_eod(_fake_eod),
         _patch_get_session(),
     ):
         first = await svc.sector_board()
@@ -569,7 +588,7 @@ async def test_board_members_follow_live_registry_roster_without_episode_backfil
         patch("src.services.podcast.cache_set", new=AsyncMock()),
         patch.object(svc, "_allowed_podcast_names", new=AsyncMock(return_value=None)),
         patch.object(PodcastService, "_sector_membership_index", return_value=changed_index),
-        patch("src.services.stock_close_refresh.get_eod_change_pct", side_effect=_fake_eod),
+        _patch_eod(_fake_eod),
         _patch_get_session(),
     ):
         second = await svc.sector_board()
@@ -605,7 +624,7 @@ async def test_warm_sector_board_recomputes_ignoring_cache():
     docs = [_doc("ep-001")]
     svc, _ = _make_svc(docs)
 
-    async def _fake_eod(ticker: str):
+    def _fake_eod(ticker: str):
         return {"2327": 1.5}.get(ticker)
 
     set_mock = AsyncMock()
@@ -614,7 +633,7 @@ async def test_warm_sector_board_recomputes_ignoring_cache():
         patch("src.services.podcast.cache_get", new=AsyncMock(return_value=json.dumps([{"stale": True}]))),
         patch("src.services.podcast.cache_set", new=set_mock),
         patch.object(svc, "_allowed_podcast_names", new=AsyncMock(return_value=None)),
-        patch("src.services.stock_close_refresh.get_eod_change_pct", side_effect=_fake_eod),
+        _patch_eod(_fake_eod),
         _patch_get_session(),
     ):
         result = await svc.warm_sector_board()

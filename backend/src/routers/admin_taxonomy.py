@@ -832,9 +832,11 @@ async def invalidate_taxonomy_caches() -> None:
     try:
         from src.data.sector_reasons import invalidate_reasons_cache
         from src.data.sector_visuals import _metadata
+        from src.services.episode_transformer import _sector_alias_index
 
         invalidate_reasons_cache()
         _metadata.cache_clear()
+        _sector_alias_index.cache_clear()
     except Exception as exc:  # noqa: BLE001
         logger.warning("taxonomy cache: local invalidation failed: %s", exc)
     for pattern in ("sector:*", "sectors:*", "tags:*"):

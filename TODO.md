@@ -811,7 +811,7 @@ pr: https://github.com/HaoweiChan/tinboker/pull/432
 ### Goal
 
 Structurally fix the sector/industry grouping: TinBoker-owned curation layer over the
-tide-tw-data input (exclude/include/merge/reclassify overlay + machine-checked policy),
+imported seed (exclude/include/merge/reclassify overlay + machine-checked policy),
 purge the ~30 audited far-fetched memberships (2330-in-HBM class), merge the 4 redundant
 `jp_*` sectors with URL redirects, rebuild industries as roll-ups of their themes, fill
 the 73%-empty per-(ticker, sector) reasons with sector-specific text, show each stock's
@@ -823,8 +823,9 @@ with an audit+fill maintenance workflow.
 Full milestone plan (M0–M5, one PR each, in order):
 `docs/fix-plans/2026-07-06-sector-curation-and-reasons.md` (v2, structural).
 Evidence base: `docs/fix-plans/2026-07-06-sector-universe-audit.md` (full 103-sector
-audit) and `docs/fix-plans/2026-07-06-grouping-logic-spec.md` (every generation rule,
-file:line). Read the plan before writing any code.
+audit). The companion generation spec is gone with the generator it described (the
+taxonomy is DB-managed; see the 2026-09-09 note in the plan). Read the plan before
+writing any code.
 
 ### Acceptance criteria
 

@@ -1,4 +1,6 @@
 """Market inference from ticker shape — mirrors the frontend inferStockMarket()."""
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 
 def infer_market(ticker: str) -> str:
@@ -18,3 +20,21 @@ def infer_market(ticker: str) -> str:
     if not core.isdigit():
         return "US"
     return "KR" if len(core) == 6 else "TW"
+
+
+MARKET_TZ = {
+    "TW": ZoneInfo("Asia/Taipei"),
+    "KR": ZoneInfo("Asia/Seoul"),
+    "US": ZoneInfo("America/New_York"),
+}
+
+
+def market_date(at_utc: datetime, market: str) -> str:
+    """Calendar date (YYYY-MM-DD) of a naive-UTC instant on the given market's exchange.
+
+    A TW show released 23:30 UTC is already the next day in Taipei; a US name
+    discussed at 01:00 UTC is still the previous evening in New York. Daily close
+    tables are keyed by the exchange's local date, so baselines must be too.
+    """
+    tz = MARKET_TZ.get(market, MARKET_TZ["US"])
+    return at_utc.replace(tzinfo=timezone.utc).astimezone(tz).strftime("%Y-%m-%d")

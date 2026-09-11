@@ -16,6 +16,7 @@ from src.services.websocket_subscriber import WebSocketSubscriber
 from src.database.postgres import get_session
 from src.database.models import StockTranslation, StockDailyClose, StockDailyOHLC, StockInstitutionalDaily
 from src.utils.market import infer_market
+from src.services.stock_close_refresh import batch_read_latest_closes, change_pct_from_pairs
 from src.cache.redis_client import cache_get, cache_set
 from src.cache.cache_config import CACHE_TTL
 from src.routers.screener import require_internal_key
@@ -172,28 +173,35 @@ async def get_batch_prices(
     """
     Get changePercent for multiple tickers in one request.
 
-    Serves end-of-day change% from the warm stock_daily_closes table (no external API),
-    falling back to the live per-ticker path only for tickers not yet stored.
+    End-of-day change% from the warm Postgres tables (``stock_daily_closes`` +
+    ``stock_daily_ohlc``), then the last-known-good Redis copy. Never calls FinMind/Massive:
+    one page view carries ~200 tickers and the old per-ticker live fallback cost ~5 Massive
+    calls each, which 429-stormed the whole process. A miss is a cheap miss (null).
     Returns {TICKER: changePercent} — null if unavailable.
     """
     ticker_list = [t.strip().upper() for t in tickers.split(',') if t.strip()][:100]
     if not ticker_list:
         return {}
 
-    from src.services.stock_close_refresh import get_eod_change_pct
+    latest = await asyncio.to_thread(batch_read_latest_closes, ticker_list)
 
-    async def _change(t: str):
-        # 1. EOD change from Postgres — no external call, immune to the free-tier limits.
-        eod = await get_eod_change_pct(t)
-        if eod is not None:
-            return eod
-        # 2. Fallback for not-yet-stored tickers: the live (rate-limited) path, which
-        #    itself serves last-known-good when the upstream is throttled.
-        try:
-            info = await asyncio.wait_for(stock_service.get_stock_basic_info_async(t), timeout=8)
-        except (asyncio.TimeoutError, Exception):
-            info = None
-        return info.get('changePercent') if isinstance(info, dict) else None
+    async def _change(t: str) -> Optional[float]:
+        pct = change_pct_from_pairs(latest.get(t))
+        if pct is not None:
+            return pct
+        # Not warmed yet: serve the last-known-good copy the /basic route left in Redis.
+        # A fresh entry that itself has no changePercent is not an answer — keep looking.
+        for key in (f"stock:{t}:basic", f"stock:{t}:basic:stale"):
+            cached = await cache_get(key)
+            if not cached:
+                continue
+            try:
+                pct = json.loads(cached).get("changePercent")
+            except Exception:
+                continue
+            if pct is not None:
+                return pct
+        return None
 
     results = await asyncio.gather(*[_change(t) for t in ticker_list])
     return {ticker: pct for ticker, pct in zip(ticker_list, results)}
@@ -216,47 +224,30 @@ _ext_api_sem = asyncio.Semaphore(5)
 _NULL_CACHE_TTL = 300  # 5 min
 
 
-def _read_close_before(ticker: str, ref_date_str: str) -> Optional[float]:
-    """Latest stored close in the 7-day window ending at *ref_date_str*.
+def _read_dated_close_before(ticker: str, ref_date_str: str) -> Optional[tuple]:
+    """``(date, close)`` of the newest stored close in the 7-day window ending at
+    *ref_date_str*, from either warm table, or None.
 
-    Opens its own session (it's called via asyncio.to_thread) rather than taking
-    the request-scoped one. Callers fan this out over up to 300 tickers with
-    asyncio.gather, and a SQLAlchemy Session is not safe to share across threads.
-    ``close`` is NOT NULL, so "no row" and "no price" collapse to the same None.
+    A one-ticker call into :func:`batch_read_latest_closes` so the single-ticker and batch
+    paths can't drift apart on which tables they read or how they break a date tie.
     """
-    window_start = (datetime.strptime(ref_date_str, "%Y-%m-%d") - timedelta(days=7)).strftime("%Y-%m-%d")
-    for session in get_session():
-        row = (
-            session.query(StockDailyClose)
-            .filter(
-                StockDailyClose.ticker == ticker,
-                StockDailyClose.date >= window_start,
-                StockDailyClose.date <= ref_date_str,
-            )
-            .order_by(StockDailyClose.date.desc())
-            .first()
-        )
-        return row.close if row is not None else None
-    return None
+    pairs = batch_read_latest_closes([ticker], days=7, ref_date_str=ref_date_str).get(ticker)
+    return pairs[-1] if pairs else None
+
+
+def _read_close_before(ticker: str, ref_date_str: str) -> Optional[float]:
+    """Newest stored close in the 7-day window ending at *ref_date_str* (see
+    :func:`_read_dated_close_before`); None when neither table has a row."""
+    found = _read_dated_close_before(ticker, ref_date_str)
+    return found[1] if found else None
 
 
 def _read_close_date_before(ticker: str, ref_date_str: str) -> Optional[str]:
     """Date of the close :func:`_read_close_before` would return, or None when the DB has
     no row in the window (API-fetched closes are not dated here — see ``_window_returns``)."""
-    window_start = (datetime.strptime(ref_date_str, "%Y-%m-%d") - timedelta(days=7)).strftime("%Y-%m-%d")
     try:
-        for session in get_session():
-            row = (
-                session.query(StockDailyClose.date)
-                .filter(
-                    StockDailyClose.ticker == ticker,
-                    StockDailyClose.date >= window_start,
-                    StockDailyClose.date <= ref_date_str,
-                )
-                .order_by(StockDailyClose.date.desc())
-                .first()
-            )
-            return row[0] if row is not None else None
+        found = _read_dated_close_before(ticker, ref_date_str)
+        return found[0] if found else None
     except Exception:
         logger.debug("close date lookup failed for %s@%s", ticker, ref_date_str, exc_info=True)
     return None
@@ -267,6 +258,10 @@ def _persist_close(ticker: str, date: str, close: float) -> None:
 
     Own session, same reason as :func:`_read_close_before`.
     """
+    from src.services.stock_close_refresh import close_is_final
+
+    if not close_is_final(ticker, date):
+        return  # intraday quote, not a close — the warmer stores it after the session
     for session in get_session():
         try:
             existing = (
@@ -289,9 +284,12 @@ async def _get_reference_close(
     """Return the closing price on or just before *ref_date_str*.
 
     Lookup order:
-      1. PostgreSQL ``stock_daily_closes`` table (permanent, never expires)
+      1. PostgreSQL warm tables (``stock_daily_closes`` + ``stock_daily_ohlc``)
       2. Redis cache (catches recent API results; 24 h TTL)
-      3. External API (FinMind for TW, Massive for US) — result persisted to both DB + Redis
+      3. FinMind, TW tickers only — result persisted to both DB + Redis. US tickers stop
+         here: the ~5/min Massive budget can't serve a per-ticker fan-out on the request
+         path (one page view = ~200 tickers), so a US miss is a cheap, negatively-cached
+         miss and the yfinance mention backfill / close warmer fill the table offline.
 
     Every DB touch is offloaded with its own session, so this is safe to fan out
     concurrently — which is exactly what all three batch-price routes do.
@@ -312,24 +310,21 @@ async def _get_reference_close(
         except (ValueError, TypeError):
             pass
 
-    # --- 3. External API (rate-limited) ---
+    # --- 3. External API (rate-limited) — TW/FinMind only; US never fans out from here ---
+    # infer_market, not `.isdigit()`: that read TW class-letter ETFs (00878B, 00632R) as US
+    # and permanently null-cached them, and sent 6-digit KR codes (005930) into FinMind.
+    if infer_market(ticker) != "TW":
+        await cache_set(cache_key, "__null__", _NULL_CACHE_TTL)
+        return None
     async with _ext_api_sem:
         loop = asyncio.get_event_loop()
-        is_tw = ticker.split(".")[0].isdigit()
         start = (datetime.strptime(ref_date_str, "%Y-%m-%d") - timedelta(days=7)).strftime("%Y-%m-%d")
         try:
-            if is_tw:
-                from src.services.finmind_service import FinMindAPIService
-                svc = FinMindAPIService()
-                rows = await loop.run_in_executor(
-                    None, lambda: svc.list_daily_ticker_summary_range(ticker.split(".")[0], start, ref_date_str),
-                )
-            else:
-                from src.services.massive_service import MassiveAPIService
-                svc = MassiveAPIService()
-                rows = await loop.run_in_executor(
-                    None, lambda: svc.list_daily_ticker_summary_range(ticker, start, ref_date_str),
-                )
+            from src.services.finmind_service import FinMindAPIService
+            svc = FinMindAPIService()
+            rows = await loop.run_in_executor(
+                None, lambda: svc.list_daily_ticker_summary_range(ticker.split(".")[0], start, ref_date_str),
+            )
         except Exception:
             rows = []
 
@@ -354,10 +349,12 @@ async def _get_reference_close(
 async def get_batch_prices_since(
     body: BatchPricesSinceRequest,
 ):
-    """Return % change from each ticker's reference date to its current price.
+    """Return % change from each ticker's reference date to its latest stored close.
 
-    Uses a DB-first strategy for historical closes to minimise external API calls.
-    The full response is cached in Redis for 15 min.
+    Both legs go through ``_get_reference_close`` (Postgres → Redis → FinMind for TW; never
+    Massive), so a page's ~200 US tickers cost zero upstream calls. "Current" is the latest
+    warmed close, like ``/batch-prices-windows`` — EOD is fine for a podcast-insight site.
+    The full response is cached in Redis for 30 min.
     """
     # Deduplicate: same ticker may appear in multiple episodes; pick earliest date.
     earliest: dict[str, str] = {}
@@ -380,30 +377,22 @@ async def get_batch_prices_since(
         except Exception:
             pass
 
-    # Fetch reference closes (DB → Redis → API) and current prices concurrently.
-    # 10s timeout per ticker to avoid hanging when external APIs are rate-limited.
+    # Reference closes fan out per ticker (DB-first, FinMind only for a TW miss; 10s cap so
+    # a throttled FinMind can't hang the response); the "current" leg is one batched read.
     async def _ref_close_safe(t, d):
         try:
             return await asyncio.wait_for(_get_reference_close(t, d), timeout=10)
         except (asyncio.TimeoutError, Exception):
+            logger.debug("reference close failed for %s@%s", t, d, exc_info=True)
             return None
 
-    async def _basic_safe(t):
-        try:
-            return await asyncio.wait_for(stock_service.get_stock_basic_info_async(t), timeout=10)
-        except (asyncio.TimeoutError, Exception):
-            return None
-
-    ref_closes, basics = await asyncio.gather(
+    ref_closes, latest = await asyncio.gather(
         asyncio.gather(*[_ref_close_safe(t, earliest[t]) for t in tickers]),
-        asyncio.gather(*[_basic_safe(t) for t in tickers]),
+        asyncio.to_thread(batch_read_latest_closes, tickers),
     )
     out: dict[str, Optional[float]] = {}
-    for ticker, ref_close, basic in zip(tickers, ref_closes, basics):
-        if isinstance(ref_close, Exception) or isinstance(basic, Exception):
-            out[ticker] = None
-            continue
-        current_price = basic.get("price") if isinstance(basic, dict) else None
+    for ticker, ref_close in zip(tickers, ref_closes):
+        current_price = latest[ticker][-1][1] if latest.get(ticker) else None
         if ref_close and current_price and ref_close > 0:
             out[ticker] = round((current_price - ref_close) / ref_close * 100, 2)
         else:

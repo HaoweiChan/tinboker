@@ -214,6 +214,18 @@ async def sync_and_triage(scan_posts: Optional[int] = None) -> dict:
         # could never finish, so the tab stayed empty.
         convs = await asyncio.gather(*(conversation(p) for p in posts))
 
+        # Comments synced before we stored the permalink and our own post text have
+        # neither, so the tab shows them with nothing to answer from. The walk already has
+        # both in hand — fill them in rather than making someone re-sync from scratch.
+        if known:
+            urls = {e["id"]: e["permalink"] for cv in convs for e in cv if e.get("permalink")}
+            texts = {e["id"]: post.get("text") or ""
+                     for post, cv in zip(posts, convs) for e in cv}
+            with session_scope() as db:
+                for row in db.query(ThreadsComment).filter(ThreadsComment.id.in_(urls | texts)):
+                    row.permalink = row.permalink or urls.get(row.id)
+                    row.root_post_text = row.root_post_text or texts.get(row.id)
+
         seen = set(known)
         candidates: list[tuple[dict, dict]] = []
         for post, conv in zip(posts, convs):
@@ -247,6 +259,7 @@ async def sync_and_triage(scan_posts: Optional[int] = None) -> dict:
             draft = t.get("draft") or ""
             row = ThreadsComment(
                 id=entry["id"], root_post_id=post["id"],
+                root_post_text=post.get("text") or "",
                 replied_to_id=(entry.get("replied_to") or {}).get("id"),
                 username=entry.get("username"), text=entry.get("text") or "",
                 posted_at=_parse_ts(entry.get("timestamp")),
@@ -318,7 +331,8 @@ def list_comments(status: str = "pending", limit: int = 50) -> list[dict]:
         return [
             {
                 "id": r.id, "root_post_id": r.root_post_id, "username": r.username,
-                "text": r.text, "posted_at": r.posted_at.isoformat() if r.posted_at else None,
+                "text": r.text, "root_post_text": r.root_post_text,
+                "posted_at": r.posted_at.isoformat() if r.posted_at else None,
                 "category": r.category, "verdict": r.verdict, "reason": r.reason,
                 "draft": r.draft, "status": r.status, "auto": r.auto,
                 "reply_media_id": r.reply_media_id,
