@@ -1,9 +1,10 @@
 """Reading vocus / Substack view counters.
 
-Both APIs are undocumented and neither field name could be confirmed against a live
-account, so what these tests pin is the behaviour that makes a wrong guess *visible*:
-a number is reported only when it was actually found, and a miss says which keys the
-platform really sent instead of rendering a zero.
+Both APIs are undocumented. vocus's published-list shape was captured live 2026-09-11
+(``pageview`` / ``readCount``, no credential needed); Substack's field is still a guess.
+What these tests pin is the behaviour that makes a wrong guess *visible*: a number is
+reported only when it was actually found, and a miss says which keys the platform
+really sent instead of rendering a zero.
 """
 import httpx
 import pytest
@@ -31,7 +32,7 @@ def _live_token(monkeypatch):
 
 
 def _vocus_service():
-    return vis.VocusInsightsService(vp.VocusClient(token="t", user_id="u", salon_id="s"))
+    return vis.VocusInsightsService(user_id="u")
 
 
 def _substack_service():
@@ -112,33 +113,86 @@ async def test_vocus_paging_stops_when_the_page_param_is_ignored(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_vocus_expired_token_is_loud_rather_than_an_empty_panel(monkeypatch):
+async def test_vocus_expired_token_does_not_blank_the_reading_panel(monkeypatch):
+    """Published articles are public: only writes need the 7-day token. Gating reads
+    on it is what left analytics_snapshots.vocus_reads NULL on every row."""
     monkeypatch.setattr(vp, "token_status", lambda *_a, **_k: {
         "configured": True, "expired": True, "expires_at": 1,
         "seconds_left": -1, "expiring_soon": True,
     })
+    seen_auth = []
 
-    def explode(_request):  # pragma: no cover - reached only on a regression
-        raise AssertionError("an expired token must not reach the network")
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_auth.append("authorization" in request.headers)
+        assert request.headers["user-agent"].startswith("Mozilla/")
+        return httpx.Response(200, json={"count": 1, "articles": [
+            {"_id": "a1", "title": "一", "pageview": 42, "readCount": 7},
+        ]})
 
-    _mock_transport(monkeypatch, explode)
+    _mock_transport(monkeypatch, handler)
     summary = await _vocus_service().account_summary()
 
-    assert summary["available"] is False
-    assert "expired" in summary["detail"]
+    assert summary["available"] is True
+    assert summary["reads"] == 42
+    assert seen_auth == [False]
+    # Still carried so the publisher-side warning can render.
+    assert summary["token"]["expired"] is True
+
+
+@pytest.mark.asyncio
+async def test_vocus_captured_page_shape_maps_pageview_first_and_carries_read_count(monkeypatch):
+    """Shape captured live 2026-09-11 from the unauthenticated published list."""
+    _live_token(monkeypatch)
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(dict(request.url.params))
+        page = int(request.url.params["page"])
+        if page == 1:
+            articles = [{"_id": f"a{i}", "title": f"文{i}", "pageview": 10, "newPageview": 1,
+                         "readCount": 3, "likeCount": 1, "collectCount": 2, "commentCount": 0,
+                         "isPay": False, "lastPublishAt": "2026-09-01T00:00:00Z"}
+                        for i in range(vis.PAGE_SIZE)]
+        else:
+            articles = [{"_id": "b0", "title": "尾", "pageview": 5, "readCount": 1,
+                         "likeCount": 0, "collectCount": 0}]
+        return httpx.Response(200, json={"count": vis.PAGE_SIZE + 1, "articles": articles})
+
+    _mock_transport(monkeypatch, handler)
+    summary = await _vocus_service().account_summary()
+
+    assert summary["available"] is True
+    assert summary["articles"] == vis.PAGE_SIZE + 1
+    assert summary["reads"] == 10 * vis.PAGE_SIZE + 5
+    assert summary["read_count"] == 3 * vis.PAGE_SIZE + 1
+    assert summary["bookmarks"] == 2 * vis.PAGE_SIZE
+    assert summary["field_map"] == {"reads": "pageview", "read_count": "readCount",
+                                    "likes": "likeCount", "bookmarks": "collectCount"}
+    assert summary["truncated"] is False
+    # Paging stopped at `count`: two pages, no third probe.
+    assert [c["page"] for c in calls] == ["1", "2"]
+    assert calls[0]["status"] == "2" and calls[0]["userId"] == "u"
+
+
+@pytest.mark.asyncio
+async def test_vocus_unconfigured_user_id_says_which_secret_is_missing(monkeypatch):
+    _live_token(monkeypatch)
+    summary = await vis.VocusInsightsService(user_id="").account_summary()
+    assert summary["configured"] is False
+    assert "VOCUS_USER_ID" in summary["detail"]
 
 
 @pytest.mark.asyncio
 async def test_vocus_recent_articles_carry_their_public_url(monkeypatch):
     _live_token(monkeypatch)
     _mock_transport(monkeypatch, lambda _r: httpx.Response(200, json=[
-        {"_id": "a1", "title": "一", "readCount": 9},
+        {"_id": "a1", "title": "一", "pageview": 9, "readCount": 4},
     ]))
 
     rows = await _vocus_service().recent_post_insights(limit=5)
 
     assert rows[0]["url"] == "https://vocus.cc/article/a1"
-    assert rows[0]["reads"] == 9
+    assert (rows[0]["reads"], rows[0]["read_count"]) == (9, 4)
 
 
 # ── substack ────────────────────────────────────────────────────────────────
