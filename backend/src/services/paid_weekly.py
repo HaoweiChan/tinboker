@@ -71,7 +71,7 @@ def _hit(label: str, r: float) -> Optional[bool]:
     return None
 
 
-def query_track_record(db: Session, week: str, allowed: Optional[frozenset] = None) -> dict:
+def query_track_record(db: Session, week: str, allowed: Optional[frozenset]) -> dict:
     """Every ticker mention released inside ``week`` whose r20d has resolved.
 
     ``allowed`` is the release roster (PodcastService._allowed_podcast_names(), resolved
