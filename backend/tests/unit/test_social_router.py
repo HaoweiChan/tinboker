@@ -80,6 +80,7 @@ async def test_syndicate_passes_publish_substack_through(monkeypatch):
     monkeypatch.setattr(social.podcast_service, "get_episode_admin", _fake_get_episode)
     monkeypatch.setattr(social.substack_publisher, "create_summary_draft", _fake_substack)
     monkeypatch.setattr(social, "_public_base_url", lambda request: "https://api.test")
+    monkeypatch.setattr(social.settings, "episode_syndication_platforms", "vocus,substack")
 
     await social.syndicate_episode(
         "EP1", request=None, platforms="substack",
@@ -106,6 +107,7 @@ async def test_syndicate_skips_show_with_publishing_disabled(monkeypatch):
     monkeypatch.setattr(social.vocus_publisher, "publish_summary", _boom)
     monkeypatch.setattr(social, "social_enabled_for", lambda name: False)
     monkeypatch.setattr(social, "_public_base_url", lambda request: "https://api.test")
+    monkeypatch.setattr(social.settings, "episode_syndication_platforms", "vocus,substack")
 
     result = await social.syndicate_episode(
         "EP1", request=None, platforms="vocus,substack",
@@ -116,3 +118,42 @@ async def test_syndicate_skips_show_with_publishing_disabled(monkeypatch):
         "vocus": "social_disabled_for_show",
         "substack": "social_disabled_for_show",
     }
+
+
+@pytest.mark.asyncio
+async def test_syndicate_is_off_by_default_since_the_daily_digest(monkeypatch):
+    """Per-episode summaries stopped going out on 2026-09-13; the nightly 每日精選 replaced
+    them. With the default (empty) policy every platform reports the switch, the episode
+    is still looked up (a 404 stays a 404), and no publisher is contacted."""
+    calls = []
+
+    async def _fake_get_episode(episode_id):
+        return _ep(episode_id)
+
+    async def _boom(*a, **kw):
+        calls.append(a)
+        return {"posted": True}
+
+    monkeypatch.setattr(social.podcast_service, "get_episode_admin", _fake_get_episode)
+    monkeypatch.setattr(social.substack_publisher, "create_summary_draft", _boom)
+    monkeypatch.setattr(social.vocus_publisher, "publish_summary", _boom)
+    monkeypatch.setattr(social.settings, "episode_syndication_platforms", "")
+
+    result = await social.syndicate_episode(
+        "EP1", request=None, platforms="vocus,substack",
+        dry_run=False, publish=True, publish_substack=True, _=None,
+    )
+    assert calls == []
+    assert {p: r["reason"] for p, r in result["platforms"].items()} == {
+        "vocus": "episode_syndication_disabled",
+        "substack": "episode_syndication_disabled",
+    }
+    # A partial policy lets one platform through and still reports the other.
+    monkeypatch.setattr(social.settings, "episode_syndication_platforms", "substack")
+    monkeypatch.setattr(social, "_public_base_url", lambda request: "https://api.test")
+    result = await social.syndicate_episode(
+        "EP1", request=None, platforms="vocus,substack",
+        dry_run=True, publish=False, publish_substack=False, _=None,
+    )
+    assert result["platforms"]["vocus"]["reason"] == "episode_syndication_disabled"
+    assert result["platforms"]["substack"] == {"posted": True}
