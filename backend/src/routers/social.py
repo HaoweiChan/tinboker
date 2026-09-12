@@ -577,6 +577,11 @@ async def draft_episode_to_substack(
     ), dry_run)
 
 
+def episode_syndication_platforms() -> set[str]:
+    """Platforms per-episode summaries may still go to (settings, default none)."""
+    return {p.strip().lower() for p in settings.episode_syndication_platforms.split(",") if p.strip()}
+
+
 @router.post("/episodes/{episode_id}/syndicate")
 async def syndicate_episode(
     episode_id: str,
@@ -612,6 +617,10 @@ async def syndicate_episode(
         raise HTTPException(status_code=422, detail=f"Unknown platform(s): {', '.join(unknown)}")
     if not selected:
         raise HTTPException(status_code=422, detail="No platforms selected")
+    # Per-episode syndication is a policy switch, not a per-call choice: the nightly
+    # 每日精選 replaced it (settings.episode_syndication_platforms, default off).
+    disabled = [p for p in selected if p not in episode_syndication_platforms()]
+    selected = [p for p in selected if p not in disabled]
 
     episode = await podcast_service.get_episode_admin(episode_id)
     if not episode:
@@ -621,9 +630,13 @@ async def syndicate_episode(
     podcast_name = (getattr(episode, "podcast_name", None) or "").strip()
     raw_title = (getattr(episode, "episode_title", None) or "").strip() or episode_id
     title = syndication_title(podcast_name, raw_title)
+    off = {p: {"platform": p, "episode_id": episode_id, "posted": False,
+               "reason": "episode_syndication_disabled"} for p in disabled}
+    if not selected:
+        return {"episode_id": episode_id, "title": title, "platforms": off}
     if not social_enabled_for(podcast_name):
         return {"episode_id": episode_id, "title": title,
-                "platforms": {p: _social_off_result(p, episode_id) for p in selected}}
+                "platforms": {**off, **{p: _social_off_result(p, episode_id) for p in selected}}}
     excerpt = ((getattr(episode, "summary_excerpt", None) or "").strip()
                or syndication_excerpt(summary))
 
@@ -660,7 +673,7 @@ async def syndicate_episode(
         return_exceptions=True,
     )
 
-    results: dict[str, Any] = {}
+    results: dict[str, Any] = dict(off)
     for name, outcome in zip(selected, settled):
         if isinstance(outcome, BaseException):
             logger.exception("syndicate: %s failed for %s", name, episode_id)

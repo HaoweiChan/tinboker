@@ -151,6 +151,16 @@ class Settings(BaseSettings):
     vocus_user_id: Optional[str] = None
     vocus_salon_id: Optional[str] = None
 
+    # ==================== Syndication policy ====================
+    # Per-episode summary syndication is OFF by default since 2026-09-13: four weeks of
+    # pushing every summary to vocus made 870 articles at ~7 pageviews each. What goes
+    # out instead is the nightly 每日精選 (services/daily_digest.py). Set a comma list
+    # ("vocus,substack") to turn per-episode syndication back on for those platforms.
+    episode_syndication_platforms: str = ""
+    # Only the environment that owns syndication runs the nightly digest loop; the
+    # shared ledger makes a second environment a no-op anyway.
+    digest_autopublish: bool = False
+
     # ==================== Substack syndication ====================
     # Also undocumented; we drive the endpoints Substack's own editor uses. SUBSTACK_SID
     # is the substack.sid session cookie, which lasts months — unlike the vocus token it
