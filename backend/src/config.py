@@ -157,6 +157,12 @@ class Settings(BaseSettings):
     # out instead is the nightly 每日一集 (services/daily_pick.py). Set a comma list
     # ("vocus,substack") to turn per-episode syndication back on for those platforms.
     episode_syndication_platforms: str = ""
+    # The endpoint refuses episodes released more than this many days ago unless the
+    # caller passes allow_old=true. The pipeline has its own SYNDICATE_MAX_AGE_DAYS, but
+    # on 2026-09-04 a backfill reached this endpoint before that gate existed and 817
+    # articles from 2021–2025 went out as new; the backend must not trust its callers.
+    # 0 turns the gate off.
+    syndicate_max_age_days: int = 7
     # 每日一集: at most this many episode summaries a day go to vocus, chosen by show
     # priority (first wins) then by how many ticker observations the episode produced.
     # The order is the measured vocus pageview ranking as of 2026-09-13 (medians 6-9,
