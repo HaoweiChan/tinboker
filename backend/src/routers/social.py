@@ -25,8 +25,9 @@ from src.services import (facebook_publisher, promo_publisher, substack_publishe
                           threads_publisher, vocus_publisher)
 from src.services.content_source_service import social_enabled_for
 from src.services.gcs_content import GCSContentService, media_url
-from src.services.syndication_markdown import (podcast_short_name, syndication_excerpt,
-                                               syndication_title)
+from src.services.syndication_markdown import (
+    build_syndication_body, hook_title, is_historic, podcast_short_name, syndication_excerpt, syndication_title,
+)
 from src.tag_registry import canonical_label
 from src.services.podcast import PodcastService
 from src.services.facebook_insights_service import (FacebookInsightsService,
@@ -663,9 +664,10 @@ async def syndicate_episode(
         )
 
     async def _substack() -> dict:
+        s_title, s_body, s_excerpt = await episode_copy(episode, base_url=_public_base_url(request))
         return await substack_publisher.create_summary_draft(
-            episode_id, title, summary, podcast_name=podcast_name,
-            subtitle=excerpt[:140],
+            episode_id, s_title, s_body, podcast_name=podcast_name,
+            subtitle=s_excerpt[:140],
             # The same cover both platforms show, so one summary does not look like two.
             cover_image_url=f"{_public_base_url(request)}/api/og/episode/{episode_id}.png",
             # Never primed to mail the list. Publishing web-only is reversible; an email
@@ -694,19 +696,70 @@ async def syndicate_episode(
     return {"episode_id": episode_id, "title": title, "platforms": results}
 
 
-async def publish_episode_summary_to_vocus(episode, *, base_url: str, publish: bool, dry_run: bool) -> dict:
-    """One episode's summary to vocus — the endpoint above and the nightly 每日一集 share it."""
-    episode_id = episode.id
+async def episode_ticker_lines(episode, limit: int = 5) -> list[str]:
+    """"<name>（<ticker>）看多：「<thesis>」" for the episode's best-backed observations.
+    Empty on any failure: the section is optional, the article is not."""
+    try:
+        from datetime import date as _date, timedelta
+        from src.routers.weekly import _insights_for, _sentiment
+        from src.services.paid_weekly import query_names
+        from src.services.syndication_markdown import released_date
+        rel = released_date(getattr(episode, "released_at_ms", None)) or _date.today()
+        insights = await _insights_for([episode.podcast_name], rel - timedelta(days=1), rel + timedelta(days=1))
+        mine = [i for i in insights if i.get("episode_id") == episode.id and i.get("ticker") and (i.get("bluf_thesis") or "").strip()]
+        mine.sort(key=lambda i: (-len(i.get("reasons") or []), i["ticker"]))
+        mine = mine[:limit]
+        if not mine:
+            return []
+
+        def _names() -> dict[str, str]:
+            for db in get_session():
+                return query_names(db, {i["ticker"] for i in mine})
+            return {}
+
+        names = await asyncio.to_thread(_names)
+        stance = {"bull": "看多", "bear": "看空", "neu": "中性"}
+        out = []
+        for i in mine:
+            thesis = " ".join(i["bluf_thesis"].split())
+            thesis = thesis if len(thesis) <= 80 else thesis[:80] + "…"
+            head = f"{names[i['ticker']]}（{i['ticker']}）" if names.get(i["ticker"]) else i["ticker"]
+            out.append(f"{head}{stance[_sentiment(i.get('sentiment_label'))]}：「{thesis}」")
+        return out
+    except Exception as e:  # noqa: BLE001 — optional section
+        logger.warning("syndication: ticker lines unavailable for %s: %s", getattr(episode, "id", "?"), e)
+        return []
+
+
+async def episode_copy(episode, *, base_url: str) -> tuple[str, str, str]:
+    """(title, body, excerpt) for one episode, shared by vocus and Substack."""
     summary = getattr(episode, "modified_summary_content", None) or getattr(episode, "summary_content", None) or ""
     podcast_name = (getattr(episode, "podcast_name", None) or "").strip()
-    raw_title = (getattr(episode, "episode_title", None) or "").strip() or episode_id
-    title = syndication_title(podcast_name, raw_title)
-    excerpt = ((getattr(episode, "summary_excerpt", None) or "").strip() or syndication_excerpt(summary))
+    raw_title = (getattr(episode, "episode_title", None) or "").strip() or episode.id
+    key_insights = list(getattr(episode, "key_insights", None) or [])
+    released = getattr(episode, "released_at_ms", None)
+    historic = is_historic(released)
+    title = hook_title(podcast_name, raw_title, key_insights, summary, historic=historic)
+    body = build_syndication_body(
+        episode_id=episode.id, podcast_name=podcast_name, episode_title=raw_title, summary=summary,
+        key_insights=key_insights, released_at_ms=released, ticker_lines=await episode_ticker_lines(episode),
+        spotify_url=getattr(episode, "spotify_url", None), site_url=settings.site_url,
+    )
+    excerpt = ((getattr(episode, "summary_excerpt", None) or "").strip()
+               or (key_insights[0].strip() if key_insights else "") or syndication_excerpt(summary))
+    return title, body, excerpt
+
+
+async def publish_episode_summary_to_vocus(episode, *, base_url: str, publish: bool, dry_run: bool) -> dict:
+    """One episode's copy to vocus — the endpoint above and the nightly 每日一集 share it."""
+    episode_id = episode.id
+    podcast_name = (getattr(episode, "podcast_name", None) or "").strip()
+    title, body, excerpt = await episode_copy(episode, base_url=base_url)
     labels = [canonical_label(t) for t in (getattr(episode, "tags", None) or []) if isinstance(t, str)]
     short = podcast_short_name(podcast_name)
     tags = list(dict.fromkeys(([short] if short else []) + labels[:5]))
     return await vocus_publisher.publish_summary(
-        episode_id, title, summary, podcast_name=podcast_name, abstract=excerpt,
+        episode_id, title, body, podcast_name=podcast_name, abstract=excerpt,
         tags=tags,
         thumbnail_url=f"{base_url}/api/og/episode/{episode_id}.png",
         as_draft=not publish, dry_run=dry_run,

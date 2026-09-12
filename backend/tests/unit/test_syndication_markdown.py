@@ -239,3 +239,85 @@ def test_a_summary_with_only_headings_yields_no_excerpt():
     """Better an empty field than a heading masquerading as a lead."""
     from src.services.syndication_markdown import syndication_excerpt
     assert syndication_excerpt("# 只有標題\n\n## 還是標題\n") == ""
+
+
+# ── structured off-site copy (2026-09-13) ─────────────────────────────────────
+from datetime import date  # noqa: E402
+
+from src.services.syndication_markdown import (  # noqa: E402
+    build_syndication_body,
+    episode_label,
+    hook_title,
+    is_historic,
+    strip_boilerplate,
+)
+
+SUMMARY = (
+    "# 從摺疊機信仰到AI地緣政治：市場信任、供應鏈博弈與投資策略全解析\n\n"
+    "本文深入剖析[蘋果](#ticker:AAPL)摺疊機的市場潛力，並探討AI模型商品化趨勢。\n\n"
+    "## 市場信任與信仰之爭 (#time:776242)\n\n"
+    "近期市場上出現一種現象：[輝達](#ticker:NVDA)即便利多頻傳，股價仍能維持強勢。\n\n"
+    "## 摺疊機的中國考驗 (#time:1500000)\n\n"
+    "定價策略出乎意料。"
+)
+INSIGHTS = ["蘋果摺疊機iPhone Duo定價僅略高於Pro Max，遠低預期，將大幅刺激銷量", "甲骨文AI資料中心建置遇地方政治瓶頸"]
+
+
+@pytest.mark.parametrize("title,label", [
+    ("EP696 | 🎖️", "EP696"),
+    ("Ep170｜人類還有幾集可以逃QQ", "EP170"),
+    ("2026/9/11(五)油價破百 債券失火!", "2026/9/11"),
+    ("中、日高精密工具機大混戰 2026.08.18", "2026.08.18"),
+    ("沒有任何編號的一集標題會被截短到十二個字", "沒有任何編號的一集標題會"),
+])
+def test_episode_label(title, label):
+    assert episode_label(title) == label
+
+
+def test_hook_title_leads_with_the_first_key_insight_and_ends_with_show_and_label():
+    t = hook_title("Gooaye 股癌", "EP696 | 🎖️", INSIGHTS, SUMMARY)
+    assert t == "蘋果摺疊機iPhone Duo定價僅略高於Pro Max，遠低預期｜股癌 EP696"
+    assert hook_title("Gooaye 股癌", "EP696 | 🎖️", INSIGHTS, SUMMARY, historic=True).startswith("【歷史回顧】")
+
+
+def test_hook_title_falls_back_to_the_h1_without_its_generic_tail_then_to_legacy():
+    assert hook_title("Gooaye 股癌", "EP696 | 🎖️", [], SUMMARY) == "從摺疊機信仰到AI地緣政治｜股癌 EP696"
+    assert hook_title("Gooaye 股癌", "EP696 | 🎖️", [], "") == "股癌 EP696 | 🎖️ 摘要"
+
+
+def test_strip_boilerplate_drops_h1_and_the_announcing_lead_but_keeps_sections():
+    out = strip_boilerplate(SUMMARY)
+    assert not out.startswith("# ") and "本文深入剖析" not in out
+    assert out.startswith("## 市場信任與信仰之爭")
+    assert "定價策略出乎意料。" in out
+    # a real first paragraph is not a lead and survives
+    assert strip_boilerplate("# 標題\n\n輝達這季的毛利率創新高。\n\n## 下一段").startswith("輝達這季")
+
+
+def test_is_historic_uses_thirty_days_and_treats_unknown_as_old():
+    fresh = int(date(2026, 9, 10).strftime("%s")) * 1000
+    assert is_historic(fresh, date(2026, 9, 13)) is False
+    assert is_historic(fresh, date(2026, 11, 1)) is True
+    assert is_historic(None, date(2026, 9, 13)) is True
+
+
+def test_body_sections_in_order_with_dates_no_markers_and_historic_note():
+    old = int(date(2022, 1, 10).strftime("%s")) * 1000
+    md = build_syndication_body(
+        episode_id="ep1", podcast_name="Gooaye 股癌", episode_title="EP696 | 🎖️", summary=SUMMARY,
+        key_insights=INSIGHTS, released_at_ms=old, ticker_lines=["台積電（2330）看多：「先進封裝吃緊」"],
+        spotify_url="https://open.spotify.com/episode/x", site_url=SITE, synced_on=date(2026, 9, 13),
+    )
+    order = [md.index(s) for s in ("原節目：股癌 EP696 | 🎖️（2022-01-10 播出）・整理：2026-09-13",
+                                   "> 本篇是 2022 年 1 月 播出節目的整理", "## 30 秒讀完", "## 這集講到的股票",
+                                   "## 精選段落", "## 市場信任與信仰之爭", "## 適用範圍", "## 下一步")]
+    assert order == sorted(order)
+    assert "- 蘋果摺疊機iPhone Duo定價僅略高於Pro Max" in md and "- 台積電（2330）看多" in md
+    assert "#ticker:" not in md and "#time:" not in md and "本文深入剖析" not in md
+    assert f"{SITE}/stock/NVDA" in md and f"{SITE}/episode/ep1" in md and "open.spotify.com" in md
+    assert "(12:56)" in md  # the section timestamp survives as text
+
+
+def test_body_is_empty_when_there_is_nothing_to_say():
+    assert build_syndication_body(episode_id="e", podcast_name="x", episode_title="t", summary="",
+                                  key_insights=[], released_at_ms=None, synced_on=date(2026, 9, 13)) == ""
