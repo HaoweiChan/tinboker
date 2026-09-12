@@ -9,7 +9,7 @@ import asyncio
 import logging
 import mimetypes
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional, Any
 
 import httpx
@@ -577,6 +577,14 @@ async def draft_episode_to_substack(
     ), dry_run)
 
 
+def _episode_age_days(episode) -> Optional[float]:
+    """Days since the episode's true release (released_at_ms), None when unknown."""
+    ms = getattr(episode, "released_at_ms", None)
+    if not ms:
+        return None
+    return round((datetime.now(timezone.utc).timestamp() * 1000 - ms) / 86_400_000, 1)
+
+
 def episode_syndication_platforms() -> set[str]:
     """Platforms per-episode summaries may still go to (settings, default none)."""
     return {p.strip().lower() for p in settings.episode_syndication_platforms.split(",") if p.strip()}
@@ -593,6 +601,7 @@ async def syndicate_episode(
         default=False,
         description="Substack only: publish to the web (never emails) instead of staying a draft",
     ),
+    allow_old: bool = Query(default=False, description="Syndicate even if the episode is older than SYNDICATE_MAX_AGE_DAYS"),
     _: AdminAccess = Depends(get_social_access),
 ):
     """Stage one episode on every syndication target at once.
@@ -634,6 +643,14 @@ async def syndicate_episode(
                "reason": "episode_syndication_disabled"} for p in disabled}
     if not selected:
         return {"episode_id": episode_id, "title": title, "platforms": off}
+    # Age gate: a backfilled 2021 episode is not news, whatever its ingest date says.
+    # Unknown age is not "new" either — publishing is public and hard to take back.
+    max_age = settings.syndicate_max_age_days
+    age_days = _episode_age_days(episode)
+    if max_age and not allow_old and (age_days is None or age_days > max_age):
+        too_old = {p: {"platform": p, "episode_id": episode_id, "posted": False,
+                       "reason": "too_old", "age_days": age_days, "max_age_days": max_age} for p in selected}
+        return {"episode_id": episode_id, "title": title, "platforms": {**off, **too_old}}
     if not social_enabled_for(podcast_name):
         return {"episode_id": episode_id, "title": title,
                 "platforms": {**off, **{p: _social_off_result(p, episode_id) for p in selected}}}
