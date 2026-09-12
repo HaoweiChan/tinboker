@@ -464,6 +464,8 @@ there falls back to GCP Secret Manager at runtime via `src/config_loader.py`, wh
 | `FIRESTORE_DATABASE_ID` | `graphfolio-db` | Named Firestore instance |
 | `CORS_ORIGINS` | `["https://tinboker.com",...]` | Set per environment in compose file |
 | `RELEASE_PODCAST_LANGUAGES` | `zh-TW` | Release scoping (launch subset) — only show `content_sources` podcasts in these languages ("" = all) |
+| `EPISODE_SYNDICATION_PLATFORMS` | `""` | Which platforms per-episode summaries may still be syndicated to (`vocus,substack`). Empty since 2026-09-13: the nightly 每日精選 replaced per-episode pushes (870 summaries in 4 weeks at ~7 pageviews each). |
+| `DIGEST_AUTOPUBLISH` | `false` | Run the nightly 每日精選 → vocus loop (20:40 Asia/Taipei). Set on **staging only** (`docker-compose.multi.yml`); the shared ledger makes a second environment a no-op anyway. |
 | `RELEASE_EPISODE_MAX_AGE_DAYS` | `0` | Release scoping — hide episodes older than N days (0=off; flip to 30 once `released_at_ms` is backfilled on existing episodes — see `docs/firestore-contract.md` § contract cleanups) |
 | `RELEASE_PICKS_MAX_AGE_DAYS` | `0` | Picks window (ticker_insights reads: /picks, stock-page 觀點, podcaster picks). Independent of the episode window so 7/30/90-day returns can settle; rows carry `episode_public` for linking. 0=full history |
 

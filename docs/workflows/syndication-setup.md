@@ -48,6 +48,16 @@ opening the admin page.
 | `SYNDICATE_VOCUS_PUBLISH` | vocus goes public instead of staying a draft. |
 | `SYNDICATE_SUBSTACK_PUBLISH` | Substack goes public **on the web**. Cannot email — see below. |
 | `SYNDICATE_MAX_AGE_DAYS` | Only syndicate episodes published within this many days. Default **7**; `0` disables the gate for a deliberate backfill. |
+
+> **Since 2026-09-13 the backend refuses per-episode syndication by default.** The pipeline
+> still fires Step 5f, but `POST /api/admin/threads/episodes/{id}/syndicate` answers
+> `episode_syndication_disabled` for every platform not listed in the backend's
+> `EPISODE_SYNDICATION_PLATFORMS` (default empty). What goes to vocus instead is the nightly
+> **每日精選** (`backend/src/services/daily_digest.py`): one article a day, the tickers
+> today's episodes raised, ranked by how many shows raised them, one sourced quote each.
+> It runs from the backend where `DIGEST_AUTOPUBLISH=true` (staging) at 20:40 Asia/Taipei
+> under ledger key `digest:{YYYY-MM-DD}`; preview or re-run by hand with
+> `GET /api/admin/digest/{day}` and `POST /api/admin/digest/{day}/publish-vocus`.
 | `TINBOKER_PLATFORM_API_URL` + `TINBOKER_SOCIAL_TOKEN` | already needed by the Threads trigger |
 | `TINBOKER_ADMIN_API_URL` | Where `/api/admin/*` calls go. **Must not be production** — see below. |
 
