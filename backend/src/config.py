@@ -154,12 +154,19 @@ class Settings(BaseSettings):
     # ==================== Syndication policy ====================
     # Per-episode summary syndication is OFF by default since 2026-09-13: four weeks of
     # pushing every summary to vocus made 870 articles at ~7 pageviews each. What goes
-    # out instead is the nightly 每日精選 (services/daily_digest.py). Set a comma list
+    # out instead is the nightly 每日一集 (services/daily_pick.py). Set a comma list
     # ("vocus,substack") to turn per-episode syndication back on for those platforms.
     episode_syndication_platforms: str = ""
-    # Only the environment that owns syndication runs the nightly digest loop; the
-    # shared ledger makes a second environment a no-op anyway.
-    digest_autopublish: bool = False
+    # 每日一集: at most this many episode summaries a day go to vocus, chosen by show
+    # priority (first wins) then by how many ticker observations the episode produced.
+    # The order is the measured vocus pageview ranking as of 2026-09-13 (medians 6-9,
+    # so it is a tie-break more than a verdict). Only the environment that owns
+    # syndication runs the nightly loop; the shared ledger makes a second one a no-op.
+    daily_pick_autopublish: bool = False
+    daily_pick_limit: int = 1
+    daily_pick_shows: str = (
+        "Gooaye 股癌,游庭皓的財經皓角,曲博科技教室,兆華與股惑仔,財女珍妮,財報狗,財經一路發,韭菜畢業班,M觀點,財經M平方"
+    )
 
     # ==================== Substack syndication ====================
     # Also undocumented; we drive the endpoints Substack's own editor uses. SUBSTACK_SID

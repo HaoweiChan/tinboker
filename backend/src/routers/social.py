@@ -641,14 +641,8 @@ async def syndicate_episode(
                or syndication_excerpt(summary))
 
     async def _vocus() -> dict:
-        labels = [canonical_label(t) for t in (getattr(episode, "tags", None) or []) if isinstance(t, str)]
-        short = podcast_short_name(podcast_name)
-        tags = list(dict.fromkeys(([short] if short else []) + labels[:5]))
-        return await vocus_publisher.publish_summary(
-            episode_id, title, summary, podcast_name=podcast_name, abstract=excerpt,
-            tags=tags,
-            thumbnail_url=f"{_public_base_url(request)}/api/og/episode/{episode_id}.png",
-            as_draft=not publish, dry_run=dry_run,
+        return await publish_episode_summary_to_vocus(
+            episode, base_url=_public_base_url(request), publish=publish, dry_run=dry_run,
         )
 
     async def _substack() -> dict:
@@ -681,6 +675,25 @@ async def syndicate_episode(
         else:
             results[name] = outcome
     return {"episode_id": episode_id, "title": title, "platforms": results}
+
+
+async def publish_episode_summary_to_vocus(episode, *, base_url: str, publish: bool, dry_run: bool) -> dict:
+    """One episode's summary to vocus — the endpoint above and the nightly 每日一集 share it."""
+    episode_id = episode.id
+    summary = getattr(episode, "modified_summary_content", None) or getattr(episode, "summary_content", None) or ""
+    podcast_name = (getattr(episode, "podcast_name", None) or "").strip()
+    raw_title = (getattr(episode, "episode_title", None) or "").strip() or episode_id
+    title = syndication_title(podcast_name, raw_title)
+    excerpt = ((getattr(episode, "summary_excerpt", None) or "").strip() or syndication_excerpt(summary))
+    labels = [canonical_label(t) for t in (getattr(episode, "tags", None) or []) if isinstance(t, str)]
+    short = podcast_short_name(podcast_name)
+    tags = list(dict.fromkeys(([short] if short else []) + labels[:5]))
+    return await vocus_publisher.publish_summary(
+        episode_id, title, summary, podcast_name=podcast_name, abstract=excerpt,
+        tags=tags,
+        thumbnail_url=f"{base_url}/api/og/episode/{episode_id}.png",
+        as_draft=not publish, dry_run=dry_run,
+    )
 
 
 def _public_base_url(request: Request) -> str:
