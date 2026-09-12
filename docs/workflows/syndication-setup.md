@@ -53,11 +53,12 @@ opening the admin page.
 > still fires Step 5f, but `POST /api/admin/threads/episodes/{id}/syndicate` answers
 > `episode_syndication_disabled` for every platform not listed in the backend's
 > `EPISODE_SYNDICATION_PLATFORMS` (default empty). What goes to vocus instead is the nightly
-> **每日精選** (`backend/src/services/daily_digest.py`): one article a day, the tickers
-> today's episodes raised, ranked by how many shows raised them, one sourced quote each.
-> It runs from the backend where `DIGEST_AUTOPUBLISH=true` (staging) at 20:40 Asia/Taipei
-> under ledger key `digest:{YYYY-MM-DD}`; preview or re-run by hand with
-> `GET /api/admin/digest/{day}` and `POST /api/admin/digest/{day}/publish-vocus`.
+> **每日一集** (`backend/src/services/daily_pick.py`): at most `DAILY_PICK_LIMIT` (1) episode
+> summary a day, chosen by show priority (`DAILY_PICK_SHOWS`, first wins) and then by how
+> many ticker observations the episode produced. It runs from the backend where
+> `DAILY_PICK_AUTOPUBLISH=true` (staging) at 20:40 Asia/Taipei through the same per-episode
+> ledger; see tonight's choice with `GET /api/admin/daily-pick/{day}` and re-run with
+> `POST /api/admin/daily-pick/{day}/publish-vocus`.
 | `TINBOKER_PLATFORM_API_URL` + `TINBOKER_SOCIAL_TOKEN` | already needed by the Threads trigger |
 | `TINBOKER_ADMIN_API_URL` | Where `/api/admin/*` calls go. **Must not be production** — see below. |
 
