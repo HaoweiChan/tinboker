@@ -41,7 +41,7 @@ from src.routers.admin_tags import router as admin_tags_router
 from src.routers.admin_taxonomy import router as admin_taxonomy_router
 from src.routers.admin_sectors import router as admin_sectors_router
 from src.routers.admin_weekly import router as admin_weekly_router
-from src.routers.admin_digest import router as admin_digest_router
+from src.routers.admin_daily_pick import router as admin_daily_pick_router
 from src.routers.social import (router as social_router, facebook_router, promo_router,
                                 substack_router, vocus_router)
 from src.routers.seo import router as seo_router, admin_router as admin_seo_router
@@ -335,15 +335,15 @@ async def lifespan(app: FastAPI):
 
     asyncio.create_task(_scheduled_posts_bg())
 
-    # 每日精選 to vocus, once a night, only where DIGEST_AUTOPUBLISH is set (staging).
-    async def _daily_digest_bg():
+    # 每日一集 to vocus, once a night, only where DAILY_PICK_AUTOPUBLISH is set (staging).
+    async def _daily_pick_bg():
         try:
-            from src.services.daily_digest import run_periodic_daily_digest
-            await run_periodic_daily_digest(interval_seconds=600.0)
+            from src.services.daily_pick import run_periodic_daily_pick
+            await run_periodic_daily_pick(interval_seconds=600.0)
         except Exception as e:
-            print(f"Warning: daily digest loop stopped: {e}")
+            print(f"Warning: daily pick loop stopped: {e}")
 
-    asyncio.create_task(_daily_digest_bg())
+    asyncio.create_task(_daily_pick_bg())
 
     yield
 
@@ -444,7 +444,7 @@ if not settings.is_production:
     app.include_router(admin_taxonomy_router)
     app.include_router(admin_sectors_router)  # /api/admin/sectors/theme-candidates
     app.include_router(admin_weekly_router)  # /api/admin/weekly/{week}/paid|publish-vocus
-    app.include_router(admin_digest_router)  # /api/admin/digest/{day}|publish-vocus
+    app.include_router(admin_daily_pick_router)  # /api/admin/daily-pick/{day}|publish-vocus
     app.include_router(social_router)       # /api/admin/threads/*
     app.include_router(facebook_router)     # /api/admin/facebook/*
     app.include_router(vocus_router)        # /api/admin/vocus/*
