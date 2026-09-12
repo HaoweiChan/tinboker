@@ -1,0 +1,176 @@
+<!doctype html><html lang="zh-TW"><head><meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:hsl(220 34% 4%); --fg:hsl(210 22% 90%); --card:hsl(218 30% 7%);
+  --amber:hsl(38 96% 56%); --cyan:hsl(190 92% 56%); --border:hsl(213 28% 15%);
+  --muted:hsl(213 15% 60%); --bull:hsl(145 66% 47%); --bear:hsl(0 80% 61%);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:1080px;height:1350px;overflow:hidden}
+body{
+  background:var(--bg); color:var(--fg);
+  font-family:'JetBrains Mono','Noto Sans TC',system-ui,sans-serif;
+  font-feature-settings:'tnum' 1,'zero' 1,'calt' 1; letter-spacing:-.01em;
+}
+/* grid canvas + scanlines */
+body::before{content:'';position:fixed;inset:0;pointer-events:none;
+  background-image:linear-gradient(hsl(213 28% 15%/.55) 1px,transparent 1px),linear-gradient(90deg,hsl(213 28% 15%/.55) 1px,transparent 1px);
+  background-size:44px 44px}
+body::after{content:'';position:fixed;inset:0;pointer-events:none;
+  background:repeating-linear-gradient(180deg,hsl(0 0% 0%/.16) 0 1px,transparent 1px 3px)}
+#keyline{position:fixed;top:0;left:0;height:4px;width:0%;z-index:9;
+  background:linear-gradient(90deg,var(--amber),var(--cyan))}
+#stage{position:relative;width:1080px;height:1350px;padding:96px 84px 84px}
+.scene{position:absolute;inset:96px 84px 120px;opacity:0;display:flex;flex-direction:column;justify-content:center}
+.overline{font-size:22px;font-weight:600;letter-spacing:.22em;text-transform:uppercase;color:var(--muted)}
+.brand{position:fixed;left:84px;bottom:56px;font-size:24px;color:var(--muted);letter-spacing:.04em;z-index:8}
+.brand b{color:var(--amber);font-weight:700}
+.wk{position:fixed;right:84px;bottom:56px;font-size:24px;color:var(--muted);letter-spacing:.06em;z-index:8}
+
+/* 1 title */
+#s1 h1{font-size:112px;font-weight:800;line-height:1.05;margin:18px 0 0;letter-spacing:-.03em}
+#s1 .wknum{font-size:150px;font-weight:800;color:var(--amber);line-height:1;margin-top:26px;letter-spacing:-.04em}
+#s1 .meta{margin-top:44px;font-size:30px;color:var(--muted);line-height:1.9}
+#s1 .meta b{color:var(--fg);font-weight:700}
+#s1 .cursor{display:inline-block;width:.55em;height:1em;background:var(--cyan);vertical-align:-.12em;margin-left:.12em}
+
+/* 2 bars */
+h2{font-size:56px;font-weight:800;margin:14px 0 40px;letter-spacing:-.02em}
+h2 span{color:var(--amber)}
+.row{display:grid;grid-template-columns:270px 1fr 100px;align-items:center;gap:24px;margin-bottom:34px}
+.tk{font-size:33px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tk i{font-style:normal;color:var(--muted);font-size:24px;margin-left:10px}
+.track{height:56px;background:hsl(218 30% 9%);border:1px solid var(--border)}
+.fill{height:100%;background:var(--amber);width:0}
+.fill.c{background:var(--cyan)}
+.num{font-size:38px;font-weight:700;text-align:right;font-variant-numeric:tabular-nums}
+.unit{font-size:20px;color:var(--muted);margin-left:4px}
+
+/* 3 flip */
+.flip{border:1px solid var(--border);background:var(--card);padding:34px 36px;margin-bottom:30px}
+.flip .name{font-size:38px;font-weight:700}
+.flip .name i{font-style:normal;color:var(--muted);font-size:26px;margin-left:12px}
+.bars{display:flex;gap:6px;margin-top:20px;align-items:center}
+.seg{height:28px}
+.seg.b{background:var(--bull)}.seg.n{background:hsl(213 15% 34%)}.seg.r{background:var(--bear)}
+.legend{font-size:23px;color:var(--muted);margin-top:14px;letter-spacing:.02em}
+.legend b{font-weight:700}
+.legend .up{color:var(--bull)}.legend .dn{color:var(--bear)}
+.wkTag{font-size:21px;color:var(--muted);width:78px;display:inline-block}
+
+.key{display:flex;gap:34px;font-size:24px;color:var(--muted);margin:-22px 0 30px}
+.key span{display:flex;align-items:center;gap:12px}
+.key i{width:30px;height:16px;display:inline-block}
+/* 4 sectors */
+.chips{display:flex;flex-wrap:wrap;gap:22px;margin-top:8px}
+.chip{border:1px solid var(--border);background:var(--card);padding:26px 34px;font-size:38px;font-weight:600;opacity:0;transform:translateY(14px)}
+.chip u{text-decoration:none;font-size:24px;color:var(--muted);margin-left:6px}
+.chip b{color:var(--amber);font-weight:800;margin-left:14px}
+
+/* 5 cta */
+#s5{align-items:center;text-align:center}
+#s5 .mark{width:260px;height:260px}
+#s5 .wordmark{margin-top:52px;font-size:74px;font-weight:800;letter-spacing:.02em}
+</style></head><body>
+<div id="keyline"></div>
+<div id="stage"></div>
+<div class="brand">聽播客 <b>TinBoker</b></div>
+<div class="wk" id="wktag"></div>
+<script>
+const D = __DATA__;
+const el = (h)=>{const d=document.createElement('div');d.innerHTML=h.trim();return d.firstChild};
+const clamp=(x)=>Math.max(0,Math.min(1,x));
+const ease=(x)=>1-Math.pow(1-clamp(x),3);
+const stage=document.getElementById('stage');
+document.getElementById('wktag').textContent=D.week.replace('-',' ');
+
+// ---- scene builders -------------------------------------------------------
+const S=[];
+function scene(id,html){const n=el('<div class="scene" id="'+id+'">'+html+'</div>');stage.appendChild(n);return n}
+
+const s1=scene('s1',`
+  <div class="overline">WEEKLY ROLLUP</div>
+  <h1>聽播客週報</h1>
+  <div class="wknum">${D.week}</div>
+  <div class="meta">${D.range}<br><b>${D.episode_count}</b> 集節目 · <b>${D.podcast_count}</b> 個頻道</div>`);
+
+const bars=D.tickers.slice(0,8);
+const maxEp=Math.max(...bars.map(t=>t.episodes));
+const s2=scene('s2',`
+  <div class="overline">01 / 被討論最多</div>
+  <h2>這週 <span>${D.episode_count} 集</span>節目在聊誰</h2>
+  ${bars.map((t,i)=>`<div class="row">
+     <div class="tk">${t.label}${t.sub?`<i>${t.sub}</i>`:''}</div>
+     <div class="track"><div class="fill${i%2?' c':''}" data-i="${i}"></div></div>
+     <div class="num" data-n="${t.episodes}">0<span class="unit">集</span></div>
+   </div>`).join('')}`);
+
+const s3=scene('s3',`
+  <div class="overline">02 / 語氣轉向</div>
+  <h2>誰的<span>口風</span>變了</h2>
+  <div class="key"><span><i class="seg b"></i>看多</span><span><i class="seg n"></i>中性</span><span><i class="seg r"></i>看空</span></div>
+  ${D.flips.map(f=>`<div class="flip">
+     <div class="name">${f.label}${f.sub?`<i>${f.sub}</i>`:''}</div>
+     <div class="bars"><span class="wkTag">上週</span>${f.prev.map(s=>`<span class="seg ${s[0]}" data-w="${s[1]}"></span>`).join('')}</div>
+     <div class="bars"><span class="wkTag">本週</span>${f.now.map(s=>`<span class="seg ${s[0]}" data-w="${s[1]}"></span>`).join('')}</div>
+     <div class="legend">${f.note}</div>
+   </div>`).join('')}`);
+
+const s4=scene('s4',`
+  <div class="overline">03 / 題材熱度</div>
+  <h2>集數落在<span>哪些題材</span></h2>
+  <div class="chips">${D.sectors.map(s=>`<div class="chip">${s.name}<b>${s.episodes}</b><u>集</u></div>`).join('')}</div>`);
+
+const s5=scene('s5',`
+  <svg class="mark" viewBox="0 0 42 42" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M9 9 H21 V13 H13 V21 H9 Z" fill="#f1ead8"/>
+    <path d="M33 33 H21 V29 H29 V21 H33 Z" fill="#ffd23f"/>
+    <circle cx="18" cy="24" r="1.5" fill="#f1ead8"/>
+    <circle cx="22" cy="20" r="1.5" fill="#f1ead8" opacity=".7"/>
+    <circle cx="26" cy="16" r="1.5" fill="#ffd23f" opacity=".85"/>
+  </svg>
+  <div class="wordmark">TinBoker</div>`);
+
+const fills=[...s2.querySelectorAll('.fill')], nums=[...s2.querySelectorAll('.num')];
+// '.bars .seg' not '.seg' — the legend swatches carry the same class
+const segs=[...s3.querySelectorAll('.bars .seg')], flips=[...s3.querySelectorAll('.flip')];
+const chips=[...s4.querySelectorAll('.chip')];
+const maxSeg=Math.max(...segs.map(s=>+s.dataset.w));
+
+// ---- timeline (seconds) ---------------------------------------------------
+// One number per scene. Everything below derives its cues from these, so a scene
+// can be re-timed here without hunting for hard-coded seconds inside setT.
+const LEN=[2.0,6.0,6.0,4.0,4.0];   // s1..s5 — whole 2s bars at 120 BPM, so every
+                                   // cut lands on a downbeat (see synth.py)
+const IN=LEN.reduce((a,l,i)=>[...a,a[i]+l],[0]);   // scene start times
+const CUES=[s1,s2,s3,s4,s5].map((n,i)=>[IN[i],IN[i+1],n]);
+window.DURATION=IN[5];
+const END=IN[4];   // scene 5 in
+const brandEls=[document.querySelector('.brand'),document.getElementById('wktag')];
+
+window.setT=function(t){
+  document.getElementById('keyline').style.width=(clamp(t/window.DURATION)*100)+'%';
+  for(const [a,b,node] of CUES){
+    const fi=clamp((t-a)/0.45), fo=1-clamp((t-(b-0.45))/0.45);
+    node.style.opacity=Math.min(fi,fo);
+    node.style.transform='translateY('+((1-ease((t-a)/0.6))*16)+'px)';
+  }
+  // s5 is a bare end card — drop the running footer over it
+  const fade=1-clamp((t-(END-0.5))/0.4);
+  brandEls.forEach(e=>e.style.opacity=fade);
+  // s2 bars
+  fills.forEach((f,i)=>{const k=ease((t-IN[1]-0.4-i*0.22)/1.0);
+    f.style.width=(k*100*bars[i].episodes/maxEp)+'%';
+    nums[i].innerHTML=Math.round(k*bars[i].episodes)+'<span class="unit">集</span>';});
+  // s3 flips
+  flips.forEach((f,i)=>{f.style.opacity=ease((t-IN[2]-0.3-i*0.85)/0.5)});
+  segs.forEach(s=>{const k=ease((t-IN[2]-0.5)/1.1);
+    s.style.width=(k*(+s.dataset.w)/maxSeg*560)+'px'});
+  // s4 chips
+  chips.forEach((c,i)=>{const k=ease((t-IN[3]-0.3-i*0.13)/0.5);
+    c.style.opacity=k;c.style.transform='translateY('+((1-k)*14)+'px)'});
+};
+window.setT(0);
+</script></body></html>

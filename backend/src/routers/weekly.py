@@ -30,6 +30,10 @@ insight_service = InsightService()
 
 TAIPEI = ZoneInfo("Asia/Taipei")
 TOP_TICKERS = 15
+FLIP_MIN_EPISODES = 5   # below this, a sentiment swing is noise wearing a big percentage
+FLIP_MIN_BEAR = 3       # bear is scarce (6% of stances), so a turn needs real voices
+FLIP_MIN_BULL = 5       # bull is the cheap direction; hold it to a higher bar
+FLIP_TOP = 3
 TOP_SECTORS = 10
 
 
@@ -88,6 +92,67 @@ def _tally(insights: list[dict]) -> dict[str, Counter]:
     return by
 
 
+def _reasons(insights: list[dict]) -> dict[str, dict[str, dict]]:
+    """One stated reason per ticker per direction — who said it, and what they said.
+
+    The rollup counted stances and threw the reasoning away, which is what made the
+    weekly read like a scoreboard: "台積電 15 看多" is not information anyone can act
+    on or argue with. Every insight doc already carries ``bluf_thesis`` (populated on
+    effectively every row, a specific sourced sentence, boilerplate filtered at export)
+    plus who said it and over what horizon. This surfaces it.
+
+    Most recent wins, not longest: a later stance supersedes an earlier one in the same
+    week, and length is a proxy for rambling as often as for substance.
+    """
+    by: dict[str, dict[str, dict]] = defaultdict(dict)
+    for i in sorted(insights, key=lambda d: d.get("podcast_launch_time") or ""):
+        tk, thesis = i.get("ticker"), (i.get("bluf_thesis") or "").strip()
+        if not tk or not thesis:
+            continue
+        side = _sentiment(i.get("sentiment_label"))
+        if side == "neu":
+            continue
+        by[tk][side] = {
+            "thesis": thesis,
+            "podcaster": i.get("podcaster"),
+            # Horizon is inferred by the extractor and defaults to 中期 when the show
+            # never said one, so it is a hint, not a claim about what was stated.
+            "horizon": i.get("time_horizon"),
+        }
+    return by
+
+
+def flip_rows(rows: list[dict]) -> list[dict]:
+    """Tickers the tracked shows demonstrably changed their mind about — or nothing.
+
+    Both the weekly video and the weekly Threads copy lead with this, so it is
+    computed here, once, and they can never name different tickers.
+
+    Thresholds are ABSOLUTE, not shares, and that is the whole point. Podcasts are
+    not a sentiment survey: they mostly discuss what they like, so across 2026-W32..36
+    the mix ran 51.5% bull / 6.2% bear, 69% of top-15 rows had zero bear mentions at
+    all, and 43% of the rows that had any rested on a single one. A share-based rule
+    turns 0→1 into "+100% bearish" and manufactures a headline every single week; run
+    over those five weeks it produced four leads that were one mention deep and one
+    where the bear count had not moved at all.
+
+    So: a bear turn needs FLIP_MIN_BEAR voices actually saying it and a real increase,
+    and a bull turn needs a bigger jump still, because bull is the cheap direction here.
+    **Returning [] is a valid, common answer.** "Nobody changed their mind this week"
+    is true more often than not, and printing it is worth more than inventing a turn.
+    """
+    pool = [r for r in rows if r["episodes"] >= FLIP_MIN_EPISODES]
+    picks: list[dict] = []
+    for key, quota, floor, jump in (("bear", 2, FLIP_MIN_BEAR, 2), ("bull", 1, FLIP_MIN_BULL, 3)):
+        moved = [r for r in pool
+                 if r[key] >= floor
+                 and r[key] - r[f"prev_{key}"] >= jump
+                 and not any(p["ticker"] == r["ticker"] for p in picks)]
+        moved.sort(key=lambda r: r[key] - r[f"prev_{key}"], reverse=True)
+        picks += [{**r, "direction": key} for r in moved[:quota]]
+    return picks[:FLIP_TOP]
+
+
 async def build_week(week: str) -> Optional[dict]:
     """The rollup for one week, or None when no scoped episode falls in it."""
     start, end = week_bounds(week)
@@ -102,6 +167,7 @@ async def build_week(week: str) -> Optional[dict]:
         _insights_for(podcasters, prev_start, prev_end),
     )
     this_t, prev_t = _tally(this_ins), _tally(prev_ins)
+    why = _reasons(this_ins)
 
     ticker_eps: Counter = Counter()
     names: dict[str, str] = {}
@@ -132,15 +198,21 @@ async def build_week(week: str) -> Optional[dict]:
             "ticker": tk, "name": names.get(tk), "episodes": n,
             "bull": cur["bull"], "neu": cur["neu"], "bear": cur["bear"],
             "prev_bull": prev["bull"], "prev_neu": prev["neu"], "prev_bear": prev["bear"],
+            # The stated reason, not just the stance — the rollup's counts alone are a
+            # scoreboard nobody can argue with. None when only neutral stances exist.
+            "bull_why": why.get(tk, {}).get("bull"),
+            "bear_why": why.get(tk, {}).get("bear"),
         }
 
+    rows = [ticker_row(tk, n) for tk, n in ticker_eps.most_common(TOP_TICKERS)]
     return {
         "week": week,
         "start": start.isoformat(),
         "end": end.isoformat(),
         "episode_count": len(episodes),
         "podcasts": [{"name": n, "episodes": c} for n, c in Counter(ep.podcast_name for ep in episodes).most_common()],
-        "tickers": [ticker_row(tk, n) for tk, n in ticker_eps.most_common(TOP_TICKERS)],
+        "tickers": rows,
+        "flips": flip_rows(rows),
         "sectors": [{"exposure_id": sid, "episodes": n, **sector_meta[sid]} for sid, n in sector_eps.most_common(TOP_SECTORS)],
         # Full Episode shape (same as /episodes/by-sector) so the page renders the same
         # EpisodeCardV2 as every other list; content fields are empty (enrich_content=False).
