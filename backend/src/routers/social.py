@@ -236,9 +236,11 @@ async def vocus_insights(
     and no history, so "reads this month" comes from the daily snapshot chart, not from
     here.
 
-    Always 200. When the credential is missing or expired, or the read-count field has
-    moved, the payload reports ``available: false`` with a ``detail`` (and
-    ``sample_keys`` for the field case) so the admin UI shows why rather than a zero.
+    Reads are unauthenticated (published articles are public), so an expired token does
+    not blank this panel. Always 200. When ``VOCUS_USER_ID`` is missing, the list call
+    fails, or the read-count field has moved, the payload reports ``available: false``
+    with a ``detail`` (and ``sample_keys`` for the field case) so the admin UI shows why
+    rather than a zero.
     """
     svc = VocusInsightsService()
     summary = await svc.account_summary()

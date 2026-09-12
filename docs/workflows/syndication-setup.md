@@ -144,9 +144,13 @@ counters, two admin endpoints serve them, and the Analytics page renders a panel
 | `GET /api/admin/vocus/insights?posts=10` | lifetime reads/likes/bookmarks + article count, and the newest articles with their own counters |
 | `GET /api/admin/substack/insights?posts=10` | lifetime views/reactions/comments + post count, and the newest posts |
 
-Both reuse the publishers' clients, so the vocus 7-day token and the `substack.sid`
-cookie are maintained in exactly one place. Both always return 200 and report
-`available: false` with a `detail` when a credential is missing or expired.
+The vocus reader is **unauthenticated**: published articles are public, and the list
+endpoint answers with no `Authorization` header (verified 2026-09-11; only writes need
+the 7-day token). It needs `VOCUS_USER_ID` and a browser User-Agent, nothing else, so an
+expired token no longer blanks the reading panel — that gating is what left
+`analytics_snapshots.vocus_reads` NULL for weeks. Substack still reuses the publisher's
+`substack.sid` cookie. Both always return 200 and report `available: false` with a
+`detail` when they cannot read.
 
 **The counts are lifetime, not windowed.** Neither platform exposes history — each
 article carries a running counter — so "reads this week" is not answerable from one
@@ -157,12 +161,14 @@ them. **A day's reading is the difference between two rows.**
 
 ### The field names are ranked guesses, and the code says so
 
-Neither API documents which key holds the read count, and neither could be captured
-while this was written. So each count is resolved against a ranked candidate list
-(`READ_KEYS` / `VIEW_KEYS`, plus `LIST_ENDPOINTS` for Substack's published-post list),
-and **the resolution is reported with the number**:
+Neither API documents which key holds the read count. vocus's published list was
+captured live 2026-09-11: each article carries `pageview` (what vocus shows as 瀏覽 —
+this is `reads`), `readCount` (the deeper "read" metric, carried as `read_count`),
+`likeCount`, `collectCount`. Substack's is still a guess. Each count is resolved against
+a ranked candidate list (`READ_KEYS` / `VIEW_KEYS`, plus `LIST_ENDPOINTS` for Substack's
+published-post list), and **the resolution is reported with the number**:
 
-- Working: the response carries `field_map` (`{"reads": "readCount"}`) and, for
+- Working: the response carries `field_map` (`{"reads": "pageview"}`) and, for
   Substack, the `source` endpoint that answered. Both show up in the Analytics page's
   Tracking Configuration list.
 - Not working: articles were found but no candidate key matched → `available: false`
