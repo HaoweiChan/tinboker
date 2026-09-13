@@ -33,6 +33,11 @@ from sqlalchemy.orm import Session
 from src.database.models import ContentMention, ScreenerCandidate, StockTranslation, TickerPerformanceSnapshot
 from src.database.postgres import get_session
 from src.routers.weekly import build_week, week_bounds
+from src.services.attention import scope_mentions
+from src.services.podcast import PodcastService
+
+# ponytail: only its cached release scope is read here, same as the routers.
+_podcast_service = PodcastService()
 
 HORIZON = "r20d"
 TRACK_RECORD_LAG_WEEKS = 4  # 20 trading days ≈ 4 weeks; the calls scored are that old
@@ -66,11 +71,16 @@ def _hit(label: str, r: float) -> Optional[bool]:
     return None
 
 
-def query_track_record(db: Session, week: str) -> dict:
-    """Every ticker mention released inside ``week`` whose r20d has resolved."""
+def query_track_record(db: Session, week: str, allowed: Optional[frozenset]) -> dict:
+    """Every ticker mention released inside ``week`` whose r20d has resolved.
+
+    ``allowed`` is the release roster (PodcastService._allowed_podcast_names(), resolved
+    by the async caller): the scored calls must be the same shows the rollup counts, or
+    an English batch in the store gets scored in a zh-TW issue.
+    """
     start, end = week_bounds(week)
     rows = (
-        db.query(ContentMention, TickerPerformanceSnapshot)
+        scope_mentions(db.query(ContentMention, TickerPerformanceSnapshot), allowed)
         .join(TickerPerformanceSnapshot, TickerPerformanceSnapshot.mention_id == ContentMention.id)
         .filter(
             ContentMention.mention_type == "ticker",
@@ -257,9 +267,9 @@ def _call_line(c: dict, names: dict[str, str]) -> str:
 
 # ── entry ──────────────────────────────────────────────────────────────────────
 
-def _query_all(week: str, rollup: dict) -> tuple[dict, dict, dict]:
+def _query_all(week: str, rollup: dict, allowed: Optional[frozenset]) -> tuple[dict, dict, dict]:
     for db in get_session():
-        record, screener = query_track_record(db, lagged_week(week)), query_screener(db)
+        record, screener = query_track_record(db, lagged_week(week), allowed), query_screener(db)
         return record, screener, query_names(db, cited_tickers(rollup, record, screener))
     return {"week": lagged_week(week), "start": "", "end": "", "calls": []}, {"date": None, "candidates": []}, {}
 
@@ -269,5 +279,6 @@ async def build_paid_weekly(week: str) -> Optional[dict]:
     rollup = await build_week(week)
     if rollup is None:
         return None
-    record, screener, names = await asyncio.to_thread(_query_all, week, rollup)
+    allowed = await _podcast_service._allowed_podcast_names()
+    record, screener, names = await asyncio.to_thread(_query_all, week, rollup, allowed)
     return {"week": week, **render_markdown(rollup, record, screener, names)}

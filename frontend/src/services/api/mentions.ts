@@ -52,6 +52,10 @@ export interface MentionHeatResponse {
   heat_index_days: number;
   series: { d: string; n: number; bull: number; bear: number }[];
   market: { d: string; n: number }[];
+  /** 聲量水位 per calendar day: the share's percentile inside the ticker's own trailing
+   *  `level_window_days`, 0–100. Computed by the backend; the chart only draws it. */
+  level: { d: string; p: number }[];
+  level_window_days: number;
 }
 
 /**

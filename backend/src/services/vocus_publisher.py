@@ -223,7 +223,7 @@ class VocusClient:
             "canonicalURL": canonical_url,
             # The whole article also lives on tinboker.com. Pointing canonical home is
             # what keeps three full-text copies from competing with each other.
-            "openCanonical": True,
+            "openCanonical": bool(canonical_url),  # vocus-native pieces (no tinboker copy) pass "" and stay canonical here
             "setInvestment": True,   # investment-content disclosure; this is a finance publication
             # AI-assisted content disclosure. Every article we send is LLM-derived — the
             # episode summaries outright, the weekly's theses and sentiment labels by

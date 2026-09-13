@@ -8,6 +8,7 @@ import asyncio
 import base64
 import logging
 import mimetypes
+from typing import Optional
 
 import httpx
 from fastapi import APIRouter, HTTPException, Path, Query
@@ -20,6 +21,7 @@ from sqlalchemy import distinct, func
 from src.cache.redis_client import cache_get, cache_set
 from src.database.models import ContentMention, StockTranslation, TagRegistry
 from src.database.postgres import get_session
+from src.services.attention import scope_mentions
 from src.services.gcs_content import GCSContentService, media_path
 from src.services.og_image import episode_cover_png, episode_cover_svg, svg_to_png
 from src.services.podcast import PodcastService
@@ -152,7 +154,7 @@ async def episode_cover_raster(episode_id: str) -> Response:
 _STOCK_CACHE_CONTROL = "public, max-age=900"
 
 
-def _daily_mentions(ticker: str, since: str) -> list[dict]:
+def _daily_mentions(ticker: str, since: str, allowed: Optional[frozenset]) -> list[dict]:
     """One row per calendar day this ticker was talked about, since ``since``.
 
     Counted in SQL rather than pulled row-by-row: the busiest tickers carry 200+ mentions
@@ -165,7 +167,7 @@ def _daily_mentions(ticker: str, since: str) -> list[dict]:
     bear = func.count(1).filter(ContentMention.sentiment_label.like("%BEARISH%"))
     for db in get_session():
         rows = (
-            db.query(day, func.count(1), bull, bear)
+            scope_mentions(db.query(day, func.count(1), bull, bear), allowed)
             .filter(ContentMention.mention_type == "ticker",
                     ContentMention.ticker == ticker,
                     ContentMention.mentioned_at >= since)
@@ -197,7 +199,10 @@ async def stock_card_raster(
         raise HTTPException(status_code=404, detail=f"Stock {ticker} not found")
 
     since = stock.chartData[max(0, len(stock.chartData) - days)].date
-    mentions = await asyncio.to_thread(_daily_mentions, ticker, since)
+    # Roster resolved here (async, cached) and handed into the thread: the card must
+    # count the same shows the stock page does, not every row in the store.
+    allowed = await podcast_service._allowed_podcast_names()
+    mentions = await asyncio.to_thread(_daily_mentions, ticker, since, allowed)
 
     svg = stock_card_svg(stock.model_dump(), mentions, days)
     try:
@@ -213,16 +218,16 @@ async def stock_card_raster(
     return Response(content=png, media_type="image/png", headers=headers)
 
 
-def _week_counts(db, start: date, end: date) -> dict[str, dict]:
+def _week_counts(db, start: date, end: date, allowed: Optional[frozenset]) -> dict[str, dict]:
     """Per-ticker mention totals for one week, with the sentiment split."""
     rows = (
-        db.query(
+        scope_mentions(db.query(
             ContentMention.ticker,
             func.count(1),
             func.count(1).filter(ContentMention.sentiment_label.like("%BULLISH%")),
             func.count(1).filter(ContentMention.sentiment_label.like("%BEARISH%")),
             func.count(distinct(ContentMention.podcaster)),
-        )
+        ), allowed)
         .filter(ContentMention.mention_type == "ticker",
                 ContentMention.ticker.isnot(None),
                 ContentMention.mentioned_at >= start,
@@ -233,7 +238,7 @@ def _week_counts(db, start: date, end: date) -> dict[str, dict]:
     return {t: {"n": n, "bull": b, "bear": r, "casts": c} for t, n, b, r, c in rows}
 
 
-def _weekly_movers(week_start: date) -> dict:
+def _weekly_movers(week_start: date, allowed: Optional[frozenset]) -> dict:
     """The week's biggest risers in podcast mention count.
 
     Ranked by the CHANGE, not the count: ranking by count returns the same handful of
@@ -243,8 +248,8 @@ def _weekly_movers(week_start: date) -> dict:
     end = week_start + timedelta(days=7)
     prev_start = week_start - timedelta(days=7)
     for db in get_session():
-        now = _week_counts(db, week_start, end)
-        before = _week_counts(db, prev_start, week_start)
+        now = _week_counts(db, week_start, end, allowed)
+        before = _week_counts(db, prev_start, week_start, allowed)
         rows = []
         for ticker, cur in now.items():
             if cur["n"] < MIN_MENTIONS:
@@ -284,7 +289,8 @@ async def weekly_card_raster(
     """
     today = date.today()
     week_start = today - timedelta(days=today.weekday() + 7)
-    data = await asyncio.to_thread(_weekly_movers, week_start)
+    allowed = await podcast_service._allowed_podcast_names()
+    data = await asyncio.to_thread(_weekly_movers, week_start, allowed)
     try:
         svg = movers_card_svg({
             "title": "本週聲量竄升",
@@ -309,11 +315,11 @@ async def weekly_card_raster(
     return Response(content=png, media_type="image/png", headers=headers)
 
 
-def _theme_week_counts(db, start: date, end: date) -> dict[str, dict]:
+def _theme_week_counts(db, start: date, end: date, allowed: Optional[frozenset]) -> dict[str, dict]:
     """Per-theme mention totals for one week. Sector rows carry no sentiment."""
     rows = (
-        db.query(ContentMention.exposure_id, func.count(1),
-                 func.count(distinct(ContentMention.podcaster)))
+        scope_mentions(db.query(ContentMention.exposure_id, func.count(1),
+                                func.count(distinct(ContentMention.podcaster))), allowed)
         .filter(ContentMention.mention_type == "sector",
                 ContentMention.exposure_id.isnot(None),
                 ContentMention.mentioned_at >= start,
@@ -324,7 +330,7 @@ def _theme_week_counts(db, start: date, end: date) -> dict[str, dict]:
     return {e: {"n": n, "casts": c} for e, n, c in rows}
 
 
-def _theme_movers(week_start: date) -> dict:
+def _theme_movers(week_start: date, allowed: Optional[frozenset]) -> dict:
     """The week's biggest risers in theme discussion, with a few member tickers each.
 
     A theme's name is not self-explanatory — "矽光子與 CPO" means little until 穩懋 and
@@ -333,8 +339,8 @@ def _theme_movers(week_start: date) -> dict:
     """
     end = week_start + timedelta(days=7)
     for db in get_session():
-        now = _theme_week_counts(db, week_start, end)
-        before = _theme_week_counts(db, week_start - timedelta(days=7), week_start)
+        now = _theme_week_counts(db, week_start, end, allowed)
+        before = _theme_week_counts(db, week_start - timedelta(days=7), week_start, allowed)
         rows = []
         for exposure_id, cur in now.items():
             if cur["n"] < THEME_MIN_MENTIONS:
@@ -375,7 +381,8 @@ async def weekly_themes_raster(
     """Last complete week's biggest risers in theme discussion, as a square PNG."""
     today = date.today()
     week_start = today - timedelta(days=today.weekday() + 7)
-    data = await asyncio.to_thread(_theme_movers, week_start)
+    allowed = await podcast_service._allowed_podcast_names()
+    data = await asyncio.to_thread(_theme_movers, week_start, allowed)
     try:
         svg = movers_card_svg({
             "title": "本週題材竄升",

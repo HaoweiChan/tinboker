@@ -204,6 +204,7 @@ const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[]; epi
         neutral: Math.max(0, r.n - r.bull - r.bear),
       })),
       market: mentionHeat.market.map((r) => ({ time: secs(r.d), n: r.n })),
+      level: (mentionHeat.level ?? []).map((r) => ({ time: secs(r.d), p: r.p })),
     };
   }, [mentionHeat]);
 

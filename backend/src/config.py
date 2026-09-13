@@ -151,6 +151,29 @@ class Settings(BaseSettings):
     vocus_user_id: Optional[str] = None
     vocus_salon_id: Optional[str] = None
 
+    # ==================== Syndication policy ====================
+    # Per-episode summary syndication is OFF by default since 2026-09-13: four weeks of
+    # pushing every summary to vocus made 870 articles at ~7 pageviews each. What goes
+    # out instead is the nightly 每日一集 (services/daily_pick.py). Set a comma list
+    # ("vocus,substack") to turn per-episode syndication back on for those platforms.
+    episode_syndication_platforms: str = ""
+    # The endpoint refuses episodes released more than this many days ago unless the
+    # caller passes allow_old=true. The pipeline has its own SYNDICATE_MAX_AGE_DAYS, but
+    # on 2026-09-04 a backfill reached this endpoint before that gate existed and 817
+    # articles from 2021–2025 went out as new; the backend must not trust its callers.
+    # 0 turns the gate off.
+    syndicate_max_age_days: int = 7
+    # 每日一集: at most this many episode summaries a day go to vocus, chosen by show
+    # priority (first wins) then by how many ticker observations the episode produced.
+    # The order is the measured vocus pageview ranking as of 2026-09-13 (medians 6-9,
+    # so it is a tie-break more than a verdict). Only the environment that owns
+    # syndication runs the nightly loop; the shared ledger makes a second one a no-op.
+    daily_pick_autopublish: bool = False
+    daily_pick_limit: int = 1
+    daily_pick_shows: str = (
+        "Gooaye 股癌,游庭皓的財經皓角,曲博科技教室,兆華與股惑仔,財女珍妮,財報狗,財經一路發,韭菜畢業班,M觀點,財經M平方"
+    )
+
     # ==================== Substack syndication ====================
     # Also undocumented; we drive the endpoints Substack's own editor uses. SUBSTACK_SID
     # is the substack.sid session cookie, which lasts months — unlike the vocus token it

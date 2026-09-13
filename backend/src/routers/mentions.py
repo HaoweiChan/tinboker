@@ -20,10 +20,14 @@ from src.database.models import (
     SectorPerformanceSnapshot,
     TickerPerformanceSnapshot,
 )
+from src.services.attention import WINDOW_DAYS as _LEVEL_WINDOW_DAYS, attention_level, scope_mentions
+from src.services.podcast import PodcastService
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["mentions"])
+# ponytail: same module-level instance the other routers use; only its release scope is read here.
+podcast_service = PodcastService()
 
 DISCLAIMER = (
     "本頁面之播客提及與後續表現統計僅供資訊參考，並非投資建議。"
@@ -74,9 +78,9 @@ def _mention_dict(mention: ContentMention, performance: Optional[dict]) -> dict:
     }
 
 
-def _ticker_mentions(db: Session, tickers: List[str], limit: int) -> List[dict]:
+def _ticker_mentions(db: Session, tickers: List[str], limit: int, allowed: Optional[frozenset]) -> List[dict]:
     rows = (
-        db.query(ContentMention, TickerPerformanceSnapshot)
+        scope_mentions(db.query(ContentMention, TickerPerformanceSnapshot), allowed)
         .outerjoin(TickerPerformanceSnapshot, TickerPerformanceSnapshot.mention_id == ContentMention.id)
         .filter(ContentMention.mention_type == "ticker", ContentMention.ticker.in_(tickers))
         .order_by(ContentMention.mentioned_at.desc())
@@ -94,8 +98,9 @@ async def get_ticker_mentions(
 ):
     """Podcast mentions of one ticker with post-mention 1/5/20/60 trading-day returns."""
     canonical = ticker.upper().replace(".TW", "").strip()
+    allowed = await podcast_service._allowed_podcast_names()
     for db in get_session():
-        mentions = _ticker_mentions(db, [canonical, ticker.upper()], limit)
+        mentions = _ticker_mentions(db, [canonical, ticker.upper()], limit, allowed)
         return {"ticker": canonical, "mentions": mentions, "disclaimer": DISCLAIMER}
     return {"ticker": canonical, "mentions": [], "disclaimer": DISCLAIMER}
 
@@ -107,9 +112,10 @@ async def get_sector_mentions(
     limit: int = Query(default=50, ge=1, le=200),
 ):
     """Podcast mentions of one sector/theme with post-mention member-average returns."""
+    allowed = await podcast_service._allowed_podcast_names()
     for db in get_session():
         rows = (
-            db.query(ContentMention, SectorPerformanceSnapshot)
+            scope_mentions(db.query(ContentMention, SectorPerformanceSnapshot), allowed)
             .outerjoin(SectorPerformanceSnapshot, SectorPerformanceSnapshot.mention_id == ContentMention.id)
             .filter(ContentMention.mention_type == "sector", ContentMention.exposure_id == exposure_id)
             .order_by(ContentMention.mentioned_at.desc())
@@ -125,9 +131,10 @@ async def get_sector_mentions(
 @cdn_cache_trending
 async def get_episode_mentions(episode_id: str):
     """All ticker + sector mentions extracted from one episode, with performance."""
+    allowed = await podcast_service._allowed_podcast_names()
     for db in get_session():
         rows = (
-            db.query(ContentMention)
+            scope_mentions(db.query(ContentMention), allowed)
             .filter(ContentMention.episode_id == episode_id)
             .order_by(ContentMention.mention_type, ContentMention.ticker)
             .all()
@@ -169,7 +176,7 @@ _HEAT_INDEX_DAYS = 30
 _HEAT_HALF_LIFE_DAYS = 7.0
 
 
-def _heat_index(db, ticker_variants: List[str]) -> Optional[int]:
+def _heat_index(db, ticker_variants: List[str], allowed: Optional[frozenset]) -> Optional[int]:
     """This ticker's discussion heat as 0-100, where 100 is the busiest ticker on the site.
 
     A raw share is unreadable here: over 30 days the median mentioned ticker holds 0.059%
@@ -185,7 +192,7 @@ def _heat_index(db, ticker_variants: List[str]) -> Optional[int]:
     heat = func.sum(func.power(0.5, age_days / _HEAT_HALF_LIFE_DAYS)).label("heat")
     since = datetime.utcnow() - timedelta(days=_HEAT_INDEX_DAYS)
     per_ticker = (
-        db.query(ContentMention.ticker.label("ticker"), heat)
+        scope_mentions(db.query(ContentMention.ticker.label("ticker"), heat), allowed)
         .filter(ContentMention.mention_type == "ticker",
                 ContentMention.ticker.isnot(None),
                 ContentMention.mentioned_at >= since)
@@ -223,22 +230,33 @@ async def get_mention_heat(
     Counts, not heat: the decay (0.5^(age/7), the platform's 討論熱度 definition) is
     applied client-side against the chart's own trading sessions, so it lines up with the
     bars actually drawn rather than with calendar days the market was shut.
+
+    `level` is 聲量水位 — the share's percentile inside the ticker's own trailing year,
+    0-100 per calendar day — computed here (services/attention.py) rather than by the
+    chart so the stock page and the weekly can never hold two definitions of it.
+
+    Every query is scoped to the release roster, like the episode surfaces: an English
+    batch landing in the store must not move a TW ticker's share or its level.
     """
     canonical = ticker.upper().replace(".TW", "").strip()
-    since = datetime.utcnow().date() - timedelta(days=days)
+    variants = [canonical, ticker.upper()]
+    today = datetime.utcnow().date()
+    since = today - timedelta(days=days)
     day = func.date(ContentMention.mentioned_at)
+    allowed = await podcast_service._allowed_podcast_names()
     for db in get_session():
-        base = db.query(day, func.count(1)).filter(
+        base = scope_mentions(db.query(day, func.count(1)), allowed).filter(
             ContentMention.mention_type == "ticker",
             ContentMention.mentioned_at >= since,
         )
-        market = [{"d": str(d), "n": n} for d, n in base.group_by(day).all()]
+        market_rows = base.group_by(day).all()
         rows = (
-            db.query(day, func.count(1),
-                     func.count(1).filter(ContentMention.sentiment_label.like("%BULLISH%")),
-                     func.count(1).filter(ContentMention.sentiment_label.like("%BEARISH%")))
+            scope_mentions(db.query(day, func.count(1),
+                             func.count(1).filter(ContentMention.sentiment_label.like("%BULLISH%")),
+                             func.count(1).filter(ContentMention.sentiment_label.like("%BEARISH%"))),
+                    allowed)
             .filter(ContentMention.mention_type == "ticker",
-                    ContentMention.ticker.in_([canonical, ticker.upper()]),
+                    ContentMention.ticker.in_(variants),
                     ContentMention.mentioned_at >= since)
             .group_by(day)
             .all()
@@ -246,12 +264,14 @@ async def get_mention_heat(
         return {
             "ticker": canonical,
             "half_life_days": 7,
-            "heat_index": _heat_index(db, [canonical, ticker.upper()]),
+            "heat_index": _heat_index(db, variants, allowed),
             "heat_index_days": _HEAT_INDEX_DAYS,
             "series": [{"d": str(d), "n": n, "bull": b, "bear": r} for d, n, b, r in rows],
-            "market": market,
+            "market": [{"d": str(d), "n": n} for d, n in market_rows],
+            "level": attention_level({d: n for d, n, _, _ in rows}, dict(market_rows), today),
+            "level_window_days": _LEVEL_WINDOW_DAYS,
             "disclaimer": DISCLAIMER,
         }
     return {"ticker": canonical, "half_life_days": 7, "heat_index": None,
             "heat_index_days": _HEAT_INDEX_DAYS, "series": [], "market": [],
-            "disclaimer": DISCLAIMER}
+            "level": [], "level_window_days": _LEVEL_WINDOW_DAYS, "disclaimer": DISCLAIMER}
