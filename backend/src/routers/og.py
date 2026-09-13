@@ -32,6 +32,7 @@ from src.services.weekly_card import (
     theme_rows, ticker_rows,
 )
 from src.services.syndication_markdown import podcast_short_name, syndication_title
+from src.services.title_card import MAX_TITLE, title_card_svg
 
 logger = logging.getLogger(__name__)
 
@@ -404,3 +405,19 @@ async def weekly_themes_raster(
     if download:
         headers["Content-Disposition"] = f'attachment; filename="tinboker-themes-{week_start}.png"'
     return Response(content=png, media_type="image/png", headers=headers)
+
+
+@router.get("/title.png")
+async def title_card_raster(
+    title: str = Query(..., min_length=1, max_length=MAX_TITLE),
+    kicker: str = Query("", max_length=40),
+) -> Response:
+    """Words-only cover: a kicker line and the title in large type. Used as the vocus
+    thumbnail for the paid weekly and research pieces, whose bodies carry no chart."""
+    svg = title_card_svg(title, kicker)
+    try:
+        png = await asyncio.to_thread(svg_to_png, svg, CARD_SIZE, CARD_SIZE)
+    except Exception as e:  # noqa: BLE001 — surfaced, never swapped for the SVG
+        logger.exception("og: title card rasterisation failed")
+        raise HTTPException(status_code=500, detail=f"card rasterisation failed: {e}") from e
+    return Response(content=png, media_type="image/png", headers={"Cache-Control": _CACHE_CONTROL})
