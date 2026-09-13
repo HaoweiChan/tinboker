@@ -240,12 +240,12 @@ def render_markdown(rollup: dict, record: dict, movers: dict, names: Optional[di
     out.append("## 資料附錄")
     out.append("")
     if top:
-        out.append("**主題個股的走勢與節目多空**（K 線、成交量、節目看多／看空分佈）")
+        # ponytail: one link per stock. vocus has no image node in our converter yet, so an
+        # inline card would render as a bare link anyway; the card is the cover instead.
+        out.append("**主題個股**（走勢、成交量與節目多空分佈見個股頁）")
         out.append("")
-        for t in top:
-            out.append(f"![{_name(t, names)}]({api}/api/og/stock/{t}.png)")
-            out.append(f"[{_name(t, names)} 個股頁]({site}/stock/{t})")
-            out.append("")
+        out.append("、".join(f"[{_name(t, names)}]({site}/stock/{t})" for t in top))
+        out.append("")
     if movers.get("high") or movers.get("low"):
         out.append(f"**聲量水位**（{movers.get('as_of')}；每檔相對自己過去一年的討論量分位數，只描述狀態）")
         out.append("")
