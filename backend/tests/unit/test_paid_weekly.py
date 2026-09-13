@@ -75,14 +75,14 @@ def test_appendix_has_charts_movers_and_pooled_excess_vs_index():
     assert pw.DISCLAIMER in md
     assert out["title"] == "聽播客週報 Pro 2026-W36"
     assert out["stats"] == {"episodes": 3, "calls_scored": 5, "movers": 1, "article": False}
-    assert out["thumbnail_url"] == "https://api.tinboker.com/api/og/stock/2330.png"  # cover = first chart
+    assert out["thumbnail_url"].startswith("https://api.tinboker.com/api/og/title.png?title=")
 
 
 def test_no_resolved_calls_says_so():
     out = pw.render_markdown(ROLLUP, {**RECORD, "calls": []}, {"high": [], "low": []}, article=ARTICLE)
     assert "本節下期補上" in out["markdown"] and "**聲量水位**" not in out["markdown"]
     assert out["title"] == "聽播客週報 Pro 2026-W36｜記憶體漲價，節目為何分歧？"
-    assert out["thumbnail_url"] == "https://api.tinboker.com/api/og/stock/2408.png"  # the article's stock, not the week's
+    assert "kicker=%E8%81%BD%E6%92%AD%E5%AE%A2%E9%80%B1%E5%A0%B1+Pro+2026-W36" in out["thumbnail_url"]
 
 
 def test_index_return_uses_the_first_session_on_or_after_the_mention():
