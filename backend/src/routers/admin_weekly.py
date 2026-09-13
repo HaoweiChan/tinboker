@@ -67,6 +67,6 @@ async def publish_paid_weekly(
         key, issue["title"], issue["markdown"],
         canonical_url=f"{settings.site_url.rstrip('/')}/weekly/{week}",
         abstract=issue["excerpt"], tags=VOCUS_TAGS, thumbnail_url=issue["thumbnail_url"],
-        as_draft=as_draft, dry_run=dry_run, paid=True,
+        as_draft=as_draft, dry_run=dry_run, paid=True, room="weekly",
     ), dry_run)
     return {**result, "week": week, "stats": issue["stats"]}
