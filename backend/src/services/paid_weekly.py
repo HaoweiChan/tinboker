@@ -24,6 +24,7 @@ from __future__ import annotations
 import asyncio
 import re
 from bisect import bisect_left
+from urllib.parse import urlencode
 from datetime import timedelta
 from typing import Optional
 
@@ -280,9 +281,8 @@ def render_markdown(rollup: dict, record: dict, movers: dict, names: Optional[di
                + f"附 {record['week']} 節目說法的 20 日驗證與聲量水位。")
     stats = {"episodes": rollup["episode_count"], "calls_scored": len(calls),
              "movers": len(movers.get("high") or []) + len(movers.get("low") or []), "article": bool(article)}
-    # The cover is the first chart in the appendix — the stock the piece is about — so a
-    # vocus card shows the same thing the article opens with, not a placeholder.
-    thumbnail = f"{api}/api/og/stock/{top[0]}.png" if top else ""
+    # The cover is the title in large type (the appendix carries no chart any more).
+    thumbnail = f"{api}/api/og/title.png?" + urlencode({"title": topic or title, "kicker": f"聽播客週報 Pro {week}"})
     return {"title": title, "markdown": "\n".join(out), "excerpt": excerpt, "stats": stats, "thumbnail_url": thumbnail}
 
 
