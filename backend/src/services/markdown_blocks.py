@@ -22,7 +22,8 @@ _QUOTE = re.compile(r"^>\s?(.*)$")
 _HR = re.compile(r"^\s*(?:-{3,}|\*{3,}|_{3,})\s*$")
 _TABLE_ROW = re.compile(r"^\s*\|.*\|\s*$")
 _TABLE_SEP = re.compile(r"^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$")  # |---|--:|:-:| — any dash count
-_LINK = re.compile(r"\[([^\]]*)\]\(([^)\s]+)\)")
+_LINK = re.compile(r"!?\[([^\]]*)\]\(([^)\s]+)\)")  # an image (![alt](src)) becomes a link: no image node yet
+_BARE_URL = re.compile(r"https?://[^\s<>()\[\]，。；、]+")
 _STRONG = re.compile(r"\*\*(.+?)\*\*|__(.+?)__")
 _EM = re.compile(r"(?<!\*)\*([^*]+)\*(?!\*)|(?<!_)_([^_]+)_(?!_)")
 
@@ -62,17 +63,30 @@ def _emphasis(text: str, bold: bool = False, italic: bool = False) -> list[Span]
     return [Span(text, bold, italic)]
 
 
+def _plain(text: str) -> list[Span]:
+    """Text outside link syntax: a bare URL is a link to itself (a reference list of
+    naked URLs reads as unfinished on vocus), the rest is emphasis."""
+    spans: list[Span] = []
+    pos = 0
+    for m in _BARE_URL.finditer(text):
+        spans.extend(_emphasis(text[pos:m.start()]))
+        spans.append(Span(m.group(0), href=m.group(0)))
+        pos = m.end()
+    spans.extend(_emphasis(text[pos:]))
+    return spans
+
+
 def inline_spans(text: str) -> list[Span]:
     """Inline markdown -> spans. Links win over emphasis; emphasis nests inside a label."""
     spans: list[Span] = []
     pos = 0
     for m in _LINK.finditer(text):
-        spans.extend(_emphasis(text[pos:m.start()]))
+        spans.extend(_plain(text[pos:m.start()]))
         label, url = m.group(1), m.group(2)
         inner = _emphasis(label) or [Span(url)]
         spans.extend(Span(s.text, s.bold, s.italic, url) for s in inner)
         pos = m.end()
-    spans.extend(_emphasis(text[pos:]))
+    spans.extend(_plain(text[pos:]))
     return spans or [Span("")]
 
 

@@ -91,3 +91,10 @@ def test_a_table_renders_as_a_bullet_list_in_both_editors():
 
 def test_a_lone_pipe_line_is_still_a_paragraph():
     assert [b.kind for b in parse_blocks("| not a table |")] == ["paragraph"]
+
+
+def test_bare_urls_link_to_themselves_and_images_become_links():
+    spans = parse_blocks("- 南亞科 (2408)：https://tinboker.com/stock/2408，見 ![卡](https://x.test/c.png)")[0].items[0]
+    assert [(s.text, s.href) for s in spans if s.href] == [
+        ("https://tinboker.com/stock/2408", "https://tinboker.com/stock/2408"), ("卡", "https://x.test/c.png")]
+    assert "!" not in "".join(s.text for s in spans)
