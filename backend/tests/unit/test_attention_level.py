@@ -1,7 +1,7 @@
 import random
 from datetime import date, timedelta
 
-from src.services.attention import MIN_HISTORY_DAYS, attention_level, scope_mentions
+from src.services.attention import MIN_MENTION_DAYS, MIN_HISTORY_DAYS, attention_level, scope_mentions
 
 
 class _Query:
@@ -64,3 +64,13 @@ def test_thin_market_days_are_skipped():
     market = {d: (100 if i >= 100 else 1) for i, d in enumerate(days)}  # corpus too small at first
     ticker = {d: 1 for d in days}
     assert attention_level(ticker, market, days[-1]) == []
+
+
+def test_a_name_said_on_too_few_days_has_no_level():
+    # Zero share on ~360 days makes any mention rank at 97–100; that is not a state.
+    days = [date(2026, 1, 1) + timedelta(days=i) for i in range(400)]
+    market = {d: 40 for d in days}
+    sparse = {days[-1]: 3, **{days[-1 - 30 * k]: 1 for k in range(1, MIN_MENTION_DAYS - 1)}}
+    assert attention_level(sparse, market, days[-1]) == []
+    monthly = {**sparse, **{days[-1 - 30 * k]: 1 for k in range(1, MIN_MENTION_DAYS + 1)}}
+    assert attention_level(monthly, market, days[-1])[-1]["p"] >= 90

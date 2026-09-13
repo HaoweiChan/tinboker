@@ -47,6 +47,11 @@ MIN_HISTORY_DAYS = 84
 # Below this much market-wide heat a share is one loud day divided by another, not a
 # measurement; those days get no share and therefore no level.
 MIN_MARKET_HEAT = 30.0
+# A ticker mentioned on fewer distinct days than this inside the window has a reference
+# distribution that is zero almost everywhere, so its first mention ranks at 97–100
+# ("被講到一年來最多" when the truth is "the only time anyone said it"). W37 dev run: 6 of 8
+# list "highs" were such names. Roughly monthly is the floor for a percentile to mean anything.
+MIN_MENTION_DAYS = 12
 
 
 def attention_level(
@@ -60,7 +65,8 @@ def attention_level(
     from the same scoped population. Heat decays by 0.5 ** (age / HALF_LIFE_DAYS) per
     calendar day; share = ticker heat / market heat; level = share's percentile rank
     (inclusive) among the shares of the trailing WINDOW_DAYS, once at least
-    MIN_HISTORY_DAYS of shares exist in that window.
+    MIN_HISTORY_DAYS of shares exist in that window and the ticker itself was mentioned on
+    at least MIN_MENTION_DAYS distinct days of it.
     """
     if not market_daily:
         return []
@@ -82,7 +88,8 @@ def attention_level(
             while shares[head][0] < day - window:
                 head += 1
             n = len(shares) - head
-            if n >= MIN_HISTORY_DAYS:
+            active = sum(1 for d in ticker_daily if day - window <= d <= day and ticker_daily[d] > 0)
+            if n >= MIN_HISTORY_DAYS and active >= MIN_MENTION_DAYS:
                 # ponytail: O(window) scan per day, ~730 × ~364; a sorted window if it ever matters.
                 le = sum(1 for _, s in shares[head:] if s <= share)
                 out.append({"d": day.isoformat(), "p": round(le / n * 100)})
@@ -163,7 +170,8 @@ async def attention_movers(week: str, *, allowed: Optional[frozenset]) -> dict:
             high.append(row)
         elif level <= MOVER_LOW:
             low.append(row)
-    high.sort(key=lambda r: (-r["level"], -r["mentions"], r["ticker"]))
+    # At the top the levels saturate at 99–100 and carry no order; breadth does.
+    high.sort(key=lambda r: (-r["shows"], -r["mentions"], -r["level"], r["ticker"]))
     low.sort(key=lambda r: (r["level"], -r["mentions"], r["ticker"]))
     return {"week": week, "start": start.isoformat(), "end": end.isoformat(), "as_of": as_of.isoformat(),
             "high": high[:MOVER_LIMIT], "low": low[:MOVER_LIMIT]}
