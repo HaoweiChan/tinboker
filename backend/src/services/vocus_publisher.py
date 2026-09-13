@@ -53,11 +53,11 @@ VOCUS_CATEGORY_TITLE = "投資理財"
 
 # 房間 (rooms) of our salon, by role. Ids are stable identifiers of our own salon (they
 # appear in its URLs), not secrets. The wizard sends them as ``publicationIds``.
-# "daily" is filled in once the 每日一集 room exists on vocus.
+# Listed by GET /api/salons/{salonId}/rooms.
 ROOMS = {
     "weekly": "6a9ed1083cad37fdc4567544",    # 週報 Pro   (urlId weekly-pro)
     "research": "6aa6c3afaa9271464230c542",  # 研究筆記  (urlId research)
-    "daily": "",                             # 每日一集  — not created yet
+    "daily": "6aa6c82eaa9271464230fc44",     # 每日一集
 }
 
 STATUS_DRAFT = 1

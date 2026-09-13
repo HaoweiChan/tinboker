@@ -356,4 +356,4 @@ async def test_room_and_schedule_are_sent_the_way_the_wizard_sends_them():
     assert seen["limitTimeFree"] is False
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
         await client.save_settings(http, "a", title="T", abstract="A", canonical_url="", tags=[], room="daily")
-    assert seen["publicationIds"] == [] and seen["isSchedule"] is False  # daily room not created yet
+    assert seen["publicationIds"] == [vp.ROOMS["daily"]] and seen["isSchedule"] is False
