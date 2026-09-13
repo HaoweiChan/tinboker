@@ -6,7 +6,7 @@ import path from 'node:path';
 import os from 'node:os';
 
 const WEEK = process.argv[2] || '2026-W36';
-const API  = process.env.API || 'https://dev-api.tinboker.com';  // `flips` lands on dev first
+const API  = process.env.API || 'https://dev-api.tinboker.com';  // `movers` lands on dev first
 const FPS  = +(process.env.FPS || 20);
 const HERE = path.dirname(new URL(import.meta.url).pathname);
 const OUT  = process.env.OUT_DIR || path.join(HERE, 'out');
@@ -44,20 +44,27 @@ async function label(t) {
 const tickers = [];
 for (const t of wk.tickers.slice(0, 8)) tickers.push({ ...t, ...(await label(t)) });
 
-// `flips` — which tickers the same shows changed their mind about — is computed by the
-// backend (routers/weekly.py:flip_rows), NOT here. The weekly Threads copy reads the
-// same field, and a video naming different tickers than the post would be the exact
-// drift this repo has already had three times.
-const flips = [];
-for (const t of wk.flips || []) {
-  const L = await label(t);
-  const seg = (b, n, r) => [['b', b], ['n', n], ['r', r]].filter(s => s[1] > 0);
-  const note = t.direction === 'bear'
-    ? `上週 <b class="up">${t.prev_bull} 看多</b> · <b class="dn">${t.prev_bear} 看空</b> → 本週 <b class="up">${t.bull} 看多</b> · <b class="dn">${t.bear} 看空</b>`
-    : `上週 <b class="up">${t.prev_bull} 看多</b> → 本週 <b class="up">${t.bull} 看多</b>，${t.episodes} 集提到`;
-  flips.push({ ...L, prev: seg(t.prev_bull, t.prev_neu, t.prev_bear), now: seg(t.bull, t.neu, t.bear), note });
+// `movers` — tickers whose 聲量水位 sits at the high or low end of their own year — come
+// from the backend (services/attention.attention_movers via routers/weekly.py), NOT from
+// here. The weekly Threads copy and the stock page read the same number, and a video
+// naming different tickers than the post would be the exact drift this repo has had.
+const mv = wk.movers;
+if (!mv) throw new Error(`${API} returned no \`movers\` — that backend predates attention_movers, or the attention query failed`);
+const esc = (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+async function moverCard(m) {
+  const w = m.bull_why || m.bear_why;   // a show's own words, attributed; never ours
+  const why = w
+    ? `<em>${esc(w.podcaster)}：</em>${esc(w.thesis)}`
+    : `<em>這週 ${m.shows} 個節目、${m.mentions} 次提到</em>`;
+  return { ...m, ...(await label(m)), why };
 }
-if (!flips.length) throw new Error(`${API} returned no \`flips\` — that backend predates flip_rows (PR: weekly video)`);
+// Three cards fit the 1350px frame with two-line reasons (four overflowed the header and
+// footer when checked). Highs lead; a low takes the last slot when there is one.
+const hi = mv.high.slice(0, mv.low.length ? 2 : 3);
+const lo = mv.low.slice(0, 3 - hi.length);
+const high = [], low = [];
+for (const m of hi) high.push(await moverCard(m));
+for (const m of lo) low.push(await moverCard(m));
 
 const D = {
   week: WEEK,
@@ -65,7 +72,8 @@ const D = {
   episode_count: wk.episode_count,
   podcast_count: wk.podcasts.length,
   ticker_count: wk.tickers.length,
-  tickers, flips,
+  tickers, high, low,
+  as_of: (mv.as_of || wk.end).replaceAll('-', '.'),
   sectors: wk.sectors.slice(0, 10).map(s => ({ name: s.display_name, episodes: s.episodes })),
   cta: '每天更新的節目摘要 · 個股情緒 · 題材熱度',
 };

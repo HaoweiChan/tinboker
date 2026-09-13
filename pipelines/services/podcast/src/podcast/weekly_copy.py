@@ -7,9 +7,11 @@ function over a dict, with a CLI on top:
 
     uv run --package tinboker-podcast python -m podcast.weekly_copy 2026-W36
 
-The rollup's ``flips`` (which tickers the same shows changed their mind about) are
-computed by the backend, not here — the weekly video reads the same field, and the two
-must never name different tickers. See backend/src/routers/weekly.py:flip_rows.
+The lead is the rollup's ``movers``: tickers whose 聲量水位 (discussion level within the
+ticker's own trailing year, 0-100) sits at the high or low end this week. The list is
+owned by backend services/attention.attention_movers — the same number the stock page
+shows, and the one the weekly video reads — so the post and the video can never name
+different tickers.
 
 Publishing is a separate, manual step: POST the result to /api/admin/promo/publish
 alongside the rendered video. Nothing here posts anything.
@@ -42,6 +44,9 @@ _TICKER_KEYS = ("ticker", "name", "episodes", "bull", "neu", "bear",
                 "bull_why", "bear_why")
 
 
+_MOVER_KEYS = ("ticker", "name", "level", "mentions", "shows", "voices")
+
+
 def _slim(row: dict, keys: tuple[str, ...]) -> dict:
     return {k: row.get(k) for k in keys if row.get(k) is not None}
 
@@ -50,11 +55,12 @@ def build_messages(rollup: dict) -> list[dict[str, str]]:
     """Render the weekly_copy_writer chat messages from a /api/weekly/{week} payload."""
     prompts = load_prompt("weekly_copy_writer")
     tickers = [_slim(t, _TICKER_KEYS) for t in (rollup.get("tickers") or [])[:TOP_TICKERS]]
-    flips = [_slim(f, _TICKER_KEYS + ("direction",)) for f in rollup.get("flips") or []]
-    # An empty `flips` is a real, common answer (see backend flip_rows) — say so rather
-    # than leaving the model to infer that silence means nothing happened.
-    flips_note = json.dumps(flips, ensure_ascii=False, indent=2) if flips else \
-        "（本週沒有任何一檔跨過「有人改變說法」的門檻。不要硬掰轉向，就寫這件事本身。）"
+    movers = rollup.get("movers") or {}
+    high = [_slim(m, _MOVER_KEYS) for m in movers.get("high") or []]
+    low = [_slim(m, _MOVER_KEYS) for m in movers.get("low") or []]
+    # Empty ends are a real answer, not a gap — say so rather than leaving the model to
+    # fill the silence with a story.
+    empty = "（本週沒有任何一檔落在這一端。不要硬找一檔湊數。）"
     sectors = [{"name": s.get("display_name"), "episodes": s.get("episodes")}
                for s in (rollup.get("sectors") or [])[:TOP_SECTORS]]
     start, end = rollup.get("start", ""), rollup.get("end", "")
@@ -64,7 +70,9 @@ def build_messages(rollup: dict) -> list[dict[str, str]]:
         episode_count=rollup.get("episode_count", 0),
         podcast_count=len(rollup.get("podcasts") or []),
         tickers=json.dumps(tickers, ensure_ascii=False, indent=2),
-        flips=flips_note,
+        as_of=movers.get("as_of") or rollup.get("end", ""),
+        movers_high=json.dumps(high, ensure_ascii=False, indent=2) if high else empty,
+        movers_low=json.dumps(low, ensure_ascii=False, indent=2) if low else empty,
         sectors=json.dumps(sectors, ensure_ascii=False, indent=2),
         podcasts=json.dumps([p.get("name") for p in rollup.get("podcasts") or []], ensure_ascii=False),
     )
@@ -107,14 +115,15 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("week", help="ISO week, e.g. 2026-W36")
     ap.add_argument("--api", default="https://dev-api.tinboker.com",
-                    help="backend serving /api/weekly (flips ship to dev first)")
+                    help="backend serving /api/weekly (movers ship to dev first)")
     ap.add_argument("--out", help="write the JSON here as well as stdout")
     args = ap.parse_args()
 
     rollup = fetch_rollup(args.week, args.api)
-    if "flips" not in rollup:
-        print(f"  ⚠ {args.api} has no `flips` field — that backend predates flip_rows; "
-              f"the copy will not lead with a sentiment turn", file=sys.stderr)
+    if not rollup.get("movers"):
+        print(f"  ⚠ {args.api} returned no `movers` — either that backend predates "
+              f"attention_movers or the attention query failed; the copy has no lead",
+              file=sys.stderr)
     copy = write_weekly_copy(rollup)
     text = json.dumps(copy, ensure_ascii=False, indent=2)
     if args.out:

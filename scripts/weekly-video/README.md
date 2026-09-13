@@ -26,10 +26,16 @@ node build.mjs 2026-W36                  # → out/tinboker-weekly-2026-W36.mp4 
   It asserts its drum hits against `weekly.html`'s `LEN` and fails if the two drift.
 - `build.mjs` — fetches the rollup, drives Chrome frame-by-frame over CDP, calls ffmpeg.
 
-**`flips` comes from the backend** (`routers/weekly.py:flip_rows`), never from this
-script. The Threads copy reads the same field, so the video and the post always name the
-same tickers. A backend without that field makes `build.mjs` fail loudly rather than
-quietly disagree with the post.
+**Scene 3 is 聲量水位**: tickers whose discussion this week sits at the high or low end
+of their OWN trailing year. The list comes from the backend
+(`services/attention.attention_movers`, via `routers/weekly.py`), never from this
+script — it is the same number as the stock page's pane and the one the Threads copy
+reads, so the video and the post always name the same tickers. A backend without
+`movers` makes `build.mjs` fail loudly.
+
+State only, on every free surface: the level and a show's attributed reason, never a
+forward return. Reasons have forecast and advice clauses (目標價, EPS 預估, 上看 N 元,
+建議) cut in the backend before they reach the video (`routers/weekly.py:_descriptive`).
 
 ## 2. Copy
 

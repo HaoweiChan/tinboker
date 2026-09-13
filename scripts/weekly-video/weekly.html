@@ -48,21 +48,23 @@ h2 span{color:var(--amber)}
 .num{font-size:38px;font-weight:700;text-align:right;font-variant-numeric:tabular-nums}
 .unit{font-size:20px;color:var(--muted);margin-left:4px}
 
-/* 3 flip */
-.flip{border:1px solid var(--border);background:var(--card);padding:34px 36px;margin-bottom:30px}
-.flip .name{font-size:38px;font-weight:700}
-.flip .name i{font-style:normal;color:var(--muted);font-size:26px;margin-left:12px}
-.bars{display:flex;gap:6px;margin-top:20px;align-items:center}
-.seg{height:28px}
-.seg.b{background:var(--bull)}.seg.n{background:hsl(213 15% 34%)}.seg.r{background:var(--bear)}
-.legend{font-size:23px;color:var(--muted);margin-top:14px;letter-spacing:.02em}
-.legend b{font-weight:700}
-.legend .up{color:var(--bull)}.legend .dn{color:var(--bear)}
-.wkTag{font-size:21px;color:var(--muted);width:78px;display:inline-block}
-
-.key{display:flex;gap:34px;font-size:24px;color:var(--muted);margin:-22px 0 30px}
-.key span{display:flex;align-items:center;gap:12px}
-.key i{width:30px;height:16px;display:inline-block}
+/* 3 聲量水位 */
+.sub2{font-size:25px;color:var(--muted);margin:-24px 0 26px;line-height:1.5}
+.grp{font-size:22px;font-weight:600;letter-spacing:.18em;color:var(--muted);margin:14px 0 14px}
+.grp b{color:var(--amber)}.grp.lo b{color:var(--cyan)}
+.lv{border:1px solid var(--border);background:var(--card);padding:22px 30px 20px;margin-bottom:16px;opacity:0}
+.lv .top{display:grid;grid-template-columns:1fr 110px;align-items:baseline}
+.lv .name{font-size:34px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lv .name i{font-style:normal;color:var(--muted);font-size:24px;margin-left:12px}
+.lv .pct{font-size:44px;font-weight:800;text-align:right;color:var(--amber);font-variant-numeric:tabular-nums}
+.lv.lo .pct{color:var(--cyan)}
+.gauge{position:relative;height:14px;background:hsl(218 30% 12%);border:1px solid var(--border);margin:14px 3px 0}
+.gauge .mark{position:absolute;top:-8px;width:6px;height:28px;background:var(--amber);left:0}
+.lv.lo .gauge .mark{background:var(--cyan)}
+.ends{display:flex;justify-content:space-between;font-size:17px;color:hsl(213 15% 42%);margin:8px 0 0;letter-spacing:.04em}
+.why{font-size:23px;color:hsl(210 22% 78%);line-height:1.45;margin-top:14px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.why em{font-style:normal;color:var(--muted)}
+.none{border:1px dashed var(--border);padding:40px 34px;font-size:32px;color:var(--muted);line-height:1.6}
 /* 4 sectors */
 .chips{display:flex;flex-wrap:wrap;gap:22px;margin-top:8px}
 .chip{border:1px solid var(--border);background:var(--card);padding:26px 34px;font-size:38px;font-weight:600;opacity:0;transform:translateY(14px)}
@@ -107,16 +109,22 @@ const s2=scene('s2',`
      <div class="num" data-n="${t.episodes}">0<span class="unit">集</span></div>
    </div>`).join('')}`);
 
+// 聲量水位: where this week's discussion sits inside the ticker's OWN trailing year.
+// State only — the level and a show's stated reason, never a forward return.
+const lvCard=(m,lo)=>`<div class="lv${lo?' lo':''}">
+     <div class="top"><div class="name">${m.label}${m.sub?`<i>${m.sub}</i>`:''}</div><div class="pct" data-p="${m.level}">0</div></div>
+     <div class="gauge"><div class="mark" data-p="${m.level}"></div></div>
+     <div class="ends"><span>一年最冷</span><span>一年最熱</span></div>
+     <div class="why">${m.why}</div>
+   </div>`;
 const s3=scene('s3',`
-  <div class="overline">02 / 語氣轉向</div>
-  <h2>誰的<span>口風</span>變了</h2>
-  <div class="key"><span><i class="seg b"></i>看多</span><span><i class="seg n"></i>中性</span><span><i class="seg r"></i>看空</span></div>
-  ${D.flips.map(f=>`<div class="flip">
-     <div class="name">${f.label}${f.sub?`<i>${f.sub}</i>`:''}</div>
-     <div class="bars"><span class="wkTag">上週</span>${f.prev.map(s=>`<span class="seg ${s[0]}" data-w="${s[1]}"></span>`).join('')}</div>
-     <div class="bars"><span class="wkTag">本週</span>${f.now.map(s=>`<span class="seg ${s[0]}" data-w="${s[1]}"></span>`).join('')}</div>
-     <div class="legend">${f.note}</div>
-   </div>`).join('')}`);
+  <div class="overline">02 / 聲量水位</div>
+  <h2>誰被講到<span>一年來</span>的高低點</h2>
+  <div class="sub2">每一檔只跟自己比：這週被討論的程度，在它自己過去一年裡排第幾（算到 ${D.as_of}）</div>
+  ${D.high.length||D.low.length ? `
+    ${D.high.length?`<div class="grp">一年<b>高點</b></div>${D.high.map(m=>lvCard(m,false)).join('')}`:''}
+    ${D.low.length?`<div class="grp lo">一年<b>低點</b>・仍有節目提到</div>${D.low.map(m=>lvCard(m,true)).join('')}`:''}
+  ` : `<div class="none">這週沒有任何一檔的討論熱度，落在它自己一年的高點或低點。</div>`}`);
 
 const s4=scene('s4',`
   <div class="overline">03 / 題材熱度</div>
@@ -134,10 +142,8 @@ const s5=scene('s5',`
   <div class="wordmark">TinBoker</div>`);
 
 const fills=[...s2.querySelectorAll('.fill')], nums=[...s2.querySelectorAll('.num')];
-// '.bars .seg' not '.seg' — the legend swatches carry the same class
-const segs=[...s3.querySelectorAll('.bars .seg')], flips=[...s3.querySelectorAll('.flip')];
+const lvs=[...s3.querySelectorAll('.lv')];
 const chips=[...s4.querySelectorAll('.chip')];
-const maxSeg=Math.max(...segs.map(s=>+s.dataset.w));
 
 // ---- timeline (seconds) ---------------------------------------------------
 // One number per scene. Everything below derives its cues from these, so a scene
@@ -164,10 +170,14 @@ window.setT=function(t){
   fills.forEach((f,i)=>{const k=ease((t-IN[1]-0.4-i*0.22)/1.0);
     f.style.width=(k*100*bars[i].episodes/maxEp)+'%';
     nums[i].innerHTML=Math.round(k*bars[i].episodes)+'<span class="unit">集</span>';});
-  // s3 flips
-  flips.forEach((f,i)=>{f.style.opacity=ease((t-IN[2]-0.3-i*0.85)/0.5)});
-  segs.forEach(s=>{const k=ease((t-IN[2]-0.5)/1.1);
-    s.style.width=(k*(+s.dataset.w)/maxSeg*560)+'px'});
+  // s3 聲量水位: cards arrive one by one, each marker slides to its level
+  const step=Math.min(0.75, 3.6/Math.max(1,lvs.length));
+  lvs.forEach((c,i)=>{const t0=IN[2]+0.35+i*step;
+    c.style.opacity=ease((t-t0)/0.45);
+    const k=ease((t-t0-0.15)/0.9), mark=c.querySelector('.mark'), pct=c.querySelector('.pct');
+    const p=+mark.dataset.p;
+    mark.style.left=`calc(${k*p/100} * (100% - 6px))`;
+    pct.textContent=Math.round(k*p);});
   // s4 chips
   chips.forEach((c,i)=>{const k=ease((t-IN[3]-0.3-i*0.13)/0.5);
     c.style.opacity=k;c.style.transform='translateY('+((1-k)*14)+'px)'});

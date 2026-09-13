@@ -48,8 +48,16 @@ async def test_build_week_aggregates_tickers_sectors_and_sentiment_shift(monkeyp
             return [{"ticker": "2330", "sentiment_label": "STRONG_BULLISH"}, {"ticker": "2330", "sentiment_label": "NEUTRAL"}] if podcaster == "股癌" else []
         return [{"ticker": "2330", "sentiment_label": "BEARISH"}]  # previous week, every podcaster
 
+    async def _movers(week, *, allowed):
+        return {"week": week, "as_of": "2026-09-06", "high": [], "low": []}
+
+    async def _roster():
+        return None
+
     monkeypatch.setattr(weekly.podcast_service, "get_recent_episodes", _recent)
     monkeypatch.setattr(weekly.insight_service, "get_by_podcaster", _by_podcaster)
+    monkeypatch.setattr(weekly.podcast_service, "_allowed_podcast_names", _roster)
+    monkeypatch.setattr(weekly, "attention_movers", _movers)
 
     wk = await weekly.build_week("2026-W36")
     assert wk["episode_count"] == 2
@@ -61,6 +69,7 @@ async def test_build_week_aggregates_tickers_sectors_and_sentiment_shift(monkeyp
     assert [e["id"] for e in wk["episodes"]] == ["E2", "E1"]  # newest first
     assert wk["episodes"][0]["key_insights"] == ["一", "二", "三", "四"]
     assert wk["episodes"][0]["podcast_name"] == "財經一路發"  # full Episode shape
+    assert wk["movers"]["as_of"] == "2026-09-06" and "flips" not in wk
 
     assert await weekly.build_week("2026-W30") is None
 
@@ -84,38 +93,47 @@ async def test_list_weeks_counts_scoped_episodes_newest_first(monkeypatch):
     assert weeks[1]["top_tickers"] == [] and weeks[1]["podcast_count"] == 1
 
 
-def _row(ticker, episodes, now, prev):
-    b, n, r = now
-    pb, pn, pr = prev
-    return {"ticker": ticker, "name": None, "episodes": episodes,
-            "bull": b, "neu": n, "bear": r, "prev_bull": pb, "prev_neu": pn, "prev_bear": pr}
+@pytest.mark.asyncio
+async def test_movers_come_from_attention_with_the_roster_and_carry_the_stated_reason(monkeypatch):
+    """The list is attention_movers' (one owner, same number as the stock page); the
+    rollup only resolves the roster and attaches what a show actually said."""
+    seen = {}
+
+    async def _roster():
+        return frozenset({"股癌"})
+
+    async def _movers(week, *, allowed):
+        seen["allowed"] = allowed
+        return {"week": week, "as_of": "2026-09-06",
+                "high": [{"ticker": "2408", "name": "南亞科", "level": 97, "mentions": 4, "shows": 3}],
+                "low": [{"ticker": "2330", "name": "台積電", "level": 6, "mentions": 2, "shows": 2}]}
+
+    monkeypatch.setattr(weekly.podcast_service, "_allowed_podcast_names", _roster)
+    monkeypatch.setattr(weekly, "attention_movers", _movers)
+    why = {"2408": {"bull": {"thesis": "DRAM 缺貨", "podcaster": "股癌", "horizon": "短期"}}}
+
+    voices = {"2408": [{"podcaster": "股癌", "side": "看多", "thesis": "DRAM 缺貨。", "when": "2026-09-05"}]}
+    movers = await weekly._movers("2026-W36", why, voices)
+    assert seen["allowed"] == frozenset({"股癌"})
+    assert movers["high"][0]["bull_why"]["thesis"] == "DRAM 缺貨"
+    assert movers["high"][0]["bear_why"] is None
+    assert movers["low"][0]["bull_why"] is None  # no stated reason → None, never invented
+    assert "share" not in movers["high"][0]
+    assert movers["high"][0]["voices"][0]["podcaster"] == "股癌" and movers["low"][0]["voices"] == []
 
 
-def test_flip_rows_needs_real_voices_not_a_share_that_moved():
-    """Absolute counts, because podcasts are not a survey — see flip_rows' docstring."""
-    rows = [
-        _row("8046", 8, (1, 4, 3), (5, 2, 0)),    # 0 → 3 bear: a real turn
-        _row("3037", 8, (4, 3, 4), (7, 1, 0)),    # 0 → 4 bear: a bigger one
-        _row("2317", 7, (2, 5, 2), (2, 4, 2)),    # bear flat at 2 → never picked
-        _row("SPCX", 7, (7, 8, 0), (0, 8, 0)),    # 0 → 7 bull
-        _row("2330", 15, (15, 3, 0), (11, 4, 0)),  # +4 bull, but a smaller jump than SPCX
-    ]
-    picks = weekly.flip_rows(rows)
-    assert [p["ticker"] for p in picks] == ["3037", "8046", "SPCX"]
-    assert [p["direction"] for p in picks] == ["bear", "bear", "bull"]
+@pytest.mark.asyncio
+async def test_movers_failure_degrades_to_none_instead_of_breaking_the_public_page(monkeypatch):
+    """/weekly/{week} is the crawled public page; an attention query must not 500 it."""
+    async def _roster():
+        return None
 
+    async def _boom(week, *, allowed):
+        raise RuntimeError("db down")
 
-def test_flip_rows_returns_nothing_when_nobody_actually_turned():
-    """The common case. Over 2026-W32..36 a share-based rule invented a lead every week;
-    printing "nobody changed their mind" beats manufacturing one."""
-    quiet = [
-        _row("TSLA", 8, (1, 5, 2), (0, 6, 1)),    # 1 → 2 bear, below FLIP_MIN_BEAR
-        _row("2303", 9, (0, 6, 1), (3, 4, 1)),    # bear unmoved; only the bulls left
-        _row("2383", 7, (4, 3, 1), (5, 2, 0)),    # a single bear voice
-        _row("9999", 3, (0, 0, 5), (5, 0, 0)),    # violent, but too thinly covered
-        _row("AAPL", 9, (4, 4, 0), (2, 5, 0)),    # +2 bull: below FLIP_MIN_BULL's jump
-    ]
-    assert weekly.flip_rows(quiet) == []
+    monkeypatch.setattr(weekly.podcast_service, "_allowed_podcast_names", _roster)
+    monkeypatch.setattr(weekly, "attention_movers", _boom)
+    assert await weekly._movers("2026-W36", {}, {}) is None
 
 
 def test_reasons_keeps_the_latest_stance_per_side_and_drops_neutral():
@@ -133,7 +151,40 @@ def test_reasons_keeps_the_latest_stance_per_side_and_drops_neutral():
          "podcaster": "E", "podcast_launch_time": "2026-09-02"},
     ]
     why = weekly._reasons(insights)
-    assert why["3037"]["bull"] == {"thesis": "本週最新的看多說法", "podcaster": "B", "horizon": "長期"}
+    assert why["3037"]["bull"] == {"thesis": "本週最新的看多說法。", "podcaster": "B", "horizon": "長期"}
     assert why["3037"]["bear"]["podcaster"] == "C"
     assert "neu" not in why["3037"]
     assert "2330" not in why
+
+
+def test_reasons_never_carry_a_forecast_or_advice_onto_the_brand_account():
+    """2026-W37: 聯發科's latest thesis ended in an EPS estimate and a 上看 target."""
+    assert weekly._descriptive(
+        "聯發科8月營收年增44%，輝達以可轉債參與增資，ASIC業務前景看好，法人預估明年EPS可達140元、後年上看300元。"
+    ) == "聯發科8月營收年增44%，輝達以可轉債參與增資，ASIC業務前景看好。"
+    assert weekly._descriptive("欣興是載板族群，法人買進，但本益比高，建議往更上游看。") == "欣興是載板族群，法人買進，但本益比高。"
+    assert weekly._descriptive("目標價上看 1200 元") == ""
+    # a reported surprise is a fact, not a forecast — it stays
+    assert weekly._descriptive("iPhone Duo 定價低於市場預期，有機會帶動市佔") == "iPhone Duo 定價低於市場預期，有機會帶動市佔。"
+
+    # an all-forecast latest thesis falls back to the latest descriptive one, not to nothing
+    why = weekly._reasons([
+        {"ticker": "2454", "sentiment_label": "BULLISH", "bluf_thesis": "ASIC 設計能力強",
+         "podcaster": "A", "podcast_launch_time": "2026-09-09"},
+        {"ticker": "2454", "sentiment_label": "BULLISH", "bluf_thesis": "法人預估明年 EPS 可達 140 元",
+         "podcaster": "B", "podcast_launch_time": "2026-09-11"},
+    ])
+    assert why["2454"]["bull"]["thesis"] == "ASIC 設計能力強。" and why["2454"]["bull"]["podcaster"] == "A"
+
+
+def test_voices_give_each_show_its_own_latest_descriptive_sentence():
+    """One quote for a ticker four shows discussed made the copy invent the other three."""
+    ins = [
+        {"ticker": "2454", "podcaster": "A", "sentiment_label": "BULLISH", "bluf_thesis": "舊說法", "podcast_launch_time": "2026-09-08"},
+        {"ticker": "2454", "podcaster": "A", "sentiment_label": "NEUTRAL", "bluf_thesis": "新說法", "podcast_launch_time": "2026-09-10"},
+        {"ticker": "2454", "podcaster": "B", "sentiment_label": "BEARISH", "bluf_thesis": "短線有壓力", "podcast_launch_time": "2026-09-09"},
+        {"ticker": "2454", "podcaster": "C", "sentiment_label": "BULLISH", "bluf_thesis": "目標價上看 1500 元", "podcast_launch_time": "2026-09-11"},
+    ]
+    v = weekly._voices(ins)["2454"]
+    assert [(x["podcaster"], x["side"], x["thesis"]) for x in v] == [("A", "中性", "新說法。"), ("B", "看空", "短線有壓力。")]
+    assert len(weekly._voices([{**ins[0], "podcaster": f"S{i}", "podcast_launch_time": f"2026-09-0{i}"} for i in range(1, 8)])["2454"]) == weekly.VOICES_PER_MOVER

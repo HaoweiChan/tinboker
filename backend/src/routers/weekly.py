@@ -11,6 +11,7 @@ and cached for a day; the current week keeps growing and is cached for an hour.
 import asyncio
 import json
 import logging
+import re
 from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
@@ -19,6 +20,7 @@ from zoneinfo import ZoneInfo
 from fastapi import APIRouter, HTTPException
 
 from src.cache.redis_client import cache_get, cache_set
+from src.services.attention import attention_movers
 from src.services.insight_service import InsightService
 from src.services.podcast import UMBRELLA_EXPOSURE_IDS, PodcastService
 
@@ -30,10 +32,6 @@ insight_service = InsightService()
 
 TAIPEI = ZoneInfo("Asia/Taipei")
 TOP_TICKERS = 15
-FLIP_MIN_EPISODES = 5   # below this, a sentiment swing is noise wearing a big percentage
-FLIP_MIN_BEAR = 3       # bear is scarce (6% of stances), so a turn needs real voices
-FLIP_MIN_BULL = 5       # bull is the cheap direction; hold it to a higher bar
-FLIP_TOP = 3
 TOP_SECTORS = 10
 
 
@@ -92,6 +90,22 @@ def _tally(insights: list[dict]) -> dict[str, Counter]:
     return by
 
 
+# A thesis is a show's own sentence, and shows repeat forecasts: "法人預估明年EPS可達140
+# 元、後年上看300元" came back as 聯發科's reason for 2026-W37. Everything that reads
+# these reasons republishes them on the brand account (the weekly video, the Threads
+# copy), so forward-looking numbers and advice are cut clause by clause before they get
+# there. Reported facts ("8月營收年增44%") survive; targets, estimates and 建議 do not.
+# "預期" is deliberately absent: "定價低於市場預期" reports a fact, and cutting it orphaned
+# the rest of 2026-W37's AAPL thesis.
+_FORECAST_CLAUSE = re.compile(r"預估|目標價|上看|下看|EPS|建議|可望達|\d+(?:\.\d+)?\s*元")
+
+
+def _descriptive(thesis: str) -> str:
+    """The thesis with every forecast/advice clause removed; "" when nothing is left."""
+    kept = [c.strip() for c in re.split(r"[，、；。,;]", thesis) if c.strip() and not _FORECAST_CLAUSE.search(c)]
+    return "，".join(kept) + "。" if kept else ""
+
+
 def _reasons(insights: list[dict]) -> dict[str, dict[str, dict]]:
     """One stated reason per ticker per direction — who said it, and what they said.
 
@@ -106,8 +120,8 @@ def _reasons(insights: list[dict]) -> dict[str, dict[str, dict]]:
     """
     by: dict[str, dict[str, dict]] = defaultdict(dict)
     for i in sorted(insights, key=lambda d: d.get("podcast_launch_time") or ""):
-        tk, thesis = i.get("ticker"), (i.get("bluf_thesis") or "").strip()
-        if not tk or not thesis:
+        tk, thesis = i.get("ticker"), _descriptive((i.get("bluf_thesis") or "").strip())
+        if not tk or not thesis:  # nothing descriptive left → an older stance may still have one
             continue
         side = _sentiment(i.get("sentiment_label"))
         if side == "neu":
@@ -122,35 +136,57 @@ def _reasons(insights: list[dict]) -> dict[str, dict[str, dict]]:
     return by
 
 
-def flip_rows(rows: list[dict]) -> list[dict]:
-    """Tickers the tracked shows demonstrably changed their mind about — or nothing.
+VOICES_PER_MOVER = 4
+_SIDE_ZH = {"bull": "看多", "neu": "中性", "bear": "看空"}
 
-    Both the weekly video and the weekly Threads copy lead with this, so it is
-    computed here, once, and they can never name different tickers.
 
-    Thresholds are ABSOLUTE, not shares, and that is the whole point. Podcasts are
-    not a sentiment survey: they mostly discuss what they like, so across 2026-W32..36
-    the mix ran 51.5% bull / 6.2% bear, 69% of top-15 rows had zero bear mentions at
-    all, and 43% of the rows that had any rested on a single one. A share-based rule
-    turns 0→1 into "+100% bearish" and manufactures a headline every single week; run
-    over those five weeks it produced four leads that were one mention deep and one
-    where the bear count had not moved at all.
+def _voices(insights: list[dict]) -> dict[str, list[dict]]:
+    """Every show's latest descriptive sentence per ticker this week, newest first.
 
-    So: a bear turn needs FLIP_MIN_BEAR voices actually saying it and a real increase,
-    and a bull turn needs a bigger jump still, because bull is the cheap direction here.
-    **Returning [] is a valid, common answer.** "Nobody changed their mind this week"
-    is true more often than not, and printing it is worth more than inventing a turn.
+    _reasons keeps ONE sentence per side, which is right for a card but starves copy: a
+    lead ticker "4 個節目都在講" with one quote made the Threads writer invent the other
+    three (2026-W37: "沒有節目在講手機晶片", "同一個理由在 13 集裡反覆出現"). Giving it
+    each show's own words is the fix that rules in the prompt were not.
     """
-    pool = [r for r in rows if r["episodes"] >= FLIP_MIN_EPISODES]
-    picks: list[dict] = []
-    for key, quota, floor, jump in (("bear", 2, FLIP_MIN_BEAR, 2), ("bull", 1, FLIP_MIN_BULL, 3)):
-        moved = [r for r in pool
-                 if r[key] >= floor
-                 and r[key] - r[f"prev_{key}"] >= jump
-                 and not any(p["ticker"] == r["ticker"] for p in picks)]
-        moved.sort(key=lambda r: r[key] - r[f"prev_{key}"], reverse=True)
-        picks += [{**r, "direction": key} for r in moved[:quota]]
-    return picks[:FLIP_TOP]
+    latest: dict[tuple[str, str], dict] = {}
+    for i in sorted(insights, key=lambda d: d.get("podcast_launch_time") or ""):
+        tk, show = i.get("ticker"), i.get("podcaster")
+        thesis = _descriptive((i.get("bluf_thesis") or "").strip())
+        if tk and show and thesis:
+            latest[(tk, show)] = {"podcaster": show, "side": _SIDE_ZH[_sentiment(i.get("sentiment_label"))],
+                                  "thesis": thesis, "when": (i.get("podcast_launch_time") or "")[:10]}
+    by: dict[str, list[dict]] = defaultdict(list)
+    for (tk, _), v in latest.items():
+        by[tk].append(v)
+    return {tk: sorted(vs, key=lambda v: v["when"], reverse=True)[:VOICES_PER_MOVER] for tk, vs in by.items()}
+
+
+async def _movers(week: str, why: dict[str, dict[str, dict]], voices: dict[str, list[dict]]) -> Optional[dict]:
+    """聲量水位 movers for the week, each with the reason a show gave, or None on failure.
+
+    The weekly video's lead and the weekly Threads copy both read this. The list itself
+    is owned by services/attention.attention_movers — the same number as the stock
+    page's 聲量水位 pane — so nothing here decides which tickers are "moving".
+
+    State only: the level and which end of its own year a ticker sits at. Never attach a
+    forward return here or downstream (投顧法 line agreed 2026-09-13).
+
+    A failure returns None rather than raising: this rollup is also the public, crawled
+    /weekly page, which must not 500 because an attention query did. Consumers that
+    need movers (build.mjs) fail loudly on None instead.
+    """
+    try:
+        allowed = await podcast_service._allowed_podcast_names()
+        movers = await attention_movers(week, allowed=allowed)
+    except Exception:
+        logger.exception("attention_movers failed for %s", week)
+        return None
+    for side in ("high", "low"):
+        movers[side] = [{**m, "bull_why": why.get(m["ticker"], {}).get("bull"),
+                         "bear_why": why.get(m["ticker"], {}).get("bear"),
+                         "voices": voices.get(m["ticker"], [])}
+                        for m in movers.get(side) or []]
+    return movers
 
 
 async def build_week(week: str) -> Optional[dict]:
@@ -212,7 +248,7 @@ async def build_week(week: str) -> Optional[dict]:
         "episode_count": len(episodes),
         "podcasts": [{"name": n, "episodes": c} for n, c in Counter(ep.podcast_name for ep in episodes).most_common()],
         "tickers": rows,
-        "flips": flip_rows(rows),
+        "movers": await _movers(week, why, _voices(this_ins)),
         "sectors": [{"exposure_id": sid, "episodes": n, **sector_meta[sid]} for sid, n in sector_eps.most_common(TOP_SECTORS)],
         # Full Episode shape (same as /episodes/by-sector) so the page renders the same
         # EpisodeCardV2 as every other list; content fields are empty (enrich_content=False).
@@ -292,7 +328,7 @@ async def get_week(week: str):
         week_bounds(week)
     except ValueError:
         raise HTTPException(status_code=400, detail="week must look like 2026-W36")
-    cache_key = f"weekly:v2:{PodcastService._scope_tag()}:{week}"
+    cache_key = f"weekly:v3:{PodcastService._scope_tag()}:{week}"
     cached = await cache_get(cache_key)
     if cached:
         try:
