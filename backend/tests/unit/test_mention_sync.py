@@ -340,3 +340,68 @@ def test_a_snapshot_without_price_data_is_retried_once_closes_arrive(session):
     session.refresh(snap)
     assert snap.baseline_close == 100.0 and snap.r60d == 0.0
     assert ms.compute_ticker_snapshots(session) == 0
+
+
+# ── price breaks: stock_daily_ohlc closes are unadjusted ─────────────────
+
+# 6669 緯穎, real closes 2026-08-20 .. 09-04: the 3-for-1 split lands on 2026-09-02.
+WIWYNN = [6325, 6255, 6300, 6440, 6785, 6815, 7200, 7095, 7800, 2610, 2475, 2565]
+
+
+def test_windows_across_a_split_are_null_not_minus_66(session):
+    _seed_ohlc(session, "6669", "2026-08-20", WIWYNN)
+    out = ms.compute_trading_day_returns(session, "6669", "2026-08-27")
+    assert out["price_break_date"] == "2026-09-02"
+    assert out["r1d"] == pytest.approx((7200 - 6815) / 6815 * 100, abs=0.01)  # before the split
+    assert out["r5d"] is None  # 09-03 would be 2475 vs 6815 = -63.68%
+
+    # Mentioned the day before: even r1d crosses it.
+    out = ms.compute_trading_day_returns(session, "6669", "2026-09-01")
+    assert out["r1d"] is None and out["price_break_date"] == "2026-09-02"
+
+    # Baseline after the split: clean again.
+    out = ms.compute_trading_day_returns(session, "6669", "2026-09-02")
+    assert out["price_break_date"] is None
+    assert out["r1d"] == pytest.approx((2475 - 2610) / 2610 * 100, abs=0.01)
+
+
+def _add_mention(db, key, **kw):
+    m = ContentMention(mention_key=key, episode_id="ep", confidence=1.0,
+                       extraction_method="test", **kw)
+    db.add(m)
+    db.commit()
+    return m
+
+
+def test_rescore_reaches_completed_snapshots_scored_before_the_fix(session):
+    _seed_ohlc(session, "6669", "2026-08-20", WIWYNN)
+    _seed_ohlc(session, "3008", "2026-08-20", [5515, 5610, 5385, 5720, 6290, 6915, 7065, 7650, 7580, 7810, 7150, 7400])
+    assert ms.detect_price_breaks(session, "2026-01-01") == [("6669", "2026-09-02")]
+
+    tick = _add_mention(session, "t1", mention_type="ticker", ticker="6669", mentioned_at=datetime(2026, 8, 27, 2))
+    other = _add_mention(session, "t2", mention_type="ticker", ticker="3008", mentioned_at=datetime(2026, 8, 27, 2))
+    sect = _add_mention(session, "s1", mention_type="sector", exposure_id="ai_server",
+                    mentioned_at=datetime(2026, 8, 27, 2), payload={"members": ["6669", "3008"]})
+    # What the old scorer left behind: complete-looking rows with the split baked in.
+    session.add_all([
+        TickerPerformanceSnapshot(mention_id=tick.id, ticker="6669", mention_date="2026-08-27",
+                                  baseline_close=6815, r1d=5.65, r5d=-63.68),
+        TickerPerformanceSnapshot(mention_id=other.id, ticker="3008", mention_date="2026-08-27",
+                                  baseline_close=6915, r1d=2.17),
+        SectorPerformanceSnapshot(mention_id=sect.id, exposure_id="ai_server", mention_date="2026-08-27",
+                                  member_count=2, r5d=-30.0),
+    ])
+    session.commit()
+
+    stats = ms.rescore_price_break_snapshots(session)
+    assert stats == {"price_break_ticker_rescored": 1, "price_break_sector_rescored": 1}
+    snaps = {s.ticker: s for s in session.query(TickerPerformanceSnapshot)}
+    assert snaps["6669"].r5d is None and snaps["6669"].price_break_date == "2026-09-02"
+    assert snaps["3008"].price_break_date is None
+    sector = session.query(SectorPerformanceSnapshot).one()
+    assert sector.r5d == pytest.approx((7150 - 6915) / 6915 * 100, abs=0.01)  # 3008 alone
+    assert sector.price_break_date == "2026-09-02"
+
+    # Stamped, so the next cycle leaves them alone.
+    assert ms.rescore_price_break_snapshots(session) == {
+        "price_break_ticker_rescored": 0, "price_break_sector_rescored": 0}

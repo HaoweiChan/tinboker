@@ -573,6 +573,9 @@ class TickerPerformanceSnapshot(Base):
     r5d = Column(Float, nullable=True)
     r20d = Column(Float, nullable=True)
     r60d = Column(Float, nullable=True)
+    # First unadjusted-close break (split / capital change / bad tick) after the
+    # baseline; every window that reaches it is NULL rather than a fake -66%.
+    price_break_date = Column(String(10), nullable=True)
     computed_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
@@ -591,6 +594,9 @@ class SectorPerformanceSnapshot(Base):
     r5d = Column(Float, nullable=True)
     r20d = Column(Float, nullable=True)
     r60d = Column(Float, nullable=True)
+    # First unadjusted-close break (split / capital change / bad tick) after the
+    # baseline; every window that reaches it is NULL rather than a fake -66%.
+    price_break_date = Column(String(10), nullable=True)
     computed_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
