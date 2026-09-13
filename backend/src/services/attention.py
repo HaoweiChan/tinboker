@@ -12,10 +12,15 @@ and one that rarely is. Ranking each day against the ticker's own year cancels b
 Of 15 normalisations tested on 2020–2026 data this was the only family that read the
 same before and after the roster change (2026-09-10 sentiment quantamental report).
 """
-from datetime import date, timedelta
+import asyncio
+from collections import defaultdict
+from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional
 
+from sqlalchemy import func
+
 from src.database.models import ContentMention
+from src.database.postgres import get_session
 
 HALF_LIFE_DAYS = 7.0
 
@@ -83,3 +88,76 @@ def attention_level(
                 out.append({"d": day.isoformat(), "p": round(le / n * 100)})
         day += timedelta(days=1)
     return out
+
+
+# ── 聲量水位 movers: the week's tickers at their own-year high / low ─────────────
+# One owner for the number and the list: the paid weekly's 資料附錄, the weekly video's
+# scene 3 and the Threads weekly copy all read this. State only — the level and which
+# end of its own year a ticker sits at — never a forward return (投顧法 line, agreed
+# 2026-09-13 with the weekly session).
+
+MOVER_HIGH = 90
+MOVER_LOW = 10
+MOVER_LIMIT = 8
+
+
+def _week_bounds(week: str) -> tuple[date, date]:
+    y, w = week.split("-W")
+    monday = date.fromisocalendar(int(y), int(w), 1)
+    return monday, monday + timedelta(days=6)
+
+
+def _movers_query(start: date, end: date, allowed: Optional[frozenset]) -> dict:
+    """Daily ticker counts (all history, for the levels) and the week's mention stats."""
+    day = func.date(ContentMention.mentioned_at)
+    for db in get_session():
+        rows = scope_mentions(db.query(ContentMention.ticker, day, func.count(1)), allowed).filter(
+            ContentMention.mention_type == "ticker", ContentMention.ticker.isnot(None),
+        ).group_by(ContentMention.ticker, day).all()
+        week = scope_mentions(db.query(ContentMention.ticker, func.count(1), func.count(func.distinct(ContentMention.podcaster))), allowed).filter(
+            ContentMention.mention_type == "ticker", ContentMention.ticker.isnot(None),
+            ContentMention.mentioned_at >= datetime.combine(start, datetime.min.time()),
+            ContentMention.mentioned_at < datetime.combine(end + timedelta(days=1), datetime.min.time()),
+        ).group_by(ContentMention.ticker).all()
+        from src.services.paid_weekly import query_names  # lazy: paid_weekly imports this module
+        names = query_names(db, {t for t, _, _ in week})
+        return {"daily": rows, "week": week, "names": names}
+    return {"daily": [], "week": [], "names": {}}
+
+
+async def attention_movers(week: str, *, allowed: Optional[frozenset]) -> dict:
+    """Tickers the roster mentioned inside ``week`` whose 聲量水位 as of ``as_of`` is
+    ≥ MOVER_HIGH (``high``, level desc) or ≤ MOVER_LOW (``low``, level asc), top
+    MOVER_LIMIT each. Levels come from attention_level() with the same roster scope as
+    the stock page, so the two never disagree.
+
+    ``as_of`` = min(week end, latest day with any mention): a Wednesday run on the
+    current week measures Wednesday and says so, instead of an empty Sunday. Rows carry
+    the level only — the raw share is deliberately not returned; its scale moves with
+    corpus size and is not comparable across weeks (2026-09-10 study), so no consumer
+    should print it."""
+    start, end = _week_bounds(week)
+    q = await asyncio.to_thread(_movers_query, start, end, allowed)
+    per_ticker: Dict[str, Dict[date, int]] = defaultdict(dict)
+    market: Dict[date, int] = defaultdict(int)
+    for ticker, d, n in q["daily"]:
+        d = d if isinstance(d, date) else date.fromisoformat(str(d))
+        per_ticker[ticker][d] = int(n)
+        market[d] += int(n)
+    as_of = min(end, max(market)) if market else end
+    high, low = [], []
+    for ticker, mentions, shows in q["week"]:
+        levels = attention_level(per_ticker.get(ticker, {}), market, as_of)
+        if not levels or levels[-1]["d"] != as_of.isoformat():
+            continue  # no share as of that day (market too thin) → no state to report
+        level = levels[-1]["p"]
+        row = {"ticker": ticker, "name": q["names"].get(ticker), "level": level,
+               "mentions": int(mentions), "shows": int(shows)}
+        if level >= MOVER_HIGH:
+            high.append(row)
+        elif level <= MOVER_LOW:
+            low.append(row)
+    high.sort(key=lambda r: (-r["level"], -r["mentions"], r["ticker"]))
+    low.sort(key=lambda r: (r["level"], -r["mentions"], r["ticker"]))
+    return {"week": week, "start": start.isoformat(), "end": end.isoformat(), "as_of": as_of.isoformat(),
+            "high": high[:MOVER_LIMIT], "low": low[:MOVER_LIMIT]}
