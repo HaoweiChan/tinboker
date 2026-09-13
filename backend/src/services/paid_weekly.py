@@ -24,7 +24,6 @@ from __future__ import annotations
 import asyncio
 import re
 from bisect import bisect_left
-from urllib.parse import urlencode
 from datetime import timedelta
 from typing import Optional
 
@@ -36,6 +35,7 @@ from src.database.postgres import get_session
 from src.routers.weekly import build_week, week_bounds
 from src.services.attention import attention_movers, scope_mentions
 from src.services.podcast import PodcastService
+from src.services.title_card import encode as title_payload
 
 # ponytail: only its cached release scope is read here, same as the routers.
 _podcast_service = PodcastService()
@@ -282,7 +282,7 @@ def render_markdown(rollup: dict, record: dict, movers: dict, names: Optional[di
     stats = {"episodes": rollup["episode_count"], "calls_scored": len(calls),
              "movers": len(movers.get("high") or []) + len(movers.get("low") or []), "article": bool(article)}
     # The cover is the title in large type (the appendix carries no chart any more).
-    thumbnail = f"{api}/api/og/title.png?" + urlencode({"title": topic or title, "kicker": f"聽播客週報 Pro {week}"})
+    thumbnail = f"{api}/api/og/title/{title_payload(topic or title, f'聽播客週報 Pro {week}')}.png"
     return {"title": title, "markdown": "\n".join(out), "excerpt": excerpt, "stats": stats, "thumbnail_url": thumbnail}
 
 
