@@ -126,10 +126,16 @@ def _movers_query(start: date, end: date, allowed: Optional[frozenset]) -> dict:
 
 
 async def attention_movers(week: str, *, allowed: Optional[frozenset]) -> dict:
-    """Tickers the roster mentioned inside ``week`` whose 聲量水位 on the week's last day
-    is ≥ MOVER_HIGH (``high``, level desc) or ≤ MOVER_LOW (``low``, level asc), top
+    """Tickers the roster mentioned inside ``week`` whose 聲量水位 as of ``as_of`` is
+    ≥ MOVER_HIGH (``high``, level desc) or ≤ MOVER_LOW (``low``, level asc), top
     MOVER_LIMIT each. Levels come from attention_level() with the same roster scope as
-    the stock page, so the two never disagree."""
+    the stock page, so the two never disagree.
+
+    ``as_of`` = min(week end, latest day with any mention): a Wednesday run on the
+    current week measures Wednesday and says so, instead of an empty Sunday. Rows carry
+    the level only — the raw share is deliberately not returned; its scale moves with
+    corpus size and is not comparable across weeks (2026-09-10 study), so no consumer
+    should print it."""
     start, end = _week_bounds(week)
     q = await asyncio.to_thread(_movers_query, start, end, allowed)
     per_ticker: Dict[str, Dict[date, int]] = defaultdict(dict)
@@ -138,19 +144,20 @@ async def attention_movers(week: str, *, allowed: Optional[frozenset]) -> dict:
         d = d if isinstance(d, date) else date.fromisoformat(str(d))
         per_ticker[ticker][d] = int(n)
         market[d] += int(n)
+    as_of = min(end, max(market)) if market else end
     high, low = [], []
     for ticker, mentions, shows in q["week"]:
-        levels = attention_level(per_ticker.get(ticker, {}), market, end)
-        if not levels or levels[-1]["d"] != end.isoformat():
-            continue  # no share on the last day (market too thin) → no state to report
+        levels = attention_level(per_ticker.get(ticker, {}), market, as_of)
+        if not levels or levels[-1]["d"] != as_of.isoformat():
+            continue  # no share as of that day (market too thin) → no state to report
         level = levels[-1]["p"]
         row = {"ticker": ticker, "name": q["names"].get(ticker), "level": level,
-               "share": None, "mentions": int(mentions), "shows": int(shows)}
+               "mentions": int(mentions), "shows": int(shows)}
         if level >= MOVER_HIGH:
             high.append(row)
         elif level <= MOVER_LOW:
             low.append(row)
     high.sort(key=lambda r: (-r["level"], -r["mentions"], r["ticker"]))
     low.sort(key=lambda r: (r["level"], -r["mentions"], r["ticker"]))
-    return {"week": week, "start": start.isoformat(), "end": end.isoformat(),
+    return {"week": week, "start": start.isoformat(), "end": end.isoformat(), "as_of": as_of.isoformat(),
             "high": high[:MOVER_LIMIT], "low": low[:MOVER_LIMIT]}

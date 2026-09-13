@@ -68,7 +68,8 @@ def test_movers_pick_own_year_highs_and_lows_from_the_weeks_mentions(db, monkeyp
     cold = next(r for r in out["low"] if r["ticker"] == "COLD")
     assert cold["level"] <= 10 and cold["mentions"] == 1
     assert not any(r["ticker"].startswith("FILL") for r in out["high"])
-    assert set(out["high"][0]) == {"ticker", "name", "level", "share", "mentions", "shows"}  # no returns
+    assert set(out["high"][0]) == {"ticker", "name", "level", "mentions", "shows"}  # no returns, no raw share
+    assert out["as_of"] == "2026-09-13"
 
 
 def test_movers_respect_the_roster(db):
@@ -80,3 +81,16 @@ def test_movers_respect_the_roster(db):
         _mention(db, "EN", d, podcaster="CNBC's Fast Money", n=5)
     assert [r["ticker"] for r in asyncio.run(attention.attention_movers("2026-W37", allowed=None))["high"]] == ["EN"]
     assert asyncio.run(attention.attention_movers("2026-W37", allowed=frozenset({"Gooaye 股癌"})))["high"] == []
+
+
+def test_movers_on_a_week_in_progress_measure_the_latest_day_and_say_so(db):
+    # Data stops on Wednesday 2026-09-09; a run on that week must not measure an empty Sunday.
+    days = [date(2026, 9, 9) - timedelta(days=i) for i in range(200)][::-1]
+    for idx, d in enumerate(days):
+        for k in range(10):
+            _mention(db, f"FILL{k:02d}", d, n=(idx + k) % 3 + 1)
+    for d in days[-3:]:
+        _mention(db, "HOT", d, n=6)
+    out = asyncio.run(attention.attention_movers("2026-W37", allowed=None))
+    assert out["as_of"] == "2026-09-09" and out["end"] == "2026-09-13"
+    assert [r["ticker"] for r in out["high"]] == ["HOT"]
