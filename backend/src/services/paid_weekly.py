@@ -280,7 +280,10 @@ def render_markdown(rollup: dict, record: dict, movers: dict, names: Optional[di
                + f"附 {record['week']} 節目說法的 20 日驗證與聲量水位。")
     stats = {"episodes": rollup["episode_count"], "calls_scored": len(calls),
              "movers": len(movers.get("high") or []) + len(movers.get("low") or []), "article": bool(article)}
-    return {"title": title, "markdown": "\n".join(out), "excerpt": excerpt, "stats": stats}
+    # The cover is the first chart in the appendix — the stock the piece is about — so a
+    # vocus card shows the same thing the article opens with, not a placeholder.
+    thumbnail = f"{api}/api/og/stock/{top[0]}.png" if top else ""
+    return {"title": title, "markdown": "\n".join(out), "excerpt": excerpt, "stats": stats, "thumbnail_url": thumbnail}
 
 
 def _call_line(c: dict, names: dict[str, str]) -> str:
