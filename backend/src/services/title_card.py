@@ -6,6 +6,8 @@ advance, not character count, so a CJK title and a Latin ticker break the same w
 """
 from __future__ import annotations
 
+import base64
+import json
 from xml.sax.saxutils import escape
 
 from src.services.card_theme import AMBER, BG, FAINT, INK, LABEL, MARGIN, SIZE, advance, card_font
@@ -63,3 +65,20 @@ def title_card_svg(title: str, kicker: str = "", footer: str = "tinboker.com · 
     s.append(f'<text x="{MARGIN}" y="{SIZE-MARGIN+4}" fill="{FAINT}" font-size="14">{escape(footer)}</text>')
     s.append("</svg>")
     return "\n".join(s)
+
+
+def encode(title: str, kicker: str = "") -> str:
+    """Path segment for /api/og/title/{payload}.png."""
+    raw = json.dumps({"title": title[:MAX_TITLE], "kicker": kicker[:40]}, ensure_ascii=False).encode()
+    return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+
+def decode(payload: str) -> tuple[str, str]:
+    try:
+        d = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+        title = str(d["title"]).strip()
+    except Exception as e:  # noqa: BLE001 — one error for every malformed shape
+        raise ValueError("payload must be urlsafe-base64 JSON with a title") from e
+    if not title:
+        raise ValueError("title is empty")
+    return title[:MAX_TITLE], str(d.get("kicker") or "")[:40]
