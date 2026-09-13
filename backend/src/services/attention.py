@@ -99,6 +99,9 @@ def attention_level(
 MOVER_HIGH = 90
 MOVER_LOW = 10
 MOVER_LIMIT = 8
+# One show saying a name once lifts a thin history to level 100 (W37 dry run: 5 of the 8
+# "highs" were single mentions). A state needs two shows behind it.
+MOVER_MIN_SHOWS = 2
 
 
 def _week_bounds(week: str) -> tuple[date, date]:
@@ -128,8 +131,9 @@ def _movers_query(start: date, end: date, allowed: Optional[frozenset]) -> dict:
 async def attention_movers(week: str, *, allowed: Optional[frozenset]) -> dict:
     """Tickers the roster mentioned inside ``week`` whose 聲量水位 as of ``as_of`` is
     ≥ MOVER_HIGH (``high``, level desc) or ≤ MOVER_LOW (``low``, level asc), top
-    MOVER_LIMIT each. Levels come from attention_level() with the same roster scope as
-    the stock page, so the two never disagree.
+    MOVER_LIMIT each, counting only names at least MOVER_MIN_SHOWS shows raised. Levels
+    come from attention_level() with the same roster scope as the stock page, so the two
+    never disagree.
 
     ``as_of`` = min(week end, latest day with any mention): a Wednesday run on the
     current week measures Wednesday and says so, instead of an empty Sunday. Rows carry
@@ -147,6 +151,8 @@ async def attention_movers(week: str, *, allowed: Optional[frozenset]) -> dict:
     as_of = min(end, max(market)) if market else end
     high, low = [], []
     for ticker, mentions, shows in q["week"]:
+        if int(shows) < MOVER_MIN_SHOWS:
+            continue
         levels = attention_level(per_ticker.get(ticker, {}), market, as_of)
         if not levels or levels[-1]["d"] != as_of.isoformat():
             continue  # no share as of that day (market too thin) → no state to report

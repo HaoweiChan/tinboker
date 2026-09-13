@@ -25,6 +25,7 @@ def db(monkeypatch):
 
     monkeypatch.setattr(attention, "get_session", _gen)
     monkeypatch.setattr("src.services.paid_weekly.get_session", _gen, raising=False)
+    monkeypatch.setattr(attention, "MOVER_MIN_SHOWS", 1)  # fixtures below use one show; the floor has its own test
     yield session
     session.close()
 
@@ -94,3 +95,17 @@ def test_movers_on_a_week_in_progress_measure_the_latest_day_and_say_so(db):
     out = asyncio.run(attention.attention_movers("2026-W37", allowed=None))
     assert out["as_of"] == "2026-09-09" and out["end"] == "2026-09-13"
     assert [r["ticker"] for r in out["high"]] == ["HOT"]
+
+
+def test_movers_need_two_shows_behind_a_state(db, monkeypatch):
+    # One show saying a thin-history name once ranks it at 100; that is a mention, not a state.
+    monkeypatch.setattr(attention, "MOVER_MIN_SHOWS", 2)
+    days = [date(2026, 9, 13) - timedelta(days=i) for i in range(200)][::-1]
+    for idx, d in enumerate(days):
+        for k in range(10):
+            _mention(db, f"FILL{k:02d}", d, n=(idx + k) % 3 + 1)
+    _mention(db, "ONCE", date(2026, 9, 10), n=1)
+    for d in days[-3:]:
+        _mention(db, "TWO", d, n=4)
+        _mention(db, "TWO", d, podcaster="財報狗", n=1)
+    assert [r["ticker"] for r in asyncio.run(attention.attention_movers("2026-W37", allowed=None))["high"]] == ["TWO"]
