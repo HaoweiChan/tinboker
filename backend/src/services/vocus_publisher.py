@@ -32,6 +32,7 @@ import json
 import logging
 import os
 import time
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 import httpx
@@ -49,6 +50,15 @@ VOCUS_API_BASE = "https://api.vocus.cc"
 # one category; make it a setting if that ever stops being true.
 VOCUS_CATEGORY_ID = "5a978e00fd897800016874cc"
 VOCUS_CATEGORY_TITLE = "投資理財"
+
+# 房間 (rooms) of our salon, by role. Ids are stable identifiers of our own salon (they
+# appear in its URLs), not secrets. The wizard sends them as ``publicationIds``.
+# "daily" is filled in once the 每日一集 room exists on vocus.
+ROOMS = {
+    "weekly": "6a9ed1083cad37fdc4567544",    # 週報 Pro   (urlId weekly-pro)
+    "research": "6aa6c3afaa9271464230c542",  # 研究筆記  (urlId research)
+    "daily": "",                             # 每日一集  — not created yet
+}
 
 STATUS_DRAFT = 1
 # Confirmed live 2026-08-11: after a full publish the article appears in the status=2
@@ -205,7 +215,11 @@ class VocusClient:
 
     async def save_settings(self, client: httpx.AsyncClient, article_id: str, *, title: str,
                             abstract: str, canonical_url: str, tags: list[str],
-                            thumbnail_url: str = "", paid: bool = False) -> None:
+                            thumbnail_url: str = "", paid: bool = False,
+                            room: str = "", publish_at: Optional[datetime] = None) -> None:
+        """``room`` is a ROOMS key; ``publish_at`` (aware datetime) schedules the article
+        instead of leaving it a plain draft — vocus flips it public itself."""
+        room_id = ROOMS.get(room, "") if room else ""
         await self._request(client, "PATCH", f"/api/articles/{article_id}", {
             "title": title,
             "abstract": abstract[:200],
@@ -236,10 +250,19 @@ class VocusClient:
             "setIsPay": paid,
             "salonId": self._salon_id,
             "thumbnailUrl": thumbnail_url,
-            # "custom" when we supply one; "article" makes vocus hunt for an image in the
-            # body, and the body has none — that is what leaves the placeholder cover.
-            "coverSource": "custom" if thumbnail_url else "article",
+            # "upload" is what the wizard itself sends for a set thumbnail (captured
+            # 2026-09-13); "article" makes vocus hunt for an image in the body, and the
+            # body has none — that is what leaves the placeholder cover.
+            "coverSource": "upload" if thumbnail_url else "article",
             "ogImageType": "thumbnail",
+            # The API creates drafts with limitTimeFree=true and an empty window, which the
+            # wizard shows as 限時免費 ticked. Always off.
+            "limitTimeFree": False,
+            "publicationIds": [room_id] if room_id else [],
+            "roomTabIds": [],
+            "isSchedule": publish_at is not None,
+            "readyPublishAt": publish_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+            if publish_at else "0001-01-01T00:00:00Z",
         })
 
     async def set_status(self, client: httpx.AsyncClient, article_id: str, status: int) -> None:
@@ -339,7 +362,7 @@ async def publish_summary(
         episode_id, title, body_markdown,
         canonical_url=f"{settings.site_url.rstrip('/')}/episode/{episode_id}",
         abstract=abstract, tags=tags, thumbnail_url=thumbnail_url,
-        as_draft=as_draft, dry_run=dry_run,
+        as_draft=as_draft, dry_run=dry_run, room="daily",
     )
 
 
@@ -355,6 +378,8 @@ async def publish_markdown(
     as_draft: bool = False,
     dry_run: bool = True,
     paid: bool = False,
+    room: str = "",
+    publish_at: Optional[datetime] = None,
 ) -> dict:
     """Publish one markdown document to vocus. ``key`` is whatever the caller's ledger
     dedupes on (an episode id, ``weekly:2026-W36``); it is echoed as ``episode_id`` so
@@ -390,7 +415,8 @@ async def publish_markdown(
                                        # the one line a reader skims before clicking.
                                        abstract=abstract,
                                        canonical_url=canonical, tags=tags or [],
-                                       thumbnail_url=thumbnail_url, paid=paid)
+                                       thumbnail_url=thumbnail_url, paid=paid,
+                                       room=room, publish_at=publish_at)
             if as_draft:
                 # create_article already left it at STATUS_DRAFT; skipping the status
                 # change is what keeps it unpublished. "Did it go public?" is the wrong
