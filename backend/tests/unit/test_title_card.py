@@ -13,3 +13,11 @@ def test_card_shrinks_rather_than_overflowing_and_escapes():
     svg = tc.title_card_svg("A & B " * 20, kicker="聽播客週報 Pro 2026-W37")
     assert "&amp;" in svg and "聽播客週報 Pro 2026-W37" in svg and "A & B" not in svg
     assert svg.count("<text") <= tc._MAX_LINES + 3
+
+
+def test_payload_round_trips_and_rejects_garbage():
+    import pytest
+    p = tc.encode("記憶體全面漲價創高，為何各家節目結論卻走向分歧？", "聽播客週報 Pro 2026-W37")
+    assert "=" not in p and tc.decode(p) == ("記憶體全面漲價創高，為何各家節目結論卻走向分歧？", "聽播客週報 Pro 2026-W37")
+    with pytest.raises(ValueError):
+        tc.decode("bm90anNvbg")

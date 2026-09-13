@@ -32,7 +32,7 @@ from src.services.weekly_card import (
     theme_rows, ticker_rows,
 )
 from src.services.syndication_markdown import podcast_short_name, syndication_title
-from src.services.title_card import MAX_TITLE, title_card_svg
+from src.services.title_card import decode, title_card_svg
 
 logger = logging.getLogger(__name__)
 
@@ -407,13 +407,18 @@ async def weekly_themes_raster(
     return Response(content=png, media_type="image/png", headers=headers)
 
 
-@router.get("/title.png")
+@router.get("/title/{payload}.png")
 async def title_card_raster(
-    title: str = Query(..., min_length=1, max_length=MAX_TITLE),
-    kicker: str = Query("", max_length=40),
+    payload: str = Path(..., pattern=r"^[A-Za-z0-9_\-]{4,600}$"),
 ) -> Response:
-    """Words-only cover: a kicker line and the title in large type. Used as the vocus
-    thumbnail for the paid weekly and research pieces, whose bodies carry no chart."""
+    """Words-only cover: a kicker line and the title in large type. ``payload`` is
+    urlsafe-base64 JSON ``{"title": ..., "kicker": ...}`` (see title_card.encode) — in the
+    PATH, not a query string, because vocus stores a thumbnail URL with its query
+    stripped and then renders a 422 as a broken cover."""
+    try:
+        title, kicker = decode(payload)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     svg = title_card_svg(title, kicker)
     try:
         png = await asyncio.to_thread(svg_to_png, svg, CARD_SIZE, CARD_SIZE)
