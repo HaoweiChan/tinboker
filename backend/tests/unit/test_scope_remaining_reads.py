@@ -8,7 +8,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 import src.routers.og as og
-from src.database.models import ContentMention, TickerPerformanceSnapshot
+from src.database.models import ContentMention, StockDailyOHLC, TickerPerformanceSnapshot
 from src.services import paid_weekly as pw
 
 TW = "Gooaye 股癌"
@@ -18,7 +18,7 @@ EN = "CNBC's Fast Money"
 @pytest.fixture
 def db(monkeypatch):
     engine = create_engine("sqlite:///:memory:")
-    for model in (ContentMention, TickerPerformanceSnapshot):
+    for model in (ContentMention, StockDailyOHLC, TickerPerformanceSnapshot):
         model.__table__.create(bind=engine)
     session = sessionmaker(bind=engine)()
 
