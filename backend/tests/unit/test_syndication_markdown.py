@@ -321,3 +321,9 @@ def test_body_sections_in_order_with_dates_no_markers_and_historic_note():
 def test_body_is_empty_when_there_is_nothing_to_say():
     assert build_syndication_body(episode_id="e", podcast_name="x", episode_title="t", summary="",
                                   key_insights=[], released_at_ms=None, synced_on=date(2026, 9, 13)) == ""
+
+
+def test_each_stock_is_linked_once():
+    from src.services.syndication_markdown import dedupe_links
+    assert dedupe_links("[蘋果](https://x/AAPL) 和 [蘋果](https://x/AAPL) 與 [輝達](https://x/NVDA)") == \
+        "[蘋果](https://x/AAPL) 和 蘋果 與 [輝達](https://x/NVDA)"

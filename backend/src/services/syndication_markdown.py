@@ -294,6 +294,24 @@ def is_historic(released_at_ms: int | None, on: date | None = None) -> bool:
     return ((on or date.today()) - rel).days > HISTORIC_AFTER_DAYS
 
 
+_MD_LINK = re.compile(r"\[([^\]]+)\]\((https?://[^)]+)\)")
+
+
+def dedupe_links(markdown: str) -> str:
+    """Keep the first link to each URL; later mentions become plain text. A stock name
+    linked on every occurrence reads as a wall of exits."""
+    seen: set[str] = set()
+
+    def _one(m: re.Match) -> str:
+        url = m.group(2)
+        if url in seen:
+            return m.group(1)
+        seen.add(url)
+        return m.group(0)
+
+    return _MD_LINK.sub(_one, markdown)
+
+
 def build_syndication_body(*, episode_id: str, podcast_name: str, episode_title: str, summary: str,
                            key_insights: list[str], released_at_ms: int | None,
                            ticker_lines: list[str] | None = None, spotify_url: str | None = None,
@@ -333,4 +351,4 @@ def build_syndication_body(*, episode_id: str, podcast_name: str, episode_title:
         steps.append(f"- 聽原話：{spotify_url}")
     steps.append(f"- 逐段時間軸，以及這集提到的每一檔股票的觀點與之後走勢：{episode_url(episode_id, base)}")
     parts += ["## 下一步", "\n".join(steps)]
-    return "\n\n".join(parts)
+    return dedupe_links("\n\n".join(parts))

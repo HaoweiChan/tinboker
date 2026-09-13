@@ -701,7 +701,7 @@ async def episode_ticker_lines(episode, limit: int = 5) -> list[str]:
     Empty on any failure: the section is optional, the article is not."""
     try:
         from datetime import date as _date, timedelta
-        from src.routers.weekly import _insights_for, _sentiment
+        from src.routers.weekly import _insights_for
         from src.services.paid_weekly import query_names
         from src.services.syndication_markdown import released_date
         rel = released_date(getattr(episode, "released_at_ms", None)) or _date.today()
@@ -718,13 +718,16 @@ async def episode_ticker_lines(episode, limit: int = 5) -> list[str]:
             return {}
 
         names = await asyncio.to_thread(_names)
-        stance = {"bull": "看多", "bear": "看空", "neu": "中性"}
+        # A label the extractor inferred from "sales may rise" is not the host saying
+        # buy. Only the strong labels are printed as a stance; the rest read 未明示.
+        explicit = {"STRONG_BULLISH": "明確看多", "STRONG_BEARISH": "明確看空"}
         out = []
         for i in mine:
             thesis = " ".join(i["bluf_thesis"].split())
             thesis = thesis if len(thesis) <= 80 else thesis[:80] + "…"
             head = f"{names[i['ticker']]}（{i['ticker']}）" if names.get(i["ticker"]) else i["ticker"]
-            out.append(f"{head}{stance[_sentiment(i.get('sentiment_label'))]}：「{thesis}」")
+            stance = explicit.get(str(i.get("sentiment_label") or "").upper(), "未明示")
+            out.append(f"{head}｜{thesis}｜主持人態度：{stance}")
         return out
     except Exception as e:  # noqa: BLE001 — optional section
         logger.warning("syndication: ticker lines unavailable for %s: %s", getattr(episode, "id", "?"), e)
