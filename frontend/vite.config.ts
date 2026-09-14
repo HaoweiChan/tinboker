@@ -3,16 +3,27 @@ import { VitePWA } from 'vite-plugin-pwa'
 import react from '@vitejs/plugin-react'
 import path from 'path'
 
-// Two installable apps share every origin: the public site (this manifest, scope "/")
-// and the back office (public/admin.webmanifest, scope "/admin"), so dev and staging —
-// which sit behind EnvGate and register /admin — can be installed twice: once as the
-// dev website, once as the back office. src/lib/pwaManifest.ts swaps the document's
-// manifest link and iOS title by route; the two manifests carry different `id`s, so
-// Chrome treats them as two apps. Production registers no /admin routes and never swaps.
+// One installable app per origin (scope "/"), so on dev and staging the site and the
+// back office (/admin) are the same home-screen app. Non-production builds get a
+// stage-labelled name and the gear icons (scripts/make-admin-icons.py) so the tile
+// can't be mistaken for the production app. VITE_STAGE comes from CI; unset (a bare
+// local build) counts as non-production, same as App.tsx's ADMIN_ENABLED.
+const STAGE = process.env.VITE_STAGE
+const IS_PROD = STAGE === 'PRODUCTION'
+const APP_TITLE = IS_PROD ? '聽播客' : `聽播客 ${STAGE === 'STAGING' ? 'Staging' : STAGE === 'DEV' ? 'Dev' : 'Local'}`
+const ICON_DIR = IS_PROD ? '/icons/pwa' : '/icons/pwa/admin'
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
     react(),
+    {
+      // iOS ignores the manifest and reads these tags off the page being added.
+      name: 'pwa-stage-html',
+      transformIndexHtml: (html: string) => html
+        .replace('name="apple-mobile-web-app-title" content="聽播客"', `name="apple-mobile-web-app-title" content="${APP_TITLE}"`)
+        .replace('href="/icons/pwa/apple-touch-icon.png"', `href="${ICON_DIR}/apple-touch-icon.png"`),
+    },
     VitePWA({
       // 'prompt': when a new deploy is detected we surface a styled toast
       // (PWAUpdatePrompt) whose 更新 button calls updateServiceWorker(true) → posts
@@ -21,11 +32,11 @@ export default defineConfig({
       // only when the user taps 更新 (the button is the control). The earlier broken
       // prompt never posted SKIP_WAITING, so its button did nothing; this flow does.
       registerType: 'prompt',
-      includeAssets: ['favicon.png', 'robots.txt', 'sitemap.xml', 'admin.webmanifest'],
+      includeAssets: ['favicon.png', 'robots.txt', 'sitemap.xml'],
       manifest: {
         id: '/',
-        name: 'TinBoker - 聽播客',
-        short_name: '聽播客',
+        name: IS_PROD ? 'TinBoker - 聽播客' : `TinBoker - ${APP_TITLE}`,
+        short_name: APP_TITLE,
         description: '結合 Podcast 觀點與即時數據的財經平台',
         theme_color: '#0e1014',
         background_color: '#0f1117',
@@ -36,9 +47,9 @@ export default defineConfig({
         lang: 'zh-TW',
         categories: ['finance', 'business', 'news'],
         icons: [72, 96, 128, 144, 152, 192, 384, 512].map((n) => ({
-          src: `/icons/pwa/icon-${n}x${n}.png`, sizes: `${n}x${n}`, type: 'image/png'
+          src: `${ICON_DIR}/icon-${n}x${n}.png`, sizes: `${n}x${n}`, type: 'image/png'
         })).concat([192, 512].map((n) => ({
-          src: `/icons/pwa/maskable-${n}x${n}.png`, sizes: `${n}x${n}`, type: 'image/png',
+          src: `${ICON_DIR}/maskable-${n}x${n}.png`, sizes: `${n}x${n}`, type: 'image/png',
           purpose: 'maskable' as const
         })))
       },

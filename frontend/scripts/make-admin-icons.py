@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Generate the back-office app icons: the public icons with a gear on them.
+"""Generate the non-production app icons: the public icons with a gear on them.
 
 Nothing a public visitor sees changes — this only writes public/icons/pwa/admin/, which
-only the dev/staging build points at. The mark, the colours and the ground are the
+only dev/staging builds point at (the one installable app there, site + back office). The mark, the colours and the ground are the
 public ones; the gear is the whole difference, which is all it has to be to tell two
 tiles apart on a home screen.
 
