@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Download } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { StockCardShareModal } from './StockCardShareModal';
 import type { TimeframeOption } from '@/services/types';
 
 interface ChartControlsProps {
@@ -10,8 +11,9 @@ interface ChartControlsProps {
     onSubChartChange: (subChart: string) => void;
     activeIndicators: string[];
     onToggleIndicator: (indicator: string, active: boolean) => void;
-    /** Stock card PNG to offer as a download. Omit to hide the button. */
-    downloadUrl?: string;
+    /** Stock card PNG to preview, share and download. Omit to hide the button. */
+    cardUrl?: string;
+    ticker?: string;
 }
 
 const TIMEFRAMES: { value: TimeframeOption; label: string }[] = [
@@ -48,9 +50,11 @@ export const ChartControls: React.FC<ChartControlsProps> = ({
     onSubChartChange,
     activeIndicators,
     onToggleIndicator,
-    downloadUrl,
+    cardUrl,
+    ticker,
 }) => {
     const [open, setOpen] = useState(false);
+    const [cardOpen, setCardOpen] = useState(false);
     const popRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -82,20 +86,19 @@ export const ChartControls: React.FC<ChartControlsProps> = ({
             </div>
 
             <div className="flex items-center gap-2">
-                {downloadUrl && (
-                    // A plain anchor, not a fetch/blob dance: the backend sends
-                    // Content-Disposition, which is what actually triggers the save. The
-                    // `download` attribute is kept for the same-origin dev proxy, where
-                    // it supplies the filename; cross-origin the browser ignores it.
-                    <a
-                        href={downloadUrl}
-                        download
+                {cardUrl && (
+                    <button
+                        type="button"
+                        onClick={() => setCardOpen(true)}
                         className="flex items-center gap-1 px-1.5 py-0.5 text-sm text-muted-foreground hover:text-foreground rounded hover:bg-muted transition-colors"
-                        title="下載這檔股票的走勢圖卡"
+                        title="分享或下載這檔股票的走勢圖卡"
                     >
                         <Download className="w-3.5 h-3.5" />
                         <span className="hidden sm:inline">圖卡</span>
-                    </a>
+                    </button>
+                )}
+                {cardOpen && cardUrl && (
+                    <StockCardShareModal url={cardUrl} ticker={ticker ?? ''} onClose={() => setCardOpen(false)} />
                 )}
 
                 <div className="relative" ref={popRef}>
