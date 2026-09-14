@@ -121,14 +121,13 @@ export async function getSectorsByTicker(ticker: string): Promise<SectorsByTicke
 /**
  * Absolute URL for the shareable stock card PNG (candles + volume + podcast sentiment).
  *
- * Returns a URL rather than fetching bytes: the browser can download it directly, and
- * `download=1` makes the backend send Content-Disposition — the HTML `download`
- * attribute alone is ignored because the API is on a different origin.
+ * `v` changes every 15 minutes (the endpoint's max-age). Without a query string the URL
+ * ends in .png and the service worker's image rule would serve it CacheFirst for 30 days.
  */
-export function getStockCardUrl(ticker: string, options?: { days?: number; download?: boolean }): string {
+export function getStockCardUrl(ticker: string, options?: { days?: number }): string {
   const params = new URLSearchParams();
   if (options?.days) params.set('days', String(options.days));
-  if (options?.download) params.set('download', '1');
+  params.set('v', String(Math.floor(Date.now() / 900_000)));
   const query = params.toString();
   return `${apiClient.defaults.baseURL || ''}/api/og/stock/${encodeURIComponent(ticker)}.png${query ? `?${query}` : ''}`;
 }
