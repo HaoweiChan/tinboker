@@ -16,6 +16,7 @@ import {
     ChevronLeft,
     ChevronRight,
     LogOut,
+    Home,
 } from 'lucide-react';
 
 interface AdminSidebarProps {
@@ -146,6 +147,13 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
 
             {/* Footer */}
             <div className="border-t border-border p-3">
+                <NavItem
+                    to="/"
+                    icon={<Home className="h-5 w-5" />}
+                    label="回前台"
+                    collapsed={collapsed}
+                    end
+                />
                 <button
                     onClick={onLogout}
                     className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-base font-medium text-foreground transition-colors hover:bg-muted ${collapsed ? 'justify-center' : ''
