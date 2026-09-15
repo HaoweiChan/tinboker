@@ -1,8 +1,10 @@
 """
 Redis client setup for FastAPI
 """
+import asyncio
+import time
 from redis import asyncio as aioredis
-from typing import Optional
+from typing import Any, Awaitable, Callable, Optional
 from src.config import settings
 import json
 import logging
@@ -241,6 +243,54 @@ async def cache_set(key: str, value: str, ttl: int = 300) -> bool:
             logger.warning(f"Cache set error for key {key}: {e}")
             return False
     return False
+
+# ponytail: in-process single-flight. Correct while the API runs one uvicorn process;
+# with several workers each would refresh once — switch to a Redis SET NX lock then.
+_inflight: dict[str, "asyncio.Future[Any]"] = {}
+
+
+async def _swr_refresh(key: str, compute: Callable[[], Awaitable[Any]], ttl: int, stale: int) -> Any:
+    try:
+        value = await compute()
+        await cache_set(key, json.dumps({"v": value, "t": time.time() + ttl}, default=str), ttl + stale)
+        return value
+    finally:
+        _inflight.pop(key, None)
+
+
+def _log_refresh_failure(fut: "asyncio.Future[Any]") -> None:
+    if not fut.cancelled() and fut.exception() is not None:
+        logger.warning(f"Background cache refresh failed: {fut.exception()}")
+
+
+async def cache_swr(key: str, compute: Callable[[], Awaitable[Any]], ttl: int, stale: int) -> Any:
+    """JSON value for ``key``: fresh for ``ttl`` seconds, then served stale for up to
+    ``stale`` more while ONE background ``compute()`` refreshes it.
+
+    Only a true miss (first request, eviction, or an explicit delete) waits on
+    ``compute()``, and concurrent misses share that one call instead of each
+    rebuilding the value. A failed compute on a miss raises; a failed background
+    refresh keeps serving the stale value.
+    """
+    raw = await cache_get(key)
+    if raw:
+        try:
+            env = json.loads(raw)
+            value, fresh_until = env["v"], float(env["t"])
+        except Exception:
+            env = None  # foreign or pre-SWR format: rebuild
+        if env is not None:
+            if time.time() >= fresh_until and key not in _inflight:
+                fut = asyncio.ensure_future(_swr_refresh(key, compute, ttl, stale))
+                fut.add_done_callback(_log_refresh_failure)
+                _inflight[key] = fut
+            return value
+    fut = _inflight.get(key)
+    if fut is None:
+        fut = _inflight[key] = asyncio.ensure_future(_swr_refresh(key, compute, ttl, stale))
+        fut.add_done_callback(_log_refresh_failure)  # if every waiter disconnected
+    return await asyncio.shield(fut)
+
 
 async def cache_delete(key: str) -> bool:
     """Delete key from cache"""
