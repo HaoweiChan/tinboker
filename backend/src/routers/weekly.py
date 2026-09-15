@@ -11,6 +11,7 @@ and cached for a day; the current week keeps growing and is cached for an hour.
 import asyncio
 import json
 import logging
+import re
 from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
@@ -19,6 +20,8 @@ from zoneinfo import ZoneInfo
 from fastapi import APIRouter, HTTPException
 
 from src.cache.redis_client import cache_get, cache_set
+from src.database.postgres import get_session
+from src.services.attention import attention_movers
 from src.services.insight_service import InsightService
 from src.services.podcast import UMBRELLA_EXPOSURE_IDS, PodcastService
 
@@ -88,6 +91,112 @@ def _tally(insights: list[dict]) -> dict[str, Counter]:
     return by
 
 
+# A thesis is a show's own sentence, and shows repeat forecasts: "法人預估明年EPS可達140
+# 元、後年上看300元" came back as 聯發科's reason for 2026-W37. Everything that reads
+# these reasons republishes them on the brand account (the weekly video, the Threads
+# copy), so forward-looking numbers and advice are cut clause by clause before they get
+# there. Reported facts ("8月營收年增44%") survive; targets, estimates and 建議 do not.
+# "預期" is deliberately absent: "定價低於市場預期" reports a fact, and cutting it orphaned
+# the rest of 2026-W37's AAPL thesis.
+_FORECAST_CLAUSE = re.compile(r"預估|目標價|上看|下看|EPS|建議|可望達|\d+(?:\.\d+)?\s*元")
+
+
+def _descriptive(thesis: str) -> str:
+    """The thesis with every forecast/advice clause removed; "" when nothing is left."""
+    kept = [c.strip() for c in re.split(r"[，、；。,;]", thesis) if c.strip() and not _FORECAST_CLAUSE.search(c)]
+    return "，".join(kept) + "。" if kept else ""
+
+
+def _reasons(insights: list[dict]) -> dict[str, dict[str, dict]]:
+    """One stated reason per ticker per direction — who said it, and what they said.
+
+    The rollup counted stances and threw the reasoning away, which is what made the
+    weekly read like a scoreboard: "台積電 15 看多" is not information anyone can act
+    on or argue with. Every insight doc already carries ``bluf_thesis`` (populated on
+    effectively every row, a specific sourced sentence, boilerplate filtered at export)
+    plus who said it and over what horizon. This surfaces it.
+
+    Most recent wins, not longest: a later stance supersedes an earlier one in the same
+    week, and length is a proxy for rambling as often as for substance.
+    """
+    by: dict[str, dict[str, dict]] = defaultdict(dict)
+    for i in sorted(insights, key=lambda d: d.get("podcast_launch_time") or ""):
+        tk, thesis = i.get("ticker"), _descriptive((i.get("bluf_thesis") or "").strip())
+        if not tk or not thesis:  # nothing descriptive left → an older stance may still have one
+            continue
+        side = _sentiment(i.get("sentiment_label"))
+        if side == "neu":
+            continue
+        by[tk][side] = {
+            "thesis": thesis,
+            "podcaster": i.get("podcaster"),
+            # Horizon is inferred by the extractor and defaults to 中期 when the show
+            # never said one, so it is a hint, not a claim about what was stated.
+            "horizon": i.get("time_horizon"),
+        }
+    return by
+
+
+VOICES_PER_MOVER = 4
+_SIDE_ZH = {"bull": "看多", "neu": "中性", "bear": "看空"}
+
+
+def _voices(insights: list[dict]) -> dict[str, list[dict]]:
+    """Every show's latest descriptive sentence per ticker this week, newest first.
+
+    _reasons keeps ONE sentence per side, which is right for a card but starves copy: a
+    lead ticker "4 個節目都在講" with one quote made the Threads writer invent the other
+    three (2026-W37: "沒有節目在講手機晶片", "同一個理由在 13 集裡反覆出現"). Giving it
+    each show's own words is the fix that rules in the prompt were not.
+    """
+    latest: dict[tuple[str, str], dict] = {}
+    for i in sorted(insights, key=lambda d: d.get("podcast_launch_time") or ""):
+        tk, show = i.get("ticker"), i.get("podcaster")
+        thesis = _descriptive((i.get("bluf_thesis") or "").strip())
+        if tk and show and thesis:
+            latest[(tk, show)] = {"podcaster": show, "side": _SIDE_ZH[_sentiment(i.get("sentiment_label"))],
+                                  "thesis": thesis, "when": (i.get("podcast_launch_time") or "")[:10]}
+    by: dict[str, list[dict]] = defaultdict(list)
+    for (tk, _), v in latest.items():
+        by[tk].append(v)
+    return {tk: sorted(vs, key=lambda v: v["when"], reverse=True)[:VOICES_PER_MOVER] for tk, vs in by.items()}
+
+
+async def _movers(week: str, why: dict[str, dict[str, dict]], voices: dict[str, list[dict]]) -> Optional[dict]:
+    """聲量水位 movers for the week, each with the reason a show gave, or None on failure.
+
+    The weekly video's lead and the weekly Threads copy both read this. The list itself
+    is owned by services/attention.attention_movers — the same number as the stock
+    page's 聲量水位 pane — so nothing here decides which tickers are "moving".
+
+    State only: the level and which end of its own year a ticker sits at. Never attach a
+    forward return here or downstream (投顧法 line agreed 2026-09-13).
+
+    A failure returns None rather than raising: this rollup is also the public, crawled
+    /weekly page, which must not 500 because an attention query did. Consumers that
+    need movers (build.mjs) fail loudly on None instead.
+    """
+    try:
+        allowed = await podcast_service._allowed_podcast_names()
+        movers = await attention_movers(week, allowed=allowed)
+    except Exception:
+        logger.exception("attention_movers failed for %s", week)
+        return None
+    for side in ("high", "low"):
+        movers[side] = [{**m, "bull_why": why.get(m["ticker"], {}).get("bull"),
+                         "bear_why": why.get(m["ticker"], {}).get("bear"),
+                         "voices": voices.get(m["ticker"], [])}
+                        for m in movers.get(side) or []]
+    return movers
+
+
+def _names_for(tickers: set[str]) -> dict[str, str]:
+    from src.services.paid_weekly import query_names  # lazy: paid_weekly imports attention
+    for db in get_session():
+        return query_names(db, tickers)
+    return {}
+
+
 async def build_week(week: str) -> Optional[dict]:
     """The rollup for one week, or None when no scoped episode falls in it."""
     start, end = week_bounds(week)
@@ -102,6 +211,7 @@ async def build_week(week: str) -> Optional[dict]:
         _insights_for(podcasters, prev_start, prev_end),
     )
     this_t, prev_t = _tally(this_ins), _tally(prev_ins)
+    why = _reasons(this_ins)
 
     ticker_eps: Counter = Counter()
     names: dict[str, str] = {}
@@ -132,15 +242,29 @@ async def build_week(week: str) -> Optional[dict]:
             "ticker": tk, "name": names.get(tk), "episodes": n,
             "bull": cur["bull"], "neu": cur["neu"], "bear": cur["bear"],
             "prev_bull": prev["bull"], "prev_neu": prev["neu"], "prev_bear": prev["bear"],
+            # The stated reason, not just the stance — the rollup's counts alone are a
+            # scoreboard nobody can argue with. None when only neutral stances exist.
+            "bull_why": why.get(tk, {}).get("bull"),
+            "bear_why": why.get(tk, {}).get("bear"),
         }
 
+    # Exposures only name the tickers they resolve, so 005930 / NVDA arrived nameless and
+    # the video printed bare codes. stock_translations names the rest (TW, US and KR).
+    missing = {tk for tk, _ in ticker_eps.most_common(TOP_TICKERS) if tk not in names}
+    if missing:
+        try:
+            names.update(await asyncio.to_thread(_names_for, missing))
+        except Exception:  # the public /weekly page must not 500 over display names
+            logger.exception("ticker names failed for %s", week)
+    rows = [ticker_row(tk, n) for tk, n in ticker_eps.most_common(TOP_TICKERS)]
     return {
         "week": week,
         "start": start.isoformat(),
         "end": end.isoformat(),
         "episode_count": len(episodes),
         "podcasts": [{"name": n, "episodes": c} for n, c in Counter(ep.podcast_name for ep in episodes).most_common()],
-        "tickers": [ticker_row(tk, n) for tk, n in ticker_eps.most_common(TOP_TICKERS)],
+        "tickers": rows,
+        "movers": await _movers(week, why, _voices(this_ins)),
         "sectors": [{"exposure_id": sid, "episodes": n, **sector_meta[sid]} for sid, n in sector_eps.most_common(TOP_SECTORS)],
         # Full Episode shape (same as /episodes/by-sector) so the page renders the same
         # EpisodeCardV2 as every other list; content fields are empty (enrich_content=False).
@@ -220,7 +344,7 @@ async def get_week(week: str):
         week_bounds(week)
     except ValueError:
         raise HTTPException(status_code=400, detail="week must look like 2026-W36")
-    cache_key = f"weekly:v2:{PodcastService._scope_tag()}:{week}"
+    cache_key = f"weekly:v4:{PodcastService._scope_tag()}:{week}"
     cached = await cache_get(cache_key)
     if cached:
         try:
