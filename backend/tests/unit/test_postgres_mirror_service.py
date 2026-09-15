@@ -130,6 +130,23 @@ def test_query_collection_array_contains_becomes_jsonb_exists(stub_session):
     assert "ORDER BY" not in _sql(s)
 
 
+def test_query_collection_gte_only_on_typed_columns(stub_session):
+    """The release-scope prefilter: `created_time >= cutoff` binds a real datetime to the
+    timestamptz column. On a doc->> text field the same compare would be lexicographic,
+    so it must fail instead."""
+    from datetime import datetime, timezone
+
+    s = stub_session(rows=[])
+    cutoff = datetime(2026, 7, 15, tzinfo=timezone.utc)
+    PostgresMirrorService().query_collection(
+        "episodes", [("podcast_name", "in", ["股癌"]), ("created_time", ">=", cutoff)], "created_time", "DESCENDING",
+    )
+    assert "WHERE podcast_name = ANY(CAST(:f0 AS text[])) AND created_time >= :f1" in _sql(s)
+    assert _params(s)["f1"] == cutoff
+    with pytest.raises(NotImplementedError, match="operator"):
+        PostgresMirrorService().query_collection("episodes", [("released_at_ms", ">=", 1)])
+
+
 def test_query_collection_unsupported_operator_fails_loud(stub_session):
     stub_session()
     with pytest.raises(NotImplementedError, match="operator"):

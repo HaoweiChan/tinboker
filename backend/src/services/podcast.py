@@ -7,7 +7,7 @@ import asyncio
 import logging
 import time
 from typing import Optional, List, Collection
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 
 from src.config import settings
@@ -868,17 +868,26 @@ class PodcastService:
                 pass
 
         try:
-            filters = [("podcast_name", "==", podcast_name)] if podcast_name else None
+            filters = [("podcast_name", "==", podcast_name)] if podcast_name else []
+            # Push the release scope into SQL. Without it every cache miss pulled the
+            # whole mirror (6,834 docs after the 2020 backfill) through Pydantic on the
+            # event loop to keep ~300: 9-13s cold, and /health stalled meanwhile.
+            # created_time is ingestion time, never earlier than release (checked on all
+            # 294 in-scope prod episodes 2026-09-15), so it is a safe prefilter;
+            # _scope_episodes below still applies the exact release-time cut.
+            if allowed is not None and not podcast_name:
+                filters.append(("podcast_name", "in", sorted(allowed)))
+            if cutoff is not None:
+                filters.append(("created_time", ">=", datetime.fromtimestamp(cutoff / 1000 - 2 * 86400, tz=timezone.utc)))
             order_by = "created_time" if not podcast_name else None
             direction = "DESCENDING" if not podcast_name else None
-            # When scoping is active we must fetch the full sorted set, not just the
-            # newest `limit`, or a window dominated by out-of-scope shows could
-            # filter down to fewer than `limit` in-scope episodes.
+            # Scoped reads still fetch the full in-scope set, not just the newest
+            # `limit`: the feed sorts by release time, which SQL can't order by.
             query_limit = None if (podcast_name or scoping_active) else limit
 
             episodes_dict = await asyncio.to_thread(
                 self.firestore_service.query_collection,
-                collection="episodes", filters=filters,
+                collection="episodes", filters=filters or None,
                 order_by=order_by, direction=direction, limit=query_limit,
             )
             episodes = await asyncio.gather(
