@@ -489,8 +489,10 @@ async def health_check():
             from src.database.postgres import engine
             if engine:
                 from sqlalchemy import text
-                with engine.connect() as conn:
-                    conn.execute(text("SELECT 1"))
+                def _ping():
+                    with engine.connect() as conn:
+                        conn.execute(text("SELECT 1"))
+                await asyncio.to_thread(_ping)  # a sync connect on the loop stalled every request
                 db_status["status"] = "connected"
             else:
                 db_status["status"] = "not_initialized"

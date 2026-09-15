@@ -23,7 +23,7 @@ from src.tag_registry import (
     trending_slugs,
 )
 from src.database.postgres import get_session
-from src.cache.redis_client import cache_get, cache_set, cache_delete, cache_delete_pattern
+from src.cache.redis_client import cache_get, cache_set, cache_delete, cache_delete_pattern, cache_swr
 from src.cache.cache_config import CACHE_TTL
 from src.cache.cdn_cache import purge_cdn_cache
 
@@ -859,15 +859,11 @@ class PodcastService:
         allowed = await self._allowed_podcast_names()
         cutoff = self._recency_cutoff_ms()
         scoping_active = allowed is not None or cutoff is not None
-        cache_key = f"episodes:recent:{podcast_name or 'all'}:{limit}:{offset}:{enrich_content}:{self._scope_tag()}"
-        cached = await cache_get(cache_key)
-        if cached:
-            try:
-                return [Episode(**i) for i in json.loads(cached)]
-            except Exception:
-                pass
+        # v2: SWR envelope. Still under "episodes:recent:" so the ingest-side
+        # cache_delete_pattern("episodes:recent:*") keeps invalidating it.
+        cache_key = f"episodes:recent:v2:{podcast_name or 'all'}:{limit}:{offset}:{enrich_content}:{self._scope_tag()}"
 
-        try:
+        async def compute() -> list:
             filters = [("podcast_name", "==", podcast_name)] if podcast_name else []
             # Push the release scope into SQL. Without it every cache miss pulled the
             # whole mirror (6,834 docs after the 2020 backfill) through Pydantic on the
@@ -900,13 +896,13 @@ class PodcastService:
             # podcaster's ingestion batch together.
             episodes = sorted(episodes, key=self._episode_release_ms, reverse=True)
             paginated = list(episodes)[offset:offset + limit]
-            try:
-                await cache_set(cache_key, json.dumps([e.dict() for e in paginated], default=str), CACHE_TTL["podcast_episodes"])
-            except Exception:
-                pass
-            return paginated
+            return [e.dict() for e in paginated]
+
+        try:
+            rows = await cache_swr(cache_key, compute, CACHE_TTL["podcast_episodes"], stale=3000)
         except Exception as e:
             raise Exception(f"Failed to get recent episodes: {e}") from e
+        return [Episode(**i) for i in rows]
 
     async def get_episodes_by_ticker(
         self, ticker: str, limit: int = 50, offset: int = 0,
