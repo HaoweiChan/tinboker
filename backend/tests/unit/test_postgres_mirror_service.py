@@ -436,3 +436,9 @@ def test_mirror_sql_runs_against_real_postgres():
         assert any(r["episode_id"] == ep["id"] for r in refs)
     svc.get_all_parent_documents("tags")
     svc.count_subcollection_documents("tags", "ai", "episodes")
+
+
+def test_pg_text_array_keeps_non_ascii_literal():
+    """json.dumps' default \\uXXXX escapes are not array syntax: Postgres read "股癌" as
+    "u80a1u764c" and the scoped feed matched no podcast at all."""
+    assert pms._pg_text_array(["Gooaye 股癌", 'a"b', "E1"]) == '{"Gooaye 股癌","a\\"b","E1"}'

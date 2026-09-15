@@ -84,7 +84,9 @@ def _field(name: str) -> str:
 
 def _pg_text_array(values: List[Any]) -> str:
     """Postgres ``text[]`` literal, bound as a plain string + CAST (driver-agnostic)."""
-    return "{" + ",".join(json.dumps(str(v)) for v in values) + "}"
+    # ensure_ascii=False: a \uXXXX escape is not array syntax — Postgres reads it as
+    # a literal "u80a1", so "股癌" never matched (emptied the dev feed 2026-09-15).
+    return "{" + ",".join(json.dumps(str(v), ensure_ascii=False) for v in values) + "}"
 
 
 @contextmanager
