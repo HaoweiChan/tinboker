@@ -20,6 +20,7 @@ from zoneinfo import ZoneInfo
 from fastapi import APIRouter, HTTPException
 
 from src.cache.redis_client import cache_get, cache_set
+from src.database.postgres import get_session
 from src.services.attention import attention_movers
 from src.services.insight_service import InsightService
 from src.services.podcast import UMBRELLA_EXPOSURE_IDS, PodcastService
@@ -189,6 +190,13 @@ async def _movers(week: str, why: dict[str, dict[str, dict]], voices: dict[str, 
     return movers
 
 
+def _names_for(tickers: set[str]) -> dict[str, str]:
+    from src.services.paid_weekly import query_names  # lazy: paid_weekly imports attention
+    for db in get_session():
+        return query_names(db, tickers)
+    return {}
+
+
 async def build_week(week: str) -> Optional[dict]:
     """The rollup for one week, or None when no scoped episode falls in it."""
     start, end = week_bounds(week)
@@ -240,6 +248,14 @@ async def build_week(week: str) -> Optional[dict]:
             "bear_why": why.get(tk, {}).get("bear"),
         }
 
+    # Exposures only name the tickers they resolve, so 005930 / NVDA arrived nameless and
+    # the video printed bare codes. stock_translations names the rest (TW, US and KR).
+    missing = {tk for tk, _ in ticker_eps.most_common(TOP_TICKERS) if tk not in names}
+    if missing:
+        try:
+            names.update(await asyncio.to_thread(_names_for, missing))
+        except Exception:  # the public /weekly page must not 500 over display names
+            logger.exception("ticker names failed for %s", week)
     rows = [ticker_row(tk, n) for tk, n in ticker_eps.most_common(TOP_TICKERS)]
     return {
         "week": week,
@@ -328,7 +344,7 @@ async def get_week(week: str):
         week_bounds(week)
     except ValueError:
         raise HTTPException(status_code=400, detail="week must look like 2026-W36")
-    cache_key = f"weekly:v3:{PodcastService._scope_tag()}:{week}"
+    cache_key = f"weekly:v4:{PodcastService._scope_tag()}:{week}"
     cached = await cache_get(cache_key)
     if cached:
         try:

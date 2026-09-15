@@ -58,6 +58,7 @@ async def test_build_week_aggregates_tickers_sectors_and_sentiment_shift(monkeyp
     monkeypatch.setattr(weekly.insight_service, "get_by_podcaster", _by_podcaster)
     monkeypatch.setattr(weekly.podcast_service, "_allowed_podcast_names", _roster)
     monkeypatch.setattr(weekly, "attention_movers", _movers)
+    monkeypatch.setattr(weekly, "_names_for", lambda missing: {"NVDA": "輝達"} if "NVDA" in missing else {})
 
     wk = await weekly.build_week("2026-W36")
     assert wk["episode_count"] == 2
@@ -65,6 +66,7 @@ async def test_build_week_aggregates_tickers_sectors_and_sentiment_shift(monkeyp
     top = wk["tickers"][0]
     assert (top["ticker"], top["episodes"], top["bull"], top["neu"], top["bear"]) == ("2330", 2, 1, 1, 0)
     assert (top["prev_bull"], top["prev_bear"]) == (0, 2)  # two podcasters × one bearish insight
+    assert {t["ticker"]: t["name"] for t in wk["tickers"]}["NVDA"] == "輝達"  # named without a sector exposure
     assert wk["sectors"] == [{"exposure_id": "sector_mlcc", "episodes": 1, "display_name": "被動元件 MLCC", "icon_id": None, "color_hex": None}]
     assert [e["id"] for e in wk["episodes"]] == ["E2", "E1"]  # newest first
     assert wk["episodes"][0]["key_insights"] == ["一", "二", "三", "四"]

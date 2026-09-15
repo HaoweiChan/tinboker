@@ -37,7 +37,7 @@ async function label(t) {
   let n = name
     .replace(/\b(Corp|Inc|Corporation|Common Stock|Class A|Technologies|Exploration|Platforms|Holdings?|Ltd|plc)\b/gi, '')
     .replace(/[.,]/g, ' ').replace(/\s+/g, ' ').trim();
-  if (n.length > 13) n = n.slice(0, 13).replace(/\s+\S*$/, '');   // cut on a word boundary, never mid-word
+  if (n.length > 13) n = '';   // a cut name misleads ("Advanced Micro Devices" → "Advanced"); the ticker alone reads fine
   return { label: t.ticker, sub: n };
 }
 
