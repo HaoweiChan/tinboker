@@ -2481,6 +2481,7 @@ class PodcastService:
 
     async def get_trending_tags(
         self, weeks: int = 6, preview_count: int = 3, force_refresh: bool = False,
+        include: Optional[Collection[str]] = None,
     ) -> List[dict]:
         """Auto-surfaced trending tags with scoped counts, weekly sparklines, and previews.
 
@@ -2490,13 +2491,17 @@ class PodcastService:
         expiry. force_refresh skips the cache read (used by that loop so the heavier
         all-tags scan stays off the request path). Episode docs are fetched ONCE across
         all tags — the same episode sits under many tag subcollections, and per-tag
-        re-fetching multiplied Firestore reads and egress ~10x (July 2026 bill)."""
-        cache_key = f"tags:trending:v1:{weeks}:{preview_count}:{self._scope_tag()}"
+        re-fetching multiplied Firestore reads and egress ~10x (July 2026 bill).
+
+        ``include`` slugs are appended when they have in-scope episodes but missed the
+        board cut, so a user's subscribed tag gets its real count instead of none. The
+        cache therefore holds every scored tag, not just the board (v2)."""
+        cache_key = f"tags:trending:v2:{weeks}:{preview_count}:{self._scope_tag()}"
         if not force_refresh:
             cached = await cache_get(cache_key)
             if cached:
                 try:
-                    return json.loads(cached)
+                    return self._board_with_includes(json.loads(cached), include)
                 except Exception:
                     pass
         allowed = await self._allowed_podcast_names()
@@ -2584,22 +2589,27 @@ class PodcastService:
                 return None
 
         results = [_process_tag(t, refs) for t, refs in zip(candidates, refs_per_tag)]
-        # Auto-surface by volume: keep tags above the recent-episode floor, rank by
-        # scoped count, and cap to the board size. (Sub-floor / zero-count tags drop.)
-        tags = sorted(
-            [r for r in results if r and r["scoped_count"] >= self._TRENDING_MIN_EPISODES],
-            key=lambda x: x["scoped_count"],
-            reverse=True,
-        )[: self._TRENDING_MAX_TAGS]
+        scored = sorted([r for r in results if r], key=lambda x: x["scoped_count"], reverse=True)
         # Don't cache empty: [] here usually means a transient failure upstream
         # (allowlist fails closed / Firestore blip), and pinning it for the long
         # TTL would blank the board for hours instead of retrying next call.
-        if tags:
+        if scored:
             try:
-                await cache_set(cache_key, json.dumps(tags), self._TOPIC_BOARD_CACHE_TTL)
+                await cache_set(cache_key, json.dumps(scored), self._TOPIC_BOARD_CACHE_TTL)
             except Exception:
                 pass
-        return tags
+        return self._board_with_includes(scored, include)
+
+    def _board_with_includes(self, scored: List[dict], include: Optional[Collection[str]]) -> List[dict]:
+        """The board from every scored tag (count-desc): above the recent-episode floor,
+        capped to the board size. Then any ``include`` slug that has a score but missed
+        the cut, in score order."""
+        board = [r for r in scored if r["scoped_count"] >= self._TRENDING_MIN_EPISODES][: self._TRENDING_MAX_TAGS]
+        if not include:
+            return board
+        on_board = {normalize_tag_slug(r["id"]) for r in board}
+        wanted = {normalize_tag_slug(s) for s in include} - on_board
+        return board + [r for r in scored if normalize_tag_slug(r["id"]) in wanted]
 
     # ── Search ───────────────────────────────────────────────────────
 
