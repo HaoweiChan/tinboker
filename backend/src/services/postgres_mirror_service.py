@@ -396,6 +396,9 @@ class PostgresMirrorService:
             elif op == "in":
                 where.append(f"{col} = ANY(CAST(:{key} AS text[]))")
                 params[key] = _pg_text_array(list(value or []))
+            elif op == ">=" and name in _EPISODE_COLUMNS:  # typed column only; doc->> is text
+                where.append(f"{col} >= :{key}")
+                params[key] = value
             elif op == "array-contains":
                 where.append(f"jsonb_exists(doc -> '{name}', :{key})")
                 params[key] = str(value)
