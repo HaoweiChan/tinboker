@@ -94,3 +94,34 @@ def test_draft_store_persists_durable_path_not_signed_url():
         PromoMedia(type="video", url="https://signed/only", path=None),  # not uploaded → dropped
     ])
     assert stored == [{"type": "image", "path": "gs://b/i.jpg", "filename": "i.jpg"}]
+
+
+@pytest.mark.parametrize("call", [
+    lambda s: s.publish_media_carousel([IMG, VID], "t", parent_delay=0),
+    lambda s: s.publish_carousel(["https://x/a.jpg", "https://x/b.jpg"], "t", item_delay=0, parent_delay=0),
+])
+async def test_carousel_parent_is_ready_before_publish(call):
+    """Publishing a carousel parent before it is FINISHED 400s with subcode 4279009
+    (hit live 2026-09-15); the parent must be polled like its children."""
+    from src.services.threads_service import ThreadsService
+
+    s = ThreadsService(access_token="tok", user_id="u")
+    calls = []
+
+    async def item(_c, url, media_type="IMAGE"):
+        return f"child:{url}"
+
+    async def parent(_c, children, _text):
+        return "parent"
+
+    async def ready(_c, cid, **_kw):
+        calls.append(("ready", cid))
+
+    async def publish(_c, cid):
+        calls.append(("publish", cid))
+        return "root"
+
+    s._create_carousel_item, s._create_carousel_parent = item, parent
+    s._wait_until_ready, s._publish_container = ready, publish
+    assert await call(s) == "root"
+    assert calls[-2:] == [("ready", "parent"), ("publish", "parent")]
