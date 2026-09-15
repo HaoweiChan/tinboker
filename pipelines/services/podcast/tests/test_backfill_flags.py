@@ -169,6 +169,7 @@ def test_writer_submit_warns_when_output_drifts_from_the_corpus():
     from src.podcast.regen.orchestrator import _corpus_drift_warnings
 
     ok = {
+        "source": "Gooaye 股癌",
         "markdown_report": "x" * 4300 + " [台積電](#ticker:2330)" * 9,
         "related_tickers": ["2330"] * 7,
         "tags": ["a"] * 8,
@@ -176,6 +177,7 @@ def test_writer_submit_warns_when_output_drifts_from_the_corpus():
     assert _corpus_drift_warnings(ok) == []
 
     drifted = {
+        "source": "Gooaye 股癌",
         "markdown_report": "x" * 6593 + " [x](#ticker:2330)" * 40,
         "related_tickers": ["t%d" % i for i in range(24)],
         "tags": ["g%d" % i for i in range(18)],
@@ -184,5 +186,11 @@ def test_writer_submit_warns_when_output_drifts_from_the_corpus():
     assert "characters" in warnings and "#ticker: links" in warnings
     assert "related_tickers" in warnings and "tags" in warnings
 
-    thin = {"markdown_report": "x" * 900, "related_tickers": [], "tags": []}
+    thin = {"source": "Gooaye 股癌", "markdown_report": "x" * 900,
+            "related_tickers": [], "tags": []}
     assert "too thin" in " ".join(_corpus_drift_warnings(thin))
+
+    # A show with no measured band gets no length/density warning: CNBC's Fast Money
+    # carries a median of 57 ticker links, so 股癌's numbers would fire on every episode.
+    other = dict(drifted, source="CNBC's Fast Money")
+    assert _corpus_drift_warnings(other) == []

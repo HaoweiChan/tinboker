@@ -314,15 +314,32 @@ def _build_messages(step: str, state: dict[str, Any]) -> list[dict[str, str]]:
 # transcript. Episodes sit next to each other on the site, so drift of that size reads
 # as a different publication. Warned, not enforced: a genuinely dense episode is
 # allowed to exceed them, but it should be a decision rather than an accident.
-_SUMMARY_CHARS = (3400, 4900)
-_TICKER_LINKS_MAX = 20
-_TICKERS_MAX = 12
-_TAGS_MAX = 12
+# Bands are PER SHOW, because the corpus is. Measured 2026-09-08 over each show's most
+# recent pipeline-written episodes: Gooaye 股癌 runs a tight ~4,300-character single-topic
+# format, while CNBC's Fast Money is rapid-fire, carrying a median of 57 inline ticker
+# links across 16 sections. Applying one show's numbers to another gets you a warning on
+# every episode, or none on the one that needed it. A show with no entry gets no
+# length/density warning at all — better silent than wrong, until someone measures it.
+_SHOW_BANDS: dict[str, dict[str, Any]] = {
+    "Gooaye 股癌": {
+        "chars": (3400, 4900),
+        "ticker_links_max": 20,
+        "tickers_max": 12,
+        "tags_max": 12,
+    },
+}
 
 
 def _corpus_drift_warnings(state: dict[str, Any]) -> list[str]:
     """Flag writer output that falls outside the corpus it will be published into."""
     out: list[str] = []
+    bands = _SHOW_BANDS.get((state.get("source") or "").strip())
+    if not bands:
+        return out
+    _SUMMARY_CHARS = bands["chars"]
+    _TICKER_LINKS_MAX = bands["ticker_links_max"]
+    _TICKERS_MAX = bands["tickers_max"]
+    _TAGS_MAX = bands["tags_max"]
     report = state.get("markdown_report") or ""
     lo, hi = _SUMMARY_CHARS
     if report and not (lo <= len(report) <= hi):
