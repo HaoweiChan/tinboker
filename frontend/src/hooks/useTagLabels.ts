@@ -40,6 +40,11 @@ export function normalizeTagSlug(slug: string): string {
   return aliases[s] || s;
 }
 
+/** Resolves once the registry has loaded (or failed, as an empty map). */
+export function loadTagLabels(): Promise<Labels> {
+  return load();
+}
+
 function load(): Promise<Labels> {
   if (cache) return Promise.resolve(cache);
   if (!inflight) {
