@@ -97,6 +97,9 @@ class ThreadsService:
                 await asyncio.sleep(item_delay)
             await asyncio.sleep(parent_delay)
             parent_id = await self._create_carousel_parent(client, child_ids, text)
+            # The parent needs its own FINISHED: publishing it early 400s with
+            # subcode 4279009 ("media not found") even when every child is ready.
+            await self._wait_until_ready(client, parent_id)
             return await self._publish_container(client, parent_id)
 
     async def publish_reply(self, text: str, reply_to_id: str, *, delay: float = 2.0) -> str:
@@ -165,6 +168,9 @@ class ThreadsService:
                 await self._wait_until_ready(client, cid, timeout=video_timeout)
             await asyncio.sleep(parent_delay)
             parent_id = await self._create_carousel_parent(client, child_ids, text)
+            # The parent needs its own FINISHED: publishing it early 400s with
+            # subcode 4279009 ("media not found") even when every child is ready.
+            await self._wait_until_ready(client, parent_id)
             return await self._publish_container(client, parent_id)
 
     async def _wait_until_ready(
