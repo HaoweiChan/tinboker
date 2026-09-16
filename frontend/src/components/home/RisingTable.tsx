@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { useGrowIn } from '@/hooks/useMotion';
 import type { AttentionTicker } from '@/validation/schemas';
+import { Bar } from './Bar';
 import { HomePanel } from './HomePanel';
 
 interface Props {
@@ -13,12 +13,11 @@ interface Props {
  *  the absolute gain, not a percent: a 1 → 7 jump reading "+600%" would outshout the
  *  6 → 15 row the score actually ranks first.
  *
- *  Same rows as 本週市場在聊什麼 above (bar = this week's mentions, amber) — as a bare
- *  table of small grey numbers it disappeared next to that panel. The bar encodes the
- *  7-day count, and the prior week rides along as the muted 「前 N」 so the gain still
- *  reads as a change, not a level. */
+ *  Same rows as 本週市場在聊什麼 above, in the momentum cyan — as a bare table of small
+ *  grey numbers it disappeared next to that panel. The bar encodes the 7-day count, and
+ *  the prior week rides along as the muted 「前 N」 so the gain still reads as a change,
+ *  not a level. */
 export const RisingTable: React.FC<Props> = ({ rows }) => {
-  const grown = useGrowIn();
   const max = Math.max(1, ...rows.map((r) => r.count_7d));
   return (
     <HomePanel title="升溫最快" aside="近 7 天 · 較前 7 天 — 熱門 ≠ 正在升溫">
@@ -33,12 +32,7 @@ export const RisingTable: React.FC<Props> = ({ rows }) => {
                 {r.name && <span className="ml-1.5 font-sans font-normal text-sm text-muted-foreground inline-block align-bottom truncate max-w-[72px] sm:max-w-[120px]">{r.name}</span>}
                 {r.prev_7d <= 1 && <span className="ml-1.5 align-[1px] text-2xs text-accent-info border border-accent-info rounded px-1">NEW</span>}
               </Link>
-              <span className="h-4 sm:h-[16px] rounded-[3px] bg-muted overflow-hidden">
-                <span
-                  className="block h-full bg-primary/85 rounded-[3px]"
-                  style={{ width: grown ? `${(r.count_7d / max) * 100}%` : '0%', transition: 'width 900ms cubic-bezier(0.22, 1, 0.36, 1)', transitionDelay: `${i * 60}ms` }}
-                />
-              </span>
+              <Bar value={r.count_7d} max={max} tone="momentum" delayMs={i * 60} />
               <span className="font-mono tabular-nums text-right whitespace-nowrap">
                 {r.count_7d} <span className="text-2xs text-muted-foreground">前 {r.prev_7d}</span>
               </span>

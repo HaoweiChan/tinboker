@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useGrowIn } from '@/hooks/useMotion';
 import { CountUp } from '@/components/common/CountUp';
 import type { Attention, AttentionNarrative } from '@/validation/schemas';
+import { Bar } from './Bar';
 import { DeltaText } from './DeltaText';
 
 function Spark({ values, delayMs }: { values: number[]; delayMs: number }) {
@@ -25,7 +26,6 @@ interface Props {
 export const NarrativeHero: React.FC<Props> = ({ data }) => {
   const rows: AttentionNarrative[] = data?.narratives ?? [];
   const max = Math.max(1, ...rows.map((r) => r.count_7d));
-  const grown = useGrowIn();
 
   return (
     <div className="bg-card border border-border rounded-[10px] p-5 flex flex-col gap-4 min-w-0">
@@ -53,9 +53,9 @@ export const NarrativeHero: React.FC<Props> = ({ data }) => {
                   {r.name}
                   {r.rising && <span className="ml-1.5 align-[1px] text-2xs font-medium text-accent-info border border-accent-info rounded px-1">升溫</span>}
                 </Link>
-                <span className="h-4 sm:h-[16px] rounded-[3px] bg-muted overflow-hidden">
-                  <span className="block h-full bg-primary/85 rounded-[3px]" style={{ width: grown ? `${(r.count_7d / max) * 100}%` : '0%', transition: 'width 900ms cubic-bezier(0.22, 1, 0.36, 1)', transitionDelay: `${i * 60}ms` }} />
-                </span>
+                {/* A 升溫 topic gets the cyan of its badge: the colour carries the
+                    same meaning as the label next to it. */}
+                <Bar value={r.count_7d} max={max} tone={r.rising ? 'momentum' : 'topic'} delayMs={i * 60} />
                 <span className="font-mono tabular-nums text-right">{r.count_7d} <span className="text-2xs text-muted-foreground">集</span></span>
                 <span className="hidden sm:block"><Spark values={r.weekly} delayMs={i * 60 + 200} /></span>
                 <span className="text-right min-w-[48px] font-semibold"><DeltaText now={r.count_7d} prev={r.prev_7d} /></span>

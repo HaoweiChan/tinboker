@@ -68,6 +68,19 @@
     --sentiment-neutral: 215 12% 42%;
     --sentiment-neutral-soft: 210 20% 92%;
 
+    /* === Attention bars — one hue per kind of signal, so the home page reads
+       without labels: amber = topic attention, steel blue = ticker popularity,
+       cyan = momentum (same cyan as the 升溫 / NEW badges). Each bar is a
+       left-dark → right-bright gradient; a flat fill read as a default progress
+       component. === */
+    --bar-track: 214 20% 90%;
+    --bar-topic-from: 38 74% 42%;
+    --bar-topic-to: 38 82% 52%;
+    --bar-ticker-from: 205 40% 38%;
+    --bar-ticker-to: 201 44% 52%;
+    --bar-momentum-from: 191 84% 34%;
+    --bar-momentum-to: 188 84% 46%;
+
     /* Legacy token aliases */
     --bg-base: hsl(var(--background));
     --bg-surface: hsl(var(--card));
@@ -132,6 +145,16 @@
     --sentiment-bear-soft: 0 55% 16%;
     --sentiment-neutral: 213 15% 60%;
     --sentiment-neutral-soft: 216 24% 14%;
+
+    /* Attention bars — see the light block. Track is barely above the card so an
+       empty bar is a groove, not a grey slab. */
+    --bar-track: 214 27% 12%;
+    --bar-topic-from: 38 74% 44%;
+    --bar-topic-to: 38 84% 55%;
+    --bar-ticker-from: 205 42% 42%;
+    --bar-ticker-to: 201 46% 55%;
+    --bar-momentum-from: 191 88% 42%;
+    --bar-momentum-to: 188 84% 53%;
   }
 }
 

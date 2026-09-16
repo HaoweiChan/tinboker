@@ -1,8 +1,8 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { HomePanel } from './HomePanel';
-import { useGrowIn } from '@/hooks/useMotion';
 import type { AttentionTicker } from '@/validation/schemas';
+import { Bar } from './Bar';
 import { DeltaText } from './DeltaText';
 
 interface Props {
@@ -13,7 +13,6 @@ interface Props {
  *  only — sentiment lives on the stock page. */
 export const BuzzRank: React.FC<Props> = ({ rows }) => {
   const max = Math.max(1, ...rows.map((r) => r.count_30d));
-  const grown = useGrowIn();
   return (
     <HomePanel title="最多人聊" aside="近 30 天提及集數 · 較前期變化">
       {rows.length === 0 ? (
@@ -26,9 +25,7 @@ export const BuzzRank: React.FC<Props> = ({ rows }) => {
                 <Link to={`/stock/${encodeURIComponent(r.ticker)}`} className="font-semibold font-mono whitespace-nowrap hover:text-primary transition-colors">
                   {r.ticker}{r.name && <span className="ml-1.5 font-sans font-normal text-sm text-muted-foreground">{r.name}</span>}
                 </Link>
-                <span className="h-4 sm:h-[16px] rounded-[3px] bg-muted overflow-hidden">
-                  <span className="block h-full bg-primary/85 rounded-[3px]" style={{ width: grown ? `${(r.count_30d / max) * 100}%` : '0%', transition: 'width 900ms cubic-bezier(0.22, 1, 0.36, 1)', transitionDelay: `${i * 60}ms` }} />
-                </span>
+                <Bar value={r.count_30d} max={max} tone="ticker" delayMs={i * 60} />
                 <span className="font-mono tabular-nums text-right">{r.count_30d} <span className="text-2xs text-muted-foreground">集</span></span>
                 <span className="text-right min-w-[48px] font-semibold"><DeltaText now={r.count_30d} prev={r.prev_30d} /></span>
               </React.Fragment>
