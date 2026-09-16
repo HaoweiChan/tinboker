@@ -64,6 +64,18 @@ async def get_sorted_podcasts(
         raise HTTPException(status_code=500, detail=f"Error fetching podcasts: {str(e)}")
 
 
+# Declared before /{podcast_name} so "scope" isn't read as a show name.
+@router.get("/scope")
+async def get_release_scope():
+    """The public episode window, so counts can say what they count.
+
+    Episode counts are release-scoped: with a 60-day window 股癌 shows 17 even though
+    698 are stored, and a bare 「17 集已分析」 read as "only 17 were ever processed".
+    0 means no window.
+    """
+    return {"episode_window_days": max(0, settings.release_episode_max_age_days or 0)}
+
+
 @router.get("/{podcast_name}", response_model=Podcast)
 @cdn_cache_podcast
 async def get_podcast_by_name(
