@@ -246,13 +246,14 @@ def already_posted(episode_id: str) -> bool:
     return social_ledger.already_posted(PLATFORM, episode_id)
 
 
-def _record(episode_id: str, media_id: str, url: str, reply_ids: Optional[list[str]] = None) -> None:
-    social_ledger.record(PLATFORM, episode_id, media_id, url, reply_ids)
+def _record(episode_id: str, media_id: str, url: str, reply_ids: Optional[list[str]] = None,
+            fmt: str = "episode_single") -> None:
+    social_ledger.record(PLATFORM, episode_id, media_id, url, reply_ids, fmt=fmt)
 
 
-def list_posted(limit: int = 50) -> list[dict]:
+def list_posted(limit: int = 50, days: Optional[int] = None) -> list[dict]:
     """Recent ledger rows, newest first (``reply_ids`` keeps the published API shape)."""
-    rows = social_ledger.list_posted(PLATFORM, limit)
+    rows = social_ledger.list_posted(PLATFORM, limit, days=days)
     return [{**r, "reply_ids": r["child_ids"]} for r in rows]
 
 
@@ -317,7 +318,7 @@ async def publish_recent(
                 continue
             try:
                 res = await publish_thread(service, thread)
-                _record(episode_id, res["root_media_id"], thread["url"], res["reply_ids"])
+                _record(episode_id, res["root_media_id"], thread["url"], res["reply_ids"], fmt="episode_thread")
                 posted.append({"episode_id": episode_id, "url": thread["url"], "dry_run": False, **res})
                 logger.info("Posted thread for %s (root=%s, %d replies)",
                             episode_id, res["root_media_id"], res["reply_count"])
@@ -391,7 +392,7 @@ async def publish_episode(episode: Any, dry_run: bool = True) -> dict:
         except ThreadsError as e:
             social_ledger.release(PLATFORM, episode_id)
             return {**base, "posted": False, "reason": f"publish_failed: {e}", "url": thread["url"]}
-        _record(episode_id, res["root_media_id"], thread["url"], res["reply_ids"])
+        _record(episode_id, res["root_media_id"], thread["url"], res["reply_ids"], fmt="episode_thread")
         logger.info("Posted thread for %s (root=%s, %d replies)", episode_id, res["root_media_id"], res["reply_count"])
         return {**base, "posted": True, "url": thread["url"], **res}
 

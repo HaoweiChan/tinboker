@@ -208,6 +208,19 @@ async def threads_insights(
     return {**summary, "recent_posts": recent}
 
 
+@router.get("/insights/by-format")
+async def threads_insights_by_format(
+    days: int = Query(default=28, ge=1, le=90),
+    _: AdminAccess = Depends(get_admin_access),
+):
+    """Engagement rolled up per post format — one line per format, median views first.
+
+    Separate from ``/insights`` because it fetches insights for every post in the window
+    (up to 200 API calls), which is a weekly review, not a dashboard load.
+    """
+    return await ThreadsInsightsService().format_report(days=days)
+
+
 @facebook_router.get("/insights")
 async def facebook_insights(
     days: int = Query(default=28, ge=1, le=90),

@@ -21,7 +21,7 @@ The contract is claim-then-publish:
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
 from sqlalchemy.exc import IntegrityError
@@ -52,6 +52,7 @@ def record(
     media_id: str,
     url: str,
     child_ids: Optional[list[str]] = None,
+    fmt: Optional[str] = None,
 ) -> None:
     """Fill in the ids of a claimed row once the post is actually live."""
     with session_scope() as db:
@@ -63,6 +64,7 @@ def record(
         row.url = url
         row.child_ids = child_ids or []
         row.posted_at = datetime.utcnow()
+        row.format = fmt
 
 
 def release(platform: str, episode_id: str) -> None:
@@ -92,12 +94,14 @@ def posted_record(platform: str, episode_id: str) -> Optional[dict]:
                 "posted_at": row.posted_at.isoformat() if row.posted_at else None}
 
 
-def list_posted(platform: str, limit: int = 50) -> list[dict]:
+def list_posted(platform: str, limit: int = 50, days: Optional[int] = None) -> list[dict]:
+    """Newest first; ``days`` restricts to rows posted inside that window."""
     with session_scope() as db:
+        q = db.query(SocialPostLedger).filter(SocialPostLedger.platform == platform)
+        if days:
+            q = q.filter(SocialPostLedger.posted_at >= datetime.utcnow() - timedelta(days=days))
         rows = (
-            db.query(SocialPostLedger)
-            .filter(SocialPostLedger.platform == platform)
-            .order_by(SocialPostLedger.posted_at.desc())
+            q.order_by(SocialPostLedger.posted_at.desc())
             .limit(limit)
             .all()
         )
@@ -107,6 +111,7 @@ def list_posted(platform: str, limit: int = 50) -> list[dict]:
                 "media_id": r.media_id,
                 "url": r.url,
                 "child_ids": r.child_ids or [],
+                "format": r.format,
                 "posted_at": r.posted_at.isoformat() if r.posted_at else None,
             }
             for r in rows
