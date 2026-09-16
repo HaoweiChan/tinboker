@@ -35,7 +35,7 @@ from src.services.facebook_insights_service import (FacebookInsightsService,
 from src.services.substack_insights_service import SubstackInsightsService
 from src.services.threads_insights_service import ThreadsInsightsService
 from src.services.vocus_insights_service import VocusInsightsService
-from src.services import social_ledger, threads_comments_service
+from src.services import social_formats, social_ledger, threads_comments_service
 
 _MAX_MEDIA_BYTES = 200 * 1024 * 1024  # 200 MB per file
 _gcs = GCSContentService()
@@ -206,6 +206,13 @@ async def threads_insights(
     summary = await svc.account_summary(days=days)
     recent = await svc.recent_post_insights(limit=posts) if posts else []
     return {**summary, "recent_posts": recent}
+
+
+@router.get("/formats/preview")
+async def threads_formats_preview(_: AdminAccess = Depends(get_admin_access)):
+    """What the rotation would post at the next slot, plus every format's draft for
+    today (caption, image URL, link) and its cooldown state. Nothing is posted."""
+    return await social_formats.preview()
 
 
 @router.get("/insights/by-format")

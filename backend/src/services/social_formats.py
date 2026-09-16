@@ -143,6 +143,29 @@ async def publish_due_format(dry_run: bool = False, now: Optional[datetime] = No
     return None
 
 
+async def preview(now: Optional[datetime] = None) -> dict:
+    """Every format's draft for today plus what the next slot would actually post —
+    so the caption can be read before Monday, not after."""
+    now = now or datetime.utcnow()
+    horizon = max((max(f.cooldown_days, f.subject_cooldown_days) for f in FORMATS), default=1)
+    recent = social_ledger.list_posted(PLATFORM, limit=500, days=horizon)
+    formats = []
+    for fmt in FORMATS:
+        try:
+            draft = await fmt.select()
+        except Exception as e:  # show the failure next to the format, not a 500
+            draft, err = None, str(e)[:200]
+        else:
+            err = None
+        formats.append({
+            "format": fmt.id, "draft": draft,
+            "format_off_cooldown": format_off_cooldown(fmt, recent, now),
+            "subject_off_cooldown": subject_off_cooldown(fmt, (draft or {}).get("subject"), recent, now),
+            **({"error": err} if err else {}),
+        })
+    return {"would_post": await publish_due_format(dry_run=True, now=now), "formats": formats}
+
+
 async def _publish(fmt: Format, draft: dict, dry_run: bool) -> dict:
     service = ThreadsService()
     base = {"format": fmt.id, "key": draft["key"], "subject": draft.get("subject"), "text": draft["text"]}

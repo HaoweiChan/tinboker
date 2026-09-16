@@ -133,3 +133,22 @@ async def test_unconfigured_threads_means_dry_run(monkeypatch, temp_db):
     res = await sf.publish_due_format(now=NOW)
     assert res == {"format": "weekly_movers", "key": "k", "subject": "s", "text": "t",
                    "posted": False, "dry_run": True}
+
+
+@pytest.mark.asyncio
+async def test_preview_shows_every_draft_and_what_the_slot_would_post(temp_db, monkeypatch):
+    monkeypatch.setattr(sf, "ThreadsService", lambda: _FakeThreads())
+
+    async def movers():
+        return {"key": "weekly_movers:2026-09-07", "subject": "2026-09-07", "text": "本週"}
+
+    async def broken():
+        raise RuntimeError("db down")
+    monkeypatch.setattr(sf, "FORMATS", [_fmt("broken", select=broken), _fmt("weekly_movers", select=movers)])
+
+    out = await sf.preview(now=NOW)
+    assert out["would_post"]["format"] == "weekly_movers" and out["would_post"]["dry_run"] is True
+    assert [f["format"] for f in out["formats"]] == ["broken", "weekly_movers"]
+    assert out["formats"][0]["draft"] is None and out["formats"][0]["error"] == "db down"
+    assert out["formats"][1]["draft"]["text"] == "本週"
+    assert social_ledger.list_posted("threads") == []   # preview never writes
