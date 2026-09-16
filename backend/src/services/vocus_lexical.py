@@ -65,6 +65,10 @@ def _inline_nodes(spans: list[Span]) -> list[dict]:
     return nodes or [_text_node("")]
 
 
+VOCUS_HEADING = "vocus-heading"
+VOCUS_LISTITEM = "custom-listitem"
+
+
 def _render(block: Block) -> dict[str, Any]:
     if block.kind == "hr":
         return {"type": "horizontalrule", "version": 1}
@@ -72,9 +76,14 @@ def _render(block: Block) -> dict[str, Any]:
         # Every heading shifts down one level, not just h1: vocus renders the article
         # title above the body, so the body must not contain an h1, and shifting the
         # whole hierarchy keeps the relative structure instead of flattening it.
-        return _block("heading", _inline_nodes(block.spans), tag=f"h{min(block.level + 1, 6)}")
+        #
+        # vocus's own node names, not stock Lexical's: vocus.cc renders `heading` /
+        # `listitem` fine, but the vocus app shows 「目前尚不支援此元件」 for each one.
+        # Anything written in vocus's editor is saved as these types (checked against
+        # published articles 2026-09-16); every other attribute is identical.
+        return _block(VOCUS_HEADING, _inline_nodes(block.spans), tag=f"h{min(block.level + 1, 6)}")
     if block.kind == "list":
-        children = [_block("listitem", _inline_nodes(item), value=i + 1)
+        children = [_block(VOCUS_LISTITEM, _inline_nodes(item), value=i + 1)
                     for i, item in enumerate(block.items)]
         return _block("list", children, listType="number" if block.ordered else "bullet",
                       start=1, tag="ol" if block.ordered else "ul")
