@@ -1,13 +1,15 @@
 import { useGrowIn } from '@/hooks/useMotion';
 
-/** Which signal the bar carries. The hue IS the meaning — amber for topic attention,
- *  steel blue for how much a ticker is discussed, cyan for what is accelerating (the
- *  same cyan as the 升溫 / NEW badges). Never colour per row: that would collide with
- *  the green/red the page already spends on gains and losses. */
-export type BarTone = 'topic' | 'ticker' | 'momentum';
+/** What the bar's colour says — its STATE, not which panel it lives in. 'default' is
+ *  every ordinary statistic, 'strong' the leader of a list (one step brighter), 'hot'
+ *  something actually heating up, in the cyan of the 升溫 / NEW badges. Giving each
+ *  panel its own hue made the page look like three dashboards pasted together; per-row
+ *  colours would collide with the green/red spent on gains and losses. */
+export type BarTone = 'default' | 'strong' | 'hot';
 
-/** One attention bar: a groove plus a left-dark → right-bright fill that grows on
- *  mount. A flat single-colour fill read as a stock progress component. */
+/** One attention bar: a groove plus a fill that grows on mount. The gradient and glow
+ *  are deliberately near-invisible — a flat fill reads as a stock progress component,
+ *  a strong one as glowing plastic. */
 export const Bar: React.FC<{ value: number; max: number; tone: BarTone; delayMs?: number }> = ({
   value,
   max,
@@ -24,7 +26,7 @@ export const Bar: React.FC<{ value: number; max: number; tone: BarTone; delayMs?
         style={{
           width: grown ? `${(value / Math.max(1, max)) * 100}%` : '0%',
           background: `linear-gradient(90deg, ${from} 0%, ${to} 100%)`,
-          boxShadow: `0 0 12px -2px ${to}`,
+          boxShadow: `0 0 6px hsl(var(--bar-${tone}-to) / 0.10)`,
           transition: 'width 900ms cubic-bezier(0.22, 1, 0.36, 1)',
           transitionDelay: `${delayMs}ms`,
         }}

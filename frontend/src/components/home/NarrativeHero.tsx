@@ -53,9 +53,8 @@ export const NarrativeHero: React.FC<Props> = ({ data }) => {
                   {r.name}
                   {r.rising && <span className="ml-1.5 align-[1px] text-2xs font-medium text-accent-info border border-accent-info rounded px-1">升溫</span>}
                 </Link>
-                {/* A 升溫 topic gets the cyan of its badge: the colour carries the
-                    same meaning as the label next to it. */}
-                <Bar value={r.count_7d} max={max} tone={r.rising ? 'momentum' : 'topic'} delayMs={i * 60} />
+                {/* Cyan only for a 升溫 topic — same meaning as the badge beside it. */}
+                <Bar value={r.count_7d} max={max} tone={r.rising ? 'hot' : i === 0 ? 'strong' : 'default'} delayMs={i * 60} />
                 <span className="font-mono tabular-nums text-right">{r.count_7d} <span className="text-2xs text-muted-foreground">集</span></span>
                 <span className="hidden sm:block"><Spark values={r.weekly} delayMs={i * 60 + 200} /></span>
                 <span className="text-right min-w-[48px] font-semibold"><DeltaText now={r.count_7d} prev={r.prev_7d} /></span>
