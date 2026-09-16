@@ -84,7 +84,10 @@ last-seen version differs.
 | [`.github/workflows/backend-deploy.yml`](../../.github/workflows/backend-deploy.yml) | Push to `develop` / `main` / tag — builds + pushes to GHCR, SSHs to VPS, runs `docker compose ... up -d --no-deps backend-<env>` |
 | [`.github/workflows/backend-deploy-admin.yml`](../../.github/workflows/backend-deploy-admin.yml) | Manual dispatch — admin/dev portal backend |
 | [`.github/workflows/frontend-deploy.yml`](../../.github/workflows/frontend-deploy.yml) | Push to `develop` / `main` — deploys to Cloudflare Pages project `tinboker` |
+| [`.github/workflows/pipelines-deploy.yml`](../../.github/workflows/pipelines-deploy.yml) | Push to `develop` / `main` touching `pipelines/**` — checks out on the VPS, `uv sync`, restarts `podcast-api` |
 | [`.github/workflows/backend-health-check.yml`](../../.github/workflows/backend-health-check.yml) | Cron every 10 min — hits `/health` per env; restarts the failing container only |
+
+The three deploy workflows run under a `concurrency` group (backend/frontend per ref, pipelines one group for all refs) with `cancel-in-progress: false`: runs queue instead of overlapping, and GitHub keeps only the newest pending run, so back-to-back merges end on the newest commit. Before this, two develop merges 20s apart let the older backend build re-push `:develop` last (2026-09-16). A manual **re-run of an older run** still re-pushes the branch tag — re-run the newest one instead.
 
 ## Verification
 

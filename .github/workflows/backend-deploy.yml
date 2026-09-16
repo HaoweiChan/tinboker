@@ -27,6 +27,15 @@ on:
         type: boolean
         default: true
 
+# Serialize runs per ref. Two merges ~20s apart used to race: the older run finished
+# its build last, re-pushed the mutable :develop tag with the older image, and both
+# deploys pulled it (2026-09-16, #711 missing on dev). Queued, not cancelled — killing
+# a run mid-SSH could leave the container half-swapped. GitHub keeps only the newest
+# pending run per group, so a burst of merges still ends on the newest commit.
+concurrency:
+  group: backend-deploy-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: haoweichan/tinboker-backend
