@@ -53,6 +53,7 @@ def record(
     url: str,
     child_ids: Optional[list[str]] = None,
     fmt: Optional[str] = None,
+    subject: Optional[str] = None,
 ) -> None:
     """Fill in the ids of a claimed row once the post is actually live."""
     with session_scope() as db:
@@ -65,6 +66,7 @@ def record(
         row.child_ids = child_ids or []
         row.posted_at = datetime.utcnow()
         row.format = fmt
+        row.subject = subject
 
 
 def release(platform: str, episode_id: str) -> None:
@@ -112,6 +114,7 @@ def list_posted(platform: str, limit: int = 50, days: Optional[int] = None) -> l
                 "url": r.url,
                 "child_ids": r.child_ids or [],
                 "format": r.format,
+                "subject": r.subject,
                 "posted_at": r.posted_at.isoformat() if r.posted_at else None,
             }
             for r in rows

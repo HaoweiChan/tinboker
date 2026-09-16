@@ -73,6 +73,18 @@ Run in this order. Do not skip to the draft.
 - **強制二選一提問**。真的想問就問，為了衝留言而問會被看出來。
 - **業配感**。連結只進留言區，不進主文（見 `references/platform.md`）。
 
+## 格式（不只一種骨架）
+
+128 篇裡 105 篇是同一個骨架（一句判斷 + 主題卡輪播 + 回覆鏈），讀者滑到就認得出來。
+`backend/src/services/social_formats.py` 是登記表：每種格式一筆 —— `id`、`select()`
+（這次有沒有料，有就回草稿，沒有回 None）、`cooldown_days`（同格式間隔）、
+`subject_cooldown_days`（同一檔／同一週／同一話題間隔）。每個發文時段先貼新集數，再從
+登記表挑**一個**不在冷卻期的格式發；表的順序就是優先順序，沒有權重沒有隨機。
+
+新增一種格式 = 一個 `select()` + 一筆登記。文案靠模型產的，上線前拿真資料打
+OpenRouter 看過輸出，不要讀 prompt 自評。要不要留下看
+`GET /api/social/threads/insights/by-format?days=28` 的 median views，不是憑感覺。
+
 ## References
 
 - `references/examples.md` — 開頭範例庫、通過的完整貼文、before/after。**寫之前讀

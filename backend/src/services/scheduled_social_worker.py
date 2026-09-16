@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from src.config import settings
 from src.database.postgres import SessionLocal
 from src.database.models import ScheduledSocialPost
-from src.services import facebook_publisher, threads_publisher, promo_publisher
+from src.services import facebook_publisher, promo_publisher, social_formats, threads_publisher
 from src.services.podcast import PodcastService
 from src.services.gcs_content import GCSContentService
 
@@ -232,6 +232,14 @@ async def publish_due_slots() -> int:
                         name, res.get("posted_count"), res.get("candidates"))
         except Exception:
             logger.exception("slot publish failed for %s", name)
+    # After the episode posts, at most one post in another shape (weekly movers, …).
+    try:
+        res = await social_formats.publish_due_format()
+        if res and res.get("posted"):
+            posted += 1
+            logger.info("slot publish (format %s): %s", res.get("format"), res.get("key"))
+    except Exception:
+        logger.exception("format post failed")
     return posted
 
 

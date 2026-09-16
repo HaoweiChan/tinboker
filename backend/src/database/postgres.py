@@ -170,6 +170,10 @@ def create_all_tables():
                 "ADD COLUMN IF NOT EXISTS format VARCHAR(40)"
             ))
             conn.execute(text(
+                "ALTER TABLE IF EXISTS social_posts "
+                "ADD COLUMN IF NOT EXISTS subject VARCHAR(80)"
+            ))
+            conn.execute(text(
                 "ALTER TABLE IF EXISTS content_sources "
                 "ADD COLUMN IF NOT EXISTS social_enabled BOOLEAN NOT NULL DEFAULT TRUE"
             ))

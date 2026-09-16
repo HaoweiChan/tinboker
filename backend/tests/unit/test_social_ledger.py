@@ -54,6 +54,12 @@ def test_record_stores_the_post_format(temp_db):
     assert by_id == {"EP905": "episode_thread", "EP906": None}
 
 
+def test_record_stores_the_subject_for_the_rotation_cooldown(temp_db):
+    social_ledger.record("threads", "weekly_movers:2026-09-07", "m1", "", fmt="weekly_movers", subject="2026-09-07")
+    row = social_ledger.list_posted("threads")[0]
+    assert (row["format"], row["subject"]) == ("weekly_movers", "2026-09-07")
+
+
 def test_list_posted_window_excludes_older_rows(temp_db):
     social_ledger.record("threads", "EP907", "m1", "https://tinboker.com/episode/EP907")
     assert [r["episode_id"] for r in social_ledger.list_posted("threads", days=1)] == ["EP907"]
