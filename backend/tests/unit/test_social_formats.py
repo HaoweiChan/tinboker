@@ -47,19 +47,141 @@ def test_same_subject_in_any_format_is_blocked():
 
 # ── caption ──────────────────────────────────────────────────────────────────
 
-def test_weekly_caption_lists_top_three_and_says_what_the_number_is():
-    data = {"rows": [
-        {"ticker": "3037", "name": "欣興", "n": 31, "prev": 4},
-        {"ticker": "8299", "name": "群聯", "n": 18, "prev": 2},
-        {"ticker": "2330", "name": "台積電", "n": 60, "prev": 45},
-        {"ticker": "3006", "name": "晶豪科", "n": 9, "prev": 0},
-    ]}
-    text = sf.weekly_movers_text(data)
-    assert "3037 欣興 31 次 上週 4" in text
-    assert "3006" not in text
-    assert "不是漲幅" in text
-    assert "我" not in text and "#" not in text
+def _movers(rows, total=900):
+    return {"week_start": "2026-09-07", "week_end": "2026-09-13", "total": total, "rows": rows}
+
+
+def test_weekly_caption_is_about_the_leader_and_says_what_the_number_is():
+    text = sf.weekly_movers_text(_movers([
+        {"ticker": "3037", "name": "欣興", "n": 31, "prev": 4, "casts": 6, "bull": 9, "bear": 14},
+        {"ticker": "8299", "name": "群聯", "n": 5, "prev": 0, "casts": 2, "bull": 3, "bear": 0},
+    ]))
+    assert text.startswith("3037 欣興 這週 6 個節目提了 31 次 上週 4 看空的多")
+    assert "8299" not in text                      # a +5 runner-up is not worth a line
+    assert "不是漲幅" in text and "我" not in text and "#" not in text
     assert len(text) <= THREADS_MAX_CHARS
+
+
+def test_weekly_caption_lists_runners_up_only_when_they_are_loud_too():
+    text = sf.weekly_movers_text(_movers([
+        {"ticker": "3037", "name": "欣興", "n": 31, "prev": 4, "casts": 6, "bull": 9, "bear": 9},
+        {"ticker": "2330", "name": "台積電", "n": 60, "prev": 45, "casts": 8, "bull": 30, "bear": 2},
+        {"ticker": "8299", "name": "群聯", "n": 12, "prev": 1, "casts": 3, "bull": 5, "bear": 0},
+        {"ticker": "3006", "name": "晶豪科", "n": 9, "prev": 0, "casts": 2, "bull": 1, "bear": 0},
+    ]))
+    assert "多空各半" in text
+    assert "也很吵的還有\n2330 台積電 60 次 上週 45\n8299 群聯 12 次 上週 1" in text
+    assert "3006" not in text                      # two runners-up at most
+
+
+@pytest.mark.asyncio
+async def test_weekly_select_stays_quiet_on_a_thin_week(monkeypatch):
+    """W37 for real: 327 mentions, leader +6. Nothing goes out rather than a weak post."""
+    import src.routers.og as og
+    from src.services import threads_publisher
+
+    async def allowed():
+        return None
+    monkeypatch.setattr(threads_publisher.podcast_service, "_allowed_podcast_names", allowed)
+    thin = _movers([{"ticker": "3661", "name": "世芯-KY", "n": 6, "prev": 0, "casts": 2, "bull": 4, "bear": 1}], total=327)
+    monkeypatch.setattr(og, "_weekly_movers", lambda *_: thin)
+    assert await sf.select_weekly_movers() is None
+
+    loud = _movers([{"ticker": "3037", "name": "欣興", "n": 31, "prev": 4, "casts": 6, "bull": 9, "bear": 14}], total=900)
+    monkeypatch.setattr(og, "_weekly_movers", lambda *_: loud)
+    draft = await sf.select_weekly_movers()
+    assert draft["key"] == "weekly_movers:2026-09-07" and draft["subject"] == "2026-09-07"
+    assert draft["image_url"].endswith("/api/og/weekly.png") and draft["url"].endswith("/weekly/2026-W37")
+
+
+# ── post-hoc ─────────────────────────────────────────────────────────────────
+
+def _cand(**kw):
+    base = {"ticker": "3324", "name": "雙鴻", "podcaster": "兆華與股惑仔", "sentiment_label": "BULLISH",
+            "thesis": "雙鴻受惠散熱族群齊漲，  股價轉強跟上奇鋐與建準漲勢。", "mention_date": "2026-08-31",
+            "baseline_close": 1250.0, "last_date": "2026-09-16", "last_close": 1360.0, "pct": 8.8, "others": 1}
+    return {**base, **kw}
+
+
+def test_post_hoc_caption_quotes_the_show_and_both_closes_without_a_verdict():
+    text = sf.post_hoc_text(_cand())
+    assert text.splitlines()[0] == "8/31 兆華與股惑仔 看多雙鴻"
+    assert "「雙鴻受惠散熱族群齊漲， 股價轉強跟上奇鋐與建準漲勢」" in text   # whitespace folded, 。 dropped
+    assert "那天收 1,250 9/16 收 1,360 +8.8%" in text
+    assert "這三週還有 1 個節目提過" in text
+    assert "我" not in text and "對了" not in text and "錯了" not in text
+    assert len(text) <= THREADS_MAX_CHARS
+
+
+def test_post_hoc_caption_handles_bearish_and_neutral_and_a_lone_show():
+    assert sf.post_hoc_text(_cand(sentiment_label="STRONG_BEARISH", pct=-12.3, others=0)).startswith(
+        "8/31 兆華與股惑仔 看空雙鴻")
+    text = sf.post_hoc_text(_cand(sentiment_label="NEUTRAL", pct=-12.3, others=0))
+    assert text.startswith("8/31 兆華與股惑仔 提到雙鴻") and "-12.3%" in text and "還有" not in text
+
+
+def _seed_post_hoc(pct_big=12.0, pct_small=3.0):
+    """Two mentions with a thesis and a 5-session return: one moved, one did not."""
+    from datetime import datetime as _dt
+    from src.database import postgres as pg
+    from src.database.models import (ContentMention, StockDailyClose, StockDailyOHLC, StockTranslation,
+                                     TickerPerformanceSnapshot)
+    from src.database.postgres import session_scope
+    for model in (ContentMention, TickerPerformanceSnapshot, StockDailyOHLC, StockDailyClose, StockTranslation):
+        model.__table__.create(bind=pg.engine, checkfirst=True)
+    with session_scope() as db:
+        db.add(StockTranslation(ticker="3324", market="TW", name_zh_tw="雙鴻"))
+        for i, (tk, pct) in enumerate((("3324", pct_big), ("2330", pct_small))):
+            m = ContentMention(mention_key=f"ep{i}:ticker:{tk}", episode_id=f"ep{i}", mention_type="ticker",
+                               ticker=tk, market="TW", podcaster="兆華與股惑仔", extraction_method="pipeline_llm",
+                               mentioned_at=_dt.utcnow() - timedelta(days=10), sentiment_label="BULLISH",
+                               thesis=f"{tk} 的理由")
+            db.add(m)
+            db.flush()
+            db.add(TickerPerformanceSnapshot(mention_id=m.id, ticker=tk, mention_date="2026-09-07",
+                                             baseline_close=100.0, r5d=pct))
+            db.add(StockDailyOHLC(ticker=tk, date="2026-09-07", close=100.0))
+            db.add(StockDailyOHLC(ticker=tk, date="2026-09-16", close=100.0 + pct))
+
+
+def test_post_hoc_candidates_rank_by_move_since_mention_and_drop_small_moves(temp_db):
+    _seed_post_hoc()
+    cands = sf._post_hoc_candidates(None, datetime(2026, 8, 1))
+    assert [c["ticker"] for c in cands] == ["3324"]          # 2330 moved 3%, under the floor
+    c = cands[0]
+    assert c["name"] == "雙鴻" and c["episode_id"] == "ep0" and c["last_date"] == "2026-09-16"
+    assert c["pct"] == pytest.approx(12.0) and c["others"] == 0
+
+
+@pytest.mark.asyncio
+async def test_post_hoc_select_builds_the_marked_card_url(temp_db, monkeypatch):
+    from src.services import threads_publisher
+
+    async def allowed():
+        return None
+    monkeypatch.setattr(threads_publisher.podcast_service, "_allowed_podcast_names", allowed)
+    _seed_post_hoc()
+    draft = await sf.select_post_hoc()
+    assert draft["key"] == "post_hoc:3324:ep0" and draft["subject"] == "3324"
+    assert draft["image_url"].endswith("/api/og/stock/3324.png?days=60&event=2026-09-07"
+                                       "&label=%E5%85%86%E8%8F%AF%E8%88%87%E8%82%A1%E6%83%91%E4%BB%94%209/7")
+    assert draft["url"].endswith("/episode/ep0")
+
+
+# ── the stock card's event marker ────────────────────────────────────────────
+
+def test_stock_card_draws_one_named_event_and_nothing_without_it():
+    from src.services.stock_card import stock_card_svg
+    pts = [{"date": f"2026-08-{d:02d}", "open": 100, "high": 105, "low": 95, "close": 101, "volume": 1000}
+           for d in range(1, 31)]
+    stock = {"ticker": "3324", "name": "雙鴻", "price": 101, "change": 1, "changePercent": 1.0, "chartData": pts}
+    plain = stock_card_svg(stock, [], 30)
+    marked = stock_card_svg(stock, [], 30, event={"date": "2026-08-10", "label": "兆華與股惑仔 8/10"})
+    assert "兆華與股惑仔 8/10" in marked and "兆華與股惑仔" not in plain
+    assert marked.count('stroke-dasharray="6 5"') == 1
+    # A date with no session lands on the next one; one past the chart draws nothing.
+    assert ">08-10<" in stock_card_svg(stock, [], 30, event={"date": "2026-08-10"})
+    assert 'stroke-dasharray="6 5"' not in stock_card_svg(stock, [], 30, event={"date": "2026-09-30"})
 
 
 # ── the slot, end to end against the ledger ──────────────────────────────────

@@ -26,12 +26,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import urllib.parse
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Awaitable, Callable, Optional
 
 from src.config import settings
+from src.database.models import ContentMention, TickerPerformanceSnapshot
+from src.database.postgres import get_session
 from src.services import social_ledger
+from src.services.attention import scope_mentions
 from src.services.threads_service import ThreadsError, ThreadsService
 
 logger = logging.getLogger(__name__)
@@ -75,14 +79,32 @@ def subject_off_cooldown(fmt: Format, subject: Optional[str], recent: list[dict]
 
 # ── formats ─────────────────────────────────────────────────────────────────
 
+# A recap with nothing in it is worse than no recap. Both floors are guesses against
+# one week of data (W37: total 327, top rise +6 — thin); tune from the by-format report.
+WEEKLY_MIN_TOTAL = 500      # market-wide mentions in the week
+WEEKLY_MIN_RISE = 5         # the leader's week-over-week gain in mentions
+WEEKLY_BUSY_N = 8           # runners-up only get a line when they are this loud
+
+
+def _tk(r: dict) -> str:
+    return f'{r["ticker"]} {r.get("name") or ""}'.strip()
+
+
 def weekly_movers_text(data: dict) -> str:
-    """Caption for the 本週聲量竄升 card: the top three, numbers only. The card carries
-    the full list; the caption's one job is to say what the numbers ARE (mentions, not
-    price) so nobody reads a recap as a buy list."""
-    lines = [f'{r["ticker"]} {r.get("name") or ""} {r["n"]} 次 上週 {r.get("prev", 0)}'.replace("  ", " ")
-             for r in data["rows"][:3]]
-    return ("這週 podcast 提及數比上週多最多的\n\n" + "\n".join(lines)
-            + "\n\n提及次數 不是漲幅 全部名單在圖裡")
+    """Caption for the 本週聲量竄升 card. It is about the leader — which shows, which
+    way they leaned — and mentions the runners-up only when they are loud too. The
+    card carries the full list; the caption's other job is to say what the numbers ARE
+    (mentions, not price) so nobody reads a recap as a buy list."""
+    top, *rest = data["rows"]
+    bull, bear = top.get("bull", 0), top.get("bear", 0)
+    lean = "看多的多" if bull > bear else "看空的多" if bear > bull else "多空各半"
+    lines = [f'{_tk(top)} 這週 {top.get("casts", 0)} 個節目提了 {top["n"]} 次 上週 {top.get("prev", 0)} {lean}']
+    busy = [r for r in rest if r["n"] >= WEEKLY_BUSY_N][:2]
+    if busy:
+        lines.append("")
+        lines.append("也很吵的還有")
+        lines += [f'{_tk(r)} {r["n"]} 次 上週 {r.get("prev", 0)}' for r in busy]
+    return "\n".join(lines) + "\n\n提及次數 不是漲幅 全部名單在圖裡"
 
 
 def _last_complete_week() -> date:
@@ -101,7 +123,9 @@ async def select_weekly_movers() -> Optional[dict]:
     week_start = _last_complete_week()
     allowed = await podcast_service._allowed_podcast_names()
     data = await asyncio.to_thread(_weekly_movers, week_start, allowed)
-    if not data["rows"]:
+    rows = data["rows"]
+    if (not rows or data["total"] < WEEKLY_MIN_TOTAL
+            or rows[0]["n"] - rows[0].get("prev", 0) < WEEKLY_MIN_RISE):
         return None
     iso = week_start.isocalendar()
     return {
@@ -113,8 +137,107 @@ async def select_weekly_movers() -> Optional[dict]:
     }
 
 
+# ── post-hoc: what a show said, and what the price did since ──────────────────
+
+POST_HOC_WINDOW_DAYS = 21   # mentions this recent; r5d must exist, so ≥ 5 sessions old
+POST_HOC_MIN_MOVE = 8.0     # percent, baseline close → latest close
+STANCE_ZH = {"BULLISH": "看多", "BEARISH": "看空"}
+
+
+def _md(iso: str) -> str:
+    """'2026-09-01' → '9/1'."""
+    y, m, d = iso.split("-")
+    return f"{int(m)}/{int(d)}"
+
+
+def post_hoc_text(c: dict) -> str:
+    """The show, its stance, its own sentence, and the two closes. No verdict line: a
+    看空 followed by +19% needs no help, and the account posts the misses on purpose —
+    that is what makes the hits worth anything."""
+    verb = STANCE_ZH.get((c.get("sentiment_label") or "").upper().replace("STRONG_", ""), "提到")
+    sign = "+" if c["pct"] >= 0 else ""
+    thesis = " ".join((c.get("thesis") or "").split()).rstrip("。")
+    lines = [f'{_md(c["mention_date"])} {c["podcaster"]} {verb}{c["name"]}',
+             f"「{thesis}」", "",
+             f'那天收 {c["baseline_close"]:,.0f} {_md(c["last_date"])} 收 {c["last_close"]:,.0f} {sign}{c["pct"]:.1f}%']
+    if c.get("others"):
+        lines.append(f'這三週還有 {c["others"]} 個節目提過')
+    lines += ["", "圖上那條線是播出那天"]
+    return "\n".join(lines)
+
+
+def _post_hoc_candidates(allowed: Optional[frozenset], since: datetime) -> list[dict]:
+    """Recent ticker mentions with a thesis and a 5-session return, best-moved first.
+    Sync — runs under ``asyncio.to_thread`` like every other mention reader."""
+    from src.services.mention_sync import _closes_from
+    from src.services.paid_weekly import query_names
+
+    for db in get_session():
+        rows = (
+            scope_mentions(db.query(ContentMention, TickerPerformanceSnapshot), allowed)
+            .join(TickerPerformanceSnapshot, TickerPerformanceSnapshot.mention_id == ContentMention.id)
+            .filter(ContentMention.mention_type == "ticker",
+                    ContentMention.mentioned_at >= since,
+                    ContentMention.thesis.isnot(None),
+                    TickerPerformanceSnapshot.r5d.isnot(None),
+                    TickerPerformanceSnapshot.price_break_date.is_(None))
+            .order_by(TickerPerformanceSnapshot.mention_date.desc())
+            .all()
+        )
+        shows_by_ticker: dict[str, set] = {}
+        for m, _ in rows:
+            shows_by_ticker.setdefault(m.ticker, set()).add(m.podcaster)
+        # r5d ranks the shortlist; the caption quotes baseline → LATEST close instead,
+        # because "五個交易日後" is a window nobody reads a chart in.
+        top = sorted(rows, key=lambda r: -abs(r[1].r5d))[:15]
+        names = query_names(db, {m.ticker for m, _ in top})
+        out = []
+        for m, snap in top:
+            closes = _closes_from(db, m.ticker, snap.mention_date)
+            if not closes or not snap.baseline_close:
+                continue
+            last_date, last_close = closes[-1]
+            pct = (last_close - snap.baseline_close) / snap.baseline_close * 100
+            if abs(pct) < POST_HOC_MIN_MOVE:
+                continue
+            out.append({
+                "ticker": m.ticker, "name": names.get(m.ticker) or m.display_name or m.ticker,
+                "episode_id": m.episode_id, "podcaster": m.podcaster or "",
+                "sentiment_label": m.sentiment_label, "thesis": m.thesis,
+                "mention_date": snap.mention_date, "baseline_close": snap.baseline_close,
+                "last_date": last_date, "last_close": last_close, "pct": pct,
+                "others": len(shows_by_ticker.get(m.ticker, set()) - {m.podcaster}),
+            })
+        return sorted(out, key=lambda c: -abs(c["pct"]))
+    return []
+
+
+async def select_post_hoc() -> Optional[dict]:
+    """The recent mention whose ticker has moved the most since — hit or miss."""
+    from src.services.threads_publisher import episode_url, podcast_service
+
+    allowed = await podcast_service._allowed_podcast_names()
+    since = datetime.utcnow() - timedelta(days=POST_HOC_WINDOW_DAYS)
+    cands = await asyncio.to_thread(_post_hoc_candidates, allowed, since)
+    if not cands:
+        return None
+    c = cands[0]
+    label = f'{c["podcaster"]} {_md(c["mention_date"])}'
+    api = settings.public_api_url.rstrip("/")
+    return {
+        "key": f'post_hoc:{c["ticker"]}:{c["episode_id"]}',
+        "subject": c["ticker"],
+        "text": post_hoc_text(c),
+        "image_url": f'{api}/api/og/stock/{c["ticker"]}.png?days=60&event={c["mention_date"]}'
+                     f'&label={urllib.parse.quote(label)}',
+        "url": episode_url(c["episode_id"]),
+    }
+
+
 FORMATS: list[Format] = [
+    # Monday recap first — it is rarer; post-hoc takes the next slot the same day.
     Format("weekly_movers", select_weekly_movers, cooldown_days=6, subject_cooldown_days=6),
+    Format("post_hoc", select_post_hoc, cooldown_days=2, subject_cooldown_days=14),
 ]
 
 

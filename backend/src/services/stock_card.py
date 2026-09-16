@@ -12,6 +12,7 @@ tofu boxes where the Chinese should be.
 from __future__ import annotations
 
 import logging
+from typing import Optional
 from xml.sax.saxutils import escape
 
 from src.services.card_theme import (
@@ -39,7 +40,8 @@ def _volume_label(volume: float, is_tw: bool) -> str:
     return f"{volume / 1e4:,.0f} 萬股"
 
 
-def stock_card_svg(stock: dict, mentions: list[dict], days: int = 90) -> str:
+def stock_card_svg(stock: dict, mentions: list[dict], days: int = 90,
+                   event: Optional[dict] = None) -> str:
     """One ticker's last ``days`` sessions as a square card.
 
     ``stock`` is a serialised CompanyDetail. ``mentions`` is one row per calendar day the
@@ -52,8 +54,10 @@ def stock_card_svg(stock: dict, mentions: list[dict], days: int = 90) -> str:
     against 40 heavily-discussed tickers over 120 days, mention volume correlates +0.11
     with the SAME day's return and -0.02 with the NEXT day's — a coin flip — so marking a
     peak invites the reader to infer a cause the data does not support. A peak is only
-    worth drawing next to a price once we can name the event behind it; the ``thesis``
-    text on each mention is where that would come from.
+    worth drawing next to a price once we can name the event behind it — which is what
+    ``event`` is: ``{"date": "YYYY-MM-DD", "label": "財經一路發 9/1"}``, ONE named
+    episode, drawn as a rule through the first session on or after that date. The
+    post-hoc Threads format supplies it together with the show's own thesis.
     """
     points = (stock.get("chartData") or [])[-days:]
     if not points:
@@ -152,6 +156,21 @@ def stock_card_svg(stock: dict, mentions: list[dict], days: int = 90) -> str:
         # it competing with a sentiment histogram that no longer exists.
         s.append(f'<rect x="{cxx-width/2:.1f}" y="{VY1-vh:.1f}" width="{width:.1f}" '
                  f'height="{vh:.1f}" fill="{c}" opacity="0.55"/>')
+
+    if event and event.get("date"):
+        hit = next((i for i, p in enumerate(points) if p["date"] >= event["date"]), None)
+        if hit is not None:
+            ex = x(hit)
+            s.append(f'<line x1="{ex:.1f}" x2="{ex:.1f}" y1="{PY0}" y2="{VY1}" '
+                     f'stroke="{AMBER}" stroke-width="2" stroke-dasharray="6 5"/>')
+            label = escape(str(event.get("label") or points[hit]["date"][5:]))
+            # Flip the label to the left of the rule when the event sits in the last
+            # quarter of the chart, or it runs off the card.
+            flip = ex > px0 + (px1 - px0) * 0.75
+            s.append(f'<text x="{ex + (-8 if flip else 8):.1f}" y="{PY0-10}" fill="{AMBER}" '
+                     f'font-size="20" font-weight="700" '
+                     f'text-anchor="{"end" if flip else "start"}">{label}</text>')
+            # y sits between the stat row (baseline 196) and the top gridline (PY0).
 
     s.append(f'<line x1="{px0}" x2="{px1}" y1="{last_y:.1f}" y2="{last_y:.1f}" '
              f'stroke="{colour}" stroke-dasharray="4 4"/>')
