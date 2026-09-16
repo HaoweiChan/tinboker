@@ -46,6 +46,27 @@ def test_record_fills_in_the_claimed_row(temp_db):
     assert rows[0]["child_ids"] == ["r1", "r2"]
 
 
+def test_record_stores_the_post_format(temp_db):
+    """The format is what the engagement report groups by; a row without one is 'unknown'."""
+    social_ledger.record("threads", "EP905", "m1", "https://tinboker.com/episode/EP905", fmt="episode_thread")
+    social_ledger.record("threads", "EP906", "m2", "https://tinboker.com/episode/EP906")
+    by_id = {r["episode_id"]: r["format"] for r in social_ledger.list_posted("threads")}
+    assert by_id == {"EP905": "episode_thread", "EP906": None}
+
+
+def test_list_posted_window_excludes_older_rows(temp_db):
+    social_ledger.record("threads", "EP907", "m1", "https://tinboker.com/episode/EP907")
+    assert [r["episode_id"] for r in social_ledger.list_posted("threads", days=1)] == ["EP907"]
+    # Nothing was posted more than a day before "now" on a fresh DB, so a zero-wide
+    # window past the row's timestamp must be empty.
+    from datetime import datetime as _dt
+    from src.database.models import SocialPostLedger
+    from src.database.postgres import session_scope
+    with session_scope() as db:
+        db.get(SocialPostLedger, ("threads", "EP907")).posted_at = _dt(2020, 1, 1)
+    assert social_ledger.list_posted("threads", days=1) == []
+
+
 def test_record_without_a_claim_still_writes(temp_db):
     """The admin publish path records directly; it must not need a prior claim."""
     social_ledger.record("facebook", "EP904", "post_1", "https://tinboker.com/episode/EP904")

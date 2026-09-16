@@ -38,8 +38,9 @@ def already_posted(episode_id: str) -> bool:
     return social_ledger.already_posted(PLATFORM, episode_id)
 
 
-def _record(episode_id: str, post_id: str, url: str, comment_ids: Optional[list[str]] = None) -> None:
-    social_ledger.record(PLATFORM, episode_id, post_id, url, comment_ids)
+def _record(episode_id: str, post_id: str, url: str, comment_ids: Optional[list[str]] = None,
+            fmt: str = "episode_single") -> None:
+    social_ledger.record(PLATFORM, episode_id, post_id, url, comment_ids, fmt=fmt)
 
 
 def list_posted(limit: int = 50) -> list[dict]:
@@ -138,7 +139,7 @@ async def publish_recent(
                 continue
             try:
                 res = await publish_thread(service, thread)
-                _record(episode_id, res["root_post_id"], thread["url"], res["comment_ids"])
+                _record(episode_id, res["root_post_id"], thread["url"], res["comment_ids"], fmt="episode_thread")
                 posted.append({"episode_id": episode_id, "url": thread["url"], "dry_run": False, **res})
                 logger.info("Posted FB album for %s (post=%s, %d comments)",
                             episode_id, res["root_post_id"], res["comment_count"])
@@ -213,7 +214,7 @@ async def publish_episode(episode, dry_run: bool = True) -> dict:
         except FacebookError as e:
             social_ledger.release(PLATFORM, episode_id)
             return {**base, "posted": False, "reason": f"publish_failed: {e}", "url": thread["url"]}
-        _record(episode_id, res["root_post_id"], thread["url"], res["comment_ids"])
+        _record(episode_id, res["root_post_id"], thread["url"], res["comment_ids"], fmt="episode_thread")
         logger.info("Posted FB album for %s (post=%s, %d comments)", episode_id, res["root_post_id"], res["comment_count"])
         return {**base, "posted": True, "url": thread["url"], **res}
 
