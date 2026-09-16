@@ -142,7 +142,10 @@ export const HomeFeed: React.FC = () => {
           <div className="float-in" style={{ animationDelay: '160ms' }}><RisingTable rows={attention?.rising ?? []} /></div>
         </div>
 
-        <h2 className="text-lg font-semibold tracking-[-0.02em] mt-6 mb-3.5">今天聽什麼</h2>
+        <h2 className="text-lg font-semibold tracking-[-0.02em] mt-6 mb-3.5 flex items-center gap-2">
+          <span aria-hidden className="inline-block w-[3px] h-[18px] rounded-sm bg-primary shrink-0" />
+          今天聽什麼
+        </h2>
         <FilterPills items={FILTERS} value={filter} onChange={setFilter} meta={loading ? null : <span>整理了 <span className="font-mono tabular-nums">{filtered.length}</span> 集</span>} />
 
         {loading ? (

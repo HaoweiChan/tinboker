@@ -68,6 +68,22 @@
     --sentiment-neutral: 215 12% 42%;
     --sentiment-neutral-soft: 210 20% 92%;
 
+    /* === Attention bars — one cool family, a different hue per kind of number, so
+       the three panels separate without looking like three products: blue-grey for
+       topic attention, a greyer violet-blue for ticker popularity, teal for momentum.
+       Cyan (--bar-signal) is never a whole bar: it is the tail a 升溫 row fades into,
+       matching its badge. Amber stays a UI accent (selected tab, logo). The gradient
+       is a few points of lightness — enough not to be a flat slab, not enough to look
+       like glowing plastic. === */
+    --bar-track: 214 20% 90%;
+    --bar-topic-from: 203 26% 40%;
+    --bar-topic-to: 203 26% 48%;
+    --bar-ticker-from: 218 19% 42%;
+    --bar-ticker-to: 218 19% 50%;
+    --bar-momentum-from: 188 72% 32%;
+    --bar-momentum-to: 188 72% 40%;
+    --bar-signal: 187 74% 44%;
+
     /* Legacy token aliases */
     --bg-base: hsl(var(--background));
     --bg-surface: hsl(var(--card));
@@ -132,6 +148,17 @@
     --sentiment-bear-soft: 0 55% 16%;
     --sentiment-neutral: 213 15% 60%;
     --sentiment-neutral-soft: 216 24% 14%;
+
+    /* Attention bars — see the light block. Track is barely above the card so an
+       empty bar is a groove, not a grey slab. */
+    --bar-track: 214 27% 12%;
+    --bar-topic-from: 203 24% 42%;
+    --bar-topic-to: 203 24% 50%;
+    --bar-ticker-from: 218 17% 44%;
+    --bar-ticker-to: 218 17% 52%;
+    --bar-momentum-from: 188 75% 36%;
+    --bar-momentum-to: 188 75% 44%;
+    --bar-signal: 187 75% 50%;
   }
 }
 

@@ -117,10 +117,12 @@ async def get_tags():
 async def get_trending_tags(
     weeks: int = Query(default=6, ge=2, le=12, description="Number of weeks for sparkline data"),
     preview_count: int = Query(default=3, ge=1, le=5, description="Episode previews per tag"),
+    include: Optional[str] = Query(default=None, max_length=2000, description="Comma-separated tag slugs to return even when they miss the board (e.g. a user's subscriptions)"),
 ):
     """Get trending tags with scoped counts, weekly sparkline data, and episode previews."""
     try:
-        tags = await podcast_service.get_trending_tags(weeks=weeks, preview_count=preview_count)
+        slugs = [t.strip() for t in (include or "").split(",") if t.strip()][:100]
+        tags = await podcast_service.get_trending_tags(weeks=weeks, preview_count=preview_count, include=slugs)
         return TrendingTagsResponse(tags=[TrendingTag(**t) for t in tags])
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching trending tags: {str(e)}")

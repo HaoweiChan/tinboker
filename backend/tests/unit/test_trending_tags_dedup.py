@@ -77,3 +77,17 @@ async def test_empty_result_is_not_cached():
 
     assert tags == []
     mock_set.assert_not_awaited()
+
+
+def test_include_returns_a_subscribed_tag_that_missed_the_board():
+    """收藏 showed '0 集' for a subscribed tag outside the top board (aichip had 379
+    episodes); the scored list is cached whole so the subscription can be answered."""
+    svc = PodcastService(firestore_service=MagicMock())
+    scored = [{"id": f"t{i}", "scoped_count": 100 - i} for i in range(PodcastService._TRENDING_MAX_TAGS + 2)]
+    scored.append({"id": "AIChip", "scoped_count": 1})  # below the floor and the cap
+    board = svc._board_with_includes(scored, None)
+    assert len(board) == PodcastService._TRENDING_MAX_TAGS and all(t["id"] != "AIChip" for t in board)
+
+    with_sub = svc._board_with_includes(scored, ["aichip", "t0", "nosuchtag"])
+    assert with_sub[: len(board)] == board  # the board itself is unchanged
+    assert [t["id"] for t in with_sub[len(board):]] == ["AIChip"]  # t0 not duplicated; unknown dropped

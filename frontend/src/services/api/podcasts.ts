@@ -370,9 +370,11 @@ export interface TrendingTagsResponse {
 export async function getTrendingTags(
   weeks: number = 6,
   previewCount: number = 3,
+  /** Slugs to return even when they miss the board — a user's subscribed tags. */
+  include: string[] = [],
 ): Promise<TrendingTagsResponse> {
   const response = await apiClient.get('/api/tags/trending', {
-    params: { weeks, preview_count: previewCount },
+    params: { weeks, preview_count: previewCount, ...(include.length ? { include: include.join(',') } : {}) },
   });
   const d = response.data ?? {};
   return { tags: Array.isArray(d.tags) ? d.tags : [] };

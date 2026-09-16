@@ -84,7 +84,9 @@ def _field(name: str) -> str:
 
 def _pg_text_array(values: List[Any]) -> str:
     """Postgres ``text[]`` literal, bound as a plain string + CAST (driver-agnostic)."""
-    return "{" + ",".join(json.dumps(str(v)) for v in values) + "}"
+    # ensure_ascii=False: a \uXXXX escape is not array syntax — Postgres reads it as
+    # a literal "u80a1", so "股癌" never matched (emptied the dev feed 2026-09-15).
+    return "{" + ",".join(json.dumps(str(v), ensure_ascii=False) for v in values) + "}"
 
 
 @contextmanager
@@ -396,6 +398,9 @@ class PostgresMirrorService:
             elif op == "in":
                 where.append(f"{col} = ANY(CAST(:{key} AS text[]))")
                 params[key] = _pg_text_array(list(value or []))
+            elif op == ">=" and name in _EPISODE_COLUMNS:  # typed column only; doc->> is text
+                where.append(f"{col} >= :{key}")
+                params[key] = value
             elif op == "array-contains":
                 where.append(f"jsonb_exists(doc -> '{name}', :{key})")
                 params[key] = str(value)
