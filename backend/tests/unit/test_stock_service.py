@@ -4,7 +4,7 @@ Unit tests for stock service
 import pytest
 from unittest.mock import Mock, patch, AsyncMock
 from src.services.stock import StockService
-from src.models.stock import CompanyDetail, ChartDataPoint
+from src.models.stock import ChartDataPoint
 
 
 def _mock_stock_data(ticker="TEST", name="Test Company", price=100.0):
@@ -136,3 +136,56 @@ class TestStockService:
         stock = await service.get_stock_info_async("MISSING")
 
         assert stock is None
+
+
+class TestStockInfoWithoutBars:
+    """A daily view with a price but no bars is a half-failed fetch. It must never be
+    cached, and a cached copy of that shape must not be served: NVDA's 1Y chart and share
+    card 404'd on prod 2026-09-17 because one was stored (with a 7-day stale twin)."""
+
+    @staticmethod
+    def _detail(bars: int) -> str:
+        import json
+        d = StockService(data_collection_service=_mock_dcs())._convert_stock_to_company_detail(
+            _mock_stock_data(ticker="NVDA"), include_images=False)
+        d.chartData = [
+            ChartDataPoint(timestamp=1789000000000 + i * 86400000, date=f"2026-09-{i + 1:02d}",
+                           price=200.0 + i, open=200.0, high=201.0 + i, low=199.0, close=200.0 + i, volume=1)
+            for i in range(bars)
+        ]
+        return json.dumps(d.dict(), default=str)
+
+    @pytest.mark.asyncio
+    async def test_priced_result_without_bars_is_returned_but_never_cached(self):
+        service = StockService(data_collection_service=_mock_dcs())  # history.day == []
+        with patch("src.services.stock.cache_get", new_callable=AsyncMock, return_value=None), \
+             patch("src.services.stock.cache_set", new_callable=AsyncMock) as cache_set:
+            stock = await service.get_stock_info_async("NVDA", timeframe="1Y")
+        assert stock is not None and stock.chartData == []
+        cache_set.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_cached_copy_without_bars_is_skipped_for_the_stale_copy_with_bars(self):
+        store = {
+            "stock:NVDA:info:1Y:daily:v3": self._detail(0),
+            "stock:NVDA:info:1Y:daily:v3:stale": self._detail(5),
+        }
+
+        async def get(key):
+            return store.get(key)
+
+        dcs = _mock_dcs()
+        service = StockService(data_collection_service=dcs)
+        with patch("src.services.stock.cache_get", side_effect=get), \
+             patch("src.services.stock.cache_set", new_callable=AsyncMock):
+            stock = await service.get_stock_info_async("NVDA", timeframe="1Y")
+        dcs.collect_stock_data.assert_called_once()  # the bar-less hit did not short-circuit
+        assert len(stock.chartData) == 5
+
+    @pytest.mark.asyncio
+    async def test_intraday_views_may_be_empty_and_still_cache(self):
+        service = StockService(data_collection_service=_mock_dcs())
+        with patch("src.services.stock.cache_get", new_callable=AsyncMock, return_value=None), \
+             patch("src.services.stock.cache_set", new_callable=AsyncMock) as cache_set:
+            await service.get_stock_info_async("NVDA", timeframe="1D")
+        cache_set.assert_awaited()
