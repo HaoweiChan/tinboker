@@ -1,7 +1,7 @@
 import React from 'react';
 import { usePlayerStore } from '@/store/usePlayerStore';
 import { SpotifyEmbed, type SpotifyEmbedRef } from '@/components/podcast/SpotifyEmbed';
-import { X, ChevronDown, ChevronUp, Play, Pause, Clock, RotateCcw, RotateCw, SkipForward } from 'lucide-react';
+import { X, ChevronDown, ChevronUp, Play, Pause, Clock, RotateCcw, RotateCw, SkipForward, ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export const GlobalPlayer: React.FC = () => {
@@ -16,10 +16,15 @@ export const GlobalPlayer: React.FC = () => {
         isBuffering: false
     });
     const [hoveredSection, setHoveredSection] = React.useState<number | null>(null);
+    // Last timestamp we were asked to jump to. A visitor not signed in to Spotify gets a
+    // short preview from the embed (duration ~60s), so a chapter past it can't be reached
+    // in-page; the player then offers the same moment in Spotify itself (?t=seconds).
+    const [seekTarget, setSeekTarget] = React.useState<number | null>(null);
 
     // Reset state when episode changes
     React.useEffect(() => {
         setIsEmbedReady(false);
+        setSeekTarget(null);
         setPlaybackState({ position: 0, duration: 0, isPaused: true, isBuffering: false });
     }, [player.currentEpisodeData?.id]);
 
@@ -36,7 +41,8 @@ export const GlobalPlayer: React.FC = () => {
     // Handle seek requests from store
     React.useEffect(() => {
         if (player.seekRequest !== null && spotifyEmbedRef.current) {
-            const seekTarget = player.seekRequest;
+            const target = player.seekRequest;
+            setSeekTarget(target);
 
             // Clear the request first to prevent duplicate processing
             clearSeekRequest();
@@ -44,7 +50,7 @@ export const GlobalPlayer: React.FC = () => {
             // Then execute the seek (with a tiny delay to ensure state is settled)
             setTimeout(() => {
                 if (spotifyEmbedRef.current) {
-                    spotifyEmbedRef.current.seekTo(seekTarget);
+                    spotifyEmbedRef.current.seekTo(target);
                 }
             }, 50);
         }
@@ -88,6 +94,7 @@ export const GlobalPlayer: React.FC = () => {
 
     // Handle section click to seek
     const handleSectionClick = (timestampSeconds: number) => {
+        setSeekTarget(timestampSeconds);
         if (spotifyEmbedRef.current) {
             spotifyEmbedRef.current.seekTo(timestampSeconds);
         }
@@ -101,6 +108,11 @@ export const GlobalPlayer: React.FC = () => {
     const progress = playbackState.duration > 0
         ? (playbackState.position / playbackState.duration) * 100
         : 0;
+
+    const spotifyEpisodeId = player.currentEpisodeData.spotifyUri?.split(':').pop();
+    const unreachableSeek = spotifyEpisodeId && seekTarget !== null && playbackState.duration > 0 && seekTarget > playbackState.duration
+        ? seekTarget
+        : null;
 
     const sections = player.currentEpisodeData.timestampedSections || [];
     // Only real chapters track "current"; skip chips never become the active section.
@@ -227,6 +239,20 @@ export const GlobalPlayer: React.FC = () => {
                                         )}
                                     </div>
                                     <div className="flex items-center gap-1 ml-4">
+                                        {unreachableSeek !== null && (
+                                            <a
+                                                href={`https://open.spotify.com/episode/${spotifyEpisodeId}?t=${unreachableSeek}`}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                onClick={(e) => e.stopPropagation()}
+                                                className="mr-1 inline-flex shrink-0 items-center gap-1.5 px-3 py-1.5 rounded-full bg-foreground text-background text-xs font-semibold shadow hover:opacity-90 transition-opacity animate-in fade-in slide-in-from-right duration-200"
+                                                title="此處只能試聽，登入 Spotify 可在頁面內收聽完整集數"
+                                            >
+                                                <span className="sm:hidden">Spotify {formatTime(unreachableSeek)}</span>
+                                                <span className="hidden sm:inline">在 Spotify 從 {formatTime(unreachableSeek)} 收聽</span>
+                                                <ExternalLink size={12} />
+                                            </a>
+                                        )}
                                         {activeSkippableSection && (
                                             <button
                                                 onClick={() => handleSectionClick(activeSkippableSection.endSeconds || activeSkippableSection.timestampSeconds)}

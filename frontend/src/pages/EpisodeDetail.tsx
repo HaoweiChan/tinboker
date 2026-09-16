@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useSearchParams, Link, useNavigate } from 'react-router-dom';
-import { ChevronLeft, ExternalLink, Bookmark, Share2, Check } from 'lucide-react';
+import { ChevronLeft, Play, ExternalLink, Bookmark, Share2, Check } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
 import { PodcastAvatar } from '@/components/common/PodcastAvatar';
 import { PageContent } from '@/components/layout/PageContent';
@@ -110,7 +110,7 @@ export const EpisodeDetail: React.FC = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const podcastName = searchParams.get('podcast') || '';
-  const { requestSeek } = usePlayerStore();
+  const { playEpisode, requestSeek } = usePlayerStore();
   const { toggleEpisodeBookmark } = useAppStore();
   const { guard } = useRequireAuth();
   const episodeBookmarks = useEpisodeBookmarks();
@@ -293,6 +293,29 @@ export const EpisodeDetail: React.FC = () => {
   const bookmarkKey = episode ? `${episode.podcast_name}_${episode.id}` : '';
   const isBookmarked = episodeBookmarks.includes(bookmarkKey);
 
+  // Playback is Spotify's own embed player (GlobalPlayer → SpotifyEmbed), never audio
+  // served from our domain — that re-hosting is what #570/#588 removed for AdSense.
+  // Without a player the summary's timestamps had nothing to seek, so a timestamp click
+  // starts this episode in the embed at that point, or seeks it if already loaded.
+  const playFrom = (seconds?: number) => {
+    if (!episode || !spotifyUri) return;
+    if (seconds !== undefined && usePlayerStore.getState().player.currentEpisodeId === episode.id) {
+      requestSeek(seconds);
+      return;
+    }
+    playEpisode(
+      {
+        id: episode.id,
+        title,
+        showName: name,
+        coverUrl: episode.spotify_images?.[0] || undefined,
+        spotifyUri,
+        timestampedSections: playerSections,
+      },
+      seconds !== undefined ? { seekTo: seconds } : undefined,
+    );
+  };
+
   const [shareCopied, setShareCopied] = useState(false);
 
   const onBookmark = () => {
@@ -377,12 +400,13 @@ export const EpisodeDetail: React.FC = () => {
                   </div>
                 </div>
                 <div className="flex w-full items-center gap-2 overflow-x-auto pb-1 sm:w-auto sm:shrink-0 sm:overflow-visible sm:pb-0">
-                  {/* No in-house player at all. The episode audio is the podcaster's,
-                      re-hosted on our own domain, and serving it with ads around it is
-                      what AdSense flagged as replicated content — that holds whether or
-                      not we have a source link to offer instead. Where a spotify_url
-                      exists the Spotify button below is the way to listen; where it does
-                      not, the page offers the summary and no playback. */}
+                  {/* Spotify embed only — no audio from our own domain (AdSense
+                      replicated content, #588). No Spotify URI, no playback. */}
+                  {spotifyUri && (
+                    <button type="button" onClick={() => playFrom()} className="inline-flex shrink-0 items-center gap-1.5 px-4 py-2 rounded-full bg-foreground text-background text-sm font-medium hover:opacity-90 transition-opacity">
+                      <Play size={14} className="fill-current" /> 播放本集
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={onBookmark}
@@ -403,10 +427,8 @@ export const EpisodeDetail: React.FC = () => {
                     {shareCopied ? '已複製' : '分享'}
                   </button>
                   {episode.spotify_url && (
-                    /* Primary styling: with the player gone this is the listen action,
-                       not a secondary link. */
-                    <a href={episode.spotify_url} target="_blank" rel="noopener noreferrer" className="inline-flex shrink-0 items-center gap-1.5 px-4 py-2 rounded-full bg-foreground text-background text-sm font-medium hover:opacity-90 transition-opacity">
-                      <ExternalLink size={13} /> 在 Spotify 收聽
+                    <a href={episode.spotify_url} target="_blank" rel="noopener noreferrer" className="inline-flex shrink-0 items-center gap-1.5 px-3.5 py-2 rounded-full bg-card border border-border text-sm font-medium hover:bg-muted transition-colors">
+                      <ExternalLink size={13} /> Spotify
                     </a>
                   )}
                 </div>
@@ -449,7 +471,7 @@ export const EpisodeDetail: React.FC = () => {
             {(episode.modified_summary_content || episode.summary_content) && (
               <section className="mb-3.5 sm:bg-card sm:border sm:border-border sm:rounded-md sm:p-6">
                 <h3 className="text-base font-semibold text-muted-foreground mb-3.5">摘要</h3>
-                <SummaryMarkdown content={episode.modified_summary_content || episode.summary_content || ''} onSeek={requestSeek} />
+                <SummaryMarkdown content={episode.modified_summary_content || episode.summary_content || ''} onSeek={spotifyUri ? playFrom : undefined} />
               </section>
             )}
 

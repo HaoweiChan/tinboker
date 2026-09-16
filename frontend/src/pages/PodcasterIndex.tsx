@@ -5,6 +5,7 @@ import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
 import { Segmented, PodAvatar } from '@/components/redesign';
 import { getSortedPodcasts, type Podcast } from '@/services/api/podcasts';
+import { useEpisodeWindowDays, episodeCountWords } from '@/hooks/useEpisodeWindow';
 import { fetchWithFallback } from '@/services/api/migration';
 
 type Sort = 'popularity' | 'episodes' | 'recent';
@@ -44,6 +45,7 @@ export const PodcasterIndex: React.FC = () => {
   }, [podcasts, q, sort]);
 
   const totalEpisodes = podcasts.reduce((s, p) => s + (p.episode_count || 0), 0);
+  const countWords = episodeCountWords(useEpisodeWindowDays());
 
   return (
     <>
@@ -53,7 +55,7 @@ export const PodcasterIndex: React.FC = () => {
           <h1 className="text-2xl font-semibold tracking-[-0.02em]">所有節目</h1>
           {!loading && (
             <div className="text-xs text-muted-foreground font-mono tabular-nums">
-              {podcasts.length} 個節目 · {totalEpisodes.toLocaleString('en-US')} 集已分析
+              {podcasts.length} 個節目 · {countWords.before}{totalEpisodes.toLocaleString('en-US')} {countWords.after}
             </div>
           )}
         </div>
@@ -82,7 +84,7 @@ export const PodcasterIndex: React.FC = () => {
                 <PodAvatar src={p.image_url} name={p.name} size={48} className="w-12 h-12 rounded-[10px] object-cover shrink-0" />
                 <div className="min-w-0 flex-1">
                   <div className="text-lg font-semibold tracking-[-0.01em] truncate">{p.name}</div>
-                  <div className="text-2xs text-muted-foreground font-mono tabular-nums mt-1">{(p.episode_count || 0).toLocaleString('en-US')} 集已分析</div>
+                  <div className="text-2xs text-muted-foreground font-mono tabular-nums mt-1">{countWords.before}{(p.episode_count || 0).toLocaleString('en-US')} {countWords.after}</div>
                 </div>
                 {p.popularity_rank != null && (
                   <div

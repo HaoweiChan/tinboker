@@ -7,7 +7,7 @@ import asyncio
 import logging
 import time
 from typing import Optional, List, Collection
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 
 from src.config import settings
@@ -23,7 +23,7 @@ from src.tag_registry import (
     trending_slugs,
 )
 from src.database.postgres import get_session
-from src.cache.redis_client import cache_get, cache_set, cache_delete, cache_delete_pattern
+from src.cache.redis_client import cache_get, cache_set, cache_delete, cache_delete_pattern, cache_swr
 from src.cache.cache_config import CACHE_TTL
 from src.cache.cdn_cache import purge_cdn_cache
 
@@ -859,26 +859,31 @@ class PodcastService:
         allowed = await self._allowed_podcast_names()
         cutoff = self._recency_cutoff_ms()
         scoping_active = allowed is not None or cutoff is not None
-        cache_key = f"episodes:recent:{podcast_name or 'all'}:{limit}:{offset}:{enrich_content}:{self._scope_tag()}"
-        cached = await cache_get(cache_key)
-        if cached:
-            try:
-                return [Episode(**i) for i in json.loads(cached)]
-            except Exception:
-                pass
+        # v2: SWR envelope. Still under "episodes:recent:" so the ingest-side
+        # cache_delete_pattern("episodes:recent:*") keeps invalidating it.
+        cache_key = f"episodes:recent:v2:{podcast_name or 'all'}:{limit}:{offset}:{enrich_content}:{self._scope_tag()}"
 
-        try:
-            filters = [("podcast_name", "==", podcast_name)] if podcast_name else None
+        async def compute() -> list:
+            filters = [("podcast_name", "==", podcast_name)] if podcast_name else []
+            # Push the release scope into SQL. Without it every cache miss pulled the
+            # whole mirror (6,834 docs after the 2020 backfill) through Pydantic on the
+            # event loop to keep ~300: 9-13s cold, and /health stalled meanwhile.
+            # created_time is ingestion time, never earlier than release (checked on all
+            # 294 in-scope prod episodes 2026-09-15), so it is a safe prefilter;
+            # _scope_episodes below still applies the exact release-time cut.
+            if allowed is not None and not podcast_name:
+                filters.append(("podcast_name", "in", sorted(allowed)))
+            if cutoff is not None:
+                filters.append(("created_time", ">=", datetime.fromtimestamp(cutoff / 1000 - 2 * 86400, tz=timezone.utc)))
             order_by = "created_time" if not podcast_name else None
             direction = "DESCENDING" if not podcast_name else None
-            # When scoping is active we must fetch the full sorted set, not just the
-            # newest `limit`, or a window dominated by out-of-scope shows could
-            # filter down to fewer than `limit` in-scope episodes.
+            # Scoped reads still fetch the full in-scope set, not just the newest
+            # `limit`: the feed sorts by release time, which SQL can't order by.
             query_limit = None if (podcast_name or scoping_active) else limit
 
             episodes_dict = await asyncio.to_thread(
                 self.firestore_service.query_collection,
-                collection="episodes", filters=filters,
+                collection="episodes", filters=filters or None,
                 order_by=order_by, direction=direction, limit=query_limit,
             )
             episodes = await asyncio.gather(
@@ -891,13 +896,13 @@ class PodcastService:
             # podcaster's ingestion batch together.
             episodes = sorted(episodes, key=self._episode_release_ms, reverse=True)
             paginated = list(episodes)[offset:offset + limit]
-            try:
-                await cache_set(cache_key, json.dumps([e.dict() for e in paginated], default=str), CACHE_TTL["podcast_episodes"])
-            except Exception:
-                pass
-            return paginated
+            return [e.dict() for e in paginated]
+
+        try:
+            rows = await cache_swr(cache_key, compute, CACHE_TTL["podcast_episodes"], stale=3000)
         except Exception as e:
             raise Exception(f"Failed to get recent episodes: {e}") from e
+        return [Episode(**i) for i in rows]
 
     async def get_episodes_by_ticker(
         self, ticker: str, limit: int = 50, offset: int = 0,
@@ -2476,6 +2481,7 @@ class PodcastService:
 
     async def get_trending_tags(
         self, weeks: int = 6, preview_count: int = 3, force_refresh: bool = False,
+        include: Optional[Collection[str]] = None,
     ) -> List[dict]:
         """Auto-surfaced trending tags with scoped counts, weekly sparklines, and previews.
 
@@ -2485,13 +2491,17 @@ class PodcastService:
         expiry. force_refresh skips the cache read (used by that loop so the heavier
         all-tags scan stays off the request path). Episode docs are fetched ONCE across
         all tags — the same episode sits under many tag subcollections, and per-tag
-        re-fetching multiplied Firestore reads and egress ~10x (July 2026 bill)."""
-        cache_key = f"tags:trending:v1:{weeks}:{preview_count}:{self._scope_tag()}"
+        re-fetching multiplied Firestore reads and egress ~10x (July 2026 bill).
+
+        ``include`` slugs are appended when they have in-scope episodes but missed the
+        board cut, so a user's subscribed tag gets its real count instead of none. The
+        cache therefore holds every scored tag, not just the board (v2)."""
+        cache_key = f"tags:trending:v2:{weeks}:{preview_count}:{self._scope_tag()}"
         if not force_refresh:
             cached = await cache_get(cache_key)
             if cached:
                 try:
-                    return json.loads(cached)
+                    return self._board_with_includes(json.loads(cached), include)
                 except Exception:
                     pass
         allowed = await self._allowed_podcast_names()
@@ -2579,22 +2589,27 @@ class PodcastService:
                 return None
 
         results = [_process_tag(t, refs) for t, refs in zip(candidates, refs_per_tag)]
-        # Auto-surface by volume: keep tags above the recent-episode floor, rank by
-        # scoped count, and cap to the board size. (Sub-floor / zero-count tags drop.)
-        tags = sorted(
-            [r for r in results if r and r["scoped_count"] >= self._TRENDING_MIN_EPISODES],
-            key=lambda x: x["scoped_count"],
-            reverse=True,
-        )[: self._TRENDING_MAX_TAGS]
+        scored = sorted([r for r in results if r], key=lambda x: x["scoped_count"], reverse=True)
         # Don't cache empty: [] here usually means a transient failure upstream
         # (allowlist fails closed / Firestore blip), and pinning it for the long
         # TTL would blank the board for hours instead of retrying next call.
-        if tags:
+        if scored:
             try:
-                await cache_set(cache_key, json.dumps(tags), self._TOPIC_BOARD_CACHE_TTL)
+                await cache_set(cache_key, json.dumps(scored), self._TOPIC_BOARD_CACHE_TTL)
             except Exception:
                 pass
-        return tags
+        return self._board_with_includes(scored, include)
+
+    def _board_with_includes(self, scored: List[dict], include: Optional[Collection[str]]) -> List[dict]:
+        """The board from every scored tag (count-desc): above the recent-episode floor,
+        capped to the board size. Then any ``include`` slug that has a score but missed
+        the cut, in score order."""
+        board = [r for r in scored if r["scoped_count"] >= self._TRENDING_MIN_EPISODES][: self._TRENDING_MAX_TAGS]
+        if not include:
+            return board
+        on_board = {normalize_tag_slug(r["id"]) for r in board}
+        wanted = {normalize_tag_slug(s) for s in include} - on_board
+        return board + [r for r in scored if normalize_tag_slug(r["id"]) in wanted]
 
     # ── Search ───────────────────────────────────────────────────────
 

@@ -91,3 +91,25 @@ def test_a_table_renders_as_a_bullet_list_in_both_editors():
 
 def test_a_lone_pipe_line_is_still_a_paragraph():
     assert [b.kind for b in parse_blocks("| not a table |")] == ["paragraph"]
+
+
+def test_bare_urls_link_to_themselves_and_images_become_links():
+    spans = parse_blocks("- 南亞科 (2408)：https://tinboker.com/stock/2408，見 ![卡](https://x.test/c.png)")[0].items[0]
+    assert [(s.text, s.href) for s in spans if s.href] == [
+        ("https://tinboker.com/stock/2408", "https://tinboker.com/stock/2408"), ("卡", "https://x.test/c.png")]
+    assert "!" not in "".join(s.text for s in spans)
+
+
+def test_lexical_uses_vocus_native_node_types():
+    """The vocus app (not vocus.cc) shows 「目前尚不支援此元件」 for stock Lexical `heading`
+    and `listitem` nodes — four auto-published 每日一集 articles rendered as a column of
+    placeholders on 2026-09-16. Articles saved from vocus's own editor use these types."""
+    kids = markdown_to_lexical("## 標題\n\n- 甲\n- 乙\n")["root"]["children"]
+    assert kids[0]["type"] == "vocus-heading"
+    assert [li["type"] for li in kids[1]["children"]] == ["custom-listitem", "custom-listitem"]
+    types, stack = set(), list(kids)
+    while stack:
+        n = stack.pop()
+        types.add(n["type"])
+        stack.extend(n.get("children") or [])
+    assert not types & {"heading", "listitem"}

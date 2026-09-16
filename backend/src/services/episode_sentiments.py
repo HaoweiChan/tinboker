@@ -106,17 +106,22 @@ class EpisodeSentimentService:
         return result
 
     async def _resolve_urls(self, ids: list[str]) -> dict:
-        """Map episode_id -> ticker_insights_public_url via the recent window."""
-        from src.services.podcast import PodcastService
+        """Map episode_id -> ticker_insights_public_url for exactly these ids.
+
+        Reads the ids' own docs. It used to load the whole recent window
+        (get_recent_episodes(limit=200)) to find a handful of URLs, a second cold
+        feed build that made this the slowest call on the home page (12s).
+        """
+        from src.services.postgres_mirror_service import content_read_service
 
         try:
-            episodes = await PodcastService().get_recent_episodes(limit=200, enrich_content=False)
+            docs = await asyncio.to_thread(content_read_service().get_documents_batch, "episodes", ids)
         except Exception as e:
             logger.warning("sentiment url resolution failed: %s", e)
             return {}
-        wanted = set(ids)
-        return {
-            ep.id: ep.ticker_insights_public_url
-            for ep in episodes
-            if ep.id in wanted and ep.ticker_insights_public_url
-        }
+        out = {}
+        for d in docs:
+            url = d.get("ticker_insights_public_url") or d.get("ticker_recommendations_public_url")
+            if d.get("id") and url:
+                out[d["id"]] = url
+        return out

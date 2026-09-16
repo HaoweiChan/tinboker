@@ -10,10 +10,11 @@ table. Daily-batch only by design (TKB-001: no real-time tracking).
 import asyncio
 import json
 import logging
+import math
 from datetime import datetime, timedelta
 from typing import Any, List, Optional
 
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, or_, text
 from sqlalchemy.orm import Session
 
 from src.database.postgres import get_session
@@ -44,6 +45,17 @@ LLM_TICKER_CONFIDENCE = 0.9
 
 # Equal-weight sector returns are averaged over at most this many members.
 MAX_SECTOR_MEMBERS = 10
+
+# stock_daily_ohlc holds UNADJUSTED closes. A one-day close ratio outside this band
+# can't be a TW move (±10% limit) — it's a split, capital change or bad tick (6669
+# went 7800 -> 2610 on its 2026-09-02 3-for-1), so windows across it are NULLed.
+# ponytail: no index cross-check (TW's limit makes one moot) and no split-factor
+# back-adjustment (several breaks are one-day glitches that reverse); a real >60%
+# US move is dropped too. Back-adjust from TWSE/TPEx reference prices if that bites.
+PRICE_BREAK_BAND = (0.6, 1.6)
+
+# 60 trading days fit in ~92 calendar days even across Lunar New Year.
+PRICE_BREAK_REACH_DAYS = 100
 
 
 def _canonical_ticker(raw: str) -> str:
@@ -260,7 +272,12 @@ def _closes_from(db: Session, ticker: str, since: str) -> List[tuple]:
         .all()
     ):
         merged[row[0]] = row[1]
-    return sorted(merged.items())
+    # yfinance bars carry NaN closes; a NaN is a missing day, not a price.
+    return sorted((d, c) for d, c in merged.items() if c is not None and math.isfinite(c))
+
+
+def _is_price_break(prev: float, cur: float) -> bool:
+    return prev > 0 and cur > 0 and not (PRICE_BREAK_BAND[0] <= cur / prev <= PRICE_BREAK_BAND[1])
 
 
 def compute_trading_day_returns(db: Session, ticker: str, mention_date: str) -> dict:
@@ -270,25 +287,33 @@ def compute_trading_day_returns(db: Session, ticker: str, mention_date: str) -> 
     stretches). rN = Nth stored trading date strictly after the baseline date.
     Windows without data yet stay None.
     """
-    out: dict[str, Optional[float]] = {"baseline_close": None}
+    out: dict[str, Any] = {"baseline_close": None, "price_break_date": None}
     for n in TRADING_WINDOWS:
         out[f"r{n}d"] = None
     window_start = (
         datetime.strptime(mention_date, "%Y-%m-%d") - timedelta(days=7)
     ).strftime("%Y-%m-%d")
     baseline: Optional[float] = None
-    following: List[float] = []
+    following: List[tuple] = []
     for date, close in _closes_from(db, ticker, window_start):
         if date <= mention_date:
             baseline = close
         else:
-            following.append(close)
+            following.append((date, close))
     if not baseline or baseline <= 0:
         return out
     out["baseline_close"] = baseline
+    # Windows that reach the first break would compare pre- and post-split prices.
+    break_at = len(following)
+    prev = baseline
+    for i, (date, close) in enumerate(following):
+        if _is_price_break(prev, close):
+            break_at, out["price_break_date"] = i, date
+            break
+        prev = close
     for n in TRADING_WINDOWS:
-        if len(following) >= n and following[n - 1]:
-            out[f"r{n}d"] = round((following[n - 1] - baseline) / baseline * 100, 2)
+        if n <= break_at and len(following) >= n and following[n - 1][1]:
+            out[f"r{n}d"] = round((following[n - 1][1] - baseline) / baseline * 100, 2)
     return out
 
 
@@ -324,27 +349,30 @@ def compute_ticker_snapshots(db: Session, limit: int = 5000) -> int:
     mentions = _mentions_needing_snapshot(
         db, "ticker", TickerPerformanceSnapshot, TickerPerformanceSnapshot.baseline_close, limit,
     )
-    updated = 0
     for mention in mentions:
-        snap = (
-            db.query(TickerPerformanceSnapshot)
-            .filter(TickerPerformanceSnapshot.mention_id == mention.id)
-            .first()
-        )
-        mention_date = market_date(mention.mentioned_at, mention.market or infer_market(mention.ticker))
-        returns = compute_trading_day_returns(db, mention.ticker, mention_date)
-        if snap is None:
-            snap = TickerPerformanceSnapshot(mention_id=mention.id, ticker=mention.ticker)
-            db.add(snap)
-        snap.mention_date = mention_date
-        snap.baseline_close = returns["baseline_close"]
-        for n in TRADING_WINDOWS:
-            setattr(snap, f"r{n}d", returns[f"r{n}d"])
-        snap.computed_at = datetime.utcnow()
-        updated += 1
-    if updated:
+        _score_ticker_mention(db, mention)
+    if mentions:
         db.commit()
-    return updated
+    return len(mentions)
+
+
+def _score_ticker_mention(db: Session, mention: ContentMention) -> None:
+    snap = (
+        db.query(TickerPerformanceSnapshot)
+        .filter(TickerPerformanceSnapshot.mention_id == mention.id)
+        .first()
+    )
+    mention_date = market_date(mention.mentioned_at, mention.market or infer_market(mention.ticker))
+    returns = compute_trading_day_returns(db, mention.ticker, mention_date)
+    if snap is None:
+        snap = TickerPerformanceSnapshot(mention_id=mention.id, ticker=mention.ticker)
+        db.add(snap)
+    snap.mention_date = mention_date
+    snap.baseline_close = returns["baseline_close"]
+    snap.price_break_date = returns["price_break_date"]
+    for n in TRADING_WINDOWS:
+        setattr(snap, f"r{n}d", returns[f"r{n}d"])
+    snap.computed_at = datetime.utcnow()
 
 
 def compute_sector_snapshots(db: Session, limit: int = 5000) -> int:
@@ -352,33 +380,106 @@ def compute_sector_snapshots(db: Session, limit: int = 5000) -> int:
     mentions = _mentions_needing_snapshot(
         db, "sector", SectorPerformanceSnapshot, SectorPerformanceSnapshot.member_count, limit,
     )
-    updated = 0
     for mention in mentions:
-        snap = (
-            db.query(SectorPerformanceSnapshot)
-            .filter(SectorPerformanceSnapshot.mention_id == mention.id)
-            .first()
-        )
-        members = ((mention.payload or {}).get("members") or [])[:MAX_SECTOR_MEMBERS]
-        member_returns = [
-            compute_trading_day_returns(db, m, market_date(mention.mentioned_at, infer_market(m)))
-            for m in members
-        ]
-        member_returns = [r for r in member_returns if r["baseline_close"] is not None]
-        if snap is None:
-            snap = SectorPerformanceSnapshot(mention_id=mention.id, exposure_id=mention.exposure_id)
-            db.add(snap)
-        # ponytail: sector taxonomy is ic.tpex (Taiwan-only), so the row date is Taipei's.
-        snap.mention_date = market_date(mention.mentioned_at, "TW")
-        snap.member_count = len(member_returns)
-        for n in TRADING_WINDOWS:
-            vals = [r[f"r{n}d"] for r in member_returns if r[f"r{n}d"] is not None]
-            setattr(snap, f"r{n}d", round(sum(vals) / len(vals), 2) if vals else None)
-        snap.computed_at = datetime.utcnow()
-        updated += 1
-    if updated:
+        _score_sector_mention(db, mention)
+    if mentions:
         db.commit()
-    return updated
+    return len(mentions)
+
+
+def _sector_members(mention: ContentMention) -> List[str]:
+    return ((mention.payload or {}).get("members") or [])[:MAX_SECTOR_MEMBERS]
+
+
+def _score_sector_mention(db: Session, mention: ContentMention) -> None:
+    snap = (
+        db.query(SectorPerformanceSnapshot)
+        .filter(SectorPerformanceSnapshot.mention_id == mention.id)
+        .first()
+    )
+    member_returns = [
+        compute_trading_day_returns(db, m, market_date(mention.mentioned_at, infer_market(m)))
+        for m in _sector_members(mention)
+    ]
+    member_returns = [r for r in member_returns if r["baseline_close"] is not None]
+    if snap is None:
+        snap = SectorPerformanceSnapshot(mention_id=mention.id, exposure_id=mention.exposure_id)
+        db.add(snap)
+    # ponytail: sector taxonomy is ic.tpex (Taiwan-only), so the row date is Taipei's.
+    snap.mention_date = market_date(mention.mentioned_at, "TW")
+    snap.member_count = len(member_returns)
+    # A member whose window crosses a break drops out of that window's average.
+    snap.price_break_date = min(
+        (r["price_break_date"] for r in member_returns if r["price_break_date"]), default=None,
+    )
+    for n in TRADING_WINDOWS:
+        vals = [r[f"r{n}d"] for r in member_returns if r[f"r{n}d"] is not None]
+        setattr(snap, f"r{n}d", round(sum(vals) / len(vals), 2) if vals else None)
+    snap.computed_at = datetime.utcnow()
+
+
+# ---------------------------------------------------------------------------
+# Re-score snapshots scored across a price break before breaks were detected
+# ---------------------------------------------------------------------------
+
+def detect_price_breaks(db: Session, since: str) -> List[tuple]:
+    """(ticker, date) of every out-of-band one-day close ratio in the whole-market
+    stock_daily_ohlc table from ``since`` on."""
+    rows = db.execute(text(
+        "SELECT ticker, date, prev, close FROM ("
+        "  SELECT ticker, date, close,"
+        "         LAG(close) OVER (PARTITION BY ticker ORDER BY date) AS prev"
+        "  FROM stock_daily_ohlc WHERE date >= :since) t "
+        "WHERE prev > 0 AND close > 0 AND (close / prev < :lo OR close / prev > :hi) "
+        "ORDER BY date, ticker"
+    ), {"since": since, "lo": PRICE_BREAK_BAND[0], "hi": PRICE_BREAK_BAND[1]}).all()
+    # Postgres sorts NaN above every number, so NaN closes slip through the SQL filter.
+    return [(t, d) for t, d, p, c in rows if math.isfinite(p) and math.isfinite(c)]
+
+
+def rescore_price_break_snapshots(db: Session) -> dict:
+    """Re-score snapshots whose mention sits within 60 trading days before a detected
+    break and that were scored without seeing it (``price_break_date`` NULL). Scoring
+    stamps the break date, so each row is re-scored once. Young incomplete rows are
+    re-scored by the normal pass anyway; this reaches the completed history.
+
+    ponytail: a candidate whose break lies past its 60th close still gets the date
+    stamped (the scan runs to today), so nothing loops; a break visible only in
+    stock_daily_ohlc but overridden by stock_daily_closes re-scores each cycle."""
+    since = (datetime.utcnow() - timedelta(days=SYNC_LOOKBACK_DAYS)).strftime("%Y-%m-%d")
+    tickers, sectors = 0, 0
+    for ticker, break_date in detect_price_breaks(db, since):
+        lo = (
+            datetime.strptime(break_date, "%Y-%m-%d") - timedelta(days=PRICE_BREAK_REACH_DAYS)
+        ).strftime("%Y-%m-%d")
+        ticker_rows = (
+            db.query(ContentMention)
+            .join(TickerPerformanceSnapshot, TickerPerformanceSnapshot.mention_id == ContentMention.id)
+            .filter(TickerPerformanceSnapshot.ticker == ticker,
+                    TickerPerformanceSnapshot.price_break_date.is_(None),
+                    TickerPerformanceSnapshot.mention_date >= lo,
+                    TickerPerformanceSnapshot.mention_date < break_date)
+            .all()
+        )
+        for mention in ticker_rows:
+            _score_ticker_mention(db, mention)
+        # Members live in the mention payload, so the membership filter runs here.
+        sector_rows = [
+            m for m in (
+                db.query(ContentMention)
+                .join(SectorPerformanceSnapshot, SectorPerformanceSnapshot.mention_id == ContentMention.id)
+                .filter(SectorPerformanceSnapshot.price_break_date.is_(None),
+                        SectorPerformanceSnapshot.mention_date >= lo,
+                        SectorPerformanceSnapshot.mention_date < break_date)
+                .all()
+            ) if ticker in _sector_members(m)
+        ]
+        for mention in sector_rows:
+            _score_sector_mention(db, mention)
+        db.commit()
+        tickers += len(ticker_rows)
+        sectors += len(sector_rows)
+    return {"price_break_ticker_rescored": tickers, "price_break_sector_rescored": sectors}
 
 
 # ---------------------------------------------------------------------------
@@ -418,6 +519,11 @@ def run_sync_cycle() -> dict:
             stats["sector_snapshots"] = compute_sector_snapshots(session)
         except Exception as e:
             logger.warning("mention sync: sector snapshot pass failed: %s", e)
+            session.rollback()
+        try:
+            stats.update(rescore_price_break_snapshots(session))
+        except Exception as e:
+            logger.warning("mention sync: price-break rescore pass failed: %s", e)
             session.rollback()
         break
     return stats

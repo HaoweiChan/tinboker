@@ -66,7 +66,7 @@ async def publish_paid_weekly(
     result = await _syndicate_once("vocus", key, lambda: vocus_publisher.publish_markdown(
         key, issue["title"], issue["markdown"],
         canonical_url=f"{settings.site_url.rstrip('/')}/weekly/{week}",
-        abstract=issue["excerpt"], tags=VOCUS_TAGS,
-        as_draft=as_draft, dry_run=dry_run, paid=True,
+        abstract=issue["excerpt"], tags=VOCUS_TAGS, thumbnail_url=issue["thumbnail_url"],
+        as_draft=as_draft, dry_run=dry_run, paid=True, room="weekly",
     ), dry_run)
     return {**result, "week": week, "stats": issue["stats"]}

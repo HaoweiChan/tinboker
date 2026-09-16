@@ -8,6 +8,12 @@ on:
     paths: ['frontend/**']
   workflow_dispatch:
 
+# Serialize runs per ref so an older build can't finish last and become the branch's
+# live Pages deployment. GitHub keeps only the newest pending run per group.
+concurrency:
+  group: frontend-deploy-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest

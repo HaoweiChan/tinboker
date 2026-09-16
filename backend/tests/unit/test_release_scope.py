@@ -158,3 +158,13 @@ def test_scope_tag_reflects_config(monkeypatch):
     monkeypatch.setattr(settings, "release_podcast_languages", [])
     monkeypatch.setattr(settings, "release_episode_max_age_days", 30)
     assert PodcastService._scope_tag() == "all:30"
+
+
+async def test_scope_endpoint_reports_the_episode_window(monkeypatch):
+    """Counts are window-scoped; the UI labels them 「近 N 天」 from this."""
+    from src.routers import podcast as router
+
+    monkeypatch.setattr(settings, "release_episode_max_age_days", 60)
+    assert await router.get_release_scope() == {"episode_window_days": 60}
+    monkeypatch.setattr(settings, "release_episode_max_age_days", 0)
+    assert await router.get_release_scope() == {"episode_window_days": 0}

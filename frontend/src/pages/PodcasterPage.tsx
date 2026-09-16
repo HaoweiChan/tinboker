@@ -17,6 +17,7 @@ import { useStockPriceMap } from '@/hooks/useStockPriceMap';
 import { useStockPriceSinceMap } from '@/hooks/useStockPriceSinceMap';
 import { useTickerWindowReturns, windowReturnsKey } from '@/hooks/useTickerWindowReturns';
 import { useTranslationMap } from '@/hooks/useTranslationMap';
+import { useEpisodeWindowDays, episodeCountWords } from '@/hooks/useEpisodeWindow';
 import { useAppStore, useSubscriptions } from '@/store/useAppStore';
 import { usePlayerStore } from '@/store/usePlayerStore';
 import type { TickerInsight } from '@/services/types';
@@ -90,6 +91,7 @@ export const PodcasterPage: React.FC = () => {
   }, [name]);
 
   const episodeCount = podcast?.episode_count ?? episodes.length;
+  const countWords = episodeCountWords(useEpisodeWindowDays());
   const imageUrl = podcast?.image_url || undefined;
   const podcastImageMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -140,7 +142,7 @@ export const PodcasterPage: React.FC = () => {
           <PodAvatar src={imageUrl} name={name} kind="solid" size={56} className="w-14 h-14 rounded-md object-cover shrink-0" />
           <div className="min-w-0 flex-1">
             <h1 className="text-2xl font-semibold tracking-[-0.02em] truncate">{name}</h1>
-            <div className="text-sm text-muted-foreground mt-0.5"><strong className="font-mono text-foreground mr-1 tabular-nums">{loading ? '…' : <CountUp value={episodeCount} />}</strong>集已分析 · 由 TinBoker 結構化分析關鍵重點與提及的個股</div>
+            <div className="text-sm text-muted-foreground mt-0.5">{countWords.before}<strong className="font-mono text-foreground mr-1 tabular-nums">{loading ? '…' : <CountUp value={episodeCount} />}</strong>{countWords.after} · 由 TinBoker 結構化分析關鍵重點與提及的個股</div>
           </div>
           <div className="flex items-center gap-3">
               <button

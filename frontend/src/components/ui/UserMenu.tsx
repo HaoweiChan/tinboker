@@ -1,9 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { User, Settings, LogOut, Info } from 'lucide-react';
+import { User, Settings, LogOut, Info, LayoutDashboard } from 'lucide-react';
 import { useAppStore, useUser, useLogout } from '@/store/useAppStore';
 import { LoginButton } from '@/components/auth/LoginButton';
 import { authApi } from '@/services/api/auth';
+
+// Mirrors App.tsx: /admin routes exist on every non-production build. The installed
+// dev/staging app has no URL bar, so this is the way into the back office.
+const ADMIN_ENABLED = (import.meta.env.VITE_STAGE as string) !== 'PRODUCTION';
 
 export const UserMenu: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -97,6 +101,15 @@ export const UserMenu: React.FC = () => {
               <Settings size={18} />
               <span>帳號設定</span>
             </button>
+            {ADMIN_ENABLED && (
+              <button
+                onClick={() => handleNavigation('/admin')}
+                className="w-full flex items-center gap-3 px-4 py-3 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+              >
+                <LayoutDashboard size={18} />
+                <span>後台</span>
+              </button>
+            )}
           </div>
 
           {/* Support — surfaces sidebar's 支援 group for mobile (where the

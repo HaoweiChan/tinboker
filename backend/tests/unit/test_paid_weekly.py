@@ -53,15 +53,15 @@ def test_summary_is_short_and_sits_above_the_paywall():
     assert "台積電（2330）、2454" in free
     assert "%" not in free                       # no numbers leak above the wall
     assert paid.index("## 記憶體漲價，節目為何分歧？") < paid.index("## 資料附錄")
-    assert "/api/og/stock/2408.png" in paid and "/api/og/stock/2330.png" not in paid  # charts follow the article
+    assert "[南亞科（2408）](https://tinboker.com/stock/2408)" in paid.split("## 資料附錄")[1] and "/stock/2330" not in paid  # follows the article
     assert "第一段。\n\n第二段 " in paid and paid.count("記憶體漲價，節目為何分歧") == 1  # H1 not repeated
 
 
 def test_appendix_has_charts_movers_and_pooled_excess_vs_index():
     out = pw.render_markdown(ROLLUP, RECORD, MOVERS, names={"2454": "聯發科"})
     md = out["markdown"]
-    assert "![台積電（2330）](https://api.tinboker.com/api/og/stock/2330.png)" in md
-    assert "[聯發科（2454） 個股頁](https://tinboker.com/stock/2454)" in md
+    assert "[台積電（2330）](https://tinboker.com/stock/2330)、[聯發科（2454）](https://tinboker.com/stock/2454)" in md
+    assert "![" not in md  # no image syntax: the converter has no image node
     assert "- 在自己一年高點（≥90）：南亞科（2408） 97" in md and "一年低點" not in md
     # bulls with an index: +5 vs +2, -2 vs +2 → 2 calls, 50% up, mean +1.5 vs +2.0, 50% beat
     assert "那週有 2 筆看多的個股說法可驢證" not in md
@@ -75,12 +75,15 @@ def test_appendix_has_charts_movers_and_pooled_excess_vs_index():
     assert pw.DISCLAIMER in md
     assert out["title"] == "聽播客週報 Pro 2026-W36"
     assert out["stats"] == {"episodes": 3, "calls_scored": 5, "movers": 1, "article": False}
+    assert out["thumbnail_url"].startswith("https://api.tinboker.com/api/og/title/") and "?" not in out["thumbnail_url"]
 
 
 def test_no_resolved_calls_says_so():
     out = pw.render_markdown(ROLLUP, {**RECORD, "calls": []}, {"high": [], "low": []}, article=ARTICLE)
     assert "本節下期補上" in out["markdown"] and "**聲量水位**" not in out["markdown"]
     assert out["title"] == "聽播客週報 Pro 2026-W36｜記憶體漲價，節目為何分歧？"
+    payload = out["thumbnail_url"].rsplit("/", 1)[1][:-4]
+    assert pw.title_payload("記憶體漲價，節目為何分歧？", "聽播客週報 Pro 2026-W36") == payload
 
 
 def test_index_return_uses_the_first_session_on_or_after_the_mention():
