@@ -86,7 +86,7 @@ def _kids(state):
 def test_headings_shift_down_one_level():
     # vocus renders the article title itself, so a body h1 would duplicate it.
     kids = _kids(markdown_to_lexical("# 標題\n\n## 章節\n\n### 小節"))
-    assert [(k["type"], k["tag"]) for k in kids] == [("heading", "h2"), ("heading", "h3"), ("heading", "h4")]
+    assert [(k["type"], k["tag"]) for k in kids] == [("vocus-heading", "h2"), ("vocus-heading", "h3"), ("vocus-heading", "h4")]
 
 
 def test_paragraph_and_bold():
@@ -122,7 +122,7 @@ def test_quote_and_horizontal_rule():
 
 def test_a_block_start_terminates_the_preceding_paragraph():
     kids = _kids(markdown_to_lexical("一段話\n## 接著是標題"))
-    assert [k["type"] for k in kids] == ["paragraph", "heading"]
+    assert [k["type"] for k in kids] == ["paragraph", "vocus-heading"]
 
 
 def test_empty_markdown_still_produces_a_valid_root():
@@ -139,7 +139,7 @@ def test_full_pipeline_shape_survives_end_to_end():
     )
     kids = _kids(markdown_to_lexical(md))
     types = [k["type"] for k in kids]
-    assert "heading" in types and "list" in types
+    assert "vocus-heading" in types and "list" in types
     # The attribution line's episode permalink must arrive as a real link node.
     urls = [c["url"] for k in kids for c in k.get("children", []) if c.get("type") == "link"]
     assert f"{SITE}/episode/ep677" in urls
