@@ -169,6 +169,11 @@ def create_all_tables():
                 "ALTER TABLE IF EXISTS content_sources "
                 "ADD COLUMN IF NOT EXISTS social_enabled BOOLEAN NOT NULL DEFAULT TRUE"
             ))
+            for table in ("ticker_performance_snapshots", "sector_performance_snapshots"):
+                conn.execute(text(
+                    f"ALTER TABLE IF EXISTS {table} "
+                    "ADD COLUMN IF NOT EXISTS price_break_date VARCHAR(10)"
+                ))
             # Unified topic registry: tag rows pre-date these columns.
             conn.execute(text(
                 "ALTER TABLE IF EXISTS tag_registry "

@@ -76,11 +76,11 @@ interface AppState {
   closeLoginPrompt: () => void;
 
   // User preference actions
-  toggleWatchlist: (ticker: string) => Promise<void>;
+  toggleWatchlist: (ticker: string, opts?: ToggleOpts) => Promise<boolean>;
   toggleAlert: (ticker: string) => void;
-  toggleSubscription: (id: string) => Promise<void>;
-  toggleEpisodeBookmark: (podcastName: string, episodeId: string) => Promise<void>;
-  toggleTagSubscription: (tagName: string) => Promise<void>;
+  toggleSubscription: (id: string, opts?: ToggleOpts) => Promise<boolean>;
+  toggleEpisodeBookmark: (podcastName: string, episodeId: string, opts?: ToggleOpts) => Promise<boolean>;
+  toggleTagSubscription: (tagName: string, opts?: ToggleOpts) => Promise<boolean>;
   setStockColorMode: (mode: 'TW' | 'US') => void;
   toggleUseMockData: () => void;
 
@@ -112,6 +112,9 @@ interface AppState {
   setHoveredEvent: (event: StockEvent | null) => void;
   closeOverlay: () => void;
 }
+
+/** `silent` skips the success/login-nudge toasts for callers that show their own (swipe-to-remove + 復原). */
+export type ToggleOpts = { silent?: boolean };
 
 export const useAppStore = create<AppState>()(
   persist(
@@ -186,14 +189,14 @@ export const useAppStore = create<AppState>()(
       openLoginPrompt: () => set(() => ({ loginPromptOpen: true })),
       closeLoginPrompt: () => set(() => ({ loginPromptOpen: false })),
 
-      toggleWatchlist: async (ticker) => {
+      toggleWatchlist: async (ticker, opts) => {
         const { token, isAuthReady } = useAppStore.getState();
         const currentWatchlist = useAppStore.getState().watchlist;
         const isInWatchlist = currentWatchlist.includes(ticker);
 
         if (!isAuthReady) {
           toast.info('正在驗證登入狀態，請稍候再試');
-          return;
+          return false;
         }
 
         useAppStore.setState((state) => ({
@@ -203,10 +206,12 @@ export const useAppStore = create<AppState>()(
         }));
 
         if (!token) {
-          toast.info('登入後可跨裝置同步自選清單', {
-            action: { label: '前往登入', onClick: () => window.location.href = '/' },
-          });
-          return;
+          if (!opts?.silent) {
+            toast.info('登入後可跨裝置同步自選清單', {
+              action: { label: '前往登入', onClick: () => window.location.href = '/' },
+            });
+          }
+          return true;
         }
 
         try {
@@ -216,7 +221,8 @@ export const useAppStore = create<AppState>()(
               ? [...state.watchlist.filter(t => t !== ticker), ticker]
               : state.watchlist.filter(t => t !== ticker),
           }));
-          toast.success(result.is_in_watchlist ? '已加入自選清單' : '已從自選清單移除');
+          if (!opts?.silent) toast.success(result.is_in_watchlist ? '已加入自選清單' : '已從自選清單移除');
+          return true;
         } catch (error) {
           console.error('Failed to toggle watchlist:', error);
           useAppStore.setState(() => ({ watchlist: currentWatchlist }));
@@ -229,6 +235,7 @@ export const useAppStore = create<AppState>()(
             toast.error('操作失敗，請稍後再試');
           }
         }
+        return false;
       },
 
       toggleAlert: (ticker) =>
@@ -238,14 +245,14 @@ export const useAppStore = create<AppState>()(
             : [...state.alerts, ticker],
         })),
 
-      toggleSubscription: async (id) => {
+      toggleSubscription: async (id, opts) => {
         const { token, isAuthReady } = useAppStore.getState();
         const currentSubscriptions = useAppStore.getState().subscriptions;
         const isSubscribed = currentSubscriptions.includes(id);
 
         if (!isAuthReady) {
           toast.info('正在驗證登入狀態，請稍候再試');
-          return;
+          return false;
         }
 
         useAppStore.setState((state) => ({
@@ -255,10 +262,12 @@ export const useAppStore = create<AppState>()(
         }));
 
         if (!token) {
-          toast.info('登入後可接收訂閱通知', {
-            action: { label: '前往登入', onClick: () => window.location.href = '/' },
-          });
-          return;
+          if (!opts?.silent) {
+            toast.info('登入後可接收訂閱通知', {
+              action: { label: '前往登入', onClick: () => window.location.href = '/' },
+            });
+          }
+          return true;
         }
 
         try {
@@ -268,7 +277,8 @@ export const useAppStore = create<AppState>()(
               ? [...state.subscriptions.filter(s => s !== id), id]
               : state.subscriptions.filter(s => s !== id),
           }));
-          toast.success(result.is_subscribed ? '已訂閱 Podcast' : '已取消訂閱');
+          if (!opts?.silent) toast.success(result.is_subscribed ? '已訂閱 Podcast' : '已取消訂閱');
+          return true;
         } catch (error) {
           console.error('Failed to toggle subscription:', error);
           useAppStore.setState(() => ({ subscriptions: currentSubscriptions }));
@@ -281,9 +291,10 @@ export const useAppStore = create<AppState>()(
             toast.error('訂閱失敗，請稍後再試');
           }
         }
+        return false;
       },
 
-      toggleEpisodeBookmark: async (podcastName: string, episodeId: string) => {
+      toggleEpisodeBookmark: async (podcastName: string, episodeId: string, opts?: ToggleOpts) => {
         const { token, isAuthReady } = useAppStore.getState();
         const formattedId = `${podcastName}_${episodeId}`;
         const currentBookmarks = useAppStore.getState().episodeBookmarks;
@@ -291,14 +302,16 @@ export const useAppStore = create<AppState>()(
 
         if (!isAuthReady) {
           toast.info('正在驗證登入狀態，請稍候再試');
-          return;
+          return false;
         }
 
         if (!token) {
-          toast.info('登入後才能收藏集數', {
-            action: { label: '前往登入', onClick: () => window.location.href = '/' },
-          });
-          return;
+          if (!opts?.silent) {
+            toast.info('登入後才能收藏集數', {
+              action: { label: '前往登入', onClick: () => window.location.href = '/' },
+            });
+          }
+          return false;
         }
 
         useAppStore.setState((state) => ({
@@ -314,7 +327,8 @@ export const useAppStore = create<AppState>()(
               ? [...state.episodeBookmarks.filter((id) => id !== formattedId), formattedId]
               : state.episodeBookmarks.filter((id) => id !== formattedId),
           }));
-          toast.success(result.is_bookmarked ? '已收藏此集數' : '已取消收藏');
+          if (!opts?.silent) toast.success(result.is_bookmarked ? '已收藏此集數' : '已取消收藏');
+          return true;
         } catch (error) {
           console.error('Failed to toggle episode bookmark:', error);
           useAppStore.setState(() => ({ episodeBookmarks: currentBookmarks }));
@@ -327,16 +341,17 @@ export const useAppStore = create<AppState>()(
             toast.error('收藏失敗，請稍後再試');
           }
         }
+        return false;
       },
 
-      toggleTagSubscription: async (tagName) => {
+      toggleTagSubscription: async (tagName, opts) => {
         const { token, isAuthReady } = useAppStore.getState();
         const currentTags = useAppStore.getState().tagSubscriptions;
         const isSubscribed = currentTags.includes(tagName);
 
         if (!isAuthReady) {
           toast.info('正在驗證登入狀態，請稍候再試');
-          return;
+          return false;
         }
 
         useAppStore.setState((state) => ({
@@ -346,10 +361,12 @@ export const useAppStore = create<AppState>()(
         }));
 
         if (!token) {
-          toast.info('登入後可接收標籤相關通知', {
-            action: { label: '前往登入', onClick: () => window.location.href = '/' },
-          });
-          return;
+          if (!opts?.silent) {
+            toast.info('登入後可接收標籤相關通知', {
+              action: { label: '前往登入', onClick: () => window.location.href = '/' },
+            });
+          }
+          return true;
         }
 
         try {
@@ -359,7 +376,8 @@ export const useAppStore = create<AppState>()(
               ? [...state.tagSubscriptions.filter(t => t !== tagName), tagName]
               : state.tagSubscriptions.filter(t => t !== tagName),
           }));
-          toast.success(result.is_subscribed ? '已訂閱此標籤' : '已取消訂閱');
+          if (!opts?.silent) toast.success(result.is_subscribed ? '已訂閱此標籤' : '已取消訂閱');
+          return true;
         } catch (error) {
           console.error('Failed to toggle tag subscription:', error);
           useAppStore.setState(() => ({ tagSubscriptions: currentTags }));
@@ -372,6 +390,7 @@ export const useAppStore = create<AppState>()(
             toast.error('訂閱失敗，請稍後再試');
           }
         }
+        return false;
       },
 
       setStockColorMode: (mode) => set(() => ({ stockColorMode: mode })),

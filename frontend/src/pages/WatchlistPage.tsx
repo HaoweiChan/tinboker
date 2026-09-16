@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { toast } from 'sonner';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
 import { EpisodeCardV2 } from '@/components/redesign';
+import { SwipeToRemove } from '@/components/common/SwipeToRemove';
 import { apiEpisodeToCardV2 } from '@/components/redesign/episodeAdapter';
 import { SubscribedTickers } from '@/components/profile/SubscribedTickers';
 import { SubscribedTopics } from '@/components/profile/SubscribedTopics';
@@ -33,6 +35,42 @@ export const WatchlistPage: React.FC = () => {
   const [apiWatchlist, setApiWatchlist] = useState<string[]>([]);
   const [apiTagSubs, setApiTagSubs] = useState<string[]>([]);
   const [serverLoaded, setServerLoaded] = useState(false);
+  // Swiped-away items, hidden immediately and restored in place by 復原. The lists
+  // themselves aren't edited, so an undo puts a row back where it was.
+  const [removed, setRemoved] = useState<ReadonlySet<string>>(new Set());
+  const toggleWatchlist = useAppStore((s) => s.toggleWatchlist);
+  const toggleTagSubscription = useAppStore((s) => s.toggleTagSubscription);
+  const toggleEpisodeBookmark = useAppStore((s) => s.toggleEpisodeBookmark);
+
+  const setHidden = (key: string, hidden: boolean) =>
+    setRemoved((prev) => {
+      const next = new Set(prev);
+      if (hidden) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+
+  /** Remove now, offer 復原. `toggle` flips the saved state server-side (or locally). */
+  const removeWithUndo = (key: string, label: string, toggle: () => Promise<boolean>) => {
+    setHidden(key, true);
+    const removal = toggle();
+    const toastId = toast(`已移除 ${label}`, {
+      action: {
+        label: '復原',
+        onClick: async () => {
+          setHidden(key, false);
+          // Undo toggles back — only once the removal itself went through, or it would remove instead.
+          if (!(await removal)) return;
+          if (!(await toggle())) setHidden(key, true);
+        },
+      },
+    });
+    void removal.then((ok) => {
+      if (ok) return;
+      toast.dismiss(toastId); // the store already showed why
+      setHidden(key, false);
+    });
+  };
 
   // Effective lists: prefer server data for logged-in users, fall back to local store
   const subscriptions = useMemo(
@@ -40,12 +78,12 @@ export const WatchlistPage: React.FC = () => {
     [token, serverLoaded, apiSubscriptions, localSubscriptions],
   );
   const watchlist = useMemo(
-    () => token && serverLoaded ? apiWatchlist : localWatchlist,
-    [token, serverLoaded, apiWatchlist, localWatchlist],
+    () => (token && serverLoaded ? apiWatchlist : localWatchlist).filter((t) => !removed.has(`ticker:${t}`)),
+    [token, serverLoaded, apiWatchlist, localWatchlist, removed],
   );
   const tagSubscriptions = useMemo(
-    () => token && serverLoaded ? apiTagSubs : localTagSubscriptions,
-    [token, serverLoaded, apiTagSubs, localTagSubscriptions],
+    () => (token && serverLoaded ? apiTagSubs : localTagSubscriptions).filter((t) => !removed.has(`topic:${t}`)),
+    [token, serverLoaded, apiTagSubs, localTagSubscriptions, removed],
   );
 
   // Fetch server-side user data on mount when logged in
@@ -155,6 +193,8 @@ export const WatchlistPage: React.FC = () => {
   }, [bookmarkedIds]);
 
   const sortedWatchlist = useMemo(() => [...watchlist], [watchlist]);
+  const visibleBookmarked = useMemo(() => bookmarked.filter((ep) => !removed.has(`episode:${ep.id}`)), [bookmarked, removed]);
+  const visibleBookmarkCount = bookmarked.length ? visibleBookmarked.length : bookmarkedIds.length;
 
   // Show loading state while server data is being fetched for logged-in users
   const isLoading = token && !serverLoaded;
@@ -166,10 +206,10 @@ export const WatchlistPage: React.FC = () => {
         <h1 className="text-2xl font-semibold tracking-[-0.02em] mb-3.5">收藏</h1>
         <div className="flex items-center gap-2 overflow-x-auto mb-[18px]">
           {([
-            ['podcasters', `訂閱節目 ${subscriptions.length}`],
-            ['tickers', `自選股票 ${watchlist.length}`],
-            ['topics', `追蹤話題 ${tagSubscriptions.length}`],
-            ['episodes', `收藏集數 ${bookmarked.length || bookmarkedIds.length}`],
+            ['podcasters', `節目 ${subscriptions.length}`],
+            ['tickers', `股票 ${watchlist.length}`],
+            ['topics', `話題 ${tagSubscriptions.length}`],
+            ['episodes', `集數 ${visibleBookmarkCount}`],
           ] as const).map(([val, label]) => (
             <button
               key={val}
@@ -219,7 +259,10 @@ export const WatchlistPage: React.FC = () => {
                   尚未加入任何自選股票 — 去 <Link to="/stock" className="text-accent-info hover:underline">個股</Link> 頁加入幾檔吧。
                 </div>
               ) : (
-                <SubscribedTickers tickers={sortedWatchlist} />
+                <SubscribedTickers
+                  tickers={sortedWatchlist}
+                  onRemove={(sym, label) => removeWithUndo(`ticker:${sym}`, label, () => toggleWatchlist(sym, { silent: true }))}
+                />
               )
             )}
 
@@ -229,12 +272,15 @@ export const WatchlistPage: React.FC = () => {
                   尚未追蹤任何話題 — 去 <Link to="/topics" className="text-accent-info hover:underline">話題</Link> 頁追蹤幾個吧。
                 </div>
               ) : (
-                <SubscribedTopics tagSubs={tagSubscriptions} />
+                <SubscribedTopics
+                  tagSubs={tagSubscriptions}
+                  onRemove={(sub, label) => removeWithUndo(`topic:${sub}`, label, () => toggleTagSubscription(sub, { silent: true }))}
+                />
               )
             )}
 
             {tab === 'episodes' && (
-              bookmarked.length === 0 && bookmarkedIds.length === 0 ? (
+              visibleBookmarkCount === 0 ? (
                 <div className="bg-card border border-border rounded-md p-10 text-center text-sm text-muted-foreground">目前沒有收藏的集數。</div>
               ) : bookmarked.length === 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -244,8 +290,15 @@ export const WatchlistPage: React.FC = () => {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {bookmarked.map((ep) => (
-                    <EpisodeCardV2 key={ep.id} {...apiEpisodeToCardV2(ep, bookmarkedPriceMap, undefined, undefined, undefined, bookmarkedPriceSinceMap)} />
+                  {visibleBookmarked.map((ep) => (
+                    <SwipeToRemove
+                      key={ep.id}
+                      className="rounded-md"
+                      onRemove={() => removeWithUndo(`episode:${ep.id}`, `「${ep.episode_title || '這集'}」`, () =>
+                        toggleEpisodeBookmark(ep.podcast_name, ep.id, { silent: true }))}
+                    >
+                      <EpisodeCardV2 {...apiEpisodeToCardV2(ep, bookmarkedPriceMap, undefined, undefined, undefined, bookmarkedPriceSinceMap)} />
+                    </SwipeToRemove>
                   ))}
                 </div>
               )

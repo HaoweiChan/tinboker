@@ -9,7 +9,7 @@ import asyncio
 import logging
 import mimetypes
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional, Any
 
 import httpx
@@ -25,8 +25,9 @@ from src.services import (facebook_publisher, promo_publisher, substack_publishe
                           threads_publisher, vocus_publisher)
 from src.services.content_source_service import social_enabled_for
 from src.services.gcs_content import GCSContentService, media_url
-from src.services.syndication_markdown import (podcast_short_name, syndication_excerpt,
-                                               syndication_title)
+from src.services.syndication_markdown import (
+    build_syndication_body, hook_title, is_historic, podcast_short_name, syndication_excerpt, syndication_title,
+)
 from src.tag_registry import canonical_label
 from src.services.podcast import PodcastService
 from src.services.facebook_insights_service import (FacebookInsightsService,
@@ -579,6 +580,19 @@ async def draft_episode_to_substack(
     ), dry_run)
 
 
+def _episode_age_days(episode) -> Optional[float]:
+    """Days since the episode's true release (released_at_ms), None when unknown."""
+    ms = getattr(episode, "released_at_ms", None)
+    if not ms:
+        return None
+    return round((datetime.now(timezone.utc).timestamp() * 1000 - ms) / 86_400_000, 1)
+
+
+def episode_syndication_platforms() -> set[str]:
+    """Platforms per-episode summaries may still go to (settings, default none)."""
+    return {p.strip().lower() for p in settings.episode_syndication_platforms.split(",") if p.strip()}
+
+
 @router.post("/episodes/{episode_id}/syndicate")
 async def syndicate_episode(
     episode_id: str,
@@ -590,6 +604,7 @@ async def syndicate_episode(
         default=False,
         description="Substack only: publish to the web (never emails) instead of staying a draft",
     ),
+    allow_old: bool = Query(default=False, description="Syndicate even if the episode is older than SYNDICATE_MAX_AGE_DAYS"),
     _: AdminAccess = Depends(get_social_access),
 ):
     """Stage one episode on every syndication target at once.
@@ -614,6 +629,10 @@ async def syndicate_episode(
         raise HTTPException(status_code=422, detail=f"Unknown platform(s): {', '.join(unknown)}")
     if not selected:
         raise HTTPException(status_code=422, detail="No platforms selected")
+    # Per-episode syndication is a policy switch, not a per-call choice: the nightly
+    # 每日精選 replaced it (settings.episode_syndication_platforms, default off).
+    disabled = [p for p in selected if p not in episode_syndication_platforms()]
+    selected = [p for p in selected if p not in disabled]
 
     episode = await podcast_service.get_episode_admin(episode_id)
     if not episode:
@@ -623,27 +642,34 @@ async def syndicate_episode(
     podcast_name = (getattr(episode, "podcast_name", None) or "").strip()
     raw_title = (getattr(episode, "episode_title", None) or "").strip() or episode_id
     title = syndication_title(podcast_name, raw_title)
+    off = {p: {"platform": p, "episode_id": episode_id, "posted": False,
+               "reason": "episode_syndication_disabled"} for p in disabled}
+    if not selected:
+        return {"episode_id": episode_id, "title": title, "platforms": off}
+    # Age gate: a backfilled 2021 episode is not news, whatever its ingest date says.
+    # Unknown age is not "new" either — publishing is public and hard to take back.
+    max_age = settings.syndicate_max_age_days
+    age_days = _episode_age_days(episode)
+    if max_age and not allow_old and (age_days is None or age_days > max_age):
+        too_old = {p: {"platform": p, "episode_id": episode_id, "posted": False,
+                       "reason": "too_old", "age_days": age_days, "max_age_days": max_age} for p in selected}
+        return {"episode_id": episode_id, "title": title, "platforms": {**off, **too_old}}
     if not social_enabled_for(podcast_name):
         return {"episode_id": episode_id, "title": title,
-                "platforms": {p: _social_off_result(p, episode_id) for p in selected}}
+                "platforms": {**off, **{p: _social_off_result(p, episode_id) for p in selected}}}
     excerpt = ((getattr(episode, "summary_excerpt", None) or "").strip()
                or syndication_excerpt(summary))
 
     async def _vocus() -> dict:
-        labels = [canonical_label(t) for t in (getattr(episode, "tags", None) or []) if isinstance(t, str)]
-        short = podcast_short_name(podcast_name)
-        tags = list(dict.fromkeys(([short] if short else []) + labels[:5]))
-        return await vocus_publisher.publish_summary(
-            episode_id, title, summary, podcast_name=podcast_name, abstract=excerpt,
-            tags=tags,
-            thumbnail_url=f"{_public_base_url(request)}/api/og/episode/{episode_id}.png",
-            as_draft=not publish, dry_run=dry_run,
+        return await publish_episode_summary_to_vocus(
+            episode, base_url=_public_base_url(request), publish=publish, dry_run=dry_run,
         )
 
     async def _substack() -> dict:
+        s_title, s_body, s_excerpt = await episode_copy(episode, base_url=_public_base_url(request))
         return await substack_publisher.create_summary_draft(
-            episode_id, title, summary, podcast_name=podcast_name,
-            subtitle=excerpt[:140],
+            episode_id, s_title, s_body, podcast_name=podcast_name,
+            subtitle=s_excerpt[:140],
             # The same cover both platforms show, so one summary does not look like two.
             cover_image_url=f"{_public_base_url(request)}/api/og/episode/{episode_id}.png",
             # Never primed to mail the list. Publishing web-only is reversible; an email
@@ -662,7 +688,7 @@ async def syndicate_episode(
         return_exceptions=True,
     )
 
-    results: dict[str, Any] = {}
+    results: dict[str, Any] = dict(off)
     for name, outcome in zip(selected, settled):
         if isinstance(outcome, BaseException):
             logger.exception("syndicate: %s failed for %s", name, episode_id)
@@ -670,6 +696,79 @@ async def syndicate_episode(
         else:
             results[name] = outcome
     return {"episode_id": episode_id, "title": title, "platforms": results}
+
+
+async def episode_ticker_lines(episode, limit: int = 5) -> list[str]:
+    """"<name>（<ticker>）看多：「<thesis>」" for the episode's best-backed observations.
+    Empty on any failure: the section is optional, the article is not."""
+    try:
+        from datetime import date as _date, timedelta
+        from src.routers.weekly import _insights_for
+        from src.services.paid_weekly import query_names
+        from src.services.syndication_markdown import released_date
+        rel = released_date(getattr(episode, "released_at_ms", None)) or _date.today()
+        insights = await _insights_for([episode.podcast_name], rel - timedelta(days=1), rel + timedelta(days=1))
+        mine = [i for i in insights if i.get("episode_id") == episode.id and i.get("ticker") and (i.get("bluf_thesis") or "").strip()]
+        mine.sort(key=lambda i: (-len(i.get("reasons") or []), i["ticker"]))
+        mine = mine[:limit]
+        if not mine:
+            return []
+
+        def _names() -> dict[str, str]:
+            for db in get_session():
+                return query_names(db, {i["ticker"] for i in mine})
+            return {}
+
+        names = await asyncio.to_thread(_names)
+        # A label the extractor inferred from "sales may rise" is not the host saying
+        # buy. Only the strong labels are printed as a stance; the rest read 未明示.
+        explicit = {"STRONG_BULLISH": "明確看多", "STRONG_BEARISH": "明確看空"}
+        out = []
+        for i in mine:
+            thesis = " ".join(i["bluf_thesis"].split())
+            thesis = thesis if len(thesis) <= 80 else thesis[:80] + "…"
+            head = f"{names[i['ticker']]}（{i['ticker']}）" if names.get(i["ticker"]) else i["ticker"]
+            stance = explicit.get(str(i.get("sentiment_label") or "").upper(), "未明示")
+            out.append(f"{head}｜{thesis}｜主持人態度：{stance}")
+        return out
+    except Exception as e:  # noqa: BLE001 — optional section
+        logger.warning("syndication: ticker lines unavailable for %s: %s", getattr(episode, "id", "?"), e)
+        return []
+
+
+async def episode_copy(episode, *, base_url: str) -> tuple[str, str, str]:
+    """(title, body, excerpt) for one episode, shared by vocus and Substack."""
+    summary = getattr(episode, "modified_summary_content", None) or getattr(episode, "summary_content", None) or ""
+    podcast_name = (getattr(episode, "podcast_name", None) or "").strip()
+    raw_title = (getattr(episode, "episode_title", None) or "").strip() or episode.id
+    key_insights = list(getattr(episode, "key_insights", None) or [])
+    released = getattr(episode, "released_at_ms", None)
+    historic = is_historic(released)
+    title = hook_title(podcast_name, raw_title, key_insights, summary, historic=historic)
+    body = build_syndication_body(
+        episode_id=episode.id, podcast_name=podcast_name, episode_title=raw_title, summary=summary,
+        key_insights=key_insights, released_at_ms=released, ticker_lines=await episode_ticker_lines(episode),
+        spotify_url=getattr(episode, "spotify_url", None), site_url=settings.site_url,
+    )
+    excerpt = ((getattr(episode, "summary_excerpt", None) or "").strip()
+               or (key_insights[0].strip() if key_insights else "") or syndication_excerpt(summary))
+    return title, body, excerpt
+
+
+async def publish_episode_summary_to_vocus(episode, *, base_url: str, publish: bool, dry_run: bool) -> dict:
+    """One episode's copy to vocus — the endpoint above and the nightly 每日一集 share it."""
+    episode_id = episode.id
+    podcast_name = (getattr(episode, "podcast_name", None) or "").strip()
+    title, body, excerpt = await episode_copy(episode, base_url=base_url)
+    labels = [canonical_label(t) for t in (getattr(episode, "tags", None) or []) if isinstance(t, str)]
+    short = podcast_short_name(podcast_name)
+    tags = list(dict.fromkeys(([short] if short else []) + labels[:5]))
+    return await vocus_publisher.publish_summary(
+        episode_id, title, body, podcast_name=podcast_name, abstract=excerpt,
+        tags=tags,
+        thumbnail_url=f"{base_url}/api/og/episode/{episode_id}.png",
+        as_draft=not publish, dry_run=dry_run,
+    )
 
 
 def _public_base_url(request: Request) -> str:

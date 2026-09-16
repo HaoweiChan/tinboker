@@ -397,7 +397,9 @@ export const TopicsCloud: React.FC = () => {
         </div>
         <div className="mb-7 rounded-xl border border-border bg-card overflow-hidden md:h-[520px]">
           {perfLoading ? (
-            <div className="w-full h-full animate-pulse bg-muted/30" />
+            // The box only has a fixed height from md up, so below that the skeleton needs
+            // its own — h-full alone collapsed it to a border line that read as "broken".
+            <div className="w-full h-[420px] md:h-full animate-pulse bg-muted/30" />
           ) : themeBubbles.length > 0 ? (
             <SectorPerformance
               variant="embedded"
@@ -414,7 +416,7 @@ export const TopicsCloud: React.FC = () => {
               radiusTooltipSuffix="億"
             />
           ) : (
-            <div className={`w-full h-full flex items-center justify-center ${type.empty} text-muted-foreground`}>
+            <div className={`w-full h-40 md:h-full flex items-center justify-center ${type.empty} text-muted-foreground`}>
               尚無題材熱度資料
             </div>
           )}
@@ -426,12 +428,16 @@ export const TopicsCloud: React.FC = () => {
         </div>
 
         {/* ── THEME BOARD (collapsed to a preview so the tags below stay reachable) ── */}
-        <div className="flex items-center justify-between mb-1.5">
+        {/* Four sort tabs don't fit beside the title on a phone (the title wrapped one
+            character per line), so they drop to their own scrollable row below sm. */}
+        <div className="flex flex-col gap-2 mb-1.5 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2">
             <SectionIcon icon={<LayoutGrid size={15} />} tone="info" />
-            <h2 className={`${type.sectionTitle} font-semibold`}>題材總覽</h2>
+            <h2 className={`${type.sectionTitle} font-semibold whitespace-nowrap`}>題材總覽</h2>
           </div>
-          <Segmented options={SORT_OPTIONS} value={sortKey} onChange={setSortKey} />
+          <div className="-mx-1 px-1 overflow-x-auto">
+            <Segmented options={SORT_OPTIONS} value={sortKey} onChange={setSortKey} />
+          </div>
         </div>
         {/* Each sort key has a different time window — spell them out so the bare
             percentages on the cards aren't mistaken for a longer horizon. */}

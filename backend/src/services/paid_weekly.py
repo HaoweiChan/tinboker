@@ -1,55 +1,58 @@
-"""The paid weekly — the 方格子 salon-member issue built from data the site already has.
+"""The paid weekly — the 方格子 salon-member issue.
 
-Three sections nobody else can write, in the order a subscriber reads them:
+Shape agreed 2026-09-13 (Willy + the weekly session): the reader sees a SHORT summary for
+free, the paywall sits right after it (placed by hand in the vocus wizard, at the ``---``
+this module emits), and everything else is paid:
 
-1. 本週節目焦點 — the public weekly rollup (``routers/weekly.build_week``): which
-   tickers the tracked shows discussed most, bull/neutral/bear counts vs last week.
-2. 誰講對了 — the mentions made FOUR weeks ago, now that their 20-trading-day forward
-   return has resolved: per-show directional hit rate and mean r20d, plus the best
-   and worst individual calls with the thesis that was stated at the time.
-3. 篩選器前十 × 節目提及 — the whole-market anomaly screener's top ten for the latest
-   trading day, each cross-referenced with how many episodes mentioned it this week.
-   That join is the product; the screener alone is a list.
+1. 摘要 — three lines: the week's topic and what the appendix verifies. Free.
+2. 本週主題 — the cross-show piece written from ``weekly_brief`` (by a model, then
+   fact-checked, never auto-published). Passed in as markdown; this module does not
+   write prose.
+3. 資料附錄 — charts, not bullet numbers: the topic tickers' OG cards, the 聲量水位
+   movers (state only), and the calls made FOUR weeks ago now that their 20-trading-day
+   return has resolved — pooled, against the index over the same window, because the
+   raw hit rate of a bull call in an up-market is beta, not skill (2026-09-10 study).
+   No per-show ranking: it read as a league table and invited "who to follow".
 
-The section that carries the value is 2, and it is deliberately backward-looking:
-a statistic about what third parties said and what happened after, not a call.
-Section 3 is factor output with the same framing. The disclaimer says so explicitly
-(投顧法 — this publication does not recommend, it measures).
-
-Render is a pure function over three plain dicts so it can be tested without a
-database; the two DB queries are separate and run in a thread (sync SQLAlchemy inside
-an async endpoint stalls the loop).
+Everything numeric is a statistic about what third parties said and what happened after,
+never a call (投顧法 — this publication measures, it does not recommend). Render is pure
+over plain dicts so it can be tested without a database.
 """
 
 from __future__ import annotations
 
 import asyncio
-from collections import Counter, defaultdict
+import re
+from bisect import bisect_left
 from datetime import timedelta
 from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from src.database.models import ContentMention, ScreenerCandidate, StockTranslation, TickerPerformanceSnapshot
+from src.config import settings
+from src.database.models import ContentMention, StockDailyOHLC, StockTranslation, TickerPerformanceSnapshot
 from src.database.postgres import get_session
 from src.routers.weekly import build_week, week_bounds
-from src.services.attention import scope_mentions
+from src.services.attention import attention_movers, scope_mentions
 from src.services.podcast import PodcastService
+from src.services.title_card import encode as title_payload
 
 # ponytail: only its cached release scope is read here, same as the routers.
 _podcast_service = PodcastService()
 
 HORIZON = "r20d"
+HORIZON_SESSIONS = 20
 TRACK_RECORD_LAG_WEEKS = 4  # 20 trading days ≈ 4 weeks; the calls scored are that old
-SCREENER_TOP = 10
-TOP_TICKERS = 10
 TOP_CALLS = 3
+CHART_TICKERS = 3
+INDEX = {"TW": "0050", "US": "SPY"}
 _BULL = ("BULLISH", "STRONG_BULLISH")
 _BEAR = ("BEARISH", "STRONG_BEARISH")
+PAYWALL = "---"  # the wizard's paywall goes here; nothing above it is paid
 
 DISCLAIMER = (
     "本文為聽播客 TinBoker 對追蹤節目公開內容的統計整理與市場資料彙整，"
-    "所有「命中」「報酬」皆為事後計算的歷史數據，篩選器為量化因子排序結果。"
+    "所有報酬皆為事後計算的歷史數據，聲量水位為節目提及量相對其自身過去一年的分位數。"
     "本文不構成任何投資建議，亦不推薦買賣任何有價證券；節目觀點屬各節目所有，"
     "過去績效不代表未來表現，投資前請自行評估風險。"
 )
@@ -61,18 +64,40 @@ def lagged_week(week: str, weeks_back: int = TRACK_RECORD_LAG_WEEKS) -> str:
     return f"{y}-W{w:02d}"
 
 
+def _stance(label: str) -> str:
+    return "bull" if label in _BULL else "bear" if label in _BEAR else "neu"
+
+
+def _market(ticker: str) -> str:
+    return "TW" if ticker[:1].isdigit() else "US"
+
+
 # ── DB queries (sync; call via asyncio.to_thread) ──────────────────────────────
 
-def _hit(label: str, r: float) -> Optional[bool]:
-    if label in _BULL:
-        return r > 0
-    if label in _BEAR:
-        return r < 0
-    return None
+def _index_r20(db: Session, start: str) -> dict[str, tuple[list[str], list[float]]]:
+    """Sorted (dates, closes) per index, from a few sessions before ``start``."""
+    out = {}
+    for mkt, tk in INDEX.items():
+        rows = (db.query(StockDailyOHLC.date, StockDailyOHLC.close)
+                .filter(StockDailyOHLC.ticker == tk, StockDailyOHLC.date >= start)
+                .order_by(StockDailyOHLC.date).all())
+        out[mkt] = ([d for d, _ in rows], [float(c) for _, c in rows])
+    return out
+
+
+def index_return(series: tuple[list[str], list[float]], day: str, sessions: int = HORIZON_SESSIONS) -> Optional[float]:
+    """The index's % change from the first session on/after ``day`` over ``sessions``
+    sessions — the same window the snapshot's r20d covers. Pure."""
+    dates, closes = series
+    i = bisect_left(dates, day)
+    if i + sessions >= len(dates):
+        return None
+    return (closes[i + sessions] / closes[i] - 1) * 100
 
 
 def query_track_record(db: Session, week: str, allowed: Optional[frozenset]) -> dict:
-    """Every ticker mention released inside ``week`` whose r20d has resolved.
+    """Every ticker mention released inside ``week`` whose r20d has resolved, each with
+    the index's return over the same window.
 
     ``allowed`` is the release roster (PodcastService._allowed_podcast_names(), resolved
     by the async caller): the scored calls must be the same shows the rollup counts, or
@@ -90,35 +115,18 @@ def query_track_record(db: Session, week: str, allowed: Optional[frozenset]) -> 
         )
         .all()
     )
+    index = _index_r20(db, (start - timedelta(days=7)).isoformat()) if rows else {}
     calls = []
     for m, snap in rows:
         r = float(getattr(snap, HORIZON))
         label = str(m.sentiment_label or "").upper()
+        idx = index_return(index[_market(m.ticker)], snap.mention_date) if index else None
         calls.append({
             "podcaster": m.podcaster or "?", "ticker": m.ticker, "date": snap.mention_date,
-            "sentiment_label": label, "thesis": m.thesis or "", "r": r, "hit": _hit(label, r),
+            "sentiment_label": label, "stance": _stance(label), "thesis": m.thesis or "",
+            "r": r, "idx": idx, "excess": None if idx is None else r - idx,
         })
     return {"week": week, "start": start.isoformat(), "end": end.isoformat(), "calls": calls}
-
-
-def query_screener(db: Session, top: int = SCREENER_TOP) -> dict:
-    latest = db.query(ScreenerCandidate.date).order_by(ScreenerCandidate.date.desc()).first()
-    if not latest:
-        return {"date": None, "candidates": []}
-    rows = (
-        db.query(ScreenerCandidate)
-        .filter(ScreenerCandidate.date == latest[0])
-        .order_by(ScreenerCandidate.rank.asc())
-        .limit(top)
-        .all()
-    )
-    return {
-        "date": latest[0],
-        "candidates": [{
-            "rank": r.rank, "ticker": r.ticker, "final_score": r.final_score,
-            "factors": r.factors or {}, "is_60d_high": bool(r.is_60d_high), "crowded": bool(r.crowded),
-        } for r in rows],
-    }
 
 
 def query_names(db: Session, tickers: set[str]) -> dict[str, str]:
@@ -151,110 +159,131 @@ def _name(ticker: str, names: dict[str, str]) -> str:
     return f"{n}（{ticker}）" if n else ticker
 
 
-def _episode_mentions(rollup: dict) -> Counter:
-    c: Counter = Counter()
-    for ep in rollup.get("episodes") or []:
-        for tk in ep.get("related_tickers") or []:
-            c[str(tk)] += 1
-    return c
-
-
-def cited_tickers(rollup: dict, record: dict, screener: dict) -> set[str]:
+def cited_tickers(rollup: dict, record: dict, movers: dict) -> set[str]:
     return (
         {t["ticker"] for t in rollup.get("tickers") or []}
         | {c["ticker"] for c in record.get("calls") or [] if c.get("ticker")}
-        | {c["ticker"] for c in screener.get("candidates") or []}
+        | {r["ticker"] for k in ("high", "low") for r in movers.get(k) or []}
     )
 
 
-def render_markdown(rollup: dict, record: dict, screener: dict, names: Optional[dict[str, str]] = None) -> dict:
+def article_title(article: Optional[str]) -> Optional[str]:
+    for line in (article or "").splitlines():
+        if line.startswith("# "):
+            return line[2:].strip()
+    return None
+
+
+def article_tickers(article: Optional[str], limit: int = CHART_TICKERS) -> list[str]:
+    """The stocks the piece links to (``/stock/{ticker}``), in order of first mention:
+    the appendix charts what the article is about, not what the week talked about most."""
+    seen: list[str] = []
+    for t in re.findall(r"/stock/([A-Za-z0-9.\-]{1,20})", article or ""):
+        if t.upper() not in seen:
+            seen.append(t.upper())
+    return seen[:limit]
+
+
+def _strip_title(article: str) -> str:
+    lines = article.strip().splitlines()
+    return "\n".join(lines[1:]).strip() if lines and lines[0].startswith("# ") else article.strip()
+
+
+def pooled(calls: list[dict]) -> Optional[dict]:
+    """The bull calls as one population against the index over the same windows."""
+    bulls = [c for c in calls if c["stance"] == "bull" and c.get("idx") is not None]
+    if not bulls:
+        return None
+    n = len(bulls)
+    return {
+        "n": n, "up": sum(c["r"] > 0 for c in bulls) / n * 100,
+        "mean_r": sum(c["r"] for c in bulls) / n, "mean_idx": sum(c["idx"] for c in bulls) / n,
+        "beat": sum(c["excess"] > 0 for c in bulls) / n * 100,
+    }
+
+
+def render_markdown(rollup: dict, record: dict, movers: dict, names: Optional[dict[str, str]] = None,
+                    article: Optional[str] = None) -> dict:
     """``{title, markdown, excerpt, stats}`` for one week. Pure."""
     week = rollup["week"]
+    site = settings.site_url.rstrip("/")
+    api = settings.public_api_url.rstrip("/")
     names = {**(names or {}),
+             **{r["ticker"]: r["name"] for k in ("high", "low") for r in movers.get(k) or [] if r.get("name")},
              **{t["ticker"]: t.get("name") for t in rollup.get("tickers") or [] if t.get("name")}}
+    topic = article_title(article)
+    top = article_tickers(article) or [t["ticker"] for t in (rollup.get("tickers") or [])[:CHART_TICKERS]]
+    calls = record["calls"]
+    stat = pooled(calls)
     out: list[str] = []
 
-    # 1. focus
-    out.append(f"## 本週節目焦點（{rollup['start']} → {rollup['end']}）")
-    out.append(f"追蹤節目本週共 {rollup['episode_count']} 集、{len(rollup.get('podcasts') or [])} 個節目。"
-               f"下表是被最多集數討論的個股，以及各集對它的多空立場（括號為上週）。")
+    # 1. 摘要 — free
+    out.append(f"## 本期摘要（{rollup['start']} → {rollup['end']}）")
+    if topic:
+        out.append(f"本週主題：{topic}" + ("" if topic[-1] in "？。！?" else "。"))
+    most = [t["ticker"] for t in (rollup.get("tickers") or [])[:CHART_TICKERS]]
+    if most:
+        out.append("追蹤節目本週談最多的是 " + "、".join(_name(t, names) for t in most) + "。")
+    out.append(f"資料附錄回頭驗證 {record['week']} 那週節目說過的話，20 個交易日後對照同期大盤。"
+               if calls else f"資料附錄的驗證段（{record['week']} 的說法）本期資料未齊，下期補上。")
     out.append("")
-    out.append("| 個股 | 集數 | 看多 | 中性 | 看空 |")
-    out.append("|---|---:|---:|---:|---:|")
-    for t in (rollup.get("tickers") or [])[:TOP_TICKERS]:
-        out.append(f"| {_name(t['ticker'], names)} | {t['episodes']} | {t['bull']}（{t['prev_bull']}）"
-                   f" | {t['neu']}（{t['prev_neu']}） | {t['bear']}（{t['prev_bear']}） |")
+    out.append(PAYWALL)
     out.append("")
 
-    # 2. who was right
-    calls = record["calls"]
-    out.append(f"## 誰講對了 — {record['week']}（{record['start']} → {record['end']}）的說法，20 個交易日後")
-    if not calls:
+    # 2. 本週主題 — the article, verbatim
+    if article:
+        out.append(f"## {topic or '本週主題'}")
+        out.append("")
+        out.append(_strip_title(article))
+        out.append("")
+
+    # 3. 資料附錄
+    out.append("## 資料附錄")
+    out.append("")
+    if top:
+        # ponytail: one link per stock. vocus has no image node in our converter yet, so an
+        # inline card would render as a bare link anyway; the card is the cover instead.
+        out.append("**主題個股**（走勢、成交量與節目多空分佈見個股頁）")
+        out.append("")
+        out.append("、".join(f"[{_name(t, names)}]({site}/stock/{t})" for t in top))
+        out.append("")
+    if movers.get("high") or movers.get("low"):
+        out.append(f"**聲量水位**（{movers.get('as_of')}；每檔相對自己過去一年的討論量分位數，只描述狀態）")
+        out.append("")
+        for k, label in (("high", "在自己一年高點（≥90）"), ("low", "在自己一年低點（≤10）")):
+            rows = movers.get(k) or []
+            if rows:
+                out.append(f"- {label}：" + "、".join(f"{_name(r['ticker'], names)} {r['level']}" for r in rows))
+        out.append("")
+    out.append(f"**{record['week']}（{record['start']} → {record['end']}）的說法，20 個交易日後**")
+    out.append("")
+    if not stat:
         out.append("那一週的提及尚無足夠的收盤資料可以計算，本節下期補上。")
     else:
-        per: dict[str, dict] = defaultdict(lambda: {"n": 0, "scored": 0, "hits": 0, "sum": 0.0})
-        for c in calls:
-            row = per[c["podcaster"]]
-            row["n"] += 1
-            row["sum"] += c["r"]
-            if c["hit"] is not None:
-                row["scored"] += 1
-                row["hits"] += int(c["hit"])
-        out.append(f"共 {len(calls)} 筆有方向或中性立場的個股提及已可驗證。「命中」＝立場方向與其後 20 個交易日"
-                   f"報酬同號，中性立場不計入命中、但計入平均。")
+        out.append(f"那週有 {stat['n']} 筆看多的個股說法可驗證。單看漲跌，{stat['up']:.0f}% 之後是漲的；"
+                   f"但同一段時間大盤（台股 0050／美股 SPY）平均走了 {_pct(stat['mean_idx'])}，"
+                   f"這些個股平均 {_pct(stat['mean_r'])}，只有 {stat['beat']:.0f}% 跑贏同期大盤。"
+                   f"看多說法的命中率有多少是選股、多少是市場本身，要看第二個數字。")
         out.append("")
-        out.append("| 節目 | 提及 | 命中 | 平均 20 日報酬 |")
-        out.append("|---|---:|---:|---:|")
-        for show, row in sorted(per.items(), key=lambda kv: (-kv[1]["hits"] / kv[1]["scored"] if kv[1]["scored"] else 0, -kv[1]["n"])):
-            hit = f"{row['hits']}/{row['scored']}" if row["scored"] else "—"
-            out.append(f"| {show} | {row['n']} | {hit} | {_pct(row['sum'] / row['n'])} |")
+        scored = [c for c in calls if c["stance"] == "bull" and c.get("excess") is not None]
+        by = sorted(scored, key=lambda c: -c["excess"])
+        out.append("**相對大盤最強的三筆**")
+        out.extend(_call_line(c, names) for c in by[:TOP_CALLS])
         out.append("")
-        directional = [c for c in calls if c["hit"] is not None]
-        if directional:
-            best = sorted(directional, key=lambda c: -(c["r"] if c["sentiment_label"] in _BULL else -c["r"]))
-            out.append("**講得最準的三筆**")
-            for c in best[:TOP_CALLS]:
-                out.append(_call_line(c, names))
-            out.append("")
-            out.append("**偏差最大的三筆**")
-            for c in reversed(best[-TOP_CALLS:]):
-                out.append(_call_line(c, names))
-            out.append("")
-
-    # 3. screener × mentions
-    ep_mentions = _episode_mentions(rollup)
-    out.append(f"## 篩選器前十 × 節目提及（{screener.get('date') or '—'}）")
-    if not screener.get("candidates"):
-        out.append("本期無篩選器資料。")
-    else:
-        out.append("全市場動能／籌碼異常篩選的前十名，最後一欄是本週有幾集節目提到它。"
-                   "有分數、沒人講的，和大家都在講、分數也高的，是兩種不同的東西。")
-        out.append("")
-        # No rank column: rows are already in rank order, and the syndication
-        # tokenizer turns a table into "first cell：…" list items, so the first
-        # cell must be the name.
-        out.append("| 個股 | 分數 | 5 日 | 量能倍數 | 60 日新高 | 擁擠 | 本週提及集數 |")
-        out.append("|---|---:|---:|---:|:-:|:-:|---:|")
-        for c in screener["candidates"]:
-            f = c["factors"]
-            ret5 = f.get("ret_5d")
-            vol = f.get("vol_mult")
-            out.append(f"| {_name(c['ticker'], names)} | {c['final_score']:.2f}"
-                       f" | {_pct(None if ret5 is None else ret5 * 100)}"  # screener stores a fraction
-                       f" | {'—' if vol is None else f'{vol:.1f}x'}"
-                       f" | {'✓' if c['is_60d_high'] else ''} | {'✓' if c['crowded'] else ''}"
-                       f" | {ep_mentions.get(c['ticker'], 0)} |")
-        out.append("")
-
+        out.append("**相對大盤最弱的三筆**")
+        out.extend(_call_line(c, names) for c in reversed(by[-TOP_CALLS:]))
+    out.append("")
     out.append("---")
     out.append(f"*{DISCLAIMER}*")
 
-    title = f"聽播客週報 Pro {week}｜誰講對了、篩選器前十"
-    excerpt = (f"{rollup['start']}～{rollup['end']}：{rollup['episode_count']} 集節目的焦點個股、"
-               f"四週前說法的 20 日驗證、以及篩選器前十與節目提及的交叉表。")
+    title = f"聽播客週報 Pro {week}｜{topic}" if topic else f"聽播客週報 Pro {week}"
+    excerpt = (f"{rollup['start']}～{rollup['end']}：" + (f"{topic}；" if topic else "")
+               + f"附 {record['week']} 節目說法的 20 日驗證與聲量水位。")
     stats = {"episodes": rollup["episode_count"], "calls_scored": len(calls),
-             "screener_rows": len(screener.get("candidates") or [])}
-    return {"title": title, "markdown": "\n".join(out), "excerpt": excerpt, "stats": stats}
+             "movers": len(movers.get("high") or []) + len(movers.get("low") or []), "article": bool(article)}
+    # The cover is the title in large type (the appendix carries no chart any more).
+    thumbnail = f"{api}/api/og/title/{title_payload(topic or title, f'聽播客週報 Pro {week}')}.png"
+    return {"title": title, "markdown": "\n".join(out), "excerpt": excerpt, "stats": stats, "thumbnail_url": thumbnail}
 
 
 def _call_line(c: dict, names: dict[str, str]) -> str:
@@ -262,23 +291,24 @@ def _call_line(c: dict, names: dict[str, str]) -> str:
     if len(thesis) > 60:
         thesis = thesis[:60] + "…"
     return (f"- {c['date']} {c['podcaster']} 對 {_name(c['ticker'], names)} {_label_zh(c['sentiment_label'])}"
-            f"，之後 20 日 {_pct(c['r'])}。「{thesis}」")
+            f"，之後 20 日 {_pct(c['r'])}（同期大盤 {_pct(c['idx'])}）。「{thesis}」")
 
 
 # ── entry ──────────────────────────────────────────────────────────────────────
 
-def _query_all(week: str, rollup: dict, allowed: Optional[frozenset]) -> tuple[dict, dict, dict]:
+def _query_all(week: str, rollup: dict, movers: dict, allowed: Optional[frozenset]) -> tuple[dict, dict]:
     for db in get_session():
-        record, screener = query_track_record(db, lagged_week(week), allowed), query_screener(db)
-        return record, screener, query_names(db, cited_tickers(rollup, record, screener))
-    return {"week": lagged_week(week), "start": "", "end": "", "calls": []}, {"date": None, "candidates": []}, {}
+        record = query_track_record(db, lagged_week(week), allowed)
+        return record, query_names(db, cited_tickers(rollup, record, movers))
+    return {"week": lagged_week(week), "start": "", "end": "", "calls": []}, {}
 
 
-async def build_paid_weekly(week: str) -> Optional[dict]:
+async def build_paid_weekly(week: str, article: Optional[str] = None) -> Optional[dict]:
     """None when the week has no scoped episodes (same rule as the public page)."""
     rollup = await build_week(week)
     if rollup is None:
         return None
     allowed = await _podcast_service._allowed_podcast_names()
-    record, screener, names = await asyncio.to_thread(_query_all, week, rollup, allowed)
-    return {"week": week, **render_markdown(rollup, record, screener, names)}
+    movers = await attention_movers(week, allowed=allowed)
+    record, names = await asyncio.to_thread(_query_all, week, rollup, movers, allowed)
+    return {"week": week, **render_markdown(rollup, record, movers, names, article)}

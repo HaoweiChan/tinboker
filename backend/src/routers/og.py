@@ -32,6 +32,7 @@ from src.services.weekly_card import (
     theme_rows, ticker_rows,
 )
 from src.services.syndication_markdown import podcast_short_name, syndication_title
+from src.services.title_card import decode, title_card_svg
 
 logger = logging.getLogger(__name__)
 
@@ -404,3 +405,24 @@ async def weekly_themes_raster(
     if download:
         headers["Content-Disposition"] = f'attachment; filename="tinboker-themes-{week_start}.png"'
     return Response(content=png, media_type="image/png", headers=headers)
+
+
+@router.get("/title/{payload}.png")
+async def title_card_raster(
+    payload: str = Path(..., pattern=r"^[A-Za-z0-9_\-]{4,600}$"),
+) -> Response:
+    """Words-only cover: a kicker line and the title in large type. ``payload`` is
+    urlsafe-base64 JSON ``{"title": ..., "kicker": ...}`` (see title_card.encode) — in the
+    PATH, not a query string, because vocus stores a thumbnail URL with its query
+    stripped and then renders a 422 as a broken cover."""
+    try:
+        title, kicker = decode(payload)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    svg = title_card_svg(title, kicker)
+    try:
+        png = await asyncio.to_thread(svg_to_png, svg, CARD_SIZE, CARD_SIZE)
+    except Exception as e:  # noqa: BLE001 — surfaced, never swapped for the SVG
+        logger.exception("og: title card rasterisation failed")
+        raise HTTPException(status_code=500, detail=f"card rasterisation failed: {e}") from e
+    return Response(content=png, media_type="image/png", headers={"Cache-Control": _CACHE_CONTROL})

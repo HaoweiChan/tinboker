@@ -6,6 +6,7 @@ import { StockIdentity } from '@/components/common/StockIdentity';
 import { TickerAvatar } from '@/components/common/TickerAvatar';
 import { inferStockMarket } from '@/utils/stockDisplay';
 import { useStockSummaries } from '@/hooks/useStockSummaries';
+import { SwipeToRemove } from '@/components/common/SwipeToRemove';
 import { getRecentBuzz } from '@/services/api/podcasts';
 import type { SentimentLabel, TickerTrending } from '@/services/types';
 import type { Sentiment } from '@/lib/sentiment';
@@ -29,7 +30,11 @@ function labelToSentiment(label: SentimentLabel): Sentiment {
  * (mention count) and 情緒 (sentiment) from the same recent-buzz feed. Caller
  * guards the empty case; this renders the populated table only.
  */
-export const SubscribedTickers: React.FC<{ tickers: string[] }> = ({ tickers }) => {
+export const SubscribedTickers: React.FC<{
+  tickers: string[];
+  /** When set, each row swipes left to remove (the 收藏 page); the label names it in the undo toast. */
+  onRemove?: (ticker: string, label: string) => void;
+}> = ({ tickers, onRemove }) => {
   const summaries = useStockSummaries(tickers);
   const [buzzMap, setBuzzMap] = useState<Map<string, TickerTrending>>(new Map());
 
@@ -64,7 +69,7 @@ export const SubscribedTickers: React.FC<{ tickers: string[] }> = ({ tickers }) 
         const summary = summaries[sym];
         const buzz = buzzMap.get(sym) ?? buzzMap.get(sym.split('.')[0]);
         const badge = MARKET_BADGE[inferStockMarket(sym)];
-        return (
+        const row = (
           <Link
             key={sym}
             to={`/stock/${encodeURIComponent(sym)}`}
@@ -84,6 +89,11 @@ export const SubscribedTickers: React.FC<{ tickers: string[] }> = ({ tickers }) 
             <ChevronRight size={14} className="text-muted-foreground" />
           </Link>
         );
+        return onRemove ? (
+          <SwipeToRemove key={sym} className="border-b border-border last:border-b-0" onRemove={() => onRemove(sym, summary?.name || sym)}>
+            {row}
+          </SwipeToRemove>
+        ) : row;
       })}
     </div>
   );

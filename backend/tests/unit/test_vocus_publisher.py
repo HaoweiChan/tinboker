@@ -207,7 +207,7 @@ async def test_tags_are_sent_as_taginfo_objects_not_strings():
 
 
 @pytest.mark.asyncio
-async def test_a_thumbnail_switches_the_cover_source_to_custom():
+async def test_a_thumbnail_switches_the_cover_source_to_upload():
     """coverSource="article" makes vocus look for an image inside the body; our bodies have
     none, which is what left the vocus placeholder cover on the first real draft."""
     seen = {}
@@ -224,7 +224,7 @@ async def test_a_thumbnail_switches_the_cover_source_to_custom():
                                    canonical_url="https://tinboker.com/episode/EP1",
                                    tags=[], thumbnail_url="https://img.test/cover.jpg")
     assert seen["thumbnailUrl"] == "https://img.test/cover.jpg"
-    assert seen["coverSource"] == "custom"
+    assert seen["coverSource"] == "upload"
 
 
 @pytest.mark.asyncio
@@ -331,3 +331,29 @@ async def test_episode_summaries_stay_free(monkeypatch):
     assert sent["setIsPay"] is False and "paid_verified" not in result
     assert sent["setAISupport"] is True and sent["setInvestment"] is True  # both disclosures, every article
     assert sent["canonicalURL"].endswith("/episode/ep1")
+
+
+@pytest.mark.asyncio
+async def test_room_and_schedule_are_sent_the_way_the_wizard_sends_them():
+    """Captured from the publish wizard 2026-09-13: rooms travel as publicationIds, a
+    schedule is isSchedule + readyPublishAt in UTC, and limitTimeFree is always off."""
+    import json
+    from datetime import datetime, timedelta, timezone
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "PATCH":
+            seen.update(json.loads(request.content))
+        return httpx.Response(200, json={})
+
+    client = vp.VocusClient(token="t", user_id="u", salon_id="s")
+    taipei = timezone(timedelta(hours=8))
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        await client.save_settings(http, "a", title="T", abstract="A", canonical_url="", tags=[],
+                                   room="weekly", publish_at=datetime(2026, 9, 14, 8, 30, tzinfo=taipei))
+    assert seen["publicationIds"] == [vp.ROOMS["weekly"]] and seen["roomTabIds"] == []
+    assert seen["isSchedule"] is True and seen["readyPublishAt"] == "2026-09-14T00:30:00Z"
+    assert seen["limitTimeFree"] is False
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        await client.save_settings(http, "a", title="T", abstract="A", canonical_url="", tags=[], room="daily")
+    assert seen["publicationIds"] == [vp.ROOMS["daily"]] and seen["isSchedule"] is False
