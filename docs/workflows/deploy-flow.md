@@ -89,6 +89,8 @@ last-seen version differs.
 
 The three deploy workflows run under a `concurrency` group (backend/frontend per ref, pipelines one group for all refs) with `cancel-in-progress: false`: runs queue instead of overlapping, and GitHub keeps only the newest pending run, so back-to-back merges end on the newest commit. Before this, two develop merges 20s apart let the older backend build re-push `:develop` last (2026-09-16). A manual **re-run of an older run** still re-pushes the branch tag — re-run the newest one instead.
 
+Backend deploys for different envs still share one `/app` checkout on the VPS, so `backend-deploy.yml`, `backend-deploy-admin.yml` and `backend-health-check.yml` take a host-wide `flock` on `/run/lock/tinboker-app-deploy.lock` before touching it. Deploys wait up to 20 min (SSH `command_timeout: 30m`); the health-check restart skips its tick instead of waiting. A deploy failing with "another deploy held /app for 20m" means a previous deploy is hung — check `ps aux | grep flock` on the VPS (read-only), then re-run.
+
 ## Verification
 
 After every deploy, in order:
