@@ -11,8 +11,9 @@ export type BarTone = 'topic' | 'ticker' | 'momentum';
  *  deliberately near-invisible — a flat fill reads as a stock progress component, a
  *  strong one as glowing plastic.
  *
- *  `rising` fades the last fifth into the 升溫 cyan instead of recolouring the whole
- *  bar: a fully cyan row outshouted the ranking it belongs to. */
+ *  `rising` tips the last few pixels with the 升溫 cyan instead of recolouring the bar
+ *  (a fully cyan row outshouted its own ranking) or fading a fifth of it (that read as
+ *  loud as the momentum panel, blurring what cyan means). */
 export const Bar: React.FC<{
   value: number;
   max: number;
@@ -31,7 +32,7 @@ export const Bar: React.FC<{
         style={{
           width: grown ? `${(value / Math.max(1, max)) * 100}%` : '0%',
           background: rising
-            ? `linear-gradient(90deg, ${from} 0%, ${to} 78%, ${signal} 100%)`
+            ? `linear-gradient(90deg, ${from} 0%, ${to} calc(100% - 9px), ${signal} calc(100% - 1px))`
             : `linear-gradient(90deg, ${from} 0%, ${to} 100%)`,
           boxShadow: `0 0 6px hsl(var(--bar-${tone}-to) / 0.10)`,
           transition: 'width 900ms cubic-bezier(0.22, 1, 0.36, 1)',

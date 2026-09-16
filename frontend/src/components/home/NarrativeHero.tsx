@@ -28,10 +28,13 @@ export const NarrativeHero: React.FC<Props> = ({ data }) => {
   const max = Math.max(1, ...rows.map((r) => r.count_7d));
 
   return (
-    <div className="bg-card border border-border rounded-[10px] p-5 flex flex-col gap-4 min-w-0">
+    <div className="bg-card border border-border rounded-[10px] p-5 flex flex-col gap-4 min-w-0 transition-colors duration-200 hover:border-primary/45">
       <div className="flex items-baseline justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-xl font-semibold tracking-[-0.02em]">本週市場在聊什麼</h1>
+          <h1 className="text-xl font-semibold tracking-[-0.02em] flex items-center gap-2">
+            <span aria-hidden className="inline-block w-[3px] h-[18px] rounded-sm bg-primary shrink-0" />
+            本週市場在聊什麼
+          </h1>
           {data && (
             <p className="text-sm text-muted-foreground mt-0.5">
               近 7 天收錄 <span className="font-mono tabular-nums text-foreground font-semibold"><CountUp value={data.episode_count_7d} /></span> 集 ·{' '}
