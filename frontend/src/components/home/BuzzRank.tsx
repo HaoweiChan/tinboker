@@ -23,9 +23,10 @@ export const BuzzRank: React.FC<Props> = ({ rows }) => {
             return (
               <React.Fragment key={r.ticker}>
                 <Link to={`/stock/${encodeURIComponent(r.ticker)}`} className="font-semibold font-mono whitespace-nowrap hover:text-primary transition-colors">
+                  <span className="text-2xs text-muted-foreground/60 tabular-nums mr-1.5">{String(i + 1).padStart(2, '0')}</span>
                   {r.ticker}{r.name && <span className="ml-1.5 font-sans font-normal text-sm text-muted-foreground">{r.name}</span>}
                 </Link>
-                <Bar value={r.count_30d} max={max} tone={i === 0 ? 'strong' : 'default'} delayMs={i * 60} />
+                <Bar value={r.count_30d} max={max} tone="ticker" delayMs={i * 60} />
                 <span className="font-mono tabular-nums text-right">{r.count_30d} <span className="text-2xs text-muted-foreground">集</span></span>
                 <span className="text-right min-w-[48px] font-semibold"><DeltaText now={r.count_30d} prev={r.prev_30d} /></span>
               </React.Fragment>

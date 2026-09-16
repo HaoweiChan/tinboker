@@ -68,20 +68,21 @@
     --sentiment-neutral: 215 12% 42%;
     --sentiment-neutral-soft: 210 20% 92%;
 
-    /* === Attention bars — colour marks STATE, never which panel a bar sits in.
-       Every statistic is the same slate blue (the leader one step brighter), and
-       cyan is spent only on what is actually heating up, so a cyan bar means the
-       same thing as the 升溫 / NEW badge next to it. Amber stays a UI accent
-       (selected tab, logo) — as a bar fill it turned whole panels into one warm
-       block. The gradient is almost imperceptible on purpose: enough that the bar
-       isn't a flat slab, not enough to look like glowing plastic. === */
+    /* === Attention bars — one cool family, a different hue per kind of number, so
+       the three panels separate without looking like three products: blue-grey for
+       topic attention, a greyer violet-blue for ticker popularity, teal for momentum.
+       Cyan (--bar-signal) is never a whole bar: it is the tail a 升溫 row fades into,
+       matching its badge. Amber stays a UI accent (selected tab, logo). The gradient
+       is a few points of lightness — enough not to be a flat slab, not enough to look
+       like glowing plastic. === */
     --bar-track: 214 20% 90%;
-    --bar-default-from: 203 33% 42%;
-    --bar-default-to: 202 33% 52%;
-    --bar-strong-from: 203 34% 48%;
-    --bar-strong-to: 202 36% 58%;
-    --bar-hot-from: 190 72% 36%;
-    --bar-hot-to: 188 74% 45%;
+    --bar-topic-from: 203 26% 40%;
+    --bar-topic-to: 203 26% 48%;
+    --bar-ticker-from: 218 19% 42%;
+    --bar-ticker-to: 218 19% 50%;
+    --bar-momentum-from: 188 72% 32%;
+    --bar-momentum-to: 188 72% 40%;
+    --bar-signal: 187 74% 44%;
 
     /* Legacy token aliases */
     --bg-base: hsl(var(--background));
@@ -151,12 +152,13 @@
     /* Attention bars — see the light block. Track is barely above the card so an
        empty bar is a groove, not a grey slab. */
     --bar-track: 214 27% 12%;
-    --bar-default-from: 203 33% 38%;
-    --bar-default-to: 202 33% 48%;
-    --bar-strong-from: 203 32% 44%;
-    --bar-strong-to: 202 34% 55%;
-    --bar-hot-from: 190 76% 36%;
-    --bar-hot-to: 188 78% 44%;
+    --bar-topic-from: 203 24% 42%;
+    --bar-topic-to: 203 24% 50%;
+    --bar-ticker-from: 218 17% 44%;
+    --bar-ticker-to: 218 17% 52%;
+    --bar-momentum-from: 188 75% 36%;
+    --bar-momentum-to: 188 75% 44%;
+    --bar-signal: 187 75% 50%;
   }
 }
 
