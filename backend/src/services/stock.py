@@ -69,15 +69,25 @@ class StockService:
         timeframe_key = timeframe or 'ALL'
         granularity = 'minute' if timeframe in ['1H'] else 'daily'
         cache_key = f"stock:{ticker.upper()}:info:{timeframe_key}:{granularity}:v3"
-        
+        # A daily view with a price but no bars means the history fetch failed while the
+        # snapshot succeeded. That shape was cached for an hour and its 7-day stale copy
+        # overwrote the good one: NVDA's 1Y chart and share card 404'd on prod
+        # 2026-09-17 while staging (same code, other Redis) drew 250 bars. Intraday
+        # views can be legitimately empty outside market hours, so they are exempt.
+        needs_bars = timeframe not in ('1H', '1D')
+
+        def usable(detail: Optional[CompanyDetail]) -> bool:
+            return bool(detail) and (detail.price or 0) > 0 and (bool(detail.chartData) or not needs_bars)
+
         # Skip cache if 'before' is provided (pagination request for older data)
         if not before:
             # Check cache first
             cached = await cache_get(cache_key)
             if cached:
                 try:
-                    data = json.loads(cached)
-                    return CompanyDetail(**data)
+                    hit = CompanyDetail(**json.loads(cached))
+                    if usable(hit):
+                        return hit
                 except Exception:
                     pass  # If deserialization fails, fetch fresh data
         
@@ -114,11 +124,11 @@ class StockService:
             if before:
                 return result
 
-            # Only treat this as a usable result when we actually got a price. A 0/None
-            # price means the snapshot/history fetch failed (only the static ticker
-            # details came through) — caching that would mask the real price for a full
-            # TTL, so fall through to the last known-good (stale) copy instead.
-            if result and (result.price or 0) > 0:
+            # Only treat this as a usable result when we actually got a price (and, for a
+            # daily view, bars). Anything less means part of the fetch failed — caching it
+            # would mask the real data for a full TTL, so fall through to the last
+            # known-good (stale) copy instead.
+            if usable(result):
                 try:
                     payload = json.dumps(result.dict(), default=str)
                     await cache_set(cache_key, payload, CACHE_TTL["stock_info"])
@@ -129,15 +139,20 @@ class StockService:
                     pass  # Cache failure shouldn't break the request
                 return result
 
-        # Upstream returned nothing usable (rate-limited / no price). Serve the last
-        # known-good value rather than 404 / a price-less blank.
+        # Upstream returned nothing usable (rate-limited / no price / no bars). Serve the
+        # last known-good value rather than 404 / a blank.
         if not before:
             stale = await cache_get(f"{cache_key}:stale")
             if stale:
                 try:
-                    return CompanyDetail(**json.loads(stale))
+                    old = CompanyDetail(**json.loads(stale))
+                    if usable(old):
+                        return old
                 except Exception:
                     pass
+            # No good copy: a priced result without bars still beats nothing, uncached.
+            if stock_data and result and (result.price or 0) > 0:
+                return result
         return None
     
     

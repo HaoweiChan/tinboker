@@ -42,6 +42,17 @@ export interface ChangelogEntry {
 //   docs/workflows/deploy-flow.md § "In-app changelog (What's new)".
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.12.0',
+    date: '2026-09',
+    items: [
+      '首頁改版：「本週市場在聊什麼」「最多人聊」「升溫最快」一眼看出節目焦點，打開速度也快了許多。',
+      '個股頁新增「聲量水位」，看這檔股票最近被節目討論的熱度，落在它自己一年來的什麼位置；另外加上法人買賣超圖表，節目觀點改成可翻頁的清單。',
+      '新增每週週報頁，整理這一週各節目聊了哪些股票與題材。',
+      '收藏頁更好用：分頁名稱精簡、左滑就能移除（可以復原），追蹤的話題也會顯示正確的集數。',
+      '分享個股圖表前可以先預覽圖卡；單集摘要的時間點可以直接在 Spotify 播放器跳轉收聽。',
+    ],
+  },
+  {
     version: '0.11.11',
     date: '2026-09',
     items: [
