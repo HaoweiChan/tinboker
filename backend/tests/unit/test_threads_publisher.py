@@ -126,6 +126,24 @@ async def test_publish_recent_skips_already_posted_and_old(temp_db, monkeypatch)
     assert result["posted"] == []
 
 
+@pytest.mark.asyncio
+async def test_publish_recent_posts_at_most_max_posts_per_call(temp_db, monkeypatch):
+    """One carousel per slot: the newest goes out, the rest stay unrecorded so the
+    next slot picks them up — not lost, not posted back to back."""
+    eps = [_ep("EP600", insights=["一"]), _ep("EP601", insights=["二"]), _ep("EP602", insights=["三"])]
+    monkeypatch.setattr(threads_publisher.podcast_service, "get_recent_episodes", await _fake_recent(eps))
+    monkeypatch.setattr(settings, "threads_access_token", None)
+    monkeypatch.setattr(settings, "threads_user_id", None)
+
+    result = await threads_publisher.publish_recent(limit=10, dry_run=True, max_posts=1)
+    assert [p["episode_id"] for p in result["posted"]] == ["EP600"]
+    assert {s["episode_id"]: s["reason"] for s in result["skipped"]} == {"EP601": "slot_full", "EP602": "slot_full"}
+    assert threads_publisher.already_posted("EP601") is False
+
+    # No cap (the admin endpoint) behaves as before.
+    assert len((await threads_publisher.publish_recent(limit=10, dry_run=True))["posted"]) == 3
+
+
 # ── thread (carousel + reply chain) ──────────────────────────────────
 
 def _cards():
