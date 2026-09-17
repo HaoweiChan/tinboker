@@ -193,3 +193,77 @@ async def generate_social_copy(
         )
 
     return SocialCopyResponse(episode_id=episode_id, post=post, comments=comments)
+
+
+class PostHocCopyRequest(BaseModel):
+    """What the backend's rotation knows about the mention it picked. ``thesis`` and
+    ``sentiment_label`` are the content_mentions row; the pipeline's own ticker_insight
+    (reasons, risks) is added here when the wiki DB has it."""
+    ticker: str
+    name: str = ""
+    mention_date: str = ""
+    sentiment_label: Optional[str] = None
+    thesis: Optional[str] = None
+
+
+class PostHocCopyResponse(BaseModel):
+    episode_id: str
+    ticker: str
+    post: str
+
+
+def _ticker_insight(episode_id: str, ticker: str) -> Optional[Any]:
+    """The pipeline's ticker_insight row for (episode, ticker), or None. Best-effort:
+    the wiki DB is a separate connection and a dev box may not have it."""
+    try:
+        from src.routers.content import _get_repos
+        for i in _get_repos().ticker_insights.list_by_episode(episode_id):
+            if (i.ticker or "").upper() == ticker.upper():
+                return i
+    except Exception as e:  # noqa: BLE001 — the story still works from thesis + summary
+        logger.info("post-hoc: ticker_insight unavailable for %s/%s: %s", episode_id, ticker, e)
+    return None
+
+
+def _generate_post_hoc_copy(episode_id: str, req: PostHocCopyRequest) -> str:
+    from src.podcast.post_hoc_copy import write_post_hoc_copy
+    from src.service.firestore_service import FirestoreService
+
+    doc = FirestoreService().get_document("episodes", episode_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail=f"Episode '{episode_id}' not found")
+    insight = _ticker_insight(episode_id, req.ticker)
+    material = {
+        "source": doc.get("podcast_name") or "Podcast",
+        "episode_title": doc.get("episode_title") or doc.get("title") or "Episode",
+        "ticker": req.ticker.upper(),
+        "name": req.name,
+        "mention_date": req.mention_date,
+        "sentiment_label": req.sentiment_label or getattr(insight, "sentiment_label", None),
+        "thesis": req.thesis or getattr(insight, "bluf_thesis", None),
+        "reasons": getattr(insight, "reasons", None) or [],
+        "risks": getattr(insight, "risks", None) or [],
+        "summary": _load_summary(doc, episode_id),
+    }
+    return write_post_hoc_copy(material).get("post") or ""
+
+
+@router.post("/episodes/{episode_id}/post-hoc-copy", response_model=PostHocCopyResponse)
+async def generate_post_hoc_copy(
+    episode_id: str,
+    req: PostHocCopyRequest,
+    api_key: str = Security(verify_api_key),
+):
+    """The story of what this episode said about one stock — for the backend's
+    post-hoc Threads format, which appends the price line itself. Read-only."""
+    if not req.ticker.strip():
+        raise HTTPException(status_code=400, detail="ticker is required")
+    try:
+        post = await asyncio.to_thread(_generate_post_hoc_copy, episode_id, req)
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Post-hoc copy generation failed: {e}")
+    if not post:
+        raise HTTPException(status_code=502, detail="Post-hoc copy generation produced no content.")
+    return PostHocCopyResponse(episode_id=episode_id, ticker=req.ticker.upper(), post=post)
