@@ -26,19 +26,19 @@ def test_sections_about_matches_anchor_or_name_and_strips_markup():
     assert phc.sections_about(_SUMMARY, "2330", "台積電") == []
 
 
-def test_speaker_is_a_nickname_a_short_show_name_or_the_cjk_run():
+def test_speaker_fallback_is_a_nickname_or_the_cjk_run_and_a_passed_name_wins():
     assert phc.speaker_for("Gooaye 股癌") == "孟恭"
     assert phc.speaker_for("游庭皓的財經皓角") == "皓哥"
-    assert phc.speaker_for("兆華與股惑仔") == "兆華"
-    assert phc.speaker_for("財經一路發") == "一路發"
     assert phc.speaker_for("Some 韭菜畢業班 Show") == "韭菜畢業班"
     assert phc.speaker_for("") == "他"
+    user = phc.build_messages({"ticker": "3324", "source": "兆華與股惑仔", "speaker": "兆華", "summary": ""})[1]["content"]
+    assert "講話的人（全篇這樣叫他）：兆華" in user
 
 
 def test_build_messages_carries_the_stance_thesis_and_only_that_stocks_sections():
     msgs = phc.build_messages({
         "source": "兆華與股惑仔", "episode_title": "EP1173", "ticker": "3324", "name": "雙鴻",
-        "mention_date": "2026-08-31", "sentiment_label": "STRONG_BULLISH",
+        "mention_date": "2026-08-31", "sentiment_label": "STRONG_BULLISH", "speaker": "兆華",
         "thesis": "雙鴻跟上奇鋐建準。", "reasons": [{"title": "比價", "description": "族群擴散"}],
         "risks": [], "summary": _SUMMARY,
     })
@@ -90,9 +90,10 @@ def test_endpoint_builds_material_from_the_doc_and_returns_the_story(client, mon
 
     r = client.post("/api/podcast/episodes/ep1/post-hoc-copy", headers={"X-API-Key": "k"},
                     json={"ticker": "3324", "name": "雙鴻", "mention_date": "2026-08-31",
-                          "sentiment_label": "BULLISH", "thesis": "跟上奇鋐"})
+                          "sentiment_label": "BULLISH", "thesis": "跟上奇鋐", "speaker": "兆華"})
     assert r.status_code == 200 and r.json() == {"episode_id": "ep1", "ticker": "3324", "post": "那天他講雙鴻"}
     assert seen["source"] == "兆華與股惑仔" and seen["summary"] == _SUMMARY and seen["thesis"] == "跟上奇鋐"
+    assert seen["speaker"] == "兆華"
 
 
 def test_endpoint_404s_unknown_episode_and_502s_an_empty_story(client, monkeypatch):

@@ -36,6 +36,7 @@ from src.database.models import ContentMention, TickerPerformanceSnapshot
 from src.database.postgres import get_session
 from src.services import social_ledger
 from src.services.attention import scope_mentions
+from src.services.content_source_service import speaker_for
 from src.services.threads_service import ThreadsError, ThreadsService
 
 logger = logging.getLogger(__name__)
@@ -175,7 +176,8 @@ async def _story(c: dict) -> Optional[str]:
             resp = await client.post(
                 f"{base}/api/podcast/episodes/{c['episode_id']}/post-hoc-copy", headers=headers,
                 json={"ticker": c["ticker"], "name": c["name"], "mention_date": c["mention_date"],
-                      "sentiment_label": c.get("sentiment_label"), "thesis": c.get("thesis")})
+                      "sentiment_label": c.get("sentiment_label"), "thesis": c.get("thesis"),
+                      "speaker": speaker_for(c.get("podcaster"))})
         if resp.status_code >= 400:
             logger.warning("post-hoc story %s/%s -> %s: %s", c["episode_id"], c["ticker"],
                            resp.status_code, resp.text[:200])
