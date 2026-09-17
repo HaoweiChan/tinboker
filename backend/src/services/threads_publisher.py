@@ -261,6 +261,7 @@ async def publish_recent(
     limit: int = 10,
     dry_run: bool = True,
     max_age_days: Optional[int] = None,
+    max_posts: Optional[int] = None,
 ) -> dict:
     """Post any recent, not-yet-posted episodes to Threads.
 
@@ -299,6 +300,10 @@ async def publish_recent(
         has_cards = bool(_field(episode, "social_cards"))
         if not (has_cards or _field(episode, "key_insights") or _field(episode, "episode_title")):
             skipped.append({"episode_id": episode_id, "reason": "no_postable_content"})
+            continue
+        if max_posts is not None and len(posted) >= max_posts:
+            # Still a candidate — it is not recorded, so the next slot picks it up.
+            skipped.append({"episode_id": episode_id, "reason": "slot_full"})
             continue
 
         # Use the full thread (carousel + reply chain) when the episode has rendered

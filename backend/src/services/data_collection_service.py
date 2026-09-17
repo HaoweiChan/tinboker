@@ -549,7 +549,7 @@ class DataCollectionService:
             from_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
             to_date = datetime.now().strftime("%Y-%m-%d")
         
-        if self.massive_service.client is None:
+        if not self.massive_service._clients:  # not `.client`: that takes a budget unit
             raise MassiveAPIError("Massive API client not initialized")
         
         # Limit adjustment
@@ -641,7 +641,7 @@ class DataCollectionService:
             self._fetch_aggregates(ticker, price_history, timeframe)
             return
         
-        if self.massive_service.client is None:
+        if not self.massive_service._clients:  # not `.client`: that takes a budget unit
             raise MassiveAPIError("Massive API client not initialized")
         
         try:

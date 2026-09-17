@@ -126,6 +126,11 @@ class Settings(BaseSettings):
     social_publish_slots: str = ""
     # How many recent episodes each slot scans (the ledger decides what actually posts).
     social_publish_scan_limit: int = 10
+    # How many of them each slot actually posts. Four episodes landing at once used to
+    # mean four carousels in a row — the same skeleton back to back is the fatigue
+    # readers reported. The rest wait for the next slot (and age out of the window if
+    # the day is too busy, which is the intended volume cut). Newest first.
+    social_publish_per_slot: int = 1
 
     # Where the pipeline's prompt YAMLs live. Unset resolves to the sibling pipelines/
     # tier in a repo checkout, which is right for local dev and wrong in the container —

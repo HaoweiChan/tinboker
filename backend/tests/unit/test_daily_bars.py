@@ -201,7 +201,7 @@ async def test_repair_refetches_every_stored_us_ticker_and_upserts(monkeypatch):
     written = []
     monkeypatch.setattr(daily_bars, "write_bars", lambda t, b, source: written.append((t, [x["date"] for x in b])) or len(b))
     client = _FlakyClient(fail=["MSFT"], times=1)   # one 429, then fine
-    state = await daily_bars.repair_us_bars(days=400, gap_seconds=0, backoff_seconds=0, client=client)
+    state = await daily_bars.repair_us_bars(days=400, gap_seconds=0, backoff_seconds=0, massive=SimpleNamespace(client=client))
     assert state["running"] is False and state["done"] == 3 and state["failed"] == []
     assert [t for t, _ in written] == ["AMD", "MSFT", "NVDA"]
     assert written[0][1] == ["2026-07-24", "2026-09-01"]  # the gap and the intraday row come back
@@ -213,7 +213,7 @@ async def test_repair_refetches_every_stored_us_ticker_and_upserts(monkeypatch):
 async def test_repair_records_a_ticker_that_fails_twice_and_carries_on(monkeypatch):
     monkeypatch.setattr(daily_bars, "us_tickers_in_store", lambda: ["AMD", "NVDA"])
     monkeypatch.setattr(daily_bars, "write_bars", lambda t, b, source: len(b))
-    state = await daily_bars.repair_us_bars(gap_seconds=0, backoff_seconds=0, client=_FlakyClient(fail=["AMD"], times=2))
+    state = await daily_bars.repair_us_bars(gap_seconds=0, backoff_seconds=0, massive=SimpleNamespace(client=_FlakyClient(fail=["AMD"], times=2)))
     assert state["done"] == 2 and [f["ticker"] for f in state["failed"]] == ["AMD"] and state["written"] == 2
 
 
