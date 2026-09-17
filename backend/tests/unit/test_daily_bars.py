@@ -177,3 +177,64 @@ async def test_stock_service_serves_but_never_caches_a_stored_bar_fallback(monke
         detail = await service.get_stock_info_async("NVDA", timeframe="1Y")
     assert detail is not None and len(detail.chartData) == 250
     cache_set.assert_not_awaited()
+
+
+# ── one-off repair ─────────────────────────────────────────────────────────
+
+class _FlakyClient:
+    """list_aggs that 429s for tickers in ``fail`` (``times`` times each)."""
+
+    def __init__(self, fail=(), times=1):
+        self.fail, self.times, self.calls = dict.fromkeys(fail, times), times, []
+
+    def list_aggs(self, ticker, **kw):
+        self.calls.append((ticker, kw["from_"], kw["to"]))
+        if self.fail.get(ticker, 0) > 0:
+            self.fail[ticker] -= 1
+            raise RuntimeError("too many 429 error responses")
+        return [_agg("2026-07-24", 180.0), _agg("2026-09-01", 459.61)]
+
+
+@pytest.mark.asyncio
+async def test_repair_refetches_every_stored_us_ticker_and_upserts(monkeypatch):
+    monkeypatch.setattr(daily_bars, "us_tickers_in_store", lambda: ["AMD", "MSFT", "NVDA"])
+    written = []
+    monkeypatch.setattr(daily_bars, "write_bars", lambda t, b, source: written.append((t, [x["date"] for x in b])) or len(b))
+    client = _FlakyClient(fail=["MSFT"], times=1)   # one 429, then fine
+    state = await daily_bars.repair_us_bars(days=400, gap_seconds=0, backoff_seconds=0, client=client)
+    assert state["running"] is False and state["done"] == 3 and state["failed"] == []
+    assert [t for t, _ in written] == ["AMD", "MSFT", "NVDA"]
+    assert written[0][1] == ["2026-07-24", "2026-09-01"]  # the gap and the intraday row come back
+    assert [c[0] for c in client.calls].count("MSFT") == 2  # retried once
+    assert state["written"] == 6
+
+
+@pytest.mark.asyncio
+async def test_repair_records_a_ticker_that_fails_twice_and_carries_on(monkeypatch):
+    monkeypatch.setattr(daily_bars, "us_tickers_in_store", lambda: ["AMD", "NVDA"])
+    monkeypatch.setattr(daily_bars, "write_bars", lambda t, b, source: len(b))
+    state = await daily_bars.repair_us_bars(gap_seconds=0, backoff_seconds=0, client=_FlakyClient(fail=["AMD"], times=2))
+    assert state["done"] == 2 and [f["ticker"] for f in state["failed"]] == ["AMD"] and state["written"] == 2
+
+
+@pytest.mark.asyncio
+async def test_repair_endpoint_starts_one_job_only(monkeypatch):
+    import asyncio
+    from src.routers import admin_stock_bars
+
+    gate = asyncio.Event()
+    starts = []
+
+    async def _slow(days):
+        starts.append(days)
+        await gate.wait()
+        return {}
+
+    monkeypatch.setattr(daily_bars, "repair_us_bars", _slow)
+    monkeypatch.setattr(admin_stock_bars, "_task", None)
+    first = await admin_stock_bars.start_repair(days=400, _=None)
+    second = await admin_stock_bars.start_repair(days=400, _=None)
+    await asyncio.sleep(0)
+    assert first["started"] is True and second["started"] is False and starts == [400]
+    gate.set()
+    await admin_stock_bars._task

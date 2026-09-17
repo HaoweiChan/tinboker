@@ -17,10 +17,12 @@ stored day and never writes back.
 Sync on purpose: callers already run inside ``run_in_executor``.
 """
 
+import asyncio
 import logging
 import math
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
@@ -116,3 +118,79 @@ def display_name(ticker: str) -> Optional[str]:
             StockTranslation.ticker == ticker).first()
         return (row[0] or row[1]) if row else None
     return None
+
+
+_NEW_YORK = ZoneInfo("America/New_York")
+
+
+def fetch_us_bars(client: Any, ticker: str, from_date: str, to_date: str, limit: int) -> List[Dict[str, Any]]:
+    """Daily bars from Massive as plain dicts, dated in New York (Massive stamps a daily
+    bar at the session's local midnight)."""
+    return [
+        {"date": datetime.fromtimestamp(a.timestamp / 1000, tz=_NEW_YORK).strftime("%Y-%m-%d"),
+         "open": a.open, "high": a.high, "low": a.low, "close": a.close,
+         "volume": int(getattr(a, "volume", 0) or 0)}
+        for a in client.list_aggs(ticker=ticker, multiplier=1, timespan="day", from_=from_date, to=to_date, limit=limit)
+    ]
+
+
+# ── one-off repair ─────────────────────────────────────────────────────────────
+#
+# Chart loads only re-fetch the last US_TAIL_DAYS, so defects older than that stay:
+# on 2026-09-17 NVDA/AMD/MSFT had no bar for 2026-07-24 and 2026-09-01 was stored
+# mid-session. The repair re-fetches a year for every US ticker in the store, spaced like
+# the other US warmers (Massive is ~5 req/min), and upserts the closed sessions. One run
+# fixes every environment: dev, staging and prod share this table.
+
+REPAIR_GAP_SECONDS = 14.0
+REPAIR_BACKOFF_SECONDS = 60.0
+REPAIR: Dict[str, Any] = {"running": False}
+
+
+def us_tickers_in_store() -> List[str]:
+    from sqlalchemy import distinct
+
+    from src.services.finmind_service import is_tw_ticker
+
+    for db in get_session():
+        rows = db.query(distinct(StockDailyOHLC.ticker)).filter(StockDailyOHLC.ticker.op("~")("^[A-Z]")).all()
+        return sorted(t for (t,) in rows if t and not is_tw_ticker(t))
+    return []
+
+
+async def repair_us_bars(days: int = 400, gap_seconds: float = REPAIR_GAP_SECONDS,
+                         backoff_seconds: float = REPAIR_BACKOFF_SECONDS, client: Any = None) -> Dict[str, Any]:
+    """Re-fetch ``days`` of daily bars for every stored US ticker and upsert closed sessions.
+    One attempt plus one retry after a back-off per ticker (a 429 run passes in a minute);
+    a ticker that fails twice is recorded and skipped. Progress lives in ``REPAIR``."""
+    if REPAIR.get("running"):
+        return REPAIR
+    if client is None:
+        from src.services.massive_service import MassiveAPIService
+        client = MassiveAPIService().client
+    tickers = await asyncio.to_thread(us_tickers_in_store)
+    to_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    from_date = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
+    REPAIR.clear()
+    REPAIR.update(running=True, total=len(tickers), done=0, written=0, failed=[], current=None,
+                  window=[from_date, to_date], started_at=datetime.now(timezone.utc).isoformat(), finished_at=None)
+    try:
+        for ticker in tickers:
+            REPAIR["current"] = ticker
+            for attempt in (1, 2):
+                try:
+                    bars = await asyncio.to_thread(fetch_us_bars, client, ticker, from_date, to_date, days + 50)
+                    REPAIR["written"] += await asyncio.to_thread(write_bars, ticker, bars, "massive")
+                    break
+                except Exception as e:
+                    if attempt == 2:
+                        REPAIR["failed"].append({"ticker": ticker, "error": str(e)[:200]})
+                        logger.warning("bar repair: %s failed twice: %s", ticker, e)
+                    else:
+                        await asyncio.sleep(backoff_seconds)
+            REPAIR["done"] += 1
+            await asyncio.sleep(gap_seconds)
+    finally:
+        REPAIR.update(running=False, current=None, finished_at=datetime.now(timezone.utc).isoformat())
+        logger.info("bar repair finished: %s", {k: v for k, v in REPAIR.items() if k != "failed"})
+    return REPAIR
