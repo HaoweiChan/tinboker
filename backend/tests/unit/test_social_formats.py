@@ -109,8 +109,8 @@ STORY = "8 月底那天 兆華聊到散熱族群\n盤面上的族群性終於整
 def test_post_hoc_caption_is_the_story_then_the_one_line_only_we_can_write():
     text = sf.post_hoc_text(_cand(), STORY)
     assert text.startswith(STORY)
-    assert text.endswith("\n\n8/31 到 9/16 漲 8.8%")
-    assert sf.post_hoc_text(_cand(pct=-12.34), STORY).endswith("8/31 到 9/16 跌 12.3%")
+    assert text.endswith("\n\n雙鴻(3324)8/31到9/16漲8.8%")
+    assert sf.post_hoc_text(_cand(pct=-12.34), STORY).endswith("雙鴻(3324)8/31到9/16跌12.3%")
     assert "我" not in text and "對了" not in text and "錯了" not in text
     assert len(text) <= THREADS_MAX_CHARS
 
@@ -168,7 +168,7 @@ async def test_post_hoc_up_tells_the_story_and_builds_the_marked_card_url(temp_d
     draft = await sf.select_post_hoc_up()
     assert asked["episode_id"] == "ep0" and asked["thesis"] == "3324 的理由"
     assert draft["key"] == "post_hoc:3324:ep0" and draft["subject"] == "3324"
-    assert draft["text"] == STORY + "\n\n9/7 到 9/16 漲 12.0%"
+    assert draft["text"] == STORY + "\n\n雙鴻(3324)9/7到9/16漲12.0%"
     assert draft["image_url"].endswith("/api/og/stock/3324.png?days=60&event=2026-09-07"
                                        "&label=%E5%85%86%E8%8F%AF%E8%88%87%E8%82%A1%E6%83%91%E4%BB%94%209/7")
     assert draft["url"].endswith("/episode/ep0")
@@ -184,7 +184,7 @@ async def test_post_hoc_down_is_its_own_format_and_no_story_means_no_post(temp_d
         return STORY
     monkeypatch.setattr(sf, "_story", story)
     assert await sf.select_post_hoc_up() is None
-    assert (await sf.select_post_hoc_down())["text"].endswith("9/7 到 9/16 跌 15.0%")
+    assert (await sf.select_post_hoc_down())["text"].endswith("雙鴻(3324)9/7到9/16跌15.0%")
 
     async def dead(c):
         return None
