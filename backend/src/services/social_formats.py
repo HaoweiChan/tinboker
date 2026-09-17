@@ -99,12 +99,12 @@ def weekly_movers_text(data: dict) -> str:
     top, *rest = data["rows"]
     bull, bear = top.get("bull", 0), top.get("bear", 0)
     lean = "看多的多" if bull > bear else "看空的多" if bear > bull else "多空各半"
-    lines = [f'{_tk(top)} 這週 {top.get("casts", 0)} 個節目提了 {top["n"]} 次 上週 {top.get("prev", 0)} {lean}']
+    lines = [f'{_tk(top)} 這週{top.get("casts", 0)}個節目提了{top["n"]}次 上週{top.get("prev", 0)} {lean}']
     busy = [r for r in rest if r["n"] >= WEEKLY_BUSY_N][:2]
     if busy:
         lines.append("")
         lines.append("也很吵的還有")
-        lines += [f'{_tk(r)} {r["n"]} 次 上週 {r.get("prev", 0)}' for r in busy]
+        lines += [f'{_tk(r)} {r["n"]}次 上週{r.get("prev", 0)}' for r in busy]
     return "\n".join(lines) + "\n\n提及次數 不是漲幅 全部名單在圖裡"
 
 
