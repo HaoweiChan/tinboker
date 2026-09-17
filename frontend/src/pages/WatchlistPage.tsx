@@ -6,17 +6,14 @@ import { PageContent } from '@/components/layout/PageContent';
 import { EpisodeCardV2 } from '@/components/redesign';
 import { SwipeToRemove } from '@/components/common/SwipeToRemove';
 import { apiEpisodeToCardV2 } from '@/components/redesign/episodeAdapter';
+import { SubscribedPodcasters } from '@/components/profile/SubscribedPodcasters';
 import { SubscribedTickers } from '@/components/profile/SubscribedTickers';
 import { SubscribedTopics } from '@/components/profile/SubscribedTopics';
-import { getPodcastEpisodes, getSortedPodcasts, type Episode as ApiEpisode, type Podcast } from '@/services/api/podcasts';
-import { fetchWithFallback } from '@/services/api/migration';
 import { userApi } from '@/services/api/user';
 import { useAppStore, useSubscriptions, useWatchlist, useTagSubscriptions } from '@/store/useAppStore';
 import { useBookmarkedEpisodes } from '@/hooks/useBookmarkedEpisodes';
 import { useStockPriceMap } from '@/hooks/useStockPriceMap';
 import { useStockPriceSinceMap } from '@/hooks/useStockPriceSinceMap';
-import { useTranslationMap } from '@/hooks/useTranslationMap';
-import { useEpisodeSentimentMap } from '@/hooks/useEpisodeSentimentMap';
 
 type Tab = 'podcasters' | 'tickers' | 'topics' | 'episodes';
 
@@ -26,10 +23,7 @@ export const WatchlistPage: React.FC = () => {
   const localWatchlist = useWatchlist();
   const localTagSubscriptions = useTagSubscriptions();
   const [tab, setTab] = useState<Tab>('podcasters');
-  const [episodes, setEpisodes] = useState<ApiEpisode[]>([]);
-  const [podcasts, setPodcasts] = useState<Podcast[]>([]);
   const [bookmarkedIds, setBookmarkedIds] = useState<string[]>([]);
-  const [loadingEps, setLoadingEps] = useState(false);
   // Server-side data for logged-in users
   const [apiSubscriptions, setApiSubscriptions] = useState<string[]>([]);
   const [apiWatchlist, setApiWatchlist] = useState<string[]>([]);
@@ -39,6 +33,7 @@ export const WatchlistPage: React.FC = () => {
   // themselves aren't edited, so an undo puts a row back where it was.
   const [removed, setRemoved] = useState<ReadonlySet<string>>(new Set());
   const toggleWatchlist = useAppStore((s) => s.toggleWatchlist);
+  const toggleSubscription = useAppStore((s) => s.toggleSubscription);
   const toggleTagSubscription = useAppStore((s) => s.toggleTagSubscription);
   const toggleEpisodeBookmark = useAppStore((s) => s.toggleEpisodeBookmark);
 
@@ -74,8 +69,8 @@ export const WatchlistPage: React.FC = () => {
 
   // Effective lists: prefer server data for logged-in users, fall back to local store
   const subscriptions = useMemo(
-    () => token && serverLoaded ? apiSubscriptions : localSubscriptions,
-    [token, serverLoaded, apiSubscriptions, localSubscriptions],
+    () => (token && serverLoaded ? apiSubscriptions : localSubscriptions).filter((n) => !removed.has(`podcaster:${n}`)),
+    [token, serverLoaded, apiSubscriptions, localSubscriptions, removed],
   );
   const watchlist = useMemo(
     () => (token && serverLoaded ? apiWatchlist : localWatchlist).filter((t) => !removed.has(`ticker:${t}`)),
@@ -106,62 +101,13 @@ export const WatchlistPage: React.FC = () => {
     });
   }, [token]);
 
-  const episodeTickers = useMemo(() => episodes.flatMap((ep) => ep.related_tickers ?? []), [episodes]);
-  const priceMap = useStockPriceMap(episodeTickers);
-  const priceSinceMap = useStockPriceSinceMap(episodes);
-  const rawTranslationMap = useTranslationMap(episodeTickers);
-  const translationMap = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const [k, v] of rawTranslationMap) m.set(k, v.displayName);
-    return m;
-  }, [rawTranslationMap]);
-  const podcastImageMap = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const p of podcasts) {
-      if (p.name && p.image_url) map.set(p.name, p.image_url);
-    }
-    return map;
-  }, [podcasts]);
-  const visibleEpisodeIds = useMemo(() => episodes.map((e) => e.id), [episodes]);
-  const sentimentMap = useEpisodeSentimentMap(visibleEpisodeIds);
-  const { episodes: bookmarked, resolved: bookmarksResolved } = useBookmarkedEpisodes(bookmarkedIds);
+  const { episodes: bookmarked, resolved: bookmarksResolved } = useBookmarkedEpisodes(bookmarkedIds, {
+    repair: true,
+    onChange: setBookmarkedIds,
+  });
   const bookmarkedTickers = useMemo(() => bookmarked.flatMap((ep) => ep.related_tickers ?? []), [bookmarked]);
   const bookmarkedPriceMap = useStockPriceMap(bookmarkedTickers);
   const bookmarkedPriceSinceMap = useStockPriceSinceMap(bookmarked);
-
-  // Fetch subscribed podcast episodes
-  useEffect(() => {
-    if (tab !== 'podcasters' || subscriptions.length === 0) return;
-    let alive = true;
-    setLoadingEps(true);
-    (async () => {
-      const [arrays, podcastList] = await Promise.all([
-        Promise.all(
-          subscriptions.slice(0, 12).map((name) =>
-            getPodcastEpisodes(name, { sortBy: 'spotify_release_date', order: 'desc', limit: 3, includeContent: false }).catch(() => [] as ApiEpisode[]),
-          ),
-        ),
-        fetchWithFallback<Podcast[]>(
-          () => getSortedPodcasts({ sortBy: 'updated_at', order: 'desc', limit: 200 }),
-          [],
-          'getSortedPodcasts:watchlist',
-        ).catch(() => [] as Podcast[]),
-      ]);
-      if (!alive) return;
-      const flat = arrays
-        .flat()
-        .sort((a, b) => {
-          const da = typeof a.spotify_release_date === 'string' ? Date.parse(a.spotify_release_date) : (a.spotify_release_date ?? a.created_time);
-          const db = typeof b.spotify_release_date === 'string' ? Date.parse(b.spotify_release_date) : (b.spotify_release_date ?? b.created_time);
-          return (db as number) - (da as number);
-        })
-        .slice(0, 18);
-      setEpisodes(flat);
-      setPodcasts(Array.isArray(podcastList) ? podcastList : []);
-      setLoadingEps(false);
-    })();
-    return () => { alive = false; };
-  }, [tab, subscriptions]);
 
   // Fetch bookmarked episode IDs (for anonymous users only — logged-in fetched above)
   useEffect(() => {
@@ -213,20 +159,11 @@ export const WatchlistPage: React.FC = () => {
                 <div className="bg-card border border-border rounded-md p-10 text-center text-sm text-muted-foreground">
                   尚未訂閱任何節目 — 去 <Link to="/podcaster" className="text-accent-info hover:underline">節目</Link> 頁追蹤幾個吧。
                 </div>
-              ) : loadingEps ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {Array.from({ length: 4 }).map((_, i) => (
-                    <div key={i} className="bg-card border border-border rounded-md h-[180px] animate-pulse" />
-                  ))}
-                </div>
-              ) : episodes.length === 0 ? (
-                <div className="bg-card border border-border rounded-md p-10 text-center text-sm text-muted-foreground">訂閱的節目目前沒有最新集數。</div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {episodes.map((ep) => (
-                    <EpisodeCardV2 key={ep.id} {...apiEpisodeToCardV2(ep, priceMap, podcastImageMap, translationMap, sentimentMap.get(ep.id), priceSinceMap)} />
-                  ))}
-                </div>
+                <SubscribedPodcasters
+                  names={subscriptions}
+                  onRemove={(name, label) => removeWithUndo(`podcaster:${name}`, label, () => toggleSubscription(name, { silent: true }))}
+                />
               )
             )}
 
