@@ -204,6 +204,7 @@ class PostHocCopyRequest(BaseModel):
     mention_date: str = ""
     sentiment_label: Optional[str] = None
     thesis: Optional[str] = None
+    speaker: Optional[str] = None   # how a listener names the host; the backend owns the table
 
 
 class PostHocCopyResponse(BaseModel):
@@ -239,6 +240,7 @@ def _generate_post_hoc_copy(episode_id: str, req: PostHocCopyRequest) -> str:
         "ticker": req.ticker.upper(),
         "name": req.name,
         "mention_date": req.mention_date,
+        "speaker": req.speaker,
         "sentiment_label": req.sentiment_label or getattr(insight, "sentiment_label", None),
         "thesis": req.thesis or getattr(insight, "bluf_thesis", None),
         "reasons": getattr(insight, "reasons", None) or [],

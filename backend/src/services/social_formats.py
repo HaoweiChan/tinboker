@@ -36,6 +36,7 @@ from src.database.models import ContentMention, TickerPerformanceSnapshot
 from src.database.postgres import get_session
 from src.services import social_ledger
 from src.services.attention import scope_mentions
+from src.services.content_source_service import speaker_for
 from src.services.threads_service import ThreadsError, ThreadsService
 
 logger = logging.getLogger(__name__)
@@ -98,12 +99,12 @@ def weekly_movers_text(data: dict) -> str:
     top, *rest = data["rows"]
     bull, bear = top.get("bull", 0), top.get("bear", 0)
     lean = "看多的多" if bull > bear else "看空的多" if bear > bull else "多空各半"
-    lines = [f'{_tk(top)} 這週 {top.get("casts", 0)} 個節目提了 {top["n"]} 次 上週 {top.get("prev", 0)} {lean}']
+    lines = [f'{_tk(top)} 這週{top.get("casts", 0)}個節目提了{top["n"]}次 上週{top.get("prev", 0)} {lean}']
     busy = [r for r in rest if r["n"] >= WEEKLY_BUSY_N][:2]
     if busy:
         lines.append("")
         lines.append("也很吵的還有")
-        lines += [f'{_tk(r)} {r["n"]} 次 上週 {r.get("prev", 0)}' for r in busy]
+        lines += [f'{_tk(r)} {r["n"]}次 上週{r.get("prev", 0)}' for r in busy]
     return "\n".join(lines) + "\n\n提及次數 不是漲幅 全部名單在圖裡"
 
 
@@ -175,7 +176,8 @@ async def _story(c: dict) -> Optional[str]:
             resp = await client.post(
                 f"{base}/api/podcast/episodes/{c['episode_id']}/post-hoc-copy", headers=headers,
                 json={"ticker": c["ticker"], "name": c["name"], "mention_date": c["mention_date"],
-                      "sentiment_label": c.get("sentiment_label"), "thesis": c.get("thesis")})
+                      "sentiment_label": c.get("sentiment_label"), "thesis": c.get("thesis"),
+                      "speaker": speaker_for(c.get("podcaster"))})
         if resp.status_code >= 400:
             logger.warning("post-hoc story %s/%s -> %s: %s", c["episode_id"], c["ticker"],
                            resp.status_code, resp.text[:200])
