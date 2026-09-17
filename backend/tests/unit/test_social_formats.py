@@ -103,7 +103,7 @@ def _cand(**kw):
     return {**base, **kw}
 
 
-STORY = "8月31號那天 主持人講到雙鴻的時候\n整個散熱族群正在齊漲\n\n主持人那時候看的是\n族群整齊發動 短線值得留意"
+STORY = "8 月底那天 兆華聊到散熱族群\n盤面上的族群性終於整齊起來\n\n那天他的焦點就停在這個整齊發動的節奏"
 
 
 def test_post_hoc_caption_is_the_story_then_the_one_line_only_we_can_write():

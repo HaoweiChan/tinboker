@@ -26,6 +26,15 @@ def test_sections_about_matches_anchor_or_name_and_strips_markup():
     assert phc.sections_about(_SUMMARY, "2330", "台積電") == []
 
 
+def test_speaker_is_a_nickname_a_short_show_name_or_the_cjk_run():
+    assert phc.speaker_for("Gooaye 股癌") == "孟恭"
+    assert phc.speaker_for("游庭皓的財經皓角") == "皓哥"
+    assert phc.speaker_for("兆華與股惑仔") == "兆華"
+    assert phc.speaker_for("財經一路發") == "一路發"
+    assert phc.speaker_for("Some 韭菜畢業班 Show") == "韭菜畢業班"
+    assert phc.speaker_for("") == "他"
+
+
 def test_build_messages_carries_the_stance_thesis_and_only_that_stocks_sections():
     msgs = phc.build_messages({
         "source": "兆華與股惑仔", "episode_title": "EP1173", "ticker": "3324", "name": "雙鴻",
@@ -34,8 +43,8 @@ def test_build_messages_carries_the_stance_thesis_and_only_that_stocks_sections(
         "risks": [], "summary": _SUMMARY,
     })
     system, user = msgs[0]["content"], msgs[1]["content"]
-    assert "時間停在節目播出那天" in system and "不要評斷" in system
-    assert "那天主持人對它的立場：看多" in user
+    assert "時間停在節目播出那天" in system and "不要評斷" in system and "不准寫「主持人」" in system
+    assert "講話的人（全篇這樣叫他）：兆華" in user and "那天他對它的立場：看多" in user
     assert "雙鴻跟上奇鋐建準。" in user and "- 比價 族群擴散" in user and "（無）" in user  # risks empty
     assert "作帳行情" in user and "光通訊" not in user
     assert "只能靠上面的結論" not in user

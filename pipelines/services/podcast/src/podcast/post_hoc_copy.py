@@ -24,7 +24,7 @@ from typing import Any
 from .content_builder.llm import invoke_json, load_prompt
 from .content_builder.nodes.social_copy_writer import (
     # shared with the episode writer so the three prompts cannot drift on these
-    _host_nicknames_for,
+    _HOST_NICKNAMES,
     _report_first_person,
     _summary_sections,
 )
@@ -32,6 +32,29 @@ from .content_builder.nodes.social_copy_writer import (
 MAX_SECTIONS = 3
 SECTION_CHARS = 1200
 STANCE_ZH = {"BULLISH": "看多", "BEARISH": "看空", "NEUTRAL": "沒有明確方向"}
+
+# Who is talking, the way a listener would say it. The story is about ONE person's take,
+# so "主持人" is banned — it reads like a report. Hosts with a known nickname get it (the
+# episode writer's table); the rest get the name the show is actually called by.
+_SPEAKERS: dict[str, str] = {
+    "兆華與股惑仔": "兆華",
+    "財經一路發": "一路發",
+    "財女珍妮": "珍妮",
+    "M觀點": "Miula",
+    "財經M平方": "M平方",
+}
+
+
+def speaker_for(source: str) -> str:
+    src = source or ""
+    for key, names in _HOST_NICKNAMES.items():
+        if key in src:
+            return names[0]
+    for key, name in _SPEAKERS.items():
+        if key in src:
+            return name
+    runs = re.findall(r"[\u4e00-\u9fff]+", src)   # "Gooaye 股癌" → 股癌, like podcast_short_name
+    return max(runs, key=len) if runs else (src.strip() or "他")
 
 
 def sections_about(summary: str, ticker: str, name: str) -> list[dict[str, str]]:
@@ -68,7 +91,7 @@ def build_messages(material: dict) -> list[dict[str, str]]:
         source=material.get("source") or "Podcast",
         episode_title=material.get("episode_title") or "Episode",
         mention_date=material.get("mention_date") or "",
-        host_nicknames=_host_nicknames_for(material.get("source") or ""),
+        speaker=speaker_for(material.get("source") or ""),
         name=material.get("name") or material["ticker"],
         ticker=material["ticker"],
         stance=STANCE_ZH.get(stance, "沒有明確方向"),
