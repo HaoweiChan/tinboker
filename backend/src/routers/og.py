@@ -186,6 +186,9 @@ async def stock_card_raster(
     # path parameter could contain quotes or newlines.
     ticker: str = Path(..., pattern=r"^[A-Za-z0-9.\-]{1,20}$"),
     days: int = Query(90, ge=20, le=250, description="Trading sessions to draw"),
+    event: Optional[str] = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$",
+                                 description="Mark the first session on/after this date"),
+    label: Optional[str] = Query(None, max_length=40, description="Text on the event marker"),
     download: bool = Query(False, description="Send as an attachment rather than inline"),
 ) -> Response:
     """One ticker as a square PNG — candles, volume, and the podcast bull/bear split.
@@ -205,7 +208,8 @@ async def stock_card_raster(
     allowed = await podcast_service._allowed_podcast_names()
     mentions = await asyncio.to_thread(_daily_mentions, ticker, since, allowed)
 
-    svg = stock_card_svg(stock.model_dump(), mentions, days)
+    svg = stock_card_svg(stock.model_dump(), mentions, days,
+                         event={"date": event, "label": label} if event else None)
     try:
         png = await asyncio.to_thread(svg_to_png, svg, CARD_SIZE, CARD_SIZE)
     except Exception as e:  # noqa: BLE001 — surfaced, never swapped for the SVG

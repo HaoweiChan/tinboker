@@ -27,6 +27,15 @@ on:
         type: boolean
         default: true
 
+# Serialize runs per ref. Two merges ~20s apart used to race: the older run finished
+# its build last, re-pushed the mutable :develop tag with the older image, and both
+# deploys pulled it (2026-09-16, #711 missing on dev). Queued, not cancelled — killing
+# a run mid-SSH could leave the container half-swapped. GitHub keeps only the newest
+# pending run per group, so a burst of merges still ends on the newest commit.
+concurrency:
+  group: backend-deploy-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: haoweichan/tinboker-backend
@@ -197,6 +206,8 @@ jobs:
           username: ${{ env.VPS_USER }}
           key: ${{ env.VPS_SSH_KEY }}
           envs: GHCR_TOKEN,GCP_CREDS_JSON,POSTGRES_PASSWORD
+          # Default is 10m; waiting on the /app lock below can add a full other deploy.
+          command_timeout: 30m
           script: |
             # Fail the SSH script (and thus the job) on any unhandled error. Without
             # this, a failed container swap below would silently fall through to the
@@ -204,6 +215,16 @@ jobs:
             # and the deploy would be falsely reported as healthy. (Root cause of prod
             # being stuck on a stale image; see backend-deploy.yml history.)
             set -eo pipefail
+
+            # One /app checkout serves dev, staging AND prod. Hold a host-wide lock so a
+            # develop deploy and a main/tag deploy can't interleave: without it one run's
+            # `git checkout -f` swaps the compose file and Caddyfile under the other run
+            # mid-deploy. flock (not a GitHub concurrency group) because a shared group
+            # would drop a pending deploy for one env when another env pushes. fd 9 closes
+            # when this shell and its children exit, including a cancelled run's SSH drop.
+            exec 9>/run/lock/tinboker-app-deploy.lock
+            echo "Waiting for the /app deploy lock..."
+            flock -w 1200 9 || { echo "ERROR: another deploy held /app for 20m"; exit 1; }
 
             SERVICE="${{ steps.env.outputs.service }}"
             IMAGE_TAG="${{ steps.env.outputs.image_tag }}"

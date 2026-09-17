@@ -128,7 +128,9 @@ class StockService:
             # daily view, bars). Anything less means part of the fetch failed — caching it
             # would mask the real data for a full TTL, so fall through to the last
             # known-good (stale) copy instead.
-            if usable(result):
+            # A result drawn from stored bars (the upstream failed) is served but never
+            # cached: it has no company details and may lack the newest session.
+            if usable(result) and getattr(stock_data, "from_stored_bars", False) is not True:
                 try:
                     payload = json.dumps(result.dict(), default=str)
                     await cache_set(cache_key, payload, CACHE_TTL["stock_info"])

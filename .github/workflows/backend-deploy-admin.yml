@@ -138,7 +138,13 @@ jobs:
           username: ${{ env.VPS_USER }}
           key: ${{ env.VPS_SSH_KEY }}
           envs: GHCR_TOKEN,POSTGRES_PASSWORD
+          # Default is 10m; waiting on the /app lock below can add a full other deploy.
+          command_timeout: 30m
           script: |
+            # Same host-wide /app lock as backend-deploy.yml — see the comment there.
+            exec 9>/run/lock/tinboker-app-deploy.lock
+            flock -w 1200 9 || { echo "ERROR: another deploy held /app for 20m"; exit 1; }
+
             cd /app
             git pull || true
 

@@ -1,12 +1,32 @@
 """Data collection service for stock data from Massive and FinMind APIs."""
 import logging
 from typing import Optional, List, Dict, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
+from src.services import daily_bars
 from src.services.massive_service import MassiveAPIService, MassiveAPIError
 from src.services.finmind_service import FinMindAPIService, FinMindAPIError, is_tw_ticker
 from src.models.schemas import Stock, StockMetadata, StockPriceRecord, StockPriceHistory, CompanyStats
 
 logger = logging.getLogger(__name__)
+
+
+_NEW_YORK = ZoneInfo("America/New_York")
+
+
+def _bar_record(bar: Dict[str, Any], tz: timezone) -> StockPriceRecord:
+    """A chart record from a plain bar dict, timestamped at the session's local midnight —
+    the convention of the upstream it stands in for (Massive: New York, FinMind: UTC)."""
+    ts = int(datetime.strptime(bar["date"], "%Y-%m-%d").replace(tzinfo=tz).timestamp() * 1000)
+    vol = int(bar.get("volume") or 0)
+    close = bar["close"]
+    high = bar.get("high") if bar.get("high") is not None else close
+    low = bar.get("low") if bar.get("low") is not None else close
+    return StockPriceRecord(
+        date=bar["date"], timestamp=ts, Trading_Volume=vol, Trading_money=vol * close,
+        open=bar.get("open") if bar.get("open") is not None else close,
+        max=high, min=low, close=close, spread=high - low, Trading_turnover=0.0,
+    )
 
 
 class DataCollectionService:
@@ -70,9 +90,49 @@ class DataCollectionService:
             except Exception as e:
                 logger.error(f"Unexpected error collecting data for {ticker}: {e}")
         
+        # The provider failed before it could return anything (on 2026-09-17 a Massive 429
+        # on ticker details emptied NVDA's chart and 404'd its share card). A daily view can
+        # still be drawn from stored bars; the result is flagged so it is never cached.
+        if not before and timeframe not in ('1H', '1Min', '1D', '1W', '1M'):
+            stock = self._stock_from_stored_bars(ticker, timeframe)
+            if stock:
+                logger.warning(f"Serving {ticker} from stored bars: the upstream API failed")
+                return stock
+
         if use_mock_fallback:
             logger.warning(f"No data available for {ticker} from any API source")
         return None
+
+    def _stock_from_stored_bars(self, ticker: str, timeframe: Optional[str]) -> Optional[Stock]:
+        days = {"YTD": (datetime.now() - datetime(datetime.now().year, 1, 1)).days, "ALL": 1825}.get(timeframe or "", 365)
+        to_date = datetime.now().strftime("%Y-%m-%d")
+        from_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+        try:
+            bars = daily_bars.read_bars(ticker, from_date, to_date)
+            name = daily_bars.display_name(ticker) or ticker
+        except Exception as e:
+            logger.warning(f"Stored-bar fallback failed for {ticker}: {e}")
+            return None
+        if not bars:
+            return None
+        tw = self._is_taiwan_stock(ticker)
+        history = StockPriceHistory()
+        for b in bars:
+            history.add_record(_bar_record(b, timezone.utc if tw else _NEW_YORK))
+        last, prev = bars[-1]["close"], (bars[-2]["close"] if len(bars) > 1 else None)
+        change = (last - prev) if prev else None
+        return Stock(
+            stock_id=ticker,
+            metadata=StockMetadata(stock_id=ticker, ticker=ticker, stock_name=name, industry_category="Unknown",
+                                   currency="TWD" if tw else "USD"),
+            stock_price_history=history,
+            price=last,
+            change=change,
+            changePercent=(change / prev * 100) if prev else None,
+            about="",
+            stats=CompanyStats(volume=int(bars[-1].get("volume") or 0), beta=0.0, volatility=0.0),
+            from_stored_bars=True,
+        )
     
     def _collect_from_finmind(self, ticker: str, timeframe: Optional[str] = None, before: Optional[int] = None) -> Optional[Stock]:
         """
@@ -220,6 +280,31 @@ class DataCollectionService:
         else:
             from_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
             to_date = datetime.now().strftime("%Y-%m-%d")
+
+        if not before:
+            # Stored TWSE/TPEx bars match FinMind exactly; ask FinMind only for what is newer
+            # than the last stored day (usually today's session), and keep the stored bars if
+            # it fails. Pagination (``before``) still goes to FinMind: the store is shallow.
+            try:
+                stored = daily_bars.read_bars(ticker, from_date, to_date)
+            except Exception as e:
+                logger.warning(f"Stored bars unavailable for {ticker}: {e}")
+                stored = []
+            start = daily_bars.fetch_from(stored, from_date, to_date, us=False)
+            try:
+                fetched = self.finmind_service.get_daily_aggregates(
+                    ticker, from_date=start, to_date=to_date, limit=min(days + 50, 50000))
+                fetched = [{"date": datetime.fromtimestamp(b["timestamp"] / 1000, tz=timezone.utc).strftime("%Y-%m-%d"),
+                            "open": b.get("open"), "high": b.get("high"), "low": b.get("low"),
+                            "close": b.get("close"), "volume": b.get("volume", 0)} for b in fetched]
+            except Exception as e:
+                if not daily_bars.covers(stored, from_date):
+                    raise
+                logger.warning(f"FinMind tail fetch failed for {ticker}, serving stored bars: {e}")
+                fetched = []
+            for bar in daily_bars.merge(stored, fetched):
+                price_history.add_record(_bar_record(bar, timezone.utc))
+            return
 
         limit = min(days + 50, 50000)
         bars = self.finmind_service.get_daily_aggregates(ticker, from_date=from_date, to_date=to_date, limit=limit)
@@ -470,6 +555,10 @@ class DataCollectionService:
         # Limit adjustment
         limit = days if timespan == 'day' else (days // 7 if timespan == 'week' else days // 30)
         limit += 50 # Buffer
+
+        if timespan == 'day' and not before:
+            self._fill_us_daily(ticker, price_history, from_date, to_date, limit)
+            return
         
         for agg in self.massive_service.client.list_aggs(
             ticker=ticker,
@@ -499,6 +588,31 @@ class DataCollectionService:
                 Trading_turnover=0.0
             )
             price_history.add_record(record)
+
+    def _fill_us_daily(self, ticker: str, price_history: StockPriceHistory, from_date: str, to_date: str, limit: int) -> None:
+        """Stored bars for the window, with Massive re-fetching the last two weeks. Those
+        fetched sessions that have closed are written back, which also heals a bar stored
+        mid-session (see ``daily_bars``). A Massive failure serves the stored bars alone."""
+        try:
+            stored = daily_bars.read_bars(ticker, from_date, to_date)
+        except Exception as e:
+            logger.warning(f"Stored bars unavailable for {ticker}: {e}")
+            stored = []
+        start = daily_bars.fetch_from(stored, from_date, to_date, us=True)
+        try:
+            fetched = daily_bars.fetch_us_bars(self.massive_service.client, ticker, start, to_date, limit)
+        except Exception as e:
+            if not daily_bars.covers(stored, from_date):
+                raise
+            logger.warning(f"Massive tail fetch failed for {ticker}, serving stored bars: {e}")
+            fetched = []
+        if fetched:
+            try:
+                daily_bars.write_bars(ticker, fetched, source="massive")
+            except Exception as e:  # the chart doesn't depend on the write
+                logger.warning(f"Could not store fetched bars for {ticker}: {e}")
+        for bar in daily_bars.merge(stored, fetched):
+            price_history.add_record(_bar_record(bar, _NEW_YORK))
 
     def _fetch_minute_aggregates(self, ticker: str, timeframe: str, price_history: StockPriceHistory) -> None:
         """

@@ -74,6 +74,15 @@ jobs:
           username: root
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
+            # Same host-wide /app lock as backend-deploy.yml. Don't wait for it: a deploy
+            # in progress is why a container looks unhealthy, and pulling/recreating
+            # under it would race the deploy. The next 10-min tick re-checks.
+            exec 9>/run/lock/tinboker-app-deploy.lock
+            if ! flock -n 9; then
+              echo "A deploy holds /app — skipping restart this tick"
+              exit 0
+            fi
+
             cd /app/backend
 
             if [ "${{ steps.prod-health.outputs.http_code }}" != "200" ]; then

@@ -8,6 +8,14 @@ on:
       - '.github/workflows/pipelines-deploy.yml'
   workflow_dispatch:
 
+# One group for ALL refs: develop and main both deploy into the same /root/tinboker
+# checkout and restart the same systemd units, so they must never overlap, and the
+# last push is the one that should end up running. Queued, not cancelled — killing a
+# run mid-`uv sync` would leave a broken venv.
+concurrency:
+  group: pipelines-deploy
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
