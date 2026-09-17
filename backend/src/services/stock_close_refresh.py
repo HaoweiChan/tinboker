@@ -149,6 +149,7 @@ def _fetch_and_store_closes(ticker: str, fin_svc, mas_svc) -> int:
 # fetched from Massive only when missing (the 429 saver). yfinance has no per-key cap but
 # we still space calls out to be polite to Yahoo and avoid an IP throttle.
 _PROFILE_TTL_DAYS = 7
+_LOGO_RETRY_HOURS = 24
 _YF_GAP_SECONDS = 1.5
 
 
@@ -327,6 +328,10 @@ def backfill_us_mention_history(provider=None, gap_seconds: float = _US_HISTORY_
     return inserted
 
 
+def _has_stored_logo(ticker: str) -> bool:
+    return bool((read_stored_profile_sync(ticker) or {}).get("logo_image"))
+
+
 def _profile_is_fresh(db, ticker: str, cutoff: datetime) -> bool:
     """True if we have a profile for ``ticker`` updated on/after ``cutoff``."""
     from src.database.models import StockProfile
@@ -339,8 +344,14 @@ def _profile_is_fresh(db, ticker: str, cutoff: datetime) -> bool:
     if not row:
         return False
     updated_at, logo_image = row
-    # Re-warm if the logo is still missing, even within the TTL, so it gets backfilled once.
-    return bool(logo_image) and updated_at is not None and updated_at >= cutoff
+    if updated_at is None:
+        return False
+    # A missing logo is retried once a day, not on every run. ETFs (GDX, TLT, URA) have no
+    # Massive branding at all, so "re-warm while the logo is missing" meant a details call
+    # plus two image downloads per such ticker on every cycle and every deploy.
+    if not logo_image:
+        return updated_at >= datetime.utcnow() - timedelta(hours=_LOGO_RETRY_HOURS)
+    return updated_at >= cutoff
 
 
 async def refresh_us_slow_data(max_tracked: int = MAX_TRACKED) -> int:
@@ -364,14 +375,18 @@ async def refresh_us_slow_data(max_tracked: int = MAX_TRACKED) -> int:
                 break
             if skip:
                 continue
+            # Only a ticker still lacking a logo touches Massive; space those like every
+            # other US warmer. The 1.5 s yfinance gap put Massive at ~40 calls/min.
+            needs_logo = not _has_stored_logo(ticker)
             wrote = await loop.run_in_executor(
                 None, _warm_us_slow_data, ticker, yf_provider, mas_provider
             )
             if wrote:
                 warmed += 1
         except Exception as e:
+            needs_logo = False
             logger.debug(f"slow-data: skipping {ticker}: {e}")
-        await asyncio.sleep(_YF_GAP_SECONDS)
+        await asyncio.sleep(_US_GAP_SECONDS if needs_logo else _YF_GAP_SECONDS)
 
     if warmed:
         logger.info(f"slow-data: warmed profile/OHLC for {warmed} US ticker(s).")

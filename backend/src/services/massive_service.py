@@ -7,10 +7,12 @@ This module provides a wrapper around the Massive API client with:
 - Rate limiting support
 """
 
+import hashlib
 import logging
 import os
 import re
 import time
+from urllib.parse import urlparse, urlunparse
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta
 from massive import RESTClient
@@ -43,21 +45,74 @@ _IMG_CACHE_MAX = 4000
 _IMG_FAIL_TTL = 600  # seconds to skip a URL after a failed fetch (e.g. 429)
 
 # Massive (Polygon) free tier is ~5 requests/min PER KEY (per-key, not per-IP), so a pool
-# of keys genuinely multiplies the ceiling. We track a per-key per-minute budget in-process
-# and hand out the first key with remaining budget for each SDK call — load-balancing across
-# keys. A key that 429s anyway just raises (caller serves stale); the next call rotates.
+# of keys genuinely multiplies the ceiling. Each SDK call and each branding-image download
+# takes one unit of a key's minute budget; with every key spent the call fails fast
+# (MassiveAPIError) and the caller serves cached / stored data.
+#
+# The budget used to be advisory and per process: spent keys were still handed out, the
+# SDK retried each 429 three more times, image downloads weren't counted, and dev, staging
+# and prod each counted their own 5/min against the SAME keys. Every deploy restarted a
+# counter at zero next to warmers that start immediately — the post-deploy 429 storm of
+# 2026-09-17 (NVDA's chart and share card went empty on prod). The counter now lives in
+# Redis, in db 0 whichever db an environment caches in, so all three draw from one budget.
 _MASSIVE_PER_MIN = int(os.getenv("MASSIVE_PER_MIN_LIMIT", "5"))
-_minute_counts: dict = {}  # key_id -> [minute, count]
+_minute_counts: dict = {}  # key_id -> [minute, count]; used only when Redis is unreachable
+_budget_redis = None
+_budget_redis_down_until = 0.0
+
+
+def _shared_budget():
+    """Sync Redis client on db 0 for the cross-environment budget, or None."""
+    global _budget_redis, _budget_redis_down_until
+    if _budget_redis is not None:
+        return _budget_redis
+    if time.time() < _budget_redis_down_until or not settings.redis_connection_string:
+        return None
+    try:
+        import redis
+
+        url = urlparse(settings.redis_connection_string)
+        client = redis.Redis.from_url(urlunparse(url._replace(path="/0")), socket_timeout=1, socket_connect_timeout=1)
+        client.ping()
+        _budget_redis = client
+    except Exception as e:
+        logger.warning(f"Massive budget: Redis unavailable, counting in-process: {e}")
+        _budget_redis_down_until = time.time() + 60
+    return _budget_redis
 
 
 def _consume_minute(key_id: str) -> bool:
     minute = int(time.time() // 60)
+    shared = _shared_budget()
+    if shared is not None:
+        try:
+            name = f"massive:rpm:{key_id}:{minute}"
+            count = shared.incr(name)
+            if count == 1:
+                shared.expire(name, 120)
+            return count <= _MASSIVE_PER_MIN
+        except Exception as e:
+            logger.warning(f"Massive budget: Redis error, counting in-process: {e}")
     entry = _minute_counts.get(key_id)
     if entry is None or entry[0] != minute:
         entry = [minute, 0]
         _minute_counts[key_id] = entry
     entry[1] += 1
     return entry[1] <= _MASSIVE_PER_MIN
+
+
+def _key_id(key: str) -> str:
+    """Stable across containers (the pool order may differ), and never the key itself."""
+    return hashlib.sha256(key.encode()).hexdigest()[:10]
+
+
+def _stored_images(ticker: str) -> dict:
+    try:
+        from src.services.stock_close_refresh import read_stored_profile_sync
+
+        return read_stored_profile_sync(ticker) or {}
+    except Exception:
+        return {}
 
 
 class MassiveAPIError(Exception):
@@ -83,7 +138,9 @@ class MassiveAPIService:
         self._clients = []  # list of (key_id, RESTClient)
         for i, key in enumerate(pool):
             try:
-                self._clients.append((str(i), RESTClient(key)))
+                # retries=0: the SDK retried a 429 three more times, so every refused call
+                # cost four requests against a budget that was already spent.
+                self._clients.append((_key_id(key), RESTClient(key, retries=0)))
             except Exception as e:
                 logger.error(f"Failed to initialize Massive API client #{i}: {e}")
         if not self._clients:
@@ -97,15 +154,15 @@ class MassiveAPIService:
 
         Accessing this consumes one unit of the chosen key's minute budget, so every
         existing ``self.client.xxx()`` call automatically spreads across the pool. When all
-        keys are spent for the current minute, returns the first client anyway (it may 429,
-        and the caller degrades to cached/stale data).
+        keys are spent for the current minute it raises MassiveAPIError instead of sending
+        a request that would only 429; callers degrade to cached / stored data.
         """
         if not self._clients:
             return None
         for key_id, cl in self._clients:
             if _consume_minute(key_id):
                 return cl
-        return self._clients[0][1]
+        raise MassiveAPIError("Massive minute budget spent")
 
     def _check_client(self) -> None:
         """Check that at least one client is configured."""
@@ -128,6 +185,12 @@ class MassiveAPIService:
             if expires_at is None or now < expires_at:
                 return b64  # cached success (no expiry) or still-valid negative cache (None)
 
+        # Image downloads hit the same rate limit; take a budget unit like any SDK call.
+        # Out of budget, skip for a minute rather than the 429 back-off.
+        if self._clients and not _consume_minute(self._clients[0][0]):
+            if len(_IMG_CACHE) < _IMG_CACHE_MAX:
+                _IMG_CACHE[url] = (None, now + 60)
+            return None
         headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
         try:
             response = requests.get(url, headers=headers, timeout=10)
@@ -166,9 +229,13 @@ class MassiveAPIService:
                     icon_url = getattr(branding, 'icon_url', None)  # PNG format
                     logo_url = getattr(branding, 'logo_url', None)   # SVG format
                 
-                # Fetch branding images (base64), cached in-process — see _fetch_image_b64.
-                icon_image = self._fetch_image_b64(icon_url)
-                logo_image = self._fetch_image_b64(logo_url)
+                # Branding images: the warmed profile store keeps them in Postgres, so reuse
+                # those instead of downloading two more files per chart miss (the in-process
+                # image cache starts empty after every deploy). Otherwise fetch, cached
+                # in-process — see _fetch_image_b64.
+                stored = _stored_images(ticker)
+                icon_image = stored.get("icon_image") or self._fetch_image_b64(icon_url)
+                logo_image = stored.get("logo_image") or self._fetch_image_b64(logo_url)
 
                 return {
                     "ticker": details.ticker,
