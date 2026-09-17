@@ -83,6 +83,9 @@ class Stock(BaseModel):
     dividendYield: Optional[float] = Field(None, alias="dividendYield")
     about: Optional[str] = None
     stats: Optional[CompanyStats] = None
+    # Built from stored bars because the upstream failed: no details, maybe a stale tail.
+    # Served so the chart isn't blank, never cached (StockService).
+    from_stored_bars: bool = False
 
     class Config:
         populate_by_name = True

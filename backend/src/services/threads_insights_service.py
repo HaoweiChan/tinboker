@@ -13,7 +13,9 @@ to "not connected" rather than 500-ing.
 """
 
 import logging
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
+from statistics import median
 from typing import Optional
 
 import httpx
@@ -27,8 +29,9 @@ logger = logging.getLogger(__name__)
 # WITHOUT a since/until window (Threads rejects the combination), so it's fetched
 # separately from the time-bound engagement metrics below.
 ACCOUNT_TIME_METRICS = ["views", "likes", "replies", "reposts", "quotes"]
-# Per-post metrics (media-level insights).
-POST_METRICS = ["views", "likes", "replies", "reposts", "quotes"]
+# Per-post metrics (media-level insights). ``shares`` is what carried every breakout
+# post so far (Aug–Sep 2026), so it is the one number the format report must not miss.
+POST_METRICS = ["views", "likes", "replies", "reposts", "quotes", "shares"]
 
 
 def _metric_value(item: dict) -> int:
@@ -46,6 +49,29 @@ def _metric_value(item: dict) -> int:
         except (TypeError, ValueError):
             continue
     return total
+
+
+def group_by_format(posts: list[dict]) -> list[dict]:
+    """Roll per-post rows (``format`` + ``metrics``) up into one line per format. Pure.
+
+    Median views, not mean: the account is power-law (top 4 posts were 51% of views), so
+    a mean says which format got lucky once, a median says which one readers open.
+    Rows with no metrics (insights call failed) are counted but excluded from the stats,
+    so a bad week for the API does not read as a bad week for a format.
+    """
+    buckets: dict[str, list[dict]] = defaultdict(list)
+    for p in posts:
+        buckets[p.get("format") or "unknown"].append(p)
+    out = []
+    for fmt, rows in buckets.items():
+        measured = [r["metrics"] for r in rows if r.get("metrics")]
+        views = [m.get("views", 0) for m in measured]
+        line = {"format": fmt, "posts": len(rows), "measured": len(measured),
+                "views_median": int(median(views)) if views else 0, "views_total": sum(views)}
+        for k in POST_METRICS[1:]:
+            line[k] = sum(m.get(k, 0) for m in measured)
+        out.append(line)
+    return sorted(out, key=lambda x: -x["posts"])
 
 
 def _parse_metrics(payload: dict) -> dict:
@@ -140,16 +166,23 @@ class ThreadsInsightsService:
             **({"detail": detail} if detail and not available else {}),
         }
 
-    async def recent_post_insights(self, limit: int = 5) -> list[dict]:
+    async def format_report(self, days: int = 28) -> dict:
+        """Engagement per post format over the window — the yardstick for which formats
+        to keep. ``unknown`` is rows recorded before the ledger stored a format."""
+        posts = await self.recent_post_insights(limit=200, days=days)
+        return {"configured": self.is_configured, "range": {"days": days},
+                "formats": group_by_format(posts)}
+
+    async def recent_post_insights(self, limit: int = 5, days: Optional[int] = None) -> list[dict]:
         """Per-post insights for the most recently published episodes (best-effort).
 
-        Reads locally-recorded posts (``threads_posts`` table) and fetches media-level
+        Reads locally-recorded posts (``social_posts`` ledger) and fetches media-level
         insights for each. Posts whose insights call fails are returned with the error
         rather than dropped, so the admin can see which ones lack data.
         """
         if not self.is_configured:
             return []
-        posted = threads_publisher.list_posted(limit=limit)
+        posted = threads_publisher.list_posted(limit=limit, days=days)
         if not posted:
             return []
 
@@ -161,6 +194,7 @@ class ThreadsInsightsService:
                     "episode_id": row.get("episode_id"),
                     "media_id": media_id,
                     "url": row.get("url"),
+                    "format": row.get("format"),
                     "posted_at": row.get("posted_at"),
                 }
                 if not media_id:

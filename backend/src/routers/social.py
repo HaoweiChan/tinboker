@@ -35,7 +35,7 @@ from src.services.facebook_insights_service import (FacebookInsightsService,
 from src.services.substack_insights_service import SubstackInsightsService
 from src.services.threads_insights_service import ThreadsInsightsService
 from src.services.vocus_insights_service import VocusInsightsService
-from src.services import social_ledger, threads_comments_service
+from src.services import social_formats, social_ledger, threads_comments_service
 
 _MAX_MEDIA_BYTES = 200 * 1024 * 1024  # 200 MB per file
 _gcs = GCSContentService()
@@ -208,6 +208,26 @@ async def threads_insights(
     return {**summary, "recent_posts": recent}
 
 
+@router.get("/formats/preview")
+async def threads_formats_preview(_: AdminAccess = Depends(get_admin_access)):
+    """What the rotation would post at the next slot, plus every format's draft for
+    today (caption, image URL, link) and its cooldown state. Nothing is posted."""
+    return await social_formats.preview()
+
+
+@router.get("/insights/by-format")
+async def threads_insights_by_format(
+    days: int = Query(default=28, ge=1, le=90),
+    _: AdminAccess = Depends(get_admin_access),
+):
+    """Engagement rolled up per post format — one line per format, median views first.
+
+    Separate from ``/insights`` because it fetches insights for every post in the window
+    (up to 200 API calls), which is a weekly review, not a dashboard load.
+    """
+    return await ThreadsInsightsService().format_report(days=days)
+
+
 @facebook_router.get("/insights")
 async def facebook_insights(
     days: int = Query(default=28, ge=1, le=90),
@@ -237,9 +257,11 @@ async def vocus_insights(
     and no history, so "reads this month" comes from the daily snapshot chart, not from
     here.
 
-    Always 200. When the credential is missing or expired, or the read-count field has
-    moved, the payload reports ``available: false`` with a ``detail`` (and
-    ``sample_keys`` for the field case) so the admin UI shows why rather than a zero.
+    Reads are unauthenticated (published articles are public), so an expired token does
+    not blank this panel. Always 200. When ``VOCUS_USER_ID`` is missing, the list call
+    fails, or the read-count field has moved, the payload reports ``available: false``
+    with a ``detail`` (and ``sample_keys`` for the field case) so the admin UI shows why
+    rather than a zero.
     """
     svc = VocusInsightsService()
     summary = await svc.account_summary()

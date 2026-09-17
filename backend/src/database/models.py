@@ -673,6 +673,13 @@ class SocialPostLedger(Base):
     url = Column(Text, nullable=True)                   # the episode URL that was posted
     child_ids = Column(JSON, nullable=False, default=list)  # reply/comment ids
     posted_at = Column(DateTime, default=datetime.utcnow)
+    # Which post shape went out ("episode_thread", "episode_single", …). NULL on rows
+    # written before the column existed. This is the axis the format report groups by;
+    # without it every Threads post is one undifferentiated bucket.
+    format = Column(String(40), nullable=True)
+    # What the post is about beyond the episode — a ticker, a week id, a topic. The
+    # rotation's per-subject cooldown keys on it (one 欣興 post a week, not five).
+    subject = Column(String(80), nullable=True)
 
     def __repr__(self) -> str:
         return f"<SocialPostLedger({self.platform}, {self.episode_id})>"
