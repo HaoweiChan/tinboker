@@ -23,6 +23,8 @@ from src.database.models import ContentMention, StockTranslation, TagRegistry
 from src.database.postgres import get_session
 from src.services.attention import scope_mentions
 from src.services.gcs_content import GCSContentService, media_path
+from src.services import macro_data
+from src.services.macro_card import macro_card_svg
 from src.services.og_image import episode_cover_png, episode_cover_svg, svg_to_png
 from src.services.podcast import PodcastService
 from src.services.stock import StockService
@@ -408,6 +410,42 @@ async def weekly_themes_raster(
     headers = {"Cache-Control": "public, max-age=3600"}
     if download:
         headers["Content-Disposition"] = f'attachment; filename="tinboker-themes-{week_start}.png"'
+    return Response(content=png, media_type="image/png", headers=headers)
+
+
+@router.get("/macro/{series_id}.png")
+async def macro_card_raster(
+    series_id: str = Path(..., pattern=r"^[A-Z0-9_]{2,40}$"),
+    points: Optional[int] = Query(None, ge=10, le=400, description="Observations to draw"),
+    event: Optional[str] = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$",
+                                 description="Mark the first observation on/after this date"),
+    label: Optional[str] = Query(None, max_length=40, description="Text on the event marker"),
+    claim: Optional[str] = Query(None, max_length=160, description="What the host said, printed under the line"),
+    download: bool = Query(False, description="Send as an attachment rather than inline"),
+) -> Response:
+    """One macro indicator as a square PNG — the stock card's sibling for episodes that
+    name no stock: the series, one named episode marked on it, and the host's claim."""
+    series_id = series_id.upper()
+    meta = macro_data.SERIES.get(series_id)
+    if not meta:
+        raise HTTPException(status_code=404, detail=f"Unknown macro series {series_id}")
+    await macro_data.ensure_fresh(series_id)
+    n = points or macro_data.DEFAULT_POINTS[meta["freq"]]
+    pts = await asyncio.to_thread(macro_data.points, series_id, n)
+    try:
+        svg = macro_card_svg(meta["name"], series_id, meta["unit"], pts, macro_data.SPAN_LABEL[meta["freq"]],
+                             f'FRED {meta["fred"]}', event={"date": event, "label": label} if event else None,
+                             claim=claim or "")
+    except ValueError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    try:
+        png = await asyncio.to_thread(svg_to_png, svg, CARD_SIZE, CARD_SIZE)
+    except Exception as e:  # noqa: BLE001 — surfaced, never swapped for the SVG
+        logger.exception("og: macro card rasterisation failed for %s", series_id)
+        raise HTTPException(status_code=500, detail=f"card rasterisation failed: {e}") from e
+    headers = {"Cache-Control": _STOCK_CACHE_CONTROL}
+    if download:
+        headers["Content-Disposition"] = f'attachment; filename="tinboker-{series_id}.png"'
     return Response(content=png, media_type="image/png", headers=headers)
 
 
