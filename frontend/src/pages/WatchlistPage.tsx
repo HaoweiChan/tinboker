@@ -8,10 +8,11 @@ import { SwipeToRemove } from '@/components/common/SwipeToRemove';
 import { apiEpisodeToCardV2 } from '@/components/redesign/episodeAdapter';
 import { SubscribedTickers } from '@/components/profile/SubscribedTickers';
 import { SubscribedTopics } from '@/components/profile/SubscribedTopics';
-import { getPodcastEpisodes, getSortedPodcasts, getEpisodeById, type Episode as ApiEpisode, type Podcast } from '@/services/api/podcasts';
+import { getPodcastEpisodes, getSortedPodcasts, type Episode as ApiEpisode, type Podcast } from '@/services/api/podcasts';
 import { fetchWithFallback } from '@/services/api/migration';
 import { userApi } from '@/services/api/user';
 import { useAppStore, useSubscriptions, useWatchlist, useTagSubscriptions } from '@/store/useAppStore';
+import { useBookmarkedEpisodes } from '@/hooks/useBookmarkedEpisodes';
 import { useStockPriceMap } from '@/hooks/useStockPriceMap';
 import { useStockPriceSinceMap } from '@/hooks/useStockPriceSinceMap';
 import { useTranslationMap } from '@/hooks/useTranslationMap';
@@ -28,7 +29,6 @@ export const WatchlistPage: React.FC = () => {
   const [episodes, setEpisodes] = useState<ApiEpisode[]>([]);
   const [podcasts, setPodcasts] = useState<Podcast[]>([]);
   const [bookmarkedIds, setBookmarkedIds] = useState<string[]>([]);
-  const [bookmarked, setBookmarked] = useState<ApiEpisode[]>([]);
   const [loadingEps, setLoadingEps] = useState(false);
   // Server-side data for logged-in users
   const [apiSubscriptions, setApiSubscriptions] = useState<string[]>([]);
@@ -124,6 +124,7 @@ export const WatchlistPage: React.FC = () => {
   }, [podcasts]);
   const visibleEpisodeIds = useMemo(() => episodes.map((e) => e.id), [episodes]);
   const sentimentMap = useEpisodeSentimentMap(visibleEpisodeIds);
+  const { episodes: bookmarked, resolved: bookmarksResolved } = useBookmarkedEpisodes(bookmarkedIds);
   const bookmarkedTickers = useMemo(() => bookmarked.flatMap((ep) => ep.related_tickers ?? []), [bookmarked]);
   const bookmarkedPriceMap = useStockPriceMap(bookmarkedTickers);
   const bookmarkedPriceSinceMap = useStockPriceSinceMap(bookmarked);
@@ -167,30 +168,6 @@ export const WatchlistPage: React.FC = () => {
     if (token) return;
     setBookmarkedIds([]);
   }, [token]);
-
-  // Hydrate bookmarked episodes
-  useEffect(() => {
-    if (bookmarkedIds.length === 0) {
-      setBookmarked([]);
-      return;
-    }
-    let alive = true;
-    Promise.all(
-      bookmarkedIds.map((bookmarkId) => {
-        const [podcastName, ...rest] = bookmarkId.split('_');
-        return fetchWithFallback<ApiEpisode | null>(
-          () => getEpisodeById(podcastName, rest.join('_')),
-          null,
-          `getEpisodeById:${bookmarkId}`,
-        ).catch(() => null);
-      }),
-    ).then((arr) => {
-      if (!alive) return;
-      const epTime = (e: ApiEpisode) => e.released_at_ms ?? e.created_time ?? 0;
-      setBookmarked(arr.filter((e): e is ApiEpisode => e != null).sort((a, b) => epTime(b) - epTime(a)));
-    });
-    return () => { alive = false; };
-  }, [bookmarkedIds]);
 
   const sortedWatchlist = useMemo(() => [...watchlist], [watchlist]);
   const visibleBookmarked = useMemo(() => bookmarked.filter((ep) => !removed.has(`episode:${ep.id}`)), [bookmarked, removed]);
@@ -282,12 +259,15 @@ export const WatchlistPage: React.FC = () => {
             {tab === 'episodes' && (
               visibleBookmarkCount === 0 ? (
                 <div className="bg-card border border-border rounded-md p-10 text-center text-sm text-muted-foreground">目前沒有收藏的集數。</div>
-              ) : bookmarked.length === 0 ? (
+              ) : bookmarked.length === 0 && !bookmarksResolved ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {Array.from({ length: Math.min(bookmarkedIds.length, 4) }).map((_, i) => (
                     <div key={i} className="bg-card border border-border rounded-md h-[180px] animate-pulse" />
                   ))}
                 </div>
+              ) : bookmarked.length === 0 ? (
+                // Everything settled and nothing came back — say so rather than pulse forever.
+                <div className="bg-card border border-border rounded-md p-10 text-center text-sm text-muted-foreground">收藏的集數目前無法載入，可能已下架。稍後再試一次吧。</div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {visibleBookmarked.map((ep) => (

@@ -9,13 +9,12 @@ import { apiEpisodeToCardV2 } from '@/components/redesign/episodeAdapter';
 import { SubscribedTickers } from '@/components/profile/SubscribedTickers';
 import { SubscribedTopics } from '@/components/profile/SubscribedTopics';
 import { useAppStore } from '@/store/useAppStore';
+import { useBookmarkedEpisodes } from '@/hooks/useBookmarkedEpisodes';
 import { useStockPriceMap } from '@/hooks/useStockPriceMap';
 import { useStockPriceSinceMap } from '@/hooks/useStockPriceSinceMap';
 import {
   getSortedStocks,
   getPodcastByName,
-  getEpisodeById,
-  type Episode as ApiEpisode,
   type Podcast,
 } from '@/services/api';
 import { fetchWithFallback } from '@/services/api/migration';
@@ -56,7 +55,7 @@ export const ProfilePage: React.FC = () => {
   const [tagSubs, setTagSubs] = useState<string[]>([]);
 
   const [podcasters, setPodcasters] = useState<Podcast[]>([]);
-  const [bookmarked, setBookmarked] = useState<ApiEpisode[]>([]);
+  const { episodes: bookmarked, resolved: bookmarksResolved } = useBookmarkedEpisodes(episodeBookmarks);
   const episodeTickers = useMemo(() => bookmarked.flatMap((ep) => ep.related_tickers ?? []), [bookmarked]);
   const priceMap = useStockPriceMap(episodeTickers);
   const priceSinceMap = useStockPriceSinceMap(bookmarked);
@@ -138,27 +137,6 @@ export const ProfilePage: React.FC = () => {
       alive = false;
     };
   }, [podcastSubs]);
-
-  useEffect(() => {
-    if (episodeBookmarks.length === 0) {
-      setBookmarked([]);
-      return;
-    }
-    let alive = true;
-    Promise.all(
-      episodeBookmarks.map((bookmarkId) => {
-        const [podcastName, ...rest] = bookmarkId.split('_');
-        return fetchWithFallback<ApiEpisode | null>(() => getEpisodeById(podcastName, rest.join('_')), null, `getEpisodeById:${bookmarkId}`).catch(() => null);
-      }),
-    ).then((arr) => {
-      if (!alive) return;
-      const epTime = (e: ApiEpisode) => e.released_at_ms ?? e.created_time ?? 0;
-      setBookmarked(arr.filter((e): e is ApiEpisode => e != null).sort((a, b) => epTime(b) - epTime(a)));
-    });
-    return () => {
-      alive = false;
-    };
-  }, [episodeBookmarks]);
 
   useEffect(() => {
     if (!searchQuery.trim()) {
@@ -295,7 +273,13 @@ export const ProfilePage: React.FC = () => {
 
         {tab === 'episodes' && (
           bookmarked.length === 0 ? (
-            <div className="bg-card border border-border rounded-md p-10 text-center text-sm text-muted-foreground">目前沒有收藏的集數。</div>
+            <div className="bg-card border border-border rounded-md p-10 text-center text-sm text-muted-foreground">
+              {episodeBookmarks.length === 0
+                ? '目前沒有收藏的集數。'
+                : bookmarksResolved
+                  ? '收藏的集數目前無法載入，可能已下架。稍後再試一次吧。'
+                  : '載入中…'}
+            </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {bookmarked.map((ep) => (
