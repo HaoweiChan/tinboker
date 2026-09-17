@@ -183,3 +183,52 @@ def test_close_is_final_us_uses_new_york_1600():
     assert r.close_is_final("AAPL", "2026-09-08", now=ny_1559) is False
     assert r.close_is_final("AAPL", "2026-09-08", now=ny_1559 + timedelta(minutes=1)) is True
     assert r.close_is_final("AAPL", "2026-09-07", now=ny_1559) is True
+
+
+class _ProfileDb:
+    def __init__(self, row):
+        self.row = row
+
+    def query(self, *cols):
+        return self
+
+    def filter(self, *a):
+        return self
+
+    def first(self):
+        return self.row
+
+
+def test_a_missing_logo_is_retried_daily_not_every_run():
+    """ETFs have no Massive branding; re-warming them on every cycle and deploy cost a
+    details call plus two image downloads each (part of the post-deploy 429 storm)."""
+    now = datetime.utcnow()
+    cutoff = now - timedelta(days=r._PROFILE_TTL_DAYS)
+    assert r._profile_is_fresh(_ProfileDb((now - timedelta(hours=3), None)), "GDX", cutoff) is True
+    assert r._profile_is_fresh(_ProfileDb((now - timedelta(hours=30), None)), "GDX", cutoff) is False
+    assert r._profile_is_fresh(_ProfileDb((now - timedelta(days=3), "LOGO")), "NVDA", cutoff) is True
+    assert r._profile_is_fresh(_ProfileDb((now - timedelta(days=8), "LOGO")), "NVDA", cutoff) is False
+    assert r._profile_is_fresh(_ProfileDb(None), "NEW", cutoff) is False
+
+
+@pytest.mark.asyncio
+async def test_slow_data_spaces_massive_bound_tickers_like_other_us_warmers(monkeypatch):
+    sleeps = []
+
+    async def _tracked(limit):
+        return ["GDX", "NVDA"]
+
+    async def _sleep(s):
+        sleeps.append(s)
+
+    monkeypatch.setattr(r, "get_tracked_tickers", _tracked)
+    monkeypatch.setattr(r, "_profile_is_fresh", lambda db, t, c: False)
+    monkeypatch.setattr(r, "get_session", lambda: iter([object()]))
+    monkeypatch.setattr(r, "_has_stored_logo", lambda t: t == "NVDA")
+    monkeypatch.setattr(r, "_warm_us_slow_data", lambda t, yf, mp: True)
+    monkeypatch.setattr(r.asyncio, "sleep", _sleep)
+    import src.services.providers as providers
+    monkeypatch.setattr(providers, "MassiveProvider", lambda: None)
+    monkeypatch.setattr(providers, "YFinanceProvider", lambda: None)
+    await r.refresh_us_slow_data()
+    assert sleeps == [r._US_GAP_SECONDS, r._YF_GAP_SECONDS]  # GDX needs Massive, NVDA doesn't

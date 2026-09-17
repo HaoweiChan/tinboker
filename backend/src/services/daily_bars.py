@@ -159,15 +159,15 @@ def us_tickers_in_store() -> List[str]:
 
 
 async def repair_us_bars(days: int = 400, gap_seconds: float = REPAIR_GAP_SECONDS,
-                         backoff_seconds: float = REPAIR_BACKOFF_SECONDS, client: Any = None) -> Dict[str, Any]:
+                         backoff_seconds: float = REPAIR_BACKOFF_SECONDS, massive: Any = None) -> Dict[str, Any]:
     """Re-fetch ``days`` of daily bars for every stored US ticker and upsert closed sessions.
     One attempt plus one retry after a back-off per ticker (a 429 run passes in a minute);
     a ticker that fails twice is recorded and skipped. Progress lives in ``REPAIR``."""
     if REPAIR.get("running"):
         return REPAIR
-    if client is None:
+    if massive is None:
         from src.services.massive_service import MassiveAPIService
-        client = MassiveAPIService().client
+        massive = MassiveAPIService()
     tickers = await asyncio.to_thread(us_tickers_in_store)
     to_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     from_date = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
@@ -179,7 +179,10 @@ async def repair_us_bars(days: int = 400, gap_seconds: float = REPAIR_GAP_SECOND
             REPAIR["current"] = ticker
             for attempt in (1, 2):
                 try:
-                    bars = await asyncio.to_thread(fetch_us_bars, client, ticker, from_date, to_date, days + 50)
+                    # `.client` per call: each access takes a unit of the shared Massive
+                    # budget and raises when it is spent (a held client would bypass it).
+                    bars = await asyncio.to_thread(
+                        lambda: fetch_us_bars(massive.client, ticker, from_date, to_date, days + 50))
                     REPAIR["written"] += await asyncio.to_thread(write_bars, ticker, bars, "massive")
                     break
                 except Exception as e:
