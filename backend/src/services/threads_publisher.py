@@ -163,14 +163,20 @@ def is_zero_ticker(episode: Any) -> bool:
     return not (_field(episode, "related_tickers") or [])
 
 
-def compose_oneliner(episode: Any) -> dict:
-    """A zero-ticker episode as one line of text, no cards, no reply chain — the
-    speaker and the one thing they said. The carousel exists to show what the stocks
-    were; with none there is nothing for five cards to say, and the macro breakouts on
-    this account were all short argued posts, not decks."""
+def compose_text_post(episode: Any) -> dict:
+    """A zero-ticker episode as text only — no cards, no reply chain, link in the
+    first reply. The text is the pipeline's own ``social_thread.post``: the 12–18 line
+    argued post the writer already produced in the approved voice, which the carousel
+    only ever used as a caption. The carousel exists to show what the stocks were; with
+    none there is nothing for five cards to say, and the macro breakouts on this
+    account were all short argued posts, not decks. An episode with no written post
+    (pre-writer backlog) falls back to the speaker + one key_insight."""
     episode_id = _field(episode, "id") or _field(episode, "episode_id") or ""
-    insight = pick_insight(_field(episode, "key_insights") or [])
-    text = f"{speaker_for(_field(episode, 'podcast_name'))}這集\n{insight}"
+    thread = _field(episode, "social_thread") or {}
+    text = (thread.get("post") or "").strip() if isinstance(thread, dict) else ""
+    if not text:
+        insight = pick_insight(_field(episode, "key_insights") or [])
+        text = f"{speaker_for(_field(episode, 'podcast_name'))}這集\n{insight}"
     return {"episode_id": episode_id, "text": text[:THREADS_MAX_CHARS], "url": episode_url(episode_id)}
 
 
@@ -333,11 +339,11 @@ async def publish_recent(
             skipped.append({"episode_id": episode_id, "reason": "slot_full"})
             continue
 
-        # No stocks in the episode and nobody hand-wrote a thread → one line of text.
-        if is_zero_ticker(episode) and _field(episode, "key_insights") and not _has_human_thread(episode):
-            draft = compose_oneliner(episode)
+        # No stocks in the episode → the written post as text, no cards.
+        if is_zero_ticker(episode) and (_has_human_thread(episode) or _field(episode, "key_insights")):
+            draft = compose_text_post(episode)
             if effective_dry_run:
-                posted.append({**draft, "kind": "oneliner", "dry_run": True})
+                posted.append({**draft, "kind": "text", "dry_run": True})
                 continue
             if not social_ledger.claim(PLATFORM, episode_id):
                 skipped.append({"episode_id": episode_id, "reason": "already_posted"})
@@ -345,9 +351,9 @@ async def publish_recent(
             try:
                 media_id = await service.publish(draft["text"])
                 reply_id = await service.publish_reply(link_comment(episode_id), reply_to_id=media_id)
-                _record(episode_id, media_id, draft["url"], [reply_id], fmt="episode_oneliner")
-                posted.append({**draft, "kind": "oneliner", "media_id": media_id, "dry_run": False})
-                logger.info("Posted one-liner for %s (%s)", episode_id, media_id)
+                _record(episode_id, media_id, draft["url"], [reply_id], fmt="episode_text")
+                posted.append({**draft, "kind": "text", "media_id": media_id, "dry_run": False})
+                logger.info("Posted text post for %s (%s)", episode_id, media_id)
             except ThreadsError as e:
                 social_ledger.release(PLATFORM, episode_id)
                 skipped.append({"episode_id": episode_id, "reason": f"publish_failed: {e}"})

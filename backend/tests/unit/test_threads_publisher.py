@@ -156,16 +156,22 @@ def test_pick_insight_prefers_a_number_then_a_screen_sized_line():
     assert threads_publisher.pick_insight(["", "  ", None]) == ""
 
 
-def test_compose_oneliner_is_speaker_plus_one_line_and_the_link_goes_in_the_reply():
-    ep = _ep("EP700", insights=["實質利率才是金價天敵", "央行買盤一噸未少"], tickers=[])
-    ep.podcast_name = "財經一路發"
-    draft = threads_publisher.compose_oneliner(ep)
-    assert draft["text"] == "一路發這集\n實質利率才是金價天敵"
+def test_compose_text_post_is_the_written_post_and_the_link_goes_in_the_reply():
+    ep = _ep("EP700", insights=["實質利率才是金價天敵"], tickers=[])
+    ep.social_thread = {"post": "加州柴油一加侖衝到快 10 美元\n這數字比原油破百嚴重得多", "comments": [{"heading": "a", "text": "x"}]}
+    draft = threads_publisher.compose_text_post(ep)
+    assert draft["text"] == "加州柴油一加侖衝到快 10 美元\n這數字比原油破百嚴重得多"   # no count line, no comments
     assert "tinboker.com" not in draft["text"] and draft["url"].endswith("/episode/EP700")
 
 
+def test_compose_text_post_falls_back_to_speaker_plus_one_insight():
+    ep = _ep("EP703", insights=["實質利率才是金價天敵", "央行買盤一噸未少"], tickers=[])
+    ep.podcast_name = "財經一路發"
+    assert threads_publisher.compose_text_post(ep)["text"] == "一路發這集\n實質利率才是金價天敵"
+
+
 @pytest.mark.asyncio
-async def test_publish_recent_posts_a_zero_ticker_episode_as_a_oneliner(temp_db, monkeypatch):
+async def test_publish_recent_posts_a_zero_ticker_episode_as_text(temp_db, monkeypatch):
     from src.services import social_ledger
 
     class _Svc:
@@ -186,16 +192,17 @@ async def test_publish_recent_posts_a_zero_ticker_episode_as_a_oneliner(temp_db,
     monkeypatch.setattr(threads_publisher, "ThreadsService", _Svc)
     eps = [_ep("EP701", insights=["AI 監管會讓算力需求再多 15%"], tickers=[]),
            _ep("EP702", insights=["有標的的照舊"], tickers=["2330"])]
+    eps[0].social_thread = {"post": "孟恭這集\n講的是算力", "comments": []}
     monkeypatch.setattr(threads_publisher.podcast_service, "get_recent_episodes", await _fake_recent(eps))
 
     result = await threads_publisher.publish_recent(limit=10, dry_run=False)
     kinds = {p["episode_id"]: p.get("kind") for p in result["posted"]}
-    assert kinds["EP701"] == "oneliner" and kinds["EP702"] is None
+    assert kinds["EP701"] == "text" and kinds["EP702"] is None
     one = [c for c in _Svc.calls if c[0] == "post" and c[1].startswith("孟恭這集\n")]
     assert len(one) == 1 and one[0][2] is None                       # text only, no card
     assert any(c[0] == "reply" and "tinboker.com/episode/EP701" in c[1] for c in _Svc.calls)
     row = next(r for r in social_ledger.list_posted("threads") if r["episode_id"] == "EP701")
-    assert (row["format"], row["child_ids"]) == ("episode_oneliner", ["r_link"])
+    assert (row["format"], row["child_ids"]) == ("episode_text", ["r_link"])
 
 
 # ── thread (carousel + reply chain) ──────────────────────────────────
