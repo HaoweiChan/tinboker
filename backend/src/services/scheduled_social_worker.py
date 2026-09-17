@@ -225,7 +225,8 @@ async def publish_due_slots() -> int:
     for name, pub in _PUBLISHERS.items():
         try:
             res = await pub.publish_recent(
-                limit=settings.social_publish_scan_limit, dry_run=False
+                limit=settings.social_publish_scan_limit, dry_run=False,
+                max_posts=settings.social_publish_per_slot or None,
             )
             posted += res.get("posted_count", 0)
             logger.info("slot publish (%s): posted=%s candidates=%s",
