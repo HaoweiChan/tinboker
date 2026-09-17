@@ -600,13 +600,7 @@ class DataCollectionService:
             stored = []
         start = daily_bars.fetch_from(stored, from_date, to_date, us=True)
         try:
-            fetched = [
-                {"date": datetime.fromtimestamp(a.timestamp / 1000, tz=_NEW_YORK).strftime("%Y-%m-%d"),
-                 "open": a.open, "high": a.high, "low": a.low, "close": a.close,
-                 "volume": int(getattr(a, 'volume', 0) or 0)}
-                for a in self.massive_service.client.list_aggs(
-                    ticker=ticker, multiplier=1, timespan='day', from_=start, to=to_date, limit=limit)
-            ]
+            fetched = daily_bars.fetch_us_bars(self.massive_service.client, ticker, start, to_date, limit)
         except Exception as e:
             if not daily_bars.covers(stored, from_date):
                 raise
