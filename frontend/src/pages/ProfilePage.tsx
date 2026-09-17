@@ -4,20 +4,16 @@ import { Search, Star } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
 import { Modal } from '@/components/ui/Modal';
-import { EpisodeCardV2, PodAvatar } from '@/components/redesign';
+import { EpisodeCardV2 } from '@/components/redesign';
 import { apiEpisodeToCardV2 } from '@/components/redesign/episodeAdapter';
+import { SubscribedPodcasters } from '@/components/profile/SubscribedPodcasters';
 import { SubscribedTickers } from '@/components/profile/SubscribedTickers';
 import { SubscribedTopics } from '@/components/profile/SubscribedTopics';
 import { useAppStore } from '@/store/useAppStore';
+import { useBookmarkedEpisodes } from '@/hooks/useBookmarkedEpisodes';
 import { useStockPriceMap } from '@/hooks/useStockPriceMap';
 import { useStockPriceSinceMap } from '@/hooks/useStockPriceSinceMap';
-import {
-  getSortedStocks,
-  getPodcastByName,
-  getEpisodeById,
-  type Episode as ApiEpisode,
-  type Podcast,
-} from '@/services/api';
+import { getSortedStocks } from '@/services/api';
 import { fetchWithFallback } from '@/services/api/migration';
 import { authApi, type AuthResponse } from '@/services/api/auth';
 import { userApi } from '@/services/api/user';
@@ -55,8 +51,10 @@ export const ProfilePage: React.FC = () => {
   const [episodeBookmarks, setEpisodeBookmarks] = useState<string[]>([]);
   const [tagSubs, setTagSubs] = useState<string[]>([]);
 
-  const [podcasters, setPodcasters] = useState<Podcast[]>([]);
-  const [bookmarked, setBookmarked] = useState<ApiEpisode[]>([]);
+  const { episodes: bookmarked, resolved: bookmarksResolved } = useBookmarkedEpisodes(episodeBookmarks, {
+    repair: true,
+    onChange: setEpisodeBookmarks,
+  });
   const episodeTickers = useMemo(() => bookmarked.flatMap((ep) => ep.related_tickers ?? []), [bookmarked]);
   const priceMap = useStockPriceMap(episodeTickers);
   const priceSinceMap = useStockPriceSinceMap(bookmarked);
@@ -126,41 +124,6 @@ export const ProfilePage: React.FC = () => {
   const effectiveWatchlist = useMemo(() => (userInfo?.watchlist !== undefined ? userInfo.watchlist || [] : token ? apiWatchlist : watchlist), [userInfo, token, apiWatchlist, watchlist]);
 
   useEffect(() => {
-    if (podcastSubs.length === 0) {
-      setPodcasters([]);
-      return;
-    }
-    let alive = true;
-    Promise.all(podcastSubs.map((n) => fetchWithFallback<Podcast | null>(() => getPodcastByName(n), null, `getPodcastByName:${n}`).catch(() => null))).then((arr) => {
-      if (alive) setPodcasters(arr.filter((p): p is Podcast => p != null));
-    });
-    return () => {
-      alive = false;
-    };
-  }, [podcastSubs]);
-
-  useEffect(() => {
-    if (episodeBookmarks.length === 0) {
-      setBookmarked([]);
-      return;
-    }
-    let alive = true;
-    Promise.all(
-      episodeBookmarks.map((bookmarkId) => {
-        const [podcastName, ...rest] = bookmarkId.split('_');
-        return fetchWithFallback<ApiEpisode | null>(() => getEpisodeById(podcastName, rest.join('_')), null, `getEpisodeById:${bookmarkId}`).catch(() => null);
-      }),
-    ).then((arr) => {
-      if (!alive) return;
-      const epTime = (e: ApiEpisode) => e.released_at_ms ?? e.created_time ?? 0;
-      setBookmarked(arr.filter((e): e is ApiEpisode => e != null).sort((a, b) => epTime(b) - epTime(a)));
-    });
-    return () => {
-      alive = false;
-    };
-  }, [episodeBookmarks]);
-
-  useEffect(() => {
     if (!searchQuery.trim()) {
       setSearchResults([]);
       return;
@@ -183,7 +146,7 @@ export const ProfilePage: React.FC = () => {
   }, [searchQuery]);
 
   const TABS: { id: Tab; label: string }[] = [
-    { id: 'podcasters', label: `訂閱節目 ${podcasters.length || podcastSubs.length}` },
+    { id: 'podcasters', label: `訂閱節目 ${podcastSubs.length}` },
     { id: 'tickers', label: `自選股票 ${effectiveWatchlist.length}` },
     { id: 'topics', label: `追蹤話題 ${tagSubs.length}` },
     { id: 'episodes', label: `收藏集數 ${bookmarked.length || episodeBookmarks.length}` },
@@ -214,7 +177,7 @@ export const ProfilePage: React.FC = () => {
                 <h1 className="text-2xl font-semibold tracking-[-0.01em]">{userInfo.name}</h1>
                 <div className="text-sm text-muted-foreground mt-0.5">{userInfo.email}</div>
                 <div className="flex gap-4 mt-2.5 text-xs text-muted-foreground">
-                  <span><strong className="text-foreground font-mono mr-1 tabular-nums">{podcasters.length || podcastSubs.length}</strong>追蹤節目</span>
+                  <span><strong className="text-foreground font-mono mr-1 tabular-nums">{podcastSubs.length}</strong>追蹤節目</span>
                   <span><strong className="text-foreground font-mono mr-1 tabular-nums">{effectiveWatchlist.length}</strong>自選股</span>
                   <span><strong className="text-foreground font-mono mr-1 tabular-nums">{bookmarked.length || episodeBookmarks.length}</strong>收藏集數</span>
                   {formatJoin(userInfo.created_at) && <span>· {formatJoin(userInfo.created_at)}</span>}
@@ -227,7 +190,7 @@ export const ProfilePage: React.FC = () => {
               <div className="min-w-0">
                 <div className="text-sm text-muted-foreground">已登入</div>
                 <div className="flex gap-4 mt-2.5 text-xs text-muted-foreground">
-                  <span><strong className="text-foreground font-mono mr-1 tabular-nums">{podcasters.length || podcastSubs.length}</strong>追蹤節目</span>
+                  <span><strong className="text-foreground font-mono mr-1 tabular-nums">{podcastSubs.length}</strong>追蹤節目</span>
                   <span><strong className="text-foreground font-mono mr-1 tabular-nums">{effectiveWatchlist.length}</strong>自選股</span>
                   <span><strong className="text-foreground font-mono mr-1 tabular-nums">{bookmarked.length || episodeBookmarks.length}</strong>收藏集數</span>
                 </div>
@@ -257,20 +220,10 @@ export const ProfilePage: React.FC = () => {
 
         {/* Tab content */}
         {tab === 'podcasters' && (
-          podcasters.length === 0 ? (
+          podcastSubs.length === 0 ? (
             <div className="bg-card border border-border rounded-md p-10 text-center text-sm text-muted-foreground">尚未追蹤任何節目。</div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {podcasters.map((p) => (
-                <button key={p.id || p.name} type="button" onClick={() => navigate(`/podcaster/${encodeURIComponent(p.name)}`)} className="flex items-center gap-3 bg-card border border-border rounded-md p-4 text-left transition-colors hover:border-foreground/25">
-                  <PodAvatar src={p.image_url} name={p.name} size={40} className="w-10 h-10 rounded-[9px] object-cover shrink-0" />
-                  <div className="min-w-0">
-                    <div className="text-lg font-semibold truncate">{p.name}</div>
-                    <div className="text-2xs text-muted-foreground font-mono tabular-nums">{p.episode_count ?? '—'} 集</div>
-                  </div>
-                </button>
-              ))}
-            </div>
+            <SubscribedPodcasters names={podcastSubs} />
           )
         )}
 
@@ -295,7 +248,13 @@ export const ProfilePage: React.FC = () => {
 
         {tab === 'episodes' && (
           bookmarked.length === 0 ? (
-            <div className="bg-card border border-border rounded-md p-10 text-center text-sm text-muted-foreground">目前沒有收藏的集數。</div>
+            <div className="bg-card border border-border rounded-md p-10 text-center text-sm text-muted-foreground">
+              {episodeBookmarks.length === 0
+                ? '目前沒有收藏的集數。'
+                : bookmarksResolved
+                  ? '收藏的集數目前無法載入，可能已下架。稍後再試一次吧。'
+                  : '載入中…'}
+            </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {bookmarked.map((ep) => (
