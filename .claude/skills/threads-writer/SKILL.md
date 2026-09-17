@@ -82,7 +82,9 @@ Run in this order. Do not skip to the draft.
 登記表挑**一個**不在冷卻期的格式發；表的順序就是優先順序，沒有權重沒有隨機。
 
 新增一種格式 = 一個 `select()` + 一筆登記。文案靠模型產的，上線前拿真資料打
-OpenRouter 看過輸出，不要讀 prompt 自評。要不要留下看
+OpenRouter 看過輸出，不要讀 prompt 自評。目前兩種：`weekly_movers`（模板）和
+`post_hoc_up` / `post_hoc_down`（故事由 pipeline 的 `post_hoc_copy_writer.yaml` 寫，時間停在
+播出那天；backend 自己補最後一行「M/D 到 M/D 漲/跌 N%」，模型不准寫報酬也不准評對錯）。要不要留下看
 `GET /api/social/threads/insights/by-format?days=28` 的 median views，不是憑感覺。
 
 ## References

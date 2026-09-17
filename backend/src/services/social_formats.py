@@ -150,20 +150,37 @@ def _md(iso: str) -> str:
     return f"{int(m)}/{int(d)}"
 
 
-def post_hoc_text(c: dict) -> str:
-    """The show, its stance, its own sentence, and the two closes. No verdict line: a
-    看空 followed by +19% needs no help, and the account posts the misses on purpose —
-    that is what makes the hits worth anything."""
-    verb = STANCE_ZH.get((c.get("sentiment_label") or "").upper().replace("STRONG_", ""), "提到")
-    sign = "+" if c["pct"] >= 0 else ""
-    thesis = " ".join((c.get("thesis") or "").split()).rstrip("。")
-    lines = [f'{_md(c["mention_date"])} {c["podcaster"]} {verb}{c["name"]}',
-             f"「{thesis}」", "",
-             f'那天收 {c["baseline_close"]:,.0f} {_md(c["last_date"])} 收 {c["last_close"]:,.0f} {sign}{c["pct"]:.1f}%']
-    if c.get("others"):
-        lines.append(f'這三週還有 {c["others"]} 個節目提過')
-    lines += ["", "圖上那條線是播出那天"]
-    return "\n".join(lines)
+def post_hoc_text(c: dict, story: str) -> str:
+    """The story (the pipeline's post_hoc_copy_writer, clock stopped on air date) and
+    then the one line only this side can write: air date → latest close. No verdict:
+    a 看空 followed by 漲 19% needs no help, and the misses post on purpose — that is
+    what makes the hits worth anything."""
+    word = "漲" if c["pct"] >= 0 else "跌"
+    return f'{story.strip()}\n\n{_md(c["mention_date"])} 到 {_md(c["last_date"])} {word} {abs(c["pct"]):.1f}%'
+
+
+async def _story(c: dict) -> Optional[str]:
+    """Ask the pipeline for the story of that episode's take on that stock. None on any
+    failure — no story, no post; the number line alone is the caption Willy rejected."""
+    import httpx
+    base = (settings.netcup_api_url or "").rstrip("/")
+    if not base:
+        return None
+    headers = {"X-API-Key": settings.podcast_api_key} if settings.podcast_api_key else {}
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=5.0)) as client:
+            resp = await client.post(
+                f"{base}/api/podcast/episodes/{c['episode_id']}/post-hoc-copy", headers=headers,
+                json={"ticker": c["ticker"], "name": c["name"], "mention_date": c["mention_date"],
+                      "sentiment_label": c.get("sentiment_label"), "thesis": c.get("thesis")})
+        if resp.status_code >= 400:
+            logger.warning("post-hoc story %s/%s -> %s: %s", c["episode_id"], c["ticker"],
+                           resp.status_code, resp.text[:200])
+            return None
+        return (resp.json().get("post") or "").strip() or None
+    except Exception as e:  # noqa: BLE001 — a dead pipeline skips this slot, nothing more
+        logger.warning("post-hoc story call failed for %s/%s: %r", c["episode_id"], c["ticker"], e)
+        return None
 
 
 def _post_hoc_candidates(allowed: Optional[frozenset], since: datetime) -> list[dict]:
@@ -212,32 +229,46 @@ def _post_hoc_candidates(allowed: Optional[frozenset], since: datetime) -> list[
     return []
 
 
-async def select_post_hoc() -> Optional[dict]:
-    """The recent mention whose ticker has moved the most since — hit or miss."""
+async def _select_post_hoc(direction: int) -> Optional[dict]:
+    """The recent mention whose ticker moved most in ``direction`` (+1 up, -1 down) —
+    each direction is its own format so a big riser and a big faller both get told."""
     from src.services.threads_publisher import episode_url, podcast_service
 
     allowed = await podcast_service._allowed_podcast_names()
     since = datetime.utcnow() - timedelta(days=POST_HOC_WINDOW_DAYS)
-    cands = await asyncio.to_thread(_post_hoc_candidates, allowed, since)
+    cands = [c for c in await asyncio.to_thread(_post_hoc_candidates, allowed, since)
+             if (c["pct"] >= 0) == (direction > 0)]
     if not cands:
         return None
     c = cands[0]
+    story = await _story(c)
+    if not story:
+        return None
     label = f'{c["podcaster"]} {_md(c["mention_date"])}'
     api = settings.public_api_url.rstrip("/")
     return {
         "key": f'post_hoc:{c["ticker"]}:{c["episode_id"]}',
         "subject": c["ticker"],
-        "text": post_hoc_text(c),
+        "text": post_hoc_text(c, story),
         "image_url": f'{api}/api/og/stock/{c["ticker"]}.png?days=60&event={c["mention_date"]}'
                      f'&label={urllib.parse.quote(label)}',
         "url": episode_url(c["episode_id"]),
     }
 
 
+async def select_post_hoc_up() -> Optional[dict]:
+    return await _select_post_hoc(+1)
+
+
+async def select_post_hoc_down() -> Optional[dict]:
+    return await _select_post_hoc(-1)
+
+
 FORMATS: list[Format] = [
     # Monday recap first — it is rarer; post-hoc takes the next slot the same day.
     Format("weekly_movers", select_weekly_movers, cooldown_days=6, subject_cooldown_days=6),
-    Format("post_hoc", select_post_hoc, cooldown_days=2, subject_cooldown_days=14),
+    Format("post_hoc_up", select_post_hoc_up, cooldown_days=3, subject_cooldown_days=14),
+    Format("post_hoc_down", select_post_hoc_down, cooldown_days=3, subject_cooldown_days=14),
 ]
 
 

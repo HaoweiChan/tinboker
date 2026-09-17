@@ -103,21 +103,16 @@ def _cand(**kw):
     return {**base, **kw}
 
 
-def test_post_hoc_caption_quotes_the_show_and_both_closes_without_a_verdict():
-    text = sf.post_hoc_text(_cand())
-    assert text.splitlines()[0] == "8/31 兆華與股惑仔 看多雙鴻"
-    assert "「雙鴻受惠散熱族群齊漲， 股價轉強跟上奇鋐與建準漲勢」" in text   # whitespace folded, 。 dropped
-    assert "那天收 1,250 9/16 收 1,360 +8.8%" in text
-    assert "這三週還有 1 個節目提過" in text
+STORY = "8月31號那天 主持人講到雙鴻的時候\n整個散熱族群正在齊漲\n\n主持人那時候看的是\n族群整齊發動 短線值得留意"
+
+
+def test_post_hoc_caption_is_the_story_then_the_one_line_only_we_can_write():
+    text = sf.post_hoc_text(_cand(), STORY)
+    assert text.startswith(STORY)
+    assert text.endswith("\n\n8/31 到 9/16 漲 8.8%")
+    assert sf.post_hoc_text(_cand(pct=-12.34), STORY).endswith("8/31 到 9/16 跌 12.3%")
     assert "我" not in text and "對了" not in text and "錯了" not in text
     assert len(text) <= THREADS_MAX_CHARS
-
-
-def test_post_hoc_caption_handles_bearish_and_neutral_and_a_lone_show():
-    assert sf.post_hoc_text(_cand(sentiment_label="STRONG_BEARISH", pct=-12.3, others=0)).startswith(
-        "8/31 兆華與股惑仔 看空雙鴻")
-    text = sf.post_hoc_text(_cand(sentiment_label="NEUTRAL", pct=-12.3, others=0))
-    assert text.startswith("8/31 兆華與股惑仔 提到雙鴻") and "-12.3%" in text and "還有" not in text
 
 
 def _seed_post_hoc(pct_big=12.0, pct_small=3.0):
@@ -153,19 +148,48 @@ def test_post_hoc_candidates_rank_by_move_since_mention_and_drop_small_moves(tem
     assert c["pct"] == pytest.approx(12.0) and c["others"] == 0
 
 
-@pytest.mark.asyncio
-async def test_post_hoc_select_builds_the_marked_card_url(temp_db, monkeypatch):
-    from src.services import threads_publisher
+async def _no_scope():
+    return None
 
-    async def allowed():
-        return None
-    monkeypatch.setattr(threads_publisher.podcast_service, "_allowed_podcast_names", allowed)
+
+@pytest.mark.asyncio
+async def test_post_hoc_up_tells_the_story_and_builds_the_marked_card_url(temp_db, monkeypatch):
+    from src.services import threads_publisher
+    monkeypatch.setattr(threads_publisher.podcast_service, "_allowed_podcast_names", _no_scope)
+    asked = {}
+
+    async def story(c):
+        asked.update(c)
+        return STORY
+    monkeypatch.setattr(sf, "_story", story)
     _seed_post_hoc()
-    draft = await sf.select_post_hoc()
+
+    assert await sf.select_post_hoc_down() is None            # nothing fell ≥ 8%
+    draft = await sf.select_post_hoc_up()
+    assert asked["episode_id"] == "ep0" and asked["thesis"] == "3324 的理由"
     assert draft["key"] == "post_hoc:3324:ep0" and draft["subject"] == "3324"
+    assert draft["text"] == STORY + "\n\n9/7 到 9/16 漲 12.0%"
     assert draft["image_url"].endswith("/api/og/stock/3324.png?days=60&event=2026-09-07"
                                        "&label=%E5%85%86%E8%8F%AF%E8%88%87%E8%82%A1%E6%83%91%E4%BB%94%209/7")
     assert draft["url"].endswith("/episode/ep0")
+
+
+@pytest.mark.asyncio
+async def test_post_hoc_down_is_its_own_format_and_no_story_means_no_post(temp_db, monkeypatch):
+    from src.services import threads_publisher
+    monkeypatch.setattr(threads_publisher.podcast_service, "_allowed_podcast_names", _no_scope)
+    _seed_post_hoc(pct_big=-15.0)
+
+    async def story(c):
+        return STORY
+    monkeypatch.setattr(sf, "_story", story)
+    assert await sf.select_post_hoc_up() is None
+    assert (await sf.select_post_hoc_down())["text"].endswith("9/7 到 9/16 跌 15.0%")
+
+    async def dead(c):
+        return None
+    monkeypatch.setattr(sf, "_story", dead)
+    assert await sf.select_post_hoc_down() is None             # the number line alone is not a post
 
 
 # ── the stock card's event marker ────────────────────────────────────────────
