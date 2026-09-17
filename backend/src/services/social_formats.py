@@ -156,8 +156,9 @@ def post_hoc_text(c: dict, story: str) -> str:
     a 看空 followed by 漲 19% needs no help, and the misses post on purpose — that is
     what makes the hits worth anything."""
     word = "漲" if c["pct"] >= 0 else "跌"
-    # Willy's spec for this line: name the stock, no spaces around the numbers.
-    return (f'{story.strip()}\n\n{c["name"]}({c["ticker"]})'
+    # Willy's spec for this line: the stock's name, one space, then the numbers run
+    # together — 雙鴻 8/31到9/16漲8.8%.
+    return (f'{story.strip()}\n\n{c["name"]} '
             f'{_md(c["mention_date"])}到{_md(c["last_date"])}{word}{abs(c["pct"]):.1f}%')
 
 
