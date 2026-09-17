@@ -44,6 +44,7 @@ from .nodes.clusterer import cluster_sentences
 from .nodes.events_markdown import build_events_markdown
 from .nodes.extractor import extract_events
 from .nodes.key_insights_extractor import extract_key_insights
+from .nodes.macro_extractor import extract_macro
 from .nodes.markdown_transform import transform_to_markdown
 from .nodes.marp_converter import convert_marp, convert_marp_ticker
 from .nodes.marp_writer import write_marp_slides
@@ -75,6 +76,7 @@ def build_graph() -> StateGraph:
     graph.add_node("write_social_copy", write_social_copy)
     graph.add_node("derive_sector_exposures", derive_sector_exposures)
     graph.add_node("extract_tickers", extract_tickers)
+    graph.add_node("extract_macro", extract_macro)
     graph.add_node("convert_marp_ticker", convert_marp_ticker)
 
     # Entry point
@@ -93,6 +95,10 @@ def build_graph() -> StateGraph:
     graph.add_edge("cluster_sentences", "consolidate_chapters")
     graph.add_edge("cluster_sentences", "write_marp_slides")
     graph.add_edge("cluster_sentences", "extract_tickers")
+    # Macro claims: a terminal branch off the same clustered events. Nothing joins on it,
+    # and the node swallows its own failures, so it can never hold up or sink an episode.
+    graph.add_edge("cluster_sentences", "extract_macro")
+    graph.add_edge("extract_macro", END)
     graph.add_edge("consolidate_chapters", "write_article")
 
     # Article branch (markdown → tags/tickers → key_insights, from the finished summary)
@@ -192,6 +198,7 @@ def run_pipeline(
         "social_thread": result.get("social_thread") or {"post": "", "comments": []},
         "sector_exposures": result.get("sector_exposures", []),
         "unresolved_market_trends": result.get("unresolved_market_trends", []),
+        "macro_claims": result.get("macro_claims", []),
         "sector_exposure_ids": result.get("sector_exposure_ids", []),
         "sector_ids": result.get("sector_ids", []),
         "unresolved_market_trend_ids": result.get("unresolved_market_trend_ids", []),

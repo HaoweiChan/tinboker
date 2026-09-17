@@ -114,6 +114,7 @@ class SummarizeService:
                     social_thread = api_result.get("social_thread") or None
                     sector_exposures = api_result.get("sector_exposures") or []
                     unresolved_market_trends = api_result.get("unresolved_market_trends") or []
+                    macro_claims = api_result.get("macro_claims") or []
                     sector_exposure_ids = api_result.get("sector_exposure_ids") or []
                     sector_ids = api_result.get("sector_ids") or []
                     unresolved_market_trend_ids = api_result.get("unresolved_market_trend_ids") or []
@@ -135,6 +136,7 @@ class SummarizeService:
                     social_thread = None
                     sector_exposures = []
                     unresolved_market_trends = []
+                    macro_claims = []
                     sector_exposure_ids = []
                     sector_ids = []
                     unresolved_market_trend_ids = []
@@ -172,6 +174,7 @@ class SummarizeService:
                     # baskets never trigger direct-mention behavior.
                     'sector_exposures': sector_exposures,
                     'unresolved_market_trends': unresolved_market_trends,
+                    'macro_claims': macro_claims,
                     'sector_exposure_ids': sector_exposure_ids,
                     'sector_ids': sector_ids,
                     'unresolved_market_trend_ids': unresolved_market_trend_ids,

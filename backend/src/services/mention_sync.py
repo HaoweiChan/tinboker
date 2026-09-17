@@ -12,6 +12,7 @@ import json
 import logging
 import math
 from datetime import datetime, timedelta
+from functools import lru_cache
 from typing import Any, List, Optional
 
 from sqlalchemy import and_, or_, text
@@ -38,6 +39,8 @@ RECOMPUTE_HORIZON_DAYS = 130
 
 # How far back each sync cycle looks for new mentions.
 SYNC_LOOKBACK_DAYS = 400
+_MACRO_CLAIM_KEYS = ("display_name", "level_quoted", "direction_expected", "claim", "reasons",
+                     "implication", "time_horizon", "quote", "start_time_s", "confidence")
 
 # The pipeline's LLM ticker extractor doesn't emit a per-row confidence yet, so
 # stamp a constant; sector exposures carry their own (alias match = 1.0).
@@ -171,16 +174,21 @@ def sync_ticker_mentions(db: Session, days: int = SYNC_LOOKBACK_DAYS) -> int:
 # Source 2: sector mentions from episode sector_exposures
 # ---------------------------------------------------------------------------
 
-def _scan_sector_exposures() -> List[dict]:
-    """One flat record per (episode, exposure) via the projected episode scan
-    the sector board already uses — reuses that read path, adds no new one."""
+@lru_cache(maxsize=1)
+def _scan_episodes() -> tuple:
+    """``(sector_records, macro_records)`` from ONE projected episode scan — the read
+    path the sector board already uses, widened by one field locally so the board's own
+    scans stay lean. Cached for the cycle (``run_sync_cycle`` clears it): the scan is
+    ~6,800 documents and both passes want it."""
+    from src.services.macro_data import SERIES
     from src.services.podcast import PodcastService
 
     service = PodcastService()
     docs = service.firestore_service.stream_documents_projected(
-        "episodes", service._SECTOR_SCAN_FIELDS,
+        "episodes", list(service._SECTOR_SCAN_FIELDS) + ["macro_claims"],
     )
     records: List[dict] = []
+    macro: List[dict] = []
     for doc in docs:
         if doc.get("retracted_at"):
             continue
@@ -188,6 +196,15 @@ def _scan_sector_exposures() -> List[dict]:
         if not episode_id:
             continue
         release_ms = service._dict_release_ms(doc)
+        for claim in doc.get("macro_claims") or []:
+            indicator = str((claim or {}).get("indicator_id") or "").upper()
+            # Only indicators with a data series: anything else has no card and no page.
+            if indicator in SERIES and (claim.get("claim") or "").strip():
+                macro.append({
+                    "episode_id": episode_id, "podcaster": doc.get("podcast_name"),
+                    "mentioned_at": datetime.utcfromtimestamp(release_ms / 1000),
+                    "indicator_id": indicator, **{k: claim.get(k) for k in _MACRO_CLAIM_KEYS},
+                })
         for entry in doc.get("sector_exposures") or []:
             exposure_id = (entry.get("exposure_id") or "").strip()
             if not exposure_id:
@@ -207,7 +224,17 @@ def _scan_sector_exposures() -> List[dict]:
                 "members": [m for m in members if m][:MAX_SECTOR_MEMBERS],
                 "mention_text": entry.get("mention_text"),
             })
-    return records
+    return records, macro
+
+
+def _scan_sector_exposures() -> List[dict]:
+    """One flat record per (episode, exposure)."""
+    return _scan_episodes()[0]
+
+
+def _scan_macro_claims() -> List[dict]:
+    """One flat record per (episode, indicator) — the pipeline's macro_extractor output."""
+    return _scan_episodes()[1]
 
 
 def sync_sector_mentions(db: Session, days: int = SYNC_LOOKBACK_DAYS) -> int:
@@ -482,6 +509,52 @@ def rescore_price_break_snapshots(db: Session) -> dict:
     return {"price_break_ticker_rescored": tickers, "price_break_sector_rescored": sectors}
 
 
+def sync_macro_mentions(db: Session, days: int = SYNC_LOOKBACK_DAYS) -> int:
+    """Upsert macro claims into content_mentions (``mention_type="macro"``).
+
+    ``exposure_id`` carries the indicator id — it is the indexed non-ticker subject
+    column, so "every episode on US10Y" is the same query shape as a sector's.
+    ``start_time_s`` is already SECONDS (the pipeline resolved it from the sentence
+    index); it must NOT pass through ``_parse_start_s``, which divides by 1000.
+    """
+    try:
+        records = _scan_macro_claims()
+    except Exception as e:
+        logger.warning("mention sync: macro claim scan failed: %s", e)
+        return 0
+    cutoff = datetime.utcnow() - timedelta(days=days)
+    seen = _existing_keys(db)
+    inserted = 0
+    for rec in records:
+        if rec["mentioned_at"] < cutoff:
+            continue
+        key = f"{rec['episode_id']}:macro:{rec['indicator_id']}"
+        if key in seen:
+            continue
+        seen.add(key)
+        start_s, confidence = rec.get("start_time_s"), rec.get("confidence")
+        db.add(ContentMention(
+            mention_key=key,
+            episode_id=rec["episode_id"],
+            source_type="podcast",
+            podcaster=rec.get("podcaster"),
+            mention_type="macro",
+            exposure_id=rec["indicator_id"],
+            display_name=rec.get("display_name") or rec["indicator_id"],
+            mentioned_at=rec["mentioned_at"],
+            mention_start_s=float(start_s) if isinstance(start_s, (int, float)) else None,
+            confidence=float(confidence) if confidence is not None else 1.0,
+            extraction_method="pipeline_llm",
+            sentiment_label=rec.get("direction_expected"),      # UP / DOWN / FLAT / UNCLEAR
+            thesis=(rec.get("claim") or "").strip(),
+            payload={k: rec.get(k) for k in ("level_quoted", "reasons", "implication", "time_horizon", "quote")},
+        ))
+        inserted += 1
+    if inserted:
+        db.commit()
+    return inserted
+
+
 # ---------------------------------------------------------------------------
 # Periodic runner
 # ---------------------------------------------------------------------------
@@ -491,8 +564,9 @@ def run_sync_cycle() -> dict:
 
     ponytail: dev/staging/prod all run this against the one shared table; the
     loser of a same-key race rolls back and simply catches up next cycle."""
-    stats = {"ticker_mentions": 0, "sector_mentions": 0, "us_history_bars": 0,
+    stats = {"ticker_mentions": 0, "sector_mentions": 0, "macro_mentions": 0, "us_history_bars": 0,
              "ticker_snapshots": 0, "sector_snapshots": 0}
+    _scan_episodes.cache_clear()       # one episode scan per cycle, shared by sector + macro
     for session in get_session():
         try:
             stats["ticker_mentions"] = sync_ticker_mentions(session)
@@ -503,6 +577,11 @@ def run_sync_cycle() -> dict:
             stats["sector_mentions"] = sync_sector_mentions(session)
         except Exception as e:
             logger.warning("mention sync: sector mention pass failed: %s", e)
+            session.rollback()
+        try:
+            stats["macro_mentions"] = sync_macro_mentions(session)
+        except Exception as e:
+            logger.warning("mention sync: macro mention pass failed: %s", e)
             session.rollback()
         try:
             # Closes first, so the snapshots below can score old US calls this cycle.

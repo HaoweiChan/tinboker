@@ -532,7 +532,7 @@ class ContentMention(Base):
     episode_id = Column(String(255), nullable=False, index=True)
     source_type = Column(String(20), nullable=False, default="podcast")
     podcaster = Column(String(255), nullable=True)
-    mention_type = Column(String(10), nullable=False, index=True)  # "ticker" | "sector"
+    mention_type = Column(String(10), nullable=False, index=True)  # "ticker" | "sector" | "macro"
     ticker = Column(String(20), nullable=True, index=True)  # canonical symbol, ticker mentions only
     exposure_id = Column(String(100), nullable=True, index=True)  # sector mentions only
     display_name = Column(Text, nullable=True)

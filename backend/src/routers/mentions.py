@@ -151,22 +151,28 @@ async def get_episode_mentions(episode_id: str):
             .filter(SectorPerformanceSnapshot.mention_id.in_([m.id for m in rows] or [0]))
             .all()
         }
-        ticker_mentions, sector_mentions = [], []
+        ticker_mentions, sector_mentions, macro_mentions = [], [], []
         for m in rows:
             if m.mention_type == "ticker":
                 ticker_mentions.append(_mention_dict(m, _performance_dict(ticker_snaps.get(m.id))))
-            else:
+            elif m.mention_type == "sector":
                 sector_mentions.append(_mention_dict(m, _sector_performance_dict(sector_snaps.get(m.id))))
+            elif m.mention_type == "macro":
+                # exposure_id = indicator id (US10Y…), thesis = the claim, sentiment_label =
+                # expected direction; the quoted level and reasons ride in payload.
+                macro_mentions.append({**_mention_dict(m, None), **(m.payload or {})})
         return {
             "episode_id": episode_id,
             "ticker_mentions": ticker_mentions,
             "sector_mentions": sector_mentions,
+            "macro_mentions": macro_mentions,
             "disclaimer": DISCLAIMER,
         }
     return {
         "episode_id": episode_id,
         "ticker_mentions": [],
         "sector_mentions": [],
+        "macro_mentions": [],
         "disclaimer": DISCLAIMER,
     }
 
