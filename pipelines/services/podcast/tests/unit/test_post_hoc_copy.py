@@ -50,6 +50,15 @@ def test_build_messages_carries_the_stance_thesis_and_only_that_stocks_sections(
     assert "只能靠上面的結論" not in user
 
 
+def test_mode_picks_the_closing_paragraph():
+    base = {"ticker": "3324", "name": "雙鴻", "source": "兆華與股惑仔", "speaker": "兆華", "summary": _SUMMARY}
+    past = phc.build_messages(base)[1]["content"]
+    today = phc.build_messages({**base, "mode": "today"})[1]["content"]
+    assert past.rstrip().endswith("不要評斷對錯。") and "用過去式" in past and "今天播出" not in past
+    assert "這集是今天播出的" in today and "兆華這集講到雙鴻" in today and "不要留半句給系統補" in today
+    assert "用過去式，不要寫之後的事" not in today
+
+
 def test_build_messages_says_so_when_the_summary_never_names_the_stock():
     user = phc.build_messages({"ticker": "2330", "name": "台積電", "summary": _SUMMARY})[1]["content"]
     assert "沒有單獨講到這檔" in user and "沒有明確方向" in user

@@ -16,6 +16,7 @@ With no Threads credentials configured the run is forced to ``dry_run`` — it c
 and returns the drafts without publishing — so the endpoint is always safe to call.
 """
 
+import asyncio
 import logging
 import urllib.parse
 from datetime import datetime, timedelta, timezone
@@ -190,6 +191,39 @@ def macro_card_url(episode: Any, claim: dict) -> Optional[str]:
     label = f"{speaker_for(_field(episode, 'podcast_name'))} {int(date[5:7])}/{int(date[8:])}"
     q = urllib.parse.urlencode({"event": date, "label": label, "claim": (claim.get("claim") or "")[:160]})
     return f"{settings.public_api_url.rstrip('/')}/api/og/macro/{str(claim['indicator_id']).upper()}.png?{q}"
+
+
+def is_low_ticker(episode: Any) -> bool:
+    """One or two stocks — the host talked about a name, not a market. A five-card deck
+    over that is padding; the shape that fits is the story of the call plus its chart."""
+    return 1 <= len(_field(episode, "related_tickers") or []) <= 2
+
+
+def _ticker_name(ticker: str) -> str:
+    """zh-TW name from stock_translations; the bare ticker when the lookup fails — a
+    story that says 3324 is worse than one that says 雙鴻, but far better than no post."""
+    try:
+        from src.database.postgres import get_session
+        from src.services.paid_weekly import query_names
+        for db in get_session():
+            return query_names(db, {ticker}).get(ticker) or ticker
+    except Exception as e:  # noqa: BLE001
+        logger.info("ticker name lookup failed for %s: %s", ticker, e)
+    return ticker
+
+
+def compose_ticker_story(episode: Any) -> dict:
+    """The frame of a same-day ticker story: which stock, the marked chart, the link.
+    The text itself is written by the pipeline at publish time (``_story`` in
+    ``today`` mode) — an LLM call the dry-run preview does not spend."""
+    episode_id = _field(episode, "id") or _field(episode, "episode_id") or ""
+    ticker = str((_field(episode, "related_tickers") or [""])[0]).upper()
+    date = _air_date_tw(episode) or datetime.utcnow().strftime("%Y-%m-%d")
+    label = f"{speaker_for(_field(episode, 'podcast_name'))} {int(date[5:7])}/{int(date[8:])}"
+    q = urllib.parse.urlencode({"days": 60, "event": date, "label": label})
+    return {"episode_id": episode_id, "ticker": ticker, "mention_date": date, "podcaster": _field(episode, "podcast_name"),
+            "image_url": f"{settings.public_api_url.rstrip('/')}/api/og/stock/{ticker}.png?{q}",
+            "url": episode_url(episode_id)}
 
 
 def compose_text_post(episode: Any) -> dict:
@@ -394,6 +428,33 @@ async def publish_recent(
                 social_ledger.release(PLATFORM, episode_id)
                 skipped.append({"episode_id": episode_id, "reason": f"publish_failed: {e}"})
             continue
+
+        # One or two stocks → the story of the call on its marked chart. The story comes
+        # from the pipeline at publish time; if it does not, the episode takes the
+        # carousel path below rather than being skipped.
+        if is_low_ticker(episode):
+            frame = compose_ticker_story(episode)
+            if effective_dry_run:
+                posted.append({**frame, "kind": "ticker_story", "text": "（發佈時由 pipeline 產生）", "dry_run": True})
+                continue
+            from src.services import social_formats
+            frame["name"] = await asyncio.to_thread(_ticker_name, frame["ticker"])
+            story = await social_formats._story(frame, mode="today")
+            if story:
+                if not social_ledger.claim(PLATFORM, episode_id):
+                    skipped.append({"episode_id": episode_id, "reason": "already_posted"})
+                    continue
+                try:
+                    media_id = await service.publish(story, image_url=frame["image_url"])
+                    reply_id = await service.publish_reply(link_comment(episode_id), reply_to_id=media_id)
+                    _record(episode_id, media_id, frame["url"], [reply_id], fmt="episode_ticker_story")
+                    posted.append({**frame, "kind": "ticker_story", "text": story, "media_id": media_id, "dry_run": False})
+                    logger.info("Posted ticker story for %s (%s, %s)", episode_id, frame["ticker"], media_id)
+                except ThreadsError as e:
+                    social_ledger.release(PLATFORM, episode_id)
+                    skipped.append({"episode_id": episode_id, "reason": f"publish_failed: {e}"})
+                continue
+            logger.info("no ticker story for %s (%s) — carousel instead", episode_id, frame["ticker"])
 
         # Use the full thread (carousel + reply chain) when the episode has rendered
         # cards OR hand-authored social copy; otherwise fall back to a single text/image

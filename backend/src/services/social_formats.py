@@ -163,9 +163,10 @@ def post_hoc_text(c: dict, story: str) -> str:
             f'{_md(c["mention_date"])}到{_md(c["last_date"])}{word}{abs(c["pct"]):.1f}%')
 
 
-async def _story(c: dict) -> Optional[str]:
+async def _story(c: dict, mode: str = "post_hoc") -> Optional[str]:
     """Ask the pipeline for the story of that episode's take on that stock. None on any
-    failure — no story, no post; the number line alone is the caption Willy rejected."""
+    failure — no story, no post; the number line alone is the caption Willy rejected.
+    ``mode`` "today" is the same-day variant (present tense, no price line follows)."""
     import httpx
     base = (settings.netcup_api_url or "").rstrip("/")
     if not base:
@@ -177,7 +178,7 @@ async def _story(c: dict) -> Optional[str]:
                 f"{base}/api/podcast/episodes/{c['episode_id']}/post-hoc-copy", headers=headers,
                 json={"ticker": c["ticker"], "name": c["name"], "mention_date": c["mention_date"],
                       "sentiment_label": c.get("sentiment_label"), "thesis": c.get("thesis"),
-                      "speaker": speaker_for(c.get("podcaster"))})
+                      "speaker": speaker_for(c.get("podcaster")), "mode": mode})
         if resp.status_code >= 400:
             logger.warning("post-hoc story %s/%s -> %s: %s", c["episode_id"], c["ticker"],
                            resp.status_code, resp.text[:200])

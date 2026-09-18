@@ -223,7 +223,7 @@ async def test_publish_recent_posts_a_zero_ticker_episode_as_text(temp_db, monke
             return "r_link"
     monkeypatch.setattr(threads_publisher, "ThreadsService", _Svc)
     eps = [_ep("EP701", insights=["AI 監管會讓算力需求再多 15%"], tickers=[]),
-           _ep("EP702", insights=["有標的的照舊"], tickers=["2330"])]
+           _ep("EP702", insights=["有標的的照舊"], tickers=["2330", "NVDA", "3324"])]
     eps[0].social_thread = {"post": "孟恭這集\n講的是算力", "comments": []}
     eps[0].macro_claims = [{"indicator_id": "FED_FUNDS", "claim": "升息機率八成", "level_quoted": "80%", "confidence": 0.9}]
     monkeypatch.setattr(threads_publisher.podcast_service, "get_recent_episodes", await _fake_recent(eps))
@@ -236,6 +236,80 @@ async def test_publish_recent_posts_a_zero_ticker_episode_as_text(temp_db, monke
     assert any(c[0] == "reply" and "tinboker.com/episode/EP701" in c[1] for c in _Svc.calls)
     row = next(r for r in social_ledger.list_posted("threads") if r["episode_id"] == "EP701")
     assert (row["format"], row["child_ids"]) == ("episode_macro_card", ["r_link"])
+
+
+# ── 1–2 tickers: the story of the call on its marked chart ───────────────
+
+def test_is_low_ticker_means_one_or_two():
+    assert not threads_publisher.is_low_ticker(_ep("a", tickers=[]))
+    assert threads_publisher.is_low_ticker(_ep("b", tickers=["2330"]))
+    assert threads_publisher.is_low_ticker(_ep("c", tickers=["2330", "NVDA"]))
+    assert not threads_publisher.is_low_ticker(_ep("d", tickers=["2330", "NVDA", "3324"]))
+
+
+def test_compose_ticker_story_frames_the_first_ticker_on_its_air_date(monkeypatch):
+    from datetime import timezone
+    monkeypatch.setattr(settings, "public_api_url", "https://api.tinboker.com")
+    aired = datetime(2026, 9, 17, 20, 5, tzinfo=timezone(timedelta(hours=8)))
+    ep = _ep("EP710", insights=["x"], tickers=["3324", "3017"], released_ms=int(aired.timestamp() * 1000))
+    ep.podcast_name = "兆華與股惑仔"
+    frame = threads_publisher.compose_ticker_story(ep)
+    assert frame["ticker"] == "3324" and frame["mention_date"] == "2026-09-17"
+    q = dict(urllib.parse.parse_qsl(frame["image_url"].split("?", 1)[1]))
+    assert frame["image_url"].startswith("https://api.tinboker.com/api/og/stock/3324.png?")
+    assert q == {"days": "60", "event": "2026-09-17", "label": "兆華 9/17"}
+    assert frame["url"].endswith("/episode/EP710")
+
+
+@pytest.mark.asyncio
+async def test_publish_recent_posts_a_low_ticker_episode_as_a_story_or_falls_back(temp_db, monkeypatch):
+    from src.services import social_formats, social_ledger
+
+    class _Svc:
+        is_configured = True
+        calls: list = []
+
+        def __init__(self, *a, **k):
+            pass
+
+        async def publish(self, text, image_url=None):
+            self.calls.append(("post", text, image_url))
+            return f"m{len(self.calls)}"
+
+        async def publish_reply(self, text, reply_to_id, **_):
+            self.calls.append(("reply", text, reply_to_id))
+            return "r_link"
+
+        async def publish_carousel(self, image_urls, text):
+            self.calls.append(("carousel", text, image_urls))
+            return "m_car"
+    monkeypatch.setattr(threads_publisher, "ThreadsService", _Svc)
+    monkeypatch.setattr(threads_publisher, "_ticker_name", lambda t: "雙鴻")
+    asked = []
+
+    async def story(c, mode="post_hoc"):
+        asked.append({**c, "mode": mode})
+        return "兆華這集講到雙鴻\n他在意的是散熱族群整齊發動" if c["ticker"] == "3324" else None
+    monkeypatch.setattr(social_formats, "_story", story)
+
+    eps = [_ep("EP711", insights=["一"], tickers=["3324"]),
+           _ep("EP712", insights=["二"], tickers=["2330"])]       # the pipeline has no story for this one
+    monkeypatch.setattr(threads_publisher.podcast_service, "get_recent_episodes", await _fake_recent(eps))
+
+    result = await threads_publisher.publish_recent(limit=10, dry_run=False)
+    kinds = {p["episode_id"]: p.get("kind") for p in result["posted"]}
+    assert kinds == {"EP711": "ticker_story", "EP712": None}          # EP712 took the old path
+    assert [(a["episode_id"], a["mode"], a["name"]) for a in asked] == [("EP711", "today", "雙鴻"), ("EP712", "today", "雙鴻")]
+    post = next(c for c in _Svc.calls if c[0] == "post" and c[1].startswith("兆華這集講到雙鴻"))
+    assert "/api/og/stock/3324.png?" in post[2]
+    rows = {r["episode_id"]: r["format"] for r in social_ledger.list_posted("threads")}
+    assert rows["EP711"] == "episode_ticker_story" and rows["EP712"] == "episode_single"
+
+    # Dry run never spends the LLM call.
+    asked.clear()
+    eps.append(_ep("EP713", insights=["三"], tickers=["2454"]))
+    dry = await threads_publisher.publish_recent(limit=10, dry_run=True)
+    assert asked == [] and [p["kind"] for p in dry["posted"]] == ["ticker_story"] and dry["posted"][0]["dry_run"]
 
 
 # ── thread (carousel + reply chain) ──────────────────────────────────
@@ -252,8 +326,8 @@ def _ep_cards(ep_id, cards, **kw) -> Episode:
     return Episode(
         id=ep_id, podcast_name="股癌", episode_title="本集重點",
         key_insights=["洞見"], social_cards=cards,
-        # A card deck implies stocks; without one the episode routes to the one-liner.
-        related_tickers=kw.get("tickers", ["2330"]),
+        # A card deck implies several stocks; 0 routes to the text post, 1–2 to the story.
+        related_tickers=kw.get("tickers", ["2330", "NVDA", "3324"]),
         created_time=_now_ms(), released_at_ms=kw.get("released_ms", _now_ms()),
     )
 
