@@ -227,3 +227,77 @@ def test_rows_for_date_both_sources_filled_is_skipped(ohlc_db):
 
     twse_n, tpex_n = _rows_for_date("2026-07-08")
     assert twse_n >= _MIN_TWSE_ROWS and tpex_n >= _MIN_TPEX_ROWS  # skip condition is True
+
+
+# ── Batched upsert (2026-07-15 incident: SELECT per row + one wholesale commit) ──
+
+class _RecordingSession:
+    """Captures executed statements; ``fail_on`` chunk indexes raise instead."""
+
+    def __init__(self, fail_on=()):
+        self.statements, self.commits, self.rollbacks = [], 0, 0
+        self.fail_on = set(fail_on)
+
+    def execute(self, stmt):
+        if len(self.statements) in self.fail_on:
+            self.statements.append(stmt)
+            raise RuntimeError("deadlock")
+        self.statements.append(stmt)
+
+    def commit(self):
+        self.commits += 1
+
+    def rollback(self):
+        self.rollbacks += 1
+
+
+def _rows(n, date="2026-09-17", start=0):
+    return [{"ticker": f"T{i}", "date": date, "open": 1.0, "high": 2.0, "low": 0.5,
+             "close": 1.5, "volume": 10.0, "trading_value": 15.0, "source": "polygon"}
+            for i in range(start, start + n)]
+
+
+def test_upsert_is_one_statement_per_chunk_committed_as_it_goes(monkeypatch):
+    """~10k US rows used to mean ~10k SELECTs in one transaction, which saturated the pool
+    and timed out every DB-backed endpoint."""
+    from sqlalchemy.dialects import postgresql
+
+    import src.services.tw_daily_ohlc_refresh as t
+
+    session = _RecordingSession()
+    monkeypatch.setattr(t, "get_session", lambda: iter([session]))
+    monkeypatch.setattr(t, "_UPSERT_CHUNK", 1000)
+    written = t._upsert_rows(_rows(2500))
+    assert written == 2500
+    assert len(session.statements) == 3 and session.commits == 3  # 1000 + 1000 + 500
+    sql = str(session.statements[0].compile(dialect=postgresql.dialect()))
+    assert "ON CONFLICT (ticker, date) DO UPDATE" in sql and "trading_value" in sql.split("DO UPDATE")[1]
+
+
+def test_upsert_dedupes_a_ticker_date_within_a_chunk(monkeypatch):
+    """Postgres refuses to update the same row twice in one statement, and the feeds do
+    repeat a (ticker, date) — the later row wins, as a re-fetch would."""
+    import src.services.tw_daily_ohlc_refresh as t
+
+    session = _RecordingSession()
+    monkeypatch.setattr(t, "get_session", lambda: iter([session]))
+    rows = _rows(1) + [{**_rows(1)[0], "close": 99.0}]
+    assert t._upsert_rows(rows) == 1
+    assert session.statements[0].compile().params["close_m0"] == 99.0
+
+
+def test_a_failed_chunk_keeps_what_earlier_chunks_wrote(monkeypatch):
+    import src.services.tw_daily_ohlc_refresh as t
+
+    session = _RecordingSession(fail_on=[1])
+    monkeypatch.setattr(t, "get_session", lambda: iter([session]))
+    monkeypatch.setattr(t, "_UPSERT_CHUNK", 100)
+    written = t._upsert_rows(_rows(250))
+    assert written == 150 and session.rollbacks == 1 and session.commits == 2
+
+
+def test_empty_rows_touch_no_session(monkeypatch):
+    import src.services.tw_daily_ohlc_refresh as t
+
+    monkeypatch.setattr(t, "get_session", lambda: pytest.fail("no session for zero rows"))
+    assert t._upsert_rows([]) == 0

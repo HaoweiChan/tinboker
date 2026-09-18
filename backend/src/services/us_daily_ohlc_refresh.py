@@ -28,7 +28,7 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from src.database.models import StockDailyOHLC
 from src.database.postgres import get_session
-from src.services.massive_service import MassiveAPIService, _looks_us
+from src.services.massive_service import MassiveAPIError, MassiveAPIService, _looks_us
 # Reuse the TW warmer's upsert — it writes StockDailyOHLC keyed on (ticker, date) and is
 # source-agnostic (our rows carry source='polygon'), so there's one upsert path, not two.
 from src.services.tw_daily_ohlc_refresh import _upsert_rows
@@ -36,7 +36,9 @@ from src.services.tw_daily_ohlc_refresh import _upsert_rows
 logger = logging.getLogger(__name__)
 
 _BACKFILL_DAYS = 90
-_BACKFILL_GAP_SECONDS = 1.0
+# One grouped call per day, spaced like the other US warmers: the Massive budget is ~5/min
+# per key and shared by every environment, so 1 s apart just burned refusals.
+_BACKFILL_GAP_SECONDS = 13.0
 # A real US session yields thousands of grouped rows; below this a date is "not yet filled"
 # (0 for weekends/holidays — harmlessly re-probed). Makes backfill idempotent + resumable.
 _MIN_ROWS_PER_DAY = 100
@@ -84,10 +86,12 @@ def _normalize_grouped(agg: Any, iso: str) -> Optional[Dict[str, Any]]:
     }
 
 
-def _fetch_grouped(iso: str) -> List[Dict[str, Any]]:
+def _fetch_grouped(iso: str) -> Optional[List[Dict[str, Any]]]:
     """Fetch + normalize the whole US market for one date via Polygon grouped-daily.
 
-    Sync (runs in a thread). Returns [] on any failure or an empty/non-trading day (logged).
+    Sync (runs in a thread). ``[]`` means a non-trading day or a failed fetch (logged);
+    ``None`` means the shared Massive minute budget is spent, which callers treat as "come
+    back later" instead of walking further back through dates that would refuse too.
     """
     try:
         svc = MassiveAPIService()
@@ -96,6 +100,9 @@ def _fetch_grouped(iso: str) -> List[Dict[str, Any]]:
             logger.warning("US OHLC: no Massive client configured — cannot warm US bars.")
             return []
         aggs = client.get_grouped_daily_aggs(iso, adjusted=True)
+    except MassiveAPIError as e:
+        logger.info("US OHLC: %s deferred, Massive budget spent (%s)", iso, e)
+        return None
     except Exception as e:
         logger.warning("US grouped-daily fetch failed for %s: %s", iso, e)
         return []
@@ -129,6 +136,8 @@ async def refresh_us_daily_ohlc() -> int:
     for i in range(_LOOKBACK_PROBE):
         iso = (_date.today() - timedelta(days=i)).isoformat()
         rows = await loop.run_in_executor(None, _fetch_grouped, iso)
+        if rows is None:
+            return 0  # budget spent; the next cycle picks this up
         if rows:
             written = await loop.run_in_executor(None, _upsert_rows, rows)
             logger.info("US OHLC refresh: %s wrote %d rows.", iso, written)
@@ -160,6 +169,9 @@ async def backfill_us_daily_ohlc(days: int = _BACKFILL_DAYS, gap_seconds: float 
         if await loop.run_in_executor(None, _us_rows_for_date, iso) >= _MIN_ROWS_PER_DAY:
             continue
         rows = await loop.run_in_executor(None, _fetch_grouped, iso)
+        if rows is None:  # budget spent — wait a minute and give this date one more go
+            await asyncio.sleep(60)
+            rows = await loop.run_in_executor(None, _fetch_grouped, iso)
         await asyncio.sleep(gap_seconds)
         if rows:
             total += await loop.run_in_executor(None, _upsert_rows, rows)
