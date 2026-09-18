@@ -47,10 +47,19 @@ def episode_url(episode_id: str) -> str:
     return f"{settings.site_url.rstrip('/')}/episode/{episode_id}"
 
 
-def link_comment(episode_id: str) -> str:
+def social_link(url: str, fmt: str) -> str:
+    """``url`` tagged so GA4 can tell a Threads arrival — and which post shape sent it —
+    from everything else. Measured 2026-09-19: 520K views → 598 clicks in 28 days, and
+    nothing on the site side could say what those 598 did next. The ledger keeps the
+    bare URL; only the posted link carries the tags."""
+    sep = "&" if "?" in url else "?"
+    return f"{url}{sep}utm_source=threads&utm_medium=social&utm_campaign={fmt}"
+
+
+def link_comment(episode_id: str, fmt: str = "episode_thread") -> str:
     """The episode permalink, posted as the FIRST comment (not in the post body) so
     the link doesn't suppress organic reach and lives where it helps SEO."""
-    return f"▶ 完整重點：{episode_url(episode_id)}"
+    return f"▶ 完整重點：{social_link(episode_url(episode_id), fmt)}"
 
 
 RASTER_IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".webp", ".gif")
@@ -100,7 +109,7 @@ def compose_post(episode: Any, *, count_line: str = "", with_link: bool = True) 
         image_url = None  # Meta can't ingest SVG — post text-only rather than hard-fail
 
     url = episode_url(episode_id)
-    link_line = f"\n\n{link_comment(episode_id)}" if with_link else ""
+    link_line = f"\n\n{link_comment(episode_id, 'episode_single')}" if with_link else ""
     count_seg = f"\n\n{count_line}" if count_line else ""
 
     header = "｜".join(p for p in (podcast_name, title) if p) or title or podcast_name
@@ -418,10 +427,10 @@ async def publish_recent(
                 skipped.append({"episode_id": episode_id, "reason": "already_posted"})
                 continue
             try:
+                fmt = "episode_macro_card" if draft.get("image_url") else "episode_text"
                 media_id = await service.publish(draft["text"], image_url=draft.get("image_url"))
-                reply_id = await service.publish_reply(link_comment(episode_id), reply_to_id=media_id)
-                _record(episode_id, media_id, draft["url"], [reply_id],
-                        fmt="episode_macro_card" if draft.get("image_url") else "episode_text")
+                reply_id = await service.publish_reply(link_comment(episode_id, fmt), reply_to_id=media_id)
+                _record(episode_id, media_id, draft["url"], [reply_id], fmt=fmt)
                 posted.append({**draft, "kind": "text", "media_id": media_id, "dry_run": False})
                 logger.info("Posted text post for %s (%s)", episode_id, media_id)
             except ThreadsError as e:
@@ -446,7 +455,8 @@ async def publish_recent(
                     continue
                 try:
                     media_id = await service.publish(story, image_url=frame["image_url"])
-                    reply_id = await service.publish_reply(link_comment(episode_id), reply_to_id=media_id)
+                    reply_id = await service.publish_reply(link_comment(episode_id, "episode_ticker_story"),
+                                                           reply_to_id=media_id)
                     _record(episode_id, media_id, frame["url"], [reply_id], fmt="episode_ticker_story")
                     posted.append({**frame, "kind": "ticker_story", "text": story, "media_id": media_id, "dry_run": False})
                     logger.info("Posted ticker story for %s (%s, %s)", episode_id, frame["ticker"], media_id)

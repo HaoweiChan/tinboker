@@ -296,6 +296,15 @@ export const OnboardingModals: React.FC = () => {
       setView(force === 'tutorial' ? 'tutorial' : CHANGELOG[0] ? { entry: CHANGELOG[0] } : null);
       return;
     }
+    // A visitor who lands on anything but the home page came for that page — a Threads
+    // link to an episode, a shared stock card. A five-step tutorial over the thing they
+    // tapped through for is the first reason to leave (measured 2026-09-19: it covered
+    // the episode on every first visit from social). Nothing is marked seen, so the
+    // tutorial and the changelog still greet them the first time a visit starts at "/".
+    if (window.location.pathname !== '/') {
+      setView(null);
+      return;
+    }
     if (!hasSeenOnboarding()) {
       setStep(0);
       setView('tutorial');
