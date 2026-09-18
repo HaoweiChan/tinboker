@@ -15,7 +15,6 @@ import { PodcasterIndex } from '@/pages/PodcasterIndex';
 import { StockIndex } from '@/pages/StockIndex';
 import { TopicsCloud } from '@/pages/TopicsCloud';
 import { WatchlistPage } from '@/pages/WatchlistPage';
-import { PicksPage } from '@/pages/PicksPage';
 import { AdminPage } from '@/pages/AdminPage';
 import { AdminDashboardPage } from '@/pages/AdminDashboardPage';
 import { TranslationsSection } from '@/pages/TranslationsSection';
@@ -36,6 +35,8 @@ import { DevTranslationsPage } from '@/pages/DevTranslationsPage';
 import { DevBypass } from '@/pages/DevBypass';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { RequireLogin } from '@/components/auth/RequireLogin';
+import { MemberGate } from '@/components/auth/MemberGate';
+import { Skeleton } from '@/components/ui/Skeleton';
 import { GlobalPlayer } from '@/components/player/GlobalPlayer';
 import { PlayerConfirmationModal } from '@/components/player/PlayerConfirmationModal';
 import { useEffect } from 'react';
@@ -49,6 +50,54 @@ const DesignPreview = import.meta.env.DEV ? lazy(() => import('@/pages/DesignPre
 // Developer portal — only registered when VITE_STAGE=DEV (dev.tinboker.com).
 // STAGING and PRODUCTION builds never register /dev routes so they fall through to the catch-all.
 const IS_DEV_ENV = (import.meta.env.VITE_STAGE as string) === 'DEV';
+
+// Paid, member-only — most anonymous visitors never open it, so keep it out of
+// the main bundle (own chunk, loaded on demand).
+const PicksPage = lazy(() => import('@/pages/PicksPage'));
+
+// Placeholder shown (blurred, behind the upgrade card) to non-members via
+// MemberGate's `preview` — it renders into the real DOM (see MemberGate's doc
+// comment), so this is skeleton bars only: no real ticker/name/numbers.
+function PicksPreview() {
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      {Array.from({ length: 4 }).map((_, i) => (
+        <div key={i} className="bg-card border border-border rounded-md p-4 space-y-3">
+          <div className="flex gap-2">
+            <Skeleton className="h-4 w-14" />
+            <Skeleton className="h-4 w-20" />
+          </div>
+          <div className="flex gap-3">
+            <Skeleton className="h-4 w-12" />
+            <Skeleton className="h-4 w-12" />
+            <Skeleton className="h-4 w-12" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// PR 3 (adds /membership) deletes this wrapper. Until then, MemberGate's upgrade
+// card links to /membership, which doesn't exist yet — so outside dev, a
+// non-member deep-linking /picks must see exactly what they saw before this PR
+// (fall through to home), not a button to a dead route. Dev keeps the upgrade
+// card visible for QA regardless of membership.
+function PicksRoute() {
+  const isAuthReady = useAppStore((s) => s.isAuthReady);
+  const user = useAppStore((s) => s.user);
+  // Same wait MemberGate itself does — otherwise a member gets bounced to home
+  // for the one tick before auth hydrates.
+  if (!isAuthReady) return null;
+  if (!IS_DEV_ENV && !user?.is_member) return <Navigate to="/" replace />;
+  return (
+    <Suspense fallback={null}>
+      <MemberGate preview={<PicksPreview />}>
+        <PicksPage />
+      </MemberGate>
+    </Suspense>
+  );
+}
 
 // Admin dashboard is developer-only. The PRODUCTION backend mounts no /api/admin/* routes
 // (see backend main.py `if not settings.is_production`), so a prod admin page would only
@@ -105,10 +154,10 @@ function App() {
             <Route path="/stock" element={<StockIndex />} />
             <Route path="/sector/:exposureId" element={<SectorPage />} />
             <Route path="/news/:id" element={<NewsRedirect />} />
-            {/* /picks (走勢) — dev-only while unstable; excluded from the release.
-                STAGING/PRODUCTION don't register it, so a direct URL falls through
-                to the catch-all → home. */}
-            {IS_DEV_ENV && <Route path="/picks" element={<PicksPage />} />}
+            {/* /picks (走勢) — paid, member-only. Registered on every env; PicksRoute
+                sends a non-member outside dev to home until /membership exists
+                (PR 3), and MemberGate handles the member/preview split otherwise. */}
+            <Route path="/picks" element={<PicksRoute />} />
             <Route path="/about" element={<About />} />
             {/* Former standalone support pages — now sections of /about. */}
             <Route path="/contact" element={<Navigate to="/about#contact" replace />} />

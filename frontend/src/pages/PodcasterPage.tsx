@@ -18,19 +18,15 @@ import { useStockPriceSinceMap } from '@/hooks/useStockPriceSinceMap';
 import { useTickerWindowReturns, windowReturnsKey } from '@/hooks/useTickerWindowReturns';
 import { useTranslationMap } from '@/hooks/useTranslationMap';
 import { useEpisodeWindowDays, episodeCountWords } from '@/hooks/useEpisodeWindow';
-import { useAppStore, useSubscriptions } from '@/store/useAppStore';
+import { useAppStore, useSubscriptions, useUser } from '@/store/useAppStore';
 import { usePlayerStore } from '@/store/usePlayerStore';
 import type { TickerInsight } from '@/services/types';
-
-// The embedded 標的走勢 (pick-performance) block is part of the dev-only /picks
-// feature — surfaced on dev.tinboker.com only, hidden on staging/prod (where /picks
-// itself is unregistered, so its "查看命中率 →" link would otherwise dead-link).
-const IS_DEV_ENV = (import.meta.env.VITE_STAGE as string) === 'DEV';
 
 export const PodcasterPage: React.FC = () => {
   const { id } = useParams();
   const { toggleSubscription } = useAppStore();
   const subscriptions = useSubscriptions();
+  const user = useUser();
   const [podcast, setPodcast] = useState<Podcast | null>(null);
   const [episodes, setEpisodes] = useState<ApiEpisode[]>([]);
   const [picks, setPicks] = useState<TickerInsight[]>([]);
@@ -99,13 +95,18 @@ export const PodcasterPage: React.FC = () => {
     return map;
   }, [name, imageUrl]);
 
-  // Ticker-pick scoreboard: forward returns from each mention date.
+  // Ticker-pick scoreboard: forward returns from each mention date. Member-only
+  // (batch-prices-windows now requires it) — an empty ref list for a non-member
+  // means useTickerWindowReturns sends no request (hooks can't be called
+  // conditionally, so the gate is on the input, not the hook call itself).
   const pickRefs = useMemo(
     () =>
-      picks
-        .map((p) => ({ ticker: p.ticker, reference_ms: Date.parse(p.podcast_launch_time) }))
-        .filter((r) => r.ticker && Number.isFinite(r.reference_ms)),
-    [picks],
+      user?.is_member
+        ? picks
+            .map((p) => ({ ticker: p.ticker, reference_ms: Date.parse(p.podcast_launch_time) }))
+            .filter((r) => r.ticker && Number.isFinite(r.reference_ms))
+        : [],
+    [picks, user?.is_member],
   );
   const windowsMap = useTickerWindowReturns(pickRefs);
   const episodeMap = useMemo(() => {
@@ -166,7 +167,7 @@ export const PodcasterPage: React.FC = () => {
           </div>
         )}
 
-        {IS_DEV_ENV && picks.length > 0 && (
+        {user?.is_member && picks.length > 0 && (
           <>
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-sm font-semibold text-muted-foreground">標的走勢（提及日起算）</h2>

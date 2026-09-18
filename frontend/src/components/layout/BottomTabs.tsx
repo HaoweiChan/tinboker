@@ -2,6 +2,7 @@ import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Home, Mic, LineChart, TrendingUp, Hash, Star } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useUser } from '@/store/useAppStore';
 
 interface Tab {
   to: string;
@@ -10,13 +11,18 @@ interface Tab {
   prefix: boolean;
   /** Surfaced only on dev.tinboker.com (VITE_STAGE=DEV); hidden on staging/prod. */
   devOnly?: boolean;
+  /** Surfaced only to signed-in members (always shown on dev for QA). */
+  memberOnly?: boolean;
 }
 
 const TABS: readonly Tab[] = [
   { to: '/', label: '首頁', icon: Home, prefix: false },
   { to: '/podcaster', label: '節目', icon: Mic, prefix: true },
   { to: '/stock', label: '個股', icon: LineChart, prefix: true },
-  { to: '/picks', label: '走勢', icon: TrendingUp, prefix: true, devOnly: true },
+  // Member-only: the upgrade card's CTA goes to /membership, which doesn't exist
+  // until PR 3, so non-members on staging/prod must not be led there yet (dev
+  // still shows it for QA). PR 3 opens this to everyone.
+  { to: '/picks', label: '走勢', icon: TrendingUp, prefix: true, memberOnly: true },
   { to: '/topics', label: '話題', icon: Hash, prefix: true },
   { to: '/watchlist', label: '收藏', icon: Star, prefix: false },
 ];
@@ -36,7 +42,10 @@ function active(pathname: string, to: string, prefix: boolean): boolean {
 /** Mobile-only bottom navigation bar. Hidden at `lg` and up (the sidebar takes over). */
 export const BottomTabs: React.FC = () => {
   const { pathname } = useLocation();
-  const tabs = TABS.filter((t) => IS_DEV_ENV || !t.devOnly);
+  const user = useUser();
+  const tabs = TABS.filter((t) => IS_DEV_ENV || !t.devOnly).filter(
+    (t) => IS_DEV_ENV || !t.memberOnly || user?.is_member,
+  );
   return (
     <nav className="lg:hidden sticky bottom-0 z-30 bg-card/95 backdrop-blur border-t border-border" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
       <div className={cn('grid', GRID_COLS[tabs.length] ?? 'grid-cols-5')}>
