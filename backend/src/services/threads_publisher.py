@@ -17,7 +17,8 @@ and returns the drafts without publishing — so the endpoint is always safe to 
 """
 
 import logging
-from datetime import datetime
+import urllib.parse
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from src.config import settings
@@ -163,6 +164,34 @@ def is_zero_ticker(episode: Any) -> bool:
     return not (_field(episode, "related_tickers") or [])
 
 
+def pick_macro_claim(claims: list[dict]) -> Optional[dict]:
+    """The claim worth a card: one with a data series behind it, the host's own number
+    quoted if any claim has one, then the most confident. Nothing → None (text only)."""
+    from src.services.macro_data import SERIES
+    usable = [c for c in claims or [] if isinstance(c, dict)
+              and str(c.get("indicator_id") or "").upper() in SERIES and (c.get("claim") or "").strip()]
+    if not usable:
+        return None
+    return max(usable, key=lambda c: (bool(c.get("level_quoted")), float(c.get("confidence") or 0)))
+
+
+def _air_date_tw(episode: Any) -> Optional[str]:
+    ms = _release_ms(episode)
+    if not ms:
+        return None
+    return (datetime.fromtimestamp(ms / 1000, tz=timezone.utc) + timedelta(hours=8)).strftime("%Y-%m-%d")
+
+
+def macro_card_url(episode: Any, claim: dict) -> Optional[str]:
+    """The macro card with the episode day marked and the host's claim printed."""
+    date = _air_date_tw(episode)
+    if not date:
+        return None
+    label = f"{speaker_for(_field(episode, 'podcast_name'))} {int(date[5:7])}/{int(date[8:])}"
+    q = urllib.parse.urlencode({"event": date, "label": label, "claim": (claim.get("claim") or "")[:160]})
+    return f"{settings.public_api_url.rstrip('/')}/api/og/macro/{str(claim['indicator_id']).upper()}.png?{q}"
+
+
 def compose_text_post(episode: Any) -> dict:
     """A zero-ticker episode as text only — no cards, no reply chain, link in the
     first reply. The text is the pipeline's own ``social_thread.post``: the 12–18 line
@@ -177,7 +206,13 @@ def compose_text_post(episode: Any) -> dict:
     if not text:
         insight = pick_insight(_field(episode, "key_insights") or [])
         text = f"{speaker_for(_field(episode, 'podcast_name'))}這集\n{insight}"
-    return {"episode_id": episode_id, "text": text[:THREADS_MAX_CHARS], "url": episode_url(episode_id)}
+    # With a macro claim behind the episode, the post carries the macro card — the
+    # indicator's line with this episode marked on it — the way a stock episode carries
+    # its chart. Without one it stays text only.
+    claim = pick_macro_claim(_field(episode, "macro_claims") or [])
+    image_url = macro_card_url(episode, claim) if claim else None
+    return {"episode_id": episode_id, "text": text[:THREADS_MAX_CHARS], "url": episode_url(episode_id),
+            "image_url": image_url}
 
 
 def compose_thread(episode: Any) -> dict:
@@ -349,9 +384,10 @@ async def publish_recent(
                 skipped.append({"episode_id": episode_id, "reason": "already_posted"})
                 continue
             try:
-                media_id = await service.publish(draft["text"])
+                media_id = await service.publish(draft["text"], image_url=draft.get("image_url"))
                 reply_id = await service.publish_reply(link_comment(episode_id), reply_to_id=media_id)
-                _record(episode_id, media_id, draft["url"], [reply_id], fmt="episode_text")
+                _record(episode_id, media_id, draft["url"], [reply_id],
+                        fmt="episode_macro_card" if draft.get("image_url") else "episode_text")
                 posted.append({**draft, "kind": "text", "media_id": media_id, "dry_run": False})
                 logger.info("Posted text post for %s (%s)", episode_id, media_id)
             except ThreadsError as e:

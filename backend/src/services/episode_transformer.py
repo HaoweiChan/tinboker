@@ -288,6 +288,7 @@ class EpisodeTransformer:
             skipped_segments=episode_dict.get('skipped_segments', []) or [],
             sector_exposures=episode_dict.get('sector_exposures', []) or [],
             unresolved_market_trends=episode_dict.get('unresolved_market_trends', []) or [],
+            macro_claims=episode_dict.get('macro_claims', []) or [],
             sector_exposure_ids=episode_dict.get('sector_exposure_ids', []) or [],
             unresolved_market_trend_ids=episode_dict.get('unresolved_market_trend_ids', []) or [],
             created_time=self.datetime_to_timestamp_ms(created_time),

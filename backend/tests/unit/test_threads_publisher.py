@@ -2,6 +2,7 @@
 and the dry-run guarantee. No network or real Threads credentials are touched —
 ThreadsService is unconfigured in tests, which forces dry-run.
 """
+import urllib.parse
 from datetime import datetime, timedelta
 
 import pytest
@@ -164,6 +165,37 @@ def test_compose_text_post_is_the_written_post_and_the_link_goes_in_the_reply():
     assert "tinboker.com" not in draft["text"] and draft["url"].endswith("/episode/EP700")
 
 
+def _claims():
+    return [
+        {"indicator_id": "US_CPI", "claim": "通膨黏著", "level_quoted": None, "confidence": 0.95},
+        {"indicator_id": "US10Y", "claim": "財政部擴大回購長債，殖利率反而衝到4.94%", "level_quoted": "4.94%", "confidence": 0.9},
+        {"indicator_id": "BEEF", "claim": "牛肉漲七成", "level_quoted": "七成", "confidence": 0.99},   # no series → no card
+    ]
+
+
+def test_pick_macro_claim_wants_a_series_and_a_quoted_number_before_confidence():
+    assert threads_publisher.pick_macro_claim(_claims())["indicator_id"] == "US10Y"
+    assert threads_publisher.pick_macro_claim([{"indicator_id": "BEEF", "claim": "x"}]) is None
+    assert threads_publisher.pick_macro_claim([]) is None
+
+
+def test_compose_text_post_carries_the_macro_card_marked_on_the_air_date(monkeypatch):
+    monkeypatch.setattr(settings, "public_api_url", "https://api.tinboker.com")
+    from datetime import timezone
+    aired = datetime(2026, 9, 14, 8, 40, tzinfo=timezone(timedelta(hours=8)))       # a TW morning show
+    ep = _ep("EP704", insights=["x"], tickers=[], released_ms=int(aired.timestamp() * 1000))
+    ep.podcast_name = "游庭皓的財經皓角"
+    ep.social_thread = {"post": "加州柴油一加侖衝到快10美元", "comments": []}
+    ep.macro_claims = _claims()
+    draft = threads_publisher.compose_text_post(ep)
+    assert draft["image_url"].startswith("https://api.tinboker.com/api/og/macro/US10Y.png?")
+    q = dict(urllib.parse.parse_qsl(draft["image_url"].split("?", 1)[1]))
+    assert q == {"event": "2026-09-14", "label": "皓哥 9/14", "claim": "財政部擴大回購長債，殖利率反而衝到4.94%"}
+    assert draft["text"] == "加州柴油一加侖衝到快10美元"
+    ep.macro_claims = []
+    assert threads_publisher.compose_text_post(ep)["image_url"] is None
+
+
 def test_compose_text_post_falls_back_to_speaker_plus_one_insight():
     ep = _ep("EP703", insights=["實質利率才是金價天敵", "央行買盤一噸未少"], tickers=[])
     ep.podcast_name = "財經一路發"
@@ -193,16 +225,17 @@ async def test_publish_recent_posts_a_zero_ticker_episode_as_text(temp_db, monke
     eps = [_ep("EP701", insights=["AI 監管會讓算力需求再多 15%"], tickers=[]),
            _ep("EP702", insights=["有標的的照舊"], tickers=["2330"])]
     eps[0].social_thread = {"post": "孟恭這集\n講的是算力", "comments": []}
+    eps[0].macro_claims = [{"indicator_id": "FED_FUNDS", "claim": "升息機率八成", "level_quoted": "80%", "confidence": 0.9}]
     monkeypatch.setattr(threads_publisher.podcast_service, "get_recent_episodes", await _fake_recent(eps))
 
     result = await threads_publisher.publish_recent(limit=10, dry_run=False)
     kinds = {p["episode_id"]: p.get("kind") for p in result["posted"]}
     assert kinds["EP701"] == "text" and kinds["EP702"] is None
     one = [c for c in _Svc.calls if c[0] == "post" and c[1].startswith("孟恭這集\n")]
-    assert len(one) == 1 and one[0][2] is None                       # text only, no card
+    assert len(one) == 1 and "/api/og/macro/FED_FUNDS.png?" in one[0][2]   # the macro card rides along
     assert any(c[0] == "reply" and "tinboker.com/episode/EP701" in c[1] for c in _Svc.calls)
     row = next(r for r in social_ledger.list_posted("threads") if r["episode_id"] == "EP701")
-    assert (row["format"], row["child_ids"]) == ("episode_text", ["r_link"])
+    assert (row["format"], row["child_ids"]) == ("episode_macro_card", ["r_link"])
 
 
 # ── thread (carousel + reply chain) ──────────────────────────────────
