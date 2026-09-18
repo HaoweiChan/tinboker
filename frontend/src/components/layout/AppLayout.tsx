@@ -62,7 +62,10 @@ export const AppLayout: React.FC = () => {
     <div className="min-h-screen lg:grid lg:grid-cols-[64px_1fr] bg-background">
       <Sidebar />
       <div className="flex flex-col min-w-0 min-h-screen">
-        <header className="sticky top-0 z-20 border-b border-border bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70">
+        {/* z-30 matches the other app chrome (Sidebar, BottomTabs). At z-20 the header tied
+            with page content — chart legends (TradingViewChart z-20) come later in the DOM and
+            painted over the open header dropdowns. Modals/overlays stay above at z-40+. */}
+        <header className="sticky top-0 z-30 border-b border-border bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70">
           <div className="flex items-center gap-2 sm:gap-4 px-4 sm:px-6 lg:px-7 py-2 sm:py-3 max-w-[1440px] mx-auto w-full">
             <Link to="/" className="lg:hidden shrink-0" aria-label="首頁">
               <BracketMark size={28} />

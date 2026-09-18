@@ -192,7 +192,10 @@ const SeoTable: React.FC<{ title: string; rows: SeoRow[]; isPage?: boolean }> = 
     rows,
     isPage,
 }) => (
-    <div>
+    // min-w-0: the scroller's overflow only zeroes the intrinsic minimum when IT is the grid
+    // item. This wrapper is, so without it the table's min-content sized the column — 628px
+    // inside a 288px column, dragging the whole page 297px past the phone viewport.
+    <div className="min-w-0">
         <h4 className="mb-2 text-base font-semibold text-foreground">{title}</h4>
         <div className="overflow-x-auto rounded-lg border border-border">
             <table className="min-w-full text-base">
@@ -232,7 +235,7 @@ const SeoTable: React.FC<{ title: string; rows: SeoRow[]; isPage?: boolean }> = 
 );
 
 const AdsPagesTable: React.FC<{ rows: AdSenseRow[]; currency: string }> = ({ rows, currency }) => (
-    <div>
+    <div className="min-w-0">
         <h4 className="mb-2 text-base font-semibold text-foreground">Top Earning Pages</h4>
         <div className="overflow-x-auto rounded-lg border border-border">
             <table className="min-w-full text-base">
@@ -277,7 +280,10 @@ const RankList: React.FC<{
 }> = ({ icon, title, rows }) => {
     const max = rows.reduce((m, r) => Math.max(m, r.count), 0) || 1;
     return (
-        <div>
+        // min-w-0: as a grid item this defaults to min-width:auto, so the column sized
+        // itself to the longest (nowrap, truncated) label — 392px inside a 288px column —
+        // and pushed the whole analytics page wider than the phone viewport.
+        <div className="min-w-0">
             <h4 className="mb-2 flex items-center gap-2 text-base font-semibold text-foreground">
                 {icon} {title}
             </h4>

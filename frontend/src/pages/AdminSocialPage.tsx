@@ -751,7 +751,7 @@ export const AdminSocialPage: React.FC = () => {
                   onChange={(e) => { setPost(e.target.value); setSaved(false); }}
                   rows={4}
                   placeholder="整集的總結，口語一點，最後引導大家看留言…"
-                  className="w-full resize-y rounded-lg border border-input bg-card p-3 text-base text-foreground placeholder:text-muted-foreground focus:border-accent-info focus:outline-none focus:ring-1 focus:ring-accent-info"
+                  className="min-h-[45vh] w-full resize-y sm:min-h-[18rem] rounded-lg border border-input bg-card p-3 text-base text-foreground placeholder:text-muted-foreground focus:border-accent-info focus:outline-none focus:ring-1 focus:ring-accent-info"
                 />
                 <div className="mt-1 text-right text-xs text-muted-foreground">{post.length} 字</div>
               </div>
@@ -790,9 +790,9 @@ export const AdminSocialPage: React.FC = () => {
                     <textarea
                       value={c.text}
                       onChange={(e) => updateComment(i, e.target.value)}
-                      rows={3}
+                      rows={4}
                       placeholder="這段的人話重點…"
-                      className="w-full resize-y rounded-lg border border-input bg-card p-3 text-base text-foreground placeholder:text-muted-foreground focus:border-accent-info focus:outline-none focus:ring-1 focus:ring-accent-info"
+                      className="min-h-[8rem] w-full resize-y rounded-lg border border-input bg-card p-3 text-base text-foreground placeholder:text-muted-foreground focus:border-accent-info focus:outline-none focus:ring-1 focus:ring-accent-info"
                     />
                     <div className="mt-1 text-right text-xs text-muted-foreground">{c.text.length} 字</div>
                   </div>

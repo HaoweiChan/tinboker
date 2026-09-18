@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from datetime import datetime
 from contextlib import asynccontextmanager
 from src.config import settings
@@ -50,6 +51,15 @@ from src.routers.seo import router as seo_router, admin_router as admin_seo_rout
 from src.routers.weekly import router as weekly_router
 from src.routers.screener import router as screener_router
 from src.middleware.cloudflare import CloudflareMiddleware
+
+# Nothing configured logging, so the root logger kept its WARNING default and every
+# logger.info() in this codebase was dropped — a background warmer could run for hours
+# with nothing to show for it (2026-09-18: the US OHLC warmer's own progress lines).
+# WARNING keeps today's output; LOG_LEVEL=INFO on a container turns the rest on.
+logging.basicConfig(
+    level=getattr(logging, settings.log_level.strip().upper(), logging.WARNING),
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
 
 
 @asynccontextmanager

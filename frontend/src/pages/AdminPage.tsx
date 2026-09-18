@@ -46,7 +46,7 @@ export const AdminPage: React.FC = () => {
             {/* Mobile menu button */}
             <button
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                className="fixed left-4 top-4 z-50 rounded-md bg-card p-2 shadow-md lg:hidden"
+                className="fixed left-4 top-[calc(1rem+env(safe-area-inset-top,0px))] z-50 rounded-md bg-card p-2 shadow-md lg:hidden"
                 aria-label="Toggle menu"
             >
                 {mobileMenuOpen ? (
@@ -82,7 +82,9 @@ export const AdminPage: React.FC = () => {
 
             {/* Main content */}
             <main className="flex-1 overflow-auto">
-                <div className="min-h-screen p-4 pt-16 lg:p-6 lg:pt-6">
+                {/* Clear the fixed menu button: its 16px offset + ~40px box + the PWA status
+                    bar (standalone mode has no browser chrome, so env() is non-zero there). */}
+                <div className="min-h-screen p-4 pt-[calc(4.5rem+env(safe-area-inset-top,0px))] lg:p-6 lg:pt-6">
                     <Outlet context={{ authenticated, onLogout: handleLogout }} />
                 </div>
             </main>

@@ -69,6 +69,16 @@ function summarize(result: PromoPublishResult): string {
     .join('　');
 }
 
+/** True when the publish request came back with no server answer — a timeout, a dropped
+ *  connection, or a gateway giving up (Cloudflare 524 / Caddy 502-504). The publish may
+ *  have completed anyway, so the caller must not report it as a failure. */
+function isNoAnswer(e: unknown): boolean {
+  const err = e as { code?: string; message?: string; response?: { status?: number } };
+  const status = err?.response?.status;
+  if (status) return status === 502 || status === 503 || status === 504 || status === 524;
+  return err?.code === 'ECONNABORTED' || err?.code === 'ETIMEDOUT' || /timeout|network/i.test(err?.message || '');
+}
+
 export interface PromoComposerProps {
   onScheduled?: () => void;
 }
@@ -88,6 +98,10 @@ export const PromoComposer: React.FC<PromoComposerProps> = ({ onScheduled }) => 
   const [draftName, setDraftName] = useState('');
   const [savingDraft, setSavingDraft] = useState(false);
   const [preview, setPreview] = useState<PromoMedia | null>(null);
+  // A publish whose answer never arrived (gateway/client timeout) may well have posted:
+  // the server keeps going after the connection drops. Block the button until the
+  // operator has looked, or a second click double-posts.
+  const [unconfirmed, setUnconfirmed] = useState(false);
 
   const [scheduling, setScheduling] = useState(false);
   const [scheduleTime, setScheduleTime] = useState('');
@@ -233,13 +247,29 @@ export const PromoComposer: React.FC<PromoComposerProps> = ({ onScheduled }) => 
     try {
       const result = await publishPromo({ text, media, comments, platforms, dryRun });
       setMsg(summarize(result));
+      // Published for real → the draft is spent. Keep it when nothing went out.
+      if (!dryRun && Object.values(result.platforms).some((r) => r.posted) && draftId) {
+        try {
+          await deletePromoDraft(draftId);
+          await refreshDrafts();
+          newDraft();
+        } catch (e) {
+          console.error('[promo] draft cleanup after publish failed', e);
+        }
+      }
     } catch (e) {
       console.error('[promo] publish failed', e);
-      setMsg('發佈失敗，請看 console');
+      // No response is NOT a failure: a carousel with video takes ~40s+ to publish and
+      // the gateway can cut the connection first while the post still goes out.
+      const noAnswer = !dryRun && isNoAnswer(e);
+      if (noAnswer) setUnconfirmed(true);
+      setMsg(noAnswer
+        ? '已送出，但沒收到結果（連線先斷了）。貼文可能已經發出 — 先到 Threads 確認，不要直接再按一次。'
+        : '發佈失敗，請看 console');
     } finally {
       setBusy(false);
     }
-  }, [text, media, comments, platforms]);
+  }, [text, media, comments, platforms, draftId, refreshDrafts, newDraft]);
 
   return (
     <div className="max-w-2xl space-y-6">
@@ -250,7 +280,10 @@ export const PromoComposer: React.FC<PromoComposerProps> = ({ onScheduled }) => 
           <select
             value={draftId ?? ''}
             onChange={(e) => (e.target.value ? loadDraft(Number(e.target.value)) : newDraft())}
-            className="rounded-lg border border-input bg-card px-3 py-2 text-base text-foreground focus:border-accent-info focus:outline-none"
+            /* A native select refuses to shrink below its longest option (draft names are
+               operator-entered), so without this it overflowed the card on a phone. Own row
+               under sm, shares the row above it like the 草稿名稱 input beside it. */
+            className="w-full min-w-0 sm:w-auto sm:flex-1 rounded-lg border border-input bg-card px-3 py-2 text-base text-foreground focus:border-accent-info focus:outline-none"
           >
             <option value="">— 載入草稿 —</option>
             {drafts.map((d) => (
@@ -302,7 +335,7 @@ export const PromoComposer: React.FC<PromoComposerProps> = ({ onScheduled }) => 
           onChange={(e) => setText(e.target.value)}
           rows={6}
           placeholder="寫下你的宣傳貼文…（Threads 上限 500 字，Facebook 無實際限制）"
-          className="w-full resize-y rounded-lg border border-input bg-card p-3 text-base text-foreground placeholder:text-muted-foreground focus:border-accent-info focus:outline-none focus:ring-1 focus:ring-accent-info"
+          className="min-h-[45vh] w-full resize-y rounded-lg border border-input bg-card p-3 text-base text-foreground placeholder:text-muted-foreground focus:border-accent-info focus:outline-none focus:ring-1 focus:ring-accent-info sm:min-h-[18rem]"
         />
         <div className={`mt-1 text-right text-xs ${threadsTooLong ? 'text-sentiment-bear' : 'text-muted-foreground'}`}>
           {text.length} 字{threadsTooLong ? `（超過 Threads ${THREADS_MAX_CHARS} 字上限）` : ''}
@@ -334,7 +367,7 @@ export const PromoComposer: React.FC<PromoComposerProps> = ({ onScheduled }) => 
         {media.length === 0 ? (
           <div className="text-base text-muted-foreground">尚未加入任何媒體（純文字貼文也可以）</div>
         ) : (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             {media.map((m, i) => (
               <div key={m.url} className="relative overflow-hidden rounded-lg border border-border bg-muted">
                 <button
@@ -344,9 +377,9 @@ export const PromoComposer: React.FC<PromoComposerProps> = ({ onScheduled }) => 
                   className="block w-full"
                 >
                   {m.type === 'image' ? (
-                    <img src={m.url} alt={m.filename || ''} className="h-28 w-full object-cover" />
+                    <img src={m.url} alt={m.filename || ''} className="h-60 w-full object-contain sm:h-28 sm:object-cover" />
                   ) : (
-                    <video src={m.url} className="h-28 w-full object-cover" muted />
+                    <video src={m.url} className="h-60 w-full object-contain sm:h-28 sm:object-cover" muted />
                   )}
                 </button>
                 <div className="absolute left-1 top-1 inline-flex items-center gap-1 rounded bg-black/60 px-1.5 py-0.5 text-2xs font-medium text-white">
@@ -421,9 +454,9 @@ export const PromoComposer: React.FC<PromoComposerProps> = ({ onScheduled }) => 
                   <textarea
                     value={c}
                     onChange={(e) => setComments((prev) => prev.map((v, idx) => (idx === i ? e.target.value : v)))}
-                    rows={2}
+                    rows={4}
                     placeholder="這則留言的內容…"
-                    className="w-full resize-y rounded-lg border border-input bg-card p-3 text-base text-foreground placeholder:text-muted-foreground focus:border-accent-info focus:outline-none focus:ring-1 focus:ring-accent-info"
+                    className="min-h-[8rem] w-full resize-y rounded-lg border border-input bg-card p-3 text-base text-foreground placeholder:text-muted-foreground focus:border-accent-info focus:outline-none focus:ring-1 focus:ring-accent-info"
                   />
                   <div className={`mt-1 text-right text-xs ${over ? 'text-sentiment-bear' : 'text-muted-foreground'}`}>
                     {c.length} 字{over ? `（超過 Threads ${THREADS_MAX_CHARS} 字上限）` : ''}
@@ -469,12 +502,21 @@ export const PromoComposer: React.FC<PromoComposerProps> = ({ onScheduled }) => 
           </button>
           <button
             onClick={() => run(false)}
-            disabled={!canSubmit || busy || scheduling}
+            disabled={!canSubmit || busy || scheduling || unconfirmed}
+            title={unconfirmed ? '上一次發佈沒回結果，可能已經發出，先去 Threads 確認' : undefined}
             className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2 text-base font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
           >
             <Send className={`h-4 w-4 ${busy ? 'animate-pulse' : ''}`} />
             {busy ? '處理中…' : '發佈'}
           </button>
+          {unconfirmed && (
+            <button
+              onClick={() => { setUnconfirmed(false); setMsg(null); }}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-sentiment-bear/40 px-3 py-2 text-base font-semibold text-sentiment-bear hover:bg-sentiment-bear-soft"
+            >
+              確認沒發出，解鎖重試
+            </button>
+          )}
         </div>
 
         {/* Scheduling Controls */}
