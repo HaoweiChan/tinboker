@@ -25,7 +25,7 @@ function GateImpl({ children }: { children: React.ReactNode }) {
       setIsAdmin(null);
       return;
     }
-    authApi.isAdmin(token).then(setIsAdmin);
+    authApi.envAccess(token).then(setIsAdmin);
   }, [isAuthReady, user, token]);
 
   // Waiting for auth init, or waiting for admin check after login
