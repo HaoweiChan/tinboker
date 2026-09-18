@@ -24,6 +24,16 @@ class TranscriptTooShortError(Exception):
     """A transcript that does not account for the audio it was made from."""
 
 
+class ChunkTranscriptionError(Exception):
+    """A chunk of a large file could not be transcribed.
+
+    The chunked path used to log the error, drop the chunk, and combine whatever else
+    came back — which is how a rate-limited bulk run stored a fifth of an episode and
+    reported success. A missing chunk is a missing part of the episode: stop, so the
+    episode can be re-run when the provider is willing.
+    """
+
+
 def probe_audio_seconds(file_path: Path) -> Optional[float]:
     """Audio duration in seconds via ffprobe, or None if ffprobe cannot tell us."""
     try:
@@ -557,7 +567,6 @@ class WhisperService(SpeechToTextService):
             
             # Transcribe each chunk
             chunk_srt_list = []
-            failed_chunks = []
             for i, (chunk_path, chunk_start) in enumerate(chunks):
                 print(f"  🎤 Transcribing chunk {i+1}/{len(chunks)}...")
                 try:
@@ -575,21 +584,12 @@ class WhisperService(SpeechToTextService):
                         transcription = self.client.audio.transcriptions.create(**transcription_params)
                     
                     srt_content = str(transcription)
-                    chunk_srt_list.append((srt_content, chunk_start))
-                    print(f"  ✓ Chunk {i+1} transcribed")
-                    
                 except Exception as e:
-                    print(f"  ✗ Error transcribing chunk {i+1}: {e}")
-                    failed_chunks.append(i+1)
-                    # Continue with remaining chunks instead of raising
-            
-            # Check if we have any successful chunks
-            if not chunk_srt_list:
-                raise Exception(f"All {len(chunks)} chunks failed to transcribe. Cannot proceed.")
-            
-            # Warn if some chunks failed
-            if failed_chunks:
-                print(f"  ⚠ Warning: {len(failed_chunks)} chunk(s) failed ({', '.join(map(str, failed_chunks))}), but continuing with {len(chunk_srt_list)} successful chunk(s)")
+                    raise ChunkTranscriptionError(
+                        f"Chunk {i+1}/{len(chunks)} (from {chunk_start / 60:.1f} min) failed: {e}"
+                    ) from e
+                chunk_srt_list.append((srt_content, chunk_start))
+                print(f"  ✓ Chunk {i+1} transcribed")
             
             # Combine SRT chunks
             print(f"  🔗 Combining {len(chunk_srt_list)} chunks...")
@@ -1178,7 +1178,6 @@ class GroqService(SpeechToTextService):
             
             # Transcribe each chunk
             chunk_srt_list = []
-            failed_chunks = []
             for i, (chunk_path, chunk_start) in enumerate(chunks):
                 print(f"  🎤 Transcribing chunk {i+1}/{len(chunks)}...")
                 try:
@@ -1193,22 +1192,12 @@ class GroqService(SpeechToTextService):
                     # Convert to SRT
                     srt_content = convert_verbose_json_to_srt(transcription_dict)
                     srt_content = convert_srt_to_traditional_chinese(srt_content)
-                    
-                    chunk_srt_list.append((srt_content, chunk_start))
-                    print(f"  ✓ Chunk {i+1} transcribed")
-                    
                 except Exception as e:
-                    print(f"  ✗ Error transcribing chunk {i+1}: {e}")
-                    failed_chunks.append(i+1)
-                    # Continue with remaining chunks instead of raising
-            
-            # Check if we have any successful chunks
-            if not chunk_srt_list:
-                raise Exception(f"All {len(chunks)} chunks failed to transcribe. Cannot proceed.")
-            
-            # Warn if some chunks failed
-            if failed_chunks:
-                print(f"  ⚠ Warning: {len(failed_chunks)} chunk(s) failed ({', '.join(map(str, failed_chunks))}), but continuing with {len(chunk_srt_list)} successful chunk(s)")
+                    raise ChunkTranscriptionError(
+                        f"Chunk {i+1}/{len(chunks)} (from {chunk_start / 60:.1f} min) failed: {e}"
+                    ) from e
+                chunk_srt_list.append((srt_content, chunk_start))
+                print(f"  ✓ Chunk {i+1} transcribed")
             
             # Combine SRT chunks
             print(f"  🔗 Combining {len(chunk_srt_list)} chunks...")

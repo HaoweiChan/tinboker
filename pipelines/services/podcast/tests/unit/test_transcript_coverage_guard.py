@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import pytest
 from src.service.speech_to_text import (
+    ChunkTranscriptionError,
+    GroqService,
     TranscriptTooShortError,
     check_transcript_covers_audio,
 )
@@ -56,3 +58,45 @@ def test_sparsest_legitimate_density_passes():
 def test_unknown_duration_disables_the_check(duration):
     # ffprobe could not read the file: no denominator, no verdict.
     check_transcript_covers_audio(_transcript(0, 0), duration)
+
+
+SRT_CHUNK = "1\n00:00:00,000 --> 00:00:05,000\n這是一段內容\n"
+
+
+def _chunked_groq(monkeypatch, tmp_path, failing_chunk: int | None):
+    """A GroqService whose file always chunks, with one chunk optionally failing."""
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
+    service = GroqService()
+    chunks = [(tmp_path / f"chunk_{i}.mp3", i * 300.0) for i in range(4)]
+    for path, _ in chunks:
+        path.write_bytes(b"")
+
+    monkeypatch.setattr(service, "_should_chunk", lambda _path: True)
+    monkeypatch.setattr(service, "_get_file_size", lambda _path: 60 * 1024 * 1024)
+    monkeypatch.setattr(service, "_chunk_audio_file", lambda _path, _dir: chunks)
+
+    def fake_call(chunk_path, label=""):
+        index = chunks.index(next(c for c in chunks if c[0] == chunk_path))
+        if index == failing_chunk:
+            raise RuntimeError("429 rate limit exceeded")
+        return {"text": "這是一段內容", "duration": 300.0, "segments": []}
+
+    monkeypatch.setattr(service, "_transcribe_call", fake_call)
+    monkeypatch.setattr(
+        "src.service.speech_to_text.convert_verbose_json_to_srt", lambda _d: SRT_CHUNK
+    )
+    return service
+
+
+def test_a_failed_chunk_stops_the_episode(monkeypatch, tmp_path):
+    # Was: log it, drop the chunk, combine the rest, exit 0 — a fifth of an episode
+    # stored as a whole one.
+    service = _chunked_groq(monkeypatch, tmp_path, failing_chunk=2)
+    with pytest.raises(ChunkTranscriptionError, match="Chunk 3/4"):
+        service._transcribe_file_chunked(tmp_path / "episode.mp3", None)
+
+
+def test_all_chunks_succeeding_still_returns_a_transcript(monkeypatch, tmp_path):
+    service = _chunked_groq(monkeypatch, tmp_path, failing_chunk=None)
+    result = service._transcribe_file_chunked(tmp_path / "episode.mp3", None)
+    assert len(result["sentences"]) == 4
