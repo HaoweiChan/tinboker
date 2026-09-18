@@ -320,6 +320,13 @@ class Settings(BaseSettings):
     # Environment
     environment: str = "development"  # development, staging, production
 
+    # Root log level. Nothing configured logging before, so the root logger sat at its
+    # WARNING default and every logger.info() in this codebase was invisible: on
+    # 2026-09-18 the US OHLC warmer's own "grouped <date> → N rows" lines never appeared
+    # and the only way to tell whether it ran was to query Postgres. WARNING stays the
+    # default; LOG_LEVEL=INFO on a container turns the warmers' own reporting back on.
+    log_level: str = "WARNING"
+
     # ==================== Release scoping ====================
     # Restrict the public podcast catalog to a launch subset. Each value is a
     # content_sources.language code (e.g. "zh-TW"). Empty list = no language
