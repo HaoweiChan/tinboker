@@ -69,6 +69,16 @@ function summarize(result: PromoPublishResult): string {
     .join('　');
 }
 
+/** True when the publish request came back with no server answer — a timeout, a dropped
+ *  connection, or a gateway giving up (Cloudflare 524 / Caddy 502-504). The publish may
+ *  have completed anyway, so the caller must not report it as a failure. */
+function isNoAnswer(e: unknown): boolean {
+  const err = e as { code?: string; message?: string; response?: { status?: number } };
+  const status = err?.response?.status;
+  if (status) return status === 502 || status === 503 || status === 504 || status === 524;
+  return err?.code === 'ECONNABORTED' || err?.code === 'ETIMEDOUT' || /timeout|network/i.test(err?.message || '');
+}
+
 export interface PromoComposerProps {
   onScheduled?: () => void;
 }
@@ -88,6 +98,10 @@ export const PromoComposer: React.FC<PromoComposerProps> = ({ onScheduled }) => 
   const [draftName, setDraftName] = useState('');
   const [savingDraft, setSavingDraft] = useState(false);
   const [preview, setPreview] = useState<PromoMedia | null>(null);
+  // A publish whose answer never arrived (gateway/client timeout) may well have posted:
+  // the server keeps going after the connection drops. Block the button until the
+  // operator has looked, or a second click double-posts.
+  const [unconfirmed, setUnconfirmed] = useState(false);
 
   const [scheduling, setScheduling] = useState(false);
   const [scheduleTime, setScheduleTime] = useState('');
@@ -233,13 +247,29 @@ export const PromoComposer: React.FC<PromoComposerProps> = ({ onScheduled }) => 
     try {
       const result = await publishPromo({ text, media, comments, platforms, dryRun });
       setMsg(summarize(result));
+      // Published for real → the draft is spent. Keep it when nothing went out.
+      if (!dryRun && Object.values(result.platforms).some((r) => r.posted) && draftId) {
+        try {
+          await deletePromoDraft(draftId);
+          await refreshDrafts();
+          newDraft();
+        } catch (e) {
+          console.error('[promo] draft cleanup after publish failed', e);
+        }
+      }
     } catch (e) {
       console.error('[promo] publish failed', e);
-      setMsg('發佈失敗，請看 console');
+      // No response is NOT a failure: a carousel with video takes ~40s+ to publish and
+      // the gateway can cut the connection first while the post still goes out.
+      const noAnswer = !dryRun && isNoAnswer(e);
+      if (noAnswer) setUnconfirmed(true);
+      setMsg(noAnswer
+        ? '已送出，但沒收到結果（連線先斷了）。貼文可能已經發出 — 先到 Threads 確認，不要直接再按一次。'
+        : '發佈失敗，請看 console');
     } finally {
       setBusy(false);
     }
-  }, [text, media, comments, platforms]);
+  }, [text, media, comments, platforms, draftId, refreshDrafts, newDraft]);
 
   return (
     <div className="max-w-2xl space-y-6">
@@ -472,12 +502,21 @@ export const PromoComposer: React.FC<PromoComposerProps> = ({ onScheduled }) => 
           </button>
           <button
             onClick={() => run(false)}
-            disabled={!canSubmit || busy || scheduling}
+            disabled={!canSubmit || busy || scheduling || unconfirmed}
+            title={unconfirmed ? '上一次發佈沒回結果，可能已經發出，先去 Threads 確認' : undefined}
             className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2 text-base font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
           >
             <Send className={`h-4 w-4 ${busy ? 'animate-pulse' : ''}`} />
             {busy ? '處理中…' : '發佈'}
           </button>
+          {unconfirmed && (
+            <button
+              onClick={() => { setUnconfirmed(false); setMsg(null); }}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-sentiment-bear/40 px-3 py-2 text-base font-semibold text-sentiment-bear hover:bg-sentiment-bear-soft"
+            >
+              確認沒發出，解鎖重試
+            </button>
+          )}
         </div>
 
         {/* Scheduling Controls */}
