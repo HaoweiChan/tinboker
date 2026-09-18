@@ -27,6 +27,8 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
 import requests
 
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+
 from src.database.models import StockDailyOHLC, StockInstitutionalDaily
 from src.database.postgres import get_session
 from src.services.finmind_service import is_tw_ticker
@@ -129,32 +131,47 @@ def _fetch(url: str, normalize, headers: Optional[dict] = None) -> List[Dict[str
     return rows
 
 
+_UPSERT_CHUNK = 1000
+_UPSERT_COLUMNS = ("open", "high", "low", "close", "volume", "trading_value", "source")
+
+
 def _upsert_rows(rows: List[Dict[str, Any]]) -> int:
     """Upsert normalized rows into stock_daily_ohlc (update-or-insert on ticker+date).
 
-    Sync (runs in a thread). Returns rows written (inserted + updated). Same-day re-runs
-    overwrite so a post-close run finalizes an earlier intraday row.
+    Sync (runs in a thread). Returns rows written. Same-day re-runs overwrite so a post-close
+    run finalizes an earlier intraday row.
+
+    One INSERT ... ON CONFLICT DO UPDATE per chunk, committed per chunk. It used to be a
+    SELECT per row plus one wholesale commit: fine for TW (~2k rows) but at US scale (~10k)
+    that ran ~10k queries inside a single long transaction, saturated the pool and timed out
+    every DB-backed endpoint — the 2026-07-15 incident that disabled the US warmer. Chunked
+    commits also mean an interrupted warm keeps what it already wrote.
     """
+    if not rows:
+        return 0
+    # A chunk may not touch the same (ticker, date) twice: Postgres rejects the second one
+    # ("cannot affect row a second time"). Last value wins, as a re-fetch would.
+    deduped = {(r["ticker"], r["date"]): r for r in rows}
+    values = [
+        {"ticker": t, "date": d, **{c: r.get(c) for c in _UPSERT_COLUMNS}}
+        for (t, d), r in deduped.items()
+    ]
     written = 0
     for session in get_session():
-        try:
-            for row in rows:
-                existing = (
-                    session.query(StockDailyOHLC)
-                    .filter(StockDailyOHLC.ticker == row["ticker"], StockDailyOHLC.date == row["date"])
-                    .first()
+        for i in range(0, len(values), _UPSERT_CHUNK):
+            chunk = values[i:i + _UPSERT_CHUNK]
+            try:
+                stmt = pg_insert(StockDailyOHLC.__table__).values(chunk)
+                stmt = stmt.on_conflict_do_update(
+                    index_elements=["ticker", "date"],
+                    set_={c: stmt.excluded[c] for c in _UPSERT_COLUMNS},
                 )
-                if existing:
-                    for k in ("open", "high", "low", "close", "volume", "trading_value", "source"):
-                        setattr(existing, k, row[k])
-                else:
-                    session.add(StockDailyOHLC(**row))
-                written += 1
-            session.commit()
-        except Exception as e:
-            session.rollback()
-            logger.warning("TW OHLC upsert failed: %s", e)
-            written = 0
+                session.execute(stmt)
+                session.commit()
+                written += len(chunk)
+            except Exception as e:
+                session.rollback()
+                logger.warning("OHLC upsert chunk failed (%d rows): %s", len(chunk), e)
         break
     return written
 
