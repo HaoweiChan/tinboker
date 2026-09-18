@@ -162,3 +162,29 @@ async def test_suggestion_index_add_keywords_enriches_existing_item():
     await index.add_keywords("stock-DOES-NOT-EXIST", ["whatever"])
     assert not any(r.id == "stock-DOES-NOT-EXIST" for r in index.suggest("whatever"))
     
+
+
+@pytest.mark.asyncio
+async def test_suggest_survives_none_keywords():
+    """A TW ETF with no English name indexes as [ticker, None, zh] and used to 500.
+
+    routers/search.py builds keywords as [ticker, en, zh, *aliases]; either name can be
+    None. _calculate_score then called kw.lower() on it, so every suggest query whose
+    prefix matched that stock answered 500 in prod (2026-09-18: "981", "00646", "00685L").
+    """
+    index = SuggestionIndex()
+    await index.clear()
+
+    etf = SearchResultItem(
+        id="stock-00685L",
+        type="stock",
+        title="00685L",
+        subtitle="群益臺灣加權正2",
+        link="/stock/00685L",
+        metadata={"price": None, "change_percent": None},
+    )
+    await index.add_item(etf, keywords=["00685L", None, "群益臺灣加權正2", None])
+
+    for prefix in ("00685L", "00685l", "0068", "00"):
+        results = index.suggest(prefix)
+        assert any(r.id == "stock-00685L" for r in results), prefix
