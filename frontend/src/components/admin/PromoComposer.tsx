@@ -250,7 +250,10 @@ export const PromoComposer: React.FC<PromoComposerProps> = ({ onScheduled }) => 
           <select
             value={draftId ?? ''}
             onChange={(e) => (e.target.value ? loadDraft(Number(e.target.value)) : newDraft())}
-            className="rounded-lg border border-input bg-card px-3 py-2 text-base text-foreground focus:border-accent-info focus:outline-none"
+            /* A native select refuses to shrink below its longest option (draft names are
+               operator-entered), so without this it overflowed the card on a phone. Own row
+               under sm, shares the row above it like the 草稿名稱 input beside it. */
+            className="w-full min-w-0 sm:w-auto sm:flex-1 rounded-lg border border-input bg-card px-3 py-2 text-base text-foreground focus:border-accent-info focus:outline-none"
           >
             <option value="">— 載入草稿 —</option>
             {drafts.map((d) => (
@@ -302,7 +305,7 @@ export const PromoComposer: React.FC<PromoComposerProps> = ({ onScheduled }) => 
           onChange={(e) => setText(e.target.value)}
           rows={6}
           placeholder="寫下你的宣傳貼文…（Threads 上限 500 字，Facebook 無實際限制）"
-          className="w-full resize-y rounded-lg border border-input bg-card p-3 text-base text-foreground placeholder:text-muted-foreground focus:border-accent-info focus:outline-none focus:ring-1 focus:ring-accent-info"
+          className="min-h-[45vh] w-full resize-y rounded-lg border border-input bg-card p-3 text-base text-foreground placeholder:text-muted-foreground focus:border-accent-info focus:outline-none focus:ring-1 focus:ring-accent-info sm:min-h-[18rem]"
         />
         <div className={`mt-1 text-right text-xs ${threadsTooLong ? 'text-sentiment-bear' : 'text-muted-foreground'}`}>
           {text.length} 字{threadsTooLong ? `（超過 Threads ${THREADS_MAX_CHARS} 字上限）` : ''}
@@ -334,7 +337,7 @@ export const PromoComposer: React.FC<PromoComposerProps> = ({ onScheduled }) => 
         {media.length === 0 ? (
           <div className="text-base text-muted-foreground">尚未加入任何媒體（純文字貼文也可以）</div>
         ) : (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             {media.map((m, i) => (
               <div key={m.url} className="relative overflow-hidden rounded-lg border border-border bg-muted">
                 <button
@@ -344,9 +347,9 @@ export const PromoComposer: React.FC<PromoComposerProps> = ({ onScheduled }) => 
                   className="block w-full"
                 >
                   {m.type === 'image' ? (
-                    <img src={m.url} alt={m.filename || ''} className="h-28 w-full object-cover" />
+                    <img src={m.url} alt={m.filename || ''} className="h-60 w-full object-contain sm:h-28 sm:object-cover" />
                   ) : (
-                    <video src={m.url} className="h-28 w-full object-cover" muted />
+                    <video src={m.url} className="h-60 w-full object-contain sm:h-28 sm:object-cover" muted />
                   )}
                 </button>
                 <div className="absolute left-1 top-1 inline-flex items-center gap-1 rounded bg-black/60 px-1.5 py-0.5 text-2xs font-medium text-white">
@@ -421,9 +424,9 @@ export const PromoComposer: React.FC<PromoComposerProps> = ({ onScheduled }) => 
                   <textarea
                     value={c}
                     onChange={(e) => setComments((prev) => prev.map((v, idx) => (idx === i ? e.target.value : v)))}
-                    rows={2}
+                    rows={4}
                     placeholder="這則留言的內容…"
-                    className="w-full resize-y rounded-lg border border-input bg-card p-3 text-base text-foreground placeholder:text-muted-foreground focus:border-accent-info focus:outline-none focus:ring-1 focus:ring-accent-info"
+                    className="min-h-[8rem] w-full resize-y rounded-lg border border-input bg-card p-3 text-base text-foreground placeholder:text-muted-foreground focus:border-accent-info focus:outline-none focus:ring-1 focus:ring-accent-info"
                   />
                   <div className={`mt-1 text-right text-xs ${over ? 'text-sentiment-bear' : 'text-muted-foreground'}`}>
                     {c.length} 字{over ? `（超過 Threads ${THREADS_MAX_CHARS} 字上限）` : ''}
