@@ -189,6 +189,14 @@ class FirebaseService:
         Returns:
             Stable episode ID (URL-friendly)
         """
+        # A blank name hashes to sha256("") and mints an orphan "e3b0c442_" id that
+        # never matches the show's real rows (17 such rows, Nov 2025–Jan 2026).
+        if not (podcast_name or "").strip():
+            raise ValueError(
+                f"Cannot generate an episode ID without a podcast_name "
+                f"(episode_title={episode.episode_title!r})"
+            )
+
         # Use hash of podcast name to handle non-ASCII characters (e.g., Chinese)
         # This ensures consistent, URL-friendly identifiers regardless of language
         podcast_hash = hashlib.sha256(podcast_name.encode('utf-8')).hexdigest()[:12]
