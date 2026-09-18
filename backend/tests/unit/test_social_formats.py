@@ -56,7 +56,7 @@ def test_weekly_caption_is_about_the_leader_and_says_what_the_number_is():
         {"ticker": "3037", "name": "欣興", "n": 31, "prev": 4, "casts": 6, "bull": 9, "bear": 14},
         {"ticker": "8299", "name": "群聯", "n": 5, "prev": 0, "casts": 2, "bull": 3, "bear": 0},
     ]))
-    assert text.startswith("3037 欣興 這週 6 個節目提了 31 次 上週 4 看空的多")
+    assert text.startswith("3037 欣興 這週6個節目提了31次 上週4 看空的多")
     assert "8299" not in text                      # a +5 runner-up is not worth a line
     assert "不是漲幅" in text and "我" not in text and "#" not in text
     assert len(text) <= THREADS_MAX_CHARS
@@ -70,7 +70,7 @@ def test_weekly_caption_lists_runners_up_only_when_they_are_loud_too():
         {"ticker": "3006", "name": "晶豪科", "n": 9, "prev": 0, "casts": 2, "bull": 1, "bear": 0},
     ]))
     assert "多空各半" in text
-    assert "也很吵的還有\n2330 台積電 60 次 上週 45\n8299 群聯 12 次 上週 1" in text
+    assert "也很吵的還有\n2330 台積電 60次 上週45\n8299 群聯 12次 上週1" in text
     assert "3006" not in text                      # two runners-up at most
 
 

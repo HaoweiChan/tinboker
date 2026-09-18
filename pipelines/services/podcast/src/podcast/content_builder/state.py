@@ -179,6 +179,9 @@ class PipelineState(TypedDict, total=False):
     # Deterministic broad market exposure metadata (NOT direct ticker mentions).
     sector_exposures: list[SectorExposure]
     unresolved_market_trends: list[UnresolvedMarketTrend]
+
+    # Per-indicator macro claims (rates, oil, FX…), validated against macro_vocab.
+    macro_claims: list[dict[str, Any]]
     sector_exposure_ids: list[str]
     sector_ids: list[str]
     unresolved_market_trend_ids: list[str]

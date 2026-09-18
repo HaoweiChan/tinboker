@@ -50,6 +50,7 @@ _ROLE_ENV: dict[str, str] = {
     "key_insights_extractor": "KEY_INSIGHTS_EXTRACTOR_MODEL",
     "social_copy_writer": "SOCIAL_COPY_WRITER_MODEL",
     "sector_verifier": "SECTOR_VERIFIER_MODEL",
+    "macro_extractor": "MACRO_EXTRACTOR_MODEL",
     "name_normalizer": "NAME_NORMALIZER_MODEL",
 }
 
@@ -100,6 +101,7 @@ _TEMPERATURE_MAP: dict[str, float] = {
     "ticker_extractor": _LLM_OVERRIDES.get("temperatures", {}).get("ticker_extractor", 0.1),
     "key_insights_extractor": _LLM_OVERRIDES.get("temperatures", {}).get("key_insights_extractor", 0.3),
     "sector_verifier": _LLM_OVERRIDES.get("temperatures", {}).get("sector_verifier", 0.1),
+    "macro_extractor": _LLM_OVERRIDES.get("temperatures", {}).get("macro_extractor", 0.1),
 }
 
 _MAX_TOKENS_MAP: dict[str, int] = {
@@ -125,6 +127,9 @@ _MAX_TOKENS_MAP: dict[str, int] = {
     "ticker_extractor": 16384,
     "key_insights_extractor": 2048,
     "sector_verifier": 8192,
+    # A macro-heavy morning show yields ~10 claims with reasons and a verbatim quote
+    # each; 4096 (the default) is the cap that truncated ticker JSON mid-string.
+    "macro_extractor": 8192,
 }
 
 

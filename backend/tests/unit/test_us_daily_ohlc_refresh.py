@@ -62,3 +62,62 @@ def test_non_us_symbols_dropped():
 
 def test_missing_close_dropped():
     assert _normalize_grouped(_agg(close=None), "2026-07-09") is None
+
+
+# ── Budget-aware fetching (the shared Massive minute budget, PR #726) ──
+
+import asyncio
+
+import src.services.us_daily_ohlc_refresh as u
+
+
+def test_a_spent_budget_defers_instead_of_walking_back_through_dates(monkeypatch):
+    """Probing five more dates when the budget is spent just burns five more refusals."""
+    calls = []
+
+    def _fetch(iso):
+        calls.append(iso)
+        return None  # budget spent
+
+    monkeypatch.setattr(u, "_fetch_grouped", _fetch)
+    assert asyncio.run(u.refresh_us_daily_ohlc()) == 0
+    assert len(calls) == 1
+
+
+def test_a_non_trading_day_still_walks_back(monkeypatch):
+    seen = []
+
+    def _fetch(iso):
+        seen.append(iso)
+        return [] if len(seen) < 3 else [{"ticker": "AAPL", "date": iso, "close": 1.0}]
+
+    monkeypatch.setattr(u, "_fetch_grouped", _fetch)
+    monkeypatch.setattr(u, "_upsert_rows", lambda rows: len(rows))
+    assert asyncio.run(u.refresh_us_daily_ohlc()) == 1
+    assert len(seen) == 3
+
+
+def test_fetch_grouped_reports_budget_refusal_as_none(monkeypatch):
+    from src.services.massive_service import MassiveAPIError
+
+    class _Svc:
+        @property
+        def client(self):
+            raise MassiveAPIError("Massive minute budget spent")
+
+    monkeypatch.setattr(u, "MassiveAPIService", _Svc)
+    assert u._fetch_grouped("2026-09-17") is None
+
+
+def test_fetch_grouped_reports_other_failures_as_empty(monkeypatch):
+    class _Svc:
+        @property
+        def client(self):
+            raise RuntimeError("network")
+
+    monkeypatch.setattr(u, "MassiveAPIService", _Svc)
+    assert u._fetch_grouped("2026-09-17") == []
+
+
+def test_backfill_spacing_matches_the_us_warmers():
+    assert u._BACKFILL_GAP_SECONDS >= 12.0

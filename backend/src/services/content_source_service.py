@@ -122,6 +122,33 @@ def social_enabled_for(podcast_name: Optional[str]) -> bool:
     return (podcast_name or "") not in social_disabled_shows()
 
 
+# How a listener refers to the person on the show. Social copy is about ONE person's
+# take, and 「主持人」 reads like a report, so every social surface (the one-liner here,
+# the post-hoc story in the pipeline) names them. The backend owns this table and passes
+# the name to the pipeline; the pipeline only falls back when nothing was passed.
+# ponytail: a dict keyed by substring of the feed name. A `speaker` column on
+# content_sources is the upgrade once someone needs to edit it from the admin.
+_SPEAKERS: dict[str, str] = {
+    "股癌": "孟恭",
+    "游庭皓": "皓哥",
+    "財經皓角": "皓哥",
+    "兆華與股惑仔": "兆華",
+    "財經一路發": "一路發",
+    "財女珍妮": "珍妮",
+    "M觀點": "Miula",
+    "財經M平方": "M平方",
+}
+
+
+def speaker_for(podcast_name: Optional[str]) -> str:
+    src = podcast_name or ""
+    for key, name in _SPEAKERS.items():
+        if key in src:
+            return name
+    runs = re.findall(r"[\u4e00-\u9fff]+", src)   # "Gooaye 股癌" → 股癌
+    return max(runs, key=len) if runs else (src.strip() or "他")
+
+
 class ContentSourceService:
     """Service class for content-source CRUD operations."""
 

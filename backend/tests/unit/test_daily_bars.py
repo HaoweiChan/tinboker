@@ -169,7 +169,10 @@ async def test_stock_service_serves_but_never_caches_a_stored_bar_fallback(monke
 
     svc, massive, _ = _service()
     massive.get_ticker_details.side_effect = MassiveAPIError("429")
-    monkeypatch.setattr(daily_bars, "read_bars", lambda *a: _bars("2025-09-18", 250))
+    # Dated from today backwards: a fixed start date drifts out of the 1Y window the
+    # service filters on, and the test started failing on the day it aged past a year.
+    recent = (datetime.now() - timedelta(days=249)).strftime("%Y-%m-%d")
+    monkeypatch.setattr(daily_bars, "read_bars", lambda *a: _bars(recent, 250))
     monkeypatch.setattr(daily_bars, "display_name", lambda t: None)
     service = StockService(data_collection_service=svc)
     with patch("src.services.stock.cache_get", new_callable=AsyncMock, return_value=None), \

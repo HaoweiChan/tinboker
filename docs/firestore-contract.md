@@ -121,6 +121,7 @@ These fields are inferred metadata only. They MUST NOT be copied into `related_t
 | `sector_ids` | string[] | always (may be empty) | Flat sector-only IDs for future filtering. |
 | `theme_ids` | string[] | always (may be empty) | Flat theme-only IDs for future filtering. |
 | `unresolved_market_trends` | object[] | always (may be empty) | Plausible but unmapped emerging market concepts for demand-driven curation. |
+| `macro_claims` | object[] | always (may be empty) | Per-indicator macro claims from the `macro_extractor` node (rates, oil, FX, inflation). One object per indicator; ids are a closed vocabulary owned by `backend/src/services/macro_data.py::SERIES`. Synced into `content_mentions` as `mention_type="macro"`. See 2.1.3. |
 | `unresolved_market_trend_ids` | string[] | always (may be empty) | Normalized unresolved trend IDs for aggregation/filtering. |
 
 ##### 2.1.1 `sector_exposures[]` object shape
@@ -164,6 +165,27 @@ Rules:
   "confidence": 0.74
 }
 ```
+
+##### 2.1.3 `macro_claims[]` object shape
+
+```jsonc
+{
+  "indicator_id": "US10Y",                  // closed vocabulary; off-list ids are dropped by the node
+  "display_name": "美債10年期殖利率",
+  "level_quoted": "4.94%",                  // the host's own number, verbatim; null when none was quoted
+  "direction_expected": "UP",               // UP | DOWN | FLAT | UNCLEAR
+  "claim": "回購反而讓殖利率衝高",           // one sentence, the host's logic
+  "reasons": ["市場不滿回購力道"],           // ≤ 3
+  "implication": "壓抑股市估值",             // or null
+  "time_horizon": "SHORT_TERM",             // SHORT_TERM | MEDIUM_TERM | LONG_TERM | UNCLEAR
+  "quote": "殖利率直接衝高到4.94了",          // verbatim transcript sentence
+  "start_index": 644,                       // sentence index the model pointed at
+  "start_time_s": 1288.08,                  // SECONDS, resolved from start_index by the node; null when unresolvable
+  "confidence": 0.9                         // rows under 0.6 are dropped by the node
+}
+```
+
+Unlike every other timing in the episode doc, `start_time_s` is in **seconds** — the backend stores it as-is in `content_mentions.mention_start_s` and must not divide it by 1000.
 
 #### File pointers — GCS gs:// URLs
 

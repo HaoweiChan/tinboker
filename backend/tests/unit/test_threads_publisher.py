@@ -2,6 +2,7 @@
 and the dry-run guarantee. No network or real Threads credentials are touched —
 ThreadsService is unconfigured in tests, which forces dry-run.
 """
+import urllib.parse
 from datetime import datetime, timedelta
 
 import pytest
@@ -144,6 +145,173 @@ async def test_publish_recent_posts_at_most_max_posts_per_call(temp_db, monkeypa
     assert len((await threads_publisher.publish_recent(limit=10, dry_run=True))["posted"]) == 3
 
 
+# ── zero-ticker one-liner ─────────────────────────────────────────────
+
+def test_pick_insight_prefers_a_number_then_a_screen_sized_line():
+    assert threads_publisher.pick_insight(["實質利率才是金價天敵 非美元或名目利率", "金價今年重挫 30% 但央行買盤一噸未少"]) \
+        == "金價今年重挫 30% 但央行買盤一噸未少"
+    # No number anywhere: the first screen-sized line wins.
+    assert threads_publisher.pick_insight(["實質利率才是金價天敵", "央行買盤一噸未少"]) == "實質利率才是金價天敵"
+    long = "聯準會升息一碼至3.75%-4.0%，點陣圖暗示年底前可能再升一碼，且市場對此反應平淡，顯示已充分定價"
+    assert threads_publisher.pick_insight([long, "8月零售銷售控制組躍增1.4%"]) == "8月零售銷售控制組躍增1.4%"
+    assert threads_publisher.pick_insight(["", "  ", None]) == ""
+
+
+def test_compose_text_post_is_the_written_post_and_the_link_goes_in_the_reply():
+    ep = _ep("EP700", insights=["實質利率才是金價天敵"], tickers=[])
+    ep.social_thread = {"post": "加州柴油一加侖衝到快 10 美元\n這數字比原油破百嚴重得多", "comments": [{"heading": "a", "text": "x"}]}
+    draft = threads_publisher.compose_text_post(ep)
+    assert draft["text"] == "加州柴油一加侖衝到快 10 美元\n這數字比原油破百嚴重得多"   # no count line, no comments
+    assert "tinboker.com" not in draft["text"] and draft["url"].endswith("/episode/EP700")
+
+
+def _claims():
+    return [
+        {"indicator_id": "US_CPI", "claim": "通膨黏著", "level_quoted": None, "confidence": 0.95},
+        {"indicator_id": "US10Y", "claim": "財政部擴大回購長債，殖利率反而衝到4.94%", "level_quoted": "4.94%", "confidence": 0.9},
+        {"indicator_id": "BEEF", "claim": "牛肉漲七成", "level_quoted": "七成", "confidence": 0.99},   # no series → no card
+    ]
+
+
+def test_pick_macro_claim_wants_a_series_and_a_quoted_number_before_confidence():
+    assert threads_publisher.pick_macro_claim(_claims())["indicator_id"] == "US10Y"
+    assert threads_publisher.pick_macro_claim([{"indicator_id": "BEEF", "claim": "x"}]) is None
+    assert threads_publisher.pick_macro_claim([]) is None
+
+
+def test_compose_text_post_carries_the_macro_card_marked_on_the_air_date(monkeypatch):
+    monkeypatch.setattr(settings, "public_api_url", "https://api.tinboker.com")
+    from datetime import timezone
+    aired = datetime(2026, 9, 14, 8, 40, tzinfo=timezone(timedelta(hours=8)))       # a TW morning show
+    ep = _ep("EP704", insights=["x"], tickers=[], released_ms=int(aired.timestamp() * 1000))
+    ep.podcast_name = "游庭皓的財經皓角"
+    ep.social_thread = {"post": "加州柴油一加侖衝到快10美元", "comments": []}
+    ep.macro_claims = _claims()
+    draft = threads_publisher.compose_text_post(ep)
+    assert draft["image_url"].startswith("https://api.tinboker.com/api/og/macro/US10Y.png?")
+    q = dict(urllib.parse.parse_qsl(draft["image_url"].split("?", 1)[1]))
+    assert q == {"event": "2026-09-14", "label": "皓哥 9/14", "claim": "財政部擴大回購長債，殖利率反而衝到4.94%"}
+    assert draft["text"] == "加州柴油一加侖衝到快10美元"
+    ep.macro_claims = []
+    assert threads_publisher.compose_text_post(ep)["image_url"] is None
+
+
+def test_compose_text_post_falls_back_to_speaker_plus_one_insight():
+    ep = _ep("EP703", insights=["實質利率才是金價天敵", "央行買盤一噸未少"], tickers=[])
+    ep.podcast_name = "財經一路發"
+    assert threads_publisher.compose_text_post(ep)["text"] == "一路發這集\n實質利率才是金價天敵"
+
+
+@pytest.mark.asyncio
+async def test_publish_recent_posts_a_zero_ticker_episode_as_text(temp_db, monkeypatch):
+    from src.services import social_ledger
+
+    class _Svc:
+        is_configured = True
+
+        def __init__(self, *a, **k):
+            pass
+
+        calls: list = []
+
+        async def publish(self, text, image_url=None):
+            self.calls.append(("post", text, image_url))
+            return f"m{len(self.calls)}"
+
+        async def publish_reply(self, text, reply_to_id, **_):
+            self.calls.append(("reply", text, reply_to_id))
+            return "r_link"
+    monkeypatch.setattr(threads_publisher, "ThreadsService", _Svc)
+    eps = [_ep("EP701", insights=["AI 監管會讓算力需求再多 15%"], tickers=[]),
+           _ep("EP702", insights=["有標的的照舊"], tickers=["2330", "NVDA", "3324"])]
+    eps[0].social_thread = {"post": "孟恭這集\n講的是算力", "comments": []}
+    eps[0].macro_claims = [{"indicator_id": "FED_FUNDS", "claim": "升息機率八成", "level_quoted": "80%", "confidence": 0.9}]
+    monkeypatch.setattr(threads_publisher.podcast_service, "get_recent_episodes", await _fake_recent(eps))
+
+    result = await threads_publisher.publish_recent(limit=10, dry_run=False)
+    kinds = {p["episode_id"]: p.get("kind") for p in result["posted"]}
+    assert kinds["EP701"] == "text" and kinds["EP702"] is None
+    one = [c for c in _Svc.calls if c[0] == "post" and c[1].startswith("孟恭這集\n")]
+    assert len(one) == 1 and "/api/og/macro/FED_FUNDS.png?" in one[0][2]   # the macro card rides along
+    assert any(c[0] == "reply" and "tinboker.com/episode/EP701" in c[1] for c in _Svc.calls)
+    row = next(r for r in social_ledger.list_posted("threads") if r["episode_id"] == "EP701")
+    assert (row["format"], row["child_ids"]) == ("episode_macro_card", ["r_link"])
+
+
+# ── 1–2 tickers: the story of the call on its marked chart ───────────────
+
+def test_is_low_ticker_means_one_or_two():
+    assert not threads_publisher.is_low_ticker(_ep("a", tickers=[]))
+    assert threads_publisher.is_low_ticker(_ep("b", tickers=["2330"]))
+    assert threads_publisher.is_low_ticker(_ep("c", tickers=["2330", "NVDA"]))
+    assert not threads_publisher.is_low_ticker(_ep("d", tickers=["2330", "NVDA", "3324"]))
+
+
+def test_compose_ticker_story_frames_the_first_ticker_on_its_air_date(monkeypatch):
+    from datetime import timezone
+    monkeypatch.setattr(settings, "public_api_url", "https://api.tinboker.com")
+    aired = datetime(2026, 9, 17, 20, 5, tzinfo=timezone(timedelta(hours=8)))
+    ep = _ep("EP710", insights=["x"], tickers=["3324", "3017"], released_ms=int(aired.timestamp() * 1000))
+    ep.podcast_name = "兆華與股惑仔"
+    frame = threads_publisher.compose_ticker_story(ep)
+    assert frame["ticker"] == "3324" and frame["mention_date"] == "2026-09-17"
+    q = dict(urllib.parse.parse_qsl(frame["image_url"].split("?", 1)[1]))
+    assert frame["image_url"].startswith("https://api.tinboker.com/api/og/stock/3324.png?")
+    assert q == {"days": "60", "event": "2026-09-17", "label": "兆華 9/17"}
+    assert frame["url"].endswith("/episode/EP710")
+
+
+@pytest.mark.asyncio
+async def test_publish_recent_posts_a_low_ticker_episode_as_a_story_or_falls_back(temp_db, monkeypatch):
+    from src.services import social_formats, social_ledger
+
+    class _Svc:
+        is_configured = True
+        calls: list = []
+
+        def __init__(self, *a, **k):
+            pass
+
+        async def publish(self, text, image_url=None):
+            self.calls.append(("post", text, image_url))
+            return f"m{len(self.calls)}"
+
+        async def publish_reply(self, text, reply_to_id, **_):
+            self.calls.append(("reply", text, reply_to_id))
+            return "r_link"
+
+        async def publish_carousel(self, image_urls, text):
+            self.calls.append(("carousel", text, image_urls))
+            return "m_car"
+    monkeypatch.setattr(threads_publisher, "ThreadsService", _Svc)
+    monkeypatch.setattr(threads_publisher, "_ticker_name", lambda t: "雙鴻")
+    asked = []
+
+    async def story(c, mode="post_hoc"):
+        asked.append({**c, "mode": mode})
+        return "兆華這集講到雙鴻\n他在意的是散熱族群整齊發動" if c["ticker"] == "3324" else None
+    monkeypatch.setattr(social_formats, "_story", story)
+
+    eps = [_ep("EP711", insights=["一"], tickers=["3324"]),
+           _ep("EP712", insights=["二"], tickers=["2330"])]       # the pipeline has no story for this one
+    monkeypatch.setattr(threads_publisher.podcast_service, "get_recent_episodes", await _fake_recent(eps))
+
+    result = await threads_publisher.publish_recent(limit=10, dry_run=False)
+    kinds = {p["episode_id"]: p.get("kind") for p in result["posted"]}
+    assert kinds == {"EP711": "ticker_story", "EP712": None}          # EP712 took the old path
+    assert [(a["episode_id"], a["mode"], a["name"]) for a in asked] == [("EP711", "today", "雙鴻"), ("EP712", "today", "雙鴻")]
+    post = next(c for c in _Svc.calls if c[0] == "post" and c[1].startswith("兆華這集講到雙鴻"))
+    assert "/api/og/stock/3324.png?" in post[2]
+    rows = {r["episode_id"]: r["format"] for r in social_ledger.list_posted("threads")}
+    assert rows["EP711"] == "episode_ticker_story" and rows["EP712"] == "episode_single"
+
+    # Dry run never spends the LLM call.
+    asked.clear()
+    eps.append(_ep("EP713", insights=["三"], tickers=["2454"]))
+    dry = await threads_publisher.publish_recent(limit=10, dry_run=True)
+    assert asked == [] and [p["kind"] for p in dry["posted"]] == ["ticker_story"] and dry["posted"][0]["dry_run"]
+
+
 # ── thread (carousel + reply chain) ──────────────────────────────────
 
 def _cards():
@@ -158,6 +326,8 @@ def _ep_cards(ep_id, cards, **kw) -> Episode:
     return Episode(
         id=ep_id, podcast_name="股癌", episode_title="本集重點",
         key_insights=["洞見"], social_cards=cards,
+        # A card deck implies several stocks; 0 routes to the text post, 1–2 to the story.
+        related_tickers=kw.get("tickers", ["2330", "NVDA", "3324"]),
         created_time=_now_ms(), released_at_ms=kw.get("released_ms", _now_ms()),
     )
 

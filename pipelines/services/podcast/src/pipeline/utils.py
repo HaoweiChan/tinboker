@@ -292,6 +292,7 @@ def create_episode_object(
         skipped_segments=summary_result.get('skipped_segments', []) if summary_result else [],
         sector_exposures=summary_result.get('sector_exposures', []) if summary_result else [],
         unresolved_market_trends=summary_result.get('unresolved_market_trends', []) if summary_result else [],
+        macro_claims=summary_result.get('macro_claims', []) if summary_result else [],
         sector_exposure_ids=summary_result.get('sector_exposure_ids', []) if summary_result else [],
         sector_ids=summary_result.get('sector_ids', []) if summary_result else [],
         unresolved_market_trend_ids=summary_result.get('unresolved_market_trend_ids', []) if summary_result else [],

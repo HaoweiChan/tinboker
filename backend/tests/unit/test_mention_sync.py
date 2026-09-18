@@ -239,6 +239,90 @@ def test_sync_sector_mentions_respects_lookback(session, monkeypatch):
     assert ms.sync_sector_mentions(session, days=400) == 0
 
 
+# ── sync_macro_mentions ──────────────────────────────────────────────────
+
+def _macro_record(**kw):
+    base = {
+        "episode_id": "haojiao_ep1", "podcaster": "游庭皓的財經皓角",
+        "mentioned_at": datetime.utcnow() - timedelta(days=2),
+        "indicator_id": "US10Y", "display_name": "美債10年期殖利率", "level_quoted": "4.94%",
+        "direction_expected": "UP", "claim": "回購反而讓殖利率衝高", "reasons": ["市場不滿回購力道"],
+        "implication": "壓抑股市估值", "time_horizon": "SHORT_TERM", "quote": "殖利率直接衝高到4.94了",
+        "start_time_s": 1288.08, "confidence": 0.9,
+    }
+    return {**base, **kw}
+
+
+def test_sync_macro_mentions_inserts_once_and_keeps_seconds_as_seconds(session, monkeypatch):
+    monkeypatch.setattr(ms, "_scan_macro_claims", lambda: [_macro_record(), _macro_record()])
+    assert ms.sync_macro_mentions(session) == 1          # same (episode, indicator) twice → one row
+    assert ms.sync_macro_mentions(session) == 0
+
+    m = session.query(ContentMention).one()
+    assert (m.mention_type, m.exposure_id, m.ticker) == ("macro", "US10Y", None)
+    assert m.mention_key == "haojiao_ep1:macro:US10Y"
+    assert m.thesis == "回購反而讓殖利率衝高" and m.sentiment_label == "UP"
+    assert m.mention_start_s == 1288.08                   # NOT divided by 1000
+    assert m.payload["level_quoted"] == "4.94%" and m.payload["quote"].startswith("殖利率")
+    assert m.extraction_method == "pipeline_llm"
+
+
+def test_sync_macro_mentions_respects_lookback_and_a_missing_time(session, monkeypatch):
+    old = _macro_record(episode_id="old", mentioned_at=datetime.utcnow() - timedelta(days=999))
+    untimed = _macro_record(episode_id="regen", indicator_id="WTI", start_time_s=None)
+    monkeypatch.setattr(ms, "_scan_macro_claims", lambda: [old, untimed])
+    assert ms.sync_macro_mentions(session, days=400) == 1
+    assert session.query(ContentMention).one().mention_start_s is None
+
+
+def test_scan_keeps_only_indicators_with_a_data_series(monkeypatch):
+    from src.services import podcast as podcast_mod
+
+    class _FS:
+        def stream_documents_projected(self, collection, fields):
+            assert "macro_claims" in fields and "sector_exposures" in fields
+            return [
+                {"id": "ep1", "podcast_name": "皓角", "released_at_ms": 1789000000000, "macro_claims": [
+                    {"indicator_id": "us10y", "claim": "逼近5%"}, {"indicator_id": "BEEF", "claim": "漲七成"},
+                    {"indicator_id": "WTI", "claim": "  "}]},
+                {"id": "ep2", "retracted_at": "x", "macro_claims": [{"indicator_id": "WTI", "claim": "破百"}]},
+            ]
+
+    class _Svc:
+        _SECTOR_SCAN_FIELDS = ["id", "podcast_name", "sector_exposures", "released_at_ms", "retracted_at"]
+        firestore_service = _FS()
+
+        @staticmethod
+        def _dict_release_ms(doc):
+            return doc.get("released_at_ms") or 0
+    monkeypatch.setattr(podcast_mod, "PodcastService", _Svc)
+    ms._scan_episodes.cache_clear()
+    try:
+        macro = ms._scan_macro_claims()
+    finally:
+        ms._scan_episodes.cache_clear()
+    assert [(r["episode_id"], r["indicator_id"], r["claim"]) for r in macro] == [("ep1", "US10Y", "逼近5%")]
+
+
+def test_macro_vocab_in_sync():
+    """The backend owns the indicator list (it decides what has a data series); the
+    pipeline keeps a copy because it cannot import backend code. Drift means the extractor
+    emits ids the card 404s on, or never emits ones we can draw."""
+    import ast
+    import pathlib
+
+    import pytest
+
+    from src.services.macro_data import SERIES
+    path = (pathlib.Path(__file__).resolve().parents[3]
+            / "pipelines/services/podcast/src/podcast/content_builder/macro_vocab.py")
+    if not path.exists():
+        pytest.skip("pipelines/ tier not in this checkout")
+    tree = ast.parse(path.read_text())
+    node = next(n for n in ast.walk(tree) if isinstance(n, ast.AnnAssign) and getattr(n.target, "id", "") == "MACRO_SERIES")
+    assert set(ast.literal_eval(node.value)) == set(SERIES)
+
+
 # ── snapshots ────────────────────────────────────────────────────────────
 
 def test_compute_ticker_snapshots(session, monkeypatch):

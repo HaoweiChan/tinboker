@@ -16,13 +16,15 @@ With no Threads credentials configured the run is forced to ``dry_run`` — it c
 and returns the drafts without publishing — so the endpoint is always safe to call.
 """
 
+import asyncio
 import logging
-from datetime import datetime
+import urllib.parse
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from src.config import settings
 from src.services import social_ledger
-from src.services.content_source_service import social_enabled_for
+from src.services.content_source_service import social_enabled_for, speaker_for
 from src.services.podcast import PodcastService
 from src.services.threads_service import THREADS_MAX_CHARS, ThreadsError, ThreadsService
 
@@ -145,6 +147,106 @@ def _finalize_post_text(episode: Any, body: str, count_line: str = "") -> str:
     budget = THREADS_MAX_CHARS - len(count_seg)
     body = (body or "").strip()[:max(0, budget)].rstrip()
     return f"{body}{count_seg}"
+
+
+def pick_insight(insights: list[str]) -> str:
+    """The one key_insight worth a post on its own: a number beats none, a line that
+    fits a Threads screen (15–45 chars) beats a paragraph, earlier beats later."""
+    def score(i: int, s: str) -> tuple:
+        return (any(ch.isdigit() for ch in s), 15 <= len(s) <= 45, -i)
+    clean = [(i, " ".join(str(s).split())) for i, s in enumerate(insights or []) if s and str(s).strip()]
+    return max(clean, key=lambda t: score(*t))[1] if clean else ""
+
+
+def is_zero_ticker(episode: Any) -> bool:
+    """No stock in the episode — macro, gold, a 心法 episode. Decided from the
+    ingest-time ``related_tickers`` field, NOT content_mentions: the mention sync runs
+    on its own timer and a fresh episode can have zero rows for an hour."""
+    return not (_field(episode, "related_tickers") or [])
+
+
+def pick_macro_claim(claims: list[dict]) -> Optional[dict]:
+    """The claim worth a card: one with a data series behind it, the host's own number
+    quoted if any claim has one, then the most confident. Nothing → None (text only)."""
+    from src.services.macro_data import SERIES
+    usable = [c for c in claims or [] if isinstance(c, dict)
+              and str(c.get("indicator_id") or "").upper() in SERIES and (c.get("claim") or "").strip()]
+    if not usable:
+        return None
+    return max(usable, key=lambda c: (bool(c.get("level_quoted")), float(c.get("confidence") or 0)))
+
+
+def _air_date_tw(episode: Any) -> Optional[str]:
+    ms = _release_ms(episode)
+    if not ms:
+        return None
+    return (datetime.fromtimestamp(ms / 1000, tz=timezone.utc) + timedelta(hours=8)).strftime("%Y-%m-%d")
+
+
+def macro_card_url(episode: Any, claim: dict) -> Optional[str]:
+    """The macro card with the episode day marked and the host's claim printed."""
+    date = _air_date_tw(episode)
+    if not date:
+        return None
+    label = f"{speaker_for(_field(episode, 'podcast_name'))} {int(date[5:7])}/{int(date[8:])}"
+    q = urllib.parse.urlencode({"event": date, "label": label, "claim": (claim.get("claim") or "")[:160]})
+    return f"{settings.public_api_url.rstrip('/')}/api/og/macro/{str(claim['indicator_id']).upper()}.png?{q}"
+
+
+def is_low_ticker(episode: Any) -> bool:
+    """One or two stocks — the host talked about a name, not a market. A five-card deck
+    over that is padding; the shape that fits is the story of the call plus its chart."""
+    return 1 <= len(_field(episode, "related_tickers") or []) <= 2
+
+
+def _ticker_name(ticker: str) -> str:
+    """zh-TW name from stock_translations; the bare ticker when the lookup fails — a
+    story that says 3324 is worse than one that says 雙鴻, but far better than no post."""
+    try:
+        from src.database.postgres import get_session
+        from src.services.paid_weekly import query_names
+        for db in get_session():
+            return query_names(db, {ticker}).get(ticker) or ticker
+    except Exception as e:  # noqa: BLE001
+        logger.info("ticker name lookup failed for %s: %s", ticker, e)
+    return ticker
+
+
+def compose_ticker_story(episode: Any) -> dict:
+    """The frame of a same-day ticker story: which stock, the marked chart, the link.
+    The text itself is written by the pipeline at publish time (``_story`` in
+    ``today`` mode) — an LLM call the dry-run preview does not spend."""
+    episode_id = _field(episode, "id") or _field(episode, "episode_id") or ""
+    ticker = str((_field(episode, "related_tickers") or [""])[0]).upper()
+    date = _air_date_tw(episode) or datetime.utcnow().strftime("%Y-%m-%d")
+    label = f"{speaker_for(_field(episode, 'podcast_name'))} {int(date[5:7])}/{int(date[8:])}"
+    q = urllib.parse.urlencode({"days": 60, "event": date, "label": label})
+    return {"episode_id": episode_id, "ticker": ticker, "mention_date": date, "podcaster": _field(episode, "podcast_name"),
+            "image_url": f"{settings.public_api_url.rstrip('/')}/api/og/stock/{ticker}.png?{q}",
+            "url": episode_url(episode_id)}
+
+
+def compose_text_post(episode: Any) -> dict:
+    """A zero-ticker episode as text only — no cards, no reply chain, link in the
+    first reply. The text is the pipeline's own ``social_thread.post``: the 12–18 line
+    argued post the writer already produced in the approved voice, which the carousel
+    only ever used as a caption. The carousel exists to show what the stocks were; with
+    none there is nothing for five cards to say, and the macro breakouts on this
+    account were all short argued posts, not decks. An episode with no written post
+    (pre-writer backlog) falls back to the speaker + one key_insight."""
+    episode_id = _field(episode, "id") or _field(episode, "episode_id") or ""
+    thread = _field(episode, "social_thread") or {}
+    text = (thread.get("post") or "").strip() if isinstance(thread, dict) else ""
+    if not text:
+        insight = pick_insight(_field(episode, "key_insights") or [])
+        text = f"{speaker_for(_field(episode, 'podcast_name'))}這集\n{insight}"
+    # With a macro claim behind the episode, the post carries the macro card — the
+    # indicator's line with this episode marked on it — the way a stock episode carries
+    # its chart. Without one it stays text only.
+    claim = pick_macro_claim(_field(episode, "macro_claims") or [])
+    image_url = macro_card_url(episode, claim) if claim else None
+    return {"episode_id": episode_id, "text": text[:THREADS_MAX_CHARS], "url": episode_url(episode_id),
+            "image_url": image_url}
 
 
 def compose_thread(episode: Any) -> dict:
@@ -305,6 +407,54 @@ async def publish_recent(
             # Still a candidate — it is not recorded, so the next slot picks it up.
             skipped.append({"episode_id": episode_id, "reason": "slot_full"})
             continue
+
+        # No stocks in the episode → the written post as text, no cards.
+        if is_zero_ticker(episode) and (_has_human_thread(episode) or _field(episode, "key_insights")):
+            draft = compose_text_post(episode)
+            if effective_dry_run:
+                posted.append({**draft, "kind": "text", "dry_run": True})
+                continue
+            if not social_ledger.claim(PLATFORM, episode_id):
+                skipped.append({"episode_id": episode_id, "reason": "already_posted"})
+                continue
+            try:
+                media_id = await service.publish(draft["text"], image_url=draft.get("image_url"))
+                reply_id = await service.publish_reply(link_comment(episode_id), reply_to_id=media_id)
+                _record(episode_id, media_id, draft["url"], [reply_id],
+                        fmt="episode_macro_card" if draft.get("image_url") else "episode_text")
+                posted.append({**draft, "kind": "text", "media_id": media_id, "dry_run": False})
+                logger.info("Posted text post for %s (%s)", episode_id, media_id)
+            except ThreadsError as e:
+                social_ledger.release(PLATFORM, episode_id)
+                skipped.append({"episode_id": episode_id, "reason": f"publish_failed: {e}"})
+            continue
+
+        # One or two stocks → the story of the call on its marked chart. The story comes
+        # from the pipeline at publish time; if it does not, the episode takes the
+        # carousel path below rather than being skipped.
+        if is_low_ticker(episode):
+            frame = compose_ticker_story(episode)
+            if effective_dry_run:
+                posted.append({**frame, "kind": "ticker_story", "text": "（發佈時由 pipeline 產生）", "dry_run": True})
+                continue
+            from src.services import social_formats
+            frame["name"] = await asyncio.to_thread(_ticker_name, frame["ticker"])
+            story = await social_formats._story(frame, mode="today")
+            if story:
+                if not social_ledger.claim(PLATFORM, episode_id):
+                    skipped.append({"episode_id": episode_id, "reason": "already_posted"})
+                    continue
+                try:
+                    media_id = await service.publish(story, image_url=frame["image_url"])
+                    reply_id = await service.publish_reply(link_comment(episode_id), reply_to_id=media_id)
+                    _record(episode_id, media_id, frame["url"], [reply_id], fmt="episode_ticker_story")
+                    posted.append({**frame, "kind": "ticker_story", "text": story, "media_id": media_id, "dry_run": False})
+                    logger.info("Posted ticker story for %s (%s, %s)", episode_id, frame["ticker"], media_id)
+                except ThreadsError as e:
+                    social_ledger.release(PLATFORM, episode_id)
+                    skipped.append({"episode_id": episode_id, "reason": f"publish_failed: {e}"})
+                continue
+            logger.info("no ticker story for %s (%s) — carousel instead", episode_id, frame["ticker"])
 
         # Use the full thread (carousel + reply chain) when the episode has rendered
         # cards OR hand-authored social copy; otherwise fall back to a single text/image

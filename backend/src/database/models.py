@@ -532,7 +532,7 @@ class ContentMention(Base):
     episode_id = Column(String(255), nullable=False, index=True)
     source_type = Column(String(20), nullable=False, default="podcast")
     podcaster = Column(String(255), nullable=True)
-    mention_type = Column(String(10), nullable=False, index=True)  # "ticker" | "sector"
+    mention_type = Column(String(10), nullable=False, index=True)  # "ticker" | "sector" | "macro"
     ticker = Column(String(20), nullable=True, index=True)  # canonical symbol, ticker mentions only
     exposure_id = Column(String(100), nullable=True, index=True)  # sector mentions only
     display_name = Column(Text, nullable=True)
@@ -725,3 +725,26 @@ class ThreadsComment(Base):
 
     def __repr__(self) -> str:
         return f"<ThreadsComment({self.id}, {self.category}, {self.status})>"
+
+
+class MacroDaily(Base):
+    """One observation of one macro series (US 10Y, WTI, diesel, DXY…), from FRED.
+
+    Backs the macro card (``/api/og/macro/{series}.png``) — the stock card's sibling for
+    episodes that name no stock. Filled lazily by ``macro_data.ensure_fresh`` on read,
+    not by a background loop: a dozen tiny keyless CSVs a day do not need a scheduler,
+    and lazy fill means dev/staging have data without waiting for a production release.
+    ``date`` is the observation date as FRED reports it (daily, weekly or monthly).
+    """
+    __tablename__ = "macro_daily"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    series_id = Column(String(40), nullable=False)      # our id, e.g. "US10Y" (not FRED's)
+    date = Column(String(10), nullable=False)           # YYYY-MM-DD
+    value = Column(Float, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("series_id", "date", name="uq_macro_series_date"),
+        Index("idx_macro_series_date", "series_id", "date"),
+    )
