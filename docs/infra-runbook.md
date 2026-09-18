@@ -449,6 +449,7 @@ there falls back to GCP Secret Manager at runtime via `src/config_loader.py`, wh
 | `PORT` | `8000` in containers, `5174` locally | Container port; Caddy/compose maps it to 8000/8001/8002 per env |
 | `USE_POSTGRES` | `true` | Forces PostgreSQL; production auto-enables this |
 | `SQL_ECHO` | `false` (default) | Echoes every SQL statement to stdout. Debugging only — turn it back off. Containers have no log rotation, and this wrote ~1.5 GB/day when left on in dev |
+| `LOG_LEVEL` | `WARNING` (default) | Root log level. At the default, every `logger.info()` is dropped — that is why a background warmer can run with nothing in `docker logs`. Set `INFO` to see the warmers report (`US OHLC: grouped <date> → N rows`, `close-refresh: fetched …`), then set it back: containers have no log rotation |
 | `REDIS_URL` | `redis://redis:6379/0` | Docker internal network |
 | `GCP_PROJECT_ID` | `gen-lang-client-0901363254` | Enables Secret Manager |
 | `GOOGLE_APPLICATION_CREDENTIALS` | `/app/gcp-service-account.json` | Mounted at runtime |
