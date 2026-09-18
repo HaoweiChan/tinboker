@@ -5,7 +5,8 @@ from datetime import datetime, timedelta, timezone
 from src.config import settings
 from src.database.postgres import SessionLocal
 from src.database.models import ScheduledSocialPost
-from src.services import facebook_publisher, promo_publisher, social_formats, threads_publisher
+from src.services import (facebook_publisher, promo_publisher, social_formats, social_ledger,
+                          threads_publisher)
 from src.services.podcast import PodcastService
 from src.services.gcs_content import GCSContentService
 
@@ -173,9 +174,6 @@ async def process_scheduled_posts() -> int:
 
 
 TW = timezone(timedelta(hours=8))
-_fired_slots: set[str] = set()
-
-
 def _parse_slots(raw: str) -> list[str]:
     """"11:30, 15:30" -> ["11:30", "15:30"]; silently drops anything malformed."""
     slots = []
@@ -190,21 +188,26 @@ def _parse_slots(raw: str) -> list[str]:
 
 
 def _due_slots(now_tw: datetime) -> list[str]:
-    """Slot keys that have come due today and have not fired yet in this process.
-
-    Re-firing a slot is harmless — the ledger makes publishing idempotent — so this
-    only needs to stop a tight 60s loop from re-scanning, not to be exactly-once.
-    """
+    """Slot keys ("YYYY-MM-DD HH:MM", TW) whose time has been reached today. Pure —
+    whether one has already fired is the ledger's call (``_claim_slots``)."""
     today = now_tw.strftime("%Y-%m-%d")
     due = []
     for slot in _parse_slots(settings.social_publish_slots):
-        key = f"{today} {slot}"
-        if key in _fired_slots:
-            continue
         hh, mm = slot.split(":")
         if now_tw >= now_tw.replace(hour=int(hh), minute=int(mm), second=0, microsecond=0):
-            due.append(key)
+            due.append(f"{today} {slot}")
     return due
+
+
+def _claim_slots(due: list[str]) -> list[str]:
+    """The subset of ``due`` this call gets to run — each slot key exactly once, ever.
+
+    Kept in the shared publishing ledger (platform "slot"), not in process memory: the
+    in-memory set was wiped by every restart, so a deploy at 22:20 re-fired the 20:30
+    slot and posted the episodes that had arrived since (2026-09-17 22:23). The
+    ledger's primary key makes the claim atomic across restarts and environments.
+    """
+    return [key for key in due if social_ledger.claim("slot", key)]
 
 
 async def publish_due_slots() -> int:
@@ -213,13 +216,8 @@ async def publish_due_slots() -> int:
     Off unless ``SOCIAL_PUBLISH_SLOTS`` is set — see the config note: exactly one
     environment may own this, because all of them carry the same tokens.
     """
-    due = _due_slots(datetime.now(TW))
-    if not due:
+    if not _claim_slots(_due_slots(datetime.now(TW))):
         return 0
-    _fired_slots.update(due)
-    # Only today's keys matter; anything older can never come due again.
-    today = datetime.now(TW).strftime("%Y-%m-%d")
-    _fired_slots.intersection_update({k for k in _fired_slots if k.startswith(today)})
 
     posted = 0
     for name, pub in _PUBLISHERS.items():

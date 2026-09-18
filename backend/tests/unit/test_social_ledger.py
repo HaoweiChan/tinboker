@@ -81,13 +81,6 @@ def test_record_without_a_claim_still_writes(temp_db):
 
 # ── posting slots ────────────────────────────────────────────────────
 
-@pytest.fixture(autouse=True)
-def _clear_slots():
-    worker._fired_slots.clear()
-    yield
-    worker._fired_slots.clear()
-
-
 def test_no_slots_configured_means_never_post(monkeypatch):
     monkeypatch.setattr(settings, "social_publish_slots", "")
     assert worker._due_slots(datetime(2026, 8, 26, 23, 0, tzinfo=TW)) == []
@@ -99,13 +92,18 @@ def test_only_slots_already_reached_today_are_due(monkeypatch):
     assert due == ["2026-08-26 11:30", "2026-08-26 15:30"]
 
 
-def test_a_slot_fires_once_per_day(monkeypatch):
+def test_a_slot_is_claimed_once_ever_even_across_a_restart(temp_db, monkeypatch):
+    """The 2026-09-17 22:23 post: a deploy wiped the in-memory set and the 20:30 slot
+    re-fired. The claim now lives in the ledger, so a fresh process sees it as taken."""
     monkeypatch.setattr(settings, "social_publish_slots", "11:30")
     now = datetime(2026, 8, 26, 12, 0, tzinfo=TW)
-    worker._fired_slots.update(worker._due_slots(now))
-    assert worker._due_slots(now) == []
-    # …and comes due again tomorrow.
-    assert worker._due_slots(now + timedelta(days=1)) == ["2026-08-27 11:30"]
+    due = worker._due_slots(now)
+    assert due == ["2026-08-26 11:30"]
+    assert worker._claim_slots(due) == ["2026-08-26 11:30"]
+    assert worker._claim_slots(worker._due_slots(now)) == []                # same process, later tick
+    assert worker._claim_slots(worker._due_slots(now)) == []                # "after a restart": still taken
+    # …and tomorrow's slot is a new key.
+    assert worker._claim_slots(worker._due_slots(now + timedelta(days=1))) == ["2026-08-27 11:30"]
 
 
 def test_malformed_slots_are_ignored(monkeypatch):
