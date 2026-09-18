@@ -54,6 +54,7 @@ class PodcastEpisode:
     skipped_segments: List[Dict] = field(default_factory=list)  # Dropped segments (timing+label) for player "skip" chips
     sector_exposures: List[Dict] = field(default_factory=list)  # Broad sector/theme exposure metadata
     unresolved_market_trends: List[Dict] = field(default_factory=list)  # Demand-driven curation candidates
+    macro_claims: List[Dict] = field(default_factory=list)  # Per-indicator macro claims (macro_extractor)
     sector_exposure_ids: List[str] = field(default_factory=list)
     sector_ids: List[str] = field(default_factory=list)  # base ids of all exposures (themes + sectors)
     unresolved_market_trend_ids: List[str] = field(default_factory=list)
@@ -198,6 +199,7 @@ class PodcastEpisode:
 
         result['sector_exposures'] = self.sector_exposures
         result['unresolved_market_trends'] = self.unresolved_market_trends
+        result['macro_claims'] = self.macro_claims
         result['sector_exposure_ids'] = self.sector_exposure_ids
         result['sector_ids'] = self.sector_ids
         result['unresolved_market_trend_ids'] = self.unresolved_market_trend_ids
@@ -307,6 +309,7 @@ class PodcastEpisode:
             skipped_segments=data.get('skipped_segments', []),
             sector_exposures=data.get('sector_exposures', []),
             unresolved_market_trends=data.get('unresolved_market_trends', []),
+            macro_claims=data.get('macro_claims', []),
             sector_exposure_ids=data.get('sector_exposure_ids', []),
             # Fold any legacy theme_ids into sector_ids when reading old docs.
             sector_ids=sorted(set(data.get('sector_ids') or []) | set(data.get('theme_ids') or [])),

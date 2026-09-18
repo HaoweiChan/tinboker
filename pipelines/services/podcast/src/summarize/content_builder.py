@@ -98,6 +98,7 @@ def analyze_transcript_with_workflow_api(
         "skipped_segments": result.get("skipped_segments") or [],
         "sector_exposures": result.get("sector_exposures") or [],
         "unresolved_market_trends": result.get("unresolved_market_trends") or [],
+        "macro_claims": result.get("macro_claims") or [],
         "sector_exposure_ids": result.get("sector_exposure_ids") or [],
         "sector_ids": result.get("sector_ids") or [],
         "unresolved_market_trend_ids": result.get("unresolved_market_trend_ids") or [],
