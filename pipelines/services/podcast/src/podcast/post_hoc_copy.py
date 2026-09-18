@@ -33,6 +33,18 @@ MAX_SECTIONS = 3
 SECTION_CHARS = 1200
 STANCE_ZH = {"BULLISH": "看多", "BEARISH": "看空", "NEUTRAL": "沒有明確方向"}
 
+# The last paragraph of the user message: what the post is FOR decides tense and ending.
+#   post_hoc — weeks later, the backend appends the price line, so the story stops on air day.
+#   today    — the episode came out today; nothing follows the story, so it ends on the
+#              host's own last judgment. Same voice rules otherwise.
+CLOSINGS = {
+    "post_hoc": "把那天他對這檔的想法講成一個 10~16 行的故事。稱呼一律用「{speaker}」和「他」，不要出現「主持人」。"
+                "時間停在播出那天，用過去式，不要寫之後的事，不要寫漲跌幅，不要評斷對錯。",
+    "today": "這集是今天播出的。把他這集對這檔的想法講成一個 10~16 行的故事，用現在式：「{speaker}這集講到{name}」"
+             "「他在意的是」。稱呼一律用「{speaker}」和「他」，不要出現「主持人」。不要寫漲跌幅、目標價，不要評斷對錯。"
+             "最後一行停在他落在哪個判斷、或他還沒想通的地方——後面不會再接任何東西，所以不要留半句給系統補。",
+}
+
 def speaker_for(source: str) -> str:
     """Fallback only. The backend owns the speaker table
     (content_source_service.speaker_for) and passes ``material["speaker"]``; this covers
@@ -76,12 +88,16 @@ def build_messages(material: dict) -> list[dict[str, str]]:
     prompts = load_prompt("post_hoc_copy_writer")
     stance = (material.get("sentiment_label") or "").upper().replace("STRONG_", "")
     sections = sections_about(material.get("summary") or "", material["ticker"], material.get("name") or "")
+    speaker = material.get("speaker") or speaker_for(material.get("source") or "")
+    name = material.get("name") or material["ticker"]
+    closing = CLOSINGS.get(material.get("mode") or "post_hoc", CLOSINGS["post_hoc"]).format(speaker=speaker, name=name)
     user = prompts["user"].format(
         source=material.get("source") or "Podcast",
         episode_title=material.get("episode_title") or "Episode",
         mention_date=material.get("mention_date") or "",
-        speaker=material.get("speaker") or speaker_for(material.get("source") or ""),
-        name=material.get("name") or material["ticker"],
+        speaker=speaker,
+        name=name,
+        closing=closing,
         ticker=material["ticker"],
         stance=STANCE_ZH.get(stance, "沒有明確方向"),
         thesis=(material.get("thesis") or "").strip() or "（無）",
