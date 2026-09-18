@@ -9,6 +9,7 @@ import uuid
 from typing import Dict, Optional
 from datetime import datetime, timezone
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from src.database.models import User
@@ -83,6 +84,7 @@ def _to_user_response(row: User) -> UserResponse:
         episode_bookmarks=row.episode_bookmarks or [],
         alerts=row.alerts or [],
         tag_subscriptions=row.tag_subscriptions or [],
+        member_until=row.member_until,
         notification_preferences=NotificationPreferences(
             new_episodes=prefs_data.get("new_episodes", True),
             stock_mentions=prefs_data.get("stock_mentions", True),
@@ -172,6 +174,47 @@ def update_user(
             return _to_user_response(row)
     except Exception as e:
         raise Exception(f"Failed to update user: {e}") from e
+
+
+def set_member_until(email: str, member_until: Optional[datetime]) -> Optional[UserResponse]:
+    """Admin manual grant/revoke: set (or clear, with `None`) a user's membership
+    expiry by email. Returns None if no such user.
+
+    Every writer (this admin grant, later the billing webhook) goes through here, so
+    the value is normalised to aware UTC once: a naive input is taken as UTC rather
+    than left to the DB session's time zone.
+    """
+    if member_until is not None:
+        member_until = (
+            member_until.replace(tzinfo=timezone.utc)
+            if member_until.tzinfo is None
+            else member_until.astimezone(timezone.utc)
+        )
+    try:
+        with session_scope() as db:
+            row = db.query(User).filter(func.lower(User.email) == email.lower()).first()
+            if not row:
+                return None
+            row.member_until = member_until
+            row.updated_at = datetime.now(timezone.utc)
+            return _to_user_response(row)
+    except Exception as e:
+        raise Exception(f"Failed to set member_until for {email}: {e}") from e
+
+
+def list_granted_members() -> list[UserResponse]:
+    """Every user with a membership grant (active or expired), newest expiry first."""
+    try:
+        with session_scope() as db:
+            rows = (
+                db.query(User)
+                .filter(User.member_until.isnot(None))
+                .order_by(User.member_until.desc())
+                .all()
+            )
+            return [_to_user_response(row) for row in rows]
+    except Exception as e:
+        raise Exception(f"Failed to list members: {e}") from e
 
 
 def get_or_create_user(

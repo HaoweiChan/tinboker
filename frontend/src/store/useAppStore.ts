@@ -18,6 +18,9 @@ interface User {
   email: string;
   avatar?: string;
   initials?: string;
+  // Membership entitlement (PR 1 — admin-granted only, no billing yet).
+  member_until?: string | null;
+  is_member?: boolean;
 }
 
 interface AppState {

@@ -16,6 +16,8 @@ export interface AuthResponse {
     episode_bookmarks?: string[];
     alerts?: string[];
     tag_subscriptions?: string[];
+    member_until?: string | null;
+    is_member?: boolean;
   };
   token: string;
   refresh_token?: string;

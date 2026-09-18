@@ -369,6 +369,11 @@ def create_all_tables():
                 conn.execute(text(
                     f"ALTER TABLE IF EXISTS analytics_snapshots ADD COLUMN IF NOT EXISTS {column} INTEGER"
                 ))
+            # Membership entitlement (PR 1 — admin-granted only, no billing yet).
+            conn.execute(text(
+                "ALTER TABLE IF EXISTS users "
+                "ADD COLUMN IF NOT EXISTS member_until TIMESTAMPTZ"
+            ))
             conn.commit()
     elif engine.dialect.name == "sqlite":
         # SQLite has no "ADD COLUMN IF NOT EXISTS" — check PRAGMA first.
@@ -427,6 +432,11 @@ def create_all_tables():
             si_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(stock_institutional_daily)"))}
             if si_cols and "trust_net_shares" not in si_cols:
                 conn.execute(text("ALTER TABLE stock_institutional_daily ADD COLUMN trust_net_shares FLOAT"))
+                conn.commit()
+            # Membership entitlement (PR 1 — admin-granted only, no billing yet).
+            users_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(users)"))}
+            if users_cols and "member_until" not in users_cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN member_until TIMESTAMP"))
                 conn.commit()
     # Clean up obsolete cryptocurrency tag registry rows (idempotent)
     with engine.connect() as conn:

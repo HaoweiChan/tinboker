@@ -64,6 +64,8 @@ export const GoogleLoginButton: React.FC<GoogleLoginButtonProps> = ({ className,
               .join('')
               .toUpperCase()
               .slice(0, 2),
+            member_until: backendUser.member_until ?? null,
+            is_member: backendUser.is_member ?? false,
           },
           appToken,
           authResponse.refresh_token,

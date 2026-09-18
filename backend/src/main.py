@@ -45,6 +45,7 @@ from src.routers.admin_weekly import router as admin_weekly_router
 from src.routers.admin_daily_pick import router as admin_daily_pick_router
 from src.routers.admin_stock_bars import router as admin_stock_bars_router
 from src.routers.admin_weekly_brief import router as admin_weekly_brief_router
+from src.routers.admin_members import router as admin_members_router
 from src.routers.social import (router as social_router, facebook_router, promo_router,
                                 substack_router, vocus_router)
 from src.routers.seo import router as seo_router, admin_router as admin_seo_router
@@ -458,6 +459,7 @@ if not settings.is_production:
     app.include_router(admin_daily_pick_router)  # /api/admin/daily-pick/{day}|publish-vocus
     app.include_router(admin_stock_bars_router)  # /api/admin/stock-bars/repair-us
     app.include_router(admin_weekly_brief_router)  # /api/admin/weekly-brief/{week}[.md]
+    app.include_router(admin_members_router)  # /api/admin/members/* — manual membership grant
     app.include_router(social_router)       # /api/admin/threads/*
     app.include_router(facebook_router)     # /api/admin/facebook/*
     app.include_router(vocus_router)        # /api/admin/vocus/*

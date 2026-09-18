@@ -626,6 +626,10 @@ class User(Base):
     tag_subscriptions = Column(JSON_VARIANT, nullable=False, default=list)
     notification_preferences = Column(JSON_VARIANT, nullable=False, default=dict)
 
+    # Paid membership entitlement (PR 1 — admin-granted only, no billing yet).
+    # A user is a member iff member_until is set and in the future.
+    member_until = Column(TZ_DATETIME, nullable=True)
+
     def __repr__(self) -> str:
         return f"<User(id={self.id}, email='{self.email}')>"
 

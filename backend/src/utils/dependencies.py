@@ -1,7 +1,7 @@
 """
 FastAPI dependencies for authentication and authorization
 """
-from fastapi import HTTPException, Header
+from fastapi import Depends, HTTPException, Header
 from typing import Optional
 from src.utils.auth import verify_jwt_token
 from src.database.user_db import get_user_by_email
@@ -64,4 +64,20 @@ def get_optional_user(authorization: Optional[str] = Header(None)) -> Optional[U
         return get_current_user(authorization)
     except HTTPException:
         return None
+
+
+def require_member(user: UserResponse = Depends(get_current_user)) -> UserResponse:
+    """Entitlement gate for member-only routes.
+
+    Usage:
+        @router.get("/protected")
+        async def protected_route(user: UserResponse = Depends(require_member)):
+            return {"user_id": user.id}
+
+    401 (from get_current_user) if not signed in at all; 402 if signed in but not
+    a paying member. Nothing is gated on this yet — this PR only adds the machinery.
+    """
+    if not user.is_member:
+        raise HTTPException(status_code=402, detail="Active membership required")
+    return user
 
