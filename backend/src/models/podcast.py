@@ -19,6 +19,7 @@ class Episode(BaseModel):
     skipped_segments: List[dict] = Field(default_factory=list, description="Non-financial segments dropped from the summary (sponsor/intro/outro/chitchat/non-substantive Q&A), kept as {segment_type, label, section_topic, start, end} ms so the player can offer skip chips")
     sector_exposures: List[dict] = Field(default_factory=list, description="Broad sector/theme exposure metadata; separate from direct ticker mentions")
     unresolved_market_trends: List[dict] = Field(default_factory=list, description="Unmapped recurring market concepts for demand-driven curation")
+    macro_claims: List[dict] = Field(default_factory=list, description="Per-indicator macro claims from the pipeline's macro_extractor (docs/firestore-contract.md §2.1.3)")
     sector_exposure_ids: List[str] = Field(default_factory=list, description="Flat Firestore-queryable sector/theme exposure IDs")
     unresolved_market_trend_ids: List[str] = Field(default_factory=list, description="Flat unresolved trend IDs")
     created_time: int = Field(..., description="Creation/ingestion timestamp (Unix milliseconds)")
