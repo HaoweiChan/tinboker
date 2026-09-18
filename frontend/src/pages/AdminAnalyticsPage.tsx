@@ -277,7 +277,10 @@ const RankList: React.FC<{
 }> = ({ icon, title, rows }) => {
     const max = rows.reduce((m, r) => Math.max(m, r.count), 0) || 1;
     return (
-        <div>
+        // min-w-0: as a grid item this defaults to min-width:auto, so the column sized
+        // itself to the longest (nowrap, truncated) label — 392px inside a 288px column —
+        // and pushed the whole analytics page wider than the phone viewport.
+        <div className="min-w-0">
             <h4 className="mb-2 flex items-center gap-2 text-base font-semibold text-foreground">
                 {icon} {title}
             </h4>
