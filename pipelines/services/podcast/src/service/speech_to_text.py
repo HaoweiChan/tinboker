@@ -10,6 +10,7 @@ import json
 import os
 import re
 import subprocess
+import time
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -25,13 +26,36 @@ class TranscriptTooShortError(Exception):
 
 
 class ChunkTranscriptionError(Exception):
-    """A chunk of a large file could not be transcribed.
+    """A chunk of a large file could not be transcribed, and retrying did not help.
 
     The chunked path used to log the error, drop the chunk, and combine whatever else
     came back — which is how a rate-limited bulk run stored a fifth of an episode and
     reported success. A missing chunk is a missing part of the episode: stop, so the
     episode can be re-run when the provider is willing.
     """
+
+
+# What took the chunks out was a bulk run hitting the provider's rate limit, which is
+# exactly the failure that clears if you wait. Back off 5s, then 10s, then give up: long
+# enough to ride out a burst limit, short enough that an episode against a genuinely dead
+# provider fails in under a minute instead of grinding through every chunk.
+_CHUNK_ATTEMPTS = 3
+_CHUNK_RETRY_BACKOFF_SECONDS = 5.0
+
+
+def transcribe_chunk_with_retry(call, label: str):
+    """Run ``call`` until it returns, raising ChunkTranscriptionError once out of tries."""
+    for attempt in range(1, _CHUNK_ATTEMPTS + 1):
+        try:
+            return call()
+        except Exception as e:
+            if attempt == _CHUNK_ATTEMPTS:
+                raise ChunkTranscriptionError(
+                    f"{label} failed after {_CHUNK_ATTEMPTS} attempts: {e}"
+                ) from e
+            delay = _CHUNK_RETRY_BACKOFF_SECONDS * 2 ** (attempt - 1)
+            print(f"  ⚠ {label} failed ({e}); retrying in {delay:.0f}s")
+            time.sleep(delay)
 
 
 def probe_audio_seconds(file_path: Path) -> Optional[float]:
@@ -569,8 +593,7 @@ class WhisperService(SpeechToTextService):
             chunk_srt_list = []
             for i, (chunk_path, chunk_start) in enumerate(chunks):
                 print(f"  🎤 Transcribing chunk {i+1}/{len(chunks)}...")
-                try:
-                    # Transcribe chunk
+                def transcribe_chunk(chunk_path=chunk_path):
                     with open(chunk_path, "rb") as chunk_file:
                         transcription_params = {
                             "model": "whisper-1",
@@ -582,12 +605,12 @@ class WhisperService(SpeechToTextService):
                             transcription_params["language"] = language
                         
                         transcription = self.client.audio.transcriptions.create(**transcription_params)
-                    
-                    srt_content = str(transcription)
-                except Exception as e:
-                    raise ChunkTranscriptionError(
-                        f"Chunk {i+1}/{len(chunks)} (from {chunk_start / 60:.1f} min) failed: {e}"
-                    ) from e
+                    return str(transcription)
+                
+                srt_content = transcribe_chunk_with_retry(
+                    transcribe_chunk,
+                    f"Chunk {i+1}/{len(chunks)} (from {chunk_start / 60:.1f} min)",
+                )
                 chunk_srt_list.append((srt_content, chunk_start))
                 print(f"  ✓ Chunk {i+1} transcribed")
             
@@ -1180,8 +1203,8 @@ class GroqService(SpeechToTextService):
             chunk_srt_list = []
             for i, (chunk_path, chunk_start) in enumerate(chunks):
                 print(f"  🎤 Transcribing chunk {i+1}/{len(chunks)}...")
-                try:
-                    # Transcribe chunk (collapse-guarded, same as the direct path)
+                def transcribe_chunk(chunk_path=chunk_path, i=i):
+                    # Collapse-guarded, same as the direct path
                     transcription_dict = self._transcribe_call(
                         chunk_path, label=f" on chunk {i+1}"
                     )
@@ -1191,11 +1214,12 @@ class GroqService(SpeechToTextService):
                     
                     # Convert to SRT
                     srt_content = convert_verbose_json_to_srt(transcription_dict)
-                    srt_content = convert_srt_to_traditional_chinese(srt_content)
-                except Exception as e:
-                    raise ChunkTranscriptionError(
-                        f"Chunk {i+1}/{len(chunks)} (from {chunk_start / 60:.1f} min) failed: {e}"
-                    ) from e
+                    return convert_srt_to_traditional_chinese(srt_content)
+                
+                srt_content = transcribe_chunk_with_retry(
+                    transcribe_chunk,
+                    f"Chunk {i+1}/{len(chunks)} (from {chunk_start / 60:.1f} min)",
+                )
                 chunk_srt_list.append((srt_content, chunk_start))
                 print(f"  ✓ Chunk {i+1} transcribed")
             
