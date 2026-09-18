@@ -22,6 +22,10 @@ jobs:
           filters: |
             frontend:
               - 'frontend/**'
+              # A change to this workflow must exercise this workflow — the
+              # preview job's retired action went unnoticed because every PR
+              # that touched only .github/ skipped it.
+              - '.github/workflows/frontend-ci.yml'
 
   # ── 2. Build + lint (only when frontend files changed) ───────────────────────
   build:
@@ -109,7 +113,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      deployments: write
       pull-requests: write
 
     steps:
@@ -121,23 +124,26 @@ jobs:
           name: frontend-dist-${{ github.run_id }}
           path: frontend/dist
 
+      # cloudflare/pages-action is retired and no longer resolves at all — the job
+      # died at "Set up job" with "Unable to resolve action `cloudflare/pages-action`".
+      # wrangler-action runs the same `pages deploy` (frontend-deploy.yml already
+      # uses it). Deliberately NOT run from frontend/, so wrangler sees no
+      # functions/ dir and the preview stays assets-only, as the note above says.
       - name: Deploy to Cloudflare Pages (preview)
         id: deploy
-        uses: cloudflare/pages-action@v1
+        uses: cloudflare/wrangler-action@v3
         continue-on-error: true   # Cloudflare hiccup ≠ broken PR
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           # CF Pages project name is immutable and owns the prod custom domains;
           # it stays "tinboker-platform" even though the repo is now "tinboker".
-          projectName: tinboker-platform
-          directory: frontend/dist
-          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          #
           # Namespace previews by PR number — NEVER use github.head_ref directly:
           # a PR whose head branch is an env branch (main/staging/develop) would
           # otherwise deploy to that Cloudflare branch and clobber prod/staging/dev
           # (e.g. a main→develop back-merge PR with head=main publishing to production).
-          branch: pr-${{ github.event.pull_request.number }}
+          command: pages deploy frontend/dist --project-name=tinboker-platform --branch=pr-${{ github.event.pull_request.number }} --commit-dirty=true
 
       # Upsert a single comment per PR — update on re-runs instead of spamming.
       - name: Post or update preview URL comment
@@ -145,8 +151,8 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const previewUrl = '${{ steps.deploy.outputs.alias }}' ||
-                               '${{ steps.deploy.outputs.url }}';
+            const previewUrl = '${{ steps.deploy.outputs.pages-deployment-alias-url }}' ||
+                               '${{ steps.deploy.outputs.deployment-url }}';
             const marker = '<!-- cf-preview-comment -->';
             const body = [
               marker,
