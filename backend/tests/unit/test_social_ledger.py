@@ -6,7 +6,6 @@ scan runs at all.
 """
 from datetime import datetime, timedelta, timezone
 
-import pytest
 
 from src.config import settings
 from src.services import social_ledger
