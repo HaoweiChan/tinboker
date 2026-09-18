@@ -22,6 +22,10 @@ jobs:
           filters: |
             frontend:
               - 'frontend/**'
+              # A change to this workflow must exercise this workflow. The preview
+              # job sat broken on a retired action because every PR that touched
+              # only .github/ skipped it, so nothing ever ran it.
+              - '.github/workflows/frontend-ci.yml'
 
   # ── 2. Build + lint (only when frontend files changed) ───────────────────────
   build:
@@ -109,7 +113,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      deployments: write
       pull-requests: write
 
     steps:
