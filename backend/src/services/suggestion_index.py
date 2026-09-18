@@ -54,7 +54,12 @@ class SuggestionIndex:
         """
         async with self._lock:
             self._items[item.id] = item
-            self._keywords[item.id] = keywords
+            # Drop empty/None keywords here, the one path every caller shares: a TW ETF with
+            # no English name indexes as [ticker, None, zh, ...] (routers/search.py), and a
+            # None reached _calculate_score's kw.lower() -> every suggest query whose prefix
+            # matched that stock answered 500 (prod 2026-09-18: "981", "00646", "00685L").
+            # add_keywords already filters; this makes add_item agree.
+            self._keywords[item.id] = [kw for kw in keywords if kw]
             
             # Tokenize all keywords and index prefixes of tokens
             all_tokens = set()
