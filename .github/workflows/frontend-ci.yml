@@ -121,23 +121,27 @@ jobs:
           name: frontend-dist-${{ github.run_id }}
           path: frontend/dist
 
+      # cloudflare/pages-action was deprecated and, on 2026-09-18, its repository was
+      # removed — the job then dies in "Set up job" ("Unable to resolve action"), before
+      # any step runs, so the step-level continue-on-error below never gets a say and
+      # every frontend PR shows a red check. wrangler-action is the maintained
+      # replacement frontend-deploy.yml already uses; it runs the same `pages deploy`.
       - name: Deploy to Cloudflare Pages (preview)
         id: deploy
-        uses: cloudflare/pages-action@v1
+        uses: cloudflare/wrangler-action@v3
         continue-on-error: true   # Cloudflare hiccup ≠ broken PR
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # Run from the repo root on purpose: there is no ./functions here, so the
+          # preview stays assets-only, exactly as the note above this job documents.
           # CF Pages project name is immutable and owns the prod custom domains;
           # it stays "tinboker-platform" even though the repo is now "tinboker".
-          projectName: tinboker-platform
-          directory: frontend/dist
-          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
           # Namespace previews by PR number — NEVER use github.head_ref directly:
           # a PR whose head branch is an env branch (main/staging/develop) would
           # otherwise deploy to that Cloudflare branch and clobber prod/staging/dev
           # (e.g. a main→develop back-merge PR with head=main publishing to production).
-          branch: pr-${{ github.event.pull_request.number }}
+          command: pages deploy frontend/dist --project-name=tinboker-platform --branch=pr-${{ github.event.pull_request.number }} --commit-dirty=true
 
       # Upsert a single comment per PR — update on re-runs instead of spamming.
       - name: Post or update preview URL comment
@@ -145,8 +149,8 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const previewUrl = '${{ steps.deploy.outputs.alias }}' ||
-                               '${{ steps.deploy.outputs.url }}';
+            const previewUrl = '${{ steps.deploy.outputs.pages-deployment-alias-url }}' ||
+                               '${{ steps.deploy.outputs.deployment-url }}';
             const marker = '<!-- cf-preview-comment -->';
             const body = [
               marker,

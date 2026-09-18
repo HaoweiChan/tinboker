@@ -239,7 +239,8 @@ async def test_slot_posts_the_first_format_with_material_then_cools_down(temp_db
     res = await sf.publish_due_format(now=NOW)
     assert res["posted"] is True and res["format"] == "weekly_movers"
     assert fake.posts == [("本週", "https://api.tinboker.com/api/og/weekly.png")]
-    assert fake.replies == [("▶ https://tinboker.com/weekly/2026-W37", "m1")]
+    assert fake.replies == [("▶ https://tinboker.com/weekly/2026-W37"
+                             "?utm_source=threads&utm_medium=social&utm_campaign=weekly_movers", "m1")]
     row = social_ledger.list_posted("threads")[0]
     assert (row["episode_id"], row["format"], row["subject"], row["child_ids"]) == \
         ("weekly_movers:2026-09-07", "weekly_movers", "2026-09-07", ["r1"])
