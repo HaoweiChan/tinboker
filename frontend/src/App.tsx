@@ -55,6 +55,9 @@ const IS_DEV_ENV = (import.meta.env.VITE_STAGE as string) === 'DEV';
 // the main bundle (own chunk, loaded on demand).
 const PicksPage = lazy(() => import('@/pages/PicksPage'));
 
+// PR 3a — public plan/pricing page. Own chunk: most visitors never open it either.
+const MembershipPage = lazy(() => import('@/pages/MembershipPage'));
+
 // Placeholder shown (blurred, behind the upgrade card) to non-members via
 // MemberGate's `preview` — it renders into the real DOM (see MemberGate's doc
 // comment), so this is skeleton bars only: no real ticker/name/numbers.
@@ -78,10 +81,10 @@ function PicksPreview() {
   );
 }
 
-// PR 3 (adds /membership) deletes this wrapper. Until then, MemberGate's upgrade
-// card links to /membership, which doesn't exist yet — so outside dev, a
-// non-member deep-linking /picks must see exactly what they saw before this PR
-// (fall through to home), not a button to a dead route. Dev keeps the upgrade
+// PR 3b (checkout actually works) deletes this wrapper. PR 3a adds /membership,
+// but it ships in its "checkout not open yet" state — nobody can become a member
+// there yet — so outside dev, a non-member deep-linking /picks still bounces to
+// home instead of a page it can look at but never unlock. Dev keeps the upgrade
 // card visible for QA regardless of membership.
 function PicksRoute() {
   const isAuthReady = useAppStore((s) => s.isAuthReady);
@@ -155,9 +158,19 @@ function App() {
             <Route path="/sector/:exposureId" element={<SectorPage />} />
             <Route path="/news/:id" element={<NewsRedirect />} />
             {/* /picks (走勢) — paid, member-only. Registered on every env; PicksRoute
-                sends a non-member outside dev to home until /membership exists
-                (PR 3), and MemberGate handles the member/preview split otherwise. */}
+                sends a non-member outside dev to home until checkout actually works
+                (PR 3b), and MemberGate handles the member/preview split otherwise. */}
             <Route path="/picks" element={<PicksRoute />} />
+            {/* Public pricing page (PR 3a) — no checkout endpoint yet, so its buy
+                button always renders disabled. Not yet in the sitemap or nav. */}
+            <Route
+              path="/membership"
+              element={
+                <Suspense fallback={null}>
+                  <MembershipPage />
+                </Suspense>
+              }
+            />
             <Route path="/about" element={<About />} />
             {/* Former standalone support pages — now sections of /about. */}
             <Route path="/contact" element={<Navigate to="/about#contact" replace />} />
