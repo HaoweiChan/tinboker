@@ -188,3 +188,36 @@ async def test_suggest_survives_none_keywords():
     for prefix in ("00685L", "00685l", "0068", "00"):
         results = index.suggest(prefix)
         assert any(r.id == "stock-00685L" for r in results), prefix
+
+
+# ── Typing a TW code without its leading zeros (981A → 00981A) ────────────────
+
+def test_bare_tw_code_variants():
+    from src.routers.search import _bare_tw_code
+
+    assert _bare_tw_code("00981A") == "981A"   # 主動統一台股增長
+    assert _bare_tw_code("0050") == "50"
+    assert _bare_tw_code("2330") is None       # nothing to strip
+    assert _bare_tw_code("AAPL") is None       # US
+    assert _bare_tw_code("005930") is None     # KR, not ours to index as TW
+
+
+def test_suggest_finds_a_padded_tw_code_typed_bare():
+    """The real listing answers "981a"; before this the only hit was a junk stub
+    literally stored under the ticker "981A"."""
+    import asyncio
+    from src.services.suggestion_index import SuggestionIndex
+    from src.schemas.search import SearchResultItem
+    from src.routers.search import _bare_tw_code
+
+    async def run():
+        index = SuggestionIndex()
+        await index.clear()
+        item = SearchResultItem(id="stock-00981A", type="stock", title="00981A",
+                                subtitle="主動統一台股增長", link="/stock/00981A", market="TW")
+        await index.add_item(item, keywords=["00981A", "主動統一台股增長", _bare_tw_code("00981A")])
+        return [i.title for i in index.suggest("981a")], [i.title for i in index.suggest("00981a")]
+
+    bare, padded = asyncio.run(run())
+    assert bare == ["00981A"]
+    assert padded == ["00981A"]

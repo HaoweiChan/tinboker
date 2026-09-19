@@ -9,6 +9,7 @@ from src.cache.cdn_cache import cdn_cache_trending, cdn_cached
 from src.utils.market import infer_market
 import asyncio
 import logging
+from typing import Optional
 import re
 
 router = APIRouter(prefix="/api/search", tags=["search"])
@@ -110,6 +111,19 @@ def _has_cjk(text) -> bool:
     return any("㐀" <= ch <= "鿿" or "豈" <= ch <= "﫿" for ch in text)
 
 
+def _bare_tw_code(ticker: str) -> Optional[str]:
+    """A TW code with its leading zeros dropped — "981A" for 00981A, "50" for 0050.
+
+    Hosts say (and listeners type) the code without the padding, so typing 981A found
+    nothing but a junk stub someone had created under that exact string. Indexed as an
+    extra keyword, not as the title, so the real listing answers the short form too.
+    """
+    if infer_market(ticker) != "TW":
+        return None
+    bare = (ticker or "").lstrip("0")
+    return bare if bare and bare != ticker else None
+
+
 def _load_stock_translations(limit: int = 20000):
     """Read translatable stock rows (blocking SQLAlchemy). Run off the event loop.
 
@@ -196,7 +210,7 @@ async def build_search_index():
             display = zh if show_zh else (en or ticker)
 
             # All searchable forms: ticker, both names, and curated aliases.
-            keywords = [ticker, en, zh, *tr.get("aliases", [])]
+            keywords = [ticker, en, zh, *tr.get("aliases", []), _bare_tw_code(ticker)]
 
             if ticker.upper() in seen_tickers:
                 # Already indexed from Massive — just add the extra (zh-TW/alias) keywords.
