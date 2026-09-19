@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Link } from 'react-router-dom';
@@ -26,9 +26,15 @@ function formatTimestamp(ms: number): string {
 interface SummaryMarkdownProps {
   content: string;
   onSeek?: (seconds: number) => void;
+  /** Land on a section instead of the top: the ms offset a social link carried in
+   *  `?t=`. Scrolls to the last section starting at or before it — so a section's own
+   *  anchor and a mention's timestamp inside that section both work. */
+  focusMs?: number | null;
 }
 
-export const SummaryMarkdown: React.FC<SummaryMarkdownProps> = ({ content, onSeek }) => {
+export const SummaryMarkdown: React.FC<SummaryMarkdownProps> = ({ content, onSeek, focusMs }) => {
+  const rootRef = useRef<HTMLDivElement>(null);
+
   // Bare `(#time:MS)` markers aren't markdown links, so rewrite them into links
   // (with the formatted time as the label) — then the custom anchor renderer below
   // turns them into clickable badges.
@@ -44,10 +50,26 @@ export const SummaryMarkdown: React.FC<SummaryMarkdownProps> = ({ content, onSee
     [content],
   );
 
+  // A reader who tapped a Threads link about ONE judgment should arrive at it, not at
+  // the top of a thirteen-screen summary (measured 2026-09-19: the sentence they had
+  // just liked sat five screens down). Runs once per (content, focusMs).
+  useEffect(() => {
+    if (focusMs == null || !Number.isFinite(focusMs) || !rootRef.current) return;
+    const marks = Array.from(rootRef.current.querySelectorAll<HTMLElement>('[data-section-ms]'));
+    if (!marks.length) return;
+    const at = (el: HTMLElement) => Number(el.dataset.sectionMs);
+    const target = marks.filter((el) => at(el) <= focusMs).pop() ?? marks[0];
+    const heading = target.closest('h2, h3, h4, h5') ?? target;
+    heading.scrollIntoView({ block: 'start', behavior: 'auto' });
+    heading.classList.add('bg-primary/10', 'rounded', 'transition-colors', 'duration-1000');
+    const timer = window.setTimeout(() => heading.classList.remove('bg-primary/10'), 2500);
+    return () => window.clearTimeout(timer);
+  }, [prepared, focusMs]);
+
   if (!prepared.trim()) return null;
 
   return (
-    <div className="text-xl md:text-lg leading-relaxed md:leading-[1.9] text-foreground">
+    <div ref={rootRef} className="text-xl md:text-lg leading-relaxed md:leading-[1.9] text-foreground">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
@@ -58,10 +80,10 @@ export const SummaryMarkdown: React.FC<SummaryMarkdownProps> = ({ content, onSee
           // an atomic item, so a long title wraps the leading ticker name onto its own
           // line. Plain inline flow lets "台積電 加速CoWoS…" read as one heading.
           h2: ({ children }) => (
-            <h3 className="text-2xl md:text-xl font-bold tracking-tight leading-tight mt-8 mb-2">{children}</h3>
+            <h3 className="scroll-mt-24 text-2xl md:text-xl font-bold tracking-tight leading-tight mt-8 mb-2">{children}</h3>
           ),
           h3: ({ children }) => (
-            <h4 className="text-xl md:text-lg font-semibold leading-snug text-foreground mt-7 mb-2">{children}</h4>
+            <h4 className="scroll-mt-24 text-xl md:text-lg font-semibold leading-snug text-foreground mt-7 mb-2">{children}</h4>
           ),
           h4: ({ children }) => (
             <h5 className="text-lg md:text-md font-semibold text-foreground/90 mt-5 mb-1">{children}</h5>
@@ -104,6 +126,7 @@ export const SummaryMarkdown: React.FC<SummaryMarkdownProps> = ({ content, onSee
               return (
                 <button
                   type="button"
+                  data-section-ms={ms}
                   onClick={() => onSeek?.(Math.round(ms / 1000))}
                   className="inline-flex items-center align-middle font-mono text-xs font-medium px-1.5 py-0.5 mx-0.5 rounded bg-primary/15 text-primary hover:bg-primary/25 transition-colors"
                 >

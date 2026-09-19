@@ -56,10 +56,30 @@ def social_link(url: str, fmt: str) -> str:
     return f"{url}{sep}utm_source=threads&utm_medium=social&utm_campaign={fmt}"
 
 
-def link_comment(episode_id: str, fmt: str = "episode_thread") -> str:
+def link_comment(episode_id: str, fmt: str = "episode_thread", hook: Optional[str] = None,
+                 focus_ms: Optional[int] = None) -> str:
     """The episode permalink, posted as the FIRST comment (not in the post body) so
-    the link doesn't suppress organic reach and lives where it helps SEO."""
-    return f"▶ 完整重點：{social_link(episode_url(episode_id), fmt)}"
+    the link doesn't suppress organic reach and lives where it helps SEO.
+
+    ``hook`` says what is on the other side that the post did not give away, and
+    ``focus_ms`` (``?t=``) lands the reader on the section the post was about instead
+    of the top of a 13-screen page. Measured 2026-09-19: 1.5% of the people who saw
+    「▶ 完整重點」 clicked it, and those who did had to scroll five screens to find the
+    sentence they had just liked. Without a hook the old generic line stands."""
+    url = episode_url(episode_id)
+    if isinstance(focus_ms, int) and focus_ms >= 1000:
+        url = f"{url}?t={focus_ms}"
+    link = social_link(url, fmt)
+    hook = " ".join((hook or "").split())
+    return f"▶ {hook}\n{link}" if hook else f"▶ 完整重點：{link}"
+
+
+def episode_link_comment(episode: Any, fmt: str) -> str:
+    """``link_comment`` fed from the episode's written copy (``social_thread``)."""
+    thread = _field(episode, "social_thread")
+    thread = thread if isinstance(thread, dict) else {}
+    episode_id = _field(episode, "id") or _field(episode, "episode_id") or ""
+    return link_comment(episode_id, fmt, hook=thread.get("link_hook"), focus_ms=thread.get("focus_ms"))
 
 
 RASTER_IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".webp", ".gif")
@@ -301,7 +321,7 @@ def compose_thread(episode: Any) -> dict:
 
     # Permalink as the FIRST comment (link-in-first-comment) — keeps it out of the
     # post body so reach isn't suppressed and the link still gets indexed.
-    replies.insert(0, {"text": link_comment(episode_id)})
+    replies.insert(0, {"text": episode_link_comment(episode, "episode_thread")})
 
     return {
         "episode_id": episode_id,
@@ -429,7 +449,7 @@ async def publish_recent(
             try:
                 fmt = "episode_macro_card" if draft.get("image_url") else "episode_text"
                 media_id = await service.publish(draft["text"], image_url=draft.get("image_url"))
-                reply_id = await service.publish_reply(link_comment(episode_id, fmt), reply_to_id=media_id)
+                reply_id = await service.publish_reply(episode_link_comment(episode, fmt), reply_to_id=media_id)
                 _record(episode_id, media_id, draft["url"], [reply_id], fmt=fmt)
                 posted.append({**draft, "kind": "text", "media_id": media_id, "dry_run": False})
                 logger.info("Posted text post for %s (%s)", episode_id, media_id)
@@ -455,8 +475,9 @@ async def publish_recent(
                     continue
                 try:
                     media_id = await service.publish(story, image_url=frame["image_url"])
-                    reply_id = await service.publish_reply(link_comment(episode_id, "episode_ticker_story"),
-                                                           reply_to_id=media_id)
+                    hook = f'{speaker_for(frame["podcaster"])}這集講{frame["name"]}的整段'
+                    reply_id = await service.publish_reply(
+                        link_comment(episode_id, "episode_ticker_story", hook=hook), reply_to_id=media_id)
                     _record(episode_id, media_id, frame["url"], [reply_id], fmt="episode_ticker_story")
                     posted.append({**frame, "kind": "ticker_story", "text": story, "media_id": media_id, "dry_run": False})
                     logger.info("Posted ticker story for %s (%s, %s)", episode_id, frame["ticker"], media_id)

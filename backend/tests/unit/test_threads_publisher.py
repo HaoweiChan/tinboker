@@ -152,6 +152,19 @@ def test_posted_links_carry_the_format_as_a_utm_campaign_and_the_ledger_url_stay
     assert "utm_" not in threads_publisher.episode_url("EP1")
 
 
+def test_link_reply_says_what_is_behind_it_and_lands_on_the_section():
+    text = threads_publisher.link_comment("EP1", "episode_thread", hook="他點名的三檔封測和理由", focus_ms=1028093)
+    assert text == ("▶ 他點名的三檔封測和理由\n"
+                    "https://tinboker.com/episode/EP1?t=1028093&utm_source=threads&utm_medium=social&utm_campaign=episode_thread")
+    # No hook → the old line; an ordinal-sized or missing offset → no ?t=.
+    assert threads_publisher.link_comment("EP1", "episode_text", focus_ms=3).startswith("▶ 完整重點：https://tinboker.com/episode/EP1?utm_source")
+
+    ep = _ep("EP2", insights=["x"], tickers=["2330", "NVDA", "3324"])
+    ep.social_thread = {"post": "p", "comments": [], "link_hook": "12個票委各自的說法", "focus_ms": 45000}
+    assert threads_publisher.episode_link_comment(ep, "episode_thread").startswith("▶ 12個票委各自的說法\nhttps://tinboker.com/episode/EP2?t=45000&utm_")
+    assert threads_publisher.compose_thread(ep)["replies"][0]["text"].startswith("▶ 12個票委各自的說法\n")
+
+
 # ── zero-ticker one-liner ─────────────────────────────────────────────
 
 def test_pick_insight_prefers_a_number_then_a_screen_sized_line():

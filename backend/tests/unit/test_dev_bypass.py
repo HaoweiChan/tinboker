@@ -81,6 +81,12 @@ def test_production_refuses_a_bypass_token_but_not_a_real_one(client, monkeypatc
     assert _is_admin(client, bypass["token"]) == {"is_admin": False, "env_access": False}
 
 
+def test_a_pasted_secret_with_stray_whitespace_still_signs_in(client):
+    assert client.post("/api/auth/dev-token", json={"token": "  s3cret\n", "role": "viewer"}).status_code == 200
+    assert client.post("/api/auth/dev-token", json={"token": "   "}).status_code == 401
+    assert client.post("/api/auth/dev-token", json={"token": None}).status_code == 401
+
+
 def test_a_refresh_cannot_launder_a_bypass_session(client):
     first = client.post("/api/auth/dev-token", json={"token": "s3cret", "role": "viewer"}).json()
     again = client.post("/api/auth/refresh", json={"refresh_token": first["refresh_token"]}).json()
