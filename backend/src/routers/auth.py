@@ -135,30 +135,46 @@ async def check_is_admin(authorization: Optional[str] = Header(None)):
     Used by non-production environments to gate access.
     Returns { "is_admin": bool } — never raises 4xx so the frontend can handle the result gracefully.
     """
+    denied = {"is_admin": False, "env_access": False}
     if not authorization:
-        return {"is_admin": False}
+        return denied
     try:
         scheme, token = authorization.split()
         if scheme.lower() != "bearer":
-            return {"is_admin": False}
+            return denied
     except ValueError:
-        return {"is_admin": False}
+        return denied
 
     payload = verify_jwt_token(token)
     if not payload:
-        return {"is_admin": False}
+        return denied
 
     from src.config import settings
     email = (payload.get("email") or "").lower()
     admin_set = {e.lower() for e in settings.admin_emails}
-    return {"is_admin": email in admin_set}
+    is_admin = email in admin_set
+    # ``env_access`` is what the dev/staging EnvGate asks for: admins, plus any bypass
+    # session (the read-only QA viewer is not an admin but must get past the gate).
+    # verify_jwt_token already refused bypass tokens in production.
+    return {"is_admin": is_admin, "env_access": is_admin or bool(payload.get("dev_bypass"))}
+
+
+QA_VIEWER_EMAIL = "qa-viewer@tinboker.com"
+_BYPASS_ROLES = ("admin", "viewer")
 
 
 @router.post("/dev-token", response_model=AuthResponse)
 async def dev_token_login(request: dict):
     """
-    Bypass Google OAuth for automated browser testing (Cursor browser MCP).
+    Bypass Google OAuth for automated browser testing (browser MCP, Playwright).
     Only available when ENVIRONMENT != production and DEV_BYPASS_TOKEN is set.
+
+    ``role`` (default "admin") picks who the session is:
+      * "admin"  — the first ADMIN_EMAILS entry; for QA of the admin pages.
+      * "viewer" — ``qa-viewer@tinboker.com``: passes the dev/staging gate, is NOT an
+        admin, so every admin route 403s. This is the session to hand an AI agent's
+        browser — it can look at everything a visitor sees and change nothing.
+    Both carry ``dev_bypass`` in the token, which production refuses to verify.
     """
     from src.config import settings
 
@@ -171,16 +187,19 @@ async def dev_token_login(request: dict):
     if not token or token != settings.dev_bypass_token:
         raise HTTPException(status_code=401, detail="Invalid bypass token")
 
-    email = settings.admin_emails[0] if settings.admin_emails else "dev@tinboker.com"
-    user = get_or_create_user(
-        google_id="dev-bypass-user",
-        email=email,
-        name="Dev Browser",
-        avatar=None,
-        email_verified=True,
-    )
-    jwt_token = create_jwt_token(user.id, user.email)
-    refresh_token = create_refresh_token(user.id, user.email)
+    role = (request.get("role") or "admin").strip().lower()
+    if role not in _BYPASS_ROLES:
+        raise HTTPException(status_code=422, detail=f"role must be one of {_BYPASS_ROLES}")
+
+    if role == "viewer":
+        google_id, email, name = "dev-bypass-viewer", QA_VIEWER_EMAIL, "QA Viewer"
+    else:
+        google_id, name = "dev-bypass-user", "Dev Browser"
+        email = settings.admin_emails[0] if settings.admin_emails else "dev@tinboker.com"
+    user = get_or_create_user(google_id=google_id, email=email, name=name, avatar=None, email_verified=True)
+    claims = {"dev_bypass": True, "role": role}
+    jwt_token = create_jwt_token(user.id, user.email, extra=claims)
+    refresh_token = create_refresh_token(user.id, user.email, extra=claims)
     return AuthResponse(user=user, token=jwt_token, refresh_token=refresh_token)
 
 
@@ -210,9 +229,11 @@ async def refresh_token_endpoint(request: dict):
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Issue a fresh access token and rotate the refresh token.
-    new_access = create_jwt_token(user.id, user.email)
-    new_refresh = create_refresh_token(user.id, user.email)
+    # Issue a fresh access token and rotate the refresh token. A bypass session stays a
+    # bypass session across refreshes — otherwise one refresh would launder it into an
+    # ordinary token that production accepts.
+    new_access = create_jwt_token(user.id, user.email, extra=payload)
+    new_refresh = create_refresh_token(user.id, user.email, extra=payload)
     return AuthResponse(user=user, token=new_access, refresh_token=new_refresh)
 
 

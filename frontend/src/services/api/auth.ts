@@ -1,5 +1,5 @@
 import { apiClient } from './client';
-import { AxiosError } from 'axios';
+import { isAxiosError } from 'axios';
 
 export interface AuthResponse {
   user: {
@@ -34,8 +34,8 @@ export const authApi = {
         }
       );
       return response.data;
-    } catch (error: any) {
-      if (error.isAxiosError || error instanceof AxiosError) {
+    } catch (error: unknown) {
+      if (isAxiosError<{ detail?: string }>(error)) {
         const message = error.response?.data?.detail || error.message;
         throw new Error(`Authentication failed: ${message}`);
       }
@@ -54,8 +54,8 @@ export const authApi = {
         }
       );
       return response.data;
-    } catch (error: any) {
-      if (error.isAxiosError || error instanceof AxiosError) {
+    } catch (error: unknown) {
+      if (isAxiosError<{ detail?: string }>(error)) {
         const message = error.response?.data?.detail || error.message;
         throw new Error(`Failed to get user: ${message}`);
       }
@@ -69,6 +69,19 @@ export const authApi = {
         headers: { Authorization: `Bearer ${token}` },
       });
       return response.data.is_admin;
+    } catch {
+      return false;
+    }
+  },
+
+  /** Whether this session may pass the dev/staging EnvGate: an admin, or a dev-bypass
+   *  session (the read-only QA viewer is not an admin but must get past the gate). */
+  envAccess: async (token: string): Promise<boolean> => {
+    try {
+      const response = await apiClient.get<{ is_admin: boolean; env_access?: boolean }>('/api/auth/is-admin', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      return response.data.is_admin || response.data.env_access === true;
     } catch {
       return false;
     }
