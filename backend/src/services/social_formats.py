@@ -338,7 +338,8 @@ async def _publish(fmt: Format, draft: dict, dry_run: bool) -> dict:
         reply_ids: list[str] = []
         if draft.get("url"):
             # Link in the first reply, not the body — same reason as the episode posts.
-            reply_ids.append(await service.publish_reply(f"▶ {draft['url']}", reply_to_id=media_id))
+            from src.services.threads_publisher import social_link
+            reply_ids.append(await service.publish_reply(f"▶ {social_link(draft['url'], fmt.id)}", reply_to_id=media_id))
     except ThreadsError as e:
         social_ledger.release(PLATFORM, draft["key"])
         return {**base, "posted": False, "reason": f"publish_failed: {e}"}
