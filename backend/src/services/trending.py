@@ -16,10 +16,14 @@ from src.schemas.search import SearchResultItem
 from src.database.models import StockTranslation
 from src.database.postgres import get_session
 from src.tag_registry import canonical_label, canonical_tag_slugs, hidden_tag_slugs, normalize_tag_slug
+from src.utils.market import infer_market
 
 
 def _infer_market(ticker: str) -> str:
-    return "TW" if ticker.split(".")[0].isdigit() else "US"
+    # Not infer_market() verbatim: its 6-digit KR rule would relabel TW's 6-digit ETFs
+    # (006208). Everything else — the trailing class letter of 00981A / 00632R — comes
+    # from the shared heuristic instead of another isdigit() copy.
+    return "US" if infer_market(ticker) == "US" else "TW"
 
 
 def _has_cjk(text: Optional[str]) -> bool:
@@ -101,7 +105,7 @@ class TrendingService:
                 for ticker in tickers:
                     # Determine market based on ticker format
                     clean_ticker = ticker.split('.')[0]
-                    market = "TW" if clean_ticker.isdigit() else "US"
+                    market = _infer_market(clean_ticker)
                     result = db.query(StockTranslation).filter(
                         StockTranslation.ticker == clean_ticker.upper(),
                         StockTranslation.market == market

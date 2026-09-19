@@ -16,6 +16,7 @@ import requests
 import pandas as pd
 from src.config import settings
 from src.services import finmind_budget
+from src.utils.market import infer_market
 
 logger = logging.getLogger(__name__)
 
@@ -27,15 +28,17 @@ _FINMIND_BUDGET = "finmind"
 def is_tw_ticker(ticker: str) -> bool:
     """True for a Taiwan (TWSE/TPEx) ticker — the only market FinMind serves.
 
-    TW codes are bare numeric strings of 4-5 digits ("2330", "1101"). A 6-digit numeric
-    code is Korean (KRX: "005930"); HK ("0700") / US ("AAPL") route to other providers.
-    FinMind only serves TW, so every FinMind call must be gated on this — a non-TW ticker
-    burns budget on a request that always 404s (see finmind_budget). The 6-digit rule is
-    the cheap discriminator the launch budget incidents called for; 4-digit HK codes that
-    collide with TW are rare and cost at most one not-found lookup, not a storm.
+    Delegates to :func:`src.utils.market.infer_market`, the one ticker-shape heuristic
+    (4-5 digits with an optional trailing class letter = TW; 6 bare digits = KR; the
+    rest = US). It used to carry its own ``code.isdigit()`` copy, which rejected every
+    letter-suffixed TW code — the 主動式 ETFs (00981A 主動統一台股增長), the R/B/K
+    share classes (00632R, 00878B) and the preferred shares (2881A). That dropped them
+    from the TWSE/TPEx bulk OHLC refresh, so their pages had no chart at all.
+
+    FinMind only serves TW, so every FinMind call must be gated on this — a non-TW
+    ticker burns budget on a request that always 404s (see finmind_budget).
     """
-    code = (ticker or "").split(".")[0]
-    return code.isdigit() and len(code) != 6
+    return infer_market(ticker) == "TW"
 
 # The TaiwanStockInfo table (the full stock-id ↔ name/industry registry) is near-static
 # — it changes at most weekly — but get_ticker_details/list_tickers re-downloaded it on

@@ -13,6 +13,7 @@ from src.models.stock import CompanyDetail, ChartDataPoint
 from src.schemas.search import SearchResultItem
 from src.cache.redis_client import cache_get, cache_set, cache_delete, cache_delete_pattern
 from src.cache.cache_config import CACHE_TTL
+from src.utils.market import infer_market
 
 logger = logging.getLogger(__name__)
 
@@ -578,7 +579,7 @@ class StockService:
             name = stock.get("name", "")
             if query_lower not in ticker.lower() and query_lower not in name.lower():
                 continue
-            market = "TW" if ticker.split(".")[0].isdigit() else "US"
+            market = "US" if infer_market(ticker) == "US" else "TW"
             results.append(SearchResultItem(
                 id=f"stock-{ticker}",
                 type="stock",
