@@ -10,6 +10,7 @@ import json
 import os
 import re
 import subprocess
+import time
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -18,6 +19,118 @@ from src.secrets_bootstrap import bootstrap
 
 # Load secrets from GSM (idempotent — safe if already bootstrapped at entry point).
 bootstrap()
+
+
+class TranscriptTooShortError(Exception):
+    """A transcript that does not account for the audio it was made from."""
+
+
+class ChunkTranscriptionError(Exception):
+    """A chunk of a large file could not be transcribed, and retrying did not help.
+
+    The chunked path used to log the error, drop the chunk, and combine whatever else
+    came back — which is how a rate-limited bulk run stored a fifth of an episode and
+    reported success. A missing chunk is a missing part of the episode: stop, so the
+    episode can be re-run when the provider is willing.
+    """
+
+
+# What took the chunks out was a bulk run hitting the provider's rate limit, which is
+# exactly the failure that clears if you wait. Back off 5s, then 10s, then give up: long
+# enough to ride out a burst limit, short enough that an episode against a genuinely dead
+# provider fails in under a minute instead of grinding through every chunk.
+_CHUNK_ATTEMPTS = 3
+_CHUNK_RETRY_BACKOFF_SECONDS = 5.0
+
+
+def transcribe_chunk_with_retry(call, label: str):
+    """Run ``call`` until it returns, raising ChunkTranscriptionError once out of tries."""
+    for attempt in range(1, _CHUNK_ATTEMPTS + 1):
+        try:
+            return call()
+        except Exception as e:
+            if attempt == _CHUNK_ATTEMPTS:
+                raise ChunkTranscriptionError(
+                    f"{label} failed after {_CHUNK_ATTEMPTS} attempts: {e}"
+                ) from e
+            delay = _CHUNK_RETRY_BACKOFF_SECONDS * 2 ** (attempt - 1)
+            print(f"  ⚠ {label} failed ({e}); retrying in {delay:.0f}s")
+            time.sleep(delay)
+
+
+def probe_audio_seconds(file_path: Path) -> Optional[float]:
+    """Audio duration in seconds via ffprobe, or None if ffprobe cannot tell us."""
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v", "error",
+                "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                str(file_path),
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            # ffmpeg/ffprobe echo the file's ID3 metadata to stderr, and podcast
+            # MP3s carry non-UTF-8 (e.g. Big5) tag bytes — strict decoding turns a
+            # cosmetic log line into a UnicodeDecodeError that kills the episode.
+            errors="replace",
+        )
+        if result.returncode != 0:
+            return None
+        return float(result.stdout.strip())
+    except Exception:
+        return None
+
+
+# A transcript comes out short two ways, and until now both were stored silently.
+# Chunks that fail transcription are skipped and whatever succeeded is combined anyway,
+# so a 52-minute episode ships with 4 minutes of text; and the model can collapse on a
+# whole file, returning a handful of characters whose timestamps still span the full
+# duration. Coverage catches the first, density the second.
+#
+# Measured over the 3,760 production episodes that carry a known audio length: healthy
+# transcripts span >0.95 of the audio (only 11 fall below 0.9, and those are themselves
+# truncated), and the sparsest legitimate one ran 224 characters per minute — Mandarin
+# shows sit at 305-416, English ones near 1,000. Both floors clear that by a wide margin,
+# because a false alarm costs a re-run and a miss ships a broken episode.
+_MIN_AUDIO_COVERAGE = 0.9
+_MIN_CHARS_PER_MINUTE = 150
+
+
+def check_transcript_covers_audio(
+    transcript: Dict[str, Any],
+    audio_seconds: Optional[float],
+    label: str = "",
+) -> None:
+    """Raise TranscriptTooShortError if the transcript is too short for its audio.
+
+    A no-op when the audio duration is unknown: the size-based duration estimate is off
+    by a factor of two on low-bitrate podcasts, and failing good episodes on a guessed
+    denominator would be worse than not checking at all.
+    """
+    if not audio_seconds or audio_seconds <= 0:
+        return
+
+    minutes = audio_seconds / 60.0
+    text = (transcript.get("text") or "").strip()
+    sentences = transcript.get("sentences") or []
+    spanned = max((s.get("end") or 0) for s in sentences) / 1000.0 if sentences else 0.0
+
+    coverage = spanned / audio_seconds
+    if coverage < _MIN_AUDIO_COVERAGE:
+        raise TranscriptTooShortError(
+            f"Transcript{label} covers only {coverage:.0%} of {minutes:.1f} min of audio "
+            f"(floor {_MIN_AUDIO_COVERAGE:.0%}) — part of the episode is missing."
+        )
+
+    density = len(text) / minutes
+    if density < _MIN_CHARS_PER_MINUTE:
+        raise TranscriptTooShortError(
+            f"Transcript{label} has {len(text):,} characters for {minutes:.1f} min of audio "
+            f"({density:.0f} chars/min, floor {_MIN_CHARS_PER_MINUTE}) — transcription collapsed."
+        )
 
 
 class SpeechToTextService(ABC):
@@ -252,41 +365,9 @@ class WhisperService(SpeechToTextService):
         return file_size_bytes > max_size_bytes
     
     def _get_audio_duration(self, file_path: Path) -> float:
-        """
-        Get actual audio duration using ffprobe.
-        
-        Returns duration in seconds.
-        """
-        try:
-            # Use ffprobe to get duration
-            cmd = [
-                "ffprobe",
-                "-v", "error",
-                "-show_entries", "format=duration",
-                "-of", "default=noprint_wrappers=1:nokey=1",
-                str(file_path)
-            ]
-            
-            result = subprocess.run(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                # ffmpeg/ffprobe echo the file's ID3 metadata to stderr, and podcast
-                # MP3s carry non-UTF-8 (e.g. Big5) tag bytes — strict decoding turns a
-                # cosmetic log line into a UnicodeDecodeError that kills the episode.
-                errors="replace",
-            )
-            
-            if result.returncode == 0:
-                duration = float(result.stdout.strip())
-                return duration
-            else:
-                # Fallback to estimation
-                return self._estimate_audio_duration(file_path)
-        except Exception:
-            # Fallback to estimation
-            return self._estimate_audio_duration(file_path)
+        """Actual audio duration in seconds, falling back to a size-based estimate."""
+        probed = probe_audio_seconds(file_path)
+        return probed if probed is not None else self._estimate_audio_duration(file_path)
     
     def _estimate_audio_duration(self, file_path: Path) -> float:
         """
@@ -510,11 +591,9 @@ class WhisperService(SpeechToTextService):
             
             # Transcribe each chunk
             chunk_srt_list = []
-            failed_chunks = []
             for i, (chunk_path, chunk_start) in enumerate(chunks):
                 print(f"  🎤 Transcribing chunk {i+1}/{len(chunks)}...")
-                try:
-                    # Transcribe chunk
+                def transcribe_chunk(chunk_path=chunk_path):
                     with open(chunk_path, "rb") as chunk_file:
                         transcription_params = {
                             "model": "whisper-1",
@@ -526,23 +605,14 @@ class WhisperService(SpeechToTextService):
                             transcription_params["language"] = language
                         
                         transcription = self.client.audio.transcriptions.create(**transcription_params)
-                    
-                    srt_content = str(transcription)
-                    chunk_srt_list.append((srt_content, chunk_start))
-                    print(f"  ✓ Chunk {i+1} transcribed")
-                    
-                except Exception as e:
-                    print(f"  ✗ Error transcribing chunk {i+1}: {e}")
-                    failed_chunks.append(i+1)
-                    # Continue with remaining chunks instead of raising
-            
-            # Check if we have any successful chunks
-            if not chunk_srt_list:
-                raise Exception(f"All {len(chunks)} chunks failed to transcribe. Cannot proceed.")
-            
-            # Warn if some chunks failed
-            if failed_chunks:
-                print(f"  ⚠ Warning: {len(failed_chunks)} chunk(s) failed ({', '.join(map(str, failed_chunks))}), but continuing with {len(chunk_srt_list)} successful chunk(s)")
+                    return str(transcription)
+                
+                srt_content = transcribe_chunk_with_retry(
+                    transcribe_chunk,
+                    f"Chunk {i+1}/{len(chunks)} (from {chunk_start / 60:.1f} min)",
+                )
+                chunk_srt_list.append((srt_content, chunk_start))
+                print(f"  ✓ Chunk {i+1} transcribed")
             
             # Combine SRT chunks
             print(f"  🔗 Combining {len(chunk_srt_list)} chunks...")
@@ -854,41 +924,9 @@ class GroqService(SpeechToTextService):
         return file_size_bytes > max_size_bytes
     
     def _get_audio_duration(self, file_path: Path) -> float:
-        """
-        Get actual audio duration using ffprobe.
-        
-        Returns duration in seconds.
-        """
-        try:
-            # Use ffprobe to get duration
-            cmd = [
-                "ffprobe",
-                "-v", "error",
-                "-show_entries", "format=duration",
-                "-of", "default=noprint_wrappers=1:nokey=1",
-                str(file_path)
-            ]
-            
-            result = subprocess.run(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                # ffmpeg/ffprobe echo the file's ID3 metadata to stderr, and podcast
-                # MP3s carry non-UTF-8 (e.g. Big5) tag bytes — strict decoding turns a
-                # cosmetic log line into a UnicodeDecodeError that kills the episode.
-                errors="replace",
-            )
-            
-            if result.returncode == 0:
-                duration = float(result.stdout.strip())
-                return duration
-            else:
-                # Fallback to estimation
-                return self._estimate_audio_duration(file_path)
-        except Exception:
-            # Fallback to estimation
-            return self._estimate_audio_duration(file_path)
+        """Actual audio duration in seconds, falling back to a size-based estimate."""
+        probed = probe_audio_seconds(file_path)
+        return probed if probed is not None else self._estimate_audio_duration(file_path)
     
     def _estimate_audio_duration(self, file_path: Path) -> float:
         """
@@ -1163,11 +1201,10 @@ class GroqService(SpeechToTextService):
             
             # Transcribe each chunk
             chunk_srt_list = []
-            failed_chunks = []
             for i, (chunk_path, chunk_start) in enumerate(chunks):
                 print(f"  🎤 Transcribing chunk {i+1}/{len(chunks)}...")
-                try:
-                    # Transcribe chunk (collapse-guarded, same as the direct path)
+                def transcribe_chunk(chunk_path=chunk_path, i=i):
+                    # Collapse-guarded, same as the direct path
                     transcription_dict = self._transcribe_call(
                         chunk_path, label=f" on chunk {i+1}"
                     )
@@ -1177,23 +1214,14 @@ class GroqService(SpeechToTextService):
                     
                     # Convert to SRT
                     srt_content = convert_verbose_json_to_srt(transcription_dict)
-                    srt_content = convert_srt_to_traditional_chinese(srt_content)
-                    
-                    chunk_srt_list.append((srt_content, chunk_start))
-                    print(f"  ✓ Chunk {i+1} transcribed")
-                    
-                except Exception as e:
-                    print(f"  ✗ Error transcribing chunk {i+1}: {e}")
-                    failed_chunks.append(i+1)
-                    # Continue with remaining chunks instead of raising
-            
-            # Check if we have any successful chunks
-            if not chunk_srt_list:
-                raise Exception(f"All {len(chunks)} chunks failed to transcribe. Cannot proceed.")
-            
-            # Warn if some chunks failed
-            if failed_chunks:
-                print(f"  ⚠ Warning: {len(failed_chunks)} chunk(s) failed ({', '.join(map(str, failed_chunks))}), but continuing with {len(chunk_srt_list)} successful chunk(s)")
+                    return convert_srt_to_traditional_chinese(srt_content)
+                
+                srt_content = transcribe_chunk_with_retry(
+                    transcribe_chunk,
+                    f"Chunk {i+1}/{len(chunks)} (from {chunk_start / 60:.1f} min)",
+                )
+                chunk_srt_list.append((srt_content, chunk_start))
+                print(f"  ✓ Chunk {i+1} transcribed")
             
             # Combine SRT chunks
             print(f"  🔗 Combining {len(chunk_srt_list)} chunks...")
@@ -1275,6 +1303,10 @@ def transcribe_audio_file(
         if not audio_path_obj.exists():
             raise FileNotFoundError(f"Audio file not found: {audio_path_obj}")
         audio_input = audio_path_obj
+
+    # Both modes below check the finished transcript against this; None (bytes input, or
+    # ffprobe unavailable) turns the check off rather than guessing a denominator.
+    audio_seconds = probe_audio_seconds(audio_path_obj) if audio_path_obj else None
     
     # If return_text_only, skip file path generation and saving
     if return_text_only:
@@ -1284,6 +1316,7 @@ def transcribe_audio_file(
         
         # Transcribe directly - returns dict with "text", "sentences", and "words"
         transcript_result = service.transcribe(audio_input, language=language)
+        check_transcript_covers_audio(transcript_result, audio_seconds)
         return transcript_result
     
     # Generate output path if not provided (only for file-based mode)
@@ -1372,6 +1405,8 @@ def transcribe_audio_file(
             "words": None
         }
     
+    check_transcript_covers_audio(transcript_data, audio_seconds)
+
     # Save transcript as JSON with text, sentences, and words
     output_path.write_text(
         json.dumps(transcript_data, ensure_ascii=False, indent=2),
