@@ -221,3 +221,36 @@ def test_suggest_finds_a_padded_tw_code_typed_bare():
     bare, padded = asyncio.run(run())
     assert bare == ["00981A"]
     assert padded == ["00981A"]
+
+
+# ── 981A is 00981A: the bare code resolves to the listing that exists ─────────
+
+def test_canonical_tw_ticker_resolves_the_bare_code(tmp_path, monkeypatch):
+    import src.database.postgres as pg
+    from src.config import settings
+
+    prev = (pg.engine, pg.SessionLocal, settings.use_postgres, settings.database_path)
+    settings.use_postgres = False
+    settings.database_path = str(tmp_path / "canon.db")
+    pg.engine = None
+    pg.SessionLocal = None
+    pg.init_engine()
+    from src.database import models  # noqa: F401
+    from src.database.models import StockTranslation
+    pg.create_all_tables()
+    try:
+        for session in pg.get_session():
+            session.add(StockTranslation(ticker="00981A", market="TW",
+                                         name_zh_tw="主動統一台股增長", translation_status="auto"))
+            session.add(StockTranslation(ticker="2330", market="TW", name_zh_tw="台積電",
+                                         translation_status="approved"))
+            session.commit()
+            break
+
+        from src.routers.stock import _canonical_tw_ticker
+        assert _canonical_tw_ticker("981A") == "00981A"   # the spoken form
+        assert _canonical_tw_ticker("2330") == "2330"     # already a listing
+        assert _canonical_tw_ticker("9999") == "9999"     # nothing to resolve to
+        assert _canonical_tw_ticker("AAPL") == "AAPL"     # not TW
+    finally:
+        pg.engine, pg.SessionLocal, settings.use_postgres, settings.database_path = prev
