@@ -385,3 +385,32 @@ def test_latin_matching_is_unchanged():
         assert index.suggest("xyz") == []
     finally:
         import asyncio; asyncio.run(index.clear())
+
+
+def test_podcast_host_alias_finds_the_show():
+    """A reader who remembers the host, not the show: 李兆華 → 兆華與股惑仔."""
+    import asyncio
+    from src.routers.search import PODCAST_ALIASES
+    from src.schemas.search import SearchResultItem
+    from src.services.suggestion_index import SuggestionIndex
+
+    index = SuggestionIndex()
+
+    async def build():
+        await index.clear()
+        for name in ("兆華與股惑仔", "Gooaye 股癌"):
+            await index.add_item(
+                SearchResultItem(id=f"podcast-{name}", type="podcast", title=name,
+                                 subtitle="episodes", link=f"/podcaster/{name}"),
+                keywords=[name, *PODCAST_ALIASES.get(name, [])],
+            )
+        index.mark_initialized()
+
+    asyncio.run(build())
+    try:
+        assert [i.title for i in index.suggest("李兆華")] == ["兆華與股惑仔"]
+        assert [i.title for i in index.suggest("陳威良")] == ["兆華與股惑仔"]
+        assert [i.title for i in index.suggest("謝孟恭")] == ["Gooaye 股癌"]
+        assert [i.title for i in index.suggest("兆華")] == ["兆華與股惑仔"]  # name still wins
+    finally:
+        asyncio.run(index.clear())
