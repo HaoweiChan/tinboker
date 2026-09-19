@@ -166,6 +166,11 @@ class SuggestionIndex:
         return [r[1] for r in results[:limit]]
 
     @property
+    def size(self) -> int:
+        """Indexed items — what a rebuild reports, so a caller can see it did something."""
+        return len(self._items)
+
+    @property
     def is_initialized(self) -> bool:
         return self._is_initialized
 
