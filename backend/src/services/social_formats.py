@@ -228,6 +228,7 @@ def _post_hoc_candidates(allowed: Optional[frozenset], since: datetime) -> list[
                 "episode_id": m.episode_id, "podcaster": m.podcaster or "",
                 "sentiment_label": m.sentiment_label, "thesis": m.thesis,
                 "mention_date": snap.mention_date, "baseline_close": snap.baseline_close,
+                "mention_start_s": m.mention_start_s,
                 "last_date": last_date, "last_close": last_close, "pct": pct,
                 "others": len(shows_by_ticker.get(m.ticker, set()) - {m.podcaster}),
             })
@@ -259,6 +260,9 @@ async def _select_post_hoc(direction: int) -> Optional[dict]:
         "image_url": f'{api}/api/og/stock/{c["ticker"]}.png?days=60&event={c["mention_date"]}'
                      f'&label={urllib.parse.quote(label)}',
         "url": episode_url(c["episode_id"]),
+        # Land on the part of the episode where the stock came up, and say so.
+        "focus_ms": int(c["mention_start_s"] * 1000) if c.get("mention_start_s") else None,
+        "link_hook": f'{speaker_for(c["podcaster"])} {_md(c["mention_date"])}那集講{c["name"]}的段落',
     }
 
 
@@ -339,7 +343,12 @@ async def _publish(fmt: Format, draft: dict, dry_run: bool) -> dict:
         if draft.get("url"):
             # Link in the first reply, not the body — same reason as the episode posts.
             from src.services.threads_publisher import social_link
-            reply_ids.append(await service.publish_reply(f"▶ {social_link(draft['url'], fmt.id)}", reply_to_id=media_id))
+            url = draft["url"]
+            if isinstance(draft.get("focus_ms"), int) and draft["focus_ms"] >= 1000:
+                url = f'{url}?t={draft["focus_ms"]}'
+            hook = (draft.get("link_hook") or "").strip()
+            text = f"▶ {hook}\n{social_link(url, fmt.id)}" if hook else f"▶ {social_link(url, fmt.id)}"
+            reply_ids.append(await service.publish_reply(text, reply_to_id=media_id))
     except ThreadsError as e:
         social_ledger.release(PLATFORM, draft["key"])
         return {**base, "posted": False, "reason": f"publish_failed: {e}"}

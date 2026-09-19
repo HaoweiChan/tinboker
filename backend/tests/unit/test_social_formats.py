@@ -172,6 +172,7 @@ async def test_post_hoc_up_tells_the_story_and_builds_the_marked_card_url(temp_d
     assert draft["image_url"].endswith("/api/og/stock/3324.png?days=60&event=2026-09-07"
                                        "&label=%E5%85%86%E8%8F%AF%E8%88%87%E8%82%A1%E6%83%91%E4%BB%94%209/7")
     assert draft["url"].endswith("/episode/ep0")
+    assert draft["link_hook"] == "兆華 9/7那集講雙鴻的段落" and draft["focus_ms"] is None   # seeded mention has no offset
 
 
 @pytest.mark.asyncio

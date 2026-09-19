@@ -456,6 +456,10 @@ async def generate_social_episode(
             for c in (data.get("comments") or [])
         ],
     }
+    if (data.get("link_hook") or "").strip():
+        thread["link_hook"] = data["link_hook"].strip()
+    if isinstance(data.get("focus_ms"), int):
+        thread["focus_ms"] = data["focus_ms"]
     episode = await podcast_service.set_social_thread(episode_id, thread)
     return {
         "episode_id": episode.id,
