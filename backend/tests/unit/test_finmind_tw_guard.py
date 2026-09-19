@@ -15,6 +15,9 @@ CASES = [
     ("2330", True), ("1101", True), ("2330.TW", True), ("00878", True),  # TW
     ("005930", False), ("035420", False), ("000660", False), ("000150", False),  # KR (6-digit)
     ("000000", False), ("AAPL", False), ("0700", True), ("", False),  # US / junk / 4-digit HK collision
+    # Letter-suffixed TW codes: 主動式 ETF, R/B/K share classes, preferred shares. The old
+    # isdigit() guard dropped these, so they never reached the TWSE/TPEx OHLC refresh.
+    ("00981A", True), ("00632R", True), ("00878B", True), ("00625K", True), ("2881A", True),
 ]
 
 
