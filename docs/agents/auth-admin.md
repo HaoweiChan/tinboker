@@ -57,7 +57,8 @@ Two distinct auth surfaces plus a shared "logged-in user" experience:
 
 - **Endpoint:** `POST /api/auth/dev-token` with `{token}` returns the same shape as Google OAuth (JWT + user object).
 - **Activation conditions:** `ENVIRONMENT != production` AND `DEV_BYPASS_TOKEN` env var is set.
-- **Frontend entry:** `/auth/dev-bypass?token=SECRET` ([`DevBypass.tsx`](../../frontend/src/pages/DevBypass.tsx)) calls the backend and stores the JWT.
+- **Frontend entry:** `/auth/dev-bypass` ([`DevBypass.tsx`](../../frontend/src/pages/DevBypass.tsx)) — a form (secret in the POST body), or `?token=SECRET[&role=viewer|admin]` for scripted runners; calls the backend and stores the JWT.
+- **Roles:** `admin` (default, first `ADMIN_EMAILS` entry) or `viewer` (`qa-viewer@tinboker.com`: passes the env gate via `is-admin`'s `env_access`, is not an admin). Tokens carry `dev_bypass` + `role`, survive `/refresh`, and are rejected by `verify_jwt_token` when `ENVIRONMENT=production` (all envs share one JWT secret). Procedure: [`../workflows/qa-flow.md`](../workflows/qa-flow.md).
 - **Browser MCP / Playwright flow:** navigate to the URL above, wait for redirect to `/`, then drive the app as an authenticated session.
 - **Token (Dev env):** the `DEV_BYPASS_TOKEN` is a rotating secret, never stored in the repo. Fetch it with:
   ```bash
