@@ -471,7 +471,11 @@ export const EpisodeDetail: React.FC = () => {
             {(episode.modified_summary_content || episode.summary_content) && (
               <section className="mb-3.5 sm:bg-card sm:border sm:border-border sm:rounded-md sm:p-6">
                 <h3 className="text-base font-semibold text-muted-foreground mb-3.5">摘要</h3>
-                <SummaryMarkdown content={episode.modified_summary_content || episode.summary_content || ''} onSeek={spotifyUri ? playFrom : undefined} />
+                <SummaryMarkdown
+                  content={episode.modified_summary_content || episode.summary_content || ''}
+                  onSeek={spotifyUri ? playFrom : undefined}
+                  focusMs={searchParams.get('t') && /^\d+$/.test(searchParams.get('t') as string) ? Number(searchParams.get('t')) : null}
+                />
               </section>
             )}
 
