@@ -130,7 +130,6 @@ export const EpisodeDetail: React.FC = () => {
   // stock page keeps its 播客提及後續表現 section.
 
   useEffect(() => {
-    window.scrollTo(0, 0);
     if (!id) return;
     let alive = true;
     setLoading(true);
