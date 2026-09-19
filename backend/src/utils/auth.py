@@ -152,7 +152,16 @@ def verify_google_access_token(access_token: str) -> Dict[str, Any]:
         raise ValueError(f"Google Access Token verification failed: {str(e)}")
 
 
-def create_jwt_token(user_id: str, email: str) -> str:
+# Claims a caller may add to a token (the dev bypass marks its tokens with these).
+# Anything else in ``extra`` is ignored, so a caller can never override sub/exp/type.
+_EXTRA_CLAIMS = ("dev_bypass", "role")
+
+
+def _extra_claims(extra: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    return {k: extra[k] for k in _EXTRA_CLAIMS if extra and k in extra}
+
+
+def create_jwt_token(user_id: str, email: str, extra: Optional[Dict[str, Any]] = None) -> str:
     """
     Create a JWT session token for the user
     
@@ -174,6 +183,7 @@ def create_jwt_token(user_id: str, email: str) -> str:
         'exp': expiration,
         'iat': datetime.now(timezone.utc),
         'type': 'access',
+        **_extra_claims(extra),
     }
 
     token = jwt.encode(
@@ -185,7 +195,7 @@ def create_jwt_token(user_id: str, email: str) -> str:
     return token
 
 
-def create_refresh_token(user_id: str, email: str) -> str:
+def create_refresh_token(user_id: str, email: str, extra: Optional[Dict[str, Any]] = None) -> str:
     """
     Create a long-lived JWT refresh token for the user.
 
@@ -211,6 +221,7 @@ def create_refresh_token(user_id: str, email: str) -> str:
         'exp': expiration,
         'iat': datetime.now(timezone.utc),
         'type': 'refresh',
+        **_extra_claims(extra),
     }
 
     return jwt.encode(
@@ -250,6 +261,12 @@ def verify_jwt_token(token: str, expected_type: Optional[str] = None) -> Optiona
         token_type = payload.get('type', 'access')
         if token_type != expected_type:
             return None
+
+    # dev, staging and production verify with the SAME secret, so without this a token
+    # from the dev bypass — which signs in as the first admin — was a valid production
+    # admin session. Bypass tokens carry ``dev_bypass`` and production refuses them.
+    if payload.get('dev_bypass') and settings.environment == 'production':
+        return None
 
     return payload
 

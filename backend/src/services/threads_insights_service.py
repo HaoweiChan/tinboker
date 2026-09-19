@@ -70,8 +70,29 @@ def group_by_format(posts: list[dict]) -> list[dict]:
                 "views_median": int(median(views)) if views else 0, "views_total": sum(views)}
         for k in POST_METRICS[1:]:
             line[k] = sum(m.get(k, 0) for m in measured)
+        # Clicks on the link each post carried, and what share of the format's views
+        # they are. The link sits in reply 0, so this is small by construction (0.1% in
+        # Sep 2026) — it is here to compare formats against each other, not to look good.
+        line["link_clicks"] = sum(int(r.get("link_clicks") or 0) for r in rows)
+        line["link_ctr_pct"] = round(line["link_clicks"] / line["views_total"] * 100, 3) if line["views_total"] else 0.0
         out.append(line)
     return sorted(out, key=lambda x: -x["posts"])
+
+
+def base_url(url: Optional[str]) -> str:
+    """A link without its query or trailing slash — the ledger stores the bare URL, the
+    posted link carries UTM tags, and Threads reports whichever was posted."""
+    return (url or "").split("?", 1)[0].split("#", 1)[0].rstrip("/")
+
+
+def parse_link_clicks(payload: dict) -> dict[str, int]:
+    """``{bare url: clicks}`` from an account ``clicks`` insight (``link_total_values``)."""
+    out: dict[str, int] = defaultdict(int)
+    for item in payload.get("data") or []:
+        for link in item.get("link_total_values") or []:
+            if link.get("link_url"):
+                out[base_url(link["link_url"])] += int(link.get("value") or 0)
+    return dict(out)
 
 
 def _parse_metrics(payload: dict) -> dict:
@@ -188,6 +209,14 @@ class ThreadsInsightsService:
 
         results: list[dict] = []
         async with httpx.AsyncClient(timeout=30.0) as client:
+            clicks: dict[str, int] = {}
+            try:
+                now = datetime.now(timezone.utc)
+                clicks = parse_link_clicks(await self._get(client, f"{self._user_id}/threads_insights", {
+                    "metric": "clicks", "until": int(now.timestamp()),
+                    "since": int((now - timedelta(days=max(1, days or 28))).timestamp())}))
+            except Exception as e:  # noqa: BLE001 — clicks are a bonus column, never a blocker
+                logger.info("Threads link clicks unavailable: %s", e)
             for row in posted:
                 media_id = row.get("media_id")
                 base = {
@@ -196,6 +225,7 @@ class ThreadsInsightsService:
                     "url": row.get("url"),
                     "format": row.get("format"),
                     "posted_at": row.get("posted_at"),
+                    "link_clicks": clicks.get(base_url(row.get("url")), 0),
                 }
                 if not media_id:
                     results.append({**base, "metrics": {}, "error": "no_media_id"})
