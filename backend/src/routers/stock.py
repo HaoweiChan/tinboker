@@ -815,6 +815,37 @@ async def get_batch_summary(
     return out
 
 
+def _canonical_tw_ticker(ticker: str) -> str:
+    """00981A for 981A — the same fund, said without its padding.
+
+    TW codes are zero-padded (00981A 主動統一台股增長), but hosts say and listeners type
+    the bare form, and the extractor stores whatever the transcript said. That produced
+    a mention, an insight and a junk translation stub filed under "981A", and a stock
+    page for a code no exchange lists. Resolve the bare form to the listing that exists
+    (translations row or a stored bar); returns the input unchanged when nothing matches.
+    """
+    code = (ticker or "").strip().upper()
+    if not code or infer_market(code) != "TW":
+        return code
+    for pad in ("0", "00", "000"):
+        candidate = pad + code
+        if len(candidate) > 6:
+            break
+        for session in get_session():
+            hit = (
+                session.query(StockTranslation.ticker)
+                .filter(StockTranslation.ticker == candidate, StockTranslation.market == "TW")
+                .first()
+                or session.query(StockDailyOHLC.ticker)
+                .filter(StockDailyOHLC.ticker == candidate)
+                .first()
+            )
+            if hit:
+                return candidate
+            break
+    return code
+
+
 @router.get("/{ticker}", response_model=CompanyDetail)
 async def get_stock_by_ticker(
     ticker: str,
@@ -857,6 +888,11 @@ async def get_stock_by_ticker(
             )
     
     stock = await stock_service.get_stock_info_async(ticker.upper(), timeframe=timeframe, before=before)
+    if not stock:
+        # Only on the miss path, so the common case costs nothing: 981A is 00981A.
+        canonical = await asyncio.to_thread(_canonical_tw_ticker, ticker)
+        if canonical != ticker.upper():
+            stock = await stock_service.get_stock_info_async(canonical, timeframe=timeframe, before=before)
     if not stock:
         raise HTTPException(status_code=404, detail=f"Stock {ticker} not found")
     return stock

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useNavigate } from 'react-router-dom';
 import { Star, Plus } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
@@ -58,6 +58,7 @@ const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[]; epi
     return () => { cancelled = true; };
   }, [symbol]);
   const { guard } = useRequireAuth();
+  const navigate = useNavigate();
   // A phone is tall and narrow; a chart that keeps its desktop height there pushes
   // everything else off the screen. The value is a number the canvas needs, so it comes
   // from matchMedia rather than a CSS class.
@@ -83,6 +84,13 @@ const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[]; epi
       // Real-or-empty: never fall back to fabricated company data (BUG-7). On
       // failure stockData is null and key stats render as '—'.
       const data = await fetchWithFallback(() => getStockByTicker(ticker.toUpperCase(), tf), null, `GET /api/stocks/${ticker.toUpperCase()}?timeframe=${tf}`);
+      // The API resolves a TW code said without its padding (981A → 00981A) to the real
+      // listing. Move the URL with it, so the page, the watchlist and any share land on
+      // the canonical code rather than the spoken one.
+      if (data?.ticker && data.ticker.toUpperCase() !== ticker.toUpperCase()) {
+        navigate(`/stock/${data.ticker.toUpperCase()}`, { replace: true });
+        return;
+      }
       // The header quote is the DAILY one. The API recomputes change/changePercent per
       // timeframe (weekly bars give "change since last week"), so switching the chart to
       // 週/月 used to flip the big number's sign and colour. Only the chart series changes
@@ -98,7 +106,7 @@ const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[]; epi
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [navigate]);
 
   useEffect(() => {
     noOlderDataRef.current = false;
