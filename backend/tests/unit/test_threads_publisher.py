@@ -145,6 +145,13 @@ async def test_publish_recent_posts_at_most_max_posts_per_call(temp_db, monkeypa
     assert len((await threads_publisher.publish_recent(limit=10, dry_run=True))["posted"]) == 3
 
 
+def test_posted_links_carry_the_format_as_a_utm_campaign_and_the_ledger_url_stays_bare():
+    assert threads_publisher.link_comment("EP1", "episode_text") == (
+        "▶ 完整重點：https://tinboker.com/episode/EP1?utm_source=threads&utm_medium=social&utm_campaign=episode_text")
+    assert threads_publisher.social_link("https://tinboker.com/x?a=1", "post_hoc_up").endswith("?a=1&utm_source=threads&utm_medium=social&utm_campaign=post_hoc_up")
+    assert "utm_" not in threads_publisher.episode_url("EP1")
+
+
 # ── zero-ticker one-liner ─────────────────────────────────────────────
 
 def test_pick_insight_prefers_a_number_then_a_screen_sized_line():
@@ -362,7 +369,7 @@ def test_compose_thread_carousel_images_and_replies():
     # Link is no longer in the post body — it's the first comment.
     assert "tinboker.com/episode/EP600" not in draft["main_text"]
     assert "#" not in draft["main_text"]
-    assert draft["replies"][0]["text"] == "▶ 完整重點：" + threads_publisher.episode_url("EP600")
+    assert draft["replies"][0]["text"] == threads_publisher.link_comment("EP600", "episode_thread")
     assert [r["text"].splitlines()[0] for r in draft["replies"][1:]] == ["【主題A】", "【主題B】"]
     assert "重點1 [01:07]" in draft["replies"][1]["text"]
     assert all(len(r["text"]) <= THREADS_MAX_CHARS for r in draft["replies"])
@@ -400,7 +407,7 @@ def test_compose_thread_prefers_human_social_thread():
     assert "tinboker.com/episode/EP610" not in draft["main_text"]
     assert "#" not in draft["main_text"]
     # First comment is the permalink; then the human comments verbatim (no scaffolding).
-    assert draft["replies"][0]["text"] == "▶ 完整重點：" + threads_publisher.episode_url("EP610")
+    assert draft["replies"][0]["text"] == threads_publisher.link_comment("EP610", "episode_thread")
     assert [r["text"] for r in draft["replies"][1:]] == [
         "題材輪動很快，籌碼要顧好。",
         "離散元件的缺口慢慢養出來。",
