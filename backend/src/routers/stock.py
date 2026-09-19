@@ -372,7 +372,8 @@ async def get_batch_prices_since(
 
     # --- Response-level Redis cache (30 min) ---
     pairs_key = ",".join(f"{t}:{earliest[t]}" for t in sorted(tickers))
-    resp_cache_key = f"batch_since:{hashlib.md5(pairs_key.encode()).hexdigest()}"
+    # v2: a pre-split-guard body (e.g. 6669's -60.3%) must not outlive the deploy.
+    resp_cache_key = f"batch_since_v2:{hashlib.md5(pairs_key.encode()).hexdigest()}"
     cached_resp = await cache_get(resp_cache_key)
     if cached_resp:
         try:
@@ -389,14 +390,19 @@ async def get_batch_prices_since(
             logger.warning("reference close failed for %s@%s", t, d, exc_info=True)
             return None
 
-    ref_closes, latest = await asyncio.gather(
+    # Split guard: one DB-only series read per ticker, from the reference close's 7-day
+    # lookback on. Closes are unadjusted, so a span that crosses a price break is null.
+    ref_closes, latest, series_list = await asyncio.gather(
         asyncio.gather(*[_ref_close_safe(t, earliest[t]) for t in tickers]),
         asyncio.to_thread(batch_read_latest_closes, tickers),
+        asyncio.gather(*[_read_series_safe(t, _days_before(earliest[t], 7)) for t in tickers]),
     )
     out: dict[str, Optional[float]] = {}
-    for ticker, ref_close in zip(tickers, ref_closes):
+    for ticker, ref_close, series in zip(tickers, ref_closes, series_list):
         current_price = latest[ticker][-1][1] if latest.get(ticker) else None
-        if ref_close and current_price and ref_close > 0:
+        if ref_close and ref_close > 0 and _crosses_price_break(series, earliest[ticker], ref_close):
+            out[ticker] = None
+        elif ref_close and current_price and ref_close > 0:
             out[ticker] = round((current_price - ref_close) / ref_close * 100, 2)
         else:
             out[ticker] = None
@@ -435,6 +441,43 @@ def _read_series_since(ticker: str, since: str) -> list:
     return []
 
 
+def _days_before(date_str: str, days: int) -> str:
+    return (datetime.strptime(date_str, "%Y-%m-%d") - timedelta(days=days)).strftime("%Y-%m-%d")
+
+
+async def _read_series_safe(ticker: str, since: str):
+    """``_read_series_since`` off the event loop; ``_SERIES_READ_FAILED`` instead of
+    raising, so each caller fails closed for that ticker only."""
+    # ponytail: one range scan per ticker (~200 on a home feed, cached 30 min) — fold
+    # into a single `ticker IN (...)` read if this shows up in cold-page latency.
+    try:
+        return await asyncio.to_thread(_read_series_since, ticker, since)
+    except Exception:
+        logger.warning("split-guard series read failed for %s@%s", ticker, since, exc_info=True)
+        return _SERIES_READ_FAILED
+
+
+def _break_dates(series: list, prev: Optional[float] = None) -> list:
+    """Dates in *series* whose close jumps outside ``PRICE_BREAK_BAND`` vs. the close
+    before it (*prev* seeds the first comparison; None skips it)."""
+    out = []
+    for date, close in series:
+        if prev is not None and _is_price_break(prev, close):
+            out.append(date)
+        prev = close
+    return out
+
+
+def _crosses_price_break(series, ref_date_str: str, ref_close: float) -> bool:
+    """True when the span (reference close → newest close) reaches a price break, or
+    when *series* could not be read (fail closed). The reference close is the newest
+    row on/before *ref_date_str*, so only rows after that date can break the span."""
+    if series is _SERIES_READ_FAILED:
+        return True
+    guard_start = max((d for d, _c in series if d <= ref_date_str), default=ref_date_str)
+    return bool(_break_dates([p for p in series if p[0] > guard_start], ref_close))
+
+
 async def _resolve_price_break_date(
     ticker: str,
     guard_start: str,
@@ -459,14 +502,8 @@ async def _resolve_price_break_date(
         raise RuntimeError(f"split-guard series unavailable for {ticker}")
     if series is None:
         series = await asyncio.to_thread(_read_series_since, ticker, guard_start)
-    prev = baseline_close
-    for date, close in series:
-        if date <= guard_start:
-            continue
-        if _is_price_break(prev, close):
-            return date
-        prev = close
-    return None
+    breaks = _break_dates([p for p in series if p[0] > guard_start], baseline_close)
+    return breaks[0] if breaks else None
 
 
 async def _window_returns(
@@ -595,12 +632,8 @@ async def get_batch_prices_windows(
             earliest_ms[t] = ms
 
     async def _series_safe(t: str):
-        start = (datetime.utcfromtimestamp(earliest_ms[t] / 1000) - timedelta(days=7)).strftime("%Y-%m-%d")
-        try:
-            return await asyncio.to_thread(_read_series_since, t, start)
-        except Exception:
-            logger.warning("split-guard series read failed for %s@%s", t, start, exc_info=True)
-            return _SERIES_READ_FAILED
+        mention = datetime.utcfromtimestamp(earliest_ms[t] / 1000).strftime("%Y-%m-%d")
+        return await _read_series_safe(t, _days_before(mention, 7))
 
     latest_list, series_list = await asyncio.gather(
         asyncio.gather(*[_latest_close_safe(t) for t in distinct_tickers]),
@@ -672,7 +705,7 @@ def _batch_read_dated_closes(tickers: List[str], limit: int = 120) -> dict:
     return {t: pairs[-limit:] for t, pairs in out.items()}
 
 
-async def _trailing_returns(ticker: str, pairs: list) -> dict:
+async def _trailing_returns(ticker: str, pairs: list, last_break: Optional[str] = None) -> dict:
     """Trailing 1/7/30/90D close-to-close % returns, anchored on the latest close.
 
     ``pairs`` is the ticker's ``[(iso_date, close)]`` list (date asc) from the DB. All
@@ -681,6 +714,9 @@ async def _trailing_returns(ticker: str, pairs: list) -> dict:
     on-or-before (latest_date − N days): taken from the series when present, otherwise
     fetched via ``_get_reference_close`` (DB → Redis → API) so deep windows fill in even
     when the local table is shallow. A window stays ``None`` when its anchor is missing.
+
+    Split guard: closes are unadjusted, so a window whose anchor predates *last_break*
+    (the newest price-break date in the ticker's series, see ``_break_dates``) is ``None``.
     """
     result: dict = {"price": None, "d1": None, "d7": None, "d30": None, "d90": None}
     if not pairs:
@@ -693,7 +729,7 @@ async def _trailing_returns(ticker: str, pairs: list) -> dict:
     result["price"] = latest
 
     # d1 — vs the previous stored trading day (gap-robust; not a fixed calendar day).
-    if len(closes) >= 2 and closes[-2] and closes[-2] > 0:
+    if len(closes) >= 2 and closes[-2] and closes[-2] > 0 and not (last_break and last_break > dates[-2]):
         result["d1"] = round((latest - closes[-2]) / closes[-2] * 100, 2)
 
     try:
@@ -706,13 +742,16 @@ async def _trailing_returns(ticker: str, pairs: list) -> dict:
         if latest_dt is not None:
             target = (latest_dt - timedelta(days=n)).strftime("%Y-%m-%d")
             # Most recent close in the series on-or-before the target date.
+            anchor_date = target  # a fetched anchor is the newest close on/before target
             for d, c in zip(reversed(dates), reversed(closes)):
                 if d <= target:
-                    anchor = c
+                    anchor, anchor_date = c, d
                     break
             # Target predates our series → fetch the anchor (DB → Redis → API).
             if anchor is None and dates and target < dates[0]:
                 anchor = await _get_reference_close(ticker, target)
+            if last_break and last_break > anchor_date:
+                continue
         if anchor and anchor > 0:
             result[f"d{n}"] = round((latest - anchor) / anchor * 100, 2)
     return result
@@ -736,7 +775,8 @@ async def get_batch_prices_trailing(
     if not tickers:
         return {}
 
-    resp_cache_key = "batch_trailing:v2:" + hashlib.md5(
+    # v3: a pre-split-guard body must not outlive the deploy.
+    resp_cache_key = "batch_trailing:v3:" + hashlib.md5(
         ",".join(sorted(tickers)).encode()
     ).hexdigest()
     cached_resp = await cache_get(resp_cache_key)
@@ -748,9 +788,26 @@ async def get_batch_prices_trailing(
 
     dated = await asyncio.to_thread(_batch_read_dated_closes, tickers, 120)
 
+    # Split guard: one DB-only series read per ticker, covering the d90 anchor's 7-day
+    # lookback. A failed read fails closed — every return for that ticker is null.
+    async def _last_break(t: str):
+        if not dated.get(t):
+            return None
+        series = await _read_series_safe(t, _days_before(dated[t][-1][0], 100))
+        if series is _SERIES_READ_FAILED:
+            return _SERIES_READ_FAILED
+        breaks = _break_dates(series)
+        return breaks[-1] if breaks else None
+
+    last_breaks = dict(zip(tickers, await asyncio.gather(*[_last_break(t) for t in tickers])))
+
     async def _safe(t: str) -> dict:
         try:
-            return await asyncio.wait_for(_trailing_returns(t, dated.get(t, [])), timeout=15)
+            if last_breaks[t] is _SERIES_READ_FAILED:
+                raise RuntimeError(f"split-guard series unavailable for {t}")
+            return await asyncio.wait_for(
+                _trailing_returns(t, dated.get(t, []), last_breaks[t]), timeout=15,
+            )
         except (asyncio.TimeoutError, Exception):
             return {"price": None, "d1": None, "d7": None, "d30": None, "d90": None}
 
@@ -758,7 +815,9 @@ async def get_batch_prices_trailing(
     out: dict = {}
     for t, r in zip(tickers, results):
         r = dict(r)
-        closes = [c for _d, c in dated.get(t, [])]
+        # The sparkline starts at the last break, so a split doesn't draw as a crash.
+        brk = last_breaks[t] if isinstance(last_breaks[t], str) else ""
+        closes = [c for d, c in dated.get(t, []) if d >= brk]
         r["series"] = closes[-30:] if len(closes) >= 2 else []
         out[t] = r
 
