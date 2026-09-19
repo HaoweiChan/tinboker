@@ -82,6 +82,8 @@ export function useAuthInit() {
                 .join('')
                 .toUpperCase()
                 .slice(0, 2),
+              member_until: user.member_until ?? null,
+              is_member: user.is_member ?? false,
             },
             currentToken,
           );

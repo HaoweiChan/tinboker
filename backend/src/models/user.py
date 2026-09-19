@@ -1,9 +1,26 @@
 """
 User models for authentication
 """
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, computed_field
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
+
+
+def is_active_member(member_until: Optional[datetime]) -> bool:
+    """A user is a member iff `member_until` is set and still in the future.
+
+    Single source of truth for the entitlement check — `require_member` and the
+    frontend both read `UserResponse.is_member` rather than re-deriving this
+    themselves (a client clock can't be trusted for a comparison like this).
+    SQLite returns naive datetimes for TIMESTAMP columns even though we always
+    write timezone-aware ones; treat a naive value as UTC instead of raising on
+    a naive/aware comparison.
+    """
+    if member_until is None:
+        return False
+    if member_until.tzinfo is None:
+        member_until = member_until.replace(tzinfo=timezone.utc)
+    return member_until > datetime.now(timezone.utc)
 
 
 class UserBase(BaseModel):
@@ -41,9 +58,16 @@ class UserResponse(UserBase):
     tag_subscriptions: List[str] = []  # Tag names
     # Notification preferences
     notification_preferences: NotificationPreferences = NotificationPreferences()
+    # Membership entitlement (PR 1 — admin-granted only, no billing yet).
+    member_until: Optional[datetime] = None
 
     class Config:
         from_attributes = True
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def is_member(self) -> bool:
+        return is_active_member(self.member_until)
 
 
 class UpdateProfileRequest(BaseModel):

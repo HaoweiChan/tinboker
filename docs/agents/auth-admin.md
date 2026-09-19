@@ -98,8 +98,16 @@ Two distinct auth surfaces plus a shared "logged-in user" experience:
 
 - **GCP Secret Manager** — all auth secrets (`JWT_SECRET_KEY`, `ADMIN_PASSWORD`, `ADMIN_JWT_SECRET`, `ADMIN_EMAILS`, `DEV_BYPASS_TOKEN`).
 - **Google OAuth** — user login; `GOOGLE_CLIENT_ID` injected into the frontend at build time.
-- **Firestore** `graphfolio-db` — `users/{user_id}` and `users/{user_id}/notifications/{notification_id}` (platform-owned writes per [`../firestore-contract.md`](../firestore-contract.md) §6).
+- **Postgres** `public.users` — one row per user, keyed by `id` (uuid4); notifications live in `user_notifications` (was Firestore `users/{user_id}` and its `notifications` subcollection until P3 of the Firestore exit, [`../firestore-contract.md`](../firestore-contract.md) §11.5).
 - **Netdata** — embedded into admin dashboard via Caddy reverse proxy.
+
+### Membership
+
+- `users.member_until` (nullable, timezone-aware) is the entitlement column; a user is a member iff it's set and in the future — `is_active_member()` / `UserResponse.is_member` in [`backend/src/models/user.py`](../../backend/src/models/user.py) is the single source of truth (naive SQLite datetimes are treated as UTC).
+- `require_member` ([`backend/src/utils/dependencies.py`](../../backend/src/utils/dependencies.py)) gates a route on it: 401 anonymous, 402 signed-in-but-not-a-member.
+- Frontend: `MemberGate` ([`frontend/src/components/auth/MemberGate.tsx`](../../frontend/src/components/auth/MemberGate.tsx)) is the content-side equivalent.
+- Manual grant (no billing yet): `PUT /api/admin/members/{email}` and `GET /api/admin/members`, in [`backend/src/routers/admin_members.py`](../../backend/src/routers/admin_members.py).
+- **Rule:** member-only data goes on separate endpoints with `CacheProfile.PRIVATE` — never add member fields to a `cdn_cached` route, because Cloudflare caches every `GET /api/*` by URL with no Vary on Authorization ([`../infra-runbook.md`](../infra-runbook.md) §1.4).
 
 ## Cross-references
 
