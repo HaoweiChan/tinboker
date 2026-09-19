@@ -254,3 +254,59 @@ def test_canonical_tw_ticker_resolves_the_bare_code(tmp_path, monkeypatch):
         assert _canonical_tw_ticker("AAPL") == "AAPL"     # not TW
     finally:
         pg.engine, pg.SessionLocal, settings.use_postgres, settings.database_path = prev
+
+
+# ── Rebuilding the index without restarting the process ──────────────────────
+
+def test_rebuild_index_drops_a_deleted_row_and_needs_the_internal_key(monkeypatch):
+    """A row deleted from the DB must be gone from typeahead after a rebuild — that is
+    the whole point: production kept suggesting the junk 981A stub after it was deleted,
+    and only a container restart cleared it."""
+    import asyncio
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from src.config import settings
+    from src.routers import search as search_router
+    from src.schemas.search import SearchResultItem
+    from src.services.suggestion_index import SuggestionIndex
+
+    index = SuggestionIndex()
+
+    async def _seed_stale():
+        await index.clear()
+        await index.add_item(
+            SearchResultItem(id="stock-981A", type="stock", title="981A",
+                             subtitle="(Probable bond ETF variant)", link="/stock/981A", market="TW"),
+            keywords=["981A"],
+        )
+    asyncio.run(_seed_stale())
+    assert [i.title for i in index.suggest("981a")] == ["981A"]
+
+    # The real build reads every source; stand in for it with the row that survived.
+    async def fake_build():
+        await index.add_item(
+            SearchResultItem(id="stock-00981A", type="stock", title="00981A",
+                             subtitle="主動統一台股增長", link="/stock/00981A", market="TW"),
+            keywords=["00981A", "981A", "主動統一台股增長"],
+        )
+        index.mark_initialized()
+    monkeypatch.setattr(search_router, "build_search_index", fake_build)
+
+    prev_key = settings.internal_api_key
+    settings.internal_api_key = "test-secret-key"
+    app = FastAPI()
+    app.include_router(search_router.router)
+    client = TestClient(app)
+    try:
+        assert client.post("/api/search/rebuild-index").status_code == 401
+        assert client.post("/api/search/rebuild-index",
+                           headers={"X-Internal-Key": "nope"}).status_code == 401
+
+        resp = client.post("/api/search/rebuild-index", headers={"X-Internal-Key": "test-secret-key"})
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["items"] == 1  # cleared first: the stale row is gone, not merged
+        assert [i.title for i in index.suggest("981a")] == ["00981A"]
+    finally:
+        settings.internal_api_key = prev_key
+        asyncio.run(index.clear())

@@ -1,12 +1,13 @@
 """
 Search API router
 """
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from src.schemas.search import SearchResponse, SearchResultItem
 from src.services.stock import StockService
 from src.services.podcast import PodcastService
 from src.cache.cdn_cache import cdn_cache_trending, cdn_cached
 from src.utils.market import infer_market
+from src.routers.screener import require_internal_key
 import asyncio
 import logging
 from typing import Optional
@@ -99,6 +100,33 @@ async def suggest(
         episodes=[s for s in suggestions if s.type == "episode"],
         tags=[s for s in suggestions if s.type == "tag"]
     )
+
+_rebuild_lock = asyncio.Lock()
+
+
+@router.post("/rebuild-index", dependencies=[Depends(require_internal_key)])
+async def rebuild_index() -> dict:
+    """Rebuild the in-memory suggestion index from the rows currently in the DB.
+
+    The index is built once at startup and never again, so a data fix is invisible to
+    typeahead until the process restarts: deleting the junk 981A stub left production
+    still suggesting "(Probable bond ETF variant)", and correcting 96 listing names left
+    the old ones in the dropdown. Restarting prod to pick up a one-row change is a blunt
+    instrument — this is the same build the startup hook runs.
+
+    Internal-key gated rather than admin: ``/api/admin/*`` is not mounted in production
+    (see main.py), and production is exactly where the index needs rebuilding. The old
+    index is cleared first, so a removed row really disappears; for the second or two
+    that takes, ``suggest`` falls back to its DB-backed search path.
+    """
+    from src.services.suggestion_index import SuggestionIndex
+
+    async with _rebuild_lock:
+        index = SuggestionIndex()
+        await index.clear()
+        await build_search_index()
+        return {"status": "ok", "items": index.size, "initialized": index.is_initialized}
+
 
 async def init_search_index():
     """Initialize search index — called from main.py startup."""
