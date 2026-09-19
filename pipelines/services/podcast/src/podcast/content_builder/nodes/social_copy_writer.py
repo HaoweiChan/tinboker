@@ -206,6 +206,42 @@ def _report_first_person(post: str, comments: list[dict[str, str]]) -> None:
         print(f"  ⚠ first person slipped into {', '.join(hits)} — the prompt forbids 我")
 
 
+_TIME_MS_RE = re.compile(r"#\s*time\s*[:：]\s*(\d+)", re.IGNORECASE)
+_MD_LINK_RE = re.compile(r"\[([^\]]+)\]\([^)]*\)")
+MAX_HOOK_CHARS = 30
+_GENERIC_HOOK = re.compile(r"完整重點|更多內容|詳細整理|點我|點這|看這|追蹤|收藏|https?://|我|你")
+
+
+def _norm_heading(text: str) -> str:
+    """A heading as the model is likely to echo it: link markup and spacing gone."""
+    return re.sub(r"\s+", "", _MD_LINK_RE.sub(r"\1", _clean_heading(text or "")))
+
+
+def section_times(summary: str) -> dict[str, int]:
+    """normalised ``##`` heading → its ``(#time:MS)`` offset, for headings that carry one."""
+    out: dict[str, int] = {}
+    for line in (summary or "").splitlines():
+        m = _SECTION_RE.match(line)
+        t = _TIME_MS_RE.search(line) if m else None
+        if m and t:
+            out.setdefault(_norm_heading(m.group(1)), int(t.group(1)))
+    return out
+
+
+def link_fields(result: dict, summary: str) -> dict[str, Any]:
+    """The link reply's hook and landing section, each kept only when usable: a hook that
+    is generic, a command, or too long is worse than none, and a heading the model
+    paraphrased points nowhere. The publisher falls back to the plain link for both."""
+    out: dict[str, Any] = {}
+    hook = " ".join(str(result.get("link_hook") or "").split())
+    if hook and len(hook) <= MAX_HOOK_CHARS and not _GENERIC_HOOK.search(hook):
+        out["link_hook"] = hook
+    ms = section_times(summary).get(_norm_heading(str(result.get("focus_heading") or "")))
+    if ms is not None and ms >= 1000:     # 1–999 were section ordinals in legacy summaries
+        out["focus_ms"] = ms
+    return out
+
+
 def postprocess(result: Any, state: PipelineState) -> dict[str, Any]:
     """Normalise the LLM/agent output into a clean ``social_thread`` dict."""
     post = ""
@@ -222,7 +258,8 @@ def postprocess(result: Any, state: PipelineState) -> dict[str, Any]:
                 comments.append({"heading": heading, "text": text})
     comments = comments[:MAX_COMMENTS]
     _report_first_person(post, comments)
-    return {"social_thread": {"post": post, "comments": comments}}
+    extra = link_fields(result, state.get("markdown_report") or "") if isinstance(result, dict) and post else {}
+    return {"social_thread": {"post": post, "comments": comments, **extra}}
 
 
 def write_social_copy(state: PipelineState) -> dict[str, Any]:
