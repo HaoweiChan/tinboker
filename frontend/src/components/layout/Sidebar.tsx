@@ -108,7 +108,9 @@ export const Sidebar: React.FC = () => {
 
   return (
     // Fixed-width rail in the grid (no layout shift); the inner panel overlays on hover.
-    <aside className="hidden lg:block sticky top-0 h-screen w-[64px] shrink-0 z-30">
+    // z-[35] beats the header's z-30 — at a tie the header comes later in the DOM and its
+    // blurred bar painted over the expanded panel's brand row. Modals stay above at z-40+.
+    <aside className="hidden lg:block sticky top-0 h-screen w-[64px] shrink-0 z-[35]">
       <div
         onMouseEnter={() => setExpanded(true)}
         onMouseLeave={() => setExpanded(false)}
