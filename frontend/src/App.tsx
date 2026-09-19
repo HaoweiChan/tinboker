@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation, useNavigationType } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import { HomeFeed } from '@/pages/HomeFeed';
 import { About } from '@/pages/About';
@@ -117,6 +117,21 @@ function GatedApp() {
   );
 }
 
+
+/** A new page starts at the top. React Router keeps the window's scroll offset across
+ * navigations, so clicking a stock from halfway down the feed used to open the stock
+ * page halfway down. Back/forward (POP) is left alone — the browser restores where the
+ * reader was — and so is an in-page #anchor. */
+function ScrollToTop() {
+  const { pathname, hash } = useLocation();
+  const navigationType = useNavigationType();
+  useEffect(() => {
+    if (navigationType === 'POP' || hash) return;
+    window.scrollTo(0, 0);
+  }, [pathname, hash, navigationType]);
+  return null;
+}
+
 function App() {
   // Validate stored auth token on app initialization
   useAuthInit();
@@ -128,6 +143,7 @@ function App() {
 
   return (
     <BrowserRouter>
+      <ScrollToTop />
       <Toaster
         position="top-center"
         theme={theme}

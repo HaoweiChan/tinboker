@@ -46,10 +46,6 @@ export const PodcasterPage: React.FC = () => {
   const isSubscribed = subscriptions.includes(name);
 
   useEffect(() => {
-    window.scrollTo(0, 0);
-  }, [name]);
-
-  useEffect(() => {
     if (!name) return;
     let alive = true;
     setLoading(true);
