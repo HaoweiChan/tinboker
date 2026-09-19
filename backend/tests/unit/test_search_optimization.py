@@ -188,3 +188,69 @@ async def test_suggest_survives_none_keywords():
     for prefix in ("00685L", "00685l", "0068", "00"):
         results = index.suggest(prefix)
         assert any(r.id == "stock-00685L" for r in results), prefix
+
+
+# ── Typing a TW code without its leading zeros (981A → 00981A) ────────────────
+
+def test_bare_tw_code_variants():
+    from src.routers.search import _bare_tw_code
+
+    assert _bare_tw_code("00981A") == "981A"   # 主動統一台股增長
+    assert _bare_tw_code("0050") == "50"
+    assert _bare_tw_code("2330") is None       # nothing to strip
+    assert _bare_tw_code("AAPL") is None       # US
+    assert _bare_tw_code("005930") is None     # KR, not ours to index as TW
+
+
+def test_suggest_finds_a_padded_tw_code_typed_bare():
+    """The real listing answers "981a"; before this the only hit was a junk stub
+    literally stored under the ticker "981A"."""
+    import asyncio
+    from src.services.suggestion_index import SuggestionIndex
+    from src.schemas.search import SearchResultItem
+    from src.routers.search import _bare_tw_code
+
+    async def run():
+        index = SuggestionIndex()
+        await index.clear()
+        item = SearchResultItem(id="stock-00981A", type="stock", title="00981A",
+                                subtitle="主動統一台股增長", link="/stock/00981A", market="TW")
+        await index.add_item(item, keywords=["00981A", "主動統一台股增長", _bare_tw_code("00981A")])
+        return [i.title for i in index.suggest("981a")], [i.title for i in index.suggest("00981a")]
+
+    bare, padded = asyncio.run(run())
+    assert bare == ["00981A"]
+    assert padded == ["00981A"]
+
+
+# ── 981A is 00981A: the bare code resolves to the listing that exists ─────────
+
+def test_canonical_tw_ticker_resolves_the_bare_code(tmp_path, monkeypatch):
+    import src.database.postgres as pg
+    from src.config import settings
+
+    prev = (pg.engine, pg.SessionLocal, settings.use_postgres, settings.database_path)
+    settings.use_postgres = False
+    settings.database_path = str(tmp_path / "canon.db")
+    pg.engine = None
+    pg.SessionLocal = None
+    pg.init_engine()
+    from src.database import models  # noqa: F401
+    from src.database.models import StockTranslation
+    pg.create_all_tables()
+    try:
+        for session in pg.get_session():
+            session.add(StockTranslation(ticker="00981A", market="TW",
+                                         name_zh_tw="主動統一台股增長", translation_status="auto"))
+            session.add(StockTranslation(ticker="2330", market="TW", name_zh_tw="台積電",
+                                         translation_status="approved"))
+            session.commit()
+            break
+
+        from src.routers.stock import _canonical_tw_ticker
+        assert _canonical_tw_ticker("981A") == "00981A"   # the spoken form
+        assert _canonical_tw_ticker("2330") == "2330"     # already a listing
+        assert _canonical_tw_ticker("9999") == "9999"     # nothing to resolve to
+        assert _canonical_tw_ticker("AAPL") == "AAPL"     # not TW
+    finally:
+        pg.engine, pg.SessionLocal, settings.use_postgres, settings.database_path = prev
