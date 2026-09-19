@@ -327,6 +327,50 @@ class Settings(BaseSettings):
     # default; LOG_LEVEL=INFO on a container turns the warmers' own reporting back on.
     log_level: str = "WARNING"
 
+    # ==================== Membership billing (NewebPay 藍新金流) ====================
+    # PR 3a — billing foundation only, no checkout endpoint exists yet (see
+    # src/routers/billing.py). Two full credential sets, both GCP Secret Manager
+    # backed (never a repo file, sandbox or not — see CLAUDE.md "Do Not"): dev/
+    # staging/prod share one Postgres but NOT one NewebPay merchant account, and GSM
+    # itself is a flat namespace with no per-env suffix, so "one field + an env
+    # label" could silently point prod at sandbox credentials (or vice versa) the
+    # moment someone forgets to set the label. Keeping both sets as separate fields
+    # and deriving which one applies from `is_production` (below) makes that
+    # particular mistake structurally impossible.
+    newebpay_merchant_id: str = ""  # GSM: NEWEBPAY_MERCHANT_ID (production)
+    newebpay_hash_key: str = ""  # GSM: NEWEBPAY_HASH_KEY (production)
+    newebpay_hash_iv: str = ""  # GSM: NEWEBPAY_HASH_IV (production)
+    newebpay_sandbox_merchant_id: str = ""  # GSM: NEWEBPAY_SANDBOX_MERCHANT_ID
+    newebpay_sandbox_hash_key: str = ""  # GSM: NEWEBPAY_SANDBOX_HASH_KEY
+    newebpay_sandbox_hash_iv: str = ""  # GSM: NEWEBPAY_SANDBOX_HASH_IV
+    # List price and the limited-run founding-member price (both NT$/month). Never
+    # hardcode these in a router or the frontend — always read from Settings/the
+    # /api/billing/plans response.
+    membership_list_price: int = 199
+    membership_founding_price: int = 99
+    membership_founding_limit: int = 100
+
+    @property
+    def newebpay_env(self) -> str:
+        """Which NewebPay merchant environment applies here — derived from
+        `is_production`, never configured separately, so it can't disagree with
+        itself (staging counts as sandbox: it has no NewebPay account of its own).
+        Every billing row records this so a sandbox mandate can never be mistaken
+        for a real one."""
+        return "production" if self.is_production else "sandbox"
+
+    @property
+    def newebpay_credentials(self) -> Tuple[str, str, str]:
+        """(merchant_id, hash_key, hash_iv) for `newebpay_env`."""
+        if self.newebpay_env == "production":
+            return (self.newebpay_merchant_id, self.newebpay_hash_key, self.newebpay_hash_iv)
+        return (self.newebpay_sandbox_merchant_id, self.newebpay_sandbox_hash_key, self.newebpay_sandbox_hash_iv)
+
+    @property
+    def newebpay_configured(self) -> bool:
+        """True once all three NewebPay credentials for THIS env are set."""
+        return all(self.newebpay_credentials)
+
     # ==================== Release scoping ====================
     # Restrict the public podcast catalog to a launch subset. Each value is a
     # content_sources.language code (e.g. "zh-TW"). Empty list = no language

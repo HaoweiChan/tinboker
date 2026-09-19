@@ -654,3 +654,16 @@ export type AttentionNarrative = Attention['narratives'][number];
 export type Weekly = z.infer<typeof WeeklySchema>;
 export type WeeklyTicker = z.infer<typeof WeeklyTickerSchema>;
 export type WeeklyList = z.infer<typeof WeeklyListSchema>;
+
+// GET /api/billing/plans — membership pricing (PR 3a billing foundation). Never
+// hardcode 199/99 anywhere that reads this; the API is the one source of truth.
+export const BillingPlansSchema = z.object({
+  list_price: z.number(),
+  founding_price: z.number(),
+  founding_limit: z.number(),
+  founding_remaining: z.number(),
+  founding_open: z.boolean(),
+  checkout_open: z.boolean(),
+});
+
+export type BillingPlans = z.infer<typeof BillingPlansSchema>;
