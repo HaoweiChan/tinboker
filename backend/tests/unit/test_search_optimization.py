@@ -310,3 +310,78 @@ def test_rebuild_index_drops_a_deleted_row_and_needs_the_internal_key(monkeypatc
     finally:
         settings.internal_api_key = prev_key
         asyncio.run(index.clear())
+
+
+# ── CJK names are findable by the part a reader remembers, not only by their first char ──
+
+def _cjk_index():
+    """A small index with the real names that exposed the bug."""
+    import asyncio
+    from src.schemas.search import SearchResultItem
+    from src.services.suggestion_index import SuggestionIndex
+
+    index = SuggestionIndex()
+
+    async def build():
+        await index.clear()
+        for iid, title, sub, kws in [
+            ("podcast-兆華與股惑仔", "兆華與股惑仔", "446 episodes", ["兆華與股惑仔"]),
+            ("podcast-財經一路發", "財經一路發", "podcast", ["財經一路發"]),
+            ("stock-2330", "2330", "台積電", ["2330", "台積電", "Taiwan Semiconductor"]),
+            ("stock-0050", "0050", "元大台灣50", ["0050", "元大台灣50"]),
+            ("stock-TSM", "TSM", "台積電 ADR", ["TSM", "Taiwan Semiconductor Manufacturing"]),
+        ]:
+            await index.add_item(
+                SearchResultItem(id=iid, type="podcast" if iid.startswith("podcast") else "stock",
+                                 title=title, subtitle=sub, link="/x"),
+                keywords=kws,
+            )
+        index.mark_initialized()
+
+    asyncio.run(build())
+    return index
+
+
+def test_cjk_substring_finds_the_name():
+    index = _cjk_index()
+    try:
+        assert [i.title for i in index.suggest("股惑仔")] == ["兆華與股惑仔"]
+        assert [i.title for i in index.suggest("惑仔")] == ["兆華與股惑仔"]
+        assert [i.title for i in index.suggest("兆華")] == ["兆華與股惑仔"]   # prefix still works
+        assert [i.title for i in index.suggest("一路發")] == ["財經一路發"]
+        assert "2330" in [i.title for i in index.suggest("積電")]
+        assert "0050" in [i.title for i in index.suggest("台灣50")]
+    finally:
+        import asyncio; asyncio.run(index.clear())
+
+
+def test_prefix_still_outranks_a_mid_name_match():
+    """台積 must not demote 台積電 below something that only contains it."""
+    import asyncio
+    from src.schemas.search import SearchResultItem
+
+    index = _cjk_index()
+    try:
+        async def add_noise():
+            await index.add_item(
+                SearchResultItem(id="stock-9999", type="stock", title="9999",
+                                 subtitle="供應台積電設備", link="/x"),
+                keywords=["9999", "供應台積電設備"],
+            )
+        asyncio.run(add_noise())
+        titles = [i.title for i in index.suggest("台積")]
+        assert titles[0] in ("2330", "TSM"), titles   # the real 台積電 rows lead
+        assert "9999" in titles                        # the mid-name match is still findable
+        assert titles.index("9999") > 0
+    finally:
+        asyncio.run(index.clear())
+
+
+def test_latin_matching_is_unchanged():
+    index = _cjk_index()
+    try:
+        assert "TSM" in [i.title for i in index.suggest("taiwan")]
+        assert [i.title for i in index.suggest("2330")] == ["2330"]
+        assert index.suggest("xyz") == []
+    finally:
+        import asyncio; asyncio.run(index.clear())

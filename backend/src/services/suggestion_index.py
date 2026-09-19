@@ -7,6 +7,18 @@ import re
 
 logger = logging.getLogger(__name__)
 
+# Han, kana, and the CJK compatibility block. A CJK name has no spaces to tokenize on, so
+# the whole thing is one token and prefix-only matching makes it findable *only* from its
+# first character: "兆華" found 兆華與股惑仔 (446 episodes) but "股惑仔" found nothing, and
+# "積電"/"台灣50"/"一路發"/"M平方" all answered empty against names that literally contain
+# them. Indexing every suffix turns the existing prefix walk into substring matching.
+_CJK_RE = re.compile(r"[\u3400-\u9fff\uf900-\ufaff\u3040-\u30ff]")
+# Beyond this a name is a sentence, not a name: n suffixes cost n(n+1)/2 index entries, so
+# the cap is what keeps a long title from dominating the index. Measured on the real corpus
+# (3,685 items / 8,056 keywords): 25.9k keys → 36.2k, 9.3 MB → 12.9 MB.
+_MAX_SUFFIX_CHARS = 20
+
+
 class SuggestionIndex:
     """
     In-memory optimized index for instant search suggestions.
@@ -41,6 +53,23 @@ class SuggestionIndex:
         tokens.discard('')
         return tokens
 
+    def _index_forms(self, keyword: str) -> Set[str]:
+        """Every string whose prefixes should point at this item.
+
+        Latin text keeps the old behaviour (its tokens plus the whole keyword); a CJK
+        token additionally contributes its suffixes, so a reader who remembers the middle
+        of a name ("股惑仔", "積電") finds it just like one who remembers the start.
+        """
+        if not keyword:
+            return set()
+        forms = {t for t in self._tokenize(keyword) if t}
+        forms.add(keyword.lower().strip())
+        for token in list(forms):
+            if _CJK_RE.search(token) and 1 < len(token) <= _MAX_SUFFIX_CHARS:
+                forms.update(token[i:] for i in range(1, len(token)))
+        forms.discard("")
+        return forms
+
     def _get_prefixes(self, text: str) -> Set[str]:
         """Generate all prefixes for a given text (min 1 char)."""
         if not text:
@@ -61,13 +90,10 @@ class SuggestionIndex:
             # add_keywords already filters; this makes add_item agree.
             self._keywords[item.id] = [kw for kw in keywords if kw]
             
-            # Tokenize all keywords and index prefixes of tokens
+            # Tokenize all keywords and index prefixes of tokens (CJK also by suffix)
             all_tokens = set()
             for kw in keywords:
-                all_tokens.update(self._tokenize(kw))
-                # Also index the full keyword (useful for "TSMC" if tokens split it weirdly? usually not needed)
-                if kw:
-                    all_tokens.add(kw.lower())
+                all_tokens.update(self._index_forms(kw))
 
             for token in all_tokens:
                 prefixes = self._get_prefixes(token)
@@ -88,9 +114,7 @@ class SuggestionIndex:
                 if not kw or kw in existing:
                     continue
                 existing.append(kw)
-                tokens = set(self._tokenize(kw))
-                tokens.add(kw.lower())
-                for token in tokens:
+                for token in self._index_forms(kw):
                     for prefix in self._get_prefixes(token):
                         self._index[prefix].add(item_id)
 
@@ -121,7 +145,9 @@ class SuggestionIndex:
             elif k.startswith(q):
                 score += 50   # Prefix match
             elif q in k:
-                score += 10   # Infix match (if we had infix indexing, but we only index prefixes of tokens)
+                score += 10   # Infix match — reachable since CJK names index by suffix too,
+                              # and deliberately worth less than a prefix hit so 台積 still
+                              # ranks 台積電 above a name that merely contains it.
         
         # Boost by type
         if item.type == 'stock':
