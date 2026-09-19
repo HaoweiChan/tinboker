@@ -15,9 +15,22 @@ id is resolved by this precedence:
   3. global env   — ``PIPELINE_LLM_MODEL`` (one switch for every role)
 
 If none is set the pipeline fails loud (``_model_name`` raises) rather than
-silently picking a model. Prefix any id with ``openrouter:`` to select it; a bare
-model name is forwarded to OpenRouter as-is. The DB overrides are read once at
-import time.
+silently picking a model. The DB overrides are read once at import time.
+
+The model id's prefix picks where the call goes:
+
+  ``openrouter:<provider>/<model>``  OpenRouter chat/completions (a bare id, with no
+                                     prefix at all, is forwarded to OpenRouter as-is)
+  ``local:<model>``                  an OpenAI-compatible server we host — ollama on the
+                                     Mac mini — at ``LOCAL_LLM_BASE_URL``
+  ``decisions:<provider>/<model>``   OpenRouter's decisions endpoint (TypeSafe Jev): a
+                                     typed choice + calibrated probability, never text.
+                                     Refused by ``get_model``; callers branch on
+                                     ``is_decisions_model()`` and use ``decide()``.
+
+``OPENROUTER_PROVIDER_ORDER`` (comma-separated, cheapest first) pins which providers may
+serve an OpenRouter call, with fallbacks left on. It is a price control, not a routing
+requirement — see ``_provider_preference``.
 """
 
 from __future__ import annotations
@@ -40,6 +53,29 @@ _log = logging.getLogger(__name__)
 _GLOBAL_MODEL_ENV = "PIPELINE_LLM_MODEL"  # one var to switch every role at once
 _OPENROUTER_PREFIX = "openrouter:"
 _OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+
+# ``local:<model>`` routes the role at an OpenAI-compatible server we host instead of
+# OpenRouter — ollama on the Mac mini (``/v1``), reached over a tunnel. The base URL is
+# env-driven for the same reason model ids are: switching hosts must not need a code edit.
+_LOCAL_PREFIX = "local:"
+_LOCAL_BASE_URL_ENV = "LOCAL_LLM_BASE_URL"
+
+# ``decisions:<model>`` routes the role at OpenRouter's decisions endpoint (TypeSafe Jev
+# and friends). These models return a typed choice + calibrated probability instead of
+# text, so they are NOT chat/completions — see ``decide()``. Measured 2026-09-19: the
+# roles whose whole answer is a verdict were ~10% of pipeline spend, and a verdict costs
+# ~97% less here ($0.042/M in, output free) than the same call on deepseek-v4-pro.
+_DECISIONS_PREFIX = "decisions:"
+_DECISIONS_URL = "https://openrouter.ai/api/alpha/decisions"
+
+# OpenRouter spreads one model across many providers and does NOT sort them by price.
+# Measured 2026-09-19 on deepseek-v4-pro: 16 providers, a 3.7x spread in posted input
+# price (StreamLake $0.513/M fp8 .. Azure $1.910/M) and 8x in what we actually paid,
+# because prompt-cache hits land per-provider and the cheap ones were also serving them.
+# The expensive tail buys nothing — AtlasCloud/BaseTen are fp4 (lower precision) at 3.3x
+# StreamLake's fp8 price, and StreamLake matched Azure on throughput. Comma-separated
+# allow-list, cheapest first; unset = OpenRouter's default routing.
+_PROVIDER_ORDER_ENV = "OPENROUTER_PROVIDER_ORDER"
 
 # role -> the per-role env var that overrides the global PIPELINE_LLM_MODEL.
 _ROLE_ENV: dict[str, str] = {
@@ -192,6 +228,34 @@ def _is_openrouter(model: str) -> bool:
     return model.startswith(_OPENROUTER_PREFIX)
 
 
+def _is_local(model: str) -> bool:
+    return model.startswith(_LOCAL_PREFIX)
+
+
+def is_decisions_model(role: str) -> bool:
+    """True when ``role`` is configured for a decisions model (``decisions:`` prefix).
+
+    Callers that have a decisions-shaped question branch on this and use ``decide()``;
+    everything else keeps the chat/completions path unchanged.
+
+    An unconfigured role answers False rather than raising: this is a routing question,
+    and the "no model configured" error belongs to whichever path actually makes the
+    call — raising here turned a missing env var into a silent verifier outage, which
+    the caller's fallback then read as "drop every ticker-derived candidate".
+    """
+    return (_resolve_model(role) or "").startswith(_DECISIONS_PREFIX)
+
+
+def _provider_preference() -> dict[str, Any] | None:
+    """OpenRouter provider allow-list from ``OPENROUTER_PROVIDER_ORDER``, or None.
+
+    ``allow_fallbacks`` stays on: pinning is a price preference, not a hard requirement,
+    and a pin that can 503 the whole ingest is a worse bug than an expensive call.
+    """
+    order = [p.strip() for p in os.getenv(_PROVIDER_ORDER_ENV, "").split(",") if p.strip()]
+    return {"order": order, "allow_fallbacks": True} if order else None
+
+
 def get_model(role: str, *, disable_reasoning: bool = True):
     """Get a configured LangChain chat model for a pipeline role.
 
@@ -206,8 +270,34 @@ def get_model(role: str, *, disable_reasoning: bool = True):
 
     model = _model_name(role)
     temperature = _TEMPERATURE_MAP.get(role, 0.2)
-    or_model = model[len(_OPENROUTER_PREFIX):] if _is_openrouter(model) else model
     max_tokens = _MAX_TOKENS_MAP.get(role, 4096)
+
+    if _is_local(model):
+        # Self-hosted OpenAI-compatible server (ollama et al.). No OpenRouter-only fields:
+        # `provider` and `reasoning` are meaningless there, and the api_key is a required
+        # placeholder the server ignores.
+        base_url = os.getenv(_LOCAL_BASE_URL_ENV)
+        if not base_url:
+            raise RuntimeError(
+                f"{role} is configured for a local model ({model}) but "
+                f"{_LOCAL_BASE_URL_ENV} is not set — e.g. {_LOCAL_BASE_URL_ENV}=http://mac-mini:11434/v1"
+            )
+        return ChatOpenAI(
+            model=model[len(_LOCAL_PREFIX):],
+            temperature=temperature,
+            max_tokens=max_tokens,
+            base_url=base_url,
+            api_key=os.getenv("LOCAL_LLM_API_KEY", "not-needed"),
+        )
+
+    if model.startswith(_DECISIONS_PREFIX):
+        raise RuntimeError(
+            f"{role} is configured for a decisions model ({model}), which cannot be used "
+            "with chat/completions — the caller must branch on is_decisions_model() and "
+            "use decide() instead."
+        )
+
+    or_model = model[len(_OPENROUTER_PREFIX):] if _is_openrouter(model) else model
 
     extra_body: dict[str, Any] = {}
     if disable_reasoning:
@@ -220,6 +310,10 @@ def get_model(role: str, *, disable_reasoning: bool = True):
         # endpoint needs headroom or the JSON truncates mid-array — the exact failure
         # disabling it was meant to prevent.
         max_tokens *= 2
+
+    provider = _provider_preference()
+    if provider:
+        extra_body["provider"] = provider
 
     return ChatOpenAI(
         model=or_model,
@@ -303,3 +397,59 @@ def invoke_json(role: str, messages: list[dict], schema: dict | None = None) -> 
                 print(f"  ⚠ JSON parse failed (attempt {attempt + 1}): {exc} — retrying in {wait}s")
                 time.sleep(wait)
     raise ValueError(f"LLM JSON output unparseable after {_MAX_RETRIES + 1} attempts: {last_err}")
+
+
+def decide(role: str, state: Any, questions: dict[str, dict[str, Any]], *, timeout: int = 60) -> dict[str, Any]:
+    """Ask the role's decisions model typed questions about ``state``.
+
+    Decisions models (``decisions:typesafe/jev-1.13``) return a typed answer plus a
+    calibrated probability rather than text, so they are refused by chat/completions and
+    go to a separate endpoint. ``state`` may be a string or any JSON-serializable object;
+    ``questions`` is the TypeSafe question map, e.g.::
+
+        {"is_relevant": {"type": "noul", "instructions": "Is the sector really discussed?"}}
+        {"segment_type": {"type": "choice", "instructions": "...", "criteria": {...}}}
+
+    Returns the ``answers`` map: ``{"is_relevant": {"type": "noul", "noul": 0.82}}`` /
+    ``{"segment_type": {"choice": "analysis", "probabilities": {...}, "confidence": 0.9}}``.
+    Raises on transport or API errors — callers that must not fail closed catch and fall
+    back to their previous path.
+    """
+    import requests
+
+    model = _model_name(role)
+    if not model.startswith(_DECISIONS_PREFIX):
+        raise ValueError(f"{role} is not configured for a decisions model (got {model!r})")
+    api_key = os.getenv("OPENROUTER_API_KEY")
+    if not api_key:
+        raise RuntimeError("OPENROUTER_API_KEY is not set — the decisions endpoint needs it")
+
+    payload = {
+        "model": model[len(_DECISIONS_PREFIX):],
+        "state": state if isinstance(state, str) else json.dumps(state, ensure_ascii=False),
+        "questions": questions,
+    }
+    last_err: Exception | None = None
+    for attempt in range(_MAX_RETRIES + 1):
+        try:
+            resp = requests.post(
+                _DECISIONS_URL,
+                json=payload,
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                timeout=timeout,
+            )
+            if resp.status_code >= 400:
+                # The body carries the real reason (bad question shape, context overflow);
+                # a bare status code has sent us chasing the wrong thing before.
+                raise RuntimeError(f"decisions endpoint {resp.status_code}: {resp.text[:300]}")
+            answers = resp.json().get("answers")
+            if not isinstance(answers, dict):
+                raise ValueError(f"decisions reply has no answers map: {resp.text[:200]}")
+            return answers
+        except Exception as exc:  # noqa: BLE001 — retry transport + transient 5xx alike
+            last_err = exc
+            if attempt < _MAX_RETRIES:
+                wait = 2 ** attempt
+                _log.warning("decide(%s) failed (attempt %d): %s — retrying in %ds", role, attempt + 1, exc, wait)
+                time.sleep(wait)
+    raise RuntimeError(f"decisions call failed after {_MAX_RETRIES + 1} attempts: {last_err}")

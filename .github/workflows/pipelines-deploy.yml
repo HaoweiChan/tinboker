@@ -152,6 +152,27 @@ jobs:
             # {events}, not the transcript — so the role burning the tokens was never the one the
             # decision was about. Those roles stay on v4-pro via PIPELINE_LLM_MODEL above.
             Environment=EXTRACTOR_MODEL=openrouter:deepseek/deepseek-v4-flash-0731
+            # Provider pin. OpenRouter serves one model from many providers and does NOT sort them
+            # by price: measured 2026-09-19 on deepseek-v4-pro, 16 providers spanning 3.7x in posted
+            # input price (StreamLake $0.513/M fp8 .. Azure/NextBit $1.910/M) and 8x in what we
+            # actually paid, because prompt-cache hits land per-provider. The expensive tail buys
+            # nothing — AtlasCloud/BaseTen serve fp4 (lower precision) at 3.3x StreamLake's fp8 rate,
+            # and StreamLake matched Azure on throughput (71-97 tok/s). Fallbacks stay enabled, so
+            # this is a price preference and an outage at the pinned providers cannot stall ingest.
+            Environment=OPENROUTER_PROVIDER_ORDER=StreamLake,Baidu
+            # sector_verifier is the shape a decisions model is built for — one yes/no per candidate,
+            # and nothing downstream reads its prose. The code path exists (SECTOR_VERIFIER_MODEL=
+            # decisions:typesafe/jev-1.13) and is ~97% cheaper, but it is deliberately NOT enabled:
+            # A/B'd 2026-09-19 against the incumbent on the real in-flight candidates of one 股癌
+            # episode, Jev agreed on only 12/17, and no cutoff fixes it (best 19/26 at p>=0.70; at
+            # p>=0.90 it keeps nothing). It rates the same sector+keyword 0.84/0.82/0.37 across three
+            # contexts, and its misses are the expensive direction — it kept 面板 where the transcript
+            # meant a faceplate, not display panels, which is exactly the homonym the verifier exists
+            # to catch. An easy hand-built set scored 6/6 and hid all of this. Re-A/B before enabling.
+            # Environment=SECTOR_VERIFIER_MODEL=decisions:typesafe/jev-1.13
+            # Local models: set LOCAL_LLM_BASE_URL (e.g. http://mac-mini:11434/v1, over a tunnel) and
+            # prefix a role's model with `local:` — e.g. EXTRACTOR_MODEL=local:qwen3:30b-a3b-instruct-2507-q4_K_M.
+            # Left unset: the pipeline runs on the VPS and the Mac mini is not reachable from it yet.
             # Use the platform source-of-truth show list (same as run_nightly.sh).
             Environment=TINBOKER_PLATFORM_API_URL=https://api.tinboker.com
             # /api/admin/* is not mounted in production by design; staging shares the DB.

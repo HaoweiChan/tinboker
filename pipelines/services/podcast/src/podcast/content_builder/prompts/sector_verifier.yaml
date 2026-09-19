@@ -36,3 +36,27 @@ system: |
 user: |
   Review these matched exposures:
   {exposures_json}
+
+# Same criteria as ``system`` above, as a single yes/no question for the decisions-model
+# path (``decisions:`` prefix on SECTOR_VERIFIER_MODEL). A decisions model returns a
+# calibrated probability and no prose, so the JSON-schema half of ``system`` is dropped
+# and only the judgement survives. Keep the two in sync — they are one rule, not two.
+noul_instructions: |
+  You are auditing one potential sector/theme exposure matched from a Taiwanese stock
+  podcast transcript. You are given the sector, the keyword or ticker that triggered the
+  match, the transcript context around it, and the sector's curated TW-listed members.
+
+  Answer YES only if the host is substantively discussing this sector's trend, investment
+  value, or business outlook.
+
+  Answer NO if:
+  - the keyword is mentioned in passing or as a metaphor (e.g. "加油"/"油價" as a general
+    expression, or 油價 purely as a macro temperature gauge rather than energy-sector投資);
+  - the keyword carries a different meaning here (e.g. "衛星" as a metaphor, or a past
+    casual trade mentioned without current substance);
+  - the context lacks substantive discussion of investing, business trends, or supply-chain
+    relevance for this sector;
+  - the context is substantively about a FOREIGN-listed company (e.g. Palantir, CrowdStrike)
+    rather than the TW-listed members in resolved_tickers or the TW supply chain around them.
+    The sector universe is Taiwan-listed only — attaching a TW ticker basket to a US-stock
+    discussion mislabels the sector even when the theme (資安/雲端) sounds related.
