@@ -166,6 +166,12 @@ export const PWAInstallBanner: React.FC = () => {
     if (dismissed) return;
     const isTouch = platform === 'ios' || platform === 'android';
     if (!isTouch) return;
+    // Same rule as the onboarding tutorial: a visit that starts on a content page — a
+    // Threads link to an episode — came for that page. Three seconds in, before they
+    // have read a paragraph, is the wrong moment to ask them to install an app (seen
+    // 2026-09-19: the banner covered the lower half of the section a social link had
+    // just landed them on). Nothing is stored, so a visit that starts at "/" still asks.
+    if (window.location.pathname !== '/') return;
     const timer = setTimeout(() => setVisible(true), 3000);
     return () => clearTimeout(timer);
   }, [platform]);
