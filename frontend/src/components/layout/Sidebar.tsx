@@ -15,6 +15,8 @@ interface NavItem {
   tab?: string;
   /** Surfaced only on dev.tinboker.com (VITE_STAGE=DEV); hidden on staging/prod. */
   devOnly?: boolean;
+  /** Surfaced only to signed-in members (always shown on dev for QA). */
+  memberOnly?: boolean;
 }
 
 // Mirrors App.tsx route gating: dev-only nav entries appear on dev.tinboker.com only.
@@ -35,7 +37,10 @@ const SECTIONS: readonly NavSection[] = [
     items: [
       { to: '/podcaster', label: '節目', icon: Mic, prefix: true },
       { to: '/stock', label: '個股', icon: LineChart, prefix: true },
-      { to: '/picks', label: '走勢', icon: TrendingUp, prefix: true, devOnly: true },
+      // Member-only: the upgrade card's CTA goes to /membership, which doesn't
+      // exist until PR 3, so non-members on staging/prod must not be led there
+      // yet (dev still shows it for QA). PR 3 opens this to everyone.
+      { to: '/picks', label: '走勢', icon: TrendingUp, prefix: true, memberOnly: true },
       { to: '/topics', label: '話題', icon: Hash, prefix: true },
       { to: '/weekly', label: '週報', icon: CalendarDays, prefix: true },
       // 文章 (articles) hidden from nav until at least one article is published —
@@ -142,7 +147,10 @@ export const Sidebar: React.FC = () => {
               <div className="mx-2.5 my-3 h-px bg-border" />
             )}
             <nav className="flex flex-col gap-1">
-              {section.items.filter((it) => IS_DEV_ENV || !it.devOnly).map(renderItem)}
+              {section.items
+                .filter((it) => IS_DEV_ENV || !it.devOnly)
+                .filter((it) => IS_DEV_ENV || !it.memberOnly || user?.is_member)
+                .map(renderItem)}
             </nav>
           </div>
         ))}
