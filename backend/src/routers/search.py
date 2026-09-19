@@ -139,6 +139,23 @@ def _has_cjk(text) -> bool:
     return any("㐀" <= ch <= "鿿" or "豈" <= ch <= "﫿" for ch in text)
 
 
+# A show is often remembered by its host, and a host's name is nowhere in our data: the
+# episode docs carry podcast_name and nothing else. Production logs show a reader typing
+# 李兆華 and getting nothing, while we publish 兆華與股惑仔 with 448 episodes.
+#
+# Curated, and only where the show's OWN episodes evidence the name (counts measured
+# 2026-09-20 over firestore_mirror.episodes): 李兆華 12 / 陳威良 29 in 兆華與股惑仔,
+# 謝孟恭 3 in Gooaye 股癌, Miula 190 in M觀點, MacroMicro 61 in 財經M平方. Hosts whose
+# name is already inside the show title (游庭皓的財經皓角, 曲博科技教室, 財女珍妮) need
+# no entry — substring matching covers them.
+PODCAST_ALIASES: dict[str, list[str]] = {
+    "兆華與股惑仔": ["李兆華", "陳威良"],
+    "Gooaye 股癌": ["謝孟恭"],
+    "M觀點": ["Miula"],
+    "財經M平方": ["MacroMicro", "MM"],
+}
+
+
 def _bare_tw_code(ticker: str) -> Optional[str]:
     """A TW code with its leading zeros dropped — "981A" for 00981A, "50" for 0050.
 
@@ -268,7 +285,7 @@ async def build_search_index():
                 link=f"/podcaster/{podcast.name}",
                 icon_url=podcast.image_url
             )
-            await index.add_item(item, keywords=[podcast.name])
+            await index.add_item(item, keywords=[podcast.name, *PODCAST_ALIASES.get(podcast.name, [])])
             
         # 3. Fetch tags
         tags = await podcast_service.get_all_tags()
