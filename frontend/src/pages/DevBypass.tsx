@@ -60,7 +60,7 @@ export const DevBypass: React.FC = () => {
           className="w-full max-w-xs space-y-3"
           onSubmit={(e) => {
             e.preventDefault();
-            if (secret) authenticate(secret, role);
+            if (secret.trim()) authenticate(secret.trim(), role);
           }}
         >
           <p className="text-sm font-semibold text-foreground">Dev bypass</p>
@@ -73,6 +73,13 @@ export const DevBypass: React.FC = () => {
             aria-label="DEV_BYPASS_TOKEN"
             className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"
           />
+          {/* What was pasted, never what it is: a wrong clipboard (a whole paragraph, a
+              stale value) is the usual failure, and the length gives it away at once. */}
+          {secret && (
+            <p className="text-xs text-muted-foreground">
+              {secret.trim().length} characters{/\s/.test(secret.trim()) ? ' — contains whitespace, probably not the token' : ''}
+            </p>
+          )}
           <select
             value={role}
             onChange={(e) => setRole(e.target.value as Role)}
@@ -84,7 +91,7 @@ export const DevBypass: React.FC = () => {
           </select>
           <button
             type="submit"
-            disabled={!secret}
+            disabled={!secret.trim()}
             className="w-full rounded-md bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50"
           >
             Sign in

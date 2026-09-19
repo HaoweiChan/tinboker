@@ -1,6 +1,8 @@
 """
 Authentication routes for Google OAuth
 """
+import hmac
+
 from fastapi import APIRouter, HTTPException, Header
 from typing import Optional
 from src.models.user import AuthResponse
@@ -183,8 +185,10 @@ async def dev_token_login(request: dict):
     if not settings.dev_bypass_token:
         raise HTTPException(status_code=403, detail="Dev bypass not configured")
 
-    token = request.get("token")
-    if not token or token != settings.dev_bypass_token:
+    # Pasted secrets arrive with stray whitespace (a terminal's trailing newline, a
+    # copied prompt); compare trimmed, and in constant time.
+    token = str(request.get("token") or "").strip()
+    if not token or not hmac.compare_digest(token.encode(), settings.dev_bypass_token.strip().encode()):
         raise HTTPException(status_code=401, detail="Invalid bypass token")
 
     role = (request.get("role") or "admin").strip().lower()
