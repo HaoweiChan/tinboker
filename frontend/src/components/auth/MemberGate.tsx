@@ -17,7 +17,9 @@ interface MemberGateProps {
  *  (reused, not duplicated); logged in but not a paying member -> an upgrade card,
  *  optionally over a blurred `preview`; member -> children.
  *
- *  No /membership page or route wiring yet — this PR only adds the gate. */
+ *  Currently unused (the /member hub route decides member-vs-plan-page itself
+ *  instead of gating a child tree) — kept for upcoming inline teasers elsewhere
+ *  on the site that gate one piece of content behind membership. */
 export const MemberGate: React.FC<MemberGateProps> = ({ children, preview }) => {
   const isAuthReady = useAppStore((s) => s.isAuthReady);
   const user = useAppStore((s) => s.user);

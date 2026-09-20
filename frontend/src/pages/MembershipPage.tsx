@@ -7,6 +7,7 @@ import { useAppStore } from '@/store/useAppStore';
 import { useRequireAuth } from '@/hooks/useRequireAuth';
 import { getPlans, startCheckout } from '@/services/api/billing';
 import type { BillingPlans } from '@/validation/schemas';
+import { formatMemberUntil } from '@/lib/date';
 
 /** /membership — PR 3a ships this in its "checkout not open yet" state: price +
  * founding-seat info come from `/api/billing/plans`, but no endpoint here talks to
@@ -27,9 +28,7 @@ export const MembershipPage: React.FC = () => {
     return () => { alive = false; };
   }, []);
 
-  const memberUntilLabel = user?.member_until
-    ? new Date(user.member_until).toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'Asia/Taipei' })
-    : null;
+  const memberUntilLabel = user?.member_until ? formatMemberUntil(user.member_until) : null;
 
   return (
     <>
@@ -46,7 +45,9 @@ export const MembershipPage: React.FC = () => {
           <div className="flex items-start gap-3">
             <CheckCircle2 size={20} className="text-accent-info shrink-0 mt-0.5" />
             <div>
-              <h2 className="text-base font-semibold text-foreground mb-1">走勢</h2>
+              <h2 className="text-base font-semibold text-foreground mb-1">
+                {user?.is_member ? <Link to="/member" className="hover:underline">走勢</Link> : '走勢'}
+              </h2>
               <p className="text-sm text-muted-foreground leading-[1.65]">
                 每一位財經 Podcaster 點名的個股，從提及當日起算的 7／30／90 天實際走勢，可依節目篩選。
               </p>

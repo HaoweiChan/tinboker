@@ -57,7 +57,13 @@ function ageDays(launch?: string): number {
   return Number.isFinite(ms) ? Math.floor((Date.now() - ms) / DAY_MS) : 0;
 }
 
-export const PicksPage: React.FC = () => {
+interface PicksPageProps {
+  /** Rendered inside MemberHub's own SEO + PageContent — skip both plus the h1 so
+   *  the page doesn't nest a second copy of the page chrome. */
+  embedded?: boolean;
+}
+
+export const PicksPage: React.FC<PicksPageProps> = ({ embedded }) => {
   const [podcasters, setPodcasters] = useState<Podcast[]>([]);
   const [picks, setPicks] = useState<TickerInsight[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -266,14 +272,16 @@ export const PicksPage: React.FC = () => {
       return next;
     });
 
-  return (
+  const body = (
     <>
-      <SEO title="走勢 · 播客選股追蹤" description="財經 Podcaster 點名的個股，從提及當日起算的 7／30／90 天真實走勢。" />
-      <PageContent>
-        <h1 className="text-2xl font-semibold tracking-[-0.02em] mb-1.5">走勢</h1>
-        <p className="text-base text-muted-foreground mb-4">
-          財經 Podcaster 點名的個股，依時間排序，從提及當日起算的 7／30／90 天真實漲跌幅。
-        </p>
+        {!embedded && (
+          <>
+            <h1 className="text-2xl font-semibold tracking-[-0.02em] mb-1.5">走勢</h1>
+            <p className="text-base text-muted-foreground mb-4">
+              財經 Podcaster 點名的個股，依時間排序，從提及當日起算的 7／30／90 天真實漲跌幅。
+            </p>
+          </>
+        )}
 
         <div className="flex items-center gap-3 mb-[18px] flex-wrap">
           {channelOptions.length > 0 && (
@@ -354,7 +362,15 @@ export const PicksPage: React.FC = () => {
           本頁內容為播客觀點整理，僅供參考，並非投資建議；過去績效不代表未來表現。
           <Link to="/about#disclaimer" className="text-accent-info hover:underline ml-1">完整免責聲明</Link>
         </p>
-      </PageContent>
+    </>
+  );
+
+  if (embedded) return body;
+
+  return (
+    <>
+      <SEO title="走勢 · 播客選股追蹤" description="財經 Podcaster 點名的個股，從提及當日起算的 7／30／90 天真實走勢。" />
+      <PageContent>{body}</PageContent>
     </>
   );
 };

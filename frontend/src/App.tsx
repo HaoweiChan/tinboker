@@ -35,8 +35,6 @@ import { DevTranslationsPage } from '@/pages/DevTranslationsPage';
 import { DevBypass } from '@/pages/DevBypass';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { RequireLogin } from '@/components/auth/RequireLogin';
-import { MemberGate } from '@/components/auth/MemberGate';
-import { Skeleton } from '@/components/ui/Skeleton';
 import { GlobalPlayer } from '@/components/player/GlobalPlayer';
 import { PlayerConfirmationModal } from '@/components/player/PlayerConfirmationModal';
 import { useEffect } from 'react';
@@ -51,56 +49,28 @@ const DesignPreview = import.meta.env.DEV ? lazy(() => import('@/pages/DesignPre
 // STAGING and PRODUCTION builds never register /dev routes so they fall through to the catch-all.
 const IS_DEV_ENV = (import.meta.env.VITE_STAGE as string) === 'DEV';
 
-// Paid, member-only — most anonymous visitors never open it, so keep it out of
-// the main bundle (own chunk, loaded on demand).
-const PicksPage = lazy(() => import('@/pages/PicksPage'));
-
 // PR 3a — public plan/pricing page. Own chunk: most visitors never open it either.
 const MembershipPage = lazy(() => import('@/pages/MembershipPage'));
+
+// Member hub (/member) — replaces the old /picks route. Own chunk: most
+// anonymous visitors never open it.
+const MemberHub = lazy(() => import('@/pages/MemberHub'));
 
 // Legal/policy page — low-traffic, own chunk like MembershipPage.
 const TermsPage = lazy(() => import('@/pages/TermsPage'));
 
-// Placeholder shown (blurred, behind the upgrade card) to non-members via
-// MemberGate's `preview` — it renders into the real DOM (see MemberGate's doc
-// comment), so this is skeleton bars only: no real ticker/name/numbers.
-function PicksPreview() {
-  return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-      {Array.from({ length: 4 }).map((_, i) => (
-        <div key={i} className="bg-card border border-border rounded-md p-4 space-y-3">
-          <div className="flex gap-2">
-            <Skeleton className="h-4 w-14" />
-            <Skeleton className="h-4 w-20" />
-          </div>
-          <div className="flex gap-3">
-            <Skeleton className="h-4 w-12" />
-            <Skeleton className="h-4 w-12" />
-            <Skeleton className="h-4 w-12" />
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// PR 3b (checkout actually works) deletes this wrapper. PR 3a adds /membership,
-// but it ships in its "checkout not open yet" state — nobody can become a member
-// there yet — so outside dev, a non-member deep-linking /picks still bounces to
-// home instead of a page it can look at but never unlock. Dev keeps the upgrade
-// card visible for QA regardless of membership.
-function PicksRoute() {
+// /member: the one home for paid membership. Member -> the hub; everyone else
+// (logged out or signed in but not a member) -> the same plan page /membership
+// renders, so the sales pitch lives in one place.
+function MemberRoute() {
   const isAuthReady = useAppStore((s) => s.isAuthReady);
   const user = useAppStore((s) => s.user);
-  // Same wait MemberGate itself does — otherwise a member gets bounced to home
-  // for the one tick before auth hydrates.
+  // Same wait MemberGate itself does — otherwise a member gets bounced to the
+  // plan page for the one tick before auth hydrates.
   if (!isAuthReady) return null;
-  if (!IS_DEV_ENV && !user?.is_member) return <Navigate to="/" replace />;
   return (
     <Suspense fallback={null}>
-      <MemberGate preview={<PicksPreview />}>
-        <PicksPage />
-      </MemberGate>
+      {user?.is_member ? <MemberHub /> : <MembershipPage />}
     </Suspense>
   );
 }
@@ -176,10 +146,11 @@ function App() {
             <Route path="/stock" element={<StockIndex />} />
             <Route path="/sector/:exposureId" element={<SectorPage />} />
             <Route path="/news/:id" element={<NewsRedirect />} />
-            {/* /picks (走勢) — paid, member-only. Registered on every env; PicksRoute
-                sends a non-member outside dev to home until checkout actually works
-                (PR 3b), and MemberGate handles the member/preview split otherwise. */}
-            <Route path="/picks" element={<PicksRoute />} />
+            {/* Old paid-feature route — kept working for bookmarks/old links. */}
+            <Route path="/picks" element={<Navigate to="/member" replace />} />
+            {/* One home for membership: member -> the hub, everyone else -> the
+                plan page below. Personalized, so never add it to the sitemap. */}
+            <Route path="/member" element={<MemberRoute />} />
             {/* Public pricing page (PR 3a) — no checkout endpoint yet, so its buy
                 button always renders disabled. Not yet in the sitemap or nav. */}
             <Route

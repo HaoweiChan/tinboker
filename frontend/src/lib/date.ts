@@ -37,3 +37,9 @@ export function formatMonthDay(input: string | number | Date | null | undefined)
   const day = String(d.getDate()).padStart(2, '0');
   return `${m}/${day}`;
 }
+
+/** "2026年06月10日" pinned to Asia/Taipei — membership expiry dates (MembershipPage,
+ * MemberHub) must read the same regardless of the visitor's own timezone. */
+export function formatMemberUntil(iso: string): string {
+  return new Date(iso).toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'Asia/Taipei' });
+}

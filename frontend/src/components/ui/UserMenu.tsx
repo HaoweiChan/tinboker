@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { User, Settings, LogOut, Info, LayoutDashboard } from 'lucide-react';
+import { User, Settings, LogOut, Info, LayoutDashboard, Star } from 'lucide-react';
 import { useAppStore, useUser, useLogout } from '@/store/useAppStore';
 import { LoginButton } from '@/components/auth/LoginButton';
 import { authApi } from '@/services/api/auth';
@@ -93,6 +93,13 @@ export const UserMenu: React.FC = () => {
             >
               <User size={18} />
               <span>個人檔案</span>
+            </button>
+            <button
+              onClick={() => handleNavigation('/watchlist')}
+              className="w-full flex items-center gap-3 px-4 py-3 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+            >
+              <Star size={18} />
+              <span>收藏</span>
             </button>
             <button
               onClick={() => handleNavigation('/settings')}
