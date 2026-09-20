@@ -27,6 +27,8 @@ function pageTitle(pathname: string): [string, string] {
       return hasId ? ['話題', '相關集數與個股'] : ['話題', '熱門 hashtag'];
     case '/watchlist':
       return ['自選', '追蹤的節目與個股'];
+    case '/member':
+      return ['會員專區', '走勢功能 · 訂閱管理'];
     case '/episode':
       return ['集數摘要', '結構化重點 · 關鍵片段'];
     case '/news':

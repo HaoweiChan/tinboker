@@ -163,11 +163,11 @@ export const PodcasterPage: React.FC = () => {
           </div>
         )}
 
-        {user?.is_member && picks.length > 0 && (
+        {user?.is_member && picks.length > 0 ? (
           <>
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-sm font-semibold text-muted-foreground">標的走勢（提及日起算）</h2>
-              <Link to="/picks" className="text-xs text-accent-info hover:underline">查看命中率 →</Link>
+              <Link to="/member" className="text-xs text-accent-info hover:underline">查看命中率 →</Link>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
               {picks.slice(0, 6).map((pick) => {
@@ -190,7 +190,12 @@ export const PodcasterPage: React.FC = () => {
               })}
             </div>
           </>
-        )}
+        ) : !user?.is_member ? (
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-sm font-semibold text-muted-foreground">標的走勢（提及日起算）為會員功能</h2>
+            <Link to="/member" className="text-xs text-accent-info hover:underline">了解會員方案 →</Link>
+          </div>
+        ) : null}
 
         <h2 className="text-sm font-semibold text-muted-foreground mb-3">最新集數</h2>
         {loading ? (
