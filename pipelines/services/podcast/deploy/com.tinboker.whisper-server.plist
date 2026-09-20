@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.tinboker.whisper-server</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/willy/bin/whisper-server-tailnet.sh</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <!-- Restart if it crashes, and keep retrying while Tailscale is still coming up:
+       the wrapper exits non-zero when no tailnet address appears, and this brings it
+       back rather than leaving the endpoint down until someone notices. -->
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+  <key>StandardOutPath</key>
+  <string>/Users/willy/Library/Logs/whisper-server.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/willy/Library/Logs/whisper-server.log</string>
+  <key>ProcessType</key>
+  <string>Adaptive</string>
+</dict>
+</plist>

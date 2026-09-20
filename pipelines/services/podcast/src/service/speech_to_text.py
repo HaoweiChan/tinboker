@@ -859,6 +859,46 @@ class LocalWhisperService(SpeechToTextService):
         return {"text": text, "sentences": sentences, "words": None}
 
 
+class FallbackTranscriptService(SpeechToTextService):
+    """Transcribe on ``primary``; hand off to ``backup`` when that does not work out.
+
+    The local Whisper endpoint lives on a Mac behind a Tailscale tunnel, so it is
+    unreachable for ordinary reasons the pipeline should ride through rather than fail
+    on: the machine rebooted for an update and is sitting at the FileVault prompt, the
+    tunnel is renegotiating, the server is mid-restart. An ingest run that loses an
+    episode to any of those is a worse outcome than one that quietly pays Groq for it.
+
+    Anything the primary raises triggers the handoff, including a 4xx that is really our
+    bug — the log says which path served the episode, and a misconfiguration that shows
+    up as "served by groq" every time is far easier to notice than a gap in the archive.
+    An empty sentence list counts as a failure too: downstream indexes sentences by
+    position, so a transcript with none of them is not a usable result.
+    """
+
+    def __init__(self, primary: SpeechToTextService, backup: SpeechToTextService):
+        self.primary = primary
+        self.backup = backup
+
+    def get_service_name(self) -> str:
+        return f"{self.primary.get_service_name()} (fallback: {self.backup.get_service_name()})"
+
+    def transcribe(self, audio_input: Union[str, Path, bytes], language: Optional[str] = None) -> Dict[str, Any]:
+        primary_name = self.primary.get_service_name()
+        try:
+            result = self.primary.transcribe(audio_input, language)
+        except Exception as exc:  # noqa: BLE001 — every primary failure is a handoff
+            print(f"  ⚠ {primary_name} failed ({exc}); falling back to {self.backup.get_service_name()}")
+            return self.backup.transcribe(audio_input, language)
+
+        if not (result or {}).get("sentences"):
+            print(
+                f"  ⚠ {primary_name} returned no sentences; falling back to "
+                f"{self.backup.get_service_name()}"
+            )
+            return self.backup.transcribe(audio_input, language)
+        return result
+
+
 class GroqService(SpeechToTextService):
     """Groq Whisper speech-to-text service implementation."""
     
