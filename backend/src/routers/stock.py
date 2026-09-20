@@ -142,33 +142,6 @@ def get_daily_institutional(
     ]
 
 
-@router.get("", response_model=List[dict])
-async def get_sorted_stocks(
-    sort_by: str = Query(default="ticker", description="Sort field"),
-    limit: int = Query(default=50, ge=1, le=200, description="Maximum number of stocks to return (1-200)"),
-    q: Optional[str] = Query(default=None, description="Search query (filters by ticker or name)")
-):
-    """
-    Get sorted stocks list with optional search
-    
-    Query params:
-    - sort_by: Sort field (ticker, name, price, change_percent, market_cap)
-    - limit: Maximum number of stocks to return (default: 50, max: 200)
-    - q: Optional search query to filter by ticker or name (case-insensitive)
-    """
-    stocks = await stock_service.get_sorted_stocks_async(sort_by=sort_by, limit=limit)
-    
-    # Apply search filter if provided
-    if q:
-        q_lower = q.lower()
-        stocks = [
-            stock for stock in stocks
-            if q_lower in stock.get("ticker", "").lower() or q_lower in stock.get("name", "").lower()
-        ]
-    
-    return stocks
-
-
 @router.get("/batch-prices")
 async def get_batch_prices(
     tickers: str = Query(description="Comma-separated ticker symbols (max 100)"),

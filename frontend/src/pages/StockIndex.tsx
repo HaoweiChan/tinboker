@@ -5,7 +5,6 @@ import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
 import { Segmented, SentimentChip } from '@/components/redesign';
 import { getRecentBuzz, type RecentBuzz } from '@/services/api/podcasts';
-import { getSortedStocks } from '@/services/api/stocks';
 import type { SentimentLabel } from '@/services/types';
 import { fetchWithFallback } from '@/services/api/migration';
 import type { Sentiment } from '@/lib/sentiment';
@@ -64,22 +63,13 @@ export const StockIndex: React.FC = () => {
       // NOT the all-time agents-precomputed trending_tickers (which ignored the
       // window — days=30 and days=90 returned identical all-time totals).
       const emptyBuzz: RecentBuzz = { tickers: [], distinct_count: 0, episode_count: 0 };
-      const [buzz, stocks] = await Promise.all([
-        fetchWithFallback<RecentBuzz>(() => getRecentBuzz({ days: 30, limit: 200 }), emptyBuzz, 'getRecentBuzz:index').catch(() => emptyBuzz),
-        fetchWithFallback<unknown[]>(() => getSortedStocks({ sortBy: 'ticker', limit: 500 }), [], 'getSortedStocks:index').catch(() => [] as unknown[]),
-      ]);
+      const buzz = await fetchWithFallback<RecentBuzz>(() => getRecentBuzz({ days: 30, limit: 200 }), emptyBuzz, 'getRecentBuzz:index').catch(() => emptyBuzz);
       if (!alive) return;
-      const nameOf = new Map<string, string>();
-      for (const s of Array.isArray(stocks) ? stocks : []) {
-        const o = s as { ticker?: string; symbol?: string; name?: string; company_name?: string };
-        const t = o.ticker || o.symbol;
-        if (t) nameOf.set(t, o.name || o.company_name || t);
-      }
       const tickers = Array.isArray(buzz?.tickers) ? buzz.tickers : [];
       setRows(
         tickers.map((t) => ({
           ticker: t.ticker,
-          name: nameOf.get(t.ticker) || t.name || t.ticker,
+          name: t.name || t.ticker,
           count: t.count,
           sentimentLabel: LABEL_RANK[t.sentiment_label] ? t.sentiment_label : ('NEUTRAL' as SentimentLabel),
           lastMentioned: String(t.last_mentioned ?? ''),

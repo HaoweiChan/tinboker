@@ -13,19 +13,6 @@ function isNumberArray(value: unknown): value is number[] {
   return Array.isArray(value) && value.every((item): item is number => typeof item === 'number');
 }
 
-export async function getSortedStocks(options?: {
-  sortBy?: string;
-  q?: string;
-  limit?: number;
-}): Promise<unknown[]> {
-  const params: Record<string, string | number> = {};
-  if (options?.sortBy) params.sort_by = options.sortBy;
-  if (options?.q) params.q = options.q;
-  if (options?.limit) params.limit = options.limit;
-  const response = await apiClient.get('/api/stocks', { params });
-  return Array.isArray(response.data) ? response.data : [];
-}
-
 export async function getStockByTicker(
   ticker: string,
   timeframe?: TimeframeOption,
