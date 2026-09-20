@@ -737,12 +737,16 @@ def convert_srt_to_traditional_chinese(srt_content: str) -> str:
 
 
 # Whisper decides Traditional vs Simplified from context, and on Taiwanese podcast audio
-# it lands on Simplified far more often than not. Measured 2026-09-20 on a 52.5-minute
-# 股癌 episode with ggml-large-v3-turbo: un-seeded output carried 104 unambiguously
-# Simplified glyphs per 1,000 characters (这/个/说/时…), where the Groq transcript of the
-# same audio had zero. Seeding the decoder with a short Traditional phrase takes it to
-# 0 per 1,000 at no measurable cost (8s either way on a 3-minute slice), and the words
-# themselves do not change — 記憶體缺貨 stays 記憶體缺貨.
+# it lands on Simplified far more often than not. Seeding the decoder with a short
+# Traditional phrase helps a lot — on a 52.5-minute 股癌 episode it took the output from
+# 104 unambiguously Simplified glyphs per 1,000 characters to 0, at no measurable cost.
+#
+# It is NOT the guarantee, though, and the Groq transcripts it was measured against were
+# never clean because of prompting either — GroqService runs its replies through
+# convert_json_to_traditional_chinese. Over 18 episodes across nine shows, five came back
+# at 31-68 Simplified glyphs per 1,000 WITH this seed in place: it anchors the early
+# windows, and Whisper's context resets every 30 seconds. The conversion in _to_sentences
+# is what makes the output zh-TW; the seed just gives it better raw material.
 #
 # This is NOT the vocabulary hint in pipeline/stt_prompt.py. That one biases the decoder
 # toward a word list and is off by default because it drags neighbouring words toward the
@@ -856,7 +860,15 @@ class LocalWhisperService(SpeechToTextService):
                 "end": int(float(end) * 1000),
             })
         text = (payload.get("text") or "").strip() or "".join(s["content"] for s in sentences)
-        return {"text": text, "sentences": sentences, "words": None}
+        # Same conversion GroqService applies to its own replies. Whisper picks Traditional
+        # vs Simplified from context and gets it wrong often enough to matter: measured over
+        # 18 episodes on 2026-09-20, five of nine shows came back with 31-68 Simplified
+        # glyphs per 1,000 characters despite the decoder seed, because the seed only
+        # anchors the early windows and Whisper's context resets every 30 seconds. The seed
+        # still helps recognition; this is what makes the output actually zh-TW.
+        return convert_json_to_traditional_chinese(
+            {"text": text, "sentences": sentences, "words": None}
+        )
 
 
 class FallbackTranscriptService(SpeechToTextService):
