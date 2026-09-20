@@ -14,6 +14,7 @@ import { useBookmarkedEpisodes } from '@/hooks/useBookmarkedEpisodes';
 import { useRemoveWithUndo } from '@/hooks/useRemoveWithUndo';
 import { useStockPriceMap } from '@/hooks/useStockPriceMap';
 import { useStockPriceSinceMap } from '@/hooks/useStockPriceSinceMap';
+import { savedCount } from '@/lib/savedCount';
 
 type Tab = 'podcasters' | 'tickers' | 'topics' | 'episodes';
 
@@ -87,7 +88,7 @@ export const WatchlistPage: React.FC = () => {
 
   const sortedWatchlist = useMemo(() => [...watchlist], [watchlist]);
   const visibleBookmarked = useMemo(() => bookmarked.filter((ep) => !removed.has(`episode:${ep.id}`)), [bookmarked, removed]);
-  const visibleBookmarkCount = bookmarked.length ? visibleBookmarked.length : bookmarkedIds.length;
+  const visibleBookmarkCount = savedCount(bookmarked.length, visibleBookmarked.length, bookmarkedIds.length);
 
   // Show loading state while server data is being fetched for logged-in users
   const isLoading = token && !serverLoaded;
