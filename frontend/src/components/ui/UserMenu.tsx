@@ -88,7 +88,7 @@ export const UserMenu: React.FC = () => {
           {/* Menu Items */}
           <div className="py-2">
             <button
-              onClick={() => handleNavigation('/profile')}
+              onClick={() => handleNavigation('/member')}
               className="w-full flex items-center gap-3 px-4 py-3 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
             >
               <User size={18} />

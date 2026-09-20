@@ -9,7 +9,6 @@ import { NewsRedirect } from '@/pages/NewsRedirect';
 import { PodcasterPage } from '@/pages/PodcasterPage';
 import { TagPage } from '@/pages/TagPage';
 import { SectorPage } from '@/pages/SectorPage';
-import { ProfilePage } from '@/pages/ProfilePage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { PodcasterIndex } from '@/pages/PodcasterIndex';
 import { StockIndex } from '@/pages/StockIndex';
@@ -59,20 +58,26 @@ const MemberHub = lazy(() => import('@/pages/MemberHub'));
 // Legal/policy page — low-traffic, own chunk like MembershipPage.
 const TermsPage = lazy(() => import('@/pages/TermsPage'));
 
-// /member: the one home for paid membership. Member -> the hub; everyone else
-// (logged out or signed in but not a member) -> the same plan page /membership
-// renders, so the sales pitch lives in one place.
+// /member: the single "my stuff" home for every signed-in user (free or paying).
+// Signed in -> the hub (which itself locks the 走勢 tab for non-members);
+// logged out -> the plan page /membership, so the sales pitch lives in one place.
 function MemberRoute() {
   const isAuthReady = useAppStore((s) => s.isAuthReady);
   const user = useAppStore((s) => s.user);
-  // Same wait MemberGate itself does — otherwise a member gets bounced to the
-  // plan page for the one tick before auth hydrates.
+  // Same wait MemberGate itself does — otherwise a signed-in user gets bounced
+  // to the plan page for the one tick before auth hydrates.
   if (!isAuthReady) return null;
   return (
     <Suspense fallback={null}>
-      {user?.is_member ? <MemberHub /> : <MembershipPage />}
+      {user ? <MemberHub /> : <MembershipPage />}
     </Suspense>
   );
+}
+
+/** /profile -> /member, preserving ?tab= (a plain <Navigate> drops the search). */
+function ProfileRedirect() {
+  const { search } = useLocation();
+  return <Navigate to={`/member${search}`} replace />;
 }
 
 // Admin dashboard is developer-only. The PRODUCTION backend mounts no /api/admin/* routes
@@ -148,7 +153,10 @@ function App() {
             <Route path="/news/:id" element={<NewsRedirect />} />
             {/* Old paid-feature route — kept working for bookmarks/old links. */}
             <Route path="/picks" element={<Navigate to="/member" replace />} />
-            {/* One home for membership: member -> the hub, everyone else -> the
+            {/* /profile merged into /member (the personal hub) — keep the old
+                links working, preserving ?tab= for deep links. */}
+            <Route path="/profile" element={<ProfileRedirect />} />
+            {/* One home for membership: signed in -> the hub, everyone else -> the
                 plan page below. Personalized, so never add it to the sitemap. */}
             <Route path="/member" element={<MemberRoute />} />
             {/* Public pricing page (PR 3a) — no checkout endpoint yet, so its buy
@@ -196,7 +204,6 @@ function App() {
             {/* Login-gated — personal surfaces with nothing to show logged out. */}
             <Route element={<RequireLogin />}>
               <Route path="/watchlist" element={<WatchlistPage />} />
-              <Route path="/profile" element={<ProfilePage />} />
               <Route path="/settings" element={<SettingsPage />} />
             </Route>
           </Route>
