@@ -21,6 +21,7 @@ import { getSuggestions } from '@/services/api/search';
 import { authApi, type AuthResponse } from '@/services/api/auth';
 import { userApi } from '@/services/api/user';
 import { formatMemberUntil } from '@/lib/date';
+import { savedCount } from '@/lib/savedCount';
 
 type Tab = 'picks' | 'podcasters' | 'tickers' | 'topics' | 'episodes';
 const VALID_TABS: readonly Tab[] = ['picks', 'podcasters', 'tickers', 'topics', 'episodes'];
@@ -158,6 +159,11 @@ export const MemberHub: React.FC = () => {
   const visiblePodcastSubs = useMemo(() => podcastSubs.filter((n) => !removed.has(`podcaster:${n}`)), [podcastSubs, removed]);
   const visibleTagSubs = useMemo(() => tagSubs.filter((t) => !removed.has(`topic:${t}`)), [tagSubs, removed]);
   const visibleBookmarked = useMemo(() => bookmarked.filter((ep) => !removed.has(`episode:${ep.id}`)), [bookmarked, removed]);
+  // Key the id-count fallback on whether the episodes RESOLVED, never on the visible
+  // count: `visible || ids` reads the stale id count the moment a swipe empties the
+  // list, so the header sat at 1集數 with no cards left. bookmarked.length doesn't
+  // move when a row is swiped — the list isn't edited, only filtered.
+  const bookmarkCount = savedCount(bookmarked.length, visibleBookmarked.length, episodeBookmarks.length);
 
   useEffect(() => {
     if (!searchQuery.trim()) {
@@ -237,7 +243,7 @@ export const MemberHub: React.FC = () => {
                   <span><strong className="text-foreground font-mono mr-1 tabular-nums">{visiblePodcastSubs.length}</strong>節目</span>
                   <span><strong className="text-foreground font-mono mr-1 tabular-nums">{effectiveWatchlist.length}</strong>股票</span>
                   <span><strong className="text-foreground font-mono mr-1 tabular-nums">{visibleTagSubs.length}</strong>話題</span>
-                  <span><strong className="text-foreground font-mono mr-1 tabular-nums">{visibleBookmarked.length || episodeBookmarks.length}</strong>集數</span>
+                  <span><strong className="text-foreground font-mono mr-1 tabular-nums">{bookmarkCount}</strong>集數</span>
                   {formatJoin(userInfo.created_at) && <span className="hidden sm:inline">· {formatJoin(userInfo.created_at)}</span>}
                 </div>
               </div>
@@ -250,7 +256,7 @@ export const MemberHub: React.FC = () => {
                 <div className="flex gap-4 mt-2.5 text-xs text-muted-foreground">
                   <span><strong className="text-foreground font-mono mr-1 tabular-nums">{visiblePodcastSubs.length}</strong>追蹤節目</span>
                   <span><strong className="text-foreground font-mono mr-1 tabular-nums">{effectiveWatchlist.length}</strong>自選股</span>
-                  <span><strong className="text-foreground font-mono mr-1 tabular-nums">{visibleBookmarked.length || episodeBookmarks.length}</strong>收藏集數</span>
+                  <span><strong className="text-foreground font-mono mr-1 tabular-nums">{bookmarkCount}</strong>收藏集數</span>
                 </div>
               </div>
             </div>
