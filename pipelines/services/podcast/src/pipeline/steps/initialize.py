@@ -19,8 +19,14 @@ def initialize_stt_service(config: PipelineConfig) -> object:
     Returns:
         Initialized STT service instance
     """
-    from src.service.speech_to_text import GroqService, WhisperService
+    from src.service.speech_to_text import GroqService, LocalWhisperService, WhisperService
     service_name_lower = config.stt_service_name.lower()
+    if service_name_lower == "local":
+        # Whisper on our own hardware. The decoder seed lives in the service (it is a
+        # script anchor, not the vocabulary hint) so every caller gets Traditional output
+        # without having to know that Whisper drifts to Simplified on TW audio.
+        model = config.stt_model or "whisper-large-v3-turbo"
+        return LocalWhisperService(model=model)
     if service_name_lower in ["whisper", "openai"]:
         # No vocabulary hint here: OpenAI's client wrapper takes no prompt and every
         # configured show runs on Groq. Wire it through if that ever changes.
