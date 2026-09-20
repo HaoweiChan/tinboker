@@ -5,7 +5,7 @@ import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
 import { EpisodeCardV2, PodAvatar } from '@/components/redesign';
 import { apiEpisodeToCardV2 } from '@/components/redesign/episodeAdapter';
-import { PickCard } from '@/components/financial/PickCard';
+import { PickCard, PickListHeader } from '@/components/financial/PickCard';
 import { PodcasterFocusCard } from '@/components/podcaster/PodcasterFocusCard';
 import { ConsensusTile } from '@/components/stock/ConsensusTile';
 import { CountUp } from '@/components/common/CountUp';
@@ -169,7 +169,8 @@ export const PodcasterPage: React.FC = () => {
               <h2 className="text-sm font-semibold text-muted-foreground">標的走勢（提及日起算）</h2>
               <Link to="/member" className="text-xs text-accent-info hover:underline">查看命中率 →</Link>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
+            <div className="bg-card border border-border rounded-md divide-y divide-border overflow-hidden mb-6">
+              <PickListHeader />
               {picks.slice(0, 6).map((pick) => {
                 const refMs = Date.parse(pick.podcast_launch_time);
                 const windows = Number.isFinite(refMs)

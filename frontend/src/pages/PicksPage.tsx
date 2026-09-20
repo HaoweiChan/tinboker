@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Filter, ChevronDown, Search, Check } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
 import { Segmented } from '@/components/redesign';
-import { PickCard } from '@/components/financial/PickCard';
+import { PickCard, PickListHeader } from '@/components/financial/PickCard';
 import {
   getRecentInsights,
   getInsightsByPodcaster,
@@ -18,6 +18,7 @@ import { useTranslationMap } from '@/hooks/useTranslationMap';
 import { usePlayerStore } from '@/store/usePlayerStore';
 import { cn } from '@/lib/utils';
 import { groupPicks } from '@/lib/pickGroups';
+import { formatDate } from '@/lib/date';
 import type { TickerInsight } from '@/services/types';
 
 interface ChannelOption {
@@ -234,6 +235,24 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded }) => {
     return () => io.disconnect();
   }, [sortedGroups.length]);
 
+  // 最新 keeps groupPicks' newest-master ordering (see groupPicks docstring: "sorted
+  // by their master mention date, newest-first"), so a sticky-free date-group
+  // header can replace the per-row date there. 已揭曉 re-sorts by return, so it
+  // keeps per-row dates instead (see sortedGroups above).
+  const dateGroupStarts = useMemo(() => {
+    if (view !== 'recent') return null;
+    const starts = new Map<number, { label: string; count: number }>();
+    let i = 0;
+    while (i < visibleGroups.length) {
+      const label = formatDate(visibleGroups[i].master.podcast_launch_time);
+      let j = i + 1;
+      while (j < visibleGroups.length && formatDate(visibleGroups[j].master.podcast_launch_time) === label) j++;
+      starts.set(i, { label, count: j - i });
+      i = j;
+    }
+    return starts;
+  }, [visibleGroups, view]);
+
   const tickers = useMemo(() => visibleGroups.map((g) => g.canonicalTicker), [visibleGroups]);
   const rawTranslationMap = useTranslationMap(tickers);
   const nameMap = useMemo(() => {
@@ -314,9 +333,9 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded }) => {
         </div>
 
         {loading || historyLoading || settledLoading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="bg-card border border-border rounded-md h-[180px] animate-pulse" />
+          <div className="bg-card border border-border rounded-md divide-y divide-border overflow-hidden">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} className="h-14 animate-pulse bg-muted/20" />
             ))}
           </div>
         ) : visibleGroups.length === 0 ? (
@@ -329,26 +348,35 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded }) => {
           </div>
         ) : (
           <>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {visibleGroups.map((g) => {
+          <div className="bg-card border border-border rounded-md divide-y divide-border overflow-hidden">
+            <PickListHeader />
+            {visibleGroups.map((g, i) => {
               const pick = g.master;
               const refMs = Date.parse(pick.podcast_launch_time);
               const windows = Number.isFinite(refMs)
                 ? windowsMap.get(windowReturnsKey(g.canonicalTicker, refMs))
                 : undefined;
+              const groupStart = dateGroupStarts?.get(i);
               return (
-                <PickCard
-                  key={g.key}
-                  pick={pick}
-                  windows={windows}
-                  displayName={nameMap.get(g.canonicalTicker.toUpperCase())}
-                  displayTicker={g.canonicalTicker}
-                  podcastImage={podcastImageMap.get(pick.podcaster || '') || undefined}
-                  episodeTitle={pick.episode_title}
-                  mentions={g.occurrences}
-                  shareUrl={`${window.location.origin}/episode/${encodeURIComponent(pick.episode_id)}`}
-                  onPlaySegment={onPlaySegment}
-                />
+                <Fragment key={g.key}>
+                  {groupStart && (
+                    <div className="bg-muted/40 px-4 py-1.5 text-xs text-muted-foreground">
+                      {groupStart.label} · {groupStart.count} 筆
+                    </div>
+                  )}
+                  <PickCard
+                    pick={pick}
+                    windows={windows}
+                    displayName={nameMap.get(g.canonicalTicker.toUpperCase())}
+                    displayTicker={g.canonicalTicker}
+                    podcastImage={podcastImageMap.get(pick.podcaster || '') || undefined}
+                    episodeTitle={pick.episode_title}
+                    mentions={g.occurrences}
+                    shareUrl={`${window.location.origin}/episode/${encodeURIComponent(pick.episode_id)}`}
+                    onPlaySegment={onPlaySegment}
+                    showDate={!dateGroupStarts}
+                  />
+                </Fragment>
               );
             })}
           </div>
