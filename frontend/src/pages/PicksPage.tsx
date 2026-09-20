@@ -1,10 +1,10 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Filter, ChevronDown, Search, Check } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
 import { Segmented } from '@/components/redesign';
-import { PickCard, PickListHeader } from '@/components/financial/PickCard';
+import { PickCard } from '@/components/financial/PickCard';
 import {
   getRecentInsights,
   getInsightsByPodcaster,
@@ -16,9 +16,10 @@ import { fetchWithFallback } from '@/services/api/migration';
 import { useTickerWindowReturns, windowReturnsKey } from '@/hooks/useTickerWindowReturns';
 import { useTranslationMap } from '@/hooks/useTranslationMap';
 import { usePlayerStore } from '@/store/usePlayerStore';
+import { useAppStore } from '@/store/useAppStore';
 import { cn } from '@/lib/utils';
-import { groupPicks } from '@/lib/pickGroups';
-import { formatDate } from '@/lib/date';
+import { groupPicks, canonicalTicker } from '@/lib/pickGroups';
+import { filterMyPicks, normalizeNames } from '@/lib/picksScope';
 import type { TickerInsight } from '@/services/types';
 
 interface ChannelOption {
@@ -58,13 +59,59 @@ function ageDays(launch?: string): number {
   return Number.isFinite(ms) ? Math.floor((Date.now() - ms) / DAY_MS) : 0;
 }
 
+const SCOPE_KEY = 'tinboker-picks-scope';
+type Scope = 'mine' | 'all';
+function loadStoredScope(): Scope | null {
+  try {
+    const v = localStorage.getItem(SCOPE_KEY);
+    return v === 'mine' || v === 'all' ? v : null;
+  } catch {
+    return null;
+  }
+}
+function saveScope(s: Scope): void {
+  try { localStorage.setItem(SCOPE_KEY, s); } catch { /* ignore (private mode, quota) */ }
+}
+
 interface PicksPageProps {
   /** Rendered inside MemberHub's own SEO + PageContent — skip both plus the h1 so
    *  the page doesn't nest a second copy of the page chrome. */
   embedded?: boolean;
+  /** Member's 訂閱節目 (podcaster names) and 自選股票 (tickers) — MemberHub already
+   *  resolves these (API-backed when signed in, store fallback otherwise) via
+   *  `podcastSubs` / `effectiveWatchlist`; passed down so this page doesn't
+   *  re-fetch the same data. Falls back to the local store when absent (e.g. the
+   *  standalone /picks route, which today just redirects to /member). */
+  mySubscribedPodcasts?: string[];
+  myWatchlistTickers?: string[];
 }
 
-export const PicksPage: React.FC<PicksPageProps> = ({ embedded }) => {
+export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodcasts, myWatchlistTickers }) => {
+  const storeSubscriptions = useAppStore((s) => s.subscriptions);
+  const storeWatchlist = useAppStore((s) => s.watchlist);
+  const mySubs = mySubscribedPodcasts ?? storeSubscriptions;
+  const myWatchlist = myWatchlistTickers ?? storeWatchlist;
+  const myNames = useMemo(() => normalizeNames(mySubs), [mySubs]);
+  const myTickers = useMemo(() => new Set(myWatchlist.map(canonicalTicker).filter(Boolean)), [myWatchlist]);
+  const hasMyStuff = myNames.size > 0 || myTickers.size > 0;
+
+  const [scope, setScopeState] = useState<Scope>(() => loadStoredScope() ?? 'all');
+  const scopeInitialized = useRef(loadStoredScope() !== null);
+  // Default to 我的 once we know the member has ≥1 subscribed show or watchlist
+  // ticker, but only if they haven't already made an explicit choice (stored).
+  useEffect(() => {
+    if (scopeInitialized.current) return;
+    if (hasMyStuff) {
+      setScopeState('mine');
+      scopeInitialized.current = true;
+    }
+  }, [hasMyStuff]);
+  const setScope = (s: Scope) => {
+    setScopeState(s);
+    scopeInitialized.current = true;
+    saveScope(s);
+  };
+
   const [podcasters, setPodcasters] = useState<Podcast[]>([]);
   const [picks, setPicks] = useState<TickerInsight[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -108,6 +155,14 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded }) => {
     return () => { alive = false; };
   }, []);
 
+  // 我的: drive the channel dropdown to exactly the subscribed shows, so the
+  // per-channel history loader below fetches their full history — the same thing
+  // that happens when a user manually ticks those channels in 全部. 全部: leave
+  // the dropdown under manual control.
+  useEffect(() => {
+    setSelected(scope === 'mine' ? new Set(myNames) : new Set());
+  }, [scope, myNames]);
+
   // Filtered view: pull each selected channel's history over the last year,
   // newest-first, so settled (older) picks appear — the blended /recent only
   // covers the most recent ~100 across all channels.
@@ -132,7 +187,10 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded }) => {
   }, [selected]);
 
   useEffect(() => {
-    if (view !== 'settled' || selected.size > 0 || settledPicks[settledTier]) return;
+    // In 全部 with a manual channel filter, the blended all-shows source isn't
+    // needed (channelHistory + ageDays covers it). In 我的, we still need it —
+    // watchlist-ticker matches are found in this all-shows source.
+    if (view !== 'settled' || (scope === 'all' && selected.size > 0) || settledPicks[settledTier]) return;
     let alive = true;
     setSettledLoading(true);
     const before = new Date(Date.now() - settledTier * DAY_MS).toISOString().slice(0, 10);
@@ -144,7 +202,7 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded }) => {
         setSettledLoading(false);
       });
     return () => { alive = false; };
-  }, [view, settledTier, selected, settledPicks]);
+  }, [view, settledTier, scope, selected, settledPicks]);
 
   const podcastImageMap = useMemo(() => {
     const m = new Map<string, string>();
@@ -165,13 +223,30 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded }) => {
     return Array.from(seen.values());
   }, [optionPicks, podcastImageMap]);
 
+  const allShowsSource = useMemo(
+    () => (view === 'settled' ? (settledPicks[settledTier] ?? []) : picks),
+    [view, settledTier, settledPicks, picks],
+  );
+
+  // 我的: subscribed shows' full history (channelHistory, loaded via the shared
+  // per-channel loader above) unioned with watchlist-ticker matches found in the
+  // all-shows source already loaded for this view.
+  // ponytail: watchlist matches only come from the recent/settled all-shows
+  // window already fetched here, not a full per-ticker history fetch — add a
+  // by-ticker insights call if members ask for deeper watchlist-only history.
+  const myFilteredSource = useMemo(
+    () => filterMyPicks([...channelHistory, ...allShowsSource], mySubs, myWatchlist),
+    [channelHistory, allShowsSource, mySubs, myWatchlist],
+  );
+
   // Collapse the stream into master cards: blended recent when no filter; the
-  // selected channels' full history when filtered. Repeated calls of the same
-  // canonical ticker by one podcaster within 14 days fold into one card.
+  // selected channels' full history when filtered; the 我的 union when scoped.
+  // Repeated calls of the same canonical ticker by one podcaster within 14 days
+  // fold into one card.
   const groups = useMemo(() => {
-    const src = selected.size > 0 ? channelHistory : view === 'settled' ? (settledPicks[settledTier] ?? []) : picks;
+    const src = scope === 'mine' ? myFilteredSource : selected.size > 0 ? channelHistory : allShowsSource;
     return groupPicks(src.filter((p) => isLikelyTradeable(p.ticker)));
-  }, [picks, channelHistory, selected, view, settledTier, settledPicks]);
+  }, [scope, myFilteredSource, selected, channelHistory, allShowsSource]);
 
   // 已揭曉 keeps only cards whose master mention is old enough for the active tier
   // to have settled, so the chosen window's return is always populated.
@@ -218,7 +293,7 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded }) => {
   // Infinite-scroll: render visibleCount, grow as the sentinel scrolls into view.
   const visibleGroups = useMemo(() => sortedGroups.slice(0, visibleCount), [sortedGroups, visibleCount]);
 
-  useEffect(() => { setVisibleCount(PAGE_SIZE); }, [selected, view, settledTier, picks, channelHistory]);
+  useEffect(() => { setVisibleCount(PAGE_SIZE); }, [scope, selected, view, settledTier, picks, channelHistory]);
 
   useEffect(() => {
     const el = sentinelRef.current;
@@ -234,24 +309,6 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded }) => {
     io.observe(el);
     return () => io.disconnect();
   }, [sortedGroups.length]);
-
-  // 最新 keeps groupPicks' newest-master ordering (see groupPicks docstring: "sorted
-  // by their master mention date, newest-first"), so a sticky-free date-group
-  // header can replace the per-row date there. 已揭曉 re-sorts by return, so it
-  // keeps per-row dates instead (see sortedGroups above).
-  const dateGroupStarts = useMemo(() => {
-    if (view !== 'recent') return null;
-    const starts = new Map<number, { label: string; count: number }>();
-    let i = 0;
-    while (i < visibleGroups.length) {
-      const label = formatDate(visibleGroups[i].master.podcast_launch_time);
-      let j = i + 1;
-      while (j < visibleGroups.length && formatDate(visibleGroups[j].master.podcast_launch_time) === label) j++;
-      starts.set(i, { label, count: j - i });
-      i = j;
-    }
-    return starts;
-  }, [visibleGroups, view]);
 
   const tickers = useMemo(() => visibleGroups.map((g) => g.canonicalTicker), [visibleGroups]);
   const rawTranslationMap = useTranslationMap(tickers);
@@ -303,7 +360,17 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded }) => {
         )}
 
         <div className="flex items-center gap-3 mb-[18px] flex-wrap">
-          {channelOptions.length > 0 && (
+          <Segmented
+            options={[
+              { value: 'mine', label: '我的' },
+              { value: 'all', label: '全部' },
+            ] as const}
+            value={scope}
+            onChange={(v) => setScope(v as Scope)}
+          />
+          {/* Channel dropdown only makes sense as a manual pick across all shows —
+             in 我的 it's already narrowed to the subscribed shows. */}
+          {scope === 'all' && channelOptions.length > 0 && (
             <ChannelFilter
               channels={channelOptions}
               selected={selected}
@@ -332,51 +399,68 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded }) => {
           )}
         </div>
 
+        {!hasMyStuff ? (
+          <p className="text-xs text-muted-foreground mb-3">
+            訂閱節目或加入自選股後，這裡會只顯示你關注的標的。
+            {' '}
+            <Link to="/member?tab=podcasters" className="text-accent-info hover:underline">管理節目</Link>
+            {' '}
+            <Link to="/member?tab=tickers" className="text-accent-info hover:underline">管理股票</Link>
+          </p>
+        ) : scope === 'mine' ? (
+          <p className="text-xs text-muted-foreground mb-3">
+            來自你訂閱的 {myNames.size} 個節目與 {myTickers.size} 檔自選股
+            {' · '}
+            <Link to="/member?tab=podcasters" className="text-accent-info hover:underline">管理節目</Link>
+            {' '}
+            <Link to="/member?tab=tickers" className="text-accent-info hover:underline">管理股票</Link>
+          </p>
+        ) : null}
+
         {loading || historyLoading || settledLoading ? (
-          <div className="bg-card border border-border rounded-md divide-y divide-border overflow-hidden">
-            {Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="h-14 animate-pulse bg-muted/20" />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="bg-card border border-border rounded-md h-[180px] animate-pulse" />
             ))}
           </div>
         ) : visibleGroups.length === 0 ? (
           <div className="bg-card border border-border rounded-md p-10 text-center text-sm text-muted-foreground">
-            {picks.length === 0
-              ? '目前沒有可顯示的標的分析。'
-              : view === 'settled'
-                ? `所選頻道近期沒有滿 ${settledTier} 天的已揭曉標的，試試較短的天期或其他頻道。`
-                : '所選頻道近期沒有標的分析，試試其他頻道。'}
+            {picks.length === 0 ? (
+              '目前沒有可顯示的標的分析。'
+            ) : scope === 'mine' ? (
+              <>
+                你關注的節目與個股近期沒有新的點名。
+                {' '}
+                <button type="button" onClick={() => setScope('all')} className="text-accent-info hover:underline">看全部</button>
+              </>
+            ) : view === 'settled' ? (
+              `所選頻道近期沒有滿 ${settledTier} 天的已揭曉標的，試試較短的天期或其他頻道。`
+            ) : (
+              '所選頻道近期沒有標的分析，試試其他頻道。'
+            )}
           </div>
         ) : (
           <>
-          <div className="bg-card border border-border rounded-md divide-y divide-border overflow-hidden">
-            <PickListHeader />
-            {visibleGroups.map((g, i) => {
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {visibleGroups.map((g) => {
               const pick = g.master;
               const refMs = Date.parse(pick.podcast_launch_time);
               const windows = Number.isFinite(refMs)
                 ? windowsMap.get(windowReturnsKey(g.canonicalTicker, refMs))
                 : undefined;
-              const groupStart = dateGroupStarts?.get(i);
               return (
-                <Fragment key={g.key}>
-                  {groupStart && (
-                    <div className="bg-muted/40 px-4 py-1.5 text-xs text-muted-foreground">
-                      {groupStart.label} · {groupStart.count} 筆
-                    </div>
-                  )}
-                  <PickCard
-                    pick={pick}
-                    windows={windows}
-                    displayName={nameMap.get(g.canonicalTicker.toUpperCase())}
-                    displayTicker={g.canonicalTicker}
-                    podcastImage={podcastImageMap.get(pick.podcaster || '') || undefined}
-                    episodeTitle={pick.episode_title}
-                    mentions={g.occurrences}
-                    shareUrl={`${window.location.origin}/episode/${encodeURIComponent(pick.episode_id)}`}
-                    onPlaySegment={onPlaySegment}
-                    showDate={!dateGroupStarts}
-                  />
-                </Fragment>
+                <PickCard
+                  key={g.key}
+                  pick={pick}
+                  windows={windows}
+                  displayName={nameMap.get(g.canonicalTicker.toUpperCase())}
+                  displayTicker={g.canonicalTicker}
+                  podcastImage={podcastImageMap.get(pick.podcaster || '') || undefined}
+                  episodeTitle={pick.episode_title}
+                  mentions={g.occurrences}
+                  shareUrl={`${window.location.origin}/episode/${encodeURIComponent(pick.episode_id)}`}
+                  onPlaySegment={onPlaySegment}
+                />
               );
             })}
           </div>
