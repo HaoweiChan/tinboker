@@ -1,7 +1,8 @@
 import { useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, Link } from 'react-router-dom';
 import { Mail, Clock, MessageCircle, AtSign, ShieldAlert } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
+import { Section } from '@/components/common/Section';
 import { PageContent } from '@/components/layout/PageContent';
 import { AppLogo } from '@/components/logo/AppLogo';
 
@@ -9,14 +10,6 @@ import { AppLogo } from '@/components/logo/AppLogo';
  *  the old paths redirect here with a hash, so deep links keep working. The /report
  *  comment board was retired — it never received a comment on any environment — so
  *  feedback is simply part of 聯絡我們. */
-function Section({ id, title, children }: { id: string; title: string; children: React.ReactNode }) {
-  return (
-    <section id={id} className="bg-card border border-border rounded-md p-5 sm:p-6 scroll-mt-24">
-      <h2 className="text-lg font-semibold tracking-[-0.01em] mb-4">{title}</h2>
-      <div className="text-base leading-[1.65] text-muted-foreground space-y-4">{children}</div>
-    </section>
-  );
-}
 
 const FEATURES: { n: number; title: string; body: string }[] = [
   { n: 1, title: '智慧摘要', body: '運用 AI 技術，快速梳理財經 Podcast 與新聞重點，讓您在幾分鐘內掌握小時級內容的精華。' },
@@ -131,6 +124,9 @@ export const About: React.FC = () => {
                 <p>{s.body}</p>
               </div>
             ))}
+            <p className="pt-4 border-t border-border">
+              完整的服務條款、會員訂閱與付款、退款政策與隱私權政策，請見<Link to="/terms" className="text-accent-info hover:underline">服務條款與政策</Link>。
+            </p>
           </Section>
 
         </div>

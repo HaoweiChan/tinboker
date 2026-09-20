@@ -58,6 +58,9 @@ const PicksPage = lazy(() => import('@/pages/PicksPage'));
 // PR 3a — public plan/pricing page. Own chunk: most visitors never open it either.
 const MembershipPage = lazy(() => import('@/pages/MembershipPage'));
 
+// Legal/policy page — low-traffic, own chunk like MembershipPage.
+const TermsPage = lazy(() => import('@/pages/TermsPage'));
+
 // Placeholder shown (blurred, behind the upgrade card) to non-members via
 // MemberGate's `preview` — it renders into the real DOM (see MemberGate's doc
 // comment), so this is skeleton bars only: no real ticker/name/numbers.
@@ -192,6 +195,19 @@ function App() {
             <Route path="/contact" element={<Navigate to="/about#contact" replace />} />
             <Route path="/disclaimer" element={<Navigate to="/about#disclaimer" replace />} />
             <Route path="/report" element={<Navigate to="/about#contact" replace />} />
+            <Route
+              path="/terms"
+              element={
+                <Suspense fallback={null}>
+                  <TermsPage />
+                </Suspense>
+              }
+            />
+            {/* NewebPay merchant review + consumer-protection expectations: dedicated
+                paths for the policy sections, folded into /terms like /about's own
+                legacy redirects. */}
+            <Route path="/privacy" element={<Navigate to="/terms#privacy" replace />} />
+            <Route path="/refund" element={<Navigate to="/terms#refund" replace />} />
 
             {/* Public content — browsable without login so visitors + crawlers
                 can read it (soft wall). Personalized actions (bookmark, watchlist,

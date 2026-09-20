@@ -76,6 +76,11 @@ export const MembershipPage: React.FC = () => {
                   </div>
                 )}
                 <p className="text-sm text-muted-foreground">每月自動扣款，可隨時取消，取消後可使用至當期結束。</p>
+                <p className="text-sm text-muted-foreground">
+                  訂閱即表示您同意<Link to="/terms" className="text-accent-info hover:underline">服務條款</Link>、
+                  <Link to="/terms#refund" className="text-accent-info hover:underline">退款政策</Link>與
+                  <Link to="/terms#privacy" className="text-accent-info hover:underline">隱私權政策</Link>。
+                </p>
 
                 <div className="pt-1">
                   {!isAuthReady ? (
