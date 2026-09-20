@@ -123,12 +123,18 @@ export const HeatReturnValidation: React.FC = () => {
           different kind of block. */}
       {header}
 
-      <p className={`mb-3 flex items-start gap-1.5 ${type.meta} text-muted-foreground`}>
-        <Info size={12} className="mt-0.5 shrink-0" />
-        <span>
+      {/* Collapsed by default: the method matters, but four lines of it above the
+          chart read as clutter on a phone. <details> is tappable, unlike a hover
+          tooltip. */}
+      <details className={`mb-3 ${type.meta} text-muted-foreground`}>
+        <summary className="flex cursor-pointer list-none items-center gap-1.5 w-fit hover:text-foreground transition-colors">
+          <Info size={12} className="shrink-0" />
+          <span>怎麼算的</span>
+        </summary>
+        <p className="mt-1.5 pl-[18px] leading-relaxed">
           用<strong className="font-medium text-foreground/80">歷史當時</strong>的討論熱度分組，對照<strong className="font-medium text-foreground/80">其後 {hz} 日</strong>的<strong className="font-medium text-foreground/80">超額報酬</strong>——相對「同一天」其他題材的平均（已剔除大盤齊漲齊跌），避免看後照鏡與行情假訊號。熱度越高的組別超額報酬越高，才代表熱度有預測力。
-        </span>
-      </p>
+        </p>
+      </details>
 
       <div className="rounded-xl border border-border bg-card p-4">
       {buckets.length > 0 ? (

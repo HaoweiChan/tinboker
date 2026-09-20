@@ -5,6 +5,7 @@ import { SimpleSparkline } from '@/components/charts/SimpleSparkline';
 import { SectorIcon } from './SectorIcon';
 import { ChangePct } from './ChangePct';
 import { TOPICS_TYPOGRAPHY } from './topicsTypography';
+import { TopicFollowButton } from './TopicFollowButton';
 import { StockIdentity } from '@/components/common/StockIdentity';
 import type { SectorBoardItem, SectorBoardMember } from '@/services/api/podcasts';
 
@@ -117,6 +118,8 @@ export const SectorBoardCard: React.FC<SectorBoardCardProps> = ({ sector, netFlo
                  hover:shadow-[0_4px_16px_-6px_rgba(0,0,0,0.10)] dark:hover:shadow-[0_4px_20px_-6px_rgba(0,0,0,0.35)]"
     >
       {/* ── Card header ─────────────────────────────────────────── */}
+      {/* The follow button lives inside the <Link> so it can sit flush with the
+          metrics column; it swallows its own click instead of navigating. */}
       <Link
         to={`/sector/${encodeURIComponent(sector.exposure_id)}`}
         className="group flex items-start justify-between gap-3 px-4 pt-3.5 pb-3 border-b border-border/40"
@@ -164,9 +167,12 @@ export const SectorBoardCard: React.FC<SectorBoardCardProps> = ({ sector, netFlo
               skeleton={isWeekly}
             />
           </div>
-          <span className={`${type.meta} text-muted-foreground font-mono tabular-nums`}>
-            {sector.episode_count} 集
-          </span>
+          <div className="flex items-center gap-1.5">
+            <span className={`${type.meta} text-muted-foreground font-mono tabular-nums`}>
+              {sector.episode_count} 集
+            </span>
+            <TopicFollowButton topic={sector.display_name} variant="icon" />
+          </div>
         </div>
       </Link>
 
