@@ -736,6 +736,129 @@ def convert_srt_to_traditional_chinese(srt_content: str) -> str:
     return '\n'.join(converted_lines)
 
 
+# Whisper decides Traditional vs Simplified from context, and on Taiwanese podcast audio
+# it lands on Simplified far more often than not. Measured 2026-09-20 on a 52.5-minute
+# 股癌 episode with ggml-large-v3-turbo: un-seeded output carried 104 unambiguously
+# Simplified glyphs per 1,000 characters (这/个/说/时…), where the Groq transcript of the
+# same audio had zero. Seeding the decoder with a short Traditional phrase takes it to
+# 0 per 1,000 at no measurable cost (8s either way on a 3-minute slice), and the words
+# themselves do not change — 記憶體缺貨 stays 記憶體缺貨.
+#
+# This is NOT the vocabulary hint in pipeline/stt_prompt.py. That one biases the decoder
+# toward a word list and is off by default because it drags neighbouring words toward the
+# list (掉單 → 吊單). This is a script anchor built from ordinary high-frequency words, so
+# it has nothing rare to drag anything toward — but it is the same mechanism, so it is
+# overridable and worth re-measuring if transcripts start drifting.
+TRADITIONAL_SEED_PROMPT = "台積電、聯發科、輝達、記憶體、伺服器、供應鏈、晶片、這個、時候、國際"
+
+
+class LocalWhisperService(SpeechToTextService):
+    """Whisper on a server we host, spoken to over the OpenAI audio API.
+
+    Points at any OpenAI-compatible ``/v1/audio/transcriptions`` endpoint —
+    ``whisper-server`` from whisper.cpp is what this was measured against. The draw is
+    not only the per-hour fee it removes: there is no 25 MB upload limit here, so the
+    size-driven chunking that :class:`GroqService` needs (and the chunk-swallow that
+    truncated 331 episodes in 2026-05) does not apply.
+    """
+
+    def __init__(
+        self,
+        base_url: Optional[str] = None,
+        model: str = "whisper-large-v3-turbo",
+        language: Optional[str] = "zh",
+        prompt: Optional[str] = None,
+        timeout: int = 1800,
+        transcribe_path: Optional[str] = None,
+    ):
+        """
+        Args:
+            base_url: Root of the OpenAI-compatible server, e.g. http://mac-mini:11434/v1.
+                Falls back to LOCAL_WHISPER_BASE_URL.
+            model: Model name the server exposes.
+            language: Language hint passed through to the server ("zh" for TW shows).
+            prompt: Decoder seed. Defaults to TRADITIONAL_SEED_PROMPT; pass "" to disable.
+            timeout: Seconds to allow for one request — a 50-minute episode takes ~2.5
+                minutes on an M4 Pro, so this is deliberately generous rather than tight.
+            transcribe_path: Route on the server, appended to base_url. Defaults to the
+                OpenAI one. whisper.cpp's ``whisper-server`` serves ``/inference`` unless
+                it is started with ``--inference-path /v1/audio/transcriptions``, so point
+                this (or LOCAL_WHISPER_TRANSCRIBE_PATH) at whichever the server actually
+                exposes — its 404 body names the path it rejected.
+        """
+        self.base_url = (base_url or os.getenv("LOCAL_WHISPER_BASE_URL") or "").rstrip("/")
+        if not self.base_url:
+            raise ValueError(
+                "LocalWhisperService needs a base URL — set LOCAL_WHISPER_BASE_URL "
+                "(e.g. http://mac-mini:11434/v1) or pass base_url."
+            )
+        self.model = model
+        self.language = language
+        self.prompt = TRADITIONAL_SEED_PROMPT if prompt is None else prompt
+        self.timeout = timeout
+        self.transcribe_path = "/" + (
+            transcribe_path or os.getenv("LOCAL_WHISPER_TRANSCRIBE_PATH") or "audio/transcriptions"
+        ).lstrip("/")
+
+    def get_service_name(self) -> str:
+        return "local-whisper"
+
+    def transcribe(self, audio_input: Union[str, Path, bytes], language: Optional[str] = None) -> Dict[str, Any]:
+        """Transcribe one file, returning the pipeline's {text, sentences, words} shape."""
+        import requests
+
+        if isinstance(audio_input, bytes):
+            name, blob = "audio.mp3", audio_input
+        else:
+            path = Path(audio_input)
+            if not path.exists():
+                raise FileNotFoundError(f"Audio file not found: {path}")
+            name, blob = path.name, path.read_bytes()
+
+        data = {"model": self.model, "response_format": "verbose_json"}
+        if language or self.language:
+            data["language"] = language or self.language
+        if self.prompt:
+            data["prompt"] = self.prompt
+
+        resp = requests.post(
+            f"{self.base_url}{self.transcribe_path}",
+            files={"file": (name, blob)},
+            data=data,
+            timeout=self.timeout,
+        )
+        if resp.status_code >= 400:
+            # The body says which knob the server rejected; a bare status code has sent
+            # us chasing the wrong thing before.
+            raise RuntimeError(f"local whisper {resp.status_code}: {resp.text[:300]}")
+        return self._to_sentences(resp.json())
+
+    @staticmethod
+    def _to_sentences(payload: Dict[str, Any]) -> Dict[str, Any]:
+        """verbose_json segments -> the pipeline's sentence rows (start/end in ms).
+
+        The extractor addresses sentences by position and the clusterer reads their
+        timestamps, so a segment without usable timing is dropped rather than given a
+        guessed one — a wrong timestamp desyncs every chapter after it.
+        """
+        sentences: List[Dict[str, Any]] = []
+        for seg in payload.get("segments") or []:
+            content = (seg.get("text") or "").strip()
+            if not content:
+                continue
+            start, end = seg.get("start"), seg.get("end")
+            if start is None or end is None:
+                continue
+            sentences.append({
+                "index": len(sentences),
+                "content": content,
+                "start": int(float(start) * 1000),
+                "end": int(float(end) * 1000),
+            })
+        text = (payload.get("text") or "").strip() or "".join(s["content"] for s in sentences)
+        return {"text": text, "sentences": sentences, "words": None}
+
+
 class GroqService(SpeechToTextService):
     """Groq Whisper speech-to-text service implementation."""
     
