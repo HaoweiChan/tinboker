@@ -23,9 +23,7 @@ import { SectorIcon } from '@/components/topics/SectorIcon';
 import { SectorHeatCard } from '@/components/topics/SectorHeatCard';
 import { WhoTalksTile } from '@/components/stock/WhoTalksTile';
 import { Tile } from '@/components/redesign/Tile';
-import { Plus, Check } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { useAppStore, useTagSubscriptions } from '@/store/useAppStore';
+import { TopicFollowButton } from '@/components/topics/TopicFollowButton';
 
 function resolvedTickerName(t: SectorResolvedTicker, translationMap: Map<string, string>): string {
   const upper = t.ticker.toUpperCase();
@@ -161,9 +159,6 @@ export const SectorPage: React.FC = () => {
 
   // A sector is a special kind of tag — follow it by its display name so it unifies with
   // the namesake topic (and shows up under 追蹤話題 like any other tag subscription).
-  const { toggleTagSubscription } = useAppStore();
-  const tagSubs = useTagSubscriptions();
-  const isSubscribed = !!displayName && (tagSubs.includes(displayName) || tagSubs.includes(`#${displayName}`));
 
   return (
     <>
@@ -197,17 +192,7 @@ export const SectorPage: React.FC = () => {
           {!loading && <span className="text-sm text-muted-foreground tabular-nums">{episodes.length} 集</span>}
           <span className="flex-1" />
           {!loading && displayName && (
-            <button
-              type="button"
-              onClick={() => toggleTagSubscription(displayName)}
-              className={cn(
-                'inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium transition-colors shrink-0',
-                isSubscribed ? 'bg-card border border-border text-foreground hover:bg-muted' : 'bg-foreground text-background hover:opacity-90',
-              )}
-            >
-              {isSubscribed ? <Check size={14} /> : <Plus size={14} />}
-              {isSubscribed ? '已追蹤' : '追蹤話題'}
-            </button>
+            <TopicFollowButton topic={displayName} />
           )}
         </div>
         <p className="text-sm text-muted-foreground max-w-[72ch] leading-[1.6] mb-4">

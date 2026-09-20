@@ -99,7 +99,12 @@ export const MemberHub: React.FC = () => {
     setUserLoading(true);
     authApi
       .getCurrentUser(token)
-      .then(setUserInfo)
+      .then((u) => {
+        // Seed the live watchlist in the SAME batch as userInfo — leaving it to
+        // the effect below would paint one frame of 尚未加入任何自選標的.
+        setUserInfo(u);
+        setApiWatchlist(u.watchlist || []);
+      })
       .catch((e) => {
         console.error('Failed to fetch user info:', e);
         setUserInfo(null);
@@ -135,7 +140,10 @@ export const MemberHub: React.FC = () => {
     });
   }, [token, userInfo]);
 
-  const effectiveWatchlist = useMemo(() => (userInfo?.watchlist !== undefined ? userInfo.watchlist || [] : token ? apiWatchlist : watchlist), [userInfo, token, apiWatchlist, watchlist]);
+  // Read apiWatchlist, never userInfo.watchlist: userInfo is fetched once per token
+  // and never refetched, so preferring it left a pick added from the modal invisible
+  // until a reload. The effect above seeds apiWatchlist from userInfo anyway.
+  const effectiveWatchlist = useMemo(() => (token ? apiWatchlist : watchlist), [token, apiWatchlist, watchlist]);
 
   useEffect(() => {
     if (!searchQuery.trim()) {

@@ -50,11 +50,14 @@ const TF_OPTIONS = [
   { value: '90' as const, label: '90日' },
 ];
 
-const SORT_OPTIONS: { value: SortKey; label: string }[] = [
-  { value: 'hotness', label: '綜合熱度' },
-  { value: 'avg_change', label: '一週表現' },
-  { value: 'episode_count', label: '討論熱度' },
-  { value: 'money_flow', label: '資金流入' },
+// Each sort key has a different time window, so the bare percentages on the cards
+// aren't mistaken for a longer horizon. Only the active tab's line is shown —
+// all four at once read as a wall of text.
+const SORT_OPTIONS: { value: SortKey; label: string; hint: string }[] = [
+  { value: 'hotness', label: '綜合熱度', hint: '當日漲跌與討論熱度的綜合排序。' },
+  { value: 'avg_change', label: '一週表現', hint: '成分股近一週平均漲跌。' },
+  { value: 'episode_count', label: '討論熱度', hint: '累計相關集數。' },
+  { value: 'money_flow', label: '資金流入', hint: '近 5 日外資買賣超。' },
 ];
 
 // ── Skeleton cards ─────────────────────────────────────────────────────────
@@ -439,10 +442,8 @@ export const TopicsCloud: React.FC = () => {
             <Segmented options={SORT_OPTIONS} value={sortKey} onChange={setSortKey} />
           </div>
         </div>
-        {/* Each sort key has a different time window — spell them out so the bare
-            percentages on the cards aren't mistaken for a longer horizon. */}
         <p className={`mb-3 ${type.meta} text-muted-foreground`}>
-          一週表現＝成分股近一週平均漲跌；討論熱度＝累計相關集數；資金流入＝近 5 日外資買賣超；綜合熱度＝當日漲跌與討論熱度的綜合排序。
+          {SORT_OPTIONS.find((o) => o.value === sortKey)?.hint}
         </p>
         <BoardGrid
           loading={loading}
