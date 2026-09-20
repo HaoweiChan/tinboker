@@ -11,7 +11,7 @@ interface NavItem {
   icon: React.ComponentType<{ size?: number; className?: string }>;
   /** Match by prefix (detail routes) rather than exact. */
   prefix?: boolean;
-  /** For /profile deep-links: the tab this item maps to (active when ?tab= matches). */
+  /** For /member deep-links: the tab this item maps to (active when ?tab= matches). */
   tab?: string;
   /** Surfaced only on dev.tinboker.com (VITE_STAGE=DEV); hidden on staging/prod. */
   devOnly?: boolean;
@@ -45,10 +45,10 @@ const SECTIONS: readonly NavSection[] = [
   {
     title: '收藏',
     items: [
-      { to: '/profile?tab=podcasters', label: '訂閱節目', icon: Headphones, tab: 'podcasters' },
-      { to: '/profile?tab=tickers', label: '自選個股', icon: Heart, tab: 'tickers' },
-      { to: '/profile?tab=topics', label: '追蹤話題', icon: Bell, tab: 'topics' },
-      { to: '/profile?tab=episodes', label: '收藏集數', icon: Bookmark, tab: 'episodes' },
+      { to: '/member?tab=podcasters', label: '訂閱節目', icon: Headphones, tab: 'podcasters' },
+      { to: '/member?tab=tickers', label: '自選個股', icon: Heart, tab: 'tickers' },
+      { to: '/member?tab=topics', label: '追蹤話題', icon: Bell, tab: 'topics' },
+      { to: '/member?tab=episodes', label: '收藏集數', icon: Bookmark, tab: 'episodes' },
     ],
   },
   {
@@ -60,9 +60,18 @@ const SECTIONS: readonly NavSection[] = [
   },
 ];
 
+// The "收藏" sub-links and the plain 會員 entry both point at /member, keyed off
+// ?tab= — only one may be highlighted at a time, so 會員 is active exactly when
+// the current tab is NOT one of the 收藏 group's own tabs (i.e. it's picks/absent).
+const COLLECTION_TABS = ['podcasters', 'tickers', 'topics', 'episodes'] as const;
+
 function isActive(pathname: string, search: string, item: NavItem): boolean {
   if (item.tab) {
-    return pathname === '/profile' && new URLSearchParams(search).get('tab') === item.tab;
+    return pathname === '/member' && new URLSearchParams(search).get('tab') === item.tab;
+  }
+  if (item.to === '/member') {
+    const tab = new URLSearchParams(search).get('tab');
+    return pathname === '/member' && !COLLECTION_TABS.includes(tab as (typeof COLLECTION_TABS)[number]);
   }
   if (item.to === '/') return pathname === '/';
   const [base, hash] = item.to.split('#');
@@ -153,8 +162,8 @@ export const Sidebar: React.FC = () => {
         <div className="mt-auto pt-4 border-t border-border">
           {user ? (
             <Link
-              to="/profile"
-              title={!expanded ? `${user.name || '使用者'} · ${user.email}` : '個人檔案'}
+              to="/member"
+              title={!expanded ? `${user.name || '使用者'} · ${user.email}` : '會員專區'}
               className={cn(
                 'flex items-center gap-2.5 rounded-lg hover:bg-muted/50 transition-colors',
                 expanded ? 'px-1.5 py-1' : 'justify-center px-0 py-1',

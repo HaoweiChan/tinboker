@@ -28,13 +28,11 @@ function pageTitle(pathname: string): [string, string] {
     case '/watchlist':
       return ['自選', '追蹤的節目與個股'];
     case '/member':
-      return ['會員專區', '走勢功能 · 訂閱管理'];
+      return ['會員專區', '訂閱、收藏與走勢功能'];
     case '/episode':
       return ['集數摘要', '結構化重點 · 關鍵片段'];
     case '/news':
       return ['集數', '摘要 · 相關內容'];
-    case '/profile':
-      return ['個人檔案', '訂閱、收藏與留言'];
     case '/settings':
       return ['帳號設定', '顯示、通知與偏好'];
     case '/story':
