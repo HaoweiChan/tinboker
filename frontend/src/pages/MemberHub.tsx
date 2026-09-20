@@ -15,8 +15,7 @@ import { useAppStore } from '@/store/useAppStore';
 import { useBookmarkedEpisodes } from '@/hooks/useBookmarkedEpisodes';
 import { useStockPriceMap } from '@/hooks/useStockPriceMap';
 import { useStockPriceSinceMap } from '@/hooks/useStockPriceSinceMap';
-import { getSortedStocks } from '@/services/api';
-import { fetchWithFallback } from '@/services/api/migration';
+import { getSuggestions } from '@/services/api/search';
 import { authApi, type AuthResponse } from '@/services/api/auth';
 import { userApi } from '@/services/api/user';
 import { formatMemberUntil } from '@/lib/date';
@@ -144,15 +143,18 @@ export const MemberHub: React.FC = () => {
       return;
     }
     let alive = true;
-    fetchWithFallback<unknown[]>(() => getSortedStocks({ q: searchQuery, limit: 40 }), [], `getSortedStocks:search`)
-      .catch(() => [] as unknown[])
+    // Same ticker index the header search uses. /api/stocks is a US-only Massive
+    // ticker list that filtered AFTER the limit — it never matched a TW name.
+    // NOT via fetchWithFallback: it caches by endpoint name for 30 s, so a search
+    // would keep answering every later query with the first query's hits.
+    getSuggestions(searchQuery, 20)
+      .catch(() => ({ stocks: [] as Awaited<ReturnType<typeof getSuggestions>>['stocks'] }))
       .then((res) => {
         if (!alive) return;
         setSearchResults(
-          (Array.isArray(res) ? res : []).map((s) => {
-            const o = s as { ticker?: string; symbol?: string; name?: string };
-            return { symbol: o.ticker || o.symbol || '', name: o.name || '' };
-          }).filter((r) => r.symbol),
+          (res.stocks || [])
+            .map((s) => ({ symbol: s.title || '', name: s.subtitle || '' }))
+            .filter((r) => r.symbol),
         );
       });
     return () => {
