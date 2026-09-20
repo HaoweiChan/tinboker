@@ -38,6 +38,16 @@ Environment=EXTRACTOR_MODEL=openrouter:deepseek/deepseek-v4-flash-0731
 # and StreamLake matched Azure on throughput (71-97 tok/s). Fallbacks stay enabled, so
 # this is a price preference and an outage at the pinned providers cannot stall ingest.
 Environment=OPENROUTER_PROVIDER_ORDER=StreamLake,Baidu
+# Local Whisper endpoint for shows on transcript_service "local" (股癌 today). The Mac
+# mini serves ggml-large-v3-turbo over Tailscale; whisper.cpp's whisper-server exposes
+# /inference rather than the OpenAI route, hence the explicit path. If the Mac is
+# unreachable — FileVault is on with no auto-login, so an unattended reboot leaves it at
+# the unlock prompt — FallbackTranscriptService pays Groq for that episode instead of
+# losing it. Compared on five 股癌 episodes (EP694-698) against their stored
+# whisper-large-v3 transcripts: 99.4% entity recall, 0.1 simplified glyphs per 1,000,
+# coverage within 30s of the incumbent, no repetition loops, 16.6x realtime.
+Environment=LOCAL_WHISPER_BASE_URL=http://100.80.151.88:8910
+Environment=LOCAL_WHISPER_TRANSCRIBE_PATH=/inference
 # sector_verifier is the shape a decisions model is built for — one yes/no per candidate,
 # and nothing downstream reads its prose. The code path exists (SECTOR_VERIFIER_MODEL=
 # decisions:typesafe/jev-1.13) and is ~97% cheaper, but it is deliberately NOT enabled:
