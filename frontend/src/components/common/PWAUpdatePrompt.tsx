@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useRegisterSW } from 'virtual:pwa-register/react'
 import { ArrowUpCircle, X } from 'lucide-react'
 import { usePlayerStore } from '@/store/usePlayerStore'
+import { pickUpdateTarget } from '@/lib/swUpdateTarget'
 
 const PWA_UPDATE_KEY = 'pwa-update-reload'
 const SUPPRESS_MS = 10_000
@@ -12,6 +13,10 @@ const SUPPRESS_MS = 10_000
 // mobile install+activate — a shorter value reloaded into the still-active OLD
 // worker, re-serving the stale build and looping the prompt (the bug this fixes).
 const RELOAD_BACKSTOP_MS = 10_000
+// Same anti-hang role while a worker is still DOWNLOADING its precache (several
+// MB) when the user taps: 10 s is not enough on mobile, and firing early reloads
+// into the old build.
+const INSTALL_BACKSTOP_MS = 60_000
 const VISIBILITY_CHECK_MIN_INTERVAL_MS = 5 * 60 * 1000
 
 // Module-level once-guard: controllerchange, the waiting worker's statechange
@@ -49,6 +54,11 @@ function forceReload() {
  * - Never call reg.update() in the click path — update checks belong in the
  *   background, not between the user's tap and the reload (awaiting that network
  *   fetch is what left 更新中… hanging forever).
+ * - Activate the NEWEST worker. When another deploy lands while one is already
+ *   waiting, the registration holds `waiting` (N+1) AND `installing` (N+2);
+ *   skipping `waiting` reloads into the already-stale N+1 and the prompt returns
+ *   as soon as N+2 installs ("tapped 更新 twice, still old"). Selection lives in
+ *   lib/swUpdateTarget.ts (check: `node src/lib/swUpdateTarget.check.ts`).
  * - If needRefresh is set but no waiting/installing worker exists (page was
  *   frozen on iOS, another tab activated it, …) there is nothing to activate:
  *   just reload.
@@ -142,7 +152,11 @@ export function PWAUpdatePrompt() {
     // is just an anti-hang backstop for the case where no worker ever takes
     // control — see RELOAD_BACKSTOP_MS. Armed synchronously so the button can't
     // dead-end even if getRegistration() never resolves.
-    const backstop = setTimeout(forceReload, RELOAD_BACKSTOP_MS)
+    let backstop = setTimeout(forceReload, RELOAD_BACKSTOP_MS)
+    const rearmBackstop = (ms: number) => {
+      clearTimeout(backstop)
+      backstop = setTimeout(forceReload, ms)
+    }
 
     // Tell the generated sw.js to self.skipWaiting(); on activation clientsClaim
     // fires controllerchange → reload. We do NOT reload here ourselves.
@@ -150,20 +164,31 @@ export function PWAUpdatePrompt() {
 
     navigator.serviceWorker.getRegistration()
       .then((reg) => {
-        if (reg?.waiting) {
-          skipWaiting(reg.waiting)
-        } else if (reg?.installing) {
-          // Update still downloading — wait for it, then activate. Don't reload
-          // into the old build in the meantime.
-          const sw = reg.installing
-          sw.addEventListener('statechange', () => {
-            if (sw.state === 'installed') skipWaiting(sw)
-          })
-        } else {
+        const target = pickUpdateTarget(reg)
+        if (!target) {
           // Stale prompt — nothing pending to switch to; reload picks up
           // whatever is current.
           clearTimeout(backstop)
           forceReload()
+        } else if (target.ready) {
+          skipWaiting(target.worker)
+        } else {
+          // A newer worker is still downloading — possibly on top of one that is
+          // already waiting. Wait for the NEWEST one, then activate it; don't
+          // reload into an older build in the meantime.
+          const sw = target.worker
+          rearmBackstop(INSTALL_BACKSTOP_MS)
+          sw.addEventListener('statechange', () => {
+            if (sw.state === 'installed') {
+              rearmBackstop(RELOAD_BACKSTOP_MS)
+              skipWaiting(sw)
+            } else if (sw.state === 'redundant') {
+              // Install failed. Fall back to the worker that was already
+              // waiting, if any; else the backstop reloads.
+              rearmBackstop(RELOAD_BACKSTOP_MS)
+              if (reg?.waiting) skipWaiting(reg.waiting)
+            }
+          })
         }
       })
       .catch(() => { clearTimeout(backstop); forceReload() })
