@@ -9,10 +9,12 @@ import { apiEpisodeToCardV2 } from '@/components/redesign/episodeAdapter';
 import { SubscribedPodcasters } from '@/components/profile/SubscribedPodcasters';
 import { SubscribedTickers } from '@/components/profile/SubscribedTickers';
 import { SubscribedTopics } from '@/components/profile/SubscribedTopics';
+import { SwipeToRemove } from '@/components/common/SwipeToRemove';
 import { PlanCard } from '@/components/membership/PlanCard';
 import { PicksPage } from '@/pages/PicksPage';
 import { useAppStore } from '@/store/useAppStore';
 import { useBookmarkedEpisodes } from '@/hooks/useBookmarkedEpisodes';
+import { useRemoveWithUndo } from '@/hooks/useRemoveWithUndo';
 import { useStockPriceMap } from '@/hooks/useStockPriceMap';
 import { useStockPriceSinceMap } from '@/hooks/useStockPriceSinceMap';
 import { getSuggestions } from '@/services/api/search';
@@ -50,6 +52,12 @@ function initials(name?: string): string {
 export const MemberHub: React.FC = () => {
   const navigate = useNavigate();
   const { watchlist, toggleWatchlist, token } = useAppStore();
+  const toggleSubscription = useAppStore((st) => st.toggleSubscription);
+  const toggleTagSubscription = useAppStore((st) => st.toggleTagSubscription);
+  const toggleEpisodeBookmark = useAppStore((st) => st.toggleEpisodeBookmark);
+  // Swipe-away state, shared with /watchlist: the lists themselves aren't edited,
+  // so 復原 puts a row back where it was.
+  const { removed, removeWithUndo } = useRemoveWithUndo();
   const [userInfo, setUserInfo] = useState<AuthResponse['user'] | null>(null);
   const [userLoading, setUserLoading] = useState(true);
 
@@ -143,7 +151,13 @@ export const MemberHub: React.FC = () => {
   // Read apiWatchlist, never userInfo.watchlist: userInfo is fetched once per token
   // and never refetched, so preferring it left a pick added from the modal invisible
   // until a reload. The effect above seeds apiWatchlist from userInfo anyway.
-  const effectiveWatchlist = useMemo(() => (token ? apiWatchlist : watchlist), [token, apiWatchlist, watchlist]);
+  const effectiveWatchlist = useMemo(
+    () => (token ? apiWatchlist : watchlist).filter((t) => !removed.has(`ticker:${t}`)),
+    [token, apiWatchlist, watchlist, removed],
+  );
+  const visiblePodcastSubs = useMemo(() => podcastSubs.filter((n) => !removed.has(`podcaster:${n}`)), [podcastSubs, removed]);
+  const visibleTagSubs = useMemo(() => tagSubs.filter((t) => !removed.has(`topic:${t}`)), [tagSubs, removed]);
+  const visibleBookmarked = useMemo(() => bookmarked.filter((ep) => !removed.has(`episode:${ep.id}`)), [bookmarked, removed]);
 
   useEffect(() => {
     if (!searchQuery.trim()) {
@@ -220,10 +234,10 @@ export const MemberHub: React.FC = () => {
                 {/* One count per pill below (the pills themselves carry no numbers), short
                     labels so the row stays on one line at 375px. */}
                 <div className="flex flex-wrap gap-x-3.5 gap-y-1 mt-2.5 text-xs text-muted-foreground whitespace-nowrap">
-                  <span><strong className="text-foreground font-mono mr-1 tabular-nums">{podcastSubs.length}</strong>節目</span>
+                  <span><strong className="text-foreground font-mono mr-1 tabular-nums">{visiblePodcastSubs.length}</strong>節目</span>
                   <span><strong className="text-foreground font-mono mr-1 tabular-nums">{effectiveWatchlist.length}</strong>股票</span>
-                  <span><strong className="text-foreground font-mono mr-1 tabular-nums">{tagSubs.length}</strong>話題</span>
-                  <span><strong className="text-foreground font-mono mr-1 tabular-nums">{bookmarked.length || episodeBookmarks.length}</strong>集數</span>
+                  <span><strong className="text-foreground font-mono mr-1 tabular-nums">{visibleTagSubs.length}</strong>話題</span>
+                  <span><strong className="text-foreground font-mono mr-1 tabular-nums">{visibleBookmarked.length || episodeBookmarks.length}</strong>集數</span>
                   {formatJoin(userInfo.created_at) && <span className="hidden sm:inline">· {formatJoin(userInfo.created_at)}</span>}
                 </div>
               </div>
@@ -234,9 +248,9 @@ export const MemberHub: React.FC = () => {
               <div className="min-w-0">
                 <div className="text-sm text-muted-foreground">已登入</div>
                 <div className="flex gap-4 mt-2.5 text-xs text-muted-foreground">
-                  <span><strong className="text-foreground font-mono mr-1 tabular-nums">{podcastSubs.length}</strong>追蹤節目</span>
+                  <span><strong className="text-foreground font-mono mr-1 tabular-nums">{visiblePodcastSubs.length}</strong>追蹤節目</span>
                   <span><strong className="text-foreground font-mono mr-1 tabular-nums">{effectiveWatchlist.length}</strong>自選股</span>
-                  <span><strong className="text-foreground font-mono mr-1 tabular-nums">{bookmarked.length || episodeBookmarks.length}</strong>收藏集數</span>
+                  <span><strong className="text-foreground font-mono mr-1 tabular-nums">{visibleBookmarked.length || episodeBookmarks.length}</strong>收藏集數</span>
                 </div>
               </div>
             </div>
@@ -275,10 +289,13 @@ export const MemberHub: React.FC = () => {
         )}
 
         {tab === 'podcasters' && (
-          podcastSubs.length === 0 ? (
+          visiblePodcastSubs.length === 0 ? (
             <div className="bg-card border border-border rounded-md p-10 text-center text-sm text-muted-foreground">尚未追蹤任何節目。</div>
           ) : (
-            <SubscribedPodcasters names={podcastSubs} />
+            <SubscribedPodcasters
+              names={visiblePodcastSubs}
+              onRemove={(name, label) => removeWithUndo(`podcaster:${name}`, label, () => toggleSubscription(name, { silent: true }))}
+            />
           )
         )}
 
@@ -287,22 +304,28 @@ export const MemberHub: React.FC = () => {
             {effectiveWatchlist.length === 0 ? (
               <div className="bg-card border border-border rounded-md p-10 text-center text-sm text-muted-foreground">尚未加入任何自選標的。</div>
             ) : (
-              <SubscribedTickers tickers={effectiveWatchlist} />
+              <SubscribedTickers
+                tickers={effectiveWatchlist}
+                onRemove={(sym, label) => removeWithUndo(`ticker:${sym}`, label, () => toggleWatchlist(sym, { silent: true }))}
+              />
             )}
             <button type="button" onClick={() => setSearchOpen(true)} className="mt-3 w-full border border-dashed border-border rounded-md py-6 text-sm text-muted-foreground hover:border-foreground/30 hover:text-foreground transition-colors">+ 新增自選</button>
           </>
         )}
 
         {tab === 'topics' && (
-          tagSubs.length === 0 ? (
+          visibleTagSubs.length === 0 ? (
             <div className="bg-card border border-border rounded-md p-10 text-center text-sm text-muted-foreground">尚未追蹤任何話題。</div>
           ) : (
-            <SubscribedTopics tagSubs={tagSubs} />
+            <SubscribedTopics
+              tagSubs={visibleTagSubs}
+              onRemove={(sub, label) => removeWithUndo(`topic:${sub}`, label, () => toggleTagSubscription(sub, { silent: true }))}
+            />
           )
         )}
 
         {tab === 'episodes' && (
-          bookmarked.length === 0 ? (
+          visibleBookmarked.length === 0 ? (
             <div className="bg-card border border-border rounded-md p-10 text-center text-sm text-muted-foreground">
               {episodeBookmarks.length === 0
                 ? '目前沒有收藏的集數。'
@@ -312,8 +335,15 @@ export const MemberHub: React.FC = () => {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {bookmarked.map((ep) => (
-                <EpisodeCardV2 key={ep.id} {...apiEpisodeToCardV2(ep, priceMap, undefined, undefined, undefined, priceSinceMap)} />
+              {visibleBookmarked.map((ep) => (
+                <SwipeToRemove
+                  key={ep.id}
+                  className="rounded-md"
+                  onRemove={() => removeWithUndo(`episode:${ep.id}`, `「${ep.episode_title || '這集'}」`, () =>
+                    toggleEpisodeBookmark(ep.podcast_name, ep.id, { silent: true }))}
+                >
+                  <EpisodeCardV2 {...apiEpisodeToCardV2(ep, priceMap, undefined, undefined, undefined, priceSinceMap)} />
+                </SwipeToRemove>
               ))}
             </div>
           )
