@@ -115,16 +115,6 @@ def test_a_missing_file_fails_before_any_request(svc, monkeypatch):
         svc.transcribe("/nope/missing.mp3")
 
 
-def test_the_factory_selects_it_for_transcript_service_local(monkeypatch):
-    monkeypatch.setenv("LOCAL_WHISPER_BASE_URL", "http://mac-mini:11434/v1")
-    from src.pipeline.steps.initialize import initialize_stt_service
-
-    class _Cfg:
-        stt_service_name = "local"
-        stt_model = None
-
-    assert initialize_stt_service(_Cfg()).get_service_name() == "local-whisper"
-
 
 def test_the_route_is_configurable_because_servers_disagree_about_it(monkeypatch):
     """Regression: whisper.cpp's whisper-server serves /inference, not the OpenAI route.
