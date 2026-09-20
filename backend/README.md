@@ -322,43 +322,7 @@ See `docs`/`/redoc` for the full response schema.
 
 ### Stock APIs
 
-#### 1. Get All Stocks
-
-Get a sorted list of all stocks in the database.
-
-```bash
-curl -X GET "http://localhost:5174/api/stocks?sort_by=ticker"
-```
-
-**Query Parameters:**
-- `sort_by` (optional): Sort field - `ticker`, `name`, `price`, `change_percent`, `market_cap` (default: `ticker`)
-
-**Example Response:**
-
-```json
-[
-  {
-    "ticker": "AAPL",
-    "name": "Apple Inc.",
-    "price": 178.50,
-    "change": 2.30,
-    "change_percent": 1.31,
-    "market_cap": 2800000000000,
-    "revenue": 394328000000,
-    "pe": 29.5,
-    "dividend_yield": 0.52,
-    "about": "Apple Inc. designs, manufactures, and markets smartphones...",
-    "volume": 52000000,
-    "beta": 1.25,
-    "volatility": 0.28,
-    "updated_at": "2024-01-15T10:30:00"
-  }
-]
-```
-
----
-
-#### 2. Get Stock by Ticker
+#### 1. Get Stock by Ticker
 
 Get detailed information about a specific stock including chart data.
 
@@ -444,7 +408,7 @@ curl -X GET "http://localhost:5174/api/stocks/NVDA?timeframe=YTD"
 
 ---
 
-#### 3. Get Stock Basic Info
+#### 2. Get Stock Basic Info
 
 Get basic stock information without chart data (faster response).
 
@@ -476,7 +440,7 @@ curl -X GET "http://localhost:5174/api/stocks/MSFT/basic"
 
 ---
 
-#### 4. WebSocket - Real-time Price Updates
+#### 3. WebSocket - Real-time Price Updates
 
 Connect via WebSocket to receive real-time stock price updates using the `/ws/prices` endpoint.
 

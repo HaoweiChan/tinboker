@@ -93,12 +93,12 @@ async def get_stock(ticker: str):
 ```python
 router = APIRouter(prefix="/api/stocks", tags=["stocks"])
 
-@router.get("", response_model=List[dict])
-async def get_sorted_stocks(
-    sort_by: str = Query(default="ticker", description="Sort field"),
-    limit: int = Query(default=50, ge=1, le=200, description="Max results")
+@router.get("/{ticker}", response_model=dict)
+async def get_stock_by_ticker(
+    ticker: str,
+    timeframe: str = Query(default="1M", description="Chart timeframe")
 ):
-    return await stock_service.get_sorted_stocks_async(sort_by=sort_by, limit=limit)
+    return await stock_service.get_stock_detail(ticker, timeframe=timeframe)
 ```
 
 ### Caching Pattern

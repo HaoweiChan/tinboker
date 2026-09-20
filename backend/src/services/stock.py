@@ -248,25 +248,6 @@ class StockService:
         return None
     
     
-    def get_sorted_stocks(self, sort_by: str = "ticker", limit: int = 50) -> List[Dict[str, Any]]:
-        """
-        Get sorted stocks list from Massive API
-        Synchronous version - calls async version internally
-        
-        Args:
-            sort_by: Sort field (ticker, name, price, change_percent, market_cap)
-            limit: Maximum number of stocks to return (default: 50, max: 200)
-            
-        Returns:
-            List of stock dictionaries
-        """
-        import asyncio
-        try:
-            loop = asyncio.get_event_loop()
-            return loop.run_until_complete(self.get_sorted_stocks_async(sort_by=sort_by, limit=limit))
-        except RuntimeError:
-            return asyncio.run(self.get_sorted_stocks_async(sort_by=sort_by, limit=limit))
-    
     async def get_sorted_stocks_async(self, sort_by: str = "ticker", limit: int = 50) -> List[Dict[str, Any]]:
         """
         Get sorted stocks list from Massive API with caching
