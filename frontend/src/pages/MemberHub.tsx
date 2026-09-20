@@ -257,7 +257,11 @@ export const MemberHub: React.FC = () => {
 
         {/* Tab content */}
         {tab === 'picks' && (
-          isMember ? <PicksPage embedded /> : <PlanCard />
+          isMember ? (
+            <PicksPage embedded mySubscribedPodcasts={podcastSubs} myWatchlistTickers={effectiveWatchlist} />
+          ) : (
+            <PlanCard />
+          )
         )}
 
         {tab === 'podcasters' && (
