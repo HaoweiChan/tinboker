@@ -93,11 +93,13 @@ export const PickCard: React.FC<PickCardProps> = ({
             <button
               type="button"
               onClick={() => navigate(`/stock/${encodeURIComponent(ticker)}`)}
-              className="font-mono font-semibold text-lg text-foreground hover:text-accent-info transition-colors"
+              className="font-mono font-semibold text-lg text-foreground hover:text-accent-info transition-colors shrink-0"
             >
               {ticker}
             </button>
-            {displayName && <span className="text-sm text-muted-foreground truncate">{displayName}</span>}
+            {/* min-w-0 + a width cap: inside a wrapping flex row `truncate` alone never
+                engages, so a long US name (SPCX) wrapped onto its own clipped line. */}
+            {displayName && <span className="text-sm text-muted-foreground truncate min-w-0 max-w-[60%]">{displayName}</span>}
             {sentiment && <SentimentChip sentiment={sentiment} />}
             {repeatCount > 0 && (
               <span className="inline-flex items-center gap-1 rounded-full bg-muted/70 border border-border px-2 py-0.5 text-2xs font-medium text-muted-foreground">

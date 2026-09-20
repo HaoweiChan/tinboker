@@ -162,10 +162,10 @@ export const MemberHub: React.FC = () => {
 
   const TABS: { id: Tab; label: string; locked?: boolean }[] = [
     { id: 'picks', label: '走勢', locked: !isMember },
-    { id: 'podcasters', label: '訂閱節目' },
-    { id: 'tickers', label: '自選股票' },
-    { id: 'topics', label: '追蹤話題' },
-    { id: 'episodes', label: '收藏集數' },
+    { id: 'podcasters', label: '節目' },
+    { id: 'tickers', label: '股票' },
+    { id: 'topics', label: '話題' },
+    { id: 'episodes', label: '集數' },
   ];
 
   const memberUntilLabel = storeUser?.member_until ? formatMemberUntil(storeUser.member_until) : null;
@@ -211,9 +211,9 @@ export const MemberHub: React.FC = () => {
                     labels so the row stays on one line at 375px. */}
                 <div className="flex flex-wrap gap-x-3.5 gap-y-1 mt-2.5 text-xs text-muted-foreground whitespace-nowrap">
                   <span><strong className="text-foreground font-mono mr-1 tabular-nums">{podcastSubs.length}</strong>節目</span>
-                  <span><strong className="text-foreground font-mono mr-1 tabular-nums">{effectiveWatchlist.length}</strong>自選</span>
+                  <span><strong className="text-foreground font-mono mr-1 tabular-nums">{effectiveWatchlist.length}</strong>股票</span>
                   <span><strong className="text-foreground font-mono mr-1 tabular-nums">{tagSubs.length}</strong>話題</span>
-                  <span><strong className="text-foreground font-mono mr-1 tabular-nums">{bookmarked.length || episodeBookmarks.length}</strong>收藏</span>
+                  <span><strong className="text-foreground font-mono mr-1 tabular-nums">{bookmarked.length || episodeBookmarks.length}</strong>集數</span>
                   {formatJoin(userInfo.created_at) && <span className="hidden sm:inline">· {formatJoin(userInfo.created_at)}</span>}
                 </div>
               </div>
@@ -238,14 +238,16 @@ export const MemberHub: React.FC = () => {
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1.5 mb-4 overflow-x-auto pb-1">
+        {/* Five short labels (the same words as the header counts) in five equal cells —
+            fits 375px without a horizontal scroller. */}
+        <div className="grid grid-cols-5 gap-1.5 mb-4">
           {TABS.map((t) => (
             <button
               key={t.id}
               type="button"
               onClick={() => setTab(t.id)}
               data-active={tab === t.id ? 'true' : undefined}
-              className="filter-pill inline-flex items-center gap-1.5"
+              className="filter-pill inline-flex items-center justify-center gap-1 !px-0 min-w-0"
             >
               {t.locked && <Lock size={12} aria-label="會員功能" />}
               {t.label}
