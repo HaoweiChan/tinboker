@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { toast } from 'sonner';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
 import { EpisodeCardV2 } from '@/components/redesign';
@@ -12,6 +11,7 @@ import { SubscribedTopics } from '@/components/profile/SubscribedTopics';
 import { userApi } from '@/services/api/user';
 import { useAppStore, useSubscriptions, useWatchlist, useTagSubscriptions } from '@/store/useAppStore';
 import { useBookmarkedEpisodes } from '@/hooks/useBookmarkedEpisodes';
+import { useRemoveWithUndo } from '@/hooks/useRemoveWithUndo';
 import { useStockPriceMap } from '@/hooks/useStockPriceMap';
 import { useStockPriceSinceMap } from '@/hooks/useStockPriceSinceMap';
 
@@ -31,41 +31,11 @@ export const WatchlistPage: React.FC = () => {
   const [serverLoaded, setServerLoaded] = useState(false);
   // Swiped-away items, hidden immediately and restored in place by 復原. The lists
   // themselves aren't edited, so an undo puts a row back where it was.
-  const [removed, setRemoved] = useState<ReadonlySet<string>>(new Set());
+  const { removed, removeWithUndo } = useRemoveWithUndo();
   const toggleWatchlist = useAppStore((s) => s.toggleWatchlist);
   const toggleSubscription = useAppStore((s) => s.toggleSubscription);
   const toggleTagSubscription = useAppStore((s) => s.toggleTagSubscription);
   const toggleEpisodeBookmark = useAppStore((s) => s.toggleEpisodeBookmark);
-
-  const setHidden = (key: string, hidden: boolean) =>
-    setRemoved((prev) => {
-      const next = new Set(prev);
-      if (hidden) next.add(key);
-      else next.delete(key);
-      return next;
-    });
-
-  /** Remove now, offer 復原. `toggle` flips the saved state server-side (or locally). */
-  const removeWithUndo = (key: string, label: string, toggle: () => Promise<boolean>) => {
-    setHidden(key, true);
-    const removal = toggle();
-    const toastId = toast(`已移除 ${label}`, {
-      action: {
-        label: '復原',
-        onClick: async () => {
-          setHidden(key, false);
-          // Undo toggles back — only once the removal itself went through, or it would remove instead.
-          if (!(await removal)) return;
-          if (!(await toggle())) setHidden(key, true);
-        },
-      },
-    });
-    void removal.then((ok) => {
-      if (ok) return;
-      toast.dismiss(toastId); // the store already showed why
-      setHidden(key, false);
-    });
-  };
 
   // Effective lists: prefer server data for logged-in users, fall back to local store
   const subscriptions = useMemo(
