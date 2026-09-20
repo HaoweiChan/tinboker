@@ -162,10 +162,10 @@ export const MemberHub: React.FC = () => {
 
   const TABS: { id: Tab; label: string; locked?: boolean }[] = [
     { id: 'picks', label: '走勢', locked: !isMember },
-    { id: 'podcasters', label: `訂閱節目 ${podcastSubs.length}` },
-    { id: 'tickers', label: `自選股票 ${effectiveWatchlist.length}` },
-    { id: 'topics', label: `追蹤話題 ${tagSubs.length}` },
-    { id: 'episodes', label: `收藏集數 ${bookmarked.length || episodeBookmarks.length}` },
+    { id: 'podcasters', label: '訂閱節目' },
+    { id: 'tickers', label: '自選股票' },
+    { id: 'topics', label: '追蹤話題' },
+    { id: 'episodes', label: '收藏集數' },
   ];
 
   const memberUntilLabel = storeUser?.member_until ? formatMemberUntil(storeUser.member_until) : null;
@@ -175,7 +175,7 @@ export const MemberHub: React.FC = () => {
       <SEO title="會員專區" description="訂閱、收藏、留言與走勢功能。" />
       <PageContent>
         {/* Identity card */}
-        <div className="bg-card border border-border rounded-md p-6 mb-5">
+        <div className="bg-card border border-border rounded-md p-4 sm:p-6 mb-5">
           {userLoading ? (
             <div className="flex items-center gap-4">
               <div className="w-[72px] h-[72px] rounded-full bg-muted animate-pulse" />
@@ -185,18 +185,18 @@ export const MemberHub: React.FC = () => {
               </div>
             </div>
           ) : userInfo ? (
-            <div className="flex items-start gap-4">
+            <div className="flex items-start gap-3 sm:gap-4">
               {userInfo.avatar ? (
-                <img src={userInfo.avatar} alt={userInfo.name} className="w-[72px] h-[72px] rounded-full object-cover shrink-0" />
+                <img src={userInfo.avatar} alt={userInfo.name} className="w-14 h-14 sm:w-[72px] sm:h-[72px] rounded-full object-cover shrink-0" />
               ) : (
-                <div className="w-[72px] h-[72px] rounded-full grid place-items-center text-white text-2xl font-semibold bg-accent-info shrink-0">{initials(userInfo.name)}</div>
+                <div className="w-14 h-14 sm:w-[72px] sm:h-[72px] rounded-full grid place-items-center text-white text-xl sm:text-2xl font-semibold bg-accent-info shrink-0">{initials(userInfo.name)}</div>
               )}
               <div className="min-w-0">
-                <h1 className="text-2xl font-semibold tracking-[-0.01em]">{userInfo.name}</h1>
-                <div className="text-sm text-muted-foreground mt-0.5">{userInfo.email}</div>
+                <h1 className="text-xl sm:text-2xl font-semibold tracking-[-0.01em] truncate">{userInfo.name}</h1>
+                <div className="text-sm text-muted-foreground mt-0.5 truncate">{userInfo.email}</div>
                 <div className="mt-1.5 text-sm">
                   {isMember ? (
-                    <span className="flex items-center gap-2 flex-wrap">
+                    <span className="flex items-center gap-x-2 gap-y-0.5 flex-wrap whitespace-nowrap">
                       <span className="text-accent-info font-medium">會員 · 有效至 {memberUntilLabel}</span>
                       <Link to="/membership" className="text-accent-info hover:underline text-xs">管理訂閱</Link>
                     </span>
@@ -207,11 +207,14 @@ export const MemberHub: React.FC = () => {
                     </span>
                   )}
                 </div>
-                <div className="flex gap-4 mt-2.5 text-xs text-muted-foreground">
-                  <span><strong className="text-foreground font-mono mr-1 tabular-nums">{podcastSubs.length}</strong>追蹤節目</span>
-                  <span><strong className="text-foreground font-mono mr-1 tabular-nums">{effectiveWatchlist.length}</strong>自選股</span>
-                  <span><strong className="text-foreground font-mono mr-1 tabular-nums">{bookmarked.length || episodeBookmarks.length}</strong>收藏集數</span>
-                  {formatJoin(userInfo.created_at) && <span>· {formatJoin(userInfo.created_at)}</span>}
+                {/* One count per pill below (the pills themselves carry no numbers), short
+                    labels so the row stays on one line at 375px. */}
+                <div className="flex flex-wrap gap-x-3.5 gap-y-1 mt-2.5 text-xs text-muted-foreground whitespace-nowrap">
+                  <span><strong className="text-foreground font-mono mr-1 tabular-nums">{podcastSubs.length}</strong>節目</span>
+                  <span><strong className="text-foreground font-mono mr-1 tabular-nums">{effectiveWatchlist.length}</strong>自選</span>
+                  <span><strong className="text-foreground font-mono mr-1 tabular-nums">{tagSubs.length}</strong>話題</span>
+                  <span><strong className="text-foreground font-mono mr-1 tabular-nums">{bookmarked.length || episodeBookmarks.length}</strong>收藏</span>
+                  {formatJoin(userInfo.created_at) && <span className="hidden sm:inline">· {formatJoin(userInfo.created_at)}</span>}
                 </div>
               </div>
             </div>
