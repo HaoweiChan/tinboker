@@ -397,7 +397,35 @@ export const EpisodeDetail: React.FC = () => {
                       {timeAgo(episode.released_at_ms ?? episode.spotify_release_date, episode.created_time)}
                     </div>
                   </div>
+                  {/* Saving and sharing are secondary to the episode itself, so they
+                      sit as icons in the corner rather than as two labelled pills
+                      taking a row of their own on a phone. */}
+                  <div className="flex shrink-0 items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={onBookmark}
+                      aria-pressed={isBookmarked}
+                      aria-label={isBookmarked ? '已收藏' : '收藏'}
+                      title={isBookmarked ? '已收藏' : '收藏'}
+                      className={cn(
+                        'grid place-items-center h-9 w-9 rounded-full transition-colors',
+                        isBookmarked ? 'bg-accent-info-soft text-accent-info' : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                      )}
+                    >
+                      <Bookmark size={17} className={isBookmarked ? 'fill-current' : ''} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={onShare}
+                      aria-label={shareCopied ? '已複製連結' : '分享'}
+                      title={shareCopied ? '已複製連結' : '分享'}
+                      className="grid place-items-center h-9 w-9 rounded-full text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                    >
+                      {shareCopied ? <Check size={17} className="text-sentiment-bull" /> : <Share2 size={17} />}
+                    </button>
+                  </div>
                 </div>
+                {(spotifyUri || episode.spotify_url) && (
                 <div className="flex w-full items-center gap-2 overflow-x-auto pb-1 sm:w-auto sm:shrink-0 sm:overflow-visible sm:pb-0">
                   {/* Spotify embed only — no audio from our own domain (AdSense
                       replicated content, #588). No Spotify URI, no playback. */}
@@ -406,31 +434,13 @@ export const EpisodeDetail: React.FC = () => {
                       <Play size={14} className="fill-current" /> 播放本集
                     </button>
                   )}
-                  <button
-                    type="button"
-                    onClick={onBookmark}
-                    className={cn(
-                      'inline-flex shrink-0 items-center gap-1.5 px-3.5 py-2 rounded-full text-sm font-medium transition-colors',
-                      isBookmarked ? 'bg-accent-info-soft text-accent-info' : 'bg-card border border-border hover:bg-muted',
-                    )}
-                  >
-                    <Bookmark size={13} className={isBookmarked ? 'fill-current' : ''} />
-                    {isBookmarked ? '已收藏' : '收藏'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={onShare}
-                    className="inline-flex shrink-0 items-center gap-1.5 px-3.5 py-2 rounded-full bg-card border border-border text-sm font-medium hover:bg-muted transition-colors"
-                  >
-                    {shareCopied ? <Check size={13} className="text-sentiment-bull" /> : <Share2 size={13} />}
-                    {shareCopied ? '已複製' : '分享'}
-                  </button>
                   {episode.spotify_url && (
                     <a href={episode.spotify_url} target="_blank" rel="noopener noreferrer" className="inline-flex shrink-0 items-center gap-1.5 px-3.5 py-2 rounded-full bg-card border border-border text-sm font-medium hover:bg-muted transition-colors">
                       <ExternalLink size={13} /> Spotify
                     </a>
                   )}
                 </div>
+                )}
               </div>
               <h1 className="text-2xl font-semibold tracking-[-0.015em] leading-[1.3]">{title}</h1>
               {(heroTags.length > 0 || (episode.sector_exposures?.length ?? 0) > 0) && (
