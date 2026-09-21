@@ -44,13 +44,15 @@ MIN_TAG_EPISODES = 5
 # sector page is a description plus one card.
 MIN_SECTOR_EPISODES = 2
 
+# /articles is deliberately absent: the CMS has zero published articles, so the index
+# page is ~74 crawler-visible characters — exactly the thin URL AdSense flagged in
+# 2026-09. The per-article loop below re-populates the sitemap if articles return.
 STATIC_PATHS = [
     ("/", "1.0", "daily"),
     ("/podcaster", "0.8", "weekly"),
     ("/stock", "0.8", "weekly"),
     ("/topics", "0.8", "weekly"),
     ("/weekly", "0.8", "weekly"),
-    ("/articles", "0.7", "weekly"),
     ("/about", "0.5", "monthly"),
     ("/terms", "0.3", "yearly"),
 ]
