@@ -359,12 +359,17 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodc
           </>
         )}
 
-        {/* Explicit rows, not one wrapping flex: with the channel dropdown sharing a
-            line, turning 全部 on re-wrapped the row below it and the 7/30/90 buttons
-            jumped. Each control owns a row, so the tiers never move; the dropdown
-            appears below them instead of pushing them. */}
+        {/* Scope and tier share the top row — both are fixed width whatever is
+            selected, so nothing shifts when 全部 is toggled. The channel dropdown is
+            the one control that appears and disappears, so it sits on its own row
+            below instead of re-wrapping the buttons above it. */}
         <div className="mb-[18px] flex flex-col items-start gap-2">
+          {/* Both controls tighten their button padding (the shared Segmented's
+              px-3.5 put the pair at 349px inside a 341px column, so it wrapped).
+              Local override — other pages keep the roomier default. */}
+          <div className="flex items-center gap-2 flex-wrap">
           <Segmented
+            className="[&_button]:px-2.5"
             options={[
               { value: 'mine', label: '我的' },
               { value: 'all', label: '全部' },
@@ -375,6 +380,7 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodc
           {/* 最新 and the maturity tiers are one choice, not two: picking 30日 already
               means 已揭曉. */}
           <Segmented
+            className="[&_button]:px-2.5"
             options={[
               { value: 'recent', label: '最新' },
               { value: '7', label: '7日' },
@@ -388,6 +394,7 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodc
               setSettledTier(Number(v) as SettledTier);
             }}
           />
+          </div>
           {/* Channel dropdown only makes sense as a manual pick across all shows —
              in 我的 it's already narrowed to the subscribed shows. */}
           {scope === 'all' && channelOptions.length > 0 && (
