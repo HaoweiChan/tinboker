@@ -128,7 +128,11 @@ async def select_weekly_movers() -> Optional[dict]:
     if (not rows or data["total"] < WEEKLY_MIN_TOTAL
             or rows[0]["n"] - rows[0].get("prev", 0) < WEEKLY_MIN_RISE):
         return None
-    iso = week_start.isocalendar()
+    # Take the ISO week from the DATA, not from the clock that started the query: key,
+    # subject and url must all name the week the card was actually built from. They
+    # only differed if _weekly_movers returned another week — which is also what made
+    # the test read the real calendar and rot every Monday.
+    iso = date.fromisoformat(data["week_start"]).isocalendar()
     return {
         "key": f"weekly_movers:{data['week_start']}",
         "subject": data["week_start"],
