@@ -103,21 +103,24 @@ export const PickCard: React.FC<PickCardProps> = ({
                 engages, so a long US name (SPCX) wrapped onto its own clipped line. */}
             {displayName && <span className="text-sm text-muted-foreground truncate min-w-0 max-w-[60%]">{displayName}</span>}
             {sentiment && <SentimentChip sentiment={sentiment} />}
-            {repeatCount > 0 && (
-              // The chip IS the disclosure: it already names the fact, so a separate
-              // 查看連續點名集數與摘要 button below just said it again.
-              <button
-                type="button"
-                onClick={() => setMentionsOpen((v) => !v)}
-                aria-expanded={mentionsOpen}
-                className="inline-flex items-center gap-1 rounded-full bg-muted/70 border border-border px-2.5 py-1 text-xs font-medium text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
-              >
-                <Layers size={11} className="shrink-0" />
-                近期連續點名 {repeatCount} 次
-                {mentionsOpen ? <ChevronUp size={11} className="shrink-0" /> : <ChevronDown size={11} className="shrink-0" />}
-              </button>
-            )}
           </div>
+          {/* Its own row, never sharing the ticker line: in a wrapping flex it sat
+              inline on a pick with no sentiment chip and dropped below on one with
+              it, so the card jumped around depending on whether a stance was
+              extracted. The chip IS the disclosure — it already names the fact, so
+              a separate 查看連續點名集數與摘要 button below just said it again. */}
+          {repeatCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setMentionsOpen((v) => !v)}
+              aria-expanded={mentionsOpen}
+              className="inline-flex items-center gap-1 mt-2 rounded-full bg-muted/70 border border-border px-2.5 py-1 text-xs font-medium text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
+            >
+              <Layers size={11} className="shrink-0" />
+              近期連續點名 {repeatCount} 次
+              {mentionsOpen ? <ChevronUp size={11} className="shrink-0" /> : <ChevronDown size={11} className="shrink-0" />}
+            </button>
+          )}
         </div>
         <ShareMenu
           shareUrl={shareUrl}
