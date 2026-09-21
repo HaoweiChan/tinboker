@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Home, Mic, LineChart, Crown, Hash, Info, Bookmark, Headphones, Heart, Bell, CalendarDays } from 'lucide-react';
+import { Home, Mic, LineChart, Crown, Hash, Info, CalendarDays } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { AppLogo } from '@/components/logo/AppLogo';
 import { useUser } from '@/store/useAppStore';
@@ -11,8 +11,6 @@ interface NavItem {
   icon: React.ComponentType<{ size?: number; className?: string }>;
   /** Match by prefix (detail routes) rather than exact. */
   prefix?: boolean;
-  /** For /member deep-links: the tab this item maps to (active when ?tab= matches). */
-  tab?: string;
   /** Surfaced only on dev.tinboker.com (VITE_STAGE=DEV); hidden on staging/prod. */
   devOnly?: boolean;
 }
@@ -21,21 +19,21 @@ interface NavItem {
 const IS_DEV_ENV = (import.meta.env.VITE_STAGE as string) === 'DEV';
 
 interface NavSection {
-  /** Group heading, shown only when the sidebar is expanded. */
-  title: string;
+  /** Group heading, shown only when the sidebar is expanded; omit for a plain divider. */
+  title?: string;
   items: readonly NavItem[];
 }
 
 /** Standalone anchor pinned above the grouped sections. */
-const HOME: NavItem = { to: '/', label: '首頁', icon: Home };
+const TOP: readonly NavItem[] = [{ to: '/', label: '首頁', icon: Home }];
 
 const SECTIONS: readonly NavSection[] = [
   {
+    // Order matches the ExploreTabs switcher these three pages share.
     title: '探索',
     items: [
-      { to: '/podcaster', label: '節目', icon: Mic, prefix: true },
       { to: '/stock', label: '個股', icon: LineChart, prefix: true },
-      { to: '/member', label: '會員', icon: Crown, prefix: true },
+      { to: '/podcaster', label: '節目', icon: Mic, prefix: true },
       { to: '/topics', label: '話題', icon: Hash, prefix: true },
       { to: '/weekly', label: '週報', icon: CalendarDays, prefix: true },
       // 文章 (articles) hidden from nav until at least one article is published —
@@ -43,13 +41,9 @@ const SECTIONS: readonly NavSection[] = [
     ],
   },
   {
-    title: '收藏',
-    items: [
-      { to: '/member?tab=podcasters', label: '訂閱節目', icon: Headphones, tab: 'podcasters' },
-      { to: '/member?tab=tickers', label: '自選個股', icon: Heart, tab: 'tickers' },
-      { to: '/member?tab=topics', label: '追蹤話題', icon: Bell, tab: 'topics' },
-      { to: '/member?tab=episodes', label: '收藏集數', icon: Bookmark, tab: 'episodes' },
-    ],
+    // No heading: a top-level place like 首頁, grouped here only so the rail order
+    // matches the mobile tab bar (首頁 · 探索 · 會員).
+    items: [{ to: '/member', label: '會員', icon: Crown, prefix: true }],
   },
   {
     title: '支援',
@@ -60,19 +54,7 @@ const SECTIONS: readonly NavSection[] = [
   },
 ];
 
-// The "收藏" sub-links and the plain 會員 entry both point at /member, keyed off
-// ?tab= — only one may be highlighted at a time, so 會員 is active exactly when
-// the current tab is NOT one of the 收藏 group's own tabs (i.e. it's picks/absent).
-const COLLECTION_TABS = ['podcasters', 'tickers', 'topics', 'episodes'] as const;
-
-function isActive(pathname: string, search: string, item: NavItem): boolean {
-  if (item.tab) {
-    return pathname === '/member' && new URLSearchParams(search).get('tab') === item.tab;
-  }
-  if (item.to === '/member') {
-    const tab = new URLSearchParams(search).get('tab');
-    return pathname === '/member' && !COLLECTION_TABS.includes(tab as (typeof COLLECTION_TABS)[number]);
-  }
+function isActive(pathname: string, item: NavItem): boolean {
   if (item.to === '/') return pathname === '/';
   const [base, hash] = item.to.split('#');
   if (hash) return pathname === base && window.location.hash === `#${hash}`;
@@ -85,12 +67,12 @@ function isActive(pathname: string, search: string, item: NavItem): boolean {
  * shifts the layout. Grouped into labeled sections (ailogora-style).
  */
 export const Sidebar: React.FC = () => {
-  const { pathname, search } = useLocation();
+  const { pathname } = useLocation();
   const user = useUser();
   const [expanded, setExpanded] = useState(false);
 
   const renderItem = (item: NavItem) => {
-    const active = isActive(pathname, search, item);
+    const active = isActive(pathname, item);
     const Icon = item.icon;
     return (
       <Link
@@ -140,12 +122,12 @@ export const Sidebar: React.FC = () => {
         </div>
 
         {/* Standalone home anchor */}
-        <nav className="flex flex-col">{renderItem(HOME)}</nav>
+        <nav className="flex flex-col gap-1">{TOP.map(renderItem)}</nav>
 
         {/* Grouped sections */}
         {SECTIONS.map((section) => (
           <div key={section.title}>
-            {expanded ? (
+            {expanded && section.title ? (
               <div className="text-2xs font-semibold tracking-[0.09em] uppercase text-muted-foreground/80 px-2.5 pt-6 pb-2">
                 {section.title}
               </div>

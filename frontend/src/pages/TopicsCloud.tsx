@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ChartScatter, Layers, Hash, Info, ListTree, ChevronDown, LayoutGrid } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
+import { ExploreTabs } from '@/components/layout/ExploreTabs';
 import { Segmented } from '@/components/redesign/Segmented';
 import SectorPerformance from '@/components/industry/SectorPerformance';
 import { SectorBoardCard, type SectorNetFlow } from '@/components/topics/SectorBoardCard';
@@ -372,6 +373,7 @@ export const TopicsCloud: React.FC = () => {
         description="今日最強題材焦點 — 依題材聚合，顯示漲跌幅、資金流與相關個股表現。"
       />
       <PageContent>
+        <ExploreTabs />
         {/* Page header */}
         <div className="flex items-center justify-between mb-1">
           <h1 className={`${type.pageTitle} font-semibold tracking-[-0.02em]`}>話題排行</h1>

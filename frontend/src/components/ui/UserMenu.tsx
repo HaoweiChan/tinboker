@@ -92,7 +92,7 @@ export const UserMenu: React.FC = () => {
               className="w-full flex items-center gap-3 px-4 py-3 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
             >
               <User size={18} />
-              <span>個人檔案</span>
+              <span>會員專區</span>
             </button>
             <button
               onClick={() => handleNavigation('/watchlist')}
