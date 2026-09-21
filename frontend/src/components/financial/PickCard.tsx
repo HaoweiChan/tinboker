@@ -31,13 +31,14 @@ interface PickCardProps {
 }
 
 // "自提及" (since mention → today) is always available once a baseline close
-// exists; the 7/30/90D windows fill in as each elapses ("—" until then).
-const METRICS: { key: 'since' | 'd7' | 'd30' | 'd90'; label: string }[] = [
-  { key: 'since', label: '自提及' },
-  { key: 'd7', label: '7天' },
-  { key: 'd30', label: '30天' },
-  { key: 'd90', label: '90天' },
+// exists; the 7/30/90D windows fill in as each elapses.
+const METRICS: { key: 'since' | 'd7' | 'd30' | 'd90'; label: string; days: number }[] = [
+  { key: 'since', label: '自提及', days: 0 },
+  { key: 'd7', label: '7天', days: 7 },
+  { key: 'd30', label: '30天', days: 30 },
+  { key: 'd90', label: '90天', days: 90 },
 ];
+
 
 /** Podket-style pick card: channel + ticker + sentiment + 7/30/90D returns,
  *  expandable to transcript-anchored 看多理由 / 風險 with play-at-timestamp. */
@@ -116,38 +117,50 @@ export const PickCard: React.FC<PickCardProps> = ({
         />
       </div>
 
-      {/* Forward 7/30/90D returns — pending windows show a muted countdown, not a bare dash */}
-      <div className="grid grid-cols-4 gap-2 mt-3 mb-1">
-        {METRICS.map(({ key, label }) => {
-          const v = windows ? windows[key] : null;
-          let content: React.ReactNode;
-          if (key === 'since') {
-            // "Since mention" has no return until the market has closed after the
-            // mention (the backend leaves it null over a weekend / same day).
-            content = v == null
-              ? <span className="text-2xs text-muted-foreground/50">待收盤</span>
-              : <Change value={v} />;
-          } else if (v != null) {
-            content = <Change value={v} />;
-          } else {
-            const wd = key === 'd7' ? 7 : key === 'd30' ? 30 : 90;
-            content = deltaDays < wd ? (
-              <span className="text-2xs text-muted-foreground/50 whitespace-nowrap">
-                {wd === 7 ? `剩餘 ${wd - deltaDays} 天` : `${wd - deltaDays} 天後揭曉`}
-              </span>
-            ) : (
-              // window elapsed but no close data (rare) — keep a plain dash
-              <span className="text-sm text-muted-foreground/50">—</span>
-            );
-          }
-          return (
-            <div key={key} className="text-center">
-              <div className="text-2xs uppercase tracking-wide text-muted-foreground">{label}</div>
-              {content}
+      {/* Forward 7/30/90D returns. Windows that haven't come due are left OUT of the
+          grid — a card from this week used to be mostly grey countdown cells, which
+          is three quarters of a row saying nothing. What's still coming is one line
+          underneath, naming only the next one. */}
+      {(() => {
+        const due = METRICS.filter((m) => m.key === 'since' || deltaDays >= m.days || (windows && windows[m.key] != null));
+        const pending = METRICS.filter((m) => !due.includes(m));
+        const next = pending[0];
+        return (
+          <>
+            {/* Always four columns even when fewer are due, so the numbers line up
+                from card to card and the empty space reads as "more to come". */}
+            <div className="grid grid-cols-4 gap-2 mt-3 mb-1">
+              {due.map(({ key, label }) => {
+                const v = windows ? windows[key] : null;
+                let content: React.ReactNode;
+                if (key === 'since') {
+                  // "Since mention" has no return until the market has closed after the
+                  // mention (the backend leaves it null over a weekend / same day).
+                  content = v == null
+                    ? <span className="text-2xs text-muted-foreground/50">待收盤</span>
+                    : <Change value={v} />;
+                } else if (v != null) {
+                  content = <Change value={v} />;
+                } else {
+                  // Window elapsed but no close data (rare) — keep a plain dash.
+                  content = <span className="text-sm text-muted-foreground/50">—</span>;
+                }
+                return (
+                  <div key={key} className="text-center">
+                    <div className="text-2xs uppercase tracking-wide text-muted-foreground">{label}</div>
+                    {content}
+                  </div>
+                );
+              })}
             </div>
-          );
-        })}
-      </div>
+            {next && (
+              <p className="text-2xs text-muted-foreground/60 mb-1">
+                下次揭曉：{next.label}（再 {Math.max(1, next.days - deltaDays)} 天）
+              </p>
+            )}
+          </>
+        );
+      })()}
 
       {/* Thesis + expand toggle */}
       {pick.bluf_thesis && (
