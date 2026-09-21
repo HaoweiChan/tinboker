@@ -359,7 +359,11 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodc
           </>
         )}
 
-        <div className="flex items-center gap-3 mb-[18px] flex-wrap">
+        {/* Explicit rows, not one wrapping flex: with the channel dropdown sharing a
+            line, turning 全部 on re-wrapped the row below it and the 7/30/90 buttons
+            jumped. Each control owns a row, so the tiers never move; the dropdown
+            appears below them instead of pushing them. */}
+        <div className="mb-[18px] flex flex-col items-start gap-2">
           <Segmented
             options={[
               { value: 'mine', label: '我的' },
@@ -368,19 +372,8 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodc
             value={scope}
             onChange={(v) => setScope(v as Scope)}
           />
-          {/* Channel dropdown only makes sense as a manual pick across all shows —
-             in 我的 it's already narrowed to the subscribed shows. */}
-          {scope === 'all' && channelOptions.length > 0 && (
-            <ChannelFilter
-              channels={channelOptions}
-              selected={selected}
-              onToggle={toggleChannel}
-              onClear={() => setSelected(new Set())}
-            />
-          )}
           {/* 最新 and the maturity tiers are one choice, not two: picking 30日 already
-              means 已揭曉. Two rows of five buttons — with 已揭曉 spelled out in three
-              of the labels — collapse into one row of four. */}
+              means 已揭曉. */}
           <Segmented
             options={[
               { value: 'recent', label: '最新' },
@@ -395,6 +388,16 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodc
               setSettledTier(Number(v) as SettledTier);
             }}
           />
+          {/* Channel dropdown only makes sense as a manual pick across all shows —
+             in 我的 it's already narrowed to the subscribed shows. */}
+          {scope === 'all' && channelOptions.length > 0 && (
+            <ChannelFilter
+              channels={channelOptions}
+              selected={selected}
+              onToggle={toggleChannel}
+              onClear={() => setSelected(new Set())}
+            />
+          )}
         </div>
 
         {!hasMyStuff || scope === 'mine' ? (
