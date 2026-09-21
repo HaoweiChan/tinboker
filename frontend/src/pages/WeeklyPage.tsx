@@ -134,7 +134,7 @@ export const WeeklyPage: React.FC = () => {
                 {(() => { const s = data.tickers.reduce((a, t) => ({ bull: a.bull + t.bull, neu: a.neu + t.neu, bear: a.bear + t.bear }), { bull: 0, neu: 0, bear: 0 }); const total = s.bull + s.neu + s.bear; return total > 0 ? (
                   <div className="flex flex-col gap-1.5">
                     <SentBar bull={s.bull} neutral={s.neu} bear={s.bear} />
-                    <div className="text-xs text-muted-foreground tabular-nums">熱門個股觀點 <span className="text-sentiment-bull">多 {s.bull}</span> · 中 {s.neu} · <span className="text-sentiment-bear">空 {s.bear}</span></div>
+                    <div className="text-xs text-muted-foreground tabular-nums">熱門個股觀點 <span className={s.bull > 0 ? 'text-sentiment-bull' : undefined}>多 {s.bull}</span> · 中 {s.neu} · <span className={s.bear > 0 ? 'text-sentiment-bear' : undefined}>空 {s.bear}</span></div>
                   </div>
                 ) : null; })()}
                 <div className="flex flex-wrap gap-1.5">
@@ -161,11 +161,16 @@ export const WeeklyPage: React.FC = () => {
                         {/* On phones the bar and counts drop together to a second line. */}
                         <span className="basis-full sm:hidden" aria-hidden />
                         <div className="flex-1 min-w-0">{total > 0 ? <SentBar bull={t.bull} neutral={t.neu} bear={t.bear} delayMs={i * 40} /> : <div className="sent-bar opacity-30" />}</div>
-                        <span className="grid grid-cols-3 w-36 shrink-0 text-xs font-mono tabular-nums">
-                          <span className="text-right text-sentiment-bull">多 {total > 0 ? t.bull : '–'}</span>
-                          <span className="text-right text-muted-foreground">中 {total > 0 ? t.neu : '–'}</span>
-                          <span className="text-right text-sentiment-bear">空 {total > 0 ? t.bear : '–'}</span>
-                        </span>
+                        {total > 0 ? (
+                          <span className="grid grid-cols-3 w-36 shrink-0 text-xs font-mono tabular-nums">
+                            {/* Colour marks a stance that exists; a zero is just a zero. */}
+                            <span className={`text-right ${t.bull > 0 ? 'text-sentiment-bull' : 'text-muted-foreground/50'}`}>多 {t.bull}</span>
+                            <span className="text-right text-muted-foreground">中 {t.neu}</span>
+                            <span className={`text-right ${t.bear > 0 ? 'text-sentiment-bear' : 'text-muted-foreground/50'}`}>空 {t.bear}</span>
+                          </span>
+                        ) : (
+                          <span className="w-36 shrink-0 text-right text-2xs text-muted-foreground/70">本週未表態</span>
+                        )}
                       </div>
                     );
                   })}
