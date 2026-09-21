@@ -210,7 +210,7 @@ export const PickCard: React.FC<PickCardProps> = ({
           type="button"
           onClick={() => setMentionsOpen((v) => !v)}
           aria-expanded={mentionsOpen}
-          className="inline-flex items-center gap-1 mt-2.5 rounded-full bg-muted/70 border border-border px-2.5 py-1 text-xs font-medium text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
+          className="inline-flex items-center gap-1 mt-2.5 rounded-full bg-muted border border-border px-2.5 py-1 text-xs font-semibold text-foreground/90 hover:text-foreground hover:border-foreground/30 transition-colors"
         >
           <Layers size={11} className="shrink-0" />
           近期連續點名 {repeatCount} 次
@@ -230,6 +230,12 @@ export const PickCard: React.FC<PickCardProps> = ({
                         <span className="tabular-nums shrink-0">
                           {formatDate(m.podcast_launch_time)}
                         </span>
+                        {/* Every mention has its own stance, and it can differ from the
+                            newest one — a flip from 看多 to 看空 across the sequence is
+                            the most interesting thing this list can show. */}
+                        {normalizeSentiment(m.sentiment_label) && (
+                          <SentimentChip sentiment={normalizeSentiment(m.sentiment_label)!} bare className="text-xs shrink-0" />
+                        )}
                         {m.episode_title && <span className="truncate">{m.episode_title}</span>}
                         {m.episode_public !== false && <ChevronRight size={13} className="shrink-0 ml-auto" />}
                       </div>
