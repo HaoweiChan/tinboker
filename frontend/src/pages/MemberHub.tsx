@@ -112,38 +112,31 @@ export const MemberHub: React.FC = () => {
               ) : (
                 <div className="w-14 h-14 sm:w-[72px] sm:h-[72px] rounded-full grid place-items-center text-white text-xl sm:text-2xl font-semibold bg-accent-info shrink-0">{initials(userInfo.name)}</div>
               )}
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <h1 className="text-xl sm:text-2xl font-semibold tracking-[-0.01em] truncate">{userInfo.name}</h1>
                 <div className="text-sm text-muted-foreground mt-0.5 truncate">{userInfo.email}</div>
-                <div className="mt-1.5 text-sm">
-                  {/* These were plain coloured text and didn't read as tappable — a
-                      bordered pill is the smallest thing that does. */}
-                  {isMember ? (
-                    <span className="flex items-center gap-x-2.5 gap-y-1 flex-wrap">
-                      <span className="text-accent-info font-medium whitespace-nowrap">會員 · 有效至 {memberUntilLabel}</span>
-                      <Link
-                        to="/membership"
-                        className="inline-flex items-center rounded-md border border-border bg-card px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted hover:border-foreground/30 transition-colors"
-                      >
-                        管理訂閱
-                      </Link>
-                    </span>
-                  ) : (
-                    <span className="flex items-center gap-2.5 flex-wrap">
-                      <span className="text-muted-foreground">免費會員</span>
-                      <Link
-                        to="/membership"
-                        className="inline-flex items-center rounded-md bg-foreground px-2.5 py-1 text-xs font-semibold text-background hover:opacity-90 transition-opacity"
-                      >
-                        升級
-                      </Link>
-                    </span>
-                  )}
+                {/* Status and expiry stack rather than sharing a line: beside the
+                    action button the column is ~210px, and "會員 · 有效至 2026/12/31"
+                    broke across the date. */}
+                <div className="mt-1.5 text-sm font-medium">
+                  {isMember ? <span className="text-accent-info">會員</span> : <span className="text-muted-foreground">免費會員</span>}
                 </div>
-                {formatJoin(userInfo.created_at) && (
-                  <div className="mt-2 text-xs text-muted-foreground">{formatJoin(userInfo.created_at)}</div>
-                )}
+                <div className="mt-0.5 text-xs text-muted-foreground">
+                  {isMember && memberUntilLabel ? `有效至 ${memberUntilLabel}` : formatJoin(userInfo.created_at)}
+                </div>
               </div>
+              {/* The card's one action, top-right beside the name — inline after the
+                  status line it wrapped onto a line of its own and read as an orphan. */}
+              <Link
+                to="/membership"
+                className={
+                  isMember
+                    ? 'shrink-0 inline-flex items-center rounded-md border border-border bg-card px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted hover:border-foreground/30 transition-colors'
+                    : 'shrink-0 inline-flex items-center rounded-md bg-foreground px-2.5 py-1 text-xs font-semibold text-background hover:opacity-90 transition-opacity'
+                }
+              >
+                {isMember ? '管理訂閱' : '升級'}
+              </Link>
             </div>
           ) : token ? (
             <div className="text-sm text-muted-foreground">已登入</div>
