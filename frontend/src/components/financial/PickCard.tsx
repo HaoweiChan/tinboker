@@ -3,7 +3,8 @@ import { useNavigate, Link } from 'react-router-dom';
 import { ChevronDown, ChevronRight, ChevronUp, Play, Mic, Layers } from 'lucide-react';
 import { Card } from '@/components/ui';
 import { Change, SentimentChip, ShareMenu, PodAvatar } from '@/components/redesign';
-import { normalizeSentiment } from '@/lib/sentiment';
+import { normalizeSentiment, getSentimentDisplay } from '@/lib/sentiment';
+import { useStockColorMode } from '@/hooks/useStockTrendColor';
 import { formatDate } from '@/lib/date';
 import { cn } from '@/lib/utils';
 import type { PickWindowReturns, TickerInsight } from '@/services/types';
@@ -73,6 +74,7 @@ export const PickCard: React.FC<PickCardProps> = ({
     : 9999;
 
   const canPlay = typeof onPlaySegment === 'function';
+  const stockColorMode = useStockColorMode();
   const hasDetail = Boolean(pick.reasons?.length || pick.risks?.length);
 
   return (
@@ -101,7 +103,7 @@ export const PickCard: React.FC<PickCardProps> = ({
             </button>
             {/* min-w-0 + a width cap: inside a wrapping flex row `truncate` alone never
                 engages, so a long US name (SPCX) wrapped onto its own clipped line. */}
-            {displayName && <span className="text-sm text-muted-foreground truncate min-w-0 max-w-[60%]">{displayName}</span>}
+            {displayName && <span className="text-base text-foreground truncate min-w-0 max-w-[60%]">{displayName}</span>}
             {sentiment && <SentimentChip sentiment={sentiment} />}
           </div>
 
@@ -224,6 +226,7 @@ export const PickCard: React.FC<PickCardProps> = ({
             {mentions.map((m) => (
               <li key={`${m.episode_id}-${m.ticker}`}>
                 {(() => {
+                  const mSent = normalizeSentiment(m.sentiment_label);
                   const body = (
                     <>
                       <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -233,9 +236,7 @@ export const PickCard: React.FC<PickCardProps> = ({
                         {/* Every mention has its own stance, and it can differ from the
                             newest one — a flip from 看多 to 看空 across the sequence is
                             the most interesting thing this list can show. */}
-                        {normalizeSentiment(m.sentiment_label) && (
-                          <SentimentChip sentiment={normalizeSentiment(m.sentiment_label)!} bare className="text-xs shrink-0" />
-                        )}
+                        {mSent && <SentimentChip sentiment={mSent} bare className="text-xs shrink-0" />}
                         {m.episode_title && <span className="truncate">{m.episode_title}</span>}
                         {m.episode_public !== false && <ChevronRight size={13} className="shrink-0 ml-auto" />}
                       </div>
@@ -246,7 +247,11 @@ export const PickCard: React.FC<PickCardProps> = ({
                       )}
                     </>
                   );
-                  const shell = 'relative block pl-3 border-l-2 border-border -mr-1 pr-1 py-0.5 rounded';
+                  // The rail takes its colour from the same place the 看多/看空 label
+                  // does, so a row can't show a green bar next to a red word: TW mode
+                  // paints a rise red, US mode green, and both follow one rule.
+                  const rail = getSentimentDisplay(mSent, stockColorMode)?.railClass ?? 'border-border';
+                  const shell = cn('relative block pl-3 border-l-2 -mr-1 pr-1 py-0.5 rounded', rail);
                   // An old mention's episode may be outside the public window; then the
                   // row is text, not a dead link.
                   return m.episode_public === false ? (
@@ -254,7 +259,7 @@ export const PickCard: React.FC<PickCardProps> = ({
                   ) : (
                     <Link
                       to={`/episode/${encodeURIComponent(m.episode_id)}`}
-                      className={cn(shell, 'transition-colors hover:border-accent-info hover:bg-muted/40')}
+                      className={cn(shell, 'transition-colors hover:bg-muted/40')}
                     >
                       {body}
                     </Link>
