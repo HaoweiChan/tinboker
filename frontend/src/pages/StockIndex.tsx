@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Search, ChevronRight } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
+import { ExploreTabs } from '@/components/layout/ExploreTabs';
 import { Segmented, SentimentChip } from '@/components/redesign';
 import { getRecentBuzz, type RecentBuzz } from '@/services/api/podcasts';
 import type { SentimentLabel } from '@/services/types';
@@ -106,6 +107,7 @@ export const StockIndex: React.FC = () => {
     <>
       <SEO title="所有個股" description="最近被 TinBoker 追蹤的 Podcast 提及的所有個股，依提及次數排序。" />
       <PageContent>
+        <ExploreTabs />
         <div className="flex items-baseline justify-between mb-1">
           <h1 className="text-2xl font-semibold tracking-[-0.02em]">所有個股</h1>
           {!loading && <div className="text-xs text-muted-foreground font-mono tabular-nums">{rows.length} 檔（近 30 天提及）</div>}

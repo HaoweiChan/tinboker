@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
+import { ExploreTabs } from '@/components/layout/ExploreTabs';
 import { CountUp } from '@/components/common/CountUp';
 import { useGrowIn } from '@/hooks/useMotion';
 import { getWeeks } from '@/services/api/weekly';
@@ -35,6 +36,7 @@ export const WeeklyIndex: React.FC = () => {
         type="website"
       />
       <PageContent>
+        <ExploreTabs />
         <div className="flex items-end justify-between gap-4 flex-wrap mb-4">
           <div>
             <h1 className="text-2xl font-semibold tracking-[-0.02em]">Podcast 週報</h1>

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Search } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
+import { ExploreTabs } from '@/components/layout/ExploreTabs';
 import { Segmented, PodAvatar } from '@/components/redesign';
 import { getSortedPodcasts, type Podcast } from '@/services/api/podcasts';
 import { useEpisodeWindowDays, episodeCountWords } from '@/hooks/useEpisodeWindow';
@@ -51,6 +52,7 @@ export const PodcasterIndex: React.FC = () => {
     <>
       <SEO title="所有節目" description="TinBoker 持續結構化分析的中文財經 Podcast。" />
       <PageContent>
+        <ExploreTabs />
         <div className="flex items-baseline justify-between mb-1">
           <h1 className="text-2xl font-semibold tracking-[-0.02em]">所有節目</h1>
           {!loading && (

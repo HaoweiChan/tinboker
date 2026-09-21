@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
 import { EpisodeCardV2 } from '@/components/redesign';
@@ -17,13 +17,27 @@ import { useStockPriceSinceMap } from '@/hooks/useStockPriceSinceMap';
 import { savedCount } from '@/lib/savedCount';
 
 type Tab = 'podcasters' | 'tickers' | 'topics' | 'episodes';
+const VALID_TABS: readonly string[] = ['podcasters', 'tickers', 'topics', 'episodes'];
 
 export const WatchlistPage: React.FC = () => {
   const token = useAppStore((s) => s.token);
   const localSubscriptions = useSubscriptions();
   const localWatchlist = useWatchlist();
   const localTagSubscriptions = useTagSubscriptions();
-  const [tab, setTab] = useState<Tab>('podcasters');
+  // URL-addressable (?tab=…) so the old /member?tab= deep links and the header
+  // menu can land on a specific list.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get('tab');
+  const tab: Tab = tabParam && VALID_TABS.includes(tabParam) ? (tabParam as Tab) : 'podcasters';
+  const setTab = (t: Tab) =>
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set('tab', t);
+        return next;
+      },
+      { replace: true },
+    );
   const [bookmarkedIds, setBookmarkedIds] = useState<string[]>([]);
   // Server-side data for logged-in users
   const [apiSubscriptions, setApiSubscriptions] = useState<string[]>([]);
