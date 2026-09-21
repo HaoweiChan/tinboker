@@ -181,7 +181,18 @@ try {
   const stockPage = renderPage(stock);
   assert.ok(stock.description.startsWith('台積電（2330） 近 30 天 3 集 Podcast 提及：2 看多 · 1 中立 · 0 看空。'), `stock description is live data: ${stock.description}`);
   assert.ok(stock.description.length <= 160, 'stock description fits a snippet');
-  for (const needle of ['<h2>Podcast 觀點</h2>', 'href="/episode/e1"', 'href="/podcaster/Gooaye%20%E8%82%A1%E7%99%8C"', 'href="/sector/sector_mlcc"', '看空']) {
+
+  // Paywall: 觀點 from the last week are members-only on the page, so serving them
+  // to a crawler would be cloaking. The tally still counts every mention (the page
+  // shows that total to everyone) — only the readable rows are cut.
+  for (const gated of ['href="/episode/e1"', '台積電是 AI 供應鏈核心持股', 'href="/episode/e4"', '長期看好。', 'Gooaye']) {
+    assert.ok(!stockPage.includes(gated), `paywalled mention leaked to the crawler body: ${gated}`);
+  }
+  assert.ok(stock.description.includes('最近：財經一路發'), `description quotes the newest FREE mention: ${stock.description}`);
+  // e2/e3 are older than the paywall window, so they stay indexable; e1 (1 day) and
+  // e4 (2 days) are members-only and must NOT reach a crawler — see the gated
+  // assertions below.
+  for (const needle of ['<h2>Podcast 觀點</h2>', 'href="/episode/e2"', 'href="/episode/e3"', 'href="/podcaster/%E8%B2%A1%E7%B6%93%E4%B8%80%E8%B7%AF%E7%99%BC"', 'href="/sector/sector_mlcc"', '看空']) {
     assert.ok(stockPage.includes(needle), `stock body missing ${needle}`);
   }
   assert.deepEqual(ldTypes(stock), ['BreadcrumbList']);
