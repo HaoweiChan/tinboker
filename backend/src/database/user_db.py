@@ -23,7 +23,9 @@ MERGED_SECTOR_TAG_SUBSCRIPTION_RENAMES = {
     "日本被動元件": "被動元件 MLCC",
 }
 
-# The five list-valued subscription fields; `alerts` has no toggle endpoint yet.
+# The list-valued per-user fields. Everything generic keys off this tuple — the row
+# reader, the response mapping and _update_array_field — so adding one here is most of
+# the work. `alerts` has no toggle endpoint yet.
 ARRAY_FIELDS = (
     "watchlist",
     "podcast_subscriptions",
@@ -80,11 +82,10 @@ def _to_user_response(row: User) -> UserResponse:
         email_verified=bool(row.email_verified),
         created_at=row.created_at,
         updated_at=row.updated_at,
-        watchlist=row.watchlist or [],
-        podcast_subscriptions=row.podcast_subscriptions or [],
-        episode_bookmarks=row.episode_bookmarks or [],
-        alerts=row.alerts or [],
-        tag_subscriptions=row.tag_subscriptions or [],
+        # Spread ARRAY_FIELDS instead of naming each one: listing them by hand is how
+        # dismissed_picks shipped missing from /me while its own toggle worked, so the
+        # field fell back to the model's default [] and a fresh login lost it.
+        **{field: (getattr(row, field) or []) for field in ARRAY_FIELDS},
         member_until=row.member_until,
         notification_preferences=NotificationPreferences(
             new_episodes=prefs_data.get("new_episodes", True),
