@@ -8,6 +8,8 @@ import { apiEpisodeToCardV2 } from '@/components/redesign/episodeAdapter';
 import { TickerInsightCard } from '@/components/financial/TickerInsightCard';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/store/useAppStore';
+import { splitByPaywall } from '@/lib/insightPaywall';
+import { LockedInsightsCard } from '@/components/financial/LockedInsightsCard';
 import { useRequireAuth } from '@/hooks/useRequireAuth';
 import { useStockTrendColor } from '@/hooks/useStockTrendColor';
 import { getStockByTicker, getEpisodesByTicker, type Episode as ApiEpisode } from '@/services/api';
@@ -475,6 +477,14 @@ export const StockDashboard: React.FC = () => {
   const episodeIds = useMemo(() => episodes.map((e) => e.id), [episodes]);
   const sentimentMap = useEpisodeSentimentMap(episodeIds);
   const [insights, setInsights] = useState<TickerInsight[]>([]);
+  // 觀點 from the last week are members-only; the archive stays free for everyone,
+  // including crawlers (functions/_middleware.js makes the same split, or the page
+  // would serve Googlebot what it hides from readers).
+  const isMember = useAppStore((s) => s.user?.is_member) ?? false;
+  const { free: freeInsights, gated: gatedInsights } = useMemo(() => splitByPaywall(insights), [insights]);
+  // Non-members never receive the gated rows — this is a gate, not a blur.
+  const visibleInsights = isMember ? insights : freeInsights;
+  const lockedCount = isMember ? 0 : gatedInsights.length;
   // The 觀點 list is long on popular tickers (200+ over 90 days); page it.
   const [insightLimit, setInsightLimit] = useState(8);
   const mockEpisodes = useMemo(
@@ -581,8 +591,9 @@ export const StockDashboard: React.FC = () => {
               <h2 className="text-sm font-semibold text-muted-foreground">Podcast 觀點</h2>
               <span className="text-xs text-muted-foreground tabular-nums">近 90 天 · {insights.length} 則</span>
             </div>
+            {lockedCount > 0 && <LockedInsightsCard count={lockedCount} />}
             <div className="bg-card border border-border rounded-md divide-y divide-border overflow-hidden">
-              {insights.slice(0, insightLimit).map((rec) => (
+              {visibleInsights.slice(0, insightLimit).map((rec) => (
                 <TickerInsightCard
                   key={`${rec.episode_id}-${rec.ticker}-${rec.podcaster ?? ''}`}
                   insight={rec}
@@ -591,13 +602,13 @@ export const StockDashboard: React.FC = () => {
                 />
               ))}
             </div>
-            {insights.length > insightLimit && (
+            {visibleInsights.length > insightLimit && (
               <button
                 type="button"
                 onClick={() => setInsightLimit((n) => n + 12)}
                 className="mt-2 w-full rounded-md border border-border bg-card py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
               >
-                顯示更多（還有 {insights.length - insightLimit} 則）
+                顯示更多（還有 {visibleInsights.length - insightLimit} 則）
               </button>
             )}
             {anyReturns && tickerMentions?.disclaimer && (
