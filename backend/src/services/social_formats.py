@@ -128,7 +128,9 @@ async def select_weekly_movers() -> Optional[dict]:
     if (not rows or data["total"] < WEEKLY_MIN_TOTAL
             or rows[0]["n"] - rows[0].get("prev", 0) < WEEKLY_MIN_RISE):
         return None
-    iso = week_start.isocalendar()
+    # The week label comes from the data, not the clock, so key/subject/url can never
+    # describe different weeks (they diverged in tests that pin one and not the other).
+    iso = date.fromisoformat(data["week_start"]).isocalendar()
     return {
         "key": f"weekly_movers:{data['week_start']}",
         "subject": data["week_start"],
