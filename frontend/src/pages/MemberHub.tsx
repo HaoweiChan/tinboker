@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
-import { ChevronRight, Settings, Star } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
 import { PlanCard } from '@/components/membership/PlanCard';
@@ -27,9 +26,10 @@ function initials(name?: string): string {
     .toUpperCase();
 }
 
-/** /member — what membership buys: 走勢 and 週報, plus the subscription's own state.
- *  Saved items are NOT here; they're a personal utility reached from the header
- *  menu (/watchlist), so this page stays about the paid product. Route gating
+/** /member — what membership buys: 走勢, plus the subscription's own state. Nothing
+ *  else earns a place here. Saved items and 帳號設定 are personal utilities and live
+ *  in the header menu; 週報 is browsable content and lives in 探索 — giving each of
+ *  them a second entry point here turned the page into a list of links. Route gating
  *  lives in App.tsx's MemberRoute, which sends logged-out visitors to
  *  MembershipPage. PicksPage must never mount for a non-member (the `isMember`
  *  guard below), or its returns endpoint 402s. */
@@ -93,7 +93,7 @@ export const MemberHub: React.FC = () => {
 
   return (
     <>
-      <SEO title="會員專區" description="會員的走勢追蹤與每週週報。" />
+      <SEO title="會員專區" description="會員的走勢追蹤與訂閱狀態。" />
       <PageContent>
         {/* Identity + subscription state */}
         <div className="bg-card border border-border rounded-md p-4 sm:p-6 mb-4">
@@ -153,29 +153,6 @@ export const MemberHub: React.FC = () => {
             </div>
           )}
         </div>
-
-        {/* The two personal utilities that used to be tabs here. */}
-        <div className="grid grid-cols-2 gap-2.5 mb-5">
-          <Link to="/watchlist" className="flex items-center gap-2 bg-card border border-border rounded-md px-3.5 py-3 text-sm hover:border-foreground/25 transition-colors">
-            <Star size={16} className="text-muted-foreground shrink-0" />
-            <span className="flex-1 truncate">收藏</span>
-            <ChevronRight size={14} className="text-muted-foreground shrink-0" />
-          </Link>
-          <Link to="/settings" className="flex items-center gap-2 bg-card border border-border rounded-md px-3.5 py-3 text-sm hover:border-foreground/25 transition-colors">
-            <Settings size={16} className="text-muted-foreground shrink-0" />
-            <span className="flex-1 truncate">帳號設定</span>
-            <ChevronRight size={14} className="text-muted-foreground shrink-0" />
-          </Link>
-        </div>
-
-        {/* 週報 — the other half of what membership is for; the page itself is public. */}
-        <Link to="/weekly" className="flex items-center gap-3 bg-card border border-border rounded-md p-4 mb-5 hover:border-foreground/25 transition-colors">
-          <div className="min-w-0 flex-1">
-            <div className="text-base font-semibold tracking-[-0.01em]">每週週報</div>
-            <div className="text-xs text-muted-foreground mt-0.5">這一週各節目聊了哪些個股與題材、多空怎麼變。</div>
-          </div>
-          <ChevronRight size={16} className="text-muted-foreground shrink-0" />
-        </Link>
 
         {/* 走勢 — members only; everyone else gets the plan pitch. */}
         <h2 className="text-base font-semibold tracking-[-0.01em] mb-2.5">走勢</h2>
