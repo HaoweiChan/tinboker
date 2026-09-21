@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { ChevronDown, ChevronUp, Play, Mic, Layers } from 'lucide-react';
+import { ChevronDown, ChevronRight, ChevronUp, Play, Mic, Layers } from 'lucide-react';
 import { Card } from '@/components/ui';
 import { Change, SentimentChip, ShareMenu, PodAvatar } from '@/components/redesign';
 import { normalizeSentiment } from '@/lib/sentiment';
@@ -73,6 +73,7 @@ export const PickCard: React.FC<PickCardProps> = ({
     : 9999;
 
   const canPlay = typeof onPlaySegment === 'function';
+  const hasDetail = Boolean(pick.reasons?.length || pick.risks?.length);
 
   return (
     <Card className={cn('p-4', className)}>
@@ -185,19 +186,20 @@ export const PickCard: React.FC<PickCardProps> = ({
 
       {/* Thesis + expand toggle */}
       {pick.bluf_thesis && (
-        <p className={cn('text-base text-muted-foreground leading-relaxed mt-2', !expanded && 'line-clamp-2')}>
+        <p className={cn('text-base text-foreground/85 leading-relaxed mt-2', !expanded && 'line-clamp-2')}>
           {pick.bluf_thesis}
         </p>
       )}
 
-      {(pick.reasons?.length || pick.risks?.length) ? (
+      {hasDetail || pick.bluf_thesis ? (
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
+          aria-expanded={expanded}
           className="flex items-center gap-1 text-xs text-accent-info mt-2 hover:underline"
         >
           {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-          {expanded ? '收合' : '查看原因'}
+          {expanded ? '收合' : hasDetail ? '查看原因' : '看完整摘要'}
         </button>
       ) : null}
 
@@ -216,28 +218,38 @@ export const PickCard: React.FC<PickCardProps> = ({
         <div className="mt-3">
           <ol className="pt-2 border-t border-border space-y-2.5">
             {mentions.map((m) => (
-              <li key={`${m.episode_id}-${m.ticker}`} className="relative pl-3 border-l-2 border-border">
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <span className="tabular-nums shrink-0">
-                    {formatDate(m.podcast_launch_time)}
-                  </span>
-                  {m.episode_title && (m.episode_public === false ? (
-                    <span className="truncate" title={m.episode_title}>{m.episode_title}</span>
+              <li key={`${m.episode_id}-${m.ticker}`}>
+                {(() => {
+                  const body = (
+                    <>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <span className="tabular-nums shrink-0">
+                          {formatDate(m.podcast_launch_time)}
+                        </span>
+                        {m.episode_title && <span className="truncate">{m.episode_title}</span>}
+                        {m.episode_public !== false && <ChevronRight size={13} className="shrink-0 ml-auto" />}
+                      </div>
+                      {m.bluf_thesis && (
+                        <p className="text-sm text-foreground/85 leading-relaxed mt-1">
+                          {m.bluf_thesis}
+                        </p>
+                      )}
+                    </>
+                  );
+                  const shell = 'relative block pl-3 border-l-2 border-border -mr-1 pr-1 py-0.5 rounded';
+                  // An old mention's episode may be outside the public window; then the
+                  // row is text, not a dead link.
+                  return m.episode_public === false ? (
+                    <div className={shell}>{body}</div>
                   ) : (
                     <Link
                       to={`/episode/${encodeURIComponent(m.episode_id)}`}
-                      className="truncate hover:text-accent-info"
-                      title={m.episode_title}
+                      className={cn(shell, 'transition-colors hover:border-accent-info hover:bg-muted/40')}
                     >
-                      {m.episode_title}
+                      {body}
                     </Link>
-                  ))}
-                </div>
-                {m.bluf_thesis && (
-                  <p className="text-sm text-foreground/75 leading-relaxed mt-1 line-clamp-2">
-                    {m.bluf_thesis}
-                  </p>
-                )}
+                  );
+                })()}
               </li>
             ))}
           </ol>
