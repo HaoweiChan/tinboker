@@ -56,6 +56,7 @@ class UserResponse(UserBase):
     episode_bookmarks: List[str] = []  # Episode IDs
     alerts: List[str] = []  # Stock tickers for alerts
     tag_subscriptions: List[str] = []  # Tag names
+    dismissed_picks: List[str] = []  # "{episode_id}|{ticker}" hidden in 走勢
     # Notification preferences
     notification_preferences: NotificationPreferences = NotificationPreferences()
     # Membership entitlement (PR 1 — admin-granted only, no billing yet).

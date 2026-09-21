@@ -626,6 +626,10 @@ class User(Base):
     episode_bookmarks = Column(JSON_VARIANT, nullable=False, default=list)  # "{podcast}_{ep}"
     alerts = Column(JSON_VARIANT, nullable=False, default=list)
     tag_subscriptions = Column(JSON_VARIANT, nullable=False, default=list)
+    # Picks the member swiped away in 走勢, as "{episode_id}|{ticker}". Derived content,
+    # so this only hides that one mention — the next time the ticker is named a new
+    # card appears, which is the behaviour the feature was asked for.
+    dismissed_picks = Column(JSON_VARIANT, nullable=False, default=list)
     notification_preferences = Column(JSON_VARIANT, nullable=False, default=dict)
 
     # Paid membership entitlement (PR 1 — admin-granted only, no billing yet).

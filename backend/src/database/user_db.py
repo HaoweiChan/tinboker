@@ -30,6 +30,7 @@ ARRAY_FIELDS = (
     "episode_bookmarks",
     "alerts",
     "tag_subscriptions",
+    "dismissed_picks",
 )
 
 
@@ -381,6 +382,16 @@ def toggle_tag_subscription(user_id: str, tag_name: str) -> Dict[str, any]:
         return {"tag_name": tag_name, "is_subscribed": False}
     add_tag_subscription(user_id, tag_name)
     return {"tag_name": tag_name, "is_subscribed": True}
+
+
+def toggle_dismissed_pick(user_id: str, pick_key: str) -> Dict[str, any]:
+    """Hide/unhide one pick in 走勢. `pick_key` is "{episode_id}|{ticker}"."""
+    subscriptions = get_user_subscriptions(user_id)
+    if pick_key in subscriptions.get("dismissed_picks", []):
+        _update_array_field(user_id, "dismissed_picks", pick_key, "remove")
+        return {"pick_key": pick_key, "is_dismissed": False}
+    _update_array_field(user_id, "dismissed_picks", pick_key, "add")
+    return {"pick_key": pick_key, "is_dismissed": True}
 
 
 def _to_preferences(prefs: dict) -> NotificationPreferences:

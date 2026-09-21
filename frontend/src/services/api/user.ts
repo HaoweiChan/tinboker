@@ -147,5 +147,18 @@ export const userApi = {
     );
     return response.data;
   },
+
+  /** Hide (or restore) one pick in 走勢. `pickKey` is `${episode_id}|${ticker}`. */
+  toggleDismissedPick: async (pickKey: string): Promise<{ pick_key: string; is_dismissed: boolean }> => {
+    const token = useAppStore.getState().token;
+    if (!token) throw new Error('Not authenticated');
+
+    const response = await apiClient.post<{ pick_key: string; is_dismissed: boolean }>(
+      '/api/user/dismissed-picks/toggle',
+      { pick_key: pickKey },
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    return response.data;
+  },
 };
 

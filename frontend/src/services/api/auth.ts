@@ -16,6 +16,7 @@ export interface AuthResponse {
     episode_bookmarks?: string[];
     alerts?: string[];
     tag_subscriptions?: string[];
+    dismissed_picks?: string[];
     member_until?: string | null;
     is_member?: boolean;
   };
