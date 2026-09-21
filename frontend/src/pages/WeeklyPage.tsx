@@ -34,7 +34,10 @@ function shiftWeek(week: string, delta: number): string | null {
   return `${isoYear}-W${String(n).padStart(2, '0')}`;
 }
 
-const weekTitle = (w: Weekly) => `${w.start.replace(/-/g, '/')} – ${w.end.slice(5).replace('-', '/')} Podcast 週報`;
+// "W38 Podcast 週報：2026/09/14 – 09/20" — the week number leads, so a tab, a search
+// result and a shared link are all identifiable before the dates are read.
+const weekTitle = (w: Weekly) =>
+  `${w.week.split('-').pop()} Podcast 週報：${w.start.replace(/-/g, '/')} – ${w.end.slice(5).replace('-', '/')}`;
 
 const stance = (t: WeeklyTicker) => {
   const cur = t.bull - t.bear, prev = t.prev_bull - t.prev_bear;
@@ -120,7 +123,7 @@ export const WeeklyPage: React.FC = () => {
           <>
             <div className="mb-4">
               <h1 className="text-2xl font-semibold tracking-[-0.02em]">{title}</h1>
-              <p className="text-sm text-muted-foreground mt-1 max-w-[72ch] leading-[1.6]">{description}</p>
+              <p className="text-sm text-foreground/80 mt-1 max-w-[72ch] leading-[1.6]">{description}</p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-6 gap-3.5 mb-[18px]">

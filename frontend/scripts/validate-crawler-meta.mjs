@@ -139,7 +139,7 @@ try {
     ['/topics/AI', '#人工智慧'],                       // normalizer path
     ['/topics/quantum-computing', '#quantum computing'], // registry miss → fallback
     ['/weekly', 'Podcast 週報'],
-    ['/weekly/2026-W36', '2026/08/31 – 09/06 Podcast 週報'],
+    ['/weekly/2026-W36', 'W36 Podcast 週報：2026/08/31 – 09/06'],
     ['/podcaster/Gooaye%20%E8%82%A1%E7%99%8C', 'Gooaye 股癌 · Podcast 頻道'],
     ['/sector/sector_mlcc', '被動元件 MLCC'],
     ['/podcaster', '所有節目'],

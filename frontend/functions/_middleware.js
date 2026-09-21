@@ -457,7 +457,7 @@ export async function metaFor(pathname, origin, api) {
     if (!w) return null;
     const url = `${origin}/weekly/${encodeURIComponent(week)}`;
     const range = `${w.start.replace(/-/g, '/')} – ${w.end.slice(5).replace('-', '/')}`;
-    const title = `${range} Podcast 週報`;
+    const title = `${(w.week || week).split('-').pop()} Podcast 週報：${range}`;
     const tickerName = (t) => (t.name ? `${t.name}（${t.ticker}）` : t.ticker);
     const description = `${w.start.replace(/-/g, '/')} 到 ${w.end.replace(/-/g, '/')}，${(w.podcasts || []).length} 個節目共 ${w.episode_count} 集。本週最常提到：${(w.tickers || []).slice(0, 5).map(tickerName).join('、')}。`;
     const body = `<p>${esc(description)}</p>`
