@@ -24,6 +24,19 @@
 
 const CRAWLER = /bot|crawl|spider|mediapartners|facebookexternalhit|facebot|twitterbot|\bline\b|slackbot|whatsapp|telegrambot|discordbot|pinterest|linkedinbot|redditbot|embedly|quora|skypeuripreview|applebot|googlebot|bingbot|baiduspider|yandex|duckduckbot/i;
 
+// Podcast 觀點 from the last week are members-only on the page, so they are left out
+// of the crawler body too — serving Googlebot what a reader is asked to pay for is
+// cloaking. Everything older stays free and indexable.
+// KEEP IN SYNC with src/lib/insightPaywall.ts (its check asserts this number).
+const INSIGHT_PAYWALL_DAYS = 7;
+const freeInsights = (rows) => {
+  const cutoff = Date.now() - INSIGHT_PAYWALL_DAYS * 86400e3;
+  return (rows || []).filter((i) => {
+    const t = Date.parse(i.podcast_launch_time || '');
+    return !Number.isFinite(t) || t <= cutoff;
+  });
+};
+
 const BRAND_IMG = 'https://tinboker.com/brand/tinboker-square-dark-1080.png';
 const CACHE_1H = { cf: { cacheTtl: 3600, cacheEverything: true } };
 const SITE = '聽播客 TinBoker';
@@ -385,9 +398,12 @@ export async function metaFor(pathname, origin, api) {
     ]);
     const name = basic && basic.name ? `${basic.name}（${sym}）` : sym;
     const url = `${origin}/stock/${enc}`;
+    // The tally counts every mention (the page shows that total to everyone); only
+    // the readable 觀點 are restricted to the free window.
     const insights = ins || [];
+    const readable = freeInsights(insights);
     const t = tally(insights);
-    const latest = insights[0];
+    const latest = readable[0];
     // The description is the page's own numbers, so no two ticker pages read alike.
     const description = t.total && latest
       ? `${tallySentence(name, t)}最近：${latest.podcaster}（${day(latest.podcast_launch_time)}）${latest.bluf_thesis || ''}`.slice(0, 160)
@@ -395,7 +411,7 @@ export async function metaFor(pathname, origin, api) {
     const members = (secs && secs.items) || [];
     const body = (insights.length ? `<p>${esc(tallySentence(name, t))}</p>` : '')
       + (members.length ? `<h2>產業 / 題材</h2>${ul(members.map((s) => `${sectorLink(s)}${s.reason ? `：${esc(s.reason)}` : ''}`))}` : '')
-      + (insights.length ? `<h2>Podcast 觀點</h2>${ul(insights.map((i) =>
+      + (readable.length ? `<h2>Podcast 觀點</h2>${ul(readable.map((i) =>
         `${esc(day(i.podcast_launch_time))} · ${podcasterLink(i.podcaster)} · ${esc(sentimentZh(i.sentiment_label))}`
         + `${i.time_horizon ? ` · ${esc(i.time_horizon)}` : ''} · ${a(`/episode/${encodeURIComponent(i.episode_id)}`, i.bluf_thesis || '')}`))}` : '');
     return {

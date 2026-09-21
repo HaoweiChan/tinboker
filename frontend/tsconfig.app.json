@@ -30,5 +30,10 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  // *.check.ts are standalone node scripts run by hand (node src/lib/x.check.ts),
+  // not app code — nothing imports them, so Vite never bundles them. They are
+  // excluded because they may use node builtins, which this browser config has no
+  // types for and which app code must not reach for.
+  "exclude": ["src/**/*.check.ts"]
 }
