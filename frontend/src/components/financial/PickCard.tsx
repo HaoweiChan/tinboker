@@ -103,10 +103,18 @@ export const PickCard: React.FC<PickCardProps> = ({
             {displayName && <span className="text-sm text-muted-foreground truncate min-w-0 max-w-[60%]">{displayName}</span>}
             {sentiment && <SentimentChip sentiment={sentiment} />}
             {repeatCount > 0 && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-muted/70 border border-border px-2 py-0.5 text-2xs font-medium text-muted-foreground">
+              // The chip IS the disclosure: it already names the fact, so a separate
+              // 查看連續點名集數與摘要 button below just said it again.
+              <button
+                type="button"
+                onClick={() => setMentionsOpen((v) => !v)}
+                aria-expanded={mentionsOpen}
+                className="inline-flex items-center gap-1 rounded-full bg-muted/70 border border-border px-2 py-0.5 text-2xs font-medium text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
+              >
                 <Layers size={11} className="shrink-0" />
                 近期連續點名 {repeatCount} 次
-              </span>
+                {mentionsOpen ? <ChevronUp size={11} className="shrink-0" /> : <ChevronDown size={11} className="shrink-0" />}
+              </button>
             )}
           </div>
         </div>
@@ -130,9 +138,11 @@ export const PickCard: React.FC<PickCardProps> = ({
         // same thing. Collapse both into that line.
         const hasAnyValue = windows ? due.some((m) => windows[m.key] != null) : false;
         if (!hasAnyValue) {
+          // Past every window and still nothing: a bare 還沒有報酬 helps no one.
+          if (!next) return null;
           return (
             <p className="text-2xs text-muted-foreground/60 mt-3 mb-1">
-              還沒有報酬{next ? ` · 下次揭曉：${next.label}（再 ${Math.max(1, next.days - deltaDays)} 天）` : ''}
+              還沒有報酬 · 下次揭曉：{next.label}（再 {Math.max(1, next.days - deltaDays)} 天）
             </p>
           );
         }
@@ -202,45 +212,35 @@ export const PickCard: React.FC<PickCardProps> = ({
         </div>
       )}
 
-      {repeatCount > 0 && mentions && (
+      {repeatCount > 0 && mentions && mentionsOpen && (
         <div className="mt-3">
-          <button
-            type="button"
-            onClick={() => setMentionsOpen((v) => !v)}
-            className="flex items-center gap-1 text-xs text-accent-info hover:underline"
-          >
-            {mentionsOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-            查看連續點名集數與摘要
-          </button>
-          {mentionsOpen && (
-            <ol className="mt-2 pt-2 border-t border-border space-y-2.5">
-              {mentions.map((m) => (
-                <li key={`${m.episode_id}-${m.ticker}`} className="relative pl-3 border-l-2 border-border">
-                  <div className="flex items-center gap-2 text-2xs text-muted-foreground">
-                    <span className="tabular-nums shrink-0">
-                      {formatDate(m.podcast_launch_time)}
-                    </span>
-                    {m.episode_title && (m.episode_public === false ? (
-                      <span className="truncate" title={m.episode_title}>{m.episode_title}</span>
-                    ) : (
-                      <Link
-                        to={`/episode/${encodeURIComponent(m.episode_id)}`}
-                        className="truncate hover:text-accent-info"
-                        title={m.episode_title}
-                      >
-                        {m.episode_title}
-                      </Link>
-                    ))}
-                  </div>
-                  {m.bluf_thesis && (
-                    <p className="text-xs text-muted-foreground/90 leading-relaxed mt-0.5 line-clamp-2">
-                      {m.bluf_thesis}
-                    </p>
-                  )}
-                </li>
-              ))}
-            </ol>
-          )}
+          <ol className="pt-2 border-t border-border space-y-2.5">
+            {mentions.map((m) => (
+              <li key={`${m.episode_id}-${m.ticker}`} className="relative pl-3 border-l-2 border-border">
+                <div className="flex items-center gap-2 text-2xs text-muted-foreground">
+                  <span className="tabular-nums shrink-0">
+                    {formatDate(m.podcast_launch_time)}
+                  </span>
+                  {m.episode_title && (m.episode_public === false ? (
+                    <span className="truncate" title={m.episode_title}>{m.episode_title}</span>
+                  ) : (
+                    <Link
+                      to={`/episode/${encodeURIComponent(m.episode_id)}`}
+                      className="truncate hover:text-accent-info"
+                      title={m.episode_title}
+                    >
+                      {m.episode_title}
+                    </Link>
+                  ))}
+                </div>
+                {m.bluf_thesis && (
+                  <p className="text-xs text-muted-foreground/90 leading-relaxed mt-0.5 line-clamp-2">
+                    {m.bluf_thesis}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ol>
         </div>
       )}
 
