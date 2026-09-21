@@ -378,39 +378,30 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodc
               onClear={() => setSelected(new Set())}
             />
           )}
+          {/* 最新 and the maturity tiers are one choice, not two: picking 30日 already
+              means 已揭曉. Two rows of five buttons — with 已揭曉 spelled out in three
+              of the labels — collapse into one row of four. */}
           <Segmented
             options={[
               { value: 'recent', label: '最新' },
-              { value: 'settled', label: '已揭曉' },
+              { value: '7', label: '7日' },
+              { value: '30', label: '30日' },
+              { value: '90', label: '90日' },
             ] as const}
-            value={view}
-            onChange={(v) => setView(v as 'recent' | 'settled')}
+            value={view === 'recent' ? 'recent' : String(settledTier)}
+            onChange={(v) => {
+              if (v === 'recent') return setView('recent');
+              setView('settled');
+              setSettledTier(Number(v) as SettledTier);
+            }}
           />
-          {view === 'settled' && (
-            <Segmented
-              options={[
-                { value: '7', label: '7日已揭曉' },
-                { value: '30', label: '30日已揭曉' },
-                { value: '90', label: '90日已揭曉' },
-              ] as const}
-              value={String(settledTier)}
-              onChange={(v) => setSettledTier(Number(v) as SettledTier)}
-            />
-          )}
         </div>
 
-        {!hasMyStuff ? (
+        {!hasMyStuff || scope === 'mine' ? (
           <p className="text-xs text-muted-foreground mb-3">
-            訂閱節目或加入自選股後，這裡會只顯示你關注的標的。
-            {' '}
-            <Link to="/member?tab=podcasters" className="text-accent-info hover:underline">管理節目</Link>
-            {' '}
-            <Link to="/member?tab=tickers" className="text-accent-info hover:underline">管理股票</Link>
-          </p>
-        ) : scope === 'mine' ? (
-          <p className="text-xs text-muted-foreground mb-3">
-            來自你訂閱的 {myNames.size} 個節目與 {myTickers.size} 檔自選股
-            {' · '}
+            {hasMyStuff
+              ? `來自你訂閱的 ${myNames.size} 個節目與 ${myTickers.size} 檔自選股 · `
+              : '訂閱節目或加入自選股後，這裡會只顯示你關注的標的。 '}
             <Link to="/member?tab=podcasters" className="text-accent-info hover:underline">管理節目</Link>
             {' '}
             <Link to="/member?tab=tickers" className="text-accent-info hover:underline">管理股票</Link>
