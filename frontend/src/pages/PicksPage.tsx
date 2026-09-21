@@ -427,7 +427,7 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodc
         </div>
 
         {!hasMyStuff || scope === 'mine' ? (
-          <p className="text-xs text-muted-foreground mb-3">
+          <p className="text-sm text-muted-foreground mb-3">
             {hasMyStuff
               ? `來自你訂閱的 ${myNames.size} 個節目與 ${myTickers.size} 檔自選股 · `
               : '訂閱節目或加入自選股後，這裡會只顯示你關注的標的。 '}
@@ -493,13 +493,13 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodc
               );
             })}
           </div>
-          <div ref={sentinelRef} className="h-10 flex items-center justify-center text-xs text-muted-foreground/70 mt-2">
+          <div ref={sentinelRef} className="h-10 flex items-center justify-center text-xs text-muted-foreground mt-2">
             {visibleGroups.length < keptGroups.length ? '載入更多…' : `共 ${keptGroups.length} 筆`}
           </div>
           </>
         )}
 
-        <p className="text-2xs text-muted-foreground/70 leading-relaxed mt-6">
+        <p className="text-xs text-muted-foreground leading-relaxed mt-6">
           本頁內容為播客觀點整理，僅供參考，並非投資建議；過去績效不代表未來表現。
           <Link to="/about#disclaimer" className="text-accent-info hover:underline ml-1">完整免責聲明</Link>
         </p>
