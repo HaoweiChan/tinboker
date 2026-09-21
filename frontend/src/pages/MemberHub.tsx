@@ -225,15 +225,27 @@ export const MemberHub: React.FC = () => {
                 <h1 className="text-xl sm:text-2xl font-semibold tracking-[-0.01em] truncate">{userInfo.name}</h1>
                 <div className="text-sm text-muted-foreground mt-0.5 truncate">{userInfo.email}</div>
                 <div className="mt-1.5 text-sm">
+                  {/* These were plain coloured text and didn't read as tappable — a
+                      bordered pill is the smallest thing that does. */}
                   {isMember ? (
-                    <span className="flex items-center gap-x-2 gap-y-0.5 flex-wrap whitespace-nowrap">
-                      <span className="text-accent-info font-medium">會員 · 有效至 {memberUntilLabel}</span>
-                      <Link to="/membership" className="text-accent-info hover:underline text-xs">管理訂閱</Link>
+                    <span className="flex items-center gap-x-2.5 gap-y-1 flex-wrap">
+                      <span className="text-accent-info font-medium whitespace-nowrap">會員 · 有效至 {memberUntilLabel}</span>
+                      <Link
+                        to="/membership"
+                        className="inline-flex items-center rounded-md border border-border bg-card px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted hover:border-foreground/30 transition-colors"
+                      >
+                        管理訂閱
+                      </Link>
                     </span>
                   ) : (
-                    <span className="flex items-center gap-2 flex-wrap">
+                    <span className="flex items-center gap-2.5 flex-wrap">
                       <span className="text-muted-foreground">免費會員</span>
-                      <Link to="/member?tab=picks" className="text-accent-info hover:underline text-xs">升級</Link>
+                      <Link
+                        to="/member?tab=picks"
+                        className="inline-flex items-center rounded-md bg-foreground px-2.5 py-1 text-xs font-semibold text-background hover:opacity-90 transition-opacity"
+                      >
+                        升級
+                      </Link>
                     </span>
                   )}
                 </div>

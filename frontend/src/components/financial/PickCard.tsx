@@ -109,7 +109,7 @@ export const PickCard: React.FC<PickCardProps> = ({
                 type="button"
                 onClick={() => setMentionsOpen((v) => !v)}
                 aria-expanded={mentionsOpen}
-                className="inline-flex items-center gap-1 rounded-full bg-muted/70 border border-border px-2 py-0.5 text-2xs font-medium text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
+                className="inline-flex items-center gap-1 rounded-full bg-muted/70 border border-border px-2.5 py-1 text-xs font-medium text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
               >
                 <Layers size={11} className="shrink-0" />
                 近期連續點名 {repeatCount} 次
@@ -141,7 +141,7 @@ export const PickCard: React.FC<PickCardProps> = ({
           // Past every window and still nothing: a bare 還沒有報酬 helps no one.
           if (!next) return null;
           return (
-            <p className="text-2xs text-muted-foreground/60 mt-3 mb-1">
+            <p className="text-xs text-muted-foreground mt-3 mb-1">
               還沒有報酬 · 下次揭曉：{next.label}（再 {Math.max(1, next.days - deltaDays)} 天）
             </p>
           );
@@ -158,7 +158,7 @@ export const PickCard: React.FC<PickCardProps> = ({
                   // "Since mention" has no return until the market has closed after the
                   // mention (the backend leaves it null over a weekend / same day).
                   content = v == null
-                    ? <span className="text-2xs text-muted-foreground/50">待收盤</span>
+                    ? <span className="text-xs text-muted-foreground">待收盤</span>
                     : <Change value={v} />;
                 } else if (v != null) {
                   content = <Change value={v} />;
@@ -168,14 +168,14 @@ export const PickCard: React.FC<PickCardProps> = ({
                 }
                 return (
                   <div key={key} className="text-center">
-                    <div className="text-2xs uppercase tracking-wide text-muted-foreground">{label}</div>
+                    <div className="text-xs uppercase tracking-wide text-muted-foreground">{label}</div>
                     {content}
                   </div>
                 );
               })}
             </div>
             {next && (
-              <p className="text-2xs text-muted-foreground/60 mb-1">
+              <p className="text-xs text-muted-foreground mb-1">
                 下次揭曉：{next.label}（再 {Math.max(1, next.days - deltaDays)} 天）
               </p>
             )}
@@ -217,7 +217,7 @@ export const PickCard: React.FC<PickCardProps> = ({
           <ol className="pt-2 border-t border-border space-y-2.5">
             {mentions.map((m) => (
               <li key={`${m.episode_id}-${m.ticker}`} className="relative pl-3 border-l-2 border-border">
-                <div className="flex items-center gap-2 text-2xs text-muted-foreground">
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
                   <span className="tabular-nums shrink-0">
                     {formatDate(m.podcast_launch_time)}
                   </span>
@@ -234,7 +234,7 @@ export const PickCard: React.FC<PickCardProps> = ({
                   ))}
                 </div>
                 {m.bluf_thesis && (
-                  <p className="text-xs text-muted-foreground/90 leading-relaxed mt-0.5 line-clamp-2">
+                  <p className="text-sm text-foreground/75 leading-relaxed mt-1 line-clamp-2">
                     {m.bluf_thesis}
                   </p>
                 )}
@@ -247,14 +247,14 @@ export const PickCard: React.FC<PickCardProps> = ({
       {/* Picks read further back than the public episode window: an old pick's
           episode may no longer be served, so show its title without a link. */}
       {episodeTitle && (pick.episode_public === false ? (
-        <span className="flex items-center gap-1 text-2xs text-muted-foreground/80 mt-3 min-w-0" title={episodeTitle}>
+        <span className="flex items-center gap-1 text-xs text-muted-foreground mt-3 min-w-0" title={episodeTitle}>
           <Mic size={11} className="shrink-0" />
           <span className="truncate">{episodeTitle}</span>
         </span>
       ) : (
         <Link
           to={`/episode/${encodeURIComponent(pick.episode_id)}`}
-          className="flex items-center gap-1 text-2xs text-muted-foreground/80 hover:text-accent-info mt-3 min-w-0"
+          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-accent-info mt-3 min-w-0"
           title={episodeTitle}
         >
           <Mic size={11} className="shrink-0" />
@@ -278,7 +278,7 @@ const Segment: React.FC<{
   onPlaySegment?: (episodeId: string, startTimeMs: number) => void;
 }> = ({ title, items, tone, episodeId, onPlaySegment }) => (
   <div>
-    <h4 className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">{title}</h4>
+    <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">{title}</h4>
     <ul className="space-y-1.5">
       {items.map((item, idx) => (
         <li
