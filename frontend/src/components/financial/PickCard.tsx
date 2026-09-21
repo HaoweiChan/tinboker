@@ -125,6 +125,17 @@ export const PickCard: React.FC<PickCardProps> = ({
         const due = METRICS.filter((m) => m.key === 'since' || deltaDays >= m.days || (windows && windows[m.key] != null));
         const pending = METRICS.filter((m) => !due.includes(m));
         const next = pending[0];
+        // Nothing has a number yet (a pick from today): the grid would be one cell
+        // reading 待收盤 under three empty ones, above a line that already says the
+        // same thing. Collapse both into that line.
+        const hasAnyValue = windows ? due.some((m) => windows[m.key] != null) : false;
+        if (!hasAnyValue) {
+          return (
+            <p className="text-2xs text-muted-foreground/60 mt-3 mb-1">
+              還沒有報酬{next ? ` · 下次揭曉：${next.label}（再 ${Math.max(1, next.days - deltaDays)} 天）` : ''}
+            </p>
+          );
+        }
         return (
           <>
             {/* Always four columns even when fewer are due, so the numbers line up
