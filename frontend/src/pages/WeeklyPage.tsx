@@ -121,9 +121,12 @@ export const WeeklyPage: React.FC = () => {
         )}
         {state === 'ok' && data && (
           <>
-            <div className="mb-4">
-              <h1 className="text-2xl font-semibold tracking-[-0.02em]">{title}</h1>
-              <p className="text-sm text-foreground/80 mt-1 max-w-[72ch] leading-[1.6]">{description}</p>
+            {/* Same reading recipe as the episode summary page (EpisodeDetail's h1 and
+                EpisodeInsightCard's thesis): a title that breathes over two lines, and a
+                standfirst at body size rather than metadata size. */}
+            <div className="mb-5">
+              <h1 className="text-2xl font-semibold tracking-[-0.015em] leading-[1.3]">{title}</h1>
+              <p className="text-md sm:text-lg text-foreground/90 mt-2.5 max-w-[72ch] leading-[1.7]">{description}</p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-6 gap-3.5 mb-[18px]">
