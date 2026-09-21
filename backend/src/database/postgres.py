@@ -374,6 +374,12 @@ def create_all_tables():
                 "ALTER TABLE IF EXISTS users "
                 "ADD COLUMN IF NOT EXISTS member_until TIMESTAMPTZ"
             ))
+            # Picks swiped away in 走勢. Pre-existing rows get '[]', not NULL — every
+            # reader treats this as a list and create_all won't backfill a default.
+            conn.execute(text(
+                "ALTER TABLE IF EXISTS users "
+                "ADD COLUMN IF NOT EXISTS dismissed_picks JSONB NOT NULL DEFAULT '[]'::jsonb"
+            ))
             conn.commit()
     elif engine.dialect.name == "sqlite":
         # SQLite has no "ADD COLUMN IF NOT EXISTS" — check PRAGMA first.
@@ -393,6 +399,10 @@ def create_all_tables():
             cs_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(content_sources)"))}
             if cs_cols and "cover_image_url" not in cs_cols:
                 conn.execute(text("ALTER TABLE content_sources ADD COLUMN cover_image_url TEXT"))
+                conn.commit()
+            u_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(users)"))}
+            if u_cols and "dismissed_picks" not in u_cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN dismissed_picks JSON"))
                 conn.commit()
             tr_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(tag_registry)"))}
             if tr_cols and "kind" not in tr_cols:

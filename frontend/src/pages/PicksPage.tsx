@@ -4,6 +4,8 @@ import { Filter, ChevronDown, Search, Check } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
 import { Segmented } from '@/components/redesign';
+import { SwipeToRemove } from '@/components/common/SwipeToRemove';
+import { useRemoveWithUndo } from '@/hooks/useRemoveWithUndo';
 import { PickCard } from '@/components/financial/PickCard';
 import {
   getRecentInsights,
@@ -51,6 +53,9 @@ const WINDOW_FETCH_CAP = 120;
 
 /** Settled maturity tiers (days). 已揭曉 defaults to 7D for immediate density. */
 type SettledTier = 7 | 30 | 90;
+/** A pick is identified by the mention it came from, not by the ticker. */
+const pickKeyOf = (p: { episode_id: string; ticker: string }) => `${p.episode_id}|${p.ticker}`;
+
 const TIER_WINDOW: Record<SettledTier, 'd7' | 'd30' | 'd90'> = { 7: 'd7', 30: 'd30', 90: 'd90' };
 
 /** Whole days elapsed since a mention date (ISO string). */
@@ -290,8 +295,22 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodc
     });
   }, [filteredGroups, view, settledTier, windowsMap]);
 
+  // Swiped-away picks. The key is the master mention, so the card comes back the next
+  // time the ticker is named (a newer master) — the pick is hidden, not the ticker.
+  // Applies in both scopes: switching to 全部 must not resurrect it.
+  const dismissedPicks = useAppStore((st) => st.dismissedPicks);
+  const toggleDismissedPick = useAppStore((st) => st.toggleDismissedPick);
+  const { removed, removeWithUndo } = useRemoveWithUndo();
+  const keptGroups = useMemo(
+    () => sortedGroups.filter((g) => {
+      const key = pickKeyOf(g.master);
+      return !dismissedPicks.includes(key) && !removed.has(`pick:${key}`);
+    }),
+    [sortedGroups, dismissedPicks, removed],
+  );
+
   // Infinite-scroll: render visibleCount, grow as the sentinel scrolls into view.
-  const visibleGroups = useMemo(() => sortedGroups.slice(0, visibleCount), [sortedGroups, visibleCount]);
+  const visibleGroups = useMemo(() => keptGroups.slice(0, visibleCount), [keptGroups, visibleCount]);
 
   useEffect(() => { setVisibleCount(PAGE_SIZE); }, [scope, selected, view, settledTier, picks, channelHistory]);
 
@@ -301,14 +320,14 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodc
     const io = new IntersectionObserver(
       (entries) => {
         if (entries[0]?.isIntersecting) {
-          setVisibleCount((c) => (c < sortedGroups.length ? c + PAGE_SIZE : c));
+          setVisibleCount((c) => (c < keptGroups.length ? c + PAGE_SIZE : c));
         }
       },
       { rootMargin: '600px' },
     );
     io.observe(el);
     return () => io.disconnect();
-  }, [sortedGroups.length]);
+  }, [keptGroups.length]);
 
   const tickers = useMemo(() => visibleGroups.map((g) => g.canonicalTicker), [visibleGroups]);
   const rawTranslationMap = useTranslationMap(tickers);
@@ -450,8 +469,16 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodc
                 ? windowsMap.get(windowReturnsKey(g.canonicalTicker, refMs))
                 : undefined;
               return (
-                <PickCard
+                <SwipeToRemove
                   key={g.key}
+                  className="rounded-md"
+                  onRemove={() => removeWithUndo(
+                    `pick:${pickKeyOf(pick)}`,
+                    `${g.canonicalTicker} 這則點名`,
+                    () => toggleDismissedPick(pickKeyOf(pick), { silent: true }),
+                  )}
+                >
+                <PickCard
                   pick={pick}
                   windows={windows}
                   displayName={nameMap.get(g.canonicalTicker.toUpperCase())}
@@ -462,11 +489,12 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodc
                   shareUrl={`${window.location.origin}/episode/${encodeURIComponent(pick.episode_id)}`}
                   onPlaySegment={onPlaySegment}
                 />
+                </SwipeToRemove>
               );
             })}
           </div>
           <div ref={sentinelRef} className="h-10 flex items-center justify-center text-xs text-muted-foreground/70 mt-2">
-            {visibleGroups.length < sortedGroups.length ? '載入更多…' : `共 ${sortedGroups.length} 筆`}
+            {visibleGroups.length < keptGroups.length ? '載入更多…' : `共 ${keptGroups.length} 筆`}
           </div>
           </>
         )}

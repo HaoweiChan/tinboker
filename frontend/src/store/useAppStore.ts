@@ -60,6 +60,8 @@ interface AppState {
   alerts: string[];
   subscriptions: string[];
   tagSubscriptions: string[];
+  /** Picks hidden in 走勢, as `${episode_id}|${ticker}`. */
+  dismissedPicks: string[];
   episodeBookmarks: string[];
   stockColorMode: 'TW' | 'US';
   fontSize: 'sm' | 'base' | 'lg';
@@ -84,6 +86,7 @@ interface AppState {
   toggleSubscription: (id: string, opts?: ToggleOpts) => Promise<boolean>;
   toggleEpisodeBookmark: (podcastName: string, episodeId: string, opts?: ToggleOpts) => Promise<boolean>;
   toggleTagSubscription: (tagName: string, opts?: ToggleOpts) => Promise<boolean>;
+  toggleDismissedPick: (pickKey: string, opts?: ToggleOpts) => Promise<boolean>;
   setStockColorMode: (mode: 'TW' | 'US') => void;
   toggleUseMockData: () => void;
 
@@ -147,6 +150,7 @@ export const useAppStore = create<AppState>()(
       alerts: [],
       subscriptions: [],
       tagSubscriptions: [],
+      dismissedPicks: [],
       episodeBookmarks: [],
       stockColorMode: 'TW',
       fontSize: 'base',
@@ -187,7 +191,7 @@ export const useAppStore = create<AppState>()(
           refreshToken: refreshToken !== undefined ? refreshToken : state.refreshToken,
         })),
       updateUser: (patch) => set((state) => ({ user: state.user ? { ...state.user, ...patch } : state.user })),
-      logout: () => set(() => ({ user: null, token: null, refreshToken: null })),
+      logout: () => set(() => ({ user: null, token: null, refreshToken: null, dismissedPicks: [] })),
       setAuthReady: (ready) => set(() => ({ isAuthReady: ready })),
       openLoginPrompt: () => set(() => ({ loginPromptOpen: true })),
       closeLoginPrompt: () => set(() => ({ loginPromptOpen: false })),
@@ -396,6 +400,49 @@ export const useAppStore = create<AppState>()(
         return false;
       },
 
+      toggleDismissedPick: async (pickKey, opts) => {
+        const { token, isAuthReady } = useAppStore.getState();
+        const before = useAppStore.getState().dismissedPicks;
+        const isDismissed = before.includes(pickKey);
+
+        if (!isAuthReady) {
+          toast.info('正在驗證登入狀態，請稍候再試');
+          return false;
+        }
+
+        useAppStore.setState((state) => ({
+          dismissedPicks: isDismissed
+            ? state.dismissedPicks.filter((k) => k !== pickKey)
+            : [...state.dismissedPicks, pickKey],
+        }));
+
+        // 走勢 is members-only, so an anonymous caller can't reach it — but keep the
+        // optimistic local state rather than throwing, same as the other toggles.
+        if (!token) return true;
+
+        try {
+          const result = await userApi.toggleDismissedPick(pickKey);
+          useAppStore.setState((state) => ({
+            dismissedPicks: result.is_dismissed
+              ? [...state.dismissedPicks.filter((k) => k !== pickKey), pickKey]
+              : state.dismissedPicks.filter((k) => k !== pickKey),
+          }));
+          return true;
+        } catch (error) {
+          console.error('Failed to toggle dismissed pick:', error);
+          useAppStore.setState(() => ({ dismissedPicks: before }));
+          if (isAuthError(error)) {
+            useAppStore.getState().logout();
+            toast.error('登入已過期，請重新登入', {
+              action: { label: '重新登入', onClick: () => window.location.href = '/' },
+            });
+          } else if (!opts?.silent) {
+            toast.error('操作失敗，請稍後再試');
+          }
+        }
+        return false;
+      },
+
       setStockColorMode: (mode) => set(() => ({ stockColorMode: mode })),
       toggleUseMockData: () => set((state) => ({ useMockData: !state.useMockData })),
 
@@ -460,6 +507,7 @@ export const useAppStore = create<AppState>()(
         alerts: state.alerts,
         subscriptions: state.subscriptions,
         tagSubscriptions: state.tagSubscriptions,
+        dismissedPicks: state.dismissedPicks,
         episodeBookmarks: state.episodeBookmarks,
         stockColorMode: state.stockColorMode,
         fontSize: state.fontSize,

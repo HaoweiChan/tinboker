@@ -57,13 +57,10 @@ def test_update_user_returns_none_for_unknown_google_id(orm_db):
 
 
 def test_get_user_subscriptions_of_unknown_user_is_all_empty(orm_db):
-    assert user_db.get_user_subscriptions("ghost") == {
-        "watchlist": [],
-        "podcast_subscriptions": [],
-        "episode_bookmarks": [],
-        "alerts": [],
-        "tag_subscriptions": [],
-    }
+    # Keyed off ARRAY_FIELDS so adding a sixth array can't silently drop one here —
+    # the point of the test is "every field, empty", not the exact five names.
+    assert user_db.get_user_subscriptions("ghost") == {f: [] for f in user_db.ARRAY_FIELDS}
+    assert "dismissed_picks" in user_db.ARRAY_FIELDS
 
 
 @pytest.mark.parametrize(
