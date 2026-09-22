@@ -433,14 +433,24 @@ class Settings(BaseSettings):
     intraday_snapshot_retention_days: int = 30
     
     # Podcast pipeline service (LangGraph + Wiki API) — runs as podcast-api.service
-    # on the same VPS, uvicorn :8003. The backend proxies a few endpoints to it
-    # (episode regenerate, social-copy generation). The old default pointed at the
-    # pre-monorepo external host (159.195.45.195:8000), which no longer exists, so
-    # an unset env black-holed the proxy until httpx timed out. NOTE: this field has
-    # a validation_alias, so the GSM secret source (keyed by field name) can't set
-    # it — only the NETCUP_IP env var or this default apply.
+    # on the same VPS, uvicorn bound to 127.0.0.1:8003. The backend proxies a few
+    # endpoints to it (episode regenerate, social-copy generation).
+    #
+    # Go through Caddy, NOT the host's own IP: uvicorn listens on loopback only, so
+    # http://152.53.136.182:8003 (the previous default) has no listener and every
+    # call from inside the backend container died with ConnectError — silently, since
+    # each caller treats a dead pipeline as "no material". That is what kept the
+    # post-hoc / ticker-story Threads formats from ever posting (2026-09-17 → 09-22).
+    # The podcast-api vhost proxies to localhost:8003 and allows /api/* from
+    # private_ranges, which covers the docker bridge. Verified from the prod
+    # container: /health 200, POST route reachable (405 on GET).
+    #
+    # NOTE: this field has a validation_alias, so the GSM secret source (keyed by
+    # field name) can't set it — only the NETCUP_IP env var or this default apply.
+    # From a workstation Caddy answers /api/* with 403 (not a private range); use
+    # `ssh -L 8003:localhost:8003 root@<vps>` and NETCUP_IP=http://localhost:8003.
     netcup_api_url: str = Field(
-        default="http://152.53.136.182:8003",
+        default="https://podcast-api.tinboker.com",
         validation_alias="NETCUP_IP"
     )
 
