@@ -96,6 +96,11 @@ interface PicksPageProps {
 const MANAGE_LINK =
   'inline-flex items-center rounded-md border border-border bg-card px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted hover:border-foreground/30 transition-colors';
 
+/** The counts in the sentence ARE the way in: "2 個節目" is the thing you'd tap to
+ *  change what feeds this list, so it carries the edge instead of a separate button. */
+const COUNT_LINK =
+  'inline-flex items-baseline gap-1 rounded-md border border-border bg-card px-2 py-0.5 align-middle text-foreground hover:bg-muted hover:border-foreground/30 transition-colors';
+
 export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodcasts, myWatchlistTickers }) => {
   const storeSubscriptions = useAppStore((s) => s.subscriptions);
   const storeWatchlist = useAppStore((s) => s.watchlist);
@@ -431,22 +436,27 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodc
           )}
         </div>
 
-        {/* The two actions were bare links at the end of the sentence, so they broke
-            mid-label on a phone; as pills on their own row they also match the card
-            actions elsewhere. They point at /watchlist, where the lists actually live
-            — /member?tab= has only been a redirect since the nav consolidation. */}
         {!hasMyStuff || scope === 'mine' ? (
-          <div className="mb-3">
-            <p className="text-sm text-muted-foreground">
-              {hasMyStuff
-                ? `來自你訂閱的 ${myNames.size} 個節目與 ${myTickers.size} 檔自選股`
-                : '訂閱節目或加入自選股後，這裡會只顯示你關注的標的。'}
-            </p>
-            <div className="flex flex-wrap gap-2 mt-2">
-              <Link to="/watchlist?tab=podcasters" className={MANAGE_LINK}>管理節目</Link>
-              <Link to="/watchlist?tab=tickers" className={MANAGE_LINK}>管理股票</Link>
-            </div>
-          </div>
+          <p className="text-sm text-muted-foreground mb-3 leading-[2]">
+            {hasMyStuff ? (
+              <>
+                來自你訂閱的{' '}
+                <Link to="/watchlist?tab=podcasters" className={COUNT_LINK}>
+                  <span className="font-mono tabular-nums font-medium">{myNames.size}</span> 個節目
+                </Link>{' '}
+                與{' '}
+                <Link to="/watchlist?tab=tickers" className={COUNT_LINK}>
+                  <span className="font-mono tabular-nums font-medium">{myTickers.size}</span> 檔自選股
+                </Link>
+              </>
+            ) : (
+              <>
+                這裡只顯示你關注的標的 —{' '}
+                <Link to="/podcaster" className={MANAGE_LINK}>訂閱節目</Link>{' '}
+                <Link to="/stock" className={MANAGE_LINK}>加入自選股</Link>
+              </>
+            )}
+          </p>
         ) : null}
 
         {loading || historyLoading || settledLoading ? (
