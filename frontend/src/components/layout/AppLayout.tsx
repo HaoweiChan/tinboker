@@ -59,7 +59,9 @@ export const AppLayout: React.FC = () => {
   const playerVisible = usePlayerStore((s) => s.player.isPlayerVisible);
 
   return (
-    <div className="min-h-screen lg:grid lg:grid-cols-[64px_1fr] bg-background">
+    // The sidebar column widens at xl, where the rail stays open with its labels
+    // visible; below that it is a 64px rail whose hover panel floats over the content.
+    <div className="min-h-screen lg:grid lg:grid-cols-[64px_1fr] xl:grid-cols-[248px_1fr] bg-background">
       {/* Keyboard users otherwise tab the 10-item sidebar rail and the header on every
           page before reaching the content. Off-screen until focused, so it costs the
           visual design nothing. */}
