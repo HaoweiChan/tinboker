@@ -106,38 +106,52 @@ export const MemberHub: React.FC = () => {
               </div>
             </div>
           ) : userInfo ? (
-            <div className="flex items-start gap-3 sm:gap-4">
-              {userInfo.avatar ? (
-                <img src={userInfo.avatar} alt={userInfo.name} className="w-14 h-14 sm:w-[72px] sm:h-[72px] rounded-full object-cover shrink-0" />
-              ) : (
-                <div className="w-14 h-14 sm:w-[72px] sm:h-[72px] rounded-full grid place-items-center text-white text-xl sm:text-2xl font-semibold bg-accent-info shrink-0">{initials(userInfo.name)}</div>
-              )}
-              <div className="min-w-0 flex-1">
-                <h1 className="text-xl sm:text-2xl font-semibold tracking-[-0.01em] truncate">{userInfo.name}</h1>
-                <div className="text-sm text-muted-foreground mt-0.5 truncate">{userInfo.email}</div>
-                {/* Status and expiry stack rather than sharing a line: beside the
-                    action button the column is ~210px, and "會員 · 有效至 2026/12/31"
-                    broke across the date. */}
-                <div className="mt-1.5 text-sm font-medium">
-                  {isMember ? <span className="text-accent-info">會員</span> : <span className="text-muted-foreground">免費會員</span>}
+            <>
+              <div className="flex items-start gap-3 sm:gap-4">
+                {userInfo.avatar ? (
+                  <img src={userInfo.avatar} alt={userInfo.name} className="w-14 h-14 sm:w-[72px] sm:h-[72px] rounded-full object-cover shrink-0" />
+                ) : (
+                  <div className="w-14 h-14 sm:w-[72px] sm:h-[72px] rounded-full grid place-items-center text-white text-xl sm:text-2xl font-semibold bg-accent-info shrink-0">{initials(userInfo.name)}</div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <h1 className="text-xl sm:text-2xl font-semibold tracking-[-0.01em] truncate">{userInfo.name}</h1>
+                  <div className="text-sm text-muted-foreground mt-0.5 truncate">{userInfo.email}</div>
                 </div>
-                <div className="mt-0.5 text-xs text-muted-foreground">
-                  {isMember && memberUntilLabel ? `有效至 ${memberUntilLabel}` : formatJoin(userInfo.created_at)}
-                </div>
+                {/* The card's one action. A paying member has already bought, so theirs
+                    is the quiet outline; the free state is the only place on this page
+                    that gets a solid button. */}
+                <Link
+                  to="/membership"
+                  className={
+                    isMember
+                      ? 'shrink-0 inline-flex items-center rounded-md border border-border bg-card px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted hover:border-foreground/30 transition-colors'
+                      : 'shrink-0 inline-flex items-center rounded-md bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground hover:bg-primary/90 transition-colors'
+                  }
+                >
+                  {isMember ? '管理訂閱' : '升級'}
+                </Link>
               </div>
-              {/* The card's one action, top-right beside the name — inline after the
-                  status line it wrapped onto a line of its own and read as an orphan. */}
-              <Link
-                to="/membership"
-                className={
-                  isMember
-                    ? 'shrink-0 inline-flex items-center rounded-md border border-border bg-card px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted hover:border-foreground/30 transition-colors'
-                    : 'shrink-0 inline-flex items-center rounded-md bg-foreground px-2.5 py-1 text-xs font-semibold text-background hover:opacity-90 transition-opacity'
-                }
-              >
-                {isMember ? '管理訂閱' : '升級'}
-              </Link>
-            </div>
+
+              {/* Full width under the identity block, so 會員 · 有效至 … stays on one
+                  line — in the column beside the button it broke across the date. The
+                  tier is a chip, not a colour on running text: the two states then
+                  differ by the same element, and free reads as a tier rather than as
+                  an error. */}
+              <div className="mt-3 flex items-center gap-2 flex-wrap text-xs">
+                <span
+                  className={
+                    isMember
+                      ? 'inline-flex items-center rounded-md bg-primary/15 px-2 py-0.5 font-semibold text-primary'
+                      : 'inline-flex items-center rounded-md bg-muted px-2 py-0.5 font-medium text-muted-foreground'
+                  }
+                >
+                  {isMember ? '會員' : '免費會員'}
+                </span>
+                <span className="text-muted-foreground tabular-nums">
+                  {isMember && memberUntilLabel ? `· 有效至 ${memberUntilLabel}` : formatJoin(userInfo.created_at) && `· ${formatJoin(userInfo.created_at)}`}
+                </span>
+              </div>
+            </>
           ) : token ? (
             <div className="text-sm text-muted-foreground">已登入</div>
           ) : (
@@ -148,7 +162,9 @@ export const MemberHub: React.FC = () => {
         </div>
 
         {/* 走勢 — members only; everyone else gets the plan pitch. */}
-        <h2 className="text-base font-semibold tracking-[-0.01em] mb-2.5">走勢</h2>
+        {/* For a non-member the card below sells two things, so 走勢 would be the
+            wrong name for the section. */}
+        <h2 className="text-base font-semibold tracking-[-0.01em] mb-2.5">{isMember ? '走勢' : '會員方案'}</h2>
         {isMember ? (
           <PicksPage embedded mySubscribedPodcasts={podcastSubs} myWatchlistTickers={effectiveWatchlist} />
         ) : (
