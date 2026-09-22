@@ -60,6 +60,15 @@ export const AppLayout: React.FC = () => {
 
   return (
     <div className="min-h-screen lg:grid lg:grid-cols-[64px_1fr] bg-background">
+      {/* Keyboard users otherwise tab the 10-item sidebar rail and the header on every
+          page before reaching the content. Off-screen until focused, so it costs the
+          visual design nothing. */}
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[100] focus:rounded-[3px] focus:border focus:border-accent-info focus:bg-card focus:px-3 focus:py-2 focus:text-sm focus:font-semibold focus:text-foreground"
+      >
+        跳到主要內容
+      </a>
       <Sidebar />
       <div className="flex flex-col min-w-0 min-h-screen">
         {/* z-30 matches the other app chrome (Sidebar, BottomTabs). At z-20 the header tied
@@ -85,7 +94,7 @@ export const AppLayout: React.FC = () => {
           </div>
         </header>
 
-        <main className={`flex-1 min-w-0${playerVisible ? ' pb-24 lg:pb-20' : ''}`}>
+        <main id="main" className={`flex-1 min-w-0${playerVisible ? ' pb-24 lg:pb-20' : ''}`}>
           <Outlet />
         </main>
 
