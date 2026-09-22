@@ -77,6 +77,12 @@ interface TradingViewChartProps {
 
   // Settings
   showPriceLines?: boolean;
+  /** What this chart shows, for screen readers. lightweight-charts paints into a
+   *  <canvas>, which is invisible to assistive tech no matter what is drawn on it, so
+   *  the container carries role="img" and this label — the same treatment the
+   *  三大法人 sparkline already gets. Callers know the symbol and the timeframe; the
+   *  chart does not. */
+  ariaLabel?: string;
 }
 
 // Helper to calculate Simple Moving Average
@@ -119,6 +125,7 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
   showPriceLines = false,
   mentions,
   formatPrice,
+  ariaLabel,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -807,7 +814,14 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
 
 
   return (
-    <div className={`relative ${className || ''}`} style={{ height }}>
+    // role="img" + a label: everything below is painted into a <canvas>, so without
+    // this a screen reader reaches the chart and finds nothing at all to announce.
+    <div
+      className={`relative ${className || ''}`}
+      style={{ height }}
+      role="img"
+      aria-label={ariaLabel || '股價走勢圖'}
+    >
       {/* Legend Overlay */}
       <div
         ref={legendRef}

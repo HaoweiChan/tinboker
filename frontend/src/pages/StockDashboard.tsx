@@ -42,6 +42,22 @@ import type { SectorByTickerItem } from '@/validation/schemas';
 // Semantic sentiment colours (green bull / red bear), matching the chart dots and
 // the SentBar rather than the market price convention.
 
+/** A heavily-covered ticker carries 50+ related episodes. Rendering them all made
+ *  /stock/:ticker 30,000px tall on a phone — ~89% of the page was one list nobody
+ *  scrolls to the end of — and mounted 50 card subtrees on load. Reveal a screen's
+ *  worth and let the reader ask for more, the same way 觀點 above already does. */
+const EPISODE_PAGE = 12;
+
+/** zh-TW names for the chart's timeframe and sub-pane, used only to describe the
+ *  chart to screen readers — the visible controls have their own labels. */
+const TIMEFRAME_LABEL: Record<string, string> = {
+  '1H': '小時線', '1D': '日線', '1W': '週線', '1M': '月線',
+  '3M': '三個月', '6M': '六個月', '1Y': '一年', YTD: '年初至今', ALL: '全部',
+};
+const SUB_PANE_LABEL: Record<string, string> = {
+  Volume: '成交量', RSI: 'RSI(14)', MACD: 'MACD', KD: 'KD', Bias: '乖離率',
+};
+
 const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[]; episodes: ApiEpisode[] }> = ({ symbol, insights, episodes }) => {
   const [stockData, setStockData] = useState<CompanyDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -381,6 +397,15 @@ const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[]; epi
                 isLoadingMore={isLoadingMore}
                 mentions={mentionSeries}
                 formatPrice={(v) => fmtPrice(v, symbol)}
+                // The chart is a <canvas>; without this a screen reader finds an empty
+                // box where the page's main content is. Names what is plotted and the
+                // latest value, since the picture itself cannot be read.
+                ariaLabel={[
+                  `${zhName ? `${zhName} ` : ''}${symbol} ${TIMEFRAME_LABEL[timeframe] ?? ''}股價走勢圖`,
+                  chartData.length > 0 ? `共 ${chartData.length} 根 K 棒` : '',
+                  SUB_PANE_LABEL[subChart] ? `副圖：${SUB_PANE_LABEL[subChart]}` : '',
+                  mentionSeries ? '另含 Podcast 聲量水位' : '',
+                ].filter(Boolean).join('，')}
               />
             </div>
           ) : market !== 'TW' && market !== 'US' ? (
@@ -487,6 +512,7 @@ export const StockDashboard: React.FC = () => {
   const lockedCount = isMember ? 0 : gatedInsights.length;
   // The 觀點 list is long on popular tickers (200+ over 90 days); page it.
   const [insightLimit, setInsightLimit] = useState(8);
+  const [episodeLimit, setEpisodeLimit] = useState(EPISODE_PAGE);
   const mockEpisodes = useMemo(
     () => episodes.map(transformApiEpisodeToMock).filter((e): e is NonNullable<typeof e> => e != null),
     [episodes],
@@ -565,6 +591,9 @@ export const StockDashboard: React.FC = () => {
         return (db as number) - (da as number);
       });
       setEpisodes(list);
+      // A new ticker starts a new list — otherwise arriving from a ticker whose list
+      // was expanded shows this one already expanded too.
+      setEpisodeLimit(EPISODE_PAGE);
       setEpisodesLoading(false);
     })();
     return () => {
@@ -627,11 +656,22 @@ export const StockDashboard: React.FC = () => {
         ) : episodes.length === 0 ? (
           <div className="bg-card border border-border rounded-md p-10 text-center text-sm text-muted-foreground">目前沒有 Podcast 提到此標的。</div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {episodes.map((ep) => (
-              <EpisodeCardV2 key={ep.id} {...apiEpisodeToCardV2(ep, priceMap, podcastImageMap, undefined, sentimentMap.get(ep.id), priceSinceMap)} />
-            ))}
-          </div>
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {episodes.slice(0, episodeLimit).map((ep) => (
+                <EpisodeCardV2 key={ep.id} {...apiEpisodeToCardV2(ep, priceMap, podcastImageMap, undefined, sentimentMap.get(ep.id), priceSinceMap)} />
+              ))}
+            </div>
+            {episodes.length > episodeLimit && (
+              <button
+                type="button"
+                onClick={() => setEpisodeLimit((n) => n + EPISODE_PAGE)}
+                className="mt-3 w-full rounded-md border border-border bg-card py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
+              >
+                顯示更多（還有 {episodes.length - episodeLimit} 集）
+              </button>
+            )}
+          </>
         )}
       </PageContent>
     </>
