@@ -22,7 +22,7 @@ export const MembershipPage: React.FC = () => {
           </p>
           {!user && (
             <p className="text-sm text-accent-info mt-2">
-              登入後可在這裡管理訂閱節目、自選股票與收藏。
+              登入後可在這裡管理訂閱節目、自選個股與收藏。
             </p>
           )}
         </div>

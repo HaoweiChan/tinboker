@@ -72,7 +72,7 @@ const SettingsRow: React.FC<{ label: string; hint: string; control: React.ReactN
 
 const NOTIF_ROWS: { key: keyof NotificationPreferences; label: string; hint: string }[] = [
   { key: 'new_episodes', label: '訂閱的 Podcast 新集數', hint: '當您訂閱的 Podcast 發布新集數時發送通知。' },
-  { key: 'stock_mentions', label: '追蹤標的被提及', hint: '當您的自選股被 Podcast 提及時發送通知。' },
+  { key: 'stock_mentions', label: '追蹤標的被提及', hint: '當您的自選個股被 Podcast 提及時發送通知。' },
   { key: 'price_alerts', label: '價格警示', hint: '當追蹤標的達到設定的價格條件時發送通知。' },
   { key: 'daily_digest', label: '每日市場摘要', hint: '每天早上 8:00 發送昨日市場重點整理。' },
 ];
