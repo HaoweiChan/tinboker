@@ -80,9 +80,12 @@ def subject_off_cooldown(fmt: Format, subject: Optional[str], recent: list[dict]
 
 # ── formats ─────────────────────────────────────────────────────────────────
 
-# A recap with nothing in it is worse than no recap. Both floors are guesses against
-# one week of data (W37: total 327, top rise +6 — thin); tune from the by-format report.
-WEEKLY_MIN_TOTAL = 500      # market-wide mentions in the week
+# A recap with nothing in it is worse than no recap. The rise floor is the real gate;
+# the total floor only catches a dead week (a holiday, an ingest outage).
+# 500 was a guess made from one week and it was roughly double reality — the whole
+# market runs ~260-330 mentions a week under the prod scope (W37 327, W38 263), so the
+# recap never once fired between 2026-09-17 and 09-22. Tune from the by-format report.
+WEEKLY_MIN_TOTAL = 150      # market-wide mentions in the week
 WEEKLY_MIN_RISE = 5         # the leader's week-over-week gain in mentions
 WEEKLY_BUSY_N = 8           # runners-up only get a line when they are this loud
 
