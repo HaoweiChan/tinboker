@@ -6,10 +6,15 @@ import { useRequireAuth } from '@/hooks/useRequireAuth';
 import { getPlans, startCheckout } from '@/services/api/billing';
 import type { BillingPlans } from '@/validation/schemas';
 import { formatMemberUntil } from '@/lib/date';
+import { INSIGHT_PAYWALL_DAYS } from '@/lib/insightPaywall';
 
-/** The 走勢 plan pitch: what it is, price (from `/api/billing/plans`), buy button,
- * and consent line. Shared by MembershipPage (/membership) and the locked 走勢
- * tab on /member so the sales copy and price fetching live in exactly one place. */
+/** The plan pitch: what membership includes, price (from `/api/billing/plans`), buy
+ * button, and consent line. Shared by MembershipPage (/membership) and the locked 走勢
+ * section on /member so the sales copy and price fetching live in exactly one place.
+ *
+ * Both benefits listed here are gates that already exist in the app: 走勢 (PicksPage,
+ * members only) and the newest 個股觀點 (INSIGHT_PAYWALL_DAYS in lib/insightPaywall) —
+ * keep this list and those gates in step, or the page sells the wrong thing. */
 export const PlanCard: React.FC = () => {
   const [plans, setPlans] = useState<BillingPlans | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -29,15 +34,27 @@ export const PlanCard: React.FC = () => {
 
   return (
     <div className="bg-card border border-border rounded-md p-5 sm:p-6 space-y-5">
-      <div className="flex items-start gap-3">
-        <CheckCircle2 size={20} className="text-accent-info shrink-0 mt-0.5" />
-        <div>
-          <h2 className="text-base font-semibold text-foreground mb-1">
-            {user?.is_member ? <Link to="/member?tab=picks" className="hover:underline">走勢</Link> : '走勢'}
-          </h2>
-          <p className="text-sm text-muted-foreground leading-[1.65]">
-            每一位財經 Podcaster 點名的個股，從提及當日起算的 7／30／90 天實際走勢，可依節目篩選。
-          </p>
+      <div className="space-y-4">
+        <div className="flex items-start gap-3">
+          <CheckCircle2 size={20} className="text-accent-info shrink-0 mt-0.5" />
+          <div>
+            <h2 className="text-base font-semibold text-foreground mb-1">
+              {user?.is_member ? <Link to="/member" className="hover:underline">走勢</Link> : '走勢'}
+            </h2>
+            <p className="text-sm text-muted-foreground leading-[1.65]">
+              每一位財經 Podcaster 點名的個股，從提及當日起算的 7／30／90 天實際走勢，可依節目篩選。
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-start gap-3">
+          <CheckCircle2 size={20} className="text-accent-info shrink-0 mt-0.5" />
+          <div>
+            <h2 className="text-base font-semibold text-foreground mb-1">最新個股觀點</h2>
+            <p className="text-sm text-muted-foreground leading-[1.65]">
+              個股頁上最近 {INSIGHT_PAYWALL_DAYS} 天的 Podcast 觀點摘要。{INSIGHT_PAYWALL_DAYS} 天前的觀點對所有人免費。
+            </p>
+          </div>
         </div>
       </div>
 

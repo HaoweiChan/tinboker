@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { User, Settings, LogOut, Info, LayoutDashboard, Star } from 'lucide-react';
+import { Settings, LogOut, Info, LayoutDashboard, Star } from 'lucide-react';
 import { useAppStore, useUser, useLogout } from '@/store/useAppStore';
 import { LoginButton } from '@/components/auth/LoginButton';
 import { authApi } from '@/services/api/auth';
@@ -87,13 +87,8 @@ export const UserMenu: React.FC = () => {
 
           {/* Menu Items */}
           <div className="py-2">
-            <button
-              onClick={() => handleNavigation('/member')}
-              className="w-full flex items-center gap-3 px-4 py-3 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-            >
-              <User size={18} />
-              <span>會員專區</span>
-            </button>
+            {/* No 會員專區 row: /member is a permanent tab (mobile) and sidebar entry
+                (desktop), so listing it here was a third door to the same page. */}
             <button
               onClick={() => handleNavigation('/watchlist')}
               className="w-full flex items-center gap-3 px-4 py-3 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"

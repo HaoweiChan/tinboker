@@ -23,7 +23,7 @@ export const LockedInsightsCard: React.FC<{ count: number }> = ({ count }) => (
       </p>
     </div>
     <Link
-      to="/member?tab=picks"
+      to="/member"
       className="shrink-0 rounded-md bg-foreground px-3 py-1.5 text-xs font-semibold text-background hover:opacity-90 transition-opacity"
     >
       升級

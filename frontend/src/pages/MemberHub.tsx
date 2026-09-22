@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
-import { ChevronRight, Settings, Star } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
 import { PlanCard } from '@/components/membership/PlanCard';
@@ -27,9 +26,10 @@ function initials(name?: string): string {
     .toUpperCase();
 }
 
-/** /member — what membership buys: 走勢 and 週報, plus the subscription's own state.
- *  Saved items are NOT here; they're a personal utility reached from the header
- *  menu (/watchlist), so this page stays about the paid product. Route gating
+/** /member — what membership buys: 走勢, plus the subscription's own state. Nothing
+ *  else earns a place here. Saved items and 帳號設定 are personal utilities and live
+ *  in the header menu; 週報 is browsable content and lives in 探索 — giving each of
+ *  them a second entry point here turned the page into a list of links. Route gating
  *  lives in App.tsx's MemberRoute, which sends logged-out visitors to
  *  MembershipPage. PicksPage must never mount for a non-member (the `isMember`
  *  guard below), or its returns endpoint 402s. */
@@ -93,7 +93,7 @@ export const MemberHub: React.FC = () => {
 
   return (
     <>
-      <SEO title="會員專區" description="會員的走勢追蹤與每週週報。" />
+      <SEO title="會員專區" description="會員的走勢追蹤與訂閱狀態。" />
       <PageContent>
         {/* Identity + subscription state */}
         <div className="bg-card border border-border rounded-md p-4 sm:p-6 mb-4">
@@ -106,45 +106,52 @@ export const MemberHub: React.FC = () => {
               </div>
             </div>
           ) : userInfo ? (
-            <div className="flex items-start gap-3 sm:gap-4">
-              {userInfo.avatar ? (
-                <img src={userInfo.avatar} alt={userInfo.name} className="w-14 h-14 sm:w-[72px] sm:h-[72px] rounded-full object-cover shrink-0" />
-              ) : (
-                <div className="w-14 h-14 sm:w-[72px] sm:h-[72px] rounded-full grid place-items-center text-white text-xl sm:text-2xl font-semibold bg-accent-info shrink-0">{initials(userInfo.name)}</div>
-              )}
-              <div className="min-w-0">
-                <h1 className="text-xl sm:text-2xl font-semibold tracking-[-0.01em] truncate">{userInfo.name}</h1>
-                <div className="text-sm text-muted-foreground mt-0.5 truncate">{userInfo.email}</div>
-                <div className="mt-1.5 text-sm">
-                  {/* These were plain coloured text and didn't read as tappable — a
-                      bordered pill is the smallest thing that does. */}
-                  {isMember ? (
-                    <span className="flex items-center gap-x-2.5 gap-y-1 flex-wrap">
-                      <span className="text-accent-info font-medium whitespace-nowrap">會員 · 有效至 {memberUntilLabel}</span>
-                      <Link
-                        to="/membership"
-                        className="inline-flex items-center rounded-md border border-border bg-card px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted hover:border-foreground/30 transition-colors"
-                      >
-                        管理訂閱
-                      </Link>
-                    </span>
-                  ) : (
-                    <span className="flex items-center gap-2.5 flex-wrap">
-                      <span className="text-muted-foreground">免費會員</span>
-                      <Link
-                        to="/membership"
-                        className="inline-flex items-center rounded-md bg-foreground px-2.5 py-1 text-xs font-semibold text-background hover:opacity-90 transition-opacity"
-                      >
-                        升級
-                      </Link>
-                    </span>
-                  )}
-                </div>
-                {formatJoin(userInfo.created_at) && (
-                  <div className="mt-2 text-xs text-muted-foreground">{formatJoin(userInfo.created_at)}</div>
+            <>
+              <div className="flex items-start gap-3 sm:gap-4">
+                {userInfo.avatar ? (
+                  <img src={userInfo.avatar} alt={userInfo.name} className="w-14 h-14 sm:w-[72px] sm:h-[72px] rounded-full object-cover shrink-0" />
+                ) : (
+                  <div className="w-14 h-14 sm:w-[72px] sm:h-[72px] rounded-full grid place-items-center text-white text-xl sm:text-2xl font-semibold bg-accent-info shrink-0">{initials(userInfo.name)}</div>
                 )}
+                <div className="min-w-0 flex-1">
+                  <h1 className="text-xl sm:text-2xl font-semibold tracking-[-0.01em] truncate">{userInfo.name}</h1>
+                  <div className="text-sm text-muted-foreground mt-0.5 truncate">{userInfo.email}</div>
+                </div>
+                {/* The card's one action. A paying member has already bought, so theirs
+                    is the quiet outline; the free state is the only place on this page
+                    that gets a solid button. */}
+                <Link
+                  to="/membership"
+                  className={
+                    isMember
+                      ? 'shrink-0 inline-flex items-center rounded-md border border-border bg-card px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted hover:border-foreground/30 transition-colors'
+                      : 'shrink-0 inline-flex items-center rounded-md bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground hover:bg-primary/90 transition-colors'
+                  }
+                >
+                  {isMember ? '管理訂閱' : '升級'}
+                </Link>
               </div>
-            </div>
+
+              {/* Full width under the identity block, so 會員 · 有效至 … stays on one
+                  line — in the column beside the button it broke across the date. The
+                  tier is a chip, not a colour on running text: the two states then
+                  differ by the same element, and free reads as a tier rather than as
+                  an error. */}
+              <div className="mt-3 flex items-center gap-2 flex-wrap text-xs">
+                <span
+                  className={
+                    isMember
+                      ? 'inline-flex items-center rounded-md bg-primary/15 px-2 py-0.5 font-semibold text-primary'
+                      : 'inline-flex items-center rounded-md bg-muted px-2 py-0.5 font-medium text-muted-foreground'
+                  }
+                >
+                  {isMember ? '會員' : '免費會員'}
+                </span>
+                <span className="text-muted-foreground tabular-nums">
+                  {isMember && memberUntilLabel ? `· 有效至 ${memberUntilLabel}` : formatJoin(userInfo.created_at) && `· ${formatJoin(userInfo.created_at)}`}
+                </span>
+              </div>
+            </>
           ) : token ? (
             <div className="text-sm text-muted-foreground">已登入</div>
           ) : (
@@ -154,31 +161,10 @@ export const MemberHub: React.FC = () => {
           )}
         </div>
 
-        {/* The two personal utilities that used to be tabs here. */}
-        <div className="grid grid-cols-2 gap-2.5 mb-5">
-          <Link to="/watchlist" className="flex items-center gap-2 bg-card border border-border rounded-md px-3.5 py-3 text-sm hover:border-foreground/25 transition-colors">
-            <Star size={16} className="text-muted-foreground shrink-0" />
-            <span className="flex-1 truncate">收藏</span>
-            <ChevronRight size={14} className="text-muted-foreground shrink-0" />
-          </Link>
-          <Link to="/settings" className="flex items-center gap-2 bg-card border border-border rounded-md px-3.5 py-3 text-sm hover:border-foreground/25 transition-colors">
-            <Settings size={16} className="text-muted-foreground shrink-0" />
-            <span className="flex-1 truncate">帳號設定</span>
-            <ChevronRight size={14} className="text-muted-foreground shrink-0" />
-          </Link>
-        </div>
-
-        {/* 週報 — the other half of what membership is for; the page itself is public. */}
-        <Link to="/weekly" className="flex items-center gap-3 bg-card border border-border rounded-md p-4 mb-5 hover:border-foreground/25 transition-colors">
-          <div className="min-w-0 flex-1">
-            <div className="text-base font-semibold tracking-[-0.01em]">每週週報</div>
-            <div className="text-xs text-muted-foreground mt-0.5">這一週各節目聊了哪些個股與題材、多空怎麼變。</div>
-          </div>
-          <ChevronRight size={16} className="text-muted-foreground shrink-0" />
-        </Link>
-
         {/* 走勢 — members only; everyone else gets the plan pitch. */}
-        <h2 className="text-base font-semibold tracking-[-0.01em] mb-2.5">走勢</h2>
+        {/* For a non-member the card below sells two things, so 走勢 would be the
+            wrong name for the section. */}
+        <h2 className="text-base font-semibold tracking-[-0.01em] mb-2.5">{isMember ? '走勢' : '會員方案'}</h2>
         {isMember ? (
           <PicksPage embedded mySubscribedPodcasts={podcastSubs} myWatchlistTickers={effectiveWatchlist} />
         ) : (
