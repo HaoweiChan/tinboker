@@ -6,6 +6,7 @@ import { apiEpisodeToCardV2 } from '@/components/redesign/episodeAdapter';
 import { NarrativeHero } from '@/components/home/NarrativeHero';
 import { BuzzRank } from '@/components/home/BuzzRank';
 import { RisingTable } from '@/components/home/RisingTable';
+import { MarketDigestStrip, MarketSectionHeading } from '@/components/home/MarketDigest';
 import { getRecentEpisodes, getSortedPodcasts, type Episode as ApiEpisode, type Podcast } from '@/services/api/podcasts';
 import { getAttention } from '@/services/api/attention';
 import type { Attention } from '@/validation/schemas';
@@ -131,18 +132,15 @@ export const HomeFeed: React.FC = () => {
     <>
       <SEO description="聽播客 TinBoker — 最新的財經 Podcast 摘要、情緒與相關個股。" />
       <PageContent>
-        {/* ① what the market is talking about → ② which tickers → ③ what to listen to.
-            Each block floats in after the previous one; the bars/lines grow once landed.
-            Rows link to the topic / stock pages — the blocks are navigation, not a filter. */}
-        <div className="float-in" style={{ animationDelay: '0ms' }}>
-          <NarrativeHero data={attention} />
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 mt-3.5">
-          <div className="float-in" style={{ animationDelay: '90ms' }}><BuzzRank rows={attention?.tickers ?? []} /></div>
-          <div className="float-in" style={{ animationDelay: '160ms' }}><RisingTable rows={attention?.rising ?? []} /></div>
+        {/* ① a one-line read on the week → ② what to listen to → ③ the market panels
+            in full. The panels used to come first and cost ~1,200px before the first
+            episode; they keep their content and order, they just no longer stand
+            between a visitor and the thing they came for. */}
+        <div className="float-in mb-3.5" style={{ animationDelay: '0ms' }}>
+          <MarketDigestStrip data={attention} />
         </div>
 
-        <h2 className="text-lg font-semibold tracking-[-0.02em] mt-6 mb-3.5 flex items-center gap-2">
+        <h2 className="text-lg font-semibold tracking-[-0.02em] mb-3.5 flex items-center gap-2">
           <span aria-hidden className="inline-block w-[3px] h-[18px] rounded-sm bg-primary shrink-0" />
           今天聽什麼
         </h2>
@@ -177,6 +175,14 @@ export const HomeFeed: React.FC = () => {
             <div className="mt-6 py-3 text-center text-xs text-muted-foreground">— 到這邊 —</div>
           </>
         )}
+
+        {/* Rows link to the topic / stock pages — the panels are navigation, not a filter. */}
+        <MarketSectionHeading />
+        <NarrativeHero data={attention} />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 mt-3.5">
+          <BuzzRank rows={attention?.tickers ?? []} />
+          <RisingTable rows={attention?.rising ?? []} />
+        </div>
       </PageContent>
     </>
   );
