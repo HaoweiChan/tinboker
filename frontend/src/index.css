@@ -292,6 +292,42 @@
   }
 }
 
+/* ── Mobile type scale ────────────────────────────────────────────────────
+   Below `md`, lift the bottom four steps by one notch. The desktop scale is a
+   deliberate terminal density and is left exactly as it is; on a phone that same
+   scale put 11px micro-labels and 13px body under a reader's thumb at arm's
+   length, below this file's own stated 11px floor being sensible as a *floor*
+   rather than the size most of the page is set in. Only the bottom of the scale
+   moves — md and up already read comfortably, and raising those would cascade
+   into every heading. Values stay in rem so a reader's own font-size setting
+   still scales them. */
+@media (width < 48rem) {
+  :root {
+    --text-2xs: 0.75rem;    /* 11 → 12px */
+    --text-2xs--line-height: 1.05rem;
+    --text-xs: 0.8125rem;   /* 12 → 13px */
+    --text-xs--line-height: 1.2rem;
+    --text-sm: 0.875rem;    /* 13 → 14px — BODY DEFAULT */
+    --text-sm--line-height: 1.35rem;
+    --text-base: 0.9375rem; /* 14 → 15px */
+    --text-base--line-height: 1.45rem;
+  }
+}
+
+/* iOS Safari zooms the whole page when you focus a field set below 16 CSS px, and
+   only un-zooms on a manual pinch — so tapping the header search on an iPhone
+   shoved the layout sideways on every page. This is a device threshold in px, not a
+   typographic choice, hence the literal; max() keeps it honest for a reader whose
+   root size is larger. Unlayered on purpose: it has to win against the text-*
+   utility on the field. */
+@media (width < 48rem) {
+  input:not([type='checkbox']):not([type='radio']),
+  select,
+  textarea {
+    font-size: max(1rem, 16px);
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
