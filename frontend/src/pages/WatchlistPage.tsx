@@ -115,7 +115,7 @@ export const WatchlistPage: React.FC = () => {
         <div className="flex items-center gap-2 overflow-x-auto mb-[18px]">
           {([
             ['podcasters', `節目 ${subscriptions.length}`],
-            ['tickers', `股票 ${watchlist.length}`],
+            ['tickers', `個股 ${watchlist.length}`],
             ['topics', `話題 ${tagSubscriptions.length}`],
             ['episodes', `集數 ${visibleBookmarkCount}`],
           ] as const).map(([val, label]) => (
@@ -155,7 +155,7 @@ export const WatchlistPage: React.FC = () => {
             {tab === 'tickers' && (
               watchlist.length === 0 ? (
                 <div className="bg-card border border-border rounded-md p-10 text-center text-sm text-muted-foreground">
-                  尚未加入任何自選股票 — 去 <Link to="/stock" className="text-accent-info hover:underline">個股</Link> 頁加入幾檔吧。
+                  尚未加入任何自選個股 — 去 <Link to="/stock" className="text-accent-info hover:underline">個股</Link> 頁加入幾檔吧。
                 </div>
               ) : (
                 <SubscribedTickers

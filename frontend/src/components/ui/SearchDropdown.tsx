@@ -227,7 +227,7 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = () => {
             )}
           </div>
           <span className="text-2xs text-muted-foreground px-2 py-0.5 rounded-md bg-muted shrink-0">
-            {result.type === 'stock' ? '股票' :
+            {result.type === 'stock' ? '個股' :
               result.type === 'podcast' ? '頻道' :
                 result.type === 'episode' ? '集數' : '標籤'}
           </span>

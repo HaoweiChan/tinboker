@@ -82,7 +82,7 @@ interface PicksPageProps {
   /** Rendered inside MemberHub's own SEO + PageContent — skip both plus the h1 so
    *  the page doesn't nest a second copy of the page chrome. */
   embedded?: boolean;
-  /** Member's 訂閱節目 (podcaster names) and 自選股票 (tickers) — MemberHub already
+  /** Member's 訂閱節目 (podcaster names) and 自選個股 (tickers) — MemberHub already
    *  resolves these (API-backed when signed in, store fallback otherwise) via
    *  `podcastSubs` / `effectiveWatchlist`; passed down so this page doesn't
    *  re-fetch the same data. Falls back to the local store when absent (e.g. the
@@ -446,14 +446,14 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodc
                 </Link>{' '}
                 與{' '}
                 <Link to="/watchlist?tab=tickers" className={COUNT_LINK}>
-                  <span className="font-mono tabular-nums font-medium">{myTickers.size}</span> 檔自選股
+                  <span className="font-mono tabular-nums font-medium">{myTickers.size}</span> 檔自選個股
                 </Link>
               </>
             ) : (
               <>
                 這裡只顯示你關注的標的 —{' '}
                 <Link to="/podcaster" className={MANAGE_LINK}>訂閱節目</Link>{' '}
-                <Link to="/stock" className={MANAGE_LINK}>加入自選股</Link>
+                <Link to="/stock" className={MANAGE_LINK}>加入自選個股</Link>
               </>
             )}
           </p>

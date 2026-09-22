@@ -318,7 +318,7 @@ export const StockNodePopover: React.FC<StockNodePopoverProps> = ({
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-2xs font-semibold uppercase tracking-[0.35em] text-slate-400 dark:text-slate-500">
-            {popoverData.subtitle ? `${popoverData.subtitle} 概覽` : '股票概覽'}
+            {popoverData.subtitle ? `${popoverData.subtitle} 概覽` : '個股概覽'}
           </p>
           {(() => {
             const { primary, secondary } = getStockLabel({
