@@ -4,6 +4,7 @@ import { Home, Mic, LineChart, Crown, Hash, Info, CalendarDays } from 'lucide-re
 import { cn } from '@/lib/utils';
 import { AppLogo } from '@/components/logo/AppLogo';
 import { useUser } from '@/store/useAppStore';
+import { useIsWide } from '@/hooks/useIsDesktop';
 
 interface NavItem {
   to: string;
@@ -62,14 +63,20 @@ function isActive(pathname: string, item: NavItem): boolean {
 }
 
 /**
- * Desktop sidebar. Sits collapsed (icon rail) by default and expands to a full
- * panel on hover — the panel floats over the page content so hovering never
- * shifts the layout. Grouped into labeled sections (ailogora-style).
+ * Desktop sidebar. Grouped into labeled sections (ailogora-style).
+ *
+ * At `xl` and wider it stays open with its labels visible: below that the viewport
+ * cannot spare 248px, so it collapses to a 64px icon rail that expands on hover, and
+ * the expanded panel floats over the page content so hovering never shifts the layout.
+ * Hover-only labels mean every destination has to be recognised from a bare glyph or
+ * uncovered one at a time, which is a poor trade on a screen with room to just say it.
  */
 export const Sidebar: React.FC = () => {
   const { pathname } = useLocation();
   const user = useUser();
-  const [expanded, setExpanded] = useState(false);
+  const pinned = useIsWide();
+  const [hovered, setHovered] = useState(false);
+  const expanded = pinned || hovered;
 
   const renderItem = (item: NavItem) => {
     const active = isActive(pathname, item);
@@ -96,13 +103,16 @@ export const Sidebar: React.FC = () => {
     // Fixed-width rail in the grid (no layout shift); the inner panel overlays on hover.
     // z-[35] beats the header's z-30 — at a tie the header comes later in the DOM and its
     // blurred bar painted over the expanded panel's brand row. Modals stay above at z-40+.
-    <aside className="hidden lg:block sticky top-0 h-screen w-[64px] shrink-0 z-[35]">
+    <aside className="hidden lg:block sticky top-0 h-screen w-[64px] xl:w-[248px] shrink-0 z-[35]">
       <div
-        onMouseEnter={() => setExpanded(true)}
-        onMouseLeave={() => setExpanded(false)}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
         className={cn(
           'absolute inset-y-0 left-0 flex flex-col border-r border-border bg-card py-5 transition-[width,box-shadow] duration-200 ease-in-out',
-          expanded ? 'w-[248px] px-3.5 shadow-2xl' : 'w-[64px] px-2',
+          expanded ? 'w-[248px] px-3.5' : 'w-[64px] px-2',
+          // Only the hover panel floats over the page and needs to lift off it; when
+          // pinned the sidebar owns its grid column and a shadow would be a seam.
+          hovered && !pinned && 'shadow-2xl',
         )}
       >
         {/* Brand */}
