@@ -24,14 +24,19 @@ export const RisingTable: React.FC<Props> = ({ rows }) => {
       {rows.length === 0 ? (
         <div className="h-40 animate-pulse bg-muted/40 rounded-md" />
       ) : (
-        <div className="grid grid-cols-[auto_1fr_auto_auto] items-center gap-x-3 sm:gap-x-4 gap-y-2.5 text-sm">
+        <div className="grid grid-cols-[auto_1fr_auto_auto] items-center gap-x-3 sm:gap-x-4 text-sm">
           {rows.map((r, i) => (
-            <React.Fragment key={r.ticker}>
-              <Link to={`/stock/${encodeURIComponent(r.ticker)}`} className="font-semibold font-mono whitespace-nowrap hover:text-primary transition-colors">
+            // Row-as-link via subgrid — see BuzzRank: the name alone was a 21px target.
+            <Link
+              key={r.ticker}
+              to={`/stock/${encodeURIComponent(r.ticker)}`}
+              className="group/row col-span-4 grid grid-cols-subgrid items-center py-[7px] rounded-[3px] transition-colors hover:bg-muted/40"
+            >
+              <span className="font-semibold font-mono whitespace-nowrap transition-colors group-hover/row:text-primary">
                 {r.ticker}
                 {r.name && <span className="ml-1.5 font-sans font-normal text-sm text-muted-foreground inline-block align-bottom truncate max-w-[72px] sm:max-w-[120px]">{r.name}</span>}
                 {r.prev_7d <= 1 && <span className="ml-1.5 align-[1px] text-2xs text-accent-info border border-accent-info rounded px-1">NEW</span>}
-              </Link>
+              </span>
               <Bar value={r.count_7d} max={max} tone="momentum" delayMs={i * 60} />
               <span className="font-mono tabular-nums text-right whitespace-nowrap">
                 {r.count_7d} <span className="text-2xs text-muted-foreground">前 {r.prev_7d}</span>
@@ -39,7 +44,7 @@ export const RisingTable: React.FC<Props> = ({ rows }) => {
               <span className="text-right min-w-[48px] font-semibold font-mono tabular-nums text-sentiment-bull whitespace-nowrap">
                 +{r.count_7d - r.prev_7d} <span className="text-2xs font-normal">集</span>
               </span>
-            </React.Fragment>
+            </Link>
           ))}
         </div>
       )}

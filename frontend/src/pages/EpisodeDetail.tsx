@@ -20,7 +20,8 @@ import { useStockPriceSinceMap, isRecentEpisode } from '@/hooks/useStockPriceSin
 import { useTranslationMap } from '@/hooks/useTranslationMap';
 import { useTagLabels, useHiddenTagSlugs, tagLabelFor, normalizeTagSlug } from '@/hooks/useTagLabels';
 import { useEpisodeSentimentMap } from '@/hooks/useEpisodeSentimentMap';
-import { EpisodeInsightCard, type EpisodeInsight } from '@/components/episode/EpisodeInsightCard';
+import { EpisodeInsightCard } from '@/components/episode/EpisodeInsightCard';
+import { episodeLeadFrom } from '@/lib/episodeLead';
 import { SummaryMarkdown } from '@/components/episode/SummaryMarkdown';
 import { EpisodeDebugPanel } from '@/components/episode/EpisodeDebugPanel';
 import { SlideViewer } from '@/components/common/SlideViewer';
@@ -53,42 +54,6 @@ function spotifyUriFrom(ep: ApiEpisode | null): string | undefined {
     if (ep.spotify_url.startsWith('spotify:episode:')) return ep.spotify_url;
   }
   return undefined;
-}
-
-function cleanSummaryLine(line: string): string {
-  return line
-    .replace(/^(?:#{1,6}\s*)+/, '')
-    .replace(/\s*\(#time:\s*\d+\)/g, '')
-    .replace(/^[-*\s]+/, '')
-    // Strip ALL inline markers ([label](#ticker:..|#tag:..|url)) down to their label
-    // so the insight reads as plain text, never raw markdown.
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-    .replace(/[*_`>~]/g, '')
-    .trim();
-}
-
-function episodeInsightFrom(ep: ApiEpisode | null, fallbackTitle: string): EpisodeInsight | null {
-  if (!ep) return null;
-  const src = ep.modified_summary_content || ep.summary_content || '';
-  const lines = src.split('\n').map((line) => line.trim()).filter(Boolean);
-  // No truncation: the insight is the concise essence of the article and is shown
-  // in full (no "…"). The headline / thesis / section headings are already short.
-  const headline = cleanSummaryLine(lines.find((line) => line.startsWith('#')) || lines[0] || fallbackTitle);
-  const thesis = cleanSummaryLine(lines.find((line) => !line.startsWith('#') && line.length > 12) || '');
-  const keyHighlights = Array.isArray(ep.key_insights) ? ep.key_insights.map((line) => cleanSummaryLine(line)).filter(Boolean) : [];
-  const sectionHighlights = lines
-    .filter((line) => /^#{2,}/.test(line))
-    .map(cleanSummaryLine)
-    .filter((line) => line && line !== headline)
-    .slice(0, 3);
-  const highlights = (keyHighlights.length > 0 ? keyHighlights : sectionHighlights).slice(0, 3);
-
-  if (!headline && !thesis && highlights.length === 0) return null;
-  return {
-    headline: headline || fallbackTitle,
-    thesis: thesis || undefined,
-    highlights,
-  };
 }
 
 function tickerLookupKeys(symbol: string): string[] {
@@ -257,7 +222,10 @@ export const EpisodeDetail: React.FC = () => {
 
   const title = episode?.episode_title || (episode?.episode_number != null ? `EP ${episode.episode_number}` : '集數摘要');
   const name = episode?.podcast_name || podcastName || '節目';
-  const episodeInsight = useMemo(() => episodeInsightFrom(episode, title), [episode, title]);
+  const episodeLead = useMemo(
+    () => episodeLeadFrom(episode?.modified_summary_content || episode?.summary_content || '', title, episode?.key_insights),
+    [episode, title],
+  );
   const podcasterImageUrl = podcastImageUrl || episode?.spotify_images?.[0] || null;
 
   // SEO: a PodcastEpisode JSON-LD with Clip parts (one per timestamped section) so
@@ -458,7 +426,7 @@ export const EpisodeDetail: React.FC = () => {
               )}
             </div>
 
-            {episodeInsight && <EpisodeInsightCard insight={episodeInsight} />}
+            {episodeLead && <EpisodeInsightCard insight={episodeLead.insight} />}
 
             {IS_DEV && episode.marp_markdown_content && (
               <section className="bg-card border border-border rounded-md p-5 sm:p-6 mb-3.5">
@@ -476,12 +444,13 @@ export const EpisodeDetail: React.FC = () => {
               </section>
             )}
 
-            {/* 摘要 — full structured summary (headings, paragraphs, ticker/tag/time markers) */}
-            {(episode.modified_summary_content || episode.summary_content) && (
+            {/* 摘要 — structured summary (headings, paragraphs, ticker/tag/time markers)
+                minus the headline + thesis the 關鍵洞察 card above already shows. */}
+            {episodeLead?.body.trim() && (
               <section className="mb-3.5 sm:bg-card sm:border sm:border-border sm:rounded-md sm:p-6">
                 <h3 className="text-base font-semibold text-muted-foreground mb-3.5">摘要</h3>
                 <SummaryMarkdown
-                  content={episode.modified_summary_content || episode.summary_content || ''}
+                  content={episodeLead.body}
                   onSeek={spotifyUri ? playFrom : undefined}
                   focusMs={searchParams.get('t') && /^\d+$/.test(searchParams.get('t') as string) ? Number(searchParams.get('t')) : null}
                 />
