@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import ANY, AsyncMock, patch
 
 import pytest
 
@@ -64,16 +64,24 @@ async def test_batch_summary_uses_translation_table_without_price_fetch():
 
 
 @pytest.mark.asyncio
+@patch("src.services.trending.batch_attention_levels", return_value={
+    "2454": {"attention_level": 73, "attention_as_of": "2026-09-23"},
+})
 @patch("src.services.trending.cache_get", new_callable=AsyncMock, return_value=None)
 @patch("src.services.trending.cache_set", new_callable=AsyncMock)
-async def test_recent_buzz_ticker_filter_returns_matching_count_and_sentiment(_cache_set, _cache_get):
+async def test_recent_buzz_ticker_filter_returns_matching_count_and_sentiment(
+    _cache_set, _cache_get, attention_levels,
+):
     now = 1_800_000_000_000
     episodes = [
         SimpleNamespace(id="ep-bear-1", released_at_ms=now, created_time=now, related_tickers=["2454"]),
         SimpleNamespace(id="ep-bear-2", released_at_ms=now - 1_000, created_time=now - 1_000, related_tickers=["2454", "2330"]),
         SimpleNamespace(id="ep-bull", released_at_ms=now - 2_000, created_time=now - 2_000, related_tickers=["2330"]),
     ]
-    podcast_service = SimpleNamespace(get_recent_episodes=AsyncMock(return_value=episodes))
+    podcast_service = SimpleNamespace(
+        get_recent_episodes=AsyncMock(return_value=episodes),
+        _allowed_podcast_names=AsyncMock(return_value=frozenset({"show"})),
+    )
     service = TrendingService(podcast_service=podcast_service)
     service._get_translations_batch = AsyncMock(return_value={"2454": "聯發科"})
 
@@ -96,5 +104,9 @@ async def test_recent_buzz_ticker_filter_returns_matching_count_and_sentiment(_c
             "sentiment_label": "BEARISH",
             "sentiment_counts": {"bull": 0, "neutral": 0, "bear": 2},
             "last_mentioned": now,
+            "attention_level": 73,
+            "attention_as_of": "2026-09-23",
         }
     ]
+
+    attention_levels.assert_called_once_with(["2454"], allowed=frozenset({"show"}), today=ANY)
