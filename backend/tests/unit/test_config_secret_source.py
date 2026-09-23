@@ -52,3 +52,15 @@ def test_no_gsm_client_without_project_id(monkeypatch):
     source = GCPSecretManagerSource(_Settings, resolved=())
 
     assert source() == {}
+
+
+def test_pipeline_url_default_goes_through_caddy():
+    """The pipeline's uvicorn binds 127.0.0.1:8003, so a default that names a host and
+    that port is unreachable from inside the backend container — which is exactly how
+    the post-hoc / ticker-story Threads formats sat silent for five days: every call
+    raised ConnectError and each caller reads a dead pipeline as "no material"."""
+    from src.config import Settings
+
+    default = Settings.model_fields["netcup_api_url"].default
+    assert default == "https://podcast-api.tinboker.com"
+    assert ":8003" not in default

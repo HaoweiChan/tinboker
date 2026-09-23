@@ -76,16 +76,27 @@ def test_weekly_caption_lists_runners_up_only_when_they_are_loud_too():
 
 @pytest.mark.asyncio
 async def test_weekly_select_stays_quiet_on_a_thin_week(monkeypatch):
-    """W37 for real: 327 mentions, leader +6. Nothing goes out rather than a weak post."""
+    """Quiet means the leader barely moved, or the week is dead — NOT an ordinary week.
+    A normal week is ~260-330 market-wide mentions (W37 327, W38 263); the old 500-total
+    floor called every one of those thin and the recap never posted at all."""
     import src.routers.og as og
     from src.services import threads_publisher
 
     async def allowed():
         return None
     monkeypatch.setattr(threads_publisher.podcast_service, "_allowed_podcast_names", allowed)
-    thin = _movers([{"ticker": "3661", "name": "世芯-KY", "n": 6, "prev": 0, "casts": 2, "bull": 4, "bear": 1}], total=327)
-    monkeypatch.setattr(og, "_weekly_movers", lambda *_: thin)
-    assert await sf.select_weekly_movers() is None
+    flat = _movers([{"ticker": "3661", "name": "世芯-KY", "n": 6, "prev": 3, "casts": 2, "bull": 4, "bear": 1}], total=300)
+    monkeypatch.setattr(og, "_weekly_movers", lambda *_: flat)
+    assert await sf.select_weekly_movers() is None          # leader rose +3
+
+    dead = _movers([{"ticker": "3661", "name": "世芯-KY", "n": 6, "prev": 0, "casts": 2, "bull": 4, "bear": 1}], total=40)
+    monkeypatch.setattr(og, "_weekly_movers", lambda *_: dead)
+    assert await sf.select_weekly_movers() is None          # the week itself is dead
+
+    # W38 as it really was: 263 mentions, NVDA 20 vs 15 last week. This posts.
+    real = _movers([{"ticker": "NVDA", "name": "輝達", "n": 20, "prev": 15, "casts": 7, "bull": 12, "bear": 2}], total=263)
+    monkeypatch.setattr(og, "_weekly_movers", lambda *_: real)
+    assert await sf.select_weekly_movers() is not None
 
     loud = _movers([{"ticker": "3037", "name": "欣興", "n": 31, "prev": 4, "casts": 6, "bull": 9, "bear": 14}], total=900)
     monkeypatch.setattr(og, "_weekly_movers", lambda *_: loud)
