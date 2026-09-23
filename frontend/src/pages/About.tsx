@@ -51,7 +51,9 @@ function ContactRow({ icon, title, children }: { icon: React.ReactNode; title: s
 }
 
 export const About: React.FC = () => {
-  const { hash } = useLocation();
+  const { hash, search } = useLocation();
+  const guideParams = new URLSearchParams(search);
+  guideParams.set('onboarding', 'tutorial');
   // Deep links (/about#contact, redirected /disclaimer, …) land on their section.
   useEffect(() => {
     const id = hash.replace(/^#/, '');
@@ -64,13 +66,17 @@ export const About: React.FC = () => {
     <>
       <SEO title="關於 TinBoker" description="TinBoker（聽播客）— 結合 Podcast 觀點與即時數據的財經平台。聯絡方式與免責聲明都在這一頁。" />
       <PageContent className="max-w-3xl">
-        <div className="flex items-center justify-center gap-2 mb-2 pt-4">
-          <span className="text-2xl font-semibold tracking-[-0.02em]">關於</span>
+        <div className="flex items-center gap-2 mb-2 pt-4">
+          <h1 className="heading-accent text-2xl font-semibold">關於</h1>
           <AppLogo size={28} />
         </div>
-        <p className="text-center text-base text-muted-foreground max-w-xl mx-auto mb-6 leading-[1.65]">
+        <p className="text-base text-muted-foreground max-w-xl mb-6 leading-[1.65]">
           TinBoker（聽播客）把財經 Podcast 的觀點結構化、和即時市場數據對照，幫你用更短的時間掌握重點。
         </p>
+
+        <div className="mb-6 flex">
+          <Link to={{ pathname: '/about', search: guideParams.toString(), hash }} className="inline-flex rounded-md border border-border px-4 py-2 text-sm font-medium text-accent-info hover:bg-muted">使用導覽</Link>
+        </div>
 
         <div className="space-y-4">
           <Section id="about" title="核心功能">

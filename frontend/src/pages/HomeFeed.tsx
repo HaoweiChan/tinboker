@@ -1,4 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link, useLocation } from 'react-router-dom';
+import { X } from 'lucide-react';
+import { hasSeenOnboarding, markOnboardingSeen } from '@/lib/onboarding';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
 import { EpisodeCardV2, FilterPills } from '@/components/redesign';
@@ -6,7 +9,6 @@ import { apiEpisodeToCardV2 } from '@/components/redesign/episodeAdapter';
 import { NarrativeHero } from '@/components/home/NarrativeHero';
 import { BuzzRank } from '@/components/home/BuzzRank';
 import { RisingTable } from '@/components/home/RisingTable';
-import { MarketDigestStrip, MarketSectionHeading } from '@/components/home/MarketDigest';
 import { getRecentEpisodes, getSortedPodcasts, type Episode as ApiEpisode, type Podcast } from '@/services/api/podcasts';
 import { getAttention } from '@/services/api/attention';
 import type { Attention } from '@/validation/schemas';
@@ -17,6 +19,7 @@ import { useStockPriceSinceMap } from '@/hooks/useStockPriceSinceMap';
 import { useTranslationMap } from '@/hooks/useTranslationMap';
 import { useEpisodeSentimentMap } from '@/hooks/useEpisodeSentimentMap';
 
+const RANKINGS = ['最多人聊', '升溫最快'] as const;
 const FILTERS = ['最新', '熱門', '追蹤'] as const;
 type Filter = (typeof FILTERS)[number];
 
@@ -43,11 +46,16 @@ function CardSkeleton() {
 }
 
 export const HomeFeed: React.FC = () => {
+  const location = useLocation();
+  const [guideDismissed, setGuideDismissed] = useState(false);
+  const guideParams = new URLSearchParams(location.search);
+  guideParams.set('onboarding', 'tutorial');
   const [episodes, setEpisodes] = useState<ApiEpisode[]>(() => homeSnapshot?.episodes ?? []);
   const [podcasts, setPodcasts] = useState<Podcast[]>(() => homeSnapshot?.podcasts ?? []);
   const [attention, setAttention] = useState<Attention | null>(() => homeSnapshot?.attention ?? null);
   const [loading, setLoading] = useState(() => !homeSnapshot);
   const [filter, setFilter] = useState<Filter>('最新');
+  const [ranking, setRanking] = useState<(typeof RANKINGS)[number]>('最多人聊');
   const subscriptions = useSubscriptions();
   const episodeBookmarks = useEpisodeBookmarks();
   const { toggleEpisodeBookmark } = useAppStore();
@@ -132,16 +140,44 @@ export const HomeFeed: React.FC = () => {
     <>
       <SEO description="聽播客 TinBoker — 最新的財經 Podcast 摘要、情緒與相關個股。" />
       <PageContent>
-        {/* ① a one-line read on the week → ② what to listen to → ③ the market panels
-            in full. The panels used to come first and cost ~1,200px before the first
-            episode; they keep their content and order, they just no longer stand
-            between a visitor and the thing they came for. */}
-        <div className="float-in mb-3.5" style={{ animationDelay: '0ms' }}>
-          <MarketDigestStrip data={attention} />
-        </div>
+        {!guideDismissed && !hasSeenOnboarding() && (
+          <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-border bg-card px-3 py-1.5 text-sm">
+            <span className="text-muted-foreground">第一次使用聽播客？</span>
+            <Link to={{ pathname: '/', search: guideParams.toString(), hash: location.hash }} className="py-1.5 text-accent-info hover:underline">使用導覽</Link>
+            <button type="button" aria-label="關閉導覽提示" onClick={() => { markOnboardingSeen(); setGuideDismissed(true); }} className="ml-auto inline-flex h-8 w-8 items-center justify-center rounded text-muted-foreground hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring">
+              <X size={15} aria-hidden />
+            </button>
+          </div>
+        )}
+        <section id="market" aria-label="本週市場" className="mb-7 scroll-mt-20">
+          <NarrativeHero data={attention} />
+          <div role="group" aria-label="選擇市場排行" className="mt-3.5 mb-4 flex items-center gap-5 border-b border-border md:hidden">
+            {RANKINGS.map((item) => (
+              <button
+                key={item}
+                type="button"
+                aria-pressed={ranking === item}
+                onClick={() => setRanking(item)}
+                className={`relative -mb-px py-2 text-sm font-medium tracking-tight transition-colors after:absolute after:inset-x-0 after:bottom-0 after:h-[2px] after:transition-colors focus-visible:outline-2 focus-visible:outline-ring ${ranking === item ? 'text-foreground after:bg-primary' : 'text-muted-foreground hover:text-foreground after:bg-transparent'}`}
+              >
+                {item}
+              </button>
+            ))}
+          </div>
+          {/* Remount on selection so the newly visible ranking replays its bar animation. */}
+          <div key={ranking} className="grid grid-cols-1 md:grid-cols-2 gap-3.5 md:mt-3.5">
+            {/* Overlap on mobile so both panels contribute to the shared height.
+                Visibility also removes the inactive links from keyboard navigation. */}
+            <div className={`col-start-1 row-start-1 grid min-w-0 md:col-auto md:row-auto ${ranking === '最多人聊' ? 'visible' : 'invisible md:visible'}`}>
+              <BuzzRank rows={attention?.tickers ?? []} />
+            </div>
+            <div className={`col-start-1 row-start-1 grid min-w-0 md:col-auto md:row-auto ${ranking === '升溫最快' ? 'visible' : 'invisible md:visible'}`}>
+              <RisingTable rows={attention?.rising ?? []} />
+            </div>
+          </div>
+        </section>
 
-        <h2 className="text-lg font-semibold tracking-[-0.02em] mb-3.5 flex items-center gap-2">
-          <span aria-hidden className="inline-block w-[3px] h-[18px] rounded-sm bg-primary shrink-0" />
+        <h2 className="heading-accent text-lg font-semibold tracking-[-0.02em] mb-3.5 flex items-center gap-2">
           今天聽什麼
         </h2>
         <FilterPills items={FILTERS} value={filter} onChange={setFilter} meta={loading ? null : <span>整理了 <span className="font-mono tabular-nums">{filtered.length}</span> 集</span>} />
@@ -176,13 +212,6 @@ export const HomeFeed: React.FC = () => {
           </>
         )}
 
-        {/* Rows link to the topic / stock pages — the panels are navigation, not a filter. */}
-        <MarketSectionHeading />
-        <NarrativeHero data={attention} />
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 mt-3.5">
-          <BuzzRank rows={attention?.tickers ?? []} />
-          <RisingTable rows={attention?.rising ?? []} />
-        </div>
       </PageContent>
     </>
   );

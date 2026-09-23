@@ -54,7 +54,7 @@ export const PodcasterIndex: React.FC = () => {
       <PageContent>
         <ExploreTabs />
         <div className="flex items-baseline justify-between mb-1">
-          <h1 className="text-2xl font-semibold tracking-[-0.02em]">所有節目</h1>
+          <h1 className="heading-accent text-2xl font-semibold tracking-[-0.02em]">所有節目</h1>
           {!loading && (
             <div className="text-xs text-muted-foreground font-mono tabular-nums">
               {podcasts.length} 個節目 · {countWords.before}{totalEpisodes.toLocaleString('en-US')} {countWords.after}

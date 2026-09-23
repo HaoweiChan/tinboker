@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import { Layers, Hash } from 'lucide-react';
 import { SectorBoardCard } from '@/components/topics/SectorBoardCard';
 import { TagBoardCard } from '@/components/topics/TagBoardCard';
 import { loadTagLabels, normalizeTagSlug } from '@/hooks/useTagLabels';
@@ -126,10 +125,7 @@ export const SubscribedTopics: React.FC<{
     <div className="space-y-8">
       {sectors.length > 0 && (
         <div>
-          <div className="flex items-center gap-1.5 mb-3">
-            <Layers size={13} className="text-muted-foreground" />
-            <h2 className="text-sm font-semibold">產業 / 題材</h2>
-          </div>
+          <h2 className="heading-accent text-lg font-semibold text-foreground mb-3">產業 / 題材</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {sectors.map(({ sub, sector }) => (
               <Removable key={sub} onRemove={onRemove && (() => onRemove(sub, sector.display_name))}>
@@ -141,10 +137,7 @@ export const SubscribedTopics: React.FC<{
       )}
       {others.length > 0 && (
         <div>
-          <div className="flex items-center gap-1.5 mb-3">
-            <Hash size={13} className="text-muted-foreground" />
-            <h2 className="text-sm font-semibold">標籤</h2>
-          </div>
+          <h2 className="heading-accent text-lg font-semibold text-foreground mb-3">標籤</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {others.map((r) => (
               <Removable key={r.sub} onRemove={onRemove && (() => onRemove(r.sub, `#${r.label}`))}>

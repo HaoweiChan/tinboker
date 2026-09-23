@@ -106,7 +106,7 @@ export const TagPage: React.FC = () => {
           <div className="flex-1 min-w-0">
             <div className="flex items-start justify-between gap-3 flex-wrap">
               <div className="min-w-0">
-                <h1 className="text-2xl font-semibold tracking-[-0.02em]">#{displayLabel}</h1>
+                <h1 className="heading-accent text-2xl font-semibold tracking-[-0.02em]">#{displayLabel}</h1>
                 <p className="text-base text-muted-foreground mt-1 max-w-[56ch] leading-[1.55]">
                   瀏覽所有關於「{displayLabel}」的 Podcast 摘要與市場討論{loading ? '' : ` · ${episodes.length} 集`}。
                 </p>
@@ -116,7 +116,7 @@ export const TagPage: React.FC = () => {
           </div>
         </div>
 
-        <h2 className="text-sm font-semibold text-muted-foreground mb-3">相關集數</h2>
+        <h2 className="heading-accent text-lg font-semibold text-foreground mb-3">相關集數</h2>
         {loading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {Array.from({ length: 4 }).map((_, i) => (

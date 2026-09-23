@@ -56,7 +56,6 @@ export const EpisodeCardV2: React.FC<EpisodeCardV2Props> = ({
   href,
   highlight = false,
   onTagClick,
-  episodeId: _episodeId,
   isBookmarked,
   onBookmark,
   className,
@@ -96,18 +95,18 @@ export const EpisodeCardV2: React.FC<EpisodeCardV2Props> = ({
       </div>
 
       {/* Title */}
-      <h3 className="text-xl font-medium leading-[1.35] tracking-[-0.005em] mb-4 text-foreground line-clamp-2">{title}</h3>
+      <h3 className="text-xl font-semibold leading-[1.45] tracking-[-0.005em] mb-3 text-foreground line-clamp-2">{title}</h3>
 
       {/* Essence — precomputed key-insight bullets, else the plain teaser */}
       {keyInsights && keyInsights.length > 0 ? (
-        <ul className="grid gap-1 text-base leading-[1.5] text-muted-foreground mb-3.5">
-          {keyInsights.slice(0, 3).map((insight, i) => (
-            <li key={i} className="grid grid-cols-[10px_1fr] gap-2">
-              <span className="mt-[7px] h-1.5 w-1.5 rounded-full bg-accent-info shrink-0" />
-              <span>{insight}</span>
-            </li>
-          ))}
-        </ul>
+          <ul className="mb-3.5 grid gap-1.5 text-base leading-[1.6] text-foreground/80">
+            {keyInsights.slice(0, 3).map((insight, i) => (
+              <li key={i} className="grid grid-cols-[10px_1fr] gap-2">
+                <span aria-hidden="true" className="mt-[9px] h-1.5 w-1.5 rounded-full bg-accent-info shrink-0" />
+                <span>{insight}</span>
+              </li>
+            ))}
+          </ul>
       ) : (
         summary && <p className="text-base leading-[1.55] text-muted-foreground mb-3.5 line-clamp-2">{summary}</p>
       )}

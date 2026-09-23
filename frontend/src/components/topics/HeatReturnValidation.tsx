@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { FlaskConical, Info } from 'lucide-react';
+import { Info } from 'lucide-react';
 import { useStockTrendColor } from '@/hooks/useStockTrendColor';
 import { TOPICS_TYPOGRAPHY } from './topicsTypography';
 import { ChangePct } from './ChangePct';
@@ -82,13 +82,10 @@ export const HeatReturnValidation: React.FC = () => {
     : null;
 
   const header = (
-    <div className="flex items-center justify-between gap-2 mb-2.5">
-      <div className="flex items-center gap-2">
-        <span className="inline-grid place-items-center rounded-lg bg-accent-info/10 text-accent-info shrink-0" style={{ width: 26, height: 26 }}>
-          <FlaskConical size={15} />
-        </span>
-        <h2 className={`${type.sectionTitle} font-semibold`}>討論熱度 → 未來報酬驗證</h2>
-      </div>
+    <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
+      <h2 className="heading-accent text-lg font-semibold tracking-[-0.02em] flex items-center gap-2">
+        討論熱度 → 未來報酬驗證
+      </h2>
       <div className={`flex shrink-0 items-center gap-0.5 ${type.micro}`}>
         {HZ.map((h) => (
           <button

@@ -371,6 +371,27 @@
 
 @layer components {
 
+  /* Page and section titles share the homepage's amber rule. Opt in explicitly
+     so article prose and repeated card titles retain their reading hierarchy. */
+  .heading-accent {
+    position: relative;
+    padding-inline-start: 11px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+
+  .heading-accent::before {
+    content: "";
+    position: absolute;
+    inset-inline-start: 0;
+    top: calc(0.75em - 9px);
+    width: 3px;
+    height: 18px;
+    border-radius: 2px;
+    background-color: hsl(var(--primary));
+    pointer-events: none;
+  }
+
   /* Flat surfaces — `.glass-card` / `.glass-panel` kept as aliases so legacy callers stay valid,
      but they're now plain hairline-bordered cards (no blur / gradients / heavy shadows). */
   .glass-card,

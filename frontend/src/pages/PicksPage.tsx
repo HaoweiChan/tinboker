@@ -381,7 +381,7 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodc
     <>
         {!embedded && (
           <>
-            <h1 className="text-2xl font-semibold tracking-[-0.02em] mb-1.5">走勢</h1>
+            <h1 className="heading-accent text-2xl font-semibold tracking-[-0.02em] mb-1.5">走勢</h1>
             <p className="text-base text-muted-foreground mb-4">
               財經 Podcaster 點名的個股，依時間排序，從提及當日起算的 7／30／90 天真實漲跌幅。
             </p>
