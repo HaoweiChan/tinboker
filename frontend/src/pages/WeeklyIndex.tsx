@@ -39,7 +39,7 @@ export const WeeklyIndex: React.FC = () => {
         <ExploreTabs />
         <div className="flex items-end justify-between gap-4 flex-wrap mb-4">
           <div>
-            <h1 className="text-2xl font-semibold tracking-[-0.015em] leading-[1.3]">Podcast 週報</h1>
+            <h1 className="heading-accent text-2xl font-semibold tracking-[-0.015em] leading-[1.3]">Podcast 週報</h1>
             <p className="text-md sm:text-lg text-foreground/90 mt-2.5 max-w-[60ch] leading-[1.7]">每週一頁：這一週台灣財經 Podcast 聊了哪些個股與題材、多空怎麼變。</p>
           </div>
           {weeks && weeks.length > 0 && (

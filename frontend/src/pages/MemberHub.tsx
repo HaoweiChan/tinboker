@@ -114,7 +114,7 @@ export const MemberHub: React.FC = () => {
                   <div className="w-14 h-14 sm:w-[72px] sm:h-[72px] rounded-full grid place-items-center text-white text-xl sm:text-2xl font-semibold bg-accent-info shrink-0">{initials(userInfo.name)}</div>
                 )}
                 <div className="min-w-0 flex-1">
-                  <h1 className="text-xl sm:text-2xl font-semibold tracking-[-0.01em] truncate">{userInfo.name}</h1>
+                  <h1 className="heading-accent text-xl sm:text-2xl font-semibold tracking-[-0.01em] truncate">{userInfo.name}</h1>
                   <div className="text-sm text-muted-foreground mt-0.5 truncate">{userInfo.email}</div>
                 </div>
                 {/* The card's one action. A paying member has already bought, so theirs
@@ -164,7 +164,7 @@ export const MemberHub: React.FC = () => {
         {/* 走勢 — members only; everyone else gets the plan pitch. */}
         {/* For a non-member the card below sells two things, so 走勢 would be the
             wrong name for the section. */}
-        <h2 className="text-base font-semibold tracking-[-0.01em] mb-2.5">{isMember ? '走勢' : '會員方案'}</h2>
+        <h2 className="heading-accent text-lg font-semibold text-foreground mb-2.5">{isMember ? '走勢' : '會員方案'}</h2>
         {isMember ? (
           <PicksPage embedded mySubscribedPodcasts={podcastSubs} myWatchlistTickers={effectiveWatchlist} />
         ) : (

@@ -111,7 +111,7 @@ export const WatchlistPage: React.FC = () => {
     <>
       <SEO title="收藏" description="追蹤的節目與個股。" />
       <PageContent>
-        <h1 className="text-2xl font-semibold tracking-[-0.02em] mb-3.5">收藏</h1>
+        <h1 className="heading-accent text-2xl font-semibold tracking-[-0.02em] mb-3.5">收藏</h1>
         <div className="flex items-center gap-2 overflow-x-auto mb-[18px]">
           {([
             ['podcasters', `節目 ${subscriptions.length}`],

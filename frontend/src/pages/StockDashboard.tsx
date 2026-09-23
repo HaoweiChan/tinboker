@@ -325,7 +325,7 @@ const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[]; epi
       <div className="mb-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex items-baseline gap-3 flex-wrap">
-            <h1 className="text-2xl font-semibold tracking-[-0.02em]">{primaryLabel}</h1>
+            <h1 className="heading-accent text-2xl font-semibold tracking-[-0.02em]">{primaryLabel}</h1>
             {subLines.map((line) => (
               <span key={line.text} className={cn('text-sm text-muted-foreground', line.mono && 'font-mono')}>{line.text}</span>
             ))}
@@ -617,7 +617,7 @@ export const StockDashboard: React.FC = () => {
         {insights.length > 0 && (
           <section className="mb-[18px]">
             <div className="flex items-baseline justify-between gap-3 mb-3">
-              <h2 className="text-sm font-semibold text-muted-foreground">Podcast 觀點</h2>
+              <h2 className="heading-accent text-lg font-semibold text-foreground">Podcast 觀點</h2>
               <span className="text-xs text-muted-foreground tabular-nums">近 90 天 · {insights.length} 則</span>
             </div>
             {lockedCount > 0 && <LockedInsightsCard count={lockedCount} />}
@@ -646,7 +646,7 @@ export const StockDashboard: React.FC = () => {
           </section>
         )}
 
-        <h2 className="text-sm font-semibold text-muted-foreground mb-3">這檔被哪些集數聊到</h2>
+        <h2 className="heading-accent text-lg font-semibold text-foreground mb-3">這檔被哪些集數聊到</h2>
         {episodesLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {Array.from({ length: 4 }).map((_, i) => (

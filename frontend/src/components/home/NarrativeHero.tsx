@@ -31,8 +31,7 @@ export const NarrativeHero: React.FC<Props> = ({ data }) => {
     <div className="bg-card border border-border rounded-[10px] p-5 flex flex-col gap-4 min-w-0 transition-colors duration-200 hover:border-primary/45">
       <div className="flex items-baseline justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-xl font-semibold tracking-[-0.02em] flex items-center gap-2">
-            <span aria-hidden className="inline-block w-[3px] h-[18px] rounded-sm bg-primary shrink-0" />
+          <h1 className="heading-accent text-xl font-semibold tracking-[-0.02em] flex items-center gap-2">
             本週市場在聊什麼
           </h1>
           {data && (

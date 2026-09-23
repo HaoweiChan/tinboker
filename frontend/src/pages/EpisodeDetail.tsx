@@ -31,6 +31,8 @@ const IS_DEV = import.meta.env.DEV || (import.meta.env.VITE_STAGE as string) ===
 
 // Episodes can carry dozens of tags; show only a handful so the row stays meaningful.
 const MAX_HERO_TAGS = 6;
+// Chips shown before the +n disclosure.
+const HERO_CHIPS_COLLAPSED = 4;
 
 function timeAgo(release: string | number | null | undefined, created: number): string {
   const ms = typeof release === 'string' ? Date.parse(release) : (release ?? created);
@@ -83,6 +85,7 @@ export const EpisodeDetail: React.FC = () => {
   const hiddenTagSlugs = useHiddenTagSlugs();
 
   const [episode, setEpisode] = useState<ApiEpisode | null>(null);
+  const [tagsExpanded, setTagsExpanded] = useState(false);
   const [podcastImageUrl, setPodcastImageUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   // Per-sector performance + visuals for the 產業/主題曝險 rail, keyed by exposure_id.
@@ -410,27 +413,53 @@ export const EpisodeDetail: React.FC = () => {
                 </div>
                 )}
               </div>
-              <h1 className="text-2xl font-semibold tracking-[-0.015em] leading-[1.3]">{title}</h1>
-              {(heroTags.length > 0 || (episode.sector_exposures?.length ?? 0) > 0) && (
-                <div className="flex gap-1.5 flex-wrap mt-3">
-                  {heroTags.slice(0, MAX_HERO_TAGS).map((t) => (
-                    <Link key={t} to={`/topics/${encodeURIComponent(t)}`} className="text-2xs px-2.5 py-0.5 rounded-full bg-primary/15 text-primary font-medium hover:bg-primary/25 transition-colors">#{tagLabelFor(t, tagLabels)}</Link>
-                  ))}
-                  {/* Sectors render in the same row, distinguished by the blue tint + their
-                      own /sector route — a sector is a kind of topic, but ticker-backed.
-                      Deduped by exposure_id: an episode tags the same sector once per section. */}
-                  {heroSectors.map((exp) => (
-                    <Link key={exp.exposure_id} to={`/sector/${encodeURIComponent(exp.exposure_id)}`} className="text-2xs px-2.5 py-0.5 rounded-full bg-accent-info-soft text-accent-info font-medium hover:bg-accent-info/25 transition-colors">#{exp.display_name}</Link>
-                  ))}
-                </div>
-              )}
+              <h1 className="heading-accent text-2xl font-semibold tracking-[-0.015em] leading-[1.3]">{title}</h1>
+              {(heroTags.length > 0 || (episode.sector_exposures?.length ?? 0) > 0) && (() => {
+                // A well-tagged episode carried 20 of these, ~240px of hashtags, so the
+                // first screen was a title and a tag wall with 關鍵洞察 — the episode's
+                // actual judgment — pushed below the fold. Show a few and make the rest a
+                // disclosure: the values stay reachable, which a plain truncation would
+                // not give.
+                const chips = [
+                  ...heroTags.slice(0, MAX_HERO_TAGS).map((t) => ({
+                    key: `t:${t}`, to: `/topics/${encodeURIComponent(t)}`, label: tagLabelFor(t, tagLabels),
+                    cls: 'bg-primary/15 text-primary hover:bg-primary/25',
+                  })),
+                  // Sectors render in the same row, distinguished by the blue tint + their
+                  // own /sector route — a sector is a kind of topic, but ticker-backed.
+                  // Deduped by exposure_id: an episode tags the same sector once per section.
+                  ...heroSectors.map((exp) => ({
+                    key: `s:${exp.exposure_id}`, to: `/sector/${encodeURIComponent(exp.exposure_id)}`, label: exp.display_name,
+                    cls: 'bg-accent-info-soft text-accent-info hover:bg-accent-info/25',
+                  })),
+                ];
+                const shown = tagsExpanded ? chips : chips.slice(0, HERO_CHIPS_COLLAPSED);
+                const hidden = chips.length - shown.length;
+                return (
+                  <div className="flex gap-1.5 flex-wrap mt-3">
+                    {shown.map((c) => (
+                      <Link key={c.key} to={c.to} className={`text-2xs px-2.5 py-0.5 rounded-full font-medium transition-colors ${c.cls}`}>#{c.label}</Link>
+                    ))}
+                    {hidden > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setTagsExpanded(true)}
+                        aria-expanded={false}
+                        className="text-2xs px-2.5 py-0.5 rounded-full border border-border text-muted-foreground font-medium hover:text-foreground hover:border-foreground/30 transition-colors"
+                      >
+                        +{hidden}
+                      </button>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
 
             {episodeLead && <EpisodeInsightCard insight={episodeLead.insight} />}
 
             {IS_DEV && episode.marp_markdown_content && (
               <section className="bg-card border border-border rounded-md p-5 sm:p-6 mb-3.5">
-                <h3 className="text-base font-semibold text-muted-foreground mb-3.5">投影片</h3>
+                <h3 className="heading-accent text-lg font-semibold text-foreground mb-3.5">投影片</h3>
                 <SlideViewer
                   content={episode.marp_markdown_content}
                   onTickerClick={(symbol) => navigate(`/stock/${encodeURIComponent(symbol)}`)}
@@ -448,7 +477,7 @@ export const EpisodeDetail: React.FC = () => {
                 minus the headline + thesis the 關鍵洞察 card above already shows. */}
             {episodeLead?.body.trim() && (
               <section className="mb-3.5 sm:bg-card sm:border sm:border-border sm:rounded-md sm:p-6">
-                <h3 className="text-base font-semibold text-muted-foreground mb-3.5">摘要</h3>
+                <h3 className="heading-accent text-lg font-semibold text-foreground mb-3.5">摘要</h3>
                 <SummaryMarkdown
                   content={episodeLead.body}
                   onSeek={spotifyUri ? playFrom : undefined}
@@ -460,7 +489,7 @@ export const EpisodeDetail: React.FC = () => {
             {/* 提及個股 — mobile fallback; desktop uses the right rail. */}
             {tickers.length > 0 && (
               <section className="xl:hidden bg-card border border-border rounded-md p-5 sm:p-6 mb-3.5">
-                <h3 className="text-base font-semibold text-muted-foreground mb-3.5">提及個股</h3>
+                <h3 className="heading-accent text-lg font-semibold text-foreground mb-3.5">提及個股</h3>
                 <div className="ticker-list flex flex-col gap-1.5">
                   {tickers.map((t) => (
                     <TickerRow key={t.symbol} ticker={t} onClick={() => navigate(`/stock/${encodeURIComponent(t.symbol)}`)} />
@@ -472,7 +501,7 @@ export const EpisodeDetail: React.FC = () => {
             {/* 產業 / 主題曝險 — mobile fallback; desktop uses the right rail. */}
             {(episode.sector_exposures?.length ?? 0) > 0 && (
               <section className="xl:hidden bg-card border border-border rounded-md p-5 sm:p-6 mb-3.5">
-                <h3 className="text-base font-semibold text-muted-foreground mb-3.5">提及產業</h3>
+                <h3 className="heading-accent text-lg font-semibold text-foreground mb-3.5">提及產業</h3>
                 <SectorExposureList
                   exposures={episode.sector_exposures!}
                   perfMap={sectorPerf}

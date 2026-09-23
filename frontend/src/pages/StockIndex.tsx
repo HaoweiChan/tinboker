@@ -109,7 +109,7 @@ export const StockIndex: React.FC = () => {
       <PageContent>
         <ExploreTabs />
         <div className="flex items-baseline justify-between mb-1">
-          <h1 className="text-2xl font-semibold tracking-[-0.02em]">所有個股</h1>
+          <h1 className="heading-accent text-2xl font-semibold tracking-[-0.02em]">所有個股</h1>
           {!loading && <div className="text-xs text-muted-foreground font-mono tabular-nums">{rows.length} 檔（近 30 天提及）</div>}
         </div>
         <p className="text-base text-muted-foreground max-w-[60ch] mb-4">最近 30 天被 TinBoker 追蹤的 Podcast 提及的所有個股，依提及次數排序。點任一檔進入情緒時間軸與相關集數。</p>

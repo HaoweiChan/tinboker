@@ -125,7 +125,7 @@ export const WeeklyPage: React.FC = () => {
                 EpisodeInsightCard's thesis): a title that breathes over two lines, and a
                 standfirst at body size rather than metadata size. */}
             <div className="mb-5">
-              <h1 className="text-2xl font-semibold tracking-[-0.015em] leading-[1.3]">{title}</h1>
+              <h1 className="heading-accent text-2xl font-semibold tracking-[-0.015em] leading-[1.3]">{title}</h1>
               <p className="text-md sm:text-lg text-foreground/90 mt-2.5 max-w-[72ch] leading-[1.7]">{description}</p>
             </div>
 
@@ -158,25 +158,25 @@ export const WeeklyPage: React.FC = () => {
                     const s = stance(t);
                     const total = t.bull + t.neu + t.bear;
                     return (
-                      <div key={t.ticker} className="flex items-center gap-x-3 gap-y-1 py-2 min-w-0 flex-wrap sm:flex-nowrap">
-                        <Link to={`/stock/${encodeURIComponent(t.ticker)}`} className="w-36 shrink-0 truncate text-sm font-medium hover:text-primary transition-colors">
+                      <div key={t.ticker} className="flex items-center gap-2 py-1 min-w-0 sm:gap-3 sm:py-2">
+                        <Link to={`/stock/${encodeURIComponent(t.ticker)}`} className="min-w-0 flex-1 truncate text-sm font-medium hover:text-primary transition-colors sm:w-36 sm:flex-none">
                           {nameOf(t) ? `${nameOf(t)} ${t.ticker}` : t.ticker}
                         </Link>
-                        <span className="w-10 shrink-0 text-xs font-mono tabular-nums text-muted-foreground">{t.episodes} 集</span>
-                        <span className={`sm:order-last w-14 shrink-0 text-right text-2xs font-medium ml-auto sm:ml-0 ${s.cls}`}>{s.label}</span>
-                        {/* On phones the bar and counts drop together to a second line. */}
-                        <span className="basis-full sm:hidden" aria-hidden />
-                        <div className="flex-1 min-w-0">{total > 0 ? <SentBar bull={t.bull} neutral={t.neu} bear={t.bear} delayMs={i * 40} /> : <div className="sent-bar opacity-30" />}</div>
-                        {total > 0 ? (
-                          <span className="grid grid-cols-3 w-36 shrink-0 text-xs font-mono tabular-nums">
-                            {/* Colour marks a stance that exists; a zero is just a zero. */}
-                            <span className={`text-right ${t.bull > 0 ? 'text-sentiment-bull' : 'text-muted-foreground/50'}`}>多 {t.bull}</span>
-                            <span className="text-right text-muted-foreground">中 {t.neu}</span>
-                            <span className={`text-right ${t.bear > 0 ? 'text-sentiment-bear' : 'text-muted-foreground/50'}`}>空 {t.bear}</span>
-                          </span>
-                        ) : (
-                          <span className="w-36 shrink-0 text-right text-2xs text-muted-foreground/70">本週未表態</span>
-                        )}
+                        <span className="w-8 shrink-0 text-right text-xs font-mono tabular-nums text-muted-foreground sm:w-10">{t.episodes} 集</span>
+                        <span className={`order-last w-14 shrink-0 text-right text-2xs font-medium ${s.cls}`}>{s.label}</span>
+                        <div className="contents">
+                          <div className="w-12 shrink-0 sm:w-auto sm:flex-1 sm:min-w-0" role="img" aria-label={total > 0 ? `多 ${t.bull}、中 ${t.neu}、空 ${t.bear}` : '本週未表態'}>{total > 0 ? <SentBar bull={t.bull} neutral={t.neu} bear={t.bear} delayMs={i * 40} /> : <div className="sent-bar opacity-30" />}</div>
+                          {total > 0 ? (
+                            <span className="hidden sm:grid grid-cols-3 w-36 shrink-0 text-xs font-mono tabular-nums">
+                              {/* Colour marks a stance that exists; a zero is just a zero. */}
+                              <span className={`text-right ${t.bull > 0 ? 'text-sentiment-bull' : 'text-muted-foreground/50'}`}>多 {t.bull}</span>
+                              <span className="text-right text-muted-foreground">中 {t.neu}</span>
+                              <span className={`text-right ${t.bear > 0 ? 'text-sentiment-bear' : 'text-muted-foreground/50'}`}>空 {t.bear}</span>
+                            </span>
+                          ) : (
+                            <span className="hidden sm:block w-36 shrink-0 text-right text-2xs text-muted-foreground/70">本週未表態</span>
+                          )}
+                        </div>
                       </div>
                     );
                   })}
@@ -187,7 +187,7 @@ export const WeeklyPage: React.FC = () => {
               </Tile>
             </div>
 
-            <h2 className="text-sm font-semibold text-muted-foreground mb-3">本週集數</h2>
+            <h2 className="heading-accent text-lg font-semibold text-foreground mb-3">本週集數</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {episodes.map((ep) => (
                 <EpisodeCardV2 key={ep.id} {...apiEpisodeToCardV2(ep, priceMap, podcastImageMap, translationMap, undefined, priceSinceMap)} />
@@ -204,9 +204,9 @@ export const WeeklyPage: React.FC = () => {
 const SectorMix: React.FC<{ sectors: Weekly['sectors']; total: number }> = ({ sectors, total }) => {
   const grown = useGrowIn();
   return (
-    <div className="flex flex-col gap-2">
+    <div className="divide-y divide-border/60">
       {sectors.map((sec, i) => (
-        <Link key={sec.exposure_id} to={`/sector/${encodeURIComponent(sec.exposure_id)}`} className="group flex items-center gap-2.5 min-w-0">
+        <Link key={sec.exposure_id} to={`/sector/${encodeURIComponent(sec.exposure_id)}`} className="group flex items-center gap-2.5 py-1 min-w-0">
           <SectorIcon exposureId={sec.exposure_id} iconId={sec.icon_id} color={sec.color_hex} size={13} variant="chip" />
           <span className="flex-1 truncate text-sm font-medium group-hover:text-primary transition-colors">{sec.display_name}</span>
           <span className="relative w-20 h-2 rounded-full bg-muted overflow-hidden shrink-0">

@@ -138,7 +138,7 @@ export const PodcasterPage: React.FC = () => {
         <div className="flex items-center gap-4 flex-wrap mb-4">
           <PodAvatar src={imageUrl} name={name} kind="solid" size={56} className="w-14 h-14 rounded-md object-cover shrink-0" />
           <div className="min-w-0 flex-1">
-            <h1 className="text-2xl font-semibold tracking-[-0.02em] truncate">{name}</h1>
+            <h1 className="heading-accent text-2xl font-semibold tracking-[-0.02em] truncate">{name}</h1>
             <div className="text-sm text-muted-foreground mt-0.5">{countWords.before}<strong className="font-mono text-foreground mr-1 tabular-nums">{loading ? '…' : <CountUp value={episodeCount} />}</strong>{countWords.after} · 由 TinBoker 結構化分析關鍵重點與提及的個股</div>
           </div>
           <div className="flex items-center gap-3">
@@ -165,8 +165,8 @@ export const PodcasterPage: React.FC = () => {
 
         {user?.is_member && picks.length > 0 ? (
           <>
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-sm font-semibold text-muted-foreground">標的走勢（提及日起算）</h2>
+            <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+              <h2 className="heading-accent text-lg font-semibold text-foreground">標的走勢（提及日起算）</h2>
               <Link to="/member" className="text-xs text-accent-info hover:underline">查看命中率 →</Link>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
@@ -191,13 +191,13 @@ export const PodcasterPage: React.FC = () => {
             </div>
           </>
         ) : !user?.is_member ? (
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-sm font-semibold text-muted-foreground">標的走勢（提及日起算）為會員功能</h2>
+          <div className="flex items-center justify-between flex-wrap gap-2 mb-6">
+            <h2 className="heading-accent text-lg font-semibold text-foreground">標的走勢（提及日起算）為會員功能</h2>
             <Link to="/member" className="text-xs text-accent-info hover:underline">了解會員方案 →</Link>
           </div>
         ) : null}
 
-        <h2 className="text-sm font-semibold text-muted-foreground mb-3">最新集數</h2>
+        <h2 className="heading-accent text-lg font-semibold text-foreground mb-3">最新集數</h2>
         {loading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {Array.from({ length: 4 }).map((_, i) => (
