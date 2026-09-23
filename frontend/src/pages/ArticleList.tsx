@@ -88,7 +88,7 @@ export const ArticleList: React.FC = () => {
       <SEO title="文章" description="深度分析與市場觀察 — TinBoker 的財經文章。" />
       <PageContent>
       <header className="mb-6">
-        <h1 className="text-2xl sm:text-3xl font-bold tracking-[-0.02em]">文章</h1>
+        <h1 className="heading-accent text-2xl sm:text-3xl font-semibold tracking-[-0.02em]">文章</h1>
         <p className="text-base text-muted-foreground mt-1">深度分析與市場觀察</p>
       </header>
 

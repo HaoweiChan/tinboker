@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Sun, Bell, Loader2, Smartphone, User as UserIcon, Camera } from 'lucide-react';
+import { Loader2, Camera } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { SEO } from '@/components/common/SEO';
@@ -50,12 +50,9 @@ const Toggle: React.FC<ToggleProps> = ({ checked, onChange, loading, ...rest }) 
   </button>
 );
 
-const SettingsSection: React.FC<{ icon: React.ReactNode; title: string; children: React.ReactNode }> = ({ icon, title, children }) => (
+const SettingsSection: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
   <section className="bg-card border border-border rounded-md px-5 sm:px-6 py-5 mb-4">
-    <div className="flex items-center gap-2.5 text-lg font-semibold tracking-[-0.01em] mb-4">
-      {icon}
-      {title}
-    </div>
+    <h2 className="heading-accent text-lg font-semibold text-foreground mb-4">{title}</h2>
     {children}
   </section>
 );
@@ -72,7 +69,7 @@ const SettingsRow: React.FC<{ label: string; hint: string; control: React.ReactN
 
 const NOTIF_ROWS: { key: keyof NotificationPreferences; label: string; hint: string }[] = [
   { key: 'new_episodes', label: '訂閱的 Podcast 新集數', hint: '當您訂閱的 Podcast 發布新集數時發送通知。' },
-  { key: 'stock_mentions', label: '追蹤標的被提及', hint: '當您的自選股被 Podcast 提及時發送通知。' },
+  { key: 'stock_mentions', label: '追蹤標的被提及', hint: '當您的自選個股被 Podcast 提及時發送通知。' },
   { key: 'price_alerts', label: '價格警示', hint: '當追蹤標的達到設定的價格條件時發送通知。' },
   { key: 'daily_digest', label: '每日市場摘要', hint: '每天早上 8:00 發送昨日市場重點整理。' },
 ];
@@ -172,7 +169,7 @@ export const SettingsPage: React.FC = () => {
     <>
       <SEO title="帳號設定" description="顯示、通知與偏好設定。" />
       <PageContent className="max-w-[680px]">
-        <SettingsSection icon={<UserIcon size={18} />} title="個人檔案">
+        <SettingsSection title="個人檔案">
           {!token ? (
             <div className="text-center py-8 text-sm text-muted-foreground">請先登入以編輯個人檔案</div>
           ) : (
@@ -215,7 +212,7 @@ export const SettingsPage: React.FC = () => {
           )}
         </SettingsSection>
 
-        <SettingsSection icon={<Sun size={18} />} title="顯示設定">
+        <SettingsSection title="顯示設定">
           <SettingsRow
             label="美股/國際模式 (綠漲紅跌)"
             hint="啟用後，上漲與看多顯示為綠色，下跌與看空顯示為紅色。"
@@ -247,11 +244,11 @@ export const SettingsPage: React.FC = () => {
           />
         </SettingsSection>
 
-        <SettingsSection icon={<Smartphone size={18} />} title="安裝 App">
+        <SettingsSection title="安裝 App">
           <PWAInstallSection />
         </SettingsSection>
 
-        <SettingsSection icon={<Bell size={18} />} title="通知設定">
+        <SettingsSection title="通知設定">
           {loadingPrefs ? (
             <div className="flex items-center justify-center py-8">
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />

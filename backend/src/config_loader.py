@@ -68,6 +68,15 @@ _GSM_FIELDS: Tuple[str, ...] = (
     "substack_sid",
     "substack_subdomain",
     "substack_user_id",
+    # NewebPay (藍新金流) periodic-payment credentials — membership billing (PR 3a+).
+    # Two full sets (production + sandbox); which one applies is derived from
+    # ENVIRONMENT (Settings.newebpay_env), never configured separately.
+    "newebpay_merchant_id",
+    "newebpay_hash_key",
+    "newebpay_hash_iv",
+    "newebpay_sandbox_merchant_id",
+    "newebpay_sandbox_hash_key",
+    "newebpay_sandbox_hash_iv",
     # GCP / GCS article store — still needed, see docs/firestore-contract.md §11.8
     "google_application_credentials",
     "gsc_site_url",

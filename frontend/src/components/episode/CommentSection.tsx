@@ -95,7 +95,7 @@ export const CommentSection: React.FC<CommentSectionProps> = ({ podcastName, epi
 
   return (
     <section className="bg-card border border-border rounded-md p-5 sm:p-6">
-      <h3 className="text-base font-semibold text-muted-foreground mb-4">
+      <h3 className="heading-accent text-lg font-semibold text-foreground mb-4">
         留言 {total > 0 && <span>({total})</span>}
       </h3>
 

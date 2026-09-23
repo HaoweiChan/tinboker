@@ -18,19 +18,15 @@ import { useStockPriceSinceMap } from '@/hooks/useStockPriceSinceMap';
 import { useTickerWindowReturns, windowReturnsKey } from '@/hooks/useTickerWindowReturns';
 import { useTranslationMap } from '@/hooks/useTranslationMap';
 import { useEpisodeWindowDays, episodeCountWords } from '@/hooks/useEpisodeWindow';
-import { useAppStore, useSubscriptions } from '@/store/useAppStore';
+import { useAppStore, useSubscriptions, useUser } from '@/store/useAppStore';
 import { usePlayerStore } from '@/store/usePlayerStore';
 import type { TickerInsight } from '@/services/types';
-
-// The embedded 標的走勢 (pick-performance) block is part of the dev-only /picks
-// feature — surfaced on dev.tinboker.com only, hidden on staging/prod (where /picks
-// itself is unregistered, so its "查看命中率 →" link would otherwise dead-link).
-const IS_DEV_ENV = (import.meta.env.VITE_STAGE as string) === 'DEV';
 
 export const PodcasterPage: React.FC = () => {
   const { id } = useParams();
   const { toggleSubscription } = useAppStore();
   const subscriptions = useSubscriptions();
+  const user = useUser();
   const [podcast, setPodcast] = useState<Podcast | null>(null);
   const [episodes, setEpisodes] = useState<ApiEpisode[]>([]);
   const [picks, setPicks] = useState<TickerInsight[]>([]);
@@ -95,13 +91,18 @@ export const PodcasterPage: React.FC = () => {
     return map;
   }, [name, imageUrl]);
 
-  // Ticker-pick scoreboard: forward returns from each mention date.
+  // Ticker-pick scoreboard: forward returns from each mention date. Member-only
+  // (batch-prices-windows now requires it) — an empty ref list for a non-member
+  // means useTickerWindowReturns sends no request (hooks can't be called
+  // conditionally, so the gate is on the input, not the hook call itself).
   const pickRefs = useMemo(
     () =>
-      picks
-        .map((p) => ({ ticker: p.ticker, reference_ms: Date.parse(p.podcast_launch_time) }))
-        .filter((r) => r.ticker && Number.isFinite(r.reference_ms)),
-    [picks],
+      user?.is_member
+        ? picks
+            .map((p) => ({ ticker: p.ticker, reference_ms: Date.parse(p.podcast_launch_time) }))
+            .filter((r) => r.ticker && Number.isFinite(r.reference_ms))
+        : [],
+    [picks, user?.is_member],
   );
   const windowsMap = useTickerWindowReturns(pickRefs);
   const episodeMap = useMemo(() => {
@@ -137,7 +138,7 @@ export const PodcasterPage: React.FC = () => {
         <div className="flex items-center gap-4 flex-wrap mb-4">
           <PodAvatar src={imageUrl} name={name} kind="solid" size={56} className="w-14 h-14 rounded-md object-cover shrink-0" />
           <div className="min-w-0 flex-1">
-            <h1 className="text-2xl font-semibold tracking-[-0.02em] truncate">{name}</h1>
+            <h1 className="heading-accent text-2xl font-semibold tracking-[-0.02em] truncate">{name}</h1>
             <div className="text-sm text-muted-foreground mt-0.5">{countWords.before}<strong className="font-mono text-foreground mr-1 tabular-nums">{loading ? '…' : <CountUp value={episodeCount} />}</strong>{countWords.after} · 由 TinBoker 結構化分析關鍵重點與提及的個股</div>
           </div>
           <div className="flex items-center gap-3">
@@ -162,11 +163,11 @@ export const PodcasterPage: React.FC = () => {
           </div>
         )}
 
-        {IS_DEV_ENV && picks.length > 0 && (
+        {user?.is_member && picks.length > 0 ? (
           <>
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-sm font-semibold text-muted-foreground">標的走勢（提及日起算）</h2>
-              <Link to="/picks" className="text-xs text-accent-info hover:underline">查看命中率 →</Link>
+            <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+              <h2 className="heading-accent text-lg font-semibold text-foreground">標的走勢（提及日起算）</h2>
+              <Link to="/member" className="text-xs text-accent-info hover:underline">查看命中率 →</Link>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
               {picks.slice(0, 6).map((pick) => {
@@ -189,9 +190,14 @@ export const PodcasterPage: React.FC = () => {
               })}
             </div>
           </>
-        )}
+        ) : !user?.is_member ? (
+          <div className="flex items-center justify-between flex-wrap gap-2 mb-6">
+            <h2 className="heading-accent text-lg font-semibold text-foreground">標的走勢（提及日起算）為會員功能</h2>
+            <Link to="/member" className="text-xs text-accent-info hover:underline">了解會員方案 →</Link>
+          </div>
+        ) : null}
 
-        <h2 className="text-sm font-semibold text-muted-foreground mb-3">最新集數</h2>
+        <h2 className="heading-accent text-lg font-semibold text-foreground mb-3">最新集數</h2>
         {loading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {Array.from({ length: 4 }).map((_, i) => (

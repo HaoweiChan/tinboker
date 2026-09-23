@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
+import { AxiosError } from 'axios';
 import { apiClient } from '@/services/api/client';
+import { useAppStore } from '@/store/useAppStore';
 import type { PickWindowReturns } from '@/services/types';
 
 /** A pick to score: a ticker plus the mention (episode-release) timestamp. */
@@ -61,10 +63,14 @@ export function useTickerWindowReturns(picks: PickRef[]): Map<string, PickWindow
       for (let i = 0; i < stale.length && alive; i += CHUNK_SIZE) {
         const chunk = stale.slice(i, i + CHUNK_SIZE);
         try {
+          // Member-only route — attach the bearer token like the other authenticated
+          // API modules (e.g. services/api/comments.ts); callers only pass a non-empty
+          // `picks` list for a signed-in member, so this is normally present.
+          const token = useAppStore.getState().token;
           const res = await apiClient.post(
             '/api/stocks/batch-prices-windows',
             { items: chunk },
-            { timeout: CHUNK_TIMEOUT },
+            { timeout: CHUNK_TIMEOUT, headers: token ? { Authorization: `Bearer ${token}` } : undefined },
           );
           if (!alive) return;
           const ts = Date.now();
@@ -74,8 +80,12 @@ export function useTickerWindowReturns(picks: PickRef[]): Map<string, PickWindow
             }
           }
           setMap(buildMap()); // progressive: fill the feed chunk by chunk
-        } catch {
-          /* skip this chunk; later chunks still proceed */
+        } catch (err) {
+          // Skip this chunk; later chunks still proceed. A 402 here means a lapsed
+          // membership — no UI for that yet (PR 3), but surface it for diagnosis.
+          if (import.meta.env.DEV && err instanceof AxiosError) {
+            console.warn('[useTickerWindowReturns] chunk failed', err.response?.status);
+          }
         }
       }
     })();

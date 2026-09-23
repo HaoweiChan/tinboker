@@ -104,7 +104,7 @@ done
 # Verify production domain is allowed
 curl -s -H "Origin: https://tinboker.com" \
      -H "Access-Control-Request-Method: GET" \
-     -X OPTIONS https://api.tinboker.com/api/stocks \
+     -X OPTIONS https://api.tinboker.com/api/stocks/AAPL \
      -I | grep -i "access-control"
 ```
 
@@ -120,9 +120,6 @@ Run these against each target environment. Replace `{API}` with the backend URL.
 ### 2.1 Stock Endpoints
 
 ```bash
-# List stocks
-curl -s "{API}/api/stocks?sort_by=ticker&limit=10"
-
 # Single stock
 curl -s "{API}/api/stocks/AAPL"
 
@@ -392,7 +389,7 @@ curl -s https://api.tinboker.com/api/admin/system -o /dev/null -w "%{http_code}"
 ### 5.3 CORS Strict Check (Production Only)
 
 ```bash
-curl -s -H "Origin: https://evil.com" -X OPTIONS https://api.tinboker.com/api/stocks -I | grep "access-control-allow-origin"
+curl -s -H "Origin: https://evil.com" -X OPTIONS https://api.tinboker.com/api/stocks/AAPL -I | grep "access-control-allow-origin"
 # Expected: no line, or header with value that is NOT "https://evil.com" or "*"
 ```
 
@@ -405,9 +402,9 @@ curl -s -H "Origin: https://evil.com" -X OPTIONS https://api.tinboker.com/api/st
 Run against production after each release to catch regressions.
 
 ```bash
-# Stock list p95 latency
+# Stock detail p95 latency
 for i in $(seq 1 10); do
-  curl -s -o /dev/null -w "%{time_total}\n" "https://api.tinboker.com/api/stocks?limit=20"
+  curl -s -o /dev/null -w "%{time_total}\n" "https://api.tinboker.com/api/stocks/AAPL"
 done | sort -n | tail -2
 ```
 
@@ -415,7 +412,6 @@ done | sort -n | tail -2
 
 | Endpoint | p95 Target |
 |----------|-----------|
-| `GET /api/stocks?limit=20` | < 1.0s |
 | `GET /api/stocks/AAPL` | < 1.5s (with cache) |
 | `GET /api/search/suggest?q=apple` | < 0.3s (in-memory) |
 | `GET /api/podcasts` | < 1.0s |
@@ -486,7 +482,6 @@ check "redis connected"         "curl -s $BACKEND/health | python3 -c \"import s
 check "no redis connection_str" "curl -s $BACKEND/health | python3 -c \"import sys,json; r=json.load(sys.stdin).get('redis',{}); print('CLEAN' if 'connection_string' not in r else 'EXPOSED')\"" "CLEAN"
 
 echo "=== API Endpoints ==="
-check "stocks list"             "curl -s '$BACKEND/api/stocks?limit=5' | python3 -c \"import sys,json; d=json.load(sys.stdin); print('ok' if isinstance(d,list) and len(d)>0 else 'empty')\"" "ok"
 check "search suggest"          "curl -s '$BACKEND/api/search/suggest?q=apple' | python3 -c \"import sys,json; d=json.load(sys.stdin); print('ok' if d.get('stocks') else 'empty')\"" "ok"
 check "podcasts list"           "curl -s '$BACKEND/api/podcasts' | python3 -c \"import sys,json; d=json.load(sys.stdin); print('ok' if isinstance(d,list) and len(d)>0 else 'empty')\"" "ok"
 check "graphs list"             "curl -s '$BACKEND/api/graphs?limit=3' | python3 -c \"import sys,json; d=json.load(sys.stdin); print('ok' if isinstance(d,list) else 'fail')\"" "ok"

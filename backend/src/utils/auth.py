@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 from jose import JWTError, jwt
 from src.config import settings
+from src.models.user import UserResponse
 
 # Try to import Google Auth library for OAuth token verification
 try:
@@ -154,7 +155,7 @@ def verify_google_access_token(access_token: str) -> Dict[str, Any]:
 
 # Claims a caller may add to a token (the dev bypass marks its tokens with these).
 # Anything else in ``extra`` is ignored, so a caller can never override sub/exp/type.
-_EXTRA_CLAIMS = ("dev_bypass", "role")
+_EXTRA_CLAIMS = ("dev_bypass", "role", "membership_preview", "membership_preview_session")
 
 
 def _extra_claims(extra: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -268,5 +269,30 @@ def verify_jwt_token(token: str, expected_type: Optional[str] = None) -> Optiona
     if payload.get('dev_bypass') and settings.environment == 'production':
         return None
 
+    # All environments share the signing key. Preview sessions, including legacy
+    # original-mode tokens, must stay development-only through refresh.
+    if any(key in payload for key in ("membership_preview", "membership_preview_expires", "membership_preview_session")):
+        if (
+            settings.environment != "development"
+            or payload.get("membership_preview_session") is not True
+            or payload.get("membership_preview") not in (None, "free", "paid")
+            or (payload.get("email") or "").lower() not in {e.lower() for e in settings.admin_emails}
+        ):
+            return None
+
     return payload
+
+
+def apply_membership_preview(user: UserResponse, payload: Dict[str, Any]) -> UserResponse:
+    """Override only this response; never change the shared database entitlement."""
+    mode = payload.get("membership_preview")
+    if mode is None:
+        return user
+    return user.model_copy(update={
+        "membership_preview": mode,
+        "member_until": (
+            datetime.fromtimestamp(payload["exp"], timezone.utc)
+            if mode == "paid" else None
+        ),
+    })
 

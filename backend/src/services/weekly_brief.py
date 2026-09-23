@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import Counter, defaultdict
-from datetime import date, datetime, time, timedelta
+from datetime import datetime, time, timedelta
 from typing import Optional
 
 from src.config import settings
@@ -26,6 +26,7 @@ from src.routers.weekly import _insights_for, _released_ms, _sentiment, podcast_
 from src.services.attention import attention_movers
 from src.services.daily_pick import TAIPEI  # noqa: F401 — same day boundary as the nightly pick
 from src.services.paid_weekly import query_names
+from src.services.syndication_markdown import released_date
 
 MIN_SHOWS = 3          # a topic is worth a cross-show piece only when ≥ this many shows raised it
 MAX_TOPICS = 4
@@ -128,7 +129,7 @@ async def build_weekly_brief(week: str) -> Optional[dict]:
         ms = _released_ms(ep)
         if ms is not None and lo <= ms < hi:
             episodes[ep.id] = {"id": ep.id, "podcast_name": ep.podcast_name, "episode_title": ep.episode_title or "",
-                               "date": date.fromtimestamp(ms / 1000, tz=TAIPEI).isoformat()}
+                               "date": released_date(ms).isoformat()}
     if not episodes:
         return None
     podcasters = sorted({e["podcast_name"] for e in episodes.values() if e["podcast_name"]})

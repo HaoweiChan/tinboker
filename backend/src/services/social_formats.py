@@ -131,8 +131,8 @@ async def select_weekly_movers() -> Optional[dict]:
     if (not rows or data["total"] < WEEKLY_MIN_TOTAL
             or rows[0]["n"] - rows[0].get("prev", 0) < WEEKLY_MIN_RISE):
         return None
-    # From the week the DATA is for, not from today — key, subject, caption and link
-    # then all name the same week by construction.
+    # Use the week attached to the returned data, not today's date, so the card text,
+    # key and link all identify the same week even if the query returns another week.
     iso = date.fromisoformat(data["week_start"]).isocalendar()
     return {
         "key": f"weekly_movers:{data['week_start']}",

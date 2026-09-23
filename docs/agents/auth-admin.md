@@ -98,8 +98,21 @@ Two distinct auth surfaces plus a shared "logged-in user" experience:
 
 - **GCP Secret Manager** — all auth secrets (`JWT_SECRET_KEY`, `ADMIN_PASSWORD`, `ADMIN_JWT_SECRET`, `ADMIN_EMAILS`, `DEV_BYPASS_TOKEN`).
 - **Google OAuth** — user login; `GOOGLE_CLIENT_ID` injected into the frontend at build time.
-- **Firestore** `graphfolio-db` — `users/{user_id}` and `users/{user_id}/notifications/{notification_id}` (platform-owned writes per [`../firestore-contract.md`](../firestore-contract.md) §6).
+- **Postgres** `public.users` — one row per user, keyed by `id` (uuid4); notifications live in `user_notifications` (was Firestore `users/{user_id}` and its `notifications` subcollection until P3 of the Firestore exit, [`../firestore-contract.md`](../firestore-contract.md) §11.5).
 - **Netdata** — embedded into admin dashboard via Caddy reverse proxy.
+
+### Membership
+
+- `users.member_until` (nullable, timezone-aware) is the entitlement column; a user is a member iff it's set and in the future — `is_active_member()` / `UserResponse.is_member` in [`backend/src/models/user.py`](../../backend/src/models/user.py) is the single source of truth (naive SQLite datetimes are treated as UTC).
+- `require_member` ([`backend/src/utils/dependencies.py`](../../backend/src/utils/dependencies.py)) gates a route on it: 401 anonymous, 402 signed-in-but-not-a-member.
+- Frontend: `MemberGate` ([`frontend/src/components/auth/MemberGate.tsx`](../../frontend/src/components/auth/MemberGate.tsx)) is the content-side equivalent.
+- Manual grant: `PUT /api/admin/members/{email}` and `GET /api/admin/members`, in [`backend/src/routers/admin_members.py`](../../backend/src/routers/admin_members.py).
+- **Rule:** member-only data goes on separate endpoints with `CacheProfile.PRIVATE` — never add member fields to a `cdn_cached` route, because Cloudflare caches every `GET /api/*` by URL with no Vary on Authorization ([`../infra-runbook.md`](../infra-runbook.md) §1.4).
+- **Billing:** [`backend/src/routers/billing.py`](../../backend/src/routers/billing.py) exposes plans, authenticated hosted checkout, private owner subscription status, verified first/recurring callbacks, and cancellation. [`backend/src/services/billing.py`](../../backend/src/services/billing.py) owns transactional order, event and entitlement transitions; [`backend/src/services/newebpay.py`](../../backend/src/services/newebpay.py) owns the Periodic AES payload contract. Setup and verification: [`../workflows/newebpay-billing.md`](../workflows/newebpay-billing.md).
+- Every subscription and event is scoped by `gateway_env`, derived from `ENVIRONMENT`; sandbox and production credentials are separate. Sandbox payment access is read from `subscriptions.paid_until` for non-production administrators and must never write the shared production `users.member_until`. Production entitlement writes use `set_member_until` within the payment transaction.
+- Checkout prices and founding-seat allocation are decided on the server under a transaction lock. One outstanding mandate per user and gateway environment prevents duplicate checkout creation. `/plans` is advisory; never trust its cached price/seat information to authorize payment.
+- Periodic has no `TradeSha`: callbacks must decrypt with the environment's key and validate merchant, order, amount and mandate before changing state. First auth has no `AlreadyTimes` and is recorded as cycle `0`. Both the server ReturnURL and NotifyURL use the same idempotent processor. A browser query parameter never grants membership.
+- Paid terms use Taipei-local billing dates. Cancellation preserves paid access and must be confirmed with the provider; an uncertain timeout is not proof of cancellation. Membership-preview credentials cannot create or cancel mandates. All owner billing responses require private/no-store caching.
 
 ## Cross-references
 

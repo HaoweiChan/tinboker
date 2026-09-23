@@ -302,69 +302,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/stocks:
-    get:
-      tags:
-      - stocks
-      summary: Get Sorted Stocks
-      description: 'Get sorted stocks list with optional search
-
-
-        Query params:
-
-        - sort_by: Sort field (ticker, name, price, change_percent, market_cap)
-
-        - limit: Maximum number of stocks to return (default: 50, max: 200)
-
-        - q: Optional search query to filter by ticker or name (case-insensitive)'
-      operationId: get_sorted_stocks_api_stocks_get
-      parameters:
-      - name: sort_by
-        in: query
-        required: false
-        schema:
-          type: string
-          description: Sort field
-          default: ticker
-          title: Sort By
-        description: Sort field
-      - name: limit
-        in: query
-        required: false
-        schema:
-          type: integer
-          maximum: 200
-          minimum: 1
-          description: Maximum number of stocks to return (1-200)
-          default: 50
-          title: Limit
-        description: Maximum number of stocks to return (1-200)
-      - name: q
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Search query (filters by ticker or name)
-          title: Q
-        description: Search query (filters by ticker or name)
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  type: object
-                title: Response Get Sorted Stocks Api Stocks Get
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
   /api/stocks/{ticker}:
     get:
       tags:

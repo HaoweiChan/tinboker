@@ -136,6 +136,19 @@ def create_all_tables():
     
     logger.info("Creating all database tables...")
     Base.metadata.create_all(bind=engine)
+    # Billing PR 3b: safely upgrade the pre-existing subscription table and scope
+    # outstanding mandates by gateway environment. DDL is transactionally applied.
+    with engine.begin() as conn:
+        if engine.dialect.name == "postgresql":
+            conn.execute(text("ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS paid_until TIMESTAMPTZ"))
+        elif engine.dialect.name == "sqlite":
+            billing_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(subscriptions)"))}
+            if "paid_until" not in billing_cols:
+                conn.execute(text("ALTER TABLE subscriptions ADD COLUMN paid_until TIMESTAMP"))
+        conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_one_open_sub_per_user_env "
+                          "ON subscriptions (user_id, gateway_env) "
+                          "WHERE status IN ('pending', 'active', 'cancelling')"))
+        conn.execute(text("DROP INDEX IF EXISTS uq_one_active_sub_per_user"))
     # Add columns that may not exist on pre-existing tables (idempotent).
     if engine.dialect.name == "postgresql":
         with engine.connect() as conn:
@@ -369,6 +382,17 @@ def create_all_tables():
                 conn.execute(text(
                     f"ALTER TABLE IF EXISTS analytics_snapshots ADD COLUMN IF NOT EXISTS {column} INTEGER"
                 ))
+            # Membership entitlement (PR 1 — admin-granted only, no billing yet).
+            conn.execute(text(
+                "ALTER TABLE IF EXISTS users "
+                "ADD COLUMN IF NOT EXISTS member_until TIMESTAMPTZ"
+            ))
+            # Picks swiped away in 走勢. Pre-existing rows get '[]', not NULL — every
+            # reader treats this as a list and create_all won't backfill a default.
+            conn.execute(text(
+                "ALTER TABLE IF EXISTS users "
+                "ADD COLUMN IF NOT EXISTS dismissed_picks JSONB NOT NULL DEFAULT '[]'::jsonb"
+            ))
             conn.commit()
     elif engine.dialect.name == "sqlite":
         # SQLite has no "ADD COLUMN IF NOT EXISTS" — check PRAGMA first.
@@ -388,6 +412,10 @@ def create_all_tables():
             cs_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(content_sources)"))}
             if cs_cols and "cover_image_url" not in cs_cols:
                 conn.execute(text("ALTER TABLE content_sources ADD COLUMN cover_image_url TEXT"))
+                conn.commit()
+            u_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(users)"))}
+            if u_cols and "dismissed_picks" not in u_cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN dismissed_picks JSON"))
                 conn.commit()
             tr_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(tag_registry)"))}
             if tr_cols and "kind" not in tr_cols:
@@ -427,6 +455,11 @@ def create_all_tables():
             si_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(stock_institutional_daily)"))}
             if si_cols and "trust_net_shares" not in si_cols:
                 conn.execute(text("ALTER TABLE stock_institutional_daily ADD COLUMN trust_net_shares FLOAT"))
+                conn.commit()
+            # Membership entitlement (PR 1 — admin-granted only, no billing yet).
+            users_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(users)"))}
+            if users_cols and "member_until" not in users_cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN member_until TIMESTAMP"))
                 conn.commit()
     # Clean up obsolete cryptocurrency tag registry rows (idempotent)
     with engine.connect() as conn:

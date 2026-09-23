@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { FlaskConical, Info } from 'lucide-react';
+import { Info } from 'lucide-react';
 import { useStockTrendColor } from '@/hooks/useStockTrendColor';
 import { TOPICS_TYPOGRAPHY } from './topicsTypography';
 import { ChangePct } from './ChangePct';
@@ -82,13 +82,10 @@ export const HeatReturnValidation: React.FC = () => {
     : null;
 
   const header = (
-    <div className="flex items-center justify-between gap-2 mb-2.5">
-      <div className="flex items-center gap-2">
-        <span className="inline-grid place-items-center rounded-lg bg-accent-info/10 text-accent-info shrink-0" style={{ width: 26, height: 26 }}>
-          <FlaskConical size={15} />
-        </span>
-        <h2 className={`${type.sectionTitle} font-semibold`}>討論熱度 → 未來報酬驗證</h2>
-      </div>
+    <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
+      <h2 className="heading-accent text-lg font-semibold tracking-[-0.02em] flex items-center gap-2">
+        討論熱度 → 未來報酬驗證
+      </h2>
       <div className={`flex shrink-0 items-center gap-0.5 ${type.micro}`}>
         {HZ.map((h) => (
           <button
@@ -123,12 +120,18 @@ export const HeatReturnValidation: React.FC = () => {
           different kind of block. */}
       {header}
 
-      <p className={`mb-3 flex items-start gap-1.5 ${type.meta} text-muted-foreground`}>
-        <Info size={12} className="mt-0.5 shrink-0" />
-        <span>
+      {/* Collapsed by default: the method matters, but four lines of it above the
+          chart read as clutter on a phone. <details> is tappable, unlike a hover
+          tooltip. */}
+      <details className={`mb-3 ${type.meta} text-muted-foreground`}>
+        <summary className="flex cursor-pointer list-none items-center gap-1.5 w-fit hover:text-foreground transition-colors">
+          <Info size={12} className="shrink-0" />
+          <span>怎麼算的</span>
+        </summary>
+        <p className="mt-1.5 pl-[18px] leading-relaxed">
           用<strong className="font-medium text-foreground/80">歷史當時</strong>的討論熱度分組，對照<strong className="font-medium text-foreground/80">其後 {hz} 日</strong>的<strong className="font-medium text-foreground/80">超額報酬</strong>——相對「同一天」其他題材的平均（已剔除大盤齊漲齊跌），避免看後照鏡與行情假訊號。熱度越高的組別超額報酬越高，才代表熱度有預測力。
-        </span>
-      </p>
+        </p>
+      </details>
 
       <div className="rounded-xl border border-border bg-card p-4">
       {buckets.length > 0 ? (

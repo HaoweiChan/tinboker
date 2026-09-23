@@ -132,3 +132,30 @@ def test_the_route_is_configurable_because_servers_disagree_about_it(monkeypatch
     LocalWhisperService().transcribe(b"bytes")
 
     assert seen["url"] == "http://mac-mini:8910/inference", "a path without its slash must still work"
+
+
+def test_simplified_output_is_converted_to_traditional(svc):
+    """Regression: the decoder seed is a nudge, not a guarantee.
+
+    Measured over 18 episodes across nine shows on 2026-09-20: five came back with
+    31-68 unambiguously Simplified glyphs per 1,000 characters *with* the seed in place,
+    because it anchors the early windows and Whisper's context resets every 30 seconds.
+    GroqService never relied on the model either — it runs replies through
+    convert_json_to_traditional_chinese, and this path now does the same.
+    """
+    out = LocalWhisperService._to_sentences({
+        "text": "这个记忆体缺货",
+        "segments": [{"text": "这个记忆体缺货", "start": 0.0, "end": 1.0}],
+    })
+
+    assert out["sentences"][0]["content"] == "這個記憶體缺貨"
+    assert out["text"] == "這個記憶體缺貨"
+
+
+def test_already_traditional_text_is_left_alone(svc):
+    out = LocalWhisperService._to_sentences({
+        "text": "這個記憶體缺貨",
+        "segments": [{"text": "這個記憶體缺貨", "start": 0.0, "end": 1.0}],
+    })
+
+    assert out["sentences"][0]["content"] == "這個記憶體缺貨"

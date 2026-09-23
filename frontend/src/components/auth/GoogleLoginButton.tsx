@@ -64,6 +64,10 @@ export const GoogleLoginButton: React.FC<GoogleLoginButtonProps> = ({ className,
               .join('')
               .toUpperCase()
               .slice(0, 2),
+            member_until: backendUser.member_until ?? null,
+            is_member: backendUser.is_member ?? false,
+            membership_preview: backendUser.membership_preview ?? null,
+            membership_preview_available: backendUser.membership_preview_available ?? false,
           },
           appToken,
           authResponse.refresh_token,
@@ -73,6 +77,7 @@ export const GoogleLoginButton: React.FC<GoogleLoginButtonProps> = ({ className,
           watchlist: backendUser.watchlist || [],
           subscriptions: backendUser.podcast_subscriptions || [],
           tagSubscriptions: backendUser.tag_subscriptions || [],
+          dismissedPicks: backendUser.dismissed_picks || [],
           alerts: backendUser.alerts || [],
         });
         toast.success(`歡迎回來，${backendUser.name}！`);

@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from sqlalchemy import (
     Boolean,
     Column,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -16,6 +17,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
 
@@ -624,10 +626,106 @@ class User(Base):
     episode_bookmarks = Column(JSON_VARIANT, nullable=False, default=list)  # "{podcast}_{ep}"
     alerts = Column(JSON_VARIANT, nullable=False, default=list)
     tag_subscriptions = Column(JSON_VARIANT, nullable=False, default=list)
+    # Picks the member swiped away in 走勢, as "{episode_id}|{ticker}". Derived content,
+    # so this only hides that one mention — the next time the ticker is named a new
+    # card appears, which is the behaviour the feature was asked for.
+    dismissed_picks = Column(JSON_VARIANT, nullable=False, default=list)
     notification_preferences = Column(JSON_VARIANT, nullable=False, default=dict)
+
+    # Paid membership entitlement (PR 1 — admin-granted only, no billing yet).
+    # A user is a member iff member_until is set and in the future.
+    member_until = Column(TZ_DATETIME, nullable=True)
 
     def __repr__(self) -> str:
         return f"<User(id={self.id}, email='{self.email}')>"
+
+
+class Subscription(Base):
+    """A NewebPay 信用卡定期定額 mandate (PR 3a — billing foundation, no checkout yet).
+
+    `gateway_env` records whether NewebPay's sandbox or production credentials created
+    this row: dev/staging/prod share one Postgres, but NewebPay's sandbox
+    (ccore.newebpay.com) and production (core.newebpay.com) are separate merchant
+    accounts, so a row from one is never a valid mandate against the other.
+    """
+    __tablename__ = "subscriptions"
+
+    id = Column(String(64), primary_key=True)  # uuid4
+    # RESTRICT, not CASCADE: deleting a user must never silently destroy financial
+    # records while a mandate keeps charging their card.
+    user_id = Column(String(64), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
+    mer_order_no = Column(String(30), nullable=False, unique=True)  # NewebPay MerOrderNo
+    period_no = Column(String(64), nullable=True, index=True)  # NewebPay's mandate id (PeriodNo)
+    status = Column(String(16), nullable=False, default="pending")  # pending|active|cancelled|ended
+    amount = Column(Integer, nullable=False)  # TWD per-period amount (99 founding or 199 list)
+    is_founding = Column(Boolean, nullable=False, default=False)
+    gateway_env = Column(String(16), nullable=False)  # sandbox|production
+    next_auth_date = Column(Date, nullable=True)
+    paid_until = Column(TZ_DATETIME, nullable=True)
+    # NewebPay auto-caps the requested PeriodTimes to however many periods fit before
+    # the card's expiry; the real total comes back as AuthTimes on creation and
+    # TotalTimes on every notify. PR 3b needs it to detect the mandate's final period.
+    total_times = Column(Integer, nullable=True)
+    created_at = Column(TZ_DATETIME, nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(TZ_DATETIME, nullable=False, default=lambda: datetime.now(timezone.utc))
+    cancelled_at = Column(TZ_DATETIME, nullable=True)
+
+    __table_args__ = (
+        # Backstop only, one live mandate per user — PR 3b must ALSO check this
+        # inside the checkout transaction (a unique index alone can't prevent two
+        # concurrent checkouts from both reaching NewebPay before either commits).
+        Index(
+            "uq_one_open_sub_per_user_env",
+            "user_id",
+            "gateway_env",
+            unique=True,
+            postgresql_where=text("status IN ('pending', 'active', 'cancelling')"),
+            sqlite_where=text("status IN ('pending', 'active', 'cancelling')"),
+        ),
+    )
+
+    def __repr__(self) -> str:
+        return f"<Subscription(id={self.id}, user_id={self.user_id}, status={self.status})>"
+
+
+class PaymentEvent(Base):
+    """Append-only audit log of every NewebPay notify/response, keyed for idempotency.
+
+    A re-delivered notify for the same (mer_order_no, already_times, kind) is a
+    no-op — callbacks can be delivered again or manually re-triggered, so this unique
+    constraint is ours. Keyed on `mer_order_no`
+    (ours, always present — NewebPay echoes it back as MerchantOrderNo, and it's
+    globally unique across sandbox/production) rather than `period_no`: the
+    first-auth result carries AuthTimes/DateArray/PeriodNo but NO AlreadyTimes, and
+    a failed attempt may carry no PeriodNo at all, so a NULL-based key would let two
+    such rows both through (SQL UNIQUE treats NULL as distinct from every other
+    NULL). First auth is written with `already_times=0` so it dedupes like any
+    other row.
+
+    Never store card data beyond what NewebPay already masks (CardNo comes pre-masked
+    as first6+last4). Never log `raw` at info level — it's the decrypted gateway
+    payload and belongs in the audit table, not application logs.
+    """
+    __tablename__ = "payment_events"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    subscription_id = Column(String(64), ForeignKey("subscriptions.id", ondelete="SET NULL"), nullable=True, index=True)
+    mer_order_no = Column(String(30), nullable=False, index=True)
+    period_no = Column(String(64), nullable=True)
+    already_times = Column(Integer, nullable=False, default=0)
+    kind = Column(String(16), nullable=False)  # first_auth|period|other
+    success = Column(Boolean, nullable=False)
+    amount = Column(Integer, nullable=True)
+    gateway_env = Column(String(16), nullable=False)
+    raw = Column(JSON_VARIANT, nullable=False, default=dict)  # decrypted gateway payload
+    received_at = Column(TZ_DATETIME, nullable=False, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        UniqueConstraint("mer_order_no", "already_times", "kind", name="uq_payment_events_dedup"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<PaymentEvent(id={self.id}, mer_order_no={self.mer_order_no}, kind={self.kind})>"
 
 
 class UserNotification(Base):

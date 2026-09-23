@@ -20,7 +20,8 @@ import { useStockPriceSinceMap, isRecentEpisode } from '@/hooks/useStockPriceSin
 import { useTranslationMap } from '@/hooks/useTranslationMap';
 import { useTagLabels, useHiddenTagSlugs, tagLabelFor, normalizeTagSlug } from '@/hooks/useTagLabels';
 import { useEpisodeSentimentMap } from '@/hooks/useEpisodeSentimentMap';
-import { EpisodeInsightCard, type EpisodeInsight } from '@/components/episode/EpisodeInsightCard';
+import { EpisodeInsightCard } from '@/components/episode/EpisodeInsightCard';
+import { episodeLeadFrom } from '@/lib/episodeLead';
 import { SummaryMarkdown } from '@/components/episode/SummaryMarkdown';
 import { EpisodeDebugPanel } from '@/components/episode/EpisodeDebugPanel';
 import { SlideViewer } from '@/components/common/SlideViewer';
@@ -30,6 +31,8 @@ const IS_DEV = import.meta.env.DEV || (import.meta.env.VITE_STAGE as string) ===
 
 // Episodes can carry dozens of tags; show only a handful so the row stays meaningful.
 const MAX_HERO_TAGS = 6;
+// Chips shown before the +n disclosure.
+const HERO_CHIPS_COLLAPSED = 4;
 
 function timeAgo(release: string | number | null | undefined, created: number): string {
   const ms = typeof release === 'string' ? Date.parse(release) : (release ?? created);
@@ -53,42 +56,6 @@ function spotifyUriFrom(ep: ApiEpisode | null): string | undefined {
     if (ep.spotify_url.startsWith('spotify:episode:')) return ep.spotify_url;
   }
   return undefined;
-}
-
-function cleanSummaryLine(line: string): string {
-  return line
-    .replace(/^(?:#{1,6}\s*)+/, '')
-    .replace(/\s*\(#time:\s*\d+\)/g, '')
-    .replace(/^[-*\s]+/, '')
-    // Strip ALL inline markers ([label](#ticker:..|#tag:..|url)) down to their label
-    // so the insight reads as plain text, never raw markdown.
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-    .replace(/[*_`>~]/g, '')
-    .trim();
-}
-
-function episodeInsightFrom(ep: ApiEpisode | null, fallbackTitle: string): EpisodeInsight | null {
-  if (!ep) return null;
-  const src = ep.modified_summary_content || ep.summary_content || '';
-  const lines = src.split('\n').map((line) => line.trim()).filter(Boolean);
-  // No truncation: the insight is the concise essence of the article and is shown
-  // in full (no "…"). The headline / thesis / section headings are already short.
-  const headline = cleanSummaryLine(lines.find((line) => line.startsWith('#')) || lines[0] || fallbackTitle);
-  const thesis = cleanSummaryLine(lines.find((line) => !line.startsWith('#') && line.length > 12) || '');
-  const keyHighlights = Array.isArray(ep.key_insights) ? ep.key_insights.map((line) => cleanSummaryLine(line)).filter(Boolean) : [];
-  const sectionHighlights = lines
-    .filter((line) => /^#{2,}/.test(line))
-    .map(cleanSummaryLine)
-    .filter((line) => line && line !== headline)
-    .slice(0, 3);
-  const highlights = (keyHighlights.length > 0 ? keyHighlights : sectionHighlights).slice(0, 3);
-
-  if (!headline && !thesis && highlights.length === 0) return null;
-  return {
-    headline: headline || fallbackTitle,
-    thesis: thesis || undefined,
-    highlights,
-  };
 }
 
 function tickerLookupKeys(symbol: string): string[] {
@@ -118,6 +85,7 @@ export const EpisodeDetail: React.FC = () => {
   const hiddenTagSlugs = useHiddenTagSlugs();
 
   const [episode, setEpisode] = useState<ApiEpisode | null>(null);
+  const [tagsExpanded, setTagsExpanded] = useState(false);
   const [podcastImageUrl, setPodcastImageUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   // Per-sector performance + visuals for the 產業/主題曝險 rail, keyed by exposure_id.
@@ -257,7 +225,10 @@ export const EpisodeDetail: React.FC = () => {
 
   const title = episode?.episode_title || (episode?.episode_number != null ? `EP ${episode.episode_number}` : '集數摘要');
   const name = episode?.podcast_name || podcastName || '節目';
-  const episodeInsight = useMemo(() => episodeInsightFrom(episode, title), [episode, title]);
+  const episodeLead = useMemo(
+    () => episodeLeadFrom(episode?.modified_summary_content || episode?.summary_content || '', title, episode?.key_insights),
+    [episode, title],
+  );
   const podcasterImageUrl = podcastImageUrl || episode?.spotify_images?.[0] || null;
 
   // SEO: a PodcastEpisode JSON-LD with Clip parts (one per timestamped section) so
@@ -352,7 +323,7 @@ export const EpisodeDetail: React.FC = () => {
             <nav className="bg-card border border-border rounded-md p-3 max-h-[calc(100vh-96px)] overflow-y-auto scrollbar-thin" aria-label="集數導覽">
               {tickers.length > 0 && (
                 <section aria-labelledby="episode-rail-tickers">
-                  <h4 id="episode-rail-tickers" className="text-2xs font-semibold tracking-[0.08em] uppercase text-muted-foreground px-2 mb-2">提及股票</h4>
+                  <h4 id="episode-rail-tickers" className="text-2xs font-semibold tracking-[0.08em] uppercase text-muted-foreground px-2 mb-2">提及個股</h4>
                   <div className="ticker-list flex flex-col gap-1.5">
                     {tickers.map((t) => (
                       <TickerRow key={t.symbol} ticker={t} onClick={() => navigate(`/stock/${encodeURIComponent(t.symbol)}`)} />
@@ -386,7 +357,7 @@ export const EpisodeDetail: React.FC = () => {
         ) : (
           <>
             {/* Hero */}
-            <div className="bg-card border border-border rounded-md p-5 sm:p-6 mb-[18px]">
+            <header className="mb-[18px]">
               <div className="flex flex-col gap-3.5 mb-3.5 sm:flex-row sm:items-center">
                 <div className="flex min-w-0 flex-1 items-center gap-3.5">
                   <PodcastAvatar name={name} src={podcasterImageUrl} size="md" className="rounded-[9px] shrink-0" />
@@ -397,7 +368,35 @@ export const EpisodeDetail: React.FC = () => {
                       {timeAgo(episode.released_at_ms ?? episode.spotify_release_date, episode.created_time)}
                     </div>
                   </div>
+                  {/* Saving and sharing are secondary to the episode itself, so they
+                      sit as icons in the corner rather than as two labelled pills
+                      taking a row of their own on a phone. */}
+                  <div className="flex shrink-0 items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={onBookmark}
+                      aria-pressed={isBookmarked}
+                      aria-label={isBookmarked ? '已收藏' : '收藏'}
+                      title={isBookmarked ? '已收藏' : '收藏'}
+                      className={cn(
+                        'grid place-items-center h-9 w-9 rounded-full transition-colors',
+                        isBookmarked ? 'bg-accent-info-soft text-accent-info' : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                      )}
+                    >
+                      <Bookmark size={17} className={isBookmarked ? 'fill-current' : ''} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={onShare}
+                      aria-label={shareCopied ? '已複製連結' : '分享'}
+                      title={shareCopied ? '已複製連結' : '分享'}
+                      className="grid place-items-center h-9 w-9 rounded-full text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                    >
+                      {shareCopied ? <Check size={17} className="text-sentiment-bull" /> : <Share2 size={17} />}
+                    </button>
+                  </div>
                 </div>
+                {(spotifyUri || episode.spotify_url) && (
                 <div className="flex w-full items-center gap-2 overflow-x-auto pb-1 sm:w-auto sm:shrink-0 sm:overflow-visible sm:pb-0">
                   {/* Spotify embed only — no audio from our own domain (AdSense
                       replicated content, #588). No Spotify URI, no playback. */}
@@ -406,53 +405,61 @@ export const EpisodeDetail: React.FC = () => {
                       <Play size={14} className="fill-current" /> 播放本集
                     </button>
                   )}
-                  <button
-                    type="button"
-                    onClick={onBookmark}
-                    className={cn(
-                      'inline-flex shrink-0 items-center gap-1.5 px-3.5 py-2 rounded-full text-sm font-medium transition-colors',
-                      isBookmarked ? 'bg-accent-info-soft text-accent-info' : 'bg-card border border-border hover:bg-muted',
-                    )}
-                  >
-                    <Bookmark size={13} className={isBookmarked ? 'fill-current' : ''} />
-                    {isBookmarked ? '已收藏' : '收藏'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={onShare}
-                    className="inline-flex shrink-0 items-center gap-1.5 px-3.5 py-2 rounded-full bg-card border border-border text-sm font-medium hover:bg-muted transition-colors"
-                  >
-                    {shareCopied ? <Check size={13} className="text-sentiment-bull" /> : <Share2 size={13} />}
-                    {shareCopied ? '已複製' : '分享'}
-                  </button>
                   {episode.spotify_url && (
                     <a href={episode.spotify_url} target="_blank" rel="noopener noreferrer" className="inline-flex shrink-0 items-center gap-1.5 px-3.5 py-2 rounded-full bg-card border border-border text-sm font-medium hover:bg-muted transition-colors">
                       <ExternalLink size={13} /> Spotify
                     </a>
                   )}
                 </div>
+                )}
               </div>
               <h1 className="text-2xl font-semibold tracking-[-0.015em] leading-[1.3]">{title}</h1>
-              {(heroTags.length > 0 || (episode.sector_exposures?.length ?? 0) > 0) && (
-                <div className="flex gap-1.5 flex-wrap mt-3">
-                  {heroTags.slice(0, MAX_HERO_TAGS).map((t) => (
-                    <Link key={t} to={`/topics/${encodeURIComponent(t)}`} className="text-2xs px-2.5 py-0.5 rounded-full bg-primary/15 text-primary font-medium hover:bg-primary/25 transition-colors">#{tagLabelFor(t, tagLabels)}</Link>
-                  ))}
-                  {/* Sectors render in the same row, distinguished by the blue tint + their
-                      own /sector route — a sector is a kind of topic, but ticker-backed.
-                      Deduped by exposure_id: an episode tags the same sector once per section. */}
-                  {heroSectors.map((exp) => (
-                    <Link key={exp.exposure_id} to={`/sector/${encodeURIComponent(exp.exposure_id)}`} className="text-2xs px-2.5 py-0.5 rounded-full bg-accent-info-soft text-accent-info font-medium hover:bg-accent-info/25 transition-colors">#{exp.display_name}</Link>
-                  ))}
-                </div>
-              )}
-            </div>
+              {(heroTags.length > 0 || (episode.sector_exposures?.length ?? 0) > 0) && (() => {
+                // A well-tagged episode carried 20 of these, ~240px of hashtags, so the
+                // first screen was a title and a tag wall with 關鍵洞察 — the episode's
+                // actual judgment — pushed below the fold. Show a few and make the rest a
+                // disclosure: the values stay reachable, which a plain truncation would
+                // not give.
+                const chips = [
+                  ...heroTags.slice(0, MAX_HERO_TAGS).map((t) => ({
+                    key: `t:${t}`, to: `/topics/${encodeURIComponent(t)}`, label: tagLabelFor(t, tagLabels),
+                    cls: 'bg-primary/15 text-primary hover:bg-primary/25',
+                  })),
+                  // Sectors render in the same row, distinguished by the blue tint + their
+                  // own /sector route — a sector is a kind of topic, but ticker-backed.
+                  // Deduped by exposure_id: an episode tags the same sector once per section.
+                  ...heroSectors.map((exp) => ({
+                    key: `s:${exp.exposure_id}`, to: `/sector/${encodeURIComponent(exp.exposure_id)}`, label: exp.display_name,
+                    cls: 'bg-accent-info-soft text-accent-info hover:bg-accent-info/25',
+                  })),
+                ];
+                const shown = tagsExpanded ? chips : chips.slice(0, HERO_CHIPS_COLLAPSED);
+                const hidden = chips.length - shown.length;
+                return (
+                  <div className="flex gap-1.5 flex-wrap mt-3">
+                    {shown.map((c) => (
+                      <Link key={c.key} to={c.to} className={`text-2xs px-2.5 py-0.5 rounded-full font-medium transition-colors ${c.cls}`}>#{c.label}</Link>
+                    ))}
+                    {hidden > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setTagsExpanded(true)}
+                        aria-expanded={false}
+                        className="text-2xs px-2.5 py-0.5 rounded-full border border-border text-muted-foreground font-medium hover:text-foreground hover:border-foreground/30 transition-colors"
+                      >
+                        +{hidden}
+                      </button>
+                    )}
+                  </div>
+                );
+              })()}
+            </header>
 
-            {episodeInsight && <EpisodeInsightCard insight={episodeInsight} />}
+            {episodeLead && <EpisodeInsightCard insight={episodeLead.insight} />}
 
             {IS_DEV && episode.marp_markdown_content && (
               <section className="bg-card border border-border rounded-md p-5 sm:p-6 mb-3.5">
-                <h3 className="text-base font-semibold text-muted-foreground mb-3.5">投影片</h3>
+                <h3 className="heading-accent text-lg font-semibold text-foreground mb-3.5">投影片</h3>
                 <SlideViewer
                   content={episode.marp_markdown_content}
                   onTickerClick={(symbol) => navigate(`/stock/${encodeURIComponent(symbol)}`)}
@@ -466,22 +473,23 @@ export const EpisodeDetail: React.FC = () => {
               </section>
             )}
 
-            {/* 摘要 — full structured summary (headings, paragraphs, ticker/tag/time markers) */}
-            {(episode.modified_summary_content || episode.summary_content) && (
+            {/* 摘要 — structured summary (headings, paragraphs, ticker/tag/time markers)
+                minus the headline + thesis the 關鍵洞察 card above already shows. */}
+            {episodeLead?.body.trim() && (
               <section className="mb-3.5 sm:bg-card sm:border sm:border-border sm:rounded-md sm:p-6">
-                <h3 className="text-base font-semibold text-muted-foreground mb-3.5">摘要</h3>
+                <h3 className="heading-accent text-lg font-semibold text-foreground mb-3.5">摘要</h3>
                 <SummaryMarkdown
-                  content={episode.modified_summary_content || episode.summary_content || ''}
+                  content={episodeLead.body}
                   onSeek={spotifyUri ? playFrom : undefined}
                   focusMs={searchParams.get('t') && /^\d+$/.test(searchParams.get('t') as string) ? Number(searchParams.get('t')) : null}
                 />
               </section>
             )}
 
-            {/* 提及股票 — mobile fallback; desktop uses the right rail. */}
+            {/* 提及個股 — mobile fallback; desktop uses the right rail. */}
             {tickers.length > 0 && (
               <section className="xl:hidden bg-card border border-border rounded-md p-5 sm:p-6 mb-3.5">
-                <h3 className="text-base font-semibold text-muted-foreground mb-3.5">提及股票</h3>
+                <h3 className="heading-accent text-lg font-semibold text-foreground mb-3.5">提及個股</h3>
                 <div className="ticker-list flex flex-col gap-1.5">
                   {tickers.map((t) => (
                     <TickerRow key={t.symbol} ticker={t} onClick={() => navigate(`/stock/${encodeURIComponent(t.symbol)}`)} />
@@ -493,7 +501,7 @@ export const EpisodeDetail: React.FC = () => {
             {/* 產業 / 主題曝險 — mobile fallback; desktop uses the right rail. */}
             {(episode.sector_exposures?.length ?? 0) > 0 && (
               <section className="xl:hidden bg-card border border-border rounded-md p-5 sm:p-6 mb-3.5">
-                <h3 className="text-base font-semibold text-muted-foreground mb-3.5">提及產業</h3>
+                <h3 className="heading-accent text-lg font-semibold text-foreground mb-3.5">提及產業</h3>
                 <SectorExposureList
                   exposures={episode.sector_exposures!}
                   perfMap={sectorPerf}

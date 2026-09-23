@@ -9,13 +9,11 @@ import { NewsRedirect } from '@/pages/NewsRedirect';
 import { PodcasterPage } from '@/pages/PodcasterPage';
 import { TagPage } from '@/pages/TagPage';
 import { SectorPage } from '@/pages/SectorPage';
-import { ProfilePage } from '@/pages/ProfilePage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { PodcasterIndex } from '@/pages/PodcasterIndex';
 import { StockIndex } from '@/pages/StockIndex';
 import { TopicsCloud } from '@/pages/TopicsCloud';
 import { WatchlistPage } from '@/pages/WatchlistPage';
-import { PicksPage } from '@/pages/PicksPage';
 import { AdminPage } from '@/pages/AdminPage';
 import { AdminDashboardPage } from '@/pages/AdminDashboardPage';
 import { TranslationsSection } from '@/pages/TranslationsSection';
@@ -49,6 +47,38 @@ const DesignPreview = import.meta.env.DEV ? lazy(() => import('@/pages/DesignPre
 // Developer portal — only registered when VITE_STAGE=DEV (dev.tinboker.com).
 // STAGING and PRODUCTION builds never register /dev routes so they fall through to the catch-all.
 const IS_DEV_ENV = (import.meta.env.VITE_STAGE as string) === 'DEV';
+
+// PR 3a — public plan/pricing page. Own chunk: most visitors never open it either.
+const MembershipPage = lazy(() => import('@/pages/MembershipPage'));
+
+// Member hub (/member) — replaces the old /picks route. Own chunk: most
+// anonymous visitors never open it.
+const MemberHub = lazy(() => import('@/pages/MemberHub'));
+
+// Legal/policy page — low-traffic, own chunk like MembershipPage.
+const TermsPage = lazy(() => import('@/pages/TermsPage'));
+
+// /member: the single "my stuff" home for every signed-in user (free or paying).
+// Signed in -> the hub (which itself locks the 走勢 tab for non-members);
+// logged out -> the plan page /membership, so the sales pitch lives in one place.
+function MemberRoute() {
+  const isAuthReady = useAppStore((s) => s.isAuthReady);
+  const user = useAppStore((s) => s.user);
+  // Same wait MemberGate itself does — otherwise a signed-in user gets bounced
+  // to the plan page for the one tick before auth hydrates.
+  if (!isAuthReady) return null;
+  return (
+    <Suspense fallback={null}>
+      {user ? <MemberHub /> : <MembershipPage />}
+    </Suspense>
+  );
+}
+
+/** /profile -> /member, preserving ?tab= (a plain <Navigate> drops the search). */
+function ProfileRedirect() {
+  const { search } = useLocation();
+  return <Navigate to={`/member${search}`} replace />;
+}
 
 // Admin dashboard is developer-only. The PRODUCTION backend mounts no /api/admin/* routes
 // (see backend main.py `if not settings.is_production`), so a prod admin page would only
@@ -121,15 +151,41 @@ function App() {
             <Route path="/stock" element={<StockIndex />} />
             <Route path="/sector/:exposureId" element={<SectorPage />} />
             <Route path="/news/:id" element={<NewsRedirect />} />
-            {/* /picks (走勢) — dev-only while unstable; excluded from the release.
-                STAGING/PRODUCTION don't register it, so a direct URL falls through
-                to the catch-all → home. */}
-            {IS_DEV_ENV && <Route path="/picks" element={<PicksPage />} />}
+            {/* Old paid-feature route — kept working for bookmarks/old links. */}
+            <Route path="/picks" element={<Navigate to="/member" replace />} />
+            {/* /profile merged into /member (the personal hub) — keep the old
+                links working, preserving ?tab= for deep links. */}
+            <Route path="/profile" element={<ProfileRedirect />} />
+            {/* One home for membership: signed in -> the hub, everyone else -> the
+                plan page below. Personalized, so never add it to the sitemap. */}
+            <Route path="/member" element={<MemberRoute />} />
+            {/* Public pricing and owner-scoped billing return/status. */}
+            <Route
+              path="/membership"
+              element={
+                <Suspense fallback={null}>
+                  <MembershipPage />
+                </Suspense>
+              }
+            />
             <Route path="/about" element={<About />} />
             {/* Former standalone support pages — now sections of /about. */}
             <Route path="/contact" element={<Navigate to="/about#contact" replace />} />
             <Route path="/disclaimer" element={<Navigate to="/about#disclaimer" replace />} />
             <Route path="/report" element={<Navigate to="/about#contact" replace />} />
+            <Route
+              path="/terms"
+              element={
+                <Suspense fallback={null}>
+                  <TermsPage />
+                </Suspense>
+              }
+            />
+            {/* NewebPay merchant review + consumer-protection expectations: dedicated
+                paths for the policy sections, folded into /terms like /about's own
+                legacy redirects. */}
+            <Route path="/privacy" element={<Navigate to="/terms#privacy" replace />} />
+            <Route path="/refund" element={<Navigate to="/terms#refund" replace />} />
 
             {/* Public content — browsable without login so visitors + crawlers
                 can read it (soft wall). Personalized actions (bookmark, watchlist,
@@ -147,7 +203,6 @@ function App() {
             {/* Login-gated — personal surfaces with nothing to show logged out. */}
             <Route element={<RequireLogin />}>
               <Route path="/watchlist" element={<WatchlistPage />} />
-              <Route path="/profile" element={<ProfilePage />} />
               <Route path="/settings" element={<SettingsPage />} />
             </Route>
           </Route>

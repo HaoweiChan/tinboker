@@ -148,7 +148,7 @@ export const ArticleDetail: React.FC = () => {
 
       {/* Header */}
       <header className="mb-8">
-        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight leading-tight mb-3">
+        <h1 className="heading-accent text-2xl sm:text-3xl font-semibold tracking-tight leading-tight mb-3">
           {article.title}
         </h1>
         {article.subtitle && (

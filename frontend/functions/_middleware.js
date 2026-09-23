@@ -24,6 +24,19 @@
 
 const CRAWLER = /bot|crawl|spider|mediapartners|facebookexternalhit|facebot|twitterbot|\bline\b|slackbot|whatsapp|telegrambot|discordbot|pinterest|linkedinbot|redditbot|embedly|quora|skypeuripreview|applebot|googlebot|bingbot|baiduspider|yandex|duckduckbot/i;
 
+// Podcast 觀點 from the last week are members-only on the page, so they are left out
+// of the crawler body too — serving Googlebot what a reader is asked to pay for is
+// cloaking. Everything older stays free and indexable.
+// KEEP IN SYNC with src/lib/insightPaywall.ts (its check asserts this number).
+const INSIGHT_PAYWALL_DAYS = 7;
+const freeInsights = (rows) => {
+  const cutoff = Date.now() - INSIGHT_PAYWALL_DAYS * 86400e3;
+  return (rows || []).filter((i) => {
+    const t = Date.parse(i.podcast_launch_time || '');
+    return !Number.isFinite(t) || t <= cutoff;
+  });
+};
+
 const BRAND_IMG = 'https://tinboker.com/brand/tinboker-square-dark-1080.png';
 const CACHE_1H = { cf: { cacheTtl: 3600, cacheEverything: true } };
 const SITE = '聽播客 TinBoker';
@@ -150,8 +163,10 @@ const hms = (sec) => {
   const mm = `${m}`.padStart(2, '0'), ss = `${s}`.padStart(2, '0');
   return h ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 };
-// Footer links into the consolidated /about page (關於 / 聯絡 / 免責聲明 sections).
-const FOOTER = `<footer>${a('/about', '關於 TinBoker')} · ${a('/about#contact', '聯絡我們')} · ${a('/about#disclaimer', '免責聲明')}</footer>`;
+// Footer links into the consolidated /about page (關於 / 聯絡 / 免責聲明 sections) plus
+// the /terms policy page (NewebPay merchant review + consumer-protection expectations).
+const FOOTER = `<footer>${a('/about', '關於 TinBoker')} · ${a('/about#contact', '聯絡我們')} · ${a('/about#disclaimer', '免責聲明')}`
+  + ` · ${a('/terms', '服務條款')} · ${a('/terms#refund', '退款政策')} · ${a('/terms#privacy', '隱私權政策')}</footer>`;
 
 // Summary markdown → HTML. Only the constructs the pipeline emits: '#'/'##' headings
 // carrying '(#time:ms)' anchors, '[text](#tag:x)' links, paragraphs. The client strips the
@@ -216,15 +231,28 @@ const STATIC_META = {
   '/weekly': ['Podcast 週報', '每週一頁：台灣財經 Podcast 這一週聊了哪些個股與題材、多空怎麼變，由 TinBoker 結構化整理。'],
   '/articles': ['文章', '深度分析與市場觀察 — TinBoker 的財經文章。'],
   '/about': ['關於 TinBoker', 'TinBoker（聽播客）— 結合 Podcast 觀點與即時數據的財經平台。聯絡方式與免責聲明都在這一頁。'],
+  '/terms': ['服務條款與政策', 'TinBoker 服務條款、會員訂閱與付款、退款政策與隱私權政策。'],
 };
 
-// Old standalone support pages → sections of /about. 301 so crawlers fold them.
-const LEGACY_REDIRECT = { '/contact': '/about#contact', '/disclaimer': '/about#disclaimer', '/report': '/about#contact' };
+// Old standalone support pages → sections of /about, and the policy sections → /terms.
+// 301 so crawlers fold them.
+const LEGACY_REDIRECT = {
+  '/contact': '/about#contact', '/disclaimer': '/about#disclaimer', '/report': '/about#contact',
+  '/privacy': '/terms#privacy', '/refund': '/terms#refund',
+};
 
 const INDEX_BODY = {
   '/about': async () => ({
     body: '<h2>聯絡我們</h2><p>bug 回報、功能許願、產品建議或合作想法：電子郵件 contact@tinboker.com · Threads @tinboker · 客服回覆時間：週一至週五 11:00–17:00。</p>'
       + '<h2>免責聲明</h2><p>本網站所提供之所有資訊、數據、觀點與分析，僅供參考與學習用途，不構成任何形式的投資建議、要約、誘導或推薦。金融市場具有高度風險，過去的績效不代表未來的表現；TinBoker 團隊不對因使用本網站資訊而產生的任何損失負責。</p>',
+  }),
+  // Same convention as '/about' above: a short, real excerpt per section rather than
+  // the full page copy (kept in sync by hand — TermsPage.tsx is the source of truth).
+  '/terms': async () => ({
+    body: '<h2>服務條款</h2><p>本服務所有內容，皆為第三方公開言論與公開市場資料的整理與統計，不是對任何有價證券的推介、評等或買賣建議，也不保證任何報酬。投資決策及其結果由您自行負責。</p>'
+      + '<h2>會員訂閱與付款</h2><p>訂閱為每月自動續訂：首次訂閱時立即收取第一期費用，之後每月自動扣款，直到您取消為止。刷卡由藍新金流（NewebPay）處理，本服務不會經手或儲存您的完整卡號。</p>'
+      + '<h2>退款政策</h2><p>第一次訂閱本服務的會員，自首次付款日起七日內，可以來信申請全額退款，不需要理由。</p>'
+      + '<h2>隱私權政策</h2><p>我們不會出售您的個人資料，只在提供服務所必要的範圍內交由 Google、藍新金流、Cloudflare 處理。依個人資料保護法，您可以查詢、更正或刪除您的個人資料。</p>',
   }),
   '/': async (api, origin) => {
     const [rec, tr] = await Promise.all([
@@ -370,9 +398,12 @@ export async function metaFor(pathname, origin, api) {
     ]);
     const name = basic && basic.name ? `${basic.name}（${sym}）` : sym;
     const url = `${origin}/stock/${enc}`;
+    // The tally counts every mention (the page shows that total to everyone); only
+    // the readable 觀點 are restricted to the free window.
     const insights = ins || [];
+    const readable = freeInsights(insights);
     const t = tally(insights);
-    const latest = insights[0];
+    const latest = readable[0];
     // The description is the page's own numbers, so no two ticker pages read alike.
     const description = t.total && latest
       ? `${tallySentence(name, t)}最近：${latest.podcaster}（${day(latest.podcast_launch_time)}）${latest.bluf_thesis || ''}`.slice(0, 160)
@@ -380,7 +411,7 @@ export async function metaFor(pathname, origin, api) {
     const members = (secs && secs.items) || [];
     const body = (insights.length ? `<p>${esc(tallySentence(name, t))}</p>` : '')
       + (members.length ? `<h2>產業 / 題材</h2>${ul(members.map((s) => `${sectorLink(s)}${s.reason ? `：${esc(s.reason)}` : ''}`))}` : '')
-      + (insights.length ? `<h2>Podcast 觀點</h2>${ul(insights.map((i) =>
+      + (readable.length ? `<h2>Podcast 觀點</h2>${ul(readable.map((i) =>
         `${esc(day(i.podcast_launch_time))} · ${podcasterLink(i.podcaster)} · ${esc(sentimentZh(i.sentiment_label))}`
         + `${i.time_horizon ? ` · ${esc(i.time_horizon)}` : ''} · ${a(`/episode/${encodeURIComponent(i.episode_id)}`, i.bluf_thesis || '')}`))}` : '');
     return {
@@ -426,7 +457,7 @@ export async function metaFor(pathname, origin, api) {
     if (!w) return null;
     const url = `${origin}/weekly/${encodeURIComponent(week)}`;
     const range = `${w.start.replace(/-/g, '/')} – ${w.end.slice(5).replace('-', '/')}`;
-    const title = `${range} Podcast 週報`;
+    const title = `${(w.week || week).split('-').pop()} Podcast 週報：${range}`;
     const tickerName = (t) => (t.name ? `${t.name}（${t.ticker}）` : t.ticker);
     const description = `${w.start.replace(/-/g, '/')} 到 ${w.end.replace(/-/g, '/')}，${(w.podcasts || []).length} 個節目共 ${w.episode_count} 集。本週最常提到：${(w.tickers || []).slice(0, 5).map(tickerName).join('、')}。`;
     const body = `<p>${esc(description)}</p>`

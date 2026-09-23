@@ -1,20 +1,33 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Search } from 'lucide-react';
+import { Search, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
-import { Segmented, PodAvatar } from '@/components/redesign';
+import { ExploreTabs } from '@/components/layout/ExploreTabs';
+import { PodAvatar } from '@/components/redesign';
 import { getSortedPodcasts, type Podcast } from '@/services/api/podcasts';
 import { useEpisodeWindowDays, episodeCountWords } from '@/hooks/useEpisodeWindow';
 import { fetchWithFallback } from '@/services/api/migration';
+import { compareOptionalNumbers } from '@/lib/listSort';
 
-type Sort = 'popularity' | 'episodes' | 'recent';
+type Sort = 'popularity_rank' | 'episode_count' | 'subscriber_count';
+type Direction = 'asc' | 'desc';
+const columns: { key: Sort; label: string; title: string }[] = [
+  { key: 'episode_count', label: '集數', title: '已分析集數' },
+  { key: 'subscriber_count', label: '站內訂閱', title: '站內訂閱人數' },
+  { key: 'popularity_rank', label: 'Apple 排名', title: 'Apple Podcasts 台灣財經排行榜名次' },
+];
 
 export const PodcasterIndex: React.FC = () => {
   const [podcasts, setPodcasts] = useState<Podcast[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
-  const [sort, setSort] = useState<Sort>('popularity');
+  const [sort, setSort] = useState<Sort>('popularity_rank');
+  const [direction, setDirection] = useState<Direction>('asc');
+  const changeSort = (key: Sort) => {
+    setDirection(key === sort ? (direction === 'asc' ? 'desc' : 'asc') : key === 'popularity_rank' ? 'asc' : 'desc');
+    setSort(key);
+  };
 
   useEffect(() => {
     let alive = true;
@@ -25,24 +38,15 @@ export const PodcasterIndex: React.FC = () => {
       setPodcasts(Array.isArray(data) ? data : []);
       setLoading(false);
     })();
-    return () => {
-      alive = false;
-    };
+    return () => { alive = false; };
   }, []);
 
-  const list = useMemo(() => {
-    let arr = podcasts.filter((p) => !q || (p.name || '').toLowerCase().includes(q.toLowerCase()));
-    arr = [...arr].sort((a, b) => {
-      if (sort === 'episodes') return (b.episode_count || 0) - (a.episode_count || 0);
-      if (sort === 'recent') return (b.updated_at || 0) - (a.updated_at || 0);
-      // popularity: rank 1 first, unranked last, episode count as tiebreak
-      const ra = a.popularity_rank ?? Infinity;
-      const rb = b.popularity_rank ?? Infinity;
-      if (ra !== rb) return ra - rb;
-      return (b.episode_count || 0) - (a.episode_count || 0);
-    });
-    return arr;
-  }, [podcasts, q, sort]);
+  const list = useMemo(() => podcasts
+    .filter((p) => !q || (p.name || '').toLowerCase().includes(q.toLowerCase()))
+    .sort((a, b) => compareOptionalNumbers(a[sort], b[sort], direction)
+      || compareOptionalNumbers(a.episode_count, b.episode_count, 'desc')
+      || a.name.localeCompare(b.name, 'zh-TW')),
+  [podcasts, q, sort, direction]);
 
   const totalEpisodes = podcasts.reduce((s, p) => s + (p.episode_count || 0), 0);
   const countWords = episodeCountWords(useEpisodeWindowDays());
@@ -51,55 +55,62 @@ export const PodcasterIndex: React.FC = () => {
     <>
       <SEO title="所有節目" description="TinBoker 持續結構化分析的中文財經 Podcast。" />
       <PageContent>
-        <div className="flex items-baseline justify-between mb-1">
-          <h1 className="text-2xl font-semibold tracking-[-0.02em]">所有節目</h1>
-          {!loading && (
-            <div className="text-xs text-muted-foreground font-mono tabular-nums">
-              {podcasts.length} 個節目 · {countWords.before}{totalEpisodes.toLocaleString('en-US')} {countWords.after}
-            </div>
-          )}
+        <ExploreTabs />
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3 mb-1">
+          <h1 className="heading-accent text-2xl font-semibold tracking-[-0.02em]">所有節目</h1>
+          {!loading && <div className="text-xs text-muted-foreground font-mono tabular-nums">{podcasts.length} 個節目 · {countWords.before}{totalEpisodes.toLocaleString('en-US')} {countWords.after}</div>}
         </div>
         <p className="text-base text-muted-foreground max-w-[60ch] mb-4">TinBoker 持續結構化的中文財經 podcast。點任一節目進入完整集數列表與情緒分析。</p>
-
-        <div className="flex gap-2.5 items-center mb-4 flex-wrap">
-          <label className="flex items-center gap-2 flex-1 min-w-[200px] bg-card border border-border rounded-md px-3 py-2">
-            <Search size={14} className="text-muted-foreground shrink-0" />
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜尋節目名稱…" className="flex-1 bg-transparent outline-none text-sm" />
-          </label>
-          <Segmented options={[{ value: 'popularity', label: '人氣' }, { value: 'episodes', label: '集數' }, { value: 'recent', label: '最近更新' }] as const} value={sort} onChange={setSort} />
-        </div>
-
+        <label className="mb-4 flex min-w-0 items-center gap-2 rounded-md border border-border bg-card px-3 py-2 focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/30">
+          <Search size={14} className="shrink-0 text-muted-foreground" />
+          <input aria-label="搜尋節目名稱" value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜尋節目名稱…" className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground" />
+        </label>
         {loading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="bg-card border border-border rounded-md p-4 h-[88px] animate-pulse" />
-            ))}
+          <div className="overflow-hidden rounded-md border border-border bg-card">
+            {Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-16 animate-pulse border-b border-border last:border-0" />)}
           </div>
         ) : list.length === 0 ? (
           <div className="bg-card border border-border rounded-md p-10 text-center text-sm text-muted-foreground">{q ? `找不到符合「${q}」的節目` : '目前沒有節目資料。'}</div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {list.map((p) => (
-              <Link key={p.id || p.name} to={`/podcaster/${encodeURIComponent(p.name)}`} className="flex items-center gap-3.5 bg-card border border-border rounded-md p-4 transition-colors hover:border-foreground/25">
-                <PodAvatar src={p.image_url} name={p.name} size={48} className="w-12 h-12 rounded-[10px] object-cover shrink-0" />
-                <div className="min-w-0 flex-1">
-                  <div className="text-lg font-semibold tracking-[-0.01em] truncate">{p.name}</div>
-                  <div className="text-2xs text-muted-foreground font-mono tabular-nums mt-1">{countWords.before}{(p.episode_count || 0).toLocaleString('en-US')} {countWords.after}</div>
-                </div>
-                {p.popularity_rank != null && (
-                  <div
-                    className={`shrink-0 font-mono tabular-nums font-medium text-xs leading-none px-2 py-1 rounded border ${
-                      p.popularity_rank <= 3
-                        ? 'border-primary/50 text-primary bg-primary/10'
-                        : 'border-border text-muted-foreground'
-                    }`}
-                    title="Apple Podcasts 台灣財經排行榜名次"
-                  >
-                    Apple 財經榜 #{p.popularity_rank}
-                  </div>
-                )}
-              </Link>
-            ))}
+          <div className="overflow-hidden rounded-md border border-border bg-card">
+            <table className="w-full table-fixed border-collapse">
+              <caption className="sr-only">節目列表；點擊數字欄位標題可切換排序方向</caption>
+              <colgroup><col /><col className="w-12 sm:w-24" /><col className="w-[68px] sm:w-28" /><col className="w-[76px] sm:w-32" /></colgroup>
+              <thead className="border-b border-border bg-muted/30">
+                <tr>
+                  <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-muted-foreground sm:px-4">節目</th>
+                  {columns.map((column) => {
+                    const active = sort === column.key;
+                    const Icon = active ? (direction === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown;
+                    const nextDirection = active ? (direction === 'asc' ? 'desc' : 'asc') : column.key === 'popularity_rank' ? 'asc' : 'desc';
+                    return (
+                      <th key={column.key} scope="col" aria-sort={active ? (direction === 'asc' ? 'ascending' : 'descending') : 'none'} className="pr-2 text-right last:pr-3 sm:pr-4">
+                        <button type="button" onClick={() => changeSort(column.key)} title={column.title}
+                          aria-label={`${column.title}排序${active ? `，目前由${direction === 'asc' ? '小到大' : '大到小'}` : ''}，點擊由${nextDirection === 'asc' ? '小到大' : '大到小'}排序`}
+                          className={`inline-flex min-h-11 items-center justify-end gap-0.5 whitespace-nowrap text-[10px] font-medium outline-none focus-visible:ring-2 focus-visible:ring-primary sm:gap-1 sm:text-xs ${active ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}>
+                          {column.label}<Icon size={10} aria-hidden="true" className="shrink-0" />
+                        </button>
+                      </th>
+                    );
+                  })}
+                </tr>
+              </thead>
+              <tbody>
+                {list.map((p) => (
+                  <tr key={p.id || p.name} className="border-b border-border/60 last:border-0 hover:bg-muted/20">
+                    <th scope="row" className="px-3 py-3 text-left font-medium sm:px-4">
+                      <Link to={`/podcaster/${encodeURIComponent(p.name)}`} className="flex min-h-11 items-center gap-2 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-primary sm:gap-3">
+                        <PodAvatar src={p.image_url} name={p.name} size={32} className="h-8 w-8 shrink-0 rounded-md object-cover" />
+                        <span className="min-w-0 break-words text-sm leading-snug sm:text-base">{p.name}</span>
+                      </Link>
+                    </th>
+                    <td className="pr-2 text-right text-xs tabular-nums sm:pr-4 sm:text-sm" title={`${countWords.before}${p.episode_count} ${countWords.after}`}>{p.episode_count.toLocaleString('zh-TW')}</td>
+                    <td className="pr-2 text-right text-xs tabular-nums sm:pr-4 sm:text-sm" aria-label={p.subscriber_count != null ? `站內 ${p.subscriber_count.toLocaleString('zh-TW')} 人訂閱` : '站內訂閱數暫無資料'}>{p.subscriber_count?.toLocaleString('zh-TW') ?? '—'}</td>
+                    <td className={`pr-3 text-right text-xs tabular-nums sm:pr-4 sm:text-sm ${p.popularity_rank != null && p.popularity_rank <= 3 ? 'font-semibold text-primary' : 'text-muted-foreground'}`} title="Apple Podcasts 台灣財經排行榜名次">{p.popularity_rank != null ? `#${p.popularity_rank}` : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </PageContent>

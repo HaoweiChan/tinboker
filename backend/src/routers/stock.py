@@ -17,9 +17,12 @@ from src.database.postgres import get_session
 from src.database.models import StockTranslation, StockDailyClose, StockDailyOHLC, StockInstitutionalDaily
 from src.utils.market import infer_market
 from src.services.stock_close_refresh import batch_read_latest_closes, change_pct_from_pairs
+from src.services.mention_sync import _closes_from, _is_price_break
 from src.cache.redis_client import cache_get, cache_set
 from src.cache.cache_config import CACHE_TTL
 from src.routers.screener import require_internal_key
+from src.utils.dependencies import require_member
+from src.models.user import UserResponse
 
 logger = logging.getLogger(__name__)
 
@@ -137,33 +140,6 @@ def get_daily_institutional(
         }
         for r in rows
     ]
-
-
-@router.get("", response_model=List[dict])
-async def get_sorted_stocks(
-    sort_by: str = Query(default="ticker", description="Sort field"),
-    limit: int = Query(default=50, ge=1, le=200, description="Maximum number of stocks to return (1-200)"),
-    q: Optional[str] = Query(default=None, description="Search query (filters by ticker or name)")
-):
-    """
-    Get sorted stocks list with optional search
-    
-    Query params:
-    - sort_by: Sort field (ticker, name, price, change_percent, market_cap)
-    - limit: Maximum number of stocks to return (default: 50, max: 200)
-    - q: Optional search query to filter by ticker or name (case-insensitive)
-    """
-    stocks = await stock_service.get_sorted_stocks_async(sort_by=sort_by, limit=limit)
-    
-    # Apply search filter if provided
-    if q:
-        q_lower = q.lower()
-        stocks = [
-            stock for stock in stocks
-            if q_lower in stock.get("ticker", "").lower() or q_lower in stock.get("name", "").lower()
-        ]
-    
-    return stocks
 
 
 @router.get("/batch-prices")
@@ -383,7 +359,7 @@ async def get_batch_prices_since(
         try:
             return await asyncio.wait_for(_get_reference_close(t, d), timeout=10)
         except (asyncio.TimeoutError, Exception):
-            logger.debug("reference close failed for %s@%s", t, d, exc_info=True)
+            logger.warning("reference close failed for %s@%s", t, d, exc_info=True)
             return None
 
     ref_closes, latest = await asyncio.gather(
@@ -412,10 +388,65 @@ async def get_batch_prices_since(
 WINDOW_DAYS = (7, 30, 90)
 
 
+# Sentinel: this ticker's split-guard series could not be read (as opposed to a
+# genuine empty list — no rows, which is not a failure). Passed into
+# `_window_returns` so it fails closed (raises → `_win_safe` returns the all-None
+# dict) instead of silently serving an un-guarded, possibly-wrong return.
+_SERIES_READ_FAILED = object()
+
+
+def _read_series_since(ticker: str, since: str) -> list:
+    """Daily close series for *ticker* from *since* on (ascending), DB-only.
+
+    Thin wrapper around ``mention_sync._closes_from`` (same warm tables, same merge
+    rule). Fails CLOSED: a DB error propagates rather than being swallowed into an
+    empty list — an empty list must mean "no rows", never "couldn't check", because
+    the caller treats an empty series as "no break found" and serves the raw return.
+    """
+    for db in get_session():
+        return _closes_from(db, ticker, since)
+    return []
+
+
+async def _resolve_price_break_date(
+    ticker: str,
+    guard_start: str,
+    baseline_close: float,
+    series: Optional[list],
+) -> Optional[str]:
+    """First date after *guard_start* where a close in *series* jumps outside
+    ``mention_sync.PRICE_BREAK_BAND`` vs. the previous close (``prev`` seeded with
+    *baseline_close*) — a stock split or similar (6669's 2026-09-02 3-for-1 is the
+    motivating case). Same rule and warm tables as
+    ``mention_sync.compute_trading_day_returns``, so a pick can't show a return that
+    path would have nulled.
+
+    *series* is normally pre-fetched once per ticker by the batch route and shared
+    across that ticker's picks (see ``get_batch_prices_windows``); pass ``None`` to
+    have this read its own, so the function stays independently testable. Pass
+    ``_SERIES_READ_FAILED`` when the caller already tried and the read failed, so
+    this pick fails closed too instead of silently skipping the guard — this raises,
+    same as a raw DB error from the ``None`` branch, so `_win_safe` catches either.
+    """
+    if series is _SERIES_READ_FAILED:
+        raise RuntimeError(f"split-guard series unavailable for {ticker}")
+    if series is None:
+        series = await asyncio.to_thread(_read_series_since, ticker, guard_start)
+    prev = baseline_close
+    for date, close in series:
+        if date <= guard_start:
+            continue
+        if _is_price_break(prev, close):
+            return date
+        prev = close
+    return None
+
+
 async def _window_returns(
     ticker: str,
     reference_ms: int,
     current_price: Optional[float],
+    series: Optional[list] = None,
 ) -> dict:
     """Forward 7/30/90D returns measured *from* the mention date, plus mention→now.
 
@@ -423,34 +454,50 @@ async def _window_returns(
     ``None`` until it has fully elapsed (so the UI can render "—" like the competitor),
     or when a close is missing. Reuses ``_get_reference_close`` (DB → Redis → API), so
     after warm-up this costs no external calls.
+
+    Split guard: every window whose resolved close lands on/after the first
+    ``_resolve_price_break_date`` past the baseline is left ``None`` too — closes in
+    ``stock_daily_ohlc`` are unadjusted, so a return spanning a split (or similar
+    capital change) would otherwise compare pre- and post-split prices. *series* lets
+    the caller share one pre-fetched close series across every pick for this ticker
+    (see ``get_batch_prices_windows``); omit it to have this read its own.
     """
     result: dict[str, Optional[float]] = {
         "baseline": None, "d7": None, "d30": None, "d90": None, "since": None,
     }
     mention_dt = datetime.utcfromtimestamp(reference_ms / 1000)
-    baseline = await _get_reference_close(ticker, mention_dt.strftime("%Y-%m-%d"))
+    mention_date_str = mention_dt.strftime("%Y-%m-%d")
+    baseline = await _get_reference_close(ticker, mention_date_str)
     if not baseline or baseline <= 0:
         return result
     result["baseline"] = baseline
 
     now = datetime.utcnow()
+    base_date = await asyncio.to_thread(_read_close_date_before, ticker, mention_date_str)
+    # Unresolved base_date (baseline came from an API fetch not found via the 7-day
+    # DB lookback) must not disable the guard — approximate with the mention date.
+    guard_start = base_date or mention_date_str
+    break_date = await _resolve_price_break_date(ticker, guard_start, baseline, series)
+
     for n in WINDOW_DAYS:
         end_dt = mention_dt + timedelta(days=n)
         if end_dt > now:
             continue  # window not complete yet → leave None ("—")
-        end_close = await _get_reference_close(ticker, end_dt.strftime("%Y-%m-%d"))
-        if end_close and end_close > 0:
+        end_date_str = end_dt.strftime("%Y-%m-%d")
+        end_close = await _get_reference_close(ticker, end_date_str)
+        if end_close and end_close > 0 and not (break_date and end_date_str >= break_date):
             result[f"d{n}"] = round((end_close - baseline) / baseline * 100, 2)
 
     if current_price and current_price > 0:
         # A mention on Friday night or a weekend has no close after its baseline yet:
         # "since" would be the baseline against itself (+0.00%). Leave it None so the
         # card says the market hasn't closed since, instead of showing a fake flat.
-        base_date, latest_date = await asyncio.gather(
-            asyncio.to_thread(_read_close_date_before, ticker, mention_dt.strftime("%Y-%m-%d")),
-            asyncio.to_thread(_read_close_date_before, ticker, now.strftime("%Y-%m-%d")),
-        )
+        latest_date = await asyncio.to_thread(_read_close_date_before, ticker, now.strftime("%Y-%m-%d"))
         if base_date and latest_date and latest_date <= base_date:
+            return result
+        # A break with no resolvable latest_date can't be proven clear of it either —
+        # don't emit a "since" we can't back up.
+        if break_date and (latest_date is None or latest_date >= break_date):
             return result
         result["since"] = round((current_price - baseline) / baseline * 100, 2)
     return result
@@ -459,8 +506,14 @@ async def _window_returns(
 @router.post("/batch-prices-windows")
 async def get_batch_prices_windows(
     body: BatchPricesSinceRequest,
+    _user: UserResponse = Depends(require_member),
 ):
     """Forward 7/30/90D (+ since) returns per *pick*, keyed by ``"{TICKER}:{reference_ms}"``.
+
+    Member-only (401 anonymous, 402 non-member) — this powers the paid /picks page and
+    the same block on PodcasterPage; `require_member` is a FastAPI dependency, resolved
+    before the function body runs, so a non-member never reaches the Redis-cached body
+    below (and can't be served a member's cached response either).
 
     Unlike ``/batch-prices-since`` (one row per ticker), each (ticker, mention-date) pair
     is computed independently so the same ticker mentioned by different episodes keeps its
@@ -478,8 +531,10 @@ async def get_batch_prices_windows(
         return {}
 
     # --- Response-level Redis cache ---
+    # v2: bumped so a pre-split-guard cached body (up to 30 min old, e.g. 6669's bad
+    # d30/since) is never served after this fix deploys.
     pairs_key = ",".join(f"{t}:{ms}" for t, ms in sorted(pairs))
-    resp_cache_key = f"batch_windows:{hashlib.md5(pairs_key.encode()).hexdigest()}"
+    resp_cache_key = f"batch_windows_v2:{hashlib.md5(pairs_key.encode()).hexdigest()}"
     cached_resp = await cache_get(resp_cache_key)
     if cached_resp:
         try:
@@ -498,15 +553,45 @@ async def get_batch_prices_windows(
         try:
             return await asyncio.wait_for(_get_reference_close(t, today_str), timeout=12)
         except (asyncio.TimeoutError, Exception):
+            logger.warning("latest close failed for %s@%s", t, today_str, exc_info=True)
             return None
 
-    latest_list = await asyncio.gather(*[_latest_close_safe(t) for t in distinct_tickers])
+    # Split-guard series: ONE read per distinct ticker, not per pick — a ticker
+    # mentioned by N episodes shares one series instead of N identical range scans.
+    # Starts 7 days before the ticker's earliest mention in this request (covers the
+    # baseline lookback); a read failure marks the ticker so every one of its picks
+    # fails closed (see `_resolve_price_break_date`'s `_SERIES_READ_FAILED` handling)
+    # instead of silently serving an un-guarded return.
+    earliest_ms: dict[str, int] = {}
+    for t, ms in pairs:
+        if t not in earliest_ms or ms < earliest_ms[t]:
+            earliest_ms[t] = ms
+
+    async def _series_safe(t: str):
+        start = (datetime.utcfromtimestamp(earliest_ms[t] / 1000) - timedelta(days=7)).strftime("%Y-%m-%d")
+        try:
+            return await asyncio.to_thread(_read_series_since, t, start)
+        except Exception:
+            logger.warning("split-guard series read failed for %s@%s", t, start, exc_info=True)
+            return _SERIES_READ_FAILED
+
+    latest_list, series_list = await asyncio.gather(
+        asyncio.gather(*[_latest_close_safe(t) for t in distinct_tickers]),
+        asyncio.gather(*[_series_safe(t) for t in distinct_tickers]),
+    )
     latest = dict(zip(distinct_tickers, latest_list))
+    series_map = dict(zip(distinct_tickers, series_list))
 
     async def _win_safe(t: str, ms: int) -> dict:
         try:
-            return await asyncio.wait_for(_window_returns(t, ms, latest.get(t)), timeout=15)
+            return await asyncio.wait_for(
+                _window_returns(t, ms, latest.get(t), series=series_map.get(t)), timeout=15,
+            )
         except (asyncio.TimeoutError, Exception):
+            logger.warning(
+                "window returns failed for %s@%s", t,
+                datetime.utcfromtimestamp(ms / 1000).strftime("%Y-%m-%d"), exc_info=True,
+            )
             return {"baseline": None, "d7": None, "d30": None, "d90": None, "since": None}
 
     results = await asyncio.gather(*[_win_safe(t, ms) for t, ms in pairs])

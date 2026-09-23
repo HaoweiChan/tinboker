@@ -125,7 +125,6 @@ async function main() {
   
   // Test Stock Endpoints
   console.log('\n📈 Testing Stock Endpoints...');
-  await validateEndpoint('GET /api/stocks', 'GET', '/api/stocks');
   await validateEndpoint(
     'GET /api/stocks/{ticker}',
     'GET',
