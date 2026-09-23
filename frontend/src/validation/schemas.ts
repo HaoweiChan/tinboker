@@ -664,6 +664,7 @@ export const BillingPlansSchema = z.object({
   founding_remaining: z.number(),
   founding_open: z.boolean(),
   checkout_open: z.boolean(),
+  gateway_env: z.enum(['sandbox', 'production']).optional(),
 });
 
 export type BillingPlans = z.infer<typeof BillingPlansSchema>;

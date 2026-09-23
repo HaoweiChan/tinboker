@@ -6,6 +6,7 @@ Was Firestore ``users/{user_id}`` until P3 of the Firestore exit
 callers (routers/user.py, routers/auth.py, utils/dependencies.py) were not touched.
 """
 import uuid
+from contextlib import nullcontext
 from typing import Dict, Optional
 from datetime import datetime, timezone
 
@@ -73,6 +74,13 @@ def migrate_merged_sector_tag_subscriptions() -> int:
 def _to_user_response(row: User) -> UserResponse:
     """Convert a User row to the API/response model."""
     prefs_data = row.notification_preferences or {}
+    member_until = row.member_until
+    from src.config import settings
+    if settings.environment in ("development", "staging") and row.email.lower() in {e.lower() for e in settings.admin_emails}:
+        from src.services.billing import sandbox_member_until
+        sandbox_until = sandbox_member_until(row.id)
+        actual_until = member_until.replace(tzinfo=timezone.utc) if member_until and member_until.tzinfo is None else member_until
+        member_until = max(filter(None, [actual_until, sandbox_until]), default=None)
     return UserResponse(
         id=row.id,
         google_id=row.google_id,
@@ -86,7 +94,7 @@ def _to_user_response(row: User) -> UserResponse:
         # dismissed_picks shipped missing from /me while its own toggle worked, so the
         # field fell back to the model's default [] and a fresh login lost it.
         **{field: (getattr(row, field) or []) for field in ARRAY_FIELDS},
-        member_until=row.member_until,
+        member_until=member_until,
         notification_preferences=NotificationPreferences(
             new_episodes=prefs_data.get("new_episodes", True),
             stock_mentions=prefs_data.get("stock_mentions", True),
@@ -178,7 +186,7 @@ def update_user(
         raise Exception(f"Failed to update user: {e}") from e
 
 
-def set_member_until(email: str, member_until: Optional[datetime]) -> Optional[UserResponse]:
+def set_member_until(email: str, member_until: Optional[datetime], *, session: Optional[Session] = None) -> Optional[UserResponse]:
     """Admin manual grant/revoke: set (or clear, with `None`) a user's membership
     expiry by email. Returns None if no such user.
 
@@ -193,7 +201,7 @@ def set_member_until(email: str, member_until: Optional[datetime]) -> Optional[U
             else member_until.astimezone(timezone.utc)
         )
     try:
-        with session_scope() as db:
+        with (nullcontext(session) if session is not None else session_scope()) as db:
             row = db.query(User).filter(func.lower(User.email) == email.lower()).first()
             if not row:
                 return None

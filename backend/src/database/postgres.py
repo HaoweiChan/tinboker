@@ -136,6 +136,19 @@ def create_all_tables():
     
     logger.info("Creating all database tables...")
     Base.metadata.create_all(bind=engine)
+    # Billing PR 3b: safely upgrade the pre-existing subscription table and scope
+    # outstanding mandates by gateway environment. DDL is transactionally applied.
+    with engine.begin() as conn:
+        if engine.dialect.name == "postgresql":
+            conn.execute(text("ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS paid_until TIMESTAMPTZ"))
+        elif engine.dialect.name == "sqlite":
+            billing_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(subscriptions)"))}
+            if "paid_until" not in billing_cols:
+                conn.execute(text("ALTER TABLE subscriptions ADD COLUMN paid_until TIMESTAMP"))
+        conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_one_open_sub_per_user_env "
+                          "ON subscriptions (user_id, gateway_env) "
+                          "WHERE status IN ('pending', 'active', 'cancelling')"))
+        conn.execute(text("DROP INDEX IF EXISTS uq_one_active_sub_per_user"))
     # Add columns that may not exist on pre-existing tables (idempotent).
     if engine.dialect.name == "postgresql":
         with engine.connect() as conn:
