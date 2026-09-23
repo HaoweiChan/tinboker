@@ -327,6 +327,11 @@ class Settings(BaseSettings):
     # default; LOG_LEVEL=INFO on a container turns the warmers' own reporting back on.
     log_level: str = "WARNING"
 
+    # Public prelaunch pricing; payment processing is not enabled by these values.
+    membership_list_price: int = Field(default=199, gt=0)
+    membership_founding_price: int = Field(default=99, gt=0)
+    membership_founding_limit: int = Field(default=100, ge=0)
+
     # ==================== Release scoping ====================
     # Restrict the public podcast catalog to a launch subset. Each value is a
     # content_sources.language code (e.g. "zh-TW"). Empty list = no language

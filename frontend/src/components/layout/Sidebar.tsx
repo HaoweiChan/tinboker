@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Home, Mic, LineChart, TrendingUp, Hash, Info, Bookmark, Headphones, Heart, Bell, CalendarDays } from 'lucide-react';
+import { Home, Mic, LineChart, TrendingUp, Hash, Info, Bookmark, Headphones, Heart, Bell, CalendarDays, FileText, Mail } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { AppLogo } from '@/components/logo/AppLogo';
 import { useUser } from '@/store/useAppStore';
@@ -55,6 +55,8 @@ const SECTIONS: readonly NavSection[] = [
     title: '支援',
     items: [
       // One page: 關於 / 聯絡我們 / 免責聲明 are sections of /about.
+      { to: '/membership', label: '服務與方案', icon: FileText },
+      { to: '/contact', label: '客服聯絡', icon: Mail },
       { to: '/about', label: '關於', icon: Info },
     ],
   },
