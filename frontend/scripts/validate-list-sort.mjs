@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import { build } from 'esbuild';
+import vm from 'node:vm';
+const result = await build({ entryPoints: ['src/lib/listSort.ts'], bundle: true, write: false, format: 'cjs', platform: 'node' });
+const runtime = { module: { exports: {} } };
+vm.runInNewContext(result.outputFiles[0].text, runtime);
+const { compareOptionalNumbers: compare } = runtime.module.exports;
+const rows = [{v:null},{v:0},{v:100},{v:33},{v:undefined},{v:33}];
+assert.deepEqual([...rows].sort((a,b)=>compare(a.v,b.v,'desc')).map(r=>r.v), [100,33,33,0,null,undefined]);
+assert.deepEqual([...rows].sort((a,b)=>compare(a.v,b.v,'asc')).map(r=>r.v), [0,33,33,100,null,undefined]);
+console.log('PASS: ascending, descending, ties, zero, and missing values last');

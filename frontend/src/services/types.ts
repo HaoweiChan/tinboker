@@ -466,6 +466,9 @@ export type SentimentLabel =
   | 'STRONG_BEARISH';
 
 export interface TickerTrending {
+  /** Latest own-history attention percentile; null when history is insufficient. */
+  attention_level?: number | null;
+  attention_as_of?: string | null;
   ticker: string;
   /** zh-TW display name (台積電, 輝達, …) when available — buzz endpoint only. */
   name?: string | null;

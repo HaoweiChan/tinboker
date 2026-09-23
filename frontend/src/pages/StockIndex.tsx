@@ -1,32 +1,20 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Search, ChevronRight } from 'lucide-react';
+import { Search, ChevronRight, ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
 import { ExploreTabs } from '@/components/layout/ExploreTabs';
-import { Segmented, SentimentChip } from '@/components/redesign';
 import { getRecentBuzz, type RecentBuzz } from '@/services/api/podcasts';
-import type { SentimentLabel } from '@/services/types';
 import { fetchWithFallback } from '@/services/api/migration';
-import type { Sentiment } from '@/lib/sentiment';
 import { inferStockMarket } from '@/utils/stockDisplay';
 import { StockIdentity } from '@/components/common/StockIdentity';
 import { useStockSummaries } from '@/hooks/useStockSummaries';
 import { TickerAvatar } from '@/components/common/TickerAvatar';
 
+import { compareOptionalNumbers } from '@/lib/listSort';
+
+type StockSort = 'count' | 'attentionLevel';
 type Market = 'all' | 'TW' | 'US';
-type Sort = 'mentions' | 'sentiment';
-
-// Stable rank for the "sort by sentiment" segmented control. Spec § 5.3 forbids
-// exposing sentiment_score on the wire, so we sort on the label tier locally.
-const LABEL_RANK: Record<SentimentLabel, number> = {
-  STRONG_BULLISH: 5,
-  BULLISH: 4,
-  NEUTRAL: 3,
-  BEARISH: 2,
-  STRONG_BEARISH: 1,
-};
-
 // Short market badge per row, keyed by the canonical market inference. KR uses a
 // neutral chip; 6-digit codes (005930 Samsung, 000660 SK Hynix) were previously
 // mislabeled TW by the all-numeric heuristic.
@@ -35,18 +23,13 @@ const MARKET_BADGE: Record<ReturnType<typeof inferStockMarket>, { label: string;
   US: { label: 'US', cls: 'bg-accent-info-soft text-accent-info' },
   KR: { label: 'KR', cls: 'bg-muted text-muted-foreground' },
 };
-function labelToSentiment(label: SentimentLabel): Sentiment {
-  if (label === 'STRONG_BULLISH' || label === 'BULLISH') return 'BULLISH';
-  if (label === 'STRONG_BEARISH' || label === 'BEARISH') return 'BEARISH';
-  return 'NEUTRAL';
-}
-
 interface Row {
   ticker: string;
   name: string;
   count: number;
-  sentimentLabel: SentimentLabel;
   lastMentioned: string;
+  attentionLevel: number | null;
+  attentionAsOf: string | null;
 }
 
 export const StockIndex: React.FC = () => {
@@ -54,7 +37,10 @@ export const StockIndex: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
   const [market, setMarket] = useState<Market>('all');
-  const [sort, setSort] = useState<Sort>('mentions');
+  const [sort, setSort] = useState<{ key: StockSort; direction: 'asc' | 'desc' }>({ key: 'count', direction: 'desc' });
+  const toggleSort = (key: StockSort) => setSort((current) => ({
+    key, direction: current.key === key && current.direction === 'desc' ? 'asc' : 'desc',
+  }));
 
   useEffect(() => {
     let alive = true;
@@ -72,8 +58,9 @@ export const StockIndex: React.FC = () => {
           ticker: t.ticker,
           name: t.name || t.ticker,
           count: t.count,
-          sentimentLabel: LABEL_RANK[t.sentiment_label] ? t.sentiment_label : ('NEUTRAL' as SentimentLabel),
           lastMentioned: String(t.last_mentioned ?? ''),
+          attentionLevel: t.attention_level ?? null,
+          attentionAsOf: t.attention_as_of ?? null,
         })),
       );
       setLoading(false);
@@ -84,7 +71,7 @@ export const StockIndex: React.FC = () => {
   }, []);
 
   const list = useMemo(() => {
-    let arr = rows.filter((r) => {
+    const arr = rows.filter((r) => {
       if (market !== 'all' && inferStockMarket(r.ticker) !== market) return false;
       if (q) {
         const s = q.toLowerCase();
@@ -92,12 +79,7 @@ export const StockIndex: React.FC = () => {
       }
       return true;
     });
-    arr = [...arr].sort((a, b) =>
-      sort === 'mentions'
-        ? b.count - a.count
-        : LABEL_RANK[b.sentimentLabel] - LABEL_RANK[a.sentimentLabel],
-    );
-    return arr;
+    return [...arr].sort((a, b) => compareOptionalNumbers(a[sort.key], b[sort.key], sort.direction) || a.ticker.localeCompare(b.ticker));
   }, [rows, q, market, sort]);
 
   const visibleTickers = useMemo(() => list.slice(0, 100).map((r) => r.ticker), [list]);
@@ -112,23 +94,53 @@ export const StockIndex: React.FC = () => {
           <h1 className="heading-accent text-2xl font-semibold tracking-[-0.02em]">所有個股</h1>
           {!loading && <div className="text-xs text-muted-foreground font-mono tabular-nums">{rows.length} 檔（近 30 天提及）</div>}
         </div>
-        <p className="text-base text-muted-foreground max-w-[60ch] mb-4">最近 30 天被 TinBoker 追蹤的 Podcast 提及的所有個股，依提及次數排序。點任一檔進入情緒時間軸與相關集數。</p>
+        <p className="text-base text-muted-foreground max-w-[60ch] mb-4">最近 30 天被 TinBoker 追蹤的 Podcast 提及的所有個股。點欄名排序，點個股查看走勢與相關集數。</p>
 
-        <div className="flex gap-2.5 items-center mb-4 flex-wrap">
-          <label className="flex items-center gap-2 flex-1 min-w-[180px] bg-card border border-border rounded-md px-3 py-2">
-            <Search size={14} className="text-muted-foreground shrink-0" />
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜尋代號或名稱…" className="flex-1 bg-transparent outline-none text-sm" />
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+          <label className="flex min-w-0 flex-1 items-center gap-2 rounded-md border border-border bg-card px-3 py-2 focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/30">
+            <Search size={14} className="shrink-0 text-muted-foreground" />
+            <input aria-label="搜尋代號或名稱" value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜尋代號或名稱…" className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground" />
           </label>
-          <Segmented options={[{ value: 'all', label: '全部' }, { value: 'TW', label: '台股' }, { value: 'US', label: '美股' }] as const} value={market} onChange={setMarket} />
-          <Segmented options={[{ value: 'mentions', label: '提及' }, { value: 'sentiment', label: '情緒' }] as const} value={sort} onChange={setSort} />
+          <div className="flex items-center justify-between gap-2">
+            <div role="group" aria-label="股票市場" className="flex shrink-0 items-center gap-1.5">
+              {([{ value: 'all', label: '全部' }, { value: 'TW', label: '台股' }, { value: 'US', label: '美股' }] as const).map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  aria-pressed={market === option.value}
+                  onClick={() => setMarket(option.value)}
+                  className={`min-h-10 whitespace-nowrap rounded-md border px-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 ${market === option.value ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border bg-transparent text-muted-foreground hover:border-muted-foreground/40 hover:text-foreground'}`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
 
+        <details className="mb-3 text-xs text-muted-foreground">
+          <summary className="w-fit cursor-pointer rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50">聲量水位怎麼看？</summary>
+          <p className="mt-2 max-w-[60ch] leading-relaxed">0–100，比較個股目前與自身近一年的討論聲量。越高代表近期越受關注，不代表看多或預期報酬。「—」表示資料不足或暫無資料。</p>
+        </details>
         <div className="bg-card border border-border rounded-md overflow-hidden">
-          <div className="grid grid-cols-[1fr_52px_60px_22px] gap-2.5 items-center px-4 py-2.5 text-2xs font-medium text-muted-foreground uppercase tracking-[0.04em] border-b border-border font-mono">
+          <div className="grid grid-cols-[minmax(0,1fr)_44px_72px] gap-4 items-center px-3 py-2.5 sm:grid-cols-[1fr_52px_100px_22px] sm:gap-2.5 sm:px-4 text-2xs font-medium text-muted-foreground uppercase tracking-[0.04em] border-b border-border font-mono">
             <span>個股</span>
-            <span className="text-right">提及</span>
-            <span className="text-right">情緒</span>
-            <span />
+            {([{ key: 'count', label: '提及' }, { key: 'attentionLevel', label: '聲量水位' }] as const).map((column) => {
+              const active = sort.key === column.key;
+              const Icon = active ? (sort.direction === 'desc' ? ArrowDown : ArrowUp) : ArrowUpDown;
+              return (
+                <button
+                  key={column.key}
+                  type="button"
+                  onClick={() => toggleSort(column.key)}
+                  aria-label={`${column.label}排序${active ? `，目前${sort.direction === 'desc' ? '由高至低' : '由低至高'}` : ''}，點擊${active && sort.direction === 'desc' ? '由低至高' : '由高至低'}`}
+                  className={`-my-2.5 flex min-h-11 items-center justify-end gap-0.5 whitespace-nowrap rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 ${active ? 'text-primary' : 'hover:text-foreground'}`}
+                >
+                  {column.label}<Icon size={12} aria-hidden="true" className="shrink-0" />
+                </button>
+              );
+            })}
+            <span className="hidden sm:block" />
           </div>
           {loading ? (
             Array.from({ length: 8 }).map((_, i) => <div key={i} className="h-[45px] border-b border-border last:border-b-0 animate-pulse bg-muted/30" />)
@@ -143,20 +155,29 @@ export const StockIndex: React.FC = () => {
                 <Link
                   key={r.ticker}
                   to={`/stock/${encodeURIComponent(r.ticker)}`}
-                  className="grid grid-cols-[1fr_52px_60px_22px] gap-2.5 items-center px-4 py-3.5 border-b border-border last:border-b-0 hover:bg-muted transition-colors"
+                  className="grid grid-cols-[minmax(0,1fr)_44px_72px] gap-4 items-center px-3 py-2.5 sm:grid-cols-[1fr_52px_100px_22px] sm:gap-2.5 sm:px-4 border-b border-border last:border-b-0 hover:bg-muted transition-colors"
                 >
-                  <span className="min-w-0 flex items-center gap-2.5">
+                  <span className="min-w-0 flex items-center gap-2 sm:gap-2.5">
                     <TickerAvatar ticker={r.ticker} brandColor={summary?.brand_color} />
                     <span className="min-w-0 flex items-center gap-1.5">
                       <StockIdentity ticker={r.ticker} name={summary?.name ?? r.name} size="md" hideCode />
-                      <span className={`text-2xs px-1.5 py-0.5 rounded font-mono font-semibold shrink-0 ${badge.cls}`}>{badge.label}</span>
+                      <span className={`hidden sm:inline text-2xs px-1.5 py-0.5 rounded font-mono font-semibold shrink-0 ${badge.cls}`}>{badge.label}</span>
                     </span>
                   </span>
-                  <span className="font-mono text-md tabular-nums text-right">{r.count}</span>
-                  <span className="text-right">
-                    <SentimentChip sentiment={labelToSentiment(r.sentimentLabel)} bare />
+                  <span className="text-right font-mono text-xs sm:text-sm tabular-nums">{r.count}</span>
+                  <span
+                    className="justify-self-end w-12 sm:w-16"
+                    title={r.attentionLevel == null ? '聲量水位：資料不足或暫無資料' : `聲量水位 ${r.attentionLevel} / 100${r.attentionAsOf ? ` · ${r.attentionAsOf}` : ''}`}
+                    aria-label={r.attentionLevel == null ? '聲量水位：資料不足或暫無資料' : `聲量水位 ${r.attentionLevel} / 100`}
+                  >
+                    <span className="block text-right font-mono text-xs sm:text-sm tabular-nums">{r.attentionLevel ?? '—'}</span>
+                    {r.attentionLevel != null && (
+                      <span aria-hidden="true" className="mt-1 block h-0.5 overflow-hidden rounded-full bg-muted">
+                        <span className="block h-full rounded-full bg-accent-info" style={{ width: `${r.attentionLevel}%` }} />
+                      </span>
+                    )}
                   </span>
-                  <ChevronRight size={14} className="text-muted-foreground" />
+                  <ChevronRight size={14} className="hidden text-muted-foreground sm:block" />
                 </Link>
               );
             })

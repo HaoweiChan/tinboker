@@ -324,6 +324,21 @@ def toggle_watchlist(user_id: str, ticker: str) -> Dict[str, any]:
     return {"ticker": ticker, "is_in_watchlist": True}
 
 
+def get_podcast_subscriber_counts(podcast_names: list[str]) -> dict[str, int]:
+    """Count current unique followers per requested show without exposing user data."""
+    counts = dict.fromkeys(podcast_names, 0)
+    if not counts:
+        return counts
+    with session_scope() as db:
+        # One column, one batched query; duplicate legacy follows count once per user.
+        for (subscriptions,) in db.query(User.podcast_subscriptions).yield_per(500):
+            if isinstance(subscriptions, list):
+                for name in {name for name in subscriptions if isinstance(name, str)}:
+                    if name in counts:
+                        counts[name] += 1
+    return counts
+
+
 def add_podcast_subscription(user_id: str, podcast_name: str) -> bool:
     """Subscribe to a podcaster"""
     return _update_array_field(user_id, "podcast_subscriptions", podcast_name, "add")

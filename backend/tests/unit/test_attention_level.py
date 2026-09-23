@@ -74,3 +74,22 @@ def test_a_name_said_on_too_few_days_has_no_level():
     assert attention_level(sparse, market, days[-1]) == []
     monthly = {**sparse, **{days[-1 - 30 * k]: 1 for k in range(1, MIN_MENTION_DAYS + 1)}}
     assert attention_level(monthly, market, days[-1])[-1]["p"] >= 90
+
+
+def test_latest_only_matches_full_history_including_guard_failures():
+    days = _days(730)
+    rng = random.Random(17)
+    market = {d: rng.randint(30, 150) for d in days}
+    histories = [{}, {d: 1 for d in days[-40:]}, {d: 1 for d in days[::40]},
+                 {d: i + 1 for i, d in enumerate(days)},
+                 {d: 730 - i for i, d in enumerate(days)},
+                 {d: rng.randint(0, 20) for d in days}, {d: 1 for d in days}]
+    for ticker in histories:
+        for population, until in [(market, days[-1]), ({}, days[-1]),
+                                  ({d: 1 for d in days}, days[-1]),
+                                  (market, days[-1] + timedelta(days=100)),
+                                  (market, days[-1] + timedelta(days=400))]:
+            full = attention_level(ticker, population, until)
+            assert attention_level(ticker, population, until, latest_only=True) == [
+                row for row in full if row['d'] == until.isoformat()]
+    assert attention_level(histories[4], market, days[-1], latest_only=True)[0]['p'] == 0
