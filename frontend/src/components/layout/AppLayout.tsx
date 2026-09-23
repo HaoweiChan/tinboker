@@ -9,6 +9,7 @@ import { UserMenu } from '@/components/ui/UserMenu';
 import { BracketMark } from '@/components/logo/AppLogo';
 import { OnboardingModals } from '@/components/onboarding/OnboardingModals';
 import { LoginPromptModal } from '@/components/auth/LoginPromptModal';
+import { MembershipPreviewBanner } from '@/components/auth/MembershipPreviewBanner';
 import { usePlayerStore } from '@/store/usePlayerStore';
 
 /** [title, subtitle] for the page header, derived from the route. */
@@ -95,6 +96,7 @@ export const AppLayout: React.FC = () => {
             </div>
           </div>
         </header>
+        {(import.meta.env.VITE_STAGE === 'DEV' || (import.meta.env.DEV && !import.meta.env.VITE_STAGE)) && <MembershipPreviewBanner />}
 
         <main id="main" className={`flex-1 min-w-0${playerVisible ? ' pb-24 lg:pb-20' : ''}`}>
           <Outlet />

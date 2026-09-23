@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 from jose import JWTError, jwt
 from src.config import settings
+from src.models.user import UserResponse
 
 # Try to import Google Auth library for OAuth token verification
 try:
@@ -154,7 +155,7 @@ def verify_google_access_token(access_token: str) -> Dict[str, Any]:
 
 # Claims a caller may add to a token (the dev bypass marks its tokens with these).
 # Anything else in ``extra`` is ignored, so a caller can never override sub/exp/type.
-_EXTRA_CLAIMS = ("dev_bypass", "role")
+_EXTRA_CLAIMS = ("dev_bypass", "role", "membership_preview", "membership_preview_expires", "membership_preview_session")
 
 
 def _extra_claims(extra: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -176,6 +177,9 @@ def create_jwt_token(user_id: str, email: str, extra: Optional[Dict[str, Any]] =
         raise ValueError("JWT_SECRET_KEY not configured")
     
     expiration = datetime.now(timezone.utc) + timedelta(hours=settings.jwt_expiration_hours or 24)
+
+    if extra and "membership_preview_expires" in extra:
+        expiration = min(expiration, datetime.fromtimestamp(extra["membership_preview_expires"], timezone.utc))
 
     payload = {
         'sub': user_id,  # Subject (user ID)
@@ -214,6 +218,9 @@ def create_refresh_token(user_id: str, email: str, extra: Optional[Dict[str, Any
         raise ValueError("JWT_SECRET_KEY not configured")
 
     expiration = datetime.now(timezone.utc) + timedelta(days=settings.jwt_refresh_expiration_days or 60)
+
+    if extra and "membership_preview_expires" in extra:
+        expiration = min(expiration, datetime.fromtimestamp(extra["membership_preview_expires"], timezone.utc))
 
     payload = {
         'sub': user_id,
@@ -268,5 +275,33 @@ def verify_jwt_token(token: str, expected_type: Optional[str] = None) -> Optiona
     if payload.get('dev_bypass') and settings.environment == 'production':
         return None
 
+    # All environments share the signing key; even original-mode sessions stay
+    # dev-only. Refresh preserves the fixed deadline and fails cleanly on expiry.
+    if any(key in payload for key in ("membership_preview", "membership_preview_expires", "membership_preview_session")):
+        deadline = payload.get("membership_preview_expires")
+        if (
+            settings.environment != "development"
+            or payload.get("membership_preview_session") is not True
+            or payload.get("membership_preview") not in (None, "free", "paid")
+            or type(deadline) is not int
+            or deadline <= datetime.now(timezone.utc).timestamp()
+            or (payload.get("email") or "").lower() not in {e.lower() for e in settings.admin_emails}
+        ):
+            return None
+
     return payload
+
+
+def apply_membership_preview(user: UserResponse, payload: Dict[str, Any]) -> UserResponse:
+    """Override only this response; never change the shared database entitlement."""
+    mode = payload.get("membership_preview")
+    if mode is None:
+        return user
+    return user.model_copy(update={
+        "membership_preview": mode,
+        "member_until": (
+            datetime.fromtimestamp(payload["membership_preview_expires"], timezone.utc)
+            if mode == "paid" else None
+        ),
+    })
 

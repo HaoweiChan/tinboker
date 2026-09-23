@@ -2,7 +2,7 @@
 User models for authentication
 """
 from pydantic import BaseModel, EmailStr, computed_field
-from typing import Optional, List
+from typing import Optional, List, Literal
 from datetime import datetime, timezone
 
 
@@ -61,9 +61,18 @@ class UserResponse(UserBase):
     notification_preferences: NotificationPreferences = NotificationPreferences()
     # Membership entitlement (PR 1 — admin-granted only, no billing yet).
     member_until: Optional[datetime] = None
+    membership_preview: Optional[Literal["free", "paid"]] = None
 
     class Config:
         from_attributes = True
+
+    @computed_field
+    @property
+    def membership_preview_available(self) -> bool:
+        from src.config import settings
+        return settings.environment == "development" and self.email.lower() in {
+            email.lower() for email in settings.admin_emails
+        }
 
     @computed_field  # type: ignore[prop-decorator]
     @property

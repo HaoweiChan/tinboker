@@ -21,6 +21,8 @@ interface User {
   // Membership entitlement (PR 1 — admin-granted only, no billing yet).
   member_until?: string | null;
   is_member?: boolean;
+  membership_preview?: 'free' | 'paid' | null;
+  membership_preview_available?: boolean;
 }
 
 interface AppState {

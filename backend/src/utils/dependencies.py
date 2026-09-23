@@ -3,7 +3,7 @@ FastAPI dependencies for authentication and authorization
 """
 from fastapi import Depends, HTTPException, Header
 from typing import Optional
-from src.utils.auth import verify_jwt_token
+from src.utils.auth import apply_membership_preview, verify_jwt_token
 from src.database.user_db import get_user_by_email
 from src.models.user import UserResponse
 
@@ -50,7 +50,7 @@ def get_current_user(authorization: Optional[str] = Header(None)) -> UserRespons
             detail="User not found"
         )
 
-    return user
+    return apply_membership_preview(user, payload)
 
 
 def get_optional_user(authorization: Optional[str] = Header(None)) -> Optional[UserResponse]:
