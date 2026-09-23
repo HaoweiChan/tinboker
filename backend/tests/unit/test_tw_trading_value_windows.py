@@ -18,6 +18,10 @@ from src.database.postgres import Base
 from src.services.podcast import PodcastService
 
 
+def _day(days_ago: int) -> str:
+    return (date.today() - timedelta(days=days_ago)).isoformat()
+
+
 @pytest.fixture()
 def svc_with_rows(monkeypatch):
     fd, path = tempfile.mkstemp(suffix=".db")
@@ -35,17 +39,14 @@ def svc_with_rows(monkeypatch):
 
     monkeypatch.setattr(podcast_mod, "get_session", fake_get_session)
 
-    # Dates are relative to today: the reader only loads rows newer than
-    # utcnow() - (max window + 20) days, so fixed calendar dates age out of that read
-    # and the 90d assertion starts failing (it did on 2026-09-20).
-    def day(n: int) -> str:
-        return (date.today() - timedelta(days=n)).isoformat()
-
+    # Dates are relative to today because the query first prefilters at max window +
+    # 20 days; fixed dates would eventually age out. Day 32 stays just beyond the 30d
+    # cutoff while remaining inside both the prefilter and the 90d window.
     rows = [
-        ("2330", day(0), 100.0), ("2330", day(1), 50.0),
-        ("2330", day(5), 20.0),   # inside the 7d window (cutoff = latest - 6)
-        ("2330", day(32), 5.0),   # outside 30d (cutoff = latest - 29), inside 90d
-        ("AAPL", day(0), 999.0),  # not a TW ticker → filtered out
+        ("2330", _day(0), 100.0), ("2330", _day(1), 50.0),
+        ("2330", _day(5), 20.0),   # inside the 7d window (cutoff latest-6)
+        ("2330", _day(32), 5.0),   # outside 30d (cutoff latest-29), inside 90d
+        ("AAPL", _day(0), 999.0),  # not a TW ticker → filtered out
     ]
     s = Session()
     for t, d, tv in rows:
