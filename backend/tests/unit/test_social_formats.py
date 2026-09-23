@@ -126,7 +126,7 @@ def test_post_hoc_caption_is_the_story_then_the_one_line_only_we_can_write():
     assert len(text) <= THREADS_MAX_CHARS
 
 
-def _seed_post_hoc(pct_big=12.0, pct_small=3.0):
+def _seed_post_hoc(pct_big=12.0, pct_small=3.0, stance="BULLISH"):
     """Two mentions with a thesis and a 5-session return: one moved, one did not."""
     from datetime import datetime as _dt
     from src.database import postgres as pg
@@ -140,7 +140,7 @@ def _seed_post_hoc(pct_big=12.0, pct_small=3.0):
         for i, (tk, pct) in enumerate((("3324", pct_big), ("2330", pct_small))):
             m = ContentMention(mention_key=f"ep{i}:ticker:{tk}", episode_id=f"ep{i}", mention_type="ticker",
                                ticker=tk, market="TW", podcaster="兆華與股惑仔", extraction_method="pipeline_llm",
-                               mentioned_at=_dt.utcnow() - timedelta(days=10), sentiment_label="BULLISH",
+                               mentioned_at=_dt.utcnow() - timedelta(days=10), sentiment_label=stance,
                                thesis=f"{tk} 的理由")
             db.add(m)
             db.flush()
@@ -190,7 +190,7 @@ async def test_post_hoc_up_tells_the_story_and_builds_the_marked_card_url(temp_d
 async def test_post_hoc_down_is_its_own_format_and_no_story_means_no_post(temp_db, monkeypatch):
     from src.services import threads_publisher
     monkeypatch.setattr(threads_publisher.podcast_service, "_allowed_podcast_names", _no_scope)
-    _seed_post_hoc(pct_big=-15.0)
+    _seed_post_hoc(pct_big=-15.0, stance="BEARISH")
 
     async def story(c):
         return STORY
@@ -311,3 +311,21 @@ async def test_preview_shows_every_draft_and_what_the_slot_would_post(temp_db, m
     assert out["formats"][0]["draft"] is None and out["formats"][0]["error"] == "db down"
     assert out["formats"][1]["draft"]["text"] == "本週"
     assert social_ledger.list_posted("threads") == []   # preview never writes
+
+
+# triage: invariant-gap — a retrospective must not pair a bullish call with a fall.
+def test_post_hoc_candidates_reject_opposite_direction(temp_db):
+    _seed_post_hoc(pct_big=-15.0)
+    assert sf._post_hoc_candidates(None, datetime(2026, 8, 1)) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stance", ["BEARISH", "STRONG_BEARISH", "NEUTRAL", None, "NOT_BULLISH"])
+async def test_post_hoc_selection_rejects_unaligned_stance_before_story(monkeypatch, stance):
+    from src.services import threads_publisher
+    monkeypatch.setattr(threads_publisher.podcast_service, "_allowed_podcast_names", _no_scope)
+    monkeypatch.setattr(sf, "_post_hoc_candidates", lambda *_: [_cand(sentiment_label=stance, episode_id="ep")])
+    async def unexpected(c):
+        pytest.fail("Rejected candidate must not incur a story call")
+    monkeypatch.setattr(sf, "_story", unexpected)
+    assert await sf.select_post_hoc_up() is None
