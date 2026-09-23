@@ -36,37 +36,43 @@ function find(node, type) {
   return null;
 }
 for (const stage of ['PRODUCTION', 'STAGING', undefined]) assert.equal((await harness(stage)).render(), null);
-assert.ok((await harness(undefined, true)).render());
+assert.equal((await harness(undefined, true)).render(), null);
+assert.equal((await harness('STAGING', true)).render(), null);
+assert.equal((await harness('PRODUCTION', true)).render(), null);
 const dev = await harness('DEV');
 dev.state.isAuthReady = false; assert.equal(dev.render(), null);
 dev.state.isAuthReady = true; dev.state.user.membership_preview_available = false; assert.equal(dev.render(), null);
 dev.state.user.membership_preview_available = true;
+assert.equal(find(dev.render(), 'select').props.children.length, 2);
+dev.state.user.is_member = false;
+assert.equal(find(dev.render(), 'select').props.value, 'free');
+dev.state.user.is_member = true;
 let resolveRequest;
 dev.api.setMembershipPreview = () => new Promise(resolve => { resolveRequest = resolve; });
 find(dev.render(), 'select').props.onChange({ target: { value: 'free' } });
 assert.equal(dev.calls.length, 0); assert.equal(dev.reloads, 0);
 assert.equal(find(dev.render(), 'select').props.disabled, true);
-assert.equal(find(dev.render(), 'select').props.value, 'original');
+assert.equal(find(dev.render(), 'select').props.value, 'paid');
 resolveRequest({ token: 'access', refresh_token: 'refresh', user: { ...user, is_member: false, membership_preview: 'free' } });
 await flush();
 assert.equal(dev.calls[0][0].is_member, false);
 assert.equal(dev.calls[0][0].membership_preview, 'free');
 assert.equal(dev.calls[0][1], 'access'); assert.equal(dev.calls[0][2], 'refresh'); assert.equal(dev.reloads, 1);
-for (const mode of ['paid', 'original']) {
+for (const mode of ['free', 'paid']) {
   const session = await harness('DEV');
-  session.api.setMembershipPreview = async () => ({ token: 'access', refresh_token: 'refresh', user: { ...user, is_member: true, membership_preview: mode === 'original' ? null : mode } });
+  session.api.setMembershipPreview = async () => ({ token: 'access', refresh_token: 'refresh', user: { ...user, is_member: mode === 'paid', membership_preview: mode } });
   find(session.render(), 'select').props.onChange({ target: { value: mode } }); await flush();
-  assert.equal(session.calls[0][0].is_member, true);
-  assert.equal(session.calls[0][0].membership_preview, mode === 'original' ? null : mode);
+  assert.equal(session.calls[0][0].is_member, mode === 'paid');
+  assert.equal(session.calls[0][0].membership_preview, mode);
   assert.equal(session.reloads, 1);
 }
 const failed = await harness('DEV');
 failed.api.setMembershipPreview = async () => { throw new Error('expired'); };
 find(failed.render(), 'select').props.onChange({ target: { value: 'paid' } }); await flush();
 assert.equal(failed.calls.length, 0); assert.equal(failed.reloads, 0);
-assert.equal(find(failed.render(), 'select').props.value, 'original');
+assert.equal(find(failed.render(), 'select').props.value, 'paid');
 assert.equal(find(failed.render(), 'select').props.disabled, false);
-assert.match(failed.hooks[1], /重新登入/);
+assert.match(failed.hooks[1], /切換失敗/);
 const schemaBuild = await build({ entryPoints: ['src/lib/authSession.ts'], bundle: true, write: false, format: 'cjs', platform: 'node' });
 const schemaRuntime = { module: { exports: {} }, require };
 vm.runInNewContext(schemaBuild.outputFiles[0].text, schemaRuntime);

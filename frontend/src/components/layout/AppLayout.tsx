@@ -96,7 +96,7 @@ export const AppLayout: React.FC = () => {
             </div>
           </div>
         </header>
-        {(import.meta.env.VITE_STAGE === 'DEV' || (import.meta.env.DEV && !import.meta.env.VITE_STAGE)) && <MembershipPreviewBanner />}
+        {import.meta.env.VITE_STAGE === 'DEV' && <MembershipPreviewBanner />}
 
         <main id="main" className={`flex-1 min-w-0${playerVisible ? ' pb-24 lg:pb-20' : ''}`}>
           <Outlet />

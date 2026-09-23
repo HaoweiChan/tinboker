@@ -28,7 +28,7 @@ export interface AuthResponse {
 }
 
 export const authApi = {
-  setMembershipPreview: async (mode: 'original' | 'free' | 'paid') => {
+  setMembershipPreview: async (mode: 'free' | 'paid') => {
     const { useAppStore } = await import('@/store/useAppStore');
     const token = useAppStore.getState().token;
     if (!token) throw new Error('Not authenticated');
