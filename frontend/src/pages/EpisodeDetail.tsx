@@ -357,7 +357,7 @@ export const EpisodeDetail: React.FC = () => {
         ) : (
           <>
             {/* Hero */}
-            <div className="bg-card border border-border rounded-md p-5 sm:p-6 mb-[18px]">
+            <header className="mb-[18px]">
               <div className="flex flex-col gap-3.5 mb-3.5 sm:flex-row sm:items-center">
                 <div className="flex min-w-0 flex-1 items-center gap-3.5">
                   <PodcastAvatar name={name} src={podcasterImageUrl} size="md" className="rounded-[9px] shrink-0" />
@@ -413,7 +413,7 @@ export const EpisodeDetail: React.FC = () => {
                 </div>
                 )}
               </div>
-              <h1 className="heading-accent text-2xl font-semibold tracking-[-0.015em] leading-[1.3]">{title}</h1>
+              <h1 className="text-2xl font-semibold tracking-[-0.015em] leading-[1.3]">{title}</h1>
               {(heroTags.length > 0 || (episode.sector_exposures?.length ?? 0) > 0) && (() => {
                 // A well-tagged episode carried 20 of these, ~240px of hashtags, so the
                 // first screen was a title and a tag wall with 關鍵洞察 — the episode's
@@ -453,7 +453,7 @@ export const EpisodeDetail: React.FC = () => {
                   </div>
                 );
               })()}
-            </div>
+            </header>
 
             {episodeLead && <EpisodeInsightCard insight={episodeLead.insight} />}
 

@@ -19,10 +19,9 @@ export const EpisodeInsightCard: React.FC<EpisodeInsightCardProps> = ({ insight,
     aria-label="關鍵洞察"
     className={cn('bg-card border border-border border-l-[3px] border-l-accent-info rounded-md p-3.5 sm:p-4 mb-3.5', className)}
   >
-    <h2 className="heading-accent text-lg font-semibold text-foreground mb-2">關鍵洞察</h2>
-    <h3 className="text-xl font-semibold leading-[1.35] tracking-[-0.005em] mb-1.5">
+    <h2 className="text-xl font-semibold leading-[1.35] tracking-[-0.005em] mb-1.5">
       <MentionText text={insight.headline} />
-    </h3>
+    </h2>
     {insight.thesis && (
       <p className="text-md sm:text-lg leading-[1.7] text-foreground/90">
         <MentionText text={insight.thesis} />
