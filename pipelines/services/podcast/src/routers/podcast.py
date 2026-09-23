@@ -5,7 +5,7 @@ import logging
 from pathlib import Path
 from typing import Any, List, Optional
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Security
+from fastapi import APIRouter, BackgroundTasks, Body, HTTPException, Security
 from pydantic import BaseModel
 
 from src.auth import verify_api_key
@@ -276,3 +276,48 @@ async def generate_post_hoc_copy(
     if not post:
         raise HTTPException(status_code=502, detail="Post-hoc copy generation produced no content.")
     return PostHocCopyResponse(episode_id=episode_id, ticker=req.ticker.upper(), post=post)
+
+
+class ClipResponse(BaseModel):
+    """``found=False`` is the normal answer, not an error: most episodes have no passage
+    worth clipping, and posting a weak one is worse than posting none."""
+    episode_id: str
+    found: bool
+    start_ms: Optional[int] = None
+    end_ms: Optional[int] = None
+    relevant: Optional[float] = None
+    transcript: Optional[str] = None
+    post: Optional[str] = None
+
+
+def _generate_clip(episode_id: str, speaker: Optional[str]) -> Optional[dict]:
+    from src.podcast.clip_copy import clip_for_episode
+    from src.service.firestore_service import FirestoreService
+
+    doc = FirestoreService().get_document("episodes", episode_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail=f"Episode '{episode_id}' not found")
+    return clip_for_episode({**doc, "id": episode_id, "speaker": speaker})
+
+
+@router.post("/episodes/{episode_id}/clip", response_model=ClipResponse)
+async def generate_clip(
+    episode_id: str,
+    speaker: Optional[str] = Body(default=None, embed=True),
+    api_key: str = Security(verify_api_key),
+):
+    """Where this episode's 30-second clip is, and the post that frames it.
+
+    The backend renders and publishes; this only decides. Read-only apart from the two
+    model calls (one cheap decisions call per candidate window, one copy call)."""
+    try:
+        clip = await asyncio.to_thread(_generate_clip, episode_id, speaker)
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Clip selection failed: {e}")
+    if not clip:
+        return ClipResponse(episode_id=episode_id, found=False)
+    return ClipResponse(episode_id=episode_id, found=True, start_ms=clip["start_ms"],
+                        end_ms=clip["end_ms"], relevant=clip.get("relevant"),
+                        transcript=clip["text"], post=clip["post"])
