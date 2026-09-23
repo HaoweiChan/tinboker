@@ -3,6 +3,9 @@ import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation, useNavigat
 import { Toaster } from 'sonner';
 import { HomeFeed } from '@/pages/HomeFeed';
 import { About } from '@/pages/About';
+import MembershipPage from '@/pages/MembershipPage';
+import TermsPage from '@/pages/TermsPage';
+import ContactPage from '@/pages/ContactPage';
 import { StockDashboard } from '@/pages/StockDashboard';
 import { EpisodeDetail } from '@/pages/EpisodeDetail';
 import { NewsRedirect } from '@/pages/NewsRedirect';
@@ -127,7 +130,11 @@ function App() {
             {IS_DEV_ENV && <Route path="/picks" element={<PicksPage />} />}
             <Route path="/about" element={<About />} />
             {/* Former standalone support pages — now sections of /about. */}
-            <Route path="/contact" element={<Navigate to="/about#contact" replace />} />
+            <Route path="/contact" element={<ContactPage />} />
+            <Route path="/membership" element={<MembershipPage />} />
+            <Route path="/terms" element={<TermsPage />} />
+            <Route path="/privacy" element={<Navigate to="/terms#privacy" replace />} />
+            <Route path="/refund" element={<Navigate to="/terms#refund" replace />} />
             <Route path="/disclaimer" element={<Navigate to="/about#disclaimer" replace />} />
             <Route path="/report" element={<Navigate to="/about#contact" replace />} />
 

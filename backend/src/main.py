@@ -50,6 +50,7 @@ from src.routers.social import (router as social_router, facebook_router, promo_
 from src.routers.seo import router as seo_router, admin_router as admin_seo_router
 from src.routers.weekly import router as weekly_router
 from src.routers.screener import router as screener_router
+from src.routers.billing import router as billing_router
 from src.middleware.cloudflare import CloudflareMiddleware
 
 # Nothing configured logging, so the root logger kept its WARNING default and every
@@ -423,6 +424,7 @@ app.include_router(podcast_router)
 app.include_router(episodes_router)
 app.include_router(tags_router)
 app.include_router(auth_router)
+app.include_router(billing_router)
 app.include_router(user_router)
 app.include_router(search_router)
 app.include_router(ticker_insights_router)

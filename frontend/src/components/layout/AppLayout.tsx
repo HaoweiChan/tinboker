@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
+import { ServiceLinks } from '@/components/membership/ServiceLinks';
 import { BottomTabs } from './BottomTabs';
 import { SearchDropdown } from '@/components/ui/SearchDropdown';
 import { ThemeToggle } from '@/components/ui/ThemeToggle';
@@ -89,6 +90,7 @@ export const AppLayout: React.FC = () => {
           <Outlet />
         </main>
 
+        <footer className="border-t border-border px-4 py-5 sm:px-6 lg:px-7"><div className="mx-auto max-w-[1440px]"><ServiceLinks /></div></footer>
         <BottomTabs />
       </div>
       <OnboardingModals />
