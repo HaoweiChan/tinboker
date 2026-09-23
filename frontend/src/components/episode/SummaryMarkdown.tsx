@@ -94,7 +94,7 @@ export const SummaryMarkdown: React.FC<SummaryMarkdownProps> = ({ content, onSee
           li: ({ children }) => <li className="leading-relaxed md:leading-[1.9] pl-1">{children}</li>,
           strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
           blockquote: ({ children }) => (
-            <blockquote className="border-l-[3px] border-border pl-5 my-5 text-foreground/70 italic">{children}</blockquote>
+            <blockquote className="border-l-[3px] border-border dark:border-muted-foreground/60 pl-5 my-5 text-foreground/70 dark:text-foreground/85 italic">{children}</blockquote>
           ),
           hr: () => <hr className="my-8 border-border" />,
           a: ({ href, children }) => {
