@@ -667,3 +667,9 @@ export const BillingPlansSchema = z.object({
 });
 
 export type BillingPlans = z.infer<typeof BillingPlansSchema>;
+
+/** Optional enrichment: older API deployments omit these fields. */
+export const AttentionLevelFieldsSchema = z.object({
+  attention_level: z.number().int().min(0).max(100).nullable().optional().catch(null),
+  attention_as_of: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional().catch(null),
+});

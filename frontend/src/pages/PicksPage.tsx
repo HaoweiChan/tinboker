@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import { Filter, ChevronDown, Search, Check } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
-import { Segmented } from '@/components/redesign';
 import { SwipeToRemove } from '@/components/common/SwipeToRemove';
 import { useRemoveWithUndo } from '@/hooks/useRemoveWithUndo';
 import { PickCard } from '@/components/financial/PickCard';
@@ -388,41 +387,40 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodc
           </>
         )}
 
-        {/* Scope and tier share the top row — both are fixed width whatever is
-            selected, so nothing shifts when 全部 is toggled. The channel dropdown is
-            the one control that appears and disappears, so it sits on its own row
-            below instead of re-wrapping the buttons above it. */}
-        <div className="mb-[18px] flex flex-col items-start gap-2">
-          {/* Both controls tighten their button padding (the shared Segmented's
-              px-3.5 put the pair at 349px inside a 341px column, so it wrapped).
-              Local override — other pages keep the roomier default. */}
-          <div className="flex items-center gap-2 flex-wrap">
-          <Segmented
-            className="[&_button]:px-2.5"
-            options={[
-              { value: 'mine', label: '我的' },
-              { value: 'all', label: '全部' },
-            ] as const}
-            value={scope}
-            onChange={(v) => setScope(v as Scope)}
-          />
-          {/* 最新 and the maturity tiers are one choice, not two: picking 30日 already
-              means 已揭曉. */}
-          <Segmented
-            className="[&_button]:px-2.5"
-            options={[
-              { value: 'recent', label: '最新' },
-              { value: '7', label: '7日' },
-              { value: '30', label: '30日' },
-              { value: '90', label: '90日' },
-            ] as const}
-            value={view === 'recent' ? 'recent' : String(settledTier)}
-            onChange={(v) => {
-              if (v === 'recent') return setView('recent');
-              setView('settled');
-              setSettledTier(Number(v) as SettledTier);
-            }}
-          />
+        <div className="mb-[18px] flex flex-col items-start gap-3">
+          <div className="flex w-full items-center justify-between gap-3 sm:justify-start">
+            <div role="group" aria-label="走勢範圍" className="flex items-center gap-1.5">
+              {([{ value: 'mine', label: '我的' }, { value: 'all', label: '全部' }] as const).map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  aria-pressed={scope === option.value}
+                  onClick={() => setScope(option.value)}
+                  className={`min-h-10 rounded-md border px-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 ${scope === option.value ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border bg-transparent text-muted-foreground hover:border-muted-foreground/40 hover:text-foreground'}`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+            <label className="relative shrink-0">
+              <span className="sr-only">走勢期間</span>
+              <select
+                value={view === 'recent' ? 'recent' : String(settledTier)}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  if (value === 'recent') return setView('recent');
+                  setView('settled');
+                  setSettledTier(value === '7' ? 7 : value === '30' ? 30 : 90);
+                }}
+                className="min-h-10 appearance-none rounded-md border border-border bg-card py-2 pl-2.5 pr-7 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+              >
+                <option value="recent">期間：最新</option>
+                <option value="7">期間：7 日</option>
+                <option value="30">期間：30 日</option>
+                <option value="90">期間：90 日</option>
+              </select>
+              <ChevronDown size={13} aria-hidden="true" className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            </label>
           </div>
           {/* Channel dropdown only makes sense as a manual pick across all shows —
              in 我的 it's already narrowed to the subscribed shows. */}
@@ -567,7 +565,8 @@ const ChannelFilter: React.FC<{
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-2 h-9 pl-3 pr-3 rounded-full bg-muted/60 border border-border text-sm font-medium hover:bg-muted transition-colors"
+        aria-expanded={open}
+        className="flex min-h-10 items-center gap-2 rounded-md border border-border bg-card px-2.5 py-2 text-xs text-foreground transition-colors hover:border-muted-foreground/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
       >
         <Filter size={14} className="text-muted-foreground" />
         <span>{label}</span>

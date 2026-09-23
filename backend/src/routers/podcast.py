@@ -1,6 +1,8 @@
 """
 Podcast API router
 """
+import asyncio
+
 from fastapi import APIRouter, HTTPException, Path, Query, Body, BackgroundTasks, Response, Depends
 from fastapi.responses import RedirectResponse
 from typing import List, Optional
@@ -11,6 +13,7 @@ from src.services.podcast import (
     poll_regeneration_status,
 )
 from src.models.podcast import Podcast, Episode
+from src.database.user_db import get_podcast_subscriber_counts
 from src.auth.admin_auth import get_content_write_access, AdminAccess
 from src.config import settings
 from src.cache.cdn_cache import cdn_cache_podcast
@@ -28,6 +31,20 @@ CACHE_CONTROL_LIST = "public, max-age=60, s-maxage=1800"   # 1min browser, 30min
 # Initialize service
 podcast_service = PodcastService()
 logger = logging.getLogger(__name__)
+
+
+async def _add_subscriber_counts(podcasts: List[Podcast]) -> List[Podcast]:
+    try:
+        counts = await asyncio.to_thread(
+            get_podcast_subscriber_counts, [podcast.name for podcast in podcasts],
+        )
+    except Exception:
+        logger.exception("Failed to aggregate podcast subscribers")
+        counts = {}
+    return [
+        podcast.model_copy(update={"subscriber_count": counts.get(podcast.name)})
+        for podcast in podcasts
+    ]
 
 
 @router.get("", response_model=List[Podcast])
@@ -59,7 +76,7 @@ async def get_sorted_podcasts(
             limit=limit,
             offset=offset
         )
-        return podcasts
+        return await _add_subscriber_counts(podcasts)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching podcasts: {str(e)}")
 
@@ -94,7 +111,7 @@ async def get_podcast_by_name(
         podcast = await podcast_service.get_podcast_by_name(podcast_name)
         if not podcast:
             raise HTTPException(status_code=404, detail=f"Podcast '{podcast_name}' not found")
-        return podcast
+        return (await _add_subscriber_counts([podcast]))[0]
     except HTTPException:
         raise
     except Exception as e:

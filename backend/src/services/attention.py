@@ -58,6 +58,8 @@ def attention_level(
     ticker_daily: Dict[date, int],
     market_daily: Dict[date, int],
     until: date,
+    *,
+    latest_only: bool = False,
 ) -> List[dict]:
     """Daily 0–100 level for every calendar day up to `until` that has enough history.
 
@@ -87,6 +89,9 @@ def attention_level(
             shares.append((day, share))
             while shares[head][0] < day - window:
                 head += 1
+            if latest_only and day != until:
+                day += timedelta(days=1)
+                continue
             n = len(shares) - head
             active = sum(1 for d in ticker_daily if day - window <= d <= day and ticker_daily[d] > 0)
             if n >= MIN_HISTORY_DAYS and active >= MIN_MENTION_DAYS:
@@ -95,6 +100,49 @@ def attention_level(
                 out.append({"d": day.isoformat(), "p": round(le / n * 100)})
         day += timedelta(days=1)
     return out
+
+
+def batch_attention_levels(
+    tickers: List[str], *, allowed: Optional[frozenset], today: date,
+) -> Dict[str, dict]:
+    """Current levels using the same 730-day population and variants as mention-heat.
+
+    Synchronous DB and percentile work runs together in the caller's worker thread.
+    Exactly two aggregate queries serve the whole batch, independent of its size.
+    """
+    result = {t: {"attention_level": None, "attention_as_of": None} for t in tickers}
+    if not tickers:
+        return result
+    variants = {t: {t.upper().replace(".TW", "").strip(), t.upper()} for t in tickers}
+    requested = set().union(*variants.values())
+    since = today - timedelta(days=730)
+    day = func.date(ContentMention.mentioned_at)
+    market_daily: Dict[date, int] = {}
+    ticker_daily: Dict[str, Dict[date, int]] = defaultdict(dict)
+    for db in get_session():
+        base = scope_mentions(db.query(day, func.count(1)), allowed).filter(
+            ContentMention.mention_type == "ticker", ContentMention.mentioned_at >= since,
+        )
+        market_rows = base.group_by(day).all()
+        rows = scope_mentions(db.query(ContentMention.ticker, day, func.count(1)), allowed).filter(
+            ContentMention.mention_type == "ticker", ContentMention.mentioned_at >= since,
+            ContentMention.ticker.in_(requested),
+        ).group_by(ContentMention.ticker, day).all()
+        market_daily = {d if isinstance(d, date) else date.fromisoformat(str(d)): int(n)
+                        for d, n in market_rows}
+        for ticker, d, n in rows:
+            d = d if isinstance(d, date) else date.fromisoformat(str(d))
+            ticker_daily[ticker][d] = int(n)
+        break
+    for ticker, symbols in variants.items():
+        daily: Dict[date, int] = defaultdict(int)
+        for symbol in symbols:
+            for d, n in ticker_daily.get(symbol, {}).items():
+                daily[d] += n
+        levels = attention_level(daily, market_daily, today, latest_only=True)
+        if levels:
+            result[ticker] = {"attention_level": levels[0]["p"], "attention_as_of": levels[0]["d"]}
+    return result
 
 
 # ── 聲量水位 movers: the week's tickers at their own-year high / low ─────────────
