@@ -147,7 +147,12 @@ async def select_weekly_movers() -> Optional[dict]:
 
 POST_HOC_WINDOW_DAYS = 21   # mentions this recent; r5d must exist, so ≥ 5 sessions old
 POST_HOC_MIN_MOVE = 8.0     # percent, baseline close → latest close
-STANCE_ZH = {"BULLISH": "看多", "BEARISH": "看空"}
+STANCE_DIRECTION = {"BULLISH": 1, "STRONG_BULLISH": 1, "BEARISH": -1, "STRONG_BEARISH": -1}
+
+
+def _stance_matches_move(label: Optional[str], pct: float) -> bool:
+    direction = STANCE_DIRECTION.get((label or "").strip().upper())
+    return direction is not None and pct * direction > 0
 
 
 def _md(iso: str) -> str:
@@ -158,9 +163,8 @@ def _md(iso: str) -> str:
 
 def post_hoc_text(c: dict, story: str) -> str:
     """The story (the pipeline's post_hoc_copy_writer, clock stopped on air date) and
-    then the one line only this side can write: air date → latest close. No verdict:
-    a 看空 followed by 漲 19% needs no help, and the misses post on purpose — that is
-    what makes the hits worth anything."""
+    then the one line only this side can write: air date → latest close. Selection
+    requires the documented stance to agree with the observed direction."""
     word = "漲" if c["pct"] >= 0 else "跌"
     # Willy's spec for this line: the stock's name, one space, then the numbers run
     # together — 雙鴻 8/31到9/16漲8.8%.
@@ -226,7 +230,7 @@ def _post_hoc_candidates(allowed: Optional[frozenset], since: datetime) -> list[
                 continue
             last_date, last_close = closes[-1]
             pct = (last_close - snap.baseline_close) / snap.baseline_close * 100
-            if abs(pct) < POST_HOC_MIN_MOVE:
+            if abs(pct) < POST_HOC_MIN_MOVE or not _stance_matches_move(m.sentiment_label, pct):
                 continue
             out.append({
                 "ticker": m.ticker, "name": names.get(m.ticker) or m.display_name or m.ticker,
@@ -249,7 +253,8 @@ async def _select_post_hoc(direction: int) -> Optional[dict]:
     allowed = await podcast_service._allowed_podcast_names()
     since = datetime.utcnow() - timedelta(days=POST_HOC_WINDOW_DAYS)
     cands = [c for c in await asyncio.to_thread(_post_hoc_candidates, allowed, since)
-             if (c["pct"] >= 0) == (direction > 0)]
+             if (c["pct"] >= 0) == (direction > 0)
+             and _stance_matches_move(c.get("sentiment_label"), c["pct"])]
     if not cands:
         return None
     c = cands[0]
