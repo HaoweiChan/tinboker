@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { isAxiosError } from 'axios';
 import { Link } from 'react-router-dom';
 import { CheckCircle2 } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
@@ -16,6 +17,9 @@ import { INSIGHT_PAYWALL_DAYS } from '@/lib/insightPaywall';
  * members only) and the newest 個股觀點 (INSIGHT_PAYWALL_DAYS in lib/insightPaywall) —
  * keep this list and those gates in step, or the page sells the wrong thing. */
 export const PlanCard: React.FC = () => {
+  const checkoutPending = useRef(false);
+  const [starting, setStarting] = useState(false);
+  const [checkoutError, setCheckoutError] = useState('');
   const [plans, setPlans] = useState<BillingPlans | null>(null);
   const [error, setError] = useState<string | null>(null);
   const isAuthReady = useAppStore((s) => s.isAuthReady);
@@ -29,6 +33,24 @@ export const PlanCard: React.FC = () => {
       .catch(() => { if (alive) setError('無法載入方案資訊，請稍後再試'); });
     return () => { alive = false; };
   }, []);
+
+  const checkout = async () => {
+    if (checkoutPending.current) return;
+    checkoutPending.current = true;
+    setStarting(true);
+    setCheckoutError('');
+    try {
+      await startCheckout();
+    } catch (error) {
+      setCheckoutError(isAxiosError(error) && error.response?.status === 403
+        ? plans?.gateway_env === 'sandbox' ? '測試付款僅開放管理員；請使用一般登入後再試。' : '目前無法付款，請重新登入後再試。'
+        : isAxiosError(error) && error.response?.status === 409
+          ? '已有訂閱或待確認的付款，請先查看訂閱狀態。'
+          : '無法開始付款，請稍後再試。');
+      checkoutPending.current = false;
+      setStarting(false);
+    }
+  };
 
   const memberUntilLabel = user?.member_until ? formatMemberUntil(user.member_until) : null;
 
@@ -80,6 +102,7 @@ export const PlanCard: React.FC = () => {
                 <span className="text-sm text-muted-foreground">/ 月</span>
               </div>
             )}
+            {plans.gateway_env === 'sandbox' && <p className="text-xs font-medium text-primary">測試付款 · 僅限管理員使用測試卡</p>}
             <p className="text-sm text-muted-foreground">每月自動扣款，可隨時取消，取消後可使用至當期結束。</p>
             <p className="text-sm text-muted-foreground">
               訂閱即表示您同意<Link to="/terms" className="text-accent-info hover:underline">服務條款</Link>、
@@ -87,6 +110,8 @@ export const PlanCard: React.FC = () => {
               <Link to="/terms#privacy" className="text-accent-info hover:underline">隱私權政策</Link>。
             </p>
 
+            {user?.membership_preview && <p className="text-xs text-muted-foreground">會員預覽中；請先重新登入，再進行付款。</p>}
+            {checkoutError && <p role="alert" className="text-sm text-destructive">{checkoutError} <Link to="/membership" className="underline">查看訂閱</Link></p>}
             <div className="pt-1">
               {!isAuthReady ? (
                 <div className="h-11 w-40 rounded-sm bg-muted animate-pulse" />
@@ -101,10 +126,11 @@ export const PlanCard: React.FC = () => {
                 <p className="text-sm text-foreground font-medium">會員有效至 {memberUntilLabel}</p>
               ) : plans.checkout_open ? (
                 <button
-                  onClick={() => { startCheckout().catch(() => {}); }}
+                  onClick={() => { void checkout(); }}
+                  disabled={starting || Boolean(user.membership_preview)}
                   className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-sm bg-primary text-primary-foreground text-sm font-bold hover:opacity-90 transition"
                 >
-                  立即加入會員
+                  {starting ? '正在前往付款…' : user.membership_preview ? '預覽模式無法付款' : '立即加入會員'}
                 </button>
               ) : (
                 <button

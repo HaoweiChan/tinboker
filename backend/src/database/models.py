@@ -661,6 +661,7 @@ class Subscription(Base):
     is_founding = Column(Boolean, nullable=False, default=False)
     gateway_env = Column(String(16), nullable=False)  # sandbox|production
     next_auth_date = Column(Date, nullable=True)
+    paid_until = Column(TZ_DATETIME, nullable=True)
     # NewebPay auto-caps the requested PeriodTimes to however many periods fit before
     # the card's expiry; the real total comes back as AuthTimes on creation and
     # TotalTimes on every notify. PR 3b needs it to detect the mandate's final period.
@@ -674,11 +675,12 @@ class Subscription(Base):
         # inside the checkout transaction (a unique index alone can't prevent two
         # concurrent checkouts from both reaching NewebPay before either commits).
         Index(
-            "uq_one_active_sub_per_user",
+            "uq_one_open_sub_per_user_env",
             "user_id",
+            "gateway_env",
             unique=True,
-            postgresql_where=text("status = 'active'"),
-            sqlite_where=text("status = 'active'"),
+            postgresql_where=text("status IN ('pending', 'active', 'cancelling')"),
+            sqlite_where=text("status IN ('pending', 'active', 'cancelling')"),
         ),
     )
 
@@ -690,8 +692,8 @@ class PaymentEvent(Base):
     """Append-only audit log of every NewebPay notify/response, keyed for idempotency.
 
     A re-delivered notify for the same (mer_order_no, already_times, kind) is a
-    no-op — NewebPay's manual documents retries on a non-2xx response but gives no
-    dedup key of its own, so this unique constraint is ours. Keyed on `mer_order_no`
+    no-op — callbacks can be delivered again or manually re-triggered, so this unique
+    constraint is ours. Keyed on `mer_order_no`
     (ours, always present — NewebPay echoes it back as MerchantOrderNo, and it's
     globally unique across sandbox/production) rather than `period_no`: the
     first-auth result carries AuthTimes/DateArray/PeriodNo but NO AlreadyTimes, and

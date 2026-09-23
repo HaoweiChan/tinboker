@@ -1,15 +1,14 @@
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
 import { useAppStore } from '@/store/useAppStore';
 import { PlanCard } from '@/components/membership/PlanCard';
+import { SubscriptionStatus } from '@/components/membership/SubscriptionStatus';
 
-/** /membership — PR 3a ships this in its "checkout not open yet" state: price +
- * founding-seat info come from `/api/billing/plans`, but no endpoint here talks to
- * NewebPay yet, so the buy button only ever renders disabled ("即將開放"). PR 3b
- * wires `startCheckout` up once NewebPay approves the Periodic API. */
 export const MembershipPage: React.FC = () => {
   const user = useAppStore((s) => s.user);
+  const ready = useAppStore((s) => s.isAuthReady);
+  const [params] = useSearchParams();
 
   return (
     <>
@@ -27,6 +26,8 @@ export const MembershipPage: React.FC = () => {
           )}
         </div>
 
+        {ready && user && <SubscriptionStatus paymentReturn={params.get('payment') === 'return'} />}
+        {params.get('payment') === 'return' && ready && !user && <p role="status" className="mb-4 text-sm text-muted-foreground">請使用付款時的帳號登入，以查詢付款結果。</p>}
         <PlanCard />
 
         <p className="text-2xs text-muted-foreground/70 leading-[1.6] mt-5 text-center">

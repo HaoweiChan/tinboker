@@ -478,6 +478,7 @@ there falls back to GCP Secret Manager at runtime via `src/config_loader.py`, wh
 | `NEWEBPAY_SANDBOX_MERCHANT_ID` | GSM only | NewebPay **sandbox** merchant id — separate NewebPay account from production, so a separate credential set. |
 | `NEWEBPAY_SANDBOX_HASH_KEY` | GSM only | NewebPay **sandbox** AES-256-CBC key (32 chars). |
 | `NEWEBPAY_SANDBOX_HASH_IV` | GSM only | NewebPay **sandbox** AES-256-CBC IV (16 chars). |
+| `NEWEBPAY_CHECKOUT_ENABLED` | `false` in Settings | Enables new hosted checkouts only when the active merchant credentials are present. Compose enables sandbox checkout on dev; staging and production remain disabled. Callbacks and cancellation remain available when new checkout is disabled. |
 
 Which of the six credentials applies is **derived from `ENVIRONMENT`, never configured
 separately** — `Settings.newebpay_env` is `"production"` iff `is_production`, else

@@ -349,6 +349,7 @@ class Settings(BaseSettings):
     membership_list_price: int = 199
     membership_founding_price: int = 99
     membership_founding_limit: int = 100
+    newebpay_checkout_enabled: bool = False
 
     @property
     def newebpay_env(self) -> str:
