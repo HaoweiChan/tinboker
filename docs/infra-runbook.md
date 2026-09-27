@@ -353,6 +353,8 @@ the deploy workflow enters `/app` and runs `git fetch` before building the stack
 This one-time host bootstrap does not start the application. Deploy through the
 [release workflow](workflows/deploy-flow.md), which installs the service account
 key and starts the Compose stack. Verify the health endpoints after CI succeeds.
+Then run `bash /app/backend/deploy/setup-systemd.sh` once to install the systemd unit
+that restarts the stack on boot; CI does not install it.
 Do not use manual SSH, `scp`, or `docker compose` commands to deploy application code.
 
 ---
@@ -393,7 +395,7 @@ Two consumers, two logical databases on the same server:
 | Consumer | Reaches it via | Database | Credentials |
 |---|---|---|---|
 | Backend containers (prod/dev/staging) | `POSTGRES_HOST=postgres` (Docker DNS on `app_default`), port 5432 | `podcast_db` | user `podcast_user`; compose requires `POSTGRES_PASSWORD` from its environment or backend `.env` |
-| Pipelines (systemd units on the VPS host, not in Docker) | host loopback: live `127.0.0.1:5433` (verified 2026-09-27); inspect their configured URL | `tinboker_wiki` | `WIKI_DATABASE_URL` from `/root/tinboker/pipelines/.env` |
+| Pipelines (systemd units on the VPS host, not in Docker) | host loopback: live `127.0.0.1:5433` (verified 2026-09-27); inspect their configured URL | `tinboker_wiki` | `WIKI_DATABASE_URL` from `/root/tinboker/pipelines/.env` (GSM fallback) |
 
 `podcast_db` and `podcast_user` are created by the container's entrypoint from
 `POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD` (the last supplied by CI at deploy
@@ -432,7 +434,7 @@ Variables set in `docker-compose.multi.yml` are passed directly to containers. C
 | `POSTGRES_DB` | `podcast_db` | Shared logical database — content, users, and platform SQL data |
 | `POSTGRES_USER` | `podcast_user` | |
 | `POSTGRES_PASSWORD` | GitHub Actions secret at deploy | Required by compose to seed the `postgres` container; backend runtime can also fall back to GSM |
-| `WIKI_DATABASE_URL` | `/root/tinboker/pipelines/.env` | Pipelines only (host systemd); check configured host port against the live mapping in Part 5 |
+| `WIKI_DATABASE_URL` | `/root/tinboker/pipelines/.env` (GSM fallback) | Pipelines only (host systemd); check configured host port against the live mapping in Part 5 |
 | `FIRESTORE_DATABASE_ID` | historical | Legacy configuration only; no live Firestore reads/writes |
 | `CORS_ORIGINS` | `["https://tinboker.com",...]` | Set per environment in compose file |
 | `RELEASE_PODCAST_LANGUAGES` | `zh-TW` | Release scoping (launch subset) — only show `content_sources` podcasts in these languages ("" = all) |

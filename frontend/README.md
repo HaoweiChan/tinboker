@@ -86,7 +86,7 @@ npm run dev -- --port 5173 --strictPort
 
 The dev server runs at `http://localhost:5173` and calls `https://dev-api.tinboker.com`
 when `VITE_API_BASE_URL` is unset. Use the authorized Google account for dev API access.
-Port 5173 is required by the dev API's CORS allowlist.
+Port 5173 is on the dev API's CORS allowlist.
 
 For a local backend, set this in the gitignored `.env.local`:
 
