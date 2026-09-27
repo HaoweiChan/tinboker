@@ -1,5 +1,9 @@
 # UI Improvement Proposals
 
+> **Historical snapshot.** This document records earlier plans or implementation details.
+> Routes, API gaps, and environment instructions below may be stale. For current
+> frontend guidance, start with the [frontend docs index](../README.md).
+
 This document outlines proposed design directions to enhance the visual appeal and user experience of TrendBrief.
 
 ## 1. "Glass & Glow" (Modern & Tech) - **SELECTED**

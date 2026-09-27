@@ -1,5 +1,9 @@
 # Backend API & Frontend Implementation Comparison
 
+> **Historical snapshot.** This document records earlier plans or implementation details.
+> Routes, API gaps, and environment instructions below may be stale. For current
+> frontend guidance, start with the [frontend docs index](../README.md).
+
 This document compares the backend API (as defined in `openapi_20251215.yaml`) with the current frontend implementation to identify matches, gaps, and required modifications.
 
 **Last Updated:** Based on OpenAPI spec dated 2025-12-15

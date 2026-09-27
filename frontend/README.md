@@ -28,13 +28,16 @@ AI-summarized financial podcasts.
 
 | Page | Route | What it is |
 |------|-------|-----------|
-| **Home** | `/` | Latest podcast summaries, top market movers, active channels |
-| **Episode / News detail** | `/episode/:id`, `/news/:id` | AI summary with clickable in-text tickers and tag navigation |
-| **Stock** | `/stock/:ticker` | Live price + chart, key stats, and every episode that mentioned the ticker |
-| **Channel** | `/podcaster/:id` | A creator's episode archive and pick performance |
-| **Tag / Topic** | `/tag/:tag` | All content for a theme (e.g. `#AI伺服器`, `#半導體`) across channels |
-| **Picks** | `/picks` | Podcast-pick performance scoreboard |
-| **Story / Graph gallery** | `/story` | Interactive concept/supply-chain relationship graphs |
+| **Home** | `/` | Recent episodes and market content |
+| **Podcasts** | `/podcaster`, `/podcaster/:id`, `/episode/:id` | Channel directory, archives, and episode summaries |
+| **Stocks and sectors** | `/stock`, `/stock/:ticker`, `/sector/:exposureId` | Stock directory, dashboards, and sector exposure |
+| **Topics** | `/topics`, `/topics/:tag` | Topic discovery and related content (`/tag/:tag` also works) |
+| **Editorial** | `/weekly`, `/weekly/:week`, `/articles`, `/article/:slug` | Weekly notes and articles |
+| **Membership** | `/membership`, `/member` | Plans and the signed-in member hub |
+| **Personal** | `/watchlist`, `/settings` | Signed-in watchlist and settings |
+
+Legacy links to `/picks` redirect to `/member`; `/story` redirects to home. `/news/:id`
+redirects to an episode or the home page.
 
 <div align="center">
   <img src="public/screenshots/home-dark.png" alt="Home dashboard" width="48%">
@@ -49,7 +52,7 @@ AI-summarized financial podcasts.
   price + chart on hover, plus channel and tag filtering.
 - **Stock dashboards** — TradingView charts, real-time quotes over WebSocket, and the related
   episode feed for each ticker (TW + US markets).
-- **Relationship graphs** — force-directed company/sector/concept graphs (React Flow + D3).
+- **Topic discovery** — browse themes and related episodes, articles, and stocks.
 - **Search** — full-text search with autocomplete and trending tickers/tags.
 - **PWA** — installable, offline-aware, with light/dark theming and an SVG icon system (no emoji).
 - **i18n** — Traditional-Chinese (`zh-TW`) UI throughout.
@@ -64,7 +67,6 @@ AI-summarized financial podcasts.
 | Build | Vite 7 |
 | Styling | Tailwind CSS 4, Shadcn UI |
 | Charts | TradingView Lightweight Charts, D3.js, Nivo |
-| Graph viz | React Flow 11, Dagre, ELK |
 | State / routing | Zustand 5, React Router 7 |
 | Validation | Zod 4 (every API response is schema-validated) |
 | Markdown | React Markdown |
@@ -73,31 +75,35 @@ AI-summarized financial podcasts.
 
 ## Getting Started
 
-**Prerequisites:** Node 20+, npm. A running backend (see [`../backend/`](../backend/)) or point at
-a deployed API.
+**Prerequisites:** Node 20+ and npm. Local development uses the shared dev API by default.
 
 ```bash
 npm install
-cp .env.example .env.local      # set VITE_API_BASE_URL
-npm run dev                     # → http://localhost:5173
+npm run dev -- --port 5173 --strictPort
 ```
 
 ### Environment
 
-`.env.local` (git-ignored) overrides per-developer settings:
+The dev server runs at `http://localhost:5173` and calls `https://dev-api.tinboker.com`
+when `VITE_API_BASE_URL` is unset. Use the authorized Google account for dev API access.
+Port 5173 is required by the dev API's CORS allowlist.
+
+For a local backend, set this in the gitignored `.env.local`:
 
 ```bash
-VITE_API_BASE_URL=http://localhost:5174   # or https://api.tinboker.com
-VITE_STAGE=DEV|STAGING|PRODUCTION
-VITE_GOOGLE_CLIENT_ID=...
+VITE_API_BASE_URL=http://localhost:5174
 ```
+
+`VITE_GOOGLE_CLIENT_ID` is needed for Google sign-in if it is not supplied by your
+environment. See [Google login setup](docs/process/google-login-setup.md). Deployment
+stage variables and secrets are documented in the [infra runbook](../docs/infra-runbook.md).
 
 ### Scripts
 
 | Command | What it does |
 |---------|--------------|
-| `npm run dev` | Vite dev server (mode `dev`) on `:5173` |
-| `npm run build` | `tsc -b` type-check + Vite production build |
+| `npm run dev -- --port 5173 --strictPort` | Vite dev server on the CORS-allowed port |
+| `npm run build` | `tsc -b` type-check + Vite build (set `VITE_STAGE=PRODUCTION` to compare deployed production output) |
 | `npm run lint` | ESLint |
 | `npm run preview` | Serve the production build locally |
 | `npm run generate-pwa-icons` / `generate-screenshots` | Asset generators |
@@ -108,15 +114,15 @@ VITE_GOOGLE_CLIENT_ID=...
 
 ```
 src/
-├── pages/          Route-level views (42 pages)
-├── components/     Reusable UI — charts/ stock/ graph/ home/ industry/ podcast/ player/ ui/ …
+├── pages/          Route-level views
+├── components/     Reusable UI — charts, stock, home, podcast, player, and UI controls
 ├── services/       API client (axios) + WebSocket price feed
 │   └── api/        Per-domain backend endpoint wrappers
 ├── store/          Zustand global state
-├── schemas/ validation/   Zod schemas for API response validation
+├── validation/     Zod schemas for API response validation
 ├── hooks/ lib/ utils/     Hooks and helpers
 ├── types/          TypeScript type definitions
-└── assets/         SVG icon system (no emoji icons)
+└── assets/         Static assets
 ```
 
 Conventions (no `any`, Zod-validated responses, DEV-gated console output, the icon system) are in
@@ -134,13 +140,14 @@ The app deploys to **Cloudflare Pages** via GitHub Actions — never deploy by h
 | merge to `main` | Staging | [staging.tinboker.com](https://staging.tinboker.com) |
 | `v*` tag on `main` | Production | [tinboker.com](https://tinboker.com) |
 
-The `frontend-ci.yml` (type-check + lint) and `frontend-deploy.yml` (Pages deploy + CDN purge)
-workflows handle this. See the root [`README.md`](../README.md) and
-[`docs/workflows/deploy-flow.md`](../docs/workflows/deploy-flow.md).
+See the root [deployment workflow](../docs/workflows/deploy-flow.md) for the CI gates,
+release process, and verification.
 
 ---
 
 ## Contributing
 
 Branch from `develop` (`feat/<name>` or `fix/<name>`), open a PR targeting `develop`, and make sure
-CI is green. See [`CLAUDE.md`](../CLAUDE.md) for the full branching and review flow.
+CI is green. See the root [deployment workflow](../docs/workflows/deploy-flow.md) for
+the full branching and release flow, and the [frontend docs index](docs/README.md) for
+additional guidance.

@@ -1,5 +1,9 @@
 # WebSocket Implementation with Redis Pub/Sub
 
+> **Historical design record.** This page reflects an earlier implementation or proposal.
+> Do not use its setup, deployment, or migration commands for the current service.
+> Start with the [backend README](../../README.md) and [infra runbook](../../../docs/infra-runbook.md).
+
 This document provides a comprehensive guide for implementing WebSocket functionality using Redis Pub/Sub pattern in the TinBoker Backend project.
 
 ## Table of Contents
