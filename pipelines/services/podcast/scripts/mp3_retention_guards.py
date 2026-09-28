@@ -222,6 +222,12 @@ BEGIN
     ELSE
         RAISE EXCEPTION 'Unexpected MP3 guard table';
     END IF;
+    -- The migration is dormant until a retirement transaction inserts the
+    -- first tombstone. That transaction must hold SHARE ROW EXCLUSIVE locks on
+    -- all guarded tables, so a concurrent writer is ordered before or after it.
+    IF NOT EXISTS (SELECT 1 FROM mp3_retention.tombstones LIMIT 1) THEN
+        RETURN NEW;
+    END IF;
     FOREACH url IN ARRAY urls LOOP
         key := mp3_retention.media_key(url);
         IF key IS NOT NULL AND EXISTS (

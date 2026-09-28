@@ -166,6 +166,10 @@ def test_postgres_guards_aliases_and_late_writes():
                 conn.execute("INSERT INTO public.episodes VALUES (%s, NULL)", ("empty",))
                 conn.execute("INSERT INTO public.wiki_pages VALUES (%s, '{}'::jsonb)", (2,))
                 conn.execute(
+                    "INSERT INTO public.episodes VALUES (%s, %s)",
+                    ("legacy-malformed", "https://media.test/media/bad%ZZ"),
+                )  # empty ledger leaves existing ingest behavior unchanged
+                conn.execute(
                     "INSERT INTO mp3_retention.tombstones (media_key) VALUES (%s)", (key,)
                 )
                 conn.execute(
