@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -38,6 +39,39 @@ def test_not_fully_processed_when_missing_summary():
 
 def test_not_fully_processed_when_empty():
     assert _is_fully_processed({}) is False
+
+
+def test_old_episode_without_mp3_is_complete_but_recent_one_is_not(monkeypatch):
+    monkeypatch.setenv("PODCAST_MP3_RETENTION_DAYS", "90")
+    now = datetime.now(timezone.utc)
+    stored = {
+        "transcript_url": "t", "summary_url": "s", "summary_image_url": "i",
+        "released_at_ms": int((now - timedelta(days=91)).timestamp() * 1000),
+    }
+    assert _is_fully_processed(stored)
+    assert not _is_fully_processed({**stored, "released_at_ms": int(now.timestamp() * 1000)})
+
+
+def test_rerun_recovers_stored_release_date_when_feed_has_none():
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    from src.pipeline.config import PipelineConfig
+    from src.pipeline.episode_data import EpisodeData
+    from src.pipeline.processor import EpisodeProcessor
+    from src.pipeline.utils import create_episode_object, retain_episode_audio
+
+    old_ms = int((datetime.now(timezone.utc) - timedelta(days=91)).timestamp() * 1000)
+    processor = EpisodeProcessor.__new__(EpisodeProcessor)
+    processor.config = PipelineConfig(config_file=Path("x"), podcast_name="show", podcast_link="x")
+    processor.services = SimpleNamespace(firebase_service=SimpleNamespace(
+        get_episode_by_fields=lambda **kwargs: {"id": "old", "released_at_ms": old_ms},
+    ))
+    data = EpisodeData(api_data={"title": "Old"}, podcast_name="show", language="en")
+    processor._load_existing_data(data)
+    assert not retain_episode_audio(data.api_data, True)
+    persisted = create_episode_object(data, {}, None, None).to_firestore_dict()
+    assert persisted["released_at_ms"] == old_ms
 
 
 # --- _find_new_episodes ---
