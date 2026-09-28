@@ -9,6 +9,7 @@ through that on Groq, and the log has to say which path served the episode.
 from __future__ import annotations
 
 import pytest
+from src.service import speech_to_text
 from src.service.speech_to_text import FallbackTranscriptService
 
 
@@ -66,6 +67,20 @@ def test_an_empty_sentence_list_counts_as_a_failure(capsys):
 
     assert out == ALSO_GOOD
     assert "no sentences" in capsys.readouterr().out
+
+
+def test_a_short_primary_transcript_falls_back_to_groq(monkeypatch, capsys):
+    monkeypatch.setattr(speech_to_text, "probe_audio_seconds", lambda _path: 60.0)
+    primary = _Stub("local-whisper", {
+        "text": "短", "sentences": [{"start": 0, "end": 60_000}], "words": None,
+    })
+    backup = _Stub("groq", ALSO_GOOD)
+
+    out = FallbackTranscriptService(primary, backup).transcribe("ep.mp3")
+
+    assert out == ALSO_GOOD
+    assert backup.calls == 1
+    assert "falling back to groq" in capsys.readouterr().out
 
 
 def test_a_backup_failure_is_raised_not_swallowed():
