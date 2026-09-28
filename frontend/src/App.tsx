@@ -159,8 +159,7 @@ function App() {
             {/* One home for membership: signed in -> the hub, everyone else -> the
                 plan page below. Personalized, so never add it to the sitemap. */}
             <Route path="/member" element={<MemberRoute />} />
-            {/* Public pricing page (PR 3a) — no checkout endpoint yet, so its buy
-                button always renders disabled. Not yet in the sitemap or nav. */}
+            {/* Public pricing and owner-scoped billing return/status. */}
             <Route
               path="/membership"
               element={

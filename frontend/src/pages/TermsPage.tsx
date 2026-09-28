@@ -151,11 +151,11 @@ export const TermsPage: React.FC = () => {
     <>
       <SEO title="服務條款與政策" description="TinBoker 服務條款、會員訂閱與付款、退款政策與隱私權政策。" />
       <PageContent className="max-w-3xl">
-        <div className="text-center pt-4 mb-2">
-          <h1 className="text-2xl font-semibold tracking-[-0.02em]">服務條款與政策</h1>
+        <div className="pt-4 mb-2">
+          <h1 className="heading-accent text-2xl font-semibold tracking-[-0.02em]">服務條款與政策</h1>
         </div>
-        <p className="text-center text-sm text-muted-foreground/70 mb-2">最後更新：2026 年 9 月 20 日</p>
-        <p className="text-center text-base text-muted-foreground max-w-xl mx-auto mb-6 leading-[1.65]">
+        <p className="text-sm text-muted-foreground/70 mb-2">最後更新：2026 年 9 月 20 日</p>
+        <p className="text-base text-muted-foreground max-w-xl mb-6 leading-[1.65]">
           使用 TinBoker（聽播客，以下稱「本服務」）即表示您同意以下條款。本頁包含服務條款、會員訂閱與付款、退款政策與隱私權政策。
         </p>
 

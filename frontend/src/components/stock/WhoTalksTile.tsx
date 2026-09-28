@@ -29,7 +29,7 @@ export const WhoTalksTile: React.FC<WhoTalksTileProps> = ({ insights, rows: give
 
   return (
     <div className={cn('bg-card border border-border rounded-[10px] p-5 flex flex-col gap-2.5', className)}>
-      <div className="text-xs text-muted-foreground">{title}</div>
+      <h2 className="heading-accent text-lg font-semibold text-foreground">{title}</h2>
       <div className="flex flex-col gap-2 text-sm">
         {rows.map((r, i) => (
           <Link key={r.name} to={`/podcaster/${encodeURIComponent(r.name)}`} className="group flex items-center gap-3 min-w-0">

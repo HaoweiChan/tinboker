@@ -1,32 +1,16 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Lock, Search, Star } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
-import { Modal } from '@/components/ui/Modal';
-import { EpisodeCardV2 } from '@/components/redesign';
-import { apiEpisodeToCardV2 } from '@/components/redesign/episodeAdapter';
-import { SubscribedPodcasters } from '@/components/profile/SubscribedPodcasters';
-import { SubscribedTickers } from '@/components/profile/SubscribedTickers';
-import { SubscribedTopics } from '@/components/profile/SubscribedTopics';
 import { PlanCard } from '@/components/membership/PlanCard';
 import { PicksPage } from '@/pages/PicksPage';
 import { useAppStore } from '@/store/useAppStore';
-import { useBookmarkedEpisodes } from '@/hooks/useBookmarkedEpisodes';
-import { useStockPriceMap } from '@/hooks/useStockPriceMap';
-import { useStockPriceSinceMap } from '@/hooks/useStockPriceSinceMap';
-import { getSuggestions } from '@/services/api/search';
 import { authApi, type AuthResponse } from '@/services/api/auth';
 import { userApi } from '@/services/api/user';
 import { formatMemberUntil } from '@/lib/date';
 
-type Tab = 'picks' | 'podcasters' | 'tickers' | 'topics' | 'episodes';
-const VALID_TABS: readonly Tab[] = ['picks', 'podcasters', 'tickers', 'topics', 'episodes'];
-
-interface StockRow {
-  symbol: string;
-  name: string;
-}
+/** The saved lists moved to /watchlist — keep old ?tab= deep links working. */
+const MOVED_TABS: readonly string[] = ['podcasters', 'tickers', 'topics', 'episodes'];
 
 function formatJoin(createdAt?: string): string {
   if (!createdAt) return '';
@@ -42,53 +26,30 @@ function initials(name?: string): string {
     .toUpperCase();
 }
 
-/** /member — the single "my stuff" home for every signed-in user (route gating
+/** /member — what membership buys: 走勢, plus the subscription's own state. Nothing
+ *  else earns a place here. Saved items and 帳號設定 are personal utilities and live
+ *  in the header menu; 週報 is browsable content and lives in 探索 — giving each of
+ *  them a second entry point here turned the page into a list of links. Route gating
  *  lives in App.tsx's MemberRoute, which sends logged-out visitors to
- *  MembershipPage instead). 走勢 is the first tab: members get PicksPage,
- *  everyone else gets the plan pitch — PicksPage must never mount for a
- *  non-member (see the `isMember` guard below), or its returns endpoint 402s. */
+ *  MembershipPage. PicksPage must never mount for a non-member (the `isMember`
+ *  guard below), or its returns endpoint 402s. */
 export const MemberHub: React.FC = () => {
   const navigate = useNavigate();
-  const { watchlist, toggleWatchlist, token } = useAppStore();
+  const token = useAppStore((st) => st.token);
+  const localWatchlist = useAppStore((st) => st.watchlist);
   const [userInfo, setUserInfo] = useState<AuthResponse['user'] | null>(null);
   const [userLoading, setUserLoading] = useState(true);
-
+  // Only what PicksPage's 我的 filter needs — the lists themselves live on /watchlist.
   const [apiWatchlist, setApiWatchlist] = useState<string[]>([]);
   const [podcastSubs, setPodcastSubs] = useState<string[]>([]);
-  const [episodeBookmarks, setEpisodeBookmarks] = useState<string[]>([]);
-  const [tagSubs, setTagSubs] = useState<string[]>([]);
-
-  const { episodes: bookmarked, resolved: bookmarksResolved } = useBookmarkedEpisodes(episodeBookmarks, {
-    repair: true,
-    onChange: setEpisodeBookmarks,
-  });
-  const episodeTickers = useMemo(() => bookmarked.flatMap((ep) => ep.related_tickers ?? []), [bookmarked]);
-  const priceMap = useStockPriceMap(episodeTickers);
-  const priceSinceMap = useStockPriceSinceMap(bookmarked);
 
   // Membership comes from the store (hydrated before MemberRoute mounts this page),
-  // not from the page's own /me fetch: that resolves a beat later, which flashed a
-  // member onto 訂閱節目 before flipping to 走勢 and briefly showed them the lock.
+  // not from the page's own /me fetch: that resolves a beat later, which flashed the
+  // plan pitch at a paying member.
   const storeUser = useAppStore((st) => st.user);
   const isMember = Boolean(storeUser?.is_member);
-
-  // Tab is URL-addressable (?tab=…) so the sidebar's "我的" links can deep-link.
-  const [searchParams, setSearchParams] = useSearchParams();
-  const tabParam = searchParams.get('tab') as Tab | null;
-  const defaultTab: Tab = isMember ? 'picks' : 'podcasters';
-  const tab: Tab = tabParam && VALID_TABS.includes(tabParam) ? tabParam : defaultTab;
-  const setTab = (t: Tab) =>
-    setSearchParams(
-      (prev) => {
-        const next = new URLSearchParams(prev);
-        next.set('tab', t);
-        return next;
-      },
-      { replace: true },
-    );
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<StockRow[]>([]);
+  const [searchParams] = useSearchParams();
+  const movedTab = searchParams.get('tab');
 
   useEffect(() => {
     if (!token) {
@@ -100,10 +61,9 @@ export const MemberHub: React.FC = () => {
     authApi
       .getCurrentUser(token)
       .then((u) => {
-        // Seed the live watchlist in the SAME batch as userInfo — leaving it to
-        // the effect below would paint one frame of 尚未加入任何自選標的.
         setUserInfo(u);
         setApiWatchlist(u.watchlist || []);
+        setPodcastSubs(u.podcast_subscriptions || []);
       })
       .catch((e) => {
         console.error('Failed to fetch user info:', e);
@@ -113,79 +73,30 @@ export const MemberHub: React.FC = () => {
   }, [token]);
 
   useEffect(() => {
-    if (!token) {
-      setApiWatchlist([]);
-      setPodcastSubs([]);
-      setEpisodeBookmarks([]);
-      setTagSubs([]);
-      return;
-    }
-    if (userInfo) {
-      setApiWatchlist(userInfo.watchlist || []);
-      setPodcastSubs(userInfo.podcast_subscriptions || []);
-      setEpisodeBookmarks(userInfo.episode_bookmarks || []);
-      setTagSubs(userInfo.tag_subscriptions || []);
-      return;
-    }
+    if (!token || userInfo) return;
     Promise.all([
       userApi.getWatchlist().catch(() => [] as string[]),
       userApi.getPodcastSubscriptions().catch(() => [] as string[]),
-      userApi.getEpisodeBookmarks().catch(() => [] as string[]),
-      userApi.getTagSubscriptions().catch(() => [] as string[]),
-    ]).then(([w, p, e, t]) => {
+    ]).then(([w, p]) => {
       setApiWatchlist(w);
       setPodcastSubs(p);
-      setEpisodeBookmarks(e);
-      setTagSubs(t);
     });
   }, [token, userInfo]);
 
-  // Read apiWatchlist, never userInfo.watchlist: userInfo is fetched once per token
-  // and never refetched, so preferring it left a pick added from the modal invisible
-  // until a reload. The effect above seeds apiWatchlist from userInfo anyway.
-  const effectiveWatchlist = useMemo(() => (token ? apiWatchlist : watchlist), [token, apiWatchlist, watchlist]);
+  // After the hooks: an old deep link to a saved list is now a redirect.
+  if (movedTab && MOVED_TABS.includes(movedTab)) {
+    return <Navigate to={`/watchlist?tab=${movedTab}`} replace />;
+  }
 
-  useEffect(() => {
-    if (!searchQuery.trim()) {
-      setSearchResults([]);
-      return;
-    }
-    let alive = true;
-    // Same ticker index the header search uses. /api/stocks is a US-only Massive
-    // ticker list that filtered AFTER the limit — it never matched a TW name.
-    // NOT via fetchWithFallback: it caches by endpoint name for 30 s, so a search
-    // would keep answering every later query with the first query's hits.
-    getSuggestions(searchQuery, 20)
-      .catch(() => ({ stocks: [] as Awaited<ReturnType<typeof getSuggestions>>['stocks'] }))
-      .then((res) => {
-        if (!alive) return;
-        setSearchResults(
-          (res.stocks || [])
-            .map((s) => ({ symbol: s.title || '', name: s.subtitle || '' }))
-            .filter((r) => r.symbol),
-        );
-      });
-    return () => {
-      alive = false;
-    };
-  }, [searchQuery]);
-
-  const TABS: { id: Tab; label: string; locked?: boolean }[] = [
-    { id: 'picks', label: '走勢', locked: !isMember },
-    { id: 'podcasters', label: '節目' },
-    { id: 'tickers', label: '股票' },
-    { id: 'topics', label: '話題' },
-    { id: 'episodes', label: '集數' },
-  ];
-
+  const effectiveWatchlist = token ? apiWatchlist : localWatchlist;
   const memberUntilLabel = storeUser?.member_until ? formatMemberUntil(storeUser.member_until) : null;
 
   return (
     <>
-      <SEO title="會員專區" description="訂閱、收藏、留言與走勢功能。" />
+      <SEO title="會員專區" description="會員的走勢追蹤與訂閱狀態。" />
       <PageContent>
-        {/* Identity card */}
-        <div className="bg-card border border-border rounded-md p-4 sm:p-6 mb-5">
+        {/* Identity + subscription state */}
+        <div className="bg-card border border-border rounded-md p-4 sm:p-6 mb-4">
           {userLoading ? (
             <div className="flex items-center gap-4">
               <div className="w-[72px] h-[72px] rounded-full bg-muted animate-pulse" />
@@ -195,51 +106,54 @@ export const MemberHub: React.FC = () => {
               </div>
             </div>
           ) : userInfo ? (
-            <div className="flex items-start gap-3 sm:gap-4">
-              {userInfo.avatar ? (
-                <img src={userInfo.avatar} alt={userInfo.name} className="w-14 h-14 sm:w-[72px] sm:h-[72px] rounded-full object-cover shrink-0" />
-              ) : (
-                <div className="w-14 h-14 sm:w-[72px] sm:h-[72px] rounded-full grid place-items-center text-white text-xl sm:text-2xl font-semibold bg-accent-info shrink-0">{initials(userInfo.name)}</div>
-              )}
-              <div className="min-w-0">
-                <h1 className="text-xl sm:text-2xl font-semibold tracking-[-0.01em] truncate">{userInfo.name}</h1>
-                <div className="text-sm text-muted-foreground mt-0.5 truncate">{userInfo.email}</div>
-                <div className="mt-1.5 text-sm">
-                  {isMember ? (
-                    <span className="flex items-center gap-x-2 gap-y-0.5 flex-wrap whitespace-nowrap">
-                      <span className="text-accent-info font-medium">會員 · 有效至 {memberUntilLabel}</span>
-                      <Link to="/membership" className="text-accent-info hover:underline text-xs">管理訂閱</Link>
-                    </span>
-                  ) : (
-                    <span className="flex items-center gap-2 flex-wrap">
-                      <span className="text-muted-foreground">免費會員</span>
-                      <Link to="/member?tab=picks" className="text-accent-info hover:underline text-xs">升級</Link>
-                    </span>
-                  )}
+            <>
+              <div className="flex items-start gap-3 sm:gap-4">
+                {userInfo.avatar ? (
+                  <img src={userInfo.avatar} alt={userInfo.name} className="w-14 h-14 sm:w-[72px] sm:h-[72px] rounded-full object-cover shrink-0" />
+                ) : (
+                  <div className="w-14 h-14 sm:w-[72px] sm:h-[72px] rounded-full grid place-items-center text-white text-xl sm:text-2xl font-semibold bg-accent-info shrink-0">{initials(userInfo.name)}</div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <h1 className="heading-accent text-xl sm:text-2xl font-semibold tracking-[-0.01em] truncate">{userInfo.name}</h1>
+                  <div className="text-sm text-muted-foreground mt-0.5 truncate">{userInfo.email}</div>
                 </div>
-                {/* One count per pill below (the pills themselves carry no numbers), short
-                    labels so the row stays on one line at 375px. */}
-                <div className="flex flex-wrap gap-x-3.5 gap-y-1 mt-2.5 text-xs text-muted-foreground whitespace-nowrap">
-                  <span><strong className="text-foreground font-mono mr-1 tabular-nums">{podcastSubs.length}</strong>節目</span>
-                  <span><strong className="text-foreground font-mono mr-1 tabular-nums">{effectiveWatchlist.length}</strong>股票</span>
-                  <span><strong className="text-foreground font-mono mr-1 tabular-nums">{tagSubs.length}</strong>話題</span>
-                  <span><strong className="text-foreground font-mono mr-1 tabular-nums">{bookmarked.length || episodeBookmarks.length}</strong>集數</span>
-                  {formatJoin(userInfo.created_at) && <span className="hidden sm:inline">· {formatJoin(userInfo.created_at)}</span>}
-                </div>
+                {/* The card's one action. A paying member has already bought, so theirs
+                    is the quiet outline; the free state is the only place on this page
+                    that gets a solid button. */}
+                <Link
+                  to="/membership"
+                  className={
+                    isMember
+                      ? 'shrink-0 inline-flex items-center rounded-md border border-border bg-card px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted hover:border-foreground/30 transition-colors'
+                      : 'shrink-0 inline-flex items-center rounded-md bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground hover:bg-primary/90 transition-colors'
+                  }
+                >
+                  {isMember ? '管理訂閱' : '升級'}
+                </Link>
               </div>
-            </div>
+
+              {/* Full width under the identity block, so 會員 · 有效至 … stays on one
+                  line — in the column beside the button it broke across the date. The
+                  tier is a chip, not a colour on running text: the two states then
+                  differ by the same element, and free reads as a tier rather than as
+                  an error. */}
+              <div className="mt-3 flex items-center gap-2 flex-wrap text-xs">
+                <span
+                  className={
+                    isMember
+                      ? 'inline-flex items-center rounded-md bg-primary/15 px-2 py-0.5 font-semibold text-primary'
+                      : 'inline-flex items-center rounded-md bg-muted px-2 py-0.5 font-medium text-muted-foreground'
+                  }
+                >
+                  {isMember ? '會員' : '免費會員'}
+                </span>
+                <span className="text-muted-foreground tabular-nums">
+                  {isMember && memberUntilLabel ? `· 有效至 ${memberUntilLabel}` : formatJoin(userInfo.created_at) && `· ${formatJoin(userInfo.created_at)}`}
+                </span>
+              </div>
+            </>
           ) : token ? (
-            <div className="flex items-center gap-4">
-              <div className="w-[72px] h-[72px] rounded-full grid place-items-center text-white text-2xl font-semibold bg-accent-info shrink-0">?</div>
-              <div className="min-w-0">
-                <div className="text-sm text-muted-foreground">已登入</div>
-                <div className="flex gap-4 mt-2.5 text-xs text-muted-foreground">
-                  <span><strong className="text-foreground font-mono mr-1 tabular-nums">{podcastSubs.length}</strong>追蹤節目</span>
-                  <span><strong className="text-foreground font-mono mr-1 tabular-nums">{effectiveWatchlist.length}</strong>自選股</span>
-                  <span><strong className="text-foreground font-mono mr-1 tabular-nums">{bookmarked.length || episodeBookmarks.length}</strong>收藏集數</span>
-                </div>
-              </div>
-            </div>
+            <div className="text-sm text-muted-foreground">已登入</div>
           ) : (
             <div className="text-center py-6 text-sm text-muted-foreground">
               請先登入以查看會員專區 — <button onClick={() => navigate('/')} className="text-accent-info hover:underline">前往首頁登入</button>
@@ -247,119 +161,16 @@ export const MemberHub: React.FC = () => {
           )}
         </div>
 
-        {/* Tabs */}
-        {/* Five short labels (the same words as the header counts) in five equal cells —
-            fits 375px without a horizontal scroller. */}
-        <div className="grid grid-cols-5 gap-1.5 mb-4">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => setTab(t.id)}
-              data-active={tab === t.id ? 'true' : undefined}
-              className="filter-pill inline-flex items-center justify-center gap-1 !px-0 min-w-0"
-            >
-              {t.locked && <Lock size={12} aria-label="會員功能" />}
-              {t.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Tab content */}
-        {tab === 'picks' && (
-          isMember ? (
-            <PicksPage embedded mySubscribedPodcasts={podcastSubs} myWatchlistTickers={effectiveWatchlist} />
-          ) : (
-            <PlanCard />
-          )
-        )}
-
-        {tab === 'podcasters' && (
-          podcastSubs.length === 0 ? (
-            <div className="bg-card border border-border rounded-md p-10 text-center text-sm text-muted-foreground">尚未追蹤任何節目。</div>
-          ) : (
-            <SubscribedPodcasters names={podcastSubs} />
-          )
-        )}
-
-        {tab === 'tickers' && (
-          <>
-            {effectiveWatchlist.length === 0 ? (
-              <div className="bg-card border border-border rounded-md p-10 text-center text-sm text-muted-foreground">尚未加入任何自選標的。</div>
-            ) : (
-              <SubscribedTickers tickers={effectiveWatchlist} />
-            )}
-            <button type="button" onClick={() => setSearchOpen(true)} className="mt-3 w-full border border-dashed border-border rounded-md py-6 text-sm text-muted-foreground hover:border-foreground/30 hover:text-foreground transition-colors">+ 新增自選</button>
-          </>
-        )}
-
-        {tab === 'topics' && (
-          tagSubs.length === 0 ? (
-            <div className="bg-card border border-border rounded-md p-10 text-center text-sm text-muted-foreground">尚未追蹤任何話題。</div>
-          ) : (
-            <SubscribedTopics tagSubs={tagSubs} />
-          )
-        )}
-
-        {tab === 'episodes' && (
-          bookmarked.length === 0 ? (
-            <div className="bg-card border border-border rounded-md p-10 text-center text-sm text-muted-foreground">
-              {episodeBookmarks.length === 0
-                ? '目前沒有收藏的集數。'
-                : bookmarksResolved
-                  ? '收藏的集數目前無法載入，可能已下架。稍後再試一次吧。'
-                  : '載入中…'}
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {bookmarked.map((ep) => (
-                <EpisodeCardV2 key={ep.id} {...apiEpisodeToCardV2(ep, priceMap, undefined, undefined, undefined, priceSinceMap)} />
-              ))}
-            </div>
-          )
+        {/* 走勢 — members only; everyone else gets the plan pitch. */}
+        {/* For a non-member the card below sells two things, so 走勢 would be the
+            wrong name for the section. */}
+        <h2 className="heading-accent text-lg font-semibold text-foreground mb-2.5">{isMember ? '走勢' : '會員方案'}</h2>
+        {isMember ? (
+          <PicksPage embedded mySubscribedPodcasts={podcastSubs} myWatchlistTickers={effectiveWatchlist} />
+        ) : (
+          <PlanCard />
         )}
       </PageContent>
-
-      <Modal isOpen={searchOpen} onClose={() => setSearchOpen(false)} title="新增自選標的">
-        <div className="p-4 border-b border-border">
-          <label className="flex items-center gap-2 bg-muted rounded-md px-3 py-2">
-            <Search size={16} className="text-muted-foreground shrink-0" />
-            <input autoFocus value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="搜尋代號或名稱…" className="flex-1 bg-transparent outline-none text-sm" />
-          </label>
-        </div>
-        <div className="max-h-[60vh] overflow-y-auto">
-          {searchResults.length === 0 ? (
-            <div className="p-8 text-center text-sm text-muted-foreground">{searchQuery ? '沒有找到符合的標的' : '輸入代號或名稱開始搜尋'}</div>
-          ) : (
-            searchResults.map((r) => {
-              const selected = (token ? apiWatchlist : watchlist).includes(r.symbol);
-              return (
-                <button
-                  key={r.symbol}
-                  type="button"
-                  onClick={async () => {
-                    await toggleWatchlist(r.symbol);
-                    if (token) {
-                      try {
-                        setApiWatchlist(await userApi.getWatchlist());
-                      } catch {
-                        /* ignore */
-                      }
-                    }
-                  }}
-                  className="flex items-center justify-between w-full p-4 hover:bg-muted transition-colors text-left border-b border-border last:border-b-0"
-                >
-                  <span className="min-w-0">
-                    <span className="block font-mono text-sm font-semibold">{r.symbol}</span>
-                    <span className="block text-xs text-muted-foreground truncate">{r.name}</span>
-                  </span>
-                  <Star size={18} className={selected ? 'text-accent-info' : 'text-muted-foreground'} fill={selected ? 'currentColor' : 'none'} />
-                </button>
-              );
-            })
-          )}
-        </div>
-      </Modal>
     </>
   );
 };

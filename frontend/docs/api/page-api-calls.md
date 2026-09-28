@@ -1,5 +1,9 @@
 # Page API Calls Documentation
 
+> **Historical snapshot.** This document records earlier plans or implementation details.
+> Routes, API gaps, and environment instructions below may be stale. For current
+> frontend guidance, start with the [frontend docs index](../README.md).
+
 This document lists all API calls made by each page in the frontend application, along with their definitions and locations in the codebase.
 
 ## Table of Contents

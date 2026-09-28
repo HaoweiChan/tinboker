@@ -24,22 +24,12 @@ PY="$REPO_ROOT/.venv/bin/python"
 # the product depends on.
 "$PY" main.py --config podcasts_tw.json --fill-limit "$@"
 
-# The English roster is gated on the release config actually serving English, because
-# every episode it picks up costs a transcription whose output nothing reads.
-# Measured 2026-09-21: 3,243 English episodes have transcripts, 238 of them (7%) were
-# ever summarised, and none are published — release_podcast_languages defaults to
-# ["zh-TW"] and production sets no override, so /api/episodes/recent returns TW shows
-# only. That is roughly $224 of Groq at whisper-large-v3 rates ($0.111/audio-hour) spent
-# on content the catalogue cannot show. The comment this replaces said the English shows
-# "are ingested and summarised ... but stay unpublished", which was half right: they are
-# ingested, mostly not summarised, and never published.
-#
-# Set RELEASE_PODCAST_LANGUAGES to include "en" — or to "" — and this run comes back on
-# its own. Empty is deliberate, not a typo: backend config documents an empty list as "no
-# language restriction (show every followed show)", so an empty value serves English too.
-# Hence ${VAR-default} and not ${VAR:-default}; the colon form would collapse the
-# no-restriction case into the zh-TW default and keep skipping a roster we do publish.
+# English episodes incur transcription cost, so ingest them only when the public
+# release scope includes English. The backend accepts CSV or a JSON list, strips
+# whitespace, and treats an empty value/list as unrestricted. Keep the unset
+# default distinct from an explicitly empty value.
 RELEASE_LANGS="${RELEASE_PODCAST_LANGUAGES-zh-TW}"
+RELEASE_LANGS="$(printf '%s' "$RELEASE_LANGS" | tr -d '[:space:]"[]')"
 if [ -z "$RELEASE_LANGS" ] || case ",$RELEASE_LANGS," in *,en,*) true ;; *) false ;; esac; then
   "$PY" main.py --config podcasts_en.json --fill-limit "$@"
 else

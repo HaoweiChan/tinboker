@@ -1,12 +1,6 @@
-// Onboarding + "what's new" gating — entirely client-side via localStorage.
-// ponytail: backend has no new-user flag, so "seen" is tracked per-user in
-// localStorage. Anyone who hasn't seen the tutorial gets it once; logging in
-// (new user id) re-shows it, which is exactly the "newly registered" case.
-
-// Browser-wide (not per-user) so the tutorial shows at most ONCE per browser.
-// Switching login state — anon → register, logout, or a different account on the
-// same browser — never re-triggers it. (Cross-device would need a server-side
-// flag; deliberately not done — localStorage is enough for launch.)
+// Browser-wide guide invitation and release-note state. The tutorial opens only
+// on request; dismissing the invitation or closing the tutorial marks it seen.
+// localStorage intentionally keeps this preference on this browser only.
 const SEEN_KEY = 'tb_onboarding_seen';
 const VERSION_KEY = 'tb_last_seen_changelog';
 
@@ -121,7 +115,7 @@ export function unseenChangelog(): ChangelogEntry | null {
     return null;
   }
   if (last === latest.version) return null;
-  // First-ever visit: adopt current silently (they get the tutorial instead).
+  // First-ever visit: adopt current silently without interrupting exploration.
   if (last === null) {
     markChangelogSeen();
     return null;

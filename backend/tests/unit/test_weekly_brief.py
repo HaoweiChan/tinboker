@@ -58,3 +58,39 @@ def test_markdown_carries_rules_sources_movers_and_no_returns():
     assert "在自己一年高點：南亞科（2408，97）" in md and "在自己一年低點：無" in md
     block = md.split("## 聲量水位")[1].split("## 這週的集數")[0]
     assert "%" not in block and "超額" not in block  # state only in the movers block, never a return
+
+
+def test_build_weekly_brief_assembles_a_real_brief(monkeypatch):
+    """The assembly function itself — the pure ones above never ran it, which is how a
+    `date.fromtimestamp(tz=...)` TypeError sat in it for a week while the endpoint 500'd."""
+    import asyncio
+    from types import SimpleNamespace
+
+    # 2026-09-08 00:30 Taipei, which is still 09-07 in UTC — a converter that skips
+    # the timezone dates this episode a day early and can drop it out of the week.
+    ep = SimpleNamespace(id="dog", podcast_name="財報狗", episode_title="562. NAND Flash",
+                         released_at_ms=1788798600000, created_time=None)
+
+    async def _episodes(**_):
+        return [ep]
+
+    async def _insights(*_a, **_k):
+        return [_ins("dog", "財報狗", "MU", "BULLISH", "中期", "長約鎖上限", ("FUNDAMENTAL",))]
+
+    async def _movers(*_a, **_k):
+        return {"as_of": "2026-09-13", "high": [], "low": []}
+
+    async def _allowed():
+        return frozenset({"財報狗"})
+
+    monkeypatch.setattr(wb.podcast_service, "get_recent_episodes", _episodes)
+    monkeypatch.setattr(wb.podcast_service, "_allowed_podcast_names", _allowed)
+    monkeypatch.setattr(wb, "_insights_for", _insights)
+    monkeypatch.setattr(wb, "attention_movers", _movers)
+    monkeypatch.setattr(wb, "get_session", lambda: iter([None]))
+    monkeypatch.setattr(wb, "query_names", lambda _db, _t: {"MU": "美光"})
+
+    brief = asyncio.run(wb.build_weekly_brief("2026-W37"))
+    assert brief["episode_count"] == 1
+    assert brief["episodes"][0]["date"] == "2026-09-08"     # Taipei day, not UTC
+    assert brief["markdown"].startswith("# 週報素材 2026-W37")

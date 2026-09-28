@@ -204,40 +204,29 @@ export function PWAUpdatePrompt() {
       aria-live="polite"
       className={`fixed right-4 left-4 sm:left-auto sm:bottom-4 z-[90] sm:max-w-[340px] animate-in fade-in slide-in-from-bottom-2 duration-200 ${playerVisible ? 'bottom-40' : 'bottom-20'}`}
     >
-      <div className="flex items-start gap-3 rounded-[var(--radius-md)] border border-border bg-card/95 backdrop-blur p-3.5 shadow-lg shadow-black/30">
-        <div className="grid place-items-center h-8 w-8 shrink-0 rounded-full bg-accent-info-soft text-accent-info">
-          <ArrowUpCircle size={18} />
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="text-lg font-semibold text-foreground">有新版本可用</div>
-          <p className="mt-0.5 text-xs leading-[1.5] text-muted-foreground">
-            重新整理以載入最新內容與修正。
-          </p>
-          <div className="mt-2.5 flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleUpdate}
-              disabled={updating}
-              className="inline-flex items-center justify-center rounded-md bg-accent-info px-3 py-1.5 text-xs font-semibold text-accent-info-foreground hover:opacity-90 transition-opacity disabled:opacity-60"
-            >
-              {updating ? '更新中…' : '立即更新'}
-            </button>
-            <button
-              type="button"
-              onClick={() => setNeedRefresh(false)}
-              className="inline-flex items-center justify-center rounded-md px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-            >
-              稍後
-            </button>
-          </div>
-        </div>
+      {/* One row, ~52px. The three-line card this replaced stood 125px tall across the
+          full width of a phone and covered page content for as long as it was up — a lot
+          of the screen to spend saying a reload is available. The explanatory sentence
+          and the separate 稍後 button are gone: the headline already says it, and ✕ was
+          always the same action. */}
+      <div className="flex items-center gap-2.5 rounded-[var(--radius-md)] border border-border bg-card/95 backdrop-blur py-2 pl-3 pr-2 shadow-lg shadow-black/30">
+        <ArrowUpCircle size={16} className="shrink-0 text-accent-info" />
+        <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">有新版本可用</span>
+        <button
+          type="button"
+          onClick={handleUpdate}
+          disabled={updating}
+          className="shrink-0 inline-flex items-center justify-center rounded-md bg-accent-info px-3 py-1.5 text-xs font-semibold text-accent-info-foreground hover:opacity-90 transition-opacity disabled:opacity-60"
+        >
+          {updating ? '更新中…' : '立即更新'}
+        </button>
         <button
           type="button"
           onClick={() => setNeedRefresh(false)}
-          aria-label="關閉"
-          className="grid place-items-center h-6 w-6 shrink-0 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+          aria-label="稍後再說"
+          className="shrink-0 grid place-items-center h-8 w-8 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
         >
-          <X size={14} />
+          <X size={15} />
         </button>
       </div>
     </div>

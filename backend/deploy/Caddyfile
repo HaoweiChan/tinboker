@@ -168,10 +168,14 @@ podcast-api.tinboker.com {
 		respond 404
 	}
 
-	# /api/* is not reachable from outside this host. No public consumer exists:
-	# neither the frontend nor the main backend calls this hostname, and three months
-	# of access log show anonymous /api traffic is almost entirely scanners
-	# (/api/.env, /api/v1/.env, TLM-Audit-Scanner — 333 of 431 hits were 404s).
+	# /api/* is not reachable from outside this host. No PUBLIC consumer exists: the
+	# frontend never calls this hostname, and three months of access log show
+	# anonymous /api traffic is almost entirely scanners (/api/.env, /api/v1/.env,
+	# TLM-Audit-Scanner — 333 of 431 hits were 404s).
+	#
+	# The main backend DOES call it (NETCUP_IP): uvicorn binds 127.0.0.1:8003, so a
+	# container cannot reach the pipeline any other way — the docker bridge address
+	# it arrives from is inside private_ranges, so this matcher lets it through.
 	#
 	# Deliberately NOT an X-API-Key check: only the write routes verify the key, the
 	# read routes have no auth dependency at all, so a header check would let any

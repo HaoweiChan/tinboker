@@ -2,6 +2,7 @@
 User-specific routes for subscriptions and preferences
 """
 from fastapi import APIRouter, HTTPException, Depends
+from pydantic import BaseModel, Field
 from src.models.user import UserResponse, NotificationPreferences, UpdateNotificationPreferencesRequest, UpdateProfileRequest
 from src.utils.dependencies import get_current_user
 from src.database.user_db import (
@@ -10,12 +11,18 @@ from src.database.user_db import (
     toggle_podcast_subscription,
     toggle_episode_bookmark,
     toggle_tag_subscription,
+    toggle_dismissed_pick,
     update_notification_preferences,
     get_notification_preferences,
     update_user,
 )
 
 router = APIRouter(prefix="/api/user", tags=["user"])
+
+
+class DismissPickRequest(BaseModel):
+    """One pick to hide in 走勢, as "{episode_id}|{ticker}"."""
+    pick_key: str = Field(min_length=1, max_length=200)
 
 
 @router.patch("/me", response_model=UserResponse)
@@ -130,6 +137,22 @@ async def toggle_episode_bookmark_item(
             status_code=500,
             detail=f"Failed to toggle episode bookmark: {str(e)}"
         )
+
+
+@router.post("/dismissed-picks/toggle")
+async def toggle_dismissed_pick_item(
+    req: DismissPickRequest,
+    user: UserResponse = Depends(get_current_user),
+):
+    """Hide (or restore) one pick in 走勢.
+
+    The key is in the body, not the path: it carries an episode id and a ticker joined
+    by "|", and episode ids are long enough that a path segment invites encoding bugs.
+    """
+    try:
+        return toggle_dismissed_pick(user.id, req.pick_key)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to toggle dismissed pick: {str(e)}")
 
 
 @router.get("/subscriptions/tags")

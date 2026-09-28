@@ -4,7 +4,9 @@ Authentication routes for Google OAuth
 import hmac
 
 from fastapi import APIRouter, HTTPException, Header
-from typing import Optional
+from typing import Literal, Optional
+from pydantic import BaseModel, ConfigDict
+from src.config import settings
 from src.models.user import AuthResponse
 from src.database.user_db import get_or_create_user, get_user_by_email
 from src.utils.auth import (
@@ -13,6 +15,7 @@ from src.utils.auth import (
     create_jwt_token,
     create_refresh_token,
     verify_jwt_token,
+    apply_membership_preview,
 )
 
 router = APIRouter(prefix="/api/auth", tags=["authentication"])
@@ -127,7 +130,7 @@ async def get_current_user(authorization: Optional[str] = Header(None)):
             detail="User not found"
         )
     
-    return user
+    return apply_membership_preview(user, payload)
 
 
 @router.get("/is-admin")
@@ -238,7 +241,42 @@ async def refresh_token_endpoint(request: dict):
     # ordinary token that production accepts.
     new_access = create_jwt_token(user.id, user.email, extra=payload)
     new_refresh = create_refresh_token(user.id, user.email, extra=payload)
-    return AuthResponse(user=user, token=new_access, refresh_token=new_refresh)
+    return AuthResponse(user=apply_membership_preview(user, verify_jwt_token(new_access)), token=new_access, refresh_token=new_refresh)
+
+
+class MembershipPreviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    mode: Literal["free", "paid"]
+
+
+@router.post("/membership-preview", response_model=AuthResponse)
+async def membership_preview(
+    request: MembershipPreviewRequest,
+    authorization: Optional[str] = Header(None),
+):
+    """Create a development-only administrator preview using normal token lifetimes."""
+    if settings.environment != "development":
+        raise HTTPException(status_code=404, detail="Not found")
+    user = await get_current_user(authorization)
+    if not user.membership_preview_available:
+        raise HTTPException(status_code=403, detail="Administrator access required")
+    payload = verify_jwt_token(authorization.split()[1], expected_type="access")
+    if not payload:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    claims = {key: payload[key] for key in ("dev_bypass", "role") if key in payload}
+    claims.update({
+        "membership_preview_session": True,
+        "membership_preview": request.mode,
+    })
+    actual_user = get_user_by_email(user.email)
+    if not actual_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    access_token = create_jwt_token(user.id, user.email, extra=claims)
+    return AuthResponse(
+        user=apply_membership_preview(actual_user, verify_jwt_token(access_token)),
+        token=access_token,
+        refresh_token=create_refresh_token(user.id, user.email, extra=claims),
+    )
 
 
 @router.post("/logout")

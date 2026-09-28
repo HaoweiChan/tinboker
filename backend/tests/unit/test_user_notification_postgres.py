@@ -56,14 +56,27 @@ def test_update_user_returns_none_for_unknown_google_id(orm_db):
     assert user_db.update_user("ghost", name="x") is None
 
 
+def test_every_array_field_reaches_the_response_model(orm_db):
+    """A field written to the row must come back on /me.
+
+    dismissed_picks shipped with its own toggle working and /me still answering [],
+    because _to_user_response named the arrays by hand and that one was missed — so a
+    fresh login silently dropped it. Assert the whole tuple round-trips, not one field.
+    """
+    user = _make_user(email="arrays@example.com", google_id="g-arrays")
+    for field in user_db.ARRAY_FIELDS:
+        user_db._update_array_field(user.id, field, f"v-{field}", "add")
+
+    fetched = user_db.get_user_by_email("arrays@example.com")
+    for field in user_db.ARRAY_FIELDS:
+        assert getattr(fetched, field) == [f"v-{field}"], f"{field} missing from UserResponse"
+
+
 def test_get_user_subscriptions_of_unknown_user_is_all_empty(orm_db):
-    assert user_db.get_user_subscriptions("ghost") == {
-        "watchlist": [],
-        "podcast_subscriptions": [],
-        "episode_bookmarks": [],
-        "alerts": [],
-        "tag_subscriptions": [],
-    }
+    # Keyed off ARRAY_FIELDS so adding a sixth array can't silently drop one here —
+    # the point of the test is "every field, empty", not the exact five names.
+    assert user_db.get_user_subscriptions("ghost") == {f: [] for f in user_db.ARRAY_FIELDS}
+    assert "dismissed_picks" in user_db.ARRAY_FIELDS
 
 
 @pytest.mark.parametrize(

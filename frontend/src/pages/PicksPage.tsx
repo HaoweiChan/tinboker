@@ -3,7 +3,8 @@ import { Link } from 'react-router-dom';
 import { Filter, ChevronDown, Search, Check } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
-import { Segmented } from '@/components/redesign';
+import { SwipeToRemove } from '@/components/common/SwipeToRemove';
+import { useRemoveWithUndo } from '@/hooks/useRemoveWithUndo';
 import { PickCard } from '@/components/financial/PickCard';
 import {
   getRecentInsights,
@@ -51,6 +52,9 @@ const WINDOW_FETCH_CAP = 120;
 
 /** Settled maturity tiers (days). 已揭曉 defaults to 7D for immediate density. */
 type SettledTier = 7 | 30 | 90;
+/** A pick is identified by the mention it came from, not by the ticker. */
+const pickKeyOf = (p: { episode_id: string; ticker: string }) => `${p.episode_id}|${p.ticker}`;
+
 const TIER_WINDOW: Record<SettledTier, 'd7' | 'd30' | 'd90'> = { 7: 'd7', 30: 'd30', 90: 'd90' };
 
 /** Whole days elapsed since a mention date (ISO string). */
@@ -77,7 +81,7 @@ interface PicksPageProps {
   /** Rendered inside MemberHub's own SEO + PageContent — skip both plus the h1 so
    *  the page doesn't nest a second copy of the page chrome. */
   embedded?: boolean;
-  /** Member's 訂閱節目 (podcaster names) and 自選股票 (tickers) — MemberHub already
+  /** Member's 訂閱節目 (podcaster names) and 自選個股 (tickers) — MemberHub already
    *  resolves these (API-backed when signed in, store fallback otherwise) via
    *  `podcastSubs` / `effectiveWatchlist`; passed down so this page doesn't
    *  re-fetch the same data. Falls back to the local store when absent (e.g. the
@@ -85,6 +89,16 @@ interface PicksPageProps {
   mySubscribedPodcasts?: string[];
   myWatchlistTickers?: string[];
 }
+
+/** Same bordered pill the member card's 管理訂閱 uses — an action inside a block of
+ *  text needs an edge to read as tappable. */
+const MANAGE_LINK =
+  'inline-flex items-center rounded-md border border-border bg-card px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted hover:border-foreground/30 transition-colors';
+
+/** The counts in the sentence ARE the way in: "2 個節目" is the thing you'd tap to
+ *  change what feeds this list, so it carries the edge instead of a separate button. */
+const COUNT_LINK =
+  'inline-flex items-baseline gap-1 rounded-md border border-border bg-card px-2 py-0.5 align-middle text-foreground hover:bg-muted hover:border-foreground/30 transition-colors';
 
 export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodcasts, myWatchlistTickers }) => {
   const storeSubscriptions = useAppStore((s) => s.subscriptions);
@@ -290,8 +304,22 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodc
     });
   }, [filteredGroups, view, settledTier, windowsMap]);
 
+  // Swiped-away picks. The key is the master mention, so the card comes back the next
+  // time the ticker is named (a newer master) — the pick is hidden, not the ticker.
+  // Applies in both scopes: switching to 全部 must not resurrect it.
+  const dismissedPicks = useAppStore((st) => st.dismissedPicks);
+  const toggleDismissedPick = useAppStore((st) => st.toggleDismissedPick);
+  const { removed, removeWithUndo } = useRemoveWithUndo();
+  const keptGroups = useMemo(
+    () => sortedGroups.filter((g) => {
+      const key = pickKeyOf(g.master);
+      return !dismissedPicks.includes(key) && !removed.has(`pick:${key}`);
+    }),
+    [sortedGroups, dismissedPicks, removed],
+  );
+
   // Infinite-scroll: render visibleCount, grow as the sentinel scrolls into view.
-  const visibleGroups = useMemo(() => sortedGroups.slice(0, visibleCount), [sortedGroups, visibleCount]);
+  const visibleGroups = useMemo(() => keptGroups.slice(0, visibleCount), [keptGroups, visibleCount]);
 
   useEffect(() => { setVisibleCount(PAGE_SIZE); }, [scope, selected, view, settledTier, picks, channelHistory]);
 
@@ -301,14 +329,14 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodc
     const io = new IntersectionObserver(
       (entries) => {
         if (entries[0]?.isIntersecting) {
-          setVisibleCount((c) => (c < sortedGroups.length ? c + PAGE_SIZE : c));
+          setVisibleCount((c) => (c < keptGroups.length ? c + PAGE_SIZE : c));
         }
       },
       { rootMargin: '600px' },
     );
     io.observe(el);
     return () => io.disconnect();
-  }, [sortedGroups.length]);
+  }, [keptGroups.length]);
 
   const tickers = useMemo(() => visibleGroups.map((g) => g.canonicalTicker), [visibleGroups]);
   const rawTranslationMap = useTranslationMap(tickers);
@@ -352,22 +380,48 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodc
     <>
         {!embedded && (
           <>
-            <h1 className="text-2xl font-semibold tracking-[-0.02em] mb-1.5">走勢</h1>
+            <h1 className="heading-accent text-2xl font-semibold tracking-[-0.02em] mb-1.5">走勢</h1>
             <p className="text-base text-muted-foreground mb-4">
               財經 Podcaster 點名的個股，依時間排序，從提及當日起算的 7／30／90 天真實漲跌幅。
             </p>
           </>
         )}
 
-        <div className="flex items-center gap-3 mb-[18px] flex-wrap">
-          <Segmented
-            options={[
-              { value: 'mine', label: '我的' },
-              { value: 'all', label: '全部' },
-            ] as const}
-            value={scope}
-            onChange={(v) => setScope(v as Scope)}
-          />
+        <div className="mb-[18px] flex flex-col items-start gap-3">
+          <div className="flex w-full items-center justify-between gap-3 sm:justify-start">
+            <div role="group" aria-label="走勢範圍" className="flex items-center gap-1.5">
+              {([{ value: 'mine', label: '我的' }, { value: 'all', label: '全部' }] as const).map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  aria-pressed={scope === option.value}
+                  onClick={() => setScope(option.value)}
+                  className={`min-h-10 rounded-md border px-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 ${scope === option.value ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border bg-transparent text-muted-foreground hover:border-muted-foreground/40 hover:text-foreground'}`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+            <label className="relative shrink-0">
+              <span className="sr-only">走勢期間</span>
+              <select
+                value={view === 'recent' ? 'recent' : String(settledTier)}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  if (value === 'recent') return setView('recent');
+                  setView('settled');
+                  setSettledTier(value === '7' ? 7 : value === '30' ? 30 : 90);
+                }}
+                className="min-h-10 appearance-none rounded-md border border-border bg-card py-2 pl-2.5 pr-7 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+              >
+                <option value="recent">期間：最新</option>
+                <option value="7">期間：7 日</option>
+                <option value="30">期間：30 日</option>
+                <option value="90">期間：90 日</option>
+              </select>
+              <ChevronDown size={13} aria-hidden="true" className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            </label>
+          </div>
           {/* Channel dropdown only makes sense as a manual pick across all shows —
              in 我的 it's already narrowed to the subscribed shows. */}
           {scope === 'all' && channelOptions.length > 0 && (
@@ -378,42 +432,28 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodc
               onClear={() => setSelected(new Set())}
             />
           )}
-          <Segmented
-            options={[
-              { value: 'recent', label: '最新' },
-              { value: 'settled', label: '已揭曉' },
-            ] as const}
-            value={view}
-            onChange={(v) => setView(v as 'recent' | 'settled')}
-          />
-          {view === 'settled' && (
-            <Segmented
-              options={[
-                { value: '7', label: '7日已揭曉' },
-                { value: '30', label: '30日已揭曉' },
-                { value: '90', label: '90日已揭曉' },
-              ] as const}
-              value={String(settledTier)}
-              onChange={(v) => setSettledTier(Number(v) as SettledTier)}
-            />
-          )}
         </div>
 
-        {!hasMyStuff ? (
-          <p className="text-xs text-muted-foreground mb-3">
-            訂閱節目或加入自選股後，這裡會只顯示你關注的標的。
-            {' '}
-            <Link to="/member?tab=podcasters" className="text-accent-info hover:underline">管理節目</Link>
-            {' '}
-            <Link to="/member?tab=tickers" className="text-accent-info hover:underline">管理股票</Link>
-          </p>
-        ) : scope === 'mine' ? (
-          <p className="text-xs text-muted-foreground mb-3">
-            來自你訂閱的 {myNames.size} 個節目與 {myTickers.size} 檔自選股
-            {' · '}
-            <Link to="/member?tab=podcasters" className="text-accent-info hover:underline">管理節目</Link>
-            {' '}
-            <Link to="/member?tab=tickers" className="text-accent-info hover:underline">管理股票</Link>
+        {!hasMyStuff || scope === 'mine' ? (
+          <p className="text-sm text-muted-foreground mb-3 leading-[2]">
+            {hasMyStuff ? (
+              <>
+                來自你訂閱的{' '}
+                <Link to="/watchlist?tab=podcasters" className={COUNT_LINK}>
+                  <span className="font-mono tabular-nums font-medium">{myNames.size}</span> 個節目
+                </Link>{' '}
+                與{' '}
+                <Link to="/watchlist?tab=tickers" className={COUNT_LINK}>
+                  <span className="font-mono tabular-nums font-medium">{myTickers.size}</span> 檔自選個股
+                </Link>
+              </>
+            ) : (
+              <>
+                這裡只顯示你關注的標的 —{' '}
+                <Link to="/podcaster" className={MANAGE_LINK}>訂閱節目</Link>{' '}
+                <Link to="/stock" className={MANAGE_LINK}>加入自選個股</Link>
+              </>
+            )}
           </p>
         ) : null}
 
@@ -449,8 +489,16 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodc
                 ? windowsMap.get(windowReturnsKey(g.canonicalTicker, refMs))
                 : undefined;
               return (
-                <PickCard
+                <SwipeToRemove
                   key={g.key}
+                  className="rounded-md"
+                  onRemove={() => removeWithUndo(
+                    `pick:${pickKeyOf(pick)}`,
+                    `${g.canonicalTicker} 這則點名`,
+                    () => toggleDismissedPick(pickKeyOf(pick), { silent: true }),
+                  )}
+                >
+                <PickCard
                   pick={pick}
                   windows={windows}
                   displayName={nameMap.get(g.canonicalTicker.toUpperCase())}
@@ -461,16 +509,17 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodc
                   shareUrl={`${window.location.origin}/episode/${encodeURIComponent(pick.episode_id)}`}
                   onPlaySegment={onPlaySegment}
                 />
+                </SwipeToRemove>
               );
             })}
           </div>
-          <div ref={sentinelRef} className="h-10 flex items-center justify-center text-xs text-muted-foreground/70 mt-2">
-            {visibleGroups.length < sortedGroups.length ? '載入更多…' : `共 ${sortedGroups.length} 筆`}
+          <div ref={sentinelRef} className="h-10 flex items-center justify-center text-xs text-muted-foreground mt-2">
+            {visibleGroups.length < keptGroups.length ? '載入更多…' : `共 ${keptGroups.length} 筆`}
           </div>
           </>
         )}
 
-        <p className="text-2xs text-muted-foreground/70 leading-relaxed mt-6">
+        <p className="text-xs text-muted-foreground leading-relaxed mt-6">
           本頁內容為播客觀點整理，僅供參考，並非投資建議；過去績效不代表未來表現。
           <Link to="/about#disclaimer" className="text-accent-info hover:underline ml-1">完整免責聲明</Link>
         </p>
@@ -516,7 +565,8 @@ const ChannelFilter: React.FC<{
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-2 h-9 pl-3 pr-3 rounded-full bg-muted/60 border border-border text-sm font-medium hover:bg-muted transition-colors"
+        aria-expanded={open}
+        className="flex min-h-10 items-center gap-2 rounded-md border border-border bg-card px-2.5 py-2 text-xs text-foreground transition-colors hover:border-muted-foreground/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
       >
         <Filter size={14} className="text-muted-foreground" />
         <span>{label}</span>

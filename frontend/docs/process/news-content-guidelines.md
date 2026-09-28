@@ -1,5 +1,9 @@
 # News Content Generation Guidelines
 
+> **Historical snapshot.** This rendering and generation proposal has not been
+> revalidated against the current content pipeline. See the
+> [frontend docs index](../README.md) and `pipelines/AGENTS.md` for current guidance.
+
 This document outlines the specifications for generating Markdown content for the News/Podcast pages in TinBoker. The backend (or content generation service) should adhere to these guidelines to ensure correct rendering of interactive elements (stock buttons, tags) and optimal SEO performance.
 
 ## Content Focus & Language

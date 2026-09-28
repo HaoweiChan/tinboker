@@ -626,6 +626,10 @@ class User(Base):
     episode_bookmarks = Column(JSON_VARIANT, nullable=False, default=list)  # "{podcast}_{ep}"
     alerts = Column(JSON_VARIANT, nullable=False, default=list)
     tag_subscriptions = Column(JSON_VARIANT, nullable=False, default=list)
+    # Picks the member swiped away in 走勢, as "{episode_id}|{ticker}". Derived content,
+    # so this only hides that one mention — the next time the ticker is named a new
+    # card appears, which is the behaviour the feature was asked for.
+    dismissed_picks = Column(JSON_VARIANT, nullable=False, default=list)
     notification_preferences = Column(JSON_VARIANT, nullable=False, default=dict)
 
     # Paid membership entitlement (PR 1 — admin-granted only, no billing yet).
@@ -657,6 +661,7 @@ class Subscription(Base):
     is_founding = Column(Boolean, nullable=False, default=False)
     gateway_env = Column(String(16), nullable=False)  # sandbox|production
     next_auth_date = Column(Date, nullable=True)
+    paid_until = Column(TZ_DATETIME, nullable=True)
     # NewebPay auto-caps the requested PeriodTimes to however many periods fit before
     # the card's expiry; the real total comes back as AuthTimes on creation and
     # TotalTimes on every notify. PR 3b needs it to detect the mandate's final period.
@@ -670,11 +675,12 @@ class Subscription(Base):
         # inside the checkout transaction (a unique index alone can't prevent two
         # concurrent checkouts from both reaching NewebPay before either commits).
         Index(
-            "uq_one_active_sub_per_user",
+            "uq_one_open_sub_per_user_env",
             "user_id",
+            "gateway_env",
             unique=True,
-            postgresql_where=text("status = 'active'"),
-            sqlite_where=text("status = 'active'"),
+            postgresql_where=text("status IN ('pending', 'active', 'cancelling')"),
+            sqlite_where=text("status IN ('pending', 'active', 'cancelling')"),
         ),
     )
 
@@ -686,8 +692,8 @@ class PaymentEvent(Base):
     """Append-only audit log of every NewebPay notify/response, keyed for idempotency.
 
     A re-delivered notify for the same (mer_order_no, already_times, kind) is a
-    no-op — NewebPay's manual documents retries on a non-2xx response but gives no
-    dedup key of its own, so this unique constraint is ours. Keyed on `mer_order_no`
+    no-op — callbacks can be delivered again or manually re-triggered, so this unique
+    constraint is ours. Keyed on `mer_order_no`
     (ours, always present — NewebPay echoes it back as MerchantOrderNo, and it's
     globally unique across sandbox/production) rather than `period_no`: the
     first-auth result carries AuthTimes/DateArray/PeriodNo but NO AlreadyTimes, and
@@ -772,9 +778,46 @@ class SocialPostLedger(Base):
     # What the post is about beyond the episode — a ticker, a week id, a topic. The
     # rotation's per-subject cooldown keys on it (one 欣興 post a week, not five).
     subject = Column(String(80), nullable=True)
+    # Human-authored promo posts share this ledger so admin Insights can track them.
+    # NULL means legacy/unknown; never infer origin from an old episode key.
+    origin = Column(String(20), nullable=True)       # "manual" | "automated" | NULL (legacy)
+    delivery = Column(String(20), nullable=True)     # "direct" | "scheduled" | NULL (legacy)
+    permalink = Column(Text, nullable=True)          # Threads public permalink, not destination URL
+    post_snapshot = Column(JSON, nullable=True)      # text, media refs, planned/confirmed reply text
+    provider_snapshot = Column(JSON_VARIANT, nullable=True)  # current metadata read from Threads API
+    tracking_error = Column(String(80), nullable=True)  # e.g. partial_reply:insufficient_permission
 
     def __repr__(self) -> str:
         return f"<SocialPostLedger({self.platform}, {self.episode_id})>"
+
+
+class ThreadsPostInsightSnapshot(Base):
+    """One real provider metric sample per post per UTC date; never backdate samples."""
+    __tablename__ = "threads_post_insight_snapshots"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    media_id = Column(String(255), nullable=False)
+    captured_day = Column(Date, nullable=False)
+    captured_at = Column(TZ_DATETIME, nullable=False, default=lambda: datetime.now(timezone.utc))
+    metrics = Column(JSON_VARIANT, nullable=False, default=dict)
+
+    __table_args__ = (
+        UniqueConstraint("media_id", "captured_day", name="uq_threads_insight_media_day"),
+        Index("idx_threads_insight_media_captured", "media_id", "captured_at"),
+    )
+
+
+class ThreadsInsightsSyncState(Base):
+    """Resumable account-history cursor and production daily sync checkpoint."""
+    __tablename__ = "threads_insights_sync_state"
+
+    key = Column(String(32), primary_key=True, default="account")
+    backfill_cursor = Column(Text, nullable=True)
+    backfill_complete = Column(Boolean, nullable=False, default=False)
+    daily_cursor = Column(Text, nullable=True)
+    daily_window_since = Column(TZ_DATETIME, nullable=True)
+    daily_synced_at = Column(TZ_DATETIME, nullable=True)
+    updated_at = Column(TZ_DATETIME, nullable=False, default=lambda: datetime.now(timezone.utc))
 
 
 class ThreadsComment(Base):

@@ -91,7 +91,7 @@ export const ChartControls: React.FC<ChartControlsProps> = ({
                         type="button"
                         onClick={() => setCardOpen(true)}
                         className="flex items-center gap-1 px-1.5 py-0.5 text-sm text-muted-foreground hover:text-foreground rounded hover:bg-muted transition-colors"
-                        title="分享或下載這檔股票的走勢圖卡"
+                        title="分享或下載這檔個股的走勢圖卡"
                     >
                         <Download className="w-3.5 h-3.5" />
                         <span className="hidden sm:inline">圖卡</span>

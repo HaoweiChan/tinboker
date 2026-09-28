@@ -1,12 +1,12 @@
 # Articles platform plan — TinBoker as a blogging surface
 
-Status: **Phase 1 implemented; MCP authoring implemented; image upload deferred** · Owner: @hwchan42 · Created 2026-06-05 · Updated 2026-06-06
+Status (verified 2026-09-27): **Phase 1 and MCP authoring implemented; image upload deferred.** This is a historical implementation plan; storage references to GCS below describe the original proposal. New work uses VPS disk media. · Owner: @hwchan42 · Created 2026-06-05
 
 Plan for turning TinBoker into a publishing platform: rich, embed-enriched articles
 authored first by the admin (you), eventually by any registered user, with the
 authoring toolkit exposed as **MCP tools** so an agent can write articles end-to-end.
 
-This doc is the north star. Each phase is independently shippable through the normal
+Use the completed checkboxes as a history of the implementation, and recheck open items against current code before starting them. Each phase is independently shippable through the normal
 `develop → dev → main → staging → tag → prod` pipeline ([deploy-flow](workflows/deploy-flow.md)).
 
 ---
@@ -19,12 +19,12 @@ These were decided up front; the rest of the plan assumes them.
 |---|---|---|
 | **Body format** | **Markdown + embed directives** | Reuses the existing `SummaryMarkdown` renderer and the `[label](#ticker:X)` / `#tag:X` marker grammar; agents emit plain text, so it is the most MCP-friendly format. |
 | **Phase-1 authoring** | **MCP-first + a simple admin markdown editor** | Leads with the agent-writes-articles vision; defers a heavy WYSIWYG build. |
-| **Image serving** | **Public GCS prefix + Cloudflare CDN** | A public blog needs no per-request signing; immutable content-hashed URLs cache forever at the edge. |
+| **Image serving** | **VPS media path served through Caddy/Cloudflare** | A public blog needs no per-request signing; immutable content-hashed URLs cache forever at the edge. |
 | **v1 embeds** | **Ticker citations, tag/topic chips, images** | Tickers + tags already render for free via the marker grammar; images are the one net-new piece. **Stock charts + knowledge-graph embeds are deferred to Phase 3.** |
 
 ### Constraints inherited from the codebase (non-negotiable)
 
-1. **No new Firestore-direct reads.** Reads are consolidating behind VPS Postgres + the upcoming HTTP API ([firestore-data-change](workflows/firestore-data-change.md)). Articles are platform-owned user-generated content → they live in **Postgres/SQLite + GCS**, never in Firestore.
+1. **No new Firestore-direct reads.** Reads use VPS Postgres through the backend HTTP API ([firestore-data-change](workflows/firestore-data-change.md)). Articles are platform-owned user-generated content → they live in **Postgres/SQLite + VPS disk media**, never in Firestore.
 2. **Stay out of the agents contract.** [`docs/firestore-contract.md`](firestore-contract.md) governs the `episodes`/`tickers`/`tags` collections written by the `pipelines/` content tier. Articles must not enter those collections or that contract.
 3. **`use_postgres` portability.** Any new table must work on both SQLite (dev) and Postgres (prod) — use the SQLAlchemy `Base` path in [`backend/src/database/postgres.py`](../backend/src/database/postgres.py), not raw SQL.
 4. **Reuse the marker grammar; never enable raw HTML.** Inline citations use `[label](#ticker:SYMBOL)` / `[label](#tag:ID)`. Block embeds use a closed allowlist of directives. `rehype-raw` stays **off** so no HTML sanitizer is ever required — even for untrusted multi-author content.
@@ -36,18 +36,18 @@ These were decided up front; the rest of the plan assumes them.
 
 ### 2.1 Storage model
 
-Three tiers, mirroring how episodes already work (DB row + GCS body + cached blob):
+The original three-tier target, updated for current media storage (DB row + optional disk artifact + cache):
 
 ```
 Postgres/SQLite  articles            ← metadata, status, denormalized author byline, tags[], tickers[]
                  article_tags        ← inverted index (tag → article) for discovery
                  article_tickers     ← inverted index (ticker → article)
-GCS              graphfolio-articles/articles/img/{hash}.webp ← uploaded images (public-read) [Phase 0]
+VPS disk         graphfolio-articles/articles/img/{hash}.webp ← proposed uploaded images [deferred]
 Redis            articles:{slug}, articles:list:*             ← cache_get → cache_set, like episodes
 ```
 
 > **Phase 1 note:** body is stored inline in `articles.body_content` (TEXT column) for MVP
-> simplicity. GCS offloading (`body_url` pointer + lazy fetch) is a future optimisation for
+> simplicity. Disk offloading (`body_url` pointer + lazy fetch) is a future optimisation for
 > very long articles. The `body_url` column is omitted from the initial schema.
 
 Model the slice on the **`news`** vertical end-to-end — it is the closest existing
@@ -69,7 +69,7 @@ Use the SQLAlchemy ORM path (like `stock_translations`), not raw SQL.
 | `author_avatar` | text? | denormalized avatar URL |
 | `status` | str(20) | `draft \| pending_review \| published \| archived` |
 | `cover_image_url` | text? | public CDN URL |
-| `body_content` | text | inline markdown body (GCS offloading deferred) |
+| `body_content` | text | inline markdown body (disk offloading deferred) |
 | `key_points` | json (str[]) | optional plain-text takeaways, analogous to `episodes.key_insights` |
 | `tags` | json (str[]) | lowercase, free-form; merged with body-extracted `#tag:` markers |
 | `tickers` | json (str[]) | symbols cited; merged with body-extracted `#ticker:` markers |
@@ -146,7 +146,7 @@ Extend the **service-token pattern**, do not invent a new one.
   `TINBOKER_ARTICLE_AUTHOR_NAME`, and `TINBOKER_ARTICLE_AUTHOR_AVATAR` so drafts created by
   an agent still publish under the admin author's byline.
 - **Phase 1 (admin-only):** you are the sole allowlisted `ADMIN_EMAILS` author. No role table yet.
-- **Phase 4 (multi-author):** add `role: reader | author | admin` to Firestore `users/{id}`
+- **Phase 4 (multi-author):** add `role: reader | author | admin` to the Postgres user model
   ([`models/user.py`](../backend/src/models/user.py)), an `articles.status` moderation flow, and
   per-author API keys (hash on the user doc) so the token both authenticates and identifies the
   author — eliminating the "pass author_id explicitly" trust gap.
@@ -160,7 +160,7 @@ Extend the **service-token pattern**, do not invent a new one.
 
 Clone [`mcp-servers/stock-translations/`](../mcp-servers/stock-translations/server.py) into
 `mcp-servers/article-authoring/`: FastMCP over stdio, a thin httpx wrapper over the public
-`/api/articles/*` + admin endpoints (**no DB/GCS credentials in the MCP**), read tools open,
+`/api/articles/*` + admin endpoints (**no DB/media credentials in the MCP**), read tools open,
 write tools gated on `TINBOKER_ARTICLE_TOKEN`. Register a sibling entry in
 [`.mcp.json`](../.mcp.json). Changes under `mcp-servers/**` are outside the deploy path filter,
 so the MCP runs client-side and needs no VPS change.
@@ -174,7 +174,7 @@ assembles the body, keeping the MCP thin):
 | `cite_ticker(query)` | read | validates + returns `[display](#ticker:SYMBOL)` |
 | `suggest_tags(text)` | read | existing tags matching the draft |
 | `add_tag(name)` | read | returns `[name](#tag:slug)` and the slug |
-| `upload_image(source_url_or_base64, alt)` | write | backend fetches/decodes → GCS → returns public CDN URL + `![alt](url)` snippet |
+| `upload_image(source_url_or_base64, alt)` | write | backend fetches/decodes → VPS media disk → returns public media URL + `![alt](url)` snippet |
 | `insert_chart(ticker, timeframe, indicators?)` | read | returns `:::chart{...}` directive (Phase 3) |
 | `insert_graph(graph_id)` | read | returns `:::graph{...}` directive (Phase 3) |
 | `create_draft(title, body_markdown, tags?, cover_image_url?)` | write | POST → returns `article_id` + admin preview URL |
@@ -207,10 +207,8 @@ Resolve the infra ambiguities that would otherwise block image upload:
   `/api/content` router now reads `{MEDIA_STORAGE_ROOT}/graphfolio-articles/` from disk and
   returns stable media URLs; `CONTENT_BUCKET`/`CONTENT_PREFIX`/`CONTENT_URL_TTL` no longer
   exist (see [`backend/docs/features/content-api-gcs.md`](../backend/docs/features/content-api-gcs.md)).
-- [ ] Decide the public image prefix + CDN hostname (e.g. `cdn.tinboker.com` via Cloudflare → GCS),
-  set the prefix public-read, confirm bucket CORS allows the real frontend origins (not just `*.vercel.app`).
-- [ ] Extend [`gcs_content.upload_content()`](../backend/src/services/gcs_content.py) to accept `bytes`
-  + arbitrary `content_type` (today it takes `str`).
+- [ ] Decide the article image path under the existing `/media` host and its cache behavior.
+- [x] Raw-byte media write helper exists as `GCSContentService.upload_bytes_public()` (the class name is historical).
 
 **Acceptance:** a manual `upload_content()` of a test image yields a public, edge-cacheable URL.
 
@@ -233,7 +231,7 @@ Everything needed for *you* to publish embed-rich articles, by hand and via an a
   (write: create/update/publish/delete) behind `get_article_author_access`;
   `tinboker_article_token` in [`config.py`](../backend/src/config.py),
   `get_article_author_access()` in [`admin_auth.py`](../backend/src/auth/admin_auth.py).
-- [ ] Image upload endpoint — **deferred** (blocked on Phase 0: CDN hostname + GCS wiring).
+- [ ] Image upload endpoint — **deferred** (blocked on the article image path and upload API).
   Articles can reference external image URLs in markdown; the `img`/`figure` renderer handles
   them. The dedicated upload endpoint ships with Phase 0 completion.
 - [x] Server-side marker extraction to populate `tags`/`tickers` from the body — reuses the
@@ -260,8 +258,7 @@ Everything needed for *you* to publish embed-rich articles, by hand and via an a
 - [x] `mcp-servers/article-authoring/` — FastMCP stdio wrapper over the HTTP API. Tools cover
   ticker/tag snippets, external-image markdown, draft create/update/list/read, and publish.
   Registered in [`.mcp.json`](../.mcp.json). Write tools require `TINBOKER_ARTICLE_TOKEN`.
-- [ ] `upload_image` — **deferred** with the backend upload endpoint (blocked on Phase 0 CDN/GCS
-  wiring). Current MCP exposes `image_markdown()` for existing public image URLs.
+- [ ] `upload_image` — **deferred** with the backend upload endpoint (blocked on the article image path and upload API). Current MCP exposes `image_markdown()` for existing public image URLs.
 
 **Acceptance:** (1) ~~you write an article in the admin editor with a ticker citation, a tag, and an
 uploaded image~~ **Partially met:** admin editor creates articles with ticker citations and tags
@@ -300,7 +297,7 @@ inline, in both light and dark mode, on desktop and mobile.
 - [ ] `articles.status` moderation flow + an admin **approval queue** (`pending_review → published`)
   reusing the `/admin` shell (no moderation surface exists today).
 - [ ] Author profiles (bio, byline, avatar, author slug) on the user doc; public author page
-  listing their articles; profile UI in [`ProfilePage`](../frontend/src/pages/ProfilePage.tsx) /
+  listing their articles; profile UI in `ProfilePage` (retired) /
   [`SettingsPage`](../frontend/src/pages/SettingsPage.tsx).
 - [ ] Per-author MCP API keys (hashed on the user doc) replacing the single shared token.
 - [ ] Comments on articles: generalize the `comments` table from `(podcast_name, episode_id)` to a
@@ -340,8 +337,7 @@ submits for review, and an admin approves it to publish.
 
 ## 5. Open questions / risks
 
-1. **CDN hostname** — confirm `cdn.tinboker.com` (or reuse an existing host) and the Cloudflare→GCS
-   wiring before Phase 1 image work. **Still open — blocks image upload endpoint.**
+1. **Article image path** — decide where uploads live under the existing VPS `/media` host and how article images are cached. **Still open — blocks image upload endpoint.**
 2. ~~**Slug strategy**~~ — **Resolved:** auto-generated from title via `slugify` (ascii
    transliteration); collisions get a `-{timestamp}` suffix. Admin editor shows the slug and
    allows manual override before publish.
@@ -386,7 +382,7 @@ submits for review, and an admin approves it to publish.
 | Area | Follow / extend |
 |---|---|
 | News slice (original template) | `backend/src/{models,database,services,routers}/news.*` |
-| GCS upload primitive | [`backend/src/services/gcs_content.py`](../backend/src/services/gcs_content.py) |
+| VPS media upload helper (historical class name) | [`backend/src/services/gcs_content.py`](../backend/src/services/gcs_content.py) |
 | Marker extraction (original) | [`backend/src/services/episode_transformer.py`](../backend/src/services/episode_transformer.py) |
 | Body renderer (episode) | [`frontend/src/components/episode/SummaryMarkdown.tsx`](../frontend/src/components/episode/SummaryMarkdown.tsx) |
 | Chart / graph embeds (Phase 3) | [`frontend/src/components/charts/TradingViewChart.tsx`](../frontend/src/components/charts/TradingViewChart.tsx), [`frontend/src/components/graph/visuals/ForceGraph.tsx`](../frontend/src/components/graph/visuals/ForceGraph.tsx) |

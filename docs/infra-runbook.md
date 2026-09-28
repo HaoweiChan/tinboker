@@ -20,9 +20,8 @@ Users → Cloudflare Edge (cache + DDoS) → Netcup VPS (152.53.136.182)
                               └───────────────┼───────────────┘
                                          Redis :6379
                                               ↓
-                                   Firestore (graphfolio-db)
-                                   GCS (graphfolio-articles)
-                                   PostgreSQL (podcast_db, read-only)
+                                   PostgreSQL (shared podcast_db)
+                                   VPS disk (/srv/tinboker-media)
                                    GCP Secret Manager
 ```
 
@@ -149,7 +148,7 @@ code changes — see [`workflows/deploy-flow.md`](./workflows/deploy-flow.md) Ve
 ### 1.4a Ad-hoc Cloudflare purge (data-only changes)
 
 This is the **canonical recipe** for manually purging the Cloudflare CDN when there is no
-code deploy to trigger the automatic purge — e.g. a Firestore data fix, or a manual pipeline
+code deploy to trigger the automatic purge — e.g. a content-data fix, or a manual pipeline
 run. Fetch credentials from GCP Secret Manager yourself, never ask the user:
 
 ```bash
@@ -235,11 +234,11 @@ the Docker volume mount (`backend/docker-compose.multi.yml`: `./gcp-service-acco
 - **Container path (inside the running container, matches `GOOGLE_APPLICATION_CREDENTIALS`):**
   `/app/gcp-service-account.json`
 
-To get a new key if lost:
-1. GCP Console → IAM & Admin → Service Accounts
-2. Find the service account used by the backend
-3. Keys tab → Add Key → JSON → download
-4. Upload to VPS: `scp service-account-key.json root@152.53.136.182:/app/backend/gcp-service-account.json`
+Credential provisioning:
+The service account is used for Secret Manager access. Store its JSON in the
+`GCP_CREDENTIALS_JSON` GitHub Actions secret; `backend-deploy.yml` writes it to
+`/app/backend/gcp-service-account.json` during deployment. Do not copy the key
+to the VPS by hand. See [§ 2.3](#23-secrets-used-by-github-actions-ci).
 
 ### 2.2 GCP Secret Manager — full secrets list
 
@@ -250,8 +249,9 @@ To get a new key if lost:
 > CI/CD secrets stay in GitHub Actions repo secrets (CI does not read GSM).
 >
 > Backend precedence is env → `.env` → GSM, which means **an `.env` entry silently
-> shadows GSM** — leave real secrets out of every `.env`. `source=gsm` in the logs is
-> the expected state, not a migration warning.
+> shadows GSM** — keep runtime secrets out of `.env`. CI supplies the compose-time
+> `POSTGRES_PASSWORD` from a GitHub Actions secret; local compose can read an
+> untracked `backend/.env`. `source=gsm` in backend logs is an expected source.
 >
 > The authoritative field list is `_GSM_FIELDS` in `backend/src/config_loader.py` (an
 > explicit allowlist — a field that is absent is never read from GSM); the table below
@@ -264,7 +264,7 @@ Python settings field name.
 
 | Secret name in GSM | What it is | Required? |
 |---|---|---|
-| `POSTGRES_PASSWORD` | Password for Cloud SQL (podcast_db) | Yes (prod) |
+| `POSTGRES_PASSWORD` | Password for VPS PostgreSQL (`podcast_db`) | Yes (prod) |
 | `JWT_SECRET_KEY` | Signing key for user auth tokens | Yes |
 | `ADMIN_PASSWORD` | Password for admin UI login | Yes |
 | `ADMIN_JWT_SECRET` | Signing key for admin tokens | Yes |
@@ -299,7 +299,7 @@ No workflow calls `gcloud secrets versions access` any more.
 | `VPS_USER` | SSH user (`root`) |
 | `VPS_SSH_KEY` | SSH private key for deploy |
 | `GHCR_TOKEN` | GitHub Container Registry login token |
-| `GCP_CREDENTIALS_JSON` | SA JSON shipped to the VPS for the GCS article store |
+| `GCP_CREDENTIALS_JSON` | SA JSON shipped to the VPS for runtime Secret Manager access |
 | `POSTGRES_PASSWORD` | Passed into the backend compose stack at deploy time |
 | `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ZONE_TAG` | Post-deploy CDN purge |
 | `GOOGLE_CLIENT_ID` | Injected as `VITE_GOOGLE_CLIENT_ID` at frontend build time |
@@ -347,39 +347,15 @@ If creating fresh:
 
 ## Part 4 — Cold start (first time ever deploying on a fresh VPS)
 
-If this is a brand new server with no running containers:
-
-```bash
-ssh root@152.53.136.182
-
-# 1. Clone repo
-git clone git@github.com:YOUR_USERNAME/tinboker.git /app
-cd /app/backend
-
-# 2. Place GCP service account key
-scp local-machine:/path/to/gcp-service-account.json /app/backend/gcp-service-account.json
-
-# 3. Create shared Docker network
-docker network create app_default
-
-# 4. Log in to GHCR
-echo "YOUR_GHCR_TOKEN" | docker login ghcr.io -u YOUR_USERNAME --password-stdin
-
-# 5. Pull all images
-docker compose -f docker-compose.multi.yml pull
-
-# 6. Start everything
-docker compose -f docker-compose.multi.yml up -d
-
-# 7. Wait and verify
-sleep 30
-curl http://localhost:8000/health
-curl http://localhost:8001/health
-curl http://localhost:8002/health
-
-# 8. Register systemd services
-bash deploy/setup-systemd.sh
-```
+For a new VPS, provision Docker, Caddy, the `app_default` network, and the GitHub
+Actions secrets described above. Initialize `/app` as a checkout of this repository:
+the deploy workflow enters `/app` and runs `git fetch` before building the stack.
+This one-time host bootstrap does not start the application. Deploy through the
+[release workflow](workflows/deploy-flow.md), which installs the service account
+key and starts the Compose stack. Verify the health endpoints after CI succeeds.
+Then run `bash /app/backend/deploy/setup-systemd.sh` once to install the systemd unit
+that restarts the stack on boot; CI does not install it.
+Do not use manual SSH, `scp`, or `docker compose` commands to deploy application code.
 
 ---
 
@@ -407,7 +383,8 @@ describing the pre-May-2026 topology.
 ```
 Image:      postgres:16-alpine
 Container:  tinboker-postgres
-Published:  127.0.0.1:5432  (loopback only — host processes can reach it, the internet cannot)
+Published:  127.0.0.1:5433 → container port 5432 (loopback only — host processes
+            can reach it, the internet cannot). Set in docker-compose.multi.yml.
 Volume:     postgres-data
 Network:    app_default (external)
 ```
@@ -416,53 +393,48 @@ Two consumers, two logical databases on the same server:
 
 | Consumer | Reaches it via | Database | Credentials |
 |---|---|---|---|
-| Backend containers (prod/dev/staging) | `POSTGRES_HOST=postgres` (Docker DNS on `app_default`), port 5432 | `podcast_db` | user `podcast_user`, `POSTGRES_PASSWORD` from `compose/backend/.env` (GSM fallback) |
-| Pipelines (systemd units on the VPS host, not in Docker) | `127.0.0.1:5432` (published port) | `tinboker_wiki` | `WIKI_DATABASE_URL` from `/root/tinboker/pipelines/.env` (GSM fallback) |
+| Backend containers (prod/dev/staging) | `POSTGRES_HOST=postgres` (Docker DNS on `app_default`), port 5432 | `podcast_db` | user `podcast_user`; compose requires `POSTGRES_PASSWORD` from its environment or backend `.env` |
+| Pipelines (systemd units on the VPS host, not in Docker) | `127.0.0.1:5433` (published port) | `tinboker_wiki` | `WIKI_DATABASE_URL` from `/root/tinboker/pipelines/.env` (GSM fallback) |
 
 `podcast_db` and `podcast_user` are created by the container's entrypoint from
-`POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD` (the last read from `backend/.env`
-— compose fails fast if it is unset). The pipelines' `tinboker_wiki` database is created
+`POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD` (the last supplied by CI at deploy
+or by the local compose environment/`backend/.env`; compose fails fast if unset).
+The pipelines' `tinboker_wiki` database is created
 separately; schema in [`pipelines/docs/wiki-schema.md`](../pipelines/docs/wiki-schema.md).
 
 All three backends depend on `postgres: condition: service_healthy`, so they will not
 start until `pg_isready -U podcast_user -d podcast_db` passes.
 
-### Firestore — `graphfolio-db`
+### Historical Firestore database
 
-Main application data (episodes, podcast metadata, user data). Managed by GCP — no
-setup needed. The backend accesses it via the service account JSON key.
-
-Database ID: `graphfolio-db` (set as `FIRESTORE_DATABASE_ID` env var in `docker-compose.multi.yml`).
+`graphfolio-db` no longer stores live application data. The database was confirmed absent on 2026-09-03. Content and user data use VPS Postgres; the service account remains for GCP Secret Manager. See the [current data contract](firestore-contract.md#current-state-2026-09-27).
 
 ---
 
 ## Part 6 — Environment variables reference
 
-Variables set in `docker-compose.multi.yml` are passed directly to containers. P6: every
-secret should be in `compose/backend/.env` (compose injects it); anything still missing
-there falls back to GCP Secret Manager at runtime via `src/config_loader.py`, which logs
-`source=gsm` for each one. See `docs/firestore-contract.md` § 11.8.
+Variables set in `docker-compose.multi.yml` are passed directly to containers. Compose needs `POSTGRES_PASSWORD` at startup (CI supplies its GitHub secret); backend runtime settings missing from the environment fall back to GCP Secret Manager through `src/config_loader.py`. See [§ 2.2](#22-gcp-secret-manager--full-secrets-list) for precedence.
 
 | Variable | Value | Notes |
 |---|---|---|
 | `ENVIRONMENT` | `production` / `development` / `staging` | Controls DB enforcement, logging |
 | `PORT` | `8000` in containers, `5174` locally | Container port; Caddy/compose maps it to 8000/8001/8002 per env |
 | `USE_POSTGRES` | `true` | Forces PostgreSQL; production auto-enables this |
-| `SQL_ECHO` | `false` (default) | Echoes every SQL statement to stdout. Debugging only — turn it back off. Containers have no log rotation, and this wrote ~1.5 GB/day when left on in dev |
-| `LOG_LEVEL` | `WARNING` (default) | Root log level. At the default, every `logger.info()` is dropped — that is why a background warmer can run with nothing in `docker logs`. Set `INFO` to see the warmers report (`US OHLC: grouped <date> → N rows`, `close-refresh: fetched …`), then set it back: containers have no log rotation |
+| `SQL_ECHO` | `false` (default) | Echoes every SQL statement to stdout. Debugging only — turn it back off. Compose now rotates container logs, but SQL echo still generated ~1.5 GB/day when left on in dev |
+| `LOG_LEVEL` | `WARNING` (default) | Root log level. At the default, every `logger.info()` is dropped — that is why a background warmer can run with nothing in `docker logs`. Set `INFO` to see the warmers report (`US OHLC: grouped <date> → N rows`, `close-refresh: fetched …`), then set it back to avoid excessive logs |
 | `REDIS_URL` | `redis://redis:6379/0` | Docker internal network |
 | `GCP_PROJECT_ID` | `gen-lang-client-0901363254` | Enables Secret Manager |
 | `GOOGLE_APPLICATION_CREDENTIALS` | `/app/gcp-service-account.json` | Mounted at runtime |
-| `MASSIVE_API_KEY` | `compose/backend/.env` (GSM fallback) | US stocks market data |
-| `FINMIND_API_KEY` | `compose/backend/.env` (GSM fallback) | TW stocks market data |
-| `JWT_SECRET_KEY` | `compose/backend/.env` (GSM fallback) | Signing key for user auth tokens |
+| `MASSIVE_API_KEY` | GCP Secret Manager fallback | US stocks market data |
+| `FINMIND_API_KEY` | GCP Secret Manager fallback | TW stocks market data |
+| `JWT_SECRET_KEY` | GCP Secret Manager fallback | Signing key for user auth tokens |
 | `POSTGRES_HOST` | `postgres` | The `postgres` service on the `app_default` Docker network (see Part 5) |
 | `POSTGRES_PORT` | `5432` | |
-| `POSTGRES_DB` | `podcast_db` | Backend's logical DB — content mirror + recommendations |
+| `POSTGRES_DB` | `podcast_db` | Shared logical database — content, users, and platform SQL data |
 | `POSTGRES_USER` | `podcast_user` | |
-| `POSTGRES_PASSWORD` | `compose/backend/.env` (GSM fallback) | Also read by compose to seed the `postgres` container |
-| `WIKI_DATABASE_URL` | `/root/tinboker/pipelines/.env` (GSM fallback) | Pipelines only (host systemd, not Docker) — points at `127.0.0.1:5432/tinboker_wiki` |
-| `FIRESTORE_DATABASE_ID` | `graphfolio-db` | Named Firestore instance |
+| `POSTGRES_PASSWORD` | GitHub Actions secret at deploy | Required by compose to seed the `postgres` container; backend runtime can also fall back to GSM |
+| `WIKI_DATABASE_URL` | `/root/tinboker/pipelines/.env` (GSM fallback) | Pipelines only (host systemd, not Docker) — points at `127.0.0.1:5433/tinboker_wiki` |
+| `FIRESTORE_DATABASE_ID` | historical | Legacy configuration only; no live Firestore reads/writes |
 | `CORS_ORIGINS` | `["https://tinboker.com",...]` | Set per environment in compose file |
 | `RELEASE_PODCAST_LANGUAGES` | `zh-TW` | Release scoping (launch subset) — only show `content_sources` podcasts in these languages ("" = all) |
 | `EPISODE_SYNDICATION_PLATFORMS` | `""` | Which platforms the pipeline's per-episode syndicate call may still reach (`vocus,substack`). Empty since 2026-09-13: 870 summaries in 4 weeks at ~7 pageviews each; the nightly 每日一集 sends one instead. |
@@ -478,6 +450,7 @@ there falls back to GCP Secret Manager at runtime via `src/config_loader.py`, wh
 | `NEWEBPAY_SANDBOX_MERCHANT_ID` | GSM only | NewebPay **sandbox** merchant id — separate NewebPay account from production, so a separate credential set. |
 | `NEWEBPAY_SANDBOX_HASH_KEY` | GSM only | NewebPay **sandbox** AES-256-CBC key (32 chars). |
 | `NEWEBPAY_SANDBOX_HASH_IV` | GSM only | NewebPay **sandbox** AES-256-CBC IV (16 chars). |
+| `NEWEBPAY_CHECKOUT_ENABLED` | `false` in Settings | Enables new hosted checkouts only when the active merchant credentials are present. Compose enables sandbox checkout on dev; staging and production remain disabled. Callbacks and cancellation remain available when new checkout is disabled. |
 
 Which of the six credentials applies is **derived from `ENVIRONMENT`, never configured
 separately** — `Settings.newebpay_env` is `"production"` iff `is_production`, else
@@ -517,25 +490,12 @@ docker logs -f tinboker-backend-prod
 docker logs -f tinboker-backend-dev
 docker logs -f tinboker-backend-staging
 
-# Restart a single service (no downtime for others)
-cd /app/backend
-docker compose -f docker-compose.multi.yml restart backend-prod
-
-# Manual redeploy production without CI
-cd /app/backend
-git pull origin main
-PROD_IMAGE_TAG=main docker compose -f docker-compose.multi.yml pull backend-prod
-PROD_IMAGE_TAG=main docker compose -f docker-compose.multi.yml up -d --no-deps backend-prod
-
-# Force-clear Redis cache
-docker exec tinboker-redis redis-cli FLUSHALL
-
 # Caddy logs
 journalctl -u caddy -f
-
-# Caddy reload after Caddyfile change
-systemctl reload caddy
 ```
+
+Use the [release workflow](workflows/deploy-flow.md) for deploys and rollbacks.
+The SSH commands above are read-only diagnostics.
 
 ---
 

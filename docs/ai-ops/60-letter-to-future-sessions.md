@@ -12,8 +12,7 @@
 
 ### 1. The dangerous seams are the data contracts, not the code
 
-This platform is mid-migration (Firestore/GCS → VPS Postgres; see
-`pipelines/docs/data-consolidation-plan.md`), and three tiers — `pipelines/` (producer),
+The Firestore/GCS → VPS Postgres and disk migration is complete (verified 2026-09-27; see the current-state section of `docs/firestore-contract.md`), and three tiers — `pipelines/` (producer),
 `backend/` (server), `frontend/` (consumer, Zod-validated) — share field-level contracts
 documented in `docs/firestore-contract.md`. Almost any "weird bug" that isn't a plain
 code error is one of these seams: a field renamed in one tier, a TTL misaligned with the
@@ -82,13 +81,10 @@ outperforms a smarter model bluffing.
 - **Rotate `DEV_BYPASS_TOKEN`** — a live value sat committed in `docs/agents/auth-admin.md`
   (removed 2026-07-03, but it lives in git history). User was told; if it hasn't
   happened, remind them. Secret: `DEV_BYPASS_TOKEN` in GCP Secret Manager + VPS env.
-- **Reconcile root `AGENTS.md`** with CLAUDE.md + docs/ (it forked; currently marked
-  legacy). Tier C — propose to user.
+- **Root `AGENTS.md` reconciliation — resolved 2026-09-27.** It is a symlink to `CLAUDE.md`; there is no separate root copy.
 - Stale docstring: `backend/src/routers/episodes.py` `/recent` says "CDN Cache: 30
   minutes"; code says 10. Trivial, fix in any passing PR.
-- `docs/infra-runbook.md` states the VPS service-account path inconsistently
-  (`/app/gcp-service-account.json` vs `/app/backend/gcp-service-account.json`) —
-  pre-existing; verify against the deploy scripts and fix (found by review 2026-07-03).
+- **Service-account path ambiguity — resolved 2026-09-27.** `/app/backend/gcp-service-account.json` is the VPS host path and `/app/gcp-service-account.json` is its container mount; see `docs/infra-runbook.md` Part 2.1.
 - Consider gitignoring `docs/ai-ops/_backups/` (user decision; backups currently in-repo
   per founding instruction, secrets scrubbed).
 - This institution was created on branch `claude/competent-cray-950c92`; it protects

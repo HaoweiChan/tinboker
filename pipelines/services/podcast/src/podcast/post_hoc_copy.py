@@ -29,6 +29,7 @@ from .content_builder.nodes.social_copy_writer import (
     _summary_sections,
 )
 
+MAX_EVIDENCE_CHARS = 16000
 MAX_SECTIONS = 3
 SECTION_CHARS = 1200
 STANCE_ZH = {"BULLISH": "看多", "BEARISH": "看空", "NEUTRAL": "沒有明確方向"}
@@ -68,8 +69,8 @@ def sections_about(summary: str, ticker: str, name: str) -> list[dict[str, str]]
         if anchor in body or (name and name in body) or (name and name in (s.get("heading") or "")):
             # Strip the pipeline's link anchors: the model should read prose, not markup.
             clean = re.sub(r"\[([^\]]+)\]\(#[^)]+\)", r"\1", body)
-            out.append({"heading": s["heading"], "body": clean[:SECTION_CHARS]})
-    return out[:MAX_SECTIONS]
+            out.append({"heading": s["heading"], "body": clean})
+    return out
 
 
 def _bullets(items: Any) -> str:
@@ -86,8 +87,10 @@ def _bullets(items: Any) -> str:
 
 def build_messages(material: dict) -> list[dict[str, str]]:
     prompts = load_prompt("post_hoc_copy_writer")
-    stance = (material.get("sentiment_label") or "").upper().replace("STRONG_", "")
+    stance = (material.get("sentiment_label") or "").strip().upper().removeprefix("STRONG_")
     sections = sections_about(material.get("summary") or "", material["ticker"], material.get("name") or "")
+    if material.get("mode") == "today":
+        sections = [{**s, "body": s["body"][:SECTION_CHARS]} for s in sections[:MAX_SECTIONS]]
     speaker = material.get("speaker") or speaker_for(material.get("source") or "")
     name = material.get("name") or material["ticker"]
     closing = CLOSINGS.get(material.get("mode") or "post_hoc", CLOSINGS["post_hoc"]).format(speaker=speaker, name=name)
@@ -98,6 +101,8 @@ def build_messages(material: dict) -> list[dict[str, str]]:
         speaker=speaker,
         name=name,
         closing=closing,
+        mode=material.get("mode") or "post_hoc",
+        full_summary=(material.get("summary") or "") if material.get("mode") != "today" else "（今天模式不附全文）",
         ticker=material["ticker"],
         stance=STANCE_ZH.get(stance, "沒有明確方向"),
         thesis=(material.get("thesis") or "").strip() or "（無）",
@@ -117,4 +122,23 @@ def postprocess(result: Any) -> dict[str, str]:
 
 def write_post_hoc_copy(material: dict) -> dict[str, str]:
     """One LLM call. Uses the episode writer's model role — same voice, same model."""
-    return postprocess(invoke_json("social_copy_writer", build_messages(material)))
+    retrospective = (material.get("mode") or "post_hoc") == "post_hoc"
+    sections = sections_about(material.get("summary") or "", material["ticker"], material.get("name") or "")
+    expected = {
+        "BULLISH": "bullish", "STRONG_BULLISH": "bullish",
+        "BEARISH": "bearish", "STRONG_BEARISH": "bearish",
+    }.get((material.get("sentiment_label") or "").strip().upper())
+    if retrospective and (not expected or not sections or
+                          len(material.get("summary") or "") > MAX_EVIDENCE_CHARS):
+        return {"post": ""}
+    result = invoke_json("social_copy_writer", build_messages(material))
+    if retrospective:
+        if not isinstance(result, dict):
+            return {"post": ""}
+        quote = result.get("supporting_quote")
+        if (result.get("source_stance") != expected or result.get("post_stance") != expected
+                or result.get("has_conflicting_evidence") is not False
+                or not isinstance(quote, str) or len(quote.strip()) < 8
+                or not any(quote.strip() in section["body"] for section in sections)):
+            return {"post": ""}
+    return postprocess(result)

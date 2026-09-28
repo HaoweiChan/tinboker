@@ -5,10 +5,11 @@ import logging
 import json
 import asyncio
 import math
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Dict
 from collections import Counter
 
+from src.services.attention import batch_attention_levels
 from src.services.podcast import PodcastService
 from src.services.stock import StockService
 from src.cache.redis_client import cache_get, cache_set, get_redis
@@ -148,7 +149,7 @@ class TrendingService:
                   prev_sentiment_summary, rising_ticker, new_tickers}
         """
         ticker_filter = ticker.strip().upper().split(".")[0] if ticker else None
-        cache_key = f"buzz:recent:{days}:{limit}:{ticker_filter or 'all'}:v5"
+        cache_key = f"buzz:recent:{days}:{limit}:{ticker_filter or 'all'}:v6"
         cached = await cache_get(cache_key)
         if cached:
             try:
@@ -203,6 +204,17 @@ class TrendingService:
         all_tickers_to_translate = list(set(top_tickers + extra_tickers + ([ticker_filter] if ticker_filter else [])))
         translations = await self._get_translations_batch(all_tickers_to_translate)
 
+        attention = {}
+        if top_tickers:
+            try:
+                allowed = await self.podcast_service._allowed_podcast_names()
+                attention = await asyncio.to_thread(
+                    batch_attention_levels, top_tickers, allowed=allowed,
+                    today=datetime.now(timezone.utc).date(),
+                )
+            except Exception:
+                logger.warning("buzz attention aggregation failed", exc_info=True)
+
         # Aggregate dominant sentiment per top ticker
         sent_maps: Dict[str, dict] = {}
         try:
@@ -241,6 +253,7 @@ class TrendingService:
                 "sentiment_label": dominant,
                 "sentiment_counts": sentiment_counts,
                 "last_mentioned": last_mentioned.get(ticker),
+                **attention.get(ticker, {"attention_level": None, "attention_as_of": None}),
             })
 
         # Compute prev-window sentiment summary from the top tickers' prior counts

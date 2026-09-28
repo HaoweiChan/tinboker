@@ -51,11 +51,11 @@ Boundaries: the underlying episode/stock data lives in [`podcast-domain.md`](./p
 ## External integrations
 
 - **Redis** — sorted sets backing trending click counts (`trending:clicks:podcast`, etc.) and cached search results.
-- **Firestore** `graphfolio-db` — source for episode mentions when building the trending stocks list.
+- **VPS Postgres** `podcast_db` — the episode content used to count ticker mentions; `firestore_mirror` is the historical schema name.
 
 ## Cross-references
 
-- Trending tickers data contract: [`../firestore-contract.md`](../firestore-contract.md) §5 (`trending_tickers/{ticker}`)
+- Trending tickers data contract: [`../firestore-contract.md`](../firestore-contract.md) §5 (historical document shape) and §11 (current Postgres table)
 - Workflow for QA on broken search: [`../workflows/qa-flow.md`](../workflows/qa-flow.md) §2.2
 - Backend code style: [`../../backend/AGENTS.md`](../../backend/AGENTS.md)
 - Frontend zh-TW conventions: [`../../frontend/AGENTS.md`](../../frontend/AGENTS.md)

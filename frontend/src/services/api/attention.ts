@@ -4,6 +4,6 @@ import { parseResponse, AttentionSchema, type Attention } from '../../validation
 /** Home-page attention: narrative tags, most-discussed and rising tickers over rolling
  *  7d / 30d windows (see backend TrendingService.get_attention). */
 export async function getAttention(): Promise<Attention> {
-  const response = await apiClient.get('/api/episodes/attention');
+  const response = await apiClient.get('/api/episodes/attention', { params: { rising_limit: 8 } });
   return parseResponse(AttentionSchema, response.data);
 }

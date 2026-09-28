@@ -187,7 +187,7 @@ export const SectorPage: React.FC = () => {
           {loading ? (
             <div className="h-7 w-40 bg-muted rounded animate-pulse" />
           ) : (
-            <h1 className="text-2xl font-semibold tracking-[-0.02em]">{titleText}</h1>
+            <h1 className="heading-accent text-2xl font-semibold tracking-[-0.02em]">{titleText}</h1>
           )}
           {!loading && <span className="text-sm text-muted-foreground tabular-nums">{episodes.length} 集</span>}
           <span className="flex-1" />
@@ -239,7 +239,7 @@ export const SectorPage: React.FC = () => {
           </div>
         )}
 
-        <h2 className="text-sm font-semibold text-muted-foreground mb-3">相關集數</h2>
+        <h2 className="heading-accent text-lg font-semibold text-foreground mb-3">相關集數</h2>
         {loading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {Array.from({ length: 4 }).map((_, i) => (

@@ -84,6 +84,8 @@ export function useAuthInit() {
                 .slice(0, 2),
               member_until: user.member_until ?? null,
               is_member: user.is_member ?? false,
+              membership_preview: user.membership_preview ?? null,
+              membership_preview_available: user.membership_preview_available ?? false,
             },
             currentToken,
           );
@@ -92,6 +94,7 @@ export function useAuthInit() {
             watchlist: user.watchlist || [],
             subscriptions: user.podcast_subscriptions || [],
             tagSubscriptions: user.tag_subscriptions || [],
+            dismissedPicks: user.dismissed_picks || [],
             episodeBookmarks: user.episode_bookmarks || [],
             alerts: user.alerts || [],
           });

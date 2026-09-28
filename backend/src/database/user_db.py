@@ -6,6 +6,7 @@ Was Firestore ``users/{user_id}`` until P3 of the Firestore exit
 callers (routers/user.py, routers/auth.py, utils/dependencies.py) were not touched.
 """
 import uuid
+from contextlib import nullcontext
 from typing import Dict, Optional
 from datetime import datetime, timezone
 
@@ -23,13 +24,16 @@ MERGED_SECTOR_TAG_SUBSCRIPTION_RENAMES = {
     "日本被動元件": "被動元件 MLCC",
 }
 
-# The five list-valued subscription fields; `alerts` has no toggle endpoint yet.
+# The list-valued per-user fields. Everything generic keys off this tuple — the row
+# reader, the response mapping and _update_array_field — so adding one here is most of
+# the work. `alerts` has no toggle endpoint yet.
 ARRAY_FIELDS = (
     "watchlist",
     "podcast_subscriptions",
     "episode_bookmarks",
     "alerts",
     "tag_subscriptions",
+    "dismissed_picks",
 )
 
 
@@ -70,6 +74,13 @@ def migrate_merged_sector_tag_subscriptions() -> int:
 def _to_user_response(row: User) -> UserResponse:
     """Convert a User row to the API/response model."""
     prefs_data = row.notification_preferences or {}
+    member_until = row.member_until
+    from src.config import settings
+    if settings.environment in ("development", "staging") and row.email.lower() in {e.lower() for e in settings.admin_emails}:
+        from src.services.billing import sandbox_member_until
+        sandbox_until = sandbox_member_until(row.id)
+        actual_until = member_until.replace(tzinfo=timezone.utc) if member_until and member_until.tzinfo is None else member_until
+        member_until = max(filter(None, [actual_until, sandbox_until]), default=None)
     return UserResponse(
         id=row.id,
         google_id=row.google_id,
@@ -79,12 +90,11 @@ def _to_user_response(row: User) -> UserResponse:
         email_verified=bool(row.email_verified),
         created_at=row.created_at,
         updated_at=row.updated_at,
-        watchlist=row.watchlist or [],
-        podcast_subscriptions=row.podcast_subscriptions or [],
-        episode_bookmarks=row.episode_bookmarks or [],
-        alerts=row.alerts or [],
-        tag_subscriptions=row.tag_subscriptions or [],
-        member_until=row.member_until,
+        # Spread ARRAY_FIELDS instead of naming each one: listing them by hand is how
+        # dismissed_picks shipped missing from /me while its own toggle worked, so the
+        # field fell back to the model's default [] and a fresh login lost it.
+        **{field: (getattr(row, field) or []) for field in ARRAY_FIELDS},
+        member_until=member_until,
         notification_preferences=NotificationPreferences(
             new_episodes=prefs_data.get("new_episodes", True),
             stock_mentions=prefs_data.get("stock_mentions", True),
@@ -176,7 +186,7 @@ def update_user(
         raise Exception(f"Failed to update user: {e}") from e
 
 
-def set_member_until(email: str, member_until: Optional[datetime]) -> Optional[UserResponse]:
+def set_member_until(email: str, member_until: Optional[datetime], *, session: Optional[Session] = None) -> Optional[UserResponse]:
     """Admin manual grant/revoke: set (or clear, with `None`) a user's membership
     expiry by email. Returns None if no such user.
 
@@ -191,7 +201,7 @@ def set_member_until(email: str, member_until: Optional[datetime]) -> Optional[U
             else member_until.astimezone(timezone.utc)
         )
     try:
-        with session_scope() as db:
+        with (nullcontext(session) if session is not None else session_scope()) as db:
             row = db.query(User).filter(func.lower(User.email) == email.lower()).first()
             if not row:
                 return None
@@ -322,6 +332,21 @@ def toggle_watchlist(user_id: str, ticker: str) -> Dict[str, any]:
     return {"ticker": ticker, "is_in_watchlist": True}
 
 
+def get_podcast_subscriber_counts(podcast_names: list[str]) -> dict[str, int]:
+    """Count current unique followers per requested show without exposing user data."""
+    counts = dict.fromkeys(podcast_names, 0)
+    if not counts:
+        return counts
+    with session_scope() as db:
+        # One column, one batched query; duplicate legacy follows count once per user.
+        for (subscriptions,) in db.query(User.podcast_subscriptions).yield_per(500):
+            if isinstance(subscriptions, list):
+                for name in {name for name in subscriptions if isinstance(name, str)}:
+                    if name in counts:
+                        counts[name] += 1
+    return counts
+
+
 def add_podcast_subscription(user_id: str, podcast_name: str) -> bool:
     """Subscribe to a podcaster"""
     return _update_array_field(user_id, "podcast_subscriptions", podcast_name, "add")
@@ -381,6 +406,16 @@ def toggle_tag_subscription(user_id: str, tag_name: str) -> Dict[str, any]:
         return {"tag_name": tag_name, "is_subscribed": False}
     add_tag_subscription(user_id, tag_name)
     return {"tag_name": tag_name, "is_subscribed": True}
+
+
+def toggle_dismissed_pick(user_id: str, pick_key: str) -> Dict[str, any]:
+    """Hide/unhide one pick in 走勢. `pick_key` is "{episode_id}|{ticker}"."""
+    subscriptions = get_user_subscriptions(user_id)
+    if pick_key in subscriptions.get("dismissed_picks", []):
+        _update_array_field(user_id, "dismissed_picks", pick_key, "remove")
+        return {"pick_key": pick_key, "is_dismissed": False}
+    _update_array_field(user_id, "dismissed_picks", pick_key, "add")
+    return {"pick_key": pick_key, "is_dismissed": True}
 
 
 def _to_preferences(prefs: dict) -> NotificationPreferences:

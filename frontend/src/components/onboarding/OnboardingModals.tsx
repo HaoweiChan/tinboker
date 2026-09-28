@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import { X, ArrowRight, ArrowLeft, TrendingUp, Hash, Sparkles } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
@@ -7,7 +8,6 @@ import { GoogleLoginButton } from '@/components/auth/GoogleLoginButton';
 import { DisplayPreferences } from '@/components/onboarding/DisplayPreferences';
 import {
   CHANGELOG,
-  hasSeenOnboarding,
   markOnboardingSeen,
   markChangelogSeen,
   unseenChangelog,
@@ -272,9 +272,7 @@ const SLIDES: Slide[] = [
   },
 ];
 
-/* ── Controller ─────────────────────────────────────────────────────────────
-   Mounted once in the consumer shell. Tutorial → first-time / newly-registered
-   users; otherwise a "what's new" panel after a release. */
+/* ── Controller: tutorials open on request; returning visitors keep release notes. */
 
 type View = 'tutorial' | { entry: ChangelogEntry } | null;
 
@@ -283,46 +281,46 @@ export const OnboardingModals: React.FC = () => {
   const user = useAppStore((s) => s.user);
   const [view, setView] = useState<View>(null);
   const [step, setStep] = useState(0);
-  // Preview mode (?onboarding=…) — show on demand without reading/writing the
-  // "seen" flags, so you can eyeball a release's changelog before shipping.
-  const [preview, setPreview] = useState(false);
+  const [params] = useSearchParams();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const force = params.get('onboarding');
+  const checkedAutomatic = useRef(false);
 
   useEffect(() => {
     if (!isAuthReady) return;
-    const force = new URLSearchParams(window.location.search).get('onboarding');
     if (force === 'tutorial' || force === 'whatsnew') {
-      setPreview(true);
+      // Closing a requested view must not immediately open an automatic release note.
+      checkedAutomatic.current = true;
       setStep(0);
       setView(force === 'tutorial' ? 'tutorial' : CHANGELOG[0] ? { entry: CHANGELOG[0] } : null);
       return;
     }
-    // A visitor who lands on anything but the home page came for that page — a Threads
-    // link to an episode, a shared stock card. A five-step tutorial over the thing they
-    // tapped through for is the first reason to leave (measured 2026-09-19: it covered
-    // the episode on every first visit from social). Nothing is marked seen, so the
-    // tutorial and the changelog still greet them the first time a visit starts at "/".
-    if (window.location.pathname !== '/') {
-      setView(null);
+    if (!checkedAutomatic.current) {
+      checkedAutomatic.current = true;
+      const entry = location.pathname === '/' ? unseenChangelog() : null;
+      setView(entry ? { entry } : null);
       return;
     }
-    if (!hasSeenOnboarding()) {
-      setStep(0);
-      setView('tutorial');
-      return;
+    setView(null);
+  }, [isAuthReady, force, location.pathname]);
+
+  const closeView = () => {
+    setView(null);
+    if (params.has('onboarding')) {
+      const next = new URLSearchParams(params);
+      next.delete('onboarding');
+      navigate({ pathname: location.pathname, search: next.toString(), hash: location.hash }, { replace: true });
     }
-    const entry = unseenChangelog();
-    setView(entry ? { entry } : null);
-  }, [isAuthReady, user?.id]);
+  };
 
   if (view === 'tutorial') {
     const slide = SLIDES[step];
     const last = step === SLIDES.length - 1;
     const close = () => {
-      if (!preview) {
-        markOnboardingSeen();
-        markChangelogSeen(); // new users shouldn't also get a changelog popup
-      }
-      setView(null);
+      markOnboardingSeen();
+      markChangelogSeen();
+      closeView();
     };
     return (
       <Shell label={slide.label} onClose={close}>
@@ -375,7 +373,7 @@ export const OnboardingModals: React.FC = () => {
                 ) : (
                   // Mark seen on click so registering here doesn't re-trigger the
                   // tutorial once the user logs in (login bypasses the close handler).
-                  <span onClickCapture={() => !preview && markOnboardingSeen()}>
+                  <span onClickCapture={() => { markOnboardingSeen(); markChangelogSeen(); }}>
                     <GoogleLoginButton className={primaryBtn}>登入 / 註冊</GoogleLoginButton>
                   </span>
                 )
@@ -394,8 +392,8 @@ export const OnboardingModals: React.FC = () => {
   if (view && 'entry' in view) {
     const { entry } = view;
     const close = () => {
-      if (!preview) markChangelogSeen();
-      setView(null);
+      if (force !== 'whatsnew') markChangelogSeen();
+      closeView();
     };
     return (
       <Shell label={`tinboker — 更新內容`} onClose={close}>

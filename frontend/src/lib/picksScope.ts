@@ -4,7 +4,7 @@ import { canonicalTicker } from './pickGroups';
 /**
  * "我的" scope for /picks (走勢): a pick belongs to the member's personal feed if
  * it's from a podcast they subscribe to, OR its canonical ticker is on their
- * watchlist. This mirrors the existing 訂閱節目 / 自選股票 lists on the member
+ * watchlist. This mirrors the existing 訂閱節目 / 自選個股 lists on the member
  * hub — there is no separate "tracked picks" model.
  */
 

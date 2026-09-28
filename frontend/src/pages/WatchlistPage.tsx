@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { toast } from 'sonner';
+import { Link, useSearchParams } from 'react-router-dom';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
 import { EpisodeCardV2 } from '@/components/redesign';
@@ -12,17 +11,33 @@ import { SubscribedTopics } from '@/components/profile/SubscribedTopics';
 import { userApi } from '@/services/api/user';
 import { useAppStore, useSubscriptions, useWatchlist, useTagSubscriptions } from '@/store/useAppStore';
 import { useBookmarkedEpisodes } from '@/hooks/useBookmarkedEpisodes';
+import { useRemoveWithUndo } from '@/hooks/useRemoveWithUndo';
 import { useStockPriceMap } from '@/hooks/useStockPriceMap';
 import { useStockPriceSinceMap } from '@/hooks/useStockPriceSinceMap';
+import { savedCount } from '@/lib/savedCount';
 
 type Tab = 'podcasters' | 'tickers' | 'topics' | 'episodes';
+const VALID_TABS: readonly string[] = ['podcasters', 'tickers', 'topics', 'episodes'];
 
 export const WatchlistPage: React.FC = () => {
   const token = useAppStore((s) => s.token);
   const localSubscriptions = useSubscriptions();
   const localWatchlist = useWatchlist();
   const localTagSubscriptions = useTagSubscriptions();
-  const [tab, setTab] = useState<Tab>('podcasters');
+  // URL-addressable (?tab=…) so the old /member?tab= deep links and the header
+  // menu can land on a specific list.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get('tab');
+  const tab: Tab = tabParam && VALID_TABS.includes(tabParam) ? (tabParam as Tab) : 'podcasters';
+  const setTab = (t: Tab) =>
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set('tab', t);
+        return next;
+      },
+      { replace: true },
+    );
   const [bookmarkedIds, setBookmarkedIds] = useState<string[]>([]);
   // Server-side data for logged-in users
   const [apiSubscriptions, setApiSubscriptions] = useState<string[]>([]);
@@ -31,41 +46,11 @@ export const WatchlistPage: React.FC = () => {
   const [serverLoaded, setServerLoaded] = useState(false);
   // Swiped-away items, hidden immediately and restored in place by 復原. The lists
   // themselves aren't edited, so an undo puts a row back where it was.
-  const [removed, setRemoved] = useState<ReadonlySet<string>>(new Set());
+  const { removed, removeWithUndo } = useRemoveWithUndo();
   const toggleWatchlist = useAppStore((s) => s.toggleWatchlist);
   const toggleSubscription = useAppStore((s) => s.toggleSubscription);
   const toggleTagSubscription = useAppStore((s) => s.toggleTagSubscription);
   const toggleEpisodeBookmark = useAppStore((s) => s.toggleEpisodeBookmark);
-
-  const setHidden = (key: string, hidden: boolean) =>
-    setRemoved((prev) => {
-      const next = new Set(prev);
-      if (hidden) next.add(key);
-      else next.delete(key);
-      return next;
-    });
-
-  /** Remove now, offer 復原. `toggle` flips the saved state server-side (or locally). */
-  const removeWithUndo = (key: string, label: string, toggle: () => Promise<boolean>) => {
-    setHidden(key, true);
-    const removal = toggle();
-    const toastId = toast(`已移除 ${label}`, {
-      action: {
-        label: '復原',
-        onClick: async () => {
-          setHidden(key, false);
-          // Undo toggles back — only once the removal itself went through, or it would remove instead.
-          if (!(await removal)) return;
-          if (!(await toggle())) setHidden(key, true);
-        },
-      },
-    });
-    void removal.then((ok) => {
-      if (ok) return;
-      toast.dismiss(toastId); // the store already showed why
-      setHidden(key, false);
-    });
-  };
 
   // Effective lists: prefer server data for logged-in users, fall back to local store
   const subscriptions = useMemo(
@@ -117,7 +102,7 @@ export const WatchlistPage: React.FC = () => {
 
   const sortedWatchlist = useMemo(() => [...watchlist], [watchlist]);
   const visibleBookmarked = useMemo(() => bookmarked.filter((ep) => !removed.has(`episode:${ep.id}`)), [bookmarked, removed]);
-  const visibleBookmarkCount = bookmarked.length ? visibleBookmarked.length : bookmarkedIds.length;
+  const visibleBookmarkCount = savedCount(bookmarked.length, visibleBookmarked.length, bookmarkedIds.length);
 
   // Show loading state while server data is being fetched for logged-in users
   const isLoading = token && !serverLoaded;
@@ -126,11 +111,11 @@ export const WatchlistPage: React.FC = () => {
     <>
       <SEO title="收藏" description="追蹤的節目與個股。" />
       <PageContent>
-        <h1 className="text-2xl font-semibold tracking-[-0.02em] mb-3.5">收藏</h1>
+        <h1 className="heading-accent text-2xl font-semibold tracking-[-0.02em] mb-3.5">收藏</h1>
         <div className="flex items-center gap-2 overflow-x-auto mb-[18px]">
           {([
             ['podcasters', `節目 ${subscriptions.length}`],
-            ['tickers', `股票 ${watchlist.length}`],
+            ['tickers', `個股 ${watchlist.length}`],
             ['topics', `話題 ${tagSubscriptions.length}`],
             ['episodes', `集數 ${visibleBookmarkCount}`],
           ] as const).map(([val, label]) => (
@@ -170,7 +155,7 @@ export const WatchlistPage: React.FC = () => {
             {tab === 'tickers' && (
               watchlist.length === 0 ? (
                 <div className="bg-card border border-border rounded-md p-10 text-center text-sm text-muted-foreground">
-                  尚未加入任何自選股票 — 去 <Link to="/stock" className="text-accent-info hover:underline">個股</Link> 頁加入幾檔吧。
+                  尚未加入任何自選個股 — 去 <Link to="/stock" className="text-accent-info hover:underline">個股</Link> 頁加入幾檔吧。
                 </div>
               ) : (
                 <SubscribedTickers

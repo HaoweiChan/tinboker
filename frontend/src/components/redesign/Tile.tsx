@@ -2,7 +2,7 @@ import React from 'react';
 import { cn } from '@/lib/utils';
 
 interface TileProps {
-  /** Sentence-case label, small and muted — no uppercase eyebrows. */
+  /** Section title with the shared amber heading accent. */
   title?: React.ReactNode;
   /** Right side of the title row (a toggle, a count, a link). */
   aside?: React.ReactNode;
@@ -16,7 +16,7 @@ export const Tile: React.FC<TileProps> = ({ title, aside, className, children })
   <div className={cn('bg-card border border-border rounded-[10px] p-5 flex flex-col gap-3 min-w-0', className)}>
     {(title || aside) && (
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        {title && <div className="text-xs text-muted-foreground">{title}</div>}
+        {title && <h2 className="heading-accent text-lg font-semibold text-foreground">{title}</h2>}
         {aside && <div className="text-xs text-muted-foreground">{aside}</div>}
       </div>
     )}
