@@ -62,6 +62,7 @@ import {
     type SyndicationPostInsight,
 } from '@/services/api/adminAnalytics';
 import { TrendChart, type TrendPoint } from '@/components/admin/TrendChart';
+import { ThreadsHistorySync } from '@/components/admin/ThreadsHistorySync';
 
 // ── formatting helpers ─────────────────────────────────────────────────────
 const nf = new Intl.NumberFormat('en-US');
@@ -693,6 +694,7 @@ export const AdminAnalyticsPage: React.FC = () => {
                         : 'Threads views, likes, replies, reposts, quotes and recent posts'
                 }
             >
+                <ThreadsHistorySync />
                 {threads?.available ? (
                     <>
                         <div className="mt-4 grid gap-4 sm:grid-cols-3 lg:grid-cols-6">
