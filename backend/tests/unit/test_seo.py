@@ -36,6 +36,7 @@ async def test_sitemap_lists_static_routes_and_episodes(monkeypatch):
     assert "<loc>https://tinboker.com/</loc>" in body
     assert "<loc>https://tinboker.com/episode/EP600</loc>" in body
     assert "<loc>https://tinboker.com/episode/EP601</loc>" in body
+    assert "<loc>https://tinboker.com/articles</loc>" not in body
     # + 1: the /weekly page for the week both episodes fall in
     assert body.count("<url>") == len(seo.STATIC_PATHS) + 2 + 1
 
