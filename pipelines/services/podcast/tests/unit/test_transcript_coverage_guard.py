@@ -8,12 +8,15 @@ characters spanning the full duration. Both were stored without complaint.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from src.service import speech_to_text
 from src.service.speech_to_text import (
     ChunkTranscriptionError,
     GroqService,
     TranscriptTooShortError,
+    WhisperService,
     check_transcript_covers_audio,
 )
 
@@ -88,7 +91,10 @@ def test_short_transcript_is_rejected_before_return_or_save(
 SRT_CHUNK = "1\n00:00:00,000 --> 00:00:05,000\n這是一段內容\n"
 
 
-def _chunked_groq(monkeypatch, tmp_path, failing_chunk: int | None, fail_times: int = 99):
+def _chunked_groq(
+    monkeypatch, tmp_path, failing_chunk: int | None, fail_times: int = 99,
+    empty_chunk: int | None = None,
+):
     """A GroqService whose file always chunks, with one chunk failing ``fail_times``."""
     monkeypatch.setenv("GROQ_API_KEY", "test-key")
     monkeypatch.setattr(speech_to_text.time, "sleep", lambda _s: None)  # no real backoff
@@ -108,12 +114,15 @@ def _chunked_groq(monkeypatch, tmp_path, failing_chunk: int | None, fail_times: 
         attempts[index] = attempts.get(index, 0) + 1
         if index == failing_chunk and attempts[index] <= fail_times:
             raise RuntimeError("429 rate limit exceeded")
+        if index == empty_chunk:
+            return {"text": "", "duration": 300.0, "segments": []}
         return {"text": "這是一段內容", "duration": 300.0, "segments": []}
 
     monkeypatch.setattr(service, "_transcribe_call", fake_call)
     service._test_attempts = attempts
     monkeypatch.setattr(
-        "src.service.speech_to_text.convert_verbose_json_to_srt", lambda _d: SRT_CHUNK
+        "src.service.speech_to_text.convert_verbose_json_to_srt",
+        lambda data: SRT_CHUNK if data["text"] else "",
     )
     return service
 
@@ -145,3 +154,32 @@ def test_retries_are_bounded(monkeypatch, tmp_path):
     with pytest.raises(ChunkTranscriptionError, match="after 3 attempts"):
         service._transcribe_file_chunked(tmp_path / "episode.mp3", None)
     assert service._test_attempts[2] == 3
+
+
+@pytest.mark.parametrize("provider", ["groq", "whisper"])
+def test_empty_middle_chunk_retries_then_stops_episode(provider, monkeypatch, tmp_path):
+    monkeypatch.setattr(speech_to_text.time, "sleep", lambda _s: None)
+    chunks = [(tmp_path / f"chunk_{i}.mp3", i * 300.0) for i in range(4)]
+    for path, _ in chunks:
+        path.write_bytes(b"audio")
+
+    if provider == "groq":
+        service = _chunked_groq(monkeypatch, tmp_path, failing_chunk=None, empty_chunk=2)
+        attempts = service._test_attempts
+    else:
+        service = WhisperService(api_key="test")
+        monkeypatch.setattr(service, "_get_file_size", lambda _path: 60 * 1024 * 1024)
+        monkeypatch.setattr(service, "_chunk_audio_file", lambda _path, _dir: chunks)
+        attempts = {}
+
+        def fake_create(**params):
+            index = int(Path(params["file"].name).stem.split("_")[-1])
+            attempts[index] = attempts.get(index, 0) + 1
+            return "" if index == 2 else SRT_CHUNK
+
+        monkeypatch.setattr(service.client.audio.transcriptions, "create", fake_create)
+
+    with pytest.raises(ChunkTranscriptionError, match="Chunk 3/4.*after 3 attempts"):
+        service._transcribe_file_chunked(tmp_path / "episode.mp3", None)
+    assert attempts[2] == 3
+    assert 3 not in attempts

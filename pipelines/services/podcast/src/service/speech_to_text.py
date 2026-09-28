@@ -44,10 +44,13 @@ _CHUNK_RETRY_BACKOFF_SECONDS = 5.0
 
 
 def transcribe_chunk_with_retry(call, label: str):
-    """Run ``call`` until it returns, raising ChunkTranscriptionError once out of tries."""
+    """Retry a chunk until it yields usable subtitles, then fail the episode."""
     for attempt in range(1, _CHUNK_ATTEMPTS + 1):
         try:
-            return call()
+            srt_content = call()
+            if not parse_srt_to_sentences(srt_content):
+                raise ValueError("chunk returned no usable subtitles")
+            return srt_content
         except Exception as e:
             if attempt == _CHUNK_ATTEMPTS:
                 raise ChunkTranscriptionError(
@@ -968,6 +971,8 @@ class FallbackTranscriptService(SpeechToTextService):
         primary_name = self.primary.get_service_name()
         try:
             result = self.primary.transcribe(audio_input, language)
+            if (result or {}).get("sentences") and not isinstance(audio_input, bytes):
+                check_transcript_covers_audio(result, probe_audio_seconds(Path(audio_input)))
         except Exception as exc:  # noqa: BLE001 — every primary failure is a handoff
             print(f"  ⚠ {primary_name} failed ({exc}); falling back to {self.backup.get_service_name()}")
             return self.backup.transcribe(audio_input, language)
