@@ -1,6 +1,6 @@
 # Tinboker TODO
 
-Last updated: 2026-09-05
+Last updated: 2026-09-27
 
 ## North Star
 
@@ -106,13 +106,16 @@ Meaning:
 
 ---
 
-# Active Tasks
+# Roadmap Tasks
+
+Task status is recorded in each YAML block. Completed tasks remain here as implementation
+history; only `ready`, `in_progress`, `blocked`, and `review` tasks require follow-up.
 
 ## TKB-001 Podcast ticker / sector performance tracking
 
 ```yaml
 id: TKB-001
-status: in_progress
+status: done
 priority: P0
 area:
 - pipelines
@@ -123,7 +126,7 @@ effort: L
 risk: medium
 github_issue: https://github.com/HaoweiChan/tinboker/issues/405
 github_project_item: PVTI_lAHOAP_gz84BcROAzgxhes4
-pr: https://github.com/HaoweiChan/tinboker/compare/develop...feat/ticker-mention-performance
+pr: https://github.com/HaoweiChan/tinboker/pull/487
 ```
 
 ### Goal
@@ -214,6 +217,9 @@ Start simple. First version can be daily batch only.
 Do not build real-time tracking yet.
 
 **2026-07-03 (branch `feat/ticker-mention-performance`):** Implemented daily-batch only, per the note above.
+
+**2026-09-27 status review:** All acceptance criteria above are checked. PR #487 is
+included in `main` and production release history; this implementation task is done.
 
 - Mentions are *derived*, not re-extracted: the pipelines already extract per-episode ticker insights (LLM) and sector exposures (alias matching), so a backend sync job (`backend/src/services/mention_sync.py`, every 6h) folds both into a new `content_mentions` table, stamping `extraction_method` (`pipeline_llm` / `alias_match`) and `confidence` (0.9 for LLM rows until the extractor emits per-row scores; the exposures' own score otherwise). Sources: the pipeline-written Postgres `ticker_insights` table + the existing projected episode scan (no new Firestore read paths).
 - 1D/5D/20D/60D are **trading-day** windows computed from `stock_daily_closes` into `ticker_performance_snapshots` / `sector_performance_snapshots` (sector = equal-weight average of resolved members). Windows stay NULL until elapsed; recompute stops ~130 days post-mention. Coverage is bounded by the close-warmer's tracked set (~400 tickers).
@@ -1034,7 +1040,7 @@ AdSense check 14 days after the production release, and post-mention returns (TK
 
 ```yaml
 id: TKB-014
-status: review
+status: done
 priority: P2
 area:
 - frontend
@@ -1080,6 +1086,9 @@ Pre-merge visual check used the algorithm run offline on the dev feed (36 episod
 2026-09-07 (PR #620, both dev deploys green); the live endpoint returns the same
 numbers, 200 in 0.42 s warm, and the home page rendered against dev-api at 1440 and
 390 matches the pre-merge captures.
+
+**2026-09-27 status review:** All acceptance criteria above are checked. PRs #620 and
+#621 are included in `main` and production release history; this task is done.
 
 ---
 

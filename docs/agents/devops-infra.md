@@ -32,9 +32,8 @@ Users → Cloudflare Edge (cache + DDoS) → Netcup VPS (152.53.136.182)
                               └───────────────┼───────────────┘
                                          Redis :6379
                                               ↓
-                                   Firestore (graphfolio-db)
-                                   GCS (graphfolio-articles)
-                                   PostgreSQL (podcast_db, read-only)
+                                   PostgreSQL (shared podcast_db)
+                                   VPS disk (/srv/tinboker-media)
                                    GCP Secret Manager
 ```
 
@@ -43,7 +42,7 @@ Users → Cloudflare Edge (cache + DDoS) → Netcup VPS (152.53.136.182)
   - `tinboker-backend-prod` :8000 → `api.tinboker.com`
   - `tinboker-backend-dev` :8001 → `dev-api.tinboker.com`
   - `tinboker-backend-staging` :8002 → `staging-api.tinboker.com`
-- **Shared services** (NOT duplicated): one `tinboker-redis` and one `netdata` container; all three backend services connect to the same Redis.
+- **Shared services** (NOT duplicated): one `tinboker-postgres`, one `tinboker-redis`, and one `netdata` container; all three backend services connect to the same database and Redis.
 
 ## Conventions
 
@@ -71,9 +70,9 @@ Users → Cloudflare Edge (cache + DDoS) → Netcup VPS (152.53.136.182)
 
 ### Secrets
 
-- Loaded at startup by `config_loader.py` from **GCP Secret Manager**, namespace: uppercased Python setting name.
+- Runtime secret fallback is **GCP Secret Manager** through `config_loader.py`, using its explicit field allowlist. Environment and `.env` values take precedence.
 - See [`infra-runbook.md`](../infra-runbook.md) Part 2.2 for the full list (`POSTGRES_PASSWORD`, `JWT_SECRET_KEY`, `ADMIN_PASSWORD`, `ADMIN_JWT_SECRET`, `ADMIN_EMAILS`, `FINMIND_API_KEY`, `MASSIVE_API_KEY`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ZONE_TAG`).
-- Local dev falls back to `backend/.env` with a warning log.
+- Local dev can use `backend/.env`; never commit it.
 - Never commit `gcp-service-account.json` or `.env*` files.
 
 ### CORS
@@ -99,11 +98,11 @@ Users → Cloudflare Edge (cache + DDoS) → Netcup VPS (152.53.136.182)
 - **BUG-4 (critical, historical):** `.github/workflows/backend-ci.yml` had `continue-on-error: true` on the test job + `pytest ... || echo "::warning::"` — broken code merged silently. Per [`CLAUDE.md`](../../CLAUDE.md) "Do Not" rules, never add either pattern back. Grep before merging CI changes: `grep -n "continue-on-error\||| echo" .github/workflows/backend-ci.yml` should return nothing.
 - **BUG-9 (medium, historical):** CORS origins drift. When changing domains, audit `backend/src/config.py` AND `docker-compose.multi.yml` env vars.
 - **BUG-11 (medium):** `/health` leaked Redis `connection_string`. In staging/prod, the response must omit it. Spot-check after infra changes.
-- **INFRA-1:** Deploy uses `git reset --hard` + `git clean -fd` on the VPS. The `gcp-service-account.json` (not in git) is restored immediately after — if that restore step fails, the deploy bricks. Don't change the order.
+- **INFRA-1:** The CI deploy writes `gcp-service-account.json` on the VPS from its GitHub secret and mounts it into backend containers for Secret Manager. Follow the deploy workflow; never copy credentials into git.
 - **INFRA-2:** VPS IP `152.53.136.182` is in plaintext in docs and also a CI secret. Don't echo it in new doc surfaces beyond what already exists.
 - **INFRA-3:** No automated rollback on health-check failure. Record the previous image tag manually before each prod deploy (see deploy-flow workflow).
 - **`@app.on_event("startup")` is deprecated.** Use the `lifespan` context manager pattern (see [`CLAUDE.md`](../../CLAUDE.md) "Do Not"). The init lives in [`backend/src/main.py`](../../backend/src/main.py).
-- **SQLite has no volume mount** in `docker-compose.multi.yml`. Container rebuild = data loss. This is intentional for dev/staging (auto-init via `init_db()`); prod uses Postgres for persistence.
+- **SQLite is for local development only.** All three deployed backend environments use the shared Postgres service; do not assume separate dev/staging databases.
 
 ## External integrations
 

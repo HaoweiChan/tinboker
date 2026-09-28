@@ -222,7 +222,7 @@ services:
     container_name: tinboker-postgres
     logging: *default-logging
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:5433:5432"
     environment:
       POSTGRES_USER: podcast_user
       POSTGRES_DB: podcast_db

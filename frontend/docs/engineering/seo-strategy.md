@@ -1,5 +1,9 @@
 # TrendBrief SEO Strategy and Optimization Guide
 
+> **Historical snapshot.** This document records earlier plans or implementation details.
+> Routes, API gaps, and environment instructions below may be stale. For current
+> frontend guidance, start with the [frontend docs index](../README.md).
+
 This document records the SEO (Search Engine Optimization) strategy for the TrendBrief website, aiming to increase website traffic and search rankings.
 
 ## 1. Technical SEO
