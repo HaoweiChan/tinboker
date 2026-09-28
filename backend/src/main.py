@@ -268,6 +268,19 @@ async def lifespan(app: FastAPI):
     if settings.is_production:
         asyncio.create_task(_refresh_us_ohlc_bg())
 
+    # Threads metrics are a once-per-UTC-day first-success sample per post. The worker
+    # pages the recent 30-day window in small batches and takes a shared Postgres lock,
+    # so staging/dev do not duplicate provider reads or snapshots.
+    if settings.is_production:
+        async def _threads_insights_bg():
+            try:
+                from src.services.threads_insights_service import run_periodic_threads_insights
+                await run_periodic_threads_insights(interval_seconds=600.0)
+            except Exception as e:
+                print(f"Warning: Threads insights snapshot worker stopped: {type(e).__name__}")
+
+        asyncio.create_task(_threads_insights_bg())
+
     # Refresh-ahead for the /topics boards (hot sectors + 熱門標籤). Production only,
     # hourly: every cycle full-scans Firestore in us-central1, and with three envs
     # running 5/10-min cycles the reads + cross-internet egress dominated the July

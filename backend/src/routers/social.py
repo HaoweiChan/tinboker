@@ -33,7 +33,8 @@ from src.services.podcast import PodcastService
 from src.services.facebook_insights_service import (FacebookInsightsService,
                                                      recent_post_insights as facebook_recent_post_insights)
 from src.services.substack_insights_service import SubstackInsightsService
-from src.services.threads_insights_service import ThreadsInsightsService
+from src.services.threads_insights_service import ThreadsInsightsService, history_sync_status
+from src.services.threads_insights_service import ThreadsAPIError
 from src.services.vocus_insights_service import VocusInsightsService
 from src.services import social_formats, social_ledger, threads_comments_service
 
@@ -206,6 +207,31 @@ async def threads_insights(
     summary = await svc.account_summary(days=days)
     recent = await svc.recent_post_insights(limit=posts) if posts else []
     return {**summary, "recent_posts": recent}
+
+
+@router.post("/history-sync/dry-run")
+async def threads_history_sync_dry_run(_: AdminAccess = Depends(get_admin_access)):
+    """Read one bounded provider page and verify post-insight permissions without writes."""
+    return await ThreadsInsightsService().backfill_page(dry_run=True, page_size=5)
+
+
+@router.get("/history-sync/status")
+async def threads_history_sync_status(_: AdminAccess = Depends(get_admin_access)):
+    return history_sync_status()
+
+
+@router.post("/history-sync/backfill")
+async def threads_history_sync_backfill(_: AdminAccess = Depends(get_admin_access)):
+    """Import one resumable provider page; call again while `more_pages` is true."""
+    try:
+        return await ThreadsInsightsService().backfill_page(dry_run=False, page_size=5)
+    except (ThreadsAPIError, httpx.RequestError) as exc:
+        status_code = exc.status_code if isinstance(exc, ThreadsAPIError) else "network"
+        logger.warning("Threads history import page was not advanced (%s)", status_code)
+        raise HTTPException(
+            status_code=503,
+            detail="Threads API could not finish this page; it remains safe to retry.",
+        ) from None
 
 
 @router.get("/formats/preview")
@@ -1187,4 +1213,3 @@ async def publish_scheduled_post_now(
         "error_message": row.error_message,
         "published_results": row.published_results
     }
-
