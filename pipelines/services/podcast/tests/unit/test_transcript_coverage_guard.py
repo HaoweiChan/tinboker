@@ -61,6 +61,30 @@ def test_unknown_duration_disables_the_check(duration):
     check_transcript_covers_audio(_transcript(0, 0), duration)
 
 
+@pytest.mark.parametrize("return_text_only", [False, True])
+def test_short_transcript_is_rejected_before_return_or_save(
+    monkeypatch, tmp_path, return_text_only
+):
+    audio = tmp_path / "episode.mp3"
+    audio.write_bytes(b"audio")
+    output = tmp_path / "episode.json"
+    monkeypatch.setattr(speech_to_text, "probe_audio_seconds", lambda _path: AUDIO_SECONDS)
+
+    class ShortService:
+        def transcribe(self, _audio, language=None):
+            return _transcript(363, AUDIO_SECONDS)
+
+        def get_service_name(self):
+            return "stub"
+
+    with pytest.raises(TranscriptTooShortError, match="chars/min"):
+        speech_to_text.transcribe_audio_file(
+            audio, output_path=str(output), service=ShortService(),
+            return_text_only=return_text_only,
+        )
+    assert not output.exists()
+
+
 SRT_CHUNK = "1\n00:00:00,000 --> 00:00:05,000\n這是一段內容\n"
 
 
