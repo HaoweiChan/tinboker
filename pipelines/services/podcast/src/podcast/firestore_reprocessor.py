@@ -57,6 +57,7 @@ def process_firestore_episode(
     api_episode_data = {
         "title": firestore_episode.get("episode_title", ""),
         "episodeNumber": firestore_episode.get("episode_number"),
+        "released_at_ms": firestore_episode.get("released_at_ms"),
     }
 
     if rerun_from == "download":

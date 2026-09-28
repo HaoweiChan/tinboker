@@ -24,7 +24,7 @@ from .steps import (
     upload_to_gcs,
     validate_episode,
 )
-from .utils import determine_language, required_artifact_urls
+from .utils import determine_language, required_artifact_urls, retain_episode_audio
 
 
 class EpisodeProcessor:
@@ -389,7 +389,7 @@ class EpisodeProcessor:
             # Check if we have all required data (GCS URLs indicate complete processing)
             required = required_artifact_urls(
                 skip_summarize=self.config.skip_summarize,
-                store_audio=self.config.store_audio,
+                store_audio=retain_episode_audio(episode_data.api_data, self.config.store_audio),
             )
             if episode_data.gcs_urls and all(
                 episode_data.gcs_urls.get(f) for f in required

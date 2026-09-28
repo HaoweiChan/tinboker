@@ -201,6 +201,10 @@ jobs:
             chmod +x "$REPO_DIR/services/podcast/scripts/run_scheduled_ingest.sh"
             cp "$REPO_DIR/services/podcast/deploy/tinboker-podcast-ingest.service" /etc/systemd/system/tinboker-podcast-ingest.service
             cp "$REPO_DIR/services/podcast/deploy/tinboker-podcast-ingest.timer" /etc/systemd/system/tinboker-podcast-ingest.timer
+
+            echo "→ Installing the media retention preview timer..."
+            cp "$REPO_DIR/services/podcast/deploy/tinboker-media-prune.service" /etc/systemd/system/tinboker-media-prune.service
+            cp "$REPO_DIR/services/podcast/deploy/tinboker-media-prune.timer" /etc/systemd/system/tinboker-media-prune.timer
             
             systemctl daemon-reload
             
@@ -216,6 +220,10 @@ jobs:
             echo "→ Arming tinboker-podcast-ingest.timer..."
             systemctl enable --now tinboker-podcast-ingest.timer
             systemctl list-timers tinboker-podcast-ingest.timer --no-pager || true
+
+            # The service has no --apply flag: it reports candidates without deleting.
+            systemctl enable --now tinboker-media-prune.timer
+            systemctl start tinboker-media-prune.service
             
             echo "→ Waiting for service to start..."
             sleep 5

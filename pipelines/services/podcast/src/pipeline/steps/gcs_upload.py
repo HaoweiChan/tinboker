@@ -10,7 +10,7 @@ import json
 from ..config import PipelineConfig
 from ..episode_data import EpisodeData
 from ..service_container import ServiceContainer
-from ..utils import generate_episode_id
+from ..utils import generate_episode_id, required_artifact_urls, retain_episode_audio
 
 
 def upload_to_gcs(
@@ -32,13 +32,15 @@ def upload_to_gcs(
     
     if not should_upload:
         return
+
+    keep_audio = retain_episode_audio(episode_data.api_data, config.store_audio)
     
     # Check if already uploaded (idempotency)
     # For rerun_from="summarize", we may have partial URLs (MP3, transcript)
     # but need to regenerate summary URLs, so check if we have all required URLs
     # For rerun_from="transcribe", we want to re-upload transcript as JSON (even if .txt exists)
     if episode_data.gcs_urls:
-        required_urls = ['mp3_url', 'transcript_url', 'summary_url', 'summary_image_url']
+        required_urls = required_artifact_urls(store_audio=keep_audio)
         has_all_urls = all(episode_data.gcs_urls.get(url) for url in required_urls)
         
         # For rerun_from="download", we always want to re-upload everything (treating as new)
@@ -113,7 +115,7 @@ def upload_to_gcs(
         gcs_urls = svc.upload_episode_files(
             episode_id=episode_data.episode_id,
             podcast_name=episode_data.podcast_name,
-            mp3_path=episode_data.mp3_path if config.store_audio else None,
+            mp3_path=episode_data.mp3_path if keep_audio else None,
             transcript_data=transcript_data,
             summary_content=episode_data.summary_result.get('summary_text') if episode_data.summary_result else None,
             svg_content=episode_data.summary_result.get('svg_content') if episode_data.summary_result else None,
@@ -329,7 +331,7 @@ def upload_to_gcs(
         gcs_urls = svc.upload_episode_files(
             episode_id=episode_data.episode_id,
             podcast_name=episode_data.podcast_name,
-            mp3_path=episode_data.mp3_path if config.store_audio else None,
+            mp3_path=episode_data.mp3_path if keep_audio else None,
             transcript_data=transcript_data,
             summary_content=episode_data.summary_result.get('summary_text') if episode_data.summary_result else None,
             svg_content=episode_data.summary_result.get('svg_content') if episode_data.summary_result else None,
@@ -342,6 +344,12 @@ def upload_to_gcs(
             skip_existing=True
         )
     
+    # A rerun of an old episode must not orphan an already-stored MP3. Keep its
+    # URL until the retention job removes the file and clears both URL fields.
+    if not keep_audio and episode_data.gcs_urls:
+        for key in ("mp3_url", "mp3_public_url"):
+            gcs_urls[key] = episode_data.gcs_urls.get(key)
+
     # Merge with existing URLs if we had partial URLs (e.g., from rerun_from="summarize")
     if episode_data.gcs_urls and config.rerun_from == "summarize":
         # Preserve existing MP3 and transcript URLs, use new summary URLs

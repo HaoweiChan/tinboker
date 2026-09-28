@@ -1,0 +1,10 @@
+[Unit]
+Description=Preview podcast MP3 retention daily
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=1h
+
+[Install]
+WantedBy=timers.target
