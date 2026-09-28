@@ -3,15 +3,15 @@
 Lets an agent re-generate an *already-transcribed* episode's content using the
 content pipeline's REAL prompts. The agent itself plays the LLM roles — replacing
 the pipeline's cheap ``invoke_json`` call — and this server runs the deterministic
-glue between steps and persists everything through the pipeline's existing write
-paths (Firestore episode doc + ``ticker_insights`` subcollection).
+glue between steps and persists everything through the pipeline's existing
+Postgres episode and ticker-insight write paths.
 
 Per-episode workflow:
   1. start_regen(podcast_name, episode_id)  -> the first rendered prompt (extractor)
   2. for each step: read the prompt, GENERATE the JSON yourself, submit_role(...).
      get_role_prompt re-fetches any step's prompt; submit_role returns the next one.
   3. preview_regen(episode_id)              -> review exactly what will be written
-  4. commit_regen(episode_id)               -> persist to Firestore (+ platform cache bust)
+  4. commit_regen(episode_id)               -> persist to Postgres and local media
 
 Required steps:  extractor -> writer -> key_insights -> ticker_extractor -> marp_writer
 Optional steps:  ticker_marp_writer (the ticker deck is rebuilt automatically by the
@@ -79,13 +79,13 @@ def list_regen_candidates(
 def start_regen(podcast_name: str, episode_id: str) -> dict[str, Any]:
     """Open a regeneration draft for one episode and return the first prompt.
 
-    Loads the episode's stored transcript/sentences from Firestore and returns the
+    Loads the episode's stored transcript/sentences from Postgres and returns the
     rendered `extractor` prompt as `next_prompt`. Errors if the episode has no
     transcript (transcription is out of scope).
 
     Args:
         podcast_name: The episode's podcast (must match the stored doc).
-        episode_id: The Firestore episode document id.
+        episode_id: The episode document id.
 
     Returns episode metadata, the current (old) content for reference, the
     step_order, and `next_prompt` (the extractor system+user prompt to fulfill).
@@ -168,14 +168,13 @@ def commit_regen(
     render_cards: bool = False,
     notify_platform: bool = True,
 ) -> dict[str, Any]:
-    """Persist the regenerated content to Firestore + GCS and bust the platform cache.
+    """Persist regenerated content to Postgres and local media; bust platform caches.
 
-    Writes only the fields whose steps you actually completed (Firestore merge —
+    Writes only the fields whose steps you actually completed (Postgres JSONB merge —
     untouched fields are left alone): the episode doc (summary_content,
     key_insights, tags, related_tickers, marp/events markdown, social_cards) and
-    the rich ticker sentiment under ticker_insights/{episode_id}/tickers/{ticker}.
-    It ALSO re-uploads the GCS blobs the backend serves marp/events/ticker_marp/summary
-    from (overwriting the prior content) and repoints the doc's *_url at them —
+    the rich ticker sentiment in Postgres. It ALSO rewrites the media files the
+    backend serves marp/events/ticker_marp/summary from and repoints the doc's *_url —
     otherwise the page keeps rendering the OLD slides/events even after the commit.
 
     Args:
@@ -191,10 +190,12 @@ def commit_regen(
         render_cards: Reserved — PNG social-card rendering stays in the normal
             pipeline; only the slide markdown is saved here.
 
-    NOTE: writes to the SHARED production Firestore (graphfolio-db) + GCS and, by
-    default, busts the production caches — run preview_regen first.
+    NOTE: local checkouts can preview, but commit requires the mounted VPS media
+    tree at /srv/tinboker-media. It refuses any Postgres write when that tree is
+    missing or MEDIA_STORAGE_ROOT points elsewhere. The registered cache target
+    is production. Run preview_regen and check EPISODE_DATABASE_URL first.
 
-    Returns a write report: episode_fields_written, gcs_content_uploaded,
+    Returns a write report: episode_fields_written, gcs_content_uploaded (legacy key),
     ticker_insights_written, and either ``cache_refreshed`` {via, surfaces} on success
     or ``manual_invalidation`` (exact copy-paste commands) if the cache bust was
     disabled/failed/unauthenticated.

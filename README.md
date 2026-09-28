@@ -17,7 +17,7 @@ Browse TW/US stocks, follow market topics, and discover AI-summarized financial 
 [![Vite](https://img.shields.io/badge/Vite-7-646CFF?style=flat-square&logo=vite&logoColor=white)](https://vite.dev)
 [![Cloudflare Pages](https://img.shields.io/badge/Cloudflare-Pages-F38020?style=flat-square&logo=cloudflare&logoColor=white)](https://pages.cloudflare.com)
 
-**Live:** [tinboker.com](https://tinboker.com) &nbsp;·&nbsp; **Dev:** [dev.tinboker.com](https://dev.tinboker.com) &nbsp;·&nbsp; **API Docs:** [api.tinboker.com/docs](https://api.tinboker.com/docs)
+**Live:** [tinboker.com](https://tinboker.com)
 
 </div>
 
@@ -37,9 +37,9 @@ into one standalone repo.
 | Tier | Path | What it is | Runs on |
 |------|------|-----------|---------|
 | **Web UI** | [`frontend/`](frontend/) | React 19 + Vite SPA (Traditional Chinese) | Cloudflare Pages → `tinboker.com` |
-| **Platform API** | [`backend/`](backend/) | FastAPI app — stocks, search, graphs, auth, podcasts | Docker on Netcup VPS → `api.tinboker.com` |
-| **Content pipelines** | [`pipelines/`](pipelines/) | Podcast + news ingestion → summaries, ticker sentiment, wiki graph | systemd on VPS, serves `/api/wiki` (:8003) |
-| **MCP servers** | [`mcp-servers/`](mcp-servers/) | Agent tooling (stock translations, article authoring) | `uvx`, stdio |
+| **Platform API** | [`backend/`](backend/) | FastAPI app — stocks, search, graphs, auth, podcasts | Docker on Netcup VPS |
+| **Content pipelines** | [`pipelines/`](pipelines/) | Podcast + news ingestion → summaries, ticker sentiment, wiki graph | systemd on VPS |
+| **MCP servers** | [`mcp-servers/`](mcp-servers/) | Agent tooling (stock translations, article authoring, podcast regeneration) | `uvx` / `uv`, stdio |
 
 ---
 
@@ -116,17 +116,15 @@ into one standalone repo.
 ```
 tinboker/
 ├── frontend/            React 19 + Vite web UI        → Cloudflare Pages (tinboker.com)
-├── backend/             FastAPI platform API           → Docker on VPS (api.tinboker.com)
+├── backend/             FastAPI platform API           → Docker on VPS
 ├── pipelines/           Content & agent pipelines (podcast + news ingestion, wiki builder)
-├── mcp-servers/         MCP servers for AI tooling (stock-translations, article-authoring)
+├── mcp-servers/         MCP launchers for stock translations, article authoring, podcast regeneration
 ├── docs/                Domain references, workflows, data contracts, runbooks
 ├── scripts/             Local maintenance utilities
-├── shared/              Manual Hermes alias export (not imported by runtime code)
 ├── tests/               Root maintenance-script tests
 ├── .claude/             Claude Code subagents + skills (thin wrappers → docs/)
-├── .codex/              Codex CLI agents + MCP config
-├── .cursor/rules/       Cursor rules (auto-attached by file glob)
-├── .agents/             Tool-neutral skill wrappers
+├── .codex/              Codex agents + MCP config
+├── .agents/             Shared skill directory link
 ├── .github/workflows/   CI/CD (backend, frontend, pipelines)
 ├── CLAUDE.md            Root AI-agent context  (AGENTS.md → symlink)
 └── README.md
@@ -205,8 +203,8 @@ npm install
 npm run dev                   # → localhost:5173
 ```
 
-Development defaults to the dev API. To use the local backend, set
-`VITE_API_BASE_URL=http://localhost:5174` in `frontend/.env.local`.
+To use the local backend, set `VITE_API_BASE_URL=http://localhost:5174` in
+`frontend/.env.local`.
 
 ### Pipelines — content ingestion
 
@@ -222,14 +220,14 @@ cd services/podcast && python main.py --config podcasts_tw.json
 
 ## Environments
 
-| Environment | Frontend | Backend | Trigger |
-|-------------|----------|---------|---------|
-| Production | [tinboker.com](https://tinboker.com) | [api.tinboker.com](https://api.tinboker.com) `:8000` | `v*` tag on `main` |
-| Staging | [staging.tinboker.com](https://staging.tinboker.com) | [staging-api.tinboker.com](https://staging-api.tinboker.com) `:8002` | merge to `main` |
-| Dev | [dev.tinboker.com](https://dev.tinboker.com) | [dev-api.tinboker.com](https://dev-api.tinboker.com) `:8001` | merge to `develop` |
-| Local | localhost:5173 | localhost:5174 | manual |
+| Environment | Access | Trigger |
+|-------------|--------|---------|
+| Production | [tinboker.com](https://tinboker.com) | `v*` tag on `main` |
+| Staging | Internal | merge to `main` |
+| Dev | Internal | merge to `develop` |
+| Local | localhost:5173 / localhost:5174 | manual |
 
-VPS: `152.53.136.182` (Netcup RS 1000 G11, Debian 13) · reverse proxy: Caddy (auto-HTTPS).
+Internal routing and host details are in [`docs/infra-runbook.md`](docs/infra-runbook.md).
 
 ---
 
@@ -286,8 +284,8 @@ point at the tool-neutral domain docs in [`docs/agents/`](docs/agents/), so guid
 place:
 
 - **Claude Code** — subagents in [`.claude/agents/`](.claude/agents/), skills in [`.claude/skills/`](.claude/skills/)
-- **Codex CLI** — agents in [`.codex/agents/`](.codex/agents/)
-- **Cursor** — rules in [`.cursor/rules/`](.cursor/rules/) (auto-attached by file glob)
+- **Codex** — agents in [`.codex/agents/`](.codex/agents/), MCP servers in [`.codex/config.toml`](.codex/config.toml)
+- **Shared skills** — [`.agents/skills/`](.agents/skills/) points to the Claude skill directory
 - **Root context** — [`CLAUDE.md`](CLAUDE.md) (symlinked as `AGENTS.md`), plus
   [`backend/AGENTS.md`](backend/AGENTS.md), [`frontend/AGENTS.md`](frontend/AGENTS.md), and
   [`pipelines/AGENTS.md`](pipelines/AGENTS.md)

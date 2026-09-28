@@ -7,6 +7,18 @@
 
 ---
 
+## 2026-09-28 — Retired editor rules and internal URLs stayed in the public README
+- **Situation:** removing Cursor after the team stopped using it and correcting the public repository overview.
+- **Wrong assumption / failure:** `README.md:20,40,226-228` advertised internal API and dev addresses, and `CLAUDE.md:68` still pointed to `.cursor/rules/` after the editor was retired.
+- **Rule:** Keep retired editor adapters out of the root tool map, and list only public entry points in the public README.
+- **Status:** logged
+
+## 2026-09-28 — MCP registration hid a pipeline tool
+- **Situation:** consolidating the podcast regeneration MCP launcher with other agent tools.
+- **Wrong assumption / failure:** `CLAUDE.md:24` and `.codex/config.toml:1-22` listed only two MCP servers, while `.mcp.json:28-46` already registered podcast regeneration from `pipelines/services/podcast/regen_mcp.py`.
+- **Rule:** When adding or moving an MCP launcher, update both client registrations and the root tool map in the same change.
+- **Status:** logged
+
 ## 2026-09-27 — Firestore-era docs remained active after decommission
 - **Situation:** refreshing root, frontend, and backend documentation for the current system.
 - **Wrong assumption / failure:** `docs/workflows/firestore-data-change.md:56-75` taught a nonexistent `get_firestore_client()` read pattern; `docs/agents/podcast-domain.md:40-41` called Firestore/GCS the read source even though `backend/src/services/postgres_mirror_service.py:422` selects the content reader and `backend/src/services/gcs_content.py:10-13` uses VPS disk and stable media URLs. Live VPS `docker ps` on 2026-09-27 showed host port 5433 while `backend/docker-compose.multi.yml:225` still maps 5432.
