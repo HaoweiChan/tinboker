@@ -191,6 +191,7 @@ def create_all_tables():
                 ("delivery", "VARCHAR(20)"),
                 ("permalink", "TEXT"),
                 ("post_snapshot", "JSON"),
+                ("provider_snapshot", "JSONB"),
                 ("tracking_error", "VARCHAR(80)"),
             ):
                 conn.execute(text(
@@ -437,6 +438,10 @@ def create_all_tables():
                 conn.commit()
             if tr_cols and "icon_id" not in tr_cols:
                 conn.execute(text("ALTER TABLE tag_registry ADD COLUMN icon_id VARCHAR(64)"))
+                conn.commit()
+            social_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(social_posts)"))}
+            if social_cols and "provider_snapshot" not in social_cols:
+                conn.execute(text("ALTER TABLE social_posts ADD COLUMN provider_snapshot JSON"))
                 conn.commit()
             if tr_cols and "color_hex" not in tr_cols:
                 conn.execute(text("ALTER TABLE tag_registry ADD COLUMN color_hex VARCHAR(16)"))

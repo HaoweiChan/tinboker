@@ -117,6 +117,17 @@ export interface ThreadsPostInsight {
         requested_comments?: string[];
         posted_reply_texts?: string[];
     };
+    provider_snapshot?: {
+        source?: 'threads_api';
+        fetched_at?: string;
+        timestamp?: string;
+        text?: string;
+        media_type?: string;
+        media_url?: string;
+        owned_replies?: Array<{ id: string; text?: string; timestamp?: string }>;
+        owned_replies_truncated?: boolean;
+    };
+    metric_history?: Array<{ captured_at: string; metrics: Record<string, number> }>;
     tracking_error?: string | null;
     posted_at: string | null;
     metrics: Record<string, number>;
