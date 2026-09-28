@@ -13,6 +13,7 @@ from types import ModuleType
 
 import psycopg
 import pytest
+from src import secrets_bootstrap
 from src.podcast.content_builder.nodes import (
     extractor,
     key_insights_extractor,
@@ -23,7 +24,6 @@ from src.podcast.content_builder.nodes import (
 from src.podcast.content_builder.nodes.markdown_transform import transform_to_markdown
 from src.podcast.content_builder.nodes.marp_converter import convert_marp
 from src.podcast.regen import orchestrator as orch
-from src import secrets_bootstrap
 
 
 @pytest.fixture(autouse=True)
