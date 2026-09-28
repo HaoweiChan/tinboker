@@ -44,13 +44,13 @@ MIN_TAG_EPISODES = 5
 # sector page is a description plus one card.
 MIN_SECTOR_EPISODES = 2
 
+# Omit the currently empty /articles index; published article permalinks are added below.
 STATIC_PATHS = [
     ("/", "1.0", "daily"),
     ("/podcaster", "0.8", "weekly"),
     ("/stock", "0.8", "weekly"),
     ("/topics", "0.8", "weekly"),
     ("/weekly", "0.8", "weekly"),
-    ("/articles", "0.7", "weekly"),
     ("/about", "0.5", "monthly"),
     ("/terms", "0.3", "yearly"),
 ]
@@ -93,7 +93,7 @@ async def sitemap(
     to Googlebot. The assembled XML is cached in Redis for an hour; the per-source
     service calls are themselves cached, and the CDN edge caches the response.
     """
-    cache_key = f"sitemap:xml:v8:{limit}"  # v8: added /terms (legal/policy page)
+    cache_key = f"sitemap:xml:v9:{limit}"  # v9: omit empty /articles index
     cached = await cache_get(cache_key)
     if cached:
         return Response(content=cached, media_type="application/xml",
