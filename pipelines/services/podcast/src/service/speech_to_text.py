@@ -606,7 +606,7 @@ class WhisperService(SpeechToTextService):
                         
                         transcription = self.client.audio.transcriptions.create(**transcription_params)
                     return str(transcription)
-                
+
                 srt_content = transcribe_chunk_with_retry(
                     transcribe_chunk,
                     f"Chunk {i+1}/{len(chunks)} (from {chunk_start / 60:.1f} min)",
@@ -1390,7 +1390,7 @@ class GroqService(SpeechToTextService):
                     # Convert to SRT
                     srt_content = convert_verbose_json_to_srt(transcription_dict)
                     return convert_srt_to_traditional_chinese(srt_content)
-                
+
                 srt_content = transcribe_chunk_with_retry(
                     transcribe_chunk,
                     f"Chunk {i+1}/{len(chunks)} (from {chunk_start / 60:.1f} min)",
@@ -1613,4 +1613,3 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
-
