@@ -66,6 +66,20 @@ def test_feed_date_drives_released_at_ms_over_created_time():
     assert ep._compute_released_at_ms() != _BACKFILL_MS
 
 
+def test_rerun_keeps_stored_release_when_feed_date_is_missing():
+    ed = _episode_data(date_published=None, created_time=_BACKFILL_TIME)
+    ed.api_data["released_at_ms"] = _FEED_MS
+    ep = create_episode_object(ed, gcs_urls={}, spotify_metadata=None, summary_result=None)
+    assert ep.to_firestore_dict()["released_at_ms"] == _FEED_MS
+
+
+def test_canonical_feed_date_corrects_stale_stored_release():
+    ed = _episode_data(date_published=_FEED_ISO, created_time=_BACKFILL_TIME)
+    ed.api_data["released_at_ms"] = _BACKFILL_MS
+    ep = create_episode_object(ed, gcs_urls={}, spotify_metadata=None, summary_result=None)
+    assert ep.to_firestore_dict()["released_at_ms"] == _FEED_MS
+
+
 def test_spotify_unmatched_episode_still_gets_feed_released_at_ms():
     """No Spotify metadata at all → released_at_ms still resolved from the feed."""
     ed = _episode_data(date_published=_FEED_ISO, created_time=None)

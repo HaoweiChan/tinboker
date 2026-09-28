@@ -213,6 +213,10 @@ class EpisodeProcessor:
         )
         
         if existing:
+            # A feed item can lose datePublished on a later poll; keep the
+            # stored release date authoritative for MP3 retention on reruns.
+            if existing.get("released_at_ms") is not None:
+                episode_data.api_data["released_at_ms"] = existing["released_at_ms"]
             # Load episode ID
             episode_data.episode_id = existing.get('id')
             

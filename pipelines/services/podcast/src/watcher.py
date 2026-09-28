@@ -265,17 +265,18 @@ def _find_new_episodes(
             episode_title=ep.get("title"),
             episode_number=ep.get("episodeNumber"),
         )
-        if existing and _is_fully_processed(existing):
+        if existing and _is_fully_processed(existing, ep):
             continue
         new.append(ep)
     return new
 
 
-def _is_fully_processed(episode: dict[str, Any]) -> bool:
-    return all(
-        episode.get(k)
-        for k in ("mp3_url", "transcript_url", "summary_url", "summary_image_url")
-    )
+def _is_fully_processed(episode: dict[str, Any], feed_episode: dict[str, Any] | None = None) -> bool:
+    from src.pipeline.utils import required_artifact_urls, retain_episode_audio
+
+    published = {**(feed_episode or {}), "released_at_ms": episode.get("released_at_ms")}
+    required = required_artifact_urls(store_audio=retain_episode_audio(published, True))
+    return all(episode.get(key) for key in required)
 
 
 def _run_pipeline_for_episode(
