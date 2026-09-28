@@ -178,14 +178,20 @@ def temp_db(tmp_path, monkeypatch):
     (``threads_comments``) live in Postgres in every deployed env, SQLite here.
     """
     from src.database import postgres as pg
-    from src.database.models import ScheduledSocialPost, SocialPostLedger, ThreadsComment
+    from src.database.models import (
+        ScheduledSocialPost, SocialPostLedger, ThreadsComment,
+        ThreadsInsightsSyncState, ThreadsPostInsightSnapshot,
+    )
 
     monkeypatch.setattr(settings, "use_postgres", False)
     monkeypatch.setattr(settings, "database_path", str(tmp_path / "ledger.db"))
     monkeypatch.setattr(pg, "engine", None)
     monkeypatch.setattr(pg, "SessionLocal", None)
     pg.init_engine()
-    for model in (ScheduledSocialPost, SocialPostLedger, ThreadsComment):
+    for model in (
+        ScheduledSocialPost, SocialPostLedger, ThreadsComment,
+        ThreadsInsightsSyncState, ThreadsPostInsightSnapshot,
+    ):
         model.__table__.create(bind=pg.engine, checkfirst=True)
     yield
 
