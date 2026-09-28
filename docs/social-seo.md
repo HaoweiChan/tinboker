@@ -22,12 +22,12 @@ publish endpoint composes drafts without posting and the SEO endpoints report
 ### Flow
 
 ```
-agents pipeline ingests an episode (Firestore)
+pipelines tier ingests an episode (VPS Postgres)
    └─ POST {platform}/api/admin/threads/publish?dry_run=false   (TINBOKER_SOCIAL_TOKEN)
          └─ scan recent episodes → skip already-posted / too-old / contentless
                └─ compose zh-TW post (title + key_insights + ticker #tags + permalink)
                      └─ Threads Graph API: create container → publish
-                           └─ record episode_id in the `threads_posts` ledger (idempotent)
+                           └─ record episode_id in the shared `social_posts` ledger (idempotent)
 ```
 
 Example composed post (181/500 chars):
@@ -169,7 +169,7 @@ Reuses the Google service account the backend already runs with. One-time setup:
 | Var | Required | Purpose |
 |-----|----------|---------|
 | `GSC_SITE_URL` | to enable | Property id. Domain property ⇒ `sc-domain:tinboker.com`. Unset ⇒ monitoring disabled. |
-| `GOOGLE_APPLICATION_CREDENTIALS` | no | Path to the service-account JSON. Falls back to ADC (the same creds firebase-admin uses on the VPS). |
+| `GOOGLE_APPLICATION_CREDENTIALS` | no | Path to the service-account JSON. Falls back to ADC; the VPS service account is retained for Google services such as Secret Manager. |
 
 ### Endpoints
 

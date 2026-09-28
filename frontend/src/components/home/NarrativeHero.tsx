@@ -31,8 +31,7 @@ export const NarrativeHero: React.FC<Props> = ({ data }) => {
     <div className="bg-card border border-border rounded-[10px] p-5 flex flex-col gap-4 min-w-0 transition-colors duration-200 hover:border-primary/45">
       <div className="flex items-baseline justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-xl font-semibold tracking-[-0.02em] flex items-center gap-2">
-            <span aria-hidden className="inline-block w-[3px] h-[18px] rounded-sm bg-primary shrink-0" />
+          <h1 className="heading-accent text-xl font-semibold tracking-[-0.02em] flex items-center gap-2">
             本週市場在聊什麼
           </h1>
           {data && (
@@ -48,21 +47,26 @@ export const NarrativeHero: React.FC<Props> = ({ data }) => {
       {rows.length === 0 ? (
         <div className="h-[168px] animate-pulse bg-muted/40 rounded-md" />
       ) : (
-        <div className="grid grid-cols-[auto_1fr_auto_auto] sm:grid-cols-[auto_1fr_auto_auto_auto] items-center gap-x-3 sm:gap-x-4 gap-y-2.5 text-sm">
+        <div className="grid grid-cols-[auto_1fr_auto_auto] sm:grid-cols-[auto_1fr_auto_auto_auto] items-center gap-x-3 sm:gap-x-4 text-sm">
           {rows.map((r, i) => {
             return (
-              <React.Fragment key={r.id}>
-                <Link to={`/topics/${encodeURIComponent(r.id)}`} className="font-semibold whitespace-nowrap hover:text-primary transition-colors">
+              // Row-as-link via subgrid — see BuzzRank: the name alone was a 21px target.
+              <Link
+                key={r.id}
+                to={`/topics/${encodeURIComponent(r.id)}`}
+                className="group/row col-span-4 sm:col-span-5 grid grid-cols-subgrid items-center py-[7px] rounded-[3px] transition-colors hover:bg-muted/40"
+              >
+                <span className="font-semibold whitespace-nowrap transition-colors group-hover/row:text-primary">
                   {r.name}
                   {r.rising && <span className="ml-1.5 align-[1px] text-2xs font-medium text-accent-info border border-accent-info rounded px-1">升溫</span>}
-                </Link>
+                </span>
                 {/* A 升溫 topic keeps the topic blue and fades into cyan at the tail —
                     the signal is stated without the row outshouting the ranking. */}
                 <Bar value={r.count_7d} max={max} tone="topic" rising={r.rising} delayMs={i * 60} />
                 <span className="font-mono tabular-nums text-right">{r.count_7d} <span className="text-2xs text-muted-foreground">集</span></span>
                 <span className="hidden sm:block"><Spark values={r.weekly} delayMs={i * 60 + 200} /></span>
                 <span className="text-right min-w-[48px] font-semibold"><DeltaText now={r.count_7d} prev={r.prev_7d} /></span>
-              </React.Fragment>
+              </Link>
             );
           })}
         </div>

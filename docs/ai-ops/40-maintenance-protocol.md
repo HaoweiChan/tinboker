@@ -103,5 +103,4 @@ fact just because it's old; verify then update.
 A fact lives in exactly one file; every other mention is a pointer. When you find the
 same fact stated in two places (the pre-2026-07-03 disease), pick the canonical home by
 the CLAUDE.md read-first map, keep it there, and replace the other with a link — Tier B.
-Special case: root `AGENTS.md` (non-Claude tools) still duplicates repo facts; reconciling
-it is a known open task, not something to do as a side effect.
+Root `AGENTS.md` is a symlink to `CLAUDE.md` (verified 2026-09-27). There is no separate root copy to reconcile; follow the same maintenance tier for either name.

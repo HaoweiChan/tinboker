@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChartScatter, Layers, Hash, Info, ListTree, ChevronDown, LayoutGrid } from 'lucide-react';
+import { Layers, Info, ChevronDown } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
+import { ExploreTabs } from '@/components/layout/ExploreTabs';
 import { Segmented } from '@/components/redesign/Segmented';
 import SectorPerformance from '@/components/industry/SectorPerformance';
 import { SectorBoardCard, type SectorNetFlow } from '@/components/topics/SectorBoardCard';
@@ -50,11 +51,14 @@ const TF_OPTIONS = [
   { value: '90' as const, label: '90日' },
 ];
 
-const SORT_OPTIONS: { value: SortKey; label: string }[] = [
-  { value: 'hotness', label: '綜合熱度' },
-  { value: 'avg_change', label: '一週表現' },
-  { value: 'episode_count', label: '討論熱度' },
-  { value: 'money_flow', label: '資金流入' },
+// Each sort key has a different time window, so the bare percentages on the cards
+// aren't mistaken for a longer horizon. Only the active tab's line is shown —
+// all four at once read as a wall of text.
+const SORT_OPTIONS: { value: SortKey; label: string; hint: string }[] = [
+  { value: 'hotness', label: '綜合熱度', hint: '當日漲跌與討論熱度的綜合排序。' },
+  { value: 'avg_change', label: '一週表現', hint: '成分股近一週平均漲跌。' },
+  { value: 'episode_count', label: '討論熱度', hint: '累計相關集數。' },
+  { value: 'money_flow', label: '資金流入', hint: '近 5 日外資買賣超。' },
 ];
 
 // ── Skeleton cards ─────────────────────────────────────────────────────────
@@ -94,19 +98,6 @@ function sortBoard(items: SectorBoardItem[], sortKey: BoardSortKey): SectorBoard
   });
 }
 
-// Rounded tinted chip for section-header icons — reads as a designed badge, not a bare glyph.
-const SECTION_TONE = {
-  info: 'bg-accent-info/10 text-accent-info',
-  amber: 'bg-amber-500/10 text-amber-500',
-  primary: 'bg-primary/10 text-primary',
-} as const;
-
-const SectionIcon: React.FC<{ icon: React.ReactNode; tone?: keyof typeof SECTION_TONE }> = ({ icon, tone = 'info' }) => (
-  <span className={`inline-grid place-items-center rounded-lg shrink-0 ${SECTION_TONE[tone]}`} style={{ width: 26, height: 26 }}>
-    {icon}
-  </span>
-);
-
 const BOARD_PREVIEW = 8;
 
 // Centered "顯示全部 N / 收合" toggle shared by every previewable section.
@@ -131,7 +122,6 @@ const ShowAllToggle: React.FC<{ expanded: boolean; total: number; unit: string; 
 export const TopicsCloud: React.FC = () => {
   const navigate = useNavigate();
   const type = TOPICS_TYPOGRAPHY.className;
-  const iconSize = TOPICS_TYPOGRAPHY.iconSize;
   const openExposure = (id: string) => navigate(`/sector/${encodeURIComponent(id)}`);
   const [sectors, setSectors] = useState<SectorBoardItem[]>([]);
   const [perf, setPerf] = useState<ExposurePerformanceItem[]>([]);
@@ -369,9 +359,10 @@ export const TopicsCloud: React.FC = () => {
         description="今日最強題材焦點 — 依題材聚合，顯示漲跌幅、資金流與相關個股表現。"
       />
       <PageContent>
+        <ExploreTabs />
         {/* Page header */}
         <div className="flex items-center justify-between mb-1">
-          <h1 className={`${type.pageTitle} font-semibold tracking-[-0.02em]`}>話題排行</h1>
+          <h1 className={`heading-accent ${type.pageTitle} font-semibold tracking-[-0.02em]`}>話題排行</h1>
           {themeBoard.length > 0 && (
             <div className={`${type.meta} text-muted-foreground font-mono tabular-nums flex items-center gap-1.5`}>
               <Layers size={12} />
@@ -392,8 +383,9 @@ export const TopicsCloud: React.FC = () => {
 
         {/* ── THEME BUBBLE CHART (hero) ─────────────────────────────── */}
         <div className="flex items-center gap-2 mb-2.5">
-          <SectionIcon icon={<ChartScatter size={15} />} tone="info" />
-          <h2 className={`${type.sectionTitle} font-semibold`}>題材泡泡圖</h2>
+          <h2 className="heading-accent text-lg font-semibold tracking-[-0.02em] flex items-center gap-2">
+            題材泡泡圖
+          </h2>
         </div>
         <div className="mb-7 rounded-xl border border-border bg-card overflow-hidden md:h-[520px]">
           {perfLoading ? (
@@ -432,17 +424,16 @@ export const TopicsCloud: React.FC = () => {
             character per line), so they drop to their own scrollable row below sm. */}
         <div className="flex flex-col gap-2 mb-1.5 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2">
-            <SectionIcon icon={<LayoutGrid size={15} />} tone="info" />
-            <h2 className={`${type.sectionTitle} font-semibold whitespace-nowrap`}>題材總覽</h2>
+            <h2 className="heading-accent text-lg whitespace-nowrap font-semibold tracking-[-0.02em] flex items-center gap-2">
+              題材總覽
+            </h2>
           </div>
           <div className="-mx-1 px-1 overflow-x-auto">
             <Segmented options={SORT_OPTIONS} value={sortKey} onChange={setSortKey} />
           </div>
         </div>
-        {/* Each sort key has a different time window — spell them out so the bare
-            percentages on the cards aren't mistaken for a longer horizon. */}
         <p className={`mb-3 ${type.meta} text-muted-foreground`}>
-          一週表現＝成分股近一週平均漲跌；討論熱度＝累計相關集數；資金流入＝近 5 日外資買賣超；綜合熱度＝當日漲跌與討論熱度的綜合排序。
+          {SORT_OPTIONS.find((o) => o.value === sortKey)?.hint}
         </p>
         <BoardGrid
           loading={loading}
@@ -459,8 +450,9 @@ export const TopicsCloud: React.FC = () => {
         {tags.length > 0 && (
           <>
             <div className="flex items-center gap-1.5 mt-9 mb-1">
-              <Hash size={iconSize.section} className="text-amber-500" />
-              <h2 className={`${type.sectionTitle} font-semibold`}>總經與焦點議題</h2>
+              <h2 className="heading-accent text-lg font-semibold tracking-[-0.02em] flex items-center gap-2">
+                總經與焦點議題
+              </h2>
             </div>
             <p className={`${type.meta} text-muted-foreground mb-3`}>政策與大盤風向，點擊看相關集數。</p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -477,9 +469,10 @@ export const TopicsCloud: React.FC = () => {
         {/* ── 產業地圖 (secondary market map — preview + toggle) ──────── */}
         {industryBoard.length > 0 && (
           <>
-            <div className="flex items-center gap-2 mt-9 mb-1">
-              <SectionIcon icon={<ListTree size={15} />} tone="primary" />
-              <h2 className={`${type.sectionTitle} font-semibold`}>產業地圖</h2>
+            <div className="flex flex-wrap items-center gap-2 mt-9 mb-1">
+              <h2 className="heading-accent text-lg font-semibold tracking-[-0.02em] flex items-center gap-2">
+                產業地圖
+              </h2>
               <span className={`${type.meta} text-muted-foreground`}>· 完整市場分類 · {industryBoard.length} 產業</span>
             </div>
             <p className={`${type.meta} text-muted-foreground mb-3 max-w-[60ch]`}>

@@ -1,5 +1,9 @@
 # Google Login Setup Guide
 
+> **Historical design record.** This page reflects an earlier implementation or proposal.
+> Do not use its setup, deployment, or migration commands for the current service.
+> Start with the [backend README](../../README.md) and [infra runbook](../../../docs/infra-runbook.md).
+
 **Date:** 2025-12-22  
 **Project:** TinBoker (Backend + Frontend)  
 **Purpose:** Step-by-step setup instructions for Google OAuth authentication

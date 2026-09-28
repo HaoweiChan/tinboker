@@ -1,5 +1,6 @@
 import { apiClient } from './client';
-import { AxiosError } from 'axios';
+import { isAxiosError } from 'axios';
+import { SessionResponseSchema } from '@/lib/authSession';
 
 export interface AuthResponse {
   user: {
@@ -16,12 +17,29 @@ export interface AuthResponse {
     episode_bookmarks?: string[];
     alerts?: string[];
     tag_subscriptions?: string[];
+    dismissed_picks?: string[];
+    member_until?: string | null;
+    is_member?: boolean;
+    membership_preview?: 'free' | 'paid' | null;
+    membership_preview_available?: boolean;
   };
   token: string;
   refresh_token?: string;
 }
 
 export const authApi = {
+  setMembershipPreview: async (mode: 'free' | 'paid') => {
+    const { useAppStore } = await import('@/store/useAppStore');
+    const token = useAppStore.getState().token;
+    if (!token) throw new Error('Not authenticated');
+    const response = await apiClient.post('/api/auth/membership-preview', { mode }, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const session = SessionResponseSchema.parse(response.data);
+    if (!session.refresh_token) throw new Error('Missing preview refresh token');
+    return session;
+  },
+
   verifyGoogleToken: async (data: { idToken?: string; accessToken?: string }): Promise<AuthResponse> => {
     try {
       const response = await apiClient.post<AuthResponse>(
@@ -34,8 +52,8 @@ export const authApi = {
         }
       );
       return response.data;
-    } catch (error: any) {
-      if (error.isAxiosError || error instanceof AxiosError) {
+    } catch (error: unknown) {
+      if (isAxiosError<{ detail?: string }>(error)) {
         const message = error.response?.data?.detail || error.message;
         throw new Error(`Authentication failed: ${message}`);
       }
@@ -54,8 +72,8 @@ export const authApi = {
         }
       );
       return response.data;
-    } catch (error: any) {
-      if (error.isAxiosError || error instanceof AxiosError) {
+    } catch (error: unknown) {
+      if (isAxiosError<{ detail?: string }>(error)) {
         const message = error.response?.data?.detail || error.message;
         throw new Error(`Failed to get user: ${message}`);
       }
@@ -69,6 +87,19 @@ export const authApi = {
         headers: { Authorization: `Bearer ${token}` },
       });
       return response.data.is_admin;
+    } catch {
+      return false;
+    }
+  },
+
+  /** Whether this session may pass the dev/staging EnvGate: an admin, or a dev-bypass
+   *  session (the read-only QA viewer is not an admin but must get past the gate). */
+  envAccess: async (token: string): Promise<boolean> => {
+    try {
+      const response = await apiClient.get<{ is_admin: boolean; env_access?: boolean }>('/api/auth/is-admin', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      return response.data.is_admin || response.data.env_access === true;
     } catch {
       return false;
     }

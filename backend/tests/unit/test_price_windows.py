@@ -3,6 +3,12 @@
 Covers `_window_returns` in src.routers.stock: completed windows compute a pct,
 not-yet-elapsed windows stay None ("—" in the UI), and a missing baseline yields
 all-None. `_get_reference_close` is monkeypatched so no DB/external API is touched.
+
+Every call passes `series=[]` (the split guard's pre-fetched series) explicitly:
+these tests aren't exercising the guard (see test_picks_window_returns.py for
+that), and `_window_returns`'s own-series fallback now fails closed on a DB error
+(no swallowing) — this worktree has no local `data/tinboker.db`, so leaving the
+default `series=None` would hit a real, unmocked `OperationalError` here.
 """
 import asyncio
 from datetime import datetime, timedelta, timezone
@@ -27,7 +33,7 @@ def _patch_closes(monkeypatch, mention_date_str: str, baseline, other):
 def test_completed_windows(monkeypatch):
     mention = datetime(2020, 1, 1)
     _patch_closes(monkeypatch, "2020-01-01", 100.0, 110.0)
-    res = asyncio.run(stock._window_returns("AAPL", _ms(mention), 120.0))
+    res = asyncio.run(stock._window_returns("AAPL", _ms(mention), 120.0, series=[]))
     assert res["baseline"] == 100.0
     assert res["d7"] == pytest.approx(10.0)
     assert res["d30"] == pytest.approx(10.0)
@@ -38,7 +44,7 @@ def test_completed_windows(monkeypatch):
 def test_incomplete_windows_are_none(monkeypatch):
     mention = datetime.utcnow() - timedelta(days=10)
     _patch_closes(monkeypatch, mention.strftime("%Y-%m-%d"), 100.0, 110.0)
-    res = asyncio.run(stock._window_returns("AAPL", _ms(mention), None))
+    res = asyncio.run(stock._window_returns("AAPL", _ms(mention), None, series=[]))
     assert res["d7"] == pytest.approx(10.0)  # 7 days elapsed → scored
     assert res["d30"] is None                # window not complete yet
     assert res["d90"] is None
@@ -49,7 +55,7 @@ def test_missing_baseline_all_none(monkeypatch):
     async def _none(ticker, ref_date_str):
         return None
     monkeypatch.setattr(stock, "_get_reference_close", _none)
-    res = asyncio.run(stock._window_returns("AAPL", _ms(datetime(2020, 1, 1)), 120.0))
+    res = asyncio.run(stock._window_returns("AAPL", _ms(datetime(2020, 1, 1)), 120.0, series=[]))
     assert res == {"baseline": None, "d7": None, "d30": None, "d90": None, "since": None}
 
 
@@ -67,7 +73,7 @@ def test_since_is_none_until_a_close_after_the_baseline(monkeypatch):
     mention = datetime.utcnow() - timedelta(days=2)
     _patch_closes(monkeypatch, mention.strftime("%Y-%m-%d"), 100.0, 100.0)
     _patch_close_dates(monkeypatch, "2026-09-04", "2026-09-04")
-    res = asyncio.run(stock._window_returns("2330", _ms(mention), 100.0))
+    res = asyncio.run(stock._window_returns("2330", _ms(mention), 100.0, series=[]))
     assert res["baseline"] == 100.0 and res["since"] is None
 
 
@@ -75,7 +81,7 @@ def test_since_scores_once_a_newer_close_exists(monkeypatch):
     mention = datetime.utcnow() - timedelta(days=2)
     _patch_closes(monkeypatch, mention.strftime("%Y-%m-%d"), 100.0, 100.0)
     _patch_close_dates(monkeypatch, "2026-09-04", "2026-09-07")
-    res = asyncio.run(stock._window_returns("2330", _ms(mention), 103.0))
+    res = asyncio.run(stock._window_returns("2330", _ms(mention), 103.0, series=[]))
     assert res["since"] == pytest.approx(3.0)
 
 
@@ -83,5 +89,5 @@ def test_since_still_scores_when_close_dates_are_unknown(monkeypatch):
     # API-fetched closes carry no DB date; don't hide a real return in that case.
     _patch_closes(monkeypatch, "2020-01-01", 100.0, 110.0)
     _patch_close_dates(monkeypatch, None, None)
-    res = asyncio.run(stock._window_returns("AAPL", _ms(datetime(2020, 1, 1)), 120.0))
+    res = asyncio.run(stock._window_returns("AAPL", _ms(datetime(2020, 1, 1)), 120.0, series=[]))
     assert res["since"] == pytest.approx(20.0)

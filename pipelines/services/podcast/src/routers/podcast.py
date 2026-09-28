@@ -105,6 +105,10 @@ class SocialCopyResponse(BaseModel):
     episode_id: str
     post: str
     comments: List[SocialCopyComment]
+    # For the link reply under the post: a specific one-line hook, and the summary
+    # section (ms offset of its #time anchor) the post is about. Both optional.
+    link_hook: str = ""
+    focus_ms: Optional[int] = None
 
 
 def _load_summary(doc: dict[str, Any], episode_id: str) -> str:
@@ -192,7 +196,8 @@ async def generate_social_copy(
             detail="Social copy generation produced no content (empty post + comments).",
         )
 
-    return SocialCopyResponse(episode_id=episode_id, post=post, comments=comments)
+    return SocialCopyResponse(episode_id=episode_id, post=post, comments=comments,
+                              link_hook=thread.get("link_hook") or "", focus_ms=thread.get("focus_ms"))
 
 
 class PostHocCopyRequest(BaseModel):

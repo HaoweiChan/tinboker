@@ -16,13 +16,12 @@ Boundaries: episode-level content rendering and the "mentioned in episodes" list
 |---|---|
 | Stock REST API (list, detail, history, batch prices) | [`backend/src/routers/stock.py`](../../backend/src/routers/stock.py) |
 | Company metadata API | [`backend/src/routers/company.py`](../../backend/src/routers/company.py), [`backend/src/services/company_service.py`](../../backend/src/services/company_service.py) |
-| Ticker insights API (Firestore-backed) | [`backend/src/routers/ticker_insights.py`](../../backend/src/routers/ticker_insights.py), [`backend/src/services/insight_service.py`](../../backend/src/services/insight_service.py) |
+| Ticker insights API (Postgres-backed) | [`backend/src/routers/ticker_insights.py`](../../backend/src/routers/ticker_insights.py), [`backend/src/services/insight_service.py`](../../backend/src/services/insight_service.py) |
 | WebSocket price stream | [`backend/src/routers/websocket_prices.py`](../../backend/src/routers/websocket_prices.py), [`backend/src/services/stock_publisher.py`](../../backend/src/services/stock_publisher.py), [`backend/src/services/websocket_subscriber.py`](../../backend/src/services/websocket_subscriber.py) |
 | Translations API (public + admin) | [`backend/src/routers/translations.py`](../../backend/src/routers/translations.py), [`backend/src/routers/admin_translations.py`](../../backend/src/routers/admin_translations.py), [`backend/src/services/translation_service.py`](../../backend/src/services/translation_service.py) |
 | Stock aggregation service | [`backend/src/services/stock.py`](../../backend/src/services/stock.py), [`backend/src/services/data_collection_service.py`](../../backend/src/services/data_collection_service.py) |
 | FinMind (TW) integration | [`backend/src/services/finmind_service.py`](../../backend/src/services/finmind_service.py), [`backend/src/services/finmind_websocket_service.py`](../../backend/src/services/finmind_websocket_service.py) |
 | Massive API (US) integration | [`backend/src/services/massive_service.py`](../../backend/src/services/massive_service.py), [`backend/src/services/massive_websocket_service.py`](../../backend/src/services/massive_websocket_service.py) |
-| TradingView logo lookup | [`backend/src/services/tradingview_logo_service.py`](../../backend/src/services/tradingview_logo_service.py) |
 
 ### Frontend
 
@@ -44,6 +43,7 @@ Boundaries: episode-level content rendering and the "mentioned in episodes" list
 - **Batch-price routes never call Massive.** `/batch-prices`, `/batch-prices-since`, `-windows`, `-trailing` read the warm Postgres tables and Redis only; a US miss is a null, filled offline by the close warmer / yfinance mention backfill. One page view carries ~200 tickers, and a per-ticker live fallback (5 Massive calls each) 429-stormed the process on 2026-09-09.
 - **One reader for warm closes.** `stock_close_refresh.batch_read_latest_closes()` is the only place that decides which close tables to read (`stock_daily_closes` + `stock_daily_ohlc`, which drift), what window counts as "recent", and how a date tie breaks. Every serving path — the batch-price routes and the `/topics` sector board — goes through it, so a ticker can't show a change% on one surface and null on another. `_get_reference_close` routes markets with `utils.market.infer_market()`, not a bare `.isdigit()`: only TW may reach FinMind.
 - **Batch prices route must precede single-ticker route.** FastAPI matches routes top-down, so `/api/stocks/batch-prices` is declared BEFORE `/api/stocks/{ticker}` in [`backend/src/routers/stock.py`](../../backend/src/routers/stock.py). Don't reorder.
+- **`POST /api/stocks/batch-prices-windows` is member-only** (`require_member`; powers the paid `/picks` page). It nulls any 7/30/90D or "since" window whose end lands on/after a large (≥40%) unadjusted close jump (`_resolve_price_break_date`), the same `PRICE_BREAK_BAND` rule `mention_sync.compute_trading_day_returns` uses. The band only catches breaks that size — ordinary TW 除權息 and smaller splits (3-for-2, 4-for-3) pass through unadjusted, and a genuine single-day US move beyond the band gets nulled too (known limitations). The baseline is always the release-day close with no after-hours check (also not fixed here).
 - **Chart timeframe params.** `timeframe` accepts `1D`, `1W`, `1M`, etc. The backend maps these to Massive API timespans. Moving averages (MA5, MA20, MA60) toggle independently in the chart config.
 - **WebSocket prices.** Live updates go through `/ws/prices`. Server publishes via `stock_publisher`, clients subscribe via `websocket_subscriber`. Don't use these for one-shot price reads — use the REST batch endpoint instead.
 - **Stock translations are public read, admin write.** `GET /api/stocks/translations/{ticker}?market=US` requires no auth. Admin endpoints under `/api/admin/translations/*` require the admin JWT (see [`auth-admin.md`](./auth-admin.md)).
@@ -54,20 +54,19 @@ Boundaries: episode-level content rendering and the "mentioned in episodes" list
 - **BUG-7 (medium):** [`frontend/src/pages/StockDashboard.tsx`](../../frontend/src/pages/StockDashboard.tsx) historically fabricated "Key Statistics" (Open = price × 0.98, P/E = 15.4). Any change to that section must read from actual OHLC data, not multipliers.
 - **BUG-10 (medium, closed):** Frontend once called `/api/recommendations/ticker/2330`; the whole `/api/recommendations/*` alias family was removed 2026-09-06. Wire consumers to `/api/ticker-insights/*` only. See [`../firestore-contract.md`](../firestore-contract.md) §4.
 - **`marketCapTier` Zod validation.** [`frontend/src/validation/schemas.ts`](../../frontend/src/validation/schemas.ts) requires `large | medium | small` but the API returns other values on some nodes. Either keep the field optional or fix the producer — not both with a fallback that masks the error.
-- **Postgres pool DNS error in prod.** The legacy recommendation Postgres reports `pool_not_initialized` because `docker-db_postgres-1` is unreachable. Migrating reads to Firestore (via ticker-insights) is the actual fix, not a Postgres workaround. See [`../firestore-contract.md`](../firestore-contract.md) Phase A.
+- **Historical:** the old recommendation pool failed on a retired Docker hostname. `/api/recommendations/*` has been removed; use `/api/ticker-insights/*`, which reads the current `firestore_mirror` Postgres tables.
 - **TradingView logo URLs are external.** Render with a graceful broken-image state; don't block on logo load.
 
 ## External integrations
 
 - **FinMind** (`FINMIND_API_KEY` from Secret Manager) — Taiwan stock prices, OHLCV history.
 - **Massive API** (`MASSIVE_API_KEY` from Secret Manager) — US market data, including WebSocket price stream.
-- **Firestore** `graphfolio-db` — ticker_insights, trending_tickers (per [`../firestore-contract.md`](../firestore-contract.md)).
-- **PostgreSQL** Cloud SQL (`POSTGRES_HOST`, `POSTGRES_PASSWORD`) — stock translations + the `firestore_mirror` content schema.
-- **TradingView** — public-CDN ticker logos; lookup table in `tradingview_logo_service.py`.
+- **VPS PostgreSQL** `podcast_db` — stock translations and the `firestore_mirror` content schema, including ticker insights and trending tickers. The schema name is historical; see [`../firestore-contract.md`](../firestore-contract.md#current-state-2026-09-27).
+- **Ticker logos** are external image URLs; render with a graceful missing-image state.
 
 ## Cross-references
 
 - Data contract: [`../firestore-contract.md`](../firestore-contract.md) §4 (ticker_insights), §5 (trending_tickers)
-- Workflow for Firestore changes: [`../workflows/firestore-data-change.md`](../workflows/firestore-data-change.md)
+- Workflow for shared-data changes: [`../workflows/firestore-data-change.md`](../workflows/firestore-data-change.md)
 - Backend code style: [`../../backend/AGENTS.md`](../../backend/AGENTS.md)
 - Frontend zh-TW glossary (stock terms): [`../../frontend/AGENTS.md`](../../frontend/AGENTS.md)

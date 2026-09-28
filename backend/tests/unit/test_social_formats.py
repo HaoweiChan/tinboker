@@ -76,16 +76,27 @@ def test_weekly_caption_lists_runners_up_only_when_they_are_loud_too():
 
 @pytest.mark.asyncio
 async def test_weekly_select_stays_quiet_on_a_thin_week(monkeypatch):
-    """W37 for real: 327 mentions, leader +6. Nothing goes out rather than a weak post."""
+    """Quiet means the leader barely moved, or the week is dead — NOT an ordinary week.
+    A normal week is ~260-330 market-wide mentions (W37 327, W38 263); the old 500-total
+    floor called every one of those thin and the recap never posted at all."""
     import src.routers.og as og
     from src.services import threads_publisher
 
     async def allowed():
         return None
     monkeypatch.setattr(threads_publisher.podcast_service, "_allowed_podcast_names", allowed)
-    thin = _movers([{"ticker": "3661", "name": "世芯-KY", "n": 6, "prev": 0, "casts": 2, "bull": 4, "bear": 1}], total=327)
-    monkeypatch.setattr(og, "_weekly_movers", lambda *_: thin)
-    assert await sf.select_weekly_movers() is None
+    flat = _movers([{"ticker": "3661", "name": "世芯-KY", "n": 6, "prev": 3, "casts": 2, "bull": 4, "bear": 1}], total=300)
+    monkeypatch.setattr(og, "_weekly_movers", lambda *_: flat)
+    assert await sf.select_weekly_movers() is None          # leader rose +3
+
+    dead = _movers([{"ticker": "3661", "name": "世芯-KY", "n": 6, "prev": 0, "casts": 2, "bull": 4, "bear": 1}], total=40)
+    monkeypatch.setattr(og, "_weekly_movers", lambda *_: dead)
+    assert await sf.select_weekly_movers() is None          # the week itself is dead
+
+    # W38 as it really was: 263 mentions, NVDA 20 vs 15 last week. This posts.
+    real = _movers([{"ticker": "NVDA", "name": "輝達", "n": 20, "prev": 15, "casts": 7, "bull": 12, "bear": 2}], total=263)
+    monkeypatch.setattr(og, "_weekly_movers", lambda *_: real)
+    assert await sf.select_weekly_movers() is not None
 
     loud = _movers([{"ticker": "3037", "name": "欣興", "n": 31, "prev": 4, "casts": 6, "bull": 9, "bear": 14}], total=900)
     monkeypatch.setattr(og, "_weekly_movers", lambda *_: loud)
@@ -115,7 +126,7 @@ def test_post_hoc_caption_is_the_story_then_the_one_line_only_we_can_write():
     assert len(text) <= THREADS_MAX_CHARS
 
 
-def _seed_post_hoc(pct_big=12.0, pct_small=3.0):
+def _seed_post_hoc(pct_big=12.0, pct_small=3.0, stance="BULLISH"):
     """Two mentions with a thesis and a 5-session return: one moved, one did not."""
     from datetime import datetime as _dt
     from src.database import postgres as pg
@@ -129,7 +140,7 @@ def _seed_post_hoc(pct_big=12.0, pct_small=3.0):
         for i, (tk, pct) in enumerate((("3324", pct_big), ("2330", pct_small))):
             m = ContentMention(mention_key=f"ep{i}:ticker:{tk}", episode_id=f"ep{i}", mention_type="ticker",
                                ticker=tk, market="TW", podcaster="兆華與股惑仔", extraction_method="pipeline_llm",
-                               mentioned_at=_dt.utcnow() - timedelta(days=10), sentiment_label="BULLISH",
+                               mentioned_at=_dt.utcnow() - timedelta(days=10), sentiment_label=stance,
                                thesis=f"{tk} 的理由")
             db.add(m)
             db.flush()
@@ -172,13 +183,14 @@ async def test_post_hoc_up_tells_the_story_and_builds_the_marked_card_url(temp_d
     assert draft["image_url"].endswith("/api/og/stock/3324.png?days=60&event=2026-09-07"
                                        "&label=%E5%85%86%E8%8F%AF%E8%88%87%E8%82%A1%E6%83%91%E4%BB%94%209/7")
     assert draft["url"].endswith("/episode/ep0")
+    assert draft["link_hook"] == "兆華 9/7那集講雙鴻的段落" and draft["focus_ms"] is None   # seeded mention has no offset
 
 
 @pytest.mark.asyncio
 async def test_post_hoc_down_is_its_own_format_and_no_story_means_no_post(temp_db, monkeypatch):
     from src.services import threads_publisher
     monkeypatch.setattr(threads_publisher.podcast_service, "_allowed_podcast_names", _no_scope)
-    _seed_post_hoc(pct_big=-15.0)
+    _seed_post_hoc(pct_big=-15.0, stance="BEARISH")
 
     async def story(c):
         return STORY
@@ -239,7 +251,8 @@ async def test_slot_posts_the_first_format_with_material_then_cools_down(temp_db
     res = await sf.publish_due_format(now=NOW)
     assert res["posted"] is True and res["format"] == "weekly_movers"
     assert fake.posts == [("本週", "https://api.tinboker.com/api/og/weekly.png")]
-    assert fake.replies == [("▶ https://tinboker.com/weekly/2026-W37", "m1")]
+    assert fake.replies == [("▶ https://tinboker.com/weekly/2026-W37"
+                             "?utm_source=threads&utm_medium=social&utm_campaign=weekly_movers", "m1")]
     row = social_ledger.list_posted("threads")[0]
     assert (row["episode_id"], row["format"], row["subject"], row["child_ids"]) == \
         ("weekly_movers:2026-09-07", "weekly_movers", "2026-09-07", ["r1"])
@@ -298,3 +311,21 @@ async def test_preview_shows_every_draft_and_what_the_slot_would_post(temp_db, m
     assert out["formats"][0]["draft"] is None and out["formats"][0]["error"] == "db down"
     assert out["formats"][1]["draft"]["text"] == "本週"
     assert social_ledger.list_posted("threads") == []   # preview never writes
+
+
+# triage: invariant-gap — a retrospective must not pair a bullish call with a fall.
+def test_post_hoc_candidates_reject_opposite_direction(temp_db):
+    _seed_post_hoc(pct_big=-15.0)
+    assert sf._post_hoc_candidates(None, datetime(2026, 8, 1)) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stance", ["BEARISH", "STRONG_BEARISH", "NEUTRAL", None, "NOT_BULLISH"])
+async def test_post_hoc_selection_rejects_unaligned_stance_before_story(monkeypatch, stance):
+    from src.services import threads_publisher
+    monkeypatch.setattr(threads_publisher.podcast_service, "_allowed_podcast_names", _no_scope)
+    monkeypatch.setattr(sf, "_post_hoc_candidates", lambda *_: [_cand(sentiment_label=stance, episode_id="ep")])
+    async def unexpected(c):
+        pytest.fail("Rejected candidate must not incur a story call")
+    monkeypatch.setattr(sf, "_story", unexpected)
+    assert await sf.select_post_hoc_up() is None

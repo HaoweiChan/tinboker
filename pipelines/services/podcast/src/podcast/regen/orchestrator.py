@@ -14,7 +14,7 @@ agent path is byte-identical to a real pipeline run for the same inputs.
 Per-episode progress is held in a JSON "working draft" (in-memory + on disk under
 ``TINBOKER_REGEN_WORK_DIR``) so the agent never has to re-pass large blobs
 (sentences, events, ticker insights) across tool calls. Nothing is written to
-Firestore until ``commit``.
+Postgres until ``commit``.
 """
 
 from __future__ import annotations
@@ -172,14 +172,6 @@ def _load(episode_id: str) -> dict[str, Any]:
     )
 
 
-# --- Firestore access (lazy: importing the module bootstraps GSM secrets) ----
-
-def _firestore():
-    from src.service.firestore_service import FirestoreService
-
-    return FirestoreService()
-
-
 def _write_doc_update(episode_id: str, fields: dict[str, Any]) -> None:
     """Jsonb-merge ``fields`` onto ``firestore_mirror.episodes.doc``.
 
@@ -240,9 +232,40 @@ def _gcs_storage_service():
     """The pipeline's media-store service (same one ``gcs_upload`` uses). Imported
     lazily so importing this module doesn't require the storage env — tests
     monkeypatch this to avoid touching the real media root."""
+    from src.secrets_bootstrap import bootstrap_regen
+
+    # The media module calls the full podcast bootstrap at import time. Set the
+    # regeneration-only secret scope first, including for direct module callers.
+    bootstrap_regen()
     from src.service.gcs_storage_service import GCSStorageService
 
     return GCSStorageService()
+
+
+_LIVE_MEDIA_ROOT = Path("/srv/tinboker-media")
+_LIVE_MEDIA_PUBLIC_BASE = "https://podcast-api.tinboker.com/media"
+
+
+def _require_live_media_root() -> None:
+    """Refuse a DB commit unless artifacts can reach the production media URL."""
+    # Keep this check free of the media-service import: that module bootstraps the
+    # full podcast service (including retired Firestore secrets) as a side effect.
+    live_root = _LIVE_MEDIA_ROOT.resolve()
+    root = Path(os.getenv("MEDIA_STORAGE_ROOT", str(live_root))).expanduser().resolve()
+    if root != live_root or not live_root.is_dir():
+        raise RegenError(
+            f"Regeneration commit requires the live media tree at {live_root}; "
+            f"MEDIA_STORAGE_ROOT resolves to {root}. Run the MCP on the VPS with "
+            "that tree mounted before writing the episode database."
+        )
+    if not os.access(root, os.W_OK):
+        raise RegenError(f"Regeneration commit cannot write to the live media tree at {root}.")
+    public_base = os.getenv("MEDIA_PUBLIC_BASE", _LIVE_MEDIA_PUBLIC_BASE).rstrip("/")
+    if public_base != _LIVE_MEDIA_PUBLIC_BASE:
+        raise RegenError(
+            f"Regeneration commit requires MEDIA_PUBLIC_BASE={_LIVE_MEDIA_PUBLIC_BASE}; "
+            f"got {public_base}. Refusing to save a non-production media URL."
+        )
 
 
 def _derive_sentences_from_transcript(
@@ -640,26 +663,19 @@ def find_candidates(
     only_placeholder: bool = False,
 ) -> dict[str, Any]:
     """Episodes that have a transcript but missing/placeholder generated content."""
+    from src.service import postgres_mirror_reader
+
     if only_placeholder:
         # The "needs content" predicate runs in SQL — see query_regen_candidates. A
         # client-side filter over a newest-first window cannot find backfilled
         # episodes, which carry their true old release date and sort to the bottom.
-        from src.service import postgres_mirror_reader
-
-        _firestore()  # importing bootstraps the GSM secrets the reader connects with
         rows = postgres_mirror_reader.query_regen_candidates(
             podcast_name=podcast_name, limit=limit
         )
     else:
-        fs = _firestore()
-        if podcast_name:
-            rows = fs.query_collection(
-                "episodes", filters=[("podcast_name", "==", podcast_name)], limit=limit * 4
-            )
-        else:
-            rows = fs.query_collection(
-                "episodes", order_by="created_time", direction="DESCENDING", limit=limit * 4
-            )
+        rows = postgres_mirror_reader.query_episodes(
+            podcast_name=podcast_name, limit=limit * 4
+        )
 
     out: list[dict[str, Any]] = []
     for d in rows:
@@ -703,9 +719,9 @@ def find_candidates(
 def start(podcast_name: str, episode_id: str) -> dict[str, Any]:
     """Load a transcribed episode and open a working draft; return the first prompt."""
     from src.podcast.exporters.ticker_insights import episode_publish_time
+    from src.service import postgres_mirror_reader
 
-    fs = _firestore()
-    doc = fs.get_document("episodes", episode_id)
+    doc = postgres_mirror_reader.get_episode_by_id(episode_id)
     if not doc:
         raise RegenError(f"Episode '{episode_id}' not found.")
     if doc.get("podcast_name") != podcast_name:
@@ -888,6 +904,8 @@ def commit(
             "would leave the episode slides describing the OLD summary. Submit "
             "'marp_writer' first (get_role_prompt(episode_id, 'marp_writer'))."
         )
+
+    _require_live_media_root()
 
     report: dict[str, Any] = {"episode_id": episode_id, "warnings": []}
 

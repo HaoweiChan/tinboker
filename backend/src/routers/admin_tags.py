@@ -15,6 +15,7 @@ from src.database.models import TagRegistry
 from src.database.postgres import get_session
 from src.services.firestore_service import FirestoreService
 from src.services.podcast import PodcastService
+from src.utils.market import infer_market
 from src.tag_registry import (
     KIND_SECTOR,
     KIND_TAG,
@@ -328,7 +329,7 @@ def clean_members_list(db: Session, members: list[dict]) -> list[dict]:
             continue
         seen.add(ticker)
         
-        is_tw = ticker.isdigit() or (ticker.endswith("*") and ticker[:-1].isdigit())
+        is_tw = infer_market(ticker.rstrip("*")) != "US"
         market = "TW" if is_tw else "US"
         
         name = m.get("name") or ""

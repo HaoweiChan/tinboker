@@ -1,14 +1,16 @@
 """
 Search API router
 """
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from src.schemas.search import SearchResponse, SearchResultItem
 from src.services.stock import StockService
 from src.services.podcast import PodcastService
 from src.cache.cdn_cache import cdn_cache_trending, cdn_cached
 from src.utils.market import infer_market
+from src.routers.screener import require_internal_key
 import asyncio
 import logging
+from typing import Optional
 import re
 
 router = APIRouter(prefix="/api/search", tags=["search"])
@@ -99,6 +101,33 @@ async def suggest(
         tags=[s for s in suggestions if s.type == "tag"]
     )
 
+_rebuild_lock = asyncio.Lock()
+
+
+@router.post("/rebuild-index", dependencies=[Depends(require_internal_key)])
+async def rebuild_index() -> dict:
+    """Rebuild the in-memory suggestion index from the rows currently in the DB.
+
+    The index is built once at startup and never again, so a data fix is invisible to
+    typeahead until the process restarts: deleting the junk 981A stub left production
+    still suggesting "(Probable bond ETF variant)", and correcting 96 listing names left
+    the old ones in the dropdown. Restarting prod to pick up a one-row change is a blunt
+    instrument — this is the same build the startup hook runs.
+
+    Internal-key gated rather than admin: ``/api/admin/*`` is not mounted in production
+    (see main.py), and production is exactly where the index needs rebuilding. The old
+    index is cleared first, so a removed row really disappears; for the second or two
+    that takes, ``suggest`` falls back to its DB-backed search path.
+    """
+    from src.services.suggestion_index import SuggestionIndex
+
+    async with _rebuild_lock:
+        index = SuggestionIndex()
+        await index.clear()
+        await build_search_index()
+        return {"status": "ok", "items": index.size, "initialized": index.is_initialized}
+
+
 async def init_search_index():
     """Initialize search index — called from main.py startup."""
     asyncio.create_task(build_search_index())
@@ -108,6 +137,36 @@ def _has_cjk(text) -> bool:
     if not text:
         return False
     return any("㐀" <= ch <= "鿿" or "豈" <= ch <= "﫿" for ch in text)
+
+
+# A show is often remembered by its host, and a host's name is nowhere in our data: the
+# episode docs carry podcast_name and nothing else. Production logs show a reader typing
+# 李兆華 and getting nothing, while we publish 兆華與股惑仔 with 448 episodes.
+#
+# Curated, and only where the show's OWN episodes evidence the name (counts measured
+# 2026-09-20 over firestore_mirror.episodes): 李兆華 12 / 陳威良 29 in 兆華與股惑仔,
+# 謝孟恭 3 in Gooaye 股癌, Miula 190 in M觀點, MacroMicro 61 in 財經M平方. Hosts whose
+# name is already inside the show title (游庭皓的財經皓角, 曲博科技教室, 財女珍妮) need
+# no entry — substring matching covers them.
+PODCAST_ALIASES: dict[str, list[str]] = {
+    "兆華與股惑仔": ["李兆華", "陳威良"],
+    "Gooaye 股癌": ["謝孟恭"],
+    "M觀點": ["Miula"],
+    "財經M平方": ["MacroMicro", "MM"],
+}
+
+
+def _bare_tw_code(ticker: str) -> Optional[str]:
+    """A TW code with its leading zeros dropped — "981A" for 00981A, "50" for 0050.
+
+    Hosts say (and listeners type) the code without the padding, so typing 981A found
+    nothing but a junk stub someone had created under that exact string. Indexed as an
+    extra keyword, not as the title, so the real listing answers the short form too.
+    """
+    if infer_market(ticker) != "TW":
+        return None
+    bare = (ticker or "").lstrip("0")
+    return bare if bare and bare != ticker else None
 
 
 def _load_stock_translations(limit: int = 20000):
@@ -196,7 +255,7 @@ async def build_search_index():
             display = zh if show_zh else (en or ticker)
 
             # All searchable forms: ticker, both names, and curated aliases.
-            keywords = [ticker, en, zh, *tr.get("aliases", [])]
+            keywords = [ticker, en, zh, *tr.get("aliases", []), _bare_tw_code(ticker)]
 
             if ticker.upper() in seen_tickers:
                 # Already indexed from Massive — just add the extra (zh-TW/alias) keywords.
@@ -226,7 +285,7 @@ async def build_search_index():
                 link=f"/podcaster/{podcast.name}",
                 icon_url=podcast.image_url
             )
-            await index.add_item(item, keywords=[podcast.name])
+            await index.add_item(item, keywords=[podcast.name, *PODCAST_ALIASES.get(podcast.name, [])])
             
         # 3. Fetch tags
         tags = await podcast_service.get_all_tags()

@@ -22,62 +22,7 @@ Massive API / Mock Data
 
 ## Endpoint-by-Endpoint Data Preparation
 
-### 1. `GET /api/stocks` - Get Sorted Stocks List
-
-**Router Handler**: `get_sorted_stocks()`
-- **Service Method**: `stock_service.get_sorted_stocks_async(sort_by, limit)`
-- **Query Params**: 
-  - `sort_by`: ticker, name, price, change_percent, market_cap
-  - `limit`: 1-200 (default: 50)
-  - `q`: Optional search query (filtered in router)
-
-**Data Preparation Flow**:
-
-1. **Cache Check** (Redis):
-   - Cache key: `stock:list:{sort_by}:{limit}`
-   - If cached, return immediately
-
-2. **Fetch from API**:
-   - Calls `data_collection_service.get_all_stocks(limit=limit)`
-   - This calls `massive_service.list_tickers(limit=limit)` (ultra-fast mode)
-   - Returns list of `Stock` objects with minimal data
-
-3. **Data Transformation**:
-   ```python
-   # Convert Stock objects to dict format
-   {
-       "ticker": stock_data.stock_id,
-       "name": stock_data.metadata.stock_name,
-       "price": stock_data.price,
-       "change": stock_data.change,
-       "change_percent": stock_data.changePercent,
-       "market_cap": stock_data.marketCap,
-       "revenue": stock_data.revenue,
-       "pe": stock_data.pe,
-       "dividend_yield": stock_data.dividendYield,
-       "about": stock_data.about,
-       "volume": stock_data.stats.volume,
-       "beta": stock_data.stats.beta,
-       "volatility": stock_data.stats.volatility,
-       "updated_at": datetime.now().isoformat()
-   }
-   ```
-
-4. **Sorting**:
-   - Sorts by `sort_by` field using lambda functions
-   - Default: sort by ticker
-
-5. **Cache Storage**:
-   - Stores result in Redis with TTL from `CACHE_TTL["stock_list"]`
-
-6. **Search Filter** (in router):
-   - If `q` parameter provided, filters by ticker or name (case-insensitive)
-
-**Response**: `List[Dict[str, Any]]` - Array of stock dictionaries
-
----
-
-### 2. `GET /api/stocks/{ticker}` - Get Stock by Ticker
+### 1. `GET /api/stocks/{ticker}` - Get Stock by Ticker
 
 **Router Handler**: `get_stock_by_ticker(ticker, timeframe)`
 - **Service Method**: `stock_service.get_stock_info_async(ticker, timeframe)`
@@ -137,7 +82,7 @@ Massive API / Mock Data
 
 ---
 
-### 3. `GET /api/stocks/{ticker}/basic` - Get Basic Stock Info
+### 2. `GET /api/stocks/{ticker}/basic` - Get Basic Stock Info
 
 **Router Handler**: `get_stock_basic_info(ticker)`
 - **Service Method**: `stock_service.get_stock_basic_info_async(ticker)`
@@ -182,7 +127,7 @@ Massive API / Mock Data
 
 ---
 
-### 4. `GET /api/stocks/{ticker}/history` - Get Stock Price History
+### 3. `GET /api/stocks/{ticker}/history` - Get Stock Price History
 
 **Router Handler**: `get_stock_history(ticker, timeframe)`
 - **Service Method**: `stock_service.get_stock_info_async(ticker, timeframe)`
@@ -214,7 +159,7 @@ Massive API / Mock Data
 
 ---
 
-### 5. `WebSocket /api/stocks/{ticker}/ohlcv` - Real-time OHLCV Streaming
+### 4. `WebSocket /api/stocks/{ticker}/ohlcv` - Real-time OHLCV Streaming
 
 **Router Handler**: `websocket_ohlcv(websocket, ticker)`
 - **Service**: Uses `WebSocketSubscriber` for Redis pub/sub

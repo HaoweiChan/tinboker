@@ -1,7 +1,8 @@
 import { useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, Link } from 'react-router-dom';
 import { Mail, Clock, MessageCircle, AtSign, ShieldAlert } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
+import { Section } from '@/components/common/Section';
 import { PageContent } from '@/components/layout/PageContent';
 import { AppLogo } from '@/components/logo/AppLogo';
 
@@ -9,14 +10,6 @@ import { AppLogo } from '@/components/logo/AppLogo';
  *  the old paths redirect here with a hash, so deep links keep working. The /report
  *  comment board was retired — it never received a comment on any environment — so
  *  feedback is simply part of 聯絡我們. */
-function Section({ id, title, children }: { id: string; title: string; children: React.ReactNode }) {
-  return (
-    <section id={id} className="bg-card border border-border rounded-md p-5 sm:p-6 scroll-mt-24">
-      <h2 className="text-lg font-semibold tracking-[-0.01em] mb-4">{title}</h2>
-      <div className="text-base leading-[1.65] text-muted-foreground space-y-4">{children}</div>
-    </section>
-  );
-}
 
 const FEATURES: { n: number; title: string; body: string }[] = [
   { n: 1, title: '智慧摘要', body: '運用 AI 技術，快速梳理財經 Podcast 與新聞重點，讓您在幾分鐘內掌握小時級內容的精華。' },
@@ -58,7 +51,9 @@ function ContactRow({ icon, title, children }: { icon: React.ReactNode; title: s
 }
 
 export const About: React.FC = () => {
-  const { hash } = useLocation();
+  const { hash, search } = useLocation();
+  const guideParams = new URLSearchParams(search);
+  guideParams.set('onboarding', 'tutorial');
   // Deep links (/about#contact, redirected /disclaimer, …) land on their section.
   useEffect(() => {
     const id = hash.replace(/^#/, '');
@@ -71,13 +66,17 @@ export const About: React.FC = () => {
     <>
       <SEO title="關於 TinBoker" description="TinBoker（聽播客）— 結合 Podcast 觀點與即時數據的財經平台。聯絡方式與免責聲明都在這一頁。" />
       <PageContent className="max-w-3xl">
-        <div className="flex items-center justify-center gap-2 mb-2 pt-4">
-          <span className="text-2xl font-semibold tracking-[-0.02em]">關於</span>
+        <div className="flex items-center gap-2 mb-2 pt-4">
+          <h1 className="heading-accent text-2xl font-semibold">關於</h1>
           <AppLogo size={28} />
         </div>
-        <p className="text-center text-base text-muted-foreground max-w-xl mx-auto mb-6 leading-[1.65]">
+        <p className="text-base text-muted-foreground max-w-xl mb-6 leading-[1.65]">
           TinBoker（聽播客）把財經 Podcast 的觀點結構化、和即時市場數據對照，幫你用更短的時間掌握重點。
         </p>
+
+        <div className="mb-6 flex">
+          <Link to={{ pathname: '/about', search: guideParams.toString(), hash }} className="inline-flex rounded-md border border-border px-4 py-2 text-sm font-medium text-accent-info hover:bg-muted">使用導覽</Link>
+        </div>
 
         <div className="space-y-4">
           <Section id="about" title="核心功能">
@@ -131,6 +130,9 @@ export const About: React.FC = () => {
                 <p>{s.body}</p>
               </div>
             ))}
+            <p className="pt-4 border-t border-border">
+              完整的服務條款、會員訂閱與付款、退款政策與隱私權政策，請見<Link to="/terms" className="text-accent-info hover:underline">服務條款與政策</Link>。
+            </p>
           </Section>
 
         </div>

@@ -20,3 +20,20 @@ args = [
 
 [mcp_servers.stock_translations.env]
 TINBOKER_API_BASE_URL = "https://dev-api.tinboker.com"
+
+[mcp_servers.podcast_regen]
+command = "uv"
+args = [
+    "run",
+    "--directory",
+    "pipelines",
+    "--package",
+    "tinboker-podcast",
+    "python",
+    "../mcp-servers/podcast-regen/server.py",
+]
+
+[mcp_servers.podcast_regen.env]
+GCP_PROJECT_ID = "gen-lang-client-0901363254"
+TINBOKER_PLATFORM_API_URL = "https://api.tinboker.com"
+PIPELINE_LLM_MODEL = "openrouter:deepseek/deepseek-v4-pro"

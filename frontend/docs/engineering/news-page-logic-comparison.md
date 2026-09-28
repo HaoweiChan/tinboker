@@ -1,5 +1,9 @@
 # News Page Logic Comparison: Intended vs Current Implementation
 
+> **Historical snapshot.** This document records earlier plans or implementation details.
+> Routes, API gaps, and environment instructions below may be stale. For current
+> frontend guidance, start with the [frontend docs index](../README.md).
+
 ## Intended Logic
 
 1. **Podcaster Page** (`/podcaster/Gooaye%20股癌`):

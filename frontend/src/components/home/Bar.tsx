@@ -26,7 +26,11 @@ export const Bar: React.FC<{
   const to = `hsl(var(--bar-${tone}-to))`;
   const signal = 'hsl(var(--bar-signal))';
   return (
-    <span className="h-4 sm:h-[16px] rounded-[3px] overflow-hidden" style={{ backgroundColor: 'hsl(var(--bar-track))' }}>
+    // Capped, not full-bleed: in the full-width 本週市場 panel the track stretched to
+    // ~950px on a desktop, so a row reading "12 集" spent most of the widest element on
+    // the page being an empty groove. 440px still separates every value in these panels
+    // (they top out in the low hundreds) while leaving the row legible as a row.
+    <span className="block w-full max-w-[440px] h-4 sm:h-[16px] rounded-[3px] overflow-hidden" style={{ backgroundColor: 'hsl(var(--bar-track))' }}>
       <span
         className="block h-full rounded-[3px]"
         style={{

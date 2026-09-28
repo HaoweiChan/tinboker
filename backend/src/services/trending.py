@@ -5,10 +5,11 @@ import logging
 import json
 import asyncio
 import math
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Dict
 from collections import Counter
 
+from src.services.attention import batch_attention_levels
 from src.services.podcast import PodcastService
 from src.services.stock import StockService
 from src.cache.redis_client import cache_get, cache_set, get_redis
@@ -16,10 +17,14 @@ from src.schemas.search import SearchResultItem
 from src.database.models import StockTranslation
 from src.database.postgres import get_session
 from src.tag_registry import canonical_label, canonical_tag_slugs, hidden_tag_slugs, normalize_tag_slug
+from src.utils.market import infer_market
 
 
 def _infer_market(ticker: str) -> str:
-    return "TW" if ticker.split(".")[0].isdigit() else "US"
+    # Not infer_market() verbatim: its 6-digit KR rule would relabel TW's 6-digit ETFs
+    # (006208). Everything else — the trailing class letter of 00981A / 00632R — comes
+    # from the shared heuristic instead of another isdigit() copy.
+    return "US" if infer_market(ticker) == "US" else "TW"
 
 
 def _has_cjk(text: Optional[str]) -> bool:
@@ -101,7 +106,7 @@ class TrendingService:
                 for ticker in tickers:
                     # Determine market based on ticker format
                     clean_ticker = ticker.split('.')[0]
-                    market = "TW" if clean_ticker.isdigit() else "US"
+                    market = _infer_market(clean_ticker)
                     result = db.query(StockTranslation).filter(
                         StockTranslation.ticker == clean_ticker.upper(),
                         StockTranslation.market == market
@@ -144,7 +149,7 @@ class TrendingService:
                   prev_sentiment_summary, rising_ticker, new_tickers}
         """
         ticker_filter = ticker.strip().upper().split(".")[0] if ticker else None
-        cache_key = f"buzz:recent:{days}:{limit}:{ticker_filter or 'all'}:v5"
+        cache_key = f"buzz:recent:{days}:{limit}:{ticker_filter or 'all'}:v6"
         cached = await cache_get(cache_key)
         if cached:
             try:
@@ -199,6 +204,17 @@ class TrendingService:
         all_tickers_to_translate = list(set(top_tickers + extra_tickers + ([ticker_filter] if ticker_filter else [])))
         translations = await self._get_translations_batch(all_tickers_to_translate)
 
+        attention = {}
+        if top_tickers:
+            try:
+                allowed = await self.podcast_service._allowed_podcast_names()
+                attention = await asyncio.to_thread(
+                    batch_attention_levels, top_tickers, allowed=allowed,
+                    today=datetime.now(timezone.utc).date(),
+                )
+            except Exception:
+                logger.warning("buzz attention aggregation failed", exc_info=True)
+
         # Aggregate dominant sentiment per top ticker
         sent_maps: Dict[str, dict] = {}
         try:
@@ -237,6 +253,7 @@ class TrendingService:
                 "sentiment_label": dominant,
                 "sentiment_counts": sentiment_counts,
                 "last_mentioned": last_mentioned.get(ticker),
+                **attention.get(ticker, {"attention_level": None, "attention_as_of": None}),
             })
 
         # Compute prev-window sentiment summary from the top tickers' prior counts

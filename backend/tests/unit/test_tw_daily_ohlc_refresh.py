@@ -301,3 +301,56 @@ def test_empty_rows_touch_no_session(monkeypatch):
 
     monkeypatch.setattr(t, "get_session", lambda: pytest.fail("no session for zero rows"))
     assert t._upsert_rows([]) == 0
+
+
+# ── Official listing-name sync (agent-guessed names: 00981A stored as 富邦道瓊ETF) ──
+
+def test_sync_names_corrects_auto_rows_but_never_approved(ohlc_db):
+    """auto/pending rows take the exchange's name (and drop the guessed English one);
+    an approved row keeps the human's choice even when the exchange disagrees."""
+    from src.database.models import StockTranslation
+    from src.services.tw_daily_ohlc_refresh import _sync_names
+
+    for session in ohlc_db.get_session():
+        session.add_all([
+            StockTranslation(ticker="00981A", market="TW", name_zh_tw="富邦道瓊ETF",
+                             name_en="Fubon Dow Jones ETF", name_preference="en",
+                             translation_status="auto"),
+            StockTranslation(ticker="2330", market="TW", name_zh_tw="台積電",
+                             translation_status="auto"),
+            StockTranslation(ticker="1216", market="TW", name_zh_tw="統一企業",
+                             translation_status="approved"),
+            StockTranslation(ticker="AAPL", market="US", name_en="Apple Inc.",
+                             translation_status="auto"),
+        ])
+        session.commit()
+        break
+
+    fixed = _sync_names({"00981A": "主動統一台股增長", "2330": "台積電", "1216": "統一"})
+    assert fixed == 1  # only the disagreeing auto row
+
+    for session in ohlc_db.get_session():
+        rows = {r.ticker: r for r in session.query(StockTranslation).all()}
+        assert rows["00981A"].name_zh_tw == "主動統一台股增長"
+        assert rows["00981A"].name_en is None          # the guess goes with it
+        assert rows["00981A"].name_preference == "auto"  # "en" would hide the zh name
+        assert rows["1216"].name_zh_tw == "統一企業"     # approved is never clobbered
+        assert rows["AAPL"].name_en == "Apple Inc."      # US rows untouched
+        break
+
+
+def test_sync_names_empty_feed_is_a_noop(ohlc_db):
+    """A failed fetch must not blank every name."""
+    from src.database.models import StockTranslation
+    from src.services.tw_daily_ohlc_refresh import _sync_names
+
+    for session in ohlc_db.get_session():
+        session.add(StockTranslation(ticker="2330", market="TW", name_zh_tw="台積電",
+                                     translation_status="auto"))
+        session.commit()
+        break
+
+    assert _sync_names({}) == 0
+    for session in ohlc_db.get_session():
+        assert session.query(StockTranslation).one().name_zh_tw == "台積電"
+        break

@@ -45,11 +45,13 @@ from src.routers.admin_weekly import router as admin_weekly_router
 from src.routers.admin_daily_pick import router as admin_daily_pick_router
 from src.routers.admin_stock_bars import router as admin_stock_bars_router
 from src.routers.admin_weekly_brief import router as admin_weekly_brief_router
+from src.routers.admin_members import router as admin_members_router
 from src.routers.social import (router as social_router, facebook_router, promo_router,
                                 substack_router, vocus_router)
 from src.routers.seo import router as seo_router, admin_router as admin_seo_router
 from src.routers.weekly import router as weekly_router
 from src.routers.screener import router as screener_router
+from src.routers.billing import router as billing_router
 from src.middleware.cloudflare import CloudflareMiddleware
 
 # Nothing configured logging, so the root logger kept its WARNING default and every
@@ -266,6 +268,19 @@ async def lifespan(app: FastAPI):
     if settings.is_production:
         asyncio.create_task(_refresh_us_ohlc_bg())
 
+    # Threads metrics are a once-per-UTC-day first-success sample per post. The worker
+    # pages the recent 30-day window in small batches and takes a shared Postgres lock,
+    # so staging/dev do not duplicate provider reads or snapshots.
+    if settings.is_production:
+        async def _threads_insights_bg():
+            try:
+                from src.services.threads_insights_service import run_periodic_threads_insights
+                await run_periodic_threads_insights(interval_seconds=600.0)
+            except Exception as e:
+                print(f"Warning: Threads insights snapshot worker stopped: {type(e).__name__}")
+
+        asyncio.create_task(_threads_insights_bg())
+
     # Refresh-ahead for the /topics boards (hot sectors + 熱門標籤). Production only,
     # hourly: every cycle full-scans Firestore in us-central1, and with three envs
     # running 5/10-min cycles the reads + cross-internet egress dominated the July
@@ -437,6 +452,7 @@ app.include_router(articles_router)
 app.include_router(seo_router)  # public /sitemap.xml — stays on every env
 app.include_router(weekly_router)  # /api/weekly — public weekly rollups (TKB-013)
 app.include_router(screener_router)  # X-Internal-Key gated — stays on every env
+app.include_router(billing_router)  # /api/billing/plans — public, stays on every env
 
 # Admin dashboard is developer-only and consolidated onto the dev/staging envs. Skip
 # mounting every /api/admin/* router in production so api.tinboker.com exposes no admin
@@ -458,6 +474,7 @@ if not settings.is_production:
     app.include_router(admin_daily_pick_router)  # /api/admin/daily-pick/{day}|publish-vocus
     app.include_router(admin_stock_bars_router)  # /api/admin/stock-bars/repair-us
     app.include_router(admin_weekly_brief_router)  # /api/admin/weekly-brief/{week}[.md]
+    app.include_router(admin_members_router)  # /api/admin/members/* — manual membership grant
     app.include_router(social_router)       # /api/admin/threads/*
     app.include_router(facebook_router)     # /api/admin/facebook/*
     app.include_router(vocus_router)        # /api/admin/vocus/*

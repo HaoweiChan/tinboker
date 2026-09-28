@@ -65,8 +65,8 @@ export const ConsensusTile: React.FC<ConsensusTileProps> = ({ insights, classNam
 
   return (
     <div className={cn('rounded-[10px] border p-4 md:p-5 flex flex-col justify-between gap-3', tint, className)}>
-      <div className="flex items-baseline justify-between gap-3">
-        <div className={cn('text-xs', lean === 'bull' ? 'text-sentiment-bull' : lean === 'bear' ? 'text-sentiment-bear' : 'text-muted-foreground')}>{title}</div>
+      <div className="flex items-baseline justify-between gap-3 flex-wrap">
+        <h2 className={cn('heading-accent text-lg font-semibold', lean === 'bull' ? 'text-sentiment-bull' : lean === 'bear' ? 'text-sentiment-bear' : 'text-foreground')}>{title}</h2>
         {typeof heatIndex === 'number' && (
           // Volume, not opinion — deliberately secondary to the sentiment count beside
           // it, which is what this tile is about. Shown as an index rather than a share

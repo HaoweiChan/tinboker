@@ -13,6 +13,7 @@ from src.models.stock import CompanyDetail, ChartDataPoint
 from src.schemas.search import SearchResultItem
 from src.cache.redis_client import cache_get, cache_set, cache_delete, cache_delete_pattern
 from src.cache.cache_config import CACHE_TTL
+from src.utils.market import infer_market
 
 logger = logging.getLogger(__name__)
 
@@ -246,25 +247,6 @@ class StockService:
                 pass
         return None
     
-    
-    def get_sorted_stocks(self, sort_by: str = "ticker", limit: int = 50) -> List[Dict[str, Any]]:
-        """
-        Get sorted stocks list from Massive API
-        Synchronous version - calls async version internally
-        
-        Args:
-            sort_by: Sort field (ticker, name, price, change_percent, market_cap)
-            limit: Maximum number of stocks to return (default: 50, max: 200)
-            
-        Returns:
-            List of stock dictionaries
-        """
-        import asyncio
-        try:
-            loop = asyncio.get_event_loop()
-            return loop.run_until_complete(self.get_sorted_stocks_async(sort_by=sort_by, limit=limit))
-        except RuntimeError:
-            return asyncio.run(self.get_sorted_stocks_async(sort_by=sort_by, limit=limit))
     
     async def get_sorted_stocks_async(self, sort_by: str = "ticker", limit: int = 50) -> List[Dict[str, Any]]:
         """
@@ -578,7 +560,7 @@ class StockService:
             name = stock.get("name", "")
             if query_lower not in ticker.lower() and query_lower not in name.lower():
                 continue
-            market = "TW" if ticker.split(".")[0].isdigit() else "US"
+            market = "US" if infer_market(ticker) == "US" else "TW"
             results.append(SearchResultItem(
                 id=f"stock-{ticker}",
                 type="stock",

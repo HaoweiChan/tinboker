@@ -33,11 +33,11 @@ files the admin "Prompts" editor writes).
 | `get_role_prompt` | A step's full `system`+`user` prompt **+ `output_schema` + `example`** |
 | `submit_role` | Submit your JSON (validated); returns a lightweight `next` pointer |
 | `preview_regen` | Show exactly what will be written (no write) |
-| `commit_regen` | Persist to Firestore + refresh the platform caches |
+| `commit_regen` | Persist to Postgres and local media storage; refresh platform caches |
 | `discard_regen` | Drop the draft |
 
-Steps — required: `extractor → writer → key_insights → ticker_extractor`;
-optional: `marp_writer` (episode slides), `ticker_marp_writer` (ticker slides).
+Steps — required: `extractor → writer → key_insights → ticker_extractor → marp_writer`;
+optional: `ticker_marp_writer` (ticker slides).
 
 ### Producing each step's output (least effort, no source-reading)
 
@@ -59,46 +59,52 @@ optional: `marp_writer` (episode slides), `ticker_marp_writer` (ticker slides).
 
 ## Run
 
-Registered in the repo-root `.mcp.json` as `podcast_regen`:
+The launcher lives at `mcp-servers/podcast-regen/server.py` and is registered as
+`podcast_regen` in both repo-root `.mcp.json` (Claude) and `.codex/config.toml`
+(Codex):
 
 ```jsonc
 "podcast_regen": {
   "type": "stdio",
   "command": "uv",
   "args": ["run", "--directory", "pipelines", "--package", "tinboker-podcast",
-           "python", "services/podcast/regen_mcp.py"],
+           "python", "../mcp-servers/podcast-regen/server.py"],
   "env": {
     "GCP_PROJECT_ID": "gen-lang-client-0901363254",
-    "FIRESTORE_DATABASE_ID": "graphfolio-db",
-    "TINBOKER_PLATFORM_API_URL": "https://api.tinboker.com"
+    "TINBOKER_PLATFORM_API_URL": "https://api.tinboker.com",
+    "PIPELINE_LLM_MODEL": "openrouter:deepseek/deepseek-v4-pro"
   }
 }
 ```
 
 | Env var | Purpose |
 |---|---|
-| `GCP_PROJECT_ID`, `FIRESTORE_DATABASE_ID` | Firestore (episode read + write) — `graphfolio-db` is the **shared production** store |
-| `GCS_BUCKET_NAME` (+ GCP creds) | The articles bucket (`graphfolio-articles`) commit re-uploads the regenerated marp/events/summary blobs to. Inherited from the shell/GSM-bootstrapped env |
-| `TINBOKER_PLATFORM_API_URL` | Backend base URL for cache invalidation on commit. Points at the env whose caches should refresh — defaults to **prod** because commit writes the shared prod Firestore |
+| `EPISODE_DATABASE_URL` | Required Postgres connection for episode reads and writes; supplied by the local environment or secrets bootstrap |
+| `MEDIA_STORAGE_ROOT`, `MEDIA_PUBLIC_BASE` | Media directory and public URL. `commit_regen` requires the mounted VPS tree at `/srv/tinboker-media`; a local fallback supports preview only |
+| `GCS_BUCKET_NAME` | Legacy directory name (`graphfolio-articles`) under the media root, not a GCS bucket |
+| `GCP_PROJECT_ID` | Secret Manager fallback in pipeline bootstrap; no Firestore access |
+| `PIPELINE_LLM_MODEL` | Model used by inline pipeline verification steps |
+| `TINBOKER_PLATFORM_API_URL` | Backend base URL for cache invalidation on commit; registered as the production API |
 | `TINBOKER_WRITE_TOKEN` | **Required for the commit cache-bust.** The content-writer service token the backend's `PATCH /api/podcast/.../episodes/...` accepts. Without it the PATCH 403s and Redis/CDN stay stale until TTL. Not hardcoded in `.mcp.json` (it's a secret) — inherited from the shell/GSM env |
 | `TINBOKER_REGEN_WORK_DIR` | Where per-episode working drafts are persisted (default: system temp) |
 
 ## Persistence & cache on `commit_regen`
 
-> Writes to the **shared production Firestore** (`graphfolio-db`) and, by default,
-> busts the **production** caches. Run `preview_regen` first.
+> A local checkout can run `preview_regen`, but `commit_regen` must run on the VPS
+> with `/srv/tinboker-media` mounted. It refuses to write Postgres when the media
+> directory is missing or points elsewhere. The registered cache target is production.
+> Run `preview_regen` first and check `EPISODE_DATABASE_URL` before committing.
 
-- **Episode doc** (Firestore merge): only the fields whose steps you completed
+- **Episode doc** (Postgres JSONB merge): only the fields whose steps you completed
   (`summary_content`, `key_insights`, `tags`, `related_tickers`, `events_markdown`,
   `marp_markdown`, `ticker_marp_markdown`, `social_cards`).
-- **GCS blobs** (re-upload): the backend serves `marp`/`events`/`ticker_marp` (and
-  `summary`) by hydrating each `*_content` field from the GCS `*_url` when the inline
-  doc field is empty, so commit overwrites those blobs (`skip_existing=False`) and
-  repoints the doc's `*_url` at the fresh upload (`gcs_content_uploaded` in the
-  report). Without this the page keeps rendering the OLD slides/events even though the
-  doc fields changed.
-- **Rich ticker sentiment** → `ticker_insights/{episode_id}/tickers/{ticker}` via the
-  pipeline's exporter.
+- **Media artifacts** (rewrite): the backend serves `marp`/`events`/`ticker_marp` (and
+  `summary`) by hydrating each `*_content` field from its `*_url` when the inline
+  doc field is empty. Commit rewrites those files and repoints the doc's `*_url`
+  at the fresh upload. The report calls this `gcs_content_uploaded` for legacy
+  compatibility. Without this the page keeps rendering the old slides/events
+  even though the doc fields changed.
+- **Rich ticker sentiment** → Postgres through the pipeline's exporter.
 - **Cache** → one PATCH to `TINBOKER_PLATFORM_API_URL` (authenticated with
   `TINBOKER_WRITE_TOKEN`) busts the **episode Redis cache**, the
   **`ticker_insights:by_ticker` sentiment cache** (when `related_tickers` changed),

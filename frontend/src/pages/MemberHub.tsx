@@ -1,0 +1,178 @@
+import { useEffect, useState } from 'react';
+import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
+import { SEO } from '@/components/common/SEO';
+import { PageContent } from '@/components/layout/PageContent';
+import { PlanCard } from '@/components/membership/PlanCard';
+import { PicksPage } from '@/pages/PicksPage';
+import { useAppStore } from '@/store/useAppStore';
+import { authApi, type AuthResponse } from '@/services/api/auth';
+import { userApi } from '@/services/api/user';
+import { formatMemberUntil } from '@/lib/date';
+
+/** The saved lists moved to /watchlist — keep old ?tab= deep links working. */
+const MOVED_TABS: readonly string[] = ['podcasters', 'tickers', 'topics', 'episodes'];
+
+function formatJoin(createdAt?: string): string {
+  if (!createdAt) return '';
+  const d = new Date(createdAt);
+  return Number.isNaN(d.getTime()) ? '' : `${d.getFullYear()} 年 ${d.getMonth() + 1} 月加入`;
+}
+function initials(name?: string): string {
+  return (name || '?')
+    .split(/\s+/)
+    .map((w) => w[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
+}
+
+/** /member — what membership buys: 走勢, plus the subscription's own state. Nothing
+ *  else earns a place here. Saved items and 帳號設定 are personal utilities and live
+ *  in the header menu; 週報 is browsable content and lives in 探索 — giving each of
+ *  them a second entry point here turned the page into a list of links. Route gating
+ *  lives in App.tsx's MemberRoute, which sends logged-out visitors to
+ *  MembershipPage. PicksPage must never mount for a non-member (the `isMember`
+ *  guard below), or its returns endpoint 402s. */
+export const MemberHub: React.FC = () => {
+  const navigate = useNavigate();
+  const token = useAppStore((st) => st.token);
+  const localWatchlist = useAppStore((st) => st.watchlist);
+  const [userInfo, setUserInfo] = useState<AuthResponse['user'] | null>(null);
+  const [userLoading, setUserLoading] = useState(true);
+  // Only what PicksPage's 我的 filter needs — the lists themselves live on /watchlist.
+  const [apiWatchlist, setApiWatchlist] = useState<string[]>([]);
+  const [podcastSubs, setPodcastSubs] = useState<string[]>([]);
+
+  // Membership comes from the store (hydrated before MemberRoute mounts this page),
+  // not from the page's own /me fetch: that resolves a beat later, which flashed the
+  // plan pitch at a paying member.
+  const storeUser = useAppStore((st) => st.user);
+  const isMember = Boolean(storeUser?.is_member);
+  const [searchParams] = useSearchParams();
+  const movedTab = searchParams.get('tab');
+
+  useEffect(() => {
+    if (!token) {
+      setUserInfo(null);
+      setUserLoading(false);
+      return;
+    }
+    setUserLoading(true);
+    authApi
+      .getCurrentUser(token)
+      .then((u) => {
+        setUserInfo(u);
+        setApiWatchlist(u.watchlist || []);
+        setPodcastSubs(u.podcast_subscriptions || []);
+      })
+      .catch((e) => {
+        console.error('Failed to fetch user info:', e);
+        setUserInfo(null);
+      })
+      .finally(() => setUserLoading(false));
+  }, [token]);
+
+  useEffect(() => {
+    if (!token || userInfo) return;
+    Promise.all([
+      userApi.getWatchlist().catch(() => [] as string[]),
+      userApi.getPodcastSubscriptions().catch(() => [] as string[]),
+    ]).then(([w, p]) => {
+      setApiWatchlist(w);
+      setPodcastSubs(p);
+    });
+  }, [token, userInfo]);
+
+  // After the hooks: an old deep link to a saved list is now a redirect.
+  if (movedTab && MOVED_TABS.includes(movedTab)) {
+    return <Navigate to={`/watchlist?tab=${movedTab}`} replace />;
+  }
+
+  const effectiveWatchlist = token ? apiWatchlist : localWatchlist;
+  const memberUntilLabel = storeUser?.member_until ? formatMemberUntil(storeUser.member_until) : null;
+
+  return (
+    <>
+      <SEO title="會員專區" description="會員的走勢追蹤與訂閱狀態。" />
+      <PageContent>
+        {/* Identity + subscription state */}
+        <div className="bg-card border border-border rounded-md p-4 sm:p-6 mb-4">
+          {userLoading ? (
+            <div className="flex items-center gap-4">
+              <div className="w-[72px] h-[72px] rounded-full bg-muted animate-pulse" />
+              <div className="flex-1">
+                <div className="h-5 w-40 bg-muted rounded animate-pulse mb-2" />
+                <div className="h-3 w-56 bg-muted rounded animate-pulse" />
+              </div>
+            </div>
+          ) : userInfo ? (
+            <>
+              <div className="flex items-start gap-3 sm:gap-4">
+                {userInfo.avatar ? (
+                  <img src={userInfo.avatar} alt={userInfo.name} className="w-14 h-14 sm:w-[72px] sm:h-[72px] rounded-full object-cover shrink-0" />
+                ) : (
+                  <div className="w-14 h-14 sm:w-[72px] sm:h-[72px] rounded-full grid place-items-center text-white text-xl sm:text-2xl font-semibold bg-accent-info shrink-0">{initials(userInfo.name)}</div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <h1 className="heading-accent text-xl sm:text-2xl font-semibold tracking-[-0.01em] truncate">{userInfo.name}</h1>
+                  <div className="text-sm text-muted-foreground mt-0.5 truncate">{userInfo.email}</div>
+                </div>
+                {/* The card's one action. A paying member has already bought, so theirs
+                    is the quiet outline; the free state is the only place on this page
+                    that gets a solid button. */}
+                <Link
+                  to="/membership"
+                  className={
+                    isMember
+                      ? 'shrink-0 inline-flex items-center rounded-md border border-border bg-card px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted hover:border-foreground/30 transition-colors'
+                      : 'shrink-0 inline-flex items-center rounded-md bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground hover:bg-primary/90 transition-colors'
+                  }
+                >
+                  {isMember ? '管理訂閱' : '升級'}
+                </Link>
+              </div>
+
+              {/* Full width under the identity block, so 會員 · 有效至 … stays on one
+                  line — in the column beside the button it broke across the date. The
+                  tier is a chip, not a colour on running text: the two states then
+                  differ by the same element, and free reads as a tier rather than as
+                  an error. */}
+              <div className="mt-3 flex items-center gap-2 flex-wrap text-xs">
+                <span
+                  className={
+                    isMember
+                      ? 'inline-flex items-center rounded-md bg-primary/15 px-2 py-0.5 font-semibold text-primary'
+                      : 'inline-flex items-center rounded-md bg-muted px-2 py-0.5 font-medium text-muted-foreground'
+                  }
+                >
+                  {isMember ? '會員' : '免費會員'}
+                </span>
+                <span className="text-muted-foreground tabular-nums">
+                  {isMember && memberUntilLabel ? `· 有效至 ${memberUntilLabel}` : formatJoin(userInfo.created_at) && `· ${formatJoin(userInfo.created_at)}`}
+                </span>
+              </div>
+            </>
+          ) : token ? (
+            <div className="text-sm text-muted-foreground">已登入</div>
+          ) : (
+            <div className="text-center py-6 text-sm text-muted-foreground">
+              請先登入以查看會員專區 — <button onClick={() => navigate('/')} className="text-accent-info hover:underline">前往首頁登入</button>
+            </div>
+          )}
+        </div>
+
+        {/* 走勢 — members only; everyone else gets the plan pitch. */}
+        {/* For a non-member the card below sells two things, so 走勢 would be the
+            wrong name for the section. */}
+        <h2 className="heading-accent text-lg font-semibold text-foreground mb-2.5">{isMember ? '走勢' : '會員方案'}</h2>
+        {isMember ? (
+          <PicksPage embedded mySubscribedPodcasts={podcastSubs} myWatchlistTickers={effectiveWatchlist} />
+        ) : (
+          <PlanCard />
+        )}
+      </PageContent>
+    </>
+  );
+};
+
+export default MemberHub;

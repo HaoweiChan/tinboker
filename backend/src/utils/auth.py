@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 from jose import JWTError, jwt
 from src.config import settings
+from src.models.user import UserResponse
 
 # Try to import Google Auth library for OAuth token verification
 try:
@@ -152,7 +153,16 @@ def verify_google_access_token(access_token: str) -> Dict[str, Any]:
         raise ValueError(f"Google Access Token verification failed: {str(e)}")
 
 
-def create_jwt_token(user_id: str, email: str) -> str:
+# Claims a caller may add to a token (the dev bypass marks its tokens with these).
+# Anything else in ``extra`` is ignored, so a caller can never override sub/exp/type.
+_EXTRA_CLAIMS = ("dev_bypass", "role", "membership_preview", "membership_preview_session")
+
+
+def _extra_claims(extra: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    return {k: extra[k] for k in _EXTRA_CLAIMS if extra and k in extra}
+
+
+def create_jwt_token(user_id: str, email: str, extra: Optional[Dict[str, Any]] = None) -> str:
     """
     Create a JWT session token for the user
     
@@ -174,6 +184,7 @@ def create_jwt_token(user_id: str, email: str) -> str:
         'exp': expiration,
         'iat': datetime.now(timezone.utc),
         'type': 'access',
+        **_extra_claims(extra),
     }
 
     token = jwt.encode(
@@ -185,7 +196,7 @@ def create_jwt_token(user_id: str, email: str) -> str:
     return token
 
 
-def create_refresh_token(user_id: str, email: str) -> str:
+def create_refresh_token(user_id: str, email: str, extra: Optional[Dict[str, Any]] = None) -> str:
     """
     Create a long-lived JWT refresh token for the user.
 
@@ -211,6 +222,7 @@ def create_refresh_token(user_id: str, email: str) -> str:
         'exp': expiration,
         'iat': datetime.now(timezone.utc),
         'type': 'refresh',
+        **_extra_claims(extra),
     }
 
     return jwt.encode(
@@ -251,5 +263,36 @@ def verify_jwt_token(token: str, expected_type: Optional[str] = None) -> Optiona
         if token_type != expected_type:
             return None
 
+    # dev, staging and production verify with the SAME secret, so without this a token
+    # from the dev bypass — which signs in as the first admin — was a valid production
+    # admin session. Bypass tokens carry ``dev_bypass`` and production refuses them.
+    if payload.get('dev_bypass') and settings.environment == 'production':
+        return None
+
+    # All environments share the signing key. Preview sessions, including legacy
+    # original-mode tokens, must stay development-only through refresh.
+    if any(key in payload for key in ("membership_preview", "membership_preview_expires", "membership_preview_session")):
+        if (
+            settings.environment != "development"
+            or payload.get("membership_preview_session") is not True
+            or payload.get("membership_preview") not in (None, "free", "paid")
+            or (payload.get("email") or "").lower() not in {e.lower() for e in settings.admin_emails}
+        ):
+            return None
+
     return payload
+
+
+def apply_membership_preview(user: UserResponse, payload: Dict[str, Any]) -> UserResponse:
+    """Override only this response; never change the shared database entitlement."""
+    mode = payload.get("membership_preview")
+    if mode is None:
+        return user
+    return user.model_copy(update={
+        "membership_preview": mode,
+        "member_until": (
+            datetime.fromtimestamp(payload["exp"], timezone.utc)
+            if mode == "paid" else None
+        ),
+    })
 

@@ -4,6 +4,7 @@ import { Hash } from 'lucide-react';
 import { SimpleSparkline } from '@/components/charts/SimpleSparkline';
 import type { TrendingTag } from '@/services/api/podcasts';
 import { TOPICS_TYPOGRAPHY } from './topicsTypography';
+import { TopicFollowButton } from './TopicFollowButton';
 
 // Tag identity is amber across the app (sectors are individually colored), so the
 // hash chip + discussion-trend sparkline use amber to read as a tag, not a sector.
@@ -70,9 +71,14 @@ export const TagBoardCard: React.FC<TagBoardCardProps> = ({ tag, label }) => {
               className="opacity-70"
             />
           )}
-          <span className={`${type.meta} text-muted-foreground font-mono tabular-nums`}>
-            {tag.scoped_count} 集
-          </span>
+          <div className="flex items-center gap-1.5">
+            <span className={`${type.meta} text-muted-foreground font-mono tabular-nums`}>
+              {tag.scoped_count} 集
+            </span>
+            {/* Subscribe by the raw id, not the zh-TW label — TagPage keys on the
+                same route param, so a label here would not read back as 已追蹤. */}
+            <TopicFollowButton topic={tag.id.replace(/^#/, '')} variant="icon" />
+          </div>
         </div>
       </Link>
 

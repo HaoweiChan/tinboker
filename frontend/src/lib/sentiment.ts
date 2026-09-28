@@ -20,22 +20,25 @@ export interface SentimentDisplay {
   short: string; // 多 / 空 / 中
   chipClass: string; // tailwind component classes for the chip
   toneClass: string; // text color class only
+  railClass: string; // border color, for a left rail that must agree with toneClass
 }
 
 function directionalClasses(
   sentiment: 'BULLISH' | 'BEARISH',
   stockColorMode: StockColorMode,
-): Pick<SentimentDisplay, 'chipClass' | 'toneClass'> {
+): Pick<SentimentDisplay, 'chipClass' | 'toneClass' | 'railClass'> {
   const isBullish = sentiment === 'BULLISH';
   const shouldUseRed = stockColorMode === 'TW' ? isBullish : !isBullish;
   return shouldUseRed
     ? {
         chipClass: 'sentiment-chip bg-red-100 text-red-600 dark:bg-red-500/20 dark:text-red-400',
         toneClass: 'text-red-600 dark:text-red-400',
+        railClass: 'border-red-600 dark:border-red-400',
       }
     : {
         chipClass: 'sentiment-chip bg-green-100 text-green-600 dark:bg-green-500/20 dark:text-green-400',
         toneClass: 'text-green-600 dark:text-green-400',
+        railClass: 'border-green-600 dark:border-green-400',
       };
 }
 

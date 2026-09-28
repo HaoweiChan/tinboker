@@ -1,5 +1,9 @@
 # API Gaps Documentation
 
+> **Historical snapshot.** This document records earlier plans or implementation details.
+> Routes, API gaps, and environment instructions below may be stale. For current
+> frontend guidance, start with the [frontend docs index](../README.md).
+
 This document identifies missing endpoints and data fields required by the frontend but not provided by the backend API (as defined in `src/schemas/openapi.yaml`).
 
 ---

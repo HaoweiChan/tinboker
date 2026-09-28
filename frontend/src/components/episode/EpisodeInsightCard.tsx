@@ -1,5 +1,4 @@
 import React from 'react';
-import { Lightbulb } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { MentionText } from '@/components/episode/InlineMarkers';
 
@@ -20,10 +19,6 @@ export const EpisodeInsightCard: React.FC<EpisodeInsightCardProps> = ({ insight,
     aria-label="關鍵洞察"
     className={cn('bg-card border border-border border-l-[3px] border-l-accent-info rounded-md p-3.5 sm:p-4 mb-3.5', className)}
   >
-    <div className="flex items-center gap-1.5 text-base font-semibold text-muted-foreground mb-2">
-      <Lightbulb size={14} className="text-accent-info" />
-      <span>關鍵洞察</span>
-    </div>
     <h2 className="text-xl font-semibold leading-[1.35] tracking-[-0.005em] mb-1.5">
       <MentionText text={insight.headline} />
     </h2>

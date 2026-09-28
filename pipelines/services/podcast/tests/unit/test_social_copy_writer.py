@@ -217,3 +217,42 @@ def test_clean_copy_reports_nothing(capsys):
 
     w.postprocess({"post": "這兩邊完全卡住", "comments": [{"heading": "H", "text": "這數字誇張"}]}, {})
     assert "first person" not in capsys.readouterr().out
+
+
+# ── link reply: a specific hook, and the section the post is about ─────────────
+
+_ANCHORED = {
+    "source": "兆華與股惑仔",
+    "episode_title": "EP1185",
+    "markdown_report": (
+        "# 標題\n\n開場。\n\n"
+        "## 盤前總覽 (#time:12000)\n\n量縮觀望。\n\n"
+        "## [載板](#tag:Substrate) PE re-rating 已過 (#time:1028093)\n\n最甜的一段走完了。\n\n"
+        "## 結論\n\n沒有時間錨點的一段。"
+    ),
+}
+
+
+def test_section_times_reads_the_anchor_and_ignores_headings_without_one():
+    assert scw.section_times(_ANCHORED["markdown_report"]) == {"盤前總覽": 12000, "載板PEre-rating已過": 1028093}
+
+
+def test_link_fields_keep_a_specific_hook_and_map_the_echoed_heading_to_its_time():
+    out = scw.postprocess({"post": "載板最甜的那一段其實已經走完了", "comments": [],
+                           "focus_heading": "載板 PE re-rating 已過", "link_hook": "他點名的三檔封測和理由"}, _ANCHORED)
+    assert out["social_thread"]["link_hook"] == "他點名的三檔封測和理由"
+    assert out["social_thread"]["focus_ms"] == 1028093          # heading echoed WITHOUT the link markup still matches
+
+
+@pytest.mark.parametrize("hook", ["完整重點在這", "點我看更多", "https://x.y", "你一定要看的名單", "字" * 31, "   "])
+def test_generic_commanding_or_overlong_hooks_are_dropped(hook):
+    thread = scw.postprocess({"post": "x", "comments": [], "link_hook": hook}, _ANCHORED)["social_thread"]
+    assert "link_hook" not in thread
+
+
+def test_a_paraphrased_heading_or_an_unanchored_one_gives_no_focus():
+    for heading in ("載板的故事", "結論", ""):
+        thread = scw.postprocess({"post": "x", "comments": [], "focus_heading": heading}, _ANCHORED)["social_thread"]
+        assert "focus_ms" not in thread
+    assert scw.postprocess({"post": "", "comments": [], "link_hook": "他點名的三檔"}, _ANCHORED)["social_thread"] == \
+        {"post": "", "comments": []}                                  # no post, nothing to link from

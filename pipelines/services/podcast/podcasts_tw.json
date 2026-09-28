@@ -5,8 +5,8 @@
     "limit": 10,
     "spotify_show_link": "https://open.spotify.com/show/1zWxx5pKk0XBEzMupVC7UZ",
     "transcript_option": {
-      "transcript_service": "groq",
-      "model": "whisper-large-v3"
+      "transcript_service": "local",
+      "model": "whisper-large-v3-turbo"
     }
   },
   {

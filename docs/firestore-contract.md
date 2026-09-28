@@ -1,30 +1,36 @@
-# Firestore data contract
+# Shared content data contract (historical Firestore shapes)
 
 > **This is the authoritative data contract between the backend (`backend/`, reader) and the content pipelines (`pipelines/`, writer) — two tiers of this monorepo.** Edits here require coordination across both tiers.
 >
-> **Status:** Authoritative. § 10 now records accepted implementation decisions rather than open blockers. (Originally drafted when `pipelines/` was the separate `tinboker-agents` repo; the two are now merged, but the reader/writer boundary still holds.)
+> **Status (verified 2026-09-27):** Field shapes remain a shared contract. §§1–10 document the historical Firestore document model and migration decisions; §11 documents the Postgres/VPS media migration. New work follows the current-state summary below. `pipelines/` and `backend/` are tiers of this monorepo.
 > **Owners:** the `backend/` (platform) tier owns this doc; the `pipelines/` tier owns the write contract.
 > **Doc location:** `docs/firestore-contract.md` (moved from `openspecs/firestore-schema/spec.md`).
 > **Document version:** see `schema_version: 3` in § Scope. Bump `schema_version` inline rather than forking the doc.
 
 ---
 
-## Purpose
+## Current state (2026-09-27)
 
-This spec is the **data contract between the content pipelines (`pipelines/`, writer) and the backend (`backend/`, reader)** for everything that flows through Firestore.
+**Verified from current repository and live VPS inspection:** `podcast_db` on the VPS is the canonical content store, shared by dev, staging, and production. `firestore_mirror.episodes`, `podcasts`, `ticker_insights`, and `trending_tickers` retain their historical schema name. Platform users and notifications also use Postgres. Pipeline writers and backend readers no longer use Firestore for live content. Episode artifacts live under `/srv/tinboker-media` and are served at `/media`; `graphfolio-articles` in a media path is a directory name, not a bucket. GCP remains in use for Secret Manager. See [§11.6](#116-post-p4-state) and [§11.7](#117-media-storage-p5-write-side).
 
-Today the platform infers the agents' shape from production traffic. That arrangement is breaking down:
+**Historical material:** The rest of §§1–10 records the Firestore-era contract and rollout. It remains useful for JSON field semantics, but do not follow its Firestore write/read or Phase A/B rollout instructions for new code. Use the [shared-data workflow](workflows/firestore-data-change.md).
 
-1. **Stock Index is empty in production.** Probes on 2026-05-13:
+## Purpose (historical 2026-05 to 2026-07)
+
+This spec originally defined the **data contract between the content pipelines (`pipelines/`, writer) and the backend (`backend/`, reader)** for Firestore documents. The field shapes were carried forward into Postgres JSONB.
+
+At the time, the platform inferred the pipeline's shape from production traffic. That arrangement was breaking down:
+
+1. **Stock Index was empty in production.** Probes on 2026-05-13:
    - `GET https://api.tinboker.com/api/recommendations/buzz?days=30&limit=100` → `[]`
    - `GET https://api.tinboker.com/api/recommendations/buzz?days=365&limit=100` → `[]`
    - `GET https://api.tinboker.com/api/recommendations/by-ticker/{NVDA|2330|AAPL}` → `[]`
    - Root cause from `/health`: `recommendation_db: pool_not_initialized`, main Postgres DNS error `could not translate host name "docker-db_postgres-1"`. Firestore-backed endpoints (`/api/podcast`, `/api/episodes/recent`) are fine.
    - **Implication:** the `ticker_recommendations` Postgres table is unreachable in prod. Moving this data to Firestore isn't an optimization — it's the actual fix.
 
-2. **The `episodes` document shape isn't written down anywhere.** Field-level expectations (which are required, which are sometimes-omitted, which are stale) live in tribal knowledge and in the [backend Pydantic model](../backend/src/models/podcast.py), but the agents team has no contract to write against.
+2. **The `episodes` document shape was not written down.** Field-level expectations (which are required, which are sometimes-omitted, which are stale) live in tribal knowledge and in the [backend Pydantic model](../backend/src/models/podcast.py), but the agents team has no contract to write against.
 
-This doc replaces that arrangement. It enumerates every Firestore path the platform reads or writes, lists every field with type and fulfillment expectation, and defines the exact JSON shape each public-facing endpoint must return.
+This doc replaced that arrangement. The historical sections enumerate every Firestore path the platform then read or wrote, lists every field with type and fulfillment expectation, and defines the exact JSON shape each public-facing endpoint must return.
 
 ---
 
@@ -250,7 +256,7 @@ This table maps every UI surface to the subset of episode fields it actually rea
 | TagPage | [frontend/src/pages/TagPage.tsx](../frontend/src/pages/TagPage.tsx) | HomeFeed subset, filtered by `tags` |
 | PodcasterPage | [frontend/src/pages/PodcasterPage.tsx](../frontend/src/pages/PodcasterPage.tsx) | HomeFeed subset, filtered by `podcast_name` |
 | WatchlistPage | [frontend/src/pages/WatchlistPage.tsx](../frontend/src/pages/WatchlistPage.tsx) | HomeFeed subset (latest 3 per subscribed podcast) |
-| ProfilePage (My Subscriptions tab) | [frontend/src/pages/ProfilePage.tsx](../frontend/src/pages/ProfilePage.tsx) | HomeFeed subset |
+| ProfilePage (My Subscriptions tab) | `ProfilePage.tsx` (retired) | HomeFeed subset |
 | PodcasterIndex | [frontend/src/pages/PodcasterIndex.tsx](../frontend/src/pages/PodcasterIndex.tsx) | Aggregated only: `podcast_name`, `created_time`, `spotify_images[0]` (for cover) |
 
 ### 2.3 Targeted cleanup status
@@ -347,7 +353,7 @@ This replaces the Postgres `ticker_recommendations` table. Renamed end-to-end fr
 }
 ```
 
-Field set mirrors today's Postgres shape at [backend/src/database/recommendation_queries.py:20-35](../backend/src/database/recommendation_queries.py#L20-L35) and the frontend type at [frontend/src/services/types.ts:456-469](../frontend/src/services/types.ts#L456-L469), with these differences:
+Field set mirrors today's Postgres shape at `backend/src/database/recommendation_queries.py:20-35` (retired) and the frontend type at [frontend/src/services/types.ts:456-469](../frontend/src/services/types.ts#L456-L469), with these differences:
 
 - **Removed from public API** (kept in Firestore for internal sort): the raw `sentiment_score` float.
 - **Replaced**: freeform `sentiment` string (`"bull"`/`"bear"`/`"neut"`) → 5-tier `sentiment_label` enum.
@@ -445,7 +451,7 @@ Old `/api/recommendations/*` paths remain as deprecation aliases for one release
   - [frontend/src/components/financial/TickerInsightCard.tsx](../frontend/src/components/financial/TickerInsightCard.tsx)
   - [frontend/src/pages/StockIndex.tsx](../frontend/src/pages/StockIndex.tsx)
   - [frontend/src/pages/StockDashboard.tsx](../frontend/src/pages/StockDashboard.tsx)
-  - [frontend/src/components/redesign/HomeRail.tsx](../frontend/src/components/redesign/HomeRail.tsx)
+  - `frontend/src/components/redesign/HomeRail.tsx` (retired)
 
 ---
 
@@ -621,12 +627,12 @@ These came up implicitly in the agents-team message ("we'll flag anything imposs
 
 | Data | Source (NOT agents) | Code reference |
 |------|---------------------|----------------|
-| Live stock price, change, market cap | FinMind API (TW), Massive API (US) | [backend/src/services/stock_service.py](../backend/src/services/stock_service.py) |
+| Live stock price, change, market cap | FinMind API (TW), Massive API (US) | [backend/src/services/stock.py](../backend/src/services/stock.py) |
 | Chart OHLC data | Massive API + Postgres cache | Same |
 | User watchlist, subscriptions, bookmarks, alerts, preferences | Platform writes on `users/{user_id}` | [backend/src/database/user_db.py](../backend/src/database/user_db.py) |
 | Top Movers / sector heatmap | Currently mocked; future market data feed | [frontend/src/services/mocks/sectorData.ts](../frontend/src/services/mocks/sectorData.ts) |
 | Notification delivery | Platform | [backend/src/services/notification_service.py](../backend/src/services/notification_service.py) |
-| Authentication, JWT | Platform | [backend/src/services/auth_service.py](../backend/src/services/auth_service.py) |
+| Authentication, JWT | Platform | [backend/src/utils/auth.py](../backend/src/utils/auth.py) |
 
 ---
 
@@ -647,7 +653,7 @@ These decisions close the implementation questions that originally blocked the F
 
 ## § 11. Reverse migration: Firestore → VPS Postgres (2026-08)
 
-> **Status: P1–P4 done, P5 (GCS + decommission) pending — see § 11.6.** Direction
+> **Historical rollout record:** P1–P4 are done; media writes moved to VPS disk. The GCP database and buckets were confirmed gone on 2026-09-03 (see root `CLAUDE.md`). Direction
 > reversed from § 7: the July 2026 GCP bill
 > (NT$46K — 78% Firestore internet egress, 17% read ops; see the P1 PR description)
 > made Firestore the wrong home for high-read content. The contract's *document
@@ -677,8 +683,7 @@ NOT mirrored as tables: per § 3.2 they are pure derivations of `episodes.tags` 
 `CONTENT_READS_FROM_POSTGRES=true` swaps a same-interface `PostgresMirrorService` in
 place of `FirestoreService` for content reads (episodes, tag/ticker membership,
 ticker insights, trending). Rolled out per-env dev → staging → prod during P1;
-**default ON since P4**. Flipping it off is no longer a real rollback — Firestore
-stopped being written in P4, so the Firestore read path serves a frozen snapshot.
+**default ON since P4**. Flipping it off is not a rollback: Firestore stopped receiving writes in P4 and the database has since been decommissioned.
 `users/{id}` and `users/{id}/notifications` moved to first-class Postgres tables in
 P3 and never consult this flag.
 
@@ -700,7 +705,7 @@ gone and each raises on failure rather than warning.
 - `dump_firestore_to_postgres.py` remains the idempotent one-shot import (Firestore →
   Postgres) for history; it is archival only now.
 
-### 11.4 Rollout runbook (P1)
+### 11.4 Historical rollout runbook (P1; completed)
 
 1. Merge P1 → `develop` (deploys backend to dev; pipelines deploy is manual).
 2. On the VPS: deploy pipelines, then run `dump_firestore_to_postgres.py` once
@@ -720,7 +725,7 @@ gone and each raises on failure rather than warning.
 | P2 | pipelines' own `:8003` reads (`/api/podcast/shows` etc.) + `podcasts` metadata → Postgres | pipelines reads | done |
 | P3 | `users/*` + notifications → new Postgres tables; fan-out query → SQL | platform data | done |
 | P4 | stop all Firestore writes | all writes | **done** |
-| P5 | mp3/transcript/summary artifacts off GCS; decommission `graphfolio-db` + the GCP service account | storage + credentials | pending |
+| P5 | mp3/transcript/summary artifacts off GCS; decommission `graphfolio-db` and GCS buckets | storage | done (verified 2026-09-03); GCP credentials remain for Secret Manager |
 
 The former **P4 blocker** — the external Hermes trading system reading
 `trending_tickers/{bare_ticker}` straight from Firestore — was cleared before this
@@ -733,13 +738,8 @@ phase: Hermes now reads the backend HTTP API.
   no behavioural gain), but nothing mirrors anything any more — `episodes`,
   `ticker_insights`, `trending_tickers` and `podcasts` are the only copies.
 - **Postgres `users` / `user_notifications` are canonical for user data** (P3).
-- **Firestore (`graphfolio-db`) is idle.** No live code path in either tier reads or
-  writes it. The `FirestoreService` classes and `CONTENT_READS_FROM_POSTGRES` still
-  exist for one release; a handful of one-off archival/backfill scripts under
-  `pipelines/services/podcast/scripts/` still hold a Firestore client on purpose.
-  Deleting the database is a P5 step, after the soak.
-- **GCS is frozen** — see § 11.7. Every artifact now lives on the VPS disk; the
-  buckets are read-only leftovers pending deletion.
+- **Firestore (`graphfolio-db`) is decommissioned.** No live code path in either tier reads or writes it. Historical classes/scripts may remain for archival work; do not point them at production. The GCP project remains for Secret Manager.
+- **GCS is decommissioned** — see § 11.7. Artifacts live on the VPS disk; the buckets were confirmed absent on 2026-09-03.
 - **Every surviving write fails loudly.** With no second store, a warn-and-skip on
   the episode upsert, the ticker-insight export, the trending refresh, the show
   upsert, the regen `commit()` or the backend's `patch_episode_doc` would be silent
@@ -757,8 +757,7 @@ phase: Hermes now reads the backend HTTP API.
 ### 11.7 Media storage (P5 write side)
 
 Episode media artifacts are written to the VPS disk and served by Caddy. **No code
-path uploads to GCS any more** — the buckets are frozen and get deleted at the end
-of the decommission.
+path uploads to GCS any more** — the old buckets were confirmed absent on 2026-09-03.
 
 **Layout.** Identical to the old bucket layout, so files copied out of
 `graphfolio-articles` and files written since P5 live in one uniform tree:
@@ -803,7 +802,7 @@ temp-file + `os.replace` so Caddy never serves a half-written artifact.
 endpoints, the one reader that needed bucket *listing*) now globs
 `{MEDIA_STORAGE_ROOT}/graphfolio-articles/` directly and returns stable media URLs;
 `CONTENT_BUCKET` / `CONTENT_PREFIX` / `CONTENT_URL_TTL` are gone. No code path reads
-GCS any more — the buckets can be deleted.
+GCS any more — the buckets were confirmed absent on 2026-09-03.
 
 ### 11.8 Secrets off Secret Manager (P6) — **policy reversed 2026-08-10**
 

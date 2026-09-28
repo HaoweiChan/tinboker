@@ -1,4 +1,6 @@
 import { apiClient } from './client';
+import { z } from 'zod';
+import { AttentionLevelFieldsSchema } from '@/validation/schemas';
 import { useAppStore } from '@/store/useAppStore';
 import type { TickerTrending, TickerInsight } from '../types';
 
@@ -21,6 +23,8 @@ export interface Podcast {
   /** Channel popularity rank (1 = most popular) from Apple Podcasts TW top charts;
    *  null/undefined when the show isn't charted. */
   popularity_rank?: number | null;
+  /** Unique current TinBoker subscribers; absent/null when unavailable. */
+  subscriber_count?: number | null;
 }
 
 export interface SectorResolvedTicker {
@@ -149,6 +153,8 @@ export interface TopMover {
   sparkline?: number[];
 }
 
+const SubscriberCountSchema = z.number().int().nonnegative().nullable().optional().catch(null);
+
 export async function getSortedPodcasts(options?: {
   sortBy?: string;
   order?: 'asc' | 'desc';
@@ -161,12 +167,18 @@ export async function getSortedPodcasts(options?: {
   if (options?.limit) params.limit = options.limit;
   if (options?.offset) params.offset = options.offset;
   const response = await apiClient.get('/api/podcast', { params });
-  return Array.isArray(response.data) ? response.data : [];
+  return Array.isArray(response.data) ? response.data.map((podcast: Podcast) => ({
+    ...podcast,
+    subscriber_count: SubscriberCountSchema.parse(podcast.subscriber_count),
+  })) : [];
 }
 
 export async function getPodcastByName(podcastName: string): Promise<Podcast> {
   const response = await apiClient.get(`/api/podcast/${encodeURIComponent(podcastName)}`);
-  return response.data;
+  return {
+    ...response.data,
+    subscriber_count: SubscriberCountSchema.parse(response.data.subscriber_count),
+  };
 }
 
 export async function getPodcastEpisodes(
@@ -335,7 +347,10 @@ export async function getRecentBuzz(
   });
   const d = response.data ?? {};
   const buzz: RecentBuzz = {
-    tickers: Array.isArray(d.tickers) ? d.tickers : [],
+    tickers: Array.isArray(d.tickers) ? d.tickers.map((ticker: TickerTrending) => ({
+      ...ticker,
+      ...AttentionLevelFieldsSchema.parse(ticker),
+    })) : [],
     distinct_count: typeof d.distinct_count === 'number' ? d.distinct_count : 0,
     episode_count: typeof d.episode_count === 'number' ? d.episode_count : 0,
   };

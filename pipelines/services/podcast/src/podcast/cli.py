@@ -24,7 +24,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--transcript-service", type=str, default="groq", dest="transcript_service",
-        choices=["whisper", "openai", "groq"],
+        choices=["whisper", "openai", "groq", "local"],
         help="Speech-to-text service. Default: groq",
     )
     parser.add_argument(

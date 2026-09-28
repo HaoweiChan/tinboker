@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
+import { ExploreTabs } from '@/components/layout/ExploreTabs';
 import { CountUp } from '@/components/common/CountUp';
 import { useGrowIn } from '@/hooks/useMotion';
 import { getWeeks } from '@/services/api/weekly';
@@ -35,10 +36,11 @@ export const WeeklyIndex: React.FC = () => {
         type="website"
       />
       <PageContent>
+        <ExploreTabs />
         <div className="flex items-end justify-between gap-4 flex-wrap mb-4">
           <div>
-            <h1 className="text-2xl font-semibold tracking-[-0.02em]">Podcast 週報</h1>
-            <p className="text-sm text-muted-foreground mt-1 max-w-[60ch] leading-[1.6]">每週一頁：這一週台灣財經 Podcast 聊了哪些個股與題材、多空怎麼變。</p>
+            <h1 className="heading-accent text-2xl font-semibold tracking-[-0.015em] leading-[1.3]">Podcast 週報</h1>
+            <p className="text-md sm:text-lg text-foreground/90 mt-2.5 max-w-[60ch] leading-[1.7]">每週一頁：這一週台灣財經 Podcast 聊了哪些個股與題材、多空怎麼變。</p>
           </div>
           {weeks && weeks.length > 0 && (
             <div className="text-sm text-muted-foreground tabular-nums">
@@ -55,18 +57,38 @@ export const WeeklyIndex: React.FC = () => {
           <div className="bg-card border border-border rounded-[10px] p-10 text-center text-sm text-muted-foreground">目前沒有可顯示的週報。</div>
         ) : (
           <>
-            {/* Episodes per week, oldest → newest: the shape of the whole run at a glance. */}
+            {/* Episodes per week, oldest → newest: the shape of the whole run at a glance.
+                Same bar language as the home panels (components/home/Bar.tsx): a groove
+                per column plus a cool 'topic' fill, so a thin week reads as a short bar
+                in its slot rather than a broken stub. The newest week is tipped with the
+                signal cyan instead of being recoloured. */}
             <div className="bg-card border border-border rounded-[10px] p-5 mb-3.5">
-              <div className="flex items-center justify-between text-xs text-muted-foreground mb-2"><span>每週已分析集數</span><span>{[...weeks].reverse()[0].week} → {weeks[0].week}</span></div>
+              <div className="flex items-center justify-between text-xs text-muted-foreground mb-2"><span>每週已分析集數</span><span className="font-mono tabular-nums">{[...weeks].reverse()[0].week} → {weeks[0].week}</span></div>
               <div className="flex items-end gap-1.5 h-16">
-                {[...weeks].reverse().map((w, i) => (
-                  <Link key={w.week} to={`/weekly/${w.week}`} title={`${range(w)} · ${w.episode_count} 集`} className="flex-1 h-full flex flex-col justify-end group">
-                    <span
-                      className={`block w-full rounded-sm transition-colors ${i === weeks.length - 1 ? 'bg-primary' : 'bg-primary/45 group-hover:bg-primary/80'}`}
-                      style={{ height: grown ? `${(w.episode_count / max) * 100}%` : '0%', transition: 'height 600ms cubic-bezier(0.22, 1, 0.36, 1)', transitionDelay: `${i * 30}ms` }}
-                    />
-                  </Link>
-                ))}
+                {[...weeks].reverse().map((w, i) => {
+                  const latest = i === weeks.length - 1;
+                  return (
+                    <Link
+                      key={w.week}
+                      to={`/weekly/${w.week}`}
+                      title={`${range(w)} · ${w.episode_count} 集`}
+                      className="flex-1 h-full flex flex-col justify-end rounded-[3px] overflow-hidden transition-[filter] hover:brightness-125"
+                      style={{ backgroundColor: 'hsl(var(--bar-track))' }}
+                    >
+                      <span
+                        className="block w-full rounded-[3px]"
+                        style={{
+                          height: grown ? `${Math.max(2, (w.episode_count / max) * 100)}%` : '0%',
+                          background: latest
+                            ? 'linear-gradient(180deg, hsl(var(--bar-signal)) 0px, hsl(var(--bar-topic-to)) 6px, hsl(var(--bar-topic-from)) 100%)'
+                            : 'linear-gradient(180deg, hsl(var(--bar-topic-to)) 0%, hsl(var(--bar-topic-from)) 100%)',
+                          transition: 'height 600ms cubic-bezier(0.22, 1, 0.36, 1)',
+                          transitionDelay: `${i * 30}ms`,
+                        }}
+                      />
+                    </Link>
+                  );
+                })}
               </div>
             </div>
 

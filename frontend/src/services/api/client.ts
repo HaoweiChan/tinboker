@@ -5,9 +5,10 @@
  * Provides base URL configuration, error handling, timeout, and logging.
  */
 
-import axios from 'axios';
-import type { AxiosInstance, AxiosError, AxiosRequestConfig } from 'axios';
+import axios, { AxiosHeaders } from 'axios';
+import type { AxiosInstance, AxiosError, AxiosRequestConfig, AxiosResponse } from 'axios';
 import { toast } from 'sonner';
+import { SessionResponseSchema, sessionUser } from '@/lib/authSession';
 
 
 
@@ -206,14 +207,9 @@ const performTokenRefresh = async (): Promise<string | null> => {
       { refresh_token: refreshToken },
       { headers: { 'Content-Type': 'application/json' }, timeout: 15000 },
     );
-    const newToken: string | undefined = response.data?.token;
-    const newRefresh: string | undefined = response.data?.refresh_token;
-    if (!newToken) return null;
-    useAppStore.setState({
-      token: newToken,
-      ...(newRefresh ? { refreshToken: newRefresh } : {}),
-    });
-    return newToken;
+    const session = SessionResponseSchema.parse(response.data);
+    useAppStore.getState().login(sessionUser(session.user), session.token, session.refresh_token);
+    return session.token;
   } catch {
     return null;
   }
@@ -280,7 +276,8 @@ const createApiClient = (): AxiosInstance => {
     async (error: AxiosError) => {
       // Check for silent mode (suppress error logging)
       // We check config headers or a custom config property if we cast it
-      const isSilent = (error.config?.headers as any)?.['X-Silent-Error'] === 'true' || (error.config as any)?.silent === true;
+      const isSilent = error.config?.headers?.['X-Silent-Error'] === 'true'
+        || (error.config as (AxiosRequestConfig & { silent?: boolean }) | undefined)?.silent === true;
 
       if (import.meta.env.DEV && !isSilent) {
         console.error(`[API] ${error.config?.method?.toUpperCase()} ${error.config?.url} - Error`, {
@@ -343,15 +340,16 @@ const createApiClient = (): AxiosInstance => {
         const raw = error.request.responseText || error.request.response;
         if (raw) {
           try {
-            const responseData = typeof raw === 'string' ? JSON.parse(raw) : raw;
-            return {
+            const responseData: unknown = typeof raw === 'string' ? JSON.parse(raw) : raw;
+            const recovered: AxiosResponse<unknown> = {
               ...error.request,
               data: responseData,
               status: error.request.status || 200,
               statusText: error.request.statusText || 'OK',
-              headers: error.request.getAllResponseHeaders ? error.request.getAllResponseHeaders() : {},
-              config: error.config || {},
-            } as any;
+              headers: AxiosHeaders.from(error.request.getAllResponseHeaders?.() || {}),
+              config: error.config || { headers: new AxiosHeaders() },
+            };
+            return recovered;
           } catch {
             // Data is not parseable — fall through to rejection
           }

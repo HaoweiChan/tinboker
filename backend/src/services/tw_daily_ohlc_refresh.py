@@ -29,7 +29,7 @@ import requests
 
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from src.database.models import StockDailyOHLC, StockInstitutionalDaily
+from src.database.models import StockDailyOHLC, StockInstitutionalDaily, StockTranslation
 from src.database.postgres import get_session
 from src.services.finmind_service import is_tw_ticker
 
@@ -188,6 +188,83 @@ async def refresh_tw_daily_ohlc() -> int:
     written = await loop.run_in_executor(None, _upsert_rows, rows)
     logger.info("TW OHLC refresh: wrote %d rows (twse=%d, tpex=%d).", written, len(twse), len(tpex))
     return written
+
+
+# ── Official listing names (same two feeds, no new provider) ──────────────────────
+# Both whole-market payloads carry the exchange's own zh-TW name for every listing
+# (TWSE "Name", TPEx "CompanyName"). stock_translations got its TW names from FinMind
+# autofill and agent backfills instead, and the agent guessed: 00981A (主動統一台股增長)
+# was stored as 富邦道瓊ETF, the phantom 981A as "(Probable bond ETF variant)". 86 of the
+# 1,362 TWSE rows disagreed with the exchange when this was written.
+#
+# Approved rows are deliberate human choices — 統一企業 where TWSE says 統一, 台灣大哥大
+# where it says 台灣大 — so they are never touched. Only auto/pending rows are corrected.
+_NAME_FEEDS: Tuple[Tuple[str, str, str, Optional[dict]], ...] = (
+    (_TWSE_URL, "Code", "Name", None),
+    (_TPEX_URL, "SecuritiesCompanyCode", "CompanyName", {"User-Agent": _BROWSER_UA}),
+)
+
+
+def _fetch_official_names() -> Dict[str, str]:
+    """{ticker: exchange zh-TW name} from both whole-market feeds. Never raises."""
+    names: Dict[str, str] = {}
+    for url, code_key, name_key, headers in _NAME_FEEDS:
+        try:
+            payload = requests.get(url, headers=headers, timeout=60).json()
+        except Exception as e:
+            logger.warning("TW name fetch failed for %s: %s", url, e)
+            continue
+        for rec in payload if isinstance(payload, list) else []:
+            code = str(rec.get(code_key, "")).strip().upper()
+            name = str(rec.get(name_key, "")).strip()
+            if code and name and is_tw_ticker(code):
+                names.setdefault(code, name)
+    return names
+
+
+def _sync_names(names: Dict[str, str]) -> int:
+    """Correct non-approved TW rows whose zh name isn't the exchange's. Sync (thread)."""
+    if not names:
+        return 0
+    fixed = 0
+    for session in get_session():
+        try:
+            rows = session.query(StockTranslation).filter(
+                StockTranslation.market == "TW",
+                StockTranslation.translation_status != "approved",
+            ).all()
+            for row in rows:
+                official = names.get((row.ticker or "").strip().upper())
+                if not official or (row.name_zh_tw or "").strip() == official:
+                    continue
+                row.name_zh_tw = official
+                # The English name on a row we are correcting came from the same guessing
+                # pass — drop it rather than leave "Fubon Dow Jones ETF" on 主動統一台股增長.
+                row.name_en = None
+                row.name_preference = "auto"  # a stub parked on "en" would hide the zh name
+                row.translation_status = "auto"
+                row.last_updated_by = "twse-openapi"
+                fixed += 1
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            logger.warning("TW name sync failed: %s", e)
+        break
+    return fixed
+
+
+async def refresh_tw_names() -> int:
+    """Sync official listing names from the exchanges into stock_translations. Never raises.
+
+    ponytail: two extra HTTP calls per cycle rather than threading the OHLC payloads
+    through — they are the same free endpoints, twice per 6h. Share them if the cadence
+    ever tightens.
+    """
+    loop = asyncio.get_event_loop()
+    names = await loop.run_in_executor(None, _fetch_official_names)
+    fixed = await loop.run_in_executor(None, _sync_names, names)
+    logger.info("TW name sync: %d listings from the exchanges, %d row(s) corrected.", len(names), fixed)
+    return fixed
 
 
 # ── Backfill (historical whole-market feeds) ──────────────────────────────────────
@@ -537,6 +614,10 @@ async def run_periodic_tw_ohlc_refresh(
             await refresh_tw_institutional()
         except Exception as e:
             logger.warning("TW institutional refresh cycle failed: %s", e)
+        try:
+            await refresh_tw_names()
+        except Exception as e:
+            logger.warning("TW name sync cycle failed: %s", e)
         if first:
             first = False
             try:
@@ -565,7 +646,10 @@ if __name__ == "__main__":
         days = int(sys.argv[2]) if len(sys.argv) > 2 else _BACKFILL_DAYS
         print("OHLC backfilled", asyncio.run(backfill_tw_daily_ohlc(days=days)), "rows")
         print("institutional backfilled", asyncio.run(backfill_tw_institutional()), "rows")
+    elif cmd == "names":
+        print("names corrected", asyncio.run(refresh_tw_names()))
     else:
         print("OHLC wrote", asyncio.run(refresh_tw_daily_ohlc()), "rows")
         print("institutional wrote", asyncio.run(refresh_tw_institutional()), "rows")
+        print("names corrected", asyncio.run(refresh_tw_names()))
     sys.exit(0)

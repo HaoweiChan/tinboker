@@ -29,9 +29,29 @@
     gtag('js', new Date());
     gtag('config', 'G-VYVPJ535WH');
   </script>
-  <!-- Google AdSense (Auto ads — 版位在 AdSense 後台調，不在這裡) -->
-  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-7624557827833745"
-    crossorigin="anonymous"></script>
+  <!-- Google AdSense (Auto ads — 版位在 AdSense 後台調，不在這裡).
+       Signed-in users get no ads: the library is never loaded for them (AdSense policy
+       allows not serving; it forbids loading and then hiding). The meta tag + ads.txt
+       keep site ownership verifiable now that the script is no longer in the static HTML.
+       Reads the Zustand persist entry (useAppStore, name 'tinboker-storage') before React
+       boots; a login/logout takes effect on the next page load. Crawlers are anonymous,
+       so they see the same page as before. -->
+  <meta name="google-adsense-account" content="ca-pub-7624557827833745">
+  <script>
+    (function () {
+      var signedIn = false;
+      try {
+        var s = JSON.parse(localStorage.getItem('tinboker-storage') || 'null');
+        signedIn = !!(s && s.state && s.state.user && s.state.token);
+      } catch (e) { /* storage blocked or corrupt: treat as a visitor */ }
+      if (signedIn) return;
+      var el = document.createElement('script');
+      el.async = true;
+      el.crossOrigin = 'anonymous';
+      el.src = 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-7624557827833745';
+      document.head.appendChild(el);
+    })();
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link

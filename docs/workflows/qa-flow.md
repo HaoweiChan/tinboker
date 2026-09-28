@@ -52,9 +52,20 @@ Dev and staging are gated by Google OAuth + admin email allowlist. Automated bro
    gcloud secrets versions access latest --secret=DEV_BYPASS_TOKEN \
      --project=gen-lang-client-0901363254
    ```
-2. Navigate to `https://dev.tinboker.com/auth/dev-bypass?token=$DEV_BYPASS_TOKEN`.
+2. Sign in, one of two ways:
+   - **A person** opens `https://dev.tinboker.com/auth/dev-bypass` (no query string), pastes the token into the form and picks a role. The secret travels in a POST body and never lands in the URL, the history or a log.
+   - **A scripted runner** that can only navigate uses `…/auth/dev-bypass?token=$DEV_BYPASS_TOKEN[&role=viewer|admin]` (default `admin`).
 3. Wait for redirect to `/` (the page calls `POST /api/auth/dev-token` under the hood and stores the JWT in `localStorage`).
 4. Drive the app as an authenticated session.
+
+### Roles
+
+| Role | Signs in as | Use it for |
+|---|---|---|
+| `viewer` | `qa-viewer@tinboker.com` — passes the dev/staging gate, **not** an admin (every admin route 403s) | The session left in an **AI agent's browser**: it can see everything a visitor sees and change nothing. An agent must not perform the sign-in step itself — a person does it once in the agent's browser pane; the refresh token (60 days, rotated on use) keeps it alive. |
+| `admin` | the first `ADMIN_EMAILS` entry | QA of the admin pages. |
+
+Bypass tokens carry a `dev_bypass` claim and **production refuses to verify them** — the three environments share one JWT secret, so without that a dev bypass session was also a production admin session.
 
 ### Constraints
 

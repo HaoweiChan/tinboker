@@ -1,5 +1,9 @@
 # Redis Service Setup & Caching Strategy Guide
 
+> **Historical design record.** This page reflects an earlier implementation or proposal.
+> Do not use its setup, deployment, or migration commands for the current service.
+> Start with the [backend README](../../README.md) and [infra runbook](../../../docs/infra-runbook.md).
+
 This comprehensive guide covers Redis setup, caching strategies, and best practices for the TinBoker Backend API.
 
 ---

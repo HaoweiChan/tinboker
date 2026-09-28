@@ -1,8 +1,12 @@
 """
 Authentication routes for Google OAuth
 """
+import hmac
+
 from fastapi import APIRouter, HTTPException, Header
-from typing import Optional
+from typing import Literal, Optional
+from pydantic import BaseModel, ConfigDict
+from src.config import settings
 from src.models.user import AuthResponse
 from src.database.user_db import get_or_create_user, get_user_by_email
 from src.utils.auth import (
@@ -11,6 +15,7 @@ from src.utils.auth import (
     create_jwt_token,
     create_refresh_token,
     verify_jwt_token,
+    apply_membership_preview,
 )
 
 router = APIRouter(prefix="/api/auth", tags=["authentication"])
@@ -125,7 +130,7 @@ async def get_current_user(authorization: Optional[str] = Header(None)):
             detail="User not found"
         )
     
-    return user
+    return apply_membership_preview(user, payload)
 
 
 @router.get("/is-admin")
@@ -135,30 +140,46 @@ async def check_is_admin(authorization: Optional[str] = Header(None)):
     Used by non-production environments to gate access.
     Returns { "is_admin": bool } — never raises 4xx so the frontend can handle the result gracefully.
     """
+    denied = {"is_admin": False, "env_access": False}
     if not authorization:
-        return {"is_admin": False}
+        return denied
     try:
         scheme, token = authorization.split()
         if scheme.lower() != "bearer":
-            return {"is_admin": False}
+            return denied
     except ValueError:
-        return {"is_admin": False}
+        return denied
 
     payload = verify_jwt_token(token)
     if not payload:
-        return {"is_admin": False}
+        return denied
 
     from src.config import settings
     email = (payload.get("email") or "").lower()
     admin_set = {e.lower() for e in settings.admin_emails}
-    return {"is_admin": email in admin_set}
+    is_admin = email in admin_set
+    # ``env_access`` is what the dev/staging EnvGate asks for: admins, plus any bypass
+    # session (the read-only QA viewer is not an admin but must get past the gate).
+    # verify_jwt_token already refused bypass tokens in production.
+    return {"is_admin": is_admin, "env_access": is_admin or bool(payload.get("dev_bypass"))}
+
+
+QA_VIEWER_EMAIL = "qa-viewer@tinboker.com"
+_BYPASS_ROLES = ("admin", "viewer")
 
 
 @router.post("/dev-token", response_model=AuthResponse)
 async def dev_token_login(request: dict):
     """
-    Bypass Google OAuth for automated browser testing (Cursor browser MCP).
+    Bypass Google OAuth for automated browser testing (browser MCP, Playwright).
     Only available when ENVIRONMENT != production and DEV_BYPASS_TOKEN is set.
+
+    ``role`` (default "admin") picks who the session is:
+      * "admin"  — the first ADMIN_EMAILS entry; for QA of the admin pages.
+      * "viewer" — ``qa-viewer@tinboker.com``: passes the dev/staging gate, is NOT an
+        admin, so every admin route 403s. This is the session to hand an AI agent's
+        browser — it can look at everything a visitor sees and change nothing.
+    Both carry ``dev_bypass`` in the token, which production refuses to verify.
     """
     from src.config import settings
 
@@ -167,20 +188,25 @@ async def dev_token_login(request: dict):
     if not settings.dev_bypass_token:
         raise HTTPException(status_code=403, detail="Dev bypass not configured")
 
-    token = request.get("token")
-    if not token or token != settings.dev_bypass_token:
+    # Pasted secrets arrive with stray whitespace (a terminal's trailing newline, a
+    # copied prompt); compare trimmed, and in constant time.
+    token = str(request.get("token") or "").strip()
+    if not token or not hmac.compare_digest(token.encode(), settings.dev_bypass_token.strip().encode()):
         raise HTTPException(status_code=401, detail="Invalid bypass token")
 
-    email = settings.admin_emails[0] if settings.admin_emails else "dev@tinboker.com"
-    user = get_or_create_user(
-        google_id="dev-bypass-user",
-        email=email,
-        name="Dev Browser",
-        avatar=None,
-        email_verified=True,
-    )
-    jwt_token = create_jwt_token(user.id, user.email)
-    refresh_token = create_refresh_token(user.id, user.email)
+    role = (request.get("role") or "admin").strip().lower()
+    if role not in _BYPASS_ROLES:
+        raise HTTPException(status_code=422, detail=f"role must be one of {_BYPASS_ROLES}")
+
+    if role == "viewer":
+        google_id, email, name = "dev-bypass-viewer", QA_VIEWER_EMAIL, "QA Viewer"
+    else:
+        google_id, name = "dev-bypass-user", "Dev Browser"
+        email = settings.admin_emails[0] if settings.admin_emails else "dev@tinboker.com"
+    user = get_or_create_user(google_id=google_id, email=email, name=name, avatar=None, email_verified=True)
+    claims = {"dev_bypass": True, "role": role}
+    jwt_token = create_jwt_token(user.id, user.email, extra=claims)
+    refresh_token = create_refresh_token(user.id, user.email, extra=claims)
     return AuthResponse(user=user, token=jwt_token, refresh_token=refresh_token)
 
 
@@ -210,10 +236,47 @@ async def refresh_token_endpoint(request: dict):
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Issue a fresh access token and rotate the refresh token.
-    new_access = create_jwt_token(user.id, user.email)
-    new_refresh = create_refresh_token(user.id, user.email)
-    return AuthResponse(user=user, token=new_access, refresh_token=new_refresh)
+    # Issue a fresh access token and rotate the refresh token. A bypass session stays a
+    # bypass session across refreshes — otherwise one refresh would launder it into an
+    # ordinary token that production accepts.
+    new_access = create_jwt_token(user.id, user.email, extra=payload)
+    new_refresh = create_refresh_token(user.id, user.email, extra=payload)
+    return AuthResponse(user=apply_membership_preview(user, verify_jwt_token(new_access)), token=new_access, refresh_token=new_refresh)
+
+
+class MembershipPreviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    mode: Literal["free", "paid"]
+
+
+@router.post("/membership-preview", response_model=AuthResponse)
+async def membership_preview(
+    request: MembershipPreviewRequest,
+    authorization: Optional[str] = Header(None),
+):
+    """Create a development-only administrator preview using normal token lifetimes."""
+    if settings.environment != "development":
+        raise HTTPException(status_code=404, detail="Not found")
+    user = await get_current_user(authorization)
+    if not user.membership_preview_available:
+        raise HTTPException(status_code=403, detail="Administrator access required")
+    payload = verify_jwt_token(authorization.split()[1], expected_type="access")
+    if not payload:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    claims = {key: payload[key] for key in ("dev_bypass", "role") if key in payload}
+    claims.update({
+        "membership_preview_session": True,
+        "membership_preview": request.mode,
+    })
+    actual_user = get_user_by_email(user.email)
+    if not actual_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    access_token = create_jwt_token(user.id, user.email, extra=claims)
+    return AuthResponse(
+        user=apply_membership_preview(actual_user, verify_jwt_token(access_token)),
+        token=access_token,
+        refresh_token=create_refresh_token(user.id, user.email, extra=claims),
+    )
 
 
 @router.post("/logout")

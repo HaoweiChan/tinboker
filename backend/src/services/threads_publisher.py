@@ -23,6 +23,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from src.config import settings
+from src.database.models import ScheduledSocialPost
+from src.database.postgres import session_scope
 from src.services import social_ledger
 from src.services.content_source_service import social_enabled_for, speaker_for
 from src.services.podcast import PodcastService
@@ -47,10 +49,39 @@ def episode_url(episode_id: str) -> str:
     return f"{settings.site_url.rstrip('/')}/episode/{episode_id}"
 
 
-def link_comment(episode_id: str) -> str:
+def social_link(url: str, fmt: str) -> str:
+    """``url`` tagged so GA4 can tell a Threads arrival — and which post shape sent it —
+    from everything else. Measured 2026-09-19: 520K views → 598 clicks in 28 days, and
+    nothing on the site side could say what those 598 did next. The ledger keeps the
+    bare URL; only the posted link carries the tags."""
+    sep = "&" if "?" in url else "?"
+    return f"{url}{sep}utm_source=threads&utm_medium=social&utm_campaign={fmt}"
+
+
+def link_comment(episode_id: str, fmt: str = "episode_thread", hook: Optional[str] = None,
+                 focus_ms: Optional[int] = None) -> str:
     """The episode permalink, posted as the FIRST comment (not in the post body) so
-    the link doesn't suppress organic reach and lives where it helps SEO."""
-    return f"▶ 完整重點：{episode_url(episode_id)}"
+    the link doesn't suppress organic reach and lives where it helps SEO.
+
+    ``hook`` says what is on the other side that the post did not give away, and
+    ``focus_ms`` (``?t=``) lands the reader on the section the post was about instead
+    of the top of a 13-screen page. Measured 2026-09-19: 1.5% of the people who saw
+    「▶ 完整重點」 clicked it, and those who did had to scroll five screens to find the
+    sentence they had just liked. Without a hook the old generic line stands."""
+    url = episode_url(episode_id)
+    if isinstance(focus_ms, int) and focus_ms >= 1000:
+        url = f"{url}?t={focus_ms}"
+    link = social_link(url, fmt)
+    hook = " ".join((hook or "").split())
+    return f"▶ {hook}\n{link}" if hook else f"▶ 完整重點：{link}"
+
+
+def episode_link_comment(episode: Any, fmt: str) -> str:
+    """``link_comment`` fed from the episode's written copy (``social_thread``)."""
+    thread = _field(episode, "social_thread")
+    thread = thread if isinstance(thread, dict) else {}
+    episode_id = _field(episode, "id") or _field(episode, "episode_id") or ""
+    return link_comment(episode_id, fmt, hook=thread.get("link_hook"), focus_ms=thread.get("focus_ms"))
 
 
 RASTER_IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".webp", ".gif")
@@ -100,7 +131,7 @@ def compose_post(episode: Any, *, count_line: str = "", with_link: bool = True) 
         image_url = None  # Meta can't ingest SVG — post text-only rather than hard-fail
 
     url = episode_url(episode_id)
-    link_line = f"\n\n{link_comment(episode_id)}" if with_link else ""
+    link_line = f"\n\n{link_comment(episode_id, 'episode_single')}" if with_link else ""
     count_seg = f"\n\n{count_line}" if count_line else ""
 
     header = "｜".join(p for p in (podcast_name, title) if p) or title or podcast_name
@@ -292,7 +323,7 @@ def compose_thread(episode: Any) -> dict:
 
     # Permalink as the FIRST comment (link-in-first-comment) — keeps it out of the
     # post body so reach isn't suppressed and the link still gets indexed.
-    replies.insert(0, {"text": link_comment(episode_id)})
+    replies.insert(0, {"text": episode_link_comment(episode, "episode_thread")})
 
     return {
         "episode_id": episode_id,
@@ -354,9 +385,55 @@ def _record(episode_id: str, media_id: str, url: str, reply_ids: Optional[list[s
 
 
 def list_posted(limit: int = 50, days: Optional[int] = None) -> list[dict]:
-    """Recent ledger rows, newest first (``reply_ids`` keeps the published API shape)."""
+    """Recent Threads posts, including safely identifiable scheduled promo history."""
     rows = social_ledger.list_posted(PLATFORM, limit, days=days)
-    return [{**r, "reply_ids": r["child_ids"]} for r in rows]
+    known_media_ids = {r["media_id"] for r in rows if r.get("media_id")}
+    with session_scope() as db:
+        query = db.query(ScheduledSocialPost).filter(
+            ScheduledSocialPost.post_type == "promo",
+            ScheduledSocialPost.status == "posted",
+        )
+        if days:
+            query = query.filter(
+                ScheduledSocialPost.posted_at >= datetime.utcnow() - timedelta(days=days)
+            )
+        scheduled = query.order_by(ScheduledSocialPost.posted_at.desc()).limit(500).all()
+
+        for post in scheduled:
+            if "threads" not in (post.platforms or []):
+                continue
+            result = (post.published_results or {}).get("threads") or {}
+            media_id = result.get("media_id")
+            if result.get("posted") is not True or not media_id or media_id in known_media_ids:
+                continue
+            comments = post.comments or []
+            posted_count = max(0, min(int(result.get("posted_comments") or 0), len(comments)))
+            rows.append({
+                "episode_id": f"scheduled:{post.id}",
+                "media_id": media_id,
+                "url": None,
+                "child_ids": [],
+                "format": "manual_promo",
+                "subject": None,
+                "origin": "manual",
+                "delivery": "scheduled",
+                "permalink": result.get("permalink"),
+                "post_snapshot": {
+                    "text": (post.text or "").strip(),
+                    "media": post.media or [],
+                    "requested_comments": comments,
+                    "posted_reply_texts": comments[:posted_count],
+                },
+                "tracking_error": (
+                    f"partial_reply:{result['comment_error']}" if result.get("comment_error") else None
+                ),
+                "posted_at": post.posted_at.isoformat() if post.posted_at else None,
+            })
+            known_media_ids.add(media_id)
+
+    rows.sort(key=lambda r: r.get("posted_at") or "", reverse=True)
+    rows = rows[:limit]
+    return [{**r, "reply_ids": r.get("child_ids") or []} for r in rows]
 
 
 async def publish_recent(
@@ -418,10 +495,10 @@ async def publish_recent(
                 skipped.append({"episode_id": episode_id, "reason": "already_posted"})
                 continue
             try:
+                fmt = "episode_macro_card" if draft.get("image_url") else "episode_text"
                 media_id = await service.publish(draft["text"], image_url=draft.get("image_url"))
-                reply_id = await service.publish_reply(link_comment(episode_id), reply_to_id=media_id)
-                _record(episode_id, media_id, draft["url"], [reply_id],
-                        fmt="episode_macro_card" if draft.get("image_url") else "episode_text")
+                reply_id = await service.publish_reply(episode_link_comment(episode, fmt), reply_to_id=media_id)
+                _record(episode_id, media_id, draft["url"], [reply_id], fmt=fmt)
                 posted.append({**draft, "kind": "text", "media_id": media_id, "dry_run": False})
                 logger.info("Posted text post for %s (%s)", episode_id, media_id)
             except ThreadsError as e:
@@ -446,7 +523,9 @@ async def publish_recent(
                     continue
                 try:
                     media_id = await service.publish(story, image_url=frame["image_url"])
-                    reply_id = await service.publish_reply(link_comment(episode_id), reply_to_id=media_id)
+                    hook = f'{speaker_for(frame["podcaster"])}這集講{frame["name"]}的整段'
+                    reply_id = await service.publish_reply(
+                        link_comment(episode_id, "episode_ticker_story", hook=hook), reply_to_id=media_id)
                     _record(episode_id, media_id, frame["url"], [reply_id], fmt="episode_ticker_story")
                     posted.append({**frame, "kind": "ticker_story", "text": story, "media_id": media_id, "dry_run": False})
                     logger.info("Posted ticker story for %s (%s, %s)", episode_id, frame["ticker"], media_id)

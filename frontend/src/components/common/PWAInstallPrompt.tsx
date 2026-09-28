@@ -158,7 +158,7 @@ export const PWAInstallBanner: React.FC = () => {
   const [visible, setVisible] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [platform] = useState(detectPlatform);
-  const [showIOSTutorial, setShowIOSTutorial] = useState(false);
+  const [showInstructions, setShowInstructions] = useState(false);
 
   useEffect(() => {
     if (isStandalone()) return;
@@ -166,6 +166,12 @@ export const PWAInstallBanner: React.FC = () => {
     if (dismissed) return;
     const isTouch = platform === 'ios' || platform === 'android';
     if (!isTouch) return;
+    // Same rule as the onboarding tutorial: a visit that starts on a content page — a
+    // Threads link to an episode — came for that page. Three seconds in, before they
+    // have read a paragraph, is the wrong moment to ask them to install an app (seen
+    // 2026-09-19: the banner covered the lower half of the section a social link had
+    // just landed them on). Nothing is stored, so a visit that starts at "/" still asks.
+    if (window.location.pathname !== '/') return;
     const timer = setTimeout(() => setVisible(true), 3000);
     return () => clearTimeout(timer);
   }, [platform]);
@@ -182,7 +188,7 @@ export const PWAInstallBanner: React.FC = () => {
 
   const dismiss = useCallback(() => {
     setVisible(false);
-    setShowIOSTutorial(false);
+    setShowInstructions(false);
     sessionStorage.setItem('pwa-banner-dismissed', '1');
   }, []);
 
@@ -192,10 +198,10 @@ export const PWAInstallBanner: React.FC = () => {
       const { outcome } = await deferredPrompt.userChoice;
       if (outcome === 'accepted') setVisible(false);
       setDeferredPrompt(null);
-    } else if (platform === 'ios') {
-      setShowIOSTutorial(true);
+    } else {
+      setShowInstructions(true);
     }
-  }, [deferredPrompt, platform]);
+  }, [deferredPrompt]);
 
   if (!visible) return null;
 
@@ -210,7 +216,7 @@ export const PWAInstallBanner: React.FC = () => {
         >
           <X size={14} />
         </button>
-        {!showIOSTutorial ? (
+        {!showInstructions ? (
           <div className="flex items-center gap-3.5 p-4 pr-10">
             <div className="grid place-items-center w-11 h-11 rounded-xl bg-[#0e1014] shrink-0">
               <BracketMark size={24} className="text-[#f1ead8]" />
@@ -231,11 +237,9 @@ export const PWAInstallBanner: React.FC = () => {
             </div>
           </div>
         ) : (
-          <div className="p-4 pt-3">
-            <div className="text-lg font-semibold text-foreground mb-2">在 Safari 中安裝</div>
-            <Step step={1} icon={<Share size={14} />} text="點擊底部「分享」按鈕" />
-            <Step step={2} icon={<Plus size={14} />} text="選擇「加入主畫面」" />
-            <Step step={3} icon={<Check size={14} />} text="點擊「新增」" />
+          <div className="max-h-[calc(100dvh-7rem)] overflow-y-auto p-4 pt-3">
+            <div className="text-lg font-semibold text-foreground mb-2">安裝步驟</div>
+            <PWAInstallSection />
             <button
               type="button"
               onClick={dismiss}

@@ -1,5 +1,9 @@
 # Google Login Complete Reference
 
+> **Historical snapshot.** This document records earlier plans or implementation details.
+> Routes, API gaps, and environment instructions below may be stale. For current
+> frontend guidance, start with the [frontend docs index](README.md).
+
 This document provides a comprehensive reference for all Google login related code, setup, and environment variables in the TinBoker WebUI project.
 
 ## Table of Contents

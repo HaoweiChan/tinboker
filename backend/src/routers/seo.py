@@ -52,6 +52,7 @@ STATIC_PATHS = [
     ("/weekly", "0.8", "weekly"),
     ("/articles", "0.7", "weekly"),
     ("/about", "0.5", "monthly"),
+    ("/terms", "0.3", "yearly"),
 ]
 
 
@@ -92,7 +93,7 @@ async def sitemap(
     to Googlebot. The assembled XML is cached in Redis for an hour; the per-source
     service calls are themselves cached, and the CDN edge caches the response.
     """
-    cache_key = f"sitemap:xml:v7:{limit}"  # v7: /contact + /disclaimer folded into /about
+    cache_key = f"sitemap:xml:v8:{limit}"  # v8: added /terms (legal/policy page)
     cached = await cache_get(cache_key)
     if cached:
         return Response(content=cached, media_type="application/xml",

@@ -188,3 +188,229 @@ async def test_suggest_survives_none_keywords():
     for prefix in ("00685L", "00685l", "0068", "00"):
         results = index.suggest(prefix)
         assert any(r.id == "stock-00685L" for r in results), prefix
+
+
+# ── Typing a TW code without its leading zeros (981A → 00981A) ────────────────
+
+def test_bare_tw_code_variants():
+    from src.routers.search import _bare_tw_code
+
+    assert _bare_tw_code("00981A") == "981A"   # 主動統一台股增長
+    assert _bare_tw_code("0050") == "50"
+    assert _bare_tw_code("2330") is None       # nothing to strip
+    assert _bare_tw_code("AAPL") is None       # US
+    assert _bare_tw_code("005930") is None     # KR, not ours to index as TW
+
+
+def test_suggest_finds_a_padded_tw_code_typed_bare():
+    """The real listing answers "981a"; before this the only hit was a junk stub
+    literally stored under the ticker "981A"."""
+    import asyncio
+    from src.services.suggestion_index import SuggestionIndex
+    from src.schemas.search import SearchResultItem
+    from src.routers.search import _bare_tw_code
+
+    async def run():
+        index = SuggestionIndex()
+        await index.clear()
+        item = SearchResultItem(id="stock-00981A", type="stock", title="00981A",
+                                subtitle="主動統一台股增長", link="/stock/00981A", market="TW")
+        await index.add_item(item, keywords=["00981A", "主動統一台股增長", _bare_tw_code("00981A")])
+        return [i.title for i in index.suggest("981a")], [i.title for i in index.suggest("00981a")]
+
+    bare, padded = asyncio.run(run())
+    assert bare == ["00981A"]
+    assert padded == ["00981A"]
+
+
+# ── 981A is 00981A: the bare code resolves to the listing that exists ─────────
+
+def test_canonical_tw_ticker_resolves_the_bare_code(tmp_path, monkeypatch):
+    import src.database.postgres as pg
+    from src.config import settings
+
+    prev = (pg.engine, pg.SessionLocal, settings.use_postgres, settings.database_path)
+    settings.use_postgres = False
+    settings.database_path = str(tmp_path / "canon.db")
+    pg.engine = None
+    pg.SessionLocal = None
+    pg.init_engine()
+    from src.database import models  # noqa: F401
+    from src.database.models import StockTranslation
+    pg.create_all_tables()
+    try:
+        for session in pg.get_session():
+            session.add(StockTranslation(ticker="00981A", market="TW",
+                                         name_zh_tw="主動統一台股增長", translation_status="auto"))
+            session.add(StockTranslation(ticker="2330", market="TW", name_zh_tw="台積電",
+                                         translation_status="approved"))
+            session.commit()
+            break
+
+        from src.routers.stock import _canonical_tw_ticker
+        assert _canonical_tw_ticker("981A") == "00981A"   # the spoken form
+        assert _canonical_tw_ticker("2330") == "2330"     # already a listing
+        assert _canonical_tw_ticker("9999") == "9999"     # nothing to resolve to
+        assert _canonical_tw_ticker("AAPL") == "AAPL"     # not TW
+    finally:
+        pg.engine, pg.SessionLocal, settings.use_postgres, settings.database_path = prev
+
+
+# ── Rebuilding the index without restarting the process ──────────────────────
+
+def test_rebuild_index_drops_a_deleted_row_and_needs_the_internal_key(monkeypatch):
+    """A row deleted from the DB must be gone from typeahead after a rebuild — that is
+    the whole point: production kept suggesting the junk 981A stub after it was deleted,
+    and only a container restart cleared it."""
+    import asyncio
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from src.config import settings
+    from src.routers import search as search_router
+    from src.schemas.search import SearchResultItem
+    from src.services.suggestion_index import SuggestionIndex
+
+    index = SuggestionIndex()
+
+    async def _seed_stale():
+        await index.clear()
+        await index.add_item(
+            SearchResultItem(id="stock-981A", type="stock", title="981A",
+                             subtitle="(Probable bond ETF variant)", link="/stock/981A", market="TW"),
+            keywords=["981A"],
+        )
+    asyncio.run(_seed_stale())
+    assert [i.title for i in index.suggest("981a")] == ["981A"]
+
+    # The real build reads every source; stand in for it with the row that survived.
+    async def fake_build():
+        await index.add_item(
+            SearchResultItem(id="stock-00981A", type="stock", title="00981A",
+                             subtitle="主動統一台股增長", link="/stock/00981A", market="TW"),
+            keywords=["00981A", "981A", "主動統一台股增長"],
+        )
+        index.mark_initialized()
+    monkeypatch.setattr(search_router, "build_search_index", fake_build)
+
+    prev_key = settings.internal_api_key
+    settings.internal_api_key = "test-secret-key"
+    app = FastAPI()
+    app.include_router(search_router.router)
+    client = TestClient(app)
+    try:
+        assert client.post("/api/search/rebuild-index").status_code == 401
+        assert client.post("/api/search/rebuild-index",
+                           headers={"X-Internal-Key": "nope"}).status_code == 401
+
+        resp = client.post("/api/search/rebuild-index", headers={"X-Internal-Key": "test-secret-key"})
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["items"] == 1  # cleared first: the stale row is gone, not merged
+        assert [i.title for i in index.suggest("981a")] == ["00981A"]
+    finally:
+        settings.internal_api_key = prev_key
+        asyncio.run(index.clear())
+
+
+# ── CJK names are findable by the part a reader remembers, not only by their first char ──
+
+def _cjk_index():
+    """A small index with the real names that exposed the bug."""
+    import asyncio
+    from src.schemas.search import SearchResultItem
+    from src.services.suggestion_index import SuggestionIndex
+
+    index = SuggestionIndex()
+
+    async def build():
+        await index.clear()
+        for iid, title, sub, kws in [
+            ("podcast-兆華與股惑仔", "兆華與股惑仔", "446 episodes", ["兆華與股惑仔"]),
+            ("podcast-財經一路發", "財經一路發", "podcast", ["財經一路發"]),
+            ("stock-2330", "2330", "台積電", ["2330", "台積電", "Taiwan Semiconductor"]),
+            ("stock-0050", "0050", "元大台灣50", ["0050", "元大台灣50"]),
+            ("stock-TSM", "TSM", "台積電 ADR", ["TSM", "Taiwan Semiconductor Manufacturing"]),
+        ]:
+            await index.add_item(
+                SearchResultItem(id=iid, type="podcast" if iid.startswith("podcast") else "stock",
+                                 title=title, subtitle=sub, link="/x"),
+                keywords=kws,
+            )
+        index.mark_initialized()
+
+    asyncio.run(build())
+    return index
+
+
+def test_cjk_substring_finds_the_name():
+    index = _cjk_index()
+    try:
+        assert [i.title for i in index.suggest("股惑仔")] == ["兆華與股惑仔"]
+        assert [i.title for i in index.suggest("惑仔")] == ["兆華與股惑仔"]
+        assert [i.title for i in index.suggest("兆華")] == ["兆華與股惑仔"]   # prefix still works
+        assert [i.title for i in index.suggest("一路發")] == ["財經一路發"]
+        assert "2330" in [i.title for i in index.suggest("積電")]
+        assert "0050" in [i.title for i in index.suggest("台灣50")]
+    finally:
+        import asyncio; asyncio.run(index.clear())
+
+
+def test_prefix_still_outranks_a_mid_name_match():
+    """台積 must not demote 台積電 below something that only contains it."""
+    import asyncio
+    from src.schemas.search import SearchResultItem
+
+    index = _cjk_index()
+    try:
+        async def add_noise():
+            await index.add_item(
+                SearchResultItem(id="stock-9999", type="stock", title="9999",
+                                 subtitle="供應台積電設備", link="/x"),
+                keywords=["9999", "供應台積電設備"],
+            )
+        asyncio.run(add_noise())
+        titles = [i.title for i in index.suggest("台積")]
+        assert titles[0] in ("2330", "TSM"), titles   # the real 台積電 rows lead
+        assert "9999" in titles                        # the mid-name match is still findable
+        assert titles.index("9999") > 0
+    finally:
+        asyncio.run(index.clear())
+
+
+def test_latin_matching_is_unchanged():
+    index = _cjk_index()
+    try:
+        assert "TSM" in [i.title for i in index.suggest("taiwan")]
+        assert [i.title for i in index.suggest("2330")] == ["2330"]
+        assert index.suggest("xyz") == []
+    finally:
+        import asyncio; asyncio.run(index.clear())
+
+
+def test_podcast_host_alias_finds_the_show():
+    """A reader who remembers the host, not the show: 李兆華 → 兆華與股惑仔."""
+    import asyncio
+    from src.routers.search import PODCAST_ALIASES
+    from src.schemas.search import SearchResultItem
+    from src.services.suggestion_index import SuggestionIndex
+
+    index = SuggestionIndex()
+
+    async def build():
+        await index.clear()
+        for name in ("兆華與股惑仔", "Gooaye 股癌"):
+            await index.add_item(
+                SearchResultItem(id=f"podcast-{name}", type="podcast", title=name,
+                                 subtitle="episodes", link=f"/podcaster/{name}"),
+                keywords=[name, *PODCAST_ALIASES.get(name, [])],
+            )
+        index.mark_initialized()
+
+    asyncio.run(build())
+    try:
+        assert [i.title for i in index.suggest("李兆華")] == ["兆華與股惑仔"]
+        assert [i.title for i in index.suggest("陳威良")] == ["兆華與股惑仔"]
+        assert [i.title for i in index.suggest("謝孟恭")] == ["Gooaye 股癌"]
+        assert [i.title for i in index.suggest("兆華")] == ["兆華與股惑仔"]  # name still wins
+    finally:
+        asyncio.run(index.clear())
