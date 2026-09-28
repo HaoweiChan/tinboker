@@ -203,7 +203,11 @@ class ThreadsInsightsService:
         """
         if not self.is_configured:
             return []
-        posted = threads_publisher.list_posted(limit=limit, days=days)
+        # Pre-publish claims have no provider media ID yet; they are not published posts.
+        posted = [
+            row for row in threads_publisher.list_posted(limit=limit, days=days)
+            if row.get("media_id")
+        ]
         if not posted:
             return []
 
@@ -222,8 +226,13 @@ class ThreadsInsightsService:
                 base = {
                     "episode_id": row.get("episode_id"),
                     "media_id": media_id,
-                    "url": row.get("url"),
+                    "url": row.get("url") or None,
+                    "permalink": row.get("permalink"),
                     "format": row.get("format"),
+                    "origin": row.get("origin", "unknown"),
+                    "delivery": row.get("delivery"),
+                    "post_snapshot": row.get("post_snapshot") or {},
+                    "tracking_error": row.get("tracking_error"),
                     "posted_at": row.get("posted_at"),
                     "link_clicks": clicks.get(base_url(row.get("url")), 0),
                 }

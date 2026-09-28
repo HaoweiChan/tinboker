@@ -186,6 +186,17 @@ def create_all_tables():
                 "ALTER TABLE IF EXISTS social_posts "
                 "ADD COLUMN IF NOT EXISTS subject VARCHAR(80)"
             ))
+            for column, sql_type in (
+                ("origin", "VARCHAR(20)"),
+                ("delivery", "VARCHAR(20)"),
+                ("permalink", "TEXT"),
+                ("post_snapshot", "JSON"),
+                ("tracking_error", "VARCHAR(80)"),
+            ):
+                conn.execute(text(
+                    f"ALTER TABLE IF EXISTS social_posts "
+                    f"ADD COLUMN IF NOT EXISTS {column} {sql_type}"
+                ))
             conn.execute(text(
                 "ALTER TABLE IF EXISTS content_sources "
                 "ADD COLUMN IF NOT EXISTS social_enabled BOOLEAN NOT NULL DEFAULT TRUE"

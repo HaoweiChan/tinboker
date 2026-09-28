@@ -690,7 +690,7 @@ export const AdminAnalyticsPage: React.FC = () => {
                 subtitle={
                     threads?.range
                         ? `Meta Threads · last ${threads.range.days} days`
-                        : 'Views, likes, replies & reposts on auto-published episode threads'
+                        : 'Threads views, likes, replies, reposts, quotes and recent posts'
                 }
             >
                 {threads?.available ? (
@@ -716,23 +716,60 @@ export const AdminAnalyticsPage: React.FC = () => {
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-border">
-                                        {threads.recent_posts.map((p, i) => (
-                                            <tr key={i} className="text-foreground">
-                                                <td className="max-w-xs truncate px-3 py-2">
-                                                    {p.url ? (
-                                                        <a
-                                                            href={p.url}
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                            className="text-accent-info hover:underline"
-                                                        >
-                                                            {p.episode_id || p.media_id}
-                                                        </a>
-                                                    ) : (
-                                                        p.episode_id || p.media_id || '—'
-                                                    )}
-                                                    {p.error && (
-                                                        <span className="ml-2 text-xs text-muted-foreground">(no data)</span>
+                                        {threads.recent_posts.map((p, i) => {
+                                            const title = p.post_snapshot?.text?.trim() || p.episode_id || p.media_id || '—';
+                                            const link = p.permalink || p.url;
+                                            const requestedReplies = p.post_snapshot?.requested_comments?.length || 0;
+                                            const postedReplies = p.post_snapshot?.posted_reply_texts?.length || 0;
+                                            return (
+                                            <tr key={p.media_id || p.episode_id || i} className="text-foreground">
+                                                <td className="max-w-xs px-3 py-2">
+                                                    <div className="truncate" title={title}>
+                                                        {link ? (
+                                                            <a
+                                                                href={link}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="text-accent-info hover:underline"
+                                                            >
+                                                                {title}
+                                                            </a>
+                                                        ) : title}
+                                                    </div>
+                                                    <div className="mt-1 flex flex-wrap gap-x-2 text-xs text-muted-foreground">
+                                                        <span>{p.origin === 'manual' ? '手動' : p.origin === 'automated' ? '自動' : '來源未知'}</span>
+                                                        {p.delivery && <span>{p.delivery === 'scheduled' ? '排程發佈' : '即時發佈'}</span>}
+                                                        {requestedReplies > 0 && <span>回覆 {postedReplies}/{requestedReplies}</span>}
+                                                        {p.tracking_error && (
+                                                            <span>{p.tracking_error.startsWith('partial_reply:') ? '部分回覆未送出' : '追蹤紀錄不完整'}</span>
+                                                        )}
+                                                        {p.error && <span>(no data)</span>}
+                                                    </div>
+                                                    {p.post_snapshot && (
+                                                        <details className="mt-1 text-xs text-muted-foreground">
+                                                            <summary className="cursor-pointer">查看文案與媒體</summary>
+                                                            <div className="mt-1 whitespace-pre-wrap break-words">{p.post_snapshot.text}</div>
+                                                            {!!p.post_snapshot.media?.length && (
+                                                                <ul className="mt-1 list-inside list-disc break-all">
+                                                                    {p.post_snapshot.media.map((media, index) => (
+                                                                        <li key={index}>{media.url || media.path || media.filename || media.type}</li>
+                                                                    ))}
+                                                                </ul>
+                                                            )}
+                                                            {!!p.post_snapshot.posted_reply_texts?.length && (
+                                                                <div className="mt-1">
+                                                                    <div>已發出的串文回覆</div>
+                                                                    {p.post_snapshot.posted_reply_texts.map((reply, index) => (
+                                                                        <div key={index} className="mt-1 whitespace-pre-wrap break-words">{reply}</div>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+                                                            {!!p.post_snapshot.requested_comments?.length && postedReplies < requestedReplies && (
+                                                                <div className="mt-1 whitespace-pre-wrap break-words">
+                                                                    未發出的回覆草稿：{p.post_snapshot.requested_comments.slice(postedReplies).join('\n')}
+                                                                </div>
+                                                            )}
+                                                        </details>
                                                     )}
                                                 </td>
                                                 <td className="px-3 py-2 text-right tabular-nums">{fmt(p.metrics.views)}</td>
@@ -740,7 +777,7 @@ export const AdminAnalyticsPage: React.FC = () => {
                                                 <td className="px-3 py-2 text-right tabular-nums">{fmt(p.metrics.replies)}</td>
                                                 <td className="px-3 py-2 text-right tabular-nums">{fmt(p.metrics.reposts)}</td>
                                             </tr>
-                                        ))}
+                                        );})}
                                     </tbody>
                                 </table>
                             </div>
