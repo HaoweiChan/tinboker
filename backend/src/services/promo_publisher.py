@@ -14,10 +14,13 @@ per-platform media rules, which differ:
 ``plan_threads`` / ``plan_facebook`` are pure so the rules are unit-tested without the API.
 """
 
+import asyncio
 import logging
+import uuid
 from typing import Optional
 
 from src.services.facebook_service import FACEBOOK_MAX_ALBUM, FacebookError, FacebookService
+from src.services import social_ledger
 from src.services.threads_service import THREADS_MAX_CHARS, ThreadsError, ThreadsService
 
 logger = logging.getLogger(__name__)
@@ -88,7 +91,15 @@ def _meta_error_reason(exc: Exception) -> str:
     return "publish_failed"
 
 
-async def _publish_threads(text: str, media: list[dict], comments: list[str], dry_run: bool) -> dict:
+async def _publish_threads(
+    text: str,
+    media: list[dict],
+    comments: list[str],
+    dry_run: bool,
+    *,
+    tracking_key: Optional[str] = None,
+    delivery: str = "direct",
+) -> dict:
     service = ThreadsService()
     configured = service.is_configured
     effective_dry_run = dry_run or not configured
@@ -102,6 +113,11 @@ async def _publish_threads(text: str, media: list[dict], comments: list[str], dr
         return {**base, "posted": False, "reason": "comment_too_long"}
     if effective_dry_run:
         return {**base, "posted": False, "reason": "dry_run", "plan": plan["kind"]}
+    post_key = tracking_key or f"manual:{uuid.uuid4().hex}"
+    if not await asyncio.to_thread(social_ledger.claim, "threads", post_key):
+        prior = await asyncio.to_thread(social_ledger.posted_record, "threads", post_key) or {}
+        return {**base, "posted": False, "reason": "already_posted",
+                "media_id": prior.get("media_id"), "permalink": prior.get("permalink")}
     try:
         if plan["kind"] == "text":
             media_id = await service.publish(text)
@@ -110,9 +126,55 @@ async def _publish_threads(text: str, media: list[dict], comments: list[str], dr
         else:
             media_id = await service.publish_media_carousel(plan["items"], text)
     except ThreadsError as e:
+        await asyncio.to_thread(social_ledger.release, "threads", post_key)
         kind = _meta_error_reason(e)
         reason = "threads_token_expired" if kind == "token_expired" else f"publish_failed: {e}"
         return {**base, "posted": False, "reason": reason}
+    snapshot = {
+        "text": text,
+        "media": [
+            {k: item.get(k) for k in ("type", "url", "path", "filename") if item.get(k) is not None}
+            for item in media
+        ],
+        "requested_comments": comments,
+        "posted_reply_texts": [],
+    }
+    reply_texts: list[str] = []
+    reply_ids: list[str] = []
+    tracking_failed = False
+
+    async def save_snapshot(tracking_error: Optional[str] = None) -> bool:
+        nonlocal tracking_failed
+        try:
+            await asyncio.to_thread(
+                social_ledger.record, "threads", post_key, media_id, "", reply_ids.copy(),
+                fmt="manual_promo", origin="manual", delivery=delivery,
+                post_snapshot=snapshot.copy(), tracking_error=tracking_error,
+            )
+            tracking_failed = False
+            return True
+        except Exception:
+            logger.exception("failed to save Threads promo tracking row %s", post_key)
+            tracking_failed = True
+            return False
+
+    await save_snapshot()
+    permalink: Optional[str] = None
+    try:
+        permalink = await service.get_permalink(media_id)
+    except Exception as e:
+        logger.info("Threads permalink unavailable for %s (%s)", media_id, type(e).__name__)
+    if permalink:
+        try:
+            await asyncio.to_thread(
+                social_ledger.record, "threads", post_key, media_id, "", reply_ids.copy(),
+                fmt="manual_promo", origin="manual", delivery=delivery,
+                permalink=permalink, post_snapshot=snapshot.copy(),
+            )
+            tracking_failed = False
+        except Exception:
+            logger.exception("failed to save Threads promo permalink %s", post_key)
+            tracking_failed = True
     # Chain each comment as a reply to the previous one (a Threads thread). A failure
     # stops the chain but keeps the already-live root.
     reply_ids: list[str] = []
@@ -126,10 +188,19 @@ async def _publish_threads(text: str, media: list[dict], comments: list[str], dr
             logger.warning("promo Threads reply failed (%d posted): %s", len(reply_ids), e)
             break
         reply_ids.append(prev)
+        reply_texts.append(c)
+        snapshot["posted_reply_texts"] = reply_texts.copy()
+        await save_snapshot()
+    tracking_error = f"partial_reply:{comment_error}" if comment_error else None
+    if tracking_error:
+        await save_snapshot(tracking_error)
     logger.info("Promo posted to Threads (%s, %s, %d replies)", media_id, plan["kind"], len(reply_ids))
-    out = {**base, "posted": True, "media_id": media_id, "plan": plan["kind"], "posted_comments": len(reply_ids)}
+    out = {**base, "posted": True, "media_id": media_id, "permalink": permalink,
+           "tracking_id": post_key, "plan": plan["kind"], "posted_comments": len(reply_ids)}
     if comment_error:
         out["comment_error"] = comment_error
+    if tracking_failed:
+        out["tracking_error"] = "ledger_write_failed"
     return out
 
 
@@ -185,6 +256,8 @@ async def publish_promo(
     platforms: list[str],
     comments: Optional[list[str]] = None,
     dry_run: bool = True,
+    tracking_key: Optional[str] = None,
+    delivery: str = "direct",
 ) -> dict:
     """Publish one promo to each selected platform; one independent result per platform.
 
@@ -202,7 +275,12 @@ async def publish_promo(
             results[name] = {"platform": name, "posted": False, "reason": "unknown_platform"}
             continue
         try:
-            results[name] = await fn(text, media, comments, dry_run)
+            if name == "threads":
+                results[name] = await _publish_threads(
+                    text, media, comments, dry_run, tracking_key=tracking_key, delivery=delivery
+                )
+            else:
+                results[name] = await fn(text, media, comments, dry_run)
         except Exception as e:  # never let one platform's crash sink the others
             logger.exception("promo publish failed for %s", name)
             results[name] = {"platform": name, "posted": False, "error": str(e)}

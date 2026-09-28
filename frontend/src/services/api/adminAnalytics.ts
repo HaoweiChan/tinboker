@@ -107,8 +107,20 @@ export interface ThreadsPostInsight {
     episode_id: string | null;
     media_id: string | null;
     url: string | null;
+    permalink?: string | null;
+    origin?: 'manual' | 'automated' | 'unknown';
+    delivery?: 'direct' | 'scheduled' | null;
+    format?: string | null;
+    post_snapshot?: {
+        text?: string;
+        media?: Array<{ type?: string; url?: string; path?: string; filename?: string }>;
+        requested_comments?: string[];
+        posted_reply_texts?: string[];
+    };
+    tracking_error?: string | null;
     posted_at: string | null;
     metrics: Record<string, number>;
+    link_clicks?: number;
     error?: string;
 }
 

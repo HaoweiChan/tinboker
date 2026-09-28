@@ -140,7 +140,9 @@ async def process_scheduled_posts() -> int:
                         media=resigned_media,
                         platforms=post.platforms,
                         comments=post.comments,
-                        dry_run=False
+                        dry_run=False,
+                        tracking_key=f"scheduled_promo:{post.id}",
+                        delivery="scheduled",
                     )
                     results = promo_res.get("platforms", {})
                     # If any platform was posted successfully

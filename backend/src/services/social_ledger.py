@@ -54,6 +54,12 @@ def record(
     child_ids: Optional[list[str]] = None,
     fmt: Optional[str] = None,
     subject: Optional[str] = None,
+    *,
+    origin: Optional[str] = None,
+    delivery: Optional[str] = None,
+    permalink: Optional[str] = None,
+    post_snapshot: Optional[dict] = None,
+    tracking_error: Optional[str] = None,
 ) -> None:
     """Fill in the ids of a claimed row once the post is actually live."""
     with session_scope() as db:
@@ -61,12 +67,22 @@ def record(
         if row is None:  # claim skipped (manual publish path) — insert outright
             row = SocialPostLedger(platform=platform, episode_id=episode_id)
             db.add(row)
+        if row.media_id is None:
+            row.posted_at = datetime.utcnow()
         row.media_id = media_id
         row.url = url
         row.child_ids = child_ids or []
-        row.posted_at = datetime.utcnow()
         row.format = fmt
         row.subject = subject
+        if origin is not None:
+            row.origin = origin
+        if delivery is not None:
+            row.delivery = delivery
+        if permalink is not None:
+            row.permalink = permalink
+        if post_snapshot is not None:
+            row.post_snapshot = post_snapshot
+        row.tracking_error = tracking_error
 
 
 def release(platform: str, episode_id: str) -> None:
@@ -92,7 +108,7 @@ def posted_record(platform: str, episode_id: str) -> Optional[dict]:
         if row is None:
             return None
         return {"platform": row.platform, "episode_id": row.episode_id,
-                "media_id": row.media_id, "url": row.url,
+                "media_id": row.media_id, "url": row.url, "permalink": row.permalink,
                 "posted_at": row.posted_at.isoformat() if row.posted_at else None}
 
 
@@ -115,6 +131,11 @@ def list_posted(platform: str, limit: int = 50, days: Optional[int] = None) -> l
                 "child_ids": r.child_ids or [],
                 "format": r.format,
                 "subject": r.subject,
+                "origin": r.origin or "unknown",
+                "delivery": r.delivery,
+                "permalink": r.permalink,
+                "post_snapshot": r.post_snapshot or {},
+                "tracking_error": r.tracking_error,
                 "posted_at": r.posted_at.isoformat() if r.posted_at else None,
             }
             for r in rows

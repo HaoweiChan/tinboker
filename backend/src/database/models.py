@@ -778,6 +778,13 @@ class SocialPostLedger(Base):
     # What the post is about beyond the episode — a ticker, a week id, a topic. The
     # rotation's per-subject cooldown keys on it (one 欣興 post a week, not five).
     subject = Column(String(80), nullable=True)
+    # Human-authored promo posts share this ledger so admin Insights can track them.
+    # NULL means legacy/unknown; never infer origin from an old episode key.
+    origin = Column(String(20), nullable=True)       # "manual" | "automated" | NULL (legacy)
+    delivery = Column(String(20), nullable=True)     # "direct" | "scheduled" | NULL (legacy)
+    permalink = Column(Text, nullable=True)          # Threads public permalink, not destination URL
+    post_snapshot = Column(JSON, nullable=True)      # text, media refs, planned/confirmed reply text
+    tracking_error = Column(String(80), nullable=True)  # e.g. partial_reply:insufficient_permission
 
     def __repr__(self) -> str:
         return f"<SocialPostLedger({self.platform}, {self.episode_id})>"

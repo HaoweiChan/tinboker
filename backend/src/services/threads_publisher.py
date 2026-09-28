@@ -23,6 +23,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from src.config import settings
+from src.database.models import ScheduledSocialPost
+from src.database.postgres import session_scope
 from src.services import social_ledger
 from src.services.content_source_service import social_enabled_for, speaker_for
 from src.services.podcast import PodcastService
@@ -383,9 +385,55 @@ def _record(episode_id: str, media_id: str, url: str, reply_ids: Optional[list[s
 
 
 def list_posted(limit: int = 50, days: Optional[int] = None) -> list[dict]:
-    """Recent ledger rows, newest first (``reply_ids`` keeps the published API shape)."""
+    """Recent Threads posts, including safely identifiable scheduled promo history."""
     rows = social_ledger.list_posted(PLATFORM, limit, days=days)
-    return [{**r, "reply_ids": r["child_ids"]} for r in rows]
+    known_media_ids = {r["media_id"] for r in rows if r.get("media_id")}
+    with session_scope() as db:
+        query = db.query(ScheduledSocialPost).filter(
+            ScheduledSocialPost.post_type == "promo",
+            ScheduledSocialPost.status == "posted",
+        )
+        if days:
+            query = query.filter(
+                ScheduledSocialPost.posted_at >= datetime.utcnow() - timedelta(days=days)
+            )
+        scheduled = query.order_by(ScheduledSocialPost.posted_at.desc()).limit(500).all()
+
+        for post in scheduled:
+            if "threads" not in (post.platforms or []):
+                continue
+            result = (post.published_results or {}).get("threads") or {}
+            media_id = result.get("media_id")
+            if result.get("posted") is not True or not media_id or media_id in known_media_ids:
+                continue
+            comments = post.comments or []
+            posted_count = max(0, min(int(result.get("posted_comments") or 0), len(comments)))
+            rows.append({
+                "episode_id": f"scheduled:{post.id}",
+                "media_id": media_id,
+                "url": None,
+                "child_ids": [],
+                "format": "manual_promo",
+                "subject": None,
+                "origin": "manual",
+                "delivery": "scheduled",
+                "permalink": result.get("permalink"),
+                "post_snapshot": {
+                    "text": (post.text or "").strip(),
+                    "media": post.media or [],
+                    "requested_comments": comments,
+                    "posted_reply_texts": comments[:posted_count],
+                },
+                "tracking_error": (
+                    f"partial_reply:{result['comment_error']}" if result.get("comment_error") else None
+                ),
+                "posted_at": post.posted_at.isoformat() if post.posted_at else None,
+            })
+            known_media_ids.add(media_id)
+
+    rows.sort(key=lambda r: r.get("posted_at") or "", reverse=True)
+    rows = rows[:limit]
+    return [{**r, "reply_ids": r.get("child_ids") or []} for r in rows]
 
 
 async def publish_recent(
