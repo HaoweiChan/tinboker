@@ -1,5 +1,9 @@
 # Stock Translation System - Implementation Summary
 
+> **Historical design record.** This page reflects an earlier implementation or proposal.
+> Do not use its setup, deployment, or migration commands for the current service.
+> Start with the [backend README](../../README.md) and [infra runbook](../../../docs/infra-runbook.md).
+
 ## Overview
 
 This document provides a complete summary of the stock translation management system implementation. The system allows managing Chinese Traditional (ZH-TW) translations for stock tickers across multiple markets (US, TW, JP, etc.) with a web-based admin interface.

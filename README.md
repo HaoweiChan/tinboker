@@ -8,7 +8,7 @@
 # 聽播客 ｜ TinBoker
 
 **Taiwanese stock &amp; podcast intelligence.**
-Browse TW/US stocks, explore relationship graphs, track market trends, and discover AI-summarized financial podcasts.
+Browse TW/US stocks, follow market topics, and discover AI-summarized financial podcasts.
 
 [![React](https://img.shields.io/badge/React-19-149ECA?style=flat-square&logo=react&logoColor=white)](https://react.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
@@ -46,7 +46,7 @@ into one standalone repo.
 ## Features
 
 - **Stock dashboard** — price charts and key statistics for TW + US markets
-- **Relationship graph explorer** — companies, sectors, and events linked into an interactive graph
+- **Market topics and sectors** — connect podcast coverage with stocks and market themes
 - **Podcast intelligence** — AI-summarized financial podcasts with per-episode ticker sentiment
 - **News &amp; wiki** — ingested market news folded into an entity/topic knowledge base
 - **Full-text search** with autocomplete and trending tickers/tags
@@ -79,20 +79,18 @@ into one standalone repo.
                               │                 │
                        Docker Compose      Spotify RSS · Tavily/RSS news
                        ├── FastAPI               │
-                       ├── Redis 7-alpine        ▼  transcribe → summarize → extract
-                       └── Netdata          GCS (mp3, transcripts, summaries, slides)
-                              │
-                              ▼
-                         GCP Services
-                       ├── Cloud SQL (PostgreSQL)  — stock, user, ticker_insights, wiki
-                       ├── Firestore               — podcast & episode documents
-                       ├── Cloud Storage           — article / content files
-                       └── Secret Manager          — credentials
+                       ├── PostgreSQL            ▼  transcribe → summarize → extract
+                       ├── Redis             VPS media disk (/srv/tinboker-media)
+                       └── Netdata               │
+                              │                   │
+                              └──── content in PostgreSQL ────┘
+
+                    GCP Secret Manager — credentials only
 ```
 
-> **Data direction:** the content pipelines *derive and write* content (Postgres + Firestore +
-> GCS); the platform API *reads and serves* it to the web UI. Reads are consolidating onto the
-> VPS Postgres + HTTP API — avoid adding new Firestore-direct read paths.
+> **Data direction:** the content pipelines derive content and write to the shared VPS
+> PostgreSQL database and media disk. The platform API serves that content over HTTP.
+> Firestore, Cloud SQL, and GCS have been retired.
 
 ---
 
@@ -100,16 +98,15 @@ into one standalone repo.
 
 | Layer | Technology |
 |-------|-----------|
-| Frontend | React 19, TypeScript 5.9, Vite 7, Tailwind CSS 4, Shadcn UI |
+| Frontend | React 19, TypeScript 5.9, Vite 7, Tailwind CSS 4 |
 | Charts | TradingView Lightweight Charts, D3.js, Nivo |
-| Graph viz | React Flow 11, Dagre, ELK |
 | State / routing | Zustand 5, React Router 7 |
 | Validation | Zod 4 |
 | Backend | FastAPI 0.104, Python 3.12, Pydantic v2 |
 | ORM / cache | SQLAlchemy 2 (SQLite dev / PostgreSQL prod), Redis 7 (hiredis) |
 | Auth | Google OAuth → JWT (python-jose) |
 | Pipelines | uv workspaces, LangGraph content builder, Marp slides, Spotify/Tavily ingestion |
-| Data APIs | Massive API (US stocks), FinMind (TW stocks), Firestore (podcasts) |
+| Data APIs | Massive API (US stocks), FinMind (TW stocks), Spotify and Tavily (content ingestion) |
 | Infra | Docker, Caddy, Netcup VPS, GitHub Actions, Cloudflare |
 
 ---
@@ -123,6 +120,9 @@ tinboker/
 ├── pipelines/           Content & agent pipelines (podcast + news ingestion, wiki builder)
 ├── mcp-servers/         MCP servers for AI tooling (stock-translations, article-authoring)
 ├── docs/                Domain references, workflows, data contracts, runbooks
+├── scripts/             Local maintenance utilities
+├── shared/              Manual Hermes alias export (not imported by runtime code)
+├── tests/               Root maintenance-script tests
 ├── .claude/             Claude Code subagents + skills (thin wrappers → docs/)
 ├── .codex/              Codex CLI agents + MCP config
 ├── .cursor/rules/       Cursor rules (auto-attached by file glob)
@@ -133,14 +133,14 @@ tinboker/
 ```
 
 <details>
-<summary><strong>backend/</strong> — FastAPI platform (32 routers, 38 services)</summary>
+<summary><strong>backend/</strong> — FastAPI platform</summary>
 
 ```
 backend/src/
 ├── main.py          FastAPI app & lifespan
 ├── config.py        Settings (env + GCP Secret Manager)
-├── routers/         32 API endpoint modules (stocks, search, graph, podcast, admin_*, …)
-├── services/        38 business-logic modules (stock, finmind, massive, insight, …)
+├── routers/         API endpoint modules (stocks, search, podcast, admin_*, …)
+├── services/        Business logic (stock, finmind, massive, insight, …)
 ├── database/        ORM models & CRUD
 ├── models/ schemas/ Pydantic request/response models
 ├── auth/            Google OAuth + JWT
@@ -152,11 +152,11 @@ backend/src/
 </details>
 
 <details>
-<summary><strong>frontend/</strong> — React web UI (42 route-level pages)</summary>
+<summary><strong>frontend/</strong> — React web UI</summary>
 
 ```
 frontend/src/
-├── pages/           42 route-level React pages
+├── pages/           Route-level React pages
 ├── components/      Reusable UI (charts, stock, graph, financial, industry, …)
 ├── services/        API client + business logic
 ├── store/           Zustand state stores
@@ -173,9 +173,9 @@ frontend/src/
 ```
 pipelines/
 ├── services/
-│   ├── podcast/     Spotify RSS → download → transcribe → summarize → wiki + GCS; serves /api/wiki (:8003)
+│   ├── podcast/     Spotify RSS → download → transcribe → summarize → Postgres + VPS media; serves /api/wiki (:8003)
 │   └── news/        Tavily/RSS news → resolve tickers → ingest (systemd timer)
-├── libs/shared/     secrets (GSM), GCS client, config, wiki_builder (Postgres-backed)
+├── libs/shared/     Shared pipeline utilities and wiki_builder (Postgres-backed)
 ├── scripts/         seeding & ops scripts
 └── docs/            wiki schema, content-api roadmap, data-consolidation plan, MIGRATION runbook
 ```
@@ -201,10 +201,12 @@ python -m src.main            # → localhost:5174  (docs at /docs)
 
 ```bash
 cd frontend
-cp .env.example .env.local    # set VITE_API_BASE_URL=http://localhost:5174
 npm install
 npm run dev                   # → localhost:5173
 ```
+
+Development defaults to the dev API. To use the local backend, set
+`VITE_API_BASE_URL=http://localhost:5174` in `frontend/.env.local`.
 
 ### Pipelines — content ingestion
 
@@ -266,7 +268,12 @@ cd pipelines && uv run --package tinboker-shared  pytest
 # Frontend — type check + build, and lint
 cd frontend && npm run build
 cd frontend && npm run lint
+
+# Root maintenance scripts
+cd backend && uv run --python 3.12 pytest ../tests/
 ```
+
+The root tests cover maintenance scripts and use the backend's test dependencies.
 
 End-to-end and environment-specific QA: [`docs/agents/qa-tester.md`](docs/agents/qa-tester.md).
 

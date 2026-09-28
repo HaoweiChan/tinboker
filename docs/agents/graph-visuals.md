@@ -72,7 +72,7 @@ The design-system half applies everywhere in the frontend, not just to graph pag
 
 ## External integrations
 
-- None directly. The graph data comes from Firestore via the backend graph service.
+- Graph data is served by the backend graph and visual-graph APIs. Check their current storage services before changing ingestion or persistence; do not add a Firestore read.
 
 ## Cross-references
 

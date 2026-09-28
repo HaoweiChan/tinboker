@@ -1,5 +1,9 @@
 # Real-Time Stock Price Updates & Timeframe Selection Requirements
 
+> **Historical design record.** This page reflects an earlier implementation or proposal.
+> Do not use its setup, deployment, or migration commands for the current service.
+> Start with the [backend README](../../README.md) and [infra runbook](../../../docs/infra-runbook.md).
+
 ## Overview
 
 This document outlines the requirements for implementing dynamic, real-time stock price updates with timeframe selection (1D, 1W, 1M, 1Y, etc.) in the TinBoker WebUI Stock Dashboard, similar to platforms like Yahoo Finance and Google Finance.

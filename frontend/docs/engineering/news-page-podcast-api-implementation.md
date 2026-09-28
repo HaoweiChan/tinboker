@@ -1,5 +1,9 @@
 # News Page Podcast API Implementation
 
+> **Historical snapshot.** This document records earlier plans or implementation details.
+> Routes, API gaps, and environment instructions below may be stale. For current
+> frontend guidance, start with the [frontend docs index](../README.md).
+
 ## Summary
 
 The NewsPage has been updated to fetch episode data from the podcast API endpoint `/api/podcast/{podcastName}/episodes/{episodeId}` when a podcast name is provided.

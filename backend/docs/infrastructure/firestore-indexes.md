@@ -1,5 +1,9 @@
 # Analysis: Why `tickers` and `tags` Collections Appear Empty
 
+> **Historical design record.** This page reflects an earlier implementation or proposal.
+> Do not use its setup, deployment, or migration commands for the current service.
+> Start with the [backend README](../../README.md) and [infra runbook](../../../docs/infra-runbook.md).
+
 ## Summary
 
 The collections **ARE being populated**, but they use a **subcollection structure**:
