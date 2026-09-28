@@ -186,6 +186,18 @@ def create_all_tables():
                 "ALTER TABLE IF EXISTS social_posts "
                 "ADD COLUMN IF NOT EXISTS subject VARCHAR(80)"
             ))
+            for column, sql_type in (
+                ("origin", "VARCHAR(20)"),
+                ("delivery", "VARCHAR(20)"),
+                ("permalink", "TEXT"),
+                ("post_snapshot", "JSON"),
+                ("provider_snapshot", "JSONB"),
+                ("tracking_error", "VARCHAR(80)"),
+            ):
+                conn.execute(text(
+                    f"ALTER TABLE IF EXISTS social_posts "
+                    f"ADD COLUMN IF NOT EXISTS {column} {sql_type}"
+                ))
             conn.execute(text(
                 "ALTER TABLE IF EXISTS content_sources "
                 "ADD COLUMN IF NOT EXISTS social_enabled BOOLEAN NOT NULL DEFAULT TRUE"
@@ -426,6 +438,10 @@ def create_all_tables():
                 conn.commit()
             if tr_cols and "icon_id" not in tr_cols:
                 conn.execute(text("ALTER TABLE tag_registry ADD COLUMN icon_id VARCHAR(64)"))
+                conn.commit()
+            social_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(social_posts)"))}
+            if social_cols and "provider_snapshot" not in social_cols:
+                conn.execute(text("ALTER TABLE social_posts ADD COLUMN provider_snapshot JSON"))
                 conn.commit()
             if tr_cols and "color_hex" not in tr_cols:
                 conn.execute(text("ALTER TABLE tag_registry ADD COLUMN color_hex VARCHAR(16)"))

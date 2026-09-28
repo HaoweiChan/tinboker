@@ -778,9 +778,46 @@ class SocialPostLedger(Base):
     # What the post is about beyond the episode — a ticker, a week id, a topic. The
     # rotation's per-subject cooldown keys on it (one 欣興 post a week, not five).
     subject = Column(String(80), nullable=True)
+    # Human-authored promo posts share this ledger so admin Insights can track them.
+    # NULL means legacy/unknown; never infer origin from an old episode key.
+    origin = Column(String(20), nullable=True)       # "manual" | "automated" | NULL (legacy)
+    delivery = Column(String(20), nullable=True)     # "direct" | "scheduled" | NULL (legacy)
+    permalink = Column(Text, nullable=True)          # Threads public permalink, not destination URL
+    post_snapshot = Column(JSON, nullable=True)      # text, media refs, planned/confirmed reply text
+    provider_snapshot = Column(JSON_VARIANT, nullable=True)  # current metadata read from Threads API
+    tracking_error = Column(String(80), nullable=True)  # e.g. partial_reply:insufficient_permission
 
     def __repr__(self) -> str:
         return f"<SocialPostLedger({self.platform}, {self.episode_id})>"
+
+
+class ThreadsPostInsightSnapshot(Base):
+    """One real provider metric sample per post per UTC date; never backdate samples."""
+    __tablename__ = "threads_post_insight_snapshots"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    media_id = Column(String(255), nullable=False)
+    captured_day = Column(Date, nullable=False)
+    captured_at = Column(TZ_DATETIME, nullable=False, default=lambda: datetime.now(timezone.utc))
+    metrics = Column(JSON_VARIANT, nullable=False, default=dict)
+
+    __table_args__ = (
+        UniqueConstraint("media_id", "captured_day", name="uq_threads_insight_media_day"),
+        Index("idx_threads_insight_media_captured", "media_id", "captured_at"),
+    )
+
+
+class ThreadsInsightsSyncState(Base):
+    """Resumable account-history cursor and production daily sync checkpoint."""
+    __tablename__ = "threads_insights_sync_state"
+
+    key = Column(String(32), primary_key=True, default="account")
+    backfill_cursor = Column(Text, nullable=True)
+    backfill_complete = Column(Boolean, nullable=False, default=False)
+    daily_cursor = Column(Text, nullable=True)
+    daily_window_since = Column(TZ_DATETIME, nullable=True)
+    daily_synced_at = Column(TZ_DATETIME, nullable=True)
+    updated_at = Column(TZ_DATETIME, nullable=False, default=lambda: datetime.now(timezone.utc))
 
 
 class ThreadsComment(Base):

@@ -121,6 +121,17 @@ class ThreadsService:
             await asyncio.sleep(delay)
             return await self._publish_container(client, container_id)
 
+    async def get_permalink(self, media_id: str) -> Optional[str]:
+        """Return Threads' public permalink for an already-published media id."""
+        if not self.is_configured:
+            return None
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(
+                f"{self._base}/{media_id}",
+                params={"fields": "permalink", "access_token": self._token},
+            )
+            return self._parse(resp, "read permalink").get("permalink")
+
     async def publish_single_media(self, text: str, item: dict, *, video_timeout: float = 180.0) -> str:
         """Publish one post carrying a single media item ``{type, url}`` (image or video).
 
