@@ -7,6 +7,12 @@
 
 ---
 
+## 2026-09-28 — MCP registration hid a pipeline tool
+- **Situation:** consolidating the podcast regeneration MCP launcher with other agent tools.
+- **Wrong assumption / failure:** `CLAUDE.md:24` and `.codex/config.toml:1-22` listed only two MCP servers, while `.mcp.json:28-46` already registered podcast regeneration from `pipelines/services/podcast/regen_mcp.py`.
+- **Rule:** When adding or moving an MCP launcher, update both client registrations and the root tool map in the same change.
+- **Status:** logged
+
 ## 2026-09-27 — Firestore-era docs remained active after decommission
 - **Situation:** refreshing root, frontend, and backend documentation for the current system.
 - **Wrong assumption / failure:** `docs/workflows/firestore-data-change.md:56-75` taught a nonexistent `get_firestore_client()` read pattern; `docs/agents/podcast-domain.md:40-41` called Firestore/GCS the read source even though `backend/src/services/postgres_mirror_service.py:422` selects the content reader and `backend/src/services/gcs_content.py:10-13` uses VPS disk and stable media URLs. Live VPS `docker ps` on 2026-09-27 showed host port 5433 while `backend/docker-compose.multi.yml:225` still maps 5432.

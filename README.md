@@ -39,7 +39,7 @@ into one standalone repo.
 | **Web UI** | [`frontend/`](frontend/) | React 19 + Vite SPA (Traditional Chinese) | Cloudflare Pages → `tinboker.com` |
 | **Platform API** | [`backend/`](backend/) | FastAPI app — stocks, search, graphs, auth, podcasts | Docker on Netcup VPS → `api.tinboker.com` |
 | **Content pipelines** | [`pipelines/`](pipelines/) | Podcast + news ingestion → summaries, ticker sentiment, wiki graph | systemd on VPS, serves `/api/wiki` (:8003) |
-| **MCP servers** | [`mcp-servers/`](mcp-servers/) | Agent tooling (stock translations, article authoring) | `uvx`, stdio |
+| **MCP servers** | [`mcp-servers/`](mcp-servers/) | Agent tooling (stock translations, article authoring, podcast regeneration) | `uvx` / `uv`, stdio |
 
 ---
 
@@ -118,10 +118,9 @@ tinboker/
 ├── frontend/            React 19 + Vite web UI        → Cloudflare Pages (tinboker.com)
 ├── backend/             FastAPI platform API           → Docker on VPS (api.tinboker.com)
 ├── pipelines/           Content & agent pipelines (podcast + news ingestion, wiki builder)
-├── mcp-servers/         MCP servers for AI tooling (stock-translations, article-authoring)
+├── mcp-servers/         MCP launchers for stock translations, article authoring, podcast regeneration
 ├── docs/                Domain references, workflows, data contracts, runbooks
 ├── scripts/             Local maintenance utilities
-├── shared/              Manual Hermes alias export (not imported by runtime code)
 ├── tests/               Root maintenance-script tests
 ├── .claude/             Claude Code subagents + skills (thin wrappers → docs/)
 ├── .codex/              Codex CLI agents + MCP config

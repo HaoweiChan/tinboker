@@ -21,7 +21,8 @@ TinBoker (聽播客) — Taiwanese stock & podcast intelligence platform. Monore
 - `pipelines/` — content tier: podcast + news ingestion → transcribe, summarize, ticker
   sentiment, wiki graph. uv workspace; serves `/api/wiki` + `/api/podcast` on `:8003`.
   **Content/infra only — never build UI here.**
-- `mcp-servers/` — agent tooling (`stock-translations`, `article-authoring`)
+- `mcp-servers/` — agent tooling (`stock-translations`, `article-authoring`,
+  `podcast-regen` launcher)
 - Data: Postgres `podcast_db` — **one instance, shared by dev/staging/prod** (SQLite
   only for a local checkout) · Redis cache · media files on the VPS disk · Google
   OAuth → JWT

@@ -35,11 +35,10 @@
         "--package",
         "tinboker-podcast",
         "python",
-        "services/podcast/regen_mcp.py"
+        "../mcp-servers/podcast-regen/server.py"
       ],
       "env": {
         "GCP_PROJECT_ID": "gen-lang-client-0901363254",
-        "FIRESTORE_DATABASE_ID": "graphfolio-db",
         "TINBOKER_PLATFORM_API_URL": "https://api.tinboker.com",
         "PIPELINE_LLM_MODEL": "openrouter:deepseek/deepseek-v4-pro"
       }

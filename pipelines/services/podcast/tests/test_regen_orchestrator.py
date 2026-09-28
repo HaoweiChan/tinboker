@@ -1,13 +1,15 @@
 """Tests for the agent-backed regeneration orchestrator.
 
 These exercise the host-driven state machine + non-LLM glue WITHOUT touching
-Firestore or any LLM: a working draft is injected directly and driven with canned
+Postgres or any LLM: a working draft is injected directly and driven with canned
 role outputs. They also assert prompt parity — the orchestrator renders the exact
 messages each content_builder node would send — which guards the build_messages /
 postprocess refactor against drift.
 """
 
 import json
+import sys
+from types import ModuleType
 
 import psycopg
 import pytest
@@ -21,6 +23,7 @@ from src.podcast.content_builder.nodes import (
 from src.podcast.content_builder.nodes.markdown_transform import transform_to_markdown
 from src.podcast.content_builder.nodes.marp_converter import convert_marp
 from src.podcast.regen import orchestrator as orch
+from src import secrets_bootstrap
 
 
 @pytest.fixture(autouse=True)
@@ -72,6 +75,107 @@ def _drive_required(episode_id="ep_test"):
     orch.submit(episode_id, "key_insights", {"key_insights": ["台積電財報優於預期", "半導體供應鏈樂觀"]})
     orch.submit(episode_id, "ticker_extractor", TICKER_OUT)
     orch.submit(episode_id, "marp_writer", MARP_OUT)
+
+
+# --- Regeneration reads the live episode catalog ---
+
+def test_find_candidates_reads_postgres(monkeypatch):
+    calls = []
+
+    def query_episodes(**kwargs):
+        calls.append(kwargs)
+        return [{
+            "id": "ep_test", "podcast_name": "股癌", "episode_title": "EP1",
+            "sentences": SENTENCES, "summary_url": "gs://b/summary.md",
+        }]
+
+    monkeypatch.setattr("src.service.postgres_mirror_reader.query_episodes", query_episodes)
+
+    result = orch.find_candidates("股癌", limit=2)
+
+    assert calls == [{"podcast_name": "股癌", "limit": 8}]
+    assert result["count"] == 1
+    assert result["candidates"][0]["episode_id"] == "ep_test"
+    assert result["candidates"][0]["is_placeholder"] is False
+
+
+def test_find_placeholder_candidates_uses_postgres_query(monkeypatch):
+    calls = []
+
+    def query_regen_candidates(**kwargs):
+        calls.append(kwargs)
+        return [{
+            "episode_id": "ep_test", "podcast_name": "股癌", "episode_title": "EP1",
+            "transcript_url": "gs://b/transcript.json",
+        }]
+
+    monkeypatch.setattr(
+        "src.service.postgres_mirror_reader.query_regen_candidates", query_regen_candidates
+    )
+
+    result = orch.find_candidates("股癌", limit=2, only_placeholder=True)
+
+    assert calls == [{"podcast_name": "股癌", "limit": 2}]
+    assert result["count"] == 1
+    assert result["candidates"][0]["is_placeholder"] is True
+
+
+def test_start_reads_episode_from_postgres(monkeypatch):
+    calls = []
+
+    def get_episode_by_id(episode_id):
+        calls.append(episode_id)
+        return {
+            "id": episode_id, "podcast_name": "股癌", "episode_title": "EP1",
+            "sentences": SENTENCES, "transcript": "台積電財報",
+        }
+
+    monkeypatch.setattr("src.service.postgres_mirror_reader.get_episode_by_id", get_episode_by_id)
+
+    result = orch.start("股癌", "ep_test")
+
+    assert calls == ["ep_test"]
+    assert result["sentence_count"] == len(SENTENCES)
+    assert result["next_prompt"]["step"] == "extractor"
+
+
+def test_start_rejects_mismatched_podcast_from_postgres(monkeypatch):
+    monkeypatch.setattr(
+        "src.service.postgres_mirror_reader.get_episode_by_id",
+        lambda episode_id: {"id": episode_id, "podcast_name": "其他節目"},
+    )
+
+    with pytest.raises(orch.RegenError, match="belongs to"):
+        orch.start("股癌", "ep_test")
+
+
+def test_regen_bootstrap_does_not_require_firestore_secrets(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(secrets_bootstrap, "_bootstrap", lambda **kwargs: captured.update(kwargs))
+
+    secrets_bootstrap.bootstrap_regen()
+
+    assert captured["gsm_vars"] == ()
+    assert "EPISODE_DATABASE_URL" in captured["optional_vars"]
+    assert "FIRESTORE_DATABASE_ID" not in captured["optional_vars"]
+
+
+def test_media_service_uses_regen_bootstrap_before_import(monkeypatch):
+    order = []
+    monkeypatch.setattr(
+        secrets_bootstrap, "bootstrap_regen", lambda: order.append("regen_bootstrap")
+    )
+    media_module = ModuleType("src.service.gcs_storage_service")
+
+    class FakeMediaService:
+        def __init__(self):
+            order.append("media_service")
+
+    media_module.GCSStorageService = FakeMediaService
+    monkeypatch.setitem(sys.modules, "src.service.gcs_storage_service", media_module)
+
+    assert isinstance(orch._gcs_storage_service(), FakeMediaService)
+    assert order == ["regen_bootstrap", "media_service"]
 
 
 # --- Prompt parity ----------------------------------------------------------
@@ -288,14 +392,6 @@ class _Resp:
         self.text = text
 
 
-class _FakeFirestore:
-    """Read-only FirestoreService stand-in — since P4 ``commit`` writes nothing to
-    Firestore, so this only has to exist for the draft-loading reads."""
-
-    def __init__(self):
-        self.db = object()
-
-
 class _FakeGCS:
     """Records upload_episode_files calls and returns deterministic gs:// URLs for
     whatever content was provided (mirrors the real service's return shape)."""
@@ -336,7 +432,6 @@ def test_commit_reuploads_gcs_served_content_and_repoints_urls(monkeypatch):
     _drive_summary_and_marp()
 
     fake_gcs = _FakeGCS()
-    monkeypatch.setattr(orch, "_firestore", lambda: _FakeFirestore())
     monkeypatch.setattr(orch, "_gcs_storage_service", lambda: fake_gcs)
     cur = _fake_pg(monkeypatch)
     monkeypatch.setattr("httpx.patch", lambda *a, **k: _Resp(200))
@@ -398,6 +493,7 @@ def _fake_pg(monkeypatch, rowcount: int = 1):
     """Point commit()'s only write target — firestore_mirror.episodes — at a fake
     cursor. Returns it so tests can read back the jsonb-merge parameters."""
     monkeypatch.setenv("EPISODE_DATABASE_URL", "postgresql://x/y")
+    monkeypatch.setattr(orch, "_require_live_media_root", lambda: None)
     cur = _FakeCursor(rowcount=rowcount)
     monkeypatch.setattr(psycopg, "connect", lambda *a, **k: _FakeConn(cur))
     return cur
@@ -417,7 +513,7 @@ def test_commit_raises_without_episode_database_url(monkeypatch):
     must fail loudly instead of reporting success for a write that went nowhere."""
     _new_draft()
     _drive_summary_and_marp()
-    monkeypatch.setattr(orch, "_firestore", lambda: _FakeFirestore())
+    monkeypatch.setattr(orch, "_require_live_media_root", lambda: None)
     monkeypatch.setattr(orch, "_gcs_storage_service", lambda: _FakeGCS())
 
     def _must_not_connect(*a, **k):
@@ -429,12 +525,37 @@ def test_commit_raises_without_episode_database_url(monkeypatch):
         orch.commit("ep_test", notify_platform=False)
 
 
+def test_commit_rejects_local_media_before_postgres_write(monkeypatch, tmp_path):
+    _new_draft()
+    _drive_summary_and_marp()
+    monkeypatch.setenv("MEDIA_STORAGE_ROOT", str(tmp_path))
+    monkeypatch.setattr(
+        orch, "_write_doc_update", lambda *_: pytest.fail("Postgres write must not run")
+    )
+
+    with pytest.raises(orch.RegenError, match="requires the live media tree"):
+        orch.commit("ep_test", notify_platform=False)
+
+
+def test_commit_rejects_nonproduction_media_url_before_postgres_write(monkeypatch, tmp_path):
+    _new_draft()
+    _drive_summary_and_marp()
+    monkeypatch.setattr(orch, "_LIVE_MEDIA_ROOT", tmp_path)
+    monkeypatch.setenv("MEDIA_STORAGE_ROOT", str(tmp_path))
+    monkeypatch.setenv("MEDIA_PUBLIC_BASE", "https://dev.example.com/media")
+    monkeypatch.setattr(
+        orch, "_write_doc_update", lambda *_: pytest.fail("Postgres write must not run")
+    )
+
+    with pytest.raises(orch.RegenError, match="MEDIA_PUBLIC_BASE"):
+        orch.commit("ep_test", notify_platform=False)
+
+
 def test_commit_merges_doc_update_onto_postgres_episodes_doc(monkeypatch):
     """commit's doc_update (summary_content/tags/events_markdown/...) is
     jsonb-merged onto firestore_mirror.episodes.doc — the only write left."""
     _new_draft()
     _drive_summary_and_marp()
-    monkeypatch.setattr(orch, "_firestore", lambda: _FakeFirestore())
     monkeypatch.setattr(orch, "_gcs_storage_service", lambda: _FakeGCS())
     cur = _fake_pg(monkeypatch)
 
@@ -453,7 +574,6 @@ def test_commit_raises_when_episode_row_missing(monkeypatch):
     """A regen for an episode Postgres never saw must fail, not fabricate a doc."""
     _new_draft()
     _drive_summary_and_marp()
-    monkeypatch.setattr(orch, "_firestore", lambda: _FakeFirestore())
     monkeypatch.setattr(orch, "_gcs_storage_service", lambda: _FakeGCS())
     _fake_pg(monkeypatch, rowcount=0)  # UPDATE matched no row
 
@@ -464,7 +584,7 @@ def test_commit_raises_when_episode_row_missing(monkeypatch):
 def test_commit_raises_on_postgres_error(monkeypatch):
     _new_draft()
     _drive_summary_and_marp()
-    monkeypatch.setattr(orch, "_firestore", lambda: _FakeFirestore())
+    monkeypatch.setattr(orch, "_require_live_media_root", lambda: None)
     monkeypatch.setattr(orch, "_gcs_storage_service", lambda: _FakeGCS())
     monkeypatch.setenv("EPISODE_DATABASE_URL", "postgresql://x/y")
 
@@ -482,7 +602,6 @@ def test_commit_patch_carries_content_writer_token(monkeypatch):
     admin-gated endpoint 403s and Redis/CDN stay stale."""
     _new_draft()
     _drive_summary_and_marp()
-    monkeypatch.setattr(orch, "_firestore", lambda: _FakeFirestore())
     monkeypatch.setattr(orch, "_gcs_storage_service", lambda: _FakeGCS())
     _fake_pg(monkeypatch)
     monkeypatch.setenv("TINBOKER_PLATFORM_API_URL", "https://api.example.com")
@@ -511,7 +630,6 @@ def test_commit_without_write_token_skips_patch_and_warns(monkeypatch):
     manual (now auth-aware) commands."""
     _new_draft()
     _drive_summary_and_marp()
-    monkeypatch.setattr(orch, "_firestore", lambda: _FakeFirestore())
     monkeypatch.setattr(orch, "_gcs_storage_service", lambda: _FakeGCS())
     _fake_pg(monkeypatch)
     monkeypatch.setenv("TINBOKER_PLATFORM_API_URL", "https://api.example.com")
@@ -670,7 +788,6 @@ def _capture_export(monkeypatch):
         captured["podcast_launch_time"] = podcast_launch_time
         return {"2330": {"ticker": "2330"}}
 
-    monkeypatch.setattr(orch, "_firestore", lambda: _FakeFirestore())
     _fake_pg(monkeypatch)
     monkeypatch.setattr(
         "src.podcast.exporters.ticker_insights.build_episode_insight_docs", fake_build
