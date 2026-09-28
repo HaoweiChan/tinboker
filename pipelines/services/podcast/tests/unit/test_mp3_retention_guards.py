@@ -327,6 +327,12 @@ def test_postgres_table_lock_orders_tombstone_and_writers():
                     ("late", json.dumps({"mp3_url": url + "#t=30"})),
                 )
 
+        # Reset only the disposable test ledger so the next race crosses its
+        # first empty -> nonempty transition, not merely a second tombstone.
+        with psycopg.connect(dsn) as reset:
+            reset.execute("DROP SCHEMA mp3_retention CASCADE")
+            guards.install(reset, wiki=False, origin=("https", "media.test", "/media"))
+
         second_key = "graphfolio-articles/mp3/hash/second.mp3"
         second_url = "https://media.test/media/" + second_key
         started = threading.Event()
