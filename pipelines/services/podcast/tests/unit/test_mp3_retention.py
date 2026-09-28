@@ -52,9 +52,33 @@ def test_plan_only_includes_expired_referenced_mp3s(tmp_path, monkeypatch):
     # The malformed primary URL must not hide the valid public reference.
     malformed = {**old, "mp3_url": "gs://unsupported-bucket/x.mp3", "mp3_public_url": url}
     assert candidates([("old", old), ("other", malformed)]) == []
+    for alias in (
+        url + "#t=30",
+        url.replace("/mp3/", "/%6dp3/"),
+        url.replace("https://media.test/", "HTTPS://MEDIA.TEST:443/"),
+    ):
+        assert candidates([("old", old), ("recent", _doc("recent", cutoff, alias))]) == []
+        assert candidates([("old", old), ("undated", _doc("undated", None, alias))]) == []
     assert path.read_bytes() == b"audio"  # planning never mutates files
     path.unlink()
     assert prune_mp3.plan([("old", old)], cutoff) == ([], 1)
+
+
+def test_pending_report_counts_only_existing_regular_files(tmp_path, monkeypatch):
+    monkeypatch.setenv("MEDIA_STORAGE_ROOT", str(tmp_path))
+    monkeypatch.setenv("MEDIA_PUBLIC_BASE", "https://media.test/media")
+    digest = hashlib.sha256(b"Test Show").hexdigest()[:12]
+    directory = tmp_path / "graphfolio-articles" / "mp3" / digest
+    directory.mkdir(parents=True)
+    path = directory / "old.mp3"
+    path.write_bytes(b"audio")
+    url = f"https://media.test/media/graphfolio-articles/mp3/{digest}/old.mp3"
+    staged = _doc("old", 1_600_000_000_000, "")
+    staged[prune_mp3.PENDING] = {"mp3_url": url, "mp3_public_url": url,
+                                  "staged_at_ms": 1_700_000_000_000}
+    assert prune_mp3.pending_report([("old", staged)]) == [(path, 5)]
+    path.unlink()
+    assert prune_mp3.pending_report([("old", staged)]) == []
 
 
 def test_mutation_is_disabled_and_media_root_must_be_explicit(monkeypatch, capsys):
@@ -68,6 +92,25 @@ def test_mutation_is_disabled_and_media_root_must_be_explicit(monkeypatch, capsy
     with pytest.raises(SystemExit):
         prune_mp3.main()
     assert "MEDIA_STORAGE_ROOT must explicitly point" in capsys.readouterr().err
+
+
+def test_database_failure_does_not_print_credentials(tmp_path, monkeypatch, capsys):
+    from src import secrets_bootstrap
+
+    monkeypatch.setattr("sys.argv", ["prune_mp3.py"])
+    monkeypatch.setenv("MEDIA_STORAGE_ROOT", str(tmp_path))
+    monkeypatch.setenv("EPISODE_DATABASE_URL", "postgresql://user:fake-secret@localhost/db")
+    monkeypatch.setattr(secrets_bootstrap, "bootstrap", lambda: None)
+    monkeypatch.setattr(prune_mp3, "libpq_url", lambda url: url)
+
+    def fail(_url):
+        raise RuntimeError("connection failed with fake-secret")
+
+    monkeypatch.setattr(prune_mp3.psycopg, "connect", fail)
+    with pytest.raises(SystemExit) as exc:
+        prune_mp3.main()
+    assert exc.value.code == 1
+    assert "fake-secret" not in capsys.readouterr().err
 
 
 def test_ingest_age_guard_skips_old_audio_and_requires_no_mp3(monkeypatch, tmp_path):
