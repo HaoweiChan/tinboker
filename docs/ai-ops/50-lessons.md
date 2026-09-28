@@ -7,6 +7,12 @@
 
 ---
 
+## 2026-09-28 — Retired editor rules and internal URLs stayed in the public README
+- **Situation:** removing Cursor after the team stopped using it and correcting the public repository overview.
+- **Wrong assumption / failure:** `README.md:20,40,226-228` advertised internal API and dev addresses, and `CLAUDE.md:68` still pointed to `.cursor/rules/` after the editor was retired.
+- **Rule:** Keep retired editor adapters out of the root tool map, and list only public entry points in the public README.
+- **Status:** logged
+
 ## 2026-09-28 — MCP registration hid a pipeline tool
 - **Situation:** consolidating the podcast regeneration MCP launcher with other agent tools.
 - **Wrong assumption / failure:** `CLAUDE.md:24` and `.codex/config.toml:1-22` listed only two MCP servers, while `.mcp.json:28-46` already registered podcast regeneration from `pipelines/services/podcast/regen_mcp.py`.

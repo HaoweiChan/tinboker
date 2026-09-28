@@ -6,7 +6,7 @@ do not work from memory of it**. If this file conflicts with a referenced doc, t
 newer — trust it and fix the pointer here (rules for editing this file:
 `docs/ai-ops/40-maintenance-protocol.md`).
 
-Note: the root `AGENTS.md` is a symlink to this file — non-Claude tools (Codex, Cursor,
+Note: the root `AGENTS.md` is a symlink to this file — non-Claude tools (Codex,
 Aider) that look for `AGENTS.md` read the same content Claude sessions do. There is no
 separate AGENTS.md content to keep in sync anymore.
 
@@ -65,7 +65,7 @@ TinBoker (聽播客) — Taiwanese stock & podcast intelligence platform. Monore
 | Product/engineering task tracking (TODO.md, TKB- IDs) | `docs/workflows/task-management.md` |
 
 Tool wrappers (all thin pointers to the docs above): `.claude/agents/`, `.claude/skills/`,
-`.codex/agents/`, `.cursor/rules/`, `.agents/skills/`.
+`.codex/agents/`, `.agents/skills/`.
 
 ## Quick commands
 

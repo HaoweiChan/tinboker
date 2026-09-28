@@ -1,6 +1,6 @@
 # Podcast domain
 
-Tool-neutral reference for any agent (Claude Code, Codex, Cursor, etc.) working on episodes, podcasts, content, comments, recommendations, or news. For code style/conventions, defer to [`backend/AGENTS.md`](../../backend/AGENTS.md) and [`frontend/AGENTS.md`](../../frontend/AGENTS.md).
+Tool-neutral reference for agents working on episodes, podcasts, content, comments, recommendations, or news. For code style/conventions, defer to [`backend/AGENTS.md`](../../backend/AGENTS.md) and [`frontend/AGENTS.md`](../../frontend/AGENTS.md).
 
 ## Scope
 
