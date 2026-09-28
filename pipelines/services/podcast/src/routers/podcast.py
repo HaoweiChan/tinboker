@@ -276,3 +276,52 @@ async def generate_post_hoc_copy(
     if not post:
         raise HTTPException(status_code=502, detail="Post-hoc copy generation produced no content.")
     return PostHocCopyResponse(episode_id=episode_id, ticker=req.ticker.upper(), post=post)
+
+
+class WeeklyEditorialRequest(BaseModel):
+    week: str
+    start: str
+    end: str
+    episodes: list[dict[str, str]]
+
+
+def _generate_weekly_editorial(req: WeeklyEditorialRequest) -> dict:
+    import hashlib
+    import json
+    import os
+    from pathlib import Path
+
+    from src.podcast.weekly_editorial import generate_editorial, render_editorial
+    from src.service.gcs_storage_service import GCSStorageService, media_root
+
+    material = req.model_dump()
+    cache_dir = Path(os.environ.get("WEEKLY_EDITORIAL_CACHE_DIR", str(media_root() / ".weekly-editorial-cache")))
+    result = generate_editorial(material, cache_dir)
+    markdown, css, images = render_editorial(result, material)
+    version = hashlib.sha256(json.dumps([material, result, markdown, css], sort_keys=True).encode()).hexdigest()[:16]
+    storage = GCSStorageService()
+    urls = []
+    for index, image in enumerate(images):
+        ok, url = storage.upload_file_from_base64(
+            image, "social_cards", "weekly", f"{req.week}/{version}/{index}", "png",
+            skip_existing=True, public=True,
+        )
+        if not ok or not url:
+            raise RuntimeError("Weekly image upload failed")
+        urls.append(url)
+    return {**result, "image_urls": urls}
+
+
+@router.post("/weekly-editorial")
+async def generate_weekly_editorial(
+    req: WeeklyEditorialRequest,
+    api_key: str = Security(verify_api_key),
+):
+    """Generate sourced copy and three public Marp cards; never publish a post."""
+    try:
+        return await asyncio.to_thread(_generate_weekly_editorial, req)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Weekly editorial generation failed")
+        raise HTTPException(status_code=502, detail="Weekly editorial generation failed") from exc

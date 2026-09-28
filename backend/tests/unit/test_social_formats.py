@@ -45,66 +45,6 @@ def test_same_subject_in_any_format_is_blocked():
     assert sf.subject_off_cooldown(f, None, recent, NOW) is True
 
 
-# ── caption ──────────────────────────────────────────────────────────────────
-
-def _movers(rows, total=900):
-    return {"week_start": "2026-09-07", "week_end": "2026-09-13", "total": total, "rows": rows}
-
-
-def test_weekly_caption_is_about_the_leader_and_says_what_the_number_is():
-    text = sf.weekly_movers_text(_movers([
-        {"ticker": "3037", "name": "欣興", "n": 31, "prev": 4, "casts": 6, "bull": 9, "bear": 14},
-        {"ticker": "8299", "name": "群聯", "n": 5, "prev": 0, "casts": 2, "bull": 3, "bear": 0},
-    ]))
-    assert text.startswith("3037 欣興 這週6個節目提了31次 上週4 看空的多")
-    assert "8299" not in text                      # a +5 runner-up is not worth a line
-    assert "不是漲幅" in text and "我" not in text and "#" not in text
-    assert len(text) <= THREADS_MAX_CHARS
-
-
-def test_weekly_caption_lists_runners_up_only_when_they_are_loud_too():
-    text = sf.weekly_movers_text(_movers([
-        {"ticker": "3037", "name": "欣興", "n": 31, "prev": 4, "casts": 6, "bull": 9, "bear": 9},
-        {"ticker": "2330", "name": "台積電", "n": 60, "prev": 45, "casts": 8, "bull": 30, "bear": 2},
-        {"ticker": "8299", "name": "群聯", "n": 12, "prev": 1, "casts": 3, "bull": 5, "bear": 0},
-        {"ticker": "3006", "name": "晶豪科", "n": 9, "prev": 0, "casts": 2, "bull": 1, "bear": 0},
-    ]))
-    assert "多空各半" in text
-    assert "也很吵的還有\n2330 台積電 60次 上週45\n8299 群聯 12次 上週1" in text
-    assert "3006" not in text                      # two runners-up at most
-
-
-@pytest.mark.asyncio
-async def test_weekly_select_stays_quiet_on_a_thin_week(monkeypatch):
-    """Quiet means the leader barely moved, or the week is dead — NOT an ordinary week.
-    A normal week is ~260-330 market-wide mentions (W37 327, W38 263); the old 500-total
-    floor called every one of those thin and the recap never posted at all."""
-    import src.routers.og as og
-    from src.services import threads_publisher
-
-    async def allowed():
-        return None
-    monkeypatch.setattr(threads_publisher.podcast_service, "_allowed_podcast_names", allowed)
-    flat = _movers([{"ticker": "3661", "name": "世芯-KY", "n": 6, "prev": 3, "casts": 2, "bull": 4, "bear": 1}], total=300)
-    monkeypatch.setattr(og, "_weekly_movers", lambda *_: flat)
-    assert await sf.select_weekly_movers() is None          # leader rose +3
-
-    dead = _movers([{"ticker": "3661", "name": "世芯-KY", "n": 6, "prev": 0, "casts": 2, "bull": 4, "bear": 1}], total=40)
-    monkeypatch.setattr(og, "_weekly_movers", lambda *_: dead)
-    assert await sf.select_weekly_movers() is None          # the week itself is dead
-
-    # W38 as it really was: 263 mentions, NVDA 20 vs 15 last week. This posts.
-    real = _movers([{"ticker": "NVDA", "name": "輝達", "n": 20, "prev": 15, "casts": 7, "bull": 12, "bear": 2}], total=263)
-    monkeypatch.setattr(og, "_weekly_movers", lambda *_: real)
-    assert await sf.select_weekly_movers() is not None
-
-    loud = _movers([{"ticker": "3037", "name": "欣興", "n": 31, "prev": 4, "casts": 6, "bull": 9, "bear": 14}], total=900)
-    monkeypatch.setattr(og, "_weekly_movers", lambda *_: loud)
-    draft = await sf.select_weekly_movers()
-    assert draft["key"] == "weekly_movers:2026-09-07" and draft["subject"] == "2026-09-07"
-    assert draft["image_url"].endswith("/api/og/weekly.png") and draft["url"].endswith("/weekly/2026-W37")
-
-
 # ── post-hoc ─────────────────────────────────────────────────────────────────
 
 def _cand(**kw):
@@ -232,6 +172,10 @@ class _FakeThreads:
         self.posts.append((text, image_url))
         return f"m{len(self.posts)}"
 
+    async def publish_carousel(self, image_urls, text):
+        self.posts.append((text, image_urls))
+        return f"m{len(self.posts)}"
+
     async def publish_reply(self, text, reply_to_id, **_):
         self.replies.append((text, reply_to_id))
         return f"r{len(self.replies)}"
@@ -329,3 +273,110 @@ async def test_post_hoc_selection_rejects_unaligned_stance_before_story(monkeypa
         pytest.fail("Rejected candidate must not incur a story call")
     monkeypatch.setattr(sf, "_story", unexpected)
     assert await sf.select_post_hoc_up() is None
+
+
+def _episode(id_, day="2026-09-14", show="allowed", **kwargs):
+    from src.models.podcast import Episode
+    return Episode(id=id_, episode_title=id_, podcast_name=show, spotify_release_date=day,
+                   released_at_ms=None, summary_content="完整素材" * 30, modified_summary_content=None,
+                   **{"created_time": 0, **kwargs})
+
+
+@pytest.mark.asyncio
+async def test_weekly_selector_hydrates_only_scoped_published_week_and_publishes_carousel(temp_db, monkeypatch):
+    from datetime import date
+    from unittest.mock import AsyncMock
+    from src.services import threads_publisher
+    service = threads_publisher.podcast_service
+    monkeypatch.setattr(sf, "_last_complete_week", lambda: date(2026, 9, 14))
+    episodes = [_episode("a"), _episode("b", "2026-09-20"), _episode("c"),
+                _episode("before", "2026-09-13"), _episode("after", "2026-09-21"),
+                _episode("private", show="excluded"), _episode("undated", None)]
+    episodes[0].modified_summary_content = "人工修改後完整素材" * 15
+    monkeypatch.setattr(service, "_allowed_podcast_names", AsyncMock(return_value=frozenset({"allowed"})))
+    monkeypatch.setattr(service, "get_recent_episodes", AsyncMock(return_value=episodes))
+    detail = AsyncMock(side_effect=lambda id_, **_: next(e for e in episodes if e.id == id_))
+    monkeypatch.setattr(service, "get_episode_by_id_only", detail)
+    images = [f"https://media.test/weekly/2026-W38/{i}.png" for i in range(3)]
+    generate = AsyncMock(return_value={"week": "2026-W38", "post": "具體且有依據的觀點", "image_urls": images})
+    monkeypatch.setattr(sf, "_weekly_editorial", generate)
+    fake = _FakeThreads()
+    monkeypatch.setattr(sf, "ThreadsService", lambda: fake)
+    monkeypatch.setattr(sf, "FORMATS", [_fmt(select=sf.select_weekly_movers)])
+    result = await sf.publish_due_format(now=NOW)
+    assert result["posted"] is True
+    payload = generate.call_args.args[0]
+    assert payload["week"] == "2026-W38" and payload["end"] == "2026-09-20"
+    assert [e["episode_id"] for e in payload["episodes"]] == ["a", "b", "c"]
+    assert payload["episodes"][0]["summary"] == "人工修改後完整素材" * 15
+    assert detail.await_count == 3
+    assert fake.posts == [("具體且有依據的觀點", images)]
+    assert social_ledger.list_posted("threads")[0]["episode_id"] == "weekly_movers:2026-09-14"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("bundle", [None, {}, {"week": "2026-W37"},
+    {"week": "2026-W38", "post": "有內容", "image_urls": ["https://x/1"]},
+    {"week": "2026-W38", "post": "有內容", "image_urls": ["https://x/1"] * 3}])
+async def test_weekly_failed_or_stale_generation_never_falls_back_to_leaderboard(monkeypatch, bundle):
+    from datetime import date
+    from unittest.mock import AsyncMock
+    monkeypatch.setattr(sf, "_last_complete_week", lambda: date(2026, 9, 14))
+    monkeypatch.setattr(sf, "_weekly_sources", AsyncMock(return_value=[{}, {}, {}]))
+    monkeypatch.setattr(sf, "_weekly_editorial", AsyncMock(return_value=bundle))
+    assert await sf.select_weekly_movers() is None
+
+
+@pytest.mark.asyncio
+async def test_preview_generates_each_draft_once(temp_db, monkeypatch):
+    from unittest.mock import AsyncMock
+    select = AsyncMock(return_value={"key": "weekly_movers:2026-09-14", "subject": "2026-09-14", "text": "觀點"})
+    monkeypatch.setattr(sf, "FORMATS", [_fmt(select=select)])
+    result = await sf.preview(now=NOW)
+    assert result["would_post"]["dry_run"] is True
+    select.assert_awaited_once()
+
+
+def test_weekly_publication_date_uses_taipei_not_ingestion():
+    from datetime import date, timezone
+    ep = _episode("e", "2026-09-13")
+    ep.released_at_ms = datetime(2026, 9, 13, 16, tzinfo=timezone.utc).timestamp() * 1000
+    assert sf._weekly_episode_date(ep) == date(2026, 9, 14)
+    ep = _episode("unknown", None, created_time=ep.released_at_ms)
+    assert sf._weekly_episode_date(ep) is None
+
+
+@pytest.mark.asyncio
+async def test_weekly_bridge_sends_authenticated_contract_and_fails_closed(monkeypatch):
+    import httpx
+    monkeypatch.setattr(sf.settings, "netcup_api_url", "http://pipeline.test")
+    monkeypatch.setattr(sf.settings, "podcast_api_key", "test-key")
+    original_client = httpx.AsyncClient
+    payload = {"week": "2026-W38", "start": "2026-09-14", "end": "2026-09-20", "episodes": []}
+    requests = []
+
+    def handler(request):
+        import json
+        requests.append(request)
+        assert request.url.path == "/api/podcast/weekly-editorial"
+        assert request.headers["X-API-Key"] == "test-key"
+        assert json.loads(request.content) == payload
+        return httpx.Response(200, json={"week": "2026-W38"})
+
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: original_client(
+        **kwargs, transport=httpx.MockTransport(handler)))
+    assert await sf._weekly_editorial(payload) == {"week": "2026-W38"}
+    assert len(requests) == 1
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: original_client(
+        **kwargs, transport=httpx.MockTransport(lambda _: httpx.Response(503))))
+    assert await sf._weekly_editorial(payload) is None
+
+
+@pytest.mark.asyncio
+async def test_weekly_insufficient_material_never_calls_generator(monkeypatch):
+    from unittest.mock import AsyncMock
+    monkeypatch.setattr(sf, "_weekly_sources", AsyncMock(return_value=[{}]))
+    generate = AsyncMock()
+    monkeypatch.setattr(sf, "_weekly_editorial", generate)
+    assert await sf.select_weekly_movers() is None
+    generate.assert_not_awaited()

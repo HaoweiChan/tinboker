@@ -30,6 +30,7 @@ import urllib.parse
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Awaitable, Callable, Optional
+from zoneinfo import ZoneInfo
 
 from src.config import settings
 from src.database.models import ContentMention, TickerPerformanceSnapshot
@@ -80,69 +81,105 @@ def subject_off_cooldown(fmt: Format, subject: Optional[str], recent: list[dict]
 
 # ── formats ─────────────────────────────────────────────────────────────────
 
-# A recap with nothing in it is worse than no recap. The rise floor is the real gate;
-# the total floor only catches a dead week (a holiday, an ingest outage).
-# 500 was a guess made from one week and it was roughly double reality — the whole
-# market runs ~260-330 mentions a week under the prod scope (W37 327, W38 263), so the
-# recap never once fired between 2026-09-17 and 09-22. Tune from the by-format report.
-WEEKLY_MIN_TOTAL = 150      # market-wide mentions in the week
-WEEKLY_MIN_RISE = 5         # the leader's week-over-week gain in mentions
-WEEKLY_BUSY_N = 8           # runners-up only get a line when they are this loud
-
-
-def _tk(r: dict) -> str:
-    return f'{r["ticker"]} {r.get("name") or ""}'.strip()
-
-
-def weekly_movers_text(data: dict) -> str:
-    """Caption for the 本週聲量竄升 card. It is about the leader — which shows, which
-    way they leaned — and mentions the runners-up only when they are loud too. The
-    card carries the full list; the caption's other job is to say what the numbers ARE
-    (mentions, not price) so nobody reads a recap as a buy list."""
-    top, *rest = data["rows"]
-    bull, bear = top.get("bull", 0), top.get("bear", 0)
-    lean = "看多的多" if bull > bear else "看空的多" if bear > bull else "多空各半"
-    lines = [f'{_tk(top)} 這週{top.get("casts", 0)}個節目提了{top["n"]}次 上週{top.get("prev", 0)} {lean}']
-    busy = [r for r in rest if r["n"] >= WEEKLY_BUSY_N][:2]
-    if busy:
-        lines.append("")
-        lines.append("也很吵的還有")
-        lines += [f'{_tk(r)} {r["n"]}次 上週{r.get("prev", 0)}' for r in busy]
-    return "\n".join(lines) + "\n\n提及次數 不是漲幅 全部名單在圖裡"
+TAIPEI = ZoneInfo("Asia/Taipei")
 
 
 def _last_complete_week() -> date:
-    today = date.today()
+    today = datetime.now(TAIPEI).date()
     return today - timedelta(days=today.weekday() + 7)
 
 
-async def select_weekly_movers() -> Optional[dict]:
-    """Last complete week's biggest risers in mention count — the same card and ranking
-    the ``/api/og/weekly.png`` route draws, so the caption and the image agree."""
-    # ponytail: the movers query lives in the og router; lazy import avoids the
-    # router→service→router cycle. Move it to weekly_card when a third caller appears.
-    from src.routers.og import _weekly_movers
+def _weekly_episode_date(episode) -> Optional[date]:
+    """Use publication time, never ingestion time, for weekly source attribution."""
+    released = getattr(episode, "released_at_ms", None)
+    if released:
+        return datetime.fromtimestamp(released / 1000, tz=TAIPEI).date()
+    try:
+        return date.fromisoformat(getattr(episode, "spotify_release_date", None) or "")
+    except ValueError:
+        return None
+
+
+async def _weekly_sources(start: date, end: date) -> list[dict]:
     from src.services.threads_publisher import podcast_service
 
-    week_start = _last_complete_week()
     allowed = await podcast_service._allowed_podcast_names()
-    data = await asyncio.to_thread(_weekly_movers, week_start, allowed)
-    rows = data["rows"]
-    if (not rows or data["total"] < WEEKLY_MIN_TOTAL
-            or rows[0]["n"] - rows[0].get("prev", 0) < WEEKLY_MIN_RISE):
+    episodes = await podcast_service.get_recent_episodes(limit=5000, enrich_content=False)
+    selected = [ep for ep in episodes
+                if (allowed is None or ep.podcast_name in allowed)
+                and (released := _weekly_episode_date(ep)) is not None
+                and start <= released <= end]
+    # Bound hydration and model context; an unexpectedly large week needs review.
+    if len(selected) > 80:
+        logger.warning("weekly editorial has too many sources: %s", len(selected))
+        return []
+    semaphore = asyncio.Semaphore(4)
+
+    async def hydrate(ep) -> Optional[dict]:
+        async with semaphore:
+            detail = await podcast_service.get_episode_by_id_only(
+                ep.id, content_fields={"modified_summary_content", "summary_content"})
+        if detail is None or detail.podcast_name != ep.podcast_name:
+            return None
+        released = _weekly_episode_date(detail)
+        if released is None or not start <= released <= end:
+            return None
+        summary = (getattr(detail, "modified_summary_content", None)
+                   or getattr(detail, "summary_content", None) or "").strip()
+        if not 100 <= len(summary) <= 24000:
+            return None
+        return {"episode_id": detail.id, "podcast_name": detail.podcast_name,
+                "title": detail.episode_title or detail.id, "date": released.isoformat(), "summary": summary}
+
+    sources = [row for row in await asyncio.gather(*(hydrate(ep) for ep in selected)) if row]
+    if sum(len(row["summary"]) for row in sources) > 240000:
+        logger.warning("weekly editorial source context exceeds budget")
+        return []
+    return sources
+
+
+async def _weekly_editorial(payload: dict) -> Optional[dict]:
+    """The pipeline caches validated, rendered bundles; no template fallback."""
+    import httpx
+
+    base = (settings.netcup_api_url or "").rstrip("/")
+    if not base:
         return None
-    # Take the ISO week from the DATA, not from the clock that started the query: key,
-    # subject and url must all name the week the card was actually built from. They
-    # only differed if _weekly_movers returned another week — which is also what made
-    # the test read the real calendar and rot every Monday.
-    iso = date.fromisoformat(data["week_start"]).isocalendar()
-    return {
-        "key": f"weekly_movers:{data['week_start']}",
-        "subject": data["week_start"],
-        "text": weekly_movers_text(data),
-        "image_url": f"{settings.public_api_url.rstrip('/')}/api/og/weekly.png",
-        "url": f"{settings.site_url.rstrip('/')}/weekly/{iso[0]}-W{iso[1]:02d}",
-    }
+    headers = {"X-API-Key": settings.podcast_api_key} if settings.podcast_api_key else {}
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(300.0, connect=5.0)) as client:
+            response = await client.post(f"{base}/api/podcast/weekly-editorial", headers=headers, json=payload)
+            response.raise_for_status()
+            return response.json()
+    except Exception:
+        logger.exception("weekly editorial pipeline failed for %s", payload["week"])
+        return None
+
+
+async def select_weekly_movers() -> Optional[dict]:
+    """Last complete week's sourced editorial carousel, retaining the existing ledger key."""
+    start = _last_complete_week()
+    end = start + timedelta(days=6)
+    iso = start.isocalendar()
+    week = f"{iso.year}-W{iso.week:02d}"
+    episodes = await _weekly_sources(start, end)
+    if len(episodes) < 3:
+        return None
+    result = await _weekly_editorial({"week": week, "start": start.isoformat(),
+                                      "end": end.isoformat(), "episodes": episodes})
+    if not isinstance(result, dict) or result.get("week") != week:
+        return None
+    images = result.get("image_urls")
+    text = result.get("post")
+    if (not isinstance(images, list) or len(images) != 3
+            or any(not isinstance(url, str) or not url.startswith("https://") for url in images)
+            or len(set(images)) != 3
+            or not isinstance(text, str) or not text.strip() or len(text) > 500):
+        logger.warning("weekly editorial returned an incomplete bundle for %s", week)
+        return None
+    return {"key": f"weekly_movers:{start.isoformat()}", "subject": start.isoformat(),
+            "text": text.strip(), "image_urls": images,
+            "url": f"{settings.site_url.rstrip('/')}/weekly/{week}"}
 
 
 # ── post-hoc: what a show said, and what the price did since ──────────────────
@@ -326,6 +363,7 @@ async def preview(now: Optional[datetime] = None) -> dict:
     horizon = max((max(f.cooldown_days, f.subject_cooldown_days) for f in FORMATS), default=1)
     recent = social_ledger.list_posted(PLATFORM, limit=500, days=horizon)
     formats = []
+    would_post = None
     for fmt in FORMATS:
         try:
             draft = await fmt.select()
@@ -333,13 +371,16 @@ async def preview(now: Optional[datetime] = None) -> dict:
             draft, err = None, str(e)[:200]
         else:
             err = None
+        if (would_post is None and draft and format_off_cooldown(fmt, recent, now)
+                and subject_off_cooldown(fmt, draft.get("subject"), recent, now)):
+            would_post = await _publish(fmt, draft, dry_run=True)
         formats.append({
             "format": fmt.id, "draft": draft,
             "format_off_cooldown": format_off_cooldown(fmt, recent, now),
             "subject_off_cooldown": subject_off_cooldown(fmt, (draft or {}).get("subject"), recent, now),
             **({"error": err} if err else {}),
         })
-    return {"would_post": await publish_due_format(dry_run=True, now=now), "formats": formats}
+    return {"would_post": would_post, "formats": formats}
 
 
 async def _publish(fmt: Format, draft: dict, dry_run: bool) -> dict:
@@ -350,7 +391,10 @@ async def _publish(fmt: Format, draft: dict, dry_run: bool) -> dict:
     if not social_ledger.claim(PLATFORM, draft["key"]):
         return {**base, "posted": False, "reason": "already_posted"}
     try:
-        media_id = await service.publish(draft["text"], image_url=draft.get("image_url"))
+        if draft.get("image_urls"):
+            media_id = await service.publish_carousel(draft["image_urls"], draft["text"])
+        else:
+            media_id = await service.publish(draft["text"], image_url=draft.get("image_url"))
         reply_ids: list[str] = []
         if draft.get("url"):
             # Link in the first reply, not the body — same reason as the episode posts.
