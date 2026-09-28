@@ -29,8 +29,12 @@ PY="$REPO_ROOT/.venv/bin/python"
 # whitespace, and treats an empty value/list as unrestricted. Keep the unset
 # default distinct from an explicitly empty value.
 RELEASE_LANGS="${RELEASE_PODCAST_LANGUAGES-zh-TW}"
-RELEASE_LANGS="$(printf '%s' "$RELEASE_LANGS" | tr -d '[:space:]"[]')"
-if [ -z "$RELEASE_LANGS" ] || case ",$RELEASE_LANGS," in *,en,*) true ;; *) false ;; esac; then
+if "$PY" -c '
+import json, sys
+value = sys.argv[1].strip()
+languages = json.loads(value) if value.startswith("[") else [part.strip() for part in value.split(",") if part.strip()]
+raise SystemExit(0 if not languages or "en" in languages else 1)
+' "$RELEASE_LANGS"; then
   "$PY" main.py --config podcasts_en.json --fill-limit "$@"
 else
   echo "  ⤷ skipping podcasts_en.json — RELEASE_PODCAST_LANGUAGES=$RELEASE_LANGS does not serve English"
