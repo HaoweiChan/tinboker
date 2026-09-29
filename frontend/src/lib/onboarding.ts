@@ -36,6 +36,16 @@ export interface ChangelogEntry {
 //   docs/workflows/deploy-flow.md § "In-app changelog (What's new)".
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.12.15',
+    date: '2026-09',
+    items: [
+      '個人專區集中顯示訂閱節目、自選股與收藏，收藏項目可滑動移除並復原。',
+      '「走勢」依你訂閱的節目與自選股整理；每筆過去點名都可展開查看來源集數與觀點。',
+      '題材排行可依升溫程度與追蹤人數瀏覽，題材卡也能直接加入追蹤。',
+      '集數摘要與播放資訊更清楚，減少重複內容，方便手機閱讀。',
+    ],
+  },
+  {
     version: '0.12.0',
     date: '2026-09',
     items: [
