@@ -52,10 +52,16 @@ def test_plan_only_includes_expired_referenced_mp3s(tmp_path, monkeypatch):
     # The malformed primary URL must not hide the valid public reference.
     malformed = {**old, "mp3_url": "gs://unsupported-bucket/x.mp3", "mp3_public_url": url}
     assert candidates([("old", old), ("other", malformed)]) == []
+    legacy = "https://media.test/media/articles/mp3/old.mp3"
+    assert candidates([("old", old), ("recent", _doc("recent", cutoff, legacy))]) == []
     for alias in (
         url + "#t=30",
         url.replace("/mp3/", "/%6dp3/"),
         url.replace("https://media.test/", "HTTPS://MEDIA.TEST:443/"),
+        url.replace("https://media.test/", "https://user@media.test/"),
+        url.replace("https://media.test/", "https://media.test./"),
+        url.replace("https://media.test/", "http://media.test:00080/"),
+        url.replace("https:", ""),
     ):
         assert candidates([("old", old), ("recent", _doc("recent", cutoff, alias))]) == []
         assert candidates([("old", old), ("undated", _doc("undated", None, alias))]) == []
@@ -79,6 +85,44 @@ def test_pending_report_counts_only_existing_regular_files(tmp_path, monkeypatch
     assert prune_mp3.pending_report([("old", staged)]) == [(path, 5)]
     path.unlink()
     assert prune_mp3.pending_report([("old", staged)]) == []
+
+
+def test_cross_store_audit_blocks_shared_and_ambiguous_references(tmp_path, monkeypatch):
+    monkeypatch.setenv("MEDIA_STORAGE_ROOT", str(tmp_path))
+    monkeypatch.setenv("MEDIA_PUBLIC_BASE", "https://media.test/media")
+    digest = hashlib.sha256(b"Test Show").hexdigest()[:12]
+    path = tmp_path / "graphfolio-articles" / "mp3" / digest / "old.mp3"
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"audio")
+    url = f"https://media.test/media/graphfolio-articles/mp3/{digest}/old.mp3"
+    cutoff = 1_700_000_000_000
+    candidate = [(path, ["old"], 5)]
+
+    def audit(content=(), wiki=()):
+        return prune_mp3.audit_cross_store(candidate, list(content), list(wiki), cutoff)
+
+    old_content = ("old", url, cutoff - 1)
+    old_wiki = (1, {"date": "2020-01-01", "source_urls": {"mp3": url}})
+    assert audit([old_content], [old_wiki]) == (candidate, {})
+    assert audit([("old", url, cutoff)], [old_wiki])[1] == {"shared_or_dated_content": 1}
+    assert audit([("other", url, cutoff - 1)], [old_wiki])[1] == {
+        "shared_or_dated_content": 1
+    }
+    assert audit([old_content], [(1, {"date": "2024-01-01", "source_urls": {"mp3": url}})])[1] == {
+        "recent_or_undated_wiki": 1
+    }
+    assert audit([old_content], [(1, {"source_urls": {"mp3": url}})])[0] == []
+    legacy = "https://media.test/media/articles/mp3/old.mp3"
+    assert audit([("old", legacy, cutoff - 1)], [old_wiki])[1] == {
+        "ambiguous_legacy_url": 1
+    }
+    assert audit([("other", "https://[broken/other.mp3", None)], [old_wiki]) == (
+        candidate, {}
+    )
+    assert audit([("other", "https://[broken/old.mp3", None)], [old_wiki])[1] == {
+        "ambiguous_legacy_url": 1
+    }
+    assert path.exists()  # audit is read-only
 
 
 def test_mutation_is_disabled_and_media_root_must_be_explicit(monkeypatch, capsys):

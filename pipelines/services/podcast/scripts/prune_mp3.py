@@ -5,7 +5,8 @@ Run on the media host with EPISODE_DATABASE_URL and MEDIA_STORAGE_ROOT set:
 
 This command is read-only. --apply is intentionally disabled until deletion
 can update every database reference, including wiki frontmatter, with a
-retryable cleanup contract. A report also avoids racing active media writes.
+retryable cleanup contract. --cross-store gives a conservative estimate after
+checking the separate content/wiki database; it never changes data or media.
 
 Only MP3s referenced by Postgres episode documents are eligible. Files with no
 matching document, no valid release date, or a second recent/undated reference
@@ -42,20 +43,20 @@ def _reference_path(url: str) -> Path | None:
     escaped path characters, host case, and an explicit default HTTPS port must
     not hide a second reference to the same file.
     """
-    parsed = urlsplit(url)
-    path = unquote(parsed.path)
+    parsed = urlsplit(url.replace("\\", "/"))
+    path = unquote(parsed.path).replace("\\", "/")
     if parsed.scheme.lower() == "gs" and parsed.netloc:
         canonical = f"gs://{parsed.netloc}{path}"
-    elif parsed.scheme.lower() == "https" and parsed.hostname == "storage.googleapis.com":
-        if parsed.port not in (None, 443):
+    elif (parsed.scheme.lower() in ("http", "https") and
+          unquote(parsed.hostname or "").lower().rstrip(".") == "storage.googleapis.com"):
+        if parsed.port not in (None, 80, 443):
             return None
         canonical = f"https://storage.googleapis.com{path}"
-    elif parsed.scheme.lower() in ("http", "https"):
+    elif parsed.scheme.lower() in ("", "http", "https") and parsed.netloc:
         base = urlsplit(public_base())
-        default_port = 443 if base.scheme.lower() == "https" else 80
-        if parsed.scheme.lower() != base.scheme.lower() or (
-            parsed.hostname, parsed.port or default_port
-        ) != (base.hostname, base.port or default_port):
+        if unquote(parsed.hostname or "").lower().rstrip(".") != (base.hostname or "").rstrip("."):
+            return None
+        if parsed.port not in (None, 80, 443, base.port):
             return None
         if not path.startswith(base.path.rstrip("/") + "/"):
             return None
@@ -101,12 +102,18 @@ def _expired(doc: dict, cutoff_ms: int) -> bool:
 def plan(rows: list[tuple[str, dict]], cutoff_ms: int) -> tuple[list[tuple[Path, list[str], int]], int]:
     """Return existing candidates and the number of missing referenced paths."""
     references: dict[Path, list[tuple[str, dict, bool]]] = defaultdict(list)
+    ambiguous_names: set[str] = set()
     for episode_id, doc in rows:
         for key in ("mp3_url", "mp3_public_url"):
             url = doc.get(key)
+            if not isinstance(url, str) or not url:
+                continue
             try:
-                path = _reference_path(url) if isinstance(url, str) else None
+                path = _reference_path(url)
             except ValueError:
+                path = None
+            if path is None:
+                ambiguous_names.add(_legacy_basename(url))
                 continue
             try:
                 eligible = path is not None and _referenced_path(episode_id, doc) == path
@@ -121,7 +128,9 @@ def plan(rows: list[tuple[str, dict]], cutoff_ms: int) -> tuple[list[tuple[Path,
         if not path.is_file():
             missing += 1
             continue
-        if all(eligible and _expired(doc, cutoff_ms) for _, doc, eligible in refs):
+        if path.name not in ambiguous_names and all(
+            eligible and _expired(doc, cutoff_ms) for _, doc, eligible in refs
+        ):
             candidates.append((path, [episode_id for episode_id, _, _ in refs], path.stat().st_size))
     return sorted(candidates, key=lambda row: str(row[0])), missing
 
@@ -144,15 +153,89 @@ def pending_report(rows: list[tuple[str, dict]]) -> list[tuple[Path, int]]:
     return sorted(((path, path.stat().st_size) for path in paths), key=lambda row: str(row[0]))
 
 
+def _old_wiki_date(frontmatter: dict, cutoff_ms: int) -> bool:
+    """A recent/unknown wiki date is a veto, never proof of episode age."""
+    raw = frontmatter.get("date")
+    try:
+        published = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if published.tzinfo is None:
+        published = published.replace(tzinfo=timezone.utc)
+    published_ms = int(published.timestamp() * 1000)
+    return 946684800000 <= published_ms < cutoff_ms
+
+
+def _legacy_basename(url: str) -> str:
+    """Unmapped legacy URLs with a matching filename block a candidate."""
+    cleaned = url.replace("\\", "/")
+    try:
+        path = urlsplit(cleaned).path
+    except ValueError:
+        path = cleaned.split("?", 1)[0].split("#", 1)[0]
+    return Path(unquote(path)).name
+
+
+def audit_cross_store(
+    candidates: list[tuple[Path, list[str], int]],
+    content_rows: list[tuple[str, str, int | None]],
+    wiki_rows: list[tuple[int, dict]],
+    cutoff_ms: int,
+) -> tuple[list[tuple[Path, list[str], int]], dict[str, int]]:
+    """Conservative potential batch after checking every known live MP3 store."""
+    content_refs: dict[Path, list[tuple[str, int | None]]] = defaultdict(list)
+    wiki_refs: dict[Path, list[dict]] = defaultdict(list)
+    ambiguous_names: set[str] = set()
+    for episode_id, url, released_at_ms in content_rows:
+        try:
+            path = _reference_path(url)
+        except ValueError:
+            path = None
+        if path:
+            content_refs[path].append((episode_id, released_at_ms))
+        else:
+            ambiguous_names.add(_legacy_basename(url))
+    for _, frontmatter in wiki_rows:
+        url = (frontmatter.get("source_urls") or {}).get("mp3")
+        if not isinstance(url, str):
+            continue
+        try:
+            path = _reference_path(url)
+        except ValueError:
+            path = None
+        if path:
+            wiki_refs[path].append(frontmatter)
+        else:
+            ambiguous_names.add(_legacy_basename(url))
+
+    eligible = []
+    blocked = defaultdict(int)
+    for path, ids, size in candidates:
+        if path.name in ambiguous_names:
+            blocked["ambiguous_legacy_url"] += 1
+        elif any(eid not in ids or not _expired({"released_at_ms": age}, cutoff_ms)
+                 for eid, age in content_refs[path]):
+            blocked["shared_or_dated_content"] += 1
+        elif any(not _old_wiki_date(frontmatter, cutoff_ms) for frontmatter in wiki_refs[path]):
+            blocked["recent_or_undated_wiki"] += 1
+        else:
+            eligible.append((path, ids, size))
+    return eligible, dict(blocked)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--days", type=int, default=int(os.getenv("PODCAST_MP3_RETENTION_DAYS", "90")))
     parser.add_argument("--apply", action="store_true", help="reserved; destructive cleanup is not enabled")
+    parser.add_argument("--cross-store", action="store_true", help="audit content and wiki references")
+    parser.add_argument("--batch-size", type=int, default=25, help="maximum preview paths to print")
     args = parser.parse_args()
     if args.days < 1:
         parser.error("--days must be a positive integer")
     if args.apply:
         parser.error("--apply is disabled until shared references and wiki links can be updated safely")
+    if args.batch_size < 1:
+        parser.error("--batch-size must be positive")
     if not os.getenv("MEDIA_STORAGE_ROOT"):
         parser.error("MEDIA_STORAGE_ROOT must explicitly point at the mounted media tree")
 
@@ -162,6 +245,9 @@ def main() -> None:
     url = os.getenv("EPISODE_DATABASE_URL")
     if not url:
         parser.error("EPISODE_DATABASE_URL is required")
+    wiki_url = os.getenv("WIKI_DATABASE_URL")
+    if args.cross_store and not wiki_url:
+        parser.error("WIKI_DATABASE_URL is required for --cross-store")
     if not media_root().is_dir():
         parser.error("media root is not mounted")
 
@@ -181,6 +267,23 @@ def main() -> None:
                   f"{sum(size for _, _, size in candidates):,} bytes; "
                   f"{len(pending)} staged files, {sum(size for _, size in pending):,} staged bytes; "
                   f"{missing} missing referenced paths; {len(rows)} episode rows scanned")
+            if args.cross_store:
+                with psycopg.connect(libpq_url(wiki_url)) as wiki:
+                    content_rows = wiki.execute(
+                        "SELECT id, mp3_url, released_at_ms FROM public.episodes "
+                        "WHERE coalesce(mp3_url, '') <> ''"
+                    ).fetchall()
+                    wiki_rows = wiki.execute(
+                        "SELECT id, frontmatter FROM public.wiki_pages "
+                        "WHERE coalesce(frontmatter #>> '{source_urls,mp3}', '') <> ''"
+                    ).fetchall()
+                candidates, blocked = audit_cross_store(
+                    candidates, content_rows, wiki_rows, cutoff_ms
+                )
+                print(f"CROSS-STORE DRY RUN: {len(candidates)} potential files, "
+                      f"{sum(size for _, _, size in candidates):,} potential bytes; "
+                      f"blocked={blocked}; previewing first {args.batch_size}")
+                candidates = candidates[:args.batch_size]
             for path, ids, size in candidates:
                 print(f"candidate: {path} ({size:,} bytes, {len(ids)} episode rows)")
     except Exception:
