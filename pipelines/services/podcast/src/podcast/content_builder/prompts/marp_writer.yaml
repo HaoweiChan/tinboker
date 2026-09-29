@@ -57,7 +57,7 @@ user: |
   - Create 5-10 slides total (1 cover + 4-9 topic slides)
   - NO EMOJIS anywhere in the output
   - Cover slide: "PODCAST MEMO" header + show name + date + accent line + bluf summary
-  - Topic slides: bold heading + 3-4 block-quoted key points with [MM:SS] timestamps
+  - Topic slides: bold heading (at most 16 characters) + 3-4 block-quoted key points with [MM:SS] timestamps, each one sentence of at most 40 characters
   - Each point captures a specific insight in the podcaster's own voice/style
   - Stock tickers in format: 台積電 2330
 
@@ -66,6 +66,6 @@ user: |
   - slides: Array of slide objects, each with:
     - heading: Slide heading (topic title, editorial style)
     - content: Full slide content in Marp format
-    - bullet_points: Array of 3-5 key point strings (plain text, no emojis)
+    - bullet_points: Array of 3-4 key point strings (plain text, no emojis). Each point is ONE complete sentence of at most 40 characters (excluding the [MM:SS] stamp) — the social card shows at most 4 points of 3 lines each, and anything longer is cut back to whole sentences
     - start_time: Start time in milliseconds (optional)
     - slide_notes: Optional speaker notes
