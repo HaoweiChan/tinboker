@@ -29,6 +29,7 @@ import {
   type SocialEpisodeListItem,
   type SocialEpisodeBundle,
   type SocialComment,
+  type SocialPoll,
   type PublishResult,
   type PublishPlatformResult,
   type ScheduledPost,
@@ -90,6 +91,7 @@ export const AdminSocialPage: React.FC = () => {
   const [loadingBundle, setLoadingBundle] = useState(false);
   const [post, setPost] = useState('');
   const [comments, setComments] = useState<SocialComment[]>([]);
+  const [poll, setPoll] = useState<SocialPoll | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -144,7 +146,8 @@ export const AdminSocialPage: React.FC = () => {
     if (!selectedId || !scheduleTime) return;
     setScheduling(true);
     try {
-      await saveSocialEpisode(selectedId, { post, comments });
+      await saveSocialEpisode(selectedId, { post, comments, poll });
+      setBundle(await getSocialEpisode(selectedId));
       setSaved(true);
 
       const targetTime = new Date(scheduleTime).toISOString();
@@ -164,7 +167,7 @@ export const AdminSocialPage: React.FC = () => {
     } finally {
       setScheduling(false);
     }
-  }, [selectedId, post, comments, scheduleTime, fetchScheduled]);
+  }, [selectedId, post, comments, poll, scheduleTime, fetchScheduled]);
 
   const fetchList = useCallback(async () => {
     setLoadingList(true);
@@ -190,6 +193,7 @@ export const AdminSocialPage: React.FC = () => {
       const b = await getSocialEpisode(id);
       setBundle(b);
       setPost(b.post);
+      setPoll(b.poll || null);
       setComments(b.comments.length ? b.comments : b.theme_cards.map((c) => ({ heading: c.heading, text: '' })));
     } catch (e) {
       console.error('[social] bundle failed', e);
@@ -203,7 +207,8 @@ export const AdminSocialPage: React.FC = () => {
     setSaving(true);
     setSaved(false);
     try {
-      await saveSocialEpisode(selectedId, { post, comments });
+      await saveSocialEpisode(selectedId, { post, comments, poll });
+      setBundle(await getSocialEpisode(selectedId));
       setSaved(true);
       setEpisodes((prev) => prev.map((e) =>
         e.episode_id === selectedId
@@ -215,7 +220,7 @@ export const AdminSocialPage: React.FC = () => {
     } finally {
       setSaving(false);
     }
-  }, [selectedId, post, comments]);
+  }, [selectedId, post, comments, poll]);
 
   const handleGenerate = useCallback(async () => {
     if (!selectedId) return;
@@ -341,7 +346,7 @@ export const AdminSocialPage: React.FC = () => {
     try {
       // Publish posts the SERVER-stored copy, so persist the editor first to avoid
       // posting stale text.
-      await saveSocialEpisode(selectedId, { post, comments });
+      await saveSocialEpisode(selectedId, { post, comments, poll });
       setSaved(true);
       const result = await publishSocialEpisode(selectedId, { dryRun: false, platforms: 'threads,facebook' });
       setPublishResult(result);
@@ -358,7 +363,7 @@ export const AdminSocialPage: React.FC = () => {
     } finally {
       setPublishing(false);
     }
-  }, [selectedId, post, comments, selectEpisode]);
+  }, [selectedId, post, comments, poll, selectEpisode]);
 
   const updateComment = (i: number, text: string) => {
     setComments((prev) => prev.map((c, idx) => (idx === i ? { ...c, text } : c)));
@@ -658,6 +663,13 @@ export const AdminSocialPage: React.FC = () => {
                 </div>
               )}
 
+              {bundle.poll_error && (
+                <div className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-base text-destructive" role="alert">
+                  <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                  <span>投票文案無效，尚未發佈。請重新生成或修正後儲存。({bundle.poll_error})</span>
+                </div>
+              )}
+
               {publishResult && (
                 <div className="space-y-2 rounded-lg border border-border bg-card px-4 py-3">
                   <div className={label}>發佈結果</div>
@@ -756,6 +768,51 @@ export const AdminSocialPage: React.FC = () => {
                 <div className="mt-1 text-right text-xs text-muted-foreground">{post.length} 字</div>
               </div>
 
+              <div className={`${card} space-y-3 p-4`}>
+                <label className="flex items-center gap-2 text-base font-medium text-foreground">
+                  <input
+                    type="checkbox"
+                    checked={!!poll}
+                    onChange={(e) => { setPoll(e.target.checked ? { question: '', options: ['', ''] } : null); setSaved(false); }}
+                    aria-label="啟用 Threads 原生投票"
+                  />
+                  Threads 原生投票
+                </label>
+                {poll && (
+                  <>
+                    <p className="text-xs text-muted-foreground">投票只會發佈到 Threads，並以純文字貼文呈現；題目會接在主貼文後，原始連結仍保留在第一則留言。</p>
+                    <input
+                      value={poll.question}
+                      aria-label="投票問題"
+                      onChange={(e) => { setPoll({ ...poll, question: e.target.value }); setSaved(false); }}
+                      placeholder="投票問題"
+                      className="w-full rounded-lg border border-input bg-card p-3 text-base text-foreground placeholder:text-muted-foreground focus:border-accent-info focus:outline-none"
+                    />
+                    {poll.options.map((option, i) => (
+                      <div key={i} className="flex gap-2">
+                        <input
+                          value={option}
+                          aria-label={`投票選項 ${i + 1}`}
+                          onChange={(e) => { setPoll({ ...poll, options: poll.options.map((value, index) => index === i ? e.target.value : value) }); setSaved(false); }}
+                          placeholder={`選項 ${i + 1}`}
+                          className="min-w-0 flex-1 rounded-lg border border-input bg-card p-3 text-base text-foreground placeholder:text-muted-foreground focus:border-accent-info focus:outline-none"
+                        />
+                        {poll.options.length > 2 && (
+                          <button onClick={() => { setPoll({ ...poll, options: poll.options.filter((_, index) => index !== i) }); setSaved(false); }} className="rounded-lg border border-border px-3 text-muted-foreground hover:text-sentiment-bear" title="刪除選項" aria-label={`刪除投票選項 ${i + 1}`}>
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    {poll.options.length < 4 && (
+                      <button onClick={() => { setPoll({ ...poll, options: [...poll.options, ''] }); setSaved(false); }} className="inline-flex items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-base text-foreground hover:bg-muted">
+                        <Plus className="h-4 w-4" /> 新增選項
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+
               {/* Comments */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
@@ -810,10 +867,18 @@ export const AdminSocialPage: React.FC = () => {
                 {showComposed && (
                   <div className="mt-3 space-y-3">
                     <pre className="whitespace-pre-wrap rounded-lg bg-muted p-3 text-xs text-foreground">{bundle.composed.main_text}</pre>
+                    {bundle.composed.poll && (
+                      <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm text-foreground">
+                        <div className="mb-2 font-semibold">Threads 投票預覽 · {bundle.composed.poll.question}</div>
+                        <ol className="list-inside list-decimal space-y-1">
+                          {bundle.composed.poll.options.map((option, i) => <li key={i}>{option}</li>)}
+                        </ol>
+                      </div>
+                    )}
                     {bundle.composed.replies.map((r, i) => (
                       <pre key={i} className="whitespace-pre-wrap rounded-lg bg-muted p-3 text-xs text-foreground">↳ {r.text}</pre>
                     ))}
-                    <p className="text-xs text-muted-foreground">註：以上為目前存檔內容組出的貼文；編輯後請先儲存再看預覽。</p>
+                    <p className="text-xs text-muted-foreground">註：以上為已儲存文案組出的貼文；編輯後請先儲存再看預覽。</p>
                   </div>
                 )}
               </div>

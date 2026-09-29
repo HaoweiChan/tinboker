@@ -15,8 +15,11 @@ to the theme cards, then to ``key_insights``.
 from __future__ import annotations
 
 import json
+import os
 import re
+from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from shared.platform_client import social_enabled_for
 
@@ -178,13 +181,19 @@ def build_messages(state: PipelineState) -> list[dict[str, str]]:
     source = state.get("source") or "Podcast"
     user_msg = prompts["user"].format(
         source=source,
+        today=datetime.now(ZoneInfo("Asia/Taipei")).date().isoformat(),
         episode_title=state.get("episode_title") or "Episode",
         host_nicknames=_host_nicknames_for(source),
         overview=overview,
         sections=json.dumps(slim, ensure_ascii=False, indent=2),
     )
+    system = prompts["system"]
+    if _native_polls_enabled():
+        system = f"{system.rstrip()}\n\n{prompts['poll_system'].strip()}"
+    else:
+        system = f"{system.rstrip()}\n\n{prompts['poll_disabled_system'].strip()}"
     return [
-        {"role": "system", "content": prompts["system"]},
+        {"role": "system", "content": system},
         {"role": "user", "content": user_msg},
     ]
 
@@ -210,6 +219,32 @@ _TIME_MS_RE = re.compile(r"#\s*time\s*[:：]\s*(\d+)", re.IGNORECASE)
 _MD_LINK_RE = re.compile(r"\[([^\]]+)\]\([^)]*\)")
 MAX_HOOK_CHARS = 30
 _GENERIC_HOOK = re.compile(r"完整重點|更多內容|詳細整理|點我|點這|看這|追蹤|收藏|https?://|我|你")
+_NON_POSITION_OPTION = re.compile(r"沒把握|沒有差別|都可以|看結果")
+_NATIVE_POLLS_ENV = "THREADS_NATIVE_POLLS_ENABLED"
+
+
+def _native_polls_enabled() -> bool:
+    return os.getenv(_NATIVE_POLLS_ENV, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _valid_poll(value: Any) -> dict[str, Any] | None:
+    """Return a normalized poll, or None when its shape/choices are not publishable."""
+    if not isinstance(value, dict):
+        return None
+    question = value.get("question")
+    options = value.get("options")
+    if not isinstance(question, str) or not question.strip():
+        return None
+    if not isinstance(options, list) or not 2 <= len(options) <= 4:
+        return None
+    if any(not isinstance(option, str) or not option.strip() for option in options):
+        return None
+    options = [option.strip() for option in options]
+    if len({option.casefold() for option in options}) != len(options):
+        return None
+    if any(_NON_POSITION_OPTION.search(option) for option in options):
+        return None
+    return {"question": question.strip(), "options": options}
 
 
 def _norm_heading(text: str) -> str:
@@ -246,8 +281,13 @@ def postprocess(result: Any, state: PipelineState) -> dict[str, Any]:
     """Normalise the LLM/agent output into a clean ``social_thread`` dict."""
     post = ""
     comments: list[dict[str, str]] = []
+    poll: dict[str, Any] | None = None
+    invalid_poll = False
     if isinstance(result, dict):
         post = (result.get("post") or "").strip()
+        if result.get("poll") is not None:
+            poll = _valid_poll(result["poll"])
+            invalid_poll = poll is None or not _native_polls_enabled()
         for item in result.get("comments") or []:
             if isinstance(item, dict):
                 text = (item.get("text") or "").strip()
@@ -257,8 +297,17 @@ def postprocess(result: Any, state: PipelineState) -> dict[str, Any]:
             if text:
                 comments.append({"heading": heading, "text": text})
     comments = comments[:MAX_COMMENTS]
+    # Never turn a model's intended poll into a context-only ordinary post. A missing
+    # or explicit null poll remains backward-compatible; a malformed present poll carries
+    # a durable marker so downstream publishers cannot fall back to a legacy post.
+    if invalid_poll:
+        return {"social_thread": {"post": "", "comments": [], "poll_error": "invalid_poll"}}
     _report_first_person(post, comments)
     extra = link_fields(result, state.get("markdown_report") or "") if isinstance(result, dict) and post else {}
+    if poll and post:
+        extra["poll"] = poll
+    elif poll:
+        return {"social_thread": {"post": "", "comments": [], "poll_error": "invalid_poll"}}
     return {"social_thread": {"post": post, "comments": comments, **extra}}
 
 

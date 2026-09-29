@@ -1,0 +1,12 @@
+{
+  "name": "tinboker-brand-video",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "audio": "python3 synth.py assets",
+    "capture": "node capture.mjs shots https://tinboker.com/ https://tinboker.com/topics https://tinboker.com/stock/2330 https://tinboker.com/episode/87a8b530_7b3af90bb6d19850 && sh crop.sh",
+    "dev": "npm run audio && npx --yes hyperframes@0.8.86 preview",
+    "check": "npm run audio && npx --yes hyperframes@0.8.86 check",
+    "render": "npm run audio && npx --yes hyperframes@0.8.86 render -q high -f 30 -o renders/tinboker-brand-15s.mp4"
+  }
+}
