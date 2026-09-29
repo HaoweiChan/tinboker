@@ -1,5 +1,6 @@
 """P5: episode artifacts land on local disk under MEDIA_STORAGE_ROOT, not GCS."""
 
+import fcntl
 import hashlib
 import os
 
@@ -37,6 +38,30 @@ def test_mp3_written_to_expected_path_and_url(svc, tmp_path):
     # gs:// is dead: both fields carry the same public https URL.
     assert urls["mp3_url"] == urls["mp3_public_url"] == f"{BASE}/{BUCKET}/{rel}"
     assert "storage.googleapis.com" not in urls["mp3_url"]
+
+
+def test_mp3_upload_checks_tombstone_under_media_lock(svc, tmp_path, monkeypatch):
+    src = tmp_path / "episode.mp3"
+    src.write_bytes(b"audio")
+    expected_key = f"{BUCKET}/mp3/{_hash(PODCAST)}/{EPISODE}.mp3"
+
+    def retired(key):
+        assert key == expected_key
+        with (tmp_path / ".mp3-retention.lock").open("a+b") as probe:
+            with pytest.raises(BlockingIOError):
+                fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return True
+
+    monkeypatch.setattr(mod, "mp3_is_retired", retired)
+    assert svc.upload_file(src, "mp3", PODCAST, EPISODE) == (False, None)
+    assert not (tmp_path / expected_key).exists()
+
+    # An existing file may also be retired; skip_existing cannot reissue its URL.
+    dest = tmp_path / expected_key
+    dest.parent.mkdir(parents=True)
+    dest.write_bytes(b"audio")
+    assert svc.upload_file(src, "mp3", PODCAST, EPISODE) == (False, None)
+    assert svc.upload_file_from_string("audio", "mp3", PODCAST, EPISODE, "mp3") == (False, None)
 
 
 def test_markdown_artifact_written_to_expected_path_and_url(svc, tmp_path):
