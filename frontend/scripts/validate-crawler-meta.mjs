@@ -122,6 +122,7 @@ globalThis.fetch = async (url) => {
   if (u.includes('/api/sectors')) return json({ sectors: [{ exposure_id: 'sector_mlcc', display_name: '被動元件 MLCC', description: '題材描述。' }] });
   if (/\/api\/stocks\/[^/]+\/basic/.test(u)) return json({ ticker: '2330', name: '台積電' });
   if (/\/api\/podcast\/[^/]+\/episodes/.test(u)) return json([EPISODE]);
+  if (/\/api\/podcast\/[^/]+$/.test(u)) return json({ image_url: 'https://x/show.jpg' });
   if (u.endsWith('/api/podcast')) return json([{ name: 'Gooaye 股癌', episode_count: 18 }]);
   throw new Error(`unstubbed fetch: ${u}`);
 };
@@ -176,6 +177,16 @@ try {
   assert.deepEqual(ldTypes(episode), ['PodcastEpisode', 'BreadcrumbList']);
   assert.equal(episode.ld[0].hasPart.length, 2, 'one Clip per timestamped chapter');
   assert.equal(episode.ld[0].hasPart[0].url, `${ORIGIN}/episode/abc123#t-37`);
+
+  // RSS episodes have SVG summary cards and no Spotify episode artwork.
+  const originalImages = EPISODE.spotify_images;
+  EPISODE.spotify_images = [];
+  EPISODE.summary_image_public_url = 'https://x/summary.svg';
+  assert.equal((await metaFor('/episode/abc123', ORIGIN, API)).image, 'https://x/show.jpg');
+  EPISODE.summary_image_public_url = 'https://x/summary.png';
+  assert.equal((await metaFor('/episode/abc123', ORIGIN, API)).image, 'https://x/summary.png');
+  EPISODE.spotify_images = originalImages;
+  delete EPISODE.summary_image_public_url;
 
   const stock = await metaFor('/stock/2330', ORIGIN, API);
   const stockPage = renderPage(stock);

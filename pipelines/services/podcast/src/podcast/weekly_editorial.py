@@ -68,7 +68,7 @@ def validate_editorial(result: dict, material: dict) -> dict:
     if not isinstance(result, dict) or result.get("skip"):
         raise ValueError("Insufficient editorial material")
     sources = {ep["episode_id"]: ep for ep in material["episodes"]}
-    post = _text(result.get("post"), 250, 350, multiline=True, field="post")
+    post = _text(result.get("post"), 180, 350, multiline=True, field="post")
     cards = result.get("cards")
     if not isinstance(cards, list) or len(cards) != 3:
         raise ValueError("Exactly three cards required")
@@ -175,7 +175,7 @@ def generate_editorial(material: dict, cache_dir: Path, candidate: dict | None =
 
     def repair(draft: dict, issues: str) -> dict:
         repair_messages = [*messages, {"role": "assistant", "content": json.dumps(draft, ensure_ascii=False)},
-                           {"role": "user", "content": f"草稿未通過驗證：{issues}。只准修一次。逐欄計字，所有欄位遵守字數限制；主文250至350字且只含三張卡可支持的內容。quote 必須連續逐字複製來源，不能改空格或省字。重新輸出完整JSON，不可縮短事實的條件、否定或假設性質。"}]
+                           {"role": "user", "content": f"草稿未通過驗證：{issues}。只准修一次。逐欄計字，所有欄位遵守字數限制；主文180至350字且只含三張卡可支持的內容。quote 必須連續逐字複製來源，不能改空格或省字。重新輸出完整JSON，不可縮短事實的條件、否定或假設性質。"}]
         return _cached_call("repair", repair_messages, cache_dir)
 
     def review(draft: dict) -> dict:

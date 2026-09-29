@@ -323,7 +323,12 @@ export async function metaFor(pathname, origin, api) {
     const name = e.podcast_name || '節目';
     const title = e.episode_title || (e.episode_number != null ? `EP ${e.episode_number}` : '集數摘要');
     const url = `${origin}/episode/${encodeURIComponent(id)}`;
-    const image = rasterImage(e.summary_image_public_url, (e.spotify_images && e.spotify_images[0]) || BRAND_IMG);
+    let image = rasterImage(e.summary_image_public_url, rasterImage(e.spotify_images?.[0], null));
+    if (!image && e.podcast_name) {
+      const podcast = await getJson(`${api}/api/podcast/${encodeURIComponent(e.podcast_name)}`, CACHE_1H);
+      image = rasterImage(podcast?.image_url, null);
+    }
+    image ||= BRAND_IMG;
     const chs = chapters(e.summary_content);
     // Ticker names come from the sector baskets; the episode itself only carries symbols.
     const names = {};

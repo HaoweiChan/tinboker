@@ -156,3 +156,12 @@ def test_blanket_approval_cannot_override_field_checks(change):
     assert weekly.review_passed(verdict, material())
     change(verdict)
     assert not weekly.review_passed(verdict, material())
+
+
+def test_concise_post_floor_does_not_require_padding():
+    draft = candidate()
+    draft['post'] = '具體事實' * 45
+    assert len(weekly.validate_editorial(draft, material())['post']) == 180
+    draft['post'] = draft['post'][:-1]
+    with pytest.raises(ValueError, match='post'):
+        weekly.validate_editorial(draft, material())

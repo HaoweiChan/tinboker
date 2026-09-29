@@ -42,7 +42,7 @@ a 300-second timeout and a 5-second connection timeout.
 
 ## Content and review gates
 
-The writer produces a 250–350-character Traditional Chinese caption and exactly
+The writer produces a 180–350-character Traditional Chinese caption and exactly
 three distinct cards. Each card contains two attributed claims with evidence excerpts
 and a substantive synthesis tied to those claims. Structural validation checks text
 budgets, source references, quoted evidence and generic observation phrases.
