@@ -20,6 +20,7 @@ from shared.platform_client import social_enabled_for
 from shared.tickers import canonical_symbol, lookup_ticker, prime_tickers
 
 from ...exporters.ticker_insights import score_to_label
+from ..card_deck import fit_focus_lead
 from ..state import PipelineState
 
 logger = logging.getLogger(__name__)
@@ -208,10 +209,13 @@ def _focus_item(insight: dict[str, Any]) -> Optional[dict[str, Any]]:
         return None
     name, code = _ticker_name_code(ticker)
     top = reasons[0] if reasons else {}
-    lead = (
-        str(top.get("description", "")).strip()
-        or str(top.get("title", "")).strip()
-        or str(insight.get("bluf_thesis", "")).strip()
+    # The card has a fixed 3-line box and must never show "…": take the first text that
+    # fits WHOLE (the reason's description, then the one-sentence thesis, then the short
+    # reason title); only if none does is the description trimmed to whole sentences.
+    lead = fit_focus_lead(
+        str(top.get("description", "")),
+        str(insight.get("bluf_thesis", "")),
+        str(top.get("title", "")),
     )
     if not lead:
         return None

@@ -48,7 +48,8 @@ system: |
   - Sentiment score: 0.0-0.3 (strongly bearish), 0.3-0.45 (bearish), 0.45-0.55 (neutral), 0.55-0.7 (bullish), 0.7-1.0 (strongly bullish)
   - Time horizon should match the investment timeframe discussed (if not explicitly stated, infer from context)
   - For reasons and risks, use the sentence indices and timestamps from the events where they were mentioned
-  - Be precise with the bluf_thesis - it should capture the essence of the insight in one sentence
+  - Be precise with the bluf_thesis - it should capture the essence of the insight in one sentence, at most 60 characters
+  - Keep each reason/risk description to one or two short sentences (about 40–80 characters). The FIRST sentence must stand on its own as the takeaway — social cards show only as many whole sentences as fit a 3-line box, so a leading "雖然…" clause whose point only arrives in a later sentence gets lost
   - Category for reasons: MACRO, MOAT, OPERATIONAL, DEMAND, SUPPLY, VALUATION, TECHNICAL, FUNDAMENTAL
   - Severity for risks: LOW, MEDIUM, HIGH
 
