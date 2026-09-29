@@ -88,6 +88,9 @@ _ROLE_ENV: dict[str, str] = {
     "sector_verifier": "SECTOR_VERIFIER_MODEL",
     "macro_extractor": "MACRO_EXTRACTOR_MODEL",
     "name_normalizer": "NAME_NORMALIZER_MODEL",
+    # Decisions-only role (typesafe/jev-1.13): the clip filter asks one noul and
+    # never needs generated text. Unset means clip_copy picks nothing at all.
+    "clip_filter": "CLIP_FILTER_MODEL",
 }
 
 
