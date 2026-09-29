@@ -366,6 +366,7 @@ def apply_batch(mirror: psycopg.Connection, wiki: psycopg.Connection,
     _ready(wiki, ("public.episodes", "public.wiki_pages"))
     rows, content, pages = _rows(mirror, wiki)
     pending_paths: set[Path] = set()
+    ready_times: dict[Path, list[int | None]] = {}
     for episode_id, doc in rows:
         marker = doc.get(PENDING)
         if not isinstance(marker, dict):
@@ -378,10 +379,18 @@ def apply_batch(mirror: psycopg.Connection, wiki: psycopg.Connection,
             continue
         if path and marker.get("media_key") == _key(path):
             pending_paths.add(path)
+            ready_times.setdefault(path, []).append(marker.get("ready_at_ms"))
     finished = staged = unresolved = 0
+    current_ms = _now_ms(mirror)
     for path in sorted(pending_paths):
         if finished + staged >= batch_size:
             break
+        times = ready_times[path]
+        if all(type(value) is int for value in times) and any(
+            current_ms - value < GRACE_MS for value in times
+        ):
+            unresolved += 1
+            continue
         if finalize(path, cutoff_ms, mirror, wiki):
             finished += 1
         elif stage(path, cutoff_ms, mirror, wiki):

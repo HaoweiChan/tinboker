@@ -50,6 +50,32 @@ def test_apply_rejects_non_autocommit_connections_before_any_query():
         apply.apply_batch(bad, bad, 1_700_000_000_000, 25)
 
 
+def test_apply_skips_grace_pending_without_locking_each_path(tmp_path, monkeypatch):
+    monkeypatch.setenv("MEDIA_STORAGE_ROOT", str(tmp_path))
+    monkeypatch.setenv("MEDIA_PUBLIC_BASE", "https://media.test/media")
+    digest = hashlib.sha256(b"Test Show").hexdigest()[:12]
+    key = f"graphfolio-articles/mp3/{digest}/old.mp3"
+    url = f"https://media.test/media/{key}"
+    marker = {"media_key": key, "mp3_url": url, "mp3_public_url": url,
+              "staged_at_ms": 1_700_000_000_000, "ready_at_ms": 1_700_000_000_000}
+    rows = [("old", {"podcast_name": "Test Show", "released_at_ms": 1_600_000_000_000,
+                     apply.PENDING: marker})]
+
+    class Connection:
+        autocommit = True
+        info = SimpleNamespace(transaction_status=TransactionStatus.IDLE)
+
+        def execute(self, _statement, _params=None):
+            return SimpleNamespace(fetchone=lambda: (1,))
+
+    monkeypatch.setattr(apply, "_ready", lambda *_args: None)
+    monkeypatch.setattr(apply, "_rows", lambda *_args: (rows, [], []))
+    monkeypatch.setattr(apply, "_now_ms", lambda *_args: 1_700_000_001_000)
+    monkeypatch.setattr(apply, "finalize", lambda *_args: pytest.fail("grace path was locked"))
+    monkeypatch.setattr(apply, "stage", lambda *_args: pytest.fail("grace path was restaged"))
+    assert apply.apply_batch(Connection(), Connection(), 1_700_000_001_000, 25) == (0, 0, 1, 1)
+
+
 @pytest.mark.skipif(
     not os.getenv("MP3_RETENTION_TEST_DATABASE_URL"),
     reason="requires an explicitly disposable PostgreSQL database",
