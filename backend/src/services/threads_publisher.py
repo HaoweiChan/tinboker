@@ -81,7 +81,7 @@ def episode_link_comment(episode: Any, fmt: str) -> str:
     thread = _field(episode, "social_thread")
     thread = thread if isinstance(thread, dict) else {}
     episode_id = _field(episode, "id") or _field(episode, "episode_id") or ""
-    return link_comment(episode_id, fmt, hook=thread.get("link_hook"), focus_ms=thread.get("focus_ms"))
+    return link_comment(episode_id, fmt, hook=thread.get("link_hook"))
 
 
 RASTER_IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".webp", ".gif")
