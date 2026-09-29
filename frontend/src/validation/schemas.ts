@@ -13,6 +13,11 @@
 
 import { z, ZodError } from 'zod';
 
+export const SocialPollSchema = z.object({
+  question: z.string().trim().min(1),
+  options: z.array(z.string().trim().min(1)).min(2).max(4),
+});
+
 // ============================================
 // Concept Schemas
 // ============================================

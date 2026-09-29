@@ -117,6 +117,13 @@ async def publish_recent(
         if not social_enabled_for(_field(episode, "podcast_name")):
             skipped.append({"episode_id": episode_id, "reason": "social_disabled_for_show"})
             continue
+        social_thread = _field(episode, "social_thread") or {}
+        if isinstance(social_thread, dict) and social_thread.get("poll_error"):
+            skipped.append({"episode_id": episode_id, "reason": "invalid_poll"})
+            continue
+        if isinstance(social_thread, dict) and social_thread.get("poll") is not None:
+            skipped.append({"episode_id": episode_id, "reason": "poll_not_supported_on_facebook"})
+            continue
         rel_ms = _release_ms(episode)
         if cutoff_ms is not None and (rel_ms is None or rel_ms < cutoff_ms):
             skipped.append({"episode_id": episode_id, "reason": "outside_recency_window"})
@@ -202,6 +209,11 @@ async def publish_episode(episode, dry_run: bool = True) -> dict:
         return {**base, "posted": False, "reason": "already_posted"}
     if not social_enabled_for(_field(episode, "podcast_name")):
         return {**base, "posted": False, "reason": "social_disabled_for_show"}
+    social_thread = _field(episode, "social_thread") or {}
+    if isinstance(social_thread, dict) and social_thread.get("poll_error"):
+        return {**base, "posted": False, "reason": "invalid_poll"}
+    if isinstance(social_thread, dict) and social_thread.get("poll") is not None:
+        return {**base, "posted": False, "reason": "poll_not_supported_on_facebook"}
     has_cards = bool(_field(episode, "social_cards"))
     if not (has_cards or _field(episode, "key_insights") or _field(episode, "episode_title")):
         return {**base, "posted": False, "reason": "no_postable_content"}

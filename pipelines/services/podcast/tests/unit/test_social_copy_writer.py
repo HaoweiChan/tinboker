@@ -61,6 +61,7 @@ def test_build_messages_feeds_section_bodies_not_just_titles():
     assert "華許主張縮表並降息" in user
     assert "台灣央行維持利率不變到年底" in user
     assert "整體市場偏多" in user  # overview / intro
+    assert "今天日期：" in user
 
 
 def test_build_messages_falls_back_to_cards_when_summary_unsectioned():
@@ -113,6 +114,52 @@ def test_postprocess_normalises_shapes():
     assert out["post"] == "整集重點看這 👇"
     assert [c["text"] for c in out["comments"]] == ["縮表又降息", "純文字也能吃"]
     assert out["comments"][0]["heading"] == "華許政策"
+
+
+def test_postprocess_preserves_valid_optional_poll_and_link_metadata():
+    out = scw.postprocess(
+        {
+            "post": "市場正在權衡利率和匯率壓力。",
+            "comments": [{"heading": "央行利率", "text": "政策空間有限。"}],
+            "focus_heading": "載板 PE re-rating 已過",
+            "link_hook": "他點名的三檔封測和理由",
+            "poll": {"question": "政策優先順序？", "options": ["先穩匯率", "先顧成長"]},
+        },
+        _ANCHORED,
+    )["social_thread"]
+    assert out["poll"] == {"question": "政策優先順序？", "options": ["先穩匯率", "先顧成長"]}
+    assert out["link_hook"] == "他點名的三檔封測和理由"
+    assert out["focus_ms"] == 1028093
+    assert out["comments"] == [{"heading": "央行利率", "text": "政策空間有限。"}]
+
+
+@pytest.mark.parametrize("poll", [
+    {},
+    {"question": "", "options": ["甲", "乙"]},
+    {"question": "怎麼選？", "options": ["甲"]},
+    {"question": "怎麼選？", "options": ["甲", "乙", "丙", "丁", "戊"]},
+    {"question": "怎麼選？", "options": ["甲", "甲"]},
+    {"question": "怎麼選？", "options": ["沒把握", "先穩匯率"]},
+    {"question": "怎麼選？", "options": ["甲", 2]},
+])
+def test_present_malformed_poll_fails_closed(poll):
+    assert scw.postprocess({"post": "投票背景", "comments": [], "poll": poll}, _SECTIONED)[
+        "social_thread"
+    ] == {"post": "", "comments": [], "poll_error": "invalid_poll"}
+
+
+def test_poll_without_required_context_fails_closed():
+    thread = scw.postprocess(
+        {"post": "", "comments": [], "poll": {"question": "怎麼選？", "options": ["甲", "乙"]}},
+        _SECTIONED,
+    )["social_thread"]
+    assert thread == {"post": "", "comments": [], "poll_error": "invalid_poll"}
+
+
+def test_missing_or_null_poll_keeps_ordinary_post_compatibility():
+    for extra in ({}, {"poll": None}):
+        thread = scw.postprocess({"post": "普通判斷", "comments": [], **extra}, _SECTIONED)["social_thread"]
+        assert thread == {"post": "普通判斷", "comments": []}
 
 
 def test_postprocess_handles_junk():
@@ -175,6 +222,21 @@ def test_prompt_asks_for_a_selection_not_every_section():
     body = p["system"] + p["user"]
     assert "一段一則" not in body, "the one-per-section instruction is what produced 10 comments"
     assert "最多 4 則" in body
+
+
+def test_prompt_describes_optional_grounded_poll_and_normal_post_fallback():
+    body = load_prompt_system()
+    assert "不需要每集都有" in body
+    assert "真實而可信的取捨" in body
+    assert "不保證會爆紅" in body
+    assert "照一般主貼文" in body
+    assert "不可為了互動製造憤怒或對立" in body
+    assert "一般讀者看得懂的字" in body
+    assert "不要重複 poll.question" in body
+    assert "comments 留空" in body
+    assert "下週大盤漲跌？" in body
+    assert "不代表已獨立查證" in body
+    assert "不要把較早的節目內容說成今天仍在發生" in body
 
 
 # --- no first person ----------------------------------------------------------------

@@ -25,6 +25,11 @@ def test_parse_platforms_normalizes_case_and_whitespace():
     assert social._parse_platforms("Threads, FACEBOOK ") == ["threads", "facebook"]
 
 
+def test_poll_edit_rejects_duplicate_choices():
+    with pytest.raises(ValueError, match="distinct"):
+        social.SocialPoll(question="選哪個？", options=["AI", " ai "])
+
+
 def test_parse_platforms_rejects_unknown():
     with pytest.raises(HTTPException) as e:
         social._parse_platforms("threads,tiktok")
@@ -56,6 +61,47 @@ def test_social_list_item_empty_when_no_copy_or_cards():
     assert item["has_copy"] is False
     assert item["has_images"] is False
     assert item["posted"] == {"threads": False, "facebook": False}
+
+
+@pytest.mark.asyncio
+async def test_social_editor_keeps_bad_stored_poll_editable(monkeypatch):
+    ep = _ep("EP_BAD", social_thread={"post": "保留的原文", "poll": {"question": "問題？", "options": ["只有一個"]}})
+    monkeypatch.setattr(social.podcast_service, "get_episode_admin", lambda _: _return(ep))
+    monkeypatch.setattr(social, "_posted_status", lambda _: {"threads": False, "facebook": False})
+    bundle = await social.get_social_episode("EP_BAD", _=None)
+    assert bundle["post"] == "保留的原文"
+    assert bundle["poll"] is None
+    assert bundle["poll_error"] == "invalid_social_poll"
+    assert bundle["composed"]["main_text"] == ""
+
+
+async def _return(value):
+    return value
+
+
+@pytest.mark.asyncio
+async def test_social_copy_patch_preserves_omitted_poll_and_clears_explicit_null(monkeypatch):
+    existing = _ep("EP_PATCH", social_thread={
+        "post": "舊文", "poll": {"question": "仍投票？", "options": ["是", "否"]},
+        "poll_error": "invalid_poll", "link_hook": "原始來源", "focus_ms": 2000,
+    })
+    saved = []
+
+    async def get_episode(_):
+        return existing
+
+    async def set_thread(_, thread):
+        saved.append(thread)
+        return existing.model_copy(update={"social_thread": thread})
+
+    monkeypatch.setattr(social.podcast_service, "get_episode_admin", get_episode)
+    monkeypatch.setattr(social.podcast_service, "set_social_thread", set_thread)
+    await social.save_social_episode("EP_PATCH", social.SocialThreadPatch(post="新文"), _=None)
+    assert saved[-1]["poll"]["question"] == "仍投票？"
+    assert saved[-1]["poll_error"] == "invalid_poll"
+    assert saved[-1]["focus_ms"] == 2000
+    await social.save_social_episode("EP_PATCH", social.SocialThreadPatch(post="一般貼文", poll=None), _=None)
+    assert "poll" not in saved[-1] and "poll_error" not in saved[-1]
 
 
 def test_posted_status_reads_both_ledgers(monkeypatch):
