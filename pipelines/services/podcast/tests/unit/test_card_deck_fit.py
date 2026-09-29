@@ -173,12 +173,22 @@ def test_cover_drops_whole_insights_instead_of_clamping():
     assert cd._cover_height(tier, "兆華與股惑仔", subtitle, hook) <= cd._THEME_BUDGET_PX
 
 
-def test_overfull_theme_card_drops_trailing_bullets_and_keeps_the_stamp():
-    bullets = ["很長的重點" * 30] * 5 + ["最後一點 [12:34]"]
+def test_overfull_theme_card_is_cut_to_its_word_budget_and_keeps_the_stamp():
+    long_point = "軟體公司面臨AI替代，訂閱模式的護城河正在被重新檢驗。市場開始區分哪些軟體真正不可取代，哪些只是可有可無的工具。" * 2
+    bullets = [long_point] * 5 + ["最後一點 [12:34]"]
     kept = cd._fit_theme_bullets("標題", bullets)
-    assert 1 <= len(kept) < len(bullets)
-    assert cd._theme_tier("標題", kept) is not None
-    assert kept[-1].endswith("[12:34]")
+    assert 1 <= len(kept) <= cd.MAX_THEME_BULLETS
+    assert cd._theme_tier("標題", kept) is not None             # fits without going below fit-xs
+    li_width = 1080 - cd._SIDE_PAD_PX - cd._LI_INDENT_PX
+    for b in kept:
+        assert cd.estimate_lines(b, 32, li_width) <= cd._THEME_BULLET_MAX_LINES
+        assert "…" not in b
+    assert kept[-1].endswith("[12:34]")                          # stamp carried off the dropped point
+    assert all(cd._split_stamp(b)[0].endswith("。") for b in kept)  # whole sentences only
+
+
+def test_theme_type_never_goes_below_the_readability_floor():
+    assert min(t[1] for t in cd._THEME_TIERS) >= 28
 
 
 # --- Cover title provenance ----------------------------------------------------------

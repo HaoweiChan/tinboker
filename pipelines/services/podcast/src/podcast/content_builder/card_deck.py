@@ -94,16 +94,17 @@ def estimate_lines(text: str, font_px: float, width_px: float) -> int:
     return lines
 
 
-def fit_to_lines(text: str, max_lines: int, font_px: float, width_px: float) -> str:
+def fit_to_lines(text: str, max_lines: int, font_px: float, width_px: float, suffix: str = "") -> str:
     """Trim ``text`` so it renders in at most ``max_lines`` — never with an ellipsis.
 
     Keeps as many whole sentences as fit; if even the first sentence is too long, keeps
     whole clauses of it and closes with 「。」. Returns ``text`` unchanged when it fits.
+    ``suffix`` (e.g. a trailing timestamp) is counted toward the lines but not returned.
     """
     text = (text or "").strip()
 
     def fits(s: str) -> bool:
-        return estimate_lines(s, font_px, width_px) <= max_lines
+        return estimate_lines(s + suffix, font_px, width_px) <= max_lines
 
     if not text or fits(text):
         return text
@@ -237,8 +238,6 @@ section.theme.fit-s h2 {{ font-size: 50px; margin-bottom: 32px; }}
 section.theme.fit-s li {{ font-size: 32px; line-height: 1.50; margin-bottom: 22px; }}
 section.theme.fit-xs h2 {{ font-size: 46px; margin-bottom: 30px; }}
 section.theme.fit-xs li {{ font-size: 28px; line-height: 1.45; margin-bottom: 18px; }}
-section.theme.fit-xxs h2 {{ font-size: 42px; margin-bottom: 26px; }}
-section.theme.fit-xxs li {{ font-size: 24px; line-height: 1.40; margin-bottom: 14px; }}
 /* ---- Sentiment badges (5-tier enum → low-noise chip, dark surface) ---- */
 .badge {{ display: inline-block; padding: 7px 22px; border-radius: 8px;
   font-size: 28px; font-weight: 800; letter-spacing: 1.5px; white-space: nowrap; }}
@@ -419,8 +418,7 @@ def _cover_slide(card: dict, show_name: str, date_str: str) -> str:
 _THEME_TIERS = [
     ("",        37, 1.52, 26, 52, 36),
     ("fit-s",   32, 1.50, 22, 50, 32),
-    ("fit-xs",  28, 1.45, 18, 46, 30),
-    ("fit-xxs", 24, 1.40, 14, 42, 26),
+    ("fit-xs",  28, 1.45, 18, 46, 30),   # readability floor — cut words, not type
 ]
 _THEME_BUDGET_PX = 1080 - 84 - 132   # canvas minus top padding minus watermark band
 _SIDE_PAD_PX = 88 * 2                 # left+right section padding
@@ -458,25 +456,51 @@ def _theme_fit_suffix(heading: str, bullets: list[str]) -> str:
     return _THEME_TIERS[-1][0] if tier is None else tier
 
 
-def _fit_theme_bullets(heading: str, bullets: list[str]) -> list[str]:
-    """Drop trailing bullets (then trim a lone one) until the card fits the smallest tier.
+# Word budget for a theme card. Shrinking type to fit everything produced a wall of
+# 24px text; instead a card carries at most this many points, each at most
+# _THEME_BULLET_MAX_LINES lines at the fit-s size, and never goes below fit-xs.
+MAX_THEME_BULLETS = 4
+_THEME_BULLET_MAX_LINES = 3
 
-    A dropped bullet's trailing timestamp moves to the new last bullet, so the card
-    still links back to its place in the episode.
+
+def _split_stamp(bullet: str) -> tuple[str, str]:
+    m = _TS_RE.search(bullet)
+    return (bullet[: m.start()].rstrip(), m.group(1)) if m else (bullet, "")
+
+
+def _join_stamp(body: str, stamp: str) -> str:
+    return f"{body} {stamp}" if stamp else body
+
+
+def _fit_theme_bullets(heading: str, bullets: list[str]) -> list[str]:
+    """Trim a theme card to its word budget: ≤4 points, each ≤3 whole-sentence lines,
+    then drop trailing points until the card fits at a readable size.
+
+    A dropped point's timestamp moves to the new last point, so the card still links
+    back to its place in the episode.
     """
-    kept = list(bullets)
+    li_width = 1080 - _SIDE_PAD_PX - _LI_INDENT_PX
+    _, lf, *_ = _THEME_TIERS[1]  # fit-s font: the per-point budget is measured there
+
+    def carry(kept: list[str], dropped: list[str]) -> None:
+        stamps = [s for s in (_split_stamp(b)[1] for b in dropped) if s]
+        body, own = _split_stamp(kept[-1])
+        if stamps and not own:
+            kept[-1] = _join_stamp(body, stamps[-1])
+
+    kept = []
+    for b in bullets[:MAX_THEME_BULLETS]:
+        body, stamp = _split_stamp(b)
+        suffix = f" {stamp}" if stamp else ""
+        body = fit_to_lines(body, _THEME_BULLET_MAX_LINES, lf, li_width, suffix=suffix)
+        if body:
+            kept.append(_join_stamp(body, stamp))
+    if not kept:
+        return []
+    carry(kept, bullets[MAX_THEME_BULLETS:])
     while len(kept) > 1 and _theme_tier(heading, kept) is None:
         dropped = kept.pop()
-        m = _TS_RE.search(dropped)
-        if m and not _TS_RE.search(kept[-1]):
-            kept[-1] = f"{kept[-1]} {m.group(1)}"
-    if kept and _theme_tier(heading, kept) is None:
-        _, lf, lh, _, hf, hm = _THEME_TIERS[-1]
-        lines = max(1, int((_THEME_BUDGET_PX - _theme_h2_height(heading, hf, hm)) // (lf * lh)))
-        m = _TS_RE.search(kept[0])
-        body = kept[0][: m.start()] if m else kept[0]
-        stamp = f" {m.group(1)}" if m else ""
-        kept[0] = fit_to_lines(body, lines, lf, 1080 - _SIDE_PAD_PX - _LI_INDENT_PX - (4 * lf if stamp else 0)) + stamp
+        carry(kept, [dropped])
     return kept
 
 
