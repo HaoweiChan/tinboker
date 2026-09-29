@@ -40,6 +40,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 from src.secrets_bootstrap import bootstrap
+from src.service.mp3_retention_lock import mp3_is_retired, mp3_media_lock, retired_marker_path
 
 # Load secrets from GSM (idempotent — safe if already bootstrapped at entry point).
 bootstrap()
@@ -238,6 +239,19 @@ class GCSStorageService:
                 extension = local_file_path.suffix.lstrip('.')
             blob_path = self._get_file_path(file_type, podcast_name, episode_id, extension)
             dest = self.local_path(blob_path)
+            if file_type == "mp3" and extension.lower() == "mp3":
+                with mp3_media_lock(self.media_root):
+                    if blob_path != Path(blob_path).as_posix() or dest != (
+                        self.media_root.resolve() / self.bucket_name / blob_path
+                    ):
+                        return (False, None)
+                    key = dest.relative_to(self.media_root.resolve()).as_posix()
+                    if retired_marker_path(self.media_root, key).exists() or mp3_is_retired(key):
+                        return (False, None)
+                    if skip_existing and dest.is_file() and dest.stat().st_size == local_file_path.stat().st_size:
+                        return (True, self.generate_public_url(blob_path))
+                    _atomic_copy(local_file_path, dest)
+                    return (True, self.generate_public_url(blob_path))
             if skip_existing and dest.is_file() and dest.stat().st_size == local_file_path.stat().st_size:
                 return (True, self.generate_public_url(blob_path))
             _atomic_copy(local_file_path, dest)
@@ -291,6 +305,18 @@ class GCSStorageService:
         try:
             blob_path = self._get_file_path(file_type, podcast_name, episode_id, extension)
             dest = self.local_path(blob_path)
+            if file_type == "mp3" and extension.lower() == "mp3":
+                with mp3_media_lock(self.media_root):
+                    if blob_path != Path(blob_path).as_posix() or dest != (
+                        self.media_root.resolve() / self.bucket_name / blob_path
+                    ):
+                        return (False, None)
+                    key = dest.relative_to(self.media_root.resolve()).as_posix()
+                    if retired_marker_path(self.media_root, key).exists() or mp3_is_retired(key):
+                        return (False, None)
+                    if not (skip_existing and dest.is_file()):
+                        _atomic_write(dest, data)
+                    return (True, self.generate_public_url(blob_path))
             if not (skip_existing and dest.is_file()):
                 _atomic_write(dest, data)
             return (True, self.generate_public_url(blob_path))

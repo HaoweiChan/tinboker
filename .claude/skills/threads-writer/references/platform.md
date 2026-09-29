@@ -1,90 +1,50 @@
-# 平台機制、發文時段、選題與漏斗
+# Threads evidence and editorial hypotheses
 
-這一份是平台事實，不是寫作規則。排程、選題、或處理帳號問題時才需要讀。
+Use this reference for topic selection and interpreting results, not as a recipe
+for guaranteed reach. Updated 2026-09-29.
 
-## 為什麼是「陌生人觸及」
+## What the evidence supports
 
-Threads 不靠粉絲訂閱推播（不像 IG/FB 的強關係鏈），初期會把貼文媒合給**對主題感
-興趣但完全不認識**的陌生用戶。零粉絲帳號只要早期互動夠強，也能被二級推播給更大
-規模的陌生受眾。台灣是 Threads 全球最重度的市場之一，陌生人觸及的紅利在中文財經
-利基裡格外明顯。
+- [Meta creator guidance](https://about.fb.com/news/2024/10/find-your-community-with-new-threads-educational-insights/)
+  associates conversation-driving posts with recommendation and recommends original
+  Threads content. Platform-wide observations do not prove that an account's own
+  reply chain causes higher reach.
+- [Berger and Milkman, 2012](https://doi.org/10.1509/jmr.10.0353) studies sharing and
+  useful, surprising, emotionally activating content. This is not a measurement of
+  the Threads ranking algorithm.
+- [Chen and Berger, 2013](https://doi.org/10.1086/671465) finds that controversy can
+  encourage discussion, but discomfort can counteract interest. More hostility is
+  not necessarily more conversation.
+- [AAPOR best practices](https://aapor.org/standards-and-ethics/best-practices/)
+  explains sampling and disclosure concerns. A voluntary social poll describes its
+  participants; it does not estimate the views of all Taiwanese investors, and a
+  vote share is not an event probability.
 
-## 互動權重：留言/引用 >> 讚/轉發
+No verified evidence here establishes exact engagement weights, a 30-minute
+likes/replies threshold, a universal best Taiwan posting hour, an industry engagement
+ceiling, or an 80/20 topic-versus-writing split. Do not repeat those old heuristics as
+platform facts. No timing change is required by the topical-poll workflow.
 
-按讚認知成本極低，留言代表用戶真的產生了社交對話，因此演算法給留言與引用的權重
-遠高於讚與轉發。
+## Editorial application
 
-**分水嶺**：新貼文發布後 **30分鐘內**若累積約 **20讚 + 4則以上深度留言**，會
-被判定為熱門潛力股，觸發向更大陌生受眾的二級推播。
+Prioritize timely personal stakes, substantive disagreement, visible costs, simple
+language, and room for readers to add experience. Use supported surprises rather
+than sensational claims. A poll should expose the choice; it should not rig the
+wording to make one answer socially unacceptable.
 
-這件事影響的是選題和留言串設計，不是主文寫法。**不要**為了衝留言在文末硬加二選
-一提問，那個設計感讀者看得出來，反而扣分。留言區本來就有整串重點在等人接話。
+The first-reply source link is TinBoker's convention. Do not claim a universal reach
+penalty for main-post links without evidence. Do not invent a personal anecdote,
+trade, or loss for an openly automated account.
 
-## 台灣黃金發文時段（週中高、週末低）
+## Evaluate against the account's own results
 
-| 排序 | 時段 | 權重 | 說明 |
-|---|---|---|---|
-| 1 | 週四20:00–21:00 | 100 | 絕對高峰，下班/晚餐後個人休閒時光 |
-| 2 | 週四21:00–22:00 | 98 | 睡前高頻滑動期，留言意願最高 |
-| 3 | 週二20:00–22:00 | 85 | 週間第二高峰 |
-| 4 | 週三20:00–22:00 | 80 | 週中穩定基線 |
-| 5 | 週五20:00–22:00 | 70 | 週末前夕，部分流量轉向實體娛樂 |
-| 最低 | 週日全天 | 30 | 用戶回歸實體生活，互動意願全週最低 |
+Compare posts at comparable ages and distinguish actual format from import origin.
+Look at typical reach as well as outliers, shares, and substantive non-owned replies.
+Separate copy/topic hypotheses from observational correlations. Small samples,
+changing audiences, time, and different events limit causal attribution.
 
-高投入的原創長文優先排在週二～週四晚間20:00–22:00。週日避免發布需要認真閱讀或
-回覆的內容。
-
-## 各產業互動天花板（供財經內容定錨期望值）
-
-| 產業 | 互動數中位數 | 頂標互動數 | 天花板特徵 |
-|---|---|---|---|
-| 汽車 | 個位數～十位數 | 225 | 生活反差、夢想實現 |
-| 美妝 | 個位數～十位數 | 212 | 強視覺、開箱/避雷 |
-| 金融財經 | 個位數～十位數 | 179 | 門檻高，依賴真實心得與反詐騙共鳴 |
-
-財經頂標略低於娛樂／美妝是正常的。**選題決定80%的擴散機率，寫作只佔20%**，
-先確認切角對，再處理文字。
-
-## 選題三維度
-
-- **相關性**——落在自己的守備範圍內。
-- **時效性**——當下正在被討論的時事或數據。
-- **共鳴度**——多數人有切身經驗或情緒。
-
-適度負面情緒（合理抱怨、揭露不公）擴散最快。
-
-## 財經利基的四大高互動切角
-
-1. **降低門檻的日常經驗**——例如「每天少喝一杯咖啡，30年後真的能買房嗎」。
-2. **知識解答型**——產業避雷、節稅整理、反詐騙案例。長尾強，會持續被搜尋收藏。
-3. **日常反差驚奇**——強烈反差情境，引導呼朋引伴圍觀。
-4. **情緒與立場對撞**——高股息 ETF 是不是騙局、買房 vs 租房這種兩派對抗。
-
-用「種草分享」取代專業說教。與其貼精美分析圖表，不如講一次慘賠復盤，搭配隨手截
-圖，降低業配感。
-
-## 非直球對決的轉化漏斗
-
-Threads 用戶對硬廣告極度反感，主文放連結流量會很差。
-
-- 平日：低壓力隨手記錄想法，維持帳號溫度。
-- 每篇：連結固定放在第一則留言（`threads_publisher.link_comment()` 已經是這個
-  行為），不進主文。
-- 平時：轉化放在自介欄（Profile 定位、Proof 佐證、Promise 承諾、CTA）。
-
-## 趨勢監測
-
-- **平台原生**：搜尋頁的「全台前五大熱門話題」AI 摘要；帶「超夯」標籤的貼文＝
-  演算法當下正在推的風口。
-- **第三方**：QSearch Trend+（每4小時更新，可回溯2年聲量）、Threadslytics
-  （排程、破圈率分析）。先用這類工具驗證需求，不要急著自建。
-- **自建採集**：Meta 官方 API 需 App Review + OAuth；第三方爬蟲免登入但違反
-  Threads 條款、有封號風險。真要做就限自己帳號或公開內容、每日1次，不做大規模
-  採集。
-
-## 防限流自救三步驟
-
-1. 檢查近期新增粉絲，大量無頭像或純轉發的垃圾帳號手動封鎖。
-2. 發一則有人情溫度的生活貼文，通常能快速重建演算法權重。
-3. 持續低迷的話，去當天熱門財經帳號底下留有深度、跟自己領域相關的留言，藉對方
-   流量池把陌生用戶導回主頁。
+For polls, retain the question, options, source, publication time, and whatever
+results the provider actually returns. Missing vote totals are unknown, not zero;
+do not reconstruct exact counts from rounded percentages or claim unique-user
+conversion from votes divided by views. No fixed recurring poll is required:
+current discussion value takes priority over a comparable time series.

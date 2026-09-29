@@ -78,3 +78,9 @@ def test_from_firestore_dict_round_trips():
     restored = PodcastEpisode.from_firestore_dict({"social_thread": _THREAD})
     assert restored.social_thread == _THREAD
     assert PodcastEpisode.from_firestore_dict({}).social_thread is None
+
+
+def test_poll_error_marker_survives_episode_serialization():
+    invalid = {"post": "", "comments": [], "poll_error": "invalid_poll"}
+    assert _episode(social_thread=invalid).to_firestore_dict()["social_thread"] == invalid
+    assert PodcastEpisode.from_firestore_dict({"social_thread": invalid}).social_thread == invalid

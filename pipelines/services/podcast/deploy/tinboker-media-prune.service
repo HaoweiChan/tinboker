@@ -1,0 +1,12 @@
+[Unit]
+Description=Preview expired podcast MP3 media
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/tinboker/pipelines/services/podcast
+EnvironmentFile=-/root/tinboker/pipelines/.env
+Environment=GOOGLE_APPLICATION_CREDENTIALS=/root/tinboker/pipelines/services/podcast/gcp-service-account.json
+Environment=MEDIA_STORAGE_ROOT=/srv/tinboker-media
+ExecStart=/root/tinboker/pipelines/.venv/bin/python -m scripts.prune_mp3

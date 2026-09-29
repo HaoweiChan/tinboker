@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import html
 import re
+import unicodedata
 from typing import Any, Optional
 
 from .brand_logo import LOGO_DATA_URI
@@ -39,6 +40,118 @@ THEME_NAME = "tinboker-cards"
 _FONT = "'Noto Sans TC', 'Noto Sans CJK TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif"
 _TS_RE = re.compile(r"\s*(\[\d{1,2}:\d{2}(?::\d{2})?\])\s*$")
 _BRAND = "TinBoker ｜ 聽播客"
+
+# ---- Text measurement --------------------------------------------------------------
+# No card text is ever clamped with an ellipsis: an "…" on a published image reads as a
+# broken render. Instead every variable-length string is measured against the line
+# budget of its box and trimmed to WHOLE sentences before it reaches the slide.
+
+# Glyph advance in em for Noto Sans TC. CJK / full-width is exactly 1em; Latin is
+# narrower but uppercase-heavy tickers (ARPU, DAU/MAU) run ~0.75em, so those are
+# over-estimated on purpose — a line that wraps early costs nothing, one that
+# overflows gets clipped.
+_EM_UPPER = 0.75
+_EM_OTHER_ASCII = 0.6
+_EM_SPACE = 0.3
+# Latin words wrap as a unit and CJK punctuation may not start a line (the browser
+# pulls the previous glyph down with it) — reserve this much slack per line.
+_LINE_SLACK_EM = 0.5
+# A Latin word (with trailing spaces) is one unbreakable token; anything else is one glyph.
+_TOKEN_RE = re.compile(r"[A-Za-z0-9][\x21-\x7e]*\s*|\s+|.", re.S)
+_SENTENCE_RE = re.compile(r"[^。！？；!?;]+[。！？；!?;]*")
+_CLAUSE_RE = re.compile(r"[^，、：,:]+[，、：,:]*")
+
+
+def _em_width(text: str) -> float:
+    w = 0.0
+    for ch in text:
+        if ch.isspace():
+            w += _EM_SPACE
+        elif ord(ch) < 0x80:
+            w += _EM_UPPER if ch.isupper() else _EM_OTHER_ASCII
+        elif unicodedata.east_asian_width(ch) in ("W", "F", "A"):
+            w += 1.0
+        else:
+            w += _EM_OTHER_ASCII
+    return w
+
+
+def estimate_lines(text: str, font_px: float, width_px: float) -> int:
+    """Greedy line-wrap estimate of ``text`` at ``font_px`` in a ``width_px`` box."""
+    cap = max(1.0, width_px / font_px - _LINE_SLACK_EM)
+    lines, cur = 1, 0.0
+    for tok in _TOKEN_RE.findall(text.strip()):
+        w = _em_width(tok)
+        if cur > 0 and cur + w > cap:
+            if tok.isspace():
+                continue
+            lines += 1
+            cur = 0.0
+        cur += w
+        while cur > cap:          # a single token wider than the line (a long URL)
+            lines += 1
+            cur -= cap
+    return lines
+
+
+def fit_to_lines(text: str, max_lines: int, font_px: float, width_px: float, suffix: str = "") -> str:
+    """Trim ``text`` so it renders in at most ``max_lines`` — never with an ellipsis.
+
+    Keeps as many whole sentences as fit; if even the first sentence is too long, keeps
+    whole clauses of it and closes with 「。」. Returns ``text`` unchanged when it fits.
+    ``suffix`` (e.g. a trailing timestamp) is counted toward the lines but not returned.
+    """
+    text = (text or "").strip()
+
+    def fits(s: str) -> bool:
+        return estimate_lines(s + suffix, font_px, width_px) <= max_lines
+
+    if not text or fits(text):
+        return text
+
+    def longest_prefix(parts: list[str]) -> str:
+        out = ""
+        for part in parts:
+            candidate = (out + part).strip()
+            if not fits(_close_sentence(candidate)):
+                break
+            out = candidate
+        return _close_sentence(out) if out else ""
+
+    sentences = _SENTENCE_RE.findall(text) or [text]
+    first_sentence = sentences[0]
+    out = (longest_prefix(sentences)
+           or longest_prefix(_CLAUSE_RE.findall(first_sentence) or [first_sentence])
+           # A single clause longer than the whole box: cut at the last glyph that fits.
+           or longest_prefix(list(first_sentence)))
+    return out
+
+
+def _close_sentence(s: str) -> str:
+    s = s.rstrip().rstrip("，、：；,:;")
+    return s if not s or s[-1] in "。！？!?" else s + "。"
+
+
+def pick_fitting(candidates: list[str], max_lines: int, font_px: float, width_px: float) -> str:
+    """First candidate that fits whole; otherwise the first one trimmed to fit."""
+    cands = [c.strip() for c in candidates if c and c.strip()]
+    for c in cands:
+        if estimate_lines(c, font_px, width_px) <= max_lines:
+            return c
+    return fit_to_lines(cands[0], max_lines, font_px, width_px) if cands else ""
+
+
+# 產業焦點 one-liner box — MUST match `section.focus-list .flead` CSS below. Three
+# items × (20+20 padding + 55 head + 14 gap + 3×45 lead) + heading ≈ 840px, inside
+# the 864px content box, so three full leads always clear the watermark.
+FOCUS_LEAD_FONT_PX = 30
+FOCUS_LEAD_MAX_LINES = 3
+FOCUS_LEAD_WIDTH_PX = 1080 - 88 * 2
+
+
+def fit_focus_lead(*candidates: str) -> str:
+    """The 產業焦點 one-liner: the first candidate that fits its 3-line box whole."""
+    return pick_fitting(list(candidates), FOCUS_LEAD_MAX_LINES, FOCUS_LEAD_FONT_PX, FOCUS_LEAD_WIDTH_PX)
 
 
 def card_theme_css(accent: str = ACCENT_BLUE[0], accent_soft: str = ACCENT_BLUE[1]) -> str:
@@ -83,17 +196,16 @@ section.cover .label {{
 section.cover h1 {{ font-size: 132px; font-weight: 900; line-height: 1.04; margin: 0 0 18px; color: {TEXT}; }}
 section.cover .subtitle {{
   font-size: 46px; font-weight: 600; line-height: 1.34; color: {SOFT}; margin: 6px 0 30px;
-  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
 }}
 section.cover .date {{ font-size: 34px; color: {MUTED}; margin-bottom: 36px; }}
 section.cover .rule {{ width: 132px; height: 10px; background: {accent}; border-radius: 6px; margin-bottom: 40px; }}
 section.cover .hook {{
   font-size: 40px; line-height: 1.6; font-weight: 500; color: {SOFT};
-  display: -webkit-box; -webkit-line-clamp: 7; -webkit-box-orient: vertical; overflow: hidden;
 }}
-/* Cover fit tiers (chosen per card by char volume in _cover_slide) — the episode title
-   and the hook are both unbounded in length, so the type scales to fit the canvas
-   instead of the canvas silently eating the text. Keep in sync with _COVER_TIERS. */
+/* Cover fit tiers (chosen per card by measured text in _cover_slide) — the episode title
+   and the hook are both unbounded in length, so the type scales to fit the canvas and
+   the hook drops whole insights rather than ever ending in an ellipsis. Keep in sync
+   with _COVER_TIERS. */
 section.cover.fit-s h1 {{ font-size: 112px; }}
 section.cover.fit-s .subtitle {{ font-size: 42px; }}
 section.cover.fit-s .hook {{ font-size: 35px; }}
@@ -126,8 +238,6 @@ section.theme.fit-s h2 {{ font-size: 50px; margin-bottom: 32px; }}
 section.theme.fit-s li {{ font-size: 32px; line-height: 1.50; margin-bottom: 22px; }}
 section.theme.fit-xs h2 {{ font-size: 46px; margin-bottom: 30px; }}
 section.theme.fit-xs li {{ font-size: 28px; line-height: 1.45; margin-bottom: 18px; }}
-section.theme.fit-xxs h2 {{ font-size: 42px; margin-bottom: 26px; }}
-section.theme.fit-xxs li {{ font-size: 24px; line-height: 1.40; margin-bottom: 14px; }}
 /* ---- Sentiment badges (5-tier enum → low-noise chip, dark surface) ---- */
 .badge {{ display: inline-block; padding: 7px 22px; border-radius: 8px;
   font-size: 28px; font-weight: 800; letter-spacing: 1.5px; white-space: nowrap; }}
@@ -174,7 +284,7 @@ section.focus-list h2 {{
   padding-left: 22px; border-left: 12px solid {accent};
 }}
 section.focus-list .flist {{ display: flex; flex-direction: column; }}
-section.focus-list .fitem {{ padding: 26px 0; border-bottom: 1px solid {BORDER}; }}
+section.focus-list .fitem {{ padding: 20px 0; border-bottom: 1px solid {BORDER}; }}
 section.focus-list .fitem:first-child {{ border-top: 1px solid {BORDER}; }}
 section.focus-list .fhead {{ display: flex; align-items: center; gap: 18px; margin-bottom: 14px; }}
 section.focus-list .fname {{ font-size: 38px; font-weight: 800; color: {TEXT}; }}
@@ -182,9 +292,10 @@ section.focus-list .fhead .src {{
   margin-left: auto; font-size: 24px; font-weight: 700; color: {MUTED};
   background: {SURFACE}; padding: 4px 14px; border-radius: 6px; white-space: nowrap;
 }}
+/* No line-clamp: the lead is pre-trimmed to whole sentences that fit 3 lines
+   (fit_focus_lead), so it never ends in "…". Keep in sync with FOCUS_LEAD_*. */
 section.focus-list .flead {{
-  font-size: 33px; line-height: 1.5; font-weight: 500; color: {SOFT}; margin: 0;
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  font-size: {FOCUS_LEAD_FONT_PX}px; line-height: 1.5; font-weight: 500; color: {SOFT}; margin: 0;
 }}
 """.strip()
 
@@ -219,47 +330,78 @@ _COVER_TIERS = [
 # Cover furniture that does not scale: label (30px + 28 margin), date (34px + 36
 # margin), and the accent rule (10px + 40 margin), each with its line box.
 _COVER_FIXED_PX = (30 * 1.2 + 28) + (34 * 1.2 + 36) + (10 + 40)
-_COVER_SUBTITLE_MAX_LINES = 3   # matches -webkit-line-clamp on .subtitle
-_COVER_HOOK_MAX_LINES = 7       # matches -webkit-line-clamp on .hook
+# The episode title (feed-supplied, unbounded) gets at most this many lines at the
+# smallest tier; anything longer is trimmed to whole clauses.
+_COVER_SUBTITLE_MAX_LINES = 3
+
+
+def _cover_height(tier: tuple, title: str, subtitle: str, hook: str) -> float:
+    _, h1f, subf, hookf = tier
+    width = 1080 - _SIDE_PAD_PX
+    height = _COVER_FIXED_PX + estimate_lines(title, h1f, width) * h1f * 1.04 + 18
+    if subtitle:
+        height += estimate_lines(subtitle, subf, width) * subf * 1.34 + 36
+    if hook:
+        height += estimate_lines(hook, hookf, width) * hookf * 1.6
+    return height
+
+
+def _cover_tier(title: str, subtitle: str, hook: str) -> Optional[str]:
+    """Largest cover tier whose measured height fits the canvas, or None if none does."""
+    for tier in _COVER_TIERS:
+        if _cover_height(tier, title, subtitle, hook) <= _THEME_BUDGET_PX:
+            return tier[0]
+    return None
 
 
 def _cover_fit_suffix(title: str, subtitle: str, hook: str) -> str:
     """Pick the largest cover tier whose estimated height fits the canvas.
 
-    Same deterministic estimate as :func:`_theme_fit_suffix` (≈1 CJK glyph per font-px
-    of width). The cover needs it for the same reason the theme cards did: the episode
-    title arrives from the show's own feed and can be any length, and the hook is three
-    key insights joined — together they routinely overflow 864px at full size.
+    The episode title arrives from the show's own feed and can be any length, and the
+    hook is three key insights joined — together they routinely overflow 864px at full
+    size. Falls back to the smallest tier (callers trim the hook so it then fits).
     """
-    import math
+    tier = _cover_tier(title, subtitle, hook)
+    return _COVER_TIERS[-1][0] if tier is None else tier
 
-    width = 1080 - _SIDE_PAD_PX
-    for suffix, h1f, subf, hookf in _COVER_TIERS:
-        height = _COVER_FIXED_PX
-        height += max(1, math.ceil(len(title) / max(1, width // h1f))) * h1f * 1.04 + 18
-        if subtitle:
-            lines = min(_COVER_SUBTITLE_MAX_LINES,
-                        max(1, math.ceil(len(subtitle) / max(1, width // subf))))
-            height += lines * subf * 1.34 + 36
-        if hook:
-            lines = min(_COVER_HOOK_MAX_LINES,
-                        max(1, math.ceil(len(hook) / max(1, width // hookf))))
-            height += lines * hookf * 1.6
-        if height <= _THEME_BUDGET_PX:
-            return suffix
-    return _COVER_TIERS[-1][0]
+
+def _join_hook(insights: list[str]) -> str:
+    hook = "，".join(s.strip().rstrip("。") for s in insights)
+    return hook + "。" if hook else ""
+
+
+def _cover_layout(title: str, subtitle: str, insights: list[str]) -> tuple[str, str]:
+    """(tier suffix, hook) — the most whole insights (≤3) that fit, at the largest type.
+
+    Never clamps: when all three don't fit even at the smallest tier, trailing insights
+    are dropped; a single insight too long for the space left is trimmed to whole
+    clauses by :func:`fit_to_lines`.
+    """
+    for n in range(min(3, len(insights)), 0, -1):
+        hook = _join_hook(insights[:n])
+        tier = _cover_tier(title, subtitle, hook)
+        if tier is not None:
+            return tier, hook
+    smallest = _COVER_TIERS[-1]
+    hookf = smallest[3]
+    room = _THEME_BUDGET_PX - _cover_height(smallest, title, subtitle, "")
+    lines = int(room // (hookf * 1.6))
+    hook = fit_to_lines(_join_hook(insights[:1]), lines, hookf, 1080 - _SIDE_PAD_PX) if lines > 0 else ""
+    return smallest[0], hook
 
 
 def _cover_slide(card: dict, show_name: str, date_str: str) -> str:
     # Show name wins: the LLM marp deck title hallucinates famous brands (e.g. 股癌)
     # for unrelated shows, so the cover must use the deterministic podcast name.
-    title = html.escape((show_name or card.get("title") or "").strip())
-    bullets = [b for b in (card.get("bullets") or []) if b and b.strip()]
-    hook = html.escape("，".join(b.strip().rstrip("。") for b in bullets[:3]))
-    if hook:
-        hook += "。"
-    subtitle = html.escape((card.get("subtitle") or "").strip())
-    cls = f"cover {_cover_fit_suffix(title, subtitle, hook)}".strip()
+    raw_title = (show_name or card.get("title") or "").strip()
+    insights = [b.strip() for b in (card.get("bullets") or []) if b and b.strip()]
+    raw_subtitle = fit_to_lines(
+        (card.get("subtitle") or "").strip(), _COVER_SUBTITLE_MAX_LINES,
+        _COVER_TIERS[-1][2], 1080 - _SIDE_PAD_PX,
+    )
+    suffix, raw_hook = _cover_layout(raw_title, raw_subtitle, insights)
+    title, subtitle, hook = html.escape(raw_title), html.escape(raw_subtitle), html.escape(raw_hook)
+    cls = f"cover {suffix}".strip()
     lines = [f"<!-- _class: {cls} -->", "", '<div class="label">Podcast Memo</div>', "", f"# {title}", ""]
     if subtitle:
         lines.append(f'<div class="subtitle">{subtitle}</div>')
@@ -276,36 +418,97 @@ def _cover_slide(card: dict, show_name: str, date_str: str) -> str:
 _THEME_TIERS = [
     ("",        37, 1.52, 26, 52, 36),
     ("fit-s",   32, 1.50, 22, 50, 32),
-    ("fit-xs",  28, 1.45, 18, 46, 30),
-    ("fit-xxs", 24, 1.40, 14, 42, 26),
+    ("fit-xs",  28, 1.45, 18, 46, 30),   # readability floor — cut words, not type
 ]
 _THEME_BUDGET_PX = 1080 - 84 - 132   # canvas minus top padding minus watermark band
 _SIDE_PAD_PX = 88 * 2                 # left+right section padding
 _LI_INDENT_PX = 40                    # li padding-left (bullet marker)
+_H2_INSET_PX = 12 + 28 + 26           # h2 border-left + horizontal padding
+
+
+def _theme_height(tier: tuple, heading: str, bullets: list[str]) -> float:
+    _, lf, lh, lm, hf, hm = tier
+    li_width = 1080 - _SIDE_PAD_PX - _LI_INDENT_PX
+    ul_lines = sum(estimate_lines(b, lf, li_width) for b in bullets)
+    ul_h = ul_lines * lf * lh + max(0, len(bullets) - 1) * lm
+    return _theme_h2_height(heading, hf, hm) + ul_h
+
+
+def _theme_h2_height(heading: str, hf: int, hm: int) -> float:
+    # 40 = h2 vertical padding; the width loses the accent border + horizontal padding.
+    return estimate_lines(heading, hf, 1080 - _SIDE_PAD_PX - _H2_INSET_PX) * hf * 1.3 + 40 + hm
+
+
+def _theme_tier(heading: str, bullets: list[str]) -> Optional[str]:
+    """Largest theme tier whose measured height fits the card, or None if none does."""
+    for tier in _THEME_TIERS:
+        if _theme_height(tier, heading, bullets) <= _THEME_BUDGET_PX:
+            return tier[0]
+    return None
 
 
 def _theme_fit_suffix(heading: str, bullets: list[str]) -> str:
     """Pick the largest type tier whose estimated height fits the card.
 
-    Deterministic auto-fit: estimates wrapped-line counts for CJK text (≈1 glyph per
-    font-px wide) so dense cards shrink to FIT rather than clip. Falls back to the
-    smallest tier (overflow:hidden then clips, very rare)."""
-    import math
+    Deterministic auto-fit on measured line wraps so dense cards shrink to FIT rather
+    than clip. Falls back to the smallest tier (callers drop bullets so it then fits)."""
+    tier = _theme_tier(heading, bullets)
+    return _THEME_TIERS[-1][0] if tier is None else tier
 
-    for suffix, lf, lh, lm, hf, hm in _THEME_TIERS:
-        li_cpl = max(1, (1080 - _SIDE_PAD_PX - _LI_INDENT_PX) // lf)
-        ul_lines = sum(max(1, math.ceil(len(b) / li_cpl)) for b in bullets)
-        ul_h = ul_lines * lf * lh + max(0, len(bullets) - 1) * lm
-        h2_cpl = max(1, (1080 - _SIDE_PAD_PX) // hf)
-        h2_h = max(1, math.ceil(len(heading) / h2_cpl)) * hf * 1.3 + 40 + hm  # 40 = h2 v-padding
-        if h2_h + ul_h <= _THEME_BUDGET_PX:
-            return suffix
-    return _THEME_TIERS[-1][0]
+
+# Word budget for a theme card. Shrinking type to fit everything produced a wall of
+# 24px text; instead a card carries at most this many points, each at most
+# _THEME_BULLET_MAX_LINES lines at the fit-s size, and never goes below fit-xs.
+MAX_THEME_BULLETS = 4
+_THEME_BULLET_MAX_LINES = 3
+
+
+def _split_stamp(bullet: str) -> tuple[str, str]:
+    m = _TS_RE.search(bullet)
+    return (bullet[: m.start()].rstrip(), m.group(1)) if m else (bullet, "")
+
+
+def _join_stamp(body: str, stamp: str) -> str:
+    return f"{body} {stamp}" if stamp else body
+
+
+def _fit_theme_bullets(heading: str, bullets: list[str]) -> list[str]:
+    """Trim a theme card to its word budget: ≤4 points, each ≤3 whole-sentence lines,
+    then drop trailing points until the card fits at a readable size.
+
+    A dropped point's timestamp moves to the new last point, so the card still links
+    back to its place in the episode.
+    """
+    li_width = 1080 - _SIDE_PAD_PX - _LI_INDENT_PX
+    _, lf, *_ = _THEME_TIERS[1]  # fit-s font: the per-point budget is measured there
+
+    def carry(kept: list[str], dropped: list[str]) -> None:
+        stamps = [s for s in (_split_stamp(b)[1] for b in dropped) if s]
+        body, own = _split_stamp(kept[-1])
+        if stamps and not own:
+            kept[-1] = _join_stamp(body, stamps[-1])
+
+    kept = []
+    for b in bullets[:MAX_THEME_BULLETS]:
+        body, stamp = _split_stamp(b)
+        suffix = f" {stamp}" if stamp else ""
+        body = fit_to_lines(body, _THEME_BULLET_MAX_LINES, lf, li_width, suffix=suffix)
+        if body:
+            kept.append(_join_stamp(body, stamp))
+    if not kept:
+        return []
+    carry(kept, bullets[MAX_THEME_BULLETS:])
+    while len(kept) > 1 and _theme_tier(heading, kept) is None:
+        dropped = kept.pop()
+        carry(kept, [dropped])
+    return kept
 
 
 def _theme_slide(card: dict) -> str:
     raw_heading = (card.get("title") or "").strip()
-    raw_bullets = [b.strip() for b in (card.get("bullets") or []) if b and b.strip()]
+    raw_bullets = _fit_theme_bullets(
+        raw_heading, [b.strip() for b in (card.get("bullets") or []) if b and b.strip()]
+    )
     suffix = _theme_fit_suffix(raw_heading, raw_bullets)
     cls = f"theme {suffix}".strip()
     parts = [f"<!-- _class: {cls} -->", "", f"## {html.escape(raw_heading)}", ""]
@@ -373,7 +576,9 @@ def _focus_list_slide(card: dict) -> str:
     for it in card.get("items") or []:
         name = html.escape((it.get("name") or "").strip())
         code = html.escape((it.get("code") or "").strip())
-        lead = html.escape((it.get("lead") or "").strip())
+        # The builder already fits the lead; re-fitting here is a no-op for fresh
+        # cards and repairs decks stored before the fit existed.
+        lead = html.escape(fit_focus_lead(it.get("lead") or ""))
         source = html.escape((it.get("source") or "").strip())
         name_html = f'{name} <span class="code">{code}</span>' if code else name
         badge = _badge(it)

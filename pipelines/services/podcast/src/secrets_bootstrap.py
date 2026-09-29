@@ -52,6 +52,16 @@ def bootstrap() -> None:
     )
 
 
+def bootstrap_regen() -> None:
+    """Load only the secrets used by the agent-driven regeneration MCP."""
+    _bootstrap(
+        project_id=_PROJECT_ID,
+        gsm_vars=(),
+        optional_vars=("OPENROUTER_API_KEY", "GROQ_API_KEY", "EPISODE_DATABASE_URL"),
+        yaml_path=_YAML_PATH,
+    )
+
+
 if __name__ == "__main__":
     bootstrap()
     print("Bootstrapped. Loaded keys (masked):")

@@ -14,7 +14,7 @@ from typing import List, Optional, Any
 
 import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from src.auth.admin_auth import AdminAccess, get_admin_access, get_social_access
@@ -61,9 +61,33 @@ class SocialComment(BaseModel):
     text: str = Field("", description="The comment body (human-tone, plain text)")
 
 
+class SocialPoll(BaseModel):
+    question: str = Field(..., min_length=1)
+    options: List[str] = Field(..., min_length=2, max_length=4)
+
+    @field_validator("question")
+    @classmethod
+    def question_not_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("poll question must not be blank")
+        return value
+
+    @field_validator("options")
+    @classmethod
+    def options_not_blank(cls, values: List[str]) -> List[str]:
+        values = [value.strip() for value in values]
+        if any(not value for value in values):
+            raise ValueError("poll options must not be blank")
+        if len({value.casefold() for value in values}) != len(values):
+            raise ValueError("poll options must be distinct")
+        return values
+
+
 class SocialThreadPatch(BaseModel):
     post: str = Field("", description="Grand-summary post")
     comments: List[SocialComment] = Field(default_factory=list, description="One per theme card")
+    poll: Optional[SocialPoll] = Field(None, description="Optional native Threads poll: question + 2–4 options")
 
 
 def _theme_cards(episode) -> list:
@@ -402,11 +426,21 @@ async def get_social_episode(
     else:
         comments = [{"heading": (c.get("title") or "").strip(), "text": ""} for c in themes]
 
+    poll_error = thread.get("poll_error")
+    poll_value = thread.get("poll")
+    try:
+        composed = threads_publisher.compose_thread(episode)
+    except ValueError as e:
+        poll_error = str(e)
+        poll_value = None
+        composed = {"episode_id": episode.id, "main_text": "", "image_urls": [], "replies": [], "poll": None,
+                    "url": threads_publisher.episode_url(episode.id)}
     return {
         "episode_id": episode.id,
         "podcast_name": episode.podcast_name,
         "episode_title": episode.episode_title,
         "post": thread.get("post") or "",
+        "poll": poll_value,
         "comments": comments,
         "theme_cards": [
             {"heading": (c.get("title") or "").strip(), "bullets": c.get("bullets") or [], "image_url": c.get("image_url")}
@@ -417,7 +451,8 @@ async def get_social_episode(
         # The long-form summary, for the "copy for 方格子/Substack" action. Prefer the
         # human-edited version, same precedence the episode page uses.
         "summary_markdown": episode.modified_summary_content or episode.summary_content or "",
-        "composed": threads_publisher.compose_thread(episode),
+        "composed": composed,
+        "poll_error": poll_error,
         "has_copy": bool((thread.get("post") or "").strip()),
         "posted": _posted_status(episode.id),
     }
@@ -430,7 +465,16 @@ async def save_social_episode(
     _: AdminAccess = Depends(get_admin_access),
 ):
     """Save the human-tone post + comments for an episode."""
-    thread = {"post": body.post.strip(), "comments": [c.model_dump() for c in body.comments]}
+    existing = await podcast_service.get_episode_admin(episode_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail=f"Episode {episode_id} not found")
+    previous = existing.social_thread if isinstance(existing.social_thread, dict) else {}
+    thread = {k: previous[k] for k in ("link_hook", "focus_ms") if k in previous}
+    if "poll" not in body.model_fields_set:
+        thread.update({k: previous[k] for k in ("poll", "poll_error") if k in previous})
+    thread.update({"post": body.post.strip(), "comments": [c.model_dump() for c in body.comments]})
+    if body.poll is not None:
+        thread["poll"] = body.poll.model_dump()
     episode = await podcast_service.set_social_thread(episode_id, thread)
     return {"episode_id": episode.id, "social_thread": episode.social_thread}
 
@@ -482,15 +526,21 @@ async def generate_social_episode(
             for c in (data.get("comments") or [])
         ],
     }
+    if "poll" in data:
+        thread["poll"] = data["poll"]
     if (data.get("link_hook") or "").strip():
         thread["link_hook"] = data["link_hook"].strip()
     if isinstance(data.get("focus_ms"), int):
         thread["focus_ms"] = data["focus_ms"]
+    if data.get("poll_error"):
+        thread["poll_error"] = str(data["poll_error"])
     episode = await podcast_service.set_social_thread(episode_id, thread)
     return {
         "episode_id": episode.id,
         "post": thread["post"],
         "comments": thread["comments"],
+        "poll": thread.get("poll"),
+        "poll_error": thread.get("poll_error"),
         "social_thread": episode.social_thread,
     }
 
@@ -865,6 +915,7 @@ class PromoMedia(BaseModel):
 
 class PromoPublishBody(BaseModel):
     text: str = Field("", description="The full post text (operator-authored)")
+    poll: Optional[SocialPoll] = None
     media: List[PromoMedia] = Field(default_factory=list)
     comments: List[str] = Field(default_factory=list, description="Text-only follow-up comments/replies")
     platforms: List[str] = Field(default_factory=lambda: ["threads", "facebook"])
@@ -943,6 +994,8 @@ async def publish_promo_post(
     Dry-run by default (returns the per-platform plan). Each platform is independent:
     a Facebook block (e.g. mixed photo+video) never stops the Threads post.
     """
+    if body.poll is not None:
+        raise HTTPException(status_code=422, detail="Native polls are supported only for episode posts")
     platforms = [p.strip().lower() for p in body.platforms if p.strip()]
     bad = [p for p in platforms if p not in _PUBLISHERS]
     if bad:
@@ -967,6 +1020,7 @@ async def publish_promo_post(
 class PromoDraftBody(BaseModel):
     name: str = Field("未命名草稿", max_length=200)
     text: str = ""
+    poll: Optional[SocialPoll] = None
     media: List[PromoMedia] = Field(default_factory=list)
     comments: List[str] = Field(default_factory=list)
     platforms: List[str] = Field(default_factory=lambda: ["threads", "facebook"])
@@ -1038,6 +1092,8 @@ def create_promo_draft(
     db: Session = Depends(get_session),
 ):
     """Save a new promo draft. Returns its id."""
+    if body.poll is not None:
+        raise HTTPException(status_code=422, detail="Native polls are supported only for episode posts")
     row = PromoDraft(
         name=(body.name or "").strip() or "未命名草稿",
         text=body.text or "",
@@ -1060,6 +1116,8 @@ def update_promo_draft(
     db: Session = Depends(get_session),
 ):
     """Overwrite an existing draft."""
+    if body.poll is not None:
+        raise HTTPException(status_code=422, detail="Native polls are supported only for episode posts")
     row = db.query(PromoDraft).filter(PromoDraft.id == draft_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="Draft not found")
@@ -1093,6 +1151,7 @@ class SchedulePostRequest(BaseModel):
     post_type: str = Field(..., description="'episode' or 'promo'")
     episode_id: Optional[str] = None
     text: Optional[str] = ""
+    poll: Optional[SocialPoll] = None
     media: Optional[List[PromoMedia]] = None
     comments: Optional[List[Any]] = None  # Support string comments for promos or dict comments for episodes
     platforms: List[str]
@@ -1110,6 +1169,8 @@ def schedule_post(
         raise HTTPException(status_code=422, detail="post_type must be 'episode' or 'promo'")
     if body.post_type == "episode" and not body.episode_id:
         raise HTTPException(status_code=422, detail="episode_id is required for 'episode' post_type")
+    if body.poll is not None:
+        raise HTTPException(status_code=422, detail="Save episode polls on the episode social-copy editor first")
 
     # Store media cleanly (durable part only; path is what persists)
     stored_media = []

@@ -1,6 +1,6 @@
 # QA tester
 
-Tool-neutral reference for any agent (Claude Code, Codex, Cursor, etc.) tasked with QA-ing the TinBoker platform across environments. Defines the full test suite to run before any release. Pair this with [`../workflows/qa-flow.md`](../workflows/qa-flow.md) for the procedural overlay (when to run which subset, dev-bypass flow).
+Tool-neutral reference for agents tasked with QA-ing the TinBoker platform across environments. Defines the full test suite to run before any release. Pair this with [`../workflows/qa-flow.md`](../workflows/qa-flow.md) for the procedural overlay (when to run which subset, dev-bypass flow).
 
 ---
 

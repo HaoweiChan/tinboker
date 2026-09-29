@@ -3,6 +3,7 @@ and the dry-run guarantee. No network or real Threads credentials are touched �
 ThreadsService is unconfigured in tests, which forces dry-run.
 """
 import urllib.parse
+import json
 from datetime import datetime, timedelta
 
 import pytest
@@ -10,7 +11,7 @@ import pytest
 from src.config import settings
 from src.models.podcast import Episode
 from src.services import threads_publisher
-from src.services.threads_service import THREADS_MAX_CHARS
+from src.services.threads_service import THREADS_MAX_CHARS, ThreadsError, ThreadsService
 
 
 def _now_ms() -> int:
@@ -145,6 +146,39 @@ async def test_publish_recent_posts_at_most_max_posts_per_call(temp_db, monkeypa
     assert len((await threads_publisher.publish_recent(limit=10, dry_run=True))["posted"]) == 3
 
 
+@pytest.mark.asyncio
+async def test_publish_recent_routes_zero_and_low_ticker_polls_through_native_path(monkeypatch):
+    zero = _ep("EP603", insights=["零股觀點"])
+    zero.social_thread = {"post": "零股先等。", "poll": {"question": "先等嗎？", "options": ["是", "否"]}}
+    low = _ep("EP604", insights=["2330看法"], tickers=["2330"])
+    low.social_cards = _cards()
+    low.social_thread = {"post": "台積電先觀察。", "poll": {"question": "先觀察嗎？", "options": ["是", "否"]}}
+    monkeypatch.setattr(threads_publisher.podcast_service, "get_recent_episodes", await _fake_recent([zero, low]))
+    monkeypatch.setattr(threads_publisher, "already_posted", lambda _: False)
+    monkeypatch.setattr(threads_publisher, "social_enabled_for", lambda _: True)
+    monkeypatch.setattr(settings, "threads_access_token", None)
+    monkeypatch.setattr(settings, "threads_user_id", None)
+    result = await threads_publisher.publish_recent(limit=5, dry_run=True)
+    drafts = {item["episode_id"]: item for item in result["posted"]}
+    assert drafts["EP603"]["poll"]["question"] == "先等嗎？"
+    assert drafts["EP604"]["poll"]["question"] == "先觀察嗎？"
+    assert drafts["EP603"]["main_text"].endswith("先等嗎？")
+    assert drafts["EP604"]["image_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_publish_recent_skips_invalid_poll_and_single_publish_reports_error(monkeypatch):
+    malformed = _ep("EP605", insights=["保留舊文"])
+    malformed.social_thread = {"post": "保留舊文", "poll": {"question": "先買？", "options": ["是"]}}
+    monkeypatch.setattr(threads_publisher.podcast_service, "get_recent_episodes", await _fake_recent([malformed]))
+    monkeypatch.setattr(threads_publisher, "already_posted", lambda _: False)
+    monkeypatch.setattr(threads_publisher, "social_enabled_for", lambda _: True)
+    bulk = await threads_publisher.publish_recent(limit=1, dry_run=True)
+    assert bulk["skipped"] == [{"episode_id": "EP605", "reason": "invalid_poll"}]
+    single = await threads_publisher.publish_episode(malformed, dry_run=True)
+    assert single["reason"] == "invalid_poll"
+
+
 def test_posted_links_carry_the_format_as_a_utm_campaign_and_the_ledger_url_stays_bare():
     assert threads_publisher.link_comment("EP1", "episode_text") == (
         "▶ 完整重點：https://tinboker.com/episode/EP1?utm_source=threads&utm_medium=social&utm_campaign=episode_text")
@@ -161,7 +195,7 @@ def test_link_reply_says_what_is_behind_it_and_lands_on_the_section():
 
     ep = _ep("EP2", insights=["x"], tickers=["2330", "NVDA", "3324"])
     ep.social_thread = {"post": "p", "comments": [], "link_hook": "12個票委各自的說法", "focus_ms": 45000}
-    assert threads_publisher.episode_link_comment(ep, "episode_thread").startswith("▶ 12個票委各自的說法\nhttps://tinboker.com/episode/EP2?t=45000&utm_")
+    assert threads_publisher.episode_link_comment(ep, "episode_thread").startswith("▶ 12個票委各自的說法\nhttps://tinboker.com/episode/EP2?utm_")
     assert threads_publisher.compose_thread(ep)["replies"][0]["text"].startswith("▶ 12個票委各自的說法\n")
 
 
@@ -367,7 +401,7 @@ class _FakeThreads:
         return self._id("root")
 
     async def publish(self, text, image_url=None, **k):
-        self.calls.append(("single", image_url))
+        self.calls.append(("poll", text, tuple(k["poll_options"])) if "poll_options" in k else ("single", image_url))
         return self._id("root")
 
     async def publish_reply(self, text, reply_to_id, **k):
@@ -439,6 +473,38 @@ def test_compose_thread_falls_back_when_social_thread_empty():
     assert [r["text"].splitlines()[0] for r in draft["replies"][1:]] == ["【主題A】", "【主題B】"]
 
 
+def test_poll_composes_native_text_post_and_keeps_only_source_reply():
+    ep = _ep_cards("EP612", _cards())
+    ep.social_thread = {"post": "市場先等數據。", "poll": {"question": "你會先看哪個？", "options": ["營收", "毛利"]}}
+    draft = threads_publisher.compose_thread(ep)
+    assert draft["main_text"] == "市場先等數據。\n\n你會先看哪個？"
+    assert draft["main_text"].count("你會先看哪個？") == 1
+    assert draft["image_urls"] == []
+    assert len(draft["replies"]) == 1
+    assert draft["replies"][0]["text"].startswith("▶ 完整重點：")
+
+
+def test_invalid_poll_never_falls_back_to_mechanical_compose():
+    ep = _ep_cards("EP613", _cards())
+    ep.social_thread = {"post": "", "comments": [], "poll_error": "invalid_poll"}
+    with pytest.raises(ValueError, match="invalid_poll"):
+        threads_publisher.compose_thread(ep)
+
+
+def test_poll_preserves_question_quoted_in_context():
+    ep = _ep_cards("EP614", _cards())
+    context = "節目問「該升息嗎？」並討論房貸的代價。"
+    ep.social_thread = {"post": context, "poll": {"question": "該升息嗎？", "options": ["升息", "維持"]}}
+    assert threads_publisher.compose_thread(ep)["main_text"] == f"{context}\n\n該升息嗎？"
+    ep.social_thread["post"] = f"{context}\n\n該升息嗎？"
+    assert threads_publisher.compose_thread(ep)["main_text"] == ep.social_thread["post"]
+
+
+def test_poll_rejects_duplicate_choices_before_publication():
+    with pytest.raises(ValueError, match="invalid_social_poll"):
+        threads_publisher.normalize_poll({"poll": {"question": "選哪個？", "options": ["AI", " ai "]}})
+
+
 @pytest.mark.asyncio
 async def test_publish_thread_carousel_then_reply_chain():
     fake = _FakeThreads()
@@ -465,6 +531,40 @@ async def test_publish_thread_single_image_when_cover_only():
     assert res["reply_count"] == 1
     assert fake.calls[1][:2] == ("reply", "root1")
     assert fake.calls[1][2].startswith("▶ 完整重點：")
+
+
+@pytest.mark.asyncio
+async def test_publish_poll_uses_text_post_then_keeps_source_reply():
+    fake = _FakeThreads()
+    ep = _ep_cards("EP614", _cards())
+    ep.social_thread = {"post": "先觀察基本面。", "poll": {"question": "會加碼嗎？", "options": ["會", "不會"]}}
+    draft = threads_publisher.compose_thread(ep)
+    result = await threads_publisher.publish_thread(fake, draft)
+    assert fake.calls[0] == ("poll", "先觀察基本面。\n\n會加碼嗎？", ("會", "不會"))
+    assert fake.calls[1][0:2] == ("reply", "root1")
+    assert result["image_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_threads_poll_container_sends_meta_attachment_json():
+    service = ThreadsService(access_token="token", user_id="123")
+    captured = {}
+
+    class Response:
+        status_code = 200
+        def json(self):
+            return {"id": "container"}
+
+    class Client:
+        async def post(self, url, *, data):
+            captured.update(data)
+            return Response()
+
+    assert await service._create_container(Client(), "question", None, ["第一", "第二"]) == "container"
+    assert captured["media_type"] == "TEXT"
+    assert json.loads(captured["poll_attachment"]) == {"option_a": "第一", "option_b": "第二"}
+    with pytest.raises(ThreadsError, match="2–4"):
+        await service._create_container(Client(), "question", None, [])
 
 
 @pytest.mark.asyncio

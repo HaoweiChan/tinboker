@@ -23,6 +23,7 @@ jobs:
           filters: |
             pipelines:
               - 'pipelines/**'
+              - '.github/workflows/pipelines-ci.yml'
 
   # ── 2. Lint (only when pipelines files changed) ──────────────────────────────
   lint:
@@ -45,6 +46,20 @@ jobs:
     needs: changed
     if: needs.changed.outputs.pipelines == 'true'
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: mp3_retention_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: test-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d mp3_retention_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     defaults:
       run:
         working-directory: pipelines
@@ -70,6 +85,7 @@ jobs:
           LANGSMITH_API_KEY: ci-dummy
           WIKI_DATABASE_URL: postgresql://ci-dummy/dummy
           EPISODE_DATABASE_URL: postgresql://ci-dummy/dummy
+          MP3_RETENTION_TEST_DATABASE_URL: postgresql://postgres:test-only@127.0.0.1:5432/mp3_retention_test
         run: |
           uv run pytest \
             services/podcast/tests/unit \

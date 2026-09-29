@@ -13,6 +13,7 @@ callers fall back to dry-run instead of raising.
 """
 
 import asyncio
+import json
 import logging
 from typing import Optional
 
@@ -53,6 +54,7 @@ class ThreadsService:
         image_url: Optional[str] = None,
         *,
         image_publish_delay: float = 5.0,
+        poll_options: Optional[list[str]] = None,
     ) -> str:
         """Publish one post. Returns the published media id.
 
@@ -66,7 +68,9 @@ class ThreadsService:
             raise ThreadsError("Refusing to publish an empty post")
 
         async with httpx.AsyncClient(timeout=30.0) as client:
-            container_id = await self._create_container(client, text, image_url)
+            if poll_options is not None and image_url:
+                raise ThreadsError("Threads polls cannot be combined with media")
+            container_id = await self._create_container(client, text, image_url, poll_options)
             if image_url:
                 # Give Meta time to fetch/process the image before publishing.
                 await asyncio.sleep(image_publish_delay)
@@ -234,7 +238,7 @@ class ThreadsService:
         return container_id
 
     async def _create_container(
-        self, client: httpx.AsyncClient, text: str, image_url: Optional[str]
+        self, client: httpx.AsyncClient, text: str, image_url: Optional[str], poll_options: Optional[list[str]] = None
     ) -> str:
         params = {
             "media_type": "IMAGE" if image_url else "TEXT",
@@ -243,6 +247,14 @@ class ThreadsService:
         }
         if image_url:
             params["image_url"] = image_url
+        if poll_options is not None:
+            if (not isinstance(poll_options, list) or not 2 <= len(poll_options) <= 4
+                    or any(not isinstance(x, str) or not x.strip() for x in poll_options)):
+                raise ThreadsError("Threads poll needs 2–4 non-empty options")
+            params["poll_attachment"] = json.dumps(
+                {f"option_{chr(97 + i)}": option for i, option in enumerate(poll_options)},
+                ensure_ascii=False,
+            )
         resp = await client.post(f"{self._base}/{self._user_id}/threads", data=params)
         data = self._parse(resp, "create container")
         container_id = data.get("id")

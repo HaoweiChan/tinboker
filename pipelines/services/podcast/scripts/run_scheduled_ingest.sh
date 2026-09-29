@@ -21,8 +21,21 @@ PY="$REPO_ROOT/.venv/bin/python"
 
 # Taiwanese shows first, then the English roster. Two runs, not one config: a feed or
 # transcription failure on one side must not stop the other, and the TW run is the one
-# the product depends on. The English shows are ingested and summarised (the prompts
-# already write zh-TW from an English transcript) but stay unpublished until they are
-# registered in content_sources with language "en" and RELEASE_PODCAST_LANGUAGES allows it.
+# the product depends on.
 "$PY" main.py --config podcasts_tw.json --fill-limit "$@"
-"$PY" main.py --config podcasts_en.json --fill-limit "$@"
+
+# English episodes incur transcription cost, so ingest them only when the public
+# release scope includes English. The backend accepts CSV or a JSON list, strips
+# whitespace, and treats an empty value/list as unrestricted. Keep the unset
+# default distinct from an explicitly empty value.
+RELEASE_LANGS="${RELEASE_PODCAST_LANGUAGES-zh-TW}"
+if "$PY" -c '
+import json, sys
+value = sys.argv[1].strip()
+languages = json.loads(value) if value.startswith("[") else [part.strip() for part in value.split(",") if part.strip()]
+raise SystemExit(0 if not languages or "en" in languages else 1)
+' "$RELEASE_LANGS"; then
+  "$PY" main.py --config podcasts_en.json --fill-limit "$@"
+else
+  echo "  ⤷ skipping podcasts_en.json — RELEASE_PODCAST_LANGUAGES=$RELEASE_LANGS does not serve English"
+fi

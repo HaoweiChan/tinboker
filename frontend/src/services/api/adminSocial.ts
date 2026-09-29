@@ -4,6 +4,7 @@
 
 import { apiClient } from './client';
 import { useAppStore } from '@/store/useAppStore';
+import { SocialPollSchema } from '@/validation/schemas';
 
 function adminAuthConfig() {
   const token = useAppStore.getState().token;
@@ -33,6 +34,11 @@ export interface SocialComment {
   text: string;
 }
 
+export interface SocialPoll {
+  question: string;
+  options: string[];
+}
+
 export interface SocialThemeCard {
   heading: string;
   bullets: string[];
@@ -43,6 +49,7 @@ export interface ComposedThread {
   main_text: string;
   replies: { text: string }[];
   image_urls: string[];
+  poll: SocialPoll | null;
 }
 
 export interface SocialEpisodeBundle {
@@ -50,6 +57,8 @@ export interface SocialEpisodeBundle {
   podcast_name: string;
   episode_title: string | null;
   post: string;
+  poll: SocialPoll | null;
+  poll_error?: string | null;
   comments: SocialComment[];
   theme_cards: SocialThemeCard[];
   marp_markdown: string;
@@ -95,12 +104,14 @@ export async function getSocialEpisode(episodeId: string): Promise<SocialEpisode
     `/api/admin/threads/episodes/${encodeURIComponent(episodeId)}`,
     adminAuthConfig(),
   );
+  if (res.data.poll != null) SocialPollSchema.parse(res.data.poll);
+  if (res.data.composed.poll != null) SocialPollSchema.parse(res.data.composed.poll);
   return res.data;
 }
 
 export async function saveSocialEpisode(
   episodeId: string,
-  body: { post: string; comments: SocialComment[] },
+  body: { post: string; comments: SocialComment[]; poll?: SocialPoll | null },
 ): Promise<void> {
   await apiClient.patch(
     `/api/admin/threads/episodes/${encodeURIComponent(episodeId)}`,
@@ -120,12 +131,13 @@ const LLM_REQUEST_TIMEOUT_MS = 120000;
  */
 export async function generateSocialEpisode(
   episodeId: string,
-): Promise<{ post: string; comments: SocialComment[] }> {
-  const res = await apiClient.post<{ post: string; comments: SocialComment[] }>(
+): Promise<{ post: string; comments: SocialComment[]; poll?: SocialPoll | null }> {
+  const res = await apiClient.post<{ post: string; comments: SocialComment[]; poll?: SocialPoll | null }>(
     `/api/admin/threads/episodes/${encodeURIComponent(episodeId)}/social-copy`,
     null,
     { ...adminAuthConfig(), timeout: LLM_REQUEST_TIMEOUT_MS },
   );
+  if (res.data.poll != null) SocialPollSchema.parse(res.data.poll);
   return res.data;
 }
 

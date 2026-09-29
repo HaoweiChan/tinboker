@@ -24,7 +24,7 @@ from .steps import (
     upload_to_gcs,
     validate_episode,
 )
-from .utils import determine_language, required_artifact_urls
+from .utils import determine_language, required_artifact_urls, retain_episode_audio
 
 
 class EpisodeProcessor:
@@ -213,6 +213,10 @@ class EpisodeProcessor:
         )
         
         if existing:
+            # A feed item can lose datePublished on a later poll; keep the
+            # stored release date authoritative for MP3 retention on reruns.
+            if existing.get("released_at_ms") is not None:
+                episode_data.api_data["released_at_ms"] = existing["released_at_ms"]
             # Load episode ID
             episode_data.episode_id = existing.get('id')
             
@@ -389,7 +393,7 @@ class EpisodeProcessor:
             # Check if we have all required data (GCS URLs indicate complete processing)
             required = required_artifact_urls(
                 skip_summarize=self.config.skip_summarize,
-                store_audio=self.config.store_audio,
+                store_audio=retain_episode_audio(episode_data.api_data, self.config.store_audio),
             )
             if episode_data.gcs_urls and all(
                 episode_data.gcs_urls.get(f) for f in required

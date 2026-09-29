@@ -45,6 +45,26 @@ def _field(episode: Any, name: str, default=None):
     return getattr(episode, name, default)
 
 
+def normalize_poll(thread: dict) -> Optional[dict]:
+    """Validate the optional social_thread poll; malformed data must never downgrade."""
+    if thread.get("poll_error"):
+        raise ValueError(str(thread["poll_error"]))
+    poll = thread.get("poll")
+    if poll is None:
+        return None
+    if not isinstance(poll, dict) or not isinstance(poll.get("question"), str) or not poll["question"].strip():
+        raise ValueError("invalid_social_poll")
+    options = poll.get("options")
+    if not isinstance(options, list) or not 2 <= len(options) <= 4 or any(
+        not isinstance(option, str) or not option.strip() for option in options
+    ):
+        raise ValueError("invalid_social_poll")
+    options = [option.strip() for option in options]
+    if len({option.casefold() for option in options}) != len(options):
+        raise ValueError("invalid_social_poll")
+    return {"question": poll["question"].strip(), "options": options}
+
+
 def episode_url(episode_id: str) -> str:
     return f"{settings.site_url.rstrip('/')}/episode/{episode_id}"
 
@@ -81,7 +101,7 @@ def episode_link_comment(episode: Any, fmt: str) -> str:
     thread = _field(episode, "social_thread")
     thread = thread if isinstance(thread, dict) else {}
     episode_id = _field(episode, "id") or _field(episode, "episode_id") or ""
-    return link_comment(episode_id, fmt, hook=thread.get("link_hook"), focus_ms=thread.get("focus_ms"))
+    return link_comment(episode_id, fmt, hook=thread.get("link_hook"))
 
 
 RASTER_IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".webp", ".gif")
@@ -106,6 +126,10 @@ def _has_human_thread(episode: Any) -> bool:
     if not isinstance(t, dict):
         return False
     if (t.get("post") or "").strip():
+        return True
+    if t.get("poll") is not None:
+        return True
+    if t.get("poll_error"):
         return True
     return any(
         ((c.get("text") if isinstance(c, dict) else c) or "").strip()
@@ -299,22 +323,29 @@ def compose_thread(episode: Any) -> dict:
 
     thread = _field(episode, "social_thread")
     thread = thread if isinstance(thread, dict) else {}
+    poll = normalize_poll(thread)
     human_post = (thread.get("post") or "").strip()
+    if poll and not human_post:
+        raise ValueError("invalid_poll")
     human_comments = [
         (c.get("text") if isinstance(c, dict) else str(c) or "").strip()
         for c in (thread.get("comments") or [])
     ]
     human_comments = [c for c in human_comments if c]
 
-    if human_post:
+    if poll:
+        main_text = human_post
+    elif human_post:
         main_text = _finalize_post_text(episode, human_post, count_line)
     else:
         main_text = compose_post(episode, count_line=count_line, with_link=False)["text"]
+    if poll and not main_text.rstrip().endswith(poll["question"]):
+        main_text = f"{main_text.rstrip()}\n\n{poll['question']}"
 
     replies: list[dict] = []
     if human_comments:
         replies = [{"text": c[:THREADS_MAX_CHARS].rstrip()} for c in human_comments]
-    else:
+    elif not poll:
         for card in theme_cards:
             bullets = [b for b in (card.get("bullets") or []) if b and b.strip()]
             text = _compose_reply((card.get("title") or "").strip(), bullets)
@@ -323,13 +354,14 @@ def compose_thread(episode: Any) -> dict:
 
     # Permalink as the FIRST comment (link-in-first-comment) — keeps it out of the
     # post body so reach isn't suppressed and the link still gets indexed.
-    replies.insert(0, {"text": episode_link_comment(episode, "episode_thread")})
+    replies.insert(0, {"text": episode_link_comment(episode, "episode_poll" if poll else "episode_thread")})
 
     return {
         "episode_id": episode_id,
         "main_text": main_text,
-        "image_urls": image_urls,
+        "image_urls": [] if poll else image_urls,
         "replies": replies,
+        "poll": poll,
         "url": episode_url(episode_id),
     }
 
@@ -342,7 +374,9 @@ async def publish_thread(service: ThreadsService, draft: dict) -> dict:
     caller records it and never re-posts.
     """
     image_urls = draft["image_urls"]
-    if len(image_urls) >= 2:
+    if draft.get("poll"):
+        root = await service.publish(draft["main_text"], poll_options=draft["poll"]["options"])
+    elif len(image_urls) >= 2:
         root = await service.publish_carousel(image_urls, draft["main_text"])
     elif len(image_urls) == 1:
         root = await service.publish(draft["main_text"], image_url=image_urls[0])
@@ -472,6 +506,17 @@ async def publish_recent(
         if not social_enabled_for(_field(episode, "podcast_name")):
             skipped.append({"episode_id": episode_id, "reason": "social_disabled_for_show"})
             continue
+        social_thread = _field(episode, "social_thread") or {}
+        if isinstance(social_thread, dict) and social_thread.get("poll_error"):
+            skipped.append({"episode_id": episode_id, "reason": "invalid_poll"})
+            continue
+        poll = None
+        if isinstance(social_thread, dict):
+            try:
+                poll = normalize_poll(social_thread)
+            except ValueError:
+                skipped.append({"episode_id": episode_id, "reason": "invalid_poll"})
+                continue
         rel_ms = _release_ms(episode)
         if cutoff_ms is not None and (rel_ms is None or rel_ms < cutoff_ms):
             skipped.append({"episode_id": episode_id, "reason": "outside_recency_window"})
@@ -486,7 +531,7 @@ async def publish_recent(
             continue
 
         # No stocks in the episode → the written post as text, no cards.
-        if is_zero_ticker(episode) and (_has_human_thread(episode) or _field(episode, "key_insights")):
+        if poll is None and is_zero_ticker(episode) and (_has_human_thread(episode) or _field(episode, "key_insights")):
             draft = compose_text_post(episode)
             if effective_dry_run:
                 posted.append({**draft, "kind": "text", "dry_run": True})
@@ -509,7 +554,7 @@ async def publish_recent(
         # One or two stocks → the story of the call on its marked chart. The story comes
         # from the pipeline at publish time; if it does not, the episode takes the
         # carousel path below rather than being skipped.
-        if is_low_ticker(episode):
+        if poll is None and is_low_ticker(episode):
             frame = compose_ticker_story(episode)
             if effective_dry_run:
                 posted.append({**frame, "kind": "ticker_story", "text": "（發佈時由 pipeline 產生）", "dry_run": True})
@@ -540,11 +585,14 @@ async def publish_recent(
         # post (legacy episodes with neither).
         if has_cards or _has_human_thread(episode):
             thread = compose_thread(episode)
+            if thread.get("poll") and len(thread["main_text"]) > THREADS_MAX_CHARS:
+                skipped.append({"episode_id": episode_id, "reason": "poll_text_too_long"})
+                continue
             if effective_dry_run:
                 posted.append({
                     "episode_id": episode_id, "url": thread["url"],
                     "main_text": thread["main_text"], "image_count": len(thread["image_urls"]),
-                    "reply_count": len(thread["replies"]), "dry_run": True,
+                    "reply_count": len(thread["replies"]), "poll": thread.get("poll"), "dry_run": True,
                 })
                 continue
             if not social_ledger.claim(PLATFORM, episode_id):
@@ -552,7 +600,16 @@ async def publish_recent(
                 continue
             try:
                 res = await publish_thread(service, thread)
-                _record(episode_id, res["root_media_id"], thread["url"], res["reply_ids"], fmt="episode_thread")
+                if thread.get("poll"):
+                    try:
+                        social_ledger.record(
+                            PLATFORM, episode_id, res["root_media_id"], thread["url"], res["reply_ids"],
+                            fmt="episode_poll", post_snapshot={"text": thread["main_text"], "poll": thread["poll"]},
+                        )
+                    except Exception:
+                        logger.exception("poll posted but tracking failed for %s", episode_id)
+                else:
+                    _record(episode_id, res["root_media_id"], thread["url"], res["reply_ids"], fmt="episode_thread")
                 posted.append({"episode_id": episode_id, "url": thread["url"], "dry_run": False, **res})
                 logger.info("Posted thread for %s (root=%s, %d replies)",
                             episode_id, res["root_media_id"], res["reply_count"])
@@ -609,16 +666,25 @@ async def publish_episode(episode: Any, dry_run: bool = True) -> dict:
         return {**base, "posted": False, "reason": "already_posted", "url": episode_url(episode_id)}
     if not social_enabled_for(_field(episode, "podcast_name")):
         return {**base, "posted": False, "reason": "social_disabled_for_show"}
+    social_thread = _field(episode, "social_thread") or {}
+    if isinstance(social_thread, dict) and social_thread.get("poll_error"):
+        return {**base, "posted": False, "reason": "invalid_poll"}
+    try:
+        poll = normalize_poll(social_thread) if isinstance(social_thread, dict) else None
+    except ValueError:
+        return {**base, "posted": False, "reason": "invalid_poll"}
     has_cards = bool(_field(episode, "social_cards"))
     if not (has_cards or _field(episode, "key_insights") or _field(episode, "episode_title")):
         return {**base, "posted": False, "reason": "no_postable_content"}
 
     if has_cards or _has_human_thread(episode):
         thread = compose_thread(episode)
+        if thread.get("poll") and len(thread["main_text"]) > THREADS_MAX_CHARS:
+            return {**base, "posted": False, "reason": "poll_text_too_long", "url": thread["url"]}
         if effective_dry_run:
             return {**base, "posted": False, "reason": "dry_run", "url": thread["url"],
                     "main_text": thread["main_text"], "image_count": len(thread["image_urls"]),
-                    "reply_count": len(thread["replies"])}
+                    "reply_count": len(thread["replies"]), "poll": thread.get("poll")}
         if not social_ledger.claim(PLATFORM, episode_id):
             return {**base, "posted": False, "reason": "already_posted", "url": thread["url"]}
         try:
@@ -626,7 +692,16 @@ async def publish_episode(episode: Any, dry_run: bool = True) -> dict:
         except ThreadsError as e:
             social_ledger.release(PLATFORM, episode_id)
             return {**base, "posted": False, "reason": f"publish_failed: {e}", "url": thread["url"]}
-        _record(episode_id, res["root_media_id"], thread["url"], res["reply_ids"], fmt="episode_thread")
+        if thread.get("poll"):
+            try:
+                social_ledger.record(
+                    PLATFORM, episode_id, res["root_media_id"], thread["url"], res["reply_ids"],
+                    fmt="episode_poll", post_snapshot={"text": thread["main_text"], "poll": thread["poll"]},
+                )
+            except Exception:
+                logger.exception("poll posted but tracking failed for %s", episode_id)
+        else:
+            _record(episode_id, res["root_media_id"], thread["url"], res["reply_ids"], fmt="episode_thread")
         logger.info("Posted thread for %s (root=%s, %d replies)", episode_id, res["root_media_id"], res["reply_count"])
         return {**base, "posted": True, "url": thread["url"], **res}
 

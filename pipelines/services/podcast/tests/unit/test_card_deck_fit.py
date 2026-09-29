@@ -99,6 +99,98 @@ def test_cover_children_never_shrink():
     assert "section.cover > * { flex: 0 0 auto; }" in cd.CARD_THEME_CSS
 
 
+# --- No ellipsis, ever ---------------------------------------------------------------
+# The 產業焦點 leads were raw LLM reason descriptions cut by `-webkit-line-clamp: 2`,
+# so published Threads images ended mid-thought in "…". Text is now measured and
+# trimmed to whole sentences before it reaches the slide.
+
+# Real leads from published 產業焦點 cards that rendered with "…".
+_META = ("雖然DAU/MAU已接近全球飽和，但市場關注的是ARPU(平均每用戶營收)的持續提升空間，"
+         "以及現有用戶基礎還有哪些可以變現的新方式。廣告與AI推薦的結合是主要動能。")
+_ADBE = ("Adobe的商用軟體訂閱制看起來出了問題，其服務跟AI之間出現替代關係，"
+         "使用者拿掉Adobe改用Figma或其他工具也還能運作。訂閱續約率將是觀察重點。")
+
+
+def test_no_card_css_clamps_with_an_ellipsis():
+    assert "-webkit-line-clamp:" not in cd.CARD_THEME_CSS
+
+
+def test_estimate_lines_matches_the_rendered_wrap():
+    # Rendered at 33px in 904px, the META lead's first line broke after 「平均」 (~30
+    # glyphs incl. Latin); the estimate must never claim MORE fits than rendered.
+    first_line = "雖然DAU/MAU已接近全球飽和，但市場關注的是ARPU(平均"
+    assert cd.estimate_lines(first_line + "每用戶", 33, 904) == 2
+    assert cd.estimate_lines("短句。", 30, 904) == 1
+
+
+def test_fit_to_lines_keeps_whole_sentences_without_ellipsis():
+    for text in (_META, _ADBE):
+        out = cd.fit_to_lines(text, 3, cd.FOCUS_LEAD_FONT_PX, cd.FOCUS_LEAD_WIDTH_PX)
+        assert cd.estimate_lines(out, cd.FOCUS_LEAD_FONT_PX, cd.FOCUS_LEAD_WIDTH_PX) <= 3
+        assert "…" not in out and out.endswith("。")
+        assert text.startswith(out)              # a whole-sentence prefix, nothing rewritten
+
+
+def test_fit_to_lines_trims_an_overlong_single_sentence_at_a_clause():
+    text = "，".join(["這是一個很長的子句用來測試"] * 12) + "。"
+    out = cd.fit_to_lines(text, 2, 30, 904)
+    assert cd.estimate_lines(out, 30, 904) <= 2
+    assert out.endswith("。") and "…" not in out
+
+
+def test_fit_to_lines_leaves_fitting_text_alone():
+    assert cd.fit_to_lines("用量幾何成長。", 3, 30, 904) == "用量幾何成長。"
+
+
+def test_focus_lead_prefers_a_candidate_that_fits_whole():
+    long_desc = _META * 3
+    assert cd.fit_focus_lead(long_desc, "廣告變現效率持續提升。", "ARPU") == "廣告變現效率持續提升。"
+
+
+def test_focus_slide_refits_a_stored_overlong_lead():
+    card = {"kind": "focus_list", "items": [{"name": "臉書", "code": "META", "lead": _META * 3}]}
+    md = cd._focus_list_slide(card)
+    lead = md.split('<p class="flead">')[1].split("</p>")[0]
+    assert cd.estimate_lines(lead, cd.FOCUS_LEAD_FONT_PX, cd.FOCUS_LEAD_WIDTH_PX) <= 3
+
+
+def test_focus_list_three_full_leads_fit_the_canvas():
+    # 3 items × (padding + head + gap + 3 lead lines + border) + heading ≤ content box.
+    item = 20 * 2 + 55 + 14 + cd.FOCUS_LEAD_MAX_LINES * cd.FOCUS_LEAD_FONT_PX * 1.5 + 1
+    assert 3 * item + (50 * 1.45 + 30) <= cd._THEME_BUDGET_PX
+
+
+def test_cover_drops_whole_insights_instead_of_clamping():
+    insights = ["欣興電子遭搜索，財務面合理跌幅約20%，但若涉洗產地恐引發美方制裁與法人永久性賣壓" * 4] * 3
+    md = cd._cover_slide({"kind": "cover", "subtitle": "EP1173｜長標題" * 4, "bullets": insights},
+                         "兆華與股惑仔", "2026.08.31")
+    hook = md.split('<div class="hook">')[1].split("</div>")[0]
+    assert "…" not in hook and hook.endswith("。")
+    assert len(hook) < len(cd._join_hook(insights))            # something whole was dropped
+    suffix = md.split("\n")[0].removeprefix("<!-- _class: cover").removesuffix(" -->").strip()
+    tier = next(t for t in cd._COVER_TIERS if t[0] == suffix)
+    subtitle = md.split('<div class="subtitle">')[1].split("</div>")[0]
+    assert cd._cover_height(tier, "兆華與股惑仔", subtitle, hook) <= cd._THEME_BUDGET_PX
+
+
+def test_overfull_theme_card_is_cut_to_its_word_budget_and_keeps_the_stamp():
+    long_point = "軟體公司面臨AI替代，訂閱模式的護城河正在被重新檢驗。市場開始區分哪些軟體真正不可取代，哪些只是可有可無的工具。" * 2
+    bullets = [long_point] * 5 + ["最後一點 [12:34]"]
+    kept = cd._fit_theme_bullets("標題", bullets)
+    assert 1 <= len(kept) <= cd.MAX_THEME_BULLETS
+    assert cd._theme_tier("標題", kept) is not None             # fits without going below fit-xs
+    li_width = 1080 - cd._SIDE_PAD_PX - cd._LI_INDENT_PX
+    for b in kept:
+        assert cd.estimate_lines(b, 32, li_width) <= cd._THEME_BULLET_MAX_LINES
+        assert "…" not in b
+    assert kept[-1].endswith("[12:34]")                          # stamp carried off the dropped point
+    assert all(cd._split_stamp(b)[0].endswith("。") for b in kept)  # whole sentences only
+
+
+def test_theme_type_never_goes_below_the_readability_floor():
+    assert min(t[1] for t in cd._THEME_TIERS) >= 28
+
+
 # --- Cover title provenance ----------------------------------------------------------
 
 

@@ -4,8 +4,9 @@ Pipeline utility functions.
 Helper functions used across pipeline steps.
 """
 
+import os
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 
 from src.models.podcast_models import PodcastEpisode, Sentence
@@ -213,6 +214,28 @@ def _date_published_to_ms(api_data: Dict) -> Optional[int]:
     return int(dt.timestamp() * 1000)
 
 
+def retain_episode_audio(api_data: Dict, store_audio: bool, *, now: Optional[datetime] = None) -> bool:
+    """Keep audio only for episodes inside the configured publish-date window.
+
+    An undated feed item is left alone: ingestion must not infer age from the
+    time it happened to be downloaded.
+    """
+    if not store_audio:
+        return False
+    days = int(os.getenv("PODCAST_MP3_RETENTION_DAYS", "90"))
+    if days < 1:
+        raise ValueError("PODCAST_MP3_RETENTION_DAYS must be a positive integer")
+    feed_ms = _date_published_to_ms(api_data)
+    stored_ms = api_data.get("released_at_ms")
+    published_ms = feed_ms if feed_ms is not None else (
+        stored_ms if type(stored_ms) is int and stored_ms >= 946684800000 else None
+    )
+    if published_ms is None:
+        return True
+    current = now or datetime.now(timezone.utc)
+    return published_ms >= int((current - timedelta(days=days)).timestamp() * 1000)
+
+
 def create_episode_object(
     episode_data,  # EpisodeData object
     gcs_urls: Dict,
@@ -224,6 +247,12 @@ def create_episode_object(
     # spotify_release_date is null for ~all zh-TW episodes and created_time is the
     # ingestion/backfill time. It is the PRIMARY source for released_at_ms.
     feed_date_published_ms = _date_published_to_ms(episode_data.api_data)
+    stored_ms = episode_data.api_data.get("released_at_ms")
+    restored_ms = (
+        stored_ms
+        if feed_date_published_ms is None and type(stored_ms) is int and stored_ms >= 946684800000
+        else None
+    )
 
     # Determine created_time. NEVER overwrite an existing stored created_time:
     # mutating it re-fires `new_episode` notifications (handoff spec §6.3). Only
@@ -297,6 +326,7 @@ def create_episode_object(
         sector_ids=summary_result.get('sector_ids', []) if summary_result else [],
         unresolved_market_trend_ids=summary_result.get('unresolved_market_trend_ids', []) if summary_result else [],
         created_time=created_time,
+        released_at_ms=restored_ms,
         feed_date_published_ms=feed_date_published_ms,
         number_click=0,
         num_likes=0,
