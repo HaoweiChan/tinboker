@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import fcntl
+import hashlib
 import os
 from contextlib import contextmanager
 from pathlib import Path
@@ -22,6 +23,12 @@ def mp3_media_lock(root: Path) -> Iterator[None]:
             yield
         finally:
             fcntl.flock(lock_file, fcntl.LOCK_UN)
+
+
+def retired_marker_path(root: Path, media_key: str) -> Path:
+    """Permanent local refusal record for a finalized MP3 path."""
+    digest = hashlib.sha256(media_key.encode()).hexdigest()
+    return root / ".mp3-retired" / digest
 
 
 def mp3_is_retired(media_key: str) -> bool:

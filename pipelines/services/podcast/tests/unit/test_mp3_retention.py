@@ -125,11 +125,17 @@ def test_cross_store_audit_blocks_shared_and_ambiguous_references(tmp_path, monk
     assert path.exists()  # audit is read-only
 
 
-def test_mutation_is_disabled_and_media_root_must_be_explicit(monkeypatch, capsys):
+def test_mutation_requires_both_databases_and_explicit_media_root(monkeypatch, capsys, tmp_path):
+    from src import secrets_bootstrap
+
+    monkeypatch.setattr(secrets_bootstrap, "bootstrap", lambda: None)
     monkeypatch.setattr("sys.argv", ["prune_mp3.py", "--apply"])
+    monkeypatch.setenv("MEDIA_STORAGE_ROOT", str(tmp_path))
+    monkeypatch.setenv("EPISODE_DATABASE_URL", "postgresql://example/db")
+    monkeypatch.delenv("WIKI_DATABASE_URL", raising=False)
     with pytest.raises(SystemExit):
         prune_mp3.main()
-    assert "--apply is disabled" in capsys.readouterr().err
+    assert "WIKI_DATABASE_URL is required" in capsys.readouterr().err
 
     monkeypatch.setattr("sys.argv", ["prune_mp3.py"])
     monkeypatch.delenv("MEDIA_STORAGE_ROOT", raising=False)

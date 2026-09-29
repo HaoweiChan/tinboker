@@ -64,6 +64,18 @@ def test_mp3_upload_checks_tombstone_under_media_lock(svc, tmp_path, monkeypatch
     assert svc.upload_file_from_string("audio", "mp3", PODCAST, EPISODE, "mp3") == (False, None)
 
 
+@pytest.mark.parametrize("base_path", ["alias/..", "./", "alias//sub"])
+def test_mp3_upload_rejects_noncanonical_blob_alias(tmp_path, monkeypatch, base_path):
+    monkeypatch.setenv("MEDIA_STORAGE_ROOT", str(tmp_path))
+    monkeypatch.setenv("GCS_BUCKET_NAME", BUCKET)
+    monkeypatch.setenv("GCS_BASE_PATH", base_path)
+    src = tmp_path / "source.mp3"
+    src.write_bytes(b"audio")
+    service = GCSStorageService()
+    assert service.upload_file(src, "mp3", PODCAST, EPISODE) == (False, None)
+    assert not list((tmp_path / BUCKET).rglob(f"{EPISODE}.mp3"))
+
+
 def test_markdown_artifact_written_to_expected_path_and_url(svc, tmp_path):
     urls = svc.upload_episode_files(
         episode_id=EPISODE, podcast_name=PODCAST, events_markdown_content="- 事件一\n",

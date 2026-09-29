@@ -3,10 +3,9 @@
 Run on the media host with EPISODE_DATABASE_URL and MEDIA_STORAGE_ROOT set:
     uv run --package tinboker-podcast python services/podcast/scripts/prune_mp3.py
 
-This command is read-only. --apply is intentionally disabled until deletion
-can update every database reference, including wiki frontmatter, with a
-retryable cleanup contract. --cross-store gives a conservative estimate after
-checking the separate content/wiki database; it never changes data or media.
+Dry-run is the default. --cross-store checks the separate content/wiki database.
+--apply stages a bounded batch only when both tombstone migrations are installed;
+it clears references first and unlinks media on a later run after four hours.
 
 Only MP3s referenced by Postgres episode documents are eligible. Files with no
 matching document, no valid release date, or a second recent/undated reference
@@ -226,14 +225,12 @@ def audit_cross_store(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--days", type=int, default=int(os.getenv("PODCAST_MP3_RETENTION_DAYS", "90")))
-    parser.add_argument("--apply", action="store_true", help="reserved; destructive cleanup is not enabled")
+    parser.add_argument("--apply", action="store_true", help="stage or finalize a bounded MP3 batch")
     parser.add_argument("--cross-store", action="store_true", help="audit content and wiki references")
     parser.add_argument("--batch-size", type=int, default=25, help="maximum preview paths to print")
     args = parser.parse_args()
     if args.days < 1:
         parser.error("--days must be a positive integer")
-    if args.apply:
-        parser.error("--apply is disabled until shared references and wiki links can be updated safely")
     if args.batch_size < 1:
         parser.error("--batch-size must be positive")
     if not os.getenv("MEDIA_STORAGE_ROOT"):
@@ -246,13 +243,26 @@ def main() -> None:
     if not url:
         parser.error("EPISODE_DATABASE_URL is required")
     wiki_url = os.getenv("WIKI_DATABASE_URL")
-    if args.cross_store and not wiki_url:
-        parser.error("WIKI_DATABASE_URL is required for --cross-store")
+    if (args.cross_store or args.apply) and not wiki_url:
+        parser.error("WIKI_DATABASE_URL is required for cross-store MP3 retention")
     if not media_root().is_dir():
         parser.error("media root is not mounted")
 
     cutoff_ms = int((datetime.now(timezone.utc) - timedelta(days=args.days)).timestamp() * 1000)
     try:
+        if args.apply:
+            from scripts.mp3_retention_apply import apply_batch
+
+            with psycopg.connect(libpq_url(url), autocommit=True) as mirror, psycopg.connect(
+                libpq_url(wiki_url), autocommit=True
+            ) as wiki:
+                staged, finalized, pending_rows, unresolved = apply_batch(
+                    mirror, wiki, cutoff_ms, args.batch_size
+                )
+            print(f"MP3 retention: {staged} staged, {finalized} finalized; "
+                  f"{pending_rows} pending episode rows, {unresolved} pending paths "
+                  "made no progress; four-hour grace applies before unlink")
+            return
         with psycopg.connect(libpq_url(url)) as conn:
             with conn.cursor() as cur:
                 rows = cur.execute(
@@ -288,7 +298,7 @@ def main() -> None:
                 print(f"candidate: {path} ({size:,} bytes, {len(ids)} episode rows)")
     except Exception:
         # Connection and query errors can contain a credential-bearing DSN.
-        print("MP3 retention preview failed; inspect database and media availability", file=sys.stderr)
+        print("MP3 retention failed; inspect database and media availability", file=sys.stderr)
         raise SystemExit(1) from None
 
 
