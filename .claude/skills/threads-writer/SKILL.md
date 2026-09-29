@@ -111,6 +111,12 @@ Its old first-person examples are not permission to imitate first-person claims.
 
 ## Runtime contract and verification
 
+The pipeline is shared across environments. Automatic poll generation is disabled
+unless `THREADS_NATIVE_POLLS_ENABLED=true`. Keep it off until every publishing
+consumer, including production, understands the poll contract; deploying the dev
+backend alone is insufficient. Ordinary thesis generation remains enabled. Do not
+enable the flag as part of a dev merge or use shared episode edits as isolated tests.
+
 Keep the skill and `social_copy_writer.yaml` aligned. Existing `social_thread`
 post/comments/link metadata remain compatible; optional `poll` contains `question`
 and 2–4 `options`. Adding fields to a prompt is not enough: normalization, preview,

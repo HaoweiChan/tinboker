@@ -116,7 +116,8 @@ def test_postprocess_normalises_shapes():
     assert out["comments"][0]["heading"] == "華許政策"
 
 
-def test_postprocess_preserves_valid_optional_poll_and_link_metadata():
+def test_postprocess_preserves_valid_optional_poll_and_link_metadata(monkeypatch):
+    monkeypatch.setenv("THREADS_NATIVE_POLLS_ENABLED", "true")
     out = scw.postprocess(
         {
             "post": "市場正在權衡利率和匯率壓力。",
@@ -142,13 +143,15 @@ def test_postprocess_preserves_valid_optional_poll_and_link_metadata():
     {"question": "怎麼選？", "options": ["沒把握", "先穩匯率"]},
     {"question": "怎麼選？", "options": ["甲", 2]},
 ])
-def test_present_malformed_poll_fails_closed(poll):
+def test_present_malformed_poll_fails_closed(poll, monkeypatch):
+    monkeypatch.setenv("THREADS_NATIVE_POLLS_ENABLED", "true")
     assert scw.postprocess({"post": "投票背景", "comments": [], "poll": poll}, _SECTIONED)[
         "social_thread"
     ] == {"post": "", "comments": [], "poll_error": "invalid_poll"}
 
 
-def test_poll_without_required_context_fails_closed():
+def test_poll_without_required_context_fails_closed(monkeypatch):
+    monkeypatch.setenv("THREADS_NATIVE_POLLS_ENABLED", "true")
     thread = scw.postprocess(
         {"post": "", "comments": [], "poll": {"question": "怎麼選？", "options": ["甲", "乙"]}},
         _SECTIONED,
@@ -160,6 +163,24 @@ def test_missing_or_null_poll_keeps_ordinary_post_compatibility():
     for extra in ({}, {"poll": None}):
         thread = scw.postprocess({"post": "普通判斷", "comments": [], **extra}, _SECTIONED)["social_thread"]
         assert thread == {"post": "普通判斷", "comments": []}
+
+
+def test_disabled_polls_drop_unexpected_poll_and_fail_closed(monkeypatch):
+    monkeypatch.delenv("THREADS_NATIVE_POLLS_ENABLED", raising=False)
+    thread = scw.postprocess(
+        {"post": "投票背景，沒有一般主文", "comments": [],
+         "poll": {"question": "怎麼選？", "options": ["甲", "乙"]}},
+        _SECTIONED,
+    )["social_thread"]
+    assert thread == {"post": "", "comments": [], "poll_error": "invalid_poll"}
+
+
+def test_disabled_polls_keep_ordinary_copy(monkeypatch):
+    monkeypatch.delenv("THREADS_NATIVE_POLLS_ENABLED", raising=False)
+    thread = scw.postprocess(
+        {"post": "一般判斷", "comments": [{"heading": "標題", "text": "補充"}]}, _SECTIONED
+    )["social_thread"]
+    assert thread == {"post": "一般判斷", "comments": [{"heading": "標題", "text": "補充"}]}
 
 
 def test_postprocess_handles_junk():
@@ -224,19 +245,35 @@ def test_prompt_asks_for_a_selection_not_every_section():
     assert "最多 4 則" in body
 
 
-def test_prompt_describes_optional_grounded_poll_and_normal_post_fallback():
-    body = load_prompt_system()
+def test_prompt_describes_optional_grounded_poll_and_normal_post_fallback(monkeypatch):
+    monkeypatch.setenv("THREADS_NATIVE_POLLS_ENABLED", "true")
+    body = "\n".join(message["content"] for message in scw.build_messages(_SECTIONED))
     assert "不需要每集都有" in body
-    assert "真實而可信的取捨" in body
+    assert "可信的不同立場與具體代價" in body
     assert "不保證會爆紅" in body
     assert "照一般主貼文" in body
-    assert "不可為了互動製造憤怒或對立" in body
+    assert "不要製造假衝突" in body
     assert "一般讀者看得懂的字" in body
-    assert "不要重複 poll.question" in body
-    assert "comments 留空" in body
+    assert "重複 poll.question" in body
+    assert "comments 預設留空" in body
     assert "下週大盤漲跌？" in body
     assert "不代表已獨立查證" in body
     assert "不要把較早的節目內容說成今天仍在發生" in body
+
+
+def test_polls_are_off_by_default_and_prompt_requests_ordinary_copy(monkeypatch):
+    monkeypatch.delenv("THREADS_NATIVE_POLLS_ENABLED", raising=False)
+    system = scw.build_messages(_SECTIONED)[0]["content"]
+    assert "請照一般主貼文寫一個有根據的判斷" in system
+    assert "不要產生 poll 欄位" in system
+    assert "額外產生 poll" not in system
+
+
+def test_explicitly_enabled_polls_extend_prompt(monkeypatch):
+    monkeypatch.setenv("THREADS_NATIVE_POLLS_ENABLED", "true")
+    system = scw.build_messages(_SECTIONED)[0]["content"]
+    assert "本次已啟用 Threads 原生投票" in system
+    assert '"poll": {"question"' in system
 
 
 # --- no first person ----------------------------------------------------------------
