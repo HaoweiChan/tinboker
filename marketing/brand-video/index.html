@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="zh-TW" data-resolution="portrait">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1080, height=1920" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700;800&family=Noto+Sans+TC:wght@500;700;900&display=swap" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      :root {
+        --bg: hsl(220 34% 4%);
+        --card: hsl(218 30% 7%);
+        --fg: hsl(210 22% 90%);
+        --muted: hsl(213 15% 60%);
+        --border: hsl(213 28% 15%);
+        --amber: hsl(38 96% 56%);
+        --cyan: hsl(190 92% 56%);
+        --bear: hsl(0 80% 61%);
+        --mono: "JetBrains Mono", "Noto Sans TC", monospace;
+        --sans: "Noto Sans TC", "JetBrains Mono", sans-serif;
+      }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 1080px; height: 1920px; overflow: hidden; background: var(--bg); }
+      #root {
+        position: relative; width: 1080px; height: 1920px; overflow: hidden;
+        background:
+          radial-gradient(ellipse 90% 60% at 50% 45%, transparent 40%, hsl(220 40% 2% / 0.85) 100%),
+          linear-gradient(hsl(213 28% 15% / 0.35) 1px, transparent 1px) 0 0 / 88px 88px,
+          linear-gradient(90deg, hsl(213 28% 15% / 0.35) 1px, transparent 1px) 0 0 / 88px 88px,
+          var(--bg);
+        font-family: var(--sans); color: var(--fg);
+        font-feature-settings: "tnum" 1, "zero" 1;
+      }
+      #keyline { position: absolute; top: 0; left: 0; width: 1080px; height: 6px; z-index: 50;
+        background: linear-gradient(90deg, var(--amber), var(--cyan)); transform-origin: left center; }
+      .clip { position: absolute; inset: 0; }
+
+      /* logo — rebuilt from the 512px mark so each part can move on its own */
+      .logo { position: absolute; width: 512px; height: 512px; left: 284px; top: 704px; }
+      .logo .bar { position: absolute; }
+      .lb-a { left: 110px; top: 110px; width: 146px; height: 48px; background: #f1ead8; }
+      .lb-b { left: 110px; top: 110px; width: 48px; height: 146px; background: #f1ead8; }
+      .ly-a { left: 256px; top: 354px; width: 146px; height: 48px; background: #ffd23f; }
+      .ly-b { left: 354px; top: 256px; width: 48px; height: 146px; background: #ffd23f; }
+      .logo .dot { position: absolute; width: 36px; height: 36px; border-radius: 50%; }
+      .d1 { left: 299px; top: 177px; background: #dbb539; }
+      .d2 { left: 250px; top: 225px; background: #ada99e; }
+      .d3 { left: 201px; top: 274px; background: #f1ead8; }
+      .tl-grp, .br-grp { position: absolute; inset: 0; }
+
+      /* hook */
+      .hook { position: absolute; left: 0; width: 1080px; text-align: center; }
+      #h-l1 { top: 540px; font-family: var(--mono); font-size: 54px; font-weight: 700; color: var(--muted); letter-spacing: 0.02em; }
+      #h-num { top: 700px; font-size: 300px; font-weight: 900; line-height: 1; font-family: var(--mono); letter-spacing: -0.04em; }
+      #h-num .u { font-family: var(--sans); font-size: 120px; font-weight: 900; margin-left: 20px; letter-spacing: 0; }
+      #h-strike { position: absolute; left: 190px; top: 860px; width: 700px; height: 16px; background: var(--bear); transform-origin: left center; }
+      #h-l3 { top: 1100px; font-size: 110px; font-weight: 900; color: var(--amber); }
+      #h-l4 { top: 1260px; font-family: var(--mono); font-size: 40px; font-weight: 500; color: var(--muted); }
+      .mask { overflow: hidden; line-height: 1.35; padding-bottom: 0.08em; }
+
+      /* scene headers */
+      .ov { position: absolute; left: 70px; top: 120px; font-family: var(--mono); font-size: 32px; font-weight: 800;
+        color: var(--amber); letter-spacing: 0.12em; display: flex; align-items: center; gap: 18px; }
+      .ov::before { content: ""; width: 10px; height: 38px; background: var(--amber); }
+      .ttl { position: absolute; left: 70px; top: 176px; font-size: 76px; font-weight: 900; letter-spacing: -0.01em; white-space: nowrap; }
+      .ttl em { font-style: normal; color: var(--amber); }
+
+      /* screenshot pieces */
+      .pc { position: absolute; display: block; border-radius: 22px; overflow: hidden;
+        border: 2px solid hsl(213 28% 20%); background: var(--card);
+        box-shadow: 0 40px 90px hsl(220 50% 1% / 0.75); }
+      .pc img { display: block; width: 100%; height: auto; }
+      .flat { border-radius: 0; border-left: 2px solid hsl(213 28% 20%); border-right: 2px solid hsl(213 28% 20%); border-top: 0; border-bottom: 0; box-shadow: none; }
+      .top-r { border-radius: 22px 22px 0 0; border-top: 2px solid hsl(213 28% 20%); border-bottom: 0; }
+      .bot-r { border-radius: 0 0 22px 22px; border-bottom: 2px solid hsl(213 28% 20%); border-top: 0; }
+      .hl { outline: 4px solid var(--amber); outline-offset: 0; }
+      #scan { position: absolute; top: 450px; width: 6px; height: 905px; background: var(--cyan);
+        box-shadow: 0 0 30px var(--cyan), 0 0 80px var(--cyan); }
+      #flash { position: absolute; inset: 0; background: #fff; opacity: 0; z-index: 40; }
+
+      /* end card */
+      #e-name { position: absolute; top: 1120px; left: 0; width: 1080px; text-align: center; font-size: 118px; font-weight: 900; letter-spacing: -0.01em; }
+      #e-tag { position: absolute; top: 1275px; left: 0; width: 1080px; text-align: center; font-size: 62px; font-weight: 700; color: var(--amber); }
+      #e-sub { position: absolute; top: 1380px; left: 0; width: 1080px; text-align: center; font-size: 38px; font-weight: 500; color: var(--muted); }
+      #e-url { position: absolute; top: 1520px; left: 290px; width: 500px; height: 96px; border: 3px solid var(--cyan);
+        border-radius: 48px; display: flex; align-items: center; justify-content: center;
+        font-family: var(--mono); font-size: 46px; font-weight: 700; color: var(--cyan); }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="15" data-width="1080" data-height="1920">
+      <div id="keyline"></div>
+      <div id="flash"></div>
+
+      <!-- S1 logo sting -->
+      <div id="s1" class="clip" data-start="0" data-duration="2.1" data-track-index="0">
+        <div class="logo" id="logo1">
+          <div class="tl-grp" id="l1-tl"><div class="bar lb-a"></div><div class="bar lb-b"></div></div>
+          <div class="br-grp" id="l1-br"><div class="bar ly-a"></div><div class="bar ly-b"></div></div>
+          <div class="dot d1" id="l1-d1"></div><div class="dot d2" id="l1-d2"></div><div class="dot d3" id="l1-d3"></div>
+        </div>
+      </div>
+
+      <!-- S2 hook -->
+      <div id="s2" class="clip" data-start="2" data-duration="2.1" data-track-index="0">
+        <div class="hook mask" id="h-l1"><div id="h-l1i">一集財經 Podcast</div></div>
+        <div class="hook" id="h-num"><span id="h-n">90</span><span class="u">分鐘</span></div>
+        <div id="h-strike"></div>
+        <div class="hook mask" id="h-l3"><div id="h-l3i">AI 幫你聽完</div></div>
+        <div class="hook mask" id="h-l4"><div id="h-l4i">重點 · 個股 · 題材，一次整理</div></div>
+      </div>
+
+      <!-- S3 summary -->
+      <div id="s3" class="clip" data-start="4" data-duration="3.05" data-track-index="0">
+        <div class="ov" id="s3-ov">01 / 摘要</div>
+        <div class="ttl mask" id="s3-t"><div id="s3-ti">一集重點，<em>一眼看完</em></div></div>
+        <div class="pc top-r" id="gy1" style="left:70px;top:330px;width:940px"><img src="assets/gy_head.png" alt="" /></div>
+        <div class="pc flat" id="gy2" style="left:70px;top:594px;width:940px"><img src="assets/gy_bullets.png" alt="" /></div>
+        <div class="pc bot-r" id="gy3" style="left:70px;top:1034px;width:940px"><img src="assets/gy_tickers.png" alt="" /></div>
+        <div class="pc hl" id="eps" style="left:90px;top:520px;width:900px"><img src="assets/ep_summary.png" alt="" /></div>
+      </div>
+
+      <!-- S4 stock signal -->
+      <div id="s4" class="clip" data-start="7" data-duration="3.05" data-track-index="0">
+        <div class="ov" id="s4-ov">02 / 個股</div>
+        <div class="ttl mask" id="s4-t"><div id="s4-ti">誰在聊、<em>聊多熱</em></div></div>
+        <div class="pc" id="sh" style="left:70px;top:330px;width:940px"><img src="assets/stock_head.png" alt="" /></div>
+        <div class="pc" id="sc" style="left:70px;top:540px;width:940px"><img src="assets/stock_chart.png" alt="" /></div>
+        <div id="scan"></div>
+        <div class="pc hl" id="cons" style="left:430px;top:1080px;width:600px"><img src="assets/consensus.png" alt="" /></div>
+        <div class="pc" id="opg" style="left:40px;top:1470px;width:680px"><img src="assets/op_gooaye.png" alt="" /></div>
+      </div>
+
+      <!-- S5 themes -->
+      <div id="s5" class="clip" data-start="10" data-duration="2.55" data-track-index="0">
+        <div class="ov" id="s5-ov">03 / 題材</div>
+        <div class="ttl mask" id="s5-t"><div id="s5-ti">題材熱度，<em>即時排行</em></div></div>
+        <div id="s5-stage" style="position:absolute;inset:0;transform-origin:540px 960px">
+          <div class="pc" id="bub" style="left:70px;top:330px;width:940px"><img src="assets/bubble.png" alt="" /></div>
+          <div class="pc" id="most" style="left:30px;top:1150px;width:560px"><img src="assets/most_talked.png" alt="" /></div>
+          <div class="pc hl" id="week" style="left:500px;top:1330px;width:560px"><img src="assets/market_week.png" alt="" /></div>
+        </div>
+      </div>
+
+      <!-- S6 end card -->
+      <div id="s6" class="clip" data-start="12.5" data-duration="2.5" data-track-index="0">
+        <div class="logo" id="logo2" style="top:500px">
+          <div class="tl-grp" id="l2-tl"><div class="bar lb-a"></div><div class="bar lb-b"></div></div>
+          <div class="br-grp" id="l2-br"><div class="bar ly-a"></div><div class="bar ly-b"></div></div>
+          <div class="dot d1" id="l2-d1"></div><div class="dot d2" id="l2-d2"></div><div class="dot d3" id="l2-d3"></div>
+        </div>
+        <div id="e-name" class="mask"><div id="e-namei">聽播客 TinBoker</div></div>
+        <div id="e-tag" class="mask"><div id="e-tagi">AI 財經 Podcast 摘要</div></div>
+        <div id="e-sub" class="mask"><div id="e-subi">5 分鐘看懂股癌、台股美股節目重點</div></div>
+        <div id="e-url">tinboker.com</div>
+      </div>
+
+      <!-- audio: original synth bed + SFX (synth.py) -->
+      <audio id="a-music" src="assets/music.wav" data-start="0" data-duration="15" data-volume="0.9" data-track-index="11"></audio>
+      <audio id="a-w0" src="assets/whoosh.wav" data-start="0" data-duration="0.5" data-volume="0.55" data-track-index="12"></audio>
+      <audio id="a-p1" src="assets/pop.wav" data-start="0.5" data-duration="0.12" data-volume="0.6" data-track-index="13"></audio>
+      <audio id="a-p2" src="assets/pop.wav" data-start="0.75" data-duration="0.12" data-volume="0.6" data-track-index="14"></audio>
+      <audio id="a-p3" src="assets/pop.wav" data-start="1.0" data-duration="0.12" data-volume="0.6" data-track-index="15"></audio>
+      <audio id="a-w1" src="assets/whoosh.wav" data-start="1.6" data-duration="0.5" data-volume="0.45" data-track-index="16"></audio>
+      <audio id="a-t1" src="assets/tick.wav" data-start="2.9" data-duration="0.04" data-volume="0.5" data-track-index="17"></audio>
+      <audio id="a-t2" src="assets/tick.wav" data-start="3.0" data-duration="0.04" data-volume="0.5" data-track-index="18"></audio>
+      <audio id="a-t3" src="assets/tick.wav" data-start="3.1" data-duration="0.04" data-volume="0.5" data-track-index="19"></audio>
+      <audio id="a-t4" src="assets/tick.wav" data-start="3.2" data-duration="0.04" data-volume="0.5" data-track-index="20"></audio>
+      <audio id="a-w2" src="assets/whoosh.wav" data-start="3.75" data-duration="0.5" data-volume="0.5" data-track-index="21"></audio>
+      <audio id="a-p4" src="assets/pop.wav" data-start="4.3" data-duration="0.12" data-volume="0.4" data-track-index="22"></audio>
+      <audio id="a-p5" src="assets/pop.wav" data-start="4.55" data-duration="0.12" data-volume="0.4" data-track-index="23"></audio>
+      <audio id="a-w3" src="assets/whoosh.wav" data-start="5.4" data-duration="0.5" data-volume="0.5" data-track-index="24"></audio>
+      <audio id="a-w4" src="assets/whoosh.wav" data-start="6.8" data-duration="0.5" data-volume="0.5" data-track-index="25"></audio>
+      <audio id="a-t5" src="assets/tick.wav" data-start="7.25" data-duration="0.04" data-volume="0.45" data-track-index="26"></audio>
+      <audio id="a-p6" src="assets/pop.wav" data-start="8.3" data-duration="0.12" data-volume="0.45" data-track-index="27"></audio>
+      <audio id="a-p7" src="assets/pop.wav" data-start="8.8" data-duration="0.12" data-volume="0.45" data-track-index="28"></audio>
+      <audio id="a-w5" src="assets/whoosh.wav" data-start="9.75" data-duration="0.5" data-volume="0.5" data-track-index="29"></audio>
+      <audio id="a-p8" src="assets/pop.wav" data-start="10.55" data-duration="0.12" data-volume="0.45" data-track-index="30"></audio>
+      <audio id="a-p9" src="assets/pop.wav" data-start="10.85" data-duration="0.12" data-volume="0.45" data-track-index="31"></audio>
+      <audio id="a-rs" src="assets/riser.wav" data-start="10.5" data-duration="2" data-volume="0.45" data-track-index="32"></audio>
+      <audio id="a-im" src="assets/impact.wav" data-start="12.5" data-duration="1.5" data-volume="0.4" data-track-index="33"></audio>
+      <audio id="a-p10" src="assets/pop.wav" data-start="12.8" data-duration="0.12" data-volume="0.5" data-track-index="34"></audio>
+      <audio id="a-p11" src="assets/pop.wav" data-start="12.9" data-duration="0.12" data-volume="0.5" data-track-index="35"></audio>
+      <audio id="a-p12" src="assets/pop.wav" data-start="13.0" data-duration="0.12" data-volume="0.5" data-track-index="36"></audio>
+      <audio id="a-t6" src="assets/tick.wav" data-start="13.7" data-duration="0.04" data-volume="0.5" data-track-index="37"></audio>
+    </div>
+    <script>
+      const tl = gsap.timeline({ paused: true });
+      const E = "expo.out", B = "back.out(1.8)";
+      const maskIn = (sel, t, d = 0.45) => tl.fromTo(sel, { yPercent: 110 }, { yPercent: 0, duration: d, ease: E }, t);
+
+      tl.fromTo("#keyline", { scaleX: 0 }, { scaleX: 1, duration: 1.2, ease: "power2.inOut" }, 0);
+
+      // S1 — brackets slam in from opposite corners, dots pop on the beat, mark shrinks away
+      tl.fromTo("#l1-tl", { x: -700, y: -700 }, { x: 0, y: 0, duration: 0.5, ease: E }, 0);
+      tl.fromTo("#l1-br", { x: 700, y: 700 }, { x: 0, y: 0, duration: 0.5, ease: E }, 0);
+      ["#l1-d3", "#l1-d2", "#l1-d1"].forEach((d, i) => tl.fromTo(d, { scale: 0 }, { scale: 1, duration: 0.3, ease: B }, 0.5 + i * 0.25));
+      tl.fromTo("#logo1", { scale: 1.25 }, { scale: 1, duration: 1.4, ease: "power1.out" }, 0);
+      tl.to("#l1-tl", { x: -26, y: -26, duration: 0.25, ease: "power2.out" }, 1.25);
+      tl.to("#l1-br", { x: 26, y: 26, duration: 0.25, ease: "power2.out" }, 1.25);
+      tl.to("#logo1", { scale: 0.18, y: -640, opacity: 0, duration: 0.45, ease: "power3.in" }, 1.6);
+
+      // S2 — 90 分鐘 → struck through → AI 幫你聽完
+      maskIn("#h-l1i", 2.0);
+      tl.fromTo("#h-num", { scale: 0.6, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.45, ease: B }, 2.2);
+      const n = { v: 90 };
+      tl.to(n, { v: 5, duration: 0.4, ease: "power2.in", onUpdate: () => (document.getElementById("h-n").textContent = String(Math.round(n.v)).padStart(2, " ")) }, 2.85);
+      tl.to("#h-num", { color: "hsl(38 96% 56%)", duration: 0.1 }, 3.2);
+      tl.fromTo("#h-strike", { scaleX: 0 }, { scaleX: 1, duration: 0.2, ease: "power3.out" }, 2.7);
+      tl.to("#h-strike", { opacity: 0, duration: 0.15 }, 3.2);
+      tl.to("#h-num", { rotation: -3, duration: 0.08, yoyo: true, repeat: 3 }, 3.2);
+      maskIn("#h-l3i", 3.3, 0.4);
+      maskIn("#h-l4i", 3.45, 0.4);
+      tl.to(["#h-l1", "#h-num", "#h-l3", "#h-l4"], { y: -260, opacity: 0, duration: 0.3, ease: "power3.in", stagger: 0.03 }, 3.78);
+
+      // S3 — Gooaye card pieces fly in, split apart, the full summary lands on top
+      tl.fromTo("#s3-ov", { x: -60, opacity: 0 }, { x: 0, opacity: 1, duration: 0.4, ease: E }, 4.0);
+      maskIn("#s3-ti", 4.05);
+      tl.fromTo("#gy1", { x: 1100, rotation: 6 }, { x: 0, rotation: 0, duration: 0.55, ease: E }, 4.05);
+      tl.fromTo("#gy2", { clipPath: "inset(0 0 100% 0)", y: 40 }, { clipPath: "inset(0 0 0% 0)", y: 0, duration: 0.6, ease: "power2.out" }, 4.3);
+      tl.fromTo("#gy3", { x: -1100, rotation: -6 }, { x: 0, rotation: 0, duration: 0.55, ease: E }, 4.55);
+      tl.to("#gy1", { y: -40, x: -30, rotation: -3, scale: 0.9, opacity: 0.35, duration: 0.6, ease: "power3.inOut" }, 5.35);
+      tl.to("#gy2", { x: 40, rotation: 2, scale: 0.9, opacity: 0.35, duration: 0.6, ease: "power3.inOut" }, 5.35);
+      tl.to("#gy3", { y: 60, x: -20, rotation: -2, scale: 0.9, opacity: 0.35, duration: 0.6, ease: "power3.inOut" }, 5.35);
+      tl.fromTo("#eps", { y: 1500, rotation: 8 }, { y: 0, rotation: -1.5, duration: 0.7, ease: E }, 5.45);
+      tl.to("#eps", { scale: 1.04, rotation: 0, duration: 1.0, ease: "none" }, 6.15);
+      tl.to(["#gy1", "#gy2", "#gy3", "#eps", "#s3-ov", "#s3-t"], { x: -1200, duration: 0.3, ease: "power3.in", stagger: 0.02 }, 6.8);
+
+      // S4 — stock head drops, chart wipes in behind a cyan scan line, consensus + 股癌 opinion pile on
+      tl.fromTo("#s4-ov", { x: -60, opacity: 0 }, { x: 0, opacity: 1, duration: 0.4, ease: E }, 7.0);
+      maskIn("#s4-ti", 7.05);
+      tl.fromTo("#sh", { y: -500 }, { y: 0, duration: 0.5, ease: E }, 7.05);
+      tl.fromTo("#sc", { clipPath: "inset(0 100% 0 0)" }, { clipPath: "inset(0 0% 0 0)", duration: 0.9, ease: "power1.inOut" }, 7.25);
+      tl.fromTo("#scan", { x: 70, opacity: 1 }, { x: 1010, duration: 0.9, ease: "power1.inOut" }, 7.25);
+      tl.to("#scan", { opacity: 0, duration: 0.15 }, 8.15);
+      tl.set("#scan", { opacity: 0 }, 0);
+      tl.set("#scan", { opacity: 1 }, 7.25);
+      tl.to(["#sh", "#sc"], { opacity: 0.45, scale: 0.97, duration: 0.5 }, 8.3);
+      tl.fromTo("#cons", { y: 900, rotation: 10 }, { y: 0, rotation: -3, duration: 0.6, ease: E }, 8.3);
+      tl.fromTo("#opg", { x: -900, rotation: -8 }, { x: 0, rotation: 2, duration: 0.6, ease: E }, 8.8);
+      tl.to("#cons", { scale: 1.05, duration: 0.9, ease: "none" }, 8.9);
+      tl.to(["#sh", "#sc", "#cons", "#opg", "#s4-ov", "#s4-t"], { scale: 0.6, opacity: 0, duration: 0.3, ease: "power3.in", stagger: 0.02 }, 9.72);
+
+      // S5 — bubble chart punches in, rankings flank it, everything rushes the camera into the flash
+      tl.fromTo("#s5-ov", { x: -60, opacity: 0 }, { x: 0, opacity: 1, duration: 0.4, ease: E }, 10.0);
+      maskIn("#s5-ti", 10.05);
+      tl.fromTo("#bub", { scale: 0.5, rotation: 8, opacity: 0 }, { scale: 1, rotation: 0, opacity: 1, duration: 0.55, ease: B }, 10.05);
+      tl.fromTo("#most", { x: -800, rotation: -12 }, { x: 0, rotation: -4, duration: 0.5, ease: E }, 10.55);
+      tl.fromTo("#week", { x: 800, rotation: 12 }, { x: 0, rotation: 3, duration: 0.5, ease: E }, 10.85);
+      tl.to("#s5-stage", { scale: 1.08, duration: 1.1, ease: "power1.in" }, 11.1);
+      tl.to("#s5-stage", { scale: 2.2, opacity: 0, duration: 0.3, ease: "power3.in" }, 12.2);
+      tl.to("#flash", { opacity: 0.9, duration: 0.12, ease: "power2.in" }, 12.38);
+      tl.to("#flash", { opacity: 0, duration: 0.45, ease: "power2.out" }, 12.5);
+
+      // S6 — end card
+      tl.fromTo("#l2-tl", { x: -700, y: -700 }, { x: 0, y: 0, duration: 0.35, ease: E }, 12.5);
+      tl.fromTo("#l2-br", { x: 700, y: 700 }, { x: 0, y: 0, duration: 0.35, ease: E }, 12.5);
+      ["#l2-d3", "#l2-d2", "#l2-d1"].forEach((d, i) => tl.fromTo(d, { scale: 0 }, { scale: 1, duration: 0.25, ease: B }, 12.8 + i * 0.1));
+      tl.fromTo("#logo2", { scale: 1.15 }, { scale: 1, duration: 2.5, ease: "power1.out" }, 12.5);
+      maskIn("#e-namei", 13.0, 0.5);
+      maskIn("#e-tagi", 13.25, 0.5);
+      maskIn("#e-subi", 13.45, 0.5);
+      tl.fromTo("#e-url", { scale: 0.6, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.4, ease: B }, 13.7);
+
+      window.__timelines = window.__timelines || {};
+      window.__timelines["main"] = tl;
+      tl.seek(0);
+    </script>
+  </body>
+</html>
