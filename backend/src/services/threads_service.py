@@ -53,14 +53,11 @@ class ThreadsService:
         text: str,
         image_url: Optional[str] = None,
         *,
-        image_publish_delay: float = 5.0,
         poll_options: Optional[list[str]] = None,
     ) -> str:
         """Publish one post. Returns the published media id.
 
-        ``image_url`` must be a public HTTPS URL when given. For image posts the
-        container needs a moment to be processed before publishing, hence the
-        short delay between the two calls.
+        ``image_url`` must be a public HTTPS URL when given.
         """
         if not self.is_configured:
             raise ThreadsError("Threads API not configured (missing access token or user id)")
@@ -71,9 +68,9 @@ class ThreadsService:
             if poll_options is not None and image_url:
                 raise ThreadsError("Threads polls cannot be combined with media")
             container_id = await self._create_container(client, text, image_url, poll_options)
-            if image_url:
-                # Give Meta time to fetch/process the image before publishing.
-                await asyncio.sleep(image_publish_delay)
+            # Text and poll containers need FINISHED too: publishing straight away 400s
+            # with subcode 4279009 ("media not found"), as the 2026-09-30 20:30 slot did.
+            await self._wait_until_ready(client, container_id, interval=2.0)
             return await self._publish_container(client, container_id)
 
     async def publish_carousel(
@@ -122,7 +119,7 @@ class ThreadsService:
             container_id = data.get("id")
             if not container_id:
                 raise ThreadsError(f"Threads create-reply returned no id: {data}")
-            await asyncio.sleep(delay)
+            await self._wait_until_ready(client, container_id, interval=delay)
             return await self._publish_container(client, container_id)
 
     async def get_permalink(self, media_id: str) -> Optional[str]:
