@@ -568,6 +568,41 @@ async def test_threads_poll_container_sends_meta_attachment_json():
 
 
 @pytest.mark.asyncio
+async def test_publish_waits_for_text_container_finished(monkeypatch):
+    # 2026-09-30: publishing a text container straight away 400'd with subcode 4279009.
+    service = ThreadsService(access_token="token", user_id="123")
+    steps = []
+    statuses = iter(["IN_PROGRESS", "FINISHED"])
+
+    class Response:
+        status_code = 200
+        def __init__(self, payload):
+            self._payload = payload
+        def json(self):
+            return self._payload
+
+    class Client:
+        def __init__(self, *a, **k): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+        async def get(self, url, *, params):
+            steps.append("status")
+            return Response({"status": next(statuses)})
+        async def post(self, url, *, data):
+            steps.append("publish" if url.endswith("threads_publish") else "create")
+            return Response({"id": "c1"})
+
+    monkeypatch.setattr("src.services.threads_service.httpx.AsyncClient", Client)
+    monkeypatch.setattr("src.services.threads_service.asyncio.sleep", lambda s: _noop())
+    assert await service.publish("hello") == "c1"
+    assert steps == ["create", "status", "status", "publish"]
+
+
+async def _noop():
+    return None
+
+
+@pytest.mark.asyncio
 async def test_publish_recent_thread_path_records_root_and_replies(temp_db, monkeypatch):
     fake = _FakeThreads()
     monkeypatch.setattr(threads_publisher, "ThreadsService", lambda *a, **k: fake)
