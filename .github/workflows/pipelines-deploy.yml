@@ -139,6 +139,8 @@ jobs:
             # aligns them to the carousel cards), and it costs ~1/5 of sonnet per run.
             # Every other role stays on deepseek.
             Environment=SOCIAL_COPY_WRITER_MODEL=openrouter:google/gemini-3.7-flash
+            # Every backend (dev/staging/prod, v0.12.18+) publishes social_thread.poll.
+            Environment=THREADS_NATIVE_POLLS_ENABLED=true
             # extractor pinned to flash: it is the ONLY role that receives {sentences} (the raw
             # transcript), so it alone accounts for the bulk of prompt-token spend — 30 days of
             # v4-pro was 175M prompt tokens, 84% of the whole OpenRouter bill. Measured on 4
