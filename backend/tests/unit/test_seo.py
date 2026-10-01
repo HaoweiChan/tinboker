@@ -20,6 +20,16 @@ def _ep(ep_id: str, tickers: list[str] | None = None, tags: list[str] | None = N
     )
 
 
+@pytest.fixture(autouse=True)
+def _no_insight_store(monkeypatch):
+    """No test here may reach the content store for insight counts; the ones that care
+    about the stock floor install their own counts."""
+    async def _unavailable(*args, **kwargs):
+        raise RuntimeError("insight store not available in unit tests")
+
+    monkeypatch.setattr(seo.insight_service, "free_insight_counts", _unavailable)
+
+
 @pytest.mark.asyncio
 async def test_sitemap_lists_static_routes_and_episodes(monkeypatch):
     async def _fake_recent(*args, **kwargs):
@@ -112,25 +122,51 @@ async def test_sitemap_lists_visible_sectors_and_skips_hidden_tags(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_sitemap_lists_tickers_with_two_or_more_scoped_episodes(monkeypatch):
-    """/stock pages come from the scoped episode list, floored at MIN_TICKER_EPISODES.
+async def test_sitemap_lists_stock_pages_that_have_free_insights_to_show(monkeypatch):
+    """/stock pages are listed on what the page renders, not on episode counts.
 
-    The trending top-100 left ~400 discussed tickers out of the sitemap; a single
-    mention is one thesis line, which is the thin page the floor keeps out.
+    A ticker can sit in three episodes' related_tickers and still have no readable 觀點
+    (no insight row, or only paywalled ones) — a title and a footer. 19 such pages were
+    in the sitemap on 2026-10-01.
     """
     async def _recent(*args, **kwargs):
-        return [_ep("E1", ["2330", "NVDA"]), _ep("E2", ["2330", "2327"]), _ep("E3", ["2330"])]
+        return [_ep("E1", ["2330", "NVDA", "6981"]), _ep("E2", ["2330", "6981"]), _ep("E3", ["2330", "6981"])]
+
+    async def _free(*args, **kwargs):
+        # 6981: discussed in three episodes, nothing readable. 9999: readable rows but
+        # outside the scoped episode list, so it has no live episode to link to.
+        return {"2330": 5, "NVDA": seo.MIN_STOCK_INSIGHTS - 1, "9999": 8}
 
     monkeypatch.setattr(seo.podcast_service, "get_recent_episodes", _recent)
+    monkeypatch.setattr(seo.insight_service, "free_insight_counts", _free)
+    monkeypatch.setattr(settings, "site_url", "https://tinboker.com")
+
+    body = (await seo.sitemap(limit=1000)).body.decode()
+
+    assert "<loc>https://tinboker.com/stock/2330</loc>" in body
+    for thin in ("/stock/NVDA", "/stock/6981", "/stock/9999"):
+        assert thin not in body
+    # 3 episodes + 1 stock page + 1 weekly page
+    assert body.count("<url>") == len(seo.STATIC_PATHS) + 3 + 1 + 1
+
+
+@pytest.mark.asyncio
+async def test_sitemap_falls_back_to_the_episode_floor_when_insights_are_unavailable(monkeypatch):
+    """A failed insight query must not empty the sitemap of stock pages for an hour."""
+    async def _recent(*args, **kwargs):
+        return [_ep("E1", ["2330", "NVDA"]), _ep("E2", ["2330"])]
+
+    async def _boom(*args, **kwargs):
+        raise RuntimeError("mirror down")
+
+    monkeypatch.setattr(seo.podcast_service, "get_recent_episodes", _recent)
+    monkeypatch.setattr(seo.insight_service, "free_insight_counts", _boom)
     monkeypatch.setattr(settings, "site_url", "https://tinboker.com")
 
     body = (await seo.sitemap(limit=1000)).body.decode()
 
     assert "<loc>https://tinboker.com/stock/2330</loc>" in body
     assert "/stock/NVDA" not in body
-    assert "/stock/2327" not in body
-    # 3 episodes + 1 stock page + 1 weekly page
-    assert body.count("<url>") == len(seo.STATIC_PATHS) + 3 + 1 + 1
 
 
 @pytest.mark.asyncio

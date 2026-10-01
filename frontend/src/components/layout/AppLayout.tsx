@@ -42,6 +42,8 @@ function pageTitle(pathname: string): [string, string] {
       return ['產業', '產業概覽'];
     case '/about':
       return ['關於', '聯絡我們 · 免責聲明'];
+    case '/methodology':
+      return ['關於', '資料來源與方法'];
     default:
       return ['TinBoker', ''];
   }

@@ -9,11 +9,13 @@ import { apiClient } from './client';
 import {
   TickerMentionsResponseSchema,
   EpisodeMentionsResponseSchema,
+  CrossShowResponseSchema,
   parseResponse,
 } from '../../validation/schemas';
 import type {
   TickerMentionsResponse,
   EpisodeMentionsResponse,
+  CrossShowResponse,
 } from '../../validation/schemas';
 
 export type {
@@ -41,6 +43,15 @@ export async function getEpisodeMentions(episodeId: string): Promise<EpisodeMent
     `/api/episodes/${encodeURIComponent(episodeId)}/mentions`,
   );
   return parseResponse(EpisodeMentionsResponseSchema, response.data);
+}
+
+/** How other shows spoke about this episode's tickers in the 30 days before it aired. */
+export async function getEpisodeCrossShow(episodeId: string): Promise<CrossShowResponse> {
+  const response = await apiClient.get(
+    `/api/episodes/${encodeURIComponent(episodeId)}/cross-show`,
+    { headers: { 'X-Silent-Error': 'true' } },
+  );
+  return parseResponse(CrossShowResponseSchema, response.data);
 }
 
 /** Daily mention counts for one ticker AND for the whole market, over one window. */

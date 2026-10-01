@@ -2,6 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { useParams, useSearchParams, Link, useNavigate } from 'react-router-dom';
 import { ChevronLeft, Play, ExternalLink, Bookmark, Share2, Check } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
+import { CrossShowPanel } from '@/components/episode/CrossShowPanel';
+import { getEpisodeCrossShow } from '@/services/api/mentions';
+import type { CrossShowResponse } from '@/validation/schemas';
 import { PodcastAvatar } from '@/components/common/PodcastAvatar';
 import { PageContent } from '@/components/layout/PageContent';
 import { TickerRow } from '@/components/redesign';
@@ -92,6 +95,17 @@ export const EpisodeDetail: React.FC = () => {
   // Sourced from the (cached) hot-sectors board so each exposure shows its aggregate
   // change without a bespoke price fetch.
   const [sectorPerf, setSectorPerf] = useState<Map<string, SectorBoardItem>>(new Map());
+  // 其他節目怎麼看 — an enrichment: the page never waits on it and renders without it.
+  const [crossShow, setCrossShow] = useState<CrossShowResponse | null>(null);
+  useEffect(() => {
+    if (!id) return;
+    let alive = true;
+    setCrossShow(null);
+    getEpisodeCrossShow(id)
+      .then((res) => { if (alive) setCrossShow(res); })
+      .catch(() => { if (alive) setCrossShow(null); });
+    return () => { alive = false; };
+  }, [id]);
   const [sectorPerfLoading, setSectorPerfLoading] = useState(false);
   // Post-mention performance (TKB-001) deliberately does NOT render here: the rail is
   // for what the episode talks about, and per-ticker return chips made it noisy. The
@@ -472,6 +486,8 @@ export const EpisodeDetail: React.FC = () => {
                 />
               </section>
             )}
+
+            <CrossShowPanel data={crossShow} />
 
             {/* 摘要 — structured summary (headings, paragraphs, ticker/tag/time markers)
                 minus the headline + thesis the 關鍵洞察 card above already shows. */}
