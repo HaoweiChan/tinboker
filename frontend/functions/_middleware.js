@@ -228,6 +228,59 @@ export function tally(insights, days = 30) {
 const tallySentence = (name, t) =>
   `${name} 近 ${t.days} 天 ${t.total} 集 Podcast 提及：${t.bull} 看多 · ${t.neu} 中立 · ${t.bear} 看空。`;
 
+// --- The site's own numbers ----------------------------------------------------
+// The crawler body used to be a mention count plus one thesis line per episode — the
+// podcasts' words, re-listed. What TinBoker itself computes (who is talking, how loud a
+// name is against its own year, where the week's attention moved) reached readers through
+// charts and never reached a crawler at all. These turn the same API payloads the charts
+// draw into text. Counts only: nothing here is gated, the page shows all of it to everyone.
+
+// 誰在談: how many of the 90-day mentions each show accounts for, most-vocal first.
+// Counts only, like WhoTalksTile — which is also why paywalled rows are counted: the
+// tile shows these totals to everyone, and a count gives away none of a row's text.
+export function whoTalks(insights) {
+  const by = new Map();
+  for (const i of insights || []) if (i.podcaster) by.set(i.podcaster, (by.get(i.podcaster) || 0) + 1);
+  return [...by.entries()].map(([name, n]) => ({ name, n })).sort((x, y) => y.n - x.n || x.name.localeCompare(y.name));
+}
+
+// The chart's daily mention series, rolled up by calendar month, newest first.
+export function monthlyMentions(series, months = 12) {
+  const by = new Map();
+  for (const r of series || []) {
+    const ym = String(r.d || '').slice(0, 7);
+    if (ym.length !== 7 || !(r.n > 0)) continue;
+    const m = by.get(ym) || { ym, n: 0, bull: 0, bear: 0 };
+    m.n += r.n; m.bull += r.bull || 0; m.bear += r.bear || 0;
+    by.set(ym, m);
+  }
+  return [...by.values()].sort((x, y) => (x.ym < y.ym ? 1 : -1)).slice(0, months);
+}
+
+// Latest 聲量水位 reading (the API does not promise date order).
+export function latestLevel(level) {
+  let best = null;
+  for (const r of level || []) if (r && r.d && Number.isFinite(r.p) && (!best || r.d > best.d)) best = r;
+  return best;
+}
+
+// 三大法人 net buy/sell summed over the last 5 / 20 / 60 sessions, in 張 (1,000 shares).
+export function flowSums(rows) {
+  const sorted = [...(rows || [])].filter((r) => r && r.date).sort((x, y) => (x.date < y.date ? 1 : -1));
+  const lots = (v) => Math.round((v || 0) / 1000);
+  return [5, 20, 60].filter((k) => sorted.length >= k).map((k) => {
+    const w = sorted.slice(0, k);
+    return {
+      days: k,
+      total: lots(w.reduce((acc, r) => acc + (r.total_net_shares || 0), 0)),
+      foreign: lots(w.reduce((acc, r) => acc + (r.foreign_net_shares || 0), 0)),
+    };
+  });
+}
+const lotsZh = (n) => `${n > 0 ? '買超' : n < 0 ? '賣超' : '持平'} ${Math.abs(n).toLocaleString('en-US')} 張`;
+// "12 集（前期 7）" — the comparison the home panels draw as a delta.
+const vsPrev = (now, prev, unit = '集') => `${now} ${unit}（前期 ${prev ?? 0}）`;
+
 // JSON.stringify never emits '</script>', but '<' inside a value could still open a tag
 // for a lenient parser — escape it.
 const ldScript = (obj) => `<script type="application/ld+json">${JSON.stringify(obj).replace(/</g, '\\u003c')}</script>`;
@@ -285,14 +338,33 @@ const INDEX_BODY = {
       + METHODOLOGY.sections.map((sec) => `<h2>${esc(sec.title)}</h2>${titled(sec.items)}`).join(''),
   }),
   '/': async (api, origin) => {
-    const [rec, tr] = await Promise.all([
+    // /api/episodes/attention is what the home page's three panels draw (本週市場在聊什麼,
+    // 最多人聊, 升溫最快). Until 2026-10 the crawler got none of it — only the episode list
+    // and the trending tickers, i.e. the part of the home page that is not TinBoker's own.
+    const [rec, tr, att] = await Promise.all([
       getJson(`${api}/api/episodes/recent?limit=10`, CACHE_1H),
       getJson(`${api}/api/ticker-insights/trending?limit=20`, CACHE_1H),
+      getJson(`${api}/api/episodes/attention?rising_limit=8`, CACHE_1H),
     ]);
     const eps = (rec && rec.episodes) || [];
+    const narratives = (att && att.narratives) || [];
+    const buzz = (att && att.tickers) || [];
+    const rising = (att && att.rising) || [];
+    const digest = (narratives.length
+      ? `<h2>本週市場在聊什麼</h2><p>${esc(`近 7 天收錄 ${att.episode_count_7d} 集、${att.podcast_count_7d} 個節目。以下是這一週最多節目談到的題材，括號內為前 7 天的集數。`)}</p>`
+        + ul(narratives.map((n) => `${a(`/topics/${encodeURIComponent(n.id)}`, n.name || n.id)} · ${esc(vsPrev(n.count_7d, n.prev_7d))}`))
+      : '')
+      + (buzz.length
+        ? `<h2>最多人聊</h2><p>近 30 天提及集數，括號內為前 30 天。</p>${ul(buzz.map((r) => `${stockLink(r.ticker, r.name)} · ${esc(vsPrev(r.count_30d, r.prev_30d))}`))}`
+        : '')
+      + (rising.length
+        ? `<h2>升溫最快</h2><p>近 7 天提及集數相較前 7 天增加最多的個股 — 熱門不等於正在升溫。</p>${ul(rising.map((r) => `${stockLink(r.ticker, r.name)} · ${esc(vsPrev(r.count_7d, r.prev_7d))}`))}`
+        : '');
     return {
-      body: `<h2>最新集數</h2>${ul(eps.map((e) => `${podcasterLink(e.podcast_name)} · ${episodeLink(e)}`))}`
-        + `<h2>近 30 天熱門個股</h2>${ul((tr || []).map((r) => `${stockLink(r.ticker)} · ${r.count} 集 · ${sentimentZh(r.sentiment_label)}`))}`,
+      body: digest
+        + `<h2>最新集數</h2>${ul(eps.map((e) => `${podcasterLink(e.podcast_name)} · ${episodeLink(e)}`))}`
+        + `<h2>近 30 天熱門個股</h2>${ul((tr || []).map((r) => `${stockLink(r.ticker)} · ${r.count} 集 · ${sentimentZh(r.sentiment_label)}`))}`
+        + `<p>${a('/methodology', '這些數字怎麼算')}</p>`,
       ld: [
         { '@context': 'https://schema.org', '@type': 'WebSite', name: SITE, url: `${origin}/` },
         { '@context': 'https://schema.org', '@type': 'Organization', name: SITE, url: `${origin}/`, logo: BRAND_IMG },
@@ -426,10 +498,14 @@ export async function metaFor(pathname, origin, api) {
     // shows (StockDashboard), so the 30-day tally below counts the same rows.
     const iso = (d) => d.toISOString().slice(0, 10);
     const since = iso(new Date(Date.now() - 90 * 86400e3));
-    const [ins, secs, basic] = await Promise.all([
+    // heat + flows are enrichments with a deadline (each ~1.5 s warm): a slow one costs
+    // the page a section, never the crawl.
+    const [ins, secs, basic, heat, flows] = await Promise.all([
       getJson(`${api}/api/ticker-insights/by-ticker/${enc}?start_date=${since}&end_date=${iso(new Date())}`),
       getJson(`${api}/api/sectors/by-ticker/${enc}`),
       getJson(`${api}/api/stocks/${enc}/basic`),
+      withTimeout(getJson(`${api}/api/tickers/${enc}/mention-heat?days=730`, CACHE_1H), 6000),
+      withTimeout(getJson(`${api}/api/stocks/${enc}/institutional?days=60`, CACHE_1H), 6000),
     ]);
     const name = basic && basic.name ? `${basic.name}（${sym}）` : sym;
     const url = `${origin}/stock/${enc}`;
@@ -444,7 +520,25 @@ export async function metaFor(pathname, origin, api) {
       ? `${tallySentence(name, t)}最近：${latest.podcaster}（${day(latest.podcast_launch_time)}）${latest.bluf_thesis || ''}`.slice(0, 160)
       : `查看 ${name} 的即時股價走勢，以及最新提到此標的的 Podcast 摘要與分析。`;
     const members = (secs && secs.items) || [];
+    // The page's own numbers, as text: 誰在談 (WhoTalksTile), the chart's mention strip
+    // and 聲量水位 pane (TradingViewChart), and the 三大法人 card (InstitutionalFlowCard).
+    const who = whoTalks(insights);
+    const months = monthlyMentions(heat && heat.series);
+    const level = latestLevel(heat && heat.level);
+    const sums = flowSums(flows && flows.rows);
+    const numbers = (who.length
+      ? `<h2>誰在談 · 90 天</h2>${ul(who.map((w) => `${podcasterLink(w.name)} · ${w.n} 集`))}`
+      : '')
+      + (months.length || level
+        ? '<h2>Podcast 聲量</h2>'
+          + (level ? `<p>${esc(`聲量水位 ${Math.round(level.p)}：${name} 近期被節目提及的熱度，落在它自己過去一年的第 ${Math.round(level.p)} 百分位（${level.d}）。`)}${a('/methodology#stats', '水位怎麼算')}</p>` : '')
+          + (months.length ? `<p>各月提及次數：</p>${ul(months.map((m) => esc(`${m.ym.replace('-', '/')} · ${m.n} 次 · ${m.bull} 看多 · ${m.bear} 看空`)))}` : '')
+        : '')
+      + (sums.length
+        ? `<h2>三大法人買賣超</h2>${ul(sums.map((f) => esc(`近 ${f.days} 個交易日：三大法人合計${lotsZh(f.total)}，其中外資${lotsZh(f.foreign)}`)))}`
+        : '');
     const body = (insights.length ? `<p>${esc(tallySentence(name, t))}</p>` : '')
+      + numbers
       + (members.length ? `<h2>產業 / 題材</h2>${ul(members.map((s) => `${sectorLink(s)}${s.reason ? `：${esc(s.reason)}` : ''}`))}` : '')
       + (readable.length ? `<h2>Podcast 觀點</h2>${ul(readable.map((i) =>
         `${esc(day(i.podcast_launch_time))} · ${podcasterLink(i.podcaster)} · ${esc(sentimentZh(i.sentiment_label))}`
@@ -560,7 +654,10 @@ export async function metaFor(pathname, origin, api) {
     for (const i of ins || []) if (i.ticker) counts[i.ticker] = (counts[i.ticker] || 0) + 1;
     const top = Object.entries(counts).sort((x, y) => y[1] - x[1]).slice(0, 10);
     const episodes = eps || [];
-    const body = (episodes.length ? `<h2>最新集數</h2>${ul(episodes.map((e) => `${e.released_at_ms ? `${esc(day(new Date(e.released_at_ms).toISOString()))} · ` : ''}${episodeLink(e)}`))}` : '')
+    // Each episode carries its first key insights, as the tag page does: a channel page
+    // that is ten bare titles was 346–1,063 characters of crawler text (2026-10-01).
+    const body = (episodes.length ? `<h2>最新集數</h2>${ul(episodes.map((e) => `${e.released_at_ms ? `${esc(day(new Date(e.released_at_ms).toISOString()))} · ` : ''}${episodeLink(e)}`
+      + `${(e.key_insights || []).length ? `<ul>${e.key_insights.slice(0, 3).map((k) => `<li>${esc(k)}</li>`).join('')}</ul>` : ''}`))}` : '')
       + (top.length ? `<h2>最常提到的個股</h2>${ul(top.map(([t, n]) => `${stockLink(t)} · ${n} 次`))}` : '');
     return {
       title: `${name} · Podcast 頻道`,
