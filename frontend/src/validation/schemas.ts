@@ -561,6 +561,24 @@ export const EpisodeMentionsResponseSchema = z.object({
   disclaimer: z.string(),
 });
 
+/** GET /api/episodes/{id}/cross-show — how other shows spoke about this episode's tickers. */
+export const CrossShowResponseSchema = z.object({
+  episode_id: z.string(),
+  window_days: z.number(),
+  podcaster: z.string().nullable(),
+  as_of: z.string().nullable(),
+  shows_in_window: z.number(),
+  rows: z.array(z.object({
+    ticker: z.string(),
+    name: z.string().nullable().optional(),
+    stance: z.enum(['BULLISH', 'BEARISH', 'NEUTRAL']).nullable().optional(),
+    others: z.object({ shows: z.number(), mentions: z.number(), bull: z.number(), neutral: z.number(), bear: z.number() }),
+    relation: z.enum(['aligned', 'opposite', 'reserved', 'firmer', 'split', 'alone']),
+  })),
+  disclaimer: z.string(),
+});
+export type CrossShowResponse = z.infer<typeof CrossShowResponseSchema>;
+
 export type MentionPerformance = z.infer<typeof MentionPerformanceSchema>;
 export type ContentMention = z.infer<typeof ContentMentionSchema>;
 export type TickerMentionsResponse = z.infer<typeof TickerMentionsResponseSchema>;

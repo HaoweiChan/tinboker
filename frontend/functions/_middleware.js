@@ -23,6 +23,7 @@
 // to the unmodified SPA: this middleware can never break a page.
 
 import { ABOUT, TERMS, METHODOLOGY } from '../shared/sitePages.js';
+import { RELATION_ZH, comparableRows, crossShowLead, othersLine, stanceZh } from '../shared/crossShow.js';
 
 const CRAWLER = /bot|crawl|spider|mediapartners|facebookexternalhit|facebot|twitterbot|\bline\b|slackbot|whatsapp|telegrambot|discordbot|pinterest|linkedinbot|redditbot|embedly|quora|skypeuripreview|applebot|googlebot|bingbot|baiduspider|yandex|duckduckbot/i;
 
@@ -418,7 +419,11 @@ export async function metaFor(pathname, origin, api) {
   let m = pathname.match(/^\/episode\/([^/]+)\/?$/);
   if (m) {
     const id = decodeURIComponent(m[1]);
-    const r = await fetch(`${api}/api/episodes/${encodeURIComponent(id)}`);
+    // cross-show is the page's 其他節目怎麼看 panel: an enrichment with a deadline.
+    const [r, cross] = await Promise.all([
+      fetch(`${api}/api/episodes/${encodeURIComponent(id)}`),
+      withTimeout(getJson(`${api}/api/episodes/${encodeURIComponent(id)}/cross-show`, CACHE_1H), 5000),
+    ]);
     if (!r.ok) return null;
     const e = await r.json();
     // Mirror EpisodeDetail's title/name derivation exactly (episode_title field).
@@ -451,9 +456,19 @@ export async function metaFor(pathname, origin, api) {
       ...(released ? { datePublished: released } : {}),
       ...(chs.length ? { hasPart: chs.map((c) => ({ '@type': 'Clip', name: c.title, startOffset: c.sec, url: `${url}#t-${c.sec}` })) } : {}),
     };
+    // Same sentences CrossShowPanel renders (shared/crossShow.js): what the OTHER shows
+    // said about this episode's tickers before it aired — the part of the page that is
+    // not a restatement of the episode.
+    const crossRows = comparableRows(cross);
+    const crossHtml = crossRows.length
+      ? `<h2>其他節目怎麼看</h2><p>${esc(crossShowLead(cross))}</p>${ul(crossRows.map((row) =>
+        `${stockLink(row.ticker, row.name)}：本集${esc(stanceZh(row.stance))}，其他 ${esc(othersLine(row.others))} — ${esc(RELATION_ZH[row.relation] || '')}`))}`
+        + `<p>比較的是各節目公開說法之間的異同，不是對股價的判斷。${a('/methodology#stance', '看多、看空怎麼判定')}</p>`
+      : '';
     const body = `<p>${podcasterLink(name)}${released ? ` · ${esc(day(released))}` : ''}</p>`
       + ((e.key_insights || []).length ? `<h2>重點</h2>${ul(e.key_insights.map(esc))}` : '')
       + (chs.length ? `<h2>章節</h2>${ul(chs.map((c) => `${hms(c.sec)} ${esc(c.title)}`))}` : '')
+      + crossHtml
       + mdToHtml(e.summary_content)
       + ((e.related_tickers || []).length ? `<h2>相關個股</h2>${ul(e.related_tickers.map((t) => stockLink(t, names[t])))}` : '')
       + (sectors.size ? `<h2>產業 / 題材</h2>${ul([...sectors.values()].map(sectorLink))}` : '');

@@ -18,6 +18,7 @@ from src.database.postgres import get_session
 from src.database.models import (
     ContentMention,
     SectorPerformanceSnapshot,
+    StockTranslation,
     TickerPerformanceSnapshot,
 )
 from src.services.attention import WINDOW_DAYS as _LEVEL_WINDOW_DAYS, attention_level, scope_mentions
@@ -175,6 +176,131 @@ async def get_episode_mentions(episode_id: str):
         "macro_mentions": [],
         "disclaimer": DISCLAIMER,
     }
+
+
+# ── Cross-show view of one episode ────────────────────────────────────────────
+# An episode page used to be the episode alone: a summary of what one show said. The
+# thing only this site can add is the other shows — who else was talking about the same
+# names in the same weeks, and whether they leaned the same way.
+CROSS_SHOW_WINDOW_DAYS = 30
+CROSS_SHOW_MAX_ROWS = 8
+# A lean needs this share of the other shows' mentions; below it they "disagree".
+_LEAN_SHARE = 0.6
+
+
+def _stance(label: Optional[str]) -> Optional[str]:
+    s = (label or "").upper()
+    if "BULL" in s or s == "POSITIVE":
+        return "BULLISH"
+    if "BEAR" in s or s == "NEGATIVE":
+        return "BEARISH"
+    if s in ("NEUTRAL", "NEUT", "MIXED"):
+        return "NEUTRAL"
+    return None
+
+
+def cross_show_relation(mine: Optional[str], bull: int, neutral: int, bear: int) -> str:
+    """How this episode's stance on a ticker sits against the other shows' mentions.
+
+    Descriptive only — it compares public statements with each other, never with the
+    price. ``alone``: nobody else mentioned it. ``split``: the others have no lean.
+    ``aligned`` / ``opposite``: same or reverse of the others' lean. ``reserved``: the
+    others lean one way and this episode is neutral. ``firmer``: the others are mostly
+    neutral and this episode takes a side.
+    """
+    total = bull + neutral + bear
+    if total == 0:
+        return "alone"
+    lean = next((k for k, n in (("BULLISH", bull), ("BEARISH", bear), ("NEUTRAL", neutral))
+                 if n / total >= _LEAN_SHARE), None)
+    if lean is None:
+        return "split"
+    if mine == lean:
+        return "aligned"
+    if lean == "NEUTRAL":
+        return "firmer" if mine in ("BULLISH", "BEARISH") else "split"
+    return "opposite" if mine in ("BULLISH", "BEARISH") else "reserved"
+
+
+@router.get("/episodes/{episode_id}/cross-show")
+@cdn_cache_trending
+async def get_episode_cross_show(episode_id: str):
+    """For each ticker this episode discussed: how many OTHER shows mentioned it in the
+    30 days up to the episode's release day, how those mentions split, and how this
+    episode's stance relates to them.
+
+    The window ends on the release day, not today, so the answer describes the moment
+    the episode aired and does not drift afterwards. Scoped to the release roster like
+    every other mention read.
+    """
+    empty = {"episode_id": episode_id, "window_days": CROSS_SHOW_WINDOW_DAYS, "podcaster": None,
+             "as_of": None, "shows_in_window": 0, "rows": [], "disclaimer": DISCLAIMER}
+    allowed = await podcast_service._allowed_podcast_names()
+    for db in get_session():
+        mine = (
+            scope_mentions(db.query(ContentMention), allowed)
+            .filter(ContentMention.episode_id == episode_id,
+                    ContentMention.mention_type == "ticker",
+                    ContentMention.ticker.isnot(None))
+            .all()
+        )
+        if not mine:
+            return empty
+        podcaster = mine[0].podcaster
+        aired = max(m.mentioned_at for m in mine)
+        end = datetime(aired.year, aired.month, aired.day) + timedelta(days=1)
+        start = end - timedelta(days=CROSS_SHOW_WINDOW_DAYS + 1)
+        window = (
+            scope_mentions(db.query(ContentMention.ticker, ContentMention.podcaster,
+                                    ContentMention.sentiment_label), allowed)
+            .filter(ContentMention.mention_type == "ticker",
+                    ContentMention.mentioned_at >= start,
+                    ContentMention.mentioned_at < end,
+                    ContentMention.episode_id != episode_id)
+            .all()
+        )
+        shows_in_window = {p for _, p, _ in window if p} | ({podcaster} if podcaster else set())
+        mine_by_ticker = {m.ticker: m for m in mine}
+        others: dict = {t: {"shows": set(), "bull": 0, "neutral": 0, "bear": 0} for t in mine_by_ticker}
+        for ticker, show, label in window:
+            # Another episode of the SAME show is not a second opinion.
+            if ticker not in others or not show or show == podcaster:
+                continue
+            o = others[ticker]
+            o["shows"].add(show)
+            stance = _stance(label)
+            o["bull" if stance == "BULLISH" else "bear" if stance == "BEARISH" else "neutral"] += 1
+        # content_mentions rarely carries a display name for tickers; the translation
+        # table is where the site's zh-TW names live.
+        names = {
+            tk: zh or en
+            for tk, zh, en in db.query(StockTranslation.ticker, StockTranslation.name_zh_tw,
+                                       StockTranslation.name_en)
+            .filter(StockTranslation.ticker.in_(list(mine_by_ticker))).all()
+        }
+        rows = []
+        for ticker, m in mine_by_ticker.items():
+            o = others[ticker]
+            stance = _stance(m.sentiment_label)
+            rows.append({
+                "ticker": ticker,
+                "name": names.get(ticker) or m.display_name,
+                "stance": stance,
+                "others": {"shows": len(o["shows"]), "mentions": o["bull"] + o["neutral"] + o["bear"],
+                           "bull": o["bull"], "neutral": o["neutral"], "bear": o["bear"]},
+                "relation": cross_show_relation(stance, o["bull"], o["neutral"], o["bear"]),
+            })
+        rows.sort(key=lambda r: (-r["others"]["shows"], -r["others"]["mentions"], r["ticker"]))
+        return {
+            "episode_id": episode_id,
+            "window_days": CROSS_SHOW_WINDOW_DAYS,
+            "podcaster": podcaster,
+            "as_of": aired.date().isoformat(),
+            "shows_in_window": len(shows_in_window),
+            "rows": rows[:CROSS_SHOW_MAX_ROWS],
+            "disclaimer": DISCLAIMER,
+        }
+    return empty
 
 
 # The card's window. Matches the "近 30 天" label on the consensus tile it feeds.
