@@ -257,19 +257,22 @@ def _provider_preference() -> dict[str, Any] | None:
     return {"order": order, "allow_fallbacks": True} if order else None
 
 
-def get_model(role: str, *, disable_reasoning: bool = True):
+def get_model(role: str, *, disable_reasoning: bool = True, model_override: str | None = None):
     """Get a configured LangChain chat model for a pipeline role.
 
     Always returns a ``ChatOpenAI`` pointed at OpenRouter. The ``openrouter:``
     prefix is stripped from the model id before sending; bare model ids (no
     prefix) are forwarded to OpenRouter as-is.
 
+    ``model_override`` is an invocation-local override for offline draft/evaluation CLIs.
+    Existing callers keep DB/environment precedence.
+
     ``disable_reasoning=False`` is the fallback for endpoints that refuse to run
     without reasoning — see the retry in ``invoke_json``.
     """
     from langchain_openai import ChatOpenAI
 
-    model = _model_name(role)
+    model = model_override or _model_name(role)
     temperature = _TEMPERATURE_MAP.get(role, 0.2)
     max_tokens = _MAX_TOKENS_MAP.get(role, 4096)
 
