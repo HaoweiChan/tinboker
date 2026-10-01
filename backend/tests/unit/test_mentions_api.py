@@ -18,6 +18,7 @@ from src.database.models import (
     ContentMention,
     SectorPerformanceSnapshot,
     StockDailyClose,
+    StockTranslation,
     TickerPerformanceSnapshot,
 )
 
@@ -25,7 +26,7 @@ from src.database.models import (
 @pytest.fixture
 def session(monkeypatch):
     engine = create_engine("sqlite:///:memory:")
-    for model in (ContentMention, TickerPerformanceSnapshot, SectorPerformanceSnapshot, StockDailyClose):
+    for model in (ContentMention, TickerPerformanceSnapshot, SectorPerformanceSnapshot, StockDailyClose, StockTranslation):
         model.__table__.create(bind=engine)
     db = sessionmaker(bind=engine)()
 
@@ -158,3 +159,79 @@ def test_episode_mentions_empty(session):
     assert body["ticker_mentions"] == []
     assert body["sector_mentions"] == []
     assert body["disclaimer"]
+
+
+# ── /episodes/{id}/cross-show ────────────────────────────────────────────────
+
+def _mention(db, episode_id, show, ticker, label, when, name=None):
+    db.add(ContentMention(
+        mention_key=f"{episode_id}:ticker:{ticker}", episode_id=episode_id, podcaster=show,
+        mention_type="ticker", ticker=ticker, display_name=name, market="TW", mentioned_at=when,
+        confidence=0.9, extraction_method="pipeline_llm", sentiment_label=label,
+    ))
+    db.commit()
+
+
+def test_cross_show_relation_names_how_the_episode_sits_against_the_others():
+    r = api.cross_show_relation
+    assert r("BULLISH", 0, 0, 0) == "alone"
+    assert r("BULLISH", 6, 2, 2) == "aligned"
+    assert r("BEARISH", 6, 2, 2) == "opposite"
+    assert r("NEUTRAL", 6, 2, 2) == "reserved"
+    assert r(None, 6, 2, 2) == "reserved"
+    assert r("BULLISH", 5, 0, 5) == "split"       # nobody holds 60%
+    assert r("BULLISH", 1, 8, 1) == "firmer"      # the others sit on the fence
+    assert r("NEUTRAL", 1, 8, 1) == "aligned"
+
+
+def test_cross_show_counts_other_shows_inside_the_window_before_the_episode(session):
+    aired = datetime(2026, 9, 20, 3, 0)
+    # Names come from the translation table; the mention's own display_name is the fallback.
+    session.add(StockTranslation(ticker="2330", market="TW", name_zh_tw="台積電", name_en="TSMC"))
+    session.commit()
+    _mention(session, "ep", "股癌", "2330", "BULLISH", aired)
+    _mention(session, "ep", "股癌", "3037", "BEARISH", aired, name="欣興")
+    _mention(session, "ep", "股癌", "6981", "NEUTRAL", aired)
+    # Other shows on 2330: two bullish, one of them later the same day.
+    _mention(session, "a1", "財經一路發", "2330", "STRONG_BULLISH", datetime(2026, 9, 10, 1, 0))
+    _mention(session, "b1", "財報狗", "2330", "BULLISH", datetime(2026, 9, 20, 22, 0))
+    # 3037: the others lean bullish, this episode is bearish.
+    _mention(session, "a2", "財經一路發", "3037", "BULLISH", datetime(2026, 9, 15, 1, 0))
+    _mention(session, "a3", "財經一路發", "3037", "BULLISH", datetime(2026, 9, 16, 1, 0))
+    # Not second opinions: the same show, a mention after the release day, one too old.
+    _mention(session, "old-own", "股癌", "2330", "BEARISH", datetime(2026, 9, 12, 3, 0))
+    _mention(session, "later", "M觀點", "2330", "BEARISH", datetime(2026, 9, 21, 9, 0))
+    _mention(session, "ancient", "M觀點", "2330", "BEARISH", datetime(2026, 8, 1, 9, 0))
+
+    body = _call(api.get_episode_cross_show("ep"))
+
+    assert body["podcaster"] == "股癌" and body["as_of"] == "2026-09-20" and body["window_days"] == 30
+    assert body["shows_in_window"] == 3  # 股癌, 財經一路發, 財報狗 — M觀點 is outside the window
+    by = {r["ticker"]: r for r in body["rows"]}
+    assert by["2330"] == {
+        "ticker": "2330", "name": "台積電", "stance": "BULLISH",
+        "others": {"shows": 2, "mentions": 2, "bull": 2, "neutral": 0, "bear": 0}, "relation": "aligned",
+    }
+    assert by["3037"]["others"] == {"shows": 1, "mentions": 2, "bull": 2, "neutral": 0, "bear": 0}
+    assert by["3037"]["name"] == "欣興" and by["3037"]["relation"] == "opposite"
+    assert by["6981"]["relation"] == "alone" and by["6981"]["others"]["shows"] == 0
+    # Most-discussed elsewhere first.
+    assert [r["ticker"] for r in body["rows"]] == ["2330", "3037", "6981"]
+    assert "並非投資建議" in body["disclaimer"]
+
+
+def test_cross_show_is_empty_for_an_episode_with_no_ticker_mentions(session):
+    body = _call(api.get_episode_cross_show("nope"))
+    assert body["rows"] == [] and body["shows_in_window"] == 0
+
+
+def test_cross_show_respects_the_release_roster(session, monkeypatch):
+    aired = datetime(2026, 9, 20, 3, 0)
+    _mention(session, "ep", "股癌", "2330", "BULLISH", aired)
+    _mention(session, "en1", "Some English Show", "2330", "BEARISH", datetime(2026, 9, 18, 3, 0))
+    monkeypatch.setattr(api.podcast_service, "_allowed_podcast_names", _roster(frozenset({"股癌"})))
+
+    body = _call(api.get_episode_cross_show("ep"))
+
+    assert body["rows"][0]["relation"] == "alone" and body["shows_in_window"] == 1
+
