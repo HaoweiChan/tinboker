@@ -19,6 +19,7 @@ const mw = await import(resolve(here, '../functions/_middleware.js'));
 const {
   metaFor, isCandidate, normalizeTagSlug, tagLabelFallback, TAG_ROUTE, tagNoindex, MIN_TAG_EPISODES, sectorNoindex,
   renderPage, mdToHtml, chapters, tally, normSentiment, stockNoindex, MIN_STOCK_INSIGHTS,
+  whoTalks, monthlyMentions, latestLevel, flowSums,
 } = mw;
 
 const ORIGIN = 'https://tinboker.com';
@@ -70,6 +71,26 @@ assert.equal(normSentiment('MIXED'), 'NEUTRAL');
 assert.equal(normSentiment(undefined), null);
 assert.deepEqual(tally([]).total, 0);
 
+// The site's own numbers, as the crawler body states them.
+assert.deepEqual(whoTalks(INSIGHTS), [{ name: '財經一路發', n: 2 }, { name: 'Gooaye 股癌', n: 1 }, { name: '財報狗', n: 1 }]);
+assert.deepEqual(whoTalks(null), []);
+const SERIES = [
+  { d: '2026-09-02', n: 3, bull: 2, bear: 0 }, { d: '2026-08-30', n: 1, bull: 0, bear: 1 },
+  { d: '2026-09-15', n: 2, bull: 1, bear: 1 }, { d: '2026-07-01', n: 0, bull: 0, bear: 0 },
+];
+assert.deepEqual(monthlyMentions(SERIES), [
+  { ym: '2026-09', n: 5, bull: 3, bear: 1 }, { ym: '2026-08', n: 1, bull: 0, bear: 1 },
+], 'months newest first, silent months dropped, order of the input ignored');
+assert.deepEqual(latestLevel([{ d: '2026-09-30', p: 61 }, { d: '2026-10-01', p: 39 }, { d: '2026-01-01', p: 90 }]), { d: '2026-10-01', p: 39 });
+assert.equal(latestLevel([]), null);
+const FLOWS = Array.from({ length: 20 }, (_, i) => ({
+  date: `2026-09-${String(i + 1).padStart(2, '0')}`, total_net_shares: 1_000_000, foreign_net_shares: i < 15 ? 0 : -400_000,
+}));
+assert.deepEqual(flowSums(FLOWS), [
+  { days: 5, total: 5000, foreign: -2000 }, { days: 20, total: 20000, foreign: -2000 },
+], 'sums the newest sessions in 張; a window longer than the data is left out');
+assert.deepEqual(flowSums(undefined), []);
+
 // --- 3. every sitemap route family resolves meta + body + JSON-LD ----------------
 // No network: stub fetch so this runs in CI. Any route returning null here is a route
 // whose pages all share index.html's title. Order matters: longer prefixes first.
@@ -95,6 +116,16 @@ globalThis.fetch = async (url) => {
       total: 12,
     });
   }
+  if (u.includes('/api/episodes/attention')) {
+    return json({
+      episode_count_7d: 29, podcast_count_7d: 9,
+      narratives: [{ id: 'aiindustry', name: 'AI產業', count_7d: 10, prev_7d: 11 }],
+      tickers: [{ ticker: 'NVDA', name: '輝達', count_30d: 81, prev_30d: 96, count_7d: 14, prev_7d: 20 }],
+      rising: [{ ticker: '3189', name: '景碩', count_30d: 9, prev_30d: 2, count_7d: 5, prev_7d: 0 }],
+    });
+  }
+  if (u.includes('/mention-heat')) return json({ series: SERIES, market: [], level: [{ d: '2026-10-01', p: 39 }], level_window_days: 364 });
+  if (u.includes('/institutional')) return json({ ticker: '2330', rows: FLOWS });
   if (u.includes('/api/episodes/recent')) return json({ episodes: [EPISODE] });
   if (u.includes('/api/episodes/by-tag/')) {
     // 'ai' is a rich tag (>= MIN_TAG_EPISODES); anything else is thin.
@@ -198,7 +229,9 @@ try {
   // Paywall: 觀點 from the last week are members-only on the page, so serving them
   // to a crawler would be cloaking. The tally still counts every mention (the page
   // shows that total to everyone) — only the readable rows are cut.
-  for (const gated of ['href="/episode/e1"', '台積電是 AI 供應鏈核心持股', 'href="/episode/e4"', '長期看好。', 'Gooaye']) {
+  // (The shows' NAMES do appear: 誰在談 counts every mention per show, as the page's
+  // tile does for everyone. A count is not the gated text.)
+  for (const gated of ['href="/episode/e1"', '台積電是 AI 供應鏈核心持股', 'href="/episode/e4"', '長期看好。']) {
     assert.ok(!stockPage.includes(gated), `paywalled mention leaked to the crawler body: ${gated}`);
   }
   assert.ok(stock.description.includes('最近：財經一路發'), `description quotes the newest FREE mention: ${stock.description}`);
@@ -208,6 +241,15 @@ try {
   for (const needle of ['<h2>Podcast 觀點</h2>', 'href="/episode/e2"', 'href="/episode/e3"', 'href="/podcaster/%E8%B2%A1%E7%B6%93%E4%B8%80%E8%B7%AF%E7%99%BC"', 'href="/sector/sector_mlcc"', '看空']) {
     assert.ok(stockPage.includes(needle), `stock body missing ${needle}`);
   }
+  // The page's own numbers reach the crawler as text, not only the shows' thesis lines.
+  for (const needle of [
+    '<h2>誰在談 · 90 天</h2>', '財經一路發</a> · 2 集', 'Gooaye 股癌</a> · 1 集',
+    '<h2>Podcast 聲量</h2>', '聲量水位 39', '第 39 百分位', 'href="/methodology#stats"', '2026/09 · 5 次 · 3 看多 · 1 看空',
+    '<h2>三大法人買賣超</h2>', '近 5 個交易日：三大法人合計買超 5,000 張，其中外資賣超 2,000 張',
+  ]) {
+    assert.ok(stockPage.includes(needle), `stock body missing ${needle}`);
+  }
+  assert.ok(!stockPage.includes('近 60 個交易日'), 'no 60-session line from 20 sessions of data');
   assert.deepEqual(ldTypes(stock), ['BreadcrumbList']);
   // Indexability follows what the body carries: free 觀點, not total mentions. This
   // fixture has four mentions but only two a non-member can read — a thin page.
@@ -263,7 +305,7 @@ try {
 
   const podcaster = await metaFor('/podcaster/Gooaye%20%E8%82%A1%E7%99%8C', ORIGIN, API);
   const podPage = renderPage(podcaster);
-  for (const needle of ['<h2>最新集數</h2>', 'href="/episode/abc123"', '<h2>最常提到的個股</h2>', 'href="/stock/2330"', '4 次']) {
+  for (const needle of ['<h2>最新集數</h2>', 'href="/episode/abc123"', '<li>聯準會 9 月升息機率驟降</li>', '<h2>最常提到的個股</h2>', 'href="/stock/2330"', '4 次']) {
     assert.ok(podPage.includes(needle), `podcaster body missing ${needle}`);
   }
   assert.ok(podcaster.description.includes('最常提到：2330'), `podcaster description is live: ${podcaster.description}`);
@@ -272,7 +314,13 @@ try {
   const home = await metaFor('/', ORIGIN, API);
   assert.equal(home.url, `${ORIGIN}/`);
   const homePage = renderPage(home);
-  for (const needle of ['<h1>聽播客 TinBoker</h1>', '<h2>最新集數</h2>', 'href="/episode/abc123"', '<h2>近 30 天熱門個股</h2>', 'href="/stock/2330"']) {
+  for (const needle of [
+    '<h1>聽播客 TinBoker</h1>', '<h2>最新集數</h2>', 'href="/episode/abc123"', '<h2>近 30 天熱門個股</h2>', 'href="/stock/2330"',
+    // The three panels the home page actually leads with.
+    '<h2>本週市場在聊什麼</h2>', '近 7 天收錄 29 集、9 個節目', 'href="/topics/aiindustry"', '10 集（前期 11）',
+    '<h2>最多人聊</h2>', '輝達（NVDA）</a> · 81 集（前期 96）',
+    '<h2>升溫最快</h2>', '景碩（3189）</a> · 5 集（前期 0）', 'href="/methodology"',
+  ]) {
     assert.ok(homePage.includes(needle), `home body missing ${needle}`);
   }
   assert.deepEqual(ldTypes(home), ['WebSite', 'Organization']);
