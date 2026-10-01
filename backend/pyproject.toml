@@ -24,7 +24,7 @@ dependencies = [
     "python-multipart==0.0.6",
     "redis[hiredis]>=5.0.0",
     "requests>=2.31.0",
-    "sqlalchemy>=2.0.0",
+    "sqlalchemy>=2.0.0,<2.1",
     "tqdm>=4.67.1",
     "uvicorn[standard]==0.24.0",
     "yfinance>=0.2.66",

@@ -2409,7 +2409,7 @@ requires-dist = [
     { name = "python-multipart", specifier = "==0.0.6" },
     { name = "redis", extras = ["hiredis"], specifier = ">=5.0.0" },
     { name = "requests", specifier = ">=2.31.0" },
-    { name = "sqlalchemy", specifier = ">=2.0.0" },
+    { name = "sqlalchemy", specifier = ">=2.0.0,<2.1" },
     { name = "tqdm", specifier = ">=4.67.1" },
     { name = "uvicorn", extras = ["standard"], specifier = "==0.24.0" },
     { name = "yfinance", specifier = ">=0.2.66" },
