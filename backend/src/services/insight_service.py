@@ -9,8 +9,8 @@ Contract: docs/firestore-contract.md §§ 4–5.
 import asyncio
 import json
 import logging
-from datetime import date, datetime, timedelta
-from typing import Any, List, Optional, Tuple
+from datetime import date, datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional, Tuple
 
 from src.cache.cache_config import CACHE_TTL
 from src.cache.redis_client import cache_get, cache_set
@@ -29,6 +29,9 @@ TRENDING_COLLECTION = "trending_tickers"
 # Same ID as the legacy inverted-index root collection, so callers MUST filter
 # results by a supported `schema_version` to disambiguate.
 INSIGHTS_SUBCOLLECTION = "tickers"
+# 觀點 newer than this are members-only on /stock, for readers and crawlers alike.
+# KEEP IN SYNC with frontend src/lib/insightPaywall.ts and functions/_middleware.js.
+INSIGHT_PAYWALL_DAYS = 7
 SEVERITY_LEVELS = {"HIGH", "MEDIUM", "LOW"}
 SENTIMENT_LABELS = {
     "STRONG_BULLISH",
@@ -368,6 +371,34 @@ class InsightService:
         ]
         rows.sort(key=lambda r: (r["count"], r["last_mentioned"]), reverse=True)
         return rows
+
+    async def free_insight_counts(
+        self, window_days: int = 90, paywall_days: int = INSIGHT_PAYWALL_DAYS
+    ) -> Dict[str, int]:
+        """{ticker: number of 觀點 a non-member can read on its /stock page}.
+
+        The stock page shows 90 days of 觀點 and gates the newest ``paywall_days``; the
+        crawler body serves exactly the free remainder (frontend functions/_middleware.js,
+        ``freeInsights``). The sitemap uses this count so it only lists stock pages that
+        have something on them — same rows, same window, one range query.
+        """
+        now = datetime.now(timezone.utc)
+        start = (now - timedelta(days=window_days)).strftime("%Y-%m-%dT00:00:00Z")
+        end = (now - timedelta(days=paywall_days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        docs = await asyncio.to_thread(
+            self._fs.query_collection_group,
+            INSIGHTS_SUBCOLLECTION,
+            [("podcast_launch_time", ">=", start), ("podcast_launch_time", "<=", end)],
+            None,
+            None,
+            None,
+        )
+        counts: Dict[str, int] = {}
+        for d in docs:
+            ticker = d.get("ticker")
+            if ticker and d.get("schema_version") in SUPPORTED_SCHEMA_VERSIONS:
+                counts[str(ticker)] = counts.get(str(ticker), 0) + 1
+        return counts
 
     async def get_by_ticker(
         self,

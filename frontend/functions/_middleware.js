@@ -22,6 +22,8 @@
 // already set their meta client-side. Every path is wrapped so any failure falls back
 // to the unmodified SPA: this middleware can never break a page.
 
+import { ABOUT, TERMS, METHODOLOGY } from '../shared/sitePages.js';
+
 const CRAWLER = /bot|crawl|spider|mediapartners|facebookexternalhit|facebot|twitterbot|\bline\b|slackbot|whatsapp|telegrambot|discordbot|pinterest|linkedinbot|redditbot|embedly|quora|skypeuripreview|applebot|googlebot|bingbot|baiduspider|yandex|duckduckbot/i;
 
 // Podcast 觀點 from the last week are members-only on the page, so they are left out
@@ -58,6 +60,14 @@ export const tagNoindex = (total) => !(Number(total) >= MIN_TAG_EPISODES);
 // (the by-sector enrichment missed its deadline) stays indexable.
 export const MIN_SECTOR_EPISODES = 2;
 export const sectorNoindex = (total) => total != null && Number(total) < MIN_SECTOR_EPISODES;
+// Stock pages: indexable only with at least this many FREE 觀點 (older than the paywall
+// window, inside the 90 days the page shows). Measured 2026-10-01 over the 255 stock URLs
+// in the sitemap: 19 rendered no 觀點 at all (title + footer, ~100 characters), 79 had
+// fewer than three — one or two thesis lines under a heading — and the median crawler
+// body was 743 characters. Those are the pages AdSense's "low value content" describes.
+// Mirrors MIN_STOCK_INSIGHTS in the sitemap (backend seo.py), which counts the same rows.
+export const MIN_STOCK_INSIGHTS = 3;
+export const stockNoindex = (freeCount) => !(Number(freeCount) >= MIN_STOCK_INSIGHTS);
 
 function apiBase(hostname) {
   const h = hostname.replace(/^www\./, '');
@@ -165,8 +175,15 @@ const hms = (sec) => {
 };
 // Footer links into the consolidated /about page (關於 / 聯絡 / 免責聲明 sections) plus
 // the /terms policy page (NewebPay merchant review + consumer-protection expectations).
-const FOOTER = `<footer>${a('/about', '關於 TinBoker')} · ${a('/about#contact', '聯絡我們')} · ${a('/about#disclaimer', '免責聲明')}`
+const FOOTER = `<footer>${a('/about', '關於 TinBoker')} · ${a('/methodology', '資料來源與方法')} · ${a('/about#contact', '聯絡我們')} · ${a('/about#disclaimer', '免責聲明')}`
   + ` · ${a('/terms', '服務條款')} · ${a('/terms#refund', '退款政策')} · ${a('/terms#privacy', '隱私權政策')}</footer>`;
+
+// shared/sitePages.js bodies → HTML: plain text, in-site links, external links. The React
+// pages render the same data through <Rich>, so the two cannot say different things.
+const rich = (body) => (typeof body === 'string' ? esc(body) : body.map((seg) => (
+  typeof seg === 'string' ? esc(seg) : a(seg.to || seg.href, seg.text))).join(''));
+const titled = (items) => items.map((i) => `<h3>${esc(i.title)}</h3><p>${rich(i.body)}</p>`).join('');
+const labelled = (items) => ul(items.map((i) => `<strong>${esc(i.label)}：</strong>${esc(i.body)}`));
 
 // Summary markdown → HTML. Only the constructs the pipeline emits: '#'/'##' headings
 // carrying '(#time:ms)' anchors, '[text](#tag:x)' links, paragraphs. The client strips the
@@ -230,8 +247,9 @@ const STATIC_META = {
   '/topics': ['話題排行', '今日最強題材焦點 — 依題材聚合，顯示漲跌幅、資金流與相關個股表現。'],
   '/weekly': ['Podcast 週報', '每週一頁：台灣財經 Podcast 這一週聊了哪些個股與題材、多空怎麼變，由 TinBoker 結構化整理。'],
   '/articles': ['文章', '深度分析與市場觀察 — TinBoker 的財經文章。'],
-  '/about': ['關於 TinBoker', 'TinBoker（聽播客）— 結合 Podcast 觀點與即時數據的財經平台。聯絡方式與免責聲明都在這一頁。'],
-  '/terms': ['服務條款與政策', 'TinBoker 服務條款、會員訂閱與付款、退款政策與隱私權政策。'],
+  '/about': [ABOUT.title, ABOUT.description],
+  '/terms': [TERMS.title, TERMS.description],
+  '/methodology': [METHODOLOGY.title, METHODOLOGY.description],
 };
 
 // Old standalone support pages → sections of /about, and the policy sections → /terms.
@@ -242,17 +260,29 @@ const LEGACY_REDIRECT = {
 };
 
 const INDEX_BODY = {
+  // The three plain-text pages serve crawlers the page's full copy (shared/sitePages.js),
+  // section for section. They used to serve a hand-kept excerpt: /terms was 4 sentences
+  // of a 25-paragraph page, and its privacy excerpt dropped the advertising-cookie
+  // disclosure that the page itself makes.
   '/about': async () => ({
-    body: '<h2>聯絡我們</h2><p>bug 回報、功能許願、產品建議或合作想法：電子郵件 contact@tinboker.com · Threads @tinboker · 客服回覆時間：週一至週五 11:00–17:00。</p>'
-      + '<h2>免責聲明</h2><p>本網站所提供之所有資訊、數據、觀點與分析，僅供參考與學習用途，不構成任何形式的投資建議、要約、誘導或推薦。金融市場具有高度風險，過去的績效不代表未來的表現；TinBoker 團隊不對因使用本網站資訊而產生的任何損失負責。</p>',
+    body: `<p>${esc(ABOUT.intro)}</p>`
+      + `<h2>核心功能</h2>${titled(ABOUT.features)}<p>${esc(ABOUT.sourcesIntro)}</p>${labelled(ABOUT.sources)}`
+      + `<h2>經營者與方法</h2>${ABOUT.operator.map((p) => `<p>${rich(p)}</p>`).join('')}`
+      + `<h2>聯絡我們</h2><p>${esc(ABOUT.contactIntro)}</p><p>${esc(ABOUT.hours)}</p>`
+      + ul([`電子郵件：${esc(ABOUT.email)}`, `官方 Line 帳號：${esc(ABOUT.line)}`, `官方 Threads 帳號：${a(ABOUT.threads.href, ABOUT.threads.text)}`])
+      + `<h2>免責聲明</h2><p>${esc(ABOUT.disclaimerLead)}</p>${titled(ABOUT.disclaimer)}<p>${rich(ABOUT.policyLink)}</p>`,
   }),
-  // Same convention as '/about' above: a short, real excerpt per section rather than
-  // the full page copy (kept in sync by hand — TermsPage.tsx is the source of truth).
   '/terms': async () => ({
-    body: '<h2>服務條款</h2><p>本服務所有內容，皆為第三方公開言論與公開市場資料的整理與統計，不是對任何有價證券的推介、評等或買賣建議，也不保證任何報酬。投資決策及其結果由您自行負責。</p>'
-      + '<h2>會員訂閱與付款</h2><p>訂閱為每月自動續訂：首次訂閱時立即收取第一期費用，之後每月自動扣款，直到您取消為止。刷卡由藍新金流（NewebPay）處理，本服務不會經手或儲存您的完整卡號。</p>'
-      + '<h2>退款政策</h2><p>第一次訂閱本服務的會員，自首次付款日起七日內，可以來信申請全額退款，不需要理由。</p>'
-      + '<h2>隱私權政策</h2><p>我們不會出售您的個人資料，只在提供服務所必要的範圍內交由 Google、藍新金流、Cloudflare 處理。依個人資料保護法，您可以查詢、更正或刪除您的個人資料。</p>',
+    body: `<p>${esc(TERMS.updated)}</p><p>${esc(TERMS.intro)}</p>`
+      + `<h2>服務條款</h2>${titled(TERMS.terms)}`
+      + `<h2>會員訂閱與付款</h2>${titled(TERMS.subscription)}`
+      + `<h2>退款政策</h2>${titled(TERMS.refund)}`
+      + `<h2>隱私權政策</h2><h3>${esc(TERMS.dataCollectedTitle)}</h3>${labelled(TERMS.dataCollected)}${titled(TERMS.privacy)}`
+      + `<p>${rich(TERMS.outro)}</p>`,
+  }),
+  '/methodology': async () => ({
+    body: `<p>${esc(METHODOLOGY.intro)}</p>`
+      + METHODOLOGY.sections.map((sec) => `<h2>${esc(sec.title)}</h2>${titled(sec.items)}`).join(''),
   }),
   '/': async (api, origin) => {
     const [rec, tr] = await Promise.all([
@@ -426,6 +456,8 @@ export async function metaFor(pathname, origin, api) {
       type: 'website',
       url,
       body,
+      // A failed insights fetch (ins === null) is unknown, not thin: stay indexable.
+      noindex: ins != null && stockNoindex(readable.length),
       ld: [crumbs([['所有個股', `${origin}/stock`], [name, url]])],
     };
   }
