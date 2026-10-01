@@ -57,6 +57,7 @@ const MemberHub = lazy(() => import('@/pages/MemberHub'));
 
 // Legal/policy page — low-traffic, own chunk like MembershipPage.
 const TermsPage = lazy(() => import('@/pages/TermsPage'));
+const MethodologyPage = lazy(() => import('@/pages/MethodologyPage'));
 
 // /member: the single "my stuff" home for every signed-in user (free or paying).
 // Signed in -> the hub (which itself locks the 走勢 tab for non-members);
@@ -178,6 +179,14 @@ function App() {
               element={
                 <Suspense fallback={null}>
                   <TermsPage />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/methodology"
+              element={
+                <Suspense fallback={null}>
+                  <MethodologyPage />
                 </Suspense>
               }
             />

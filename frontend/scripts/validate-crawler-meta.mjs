@@ -18,7 +18,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const mw = await import(resolve(here, '../functions/_middleware.js'));
 const {
   metaFor, isCandidate, normalizeTagSlug, tagLabelFallback, TAG_ROUTE, tagNoindex, MIN_TAG_EPISODES, sectorNoindex,
-  renderPage, mdToHtml, chapters, tally, normSentiment,
+  renderPage, mdToHtml, chapters, tally, normSentiment, stockNoindex, MIN_STOCK_INSIGHTS,
 } = mw;
 
 const ORIGIN = 'https://tinboker.com';
@@ -148,6 +148,8 @@ try {
     ['/topics', '話題排行'],
     ['/articles', '文章'],
     ['/about', '關於 TinBoker'],
+    ['/terms', '服務條款與政策'],
+    ['/methodology', '資料來源與方法'],
   ];
   const titles = new Set();
   for (const [path, expected] of cases) {
@@ -207,6 +209,22 @@ try {
     assert.ok(stockPage.includes(needle), `stock body missing ${needle}`);
   }
   assert.deepEqual(ldTypes(stock), ['BreadcrumbList']);
+  // Indexability follows what the body carries: free 觀點, not total mentions. This
+  // fixture has four mentions but only two a non-member can read — a thin page.
+  assert.equal(stock.noindex, true, 'two readable 觀點 is below the floor');
+  assert.equal(stockNoindex(MIN_STOCK_INSIGHTS), false);
+  assert.equal(stockNoindex(MIN_STOCK_INSIGHTS - 1), true);
+  assert.equal(stockNoindex(0), true);
+  {
+    const inner = globalThis.fetch;
+    const more = [...INSIGHTS, { ...INSIGHTS[1], episode_id: 'e5', podcast_launch_time: daysAgo(20) }];
+    globalThis.fetch = async (url) => (String(url).includes('/api/ticker-insights/by-ticker/') ? json(more) : inner(url));
+    assert.equal((await metaFor('/stock/2330', ORIGIN, API)).noindex, false, 'three readable 觀點 is indexable');
+    // A failed insights fetch is unknown, not thin — do not noindex a page on an API blip.
+    globalThis.fetch = async (url) => (String(url).includes('/api/ticker-insights/by-ticker/') ? new Response('', { status: 500 }) : inner(url));
+    assert.equal((await metaFor('/stock/2330', ORIGIN, API)).noindex, false, 'insights fetch failure stays indexable');
+    globalThis.fetch = inner;
+  }
   // A ticker nobody has discussed keeps the template description rather than "0 集".
   globalThis.fetch = (fetchWithEmptyInsights => async (url) => {
     const u = String(url);
@@ -216,6 +234,7 @@ try {
   const quiet = await metaFor('/stock/9999', ORIGIN, API);
   assert.ok(quiet.description.startsWith('查看 台積電（9999） 的即時股價走勢'), `quiet ticker keeps the template: ${quiet.description}`);
   assert.ok(!renderPage(quiet).includes('Podcast 觀點'), 'quiet ticker renders no empty insight section');
+  assert.equal(quiet.noindex, true, 'a ticker with nothing to read is not offered to Google');
 
   const sector = await metaFor('/sector/sector_mlcc', ORIGIN, API);
   // The sector description is the page's own paragraph, trimmed — not the template.
@@ -257,6 +276,30 @@ try {
     assert.ok(homePage.includes(needle), `home body missing ${needle}`);
   }
   assert.deepEqual(ldTypes(home), ['WebSite', 'Organization']);
+
+  // Plain-text pages: the crawler body is the page's full copy (shared/sitePages.js),
+  // not an excerpt. The needles are the things an excerpt once dropped — /terms served
+  // 4 sentences and no advertising-cookie disclosure.
+  const text = (html) => html.replace(/<[^>]+>/g, '');
+  const terms = renderPage(await metaFor('/terms', ORIGIN, API));
+  for (const needle of ['<h2>隱私權政策</h2>', '廣告與 Cookie', 'Google AdSense', 'href="https://adssettings.google.com"', '個人資料保護法', '<h2>退款政策</h2>', '七個工作日', 'href="/membership"']) {
+    assert.ok(terms.includes(needle), `/terms body missing ${needle}`);
+  }
+  assert.ok(text(terms).length > 2000, `/terms body is an excerpt again: ${text(terms).length} chars`);
+  const about = renderPage(await metaFor('/about', ORIGIN, API));
+  for (const needle of ['<h2>經營者與方法</h2>', '以個人名義經營', 'href="/methodology"', '<h2>聯絡我們</h2>', 'contact@tinboker.com', '<h2>免責聲明</h2>', '責任限制']) {
+    assert.ok(about.includes(needle), `/about body missing ${needle}`);
+  }
+  assert.ok(text(about).length > 900, `/about body is an excerpt again: ${text(about).length} chars`);
+  const method = renderPage(await metaFor('/methodology', ORIGIN, API));
+  for (const needle of ['<h2>資料來源</h2>', '<h2>摘要怎麼產生</h2>', '<h2>個股觀點與看多、看空</h2>', '聲量水位', '<h2>限制與更正</h2>', 'href="/podcaster"', 'href="/weekly"']) {
+    assert.ok(method.includes(needle), `/methodology body missing ${needle}`);
+  }
+  assert.ok(text(method).length > 1200, `/methodology body too short: ${text(method).length} chars`);
+  // The pages render the same module, so a page that stops importing it has drifted.
+  for (const page of ['About.tsx', 'TermsPage.tsx', 'MethodologyPage.tsx']) {
+    assert.ok(readFileSync(resolve(here, '../src/pages', page), 'utf8').includes("shared/sitePages.js'"), `${page} no longer reads shared/sitePages.js`);
+  }
 
   // Index pages link to what they list — the hub links Google follows into the site.
   assert.ok(renderPage(await metaFor('/stock', ORIGIN, API)).includes('href="/stock/2330"'), '/stock index links its tickers');

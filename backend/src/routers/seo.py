@@ -21,6 +21,7 @@ from src.cache.redis_client import cache_get, cache_set
 from src.config import settings
 from src.database.postgres import get_session
 from src.services.article_service import ArticleService
+from src.services.insight_service import InsightService
 from src.services.podcast import PodcastService
 from src.routers.weekly import week_of_ms
 from src.services.search_console_service import SearchConsoleService
@@ -34,10 +35,15 @@ router = APIRouter(tags=["seo"])
 admin_router = APIRouter(tags=["seo", "admin"])
 
 podcast_service = PodcastService()
+insight_service = InsightService()
 
 # Public top-level routes that should always be in the sitemap (mirrors the routes
 # in frontend/src/App.tsx). Episodes are appended dynamically below.
 MIN_TICKER_EPISODES = 2
+# A /stock page is listed only when it shows at least this many free 觀點 — the rows its
+# crawler body is made of. Mirrors MIN_STOCK_INSIGHTS in frontend functions/_middleware.js,
+# which sends noindex below the same floor.
+MIN_STOCK_INSIGHTS = 3
 # /topics/:tag pages are listed only above this many scoped episodes — see the tag block below.
 MIN_TAG_EPISODES = 5
 # Sector pages need at least this many scoped episodes to be listed — a one-episode
@@ -52,6 +58,7 @@ STATIC_PATHS = [
     ("/topics", "0.8", "weekly"),
     ("/weekly", "0.8", "weekly"),
     ("/about", "0.5", "monthly"),
+    ("/methodology", "0.5", "monthly"),
     ("/terms", "0.3", "yearly"),
 ]
 
@@ -93,7 +100,7 @@ async def sitemap(
     to Googlebot. The assembled XML is cached in Redis for an hour; the per-source
     service calls are themselves cached, and the CDN edge caches the response.
     """
-    cache_key = f"sitemap:xml:v9:{limit}"  # v9: omit empty /articles index
+    cache_key = f"sitemap:xml:v10:{limit}"  # v10: /methodology + stock pages floored on free 觀點
     cached = await cache_get(cache_key)
     if cached:
         return Response(content=cached, media_type="application/xml",
@@ -178,14 +185,24 @@ async def sitemap(
     except Exception as e:
         logger.warning("Sitemap sector enumeration failed: %s", e)
 
-    # Stock pages: every ticker at least MIN_TICKER_EPISODES scoped episodes discuss.
-    # Measured 2026-09-05: 514 tickers were mentioned inside the release window but only
-    # the trending top-100 had a sitemap entry, so ~400 pages with real podcast content
-    # were undiscoverable. The floor keeps single-mention pages (one thesis line) out.
-    # Counting the scoped episode list, not trending_tickers, guarantees every listed
-    # page has episodes to show — trending counts include out-of-window mentions.
+    # Stock pages: a ticker the scoped episodes discuss AND whose page shows at least
+    # MIN_STOCK_INSIGHTS free 觀點. The episode count alone let thin pages through —
+    # measured 2026-10-01, 19 of the 255 listed stock pages rendered no 觀點 at all (the
+    # ticker sat in related_tickers but had no insight row, or only paywalled ones) and
+    # 79 had fewer than three; the median crawler body was 743 characters. That is the
+    # "low value content" shape. Counting the rows the page itself renders means a listed
+    # page always has text on it, and the middleware noindexes below the same floor.
+    # If the insight query fails, fall back to the episode floor rather than dropping
+    # every stock page from the sitemap for an hour.
+    try:
+        free = await insight_service.free_insight_counts()
+    except Exception as e:
+        logger.warning("Sitemap insight count failed, using the episode floor: %s", e)
+        free = None
     for tk in sorted(ticker_episodes):
-        if ticker_episodes[tk] >= MIN_TICKER_EPISODES:
+        listed = (free.get(tk, 0) >= MIN_STOCK_INSIGHTS) if free is not None \
+            else ticker_episodes[tk] >= MIN_TICKER_EPISODES
+        if listed:
             entries.append(_url_entry(f"{base}/stock/{quote(tk)}", None, "daily", "0.6"))
 
     xml = (
