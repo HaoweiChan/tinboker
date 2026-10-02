@@ -5,14 +5,19 @@ ThreadsService is unconfigured in tests, which forces dry-run.
 import urllib.parse
 import json
 from datetime import datetime, timedelta
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
 from src.config import settings
 from src.models.podcast import Episode
-from src.services import threads_publisher
+from src.services import social_ranker, threads_publisher
 from src.services.threads_service import THREADS_MAX_CHARS, ThreadsError, ThreadsService
+
+
+@pytest.fixture(autouse=True)
+def _disable_live_ranker(monkeypatch):
+    monkeypatch.setattr(settings, "openrouter_api_key", "")
 
 
 def _now_ms() -> int:
@@ -757,3 +762,84 @@ async def test_publish_skips_shows_with_social_disabled(temp_db, monkeypatch):
     single = await threads_publisher.publish_episode(muted, dry_run=False)
     assert single["posted"] is False
     assert single["reason"] == "social_disabled_for_show"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("dry_run", [False, True])
+@pytest.mark.parametrize("scores,order", [
+    ({"R1": 0.2, "R2": 0.9, "R3": 0.4}, ["R2", "R3", "R1"]),
+    ({}, ["R1", "R2", "R3"]),
+    ({"R2": 0.0}, ["R2", "R1", "R3"]),
+    ({"R2": 0.9, "R3": 0.9}, ["R2", "R3", "R1"]),
+])
+async def test_publish_recent_ranks_slot_candidates(temp_db, monkeypatch, dry_run, scores, order):
+    episodes = [_ep_cards(ep_id, _cards()) for ep_id in ["R1", "R2", "R3"]]
+    for episode in episodes:
+        episode.social_thread = {"post": f"Post {episode.id}", "comments": []}
+    fake = _FakeThreads()
+    monkeypatch.setattr(threads_publisher, "ThreadsService", lambda: fake)
+    monkeypatch.setattr(threads_publisher, "social_enabled_for", lambda _: True)
+    monkeypatch.setattr(settings, "social_slot_ranker_model", "typesafe/jev-1.13")
+    monkeypatch.setattr(threads_publisher.podcast_service, "get_recent_episodes", await _fake_recent(episodes))
+    ranker = AsyncMock(return_value=scores)
+    monkeypatch.setattr(social_ranker, "score_posts", ranker)
+
+    result = await threads_publisher.publish_recent(dry_run=dry_run, max_posts=1)
+
+    ranker.assert_awaited_once_with({episode.id: f"Post {episode.id}" for episode in episodes})
+    assert [post["episode_id"] for post in result["posted"]] == order[:1]
+    assert result["skipped"] == [{"episode_id": ep_id, "reason": "slot_full"} for ep_id in order[1:]]
+    assert result["ranking"] == [{"episode_id": ep_id, "score": scores.get(ep_id)} for ep_id in order]
+    assert bool(fake.calls) is not dry_run
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("max_posts,model", [(None, "typesafe/jev-1.13"), (1, ""), (3, "typesafe/jev-1.13")])
+async def test_publish_recent_does_not_rank_without_competition_or_when_disabled(monkeypatch, max_posts, model):
+    episodes = [_ep_cards(ep_id, _cards()) for ep_id in ["R1", "R2", "R3"]]
+    for episode in episodes:
+        episode.social_thread = {"post": f"Post {episode.id}"}
+    monkeypatch.setattr(threads_publisher, "ThreadsService", _FakeThreads)
+    monkeypatch.setattr(threads_publisher, "already_posted", lambda _: False)
+    monkeypatch.setattr(threads_publisher, "social_enabled_for", lambda _: True)
+    monkeypatch.setattr(settings, "social_slot_ranker_model", model)
+    monkeypatch.setattr(threads_publisher.podcast_service, "get_recent_episodes", await _fake_recent(episodes))
+    ranker = AsyncMock()
+    monkeypatch.setattr(social_ranker, "score_posts", ranker)
+
+    result = await threads_publisher.publish_recent(dry_run=True, max_posts=max_posts)
+
+    ranker.assert_not_called()
+    assert result["ranking"] == []
+    assert [post["episode_id"] for post in result["posted"]] == [episode.id for episode in episodes[:max_posts]]
+
+
+@pytest.mark.asyncio
+async def test_publish_recent_excludes_ineligible_and_empty_text_from_ranking(monkeypatch):
+    old_ms = int((datetime.utcnow() - timedelta(days=30)).timestamp() * 1000)
+    episodes = [_ep_cards(ep_id, _cards()) for ep_id in ["posted", "old", "no_text", "eligible", "malformed"]]
+    for episode in episodes:
+        episode.social_thread = {"post": f"Post {episode.id}"}
+    episodes[1].released_at_ms = old_ms
+    episodes[2].social_thread = {"post": ""}
+    episodes[4].social_thread = {"post": 123}
+    monkeypatch.setattr(threads_publisher, "ThreadsService", _FakeThreads)
+    monkeypatch.setattr(threads_publisher, "already_posted", lambda ep_id: ep_id == "posted")
+    monkeypatch.setattr(threads_publisher, "social_enabled_for", lambda _: True)
+    monkeypatch.setattr(settings, "social_slot_ranker_model", "typesafe/jev-1.13")
+    monkeypatch.setattr(threads_publisher.podcast_service, "get_recent_episodes", await _fake_recent(episodes))
+    ranker = AsyncMock(return_value={"eligible": 0.7})
+    monkeypatch.setattr(social_ranker, "score_posts", ranker)
+
+    result = await threads_publisher.publish_recent(dry_run=True, max_posts=1, max_age_days=4)
+
+    ranker.assert_awaited_once_with({"eligible": "Post eligible"})
+    assert [post["episode_id"] for post in result["posted"]] == ["eligible"]
+    assert {item["episode_id"]: item["reason"] for item in result["skipped"]} == {
+        "posted": "already_posted", "old": "outside_recency_window", "no_text": "slot_full",
+        "malformed": "slot_full",
+    }
+    assert result["ranking"] == [
+        {"episode_id": "eligible", "score": 0.7}, {"episode_id": "no_text", "score": None},
+        {"episode_id": "malformed", "score": None},
+    ]

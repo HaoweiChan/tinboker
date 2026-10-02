@@ -129,8 +129,10 @@ class Settings(BaseSettings):
     # How many of them each slot actually posts. Four episodes landing at once used to
     # mean four carousels in a row — the same skeleton back to back is the fatigue
     # readers reported. The rest wait for the next slot (and age out of the window if
-    # the day is too busy, which is the intended volume cut). Newest first.
+    # the day is too busy, which is the intended volume cut).
     social_publish_per_slot: int = 1
+    # Empty string disables ranking and restores newest-first; needs OPENROUTER_API_KEY; fails open.
+    social_slot_ranker_model: str = "typesafe/jev-1.13"
 
     # Where the pipeline's prompt YAMLs live. Unset resolves to the sibling pipelines/
     # tier in a repo checkout, which is right for local dev and wrong in the container —
