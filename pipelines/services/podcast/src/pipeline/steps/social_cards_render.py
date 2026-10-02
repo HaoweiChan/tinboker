@@ -7,7 +7,7 @@ URLs back into ``social_cards[i]['image_url']`` so the next step (Firestore) per
 them.
 
 Best-effort: any failure is logged and leaves the image_urls as None — the platform
-then falls back to a text/single-image post instead of a card carousel. Runs after
+then skips Threads carousel posts until cards are re-rendered. Runs after
 ``upload_to_gcs`` (which assigns the episode_id + resolves the storage backend) and
 before ``upload_to_firestore``.
 """
@@ -84,13 +84,14 @@ def render_social_cards(
         )
         images = _render_png(markdown, CARD_THEME_CSS, MARP_SERVICE_URL)
     except Exception as e:
-        print(f"  ⚠ Social card render skipped: {e}")
+        print(f"  ⚠ Social card render skipped: {e}; episode will NOT be posted to Threads until cards are re-rendered")
         return
 
     # Index alignment is load-bearing (card i ↔ carousel image i ↔ reply i). If the
     # render produced a different count, skip rather than post a desynced thread.
     if len(images) != len(cards):
-        print(f"  ⚠ Social card count mismatch ({len(images)} PNG vs {len(cards)} cards); skipping")
+        print(f"  ⚠ Social card count mismatch ({len(images)} PNG vs {len(cards)} cards); "
+              "episode will NOT be posted to Threads until cards are re-rendered")
         return
 
     uploaded = 0

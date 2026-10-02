@@ -186,6 +186,7 @@ async def select_weekly_movers() -> Optional[dict]:
 
 POST_HOC_WINDOW_DAYS = 21   # mentions this recent; r5d must exist, so ≥ 5 sessions old
 POST_HOC_MIN_MOVE = 8.0     # percent, baseline close → latest close
+POST_HOC_MAX_ATTEMPTS = 3
 STANCE_DIRECTION = {"BULLISH": 1, "STRONG_BULLISH": 1, "BEARISH": -1, "STRONG_BEARISH": -1}
 
 
@@ -294,11 +295,11 @@ async def _select_post_hoc(direction: int) -> Optional[dict]:
     cands = [c for c in await asyncio.to_thread(_post_hoc_candidates, allowed, since)
              if (c["pct"] >= 0) == (direction > 0)
              and _stance_matches_move(c.get("sentiment_label"), c["pct"])]
-    if not cands:
-        return None
-    c = cands[0]
-    story = await _story(c)
-    if not story:
+    for c in cands[:POST_HOC_MAX_ATTEMPTS]:
+        story = await _story(c)
+        if story:
+            break
+    else:
         return None
     label = f'{c["podcaster"]} {_md(c["mention_date"])}'
     api = settings.public_api_url.rstrip("/")

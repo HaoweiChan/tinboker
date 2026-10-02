@@ -316,7 +316,7 @@ def compose_thread(episode: Any) -> dict:
     """
     episode_id = _field(episode, "id") or _field(episode, "episode_id") or ""
     cards = [c for c in (_field(episode, "social_cards") or []) if isinstance(c, dict)]
-    # Drop non-raster (SVG) card images — Meta rejects them; better a text post than a hard fail.
+    # Drop non-raster (SVG) card images — Meta rejects them.
     image_urls = [c["image_url"] for c in cards if _is_raster(c.get("image_url"))][:MAX_CARDS]
     theme_cards = [c for c in cards if c.get("kind") == "theme"]
     count_line = f"⬇️ {len(theme_cards)} 個重點整理" if theme_cards else ""
@@ -364,6 +364,13 @@ def compose_thread(episode: Any) -> dict:
         "poll": poll,
         "url": episode_url(episode_id),
     }
+
+
+def _cards_not_rendered(episode: Any, thread: dict) -> bool:
+    if _field(episode, "social_cards") and not thread.get("poll") and not thread["image_urls"]:
+        logger.warning("Skipping Threads episode %s: cards_not_rendered", thread["episode_id"])
+        return True
+    return False
 
 
 async def publish_thread(service: ThreadsService, draft: dict) -> dict:
@@ -585,6 +592,9 @@ async def publish_recent(
         # post (legacy episodes with neither).
         if has_cards or _has_human_thread(episode):
             thread = compose_thread(episode)
+            if _cards_not_rendered(episode, thread):
+                skipped.append({"episode_id": episode_id, "reason": "cards_not_rendered"})
+                continue
             if thread.get("poll") and len(thread["main_text"]) > THREADS_MAX_CHARS:
                 skipped.append({"episode_id": episode_id, "reason": "poll_text_too_long"})
                 continue
@@ -679,6 +689,8 @@ async def publish_episode(episode: Any, dry_run: bool = True) -> dict:
 
     if has_cards or _has_human_thread(episode):
         thread = compose_thread(episode)
+        if _cards_not_rendered(episode, thread):
+            return {**base, "posted": False, "reason": "cards_not_rendered", "url": thread["url"]}
         if thread.get("poll") and len(thread["main_text"]) > THREADS_MAX_CHARS:
             return {**base, "posted": False, "reason": "poll_text_too_long", "url": thread["url"]}
         if effective_dry_run:
