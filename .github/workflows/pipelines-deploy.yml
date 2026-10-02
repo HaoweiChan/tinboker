@@ -240,6 +240,15 @@ jobs:
             fi
             
             curl -s http://localhost:8003/api/wiki/health || true
+
+            # After the health check, so a Marp failure fails the run without blocking the API deploy above.
+            # The 2026-08-25 init: true never took effect because the Marp container was not recreated.
+            echo "→ Applying Marp compose changes..."
+            cd "$PODCAST_DIR/src/podcast/marp_service"
+            if ! docker compose up -d; then
+                echo "ERROR: Failed to apply Marp compose changes"
+                exit 1
+            fi
             echo ""
 
             # 6. Cleanup legacy directories

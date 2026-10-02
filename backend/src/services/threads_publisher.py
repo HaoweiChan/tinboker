@@ -25,7 +25,7 @@ from typing import Any, Optional
 from src.config import settings
 from src.database.models import ScheduledSocialPost
 from src.database.postgres import session_scope
-from src.services import social_ledger
+from src.services import social_ledger, social_ranker
 from src.services.content_source_service import social_enabled_for, speaker_for
 from src.services.podcast import PodcastService
 from src.services.threads_service import THREADS_MAX_CHARS, ThreadsError, ThreadsService
@@ -316,7 +316,7 @@ def compose_thread(episode: Any) -> dict:
     """
     episode_id = _field(episode, "id") or _field(episode, "episode_id") or ""
     cards = [c for c in (_field(episode, "social_cards") or []) if isinstance(c, dict)]
-    # Drop non-raster (SVG) card images — Meta rejects them; better a text post than a hard fail.
+    # Drop non-raster (SVG) card images — Meta rejects them.
     image_urls = [c["image_url"] for c in cards if _is_raster(c.get("image_url"))][:MAX_CARDS]
     theme_cards = [c for c in cards if c.get("kind") == "theme"]
     count_line = f"⬇️ {len(theme_cards)} 個重點整理" if theme_cards else ""
@@ -364,6 +364,13 @@ def compose_thread(episode: Any) -> dict:
         "poll": poll,
         "url": episode_url(episode_id),
     }
+
+
+def _cards_not_rendered(episode: Any, thread: dict) -> bool:
+    if _field(episode, "social_cards") and not thread.get("poll") and not thread["image_urls"]:
+        logger.warning("Skipping Threads episode %s: cards_not_rendered", thread["episode_id"])
+        return True
+    return False
 
 
 async def publish_thread(service: ThreadsService, draft: dict) -> dict:
@@ -470,6 +477,27 @@ def list_posted(limit: int = 50, days: Optional[int] = None) -> list[dict]:
     return [{**r, "reply_ids": r.get("child_ids") or []} for r in rows]
 
 
+def _skip_reason(episode: Any, episode_id: str, cutoff_ms: Optional[int]) -> Optional[str]:
+    if already_posted(episode_id):
+        return "already_posted"
+    if not social_enabled_for(_field(episode, "podcast_name")):
+        return "social_disabled_for_show"
+    social_thread = _field(episode, "social_thread") or {}
+    if isinstance(social_thread, dict) and social_thread.get("poll_error"):
+        return "invalid_poll"
+    if isinstance(social_thread, dict):
+        try:
+            normalize_poll(social_thread)
+        except ValueError:
+            return "invalid_poll"
+    rel_ms = _release_ms(episode)
+    if cutoff_ms is not None and (rel_ms is None or rel_ms < cutoff_ms):
+        return "outside_recency_window"
+    if not (_field(episode, "social_cards") or _field(episode, "key_insights") or _field(episode, "episode_title")):
+        return "no_postable_content"
+    return None
+
+
 async def publish_recent(
     limit: int = 10,
     dry_run: bool = True,
@@ -493,6 +521,34 @@ async def publish_recent(
 
     episodes = await podcast_service.get_recent_episodes(limit=limit, enrich_content=False)
 
+    ranking: list[dict] = []
+    if max_posts is not None and settings.social_slot_ranker_model:
+        eligible: dict[str, Any] = {}
+        for episode in episodes:
+            episode_id = _field(episode, "id") or _field(episode, "episode_id") or ""
+            if episode_id and _skip_reason(episode, episode_id, cutoff_ms) is None:
+                eligible[episode_id] = episode
+        if len(eligible) > max_posts:
+            texts = {}
+            for episode_id, episode in eligible.items():
+                thread = _field(episode, "social_thread") or {}
+                text = thread.get("post") if isinstance(thread, dict) else None
+                if isinstance(text, str) and text.strip():
+                    texts[episode_id] = text
+            scores = await social_ranker.score_posts(texts)
+            if scores:
+                episodes = sorted(episodes, key=lambda ep: scores.get(
+                    _field(ep, "id") or _field(ep, "episode_id") or "", -1), reverse=True)
+            ranking = [
+                {"episode_id": episode_id, "score": scores.get(episode_id)}
+                for episode_id in sorted(eligible, key=lambda eid: scores.get(eid, -1), reverse=True)
+            ]
+            # WARNING, not INFO: production runs LOG_LEVEL=WARNING, and this line is the
+            # only record of which candidates competed for the slot.
+            logger.warning("Threads slot ranking: %s", ", ".join(
+                f"{row['episode_id']}={row['score']:.2f}" if row["score"] is not None
+                else f"{row['episode_id']}=unscored" for row in ranking))
+
     posted: list[dict] = []
     skipped: list[dict] = []
 
@@ -500,31 +556,13 @@ async def publish_recent(
         episode_id = _field(episode, "id") or _field(episode, "episode_id") or ""
         if not episode_id:
             continue
-        if already_posted(episode_id):
-            skipped.append({"episode_id": episode_id, "reason": "already_posted"})
-            continue
-        if not social_enabled_for(_field(episode, "podcast_name")):
-            skipped.append({"episode_id": episode_id, "reason": "social_disabled_for_show"})
+        reason = _skip_reason(episode, episode_id, cutoff_ms)
+        if reason:
+            skipped.append({"episode_id": episode_id, "reason": reason})
             continue
         social_thread = _field(episode, "social_thread") or {}
-        if isinstance(social_thread, dict) and social_thread.get("poll_error"):
-            skipped.append({"episode_id": episode_id, "reason": "invalid_poll"})
-            continue
-        poll = None
-        if isinstance(social_thread, dict):
-            try:
-                poll = normalize_poll(social_thread)
-            except ValueError:
-                skipped.append({"episode_id": episode_id, "reason": "invalid_poll"})
-                continue
-        rel_ms = _release_ms(episode)
-        if cutoff_ms is not None and (rel_ms is None or rel_ms < cutoff_ms):
-            skipped.append({"episode_id": episode_id, "reason": "outside_recency_window"})
-            continue
+        poll = normalize_poll(social_thread) if isinstance(social_thread, dict) else None
         has_cards = bool(_field(episode, "social_cards"))
-        if not (has_cards or _field(episode, "key_insights") or _field(episode, "episode_title")):
-            skipped.append({"episode_id": episode_id, "reason": "no_postable_content"})
-            continue
         if max_posts is not None and len(posted) >= max_posts:
             # Still a candidate — it is not recorded, so the next slot picks it up.
             skipped.append({"episode_id": episode_id, "reason": "slot_full"})
@@ -585,6 +623,9 @@ async def publish_recent(
         # post (legacy episodes with neither).
         if has_cards or _has_human_thread(episode):
             thread = compose_thread(episode)
+            if _cards_not_rendered(episode, thread):
+                skipped.append({"episode_id": episode_id, "reason": "cards_not_rendered"})
+                continue
             if thread.get("poll") and len(thread["main_text"]) > THREADS_MAX_CHARS:
                 skipped.append({"episode_id": episode_id, "reason": "poll_text_too_long"})
                 continue
@@ -642,6 +683,7 @@ async def publish_recent(
         "posted_count": len([p for p in posted if not p.get("dry_run")]),
         "posted": posted,
         "skipped": skipped,
+        "ranking": ranking,
     }
 
 
@@ -679,6 +721,8 @@ async def publish_episode(episode: Any, dry_run: bool = True) -> dict:
 
     if has_cards or _has_human_thread(episode):
         thread = compose_thread(episode)
+        if _cards_not_rendered(episode, thread):
+            return {**base, "posted": False, "reason": "cards_not_rendered", "url": thread["url"]}
         if thread.get("poll") and len(thread["main_text"]) > THREADS_MAX_CHARS:
             return {**base, "posted": False, "reason": "poll_text_too_long", "url": thread["url"]}
         if effective_dry_run:
