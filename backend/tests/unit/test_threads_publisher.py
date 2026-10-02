@@ -5,6 +5,7 @@ ThreadsService is unconfigured in tests, which forces dry-run.
 import urllib.parse
 import json
 from datetime import datetime, timedelta
+from unittest.mock import Mock
 
 import pytest
 
@@ -623,6 +624,57 @@ async def test_publish_recent_thread_path_records_root_and_replies(temp_db, monk
     again = await threads_publisher.publish_recent(limit=5, dry_run=False)
     assert again["posted_count"] == 0
     assert again["skipped"][0]["reason"] == "already_posted"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("dry_run", [True, False])
+async def test_unrendered_cards_skip_without_claiming_or_consuming_slot(temp_db, monkeypatch, caplog, dry_run):
+    fake = _FakeThreads()
+    monkeypatch.setattr(threads_publisher, "ThreadsService", lambda: fake)
+    claim = Mock(wraps=threads_publisher.social_ledger.claim)
+    monkeypatch.setattr(threads_publisher.social_ledger, "claim", claim)
+    missing = _ep_cards("EP703", [{**c, "image_url": None} for c in _cards()])
+    ready = _ep_cards("EP704", _cards())
+    monkeypatch.setattr(threads_publisher.podcast_service, "get_recent_episodes",
+                        await _fake_recent([missing, ready]))
+
+    single = await threads_publisher.publish_episode(missing, dry_run=dry_run)
+    assert single["posted"] is False and single["reason"] == "cards_not_rendered"
+    assert fake.calls == []
+    claim.assert_not_called()
+
+    result = await threads_publisher.publish_recent(dry_run=dry_run, max_posts=1)
+    assert result["skipped"] == [{"episode_id": "EP703", "reason": "cards_not_rendered"}]
+    assert [p["episode_id"] for p in result["posted"]] == ["EP704"]
+    assert result["posted_count"] == (0 if dry_run else 1)
+    assert "Skipping Threads episode EP703: cards_not_rendered" in caplog.text
+    assert threads_publisher.already_posted("EP703") is False
+    if dry_run:
+        assert fake.calls == []
+        claim.assert_not_called()
+    else:
+        claim.assert_called_once_with("threads", "EP704")
+        assert fake.calls[0] == ("carousel", tuple(c["image_url"] for c in _cards()))
+        assert len(fake.calls) == 4
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("single", [True, False])
+async def test_poll_with_unrendered_cards_still_publishes(temp_db, monkeypatch, single):
+    fake = _FakeThreads()
+    monkeypatch.setattr(threads_publisher, "ThreadsService", lambda: fake)
+    episode = _ep_cards("EP705", [{**c, "image_url": None} for c in _cards()])
+    episode.social_thread = {"post": "Watch earnings.", "poll": {"question": "Wait?", "options": ["Yes", "No"]}}
+    if single:
+        result = await threads_publisher.publish_episode(episode, dry_run=False)
+        assert result["posted"] is True
+    else:
+        monkeypatch.setattr(threads_publisher.podcast_service, "get_recent_episodes",
+                            await _fake_recent([episode]))
+        result = await threads_publisher.publish_recent(dry_run=False)
+        assert result["posted_count"] == 1 and result["skipped"] == []
+    assert fake.calls[0] == ("poll", "Watch earnings.\n\nWait?", ("Yes", "No"))
+    assert threads_publisher.already_posted("EP705") is True
 
 
 # ── publish_episode (single explicit episode — the admin 發佈 button) ──────────
