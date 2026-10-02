@@ -5,17 +5,15 @@ import argparse
 import hashlib
 import json
 import math
-import os
 import re
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-import requests
 import yaml
 
-JEV_MODEL = "jev-1.13.0"
+JEV_MODEL = "typesafe/jev-1.13"
 QUESTIONS = {
     "relevant": {"type": "noul", "instructions":
         "Does this article describe a concrete business, industry, economic or policy change "
@@ -107,15 +105,33 @@ def prefilter(data: dict, as_of: datetime) -> tuple[list[dict], dict[str, str]]:
 
 
 def jev(payload: dict) -> dict:
-    key = os.environ.get("TYPESAFE_API_KEY")
-    if not key:
-        raise RuntimeError("TYPESAFE_API_KEY is required for --select-with-jev")
-    response = requests.post(
-        "https://api.typesafe.ai/v1/systemone", json=payload,
-        headers={"Authorization": f"Bearer {key}"}, timeout=30,
+    from . import llm
+
+    answers = llm.decide(
+        "news_selector", payload["state"], payload["questions"],
+        model_override=f"decisions:{payload['model']}", timeout=30, max_retries=0,
     )
-    response.raise_for_status()
-    return response.json()
+    return {"answers": answers}
+
+
+def _failure_summary(exc: Exception) -> dict[str, str | int]:
+    causes, current = [], exc
+    while current is not None and current not in causes:
+        causes.append(current)
+        current = current.__cause__ or current.__context__
+    messages = [str(cause) for cause in causes]
+    if any("OPENROUTER_API_KEY is not set" in message for message in messages):
+        return {"category": "missing_openrouter_api_key"}
+    for message in messages:
+        match = re.search(r"decisions endpoint (\d{3})\b", message)
+        if match:
+            return {"category": "provider_http_error", "status": int(match.group(1))}
+    if any(type(cause).__name__ in {"Timeout", "TimeoutError", "ConnectTimeout", "ReadTimeout"}
+           for cause in causes):
+        return {"category": "timeout"}
+    if any("decisions reply has no answers map" in message for message in messages):
+        return {"category": "invalid_provider_response"}
+    return {"category": "request_failed", "type": type(exc).__name__}
 
 
 def selection_score(result: dict) -> float | None:
@@ -172,7 +188,8 @@ def run(data: dict, out: Path, *, as_of: datetime, select_with_jev: bool = False
               "skipped": skipped, "calls": [], "draft": None}
 
     def cached(stage: str, payload: dict, call) -> dict:
-        encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True).encode()
+        # Match requests' default JSON body encoding, including ASCII escapes and spaces.
+        encoded = json.dumps(payload, sort_keys=True).encode()
         if len(encoded) > 32000 or len(report["calls"]) >= 7:
             raise ValueError("Run call/input budget exceeded")
         path = out / (stage + "-" + hashlib.sha256(encoded).hexdigest() + ".json")
@@ -187,13 +204,17 @@ def run(data: dict, out: Path, *, as_of: datetime, select_with_jev: bool = False
             try:
                 saved = {"result": call(payload)}
             except Exception as exc:
-                saved = {"error": type(exc).__name__}
+                saved = {"error": _failure_summary(exc)}
             path.write_text(json.dumps(saved, ensure_ascii=False, indent=2))
         report["calls"].append({"stage": stage, "cache_hit": hit,
                                  "seconds": time.monotonic() - started,
-                                 "usage": saved.get("result", {}).get("usage")})
+                                 "usage": saved.get("result", {}).get("usage"),
+                                 "error": saved.get("error")})
         if "error" in saved:
-            raise RuntimeError(f"{stage} failed: {saved['error']}; inspect configuration before retrying")
+            detail = saved["error"]
+            if isinstance(detail, dict):
+                detail = ":".join(str(detail[key]) for key in ("category", "status", "type") if key in detail)
+            raise RuntimeError(f"{stage} failed ({detail}); inspect configuration before retrying")
         return saved["result"]
 
     try:
@@ -201,7 +222,9 @@ def run(data: dict, out: Path, *, as_of: datetime, select_with_jev: bool = False
         if select_with_jev:
             ranked = []
             for article in candidates:
-                result = cached("jev", {"model": JEV_MODEL, "state": article,
+                state = json.dumps({"title": article["title"], "paragraphs": article["paragraphs"]},
+                                   ensure_ascii=False)
+                result = cached("jev", {"model": JEV_MODEL, "state": state,
                                         "questions": QUESTIONS}, jev)
                 score = selection_score(result)
                 if score is not None:
@@ -249,7 +272,7 @@ def main() -> None:
     args = parser.parse_args()
     if args.select_with_jev or args.article_id:
         from shared.secrets import bootstrap
-        bootstrap(gsm_vars=(), optional_vars=("OPENROUTER_API_KEY", "TYPESAFE_API_KEY"))
+        bootstrap(gsm_vars=(), optional_vars=("OPENROUTER_API_KEY",))
     run(json.loads(args.input.read_text()), args.out,
         as_of=timestamp(args.as_of) if args.as_of else datetime.now(timezone.utc),
         select_with_jev=args.select_with_jev, article_id=args.article_id,

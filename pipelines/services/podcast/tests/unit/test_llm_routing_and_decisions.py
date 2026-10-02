@@ -82,6 +82,27 @@ def test_decisions_model_is_refused_by_the_chat_path(captured, monkeypatch):
         llm.get_model("sector_verifier")
 
 
+def test_decide_keeps_default_retry_behavior(monkeypatch):
+    from unittest.mock import Mock, call
+
+    import requests
+
+    monkeypatch.setenv("SECTOR_VERIFIER_MODEL", "decisions:typesafe/jev-1.13")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    response = Mock()
+    response.status_code = 503
+    response.text = "provider unavailable"
+    post = Mock(return_value=response)
+    sleep = Mock()
+    monkeypatch.setattr(requests, "post", post)
+    monkeypatch.setattr(llm.time, "sleep", sleep)
+
+    with pytest.raises(RuntimeError, match="decisions call failed after 3 attempts"):
+        llm.decide("sector_verifier", {"text": "test"}, {"valid": {"type": "noul", "instructions": "Is it valid?"}})
+    assert post.call_count == 3
+    assert sleep.call_args_list == [call(1), call(2)]
+
+
 def test_sector_verifier_uses_the_decisions_path_and_the_cutoff(monkeypatch):
     asked: list[dict] = []
 

@@ -403,7 +403,15 @@ def invoke_json(role: str, messages: list[dict], schema: dict | None = None) -> 
     raise ValueError(f"LLM JSON output unparseable after {_MAX_RETRIES + 1} attempts: {last_err}")
 
 
-def decide(role: str, state: Any, questions: dict[str, dict[str, Any]], *, timeout: int = 60) -> dict[str, Any]:
+def decide(
+    role: str,
+    state: Any,
+    questions: dict[str, dict[str, Any]],
+    *,
+    timeout: int = 60,
+    max_retries: int | None = None,
+    model_override: str | None = None,
+) -> dict[str, Any]:
     """Ask the role's decisions model typed questions about ``state``.
 
     Decisions models (``decisions:typesafe/jev-1.13``) return a typed answer plus a
@@ -421,9 +429,12 @@ def decide(role: str, state: Any, questions: dict[str, dict[str, Any]], *, timeo
     """
     import requests
 
-    model = _model_name(role)
+    model = model_override or _model_name(role)
     if not model.startswith(_DECISIONS_PREFIX):
         raise ValueError(f"{role} is not configured for a decisions model (got {model!r})")
+    retries = _MAX_RETRIES if max_retries is None else max_retries
+    if type(retries) is not int or retries < 0:
+        raise ValueError("max_retries must be a nonnegative integer")
     api_key = os.getenv("OPENROUTER_API_KEY")
     if not api_key:
         raise RuntimeError("OPENROUTER_API_KEY is not set — the decisions endpoint needs it")
@@ -434,7 +445,7 @@ def decide(role: str, state: Any, questions: dict[str, dict[str, Any]], *, timeo
         "questions": questions,
     }
     last_err: Exception | None = None
-    for attempt in range(_MAX_RETRIES + 1):
+    for attempt in range(retries + 1):
         try:
             resp = requests.post(
                 _DECISIONS_URL,
@@ -452,8 +463,8 @@ def decide(role: str, state: Any, questions: dict[str, dict[str, Any]], *, timeo
             return answers
         except Exception as exc:  # noqa: BLE001 — retry transport + transient 5xx alike
             last_err = exc
-            if attempt < _MAX_RETRIES:
+            if attempt < retries:
                 wait = 2 ** attempt
                 _log.warning("decide(%s) failed (attempt %d): %s — retrying in %ds", role, attempt + 1, exc, wait)
                 time.sleep(wait)
-    raise RuntimeError(f"decisions call failed after {_MAX_RETRIES + 1} attempts: {last_err}")
+    raise RuntimeError(f"decisions call failed after {retries + 1} attempts: {last_err}") from last_err

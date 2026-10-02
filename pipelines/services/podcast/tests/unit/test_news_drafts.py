@@ -82,7 +82,8 @@ def test_english_source_cache_and_separate_comment(tmp_path, monkeypatch):
         assert not result["draft"]["screenshot_exists"]
         assert result["draft"]["review_required"]
     assert selector.call_count == writer.call_count == 1
-    assert selector.call_args.args[0]["state"] == source
+    sent_state = json.loads(selector.call_args.args[0]["state"])
+    assert sent_state == {"title": source["title"], "paragraphs": source["paragraphs"]}
     assert os.environ["SOCIAL_COPY_WRITER_MODEL"] == "original-model"
     user_data = json.loads(writer.call_args.args[0]["messages"][1]["content"])
     assert user_data["article"] == source
@@ -115,17 +116,86 @@ def test_candidate_cap_and_no_selection_default(tmp_path, monkeypatch):
 
 
 def test_jev_http_contract(monkeypatch):
-    monkeypatch.setenv("TYPESAFE_API_KEY", "test-only-placeholder")
+    from podcast.content_builder import llm
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-only-placeholder")
     response = Mock()
+    response.status_code = 200
     response.json.return_value = answer()
+    import requests
     post = Mock(return_value=response)
-    monkeypatch.setattr(drafts.requests, "post", post)
+    monkeypatch.setattr(requests, "post", post)
+    original_decide = llm.decide
+    decided = []
+
+    def capture_decide(*args, **kwargs):
+        decided.append((args, kwargs))
+        return original_decide(*args, **kwargs)
+
+    monkeypatch.setattr(llm, "decide", capture_decide)
     payload = {"model": drafts.JEV_MODEL, "state": article(), "questions": drafts.QUESTIONS}
     assert drafts.jev(payload) == answer()
-    assert post.call_args.args == ("https://api.typesafe.ai/v1/systemone",)
-    assert post.call_args.kwargs["json"] == payload
+    assert post.call_args.args == ("https://openrouter.ai/api/alpha/decisions",)
+    assert post.call_args.kwargs["json"] == {
+        "model": drafts.JEV_MODEL,
+        "state": json.dumps(article(), ensure_ascii=False),
+        "questions": drafts.QUESTIONS,
+    }
+    assert post.call_args.kwargs["headers"]["Authorization"] == "Bearer test-only-placeholder"
     assert post.call_args.kwargs["timeout"] == 30
-    response.raise_for_status.assert_called_once()
+    assert decided == [(("news_selector", article(), drafts.QUESTIONS), {
+        "model_override": "decisions:typesafe/jev-1.13", "timeout": 30, "max_retries": 0})]
+    post.assert_called_once()
+
+
+def test_jev_failure_stops_after_one_transport_attempt(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-only-placeholder")
+    response = Mock(status_code=503, text="provider unavailable")
+    post = Mock(return_value=response)
+    import requests
+    monkeypatch.setattr(requests, "post", post)
+    payload = {"model": drafts.JEV_MODEL, "state": article(), "questions": drafts.QUESTIONS}
+    with pytest.raises(RuntimeError, match="decisions call failed after 1 attempts"):
+        drafts.jev(payload)
+    post.assert_called_once()
+
+
+def test_cli_bootstraps_only_openrouter_key(tmp_path, monkeypatch):
+    import sys
+
+    import shared.secrets
+
+    source = tmp_path / "input.json"
+    source.write_text('{"articles": []}')
+    monkeypatch.setattr(sys, "argv", ["news_drafts", "--input", str(source), "--out", str(tmp_path / "out"), "--select-with-jev"])
+    bootstrap = Mock()
+    monkeypatch.setattr(shared.secrets, "bootstrap", bootstrap)
+    result = Mock()
+    monkeypatch.setattr(drafts, "run", result)
+    drafts.main()
+    bootstrap.assert_called_once_with(gsm_vars=(), optional_vars=("OPENROUTER_API_KEY",))
+    result.assert_called_once()
+
+
+def test_selector_wire_limit_counts_ascii_escaped_state(tmp_path, monkeypatch):
+    source = article() | {"paragraphs": [{"id": "0", "text": "新聞" * 2800}]}
+    assert len(json.dumps(source, ensure_ascii=False).encode()) < 24000
+    call = Mock(side_effect=AssertionError("Oversize request reached Jev"))
+    monkeypatch.setattr(drafts, "jev", call)
+    with pytest.raises(ValueError, match="Run call/input budget exceeded"):
+        drafts.run({"articles": [source]}, tmp_path, as_of=NOW, select_with_jev=True)
+    call.assert_not_called()
+
+
+def test_cached_provider_error_keeps_status_without_response_body(tmp_path, monkeypatch):
+    monkeypatch.setattr(drafts, "jev", Mock(side_effect=RuntimeError(
+        "decisions call failed after 1 attempts: decisions endpoint 503: echoed source text")))
+    with pytest.raises(RuntimeError, match="provider_http_error:503"):
+        drafts.run({"articles": [article()]}, tmp_path, as_of=NOW, select_with_jev=True)
+    cached = next(tmp_path.glob("jev-*.json")).read_text()
+    report = (tmp_path / "report.json").read_text()
+    assert "503" in cached and "503" in report
+    assert "echoed source text" not in cached and "echoed source text" not in report
 
 
 def test_newest_revision_wins_and_english_only_is_rejected():

@@ -1,7 +1,7 @@
 # English news → local Threads drafts
 
 This opt-in CLI accepts extracted English source records, filters them before paid
-calls, optionally asks TypeSafe Jev two narrow questions, and writes one zh-TW
+calls, optionally asks TypeSafe Jev two narrow questions through OpenRouter, and writes one zh-TW
 draft with its original URL as a separate first comment. It does not fetch sources,
 translate the whole ingestion feed, schedule posts, write databases, or publish.
 Existing podcast ingestion and production model defaults are unchanged.
@@ -23,10 +23,12 @@ uv run --package tinboker-podcast python -m podcast.content_builder.news_drafts 
   --writer-model deepseek/deepseek-v4-pro
 ```
 
-Paid modes use existing `shared.secrets.bootstrap()` for `OPENROUTER_API_KEY` and
-`TYPESAFE_API_KEY`. Supply credentials through environment/Secret Manager, never
-input JSON. Jev uses the direct [TypeSafe API](https://docs.typesafe.ai/api), pinned
-to `jev-1.13.0`; the existing OpenRouter decisions wrapper is not this API.
+Paid modes use existing `shared.secrets.bootstrap()` for `OPENROUTER_API_KEY`.
+Supply credentials through environment/Secret Manager, never input JSON. Jev uses
+OpenRouter's [Decisions API](https://openrouter.ai/blog/tutorials/how-to-use-jev/)
+with the model ID `typesafe/jev-1.13` and the shared `llm.decide()` adapter.
+OpenRouter may roll this ID to a dated snapshot; cache keys use the requested ID,
+so use a fresh output directory when evaluating a newer snapshot.
 
 ## Input contract
 
@@ -75,8 +77,12 @@ Requests/results, including failures, are cached under the output directory by
 payload hash, including model and prompt. Reusing the same input, `--as-of`, model,
 and output directory makes reruns free. Use a separate output directory for each
 concurrent run. Failed cache entries require deliberate removal before retrying.
-`report.json` records cache hits, duration, and available usage; raw cached responses
-retain provider metadata. Dollar cost is not estimated when the provider omits it.
+`report.json` records cache hits, duration, and available usage. The shared Jev
+adapter returns only its answer map, so Jev usage/cost metadata is not available
+in this CLI report; writer usage metadata is retained when the provider supplies it.
+Only the article title and paragraphs are sent to Jev; local IDs, URLs, and paths
+stay outside the request. For Jev, the 32 KB cap measures the ASCII-escaped JSON body sent on the wire;
+for the writer it bounds the cached input payload, excluding SDK-added parameters.
 
 Every output has `publish_ready: false` and requires human fact review. Paragraph
 IDs prove provenance membership, not factual correctness. Check numeric qualifiers
@@ -85,10 +91,12 @@ available products. The supplied screenshot path is preserved and checked for fi
 existence; no screenshot is fabricated or captured automatically. The URL stays in
 `first_comment`, outside `post`. A missing screenshot never makes a draft ready.
 
-Validation is offline with mocked paid calls. **The direct Jev integration has not
-been validated with a live credential or calibrated on an English-news dataset.**
-Earlier scratch writer comparisons were one-story pilots, not release quality
-benchmarks. This CLI is a review/evaluation tool, not a production publishing path.
+Offline tests mock paid calls. A separate seven-case live selector pilot through
+OpenRouter matched its frozen labels (three real articles and four synthetic
+controls); it bypassed the CLI freshness prefilter and writer, so it does not
+validate the end-to-end flow or calibrate the 0.8 threshold. Treat this as an
+initial integration check, not a quality benchmark. This CLI is a
+review/evaluation tool, not a production publishing path.
 
 ```sh
 uv sync --all-packages --group dev
