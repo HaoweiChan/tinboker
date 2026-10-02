@@ -26,7 +26,9 @@ uv run --package tinboker-podcast python -m podcast.content_builder.news_drafts 
 Paid modes use existing `shared.secrets.bootstrap()` for `OPENROUTER_API_KEY`.
 Supply credentials through environment/Secret Manager, never input JSON. Jev uses
 OpenRouter's [Decisions API](https://openrouter.ai/blog/tutorials/how-to-use-jev/)
-with the pinned model ID `typesafe/jev-1.13` and the shared `llm.decide()` adapter.
+with the model ID `typesafe/jev-1.13` and the shared `llm.decide()` adapter.
+OpenRouter may roll this ID to a dated snapshot; cache keys use the requested ID,
+so use a fresh output directory when evaluating a newer snapshot.
 
 ## Input contract
 
@@ -78,6 +80,9 @@ concurrent run. Failed cache entries require deliberate removal before retrying.
 `report.json` records cache hits, duration, and available usage. The shared Jev
 adapter returns only its answer map, so Jev usage/cost metadata is not available
 in this CLI report; writer usage metadata is retained when the provider supplies it.
+Only the article title and paragraphs are sent to Jev; local IDs, URLs, and paths
+stay outside the request. For Jev, the 32 KB cap measures the ASCII-escaped JSON body sent on the wire;
+for the writer it bounds the cached input payload, excluding SDK-added parameters.
 
 Every output has `publish_ready: false` and requires human fact review. Paragraph
 IDs prove provenance membership, not factual correctness. Check numeric qualifiers
