@@ -5,17 +5,15 @@ import argparse
 import hashlib
 import json
 import math
-import os
 import re
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-import requests
 import yaml
 
-JEV_MODEL = "jev-1.13.0"
+JEV_MODEL = "typesafe/jev-1.13"
 QUESTIONS = {
     "relevant": {"type": "noul", "instructions":
         "Does this article describe a concrete business, industry, economic or policy change "
@@ -107,15 +105,13 @@ def prefilter(data: dict, as_of: datetime) -> tuple[list[dict], dict[str, str]]:
 
 
 def jev(payload: dict) -> dict:
-    key = os.environ.get("TYPESAFE_API_KEY")
-    if not key:
-        raise RuntimeError("TYPESAFE_API_KEY is required for --select-with-jev")
-    response = requests.post(
-        "https://api.typesafe.ai/v1/systemone", json=payload,
-        headers={"Authorization": f"Bearer {key}"}, timeout=30,
+    from . import llm
+
+    answers = llm.decide(
+        "sector_verifier", payload["state"], payload["questions"],
+        model_override=f"decisions:{payload['model']}", timeout=30, max_retries=0,
     )
-    response.raise_for_status()
-    return response.json()
+    return {"answers": answers}
 
 
 def selection_score(result: dict) -> float | None:
@@ -249,7 +245,7 @@ def main() -> None:
     args = parser.parse_args()
     if args.select_with_jev or args.article_id:
         from shared.secrets import bootstrap
-        bootstrap(gsm_vars=(), optional_vars=("OPENROUTER_API_KEY", "TYPESAFE_API_KEY"))
+        bootstrap(gsm_vars=(), optional_vars=("OPENROUTER_API_KEY",))
     run(json.loads(args.input.read_text()), args.out,
         as_of=timestamp(args.as_of) if args.as_of else datetime.now(timezone.utc),
         select_with_jev=args.select_with_jev, article_id=args.article_id,

@@ -115,17 +115,55 @@ def test_candidate_cap_and_no_selection_default(tmp_path, monkeypatch):
 
 
 def test_jev_http_contract(monkeypatch):
-    monkeypatch.setenv("TYPESAFE_API_KEY", "test-only-placeholder")
+    from podcast.content_builder import llm
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-only-placeholder")
     response = Mock()
+    response.status_code = 200
     response.json.return_value = answer()
+    import requests
     post = Mock(return_value=response)
-    monkeypatch.setattr(drafts.requests, "post", post)
+    monkeypatch.setattr(requests, "post", post)
     payload = {"model": drafts.JEV_MODEL, "state": article(), "questions": drafts.QUESTIONS}
     assert drafts.jev(payload) == answer()
-    assert post.call_args.args == ("https://api.typesafe.ai/v1/systemone",)
-    assert post.call_args.kwargs["json"] == payload
+    assert post.call_args.args == ("https://openrouter.ai/api/alpha/decisions",)
+    assert post.call_args.kwargs["json"] == {
+        "model": drafts.JEV_MODEL,
+        "state": json.dumps(article(), ensure_ascii=False),
+        "questions": drafts.QUESTIONS,
+    }
+    assert post.call_args.kwargs["headers"]["Authorization"] == "Bearer test-only-placeholder"
     assert post.call_args.kwargs["timeout"] == 30
-    response.raise_for_status.assert_called_once()
+    assert llm._MAX_RETRIES == 2  # news selection disables retries per call, not globally
+    post.assert_called_once()
+
+
+def test_jev_failure_stops_after_one_transport_attempt(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-only-placeholder")
+    response = Mock(status_code=503, text="provider unavailable")
+    post = Mock(return_value=response)
+    import requests
+    monkeypatch.setattr(requests, "post", post)
+    payload = {"model": drafts.JEV_MODEL, "state": article(), "questions": drafts.QUESTIONS}
+    with pytest.raises(RuntimeError, match="decisions call failed after 1 attempts"):
+        drafts.jev(payload)
+    post.assert_called_once()
+
+
+def test_cli_bootstraps_only_openrouter_key(tmp_path, monkeypatch):
+    import sys
+    import shared.secrets
+
+    source = tmp_path / "input.json"
+    source.write_text('{"articles": []}')
+    monkeypatch.setattr(sys, "argv", ["news_drafts", "--input", str(source), "--out", str(tmp_path / "out"), "--select-with-jev"])
+    bootstrap = Mock()
+    monkeypatch.setattr(shared.secrets, "bootstrap", bootstrap)
+    result = Mock()
+    monkeypatch.setattr(drafts, "run", result)
+    drafts.main()
+    bootstrap.assert_called_once_with(gsm_vars=(), optional_vars=("OPENROUTER_API_KEY",))
+    result.assert_called_once()
 
 
 def test_newest_revision_wins_and_english_only_is_rejected():
