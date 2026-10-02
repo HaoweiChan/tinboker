@@ -1,6 +1,7 @@
 """The post-shape rotation: which format a slot gets, and the cooldowns that stop the
 same shape or the same subject going out again too soon."""
 from datetime import datetime, timedelta
+from unittest.mock import AsyncMock, call
 
 import pytest
 
@@ -142,6 +143,30 @@ async def test_post_hoc_down_is_its_own_format_and_no_story_means_no_post(temp_d
         return None
     monkeypatch.setattr(sf, "_story", dead)
     assert await sf.select_post_hoc_down() is None             # the number line alone is not a post
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("succeeds", [True, False])
+async def test_post_hoc_tries_next_candidate_up_to_cap(monkeypatch, succeeds):
+    from src.services import threads_publisher
+    candidates = [_cand(ticker=str(i), episode_id=f"ep{i}")
+                  for i in range(sf.POST_HOC_MAX_ATTEMPTS + 1)]
+    monkeypatch.setattr(threads_publisher.podcast_service, "_allowed_podcast_names", _no_scope)
+    monkeypatch.setattr(sf, "_post_hoc_candidates", lambda *_: candidates)
+    story = AsyncMock(side_effect=[None, STORY] if succeeds else None, return_value=None)
+    monkeypatch.setattr(sf, "_story", story)
+
+    draft = await sf.select_post_hoc_up()
+    if succeeds:
+        assert draft["key"] == "post_hoc:1:ep1" and draft["subject"] == "1"
+        assert draft["text"] == sf.post_hoc_text(candidates[1], STORY)
+        assert draft["url"].endswith("/episode/ep1")
+        assert "/api/og/stock/1.png?" in draft["image_url"]
+    else:
+        assert draft is None
+    attempts = 2 if succeeds else sf.POST_HOC_MAX_ATTEMPTS
+    assert story.await_count == attempts
+    assert story.await_args_list == [call(c) for c in candidates[:attempts]]
 
 
 # ── the stock card's event marker ────────────────────────────────────────────
