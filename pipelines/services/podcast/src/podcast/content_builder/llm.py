@@ -467,4 +467,4 @@ def decide(
                 wait = 2 ** attempt
                 _log.warning("decide(%s) failed (attempt %d): %s — retrying in %ds", role, attempt + 1, exc, wait)
                 time.sleep(wait)
-    raise RuntimeError(f"decisions call failed after {retries + 1} attempts: {last_err}")
+    raise RuntimeError(f"decisions call failed after {retries + 1} attempts: {last_err}") from last_err
