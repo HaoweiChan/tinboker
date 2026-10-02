@@ -152,6 +152,7 @@ def test_jev_failure_stops_after_one_transport_attempt(monkeypatch):
 
 def test_cli_bootstraps_only_openrouter_key(tmp_path, monkeypatch):
     import sys
+
     import shared.secrets
 
     source = tmp_path / "input.json"
