@@ -41,7 +41,7 @@ def test_pick_narratives_top_plus_one_rising_slot():
 
 @pytest.mark.asyncio
 @patch("src.services.trending.hidden_tag_slugs", return_value={"hiddentag"})
-@patch("src.services.trending.get_session", return_value=iter([object()]))
+@patch("src.services.trending.session_scope")
 @patch("src.services.trending.cache_get", new_callable=AsyncMock, return_value=None)
 @patch("src.services.trending.cache_set", new_callable=AsyncMock)
 async def test_get_attention_windows_and_boards(_set, _get, _sess, _hidden):

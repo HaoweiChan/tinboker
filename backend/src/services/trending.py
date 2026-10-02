@@ -15,7 +15,7 @@ from src.services.stock import StockService
 from src.cache.redis_client import cache_get, cache_set, get_redis
 from src.schemas.search import SearchResultItem
 from src.database.models import StockTranslation
-from src.database.postgres import get_session
+from src.database.postgres import session_scope
 from src.tag_registry import canonical_label, canonical_tag_slugs, hidden_tag_slugs, normalize_tag_slug
 from src.utils.market import infer_market
 
@@ -373,7 +373,14 @@ class TrendingService:
 
         canon = canonical_tag_slugs()
         try:
-            hidden = await asyncio.to_thread(lambda: hidden_tag_slugs(next(get_session())))
+            # Not next(get_session()): the dropped generator closes the session before
+            # the query runs, the query reopens a transaction, and nothing ends it —
+            # the connection sat "idle in transaction" holding a tag_registry lock
+            # until the garbage collector got to it (prod boot hang, 2026-10-01).
+            def _hidden() -> set[str]:
+                with session_scope() as db:
+                    return hidden_tag_slugs(db)
+            hidden = await asyncio.to_thread(_hidden)
         except Exception:
             logger.warning("attention: hidden-tag lookup failed; showing all canonical tags", exc_info=True)
             hidden = set()
