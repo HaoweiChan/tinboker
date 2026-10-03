@@ -107,12 +107,17 @@ def test_checkout_price_owner_status_sandbox_isolation_and_refresh(flow):
     assert params["PeriodAmt"] == [str(settings.membership_founding_price)]
     assert params["NotifyURL"] == ["https://dev-api.tinboker.com/api/billing/notify"]
     assert started["action"].startswith("https://ccore.")
-    assert checkout(client)["mer_order_no"] == started["mer_order_no"]
+    retry = checkout(client)
+    # A retry gets a fresh MerOrderNo (NewebPay rejects a reused one with PER10032)
+    # and keeps the founding price; the late success of the first attempt still counts.
+    assert retry["mer_order_no"] != started["mer_order_no"]
+    assert parse_qs(newebpay.decrypt(retry["fields"]["PostData_"], KEY, IV))["PeriodAmt"] == params["PeriodAmt"]
     response = notify(client, first(started["mer_order_no"]))
     assert response.status_code == 200, response.text
     with scope() as db:
         assert db.get(User, "a").member_until is None
-        assert db.query(Subscription).one().paid_until is not None
+        assert db.query(Subscription).filter_by(mer_order_no=started["mer_order_no"]).one().paid_until is not None
+        assert db.query(Subscription).filter_by(mer_order_no=retry["mer_order_no"]).one().status == "abandoned"
     status = client.get("/api/billing/subscription", headers=headers())
     assert "no-store" in status.headers["cache-control"]
     assert status.json()["subscription"]["status"] == "active"
@@ -192,10 +197,11 @@ def test_concurrent_checkout_one_founder_and_same_order(flow):
     _, scope = flow
     with ThreadPoolExecutor(max_workers=4) as pool:
         results = list(pool.map(lambda name: billing.checkout(name, f"{name}@example.com"), ["a", "b", "a", "b"]))
-    assert len({r["mer_order_no"] for r in results}) == 2
+    assert len({r["mer_order_no"] for r in results}) == 4
     with scope() as db:
-        assert db.query(Subscription).count() == 2
-        assert db.query(Subscription).filter_by(is_founding=True).count() == 1
+        live = db.query(Subscription).filter(Subscription.status != "abandoned")
+        assert live.count() == 2
+        assert live.filter_by(is_founding=True).count() == 1
 
 
 def test_auth_preview_and_disabled_gate(flow, monkeypatch):
@@ -300,13 +306,15 @@ def test_malformed_identifiers_rejected_before_database(flow, changes):
     assert notify(client, first(order, **changes)).status_code == 400
 
 
-def test_duplicate_provider_error_retains_pending_order(flow):
-    client, _ = flow
+def test_duplicate_provider_error_retires_order_on_retry(flow):
+    client, scope = flow
     order = checkout(client)["mer_order_no"]
     payload = first(order)
     payload["Status"] = "PER10032"
     assert notify(client, payload).status_code == 400
-    assert checkout(client)["mer_order_no"] == order
+    assert checkout(client)["mer_order_no"] != order
+    with scope() as db:
+        assert db.query(Subscription).filter_by(mer_order_no=order).one().status == "abandoned"
 
 
 def test_terminal_failure_without_optional_success_fields_allows_retry(flow):
@@ -333,3 +341,20 @@ def test_existing_billing_table_upgrade_is_idempotent(tmp_path, monkeypatch):
     indexes = {index["name"] for index in inspect(engine).get_indexes("subscriptions")}
     assert "uq_one_open_sub_per_user_env" in indexes
     assert "uq_one_active_sub_per_user" not in indexes
+
+
+def test_retry_after_abandoned_paid_attempt_shows_active_and_retires_retry(flow):
+    client, scope = flow
+    stale = checkout(client)["mer_order_no"]
+    retry = checkout(client)["mer_order_no"]
+    assert notify(client, first(stale)).status_code == 200
+    assert client.get("/api/billing/subscription", headers=headers()).json()["subscription"]["status"] == "active"
+    with scope() as db:
+        assert db.query(Subscription).filter_by(mer_order_no=retry).one().status == "abandoned"
+    # If the retired retry was ALSO paid, it is recorded but not activated: one open
+    # subscription per user, the second mandate is flagged for manual termination.
+    assert notify(client, first(retry, PeriodNo="P_two")).status_code == 200
+    with scope() as db:
+        assert db.query(Subscription).filter_by(mer_order_no=retry).one().status == "abandoned"
+        assert db.query(Subscription).filter_by(mer_order_no=stale).one().status == "active"
+        assert db.query(PaymentEvent).filter_by(mer_order_no=retry).count() == 1

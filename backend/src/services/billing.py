@@ -58,7 +58,8 @@ def _view(sub: Subscription | None) -> dict:
 
 
 def _latest(db: Session, user_id: str) -> Subscription | None:
-    return db.query(Subscription).filter_by(user_id=user_id, gateway_env=settings.newebpay_env).order_by(Subscription.created_at.desc()).first()
+    return (db.query(Subscription).filter_by(user_id=user_id, gateway_env=settings.newebpay_env)
+            .filter(Subscription.status != "abandoned").order_by(Subscription.created_at.desc()).first())
 
 
 def subscription_status(user_id: str) -> dict:
@@ -85,18 +86,26 @@ def checkout(user_id: str, email: str) -> dict:
         sub = db.query(Subscription).filter_by(user_id=user_id, gateway_env=settings.newebpay_env).filter(Subscription.status.in_(OPEN_STATUSES)).first()
         if sub and sub.status != "pending":
             raise HTTPException(409, "An existing subscription must be cancelled first")
-        if sub is None:
+        # NewebPay rejects a MerOrderNo it has already seen (PER10032), so every attempt
+        # gets a fresh one. The old row is kept as "abandoned" so a late Notify for it
+        # still finds its subscription; it hands its price and founding seat to the retry.
+        prior = sub
+        if prior:
+            prior.status = "abandoned"
+            db.flush()  # free the one-open-subscription slot before the retry's INSERT
+            founding, amount = prior.is_founding, prior.amount
+        else:
             taken = db.query(func.count(Subscription.id)).filter(
                 Subscription.gateway_env == settings.newebpay_env,
                 Subscription.is_founding.is_(True),
                 Subscription.status.in_(("pending", "active", "cancelling", "cancelled", "ended")),
             ).scalar()
             founding = taken < settings.membership_founding_limit
-            sub = Subscription(id=str(uuid.uuid4()), user_id=user_id, mer_order_no=newebpay.new_mer_order_no(),
-                               amount=settings.membership_founding_price if founding else settings.membership_list_price,
-                               is_founding=founding, gateway_env=settings.newebpay_env, status="pending")
-            db.add(sub)
-            db.flush()
+            amount = settings.membership_founding_price if founding else settings.membership_list_price
+        sub = Subscription(id=str(uuid.uuid4()), user_id=user_id, mer_order_no=newebpay.new_mer_order_no(),
+                           amount=amount, is_founding=founding, gateway_env=settings.newebpay_env, status="pending")
+        db.add(sub)
+        db.flush()
         fields = newebpay.build_period_post_data(
             mer_order_no=sub.mer_order_no, prod_desc="TinBoker Membership", period_amt=sub.amount,
             period_point=datetime.now(TAIPEI).day, payer_email=email,
@@ -202,14 +211,31 @@ def process_notification(encrypted: str) -> dict:
             if sub.next_auth_date is None or next_date > sub.next_auth_date:
                 sub.next_auth_date = next_date
             sub.total_times = total
-            if sub.status not in ("cancelled", "cancelling", "ended"):
+            live = []
+            if sub.status == "abandoned":
+                # The payer was charged on an attempt they later retried. Honour it and
+                # retire the retry — unless another mandate is already live: the DB allows
+                # one open subscription per user, so that second charge is flagged for a
+                # manual NewebPay termination instead of silently granted.
+                others = db.query(Subscription).filter(
+                    Subscription.user_id == sub.user_id, Subscription.gateway_env == settings.newebpay_env,
+                    Subscription.id != sub.id, Subscription.status.in_(OPEN_STATUSES)).all()
+                live = [o for o in others if o.status != "pending"]
+                if live:
+                    logger.warning("billing: paid abandoned order %s while %s is live — terminate one at NewebPay",
+                                   sub.mer_order_no, live[0].mer_order_no)
+                for other in others:
+                    if other.status == "pending":
+                        other.status = "abandoned"
+                db.flush()
+            if sub.status not in ("cancelled", "cancelling", "ended") and not (sub.status == "abandoned" and live):
                 sub.status = "ended" if (kind == "period" and cycle == total) or total == 1 else "active"
             if settings.newebpay_env == "production":
                 user = db.query(User).filter_by(id=sub.user_id).with_for_update().first()
                 if not user:
                     raise HTTPException(400, "Payment user not found")
                 set_member_until(user.email, max(filter(None, [_aware(user.member_until), _aware(sub.paid_until)])), session=db)
-        elif sub.status == "pending" and kind == "first_auth":
+        elif sub.status in ("pending", "abandoned") and kind == "first_auth":
             sub.status = "failed"
         elif kind == "period" and cycle == total and sub.status == "active":
             sub.status = "ended"
