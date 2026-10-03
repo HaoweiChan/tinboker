@@ -245,7 +245,7 @@ def cancel_subscription(user_id: str) -> dict:
                 data={"MerchantID_": merchant, "PostData_": newebpay.encrypt({
                     "RespondType": "JSON", "Version": "1.0", "TimeStamp": str(int(datetime.now(timezone.utc).timestamp())),
                     "MerOrderNo": sub.mer_order_no, "PeriodNo": sub.period_no, "AlterType": "terminate",
-                }, key, iv)}, timeout=15.0,
+                }, key, iv)}, headers=newebpay.HTTP_HEADERS, timeout=15.0,
             )
             response.raise_for_status()
             data = response.json()
@@ -272,7 +272,7 @@ def _confirmed_terminated(sub: Subscription, merchant: str, key: str, iv: str) -
             "PostData_": newebpay.encrypt({"RespondType": "JSON", "Version": "1.0",
                 "TimeStamp": str(int(datetime.now(timezone.utc).timestamp())),
                 "MerOrderNo": sub.mer_order_no, "PeriodNo": sub.period_no}, key, iv),
-        }, timeout=15.0)
+        }, headers=newebpay.HTTP_HEADERS, timeout=15.0)
         response.raise_for_status()
         payload = json.loads(newebpay.decrypt(response.json()["Period"], key, iv))
         # The official query example uses lowercase root keys, unlike its table.

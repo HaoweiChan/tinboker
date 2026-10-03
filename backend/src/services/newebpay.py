@@ -31,6 +31,9 @@ PERIOD_ENDPOINTS = {
     "sandbox": "https://ccore.newebpay.com/MPG/period",
     "production": "https://core.newebpay.com/MPG/period",
 }
+# NewebPay's Akamai edge returns 403 to the default `python-httpx/x.y` User-Agent
+# (verified 2026-10-04 on ccore AlterStatus); any named agent passes.
+HTTP_HEADERS = {"User-Agent": "TinBoker-Billing/1.0"}
 
 
 class NewebPayError(Exception):
