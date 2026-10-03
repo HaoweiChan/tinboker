@@ -656,7 +656,7 @@ class Subscription(Base):
     user_id = Column(String(64), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
     mer_order_no = Column(String(30), nullable=False, unique=True)  # NewebPay MerOrderNo
     period_no = Column(String(64), nullable=True, index=True)  # NewebPay's mandate id (PeriodNo)
-    status = Column(String(16), nullable=False, default="pending")  # pending|active|cancelled|ended
+    status = Column(String(16), nullable=False, default="pending")  # pending|active|cancelling|cancelled|ended|failed|abandoned
     amount = Column(Integer, nullable=False)  # TWD per-period amount (99 founding or 199 list)
     is_founding = Column(Boolean, nullable=False, default=False)
     gateway_env = Column(String(16), nullable=False)  # sandbox|production
