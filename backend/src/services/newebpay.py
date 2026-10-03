@@ -70,9 +70,13 @@ def decrypt(hex_str: str, key: str, iv: str) -> str:
         cipher = Cipher(algorithms.AES(key.encode("utf-8")), modes.CBC(iv.encode("utf-8")))
         decryptor = cipher.decryptor()
         padded = decryptor.update(ciphertext) + decryptor.finalize()
-        unpadder = padding.PKCS7(algorithms.AES.block_size).unpadder()
-        plaintext = unpadder.update(padded) + unpadder.finalize()
-        return plaintext.decode("utf-8")
+        # NewebPay pads to a 32-byte boundary (its sample `addpadding($s, 32)`), so the
+        # pad length is 1-32 — a standard 16-byte PKCS7 unpadder rejects 17-32, which
+        # failed roughly half of all real notifications (seen 2026-10-03: last byte 32).
+        pad = padded[-1] if padded else 0
+        if not 1 <= pad <= 32 or padded[-pad:] != bytes([pad]) * pad:
+            raise ValueError("bad padding")
+        return padded[:-pad].decode("utf-8")
     except (ValueError, binascii.Error, UnicodeDecodeError) as e:
         raise NewebPayError("failed to decrypt NewebPay payload") from e
 
