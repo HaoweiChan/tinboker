@@ -143,6 +143,23 @@ def build_period_post_data(
     }
 
 
+def describe_ciphertext(hex_str: str, key: str, iv: str) -> dict:
+    """Shape of a payload that failed to parse — sizes and byte classes only, never
+    plaintext (it carries a masked card number and the payer email)."""
+    info: dict = {"len": len(hex_str), "hex": all(c in "0123456789abcdefABCDEF" for c in hex_str)}
+    try:
+        raw = bytes.fromhex(hex_str)
+        info["blocks"] = len(raw) / 16
+        cipher = Cipher(algorithms.AES(key.encode("utf-8")), modes.CBC(iv.encode("utf-8")))
+        padded = cipher.decryptor().update(raw)
+        info["last_byte"] = padded[-1] if padded else None
+        info["head"] = padded[:1].decode("ascii", "replace")
+        info["tail_nul"] = len(padded) - len(padded.rstrip(b"\0"))
+    except Exception as e:  # diagnostics must never raise
+        info["error"] = type(e).__name__
+    return info
+
+
 def parse_period_result(hex_str: str, key: str, iv: str) -> dict:
     """Decrypt a `Period` field (create-mandate response or per-period Notify) into
     its JSON dict. Raises `NewebPayError` if it isn't valid JSON or lacks `Status`."""
