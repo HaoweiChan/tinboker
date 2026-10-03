@@ -1,5 +1,6 @@
 """Membership plans, hosted NewebPay checkout and verified server callbacks."""
 import asyncio
+import logging
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
@@ -15,6 +16,8 @@ from src.cache.cdn_cache import cdn_cached
 from src.config import settings
 from src.database.models import Subscription
 from src.database.postgres import session_scope
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/billing", tags=["billing"])
 
@@ -108,6 +111,8 @@ async def _notification(request: Request) -> dict:
     form = await request.form()
     encrypted = form.get("Period")
     if not isinstance(encrypted, str) or not encrypted:
+        # A gateway-side rejection (e.g. PER10030) posts plain Status/Message, no Period.
+        logger.warning("billing: notification without Period status=%s message=%s", form.get("Status"), form.get("Message"))
         raise HTTPException(400, "Missing encrypted payment notification")
     return await asyncio.to_thread(billing.process_notification, encrypted)
 
@@ -121,7 +126,15 @@ async def notify(request: Request):
 async def payment_return(request: Request):
     # ReturnURL is a gateway form POST. Verify it identically to NotifyURL; only
     # validated server state grants access, never a browser query-string status.
-    await _notification(request)
     site, _ = billing.billing_urls()
-    return RedirectResponse(f"{site}/membership?payment=return", status_code=303,
+    try:
+        await _notification(request)
+        outcome = "return"
+    except HTTPException as e:
+        # The payer is a browser here: send them back to the site, not a JSON 400.
+        # NotifyURL still carries the authoritative outcome.
+        if e.status_code >= 500:
+            raise
+        outcome = "failed"
+    return RedirectResponse(f"{site}/membership?payment={outcome}", status_code=303,
                             headers={"Cache-Control": "private, no-store"})

@@ -2,6 +2,7 @@
 from calendar import monthrange
 from datetime import date, datetime, time, timezone
 from zoneinfo import ZoneInfo
+import logging
 import uuid
 import re
 
@@ -11,6 +12,8 @@ from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from src.config import settings
+
+logger = logging.getLogger(__name__)
 from src.database.models import PaymentEvent, Subscription, User
 from src.database.postgres import session_scope
 from src.database.user_db import set_member_until
@@ -120,6 +123,7 @@ def process_notification(encrypted: str) -> dict:
     if not settings.newebpay_configured:
         raise HTTPException(503, "Payment gateway unavailable")
     merchant, key, iv = settings.newebpay_credentials
+    payload: dict = {}
     try:
         payload = newebpay.parse_period_result(encrypted, key, iv)
         result = payload.get("Result")
@@ -150,7 +154,14 @@ def process_notification(encrypted: str) -> dict:
         total = int(total_value) if total_value is not None else 0
         if cycle < 0 or (not terminal_failure and (total <= 0 or cycle > total)):
             raise ValueError()
-    except (newebpay.NewebPayError, ValueError, TypeError, KeyError):
+    except (newebpay.NewebPayError, ValueError, TypeError, KeyError) as e:
+        # Gateway status codes and field names only — never card or payer data.
+        result = payload.get("Result") if isinstance(payload.get("Result"), dict) else {}
+        logger.warning(
+            "billing: rejected notification (%s) status=%s message=%s order=%s respond=%s keys=%s",
+            type(e).__name__, payload.get("Status"), payload.get("Message"), result.get("MerchantOrderNo"),
+            result.get("RespondCode"), sorted(result) if result else None,
+        )
         raise HTTPException(400, "Invalid payment notification") from None
     event_kind = kind if success else ("first_failed" if kind == "first_auth" else "period_failed")
     with session_scope() as db:
