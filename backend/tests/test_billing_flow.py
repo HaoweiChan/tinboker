@@ -264,7 +264,8 @@ def test_bad_ciphertext_and_return_query_do_not_activate(flow):
     client, scope = flow
     checkout(client)
     assert client.post("/api/billing/notify", data={"Period": "tampered"}).status_code == 400
-    assert client.post("/api/billing/return?status=SUCCESS", data={}).status_code == 400
+    returned = client.post("/api/billing/return?status=SUCCESS", data={}, follow_redirects=False)
+    assert returned.status_code == 303 and returned.headers["location"].endswith("/membership?payment=failed")
     with scope() as db:
         assert db.query(Subscription).one().paid_until is None
 
