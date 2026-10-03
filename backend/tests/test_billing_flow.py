@@ -223,6 +223,8 @@ def test_cancel_preserves_paid_term_with_checkout_disabled(flow, monkeypatch):
     assert response.json()["subscription"]["paid_until"] is not None
     assert client.post("/api/billing/cancel", headers=headers()).status_code == 200
     assert mocked.call_count == 1
+    # NewebPay's edge 403s the default python-httpx User-Agent.
+    assert not mocked.call_args.kwargs["headers"]["User-Agent"].startswith("python-httpx")
     with scope() as db:
         assert db.get(User, "a").member_until is None
 
