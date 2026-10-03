@@ -158,9 +158,10 @@ def process_notification(encrypted: str) -> dict:
         # Gateway status codes and field names only — never card or payer data.
         result = payload.get("Result") if isinstance(payload.get("Result"), dict) else {}
         logger.warning(
-            "billing: rejected notification (%s) status=%s message=%s order=%s respond=%s keys=%s",
-            type(e).__name__, payload.get("Status"), payload.get("Message"), result.get("MerchantOrderNo"),
+            "billing: rejected notification (%s: %s) status=%s message=%s order=%s respond=%s keys=%s shape=%s",
+            type(e).__name__, e, payload.get("Status"), payload.get("Message"), result.get("MerchantOrderNo"),
             result.get("RespondCode"), sorted(result) if result else None,
+            None if payload else newebpay.describe_ciphertext(encrypted, key, iv),
         )
         raise HTTPException(400, "Invalid payment notification") from None
     event_kind = kind if success else ("first_failed" if kind == "first_auth" else "period_failed")
