@@ -14,15 +14,28 @@ TinBoker uses NewebPay credit-card periodic payments for monthly membership. Car
 
 ## API flow
 
-1. `GET /api/billing/plans` supplies current pricing and advisory founding-member availability.
-2. Authenticated `POST /api/billing/checkout` reserves a server-priced order and returns the hosted form action and encrypted fields. The frontend submits those fields to NewebPay.
+1. `GET /api/billing/plans` supplies the list price. Authenticated `GET /api/billing/promo/{code}` quotes what the caller would pay with a promo code (404 unknown or inactive, 409 fully redeemed or already used by this account).
+2. Authenticated `POST /api/billing/checkout` (optional `promo_code`) reserves a server-priced order and returns the hosted form action and encrypted fields. The frontend submits those fields to NewebPay.
 3. `POST /api/billing/notify` verifies provider notifications. `POST /api/billing/return` also verifies the encrypted first-payment result before redirecting to the fixed membership page. Both paths use the same idempotent event processor.
 4. Authenticated `GET /api/billing/subscription` returns only the caller's subscription in the current gateway environment, with private cache headers. The membership page uses it to show the result and refresh the signed-in user's effective access.
 5. Authenticated `POST /api/billing/cancel` stops the recurring mandate at NewebPay. Already paid access remains valid until its recorded expiry.
 
 The browser's return query is never proof of payment. A successful provider event must match the stored order, merchant, gateway environment and amount. Repeated notifications must not grant the same term twice. Provider failures must not erase an already paid term.
 
-An unresolved checkout keeps its order and founding-price reservation. The provider's timestamp acceptance window does not prove that an already opened card/3DS page has expired, so a local timer must not release the reservation or silently create another mandate. A definitively failed first payment can be retried as a new order. If the provider never delivers a conclusive result, reconcile the order in the merchant dashboard before changing its state; do not fabricate a successful callback.
+Every checkout attempt gets a fresh `MerOrderNo`: NewebPay answers a number it has already seen with `PER10032`, so reusing a pending order locks the payer out. The previous pending row becomes `abandoned` (outside the one-open-subscription index) and hands its promo code to the retry. A late success for an abandoned order is still honoured — the payer was charged — and retires the newer pending retry; if another mandate is already live it is recorded, not activated, and logged for manual termination in the merchant dashboard. Do not fabricate a successful callback.
+
+## Promo codes
+
+Discounts are shared codes in `promo_codes` (`amount_off` NT$/month, `max_uses`, `active`), managed with `PUT /api/admin/promo-codes/{CODE}` and `GET /api/admin/promo-codes`. There is one list price and no founding-seat allocation.
+
+- The discounted amount is the mandate's `PeriodAmt`, so it holds for the life of that subscription. A new subscription after cancelling is priced afresh.
+- A use is spent while its subscription is `pending`, `active`, `cancelling`, `cancelled` or `ended`; `failed` and `abandoned` return it. One use per account, counted per gateway environment.
+- A code worth the whole list price never reaches NewebPay (it cannot authorise NT$0): checkout records an `ended` subscription with `amount = 0` and `paid_until` `MEMBERSHIP_FREE_MONTHS` ahead, and in production extends `users.member_until`. It works while `NEWEBPAY_CHECKOUT_ENABLED` is false.
+
+## Gateway quirks
+
+- NewebPay pads encrypted responses to a 32-byte boundary (pad length 1–32). A 16-byte PKCS7 unpadder rejects roughly half of real notifications.
+- NewebPay's edge returns 403 to the default `python-httpx` User-Agent; server-to-server calls send `newebpay.HTTP_HEADERS`.
 
 ## Callback origins
 

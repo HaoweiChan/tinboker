@@ -83,7 +83,7 @@ export function SubscriptionStatus({ paymentReturn }: { paymentReturn: boolean }
       {loading ? <p role="status" className="text-sm text-muted-foreground">正在查詢訂閱狀態…</p> : subscription ? (
         <>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-medium">{labels[subscription.status]}</span>
+            <span className="text-sm font-medium">{subscription.amount === 0 ? '優惠碼會員資格' : labels[subscription.status]}</span>
             {subscription.gateway_env === 'sandbox' && <span className="rounded bg-primary/10 px-2 py-0.5 text-xs text-primary">測試付款</span>}
           </div>
           {subscription.status === 'pending' ? (
@@ -94,8 +94,8 @@ export function SubscriptionStatus({ paymentReturn }: { paymentReturn: boolean }
             <p className="text-sm text-muted-foreground">尚未完成付款，請重新查詢。若已扣款，請聯絡我們確認。</p>
           ) : (
             <div className="space-y-1 text-sm text-muted-foreground">
-              <p>NT$ {subscription.amount.toLocaleString('zh-TW')} / 月{subscription.is_founding ? ' · 創始會員價' : ''}</p>
-              {subscription.paid_until && <p>已付款會員期限：{formatMemberUntil(subscription.paid_until)}</p>}
+              <p>{subscription.amount === 0 ? '免費' : `NT$ ${subscription.amount.toLocaleString('zh-TW')} / 月`}{subscription.promo_code ? ` · 優惠碼 ${subscription.promo_code}` : ''}</p>
+              {subscription.paid_until && <p>{subscription.amount === 0 ? '會員期限' : '已付款會員期限'}：{formatMemberUntil(subscription.paid_until)}</p>}
               {subscription.status === 'active' && subscription.next_auth_date && <p>下次扣款日：{subscription.next_auth_date}</p>}
               {subscription.status === 'cancelled' && <p>不再自動扣款，已付款期間的會員權益不受影響。</p>}
             </div>

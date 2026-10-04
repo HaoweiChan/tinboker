@@ -459,8 +459,7 @@ separately** — `Settings.newebpay_env` is `"production"` iff `is_production`, 
 no `NEWEBPAY_ENV` variable to set; empty credentials for the active env means
 `newebpay_configured` is false and billing stays disabled.
 | `MEMBERSHIP_LIST_PRICE` | `199` | Monthly membership price, NT$. |
-| `MEMBERSHIP_FOUNDING_PRICE` | `99` | Limited-run founding-member monthly price, NT$ — kept for the life of that mandate. |
-| `MEMBERSHIP_FOUNDING_LIMIT` | `100` | How many founding-price subscriptions may ever be created. |
+| `MEMBERSHIP_FREE_MONTHS` | `12` | Membership length granted by a promo code worth the whole list price (no payment, no mandate). Discounts themselves live in the `promo_codes` table — see `docs/workflows/newebpay-billing.md` § Promo codes. |
 
 For **local development** (not Docker), copy `backend/.env.example` to `backend/.env`
 and fill in values. The app loads `.env` before falling back to Secret Manager.

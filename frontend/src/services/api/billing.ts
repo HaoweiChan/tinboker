@@ -8,8 +8,8 @@ const SubscriptionSchema = z.object({
   id: z.string(),
   mer_order_no: z.string(),
   status: z.enum(['pending', 'active', 'cancelling', 'cancelled', 'ended', 'failed']),
-  amount: z.number().int().positive(),
-  is_founding: z.boolean(),
+  amount: z.number().int().nonnegative(), // 0 = a promo code covered the whole price
+  promo_code: z.string().nullable(),
   gateway_env: GatewaySchema,
   paid_until: z.string().datetime({ offset: true }).nullable(),
   next_auth_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
@@ -28,6 +28,14 @@ const CheckoutSchema = z.object({
   gateway_env: GatewaySchema,
 }).refine((checkout) => checkout.action === gatewayUrls[checkout.gateway_env], 'Unexpected payment destination');
 
+const PromoQuoteSchema = z.object({
+  code: z.string(),
+  list_price: z.number().int().positive(),
+  price: z.number().int().nonnegative(),
+  free_months: z.number().int().positive().nullable(),
+});
+export type PromoQuote = z.infer<typeof PromoQuoteSchema>;
+
 function authConfig(signal?: AbortSignal) {
   const token = useAppStore.getState().token;
   if (!token) throw new Error('Not authenticated');
@@ -39,9 +47,18 @@ export async function getPlans(): Promise<BillingPlans> {
   return parseResponse(BillingPlansSchema, response.data);
 }
 
-/** Only server-encrypted fields leave the site; the browser never handles card data. */
-export async function startCheckout(): Promise<void> {
-  const response = await apiClient.post('/api/billing/checkout', {}, authConfig());
+/** What the signed-in user would pay with `code`; rejects 404 (unknown) / 409 (spent). */
+export async function quotePromo(code: string): Promise<PromoQuote> {
+  const response = await apiClient.get(`/api/billing/promo/${encodeURIComponent(code)}`, authConfig());
+  return PromoQuoteSchema.parse(response.data);
+}
+
+/** Only server-encrypted fields leave the site; the browser never handles card data.
+ * Resolves `true` when a promo code covered the whole price: membership is granted
+ * on the spot and there is no payment page to go to. */
+export async function startCheckout(promoCode?: string): Promise<boolean> {
+  const response = await apiClient.post('/api/billing/checkout', promoCode ? { promo_code: promoCode } : {}, authConfig());
+  if (response.data?.granted === true) return true;
   const checkout = CheckoutSchema.parse(response.data);
   const form = document.createElement('form');
   form.method = 'POST';
@@ -56,6 +73,7 @@ export async function startCheckout(): Promise<void> {
   }
   document.body.append(form);
   try { form.submit(); } finally { form.remove(); }
+  return false;
 }
 
 export async function getSubscription(signal?: AbortSignal): Promise<BillingSubscription | null> {

@@ -1,7 +1,7 @@
 """Tests for the NewebPay crypto/payload module (PR 3a — billing foundation).
 
-No real DB and no network: `_founding_taken` (the only I/O in `routers/billing.py`)
-is patched directly, matching the idiom in `tests/test_membership.py`.
+No real DB and no network: `/plans` reads Settings only, so nothing
+needs patching beyond the credentials.
 """
 import re
 from unittest.mock import patch
@@ -312,27 +312,15 @@ def test_period_endpoint():
 # GET /api/billing/plans
 # ---------------------------------------------------------------------------
 
-def test_plans_founding_open_when_no_seats_taken():
-    with patch("src.routers.billing._founding_taken", return_value=0):
-        client = TestClient(app)
-        resp = client.get("/api/billing/plans")
-    assert resp.status_code == 200, resp.text
-    body = resp.json()
-    assert body["founding_open"] is True
-    assert body["founding_remaining"] > 0
-    assert body["checkout_open"] is False  # CHECKOUT_IMPLEMENTED is False in PR 3a
-
-
-def test_plans_founding_closed_at_limit():
+def test_plans_quote_the_list_price_only():
     from src.config import settings
 
-    with patch("src.routers.billing._founding_taken", return_value=settings.membership_founding_limit):
-        client = TestClient(app)
-        resp = client.get("/api/billing/plans")
+    resp = TestClient(app).get("/api/billing/plans")
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["founding_open"] is False
-    assert body["founding_remaining"] == 0
+    assert body["list_price"] == settings.membership_list_price
+    assert not any("founding" in key for key in body)  # discounts are promo codes now
+    assert body["checkout_open"] is False
 
 
 def test_plans_checkout_never_open_in_pr_3a():
@@ -343,7 +331,7 @@ def test_plans_checkout_never_open_in_pr_3a():
     "sandbox" and `newebpay_configured` reads the sandbox credential fields."""
     from src.config import settings
 
-    with patch("src.routers.billing._founding_taken", return_value=0), patch.object(
+    with patch.object(
         settings, "newebpay_sandbox_merchant_id", "MID"
     ), patch.object(settings, "newebpay_sandbox_hash_key", "k" * 32), patch.object(
         settings, "newebpay_sandbox_hash_iv", "i" * 16

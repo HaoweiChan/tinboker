@@ -9,13 +9,10 @@ from src.models.user import UserResponse
 from src.utils.dependencies import get_current_user
 from src.utils.auth import verify_jwt_token
 from src.services import billing
-from pydantic import BaseModel
-from sqlalchemy import func
+from pydantic import BaseModel, Field
 
 from src.cache.cdn_cache import cdn_cached
 from src.config import settings
-from src.database.models import Subscription
-from src.database.postgres import session_scope
 
 logger = logging.getLogger(__name__)
 
@@ -23,48 +20,17 @@ router = APIRouter(prefix="/api/billing", tags=["billing"])
 
 class PlansResponse(BaseModel):
     list_price: int
-    founding_price: int
-    founding_limit: int
-    founding_remaining: int
-    founding_open: bool
     checkout_open: bool
     gateway_env: str
-
-
-def _founding_taken() -> int:
-    """Pending reserves a seat; paid/cancelled/ended mandates already spent one.
-    Only a verified terminal first-auth failure releases its reservation."""
-    with session_scope() as db:
-        return int(
-            db.query(func.count(Subscription.id))
-            .filter(
-                Subscription.is_founding.is_(True),
-                Subscription.status.in_(["pending", "active", "cancelling", "cancelled", "ended"]),
-                Subscription.gateway_env == settings.newebpay_env,
-            )
-            .scalar()
-            or 0
-        )
 
 
 @router.get("/plans", response_model=PlansResponse)
 @cdn_cached(s_maxage=60, max_age=0, stale=30)
 async def get_plans():
-    """Public, non-personalised plan info for the `/membership` page.
-
-    CDN cache: 60s edge (short — founding-seat count changes as people subscribe).
-    `founding_remaining` is advisory only (a 60s-cached, non-transactional count) —
-    Checkout re-checks and reserves founding seats inside its transaction rather
-    than trusting this cached advisory count.
-    """
-    taken = await asyncio.to_thread(_founding_taken)
-    remaining = max(0, settings.membership_founding_limit - taken)
+    """Public, non-personalised plan info for the `/membership` page. Discounts are
+    per-user (promo codes), so they are quoted by `/promo/{code}`, not here."""
     return PlansResponse(
         list_price=settings.membership_list_price,
-        founding_price=settings.membership_founding_price,
-        founding_limit=settings.membership_founding_limit,
-        founding_remaining=remaining,
-        founding_open=remaining > 0,
         checkout_open=settings.newebpay_configured and settings.newebpay_checkout_enabled,
         gateway_env=settings.newebpay_env,
     )
@@ -87,10 +53,24 @@ def billing_writer(
     return user
 
 
+class CheckoutRequest(BaseModel):
+    promo_code: Optional[str] = Field(None, min_length=1, max_length=32)
+
+
 @router.post("/checkout")
-def start_checkout(response: Response, user: UserResponse = Depends(billing_writer)):
+def start_checkout(response: Response, req: Optional[CheckoutRequest] = None,
+                   user: UserResponse = Depends(billing_writer)):
     response.headers["Cache-Control"] = "private, no-store"
-    return billing.checkout(user.id, user.email)
+    return billing.checkout(user.id, user.email, req.promo_code if req else None)
+
+
+@router.get("/promo/{code}")
+def quote_promo(code: str, response: Response, user: UserResponse = Depends(billing_user)):
+    """What this signed-in user would pay with `code` — 404 unknown, 409 spent."""
+    response.headers["Cache-Control"] = "private, no-store"
+    if len(code) > 32:
+        raise HTTPException(404, "Promo code not found")
+    return billing.promo_preview(user.id, code)
 
 
 @router.get("/subscription")

@@ -1,6 +1,6 @@
 """Transactional NewebPay subscriptions; sandbox never changes production grants."""
 from calendar import monthrange
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 import logging
 import uuid
@@ -14,13 +14,15 @@ from sqlalchemy.orm import Session
 from src.config import settings
 
 logger = logging.getLogger(__name__)
-from src.database.models import PaymentEvent, Subscription, User
+from src.database.models import PaymentEvent, PromoCode, Subscription, User
 from src.database.postgres import session_scope
 from src.database.user_db import set_member_until
 from src.services import newebpay
 
 TAIPEI = ZoneInfo("Asia/Taipei")
 OPEN_STATUSES = ("pending", "active", "cancelling")
+# A promo use is spent once NewebPay may have seen it; only failed/abandoned free it.
+PROMO_USED_STATUSES = ("pending", "active", "cancelling", "cancelled", "ended")
 
 
 def billing_urls() -> tuple[str, str]:
@@ -51,7 +53,7 @@ def _aware(value: datetime | None) -> datetime | None:
 def _view(sub: Subscription | None) -> dict:
     return {"subscription": None if sub is None else {
         "id": sub.id, "mer_order_no": sub.mer_order_no, "status": sub.status,
-        "amount": sub.amount, "is_founding": sub.is_founding,
+        "amount": sub.amount, "promo_code": sub.promo_code,
         "gateway_env": sub.gateway_env, "paid_until": _aware(sub.paid_until),
         "next_auth_date": sub.next_auth_date,
     }}
@@ -73,11 +75,33 @@ def sandbox_member_until(user_id: str) -> datetime | None:
         return _aware(value)
 
 
-def checkout(user_id: str, email: str) -> dict:
-    if not settings.newebpay_checkout_enabled or not settings.newebpay_configured:
-        raise HTTPException(503, "Membership checkout is not open yet")
-    _, api = billing_urls()
-    merchant, key, iv = settings.newebpay_credentials
+def _promo(db: Session, code: str, user_id: str) -> PromoCode:
+    """The redeemable code for this user, or 404/409. Call inside the billing lock."""
+    promo = db.get(PromoCode, code.strip().upper())
+    if not promo or not promo.active:
+        raise HTTPException(404, "Promo code not found")
+    used = db.query(Subscription.user_id).filter(
+        Subscription.promo_code == promo.code, Subscription.gateway_env == settings.newebpay_env,
+        Subscription.status.in_(PROMO_USED_STATUSES)).all()
+    if any(row[0] == user_id for row in used):
+        raise HTTPException(409, "Promo code already used on this account")
+    if len(used) >= promo.max_uses:
+        raise HTTPException(409, "Promo code is fully redeemed")
+    return promo
+
+
+def _priced(promo: PromoCode | None) -> dict:
+    price = max(0, settings.membership_list_price - (promo.amount_off if promo else 0))
+    return {"code": promo.code if promo else None, "list_price": settings.membership_list_price, "price": price,
+            "free_months": settings.membership_free_months if price == 0 else None}
+
+
+def promo_preview(user_id: str, code: str) -> dict:
+    with session_scope() as db:
+        return _priced(_promo(db, code, user_id))
+
+
+def checkout(user_id: str, email: str, promo_code: str | None = None) -> dict:
     with session_scope() as db:
         _lock(db)
         user = db.query(User).filter_by(id=user_id).first()
@@ -88,22 +112,32 @@ def checkout(user_id: str, email: str) -> dict:
             raise HTTPException(409, "An existing subscription must be cancelled first")
         # NewebPay rejects a MerOrderNo it has already seen (PER10032), so every attempt
         # gets a fresh one. The old row is kept as "abandoned" so a late Notify for it
-        # still finds its subscription; it hands its price and founding seat to the retry.
+        # still finds its subscription; it hands its promo code to the retry.
         prior = sub
         if prior:
             prior.status = "abandoned"
             db.flush()  # free the one-open-subscription slot before the retry's INSERT
-            founding, amount = prior.is_founding, prior.amount
-        else:
-            taken = db.query(func.count(Subscription.id)).filter(
-                Subscription.gateway_env == settings.newebpay_env,
-                Subscription.is_founding.is_(True),
-                Subscription.status.in_(("pending", "active", "cancelling", "cancelled", "ended")),
-            ).scalar()
-            founding = taken < settings.membership_founding_limit
-            amount = settings.membership_founding_price if founding else settings.membership_list_price
+        # A retry without a code keeps the one its abandoned attempt was started with.
+        code = promo_code or (prior.promo_code if prior else None)
+        promo = _promo(db, code, user_id) if code else None
+        priced = _priced(promo)
         sub = Subscription(id=str(uuid.uuid4()), user_id=user_id, mer_order_no=newebpay.new_mer_order_no(),
-                           amount=amount, is_founding=founding, gateway_env=settings.newebpay_env, status="pending")
+                           amount=priced["price"], promo_code=priced["code"], gateway_env=settings.newebpay_env,
+                           status="pending")
+        if sub.amount == 0:
+            # Nothing to charge: no mandate, no gateway. Recorded as an already-ended
+            # subscription so the code's use count and the entitlement share one row.
+            sub.status = "ended"
+            sub.paid_until = datetime.now(timezone.utc) + timedelta(days=round(365 * settings.membership_free_months / 12))
+            db.add(sub)
+            db.flush()
+            if settings.newebpay_env == "production":
+                set_member_until(email, max(filter(None, [_aware(user.member_until), sub.paid_until])), session=db)
+            return {"granted": True, **_view(sub)}
+        if not settings.newebpay_checkout_enabled or not settings.newebpay_configured:
+            raise HTTPException(503, "Membership checkout is not open yet")
+        _, api = billing_urls()
+        merchant, key, iv = settings.newebpay_credentials
         db.add(sub)
         db.flush()
         fields = newebpay.build_period_post_data(
