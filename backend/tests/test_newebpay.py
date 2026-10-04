@@ -1,7 +1,7 @@
 """Tests for the NewebPay crypto/payload module (PR 3a — billing foundation).
 
-No real DB and no network: `_founding_taken` (the only I/O in `routers/billing.py`)
-is patched directly, matching the idiom in `tests/test_membership.py`.
+No real DB and no network: `/plans` reads Settings only, so nothing
+needs patching beyond the credentials.
 """
 import re
 from unittest.mock import patch
@@ -312,27 +312,17 @@ def test_period_endpoint():
 # GET /api/billing/plans
 # ---------------------------------------------------------------------------
 
-def test_plans_founding_open_when_no_seats_taken():
-    with patch("src.routers.billing._founding_taken", return_value=0):
-        client = TestClient(app)
-        resp = client.get("/api/billing/plans")
-    assert resp.status_code == 200, resp.text
-    body = resp.json()
-    assert body["founding_open"] is True
-    assert body["founding_remaining"] > 0
-    assert body["checkout_open"] is False  # CHECKOUT_IMPLEMENTED is False in PR 3a
-
-
-def test_plans_founding_closed_at_limit():
+def test_plans_quote_the_list_price_only():
     from src.config import settings
 
-    with patch("src.routers.billing._founding_taken", return_value=settings.membership_founding_limit):
-        client = TestClient(app)
-        resp = client.get("/api/billing/plans")
+    resp = TestClient(app).get("/api/billing/plans")
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["founding_open"] is False
-    assert body["founding_remaining"] == 0
+    assert body["list_price"] == settings.membership_list_price
+    # Discounts are promo codes now; the founding fields stay only so bundles built
+    # before #876 still parse the response, and must read as "no founding offer".
+    assert body["founding_open"] is False and body["founding_remaining"] == 0
+    assert body["checkout_open"] is False
 
 
 def test_plans_checkout_never_open_in_pr_3a():
@@ -343,7 +333,7 @@ def test_plans_checkout_never_open_in_pr_3a():
     "sandbox" and `newebpay_configured` reads the sandbox credential fields."""
     from src.config import settings
 
-    with patch("src.routers.billing._founding_taken", return_value=0), patch.object(
+    with patch.object(
         settings, "newebpay_sandbox_merchant_id", "MID"
     ), patch.object(settings, "newebpay_sandbox_hash_key", "k" * 32), patch.object(
         settings, "newebpay_sandbox_hash_iv", "i" * 16
@@ -405,3 +395,26 @@ def test_settings_newebpay_configured_false_when_this_envs_creds_missing():
     )
     assert s.newebpay_env == "production"
     assert s.newebpay_configured is False
+
+
+@pytest.mark.parametrize("length", range(1, 65))
+def test_decrypt_accepts_newebpay_32_byte_padding(length):
+    """NewebPay pads responses to a 32-byte boundary (pad length 1-32). A 16-byte
+    PKCS7 unpadder rejects pad lengths 17-32 — the cause of the intermittent
+    "failed to decrypt" on real sandbox notifications."""
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+
+    plain = ("x" * length).encode()
+    pad = 32 - len(plain) % 32
+    enc = Cipher(algorithms.AES(KEY.encode()), modes.CBC(IV.encode())).encryptor()
+    ciphertext = (enc.update(plain + bytes([pad]) * pad) + enc.finalize()).hex()
+    assert decrypt(ciphertext, KEY, IV) == "x" * length
+
+
+def test_decrypt_rejects_inconsistent_padding():
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+
+    enc = Cipher(algorithms.AES(KEY.encode()), modes.CBC(IV.encode())).encryptor()
+    ciphertext = (enc.update(b"x" * 29 + b"\x01\x02\x03") + enc.finalize()).hex()
+    with pytest.raises(NewebPayError):
+        decrypt(ciphertext, KEY, IV)

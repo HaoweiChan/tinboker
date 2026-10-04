@@ -144,6 +144,7 @@ _IDLE_IN_TRANSACTION_TIMEOUT_MS = 300_000
 _PG_BOOT_COLUMNS: list[tuple[str, str, str]] = [
     # Billing PR 3b.
     ("subscriptions", "paid_until", "TIMESTAMPTZ"),
+    ("subscriptions", "promo_code", "VARCHAR(32)"),
     ("stock_translations", "brand_color", "VARCHAR(7)"),
     ("stock_translations", "aliases", "JSON"),
     ("stock_translations", "name_preference", "VARCHAR(10) DEFAULT 'auto'"),
@@ -412,6 +413,8 @@ def create_all_tables():
             billing_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(subscriptions)"))}
             if "paid_until" not in billing_cols:
                 conn.execute(text("ALTER TABLE subscriptions ADD COLUMN paid_until TIMESTAMP"))
+            if "promo_code" not in billing_cols:
+                conn.execute(text("ALTER TABLE subscriptions ADD COLUMN promo_code VARCHAR(32)"))
             for statement in subscription_indexes:
                 conn.execute(text(statement))
         # SQLite has no "ADD COLUMN IF NOT EXISTS" — check PRAGMA first.

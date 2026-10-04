@@ -1,7 +1,8 @@
 """Transactional NewebPay subscriptions; sandbox never changes production grants."""
 from calendar import monthrange
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
+import logging
 import uuid
 import re
 
@@ -11,13 +12,17 @@ from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from src.config import settings
-from src.database.models import PaymentEvent, Subscription, User
+
+logger = logging.getLogger(__name__)
+from src.database.models import PaymentEvent, PromoCode, Subscription, User
 from src.database.postgres import session_scope
 from src.database.user_db import set_member_until
 from src.services import newebpay
 
 TAIPEI = ZoneInfo("Asia/Taipei")
 OPEN_STATUSES = ("pending", "active", "cancelling")
+# A promo use is spent once NewebPay may have seen it; only failed/abandoned free it.
+PROMO_USED_STATUSES = ("pending", "active", "cancelling", "cancelled", "ended")
 
 
 def billing_urls() -> tuple[str, str]:
@@ -48,14 +53,16 @@ def _aware(value: datetime | None) -> datetime | None:
 def _view(sub: Subscription | None) -> dict:
     return {"subscription": None if sub is None else {
         "id": sub.id, "mer_order_no": sub.mer_order_no, "status": sub.status,
-        "amount": sub.amount, "is_founding": sub.is_founding,
+        "amount": sub.amount, "promo_code": sub.promo_code,
+        "is_founding": False,  # ponytail: pre-#876 bundles require it; drop with /plans' founding_* fields
         "gateway_env": sub.gateway_env, "paid_until": _aware(sub.paid_until),
         "next_auth_date": sub.next_auth_date,
     }}
 
 
 def _latest(db: Session, user_id: str) -> Subscription | None:
-    return db.query(Subscription).filter_by(user_id=user_id, gateway_env=settings.newebpay_env).order_by(Subscription.created_at.desc()).first()
+    return (db.query(Subscription).filter_by(user_id=user_id, gateway_env=settings.newebpay_env)
+            .filter(Subscription.status != "abandoned").order_by(Subscription.created_at.desc()).first())
 
 
 def subscription_status(user_id: str) -> dict:
@@ -69,11 +76,33 @@ def sandbox_member_until(user_id: str) -> datetime | None:
         return _aware(value)
 
 
-def checkout(user_id: str, email: str) -> dict:
-    if not settings.newebpay_checkout_enabled or not settings.newebpay_configured:
-        raise HTTPException(503, "Membership checkout is not open yet")
-    _, api = billing_urls()
-    merchant, key, iv = settings.newebpay_credentials
+def _promo(db: Session, code: str, user_id: str) -> PromoCode:
+    """The redeemable code for this user, or 404/409. Call inside the billing lock."""
+    promo = db.get(PromoCode, code.strip().upper())
+    if not promo or not promo.active:
+        raise HTTPException(404, "Promo code not found")
+    used = db.query(Subscription.user_id).filter(
+        Subscription.promo_code == promo.code, Subscription.gateway_env == settings.newebpay_env,
+        Subscription.status.in_(PROMO_USED_STATUSES)).all()
+    if any(row[0] == user_id for row in used):
+        raise HTTPException(409, "Promo code already used on this account")
+    if len(used) >= promo.max_uses:
+        raise HTTPException(409, "Promo code is fully redeemed")
+    return promo
+
+
+def _priced(promo: PromoCode | None) -> dict:
+    price = max(0, settings.membership_list_price - (promo.amount_off if promo else 0))
+    return {"code": promo.code if promo else None, "list_price": settings.membership_list_price, "price": price,
+            "free_months": settings.membership_free_months if price == 0 else None}
+
+
+def promo_preview(user_id: str, code: str) -> dict:
+    with session_scope() as db:
+        return _priced(_promo(db, code, user_id))
+
+
+def checkout(user_id: str, email: str, promo_code: str | None = None) -> dict:
     with session_scope() as db:
         _lock(db)
         user = db.query(User).filter_by(id=user_id).first()
@@ -82,18 +111,36 @@ def checkout(user_id: str, email: str) -> dict:
         sub = db.query(Subscription).filter_by(user_id=user_id, gateway_env=settings.newebpay_env).filter(Subscription.status.in_(OPEN_STATUSES)).first()
         if sub and sub.status != "pending":
             raise HTTPException(409, "An existing subscription must be cancelled first")
-        if sub is None:
-            taken = db.query(func.count(Subscription.id)).filter(
-                Subscription.gateway_env == settings.newebpay_env,
-                Subscription.is_founding.is_(True),
-                Subscription.status.in_(("pending", "active", "cancelling", "cancelled", "ended")),
-            ).scalar()
-            founding = taken < settings.membership_founding_limit
-            sub = Subscription(id=str(uuid.uuid4()), user_id=user_id, mer_order_no=newebpay.new_mer_order_no(),
-                               amount=settings.membership_founding_price if founding else settings.membership_list_price,
-                               is_founding=founding, gateway_env=settings.newebpay_env, status="pending")
+        # NewebPay rejects a MerOrderNo it has already seen (PER10032), so every attempt
+        # gets a fresh one. The old row is kept as "abandoned" so a late Notify for it
+        # still finds its subscription; it hands its promo code to the retry.
+        prior = sub
+        if prior:
+            prior.status = "abandoned"
+            db.flush()  # free the one-open-subscription slot before the retry's INSERT
+        # A retry without a code keeps the one its abandoned attempt was started with.
+        code = promo_code or (prior.promo_code if prior else None)
+        promo = _promo(db, code, user_id) if code else None
+        priced = _priced(promo)
+        sub = Subscription(id=str(uuid.uuid4()), user_id=user_id, mer_order_no=newebpay.new_mer_order_no(),
+                           amount=priced["price"], promo_code=priced["code"], gateway_env=settings.newebpay_env,
+                           status="pending")
+        if sub.amount == 0:
+            # Nothing to charge: no mandate, no gateway. Recorded as an already-ended
+            # subscription so the code's use count and the entitlement share one row.
+            sub.status = "ended"
+            sub.paid_until = datetime.now(timezone.utc) + timedelta(days=round(365 * settings.membership_free_months / 12))
             db.add(sub)
             db.flush()
+            if settings.newebpay_env == "production":
+                set_member_until(email, max(filter(None, [_aware(user.member_until), sub.paid_until])), session=db)
+            return {"granted": True, **_view(sub)}
+        if not settings.newebpay_checkout_enabled or not settings.newebpay_configured:
+            raise HTTPException(503, "Membership checkout is not open yet")
+        _, api = billing_urls()
+        merchant, key, iv = settings.newebpay_credentials
+        db.add(sub)
+        db.flush()
         fields = newebpay.build_period_post_data(
             mer_order_no=sub.mer_order_no, prod_desc="TinBoker Membership", period_amt=sub.amount,
             period_point=datetime.now(TAIPEI).day, payer_email=email,
@@ -120,6 +167,7 @@ def process_notification(encrypted: str) -> dict:
     if not settings.newebpay_configured:
         raise HTTPException(503, "Payment gateway unavailable")
     merchant, key, iv = settings.newebpay_credentials
+    payload: dict = {}
     try:
         payload = newebpay.parse_period_result(encrypted, key, iv)
         result = payload.get("Result")
@@ -150,7 +198,15 @@ def process_notification(encrypted: str) -> dict:
         total = int(total_value) if total_value is not None else 0
         if cycle < 0 or (not terminal_failure and (total <= 0 or cycle > total)):
             raise ValueError()
-    except (newebpay.NewebPayError, ValueError, TypeError, KeyError):
+    except (newebpay.NewebPayError, ValueError, TypeError, KeyError) as e:
+        # Gateway status codes and field names only — never card or payer data.
+        result = payload.get("Result") if isinstance(payload.get("Result"), dict) else {}
+        logger.warning(
+            "billing: rejected notification (%s: %s) status=%s message=%s order=%s respond=%s keys=%s shape=%s",
+            type(e).__name__, e, payload.get("Status"), payload.get("Message"), result.get("MerchantOrderNo"),
+            result.get("RespondCode"), sorted(result) if result else None,
+            None if payload else newebpay.describe_ciphertext(encrypted, key, iv),
+        )
         raise HTTPException(400, "Invalid payment notification") from None
     event_kind = kind if success else ("first_failed" if kind == "first_auth" else "period_failed")
     with session_scope() as db:
@@ -190,14 +246,31 @@ def process_notification(encrypted: str) -> dict:
             if sub.next_auth_date is None or next_date > sub.next_auth_date:
                 sub.next_auth_date = next_date
             sub.total_times = total
-            if sub.status not in ("cancelled", "cancelling", "ended"):
+            live = []
+            if sub.status == "abandoned":
+                # The payer was charged on an attempt they later retried. Honour it and
+                # retire the retry — unless another mandate is already live: the DB allows
+                # one open subscription per user, so that second charge is flagged for a
+                # manual NewebPay termination instead of silently granted.
+                others = db.query(Subscription).filter(
+                    Subscription.user_id == sub.user_id, Subscription.gateway_env == settings.newebpay_env,
+                    Subscription.id != sub.id, Subscription.status.in_(OPEN_STATUSES)).all()
+                live = [o for o in others if o.status != "pending"]
+                if live:
+                    logger.warning("billing: paid abandoned order %s while %s is live — terminate one at NewebPay",
+                                   sub.mer_order_no, live[0].mer_order_no)
+                for other in others:
+                    if other.status == "pending":
+                        other.status = "abandoned"
+                db.flush()
+            if sub.status not in ("cancelled", "cancelling", "ended") and not (sub.status == "abandoned" and live):
                 sub.status = "ended" if (kind == "period" and cycle == total) or total == 1 else "active"
             if settings.newebpay_env == "production":
                 user = db.query(User).filter_by(id=sub.user_id).with_for_update().first()
                 if not user:
                     raise HTTPException(400, "Payment user not found")
                 set_member_until(user.email, max(filter(None, [_aware(user.member_until), _aware(sub.paid_until)])), session=db)
-        elif sub.status == "pending" and kind == "first_auth":
+        elif sub.status in ("pending", "abandoned") and kind == "first_auth":
             sub.status = "failed"
         elif kind == "period" and cycle == total and sub.status == "active":
             sub.status = "ended"
@@ -233,7 +306,7 @@ def cancel_subscription(user_id: str) -> dict:
                 data={"MerchantID_": merchant, "PostData_": newebpay.encrypt({
                     "RespondType": "JSON", "Version": "1.0", "TimeStamp": str(int(datetime.now(timezone.utc).timestamp())),
                     "MerOrderNo": sub.mer_order_no, "PeriodNo": sub.period_no, "AlterType": "terminate",
-                }, key, iv)}, timeout=15.0,
+                }, key, iv)}, headers=newebpay.HTTP_HEADERS, timeout=15.0,
             )
             response.raise_for_status()
             data = response.json()
@@ -260,7 +333,7 @@ def _confirmed_terminated(sub: Subscription, merchant: str, key: str, iv: str) -
             "PostData_": newebpay.encrypt({"RespondType": "JSON", "Version": "1.0",
                 "TimeStamp": str(int(datetime.now(timezone.utc).timestamp())),
                 "MerOrderNo": sub.mer_order_no, "PeriodNo": sub.period_no}, key, iv),
-        }, timeout=15.0)
+        }, headers=newebpay.HTTP_HEADERS, timeout=15.0)
         response.raise_for_status()
         payload = json.loads(newebpay.decrypt(response.json()["Period"], key, iv))
         # The official query example uses lowercase root keys, unlike its table.
