@@ -20,6 +20,14 @@ router = APIRouter(prefix="/api/billing", tags=["billing"])
 
 class PlansResponse(BaseModel):
     list_price: int
+    # ponytail: frozen legacy fields. Bundles built before promo codes (#876) — cached
+    # PWAs, open tabs — reject a /plans without them and show "無法載入方案資訊".
+    # founding_open False makes them render the list price. Drop once no such bundle
+    # can still be running (a few weeks after the release that ships #876).
+    founding_price: int = 0
+    founding_limit: int = 0
+    founding_remaining: int = 0
+    founding_open: bool = False
     checkout_open: bool
     gateway_env: str
 

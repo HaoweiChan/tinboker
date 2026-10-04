@@ -319,7 +319,9 @@ def test_plans_quote_the_list_price_only():
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["list_price"] == settings.membership_list_price
-    assert not any("founding" in key for key in body)  # discounts are promo codes now
+    # Discounts are promo codes now; the founding fields stay only so bundles built
+    # before #876 still parse the response, and must read as "no founding offer".
+    assert body["founding_open"] is False and body["founding_remaining"] == 0
     assert body["checkout_open"] is False
 
 
