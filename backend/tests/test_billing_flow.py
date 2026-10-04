@@ -418,8 +418,8 @@ def test_admin_promo_upsert_and_use_count(flow, monkeypatch):
     client, scope = flow
     monkeypatch.setattr(admin_members, "session_scope", scope)
     made = admin_members._upsert_promo("SAVE100", admin_members.PromoCodeRequest(amount_off=100, max_uses=5))
-    assert (made.code, made.used, made.active) == ("SAVE100", 0, True)
+    assert (made.code, made.used_sandbox, made.active) == ("SAVE100", 0, True)
     checkout(client, promo_code="SAVE100")
     edited = admin_members._upsert_promo("SAVE100", admin_members.PromoCodeRequest(amount_off=100, max_uses=5, active=False))
-    assert (edited.used, edited.active) == (1, False)
+    assert (edited.used_sandbox, edited.used_production, edited.active) == (1, 0, False)
     assert client.get("/api/billing/promo/SAVE100", headers=headers("b")).status_code == 404

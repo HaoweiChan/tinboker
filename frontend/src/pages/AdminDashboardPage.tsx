@@ -7,6 +7,7 @@ import { Activity, Database, Server, Cpu, RefreshCw, AlertCircle } from 'lucide-
 import { getSystemStatus } from '@/services/api/system';
 import { StatusCard } from '@/components/admin/StatusCard';
 import { NetdataEmbed } from '@/components/admin/NetdataEmbed';
+import { PromoCodesPanel } from '@/components/admin/PromoCodesPanel';
 import type { SystemStatusResponse } from '@/types/system';
 
 export const AdminDashboardPage: React.FC = () => {
@@ -153,6 +154,8 @@ export const AdminDashboardPage: React.FC = () => {
                     loading={loading && !status}
                 />
             </div>
+
+            <PromoCodesPanel />
 
             {/* Netdata embed */}
             <div className="rounded-lg border border-border bg-card p-4">

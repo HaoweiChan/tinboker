@@ -15,7 +15,6 @@ from sqlalchemy import func
 
 from src.auth.admin_auth import get_admin_access, AdminAccess
 from src.cache.cdn_cache import cdn_cached, CacheProfile
-from src.config import settings
 from src.database.models import PromoCode, Subscription
 from src.database.postgres import session_scope
 from src.database.user_db import set_member_until, list_granted_members
@@ -77,17 +76,21 @@ class PromoCodeRequest(BaseModel):
 
 class PromoCodeSummary(PromoCodeRequest):
     code: str
-    used: int
+    # The admin API only exists on dev/staging (sandbox gateway) while the codes are
+    # shared with production through the one Postgres, so report both counts.
+    used_production: int
+    used_sandbox: int
 
 
 def _promo_rows(code: Optional[str] = None) -> List[PromoCodeSummary]:
     with session_scope() as db:
-        used = dict(db.query(Subscription.promo_code, func.count(Subscription.id)).filter(
-            Subscription.gateway_env == settings.newebpay_env,
-            Subscription.status.in_(PROMO_USED_STATUSES)).group_by(Subscription.promo_code).all())
+        used = {(code, env): count for code, env, count in db.query(
+            Subscription.promo_code, Subscription.gateway_env, func.count(Subscription.id)).filter(
+            Subscription.status.in_(PROMO_USED_STATUSES)).group_by(Subscription.promo_code, Subscription.gateway_env)}
         query = db.query(PromoCode).order_by(PromoCode.created_at.desc())
         return [PromoCodeSummary(code=p.code, amount_off=p.amount_off, max_uses=p.max_uses, active=p.active,
-                                 used=used.get(p.code, 0))
+                                 used_production=used.get((p.code, "production"), 0),
+                                 used_sandbox=used.get((p.code, "sandbox"), 0))
                 for p in (query.filter_by(code=code) if code else query)]
 
 
@@ -112,5 +115,5 @@ async def upsert_promo_code(code: str, req: PromoCodeRequest, admin: AdminAccess
 @promo_router.get("", response_model=List[PromoCodeSummary])
 @cdn_cached(profile=CacheProfile.PRIVATE)
 async def list_promo_codes(admin: AdminAccess = Depends(get_admin_access)):
-    """Every code with its use count in this environment's gateway (sandbox vs production)."""
+    """Every code with its use counts on the production and sandbox gateways."""
     return await asyncio.to_thread(_promo_rows)
