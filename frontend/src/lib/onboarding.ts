@@ -36,6 +36,14 @@ export interface ChangelogEntry {
 //   docs/workflows/deploy-flow.md § "In-app changelog (What's new)".
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.12.23',
+    date: '2026-10',
+    items: [
+      '加入會員時可以輸入優惠碼。',
+      '會員頁會顯示目前的訂閱狀態、下次扣款日，取消後權益保留到當期結束。',
+    ],
+  },
+  {
     version: '0.12.15',
     date: '2026-09',
     items: [
