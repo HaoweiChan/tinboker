@@ -17,7 +17,7 @@ from sqlalchemy.orm import sessionmaker
 
 from src.config import settings
 from src.database import user_db
-from src.database.models import Base, PaymentEvent, Subscription, User
+from src.database.models import Base, PaymentEvent, PromoCode, Subscription, User
 from src.routers import auth, billing as router
 from src.services import billing, newebpay
 from src.utils.auth import create_jwt_token, create_refresh_token
@@ -53,7 +53,6 @@ def flow(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "admin_emails", ["a@example.com", "b@example.com"])
     monkeypatch.setattr(settings, "jwt_secret_key", "billing-test-jwt")
     monkeypatch.setattr(settings, "newebpay_checkout_enabled", True)
-    monkeypatch.setattr(settings, "membership_founding_limit", 1)
     for prefix in ("newebpay", "newebpay_sandbox"):
         for suffix, value in (("merchant_id", MERCHANT), ("hash_key", KEY), ("hash_iv", IV)):
             monkeypatch.setattr(settings, f"{prefix}_{suffix}", value)
@@ -71,15 +70,15 @@ def headers(user="a", preview=False):
     return {"Authorization": "Bearer " + create_jwt_token(user, f"{user}@example.com", extra)}
 
 
-def checkout(client, user="a"):
-    response = client.post("/api/billing/checkout", headers=headers(user), json={})
+def checkout(client, user="a", **body):
+    response = client.post("/api/billing/checkout", headers=headers(user), json=body)
     assert response.status_code == 200, response.text
     return response.json()
 
 
 def first(order, **updates):
     result = {"MerchantID": MERCHANT, "MerchantOrderNo": order, "PeriodNo": "P_test",
-              "PeriodAmt": settings.membership_founding_price, "AuthTimes": 12,
+              "PeriodAmt": settings.membership_list_price, "AuthTimes": 12,
               "RespondCode": "00", "AuthTime": "20270131120000",
               "DateArray": "2027-01-31,2027-02-28,2027-03-31"}
     result.update(updates)
@@ -88,7 +87,7 @@ def first(order, **updates):
 
 def recurring(order, **updates):
     result = {"MerchantID": MERCHANT, "MerchantOrderNo": order, "PeriodNo": "P_test",
-              "AuthAmt": settings.membership_founding_price, "AlreadyTimes": 2, "TotalTimes": 12,
+              "AuthAmt": settings.membership_list_price, "AlreadyTimes": 2, "TotalTimes": 12,
               "RespondCode": "00", "AuthDate": "2027-02-28 12:00:00", "NextAuthDate": "2027-03-31",
               "OrderNo": f"{order}_2"}
     result.update(updates)
@@ -104,15 +103,20 @@ def test_checkout_price_owner_status_sandbox_isolation_and_refresh(flow):
     client, scope = flow
     started = checkout(client)
     params = parse_qs(newebpay.decrypt(started["fields"]["PostData_"], KEY, IV))
-    assert params["PeriodAmt"] == [str(settings.membership_founding_price)]
+    assert params["PeriodAmt"] == [str(settings.membership_list_price)]
     assert params["NotifyURL"] == ["https://dev-api.tinboker.com/api/billing/notify"]
     assert started["action"].startswith("https://ccore.")
-    assert checkout(client)["mer_order_no"] == started["mer_order_no"]
+    retry = checkout(client)
+    # A retry gets a fresh MerOrderNo (NewebPay rejects a reused one with PER10032)
+    # at the same price; the late success of the first attempt still counts.
+    assert retry["mer_order_no"] != started["mer_order_no"]
+    assert parse_qs(newebpay.decrypt(retry["fields"]["PostData_"], KEY, IV))["PeriodAmt"] == params["PeriodAmt"]
     response = notify(client, first(started["mer_order_no"]))
     assert response.status_code == 200, response.text
     with scope() as db:
         assert db.get(User, "a").member_until is None
-        assert db.query(Subscription).one().paid_until is not None
+        assert db.query(Subscription).filter_by(mer_order_no=started["mer_order_no"]).one().paid_until is not None
+        assert db.query(Subscription).filter_by(mer_order_no=retry["mer_order_no"]).one().status == "abandoned"
     status = client.get("/api/billing/subscription", headers=headers())
     assert "no-store" in status.headers["cache-control"]
     assert status.json()["subscription"]["status"] == "active"
@@ -188,14 +192,14 @@ def test_terminal_failure_allows_new_order_conflicting_success_rejected(flow):
         assert db.query(Subscription).filter_by(mer_order_no=next_order).one().status == "active"
 
 
-def test_concurrent_checkout_one_founder_and_same_order(flow):
+def test_concurrent_checkout_one_live_order_per_user(flow):
     _, scope = flow
     with ThreadPoolExecutor(max_workers=4) as pool:
         results = list(pool.map(lambda name: billing.checkout(name, f"{name}@example.com"), ["a", "b", "a", "b"]))
-    assert len({r["mer_order_no"] for r in results}) == 2
+    assert len({r["mer_order_no"] for r in results}) == 4
     with scope() as db:
-        assert db.query(Subscription).count() == 2
-        assert db.query(Subscription).filter_by(is_founding=True).count() == 1
+        live = db.query(Subscription).filter(Subscription.status != "abandoned")
+        assert live.count() == 2
 
 
 def test_auth_preview_and_disabled_gate(flow, monkeypatch):
@@ -223,6 +227,8 @@ def test_cancel_preserves_paid_term_with_checkout_disabled(flow, monkeypatch):
     assert response.json()["subscription"]["paid_until"] is not None
     assert client.post("/api/billing/cancel", headers=headers()).status_code == 200
     assert mocked.call_count == 1
+    # NewebPay's edge 403s the default python-httpx User-Agent.
+    assert not mocked.call_args.kwargs["headers"]["User-Agent"].startswith("python-httpx")
     with scope() as db:
         assert db.get(User, "a").member_until is None
 
@@ -232,7 +238,7 @@ def test_cancel_timeout_query_reconciliation(flow, monkeypatch):
     order = checkout(client)["mer_order_no"]
     notify(client, first(order))
     result = {"status": "SUCCESS", "result": {"MerchantID": MERCHANT, "MerchantOrderNo": order,
-        "PeriodNo": "P_test", "PeriodAmt": settings.membership_founding_price, "Status": 3}}
+        "PeriodNo": "P_test", "PeriodAmt": settings.membership_list_price, "Status": 3}}
     mocked = Mock(side_effect=[httpx.TimeoutException("timeout"), Mock(raise_for_status=Mock(), json=lambda: {"Period": encrypted(result)})])
     monkeypatch.setattr(billing.httpx, "post", mocked)
     assert client.post("/api/billing/cancel", headers=headers()).json()["subscription"]["status"] == "cancelled"
@@ -264,7 +270,8 @@ def test_bad_ciphertext_and_return_query_do_not_activate(flow):
     client, scope = flow
     checkout(client)
     assert client.post("/api/billing/notify", data={"Period": "tampered"}).status_code == 400
-    assert client.post("/api/billing/return?status=SUCCESS", data={}).status_code == 400
+    returned = client.post("/api/billing/return?status=SUCCESS", data={}, follow_redirects=False)
+    assert returned.status_code == 303 and returned.headers["location"].endswith("/membership?payment=failed")
     with scope() as db:
         assert db.query(Subscription).one().paid_until is None
 
@@ -297,13 +304,15 @@ def test_malformed_identifiers_rejected_before_database(flow, changes):
     assert notify(client, first(order, **changes)).status_code == 400
 
 
-def test_duplicate_provider_error_retains_pending_order(flow):
-    client, _ = flow
+def test_duplicate_provider_error_retires_order_on_retry(flow):
+    client, scope = flow
     order = checkout(client)["mer_order_no"]
     payload = first(order)
     payload["Status"] = "PER10032"
     assert notify(client, payload).status_code == 400
-    assert checkout(client)["mer_order_no"] == order
+    assert checkout(client)["mer_order_no"] != order
+    with scope() as db:
+        assert db.query(Subscription).filter_by(mer_order_no=order).one().status == "abandoned"
 
 
 def test_terminal_failure_without_optional_success_fields_allows_retry(flow):
@@ -330,3 +339,90 @@ def test_existing_billing_table_upgrade_is_idempotent(tmp_path, monkeypatch):
     indexes = {index["name"] for index in inspect(engine).get_indexes("subscriptions")}
     assert "uq_one_open_sub_per_user_env" in indexes
     assert "uq_one_active_sub_per_user" not in indexes
+
+
+def test_retry_after_abandoned_paid_attempt_shows_active_and_retires_retry(flow):
+    client, scope = flow
+    stale = checkout(client)["mer_order_no"]
+    retry = checkout(client)["mer_order_no"]
+    assert notify(client, first(stale)).status_code == 200
+    assert client.get("/api/billing/subscription", headers=headers()).json()["subscription"]["status"] == "active"
+    with scope() as db:
+        assert db.query(Subscription).filter_by(mer_order_no=retry).one().status == "abandoned"
+    # If the retired retry was ALSO paid, it is recorded but not activated: one open
+    # subscription per user, the second mandate is flagged for manual termination.
+    assert notify(client, first(retry, PeriodNo="P_two")).status_code == 200
+    with scope() as db:
+        assert db.query(Subscription).filter_by(mer_order_no=retry).one().status == "abandoned"
+        assert db.query(Subscription).filter_by(mer_order_no=stale).one().status == "active"
+        assert db.query(PaymentEvent).filter_by(mer_order_no=retry).count() == 1
+
+
+def _promo(scope, code, off, uses=1):
+    with scope() as db:
+        db.add(PromoCode(code=code, amount_off=off, max_uses=uses))
+
+
+def test_promo_code_discounts_the_mandate_and_is_spent_once(flow):
+    client, scope = flow
+    _promo(scope, "SAVE100", 100)
+    quote = client.get("/api/billing/promo/save100", headers=headers())
+    assert quote.status_code == 200 and quote.json()["price"] == settings.membership_list_price - 100
+    started = checkout(client, promo_code=" save100 ")
+    assert parse_qs(newebpay.decrypt(started["fields"]["PostData_"], KEY, IV))["PeriodAmt"] == ["99"]
+    # A retry with no code keeps the discount of the attempt it replaces.
+    retry = checkout(client)
+    assert parse_qs(newebpay.decrypt(retry["fields"]["PostData_"], KEY, IV))["PeriodAmt"] == ["99"]
+    assert notify(client, first(retry["mer_order_no"], PeriodAmt=99)).status_code == 200
+    with scope() as db:
+        assert db.query(Subscription).filter_by(mer_order_no=retry["mer_order_no"]).one().promo_code == "SAVE100"
+    # Spent: the only use is taken, and this account has already used it.
+    for user in ("a", "b"):
+        assert client.get("/api/billing/promo/SAVE100", headers=headers(user)).status_code == 409
+    assert client.post("/api/billing/checkout", headers=headers("b"), json={"promo_code": "SAVE100"}).status_code == 409
+    assert client.post("/api/billing/checkout", headers=headers("b"), json={"promo_code": "NOPE"}).status_code == 404
+    with scope() as db:
+        assert db.query(Subscription).filter_by(user_id="b").count() == 0
+
+
+def test_failed_first_auth_returns_the_promo_use(flow):
+    client, scope = flow
+    _promo(scope, "SAVE100", 100)
+    order = checkout(client, promo_code="SAVE100")["mer_order_no"]
+    failed = first(order, PeriodAmt=99, RespondCode="05")
+    failed["Status"] = "PER10034"
+    assert notify(client, failed).status_code == 200
+    assert client.get("/api/billing/promo/SAVE100", headers=headers("b")).status_code == 200
+
+
+def test_full_price_promo_grants_a_year_without_the_gateway(flow, monkeypatch):
+    client, scope = flow
+    _promo(scope, "FAMILY", settings.membership_list_price)
+    monkeypatch.setattr(settings, "newebpay_checkout_enabled", False)
+    assert client.get("/api/billing/promo/FAMILY", headers=headers()).json()["free_months"] == 12
+    granted = checkout(client, promo_code="FAMILY")
+    assert granted["granted"] is True and "fields" not in granted
+    assert granted["subscription"]["status"] == "ended" and granted["subscription"]["amount"] == 0
+    with scope() as db:
+        until = db.query(Subscription).one().paid_until.replace(tzinfo=timezone.utc)
+    assert 364 <= (until - datetime.now(timezone.utc)).days <= 365
+    assert require_member(get_current_user(headers()["Authorization"]))
+    assert client.post("/api/billing/checkout", headers=headers(), json={"promo_code": "FAMILY"}).status_code == 409
+    # Paid checkout is still closed while the gateway switch is off.
+    assert client.post("/api/billing/checkout", headers=headers("b"), json={}).status_code == 503
+
+
+def test_admin_promo_upsert_and_use_count(flow, monkeypatch):
+    from src.routers import admin_members
+
+    client, scope = flow
+    monkeypatch.setattr(admin_members, "session_scope", scope)
+    made = admin_members._upsert_promo("SAVE100", admin_members.PromoCodeRequest(amount_off=100, max_uses=5))
+    assert (made.code, made.used_sandbox, made.active) == ("SAVE100", 0, True)
+    checkout(client, promo_code="SAVE100")
+    edited = admin_members._upsert_promo("SAVE100", admin_members.PromoCodeRequest(amount_off=100, max_uses=5, active=False))
+    assert (edited.used_sandbox, edited.used_production, edited.active) == (1, 0, False)
+    (row,) = admin_members._promo_redemptions()
+    assert (row.code, row.email, row.gateway_env, row.status, row.amount, row.counted) == (
+        "SAVE100", "a@example.com", "sandbox", "pending", settings.membership_list_price - 100, True)
+    assert client.get("/api/billing/promo/SAVE100", headers=headers("b")).status_code == 404

@@ -10,14 +10,19 @@ from datetime import datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from sqlalchemy import func
 
 from src.auth.admin_auth import get_admin_access, AdminAccess
 from src.cache.cdn_cache import cdn_cached, CacheProfile
+from src.database.models import PromoCode, Subscription, User
+from src.database.postgres import session_scope
 from src.database.user_db import set_member_until, list_granted_members
+from src.services.billing import PROMO_USED_STATUSES
 from src.models.user import UserResponse
 
 router = APIRouter(prefix="/api/admin/members", tags=["admin"])
+promo_router = APIRouter(prefix="/api/admin/promo-codes", tags=["admin"])
 
 
 class MemberGrantRequest(BaseModel):
@@ -60,3 +65,84 @@ async def list_members(
     still risk one admin's response being served to another.
     """
     return [_summary(u) for u in await asyncio.to_thread(list_granted_members)]
+
+
+class PromoCodeRequest(BaseModel):
+    """`amount_off` is NT$/month; the list price or more makes the code a free grant."""
+    amount_off: int = Field(gt=0)
+    max_uses: int = Field(ge=0)
+    active: bool = True
+
+
+class PromoCodeSummary(PromoCodeRequest):
+    code: str
+    # The admin API only exists on dev/staging (sandbox gateway) while the codes are
+    # shared with production through the one Postgres, so report both counts.
+    used_production: int
+    used_sandbox: int
+
+
+def _promo_rows(code: Optional[str] = None) -> List[PromoCodeSummary]:
+    with session_scope() as db:
+        used = {(code, env): count for code, env, count in db.query(
+            Subscription.promo_code, Subscription.gateway_env, func.count(Subscription.id)).filter(
+            Subscription.status.in_(PROMO_USED_STATUSES)).group_by(Subscription.promo_code, Subscription.gateway_env)}
+        query = db.query(PromoCode).order_by(PromoCode.created_at.desc())
+        return [PromoCodeSummary(code=p.code, amount_off=p.amount_off, max_uses=p.max_uses, active=p.active,
+                                 used_production=used.get((p.code, "production"), 0),
+                                 used_sandbox=used.get((p.code, "sandbox"), 0))
+                for p in (query.filter_by(code=code) if code else query)]
+
+
+def _upsert_promo(code: str, req: PromoCodeRequest) -> PromoCodeSummary:
+    with session_scope() as db:
+        promo = db.get(PromoCode, code) or PromoCode(code=code)
+        promo.amount_off, promo.max_uses, promo.active = req.amount_off, req.max_uses, req.active
+        db.add(promo)
+    return _promo_rows(code)[0]
+
+
+@promo_router.put("/{code}", response_model=PromoCodeSummary)
+async def upsert_promo_code(code: str, req: PromoCodeRequest, admin: AdminAccess = Depends(get_admin_access)):
+    """Create or edit a shared code. `active: false` or a lower `max_uses` stops new
+    redemptions; existing subscriptions keep their price."""
+    code = code.strip().upper()
+    if not code.isalnum() or len(code) > 32:
+        raise HTTPException(status_code=422, detail="Code must be 1-32 letters or digits")
+    return await asyncio.to_thread(_upsert_promo, code, req)
+
+
+@promo_router.get("", response_model=List[PromoCodeSummary])
+@cdn_cached(profile=CacheProfile.PRIVATE)
+async def list_promo_codes(admin: AdminAccess = Depends(get_admin_access)):
+    """Every code with its use counts on the production and sandbox gateways."""
+    return await asyncio.to_thread(_promo_rows)
+
+
+class PromoRedemption(BaseModel):
+    code: str
+    email: str
+    gateway_env: str
+    status: str
+    amount: int
+    counted: bool  # False once the use was handed back (failed / abandoned)
+    created_at: datetime
+    paid_until: Optional[datetime]
+
+
+def _promo_redemptions() -> List[PromoRedemption]:
+    with session_scope() as db:
+        rows = (db.query(Subscription, User.email).join(User, User.id == Subscription.user_id)
+                .filter(Subscription.promo_code.isnot(None))
+                .order_by(Subscription.created_at.desc()).limit(200).all())
+        return [PromoRedemption(code=sub.promo_code, email=email, gateway_env=sub.gateway_env, status=sub.status,
+                                amount=sub.amount, counted=sub.status in PROMO_USED_STATUSES,
+                                created_at=sub.created_at, paid_until=sub.paid_until)
+                for sub, email in rows]
+
+
+@promo_router.get("/redemptions", response_model=List[PromoRedemption])
+@cdn_cached(profile=CacheProfile.PRIVATE)
+async def list_promo_redemptions(admin: AdminAccess = Depends(get_admin_access)):
+    """The latest 200 checkouts that carried a promo code, on either gateway."""
+    return await asyncio.to_thread(_promo_redemptions)

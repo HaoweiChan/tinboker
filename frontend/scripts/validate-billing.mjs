@@ -4,7 +4,7 @@ import { createRequire } from 'node:module';
 import vm from 'node:vm';
 const require = createRequire(import.meta.url);
 const flush = () => new Promise(resolve => setImmediate(resolve));
-const subscription = { id: 'sub', mer_order_no: 'order', status: 'active', amount: 299, is_founding: false, gateway_env: 'sandbox', paid_until: '2026-10-23T00:00:00Z', next_auth_date: '2026-10-23' };
+const subscription = { id: 'sub', mer_order_no: 'order', status: 'active', amount: 299, promo_code: null, gateway_env: 'sandbox', paid_until: '2026-10-23T00:00:00Z', next_auth_date: '2026-10-23' };
 const realUser = { id: 'user', name: 'User', email: 'user@example.com', is_member: false };
 async function run(entry, mocks, runtime) {
   const result = await build({ entryPoints: [entry], tsconfig: 'tsconfig.app.json', bundle: true, write: false, format: 'cjs', platform: 'node',
@@ -95,7 +95,7 @@ console.log('PASS: auth headers, fixed gateway allowlist, encrypted fields only,
 
 async function planHarness(open = true) {
   const r = { hooks: [], hookIndex: 0, effect: null, starts: 0, state: { isAuthReady: true, user: realUser } };
-  r.plans = { list_price: 299, founding_price: 199, founding_limit: 100, founding_remaining: 10, founding_open: true, checkout_open: open, gateway_env: 'sandbox' };
+  r.plans = { list_price: 299, checkout_open: open, gateway_env: 'sandbox' };
   r.start = () => { r.starts++; return new Promise((_, reject) => { r.rejectCheckout = reject; }); };
   const exports = await run('src/components/membership/PlanCard.tsx', {
     react: 'export const useState=(initial)=>{const i=globalThis.hookIndex++;if(!(i in globalThis.hooks))globalThis.hooks[i]=initial;return[globalThis.hooks[i],v=>globalThis.hooks[i]=v];};export const useRef=value=>{const i=globalThis.hookIndex++;return globalThis.hooks[i]??={current:value};};export const useEffect=fn=>globalThis.effect=fn;',
@@ -105,7 +105,7 @@ async function planHarness(open = true) {
     'lucide-react': 'export const CheckCircle2="icon";',
     '@/store/useAppStore': 'export const useAppStore=selector=>selector(globalThis.state);',
     '@/hooks/useRequireAuth': 'export const useRequireAuth=()=>({guard:fn=>fn()});',
-    '@/services/api/billing': 'export const getPlans=async()=>globalThis.plans;export const startCheckout=()=>globalThis.start();',
+    '@/services/api/billing': 'export const getPlans=async()=>globalThis.plans;export const quotePromo=async()=>null;export const startCheckout=()=>globalThis.start();',
   }, r);
   r.render = () => { r.hookIndex = 0; return exports.PlanCard(); };
   r.render(); r.effect(); await flush(); return r;

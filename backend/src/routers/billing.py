@@ -1,5 +1,6 @@
-"""Membership plans, hosted NewebPay checkout and verified server callbacks."""
+"""Membership plans, promo-code quotes, hosted NewebPay checkout and verified server callbacks."""
 import asyncio
+import logging
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
@@ -8,60 +9,36 @@ from src.models.user import UserResponse
 from src.utils.dependencies import get_current_user
 from src.utils.auth import verify_jwt_token
 from src.services import billing
-from pydantic import BaseModel
-from sqlalchemy import func
+from pydantic import BaseModel, Field
 
 from src.cache.cdn_cache import cdn_cached
 from src.config import settings
-from src.database.models import Subscription
-from src.database.postgres import session_scope
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/billing", tags=["billing"])
 
 class PlansResponse(BaseModel):
     list_price: int
-    founding_price: int
-    founding_limit: int
-    founding_remaining: int
-    founding_open: bool
+    # ponytail: frozen legacy fields. Bundles built before promo codes (#876) — cached
+    # PWAs, open tabs — reject a /plans without them and show "無法載入方案資訊".
+    # founding_open False makes them render the list price. Drop once no such bundle
+    # can still be running (a few weeks after the release that ships #876).
+    founding_price: int = 0
+    founding_limit: int = 0
+    founding_remaining: int = 0
+    founding_open: bool = False
     checkout_open: bool
     gateway_env: str
-
-
-def _founding_taken() -> int:
-    """Pending reserves a seat; paid/cancelled/ended mandates already spent one.
-    Only a verified terminal first-auth failure releases its reservation."""
-    with session_scope() as db:
-        return int(
-            db.query(func.count(Subscription.id))
-            .filter(
-                Subscription.is_founding.is_(True),
-                Subscription.status.in_(["pending", "active", "cancelling", "cancelled", "ended"]),
-                Subscription.gateway_env == settings.newebpay_env,
-            )
-            .scalar()
-            or 0
-        )
 
 
 @router.get("/plans", response_model=PlansResponse)
 @cdn_cached(s_maxage=60, max_age=0, stale=30)
 async def get_plans():
-    """Public, non-personalised plan info for the `/membership` page.
-
-    CDN cache: 60s edge (short — founding-seat count changes as people subscribe).
-    `founding_remaining` is advisory only (a 60s-cached, non-transactional count) —
-    Checkout re-checks and reserves founding seats inside its transaction rather
-    than trusting this cached advisory count.
-    """
-    taken = await asyncio.to_thread(_founding_taken)
-    remaining = max(0, settings.membership_founding_limit - taken)
+    """Public, non-personalised plan info for the `/membership` page. Discounts are
+    per-user (promo codes), so they are quoted by `/promo/{code}`, not here."""
     return PlansResponse(
         list_price=settings.membership_list_price,
-        founding_price=settings.membership_founding_price,
-        founding_limit=settings.membership_founding_limit,
-        founding_remaining=remaining,
-        founding_open=remaining > 0,
         checkout_open=settings.newebpay_configured and settings.newebpay_checkout_enabled,
         gateway_env=settings.newebpay_env,
     )
@@ -84,10 +61,24 @@ def billing_writer(
     return user
 
 
+class CheckoutRequest(BaseModel):
+    promo_code: Optional[str] = Field(None, min_length=1, max_length=32)
+
+
 @router.post("/checkout")
-def start_checkout(response: Response, user: UserResponse = Depends(billing_writer)):
+def start_checkout(response: Response, req: Optional[CheckoutRequest] = None,
+                   user: UserResponse = Depends(billing_writer)):
     response.headers["Cache-Control"] = "private, no-store"
-    return billing.checkout(user.id, user.email)
+    return billing.checkout(user.id, user.email, req.promo_code if req else None)
+
+
+@router.get("/promo/{code}")
+def quote_promo(code: str, response: Response, user: UserResponse = Depends(billing_user)):
+    """What this signed-in user would pay with `code` — 404 unknown, 409 spent."""
+    response.headers["Cache-Control"] = "private, no-store"
+    if len(code) > 32:
+        raise HTTPException(404, "Promo code not found")
+    return billing.promo_preview(user.id, code)
 
 
 @router.get("/subscription")
@@ -108,6 +99,8 @@ async def _notification(request: Request) -> dict:
     form = await request.form()
     encrypted = form.get("Period")
     if not isinstance(encrypted, str) or not encrypted:
+        # A gateway-side rejection (e.g. PER10030) posts plain Status/Message, no Period.
+        logger.warning("billing: notification without Period status=%s message=%s", form.get("Status"), form.get("Message"))
         raise HTTPException(400, "Missing encrypted payment notification")
     return await asyncio.to_thread(billing.process_notification, encrypted)
 
@@ -121,7 +114,15 @@ async def notify(request: Request):
 async def payment_return(request: Request):
     # ReturnURL is a gateway form POST. Verify it identically to NotifyURL; only
     # validated server state grants access, never a browser query-string status.
-    await _notification(request)
     site, _ = billing.billing_urls()
-    return RedirectResponse(f"{site}/membership?payment=return", status_code=303,
+    try:
+        await _notification(request)
+        outcome = "return"
+    except HTTPException as e:
+        # The payer is a browser here: send them back to the site, not a JSON 400.
+        # NotifyURL still carries the authoritative outcome.
+        if e.status_code >= 500:
+            raise
+        outcome = "failed"
+    return RedirectResponse(f"{site}/membership?payment={outcome}", status_code=303,
                             headers={"Cache-Control": "private, no-store"})

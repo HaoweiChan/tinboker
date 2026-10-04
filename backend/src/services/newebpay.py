@@ -31,6 +31,9 @@ PERIOD_ENDPOINTS = {
     "sandbox": "https://ccore.newebpay.com/MPG/period",
     "production": "https://core.newebpay.com/MPG/period",
 }
+# NewebPay's Akamai edge returns 403 to the default `python-httpx/x.y` User-Agent
+# (verified 2026-10-04 on ccore AlterStatus); any named agent passes.
+HTTP_HEADERS = {"User-Agent": "TinBoker-Billing/1.0"}
 
 
 class NewebPayError(Exception):
@@ -67,9 +70,13 @@ def decrypt(hex_str: str, key: str, iv: str) -> str:
         cipher = Cipher(algorithms.AES(key.encode("utf-8")), modes.CBC(iv.encode("utf-8")))
         decryptor = cipher.decryptor()
         padded = decryptor.update(ciphertext) + decryptor.finalize()
-        unpadder = padding.PKCS7(algorithms.AES.block_size).unpadder()
-        plaintext = unpadder.update(padded) + unpadder.finalize()
-        return plaintext.decode("utf-8")
+        # NewebPay pads to a 32-byte boundary (its sample `addpadding($s, 32)`), so the
+        # pad length is 1-32 — a standard 16-byte PKCS7 unpadder rejects 17-32, which
+        # failed roughly half of all real notifications (seen 2026-10-03: last byte 32).
+        pad = padded[-1] if padded else 0
+        if not 1 <= pad <= 32 or padded[-pad:] != bytes([pad]) * pad:
+            raise ValueError("bad padding")
+        return padded[:-pad].decode("utf-8")
     except (ValueError, binascii.Error, UnicodeDecodeError) as e:
         raise NewebPayError("failed to decrypt NewebPay payload") from e
 
@@ -141,6 +148,23 @@ def build_period_post_data(
         "MerchantID_": merchant_id,
         "PostData_": encrypt(inner, key, iv),
     }
+
+
+def describe_ciphertext(hex_str: str, key: str, iv: str) -> dict:
+    """Shape of a payload that failed to parse — sizes and byte classes only, never
+    plaintext (it carries a masked card number and the payer email)."""
+    info: dict = {"len": len(hex_str), "hex": all(c in "0123456789abcdefABCDEF" for c in hex_str)}
+    try:
+        raw = bytes.fromhex(hex_str)
+        info["blocks"] = len(raw) / 16
+        cipher = Cipher(algorithms.AES(key.encode("utf-8")), modes.CBC(iv.encode("utf-8")))
+        padded = cipher.decryptor().update(raw)
+        info["last_byte"] = padded[-1] if padded else None
+        info["head"] = padded[:1].decode("ascii", "replace")
+        info["tail_nul"] = len(padded) - len(padded.rstrip(b"\0"))
+    except Exception as e:  # diagnostics must never raise
+        info["error"] = type(e).__name__
+    return info
 
 
 def parse_period_result(hex_str: str, key: str, iv: str) -> dict:

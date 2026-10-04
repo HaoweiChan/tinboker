@@ -27,7 +27,8 @@ export const MembershipPage: React.FC = () => {
         </div>
 
         {ready && user && <SubscriptionStatus paymentReturn={params.get('payment') === 'return'} />}
-        {params.get('payment') === 'return' && ready && !user && <p role="status" className="mb-4 text-sm text-muted-foreground">請使用付款時的帳號登入，以查詢付款結果。</p>}
+        {params.get('payment') === 'failed' && <p role="status" className="mb-4 text-sm text-accent-warning">付款沒有完成。請在下方確認訂閱狀態，或稍後再試一次。</p>}
+        {params.get('payment') === 'return' && ready && !user &&<p role="status" className="mb-4 text-sm text-muted-foreground">請使用付款時的帳號登入，以查詢付款結果。</p>}
         <PlanCard />
 
         <p className="text-2xs text-muted-foreground/70 leading-[1.6] mt-5 text-center">
