@@ -18,6 +18,18 @@ const PromoCodeSchema = z.object({
 export type AdminPromoCode = z.infer<typeof PromoCodeSchema>;
 export type AdminPromoCodeInput = Pick<AdminPromoCode, 'amount_off' | 'max_uses' | 'active'>;
 
+const RedemptionSchema = z.object({
+  code: z.string(),
+  email: z.string(),
+  gateway_env: z.enum(['sandbox', 'production']),
+  status: z.string(),
+  amount: z.number().int().nonnegative(),
+  counted: z.boolean(),
+  created_at: z.string(),
+  paid_until: z.string().nullable(),
+});
+export type AdminPromoRedemption = z.infer<typeof RedemptionSchema>;
+
 function adminAuthConfig() {
   const token = useAppStore.getState().token;
   if (!token) throw new Error('Not authenticated');
@@ -27,6 +39,12 @@ function adminAuthConfig() {
 export async function listPromoCodes(): Promise<AdminPromoCode[]> {
   const response = await apiClient.get('/api/admin/promo-codes', adminAuthConfig());
   return z.array(PromoCodeSchema).parse(response.data);
+}
+
+/** Latest checkouts that carried a code, both gateways, newest first. */
+export async function listPromoRedemptions(): Promise<AdminPromoRedemption[]> {
+  const response = await apiClient.get('/api/admin/promo-codes/redemptions', adminAuthConfig());
+  return z.array(RedemptionSchema).parse(response.data);
 }
 
 /** Creates the code, or edits it when it already exists. */

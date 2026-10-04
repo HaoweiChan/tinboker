@@ -15,7 +15,7 @@ from sqlalchemy import func
 
 from src.auth.admin_auth import get_admin_access, AdminAccess
 from src.cache.cdn_cache import cdn_cached, CacheProfile
-from src.database.models import PromoCode, Subscription
+from src.database.models import PromoCode, Subscription, User
 from src.database.postgres import session_scope
 from src.database.user_db import set_member_until, list_granted_members
 from src.services.billing import PROMO_USED_STATUSES
@@ -117,3 +117,32 @@ async def upsert_promo_code(code: str, req: PromoCodeRequest, admin: AdminAccess
 async def list_promo_codes(admin: AdminAccess = Depends(get_admin_access)):
     """Every code with its use counts on the production and sandbox gateways."""
     return await asyncio.to_thread(_promo_rows)
+
+
+class PromoRedemption(BaseModel):
+    code: str
+    email: str
+    gateway_env: str
+    status: str
+    amount: int
+    counted: bool  # False once the use was handed back (failed / abandoned)
+    created_at: datetime
+    paid_until: Optional[datetime]
+
+
+def _promo_redemptions() -> List[PromoRedemption]:
+    with session_scope() as db:
+        rows = (db.query(Subscription, User.email).join(User, User.id == Subscription.user_id)
+                .filter(Subscription.promo_code.isnot(None))
+                .order_by(Subscription.created_at.desc()).limit(200).all())
+        return [PromoRedemption(code=sub.promo_code, email=email, gateway_env=sub.gateway_env, status=sub.status,
+                                amount=sub.amount, counted=sub.status in PROMO_USED_STATUSES,
+                                created_at=sub.created_at, paid_until=sub.paid_until)
+                for sub, email in rows]
+
+
+@promo_router.get("/redemptions", response_model=List[PromoRedemption])
+@cdn_cached(profile=CacheProfile.PRIVATE)
+async def list_promo_redemptions(admin: AdminAccess = Depends(get_admin_access)):
+    """The latest 200 checkouts that carried a promo code, on either gateway."""
+    return await asyncio.to_thread(_promo_redemptions)

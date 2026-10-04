@@ -8,12 +8,16 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { isAxiosError } from 'axios';
 import { Ticket } from 'lucide-react';
 import { getPlans } from '@/services/api/billing';
-import { listPromoCodes, savePromoCode, type AdminPromoCode } from '@/services/api/adminPromoCodes';
+import {
+    listPromoCodes, listPromoRedemptions, savePromoCode,
+    type AdminPromoCode, type AdminPromoRedemption,
+} from '@/services/api/adminPromoCodes';
 
 const inputClass = 'min-h-9 rounded-md border border-border bg-background px-2 text-base text-foreground outline-none focus-visible:ring-2 focus-visible:ring-primary';
 
 export const PromoCodesPanel: React.FC = () => {
     const [codes, setCodes] = useState<AdminPromoCode[] | null>(null);
+    const [redemptions, setRedemptions] = useState<AdminPromoRedemption[] | null>(null);
     const [listPrice, setListPrice] = useState<number | null>(null);
     const [error, setError] = useState('');
     const [saving, setSaving] = useState(false);
@@ -23,7 +27,9 @@ export const PromoCodesPanel: React.FC = () => {
 
     const load = useCallback(async () => {
         try {
-            setCodes(await listPromoCodes());
+            const [nextCodes, nextRedemptions] = await Promise.all([listPromoCodes(), listPromoRedemptions()]);
+            setCodes(nextCodes);
+            setRedemptions(nextRedemptions);
         } catch {
             setError('Failed to load promo codes');
         }
@@ -117,6 +123,37 @@ export const PromoCodesPanel: React.FC = () => {
                                         {row.active ? 'Active — disable' : 'Disabled — enable'}
                                     </button>
                                 </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+
+            <h3 className="mb-2 mt-6 text-base font-semibold text-foreground">Redemptions</h3>
+            <div className="overflow-x-auto">
+                <table className="w-full text-left text-base">
+                    <thead className="text-muted-foreground">
+                        <tr className="border-b border-border">
+                            <th className="py-2 pr-4 font-medium">When</th>
+                            <th className="py-2 pr-4 font-medium">Code</th>
+                            <th className="py-2 pr-4 font-medium">Account</th>
+                            <th className="py-2 pr-4 font-medium">Gateway</th>
+                            <th className="py-2 pr-4 font-medium">Pays</th>
+                            <th className="py-2 pr-4 font-medium">Status</th>
+                            <th className="py-2 font-medium">Member until</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {redemptions?.length === 0 && <tr><td colSpan={7} className="py-3 text-muted-foreground">Nobody has used a code yet.</td></tr>}
+                        {redemptions?.map((row) => (
+                            <tr key={`${row.code}-${row.email}-${row.created_at}`} className={`border-b border-border last:border-0 ${row.counted ? '' : 'text-muted-foreground'}`}>
+                                <td className="py-2 pr-4 font-mono tabular-nums">{new Date(row.created_at).toLocaleString('zh-TW', { hour12: false })}</td>
+                                <td className="py-2 pr-4 font-mono">{row.code}</td>
+                                <td className="py-2 pr-4">{row.email}</td>
+                                <td className="py-2 pr-4">{row.gateway_env}</td>
+                                <td className="py-2 pr-4 font-mono tabular-nums">{row.amount === 0 ? 'Free' : `NT$${row.amount}`}</td>
+                                <td className="py-2 pr-4">{row.status}{row.counted ? '' : ' (use returned)'}</td>
+                                <td className="py-2 font-mono tabular-nums">{row.paid_until ? new Date(row.paid_until).toLocaleDateString('zh-TW') : '—'}</td>
                             </tr>
                         ))}
                     </tbody>
