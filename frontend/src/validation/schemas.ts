@@ -678,14 +678,10 @@ export type Weekly = z.infer<typeof WeeklySchema>;
 export type WeeklyTicker = z.infer<typeof WeeklyTickerSchema>;
 export type WeeklyList = z.infer<typeof WeeklyListSchema>;
 
-// GET /api/billing/plans — membership pricing (PR 3a billing foundation). Never
-// hardcode 199/99 anywhere that reads this; the API is the one source of truth.
+// GET /api/billing/plans — membership list price. Never hardcode a price anywhere
+// that reads this; discounts are promo codes quoted by /api/billing/promo/{code}.
 export const BillingPlansSchema = z.object({
   list_price: z.number(),
-  founding_price: z.number(),
-  founding_limit: z.number(),
-  founding_remaining: z.number(),
-  founding_open: z.boolean(),
   checkout_open: z.boolean(),
   gateway_env: z.enum(['sandbox', 'production']).optional(),
 });

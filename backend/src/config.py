@@ -345,12 +345,11 @@ class Settings(BaseSettings):
     newebpay_sandbox_merchant_id: str = ""  # GSM: NEWEBPAY_SANDBOX_MERCHANT_ID
     newebpay_sandbox_hash_key: str = ""  # GSM: NEWEBPAY_SANDBOX_HASH_KEY
     newebpay_sandbox_hash_iv: str = ""  # GSM: NEWEBPAY_SANDBOX_HASH_IV
-    # List price and the limited-run founding-member price (both NT$/month). Never
-    # hardcode these in a router or the frontend — always read from Settings/the
-    # /api/billing/plans response.
+    # List price, NT$/month. Discounts come from promo codes (promo_codes table), never
+    # from a second hardcoded price — always read from Settings / /api/billing/plans.
     membership_list_price: int = 199
-    membership_founding_price: int = 99
-    membership_founding_limit: int = 100
+    # A promo code worth the whole list price skips the gateway and grants this long.
+    membership_free_months: int = 12
     newebpay_checkout_enabled: bool = False
 
     @property

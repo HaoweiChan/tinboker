@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import { CheckCircle2 } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { useRequireAuth } from '@/hooks/useRequireAuth';
-import { getPlans, startCheckout } from '@/services/api/billing';
+import { getPlans, quotePromo, startCheckout, type PromoQuote } from '@/services/api/billing';
 import type { BillingPlans } from '@/validation/schemas';
 import { formatMemberUntil } from '@/lib/date';
 import { INSIGHT_PAYWALL_DAYS } from '@/lib/insightPaywall';
@@ -20,6 +20,10 @@ export const PlanCard: React.FC = () => {
   const checkoutPending = useRef(false);
   const [starting, setStarting] = useState(false);
   const [checkoutError, setCheckoutError] = useState('');
+  const [promoInput, setPromoInput] = useState('');
+  const [quote, setQuote] = useState<PromoQuote | null>(null);
+  const [quoting, setQuoting] = useState(false);
+  const [promoError, setPromoError] = useState('');
   const [plans, setPlans] = useState<BillingPlans | null>(null);
   const [error, setError] = useState<string | null>(null);
   const isAuthReady = useAppStore((s) => s.isAuthReady);
@@ -40,18 +44,41 @@ export const PlanCard: React.FC = () => {
     setStarting(true);
     setCheckoutError('');
     try {
-      await startCheckout();
+      // Granted on the spot (the code covered the whole price): reload so /me and
+      // every member-only query pick the new entitlement up.
+      if (await startCheckout(quote?.code)) window.location.assign('/membership');
     } catch (error) {
       setCheckoutError(isAxiosError(error) && error.response?.status === 403
         ? plans?.gateway_env === 'sandbox' ? '測試付款僅開放管理員；請使用一般登入後再試。' : '目前無法付款，請重新登入後再試。'
         : isAxiosError(error) && error.response?.status === 409
-          ? '已有訂閱或待確認的付款，請先查看訂閱狀態。'
+          ? quote ? '這組優惠碼已無法使用，或已有訂閱。請先查看訂閱狀態。' : '已有訂閱或待確認的付款，請先查看訂閱狀態。'
           : '無法開始付款，請稍後再試。');
       checkoutPending.current = false;
       setStarting(false);
     }
   };
 
+  const applyPromo = async () => {
+    const code = promoInput.trim();
+    if (!code || quoting) return;
+    setQuoting(true);
+    setPromoError('');
+    try {
+      setQuote(await quotePromo(code));
+    } catch (error) {
+      setQuote(null);
+      const status = isAxiosError(error) ? error.response?.status : undefined;
+      setPromoError(status === 404 ? '找不到這組優惠碼。'
+        : status === 409 ? '這組優惠碼已兌換完畢，或這個帳號已經使用過。'
+          : status === 403 ? '目前無法使用優惠碼，請重新登入後再試。'
+            : '無法確認優惠碼，請稍後再試。');
+    } finally {
+      setQuoting(false);
+    }
+  };
+
+  const free = quote?.price === 0;
+  const canPay = Boolean(plans?.checkout_open) || free;
   const memberUntilLabel = user?.member_until ? formatMemberUntil(user.member_until) : null;
 
   return (
@@ -86,24 +113,40 @@ export const PlanCard: React.FC = () => {
 
         {plans && (
           <>
-            {plans.founding_open ? (
-              <div>
-                <div className="flex items-baseline gap-2">
-                  <span className="text-3xl font-bold text-foreground font-mono tabular-nums">NT$ {plans.founding_price}</span>
-                  <span className="text-sm text-muted-foreground">/ 月</span>
-                </div>
-                <p className="text-sm text-accent-info mt-1">
-                  創始會員價，訂閱期間不調漲 · 剩餘 {plans.founding_remaining} 個名額
-                </p>
-              </div>
-            ) : (
+            <div>
               <div className="flex items-baseline gap-2">
-                <span className="text-3xl font-bold text-foreground font-mono tabular-nums">NT$ {plans.list_price}</span>
-                <span className="text-sm text-muted-foreground">/ 月</span>
+                <span className="text-3xl font-bold text-foreground font-mono tabular-nums">{free ? '免費' : `NT$ ${quote ? quote.price : plans.list_price}`}</span>
+                {!free && <span className="text-sm text-muted-foreground">/ 月</span>}
+                {quote && <span className="text-sm text-muted-foreground line-through font-mono tabular-nums">NT$ {quote.list_price}</span>}
               </div>
+              {quote && (
+                <p className="text-sm text-accent-info mt-1">
+                  {free ? `優惠碼 ${quote.code}：${quote.free_months} 個月會員資格，不需付款` : `優惠碼 ${quote.code}：訂閱期間每月 NT$ ${quote.price}`}
+                </p>
+              )}
+            </div>
+            {isAuthReady && user && !user.is_member && !user.membership_preview && (
+              <form className="space-y-1" onSubmit={(event) => { event.preventDefault(); void applyPromo(); }}>
+                <div className="flex gap-2">
+                  <input
+                    value={promoInput}
+                    onChange={(event) => { setPromoInput(event.target.value); setQuote(null); setPromoError(''); }}
+                    aria-label="優惠碼"
+                    placeholder="優惠碼"
+                    maxLength={32}
+                    autoCapitalize="characters"
+                    autoComplete="off"
+                    className="min-h-10 w-40 rounded-sm border border-border bg-background px-3 text-sm font-mono uppercase outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                  />
+                  <button type="submit" disabled={!promoInput.trim() || quoting} className="rounded-sm border border-border px-3 text-sm hover:bg-muted disabled:opacity-50">
+                    {quoting ? '確認中…' : '套用'}
+                  </button>
+                </div>
+                {promoError && <p role="alert" className="text-sm text-destructive">{promoError}</p>}
+              </form>
             )}
             {plans.gateway_env === 'sandbox' && <p className="text-xs font-medium text-primary">測試付款 · 僅限管理員使用測試卡</p>}
-            <p className="text-sm text-muted-foreground">每月自動扣款，可隨時取消，取消後可使用至當期結束。</p>
+            {!free && <p className="text-sm text-muted-foreground">每月自動扣款，可隨時取消，取消後可使用至當期結束。</p>}
             <p className="text-sm text-muted-foreground">
               訂閱即表示您同意<Link to="/terms" className="text-accent-info hover:underline">服務條款</Link>、
               <Link to="/terms#refund" className="text-accent-info hover:underline">退款政策</Link>與
@@ -124,13 +167,13 @@ export const PlanCard: React.FC = () => {
                 </button>
               ) : user.is_member ? (
                 <p className="text-sm text-foreground font-medium">會員有效至 {memberUntilLabel}</p>
-              ) : plans.checkout_open ? (
+              ) : canPay ? (
                 <button
                   onClick={() => { void checkout(); }}
                   disabled={starting || Boolean(user.membership_preview)}
                   className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-sm bg-primary text-primary-foreground text-sm font-bold hover:opacity-90 transition"
                 >
-                  {starting ? '正在前往付款…' : user.membership_preview ? '預覽模式無法付款' : '立即加入會員'}
+                  {starting ? (free ? '開通中…' : '正在前往付款…') : user.membership_preview ? '預覽模式無法付款' : free ? '兌換會員資格' : '立即加入會員'}
                 </button>
               ) : (
                 <button

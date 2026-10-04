@@ -657,8 +657,9 @@ class Subscription(Base):
     mer_order_no = Column(String(30), nullable=False, unique=True)  # NewebPay MerOrderNo
     period_no = Column(String(64), nullable=True, index=True)  # NewebPay's mandate id (PeriodNo)
     status = Column(String(16), nullable=False, default="pending")  # pending|active|cancelling|cancelled|ended|failed|abandoned
-    amount = Column(Integer, nullable=False)  # TWD per-period amount (99 founding or 199 list)
-    is_founding = Column(Boolean, nullable=False, default=False)
+    amount = Column(Integer, nullable=False)  # TWD per period: list price minus the promo code; 0 = free grant
+    is_founding = Column(Boolean, nullable=False, default=False)  # legacy (founding seats, replaced by promo codes)
+    promo_code = Column(String(32), nullable=True, index=True)
     gateway_env = Column(String(16), nullable=False)  # sandbox|production
     next_auth_date = Column(Date, nullable=True)
     paid_until = Column(TZ_DATETIME, nullable=True)
@@ -686,6 +687,18 @@ class Subscription(Base):
 
     def __repr__(self) -> str:
         return f"<Subscription(id={self.id}, user_id={self.user_id}, status={self.status})>"
+
+
+class PromoCode(Base):
+    """A shared discount code. `amount_off` is NT$ per month for the life of the
+    mandate; a code worth the whole list price grants membership with no payment."""
+    __tablename__ = "promo_codes"
+
+    code = Column(String(32), primary_key=True)  # stored upper-case
+    amount_off = Column(Integer, nullable=False)
+    max_uses = Column(Integer, nullable=False)
+    active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(TZ_DATETIME, nullable=False, default=lambda: datetime.now(timezone.utc))
 
 
 class PaymentEvent(Base):
