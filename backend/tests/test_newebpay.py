@@ -405,3 +405,26 @@ def test_settings_newebpay_configured_false_when_this_envs_creds_missing():
     )
     assert s.newebpay_env == "production"
     assert s.newebpay_configured is False
+
+
+@pytest.mark.parametrize("length", range(1, 65))
+def test_decrypt_accepts_newebpay_32_byte_padding(length):
+    """NewebPay pads responses to a 32-byte boundary (pad length 1-32). A 16-byte
+    PKCS7 unpadder rejects pad lengths 17-32 — the cause of the intermittent
+    "failed to decrypt" on real sandbox notifications."""
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+
+    plain = ("x" * length).encode()
+    pad = 32 - len(plain) % 32
+    enc = Cipher(algorithms.AES(KEY.encode()), modes.CBC(IV.encode())).encryptor()
+    ciphertext = (enc.update(plain + bytes([pad]) * pad) + enc.finalize()).hex()
+    assert decrypt(ciphertext, KEY, IV) == "x" * length
+
+
+def test_decrypt_rejects_inconsistent_padding():
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+
+    enc = Cipher(algorithms.AES(KEY.encode()), modes.CBC(IV.encode())).encryptor()
+    ciphertext = (enc.update(b"x" * 29 + b"\x01\x02\x03") + enc.finalize()).hex()
+    with pytest.raises(NewebPayError):
+        decrypt(ciphertext, KEY, IV)
