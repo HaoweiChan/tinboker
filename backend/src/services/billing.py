@@ -54,6 +54,7 @@ def _view(sub: Subscription | None) -> dict:
     return {"subscription": None if sub is None else {
         "id": sub.id, "mer_order_no": sub.mer_order_no, "status": sub.status,
         "amount": sub.amount, "promo_code": sub.promo_code,
+        "is_founding": False,  # ponytail: pre-#876 bundles require it; drop with /plans' founding_* fields
         "gateway_env": sub.gateway_env, "paid_until": _aware(sub.paid_until),
         "next_auth_date": sub.next_auth_date,
     }}
