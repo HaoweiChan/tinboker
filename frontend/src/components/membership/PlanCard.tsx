@@ -9,7 +9,8 @@ import type { BillingPlans } from '@/validation/schemas';
 import { formatMemberUntil } from '@/lib/date';
 import { INSIGHT_PAYWALL_DAYS } from '@/lib/insightPaywall';
 
-/** The plan pitch: what membership includes, price (from `/api/billing/plans`), buy
+/** The plan pitch: what membership includes, price (from `/api/billing/plans`, or a
+ * promo-code quote from `/api/billing/promo/{code}`), buy
  * button, and consent line. Shared by MembershipPage (/membership) and the locked 走勢
  * section on /member so the sales copy and price fetching live in exactly one place.
  *

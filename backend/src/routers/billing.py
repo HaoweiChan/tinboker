@@ -1,4 +1,4 @@
-"""Membership plans, hosted NewebPay checkout and verified server callbacks."""
+"""Membership plans, promo-code quotes, hosted NewebPay checkout and verified server callbacks."""
 import asyncio
 import logging
 
