@@ -422,4 +422,7 @@ def test_admin_promo_upsert_and_use_count(flow, monkeypatch):
     checkout(client, promo_code="SAVE100")
     edited = admin_members._upsert_promo("SAVE100", admin_members.PromoCodeRequest(amount_off=100, max_uses=5, active=False))
     assert (edited.used_sandbox, edited.used_production, edited.active) == (1, 0, False)
+    (row,) = admin_members._promo_redemptions()
+    assert (row.code, row.email, row.gateway_env, row.status, row.amount, row.counted) == (
+        "SAVE100", "a@example.com", "sandbox", "pending", settings.membership_list_price - 100, True)
     assert client.get("/api/billing/promo/SAVE100", headers=headers("b")).status_code == 404
