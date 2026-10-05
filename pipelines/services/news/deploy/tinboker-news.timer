@@ -2,8 +2,10 @@
 Description=Run the TinBoker news ingest every 6 hours
 
 [Timer]
-OnBootSec=15min
-OnUnitActiveSec=6h
+# Wall-clock, not OnUnitActiveSec: that counts from the last time the service became
+# active, and a oneshot that fails to start never does — after the first failed run the
+# timer sat "elapsed" with no next trigger for six weeks.
+OnCalendar=*-*-* 00/6:20:00
 Persistent=true
 
 [Install]
