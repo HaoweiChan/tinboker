@@ -530,8 +530,10 @@ export const EpisodeDetail: React.FC = () => {
               <EpisodeDebugPanel episode={episode} onUpdated={setEpisode} />
             )}
 
-            {id && podcastName && (
-              <CommentSection podcastName={podcastName} episodeId={id} />
+            {/* Keyed on the episode's own podcast_name, not the ?podcast= param: canonical,
+                shared and Threads links carry no param, and those pages had no comments. */}
+            {id && (episode?.podcast_name || podcastName) && (
+              <CommentSection podcastName={episode?.podcast_name || podcastName} episodeId={id} />
             )}
           </>
         )}
