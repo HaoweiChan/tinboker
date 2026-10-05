@@ -7,7 +7,7 @@ TinBoker uses NewebPay credit-card periodic payments for monthly membership. Car
 - Development and staging use the sandbox merchant; production uses the production merchant. The environment is derived from `ENVIRONMENT`, not a client request.
 - Sandbox checkout is restricted to administrators. Sandbox payments record their own paid term and do not change the shared production `users.member_until` entitlement.
 - Membership-preview sessions cannot create or cancel payment mandates. Sign in again normally before testing payment.
-- Development enables checkout in Compose, subject to valid sandbox credentials. Staging and production keep `NEWEBPAY_CHECKOUT_ENABLED=false`. Changing this flag does not disable callbacks or cancellation of existing mandates.
+- Compose enables checkout on development (sandbox credentials) and, since v0.12.24 (2026-10-05), on production. Staging keeps `NEWEBPAY_CHECKOUT_ENABLED=false`. Changing this flag does not disable callbacks or cancellation of existing mandates.
 - Store `NEWEBPAY_SANDBOX_MERCHANT_ID`, `NEWEBPAY_SANDBOX_HASH_KEY`, and `NEWEBPAY_SANDBOX_HASH_IV` in Google Secret Manager, project `gen-lang-client-0901363254`. Use the corresponding names without `SANDBOX_` only for production. Never paste credential values into chat, commits, or documentation.
 - The merchant must have credit-card periodic payments enabled. Credentials alone do not prove merchant approval or successful payment.
 - Apply configuration and code through the normal Git/PR/CI deployment. Do not edit or restart the deployed application manually.
