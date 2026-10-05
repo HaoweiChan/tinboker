@@ -65,10 +65,10 @@ services:
       # Comment triage on the same production-only rule (all three envs share the token,
       # so a second env syncing would just duplicate the work). The sync posts nothing —
       # it classifies new comments into the admin 留言 tab, and only the 送出回覆 button
-      # there sends anything. Held at 0: pressing 抓新留言 fills the tab on demand, which
-      # is enough while the queue is a handful of comments a week. Set "30" when you want
-      # it kept warm without pressing the button.
-      SOCIAL_COMMENT_SYNC_MINUTES: "0"
+      # there sends anything. On a 30-minute timer since the episode page started showing
+      # triaged Threads replies (#887): the public block is only as fresh as this sync.
+      # "0" turns the timer off; 抓新留言 in the tab still syncs on demand.
+      SOCIAL_COMMENT_SYNC_MINUTES: "30"
       CORS_ORIGINS: '["https://tinboker.com","https://www.tinboker.com"]'
       # Marp render service runs as separate infra on its own docker network, only
       # reachable via its host-published :5004 — so go through the host gateway.

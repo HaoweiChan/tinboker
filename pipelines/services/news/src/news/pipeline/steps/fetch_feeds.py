@@ -42,10 +42,21 @@ def _entry_content(entry: Any) -> str:
     return ""
 
 
+FEED_TIMEOUT_S = 20
+_USER_AGENT = "Mozilla/5.0 (compatible; TinBokerNews/1.0; +https://tinboker.com)"
+
+
 def _default_parse(url: str) -> Any:
+    """Download with a deadline, then parse the bytes. ``feedparser.parse(url)`` opens
+    the URL with no timeout at all: one feed that stopped answering held every run
+    until systemd killed it at 30 minutes, from 2026-08-15 until this was written."""
+    import urllib.request
+
     import feedparser
 
-    return feedparser.parse(url)
+    request = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
+    with urllib.request.urlopen(request, timeout=FEED_TIMEOUT_S) as response:  # noqa: S310 — operator-configured feeds
+        return feedparser.parse(response.read())
 
 
 def fetch_feeds(

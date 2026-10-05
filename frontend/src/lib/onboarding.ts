@@ -36,6 +36,14 @@ export interface ChangelogEntry {
 //   docs/workflows/deploy-flow.md § "In-app changelog (What's new)".
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.12.25',
+    date: '2026-10',
+    items: [
+      '集數頁的留言現在會好好保存下來，每一集都可以留言。',
+      '集數頁會顯示 Threads 上大家對這一集的討論，可以點回原文。',
+    ],
+  },
+  {
     version: '0.12.24',
     date: '2026-10',
     items: [

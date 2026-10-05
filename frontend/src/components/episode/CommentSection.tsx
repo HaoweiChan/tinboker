@@ -4,8 +4,9 @@ import { useUser, useAppStore } from '@/store/useAppStore';
 import { useRequireAuth } from '@/hooks/useRequireAuth';
 import { CommentForm } from './CommentForm';
 import { CommentList, type CommentWithReplies } from './CommentList';
-import { getEpisodeComments, postComment, deleteComment } from '@/services/api/comments';
-import type { Comment } from '@/validation/schemas';
+import { timeAgo } from '@/lib/timeAgo';
+import { getEpisodeComments, getEpisodeThreadsComments, postComment, deleteComment } from '@/services/api/comments';
+import type { Comment, ThreadsComment } from '@/validation/schemas';
 
 function buildTree(flat: Comment[]): CommentWithReplies[] {
   const map = new Map<string, CommentWithReplies>();
@@ -41,6 +42,18 @@ export const CommentSection: React.FC<CommentSectionProps> = ({ podcastName, epi
   const [flatComments, setFlatComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(true);
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
+  const [threadsComments, setThreadsComments] = useState<ThreadsComment[]>([]);
+
+  // Replies people left on our Threads post about this episode. Decoration only:
+  // a failure leaves the block out rather than surfacing an error.
+  useEffect(() => {
+    let live = true;
+    setThreadsComments([]);
+    getEpisodeThreadsComments(podcastName, episodeId)
+      .then((c) => { if (live) setThreadsComments(c); })
+      .catch(() => {});
+    return () => { live = false; };
+  }, [podcastName, episodeId]);
 
   const tree = buildTree(flatComments);
   const total = flatComments.length;
@@ -118,6 +131,41 @@ export const CommentSection: React.FC<CommentSectionProps> = ({ podcastName, epi
           onSubmitReply={handleSubmitReply}
           replyingTo={replyingTo}
         />
+      )}
+
+      {threadsComments.length > 0 && (
+        <div className="mt-5 pt-5 border-t border-border">
+          <h4 className="text-sm font-semibold text-muted-foreground mb-1">
+            Threads 上的討論 ({threadsComments.length})
+          </h4>
+          {threadsComments.map((c) => (
+            <div key={c.id} className="py-3">
+              <div className="flex items-baseline gap-2 mb-0.5">
+                <span className="text-sm font-semibold truncate">@{c.username}</span>
+                {c.posted_at && (
+                  <span className="text-2xs text-muted-foreground flex-shrink-0">{timeAgo(c.posted_at)}</span>
+                )}
+                {c.permalink && (
+                  <a
+                    href={c.permalink}
+                    target="_blank"
+                    rel="noopener noreferrer nofollow"
+                    className="text-2xs text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
+                  >
+                    在 Threads 查看
+                  </a>
+                )}
+              </div>
+              <p className="text-base text-foreground break-words whitespace-pre-wrap">{c.text}</p>
+              {c.reply && (
+                <div className="mt-2 ml-6 pl-3 border-l border-border">
+                  <span className="text-sm font-semibold">@tinboker</span>
+                  <p className="text-base text-foreground break-words whitespace-pre-wrap">{c.reply}</p>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
       )}
     </section>
   );

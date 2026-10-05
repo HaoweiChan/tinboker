@@ -66,7 +66,7 @@ Example composed post (181/500 chars):
 | `THREADS_MAX_AGE_DAYS` | no (default 4) | Recency guard — only post episodes published within N days. Caps blast radius even if the ledger is wiped. |
 | `SOCIAL_PUBLISH_SLOTS` | to auto-post | TW times, e.g. `11:30,15:30,20:30`. Empty ⇒ this env never auto-posts. **Set it on exactly one environment** — dev/staging/prod all load the same tokens. |
 | `SOCIAL_PUBLISH_SCAN_LIMIT` | no (default 10) | How many recent episodes each slot scans; the ledger decides what actually posts. |
-| `SOCIAL_COMMENT_SYNC_MINUTES` | to answer comments | How often to pull + triage new comments. 0 (default) = off. Same one-environment rule. **Currently 0 on production.** The sync posts nothing, so turning it on only fills the tab — flip to `30` on one environment once you want the queue kept warm without pressing 抓新留言. |
+| `SOCIAL_COMMENT_SYNC_MINUTES` | to answer comments | How often to pull + triage new comments. 0 (default) = off. Same one-environment rule. **`30` on production** (set in `docker-compose.multi.yml`): the episode page shows triaged Threads replies, so the public block is only as fresh as this sync. The sync posts nothing. |
 | `SOCIAL_COMMENT_MODEL` | no (default `google/gemini-2.5-flash`) | OpenRouter model used to classify a comment and draft a reply. |
 | `SITE_URL` | no (default `https://tinboker.com`) | Origin used for episode permalinks. |
 
