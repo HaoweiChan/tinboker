@@ -215,7 +215,9 @@ jobs:
             systemctl restart podcast-api
             
             echo "→ Restarting tinboker-news.timer..."
-            systemctl enable --now tinboker-news.timer
+            systemctl enable tinboker-news.timer
+            # restart, not enable --now: an already-active timer keeps its old schedule.
+            systemctl restart tinboker-news.timer
 
             # enable --now arms the timer without running the ingest; the unit is
             # oneshot and fires on its own schedule.

@@ -14,5 +14,8 @@ ExecStart=/root/tinboker/pipelines/services/news/scripts/run_news.sh
 EnvironmentFile=-/root/tinboker/pipelines/.env
 # Still required: the article store reads GCS with this service account.
 Environment=GOOGLE_APPLICATION_CREDENTIALS=/root/tinboker/pipelines/services/podcast/gcp-service-account.json
+# Python block-buffers stdout under systemd, so a run killed at the timeout left an
+# empty journal and nothing to say where it had stopped.
+Environment=PYTHONUNBUFFERED=1
 # A single run is bounded; cap it so a hung fetch cannot wedge the timer.
 TimeoutStartSec=1800
