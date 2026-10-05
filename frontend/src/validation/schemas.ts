@@ -516,6 +516,17 @@ export const CommentListSchema = z.object({
 });
 export type CommentList = z.infer<typeof CommentListSchema>;
 
+/** A reply someone left on our Threads post about the episode (read-only on the site). */
+export const ThreadsCommentSchema = z.object({
+  id: z.string(),
+  username: z.string(),
+  text: z.string(),
+  posted_at: z.string().nullable().optional(),
+  permalink: z.string().nullable().optional(),
+  reply: z.string().nullable().optional(),
+});
+export type ThreadsComment = z.infer<typeof ThreadsCommentSchema>;
+
 // ── Podcast mentions & post-mention performance (TKB-001) ────────────────────
 
 /** Post-mention returns over 1/5/20/60 *trading days*. Each window is null until
