@@ -36,7 +36,9 @@ services:
       - "127.0.0.1:8000:8000"
     environment:
       ENVIRONMENT: production
-      NEWEBPAY_CHECKOUT_ENABLED: "false"
+      # Paid checkout opened 2026-10-05 (v0.12.24). "false" stops NEW checkouts only;
+      # notifications and cancellation of existing mandates keep working.
+      NEWEBPAY_CHECKOUT_ENABLED: "true"
       USE_POSTGRES: "true"
       # P1 read flip (firestore-contract §11): content reads from the local
       # firestore_mirror. Verified on dev 2026-08-03 (parity vs Firestore).
