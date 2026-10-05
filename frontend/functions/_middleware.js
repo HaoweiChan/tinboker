@@ -43,6 +43,14 @@ const freeInsights = (rows) => {
 const BRAND_IMG = 'https://tinboker.com/brand/tinboker-square-dark-1080.png';
 const CACHE_1H = { cf: { cacheTtl: 3600, cacheEverything: true } };
 const SITE = '聽播客 TinBoker';
+// The two halves of the name, as Google's site-name guidance asks for (alternateName).
+// "聽播客" alone is an everyday phrase ("listen to podcasts") that Google answers with
+// podcast platforms; "TinBoker" alone is ours. Stating both as names of this one site is
+// how the two get tied together — checked 2026-10-03: `聽播客` returned no tinboker.com
+// result in three pages, `聽播客 tinboker` returned the home page second.
+const BRAND_NAMES = ['聽播客', 'TinBoker'];
+// Profiles that already rank for the brand; sameAs lets Google treat them as one entity.
+const BRAND_PROFILES = ['https://www.threads.net/@tinboker', 'https://vocus.cc/salon/tinboker'];
 // Only these serve indexable content; every other host this code runs on (dev.,
 // staging., <pr>.pages.dev) is a copy of it.
 const PROD_HOSTS = new Set(['tinboker.com', 'www.tinboker.com']);
@@ -367,8 +375,8 @@ const INDEX_BODY = {
         + `<h2>近 30 天熱門個股</h2>${ul((tr || []).map((r) => `${stockLink(r.ticker)} · ${r.count} 集 · ${sentimentZh(r.sentiment_label)}`))}`
         + `<p>${a('/methodology', '這些數字怎麼算')}</p>`,
       ld: [
-        { '@context': 'https://schema.org', '@type': 'WebSite', name: SITE, url: `${origin}/` },
-        { '@context': 'https://schema.org', '@type': 'Organization', name: SITE, url: `${origin}/`, logo: BRAND_IMG },
+        { '@context': 'https://schema.org', '@type': 'WebSite', name: SITE, alternateName: BRAND_NAMES, url: `${origin}/` },
+        { '@context': 'https://schema.org', '@type': 'Organization', name: SITE, alternateName: BRAND_NAMES, url: `${origin}/`, logo: BRAND_IMG, sameAs: BRAND_PROFILES },
       ],
     };
   },
