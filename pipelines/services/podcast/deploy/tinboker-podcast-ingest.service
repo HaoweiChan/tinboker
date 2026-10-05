@@ -17,6 +17,10 @@ Environment=GOOGLE_APPLICATION_CREDENTIALS=/root/tinboker/pipelines/services/pod
 # per-role pin exists because the Threads copy is judged on voice, not accuracy.
 Environment=PIPELINE_LLM_MODEL=openrouter:deepseek/deepseek-v4-pro
 Environment=SOCIAL_COPY_WRITER_MODEL=openrouter:google/gemini-3.7-flash
+# Native Threads polls. This unit, not podcast-api, writes social_thread for every
+# scheduled episode — with the flag only on podcast-api (2026-09-30 to 10-05) the prompt
+# ran its poll_disabled branch and not one poll was ever generated.
+Environment=THREADS_NATIVE_POLLS_ENABLED=true
 # extractor pinned to flash: it is the ONLY role that receives {sentences} (the raw
 # transcript), so it alone accounts for the bulk of prompt-token spend — 30 days of
 # v4-pro was 175M prompt tokens, 84% of the whole OpenRouter bill. Measured on 4
