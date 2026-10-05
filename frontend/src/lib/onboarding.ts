@@ -36,6 +36,14 @@ export interface ChangelogEntry {
 //   docs/workflows/deploy-flow.md § "In-app changelog (What's new)".
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.12.24',
+    date: '2026-10',
+    items: [
+      '會員方案上線：每月 NT$199，解鎖「走勢」與最新個股觀點，可隨時取消。',
+      '加入會員時可以輸入優惠碼。',
+    ],
+  },
+  {
     version: '0.12.23',
     date: '2026-10',
     items: [
