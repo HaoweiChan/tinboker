@@ -28,7 +28,7 @@ from typing import Optional
 import httpx
 
 from src.config import settings
-from src.database.models import ThreadsComment
+from src.database.models import SocialPostLedger, ThreadsComment
 from src.database.postgres import session_scope
 from src.services.threads_service import ThreadsService
 
@@ -46,6 +46,9 @@ POSITION_RE = re.compile(
 )
 
 CATEGORIES = ("praise", "question", "substantive", "hostile", "noise", "promo", "bot")
+# What the episode page may show. Triage already ran, so this is a read of its verdict:
+# untriaged rows (category NULL) stay off the site until a model or a human has seen them.
+PUBLIC_CATEGORIES = ("praise", "question", "substantive")
 
 TRIAGE_SYSTEM = """你是台灣財經 podcast 摘要帳號 @tinboker 的社群編輯。判斷一則留言該不該回、怎麼回。
 
@@ -337,6 +340,44 @@ def list_comments(status: str = "pending", limit: int = 50) -> list[dict]:
                 "draft": r.draft, "status": r.status, "auto": r.auto,
                 "reply_media_id": r.reply_media_id,
                 "permalink": r.permalink,
+            }
+            for r in rows
+        ]
+
+
+def public_for_episode(episode_id: str, limit: int = 30) -> list[dict]:
+    """Threads replies on the posts we published for one episode, oldest first.
+
+    The ledger key is the episode id itself for episode posts and ends in
+    ``:<episode_id>`` for the per-ticker formats (``post_hoc:2330:<episode_id>``).
+    """
+    with session_scope() as db:
+        post_ids = [
+            media_id for (media_id,) in db.query(SocialPostLedger.media_id).filter(
+                SocialPostLedger.platform == "threads",
+                SocialPostLedger.media_id.isnot(None),
+                (SocialPostLedger.episode_id == episode_id)
+                | SocialPostLedger.episode_id.endswith(f":{episode_id}", autoescape=True),
+            )
+        ]
+        if not post_ids:
+            return []
+        rows = (
+            db.query(ThreadsComment)
+            .filter(ThreadsComment.root_post_id.in_(post_ids),
+                    ThreadsComment.category.in_(PUBLIC_CATEGORIES))
+            .order_by(ThreadsComment.posted_at.asc().nulls_last())
+            .limit(limit)
+            .all()
+        )
+        return [
+            {
+                "id": r.id, "username": r.username or "", "text": r.text,
+                # stored as naive UTC (see _parse_ts)
+                "posted_at": f"{r.posted_at.isoformat()}Z" if r.posted_at else None,
+                "permalink": r.permalink,
+                # ``draft`` is overwritten with the text actually sent once we reply
+                "reply": r.draft if r.status == "replied" and r.draft else None,
             }
             for r in rows
         ]

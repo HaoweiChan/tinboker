@@ -1,5 +1,9 @@
 import { apiClient } from './client';
-import { CommentListSchema, CommentSchema, type Comment, type CommentList } from '../../validation/schemas';
+import { z } from 'zod';
+import {
+  CommentListSchema, CommentSchema, ThreadsCommentSchema,
+  type Comment, type CommentList, type ThreadsComment,
+} from '../../validation/schemas';
 
 export async function getEpisodeComments(
   podcastName: string,
@@ -39,4 +43,11 @@ export async function deleteComment(commentId: string, token: string): Promise<v
   await apiClient.delete(`/api/comments/${encodeURIComponent(commentId)}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
+}
+
+export async function getEpisodeThreadsComments(podcastName: string, episodeId: string): Promise<ThreadsComment[]> {
+  const res = await apiClient.get(
+    `/api/episodes/${encodeURIComponent(podcastName)}/${encodeURIComponent(episodeId)}/threads-comments`,
+  );
+  return z.object({ comments: z.array(ThreadsCommentSchema) }).parse(res.data).comments;
 }

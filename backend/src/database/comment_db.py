@@ -1,10 +1,27 @@
 """
-Comment database operations using SQLite/PostgreSQL.
+Episode comment storage (ORM — Postgres when deployed, SQLite for a local checkout).
 """
 import uuid
 from typing import Optional
 from datetime import datetime, timezone
-from src.database.db import get_connection
+from src.database.models import EpisodeComment
+from src.database.postgres import session_scope
+
+
+def _to_dict(row: EpisodeComment) -> dict:
+    return {
+        "id": row.id,
+        "podcast_name": row.podcast_name,
+        "episode_id": row.episode_id,
+        "user_id": row.user_id,
+        "user_name": row.user_name,
+        "user_avatar": row.user_avatar,
+        "content": row.content,
+        "created_at": row.created_at,
+        "parent_comment_id": row.parent_comment_id,
+        "depth": row.depth,
+        "is_public": bool(row.is_public),
+    }
 
 
 def create_comment(
@@ -18,36 +35,23 @@ def create_comment(
     depth: int = 0,
     is_public: bool = True,
 ) -> dict:
-    conn = get_connection()
-    try:
-        comment_id = str(uuid.uuid4())
-        created_at = datetime.now(timezone.utc).isoformat()
-        conn.execute(
-            """
-            INSERT INTO comments
-              (id, podcast_name, episode_id, user_id, user_name, user_avatar,
-               content, created_at, parent_comment_id, depth, is_public)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (comment_id, podcast_name, episode_id, user_id, user_name, user_avatar,
-             content, created_at, parent_comment_id, depth, int(is_public)),
-        )
-        conn.commit()
-        return {
-            "id": comment_id,
-            "podcast_name": podcast_name,
-            "episode_id": episode_id,
-            "user_id": user_id,
-            "user_name": user_name,
-            "user_avatar": user_avatar,
-            "content": content,
-            "created_at": created_at,
-            "parent_comment_id": parent_comment_id,
-            "depth": depth,
-            "is_public": is_public,
-        }
-    finally:
-        conn.close()
+    row = EpisodeComment(
+        id=str(uuid.uuid4()),
+        podcast_name=podcast_name,
+        episode_id=episode_id,
+        user_id=user_id,
+        user_name=user_name,
+        user_avatar=user_avatar,
+        content=content,
+        created_at=datetime.now(timezone.utc).isoformat(),
+        parent_comment_id=parent_comment_id,
+        depth=depth,
+        is_public=is_public,
+    )
+    out = _to_dict(row)
+    with session_scope() as db:
+        db.add(row)
+    return out
 
 
 def get_comments(
@@ -58,52 +62,28 @@ def get_comments(
 ) -> list[dict]:
     """Return comments for an episode (flat, oldest-first) for client-side tree building.
 
-    Private comments (is_public=0) are only returned to their author or an admin.
+    Private comments are only returned to their author or an admin.
     """
-    conn = get_connection()
-    try:
-        rows = conn.execute(
-            """
-            SELECT id, podcast_name, episode_id, user_id, user_name, user_avatar,
-                   content, created_at, parent_comment_id, depth, is_public
-            FROM comments
-            WHERE podcast_name = ? AND episode_id = ?
-            ORDER BY created_at ASC
-            """,
-            (podcast_name, episode_id),
-        ).fetchall()
-        out = []
-        for row in rows:
-            c = dict(row)
-            c["is_public"] = bool(c["is_public"])
-            if c["is_public"] or is_admin or c["user_id"] == viewer_id:
-                out.append(c)
-        return out
-    finally:
-        conn.close()
+    with session_scope() as db:
+        rows = (
+            db.query(EpisodeComment)
+            .filter(EpisodeComment.podcast_name == podcast_name,
+                    EpisodeComment.episode_id == episode_id)
+            .order_by(EpisodeComment.created_at.asc())
+            .all()
+        )
+        return [
+            _to_dict(r) for r in rows
+            if r.is_public or is_admin or r.user_id == viewer_id
+        ]
 
 
 def get_comment_by_id(comment_id: str) -> Optional[dict]:
-    conn = get_connection()
-    try:
-        row = conn.execute(
-            """
-            SELECT id, podcast_name, episode_id, user_id, user_name, user_avatar,
-                   content, created_at, parent_comment_id, depth
-            FROM comments WHERE id = ?
-            """,
-            (comment_id,),
-        ).fetchone()
-        return dict(row) if row else None
-    finally:
-        conn.close()
+    with session_scope() as db:
+        row = db.get(EpisodeComment, comment_id)
+        return _to_dict(row) if row else None
 
 
 def delete_comment(comment_id: str) -> bool:
-    conn = get_connection()
-    try:
-        cursor = conn.execute("DELETE FROM comments WHERE id = ?", (comment_id,))
-        conn.commit()
-        return cursor.rowcount > 0
-    finally:
-        conn.close()
+    with session_scope() as db:
+        return db.query(EpisodeComment).filter(EpisodeComment.id == comment_id).delete() > 0

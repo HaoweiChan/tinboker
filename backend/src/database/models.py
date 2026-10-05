@@ -875,6 +875,28 @@ class ThreadsComment(Base):
         return f"<ThreadsComment({self.id}, {self.category}, {self.status})>"
 
 
+class EpisodeComment(Base):
+    """A member's comment on an episode page.
+
+    Lived in the container-local SQLite until 2026-10: that file has no volume, so
+    every backend redeploy wiped every comment (same failure as the old social ledger).
+    """
+    __tablename__ = "episode_comments"
+    __table_args__ = (Index("ix_episode_comments_episode", "podcast_name", "episode_id", "created_at"),)
+
+    id = Column(String(36), primary_key=True)
+    podcast_name = Column(String(255), nullable=False)
+    episode_id = Column(String(255), nullable=False)
+    user_id = Column(String(255), nullable=False)
+    user_name = Column(String(255), nullable=False)
+    user_avatar = Column(Text, nullable=True)
+    content = Column(Text, nullable=False)
+    created_at = Column(String(40), nullable=False)       # ISO-8601 UTC, as the API returns it
+    parent_comment_id = Column(String(36), nullable=True)
+    depth = Column(Integer, nullable=False, default=0)
+    is_public = Column(Boolean, nullable=False, default=True)
+
+
 class MacroDaily(Base):
     """One observation of one macro series (US 10Y, WTI, diesel, DXY…), from FRED.
 
