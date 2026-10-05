@@ -348,6 +348,9 @@ try {
     assert.ok(homePage.includes(needle), `home body missing ${needle}`);
   }
   assert.deepEqual(ldTypes(home), ['WebSite', 'Organization']);
+  // Both halves of the brand are declared as names of the site (Google site-name markup).
+  for (const ld of home.ld) assert.deepEqual(ld.alternateName, ['聽播客', 'TinBoker'], `${ld['@type']} must carry both brand names`);
+  assert.ok(home.ld[1].sameAs.includes('https://www.threads.net/@tinboker'), 'Organization links its official profiles');
 
   // Plain-text pages: the crawler body is the page's full copy (shared/sitePages.js),
   // not an excerpt. The needles are the things an excerpt once dropped — /terms served
