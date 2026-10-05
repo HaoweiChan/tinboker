@@ -1,6 +1,7 @@
 """
 Comment endpoints for podcast episodes.
 """
+import asyncio
 import logging
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Depends
@@ -9,6 +10,7 @@ from src.utils.dependencies import get_current_user, get_optional_user
 from src.models.user import UserResponse
 from src.auth.admin_auth import is_admin_email
 from src.database.comment_db import create_comment, get_comments, get_comment_by_id, delete_comment
+from src.services import threads_comments_service
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +57,17 @@ async def list_comments(
     except Exception as e:
         logger.error(f"Failed to fetch comments for {podcast_name}/{episode_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch comments")
+
+
+@router.get("/{podcast_name}/{episode_id}/threads-comments")
+async def list_threads_comments(podcast_name: str, episode_id: str):
+    """Public Threads replies on our posts about this episode (read-only, triaged)."""
+    try:
+        comments = await asyncio.to_thread(threads_comments_service.public_for_episode, episode_id)
+    except Exception as e:  # decoration, not content: never fail the episode page over it
+        logger.error(f"Failed to fetch Threads comments for {episode_id}: {e}")
+        comments = []
+    return {"comments": comments}
 
 
 @router.post("/{podcast_name}/{episode_id}/comments", status_code=201)
