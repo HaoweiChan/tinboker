@@ -6,6 +6,7 @@ import { PageContent } from '@/components/layout/PageContent';
 import { SwipeToRemove } from '@/components/common/SwipeToRemove';
 import { useRemoveWithUndo } from '@/hooks/useRemoveWithUndo';
 import { PickCard } from '@/components/financial/PickCard';
+import { ThemeCardsFeed } from '@/components/financial/ThemeCardsFeed';
 import {
   getRecentInsights,
   getInsightsByPodcaster,
@@ -141,6 +142,8 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodc
   // Feed controls: 最新 (all, newest) vs 已揭曉 (picks old enough for a window to
   // have settled). 已揭曉 has a 7/30/90-day sub-tier — default 7D for density,
   // and sorting flips to "highest return over that window".
+  // 個股 = one card per show × stock; 題材 = one card per show × theme (ThemeCardsFeed).
+  const [kind, setKind] = useState<'stocks' | 'themes'>('stocks');
   const [view, setView] = useState<'recent' | 'settled'>('recent');
   const [settledTier, setSettledTier] = useState<SettledTier>(7);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
@@ -382,12 +385,25 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodc
           <>
             <h1 className="heading-accent text-2xl font-semibold tracking-[-0.02em] mb-1.5">走勢</h1>
             <p className="text-base text-muted-foreground mb-4">
-              財經 Podcaster 點名的個股，依時間排序，從提及當日起算的 7／30／90 天真實漲跌幅。
+              財經 Podcaster 點名的個股與題材，依時間排序，從提及當日起算的 7／30／90 天真實漲跌幅。
             </p>
           </>
         )}
 
         <div className="mb-[18px] flex flex-col items-start gap-3">
+          <div role="group" aria-label="走勢類型" className="flex items-center gap-1.5">
+            {([{ value: 'stocks', label: '個股' }, { value: 'themes', label: '題材' }] as const).map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                aria-pressed={kind === option.value}
+                onClick={() => setKind(option.value)}
+                className={`min-h-10 rounded-md border px-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 ${kind === option.value ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border bg-transparent text-muted-foreground hover:border-muted-foreground/40 hover:text-foreground'}`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
           <div className="flex w-full items-center justify-between gap-3 sm:justify-start">
             <div role="group" aria-label="走勢範圍" className="flex items-center gap-1.5">
               {([{ value: 'mine', label: '我的' }, { value: 'all', label: '全部' }] as const).map((option) => (
@@ -402,7 +418,7 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodc
                 </button>
               ))}
             </div>
-            <label className="relative shrink-0">
+            <label className={kind === 'themes' ? 'hidden' : 'relative shrink-0'}>
               <span className="sr-only">走勢期間</span>
               <select
                 value={view === 'recent' ? 'recent' : String(settledTier)}
@@ -424,7 +440,7 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodc
           </div>
           {/* Channel dropdown only makes sense as a manual pick across all shows —
              in 我的 it's already narrowed to the subscribed shows. */}
-          {scope === 'all' && channelOptions.length > 0 && (
+          {kind === 'stocks' && scope === 'all' && channelOptions.length > 0 && (
             <ChannelFilter
               channels={channelOptions}
               selected={selected}
@@ -434,6 +450,15 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodc
           )}
         </div>
 
+        {kind === 'themes' ? (
+          <ThemeCardsFeed
+            scope={scope}
+            mySubscribedNames={myNames}
+            podcastImages={podcastImageMap}
+            onPlaySegment={onPlaySegment}
+            onShowAll={() => setScope('all')}
+          />
+        ) : (<>
         {!hasMyStuff || scope === 'mine' ? (
           <p className="text-sm text-muted-foreground mb-3 leading-[2]">
             {hasMyStuff ? (
@@ -518,6 +543,7 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodc
           </div>
           </>
         )}
+        </>)}
 
         <p className="text-xs text-muted-foreground leading-relaxed mt-6">
           本頁內容為播客觀點整理，僅供參考，並非投資建議；過去績效不代表未來表現。

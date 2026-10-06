@@ -689,6 +689,32 @@ class Subscription(Base):
         return f"<Subscription(id={self.id}, user_id={self.user_id}, status={self.status})>"
 
 
+class ThemeView(Base):
+    """One theme an episode discusses with a stance (see routers/theme_views.py).
+    Extracted from the transcript; `theme_key` groups mentions of one theme across
+    episodes (taxonomy exposure id when matched, else the normalised label)."""
+    __tablename__ = "theme_views"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    episode_id = Column(String(255), nullable=False, index=True)
+    podcaster = Column(String(255), nullable=False, index=True)
+    episode_number = Column(String(20), nullable=True)
+    released_at = Column(DateTime, nullable=False, index=True)  # episode release (UTC)
+    theme_key = Column(String(200), nullable=False, index=True)
+    theme_label = Column(String(80), nullable=False)
+    exposure_id = Column(String(100), nullable=True)
+    stance = Column(String(10), nullable=False)  # bullish | bearish | mixed
+    conviction = Column(String(10), nullable=False)  # firm | tentative
+    thesis = Column(Text, nullable=False)
+    start_ms = Column(Integer, nullable=True)  # offset of the discussion within the episode
+    tickers = Column(JSON, nullable=True)  # [{ticker, name, role: beneficiary|context}]
+    quote = Column(Text, nullable=True)
+    source = Column(String(40), nullable=False, default="backfill")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (UniqueConstraint("episode_id", "theme_key", name="uq_theme_view_episode_theme"),)
+
+
 class PromoCode(Base):
     """A shared discount code. `amount_off` is NT$ per month for the life of the
     mandate; a code worth the whole list price grants membership with no payment."""
