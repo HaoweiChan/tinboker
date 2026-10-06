@@ -89,8 +89,12 @@ export const ThemeCard: React.FC<ThemeCardProps> = ({ card, windowsMap, podcastI
               </div>
             ))}
           </div>
-          {/* Bleeds to the card edge so a cut-off tile shows there is more to swipe. */}
-          <ul aria-label="成分股走勢" className="-mx-4 mt-2 flex snap-x gap-2 overflow-x-auto px-4 pb-1 no-scrollbar">
+          {/* Stays inside the card; the right edge fades out to show there is more to swipe,
+             and the trailing padding lets the last tile scroll clear of the fade. */}
+          <ul
+            aria-label="成分股走勢"
+            className="mt-2 flex snap-x gap-2 overflow-x-auto pb-1.5 pr-8 [scrollbar-width:thin] [mask-image:linear-gradient(to_right,black_calc(100%-2rem),transparent)]"
+          >
             {rows.map((r) => (
               <li key={r.ticker} className="w-36 shrink-0 snap-start rounded-md border border-border p-2.5">
                 <Link to={`/stock/${encodeURIComponent(r.ticker)}`} className="block hover:text-accent-info">
