@@ -80,6 +80,7 @@ _PROVIDER_ORDER_ENV = "OPENROUTER_PROVIDER_ORDER"
 # role -> the per-role env var that overrides the global PIPELINE_LLM_MODEL.
 _ROLE_ENV: dict[str, str] = {
     "extractor": "EXTRACTOR_MODEL",
+    "theme_views_extractor": "THEME_VIEWS_EXTRACTOR_MODEL",
     "writer": "WRITER_MODEL",
     "marp_writer": "MARP_WRITER_MODEL",
     "ticker_extractor": "TICKER_EXTRACTOR_MODEL",
@@ -257,7 +258,10 @@ def _provider_preference() -> dict[str, Any] | None:
     return {"order": order, "allow_fallbacks": True} if order else None
 
 
-def get_model(role: str, *, disable_reasoning: bool = True, model_override: str | None = None):
+def get_model(
+    role: str, *, disable_reasoning: bool = True, model_override: str | None = None,
+    max_retries: int = 2, timeout: float | None = None,
+):
     """Get a configured LangChain chat model for a pipeline role.
 
     Always returns a ``ChatOpenAI`` pointed at OpenRouter. The ``openrouter:``
@@ -288,6 +292,8 @@ def get_model(role: str, *, disable_reasoning: bool = True, model_override: str 
             )
         return ChatOpenAI(
             model=model[len(_LOCAL_PREFIX):],
+            max_retries=max_retries,
+            timeout=timeout,
             temperature=temperature,
             max_tokens=max_tokens,
             base_url=base_url,
@@ -321,6 +327,8 @@ def get_model(role: str, *, disable_reasoning: bool = True, model_override: str 
 
     return ChatOpenAI(
         model=or_model,
+        max_retries=max_retries,
+        timeout=timeout,
         temperature=temperature,
         max_tokens=max_tokens,
         base_url=_OPENROUTER_BASE_URL,

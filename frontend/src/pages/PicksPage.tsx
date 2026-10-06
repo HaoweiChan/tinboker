@@ -391,20 +391,21 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodc
         )}
 
         <div className="mb-[18px] flex flex-col items-start gap-3">
-          <div role="group" aria-label="走勢類型" className="flex items-center gap-1.5">
-            {([{ value: 'stocks', label: '個股' }, { value: 'themes', label: '題材' }] as const).map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                aria-pressed={kind === option.value}
-                onClick={() => setKind(option.value)}
-                className={`min-h-10 rounded-md border px-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 ${kind === option.value ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border bg-transparent text-muted-foreground hover:border-muted-foreground/40 hover:text-foreground'}`}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-          <div className="flex w-full items-center justify-between gap-3 sm:justify-start">
+          <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-2">
+            <div role="group" aria-label="走勢類型" className="flex items-center gap-1.5">
+              {([{ value: 'stocks', label: '個股' }, { value: 'themes', label: '題材' }] as const).map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  aria-pressed={kind === option.value}
+                  onClick={() => setKind(option.value)}
+                  className={`min-h-10 rounded-md border px-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 ${kind === option.value ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border bg-transparent text-muted-foreground hover:border-muted-foreground/40 hover:text-foreground'}`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+            <span aria-hidden="true" className="h-5 w-px bg-border" />
             <div role="group" aria-label="走勢範圍" className="flex items-center gap-1.5">
               {([{ value: 'mine', label: '我的' }, { value: 'all', label: '全部' }] as const).map((option) => (
                 <button
@@ -418,7 +419,7 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodc
                 </button>
               ))}
             </div>
-            <label className={kind === 'themes' ? 'hidden' : 'relative shrink-0'}>
+            <label className={kind === 'themes' ? 'hidden' : 'relative ml-auto shrink-0 sm:ml-0'}>
               <span className="sr-only">走勢期間</span>
               <select
                 value={view === 'recent' ? 'recent' : String(settledTier)}

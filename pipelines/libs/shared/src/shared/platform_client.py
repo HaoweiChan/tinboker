@@ -230,3 +230,22 @@ def fetch_sectors_universe(*, timeout: float = 10.0) -> dict[str, Any] | None:
         return None
     return None
 
+
+def put_theme_views(
+    episode_id: str, body: dict[str, Any], *, timeout: float = 30.0,
+) -> dict[str, Any] | None:
+    """Replace an episode's theme views once; errors are handled by the optional step."""
+    base = admin_base_url()
+    token = os.environ.get("TINBOKER_WRITE_TOKEN")
+    if not base or not token or not episode_id:
+        return None
+    path = urllib.parse.quote(episode_id, safe="")
+    request = urllib.request.Request(
+        f"{base}/api/theme-views/episode/{path}",
+        data=json.dumps(body, ensure_ascii=False).encode("utf-8"), method="PUT",
+        headers=_headers({
+            "Authorization": f"Bearer {token}", "Content-Type": "application/json",
+        }),
+    )
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return json.loads(response.read().decode("utf-8"))
