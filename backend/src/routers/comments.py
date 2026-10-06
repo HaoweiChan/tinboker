@@ -4,7 +4,7 @@ Comment endpoints for podcast episodes.
 import asyncio
 import logging
 from typing import Optional
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Response
 from pydantic import BaseModel, field_validator
 from src.utils.dependencies import get_current_user, get_optional_user
 from src.models.user import UserResponse
@@ -39,6 +39,7 @@ class CommentCreate(BaseModel):
 async def list_comments(
     podcast_name: str,
     episode_id: str,
+    response: Response,
     viewer: Optional[UserResponse] = Depends(get_optional_user),
 ):
     """List comments for an episode as a flat list.
@@ -46,6 +47,10 @@ async def list_comments(
     Public comments are visible to everyone; private ones only to their author
     (or an admin).
     """
+    # Never CDN-cached: the edge keys on the URL alone, so a cached copy kept showing a
+    # deleted comment to everyone, hid new ones, and would hand one viewer's private
+    # comments to the next visitor.
+    response.headers["Cache-Control"] = "private, no-store"
     try:
         is_admin = bool(viewer and is_admin_email(viewer.email))
         comments = get_comments(
