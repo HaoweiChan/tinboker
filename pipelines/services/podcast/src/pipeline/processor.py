@@ -24,6 +24,7 @@ from .steps import (
     upload_to_gcs,
     validate_episode,
 )
+from .steps.theme_views import extract_theme_views
 from .utils import determine_language, required_artifact_urls, retain_episode_audio
 
 
@@ -96,6 +97,10 @@ class EpisodeProcessor:
             # Load existing data from Firestore/GCS if available
             self._load_existing_data(episode_data)
 
+            if self.config.rerun_from == "theme-views":
+                extract_theme_views(self.config, self.services, episode_data)
+                return True
+
             # Check if we should skip (based on what we have in episode_data)
             if self._should_skip_episode(episode_data):
                 return True  # Skip is successful
@@ -155,6 +160,9 @@ class EpisodeProcessor:
 
             # Step 5: Persist the episode doc into Postgres (the only content store)
             persist_episode(self.config, self.services, episode_data)
+
+            # Optional theme views use the transcript and write only through the API.
+            extract_theme_views(self.config, self.services, episode_data)
 
             # Step 5b: Ingest into knowledge wiki (best-effort)
             ingest_into_wiki(self.config, self.services, episode_data)
@@ -259,6 +267,9 @@ class EpisodeProcessor:
                         'ticker_marp_markdown_public_url': existing.get('ticker_marp_markdown_public_url'),
                     }
             
+            if self.config.rerun_from == "theme-views" and existing.get("summary_content"):
+                episode_data.summary_result = {"summary_text": existing["summary_content"]}
+
             # Load Spotify metadata if available
             if existing.get('spotify_id'):
                 episode_data.spotify_metadata = {

@@ -5,12 +5,12 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
 from src.config import settings
 from src.database import user_db
-from src.database.models import Base, ThemeView, User
+from src.database.models import Base, TagRegistry, ThemeView, User
 from src.routers import theme_views as router
 from src.utils.auth import create_jwt_token
 
@@ -110,8 +110,10 @@ def test_runs_anchor_on_the_first_mention_and_split_after_a_long_gap(api):
     # Beneficiaries only, most-mentioned first; the context name (TDK) is not measured.
     assert run["tickers"] == [{"ticker": "2327", "name": "國巨", "mentions": 2},
                               {"ticker": "2492", "name": "華新科", "mentions": 1}]
+    assert run["tickers_source"] == "named"
     only = client.get("/api/theme-views/cards?podcaster=Other", headers=bearer("member")).json()
     assert [c["theme_key"] for c in only] == ["label:矽光子"] and only[0]["tickers"] == []
+    assert only[0]["tickers_source"] == "none"
     assert len(client.get("/api/theme-views/cards?limit=1", headers=bearer("member")).json()) == 1
 
 
@@ -119,3 +121,57 @@ def test_theme_key_normalises_free_labels():
     assert router.theme_key(" 矽光子 ", None) == router.theme_key("矽光子", None) == "label:矽光子"
     assert router.theme_key("ＣＰＵ", None) == "label:cpu"
     assert router.theme_key("anything", "sector_x") == "sector_x"
+
+
+def test_cards_use_members_only_when_the_entire_run_has_no_beneficiaries(api):
+    client, scope = api
+    members = [{"name": "Missing ticker", "rank": 0},
+               {"ticker": "unranked", "name": "Stored first"},
+               {"ticker": "second", "rank": 2},
+               {"ticker": "first", "name": "Ranked first", "rank": 1},
+               *[{"ticker": str(i)} for i in range(5)]]
+    with scope() as db:
+        db.add(TagRegistry(slug="mlcc", display_zh="被動元件", exposure_id="sector_mlcc", members=members))
+    put(client, "e1", T0, [view(tickers=[{"ticker": "6762", "name": "TDK", "role": "context"}])])
+    card = client.get("/api/theme-views/cards", headers=bearer("member")).json()[0]
+    assert card["tickers_source"] == "members"
+    assert card["tickers"] == [
+        {"ticker": "first", "name": "Ranked first", "mentions": 0},
+        {"ticker": "second", "name": "second", "mentions": 0},
+        {"ticker": "unranked", "name": "Stored first", "mentions": 0},
+        {"ticker": "0", "name": "0", "mentions": 0},
+        {"ticker": "1", "name": "1", "mentions": 0},
+    ]
+    put(client, "e2", T0 + DAY_MS, [view()])
+    card = client.get("/api/theme-views/cards", headers=bearer("member")).json()[0]
+    assert card["tickers_source"] == "named"
+    assert card["tickers"] == [{"ticker": "2327", "name": "國巨", "mentions": 1}]
+
+
+@pytest.mark.parametrize("exposure,members", [(None, []), ("missing", []), ("sector_mlcc", []),
+                                               ("sector_mlcc", [{"name": "No ticker"}])])
+def test_build_cards_without_available_members(exposure, members):
+    row = ThemeView(**view(exposure=exposure, tickers=[]), podcaster="Show", theme_key="theme",
+                    episode_id="e1", episode_number="1", released_at=datetime(2026, 2, 28))
+    card = router.build_cards([row], 1, {"sector_mlcc": members})[0]
+    assert card["tickers_source"] == "none"
+    assert card["tickers"] == []
+
+
+def test_cards_fetch_members_in_one_query_for_multiple_themes(api):
+    client, scope = api
+    put(client, "e1", T0, [view(tickers=[]), view("矽光子", "sector_cpo", tickers=[])])
+    with scope() as db:
+        engine = db.get_bind()
+    registry_queries = []
+
+    def record_query(conn, cursor, statement, parameters, context, executemany):
+        if "tag_registry" in statement:
+            registry_queries.append(statement)
+
+    event.listen(engine, "before_cursor_execute", record_query)
+    try:
+        assert len(router._cards(None, 60)) == 2
+    finally:
+        event.remove(engine, "before_cursor_execute", record_query)
+    assert len(registry_queries) == 1

@@ -25,7 +25,9 @@ const ThemeCardSchema = z.object({
   exposure_id: z.string().nullable(),
   first_ms: z.number(),
   latest_ms: z.number(),
-  /** Companies the show named as beneficiaries during the run, most-mentioned first. */
+  /** Companies the show named as beneficiaries during the run, most-mentioned first;
+   *  when it named none, the theme's core members from the taxonomy (`members`). */
+  tickers_source: z.enum(['named', 'members', 'none']).default('named'),
   tickers: z.array(z.object({ ticker: z.string(), name: z.string(), mentions: z.number() })),
   /** Oldest first; `mentions[0]` is the call the card is anchored on. */
   mentions: z.array(MentionSchema).min(1),

@@ -19,7 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from src.auth.admin_auth import AdminAccess, get_content_write_access
 from src.cache.cdn_cache import CacheProfile, cdn_cached
-from src.database.models import ThemeView
+from src.database.models import TagRegistry, ThemeView
 from src.database.postgres import session_scope
 from src.models.user import UserResponse
 from src.utils.dependencies import require_member
@@ -98,7 +98,7 @@ def _ms(value: datetime) -> int:
     return int(value.replace(tzinfo=timezone.utc).timestamp() * 1000)
 
 
-def build_cards(rows: list, limit: int) -> List[dict]:
+def build_cards(rows: list, limit: int, members_by_exposure: Optional[dict[str, list]] = None) -> List[dict]:
     """Group rows (any order) into run cards, newest run first.
 
     `rows` need: podcaster, theme_key, theme_label, exposure_id, episode_id,
@@ -123,6 +123,19 @@ def build_cards(rows: list, limit: int) -> List[dict]:
                     if t.get("role") == "beneficiary":
                         entry = counts.setdefault(t["ticker"], {"ticker": t["ticker"], "name": t["name"], "mentions": 0})
                         entry["mentions"] += 1
+            tickers = sorted(counts.values(), key=lambda c: (-c["mentions"], c["ticker"]))
+            tickers_source = "named" if tickers else "none"
+            if not tickers and first.exposure_id:
+                members = (members_by_exposure or {}).get(first.exposure_id, [])
+                # Stable sorting preserves stored order for ties and unranked members.
+                members = sorted(
+                    (m for m in members if m.get("ticker")),
+                    key=lambda m: m.get("rank") if isinstance(m.get("rank"), (int, float)) else float("inf"),
+                )
+                tickers = [{"ticker": m["ticker"], "name": m.get("name") or m["ticker"], "mentions": 0}
+                           for m in members[:5]]
+                if tickers:
+                    tickers_source = "members"
             cards.append({
                 "key": f"{podcaster}|{key}|{_ms(first.released_at)}",
                 "podcaster": podcaster,
@@ -131,7 +144,8 @@ def build_cards(rows: list, limit: int) -> List[dict]:
                 "exposure_id": first.exposure_id,
                 "first_ms": _ms(first.released_at),
                 "latest_ms": _ms(last.released_at),
-                "tickers": sorted(counts.values(), key=lambda c: (-c["mentions"], c["ticker"])),
+                "tickers": tickers,
+                "tickers_source": tickers_source,
                 "mentions": [{
                     "episode_id": r.episode_id, "episode_number": r.episode_number,
                     "released_at_ms": _ms(r.released_at), "stance": r.stance,
@@ -148,7 +162,12 @@ def _cards(podcaster: Optional[str], limit: int) -> List[dict]:
         query = db.query(ThemeView)
         if podcaster:
             query = query.filter_by(podcaster=podcaster)
-        return build_cards(query.all(), limit)
+        rows = query.all()
+        exposure_ids = {row.exposure_id for row in rows if row.exposure_id}
+        members = db.query(TagRegistry.exposure_id, TagRegistry.members).filter(
+            TagRegistry.exposure_id.in_(exposure_ids),
+        ).all()
+        return build_cards(rows, limit, {row.exposure_id: row.members or [] for row in members})
 
 
 @router.get("/cards")

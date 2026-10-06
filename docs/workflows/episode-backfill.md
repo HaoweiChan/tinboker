@@ -258,3 +258,31 @@ them stopped feeding in 2026-05 anyway.
 Start with a 20-episode pilot on the oldest 股癌 episodes and confirm transcript quality,
 disk delta, that the regen queue picks them up, and that no notification fired, before
 opening it up.
+
+## Transcript theme views
+
+Normal ingestion runs the optional `theme_views_extractor` after the summary and episode
+ID exist. It makes one transcript-based LLM call, validates up to three views, and replaces
+that episode's views with `PUT /api/theme-views/episode/{id}` (`source: pipeline`). It does
+not add fields to the episode or write media or database rows directly. Missing inputs,
+configuration, invalid output, and provider/API failures are logged with the episode ID
+and skipped; neither the model nor the PUT is retried.
+
+Configure `TINBOKER_PLATFORM_API_URL` for the live theme taxonomy and API writes;
+`TINBOKER_ADMIN_API_URL` optionally overrides the write destination. Writes require
+`TINBOKER_WRITE_TOKEN`. The step is opt-in: it runs only when `THEME_VIEWS_EXTRACTOR_MODEL`
+is set, so it never rides the global `PIPELINE_LLM_MODEL` across the back-catalogue by
+accident (a per-role DB override still takes precedence once the env var enables it). OpenRouter models
+need `OPENROUTER_API_KEY`; local models use `LOCAL_LLM_BASE_URL` and, if required,
+`LOCAL_LLM_API_KEY`. The normal entry point bootstraps these from the existing environment.
+
+Re-run only this optional step for one stored episode (reads its transcript and summary,
+then replaces its views; no summary regeneration or episode/media writes):
+
+```bash
+cd pipelines/services/podcast
+python main.py --config podcasts_tw.json --episode EPISODE_ID --rerun-from theme-views
+```
+
+The normal `--skip-summarize` path does not extract theme views. An explicit theme-views
+rerun also supports an inline summary from the regeneration workflow.
