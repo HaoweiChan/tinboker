@@ -86,3 +86,15 @@ def test_threads_comments_for_episode_show_only_triaged_public_ones(comment_db):
     assert out["drafted"]["reply"] is None          # an unsent draft never leaks
     assert out["good"]["posted_at"] == "2026-10-01T00:00:00Z"
     assert public_for_episode("nope") == []
+
+
+def test_comment_list_is_never_cdn_cached(comment_db):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from src.routers.comments import router
+
+    app = FastAPI()
+    app.include_router(router)
+    res = TestClient(app).get("/api/episodes/p/e/comments")
+    assert res.status_code == 200
+    assert res.headers["cache-control"] == "private, no-store"
