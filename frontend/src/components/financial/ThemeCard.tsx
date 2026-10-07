@@ -118,15 +118,18 @@ export const ThemeCard: React.FC<ThemeCardProps> = ({ card, windowsMap, podcastI
               </div>
             ))}
           </div>
-          {/* Phones swipe the strip: no scrollbar, the right edge fades to show there is
-             more, and the trailing padding lets the last tile clear the fade. From md up
-             the tiles wrap into a grid instead — a mouse has nothing to swipe with. */}
+          {/* One row that scrolls sideways at every width, so cards in a grid keep the
+             same height however many stocks they list. The right edge fades to show
+             there is more, and the trailing padding lets the last tile clear the fade.
+             Touch swipes with no scrollbar; a mouse gets a hairline one (scroll-quiet),
+             whose space is reserved even when nothing overflows (md:overflow-x-scroll) so
+             a two-stock card is exactly as tall as a nine-stock one. */}
           <ul
             aria-label="成分股走勢"
-            className="no-scrollbar mt-2 flex snap-x gap-2 overflow-x-auto pr-8 [mask-image:linear-gradient(to_right,black_calc(100%-2rem),transparent)] md:grid md:grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] md:overflow-visible md:pr-0 md:[mask-image:none]"
+            className="scroll-quiet mt-2 flex snap-x gap-2 overflow-x-auto pb-1.5 pr-8 md:overflow-x-scroll [mask-image:linear-gradient(to_right,black_calc(100%-2rem),transparent)]"
           >
             {rows.map((r) => (
-              <li key={r.ticker} className="w-36 shrink-0 snap-start rounded-md border border-border p-2.5 md:w-auto">
+              <li key={r.ticker} className="w-36 shrink-0 snap-start rounded-md border border-border p-2.5">
                 <Link to={`/stock/${encodeURIComponent(r.ticker)}`} className="block hover:text-accent-info">
                   <span className="block truncate text-sm font-medium text-foreground">{r.name}</span>
                   <span className="block font-mono text-xs text-muted-foreground">{r.ticker}</span>
