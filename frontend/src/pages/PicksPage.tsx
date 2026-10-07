@@ -372,6 +372,8 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodc
     }
   };
 
+  const themeShows = useMemo(() => Array.from(scope === 'mine' ? myNames : selected).sort(), [scope, myNames, selected]);
+
   const toggleChannel = (name: string) =>
     setSelected((prev) => {
       const next = new Set(prev);
@@ -441,7 +443,7 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodc
           </div>
           {/* Channel dropdown only makes sense as a manual pick across all shows —
              in 我的 it's already narrowed to the subscribed shows. */}
-          {kind === 'stocks' && scope === 'all' && channelOptions.length > 0 && (
+          {scope === 'all' && channelOptions.length > 0 && (
             <ChannelFilter
               channels={channelOptions}
               selected={selected}
@@ -454,7 +456,7 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodc
         {kind === 'themes' ? (
           <ThemeCardsFeed
             scope={scope}
-            mySubscribedNames={myNames}
+            shows={themeShows}
             podcastImages={podcastImageMap}
             onPlaySegment={onPlaySegment}
             onShowAll={() => setScope('all')}
