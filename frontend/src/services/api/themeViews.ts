@@ -35,11 +35,14 @@ const ThemeCardSchema = z.object({
 export type ThemeCardData = z.infer<typeof ThemeCardSchema>;
 export type ThemeMention = z.infer<typeof MentionSchema>;
 
-export async function getThemeCards(signal?: AbortSignal): Promise<ThemeCardData[]> {
+/** Newest runs first. Without `podcaster` this is the newest across every show, so one
+ *  show's older themes only come back when it is asked for by name. */
+export async function getThemeCards(signal?: AbortSignal, podcaster?: string): Promise<ThemeCardData[]> {
   const token = useAppStore.getState().token;
   if (!token) throw new Error('Not authenticated');
   const response = await apiClient.get('/api/theme-views/cards', {
     headers: { Authorization: `Bearer ${token}` }, signal,
+    params: podcaster ? { podcaster, limit: 200 } : undefined,
   });
   return z.array(ThemeCardSchema).parse(response.data);
 }
