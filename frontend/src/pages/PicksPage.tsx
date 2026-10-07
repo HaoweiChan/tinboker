@@ -421,35 +421,42 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodc
                 </button>
               ))}
             </div>
-            <label className={kind === 'themes' ? 'hidden' : 'relative ml-auto shrink-0 sm:ml-0'}>
-              <span className="sr-only">走勢期間</span>
-              <select
-                value={view === 'recent' ? 'recent' : String(settledTier)}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  if (value === 'recent') return setView('recent');
-                  setView('settled');
-                  setSettledTier(value === '7' ? 7 : value === '30' ? 30 : 90);
-                }}
-                className="min-h-10 appearance-none rounded-md border border-border bg-card py-2 pl-2.5 pr-7 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-              >
-                <option value="recent">期間：最新</option>
-                <option value="7">期間：7 日</option>
-                <option value="30">期間：30 日</option>
-                <option value="90">期間：90 日</option>
-              </select>
-              <ChevronDown size={13} aria-hidden="true" className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            </label>
           </div>
-          {/* Channel dropdown only makes sense as a manual pick across all shows —
-             in 我的 it's already narrowed to the subscribed shows. */}
-          {scope === 'all' && channelOptions.length > 0 && (
-            <ChannelFilter
-              channels={channelOptions}
-              selected={selected}
-              onToggle={toggleChannel}
-              onClear={() => setSelected(new Set())}
-            />
+          {/* Second row: the two dropdowns side by side. The channel one only makes sense as a
+             manual pick across all shows (我的 is already the subscribed shows), and 題材
+             has no period to choose. */}
+          {(kind === 'stocks' || (scope === 'all' && channelOptions.length > 0)) && (
+            <div className="flex w-full flex-wrap items-center gap-2">
+              {scope === 'all' && channelOptions.length > 0 && (
+                <ChannelFilter
+                  channels={channelOptions}
+                  selected={selected}
+                  onToggle={toggleChannel}
+                  onClear={() => setSelected(new Set())}
+                />
+              )}
+              {kind === 'stocks' && (
+                <label className="relative shrink-0">
+                  <span className="sr-only">走勢期間</span>
+                  <select
+                    value={view === 'recent' ? 'recent' : String(settledTier)}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      if (value === 'recent') return setView('recent');
+                      setView('settled');
+                      setSettledTier(value === '7' ? 7 : value === '30' ? 30 : 90);
+                    }}
+                    className="min-h-10 appearance-none rounded-md border border-border bg-card py-2 pl-2.5 pr-7 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                  >
+                    <option value="recent">期間：最新</option>
+                    <option value="7">期間：7 日</option>
+                    <option value="30">期間：30 日</option>
+                    <option value="90">期間：90 日</option>
+                  </select>
+                  <ChevronDown size={13} aria-hidden="true" className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                </label>
+              )}
+            </div>
           )}
         </div>
 
