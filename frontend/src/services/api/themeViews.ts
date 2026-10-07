@@ -11,6 +11,8 @@ const MentionSchema = z.object({
   episode_id: z.string(),
   episode_number: z.string().nullable(),
   released_at_ms: z.number(),
+  /** False when the episode is older than the public window: no page to link to or play. */
+  episode_public: z.boolean().default(true),
   stance: z.enum(['bullish', 'bearish', 'mixed']),
   conviction: z.enum(['firm', 'tentative']),
   thesis: z.string(),

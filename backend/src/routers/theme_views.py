@@ -11,7 +11,7 @@ talking about it is the call; later mentions are the timeline.
 import asyncio
 import re
 import unicodedata
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import List, Literal, Optional
 
 from fastapi import APIRouter, Depends, Query
@@ -19,6 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from src.auth.admin_auth import AdminAccess, get_content_write_access
 from src.cache.cdn_cache import CacheProfile, cdn_cached
+from src.config import settings
 from src.database.models import TagRegistry, ThemeView
 from src.database.postgres import session_scope
 from src.models.user import UserResponse
@@ -98,7 +99,10 @@ def _ms(value: datetime) -> int:
     return int(value.replace(tzinfo=timezone.utc).timestamp() * 1000)
 
 
-def build_cards(rows: list, limit: int, members_by_exposure: Optional[dict[str, list]] = None) -> List[dict]:
+def build_cards(
+    rows: list, limit: int, members_by_exposure: Optional[dict[str, list]] = None,
+    public_since: Optional[datetime] = None,
+) -> List[dict]:
     """Group rows (any order) into run cards, newest run first.
 
     `rows` need: podcaster, theme_key, theme_label, exposure_id, episode_id,
@@ -149,6 +153,9 @@ def build_cards(rows: list, limit: int, members_by_exposure: Optional[dict[str, 
                 "mentions": [{
                     "episode_id": r.episode_id, "episode_number": r.episode_number,
                     "released_at_ms": _ms(r.released_at), "stance": r.stance,
+                    # Cards read further back than the public episode window; the UI
+                    # must not link to (or play) an episode the window no longer serves.
+                    "episode_public": public_since is None or r.released_at >= public_since,
                     "conviction": r.conviction, "thesis": r.thesis, "start_ms": r.start_ms,
                     "quote": r.quote,
                 } for r in run],
@@ -167,7 +174,9 @@ def _cards(podcaster: Optional[str], limit: int) -> List[dict]:
         members = db.query(TagRegistry.exposure_id, TagRegistry.members).filter(
             TagRegistry.exposure_id.in_(exposure_ids),
         ).all()
-        return build_cards(rows, limit, {row.exposure_id: row.members or [] for row in members})
+        days = getattr(settings, "release_episode_max_age_days", 0) or 0
+        public_since = datetime.utcnow() - timedelta(days=days) if days > 0 else None
+        return build_cards(rows, limit, {row.exposure_id: row.members or [] for row in members}, public_since)
 
 
 @router.get("/cards")
