@@ -1,0 +1,197 @@
+"""Theme views: write path, run grouping, and the members-only card feed."""
+from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
+
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine, event
+from sqlalchemy.orm import sessionmaker
+
+from src.config import settings
+from src.database import user_db
+from src.database.models import Base, TagRegistry, ThemeView, User
+from src.routers import theme_views as router
+from src.utils.auth import create_jwt_token
+
+DAY_MS = 86_400_000
+T0 = int(datetime(2026, 2, 28, 8, tzinfo=timezone.utc).timestamp() * 1000)
+
+
+@pytest.fixture
+def api(tmp_path, monkeypatch):
+    engine = create_engine(f"sqlite:///{tmp_path / 'themes.db'}", connect_args={"check_same_thread": False})
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine)
+
+    @contextmanager
+    def scope():
+        with factory() as db:
+            try:
+                yield db
+                db.commit()
+            except Exception:
+                db.rollback()
+                raise
+
+    monkeypatch.setattr(router, "session_scope", scope)
+    monkeypatch.setattr(user_db, "session_scope", scope)
+    monkeypatch.setattr(settings, "environment", "production")
+    monkeypatch.setattr(settings, "admin_emails", ["admin@example.com"])
+    monkeypatch.setattr(settings, "jwt_secret_key", "theme-test-jwt")
+    monkeypatch.setattr(settings, "tinboker_write_token", "write-token")
+    now = datetime.now(timezone.utc)
+    with scope() as db:
+        db.add(User(id="member", google_id="member", email="member@example.com", name="m",
+                    member_until=now + timedelta(days=30), created_at=now, updated_at=now))
+        db.add(User(id="free", google_id="free", email="free@example.com", name="f", created_at=now, updated_at=now))
+    app = FastAPI()
+    app.include_router(router.router)
+    return TestClient(app), scope
+
+
+def bearer(user):
+    return {"Authorization": "Bearer " + create_jwt_token(user, f"{user}@example.com")}
+
+
+WRITER = {"Authorization": "Bearer write-token"}
+
+
+def view(label="被動元件 MLCC", exposure="sector_mlcc", **over):
+    base = {"theme_label": label, "exposure_id": exposure, "stance": "bullish", "conviction": "tentative",
+            "thesis": "中低階產能被排擠，可能出現缺貨。", "start_ms": 1461895,
+            "tickers": [{"ticker": "2327", "name": "國巨", "role": "beneficiary"},
+                        {"ticker": "6762", "name": "TDK", "role": "context"}],
+            "quote": "比較偏向猜測的狀態"}
+    return {**base, **over}
+
+
+def put(client, episode, ms, views, ep="640", podcaster="Gooaye 股癌", headers=WRITER):
+    return client.put(f"/api/theme-views/episode/{episode}", headers=headers, json={
+        "podcaster": podcaster, "episode_number": ep, "released_at_ms": ms, "theme_views": views})
+
+
+def test_write_requires_the_service_token_and_replaces_the_episode(api):
+    client, scope = api
+    assert put(client, "e1", T0, [view()], headers=bearer("member")).status_code == 403
+    assert put(client, "e1", T0, [view(), view("矽光子", None)]).json() == {"episode_id": "e1", "stored": 2}
+    # Re-running an episode replaces its rows; two labels on one theme keep the first.
+    assert put(client, "e1", T0, [view(), view("MLCC", "sector_mlcc", stance="bearish")]).json()["stored"] == 1
+    with scope() as db:
+        row = db.query(ThemeView).one()
+        assert (row.theme_key, row.stance, row.episode_number) == ("sector_mlcc", "bullish", "640")
+    assert put(client, "e1", T0, []).json()["stored"] == 0
+    assert put(client, "e1", T0, [view(stance="neutral")]).status_code == 422
+    assert put(client, "e1", T0, [view()] * 4).status_code == 422
+
+
+def test_cards_are_members_only_and_private(api):
+    client, _ = api
+    put(client, "e1", T0, [view()])
+    assert client.get("/api/theme-views/cards").status_code in (401, 403)
+    assert client.get("/api/theme-views/cards", headers=bearer("free")).status_code == 402
+    response = client.get("/api/theme-views/cards", headers=bearer("member"))
+    assert response.status_code == 200 and "private" in response.headers["cache-control"]
+
+
+def test_runs_anchor_on_the_first_mention_and_split_after_a_long_gap(api):
+    client, _ = api
+    put(client, "e1", T0, [view()], ep="640")
+    put(client, "e2", T0 + 35 * DAY_MS, [view(conviction="firm", tickers=[
+        {"ticker": "2327", "name": "國巨", "role": "beneficiary"},
+        {"ticker": "2492", "name": "華新科", "role": "beneficiary"}])], ep="650")
+    put(client, "e3", T0 + 35 * DAY_MS + 60 * DAY_MS, [view(stance="bearish")], ep="667")
+    put(client, "e4", T0 + 10 * DAY_MS, [view("矽光子", None, tickers=[])], ep="643", podcaster="Other")
+    cards = client.get("/api/theme-views/cards", headers=bearer("member")).json()
+    assert [c["mentions"][0]["episode_number"] for c in cards] == ["667", "640", "643"]  # newest run first
+    run = next(c for c in cards if c["first_ms"] == T0)
+    assert [m["episode_number"] for m in run["mentions"]] == ["640", "650"]
+    assert run["latest_ms"] == T0 + 35 * DAY_MS
+    # Beneficiaries only, most-mentioned first; the context name (TDK) is not measured.
+    assert run["tickers"] == [{"ticker": "2327", "name": "國巨", "mentions": 2},
+                              {"ticker": "2492", "name": "華新科", "mentions": 1}]
+    assert run["tickers_source"] == "named"
+    only = client.get("/api/theme-views/cards?podcaster=Other", headers=bearer("member")).json()
+    assert [c["theme_key"] for c in only] == ["label:矽光子"] and only[0]["tickers"] == []
+    assert only[0]["tickers_source"] == "none"
+    assert len(client.get("/api/theme-views/cards?limit=1", headers=bearer("member")).json()) == 1
+
+
+def test_theme_key_normalises_free_labels():
+    assert router.theme_key(" 矽光子 ", None) == router.theme_key("矽光子", None) == "label:矽光子"
+    assert router.theme_key("ＣＰＵ", None) == "label:cpu"
+    assert router.theme_key("anything", "sector_x") == "sector_x"
+
+
+def test_cards_use_members_only_when_the_entire_run_has_no_beneficiaries(api):
+    client, scope = api
+    members = [{"name": "Missing ticker", "rank": 0},
+               {"ticker": "unranked", "name": "Stored first"},
+               {"ticker": "second", "rank": 2},
+               {"ticker": "first", "name": "Ranked first", "rank": 1},
+               *[{"ticker": str(i)} for i in range(5)]]
+    with scope() as db:
+        db.add(TagRegistry(slug="mlcc", display_zh="被動元件", exposure_id="sector_mlcc", members=members))
+    put(client, "e1", T0, [view(tickers=[{"ticker": "6762", "name": "TDK", "role": "context"}])])
+    card = client.get("/api/theme-views/cards", headers=bearer("member")).json()[0]
+    assert card["tickers_source"] == "members"
+    assert card["tickers"] == [
+        {"ticker": "first", "name": "Ranked first", "mentions": 0},
+        {"ticker": "second", "name": "second", "mentions": 0},
+        {"ticker": "unranked", "name": "Stored first", "mentions": 0},
+        {"ticker": "0", "name": "0", "mentions": 0},
+        {"ticker": "1", "name": "1", "mentions": 0},
+    ]
+    put(client, "e2", T0 + DAY_MS, [view()])
+    card = client.get("/api/theme-views/cards", headers=bearer("member")).json()[0]
+    assert card["tickers_source"] == "named"
+    assert card["tickers"] == [{"ticker": "2327", "name": "國巨", "mentions": 1}]
+
+
+@pytest.mark.parametrize("exposure,members", [(None, []), ("missing", []), ("sector_mlcc", []),
+                                               ("sector_mlcc", [{"name": "No ticker"}])])
+def test_build_cards_without_available_members(exposure, members):
+    row = ThemeView(**view(exposure=exposure, tickers=[]), podcaster="Show", theme_key="theme",
+                    episode_id="e1", episode_number="1", released_at=datetime(2026, 2, 28))
+    card = router.build_cards([row], 1, {"sector_mlcc": members})[0]
+    assert card["tickers_source"] == "none"
+    assert card["tickers"] == []
+
+
+def test_cards_fetch_members_in_one_query_for_multiple_themes(api):
+    client, scope = api
+    put(client, "e1", T0, [view(tickers=[]), view("矽光子", "sector_cpo", tickers=[])])
+    with scope() as db:
+        engine = db.get_bind()
+    registry_queries = []
+
+    def record_query(conn, cursor, statement, parameters, context, executemany):
+        if "tag_registry" in statement:
+            registry_queries.append(statement)
+
+    event.listen(engine, "before_cursor_execute", record_query)
+    try:
+        assert len(router._cards(None, 60)) == 2
+    finally:
+        event.remove(engine, "before_cursor_execute", record_query)
+    assert len(registry_queries) == 1
+
+
+def test_mentions_flag_episodes_outside_the_public_window():
+    """Prod serves only recent episode pages; an older mention must say so, so the card
+    shows it as text instead of a link that 404s."""
+    from datetime import datetime, timedelta
+    from types import SimpleNamespace
+
+    def row(episode_id, released_at):
+        return SimpleNamespace(
+            podcaster="Show", theme_key="k", theme_label="K", exposure_id=None, episode_id=episode_id,
+            episode_number=None, released_at=released_at, stance="bullish", conviction="firm",
+            thesis="t", start_ms=None, tickers=[], quote=None,
+        )
+
+    now = datetime.utcnow()
+    rows = [row("old", now - timedelta(days=20)), row("new", now - timedelta(days=1))]
+    flags = lambda cards: {m["episode_id"]: m["episode_public"] for m in cards[0]["mentions"]}  # noqa: E731
+    assert flags(router.build_cards(rows, 5, {}, now - timedelta(days=7))) == {"old": False, "new": True}
+    assert flags(router.build_cards(rows, 5)) == {"old": True, "new": True}

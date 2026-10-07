@@ -160,5 +160,18 @@ export const userApi = {
     );
     return response.data;
   },
+
+  /** Keep (or drop) one 走勢 card in 我的清單. Key format: see `savedPickKey` / `savedThemeKey`. */
+  toggleSavedPick: async (pickKey: string): Promise<{ pick_key: string; is_saved: boolean }> => {
+    const token = useAppStore.getState().token;
+    if (!token) throw new Error('Not authenticated');
+
+    const response = await apiClient.post<{ pick_key: string; is_saved: boolean }>(
+      '/api/user/saved-picks/toggle',
+      { pick_key: pickKey },
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    return response.data;
+  },
 };
 

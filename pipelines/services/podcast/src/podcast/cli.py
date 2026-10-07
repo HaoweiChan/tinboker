@@ -15,9 +15,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--rerun-from", type=str, default=None,
-        choices=["download", "transcribe", "summarize", "upload", "validate", "spotify-metadata"],
+        choices=["download", "transcribe", "summarize", "upload", "validate", "spotify-metadata", "theme-views"],
         help=(
             "Rerun pipeline from a specific step. Default: None (full pipeline). "
+            "Use 'theme-views' to replace only transcript theme views through the API. "
             "Use 'spotify-metadata' to refresh only the Spotify fields on an existing "
             "Firestore episode (no MP3 / transcript / summary work)."
         ),

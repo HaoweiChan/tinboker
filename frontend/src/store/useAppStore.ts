@@ -64,6 +64,8 @@ interface AppState {
   tagSubscriptions: string[];
   /** Picks hidden in 走勢, as `${episode_id}|${ticker}`. */
   dismissedPicks: string[];
+  /** Cards kept in 我的清單 (走勢): stock and theme cards share one list. */
+  savedPicks: string[];
   episodeBookmarks: string[];
   stockColorMode: 'TW' | 'US';
   fontSize: 'sm' | 'base' | 'lg';
@@ -89,6 +91,7 @@ interface AppState {
   toggleEpisodeBookmark: (podcastName: string, episodeId: string, opts?: ToggleOpts) => Promise<boolean>;
   toggleTagSubscription: (tagName: string, opts?: ToggleOpts) => Promise<boolean>;
   toggleDismissedPick: (pickKey: string, opts?: ToggleOpts) => Promise<boolean>;
+  toggleSavedPick: (pickKey: string) => Promise<boolean>;
   setStockColorMode: (mode: 'TW' | 'US') => void;
   toggleUseMockData: () => void;
 
@@ -153,6 +156,7 @@ export const useAppStore = create<AppState>()(
       subscriptions: [],
       tagSubscriptions: [],
       dismissedPicks: [],
+      savedPicks: [],
       episodeBookmarks: [],
       stockColorMode: 'TW',
       fontSize: 'base',
@@ -193,7 +197,7 @@ export const useAppStore = create<AppState>()(
           refreshToken: refreshToken !== undefined ? refreshToken : state.refreshToken,
         })),
       updateUser: (patch) => set((state) => ({ user: state.user ? { ...state.user, ...patch } : state.user })),
-      logout: () => set(() => ({ user: null, token: null, refreshToken: null, dismissedPicks: [] })),
+      logout: () => set(() => ({ user: null, token: null, refreshToken: null, dismissedPicks: [], savedPicks: [] })),
       setAuthReady: (ready) => set(() => ({ isAuthReady: ready })),
       openLoginPrompt: () => set(() => ({ loginPromptOpen: true })),
       closeLoginPrompt: () => set(() => ({ loginPromptOpen: false })),
@@ -402,6 +406,32 @@ export const useAppStore = create<AppState>()(
         return false;
       },
 
+      toggleSavedPick: async (pickKey) => {
+        const { token, isAuthReady } = useAppStore.getState();
+        const before = useAppStore.getState().savedPicks;
+        if (!isAuthReady) {
+          toast.info('正在驗證登入狀態，請稍候再試');
+          return false;
+        }
+        const without = (list: string[]) => list.filter((k) => k !== pickKey);
+        useAppStore.setState((state) => ({
+          savedPicks: before.includes(pickKey) ? without(state.savedPicks) : [...state.savedPicks, pickKey],
+        }));
+        if (!token) return true;
+        try {
+          const result = await userApi.toggleSavedPick(pickKey);
+          useAppStore.setState((state) => ({
+            savedPicks: result.is_saved ? [...without(state.savedPicks), pickKey] : without(state.savedPicks),
+          }));
+          return true;
+        } catch (error) {
+          console.error('Failed to toggle saved pick:', error);
+          useAppStore.setState(() => ({ savedPicks: before }));
+          toast.error('無法更新我的清單，請稍後再試');
+          return false;
+        }
+      },
+
       toggleDismissedPick: async (pickKey, opts) => {
         const { token, isAuthReady } = useAppStore.getState();
         const before = useAppStore.getState().dismissedPicks;
@@ -510,6 +540,7 @@ export const useAppStore = create<AppState>()(
         subscriptions: state.subscriptions,
         tagSubscriptions: state.tagSubscriptions,
         dismissedPicks: state.dismissedPicks,
+        savedPicks: state.savedPicks,
         episodeBookmarks: state.episodeBookmarks,
         stockColorMode: state.stockColorMode,
         fontSize: state.fontSize,
