@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Filter, ChevronDown, Search, Check } from 'lucide-react';
+import { ChevronDown, Search, Check } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
 import { PageContent } from '@/components/layout/PageContent';
 import { SwipeToRemove } from '@/components/common/SwipeToRemove';
@@ -177,7 +177,8 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodc
   // that happens when a user manually ticks those channels in 全部. 全部: leave
   // the dropdown under manual control.
   useEffect(() => {
-    setSelected(scope === 'mine' ? new Set(myNames) : new Set());
+    setSelected(scope === 'mine' ? new Set(myNames) : new Set(pendingPick.current));
+    pendingPick.current = [];
   }, [scope, myNames]);
 
   // Filtered view: pull each selected channel's history over the last year,
@@ -374,12 +375,20 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodc
 
   const themeShows = useMemo(() => Array.from(scope === 'mine' ? myNames : selected).sort(), [scope, myNames, selected]);
 
-  const toggleChannel = (name: string) =>
+  // Picking a show while on 我的 means "just this one": switch to 全部 and carry the
+  // pick across the scope effect, which would otherwise clear it.
+  const pendingPick = useRef<string[]>([]);
+  const toggleChannel = (name: string) => {
+    if (scope === 'mine') {
+      pendingPick.current = [name];
+      return setScope('all');
+    }
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(name)) next.delete(name); else next.add(name);
       return next;
     });
+  };
 
   const body = (
     <>
@@ -392,71 +401,49 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodc
           </>
         )}
 
-        <div className="mb-[18px] flex flex-col items-start gap-3">
-          <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-2">
-            <div role="group" aria-label="走勢類型" className="flex items-center gap-1.5">
-              {([{ value: 'stocks', label: '個股' }, { value: 'themes', label: '題材' }] as const).map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  aria-pressed={kind === option.value}
-                  onClick={() => setKind(option.value)}
-                  className={`min-h-10 rounded-md border px-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 ${kind === option.value ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border bg-transparent text-muted-foreground hover:border-muted-foreground/40 hover:text-foreground'}`}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-            <span aria-hidden="true" className="h-5 w-px bg-border" />
-            <div role="group" aria-label="走勢範圍" className="flex items-center gap-1.5">
-              {([{ value: 'mine', label: '我的' }, { value: 'all', label: '全部' }] as const).map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  aria-pressed={scope === option.value}
-                  onClick={() => setScope(option.value)}
-                  className={`min-h-10 rounded-md border px-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 ${scope === option.value ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border bg-transparent text-muted-foreground hover:border-muted-foreground/40 hover:text-foreground'}`}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
+        {/* One row, three controls: what to look at (個股／題材), whose shows, and — for
+           個股 only — which period. `relative` anchors the show menu on phones. */}
+        <div className="relative mb-[18px] flex flex-wrap items-center gap-2">
+          <div role="group" aria-label="走勢類型" className="flex shrink-0 items-center gap-0.5 rounded-md border border-border bg-card p-0.5">
+            {([{ value: 'stocks', label: '個股' }, { value: 'themes', label: '題材' }] as const).map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                aria-pressed={kind === option.value}
+                onClick={() => setKind(option.value)}
+                className={`min-h-9 rounded px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 ${kind === option.value ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+              >
+                {option.label}
+              </button>
+            ))}
           </div>
-          {/* Second row: the two dropdowns side by side. The channel one only makes sense as a
-             manual pick across all shows (我的 is already the subscribed shows), and 題材
-             has no period to choose. */}
-          {(kind === 'stocks' || (scope === 'all' && channelOptions.length > 0)) && (
-            <div className="flex w-full flex-wrap items-center gap-2">
-              {scope === 'all' && channelOptions.length > 0 && (
-                <ChannelFilter
-                  channels={channelOptions}
-                  selected={selected}
-                  onToggle={toggleChannel}
-                  onClear={() => setSelected(new Set())}
-                />
-              )}
-              {kind === 'stocks' && (
-                <label className="relative shrink-0">
-                  <span className="sr-only">走勢期間</span>
-                  <select
-                    value={view === 'recent' ? 'recent' : String(settledTier)}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      if (value === 'recent') return setView('recent');
-                      setView('settled');
-                      setSettledTier(value === '7' ? 7 : value === '30' ? 30 : 90);
-                    }}
-                    className="min-h-10 appearance-none rounded-md border border-border bg-card py-2 pl-2.5 pr-7 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-                  >
-                    <option value="recent">期間：最新</option>
-                    <option value="7">期間：7 日</option>
-                    <option value="30">期間：30 日</option>
-                    <option value="90">期間：90 日</option>
-                  </select>
-                  <ChevronDown size={13} aria-hidden="true" className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                </label>
-              )}
-            </div>
+          <ChannelFilter
+            channels={channelOptions}
+            scope={scope}
+            onScope={setScope}
+            selected={selected}
+            onToggle={toggleChannel}
+          />
+          {kind === 'stocks' && (
+            <label className="relative shrink-0">
+              <span className="sr-only">走勢期間</span>
+              <select
+                value={view === 'recent' ? 'recent' : String(settledTier)}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  if (value === 'recent') return setView('recent');
+                  setView('settled');
+                  setSettledTier(value === '7' ? 7 : value === '30' ? 30 : 90);
+                }}
+                className="min-h-10 appearance-none rounded-md border border-border bg-card py-2 pl-2.5 pr-7 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+              >
+                <option value="recent">最新</option>
+                <option value="7">7 日</option>
+                <option value="30">30 日</option>
+                <option value="90">90 日</option>
+              </select>
+              <ChevronDown size={13} aria-hidden="true" className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            </label>
           )}
         </div>
 
@@ -573,12 +560,14 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodc
 };
 
 /** Multi-select channel filter — checkboxes in a searchable dropdown. No selection = all. */
+/** Whose shows: every show, the member's subscribed ones, or hand-picked ones. */
 const ChannelFilter: React.FC<{
   channels: ChannelOption[];
+  scope: Scope;
+  onScope: (scope: Scope) => void;
   selected: Set<string>;
   onToggle: (name: string) => void;
-  onClear: () => void;
-}> = ({ channels, selected, onToggle, onClear }) => {
+}> = ({ channels, scope, onScope, selected, onToggle }) => {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const ref = useRef<HTMLDivElement>(null);
@@ -594,46 +583,61 @@ const ChannelFilter: React.FC<{
 
   const q = query.trim().toLowerCase();
   const filtered = q ? channels.filter((c) => c.name.toLowerCase().includes(q)) : channels;
-  const label = selected.size === 0 ? '全部頻道' : `已選 ${selected.size} 個頻道`;
+  const picked = scope === 'all' ? selected : new Set<string>();
+  const label = scope === 'mine' ? '我訂閱的節目'
+    : picked.size === 0 ? '全部節目'
+    : picked.size === 1 ? Array.from(picked)[0] : `${picked.size} 個節目`;
+  const scopeRows = [
+    { label: '全部節目', active: scope === 'all' && picked.size === 0, pick: () => { onScope('all'); picked.forEach(onToggle); } },
+    { label: '我訂閱的節目', active: scope === 'mine', pick: () => onScope('mine') },
+  ];
 
   return (
-    <div className="relative inline-block" ref={ref}>
+    // Static on phones so the menu anchors to the control row and cannot run off-screen.
+    <div className="inline-block min-w-0 sm:relative" ref={ref}>
       {/* max-md:text-base: phones force the period <select> beside this to 1rem (iOS zooms
          on smaller ones), so match it and the two dropdowns read as a pair. */}
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className="flex min-h-10 items-center gap-2 rounded-md border border-border bg-card px-2.5 py-2 text-xs max-md:text-base text-foreground transition-colors hover:border-muted-foreground/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+        className="flex min-h-10 max-w-full items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-2 text-xs max-md:text-base text-foreground transition-colors hover:border-muted-foreground/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
       >
-        <Filter size={14} className="text-muted-foreground" />
-        <span>{label}</span>
-        <ChevronDown size={15} className={cn('text-muted-foreground transition-transform', open && 'rotate-180')} />
+        <span className="max-w-[6.5rem] truncate sm:max-w-[9rem]">{label}</span>
+        <ChevronDown size={15} className={cn('shrink-0 text-muted-foreground transition-transform', open && 'rotate-180')} />
       </button>
 
       {open && (
-        <div className="absolute z-30 mt-1.5 w-[280px] bg-card border border-border rounded-lg shadow-lg overflow-hidden">
+        <div className="absolute left-0 z-30 mt-1.5 w-[280px] max-w-full sm:max-w-none bg-card border border-border rounded-lg shadow-lg overflow-hidden">
+          <ul className="border-b border-border py-1">
+            {scopeRows.map((row) => (
+              <li key={row.label}>
+                <button
+                  type="button"
+                  onClick={() => { row.pick(); setOpen(false); }}
+                  className="w-full flex items-center justify-between gap-2.5 px-3 py-2 text-left text-sm hover:bg-muted transition-colors"
+                >
+                  <span className={row.active ? 'text-primary font-medium' : undefined}>{row.label}</span>
+                  {row.active && <Check size={14} className="text-primary" />}
+                </button>
+              </li>
+            ))}
+          </ul>
           <div className="flex items-center gap-2 px-3 border-b border-border">
             <Search size={14} className="text-muted-foreground shrink-0" />
             <input
-              autoFocus
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="搜尋頻道…"
+              placeholder="搜尋節目…"
               className="w-full h-9 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
             />
-            {selected.size > 0 && (
-              <button type="button" onClick={onClear} className="text-xs text-accent-info hover:underline shrink-0">
-                清除
-              </button>
-            )}
           </div>
-          <ul className="max-h-[320px] overflow-auto py-1">
+          <ul className="max-h-[280px] overflow-auto py-1">
             {filtered.length === 0 ? (
-              <li className="px-3 py-2.5 text-sm text-muted-foreground">找不到頻道</li>
+              <li className="px-3 py-2.5 text-sm text-muted-foreground">找不到節目</li>
             ) : (
               filtered.map((c) => {
-                const checked = selected.has(c.name);
+                const checked = picked.has(c.name);
                 return (
                   <li key={c.name}>
                     <button
