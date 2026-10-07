@@ -57,6 +57,7 @@ class UserResponse(UserBase):
     alerts: List[str] = []  # Stock tickers for alerts
     tag_subscriptions: List[str] = []  # Tag names
     dismissed_picks: List[str] = []  # "{episode_id}|{ticker}" hidden in 走勢
+    saved_picks: List[str] = []  # cards kept in 我的清單; key format in toggle_saved_pick
     # Notification preferences
     notification_preferences: NotificationPreferences = NotificationPreferences()
     # Membership entitlement (PR 1 — admin-granted only, no billing yet).

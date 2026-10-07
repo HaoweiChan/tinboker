@@ -95,6 +95,7 @@ export function useAuthInit() {
             subscriptions: user.podcast_subscriptions || [],
             tagSubscriptions: user.tag_subscriptions || [],
             dismissedPicks: user.dismissed_picks || [],
+            savedPicks: user.saved_picks || [],
             episodeBookmarks: user.episode_bookmarks || [],
             alerts: user.alerts || [],
           });

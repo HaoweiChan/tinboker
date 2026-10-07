@@ -1,3 +1,4 @@
+import { SaveCheck } from '@/components/financial/SaveCheck';
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { ChevronDown, ChevronRight, ChevronUp, Play, Mic, Layers } from 'lucide-react';
@@ -28,6 +29,9 @@ interface PickCardProps {
   /** All mentions collapsed into this card (newest-first, incl. the master). When
    *  length > 1, the card shows a "近期連續點名 N 次" badge + an occurrence timeline. */
   mentions?: TickerInsight[];
+  /** 我的清單 state and toggle; the corner check is hidden when no toggle is given. */
+  saved?: boolean;
+  onToggleSaved?: () => void;
   className?: string;
 }
 
@@ -53,6 +57,8 @@ export const PickCard: React.FC<PickCardProps> = ({
   shareUrl,
   onPlaySegment,
   mentions,
+  saved = false,
+  onToggleSaved,
   className,
 }) => {
   const navigate = useNavigate();
@@ -108,11 +114,17 @@ export const PickCard: React.FC<PickCardProps> = ({
           </div>
 
         </div>
-        <ShareMenu
-          shareUrl={shareUrl}
-          shareTitle={`${podcaster} 看${sentiment === 'BEARISH' ? '空' : '多'} ${ticker}｜TinBoker`}
-          className="shrink-0"
-        />
+        {/* Actions, apart from the date: the bookmark, then the menu as the fixed right
+            anchor. 40px tap targets, overlapped and pulled up so the small icons sit on
+            the date's line about 16px apart. */}
+        <div className="-mr-2 -mt-2.5 flex shrink-0 items-center">
+          {onToggleSaved && <SaveCheck saved={saved} onToggle={onToggleSaved} />}
+          <ShareMenu
+            shareUrl={shareUrl}
+            shareTitle={`${podcaster} 看${sentiment === 'BEARISH' ? '空' : '多'} ${ticker}｜TinBoker`}
+            className={cn('h-10 w-10 shrink-0', onToggleSaved && '-ml-2')}
+          />
+        </div>
       </div>
 
       {/* Forward 7/30/90D returns. Windows that haven't come due are left OUT of the
