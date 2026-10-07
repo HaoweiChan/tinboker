@@ -18,6 +18,33 @@ CANON = {  # synonym -> (label, exposure_id)
     **{k: ("AI 算力需求", None) for k in ("AI 算力", "AI 算力需求")},
     "CPU": ("CPU 與 Agentic AI", "sector_cpu_agentic_ai"), "AI agent": ("CPU 與 Agentic AI", "sector_cpu_agentic_ai"),
     "散熱": ("液冷散熱", "sector_liquid_cooling"),
+    # Added 2026-10 from the labels eight more shows actually produced.
+    **{k: ("記憶體", None) for k in ("記憶體存儲", "記憶體存儲產業", "記憶體族群", "記憶體股", "記憶體類股", "記憶體與存儲", "記憶體跟存儲", "AI記憶體")},
+    **{k: ("NAND Flash", None) for k in ("NAND Flash 儲存需求",)},
+    "利基型記憶體": ("NOR Flash 利基記憶體", "sector_nor_flash"),
+    "高速網通與光通訊": ("光通訊", None),
+    **{k: ("AI 基礎建設", None) for k in ("AI Infra", "AI 基礎建設概念股", "AI 基礎設施")},
+    "AI 相關硬體": ("AI 硬體", None),
+    **{k: ("AI 資本支出", None) for k in ("大型科技股資本支出", "雲端巨頭資本支出", "科技巨頭資本支出與供應鏈")},
+    **{k: ("科技巨頭", None) for k in ("AI 巨頭", "AI 和科技巨頭", "AI 大型科技股", "AI雲端巨頭", "雲端巨頭", "四大雲端業者")},
+    **{k: ("AI", None) for k in ("AI 概念股", "AI 類股", "AI 產業", "科技跟AI股")},
+    "AI相關供應鏈": ("AI 供應鏈", None),
+    **{k: ("台積電供應鏈", None) for k in ("臺積電供應鏈", "泛台積電概念股", "台積電關係企業")},
+    **{k: ("晶圓廠廠務", None) for k in ("廠務工程", "廠務工程與設備")},
+    **{k: ("探針卡", None) for k in ("探針", "探針族群", "探針卡與測試介面")},
+    "摺疊機": ("摺疊手機", None), "特化族群": ("特化", None), "稀土概念股": ("稀土供應鏈", None),
+    "IPC/IPD 矽電容": ("矽電容", None), "虛擬貨幣": ("加密貨幣", None), "開放權重模型": ("開源模型", None),
+    **{k: ("漲價概念股", None) for k in ("報價概念股", "報價漲價股")},
+    **{k: ("自動駕駛", None) for k in ("RoboTaxi", "無人自動駕駛計程車")},
+    "老AI族群": ("老AI", None), "設備族群": ("設備股", None),
+    **{k: ("電力設備", None) for k in ("電力基建", "AI 資料中心電力", "資料中心的電網升級鏈", "電力與資料中心設備", "電力設備與資料中心電力")},
+    **{k: ("NeoCloud", None) for k in ("新型雲端服務商", "算力租賃", "賣算力")},
+    **{k: ("穿戴裝置", None) for k in ("AI穿戴裝置", "穿戴型裝置")},
+    **{k: ("半導體", None) for k in ("晶片股", "半導體供應鏈")},
+    **{k: ("PCB 載板", "sector_pcb_substrate") for k in ("ABF 載板", "ABF 載板與上游銅箔材料")},
+    "PCB 產業": ("PCB 硬板製造", "sector_pcb_rigid"),
+    "AI 伺服器代工廠": ("AI 伺服器組裝", "sector_ai_server"),
+    "應用軟體": ("企業 SaaS", "sector_saas"),
 }
 
 # Canonical names retain the same identity even without a taxonomy cache.
@@ -52,6 +79,31 @@ def _normalize(value: str) -> str:
     return re.sub(r"\s+", "", unicodedata.normalize("NFKC", value)).casefold()
 
 
+_CANON_NORM = {_normalize(key): value for key, value in CANON.items()}
+
+
+def canonical_theme(label: str, taxonomy: list[dict[str, Any]]) -> tuple[str, str | None]:
+    """One identity per theme: a synonym's canonical name, else the taxonomy's own display
+    name when the label (or an alias) matches exactly one theme, else the label as given.
+
+    Spacing and width are ignored, so 「AI算力」 and 「AI 算力」 are the same label.
+    """
+    canon = _CANON_NORM.get(_normalize(label))
+    if canon:
+        return canon
+    matches: dict[str, str] = {}
+    for theme in taxonomy:
+        if not theme.get("exposure_id"):
+            continue
+        names = [theme.get("display_zh"), theme.get("display_name"), *(theme.get("aliases") or [])]
+        if any(name and _normalize(name) == _normalize(label) for name in names):
+            matches[theme["exposure_id"]] = theme.get("display_zh") or label
+    if len(matches) == 1:
+        exposure, display = next(iter(matches.items()))
+        return display, exposure
+    return label, None
+
+
 def validate_theme_views(
     data: dict[str, Any], episode_id: str, starts: set[int],
     anchors: set[tuple[str, str]], transcript_text: str, taxonomy: list[dict[str, Any]],
@@ -62,13 +114,6 @@ def validate_theme_views(
     views = data["theme_views"]
     if not isinstance(views, list) or len(views) > 3:
         raise ValueError("theme_views must be a list with at most 3 views")
-    names: dict[str, set[str]] = {}
-    for theme in taxonomy:
-        if not theme.get("exposure_id"):
-            continue
-        for name in [theme.get("display_zh"), theme.get("display_name"), *(theme.get("aliases") or [])]:
-            if name:
-                names.setdefault(_normalize(name), set()).add(theme["exposure_id"])
     keys = {"theme_label", "stance", "conviction", "thesis", "start_ms", "tickers", "quote"}
     result = []
     for raw in views:
@@ -95,9 +140,7 @@ def validate_theme_views(
             and (ticker["name"], ticker["ticker"]) in anchors
             and ticker.get("role") in ("beneficiary", "context")
         ][:20]
-        matches = names.get(_normalize(view["theme_label"]), set())
-        exposure = next(iter(matches)) if len(matches) == 1 else None
-        view["theme_label"], view["exposure_id"] = CANON.get(view["theme_label"], (view["theme_label"], exposure))
+        view["theme_label"], view["exposure_id"] = canonical_theme(view["theme_label"], taxonomy)
         view["thesis"] = view["thesis"][:400]
         view["quote"] = view["quote"][:200] if view["quote"] else None
         result.append(view)

@@ -279,3 +279,13 @@ def test_canonical_identity_survives_unavailable_taxonomy(synonym, canonical, ou
     second = validate_theme_views(output, "episode-1", {0}, set(), "", [])[0]
     assert first["exposure_id"] == second["exposure_id"]
     assert first["theme_label"] == second["theme_label"]
+
+
+def test_canonical_theme_merges_spelling_variants_and_uses_taxonomy_names():
+    from podcast.content_builder.theme_views import canonical_theme
+
+    taxonomy = [{"display_zh": "客製 ASIC 矽智財", "aliases": ["ASIC"], "exposure_id": "sector_asic_ip"}]
+    assert canonical_theme("ASIC", taxonomy) == ("客製 ASIC 矽智財", "sector_asic_ip")
+    assert canonical_theme("AI算力", []) == canonical_theme("AI 算力", []) == ("AI 算力需求", None)
+    assert canonical_theme("記憶體族群", taxonomy) == ("記憶體", None)
+    assert canonical_theme("沒人聽過的題材", taxonomy) == ("沒人聽過的題材", None)
