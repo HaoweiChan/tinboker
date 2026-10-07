@@ -78,6 +78,7 @@ export const GoogleLoginButton: React.FC<GoogleLoginButtonProps> = ({ className,
           subscriptions: backendUser.podcast_subscriptions || [],
           tagSubscriptions: backendUser.tag_subscriptions || [],
           dismissedPicks: backendUser.dismissed_picks || [],
+          savedPicks: backendUser.saved_picks || [],
           alerts: backendUser.alerts || [],
         });
         toast.success(`歡迎回來，${backendUser.name}！`);

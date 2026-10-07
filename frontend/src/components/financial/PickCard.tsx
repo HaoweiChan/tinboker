@@ -1,3 +1,4 @@
+import { SaveCheck } from '@/components/financial/SaveCheck';
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { ChevronDown, ChevronRight, ChevronUp, Play, Mic, Layers } from 'lucide-react';
@@ -28,6 +29,9 @@ interface PickCardProps {
   /** All mentions collapsed into this card (newest-first, incl. the master). When
    *  length > 1, the card shows a "近期連續點名 N 次" badge + an occurrence timeline. */
   mentions?: TickerInsight[];
+  /** 我的清單 state and toggle; the corner check is hidden when no toggle is given. */
+  saved?: boolean;
+  onToggleSaved?: () => void;
   className?: string;
 }
 
@@ -53,6 +57,8 @@ export const PickCard: React.FC<PickCardProps> = ({
   shareUrl,
   onPlaySegment,
   mentions,
+  saved = false,
+  onToggleSaved,
   className,
 }) => {
   const navigate = useNavigate();
@@ -108,6 +114,7 @@ export const PickCard: React.FC<PickCardProps> = ({
           </div>
 
         </div>
+        {onToggleSaved && <SaveCheck saved={saved} onToggle={onToggleSaved} />}
         <ShareMenu
           shareUrl={shareUrl}
           shareTitle={`${podcaster} 看${sentiment === 'BEARISH' ? '空' : '多'} ${ticker}｜TinBoker`}

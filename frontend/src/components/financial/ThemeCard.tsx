@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { ChevronDown, ChevronUp, Play } from 'lucide-react';
 import { Card } from '@/components/ui';
 import { Change, PodAvatar, SentimentChip } from '@/components/redesign';
+import { SaveCheck } from '@/components/financial/SaveCheck';
 import { formatDate } from '@/lib/date';
 import { cn } from '@/lib/utils';
 import { windowReturnsKey } from '@/hooks/useTickerWindowReturns';
@@ -15,6 +16,9 @@ interface ThemeCardProps {
   windowsMap: Map<string, PickWindowReturns>;
   podcastImage?: string;
   onPlaySegment?: (episodeId: string, startTimeMs: number) => void;
+  /** 我的清單 state and toggle; the corner check is hidden when no toggle is given. */
+  saved?: boolean;
+  onToggleSaved?: () => void;
   className?: string;
 }
 
@@ -40,7 +44,7 @@ function mean(values: (number | null | undefined)[]): number | null {
 
 /** A theme a show has been talking about: when it started, what it said, and how the
  *  companies it named have done since that FIRST mention. */
-export const ThemeCard: React.FC<ThemeCardProps> = ({ card, windowsMap, podcastImage, onPlaySegment, className }) => {
+export const ThemeCard: React.FC<ThemeCardProps> = ({ card, windowsMap, podcastImage, onPlaySegment, saved = false, onToggleSaved, className }) => {
   const [open, setOpen] = useState(false);
   const first = card.mentions[0];
   const latest = card.mentions[card.mentions.length - 1];
@@ -67,6 +71,7 @@ export const ThemeCard: React.FC<ThemeCardProps> = ({ card, windowsMap, podcastI
             )}
           </div>
         </div>
+        {onToggleSaved && <SaveCheck saved={saved} onToggle={onToggleSaved} />}
       </div>
 
       <p className={cn('text-base text-foreground/85 leading-relaxed mt-3', !open && 'line-clamp-3')}>{first.thesis}</p>

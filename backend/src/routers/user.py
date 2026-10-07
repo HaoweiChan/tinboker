@@ -12,6 +12,7 @@ from src.database.user_db import (
     toggle_episode_bookmark,
     toggle_tag_subscription,
     toggle_dismissed_pick,
+    toggle_saved_pick,
     update_notification_preferences,
     get_notification_preferences,
     update_user,
@@ -153,6 +154,18 @@ async def toggle_dismissed_pick_item(
         return toggle_dismissed_pick(user.id, req.pick_key)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to toggle dismissed pick: {str(e)}")
+
+
+@router.post("/saved-picks/toggle")
+async def toggle_saved_pick_item(
+    req: DismissPickRequest,
+    user: UserResponse = Depends(get_current_user),
+):
+    """Keep (or drop) one 走勢 card in 我的清單. Key in the body for the same reason as above."""
+    try:
+        return toggle_saved_pick(user.id, req.pick_key)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to toggle saved pick: {str(e)}")
 
 
 @router.get("/subscriptions/tags")

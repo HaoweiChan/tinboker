@@ -630,6 +630,7 @@ class User(Base):
     # so this only hides that one mention — the next time the ticker is named a new
     # card appears, which is the behaviour the feature was asked for.
     dismissed_picks = Column(JSON_VARIANT, nullable=False, default=list)
+    saved_picks = Column(JSON_VARIANT, nullable=False, default=list)
     notification_preferences = Column(JSON_VARIANT, nullable=False, default=dict)
 
     # Paid membership entitlement (PR 1 — admin-granted only, no billing yet).

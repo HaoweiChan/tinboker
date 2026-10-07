@@ -195,6 +195,8 @@ _PG_BOOT_COLUMNS: list[tuple[str, str, str]] = [
     # Picks swiped away in 走勢. Pre-existing rows get '[]', not NULL — every
     # reader treats this as a list and create_all won't backfill a default.
     ("users", "dismissed_picks", "JSONB NOT NULL DEFAULT '[]'::jsonb"),
+    # Cards kept in 我的清單 (走勢). Same shape and same reason for the default.
+    ("users", "saved_picks", "JSONB NOT NULL DEFAULT '[]'::jsonb"),
 ]
 
 
@@ -438,6 +440,9 @@ def create_all_tables():
             u_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(users)"))}
             if u_cols and "dismissed_picks" not in u_cols:
                 conn.execute(text("ALTER TABLE users ADD COLUMN dismissed_picks JSON"))
+                conn.commit()
+            if u_cols and "saved_picks" not in u_cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN saved_picks JSON"))
                 conn.commit()
             tr_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(tag_registry)"))}
             if tr_cols and "kind" not in tr_cols:

@@ -2,12 +2,15 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { isAxiosError } from 'axios';
 import { ThemeCard } from '@/components/financial/ThemeCard';
 import { useTickerWindowReturns } from '@/hooks/useTickerWindowReturns';
+import { savedThemeKey } from '@/lib/savedPicks';
+import { useAppStore } from '@/store/useAppStore';
 import { getThemeCards, type ThemeCardData } from '@/services/api/themeViews';
 
 interface ThemeCardsFeedProps {
   /** 我的 narrows to the member's subscribed shows; 全部 shows every show. */
-  scope: 'mine' | 'all';
-  /** Shows to load in full: the subscribed ones in 我的, the picked ones in 全部.
+  scope: 'mine' | 'all' | 'saved';
+  /** Shows to load in full: the subscribed ones, the picked ones, or — for 我的清單 —
+   *  the ones with a saved theme card.
    *  Empty means the newest themes across every show. */
   shows: string[];
   podcastImages: Map<string, string | undefined>;
@@ -31,10 +34,10 @@ export const ThemeCardsFeed: React.FC<ThemeCardsFeedProps> = ({ scope, shows, po
     setCards(null);
     setError('');
     setShown(PAGE_SIZE);
-    // 我的 with nothing subscribed has nothing to load; it must not fall back to every show.
+    // 我訂閱的節目 / 我的清單 with no shows has nothing to load; it must not fall back to every show.
     const load = names.length
       ? Promise.all(names.map((name) => getThemeCards(controller.signal, name))).then((lists) => lists.flat().sort((a, b) => b.latest_ms - a.latest_ms))
-      : scope === 'mine' ? Promise.resolve([]) : getThemeCards(controller.signal);
+      : scope === 'all' ? getThemeCards(controller.signal) : Promise.resolve([]);
     load
       .then(setCards)
       .catch((err) => {
@@ -44,7 +47,14 @@ export const ThemeCardsFeed: React.FC<ThemeCardsFeedProps> = ({ scope, shows, po
     return () => controller.abort();
   }, [showsKey, scope]);
 
-  const visible = useMemo(() => (cards ?? []).slice(0, shown), [cards, shown]);
+  const savedPicks = useAppStore((st) => st.savedPicks);
+  const toggleSavedPick = useAppStore((st) => st.toggleSavedPick);
+  const savedSet = useMemo(() => new Set(savedPicks), [savedPicks]);
+  const listed = useMemo(
+    () => (cards ?? []).filter((c) => scope !== 'saved' || savedSet.has(savedThemeKey(c.key))),
+    [cards, scope, savedSet],
+  );
+  const visible = useMemo(() => listed.slice(0, shown), [listed, shown]);
   // Every named company is scored from its card's FIRST mention, not the latest one.
   const refs = useMemo(
     () => visible.flatMap((c) => c.tickers.map((t) => ({ ticker: t.ticker, reference_ms: c.first_ms }))),
@@ -63,7 +73,7 @@ export const ThemeCardsFeed: React.FC<ThemeCardsFeedProps> = ({ scope, shows, po
   if (visible.length === 0) {
     return (
       <div className="bg-card border border-border rounded-md p-10 text-center text-sm text-muted-foreground">
-        {scope === 'all' ? (shows.length ? '這些節目還沒有題材走勢。' : '目前還沒有題材走勢。') : (
+        {scope === 'saved' ? '我的清單還沒有題材卡片。點卡片右上角的 ＋ 就會存進來。' : scope === 'all' ? (shows.length ? '這些節目還沒有題材走勢。' : '目前還沒有題材走勢。') : (
           <>你訂閱的節目還沒有題材走勢。<button type="button" onClick={onShowAll} className="text-accent-info hover:underline ml-1">看全部</button></>
         )}
       </div>
@@ -73,19 +83,19 @@ export const ThemeCardsFeed: React.FC<ThemeCardsFeedProps> = ({ scope, shows, po
     <>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">
         {visible.map((card) => (
-          <ThemeCard key={card.key} card={card} windowsMap={windowsMap} podcastImage={podcastImages.get(card.podcaster)} onPlaySegment={onPlaySegment} className="rounded-md" />
+          <ThemeCard key={card.key} card={card} windowsMap={windowsMap} podcastImage={podcastImages.get(card.podcaster)} onPlaySegment={onPlaySegment} saved={savedSet.has(savedThemeKey(card.key))} onToggleSaved={() => void toggleSavedPick(savedThemeKey(card.key))} className="rounded-md" />
         ))}
       </div>
-      {cards.length > visible.length ? (
+      {listed.length > visible.length ? (
         <button
           type="button"
           onClick={() => setShown((n) => n + PAGE_SIZE)}
           className="mt-3 flex min-h-10 w-full items-center justify-center rounded-md border border-border text-sm text-muted-foreground hover:text-foreground"
         >
-          顯示更多（還有 {cards.length - visible.length} 個）
+          顯示更多（還有 {listed.length - visible.length} 個）
         </button>
       ) : (
-        <p className="h-10 flex items-center justify-center text-xs text-muted-foreground mt-2">共 {cards.length} 個題材</p>
+        <p className="h-10 flex items-center justify-center text-xs text-muted-foreground mt-2">共 {listed.length} 個題材</p>
       )}
     </>
   );
