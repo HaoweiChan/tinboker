@@ -607,7 +607,9 @@ class PodcastService:
                 podcasts.append(Podcast(
                     id=name, name=name, episode_count=len(data['episodes']),
                     created_at=data['created_at'], updated_at=data['updated_at'],
-                    image_url=image_url or covers.get(name),
+                    # One source for every show: our mirrored cover first. Spotify's CDN
+                    # URL is only the fallback for a show not mirrored yet.
+                    image_url=covers.get(name) or image_url,
                     popularity_rank=self._popularity_rank_for(name, popularity),
                 ))
 
@@ -680,7 +682,7 @@ class PodcastService:
             podcast = Podcast(
                 id=podcast_name, name=podcast_name, episode_count=len(episodes),
                 created_at=created_at, updated_at=updated_at,
-                image_url=latest_image_url or fallback_image_url or covers.get(podcast_name),
+                image_url=covers.get(podcast_name) or latest_image_url or fallback_image_url,
             )
             try:
                 await cache_set(cache_key, json.dumps(podcast.dict(), default=str), CACHE_TTL["podcast_item"])
