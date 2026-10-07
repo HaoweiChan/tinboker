@@ -73,7 +73,7 @@ export const ThemeCardsFeed: React.FC<ThemeCardsFeedProps> = ({ scope, shows, po
   if (visible.length === 0) {
     return (
       <div className="bg-card border border-border rounded-md p-10 text-center text-sm text-muted-foreground">
-        {scope === 'saved' ? '我的清單還沒有題材卡片。點卡片日期旁的書籤就會存進來。' : scope === 'all' ? (shows.length ? '這些節目還沒有題材走勢。' : '目前還沒有題材走勢。') : (
+        {scope === 'saved' ? '我的清單還沒有題材卡片。點卡片右上角的書籤就會存進來。' : scope === 'all' ? (shows.length ? '這些節目還沒有題材走勢。' : '目前還沒有題材走勢。') : (
           <>你訂閱的節目還沒有題材走勢。<button type="button" onClick={onShowAll} className="text-accent-info hover:underline ml-1">看全部</button></>
         )}
       </div>

@@ -61,10 +61,7 @@ export const ThemeCard: React.FC<ThemeCardProps> = ({ card, windowsMap, podcastI
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs text-muted-foreground truncate">{card.podcaster}</span>
-            <span className="flex shrink-0 items-center gap-1.5">
-              <span className="text-xs text-muted-foreground tabular-nums">{formatDate(card.first_ms)} 起</span>
-              {onToggleSaved && <SaveCheck saved={saved} onToggle={onToggleSaved} />}
-            </span>
+            <span className="text-xs text-muted-foreground tabular-nums shrink-0">{formatDate(card.first_ms)} 起</span>
           </div>
           <div className="flex items-center gap-2 mt-0.5 flex-wrap">
             <span className="font-semibold text-lg text-foreground">{card.theme_label}</span>
@@ -74,6 +71,7 @@ export const ThemeCard: React.FC<ThemeCardProps> = ({ card, windowsMap, podcastI
             )}
           </div>
         </div>
+        {onToggleSaved && <SaveCheck saved={saved} onToggle={onToggleSaved} className="-mr-2 -mt-2.5" />}
       </div>
 
       <p className={cn('text-base text-foreground/85 leading-relaxed mt-3', !open && 'line-clamp-3')}>{first.thesis}</p>

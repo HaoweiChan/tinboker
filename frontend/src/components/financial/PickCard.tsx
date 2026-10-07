@@ -97,10 +97,7 @@ export const PickCard: React.FC<PickCardProps> = ({
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs text-muted-foreground truncate">{podcaster}</span>
-            <span className="flex shrink-0 items-center gap-1.5">
-              <span className="text-xs text-muted-foreground tabular-nums">{dateLabel}</span>
-              {onToggleSaved && <SaveCheck saved={saved} onToggle={onToggleSaved} />}
-            </span>
+            <span className="text-xs text-muted-foreground tabular-nums shrink-0">{dateLabel}</span>
           </div>
           <div className="flex items-center gap-2 mt-0.5 flex-wrap">
             <button
@@ -117,11 +114,17 @@ export const PickCard: React.FC<PickCardProps> = ({
           </div>
 
         </div>
-        <ShareMenu
-          shareUrl={shareUrl}
-          shareTitle={`${podcaster} 看${sentiment === 'BEARISH' ? '空' : '多'} ${ticker}｜TinBoker`}
-          className="shrink-0"
-        />
+        {/* Actions, apart from the date: the bookmark, then the menu as the fixed right
+            anchor. 40px tap targets, overlapped and pulled up so the small icons sit on
+            the date's line about 16px apart. */}
+        <div className="-mr-2 -mt-2.5 flex shrink-0 items-center">
+          {onToggleSaved && <SaveCheck saved={saved} onToggle={onToggleSaved} />}
+          <ShareMenu
+            shareUrl={shareUrl}
+            shareTitle={`${podcaster} 看${sentiment === 'BEARISH' ? '空' : '多'} ${ticker}｜TinBoker`}
+            className={cn('h-10 w-10 shrink-0', onToggleSaved && '-ml-2')}
+          />
+        </div>
       </div>
 
       {/* Forward 7/30/90D returns. Windows that haven't come due are left OUT of the
