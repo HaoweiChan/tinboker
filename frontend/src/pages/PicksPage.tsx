@@ -513,7 +513,7 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodc
             {picks.length === 0 ? (
               '目前沒有可顯示的標的分析。'
             ) : scope === 'saved' ? (
-              '我的清單還沒有個股卡片。點卡片右上角的 ＋ 就會存進來。'
+              '我的清單還沒有個股卡片。點卡片日期旁的書籤就會存進來。'
             ) : scope === 'mine' ? (
               <>
                 你關注的節目與個股近期沒有新的點名。

@@ -97,7 +97,10 @@ export const PickCard: React.FC<PickCardProps> = ({
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs text-muted-foreground truncate">{podcaster}</span>
-            <span className="text-xs text-muted-foreground tabular-nums shrink-0">{dateLabel}</span>
+            <span className="flex shrink-0 items-center gap-1.5">
+              <span className="text-xs text-muted-foreground tabular-nums">{dateLabel}</span>
+              {onToggleSaved && <SaveCheck saved={saved} onToggle={onToggleSaved} />}
+            </span>
           </div>
           <div className="flex items-center gap-2 mt-0.5 flex-wrap">
             <button
@@ -114,7 +117,6 @@ export const PickCard: React.FC<PickCardProps> = ({
           </div>
 
         </div>
-        {onToggleSaved && <SaveCheck saved={saved} onToggle={onToggleSaved} />}
         <ShareMenu
           shareUrl={shareUrl}
           shareTitle={`${podcaster} 看${sentiment === 'BEARISH' ? '空' : '多'} ${ticker}｜TinBoker`}
