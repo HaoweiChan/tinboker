@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 from dataclasses import asdict
 
 from shared import platform_client
@@ -14,6 +15,12 @@ from ..episode_data import EpisodeData
 from ..service_container import ServiceContainer
 
 logger = logging.getLogger(__name__)
+
+# Scheduled ingestion also works through the back-catalogue. Theme views are extracted
+# only for recent episodes there: a card is anchored on its first mention, so a 2021
+# episode adds a run nobody will page to, at the same cost as a new one. An explicit
+# `--rerun-from theme-views` ignores this, which is how a deliberate backfill is done.
+MAX_AGE_DAYS = 90
 
 
 def _json_object(text: str) -> str:
@@ -42,8 +49,18 @@ def extract_theme_views(
         from podcast.content_builder.theme_views import build_episode_input, validate_theme_views
         from shared.sectors import load_universe
 
+        released_at_ms = episode_data.api_data.get("released_at_ms")
+        if episode_data.episode:
+            released_at_ms = episode_data.episode.resolved_publish_ms()
+        if config.rerun_from != "theme-views" and (
+            not released_at_ms or released_at_ms < (time.time() - MAX_AGE_DAYS * 86400) * 1000
+        ):
+            logger.info("Theme views skipped for %s: released more than %d days ago", episode_id, MAX_AGE_DAYS)
+            return
         # Resolve configuration before fetching inputs or taxonomy. Disable SDK retries too.
-        model = get_model("theme_views_extractor", max_retries=0, timeout=120.0)
+        # Reasoning stays on: judging stance and conviction is the whole task, and the
+        # model this role is pinned to refuses requests that switch it off.
+        model = get_model("theme_views_extractor", max_retries=0, timeout=180.0, disable_reasoning=False)
         if not episode_data.episode_id:
             raise ValueError("episode id is missing")
         summary = (episode_data.summary_result or {}).get("summary_text")
@@ -75,9 +92,6 @@ def extract_theme_views(
         system = system.replace("Gooaye 股癌", episode_data.podcast_name)
         response = model.invoke([("system", system), ("human", episode_input)])
         views = validate_theme_views(json.loads(_json_object(response.content)), episode_id, starts, anchors, text, taxonomy)
-        released_at_ms = episode_data.api_data.get("released_at_ms")
-        if episode_data.episode:
-            released_at_ms = episode_data.episode.resolved_publish_ms()
         body = {
             "podcaster": episode_data.podcast_name,
             "episode_number": str(episode_data.api_data.get("episodeNumber") or ""),
