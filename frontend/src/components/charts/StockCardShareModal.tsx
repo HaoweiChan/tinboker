@@ -1,10 +1,14 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Download, Share2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Modal } from '@/components/ui/Modal';
 
 interface StockCardShareModalProps {
-    url: string;
+    /** Where to fetch the PNG. Omit when `load` produces it instead. */
+    url?: string;
+    /** Produces the PNG without a fetch (cards drawn in the browser). Wins over `url`. */
+    load?: () => Promise<Blob>;
+    /** Names the file and the image: a ticker, or a theme label. */
     ticker: string;
     onClose: () => void;
 }
@@ -20,18 +24,25 @@ interface StockCardShareModalProps {
  * The fetch starts when the modal opens, not on 分享 — navigator.share needs a recent tap,
  * and a cold card can take ~5s to render, which would outlive it.
  */
-export const StockCardShareModal: React.FC<StockCardShareModalProps> = ({ url, ticker, onClose }) => {
+export const StockCardShareModal: React.FC<StockCardShareModalProps> = ({ url, load, ticker, onClose }) => {
     const [file, setFile] = useState<File | null>(null);
     const [failed, setFailed] = useState(false);
     const filename = `${ticker}-${new Date().toISOString().slice(0, 10)}.png`;
 
+    // Read through a ref: callers build `load` inline, and a new function each render
+    // must not restart the work.
+    const loadRef = useRef(load);
+    loadRef.current = load;
+
     useEffect(() => {
         let alive = true;
-        fetch(url)
-            .then((r) => {
+        const png = loadRef.current
+            ? loadRef.current()
+            : fetch(url ?? '').then((r) => {
                 if (!r.ok) throw new Error(`card ${r.status}`);
                 return r.blob();
-            })
+            });
+        png
             .then((blob) => {
                 if (alive) setFile(new File([blob], filename, { type: 'image/png' }));
             })

@@ -1,8 +1,11 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronDown, ChevronUp, Play } from 'lucide-react';
+import { ChevronDown, ChevronUp, Play, Share2 } from 'lucide-react';
 import { Card } from '@/components/ui';
 import { Change, PodAvatar, SentimentChip } from '@/components/redesign';
+import { StockCardShareModal } from '@/components/charts/StockCardShareModal';
+import { renderThemeCardPng } from '@/lib/themeCardImage';
+import { useAppStore } from '@/store/useAppStore';
 import { SaveCheck } from '@/components/financial/SaveCheck';
 import { formatDate } from '@/lib/date';
 import { cn } from '@/lib/utils';
@@ -46,6 +49,8 @@ function mean(values: (number | null | undefined)[]): number | null {
  *  companies it named have done since that FIRST mention. */
 export const ThemeCard: React.FC<ThemeCardProps> = ({ card, windowsMap, podcastImage, onPlaySegment, saved = false, onToggleSaved, className }) => {
   const [open, setOpen] = useState(false);
+  const [sharing, setSharing] = useState(false);
+  const colorMode = useAppStore((st) => st.stockColorMode);
   const first = card.mentions[0];
   const latest = card.mentions[card.mentions.length - 1];
   const rows = card.tickers.map((t) => ({
@@ -71,8 +76,27 @@ export const ThemeCard: React.FC<ThemeCardProps> = ({ card, windowsMap, podcastI
             )}
           </div>
         </div>
-        {onToggleSaved && <SaveCheck saved={saved} onToggle={onToggleSaved} className="-mr-2 -mt-2.5" />}
+        {/* Actions, apart from the date: share, then the bookmark as the right anchor. */}
+        <div className="-mr-2 -mt-2.5 flex shrink-0 items-center">
+          <button
+            type="button"
+            aria-label="分享圖卡"
+            title="分享圖卡"
+            onClick={() => setSharing(true)}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+          >
+            <Share2 size={14} />
+          </button>
+          {onToggleSaved && <SaveCheck saved={saved} onToggle={onToggleSaved} className="-ml-2" />}
+        </div>
       </div>
+      {sharing && (
+        <StockCardShareModal
+          ticker={card.theme_label}
+          load={() => renderThemeCardPng({ card, podcastImage, rows, averages, colorMode })}
+          onClose={() => setSharing(false)}
+        />
+      )}
 
       <p className={cn('text-base text-foreground/85 leading-relaxed mt-3', !open && 'line-clamp-3')}>{first.thesis}</p>
 
@@ -94,14 +118,15 @@ export const ThemeCard: React.FC<ThemeCardProps> = ({ card, windowsMap, podcastI
               </div>
             ))}
           </div>
-          {/* Stays inside the card; the right edge fades out to show there is more to swipe,
-             and the trailing padding lets the last tile scroll clear of the fade. */}
+          {/* Phones swipe the strip: no scrollbar, the right edge fades to show there is
+             more, and the trailing padding lets the last tile clear the fade. From md up
+             the tiles wrap into a grid instead — a mouse has nothing to swipe with. */}
           <ul
             aria-label="成分股走勢"
-            className="mt-2 flex snap-x gap-2 overflow-x-auto pb-1.5 pr-8 [scrollbar-width:thin] [mask-image:linear-gradient(to_right,black_calc(100%-2rem),transparent)]"
+            className="no-scrollbar mt-2 flex snap-x gap-2 overflow-x-auto pr-8 [mask-image:linear-gradient(to_right,black_calc(100%-2rem),transparent)] md:grid md:grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] md:overflow-visible md:pr-0 md:[mask-image:none]"
           >
             {rows.map((r) => (
-              <li key={r.ticker} className="w-36 shrink-0 snap-start rounded-md border border-border p-2.5">
+              <li key={r.ticker} className="w-36 shrink-0 snap-start rounded-md border border-border p-2.5 md:w-auto">
                 <Link to={`/stock/${encodeURIComponent(r.ticker)}`} className="block hover:text-accent-info">
                   <span className="block truncate text-sm font-medium text-foreground">{r.name}</span>
                   <span className="block font-mono text-xs text-muted-foreground">{r.ticker}</span>
