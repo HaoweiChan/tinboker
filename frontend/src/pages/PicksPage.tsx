@@ -598,11 +598,13 @@ const ChannelFilter: React.FC<{
 
   return (
     <div className="relative inline-block" ref={ref}>
+      {/* max-md:text-base: phones force the period <select> beside this to 1rem (iOS zooms
+         on smaller ones), so match it and the two dropdowns read as a pair. */}
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className="flex min-h-10 items-center gap-2 rounded-md border border-border bg-card px-2.5 py-2 text-xs text-foreground transition-colors hover:border-muted-foreground/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+        className="flex min-h-10 items-center gap-2 rounded-md border border-border bg-card px-2.5 py-2 text-xs max-md:text-base text-foreground transition-colors hover:border-muted-foreground/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
       >
         <Filter size={14} className="text-muted-foreground" />
         <span>{label}</span>
