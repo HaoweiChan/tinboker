@@ -25,6 +25,8 @@ const MAX_ROWS = 6;
 
 export interface ThemeCardImageInput {
   card: ThemeCardData;
+  /** Channel cover. Needs CORS to be drawn; otherwise the card shows the show's initial. */
+  podcastImage?: string;
   rows: { ticker: string; name: string; windows?: PickWindowReturns }[];
   averages: { key: string; label: string; value: number | null }[];
   /** 'TW' paints gains red; anything else paints them green. */
@@ -55,8 +57,22 @@ function fit(ctx: CanvasRenderingContext2D, text: string, width: number): string
   return `${out}…`;
 }
 
-export async function renderThemeCardPng({ card, rows, averages, colorMode }: ThemeCardImageInput): Promise<Blob> {
-  await document.fonts.ready;
+/** The cover as a canvas-safe image, or null. `crossOrigin` makes a host without CORS
+ *  fail to load instead of tainting the canvas, which would break the PNG export. */
+function loadCover(url?: string): Promise<HTMLImageElement | null> {
+  if (!url) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const img = new Image();
+    const timer = setTimeout(() => resolve(null), 4000);
+    img.crossOrigin = 'anonymous';
+    img.onload = () => { clearTimeout(timer); resolve(img); };
+    img.onerror = () => { clearTimeout(timer); resolve(null); };
+    img.src = url;
+  });
+}
+
+export async function renderThemeCardPng({ card, podcastImage, rows, averages, colorMode }: ThemeCardImageInput): Promise<Blob> {
+  const [cover] = await Promise.all([loadCover(podcastImage), document.fonts.ready]);
   const canvas = document.createElement('canvas');
   canvas.width = SIZE;
   canvas.height = SIZE;
@@ -80,21 +96,41 @@ export async function renderThemeCardPng({ card, rows, averages, colorMode }: Th
   ctx.fillRect(0, 0, SIZE, SIZE);
   ctx.textBaseline = 'alphabetic';
 
-  text(card.podcaster, MARGIN, 82, `400 30px ${FONT}`, LABEL);
-  text('TinBoker 聽播客', right, 82, `700 26px ${FONT}`, AMBER, 'right');
+  // Channel: cover (or the show's initial on a tile) and its name, then the brand.
+  const ICON = 84;
+  const iconY = 44;
+  ctx.save();
+  ctx.beginPath();
+  ctx.roundRect(MARGIN, iconY, ICON, ICON, 12);
+  ctx.clip();
+  if (cover) {
+    // Centre-crop to a square.
+    const side = Math.min(cover.naturalWidth, cover.naturalHeight);
+    ctx.drawImage(cover, (cover.naturalWidth - side) / 2, (cover.naturalHeight - side) / 2, side, side, MARGIN, iconY, ICON, ICON);
+  } else {
+    ctx.fillStyle = BORDER;
+    ctx.fillRect(MARGIN, iconY, ICON, ICON);
+    text(card.podcaster.trim().charAt(0), MARGIN + ICON / 2, iconY + ICON / 2 + 16, `700 44px ${FONT}`, INK, 'center');
+  }
+  ctx.restore();
+  ctx.font = `700 26px ${FONT}`;
+  const brandWidth = ctx.measureText('TinBoker 聽播客').width;
+  ctx.font = `600 42px ${FONT}`;
+  text(fit(ctx, card.podcaster, inner - ICON - 24 - brandWidth - 32), MARGIN + ICON + 24, iconY + ICON / 2 + 15, `600 42px ${FONT}`, INK);
+  text('TinBoker 聽播客', right, iconY + ICON / 2 + 10, `700 26px ${FONT}`, AMBER, 'right');
 
   ctx.font = `700 68px ${FONT}`;
-  text(fit(ctx, card.theme_label, inner), MARGIN, 178, `700 68px ${FONT}`, INK);
+  text(fit(ctx, card.theme_label, inner), MARGIN, 226, `700 68px ${FONT}`, INK);
   const stance = STANCE[latest.stance];
   const stanceColor = latest.stance === 'mixed' ? LABEL : latest.stance === 'bullish' ? up : down;
-  text(stance, MARGIN, 234, `700 30px ${FONT}`, stanceColor);
+  text(stance, MARGIN, 282, `700 30px ${FONT}`, stanceColor);
   ctx.font = `700 30px ${FONT}`;
   const stanceWidth = ctx.measureText(stance).width;
   text(`${formatDate(card.first_ms)} 起${card.mentions.length > 1 ? ` · 連續提及 ${card.mentions.length} 集` : ''}`,
-    MARGIN + stanceWidth + 24, 234, `400 28px ${FONT}`, LABEL);
+    MARGIN + stanceWidth + 24, 282, `400 28px ${FONT}`, LABEL);
 
   ctx.font = `400 34px ${FONT}`;
-  let y = 304;
+  let y = 350;
   for (const line of wrap(ctx, card.mentions[0].thesis, inner, 3)) {
     text(line, MARGIN, y, `400 34px ${FONT}`, INK);
     y += 50;

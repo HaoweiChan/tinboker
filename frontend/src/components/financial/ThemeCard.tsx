@@ -93,7 +93,7 @@ export const ThemeCard: React.FC<ThemeCardProps> = ({ card, windowsMap, podcastI
       {sharing && (
         <StockCardShareModal
           ticker={card.theme_label}
-          load={() => renderThemeCardPng({ card, rows, averages, colorMode })}
+          load={() => renderThemeCardPng({ card, podcastImage, rows, averages, colorMode })}
           onClose={() => setSharing(false)}
         />
       )}
