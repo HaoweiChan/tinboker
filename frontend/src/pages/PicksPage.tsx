@@ -424,8 +424,8 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodc
           </>
         )}
 
-        {/* One row, three controls: what to look at (個股／題材), whose shows, and — for
-           個股 only — which period. `relative` anchors the show menu on phones. */}
+        {/* One row, three controls: what to look at (個股／題材), whose shows, and which
+           period. `relative` anchors the show menu on phones. */}
         <div className="relative mb-[18px] flex flex-wrap items-center gap-2">
           <div role="group" aria-label="走勢類型" className="flex shrink-0 items-center gap-0.5 rounded-md border border-border bg-card p-0.5">
             {([{ value: 'stocks', label: '個股' }, { value: 'themes', label: '題材' }] as const).map((option) => (
@@ -447,33 +447,32 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodc
             selected={selected}
             onToggle={toggleChannel}
           />
-          {kind === 'stocks' && (
-            <label className="relative shrink-0">
-              <span className="sr-only">走勢期間</span>
-              <select
-                value={view === 'recent' ? 'recent' : String(settledTier)}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  if (value === 'recent') return setView('recent');
-                  setView('settled');
-                  setSettledTier(value === '7' ? 7 : value === '30' ? 30 : 90);
-                }}
-                className="min-h-10 appearance-none rounded-md border border-border bg-card py-2 pl-2.5 pr-7 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-              >
-                <option value="recent">最新</option>
-                <option value="7">7 日</option>
-                <option value="30">30 日</option>
-                <option value="90">90 日</option>
-              </select>
-              <ChevronDown size={13} aria-hidden="true" className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            </label>
-          )}
+          <label className="relative shrink-0">
+            <span className="sr-only">走勢期間</span>
+            <select
+              value={view === 'recent' ? 'recent' : String(settledTier)}
+              onChange={(e) => {
+                const value = e.target.value;
+                if (value === 'recent') return setView('recent');
+                setView('settled');
+                setSettledTier(value === '7' ? 7 : value === '30' ? 30 : 90);
+              }}
+              className="min-h-10 appearance-none rounded-md border border-border bg-card py-2 pl-2.5 pr-7 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+            >
+              <option value="recent">最新</option>
+              <option value="7">7 日</option>
+              <option value="30">30 日</option>
+              <option value="90">90 日</option>
+            </select>
+            <ChevronDown size={13} aria-hidden="true" className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          </label>
         </div>
 
         {kind === 'themes' ? (
           <ThemeCardsFeed
             scope={scope}
             shows={themeShows}
+            period={view === 'settled' ? settledTier : null}
             podcastImages={podcastImageMap}
             onPlaySegment={onPlaySegment}
             onShowAll={() => setScope('all')}
