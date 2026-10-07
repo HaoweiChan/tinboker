@@ -165,12 +165,17 @@ export const ThemeCard: React.FC<ThemeCardProps> = ({ card, windowsMap, podcastI
               <li key={m.episode_id} className="text-sm">
                 <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                   <span className="tabular-nums">{formatDate(m.released_at_ms)}</span>
-                  <Link to={`/episode/${encodeURIComponent(m.episode_id)}`} className="hover:text-accent-info hover:underline">
-                    {m.episode_number ? `EP${m.episode_number}` : '這一集'}
-                  </Link>
+                  {/* An old mention's episode may be outside the public window: text, not a dead link. */}
+                  {m.episode_public ? (
+                    <Link to={`/episode/${encodeURIComponent(m.episode_id)}`} className="hover:text-accent-info hover:underline">
+                      {m.episode_number ? `EP${m.episode_number}` : '這一集'}
+                    </Link>
+                  ) : (
+                    <span>{m.episode_number ? `EP${m.episode_number}` : '較早的集數'}</span>
+                  )}
                   <StanceChip stance={m.stance} />
                   {m.conviction === 'tentative' && <span>語氣保留</span>}
-                  {onPlaySegment && m.start_ms != null && (
+                  {onPlaySegment && m.episode_public && m.start_ms != null && (
                     <button
                       type="button"
                       onClick={() => onPlaySegment(m.episode_id, m.start_ms as number)}

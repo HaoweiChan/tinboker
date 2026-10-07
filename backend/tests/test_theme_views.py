@@ -175,3 +175,23 @@ def test_cards_fetch_members_in_one_query_for_multiple_themes(api):
     finally:
         event.remove(engine, "before_cursor_execute", record_query)
     assert len(registry_queries) == 1
+
+
+def test_mentions_flag_episodes_outside_the_public_window():
+    """Prod serves only recent episode pages; an older mention must say so, so the card
+    shows it as text instead of a link that 404s."""
+    from datetime import datetime, timedelta
+    from types import SimpleNamespace
+
+    def row(episode_id, released_at):
+        return SimpleNamespace(
+            podcaster="Show", theme_key="k", theme_label="K", exposure_id=None, episode_id=episode_id,
+            episode_number=None, released_at=released_at, stance="bullish", conviction="firm",
+            thesis="t", start_ms=None, tickers=[], quote=None,
+        )
+
+    now = datetime.utcnow()
+    rows = [row("old", now - timedelta(days=20)), row("new", now - timedelta(days=1))]
+    flags = lambda cards: {m["episode_id"]: m["episode_public"] for m in cards[0]["mentions"]}  # noqa: E731
+    assert flags(router.build_cards(rows, 5, {}, now - timedelta(days=7))) == {"old": False, "new": True}
+    assert flags(router.build_cards(rows, 5)) == {"old": True, "new": True}
