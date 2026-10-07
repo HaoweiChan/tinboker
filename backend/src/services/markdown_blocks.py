@@ -1,8 +1,8 @@
 """Markdown -> neutral blocks and inline spans.
 
-Both syndication targets need the same reading of the same markdown and differ only in
-the JSON they emit: vocus wants Lexical, Substack wants ProseMirror. Parsing it twice
-would mean two parsers drifting apart on exactly the details summary quality rides on —
+Syndication needs one reading of the markdown, and each platform emits its own JSON
+(vocus wants Lexical). Keeping the parse apart from the renderer stops parsers drifting
+on exactly the details summary quality rides on —
 ticker/tag links and heading levels — so the parse lives here and the platform modules
 are thin renderers over it.
 
@@ -117,8 +117,8 @@ def parse_blocks(markdown: str) -> list[Block]:
             continue
 
         # A pipe table becomes a bullet list, one item per row: "first cell：header
-        # value、header value…". Neither vocus's Lexical editor nor Substack's
-        # ProseMirror is known to accept a table node from the API (an unregistered
+        # value、header value…". vocus's Lexical editor is not known
+        # to accept a table node from the API (an unregistered
         # node type can wreck the whole article, and a 200 proves nothing), and a
         # table left as prose is one unreadable paragraph of pipes. Lists render
         # everywhere and read fine on a phone.

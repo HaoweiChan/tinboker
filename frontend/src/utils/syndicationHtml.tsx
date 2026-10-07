@@ -1,4 +1,4 @@
-/** Render a summary to clipboard-ready HTML for 方格子 / Substack.
+/** Render a summary to clipboard-ready HTML for 方格子.
  *
  *  Both are WYSIWYG editors: pasting raw markdown leaves literal `##` and `**` on the
  *  page, while pasting HTML keeps headings, bold, lists and links. So we hand the

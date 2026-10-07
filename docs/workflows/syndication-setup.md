@@ -1,7 +1,8 @@
-# Syndication setup — 方格子 (vocus) and Substack
+# Syndication setup — 方格子 (vocus)
 
-Episode summaries are republished to two platforms. The code lives in
-`backend/src/services/{vocus,substack}_publisher.py` and
+Episode summaries are republished to 方格子. (Substack was dropped in October 2026:
+the account was closed after the views stayed negligible, and its code was removed.)
+The code lives in `backend/src/services/vocus_publisher.py` and
 `backend/src/routers/social.py`; this file records the **account-side settings and the
 platform behaviours that are not visible from the code** — the things that cost a
 round-trip to rediscover.
@@ -14,39 +15,21 @@ APIs actually accept.
 
 ## Publishing, in one action
 
-`POST /api/admin/threads/episodes/{id}/syndicate?platforms=vocus,substack` — builds the
-shared fields **once** and hands the same values to both publishers. Admin page: the
-「兩邊建草稿」 button.
-
-Drafts on both by default. `publish` covers vocus and `publish_substack` covers Substack —
-separate switches, so turning one on never quietly turns the other on.
-
-| | vocus | Substack |
-|---|---|---|
-| Draft URL | `vocus.cc/publish-v2/{id}` | `{sub}.substack.com/publish/post/{id}` |
-| Publishing | `publish=true`, or the wizard | `publish_substack=true`, or the editor |
-| Emails on publish | no such thing | **never from here** — `send_email` is hard-wired `false` |
-
-### Substack: drafts and published posts are separate records
-
-Editing a draft does **not** change the live post. Every field — body, cover, og tags —
-stays at whatever it was when Publish was last clicked. After changing anything on an
-already-published post, someone has to hit Update in the editor or the change is invisible
-to readers. This has caught us twice: once for `og:image`, once for the body image.
-
-Consequence: get the post right **before** first publish. Nothing after it is automatic.
+`POST /api/admin/threads/episodes/{id}/syndicate?platforms=vocus` — builds the shared
+fields and hands them to the vocus publisher. A draft by default; `publish=true` makes
+it public. The admin Social page's 「發佈到方格子」 button calls the vocus publisher
+directly.
 
 ### From the pipeline, automatically
 
 `pipelines/services/podcast/src/pipeline/steps/syndicate.py` (Step 5f) fires the same
-endpoint after a fresh ingest, so a new summary reaches both platforms without anyone
+endpoint after a fresh ingest, so a new summary reaches vocus without anyone
 opening the admin page.
 
 | Env var | Effect |
 |---|---|
 | `SYNDICATE_AUTOPUBLISH` | **Required.** Unset = the step is a no-op and prints where to do it by hand. |
 | `SYNDICATE_VOCUS_PUBLISH` | vocus goes public instead of staying a draft. |
-| `SYNDICATE_SUBSTACK_PUBLISH` | Substack goes public **on the web**. Cannot email — see below. |
 | `SYNDICATE_MAX_AGE_DAYS` | Only syndicate episodes published within this many days. Default **7**; `0` disables the gate for a deliberate backfill. |
 
 > **Since 2026-09-13 the backend refuses per-episode syndication by default.** The pipeline
@@ -79,7 +62,7 @@ exactly the same work to the same data. The pinned value lives in the systemd un
 call claims `(platform, episode_id)` before publishing and records the article id after,
 so a re-ingest, an overlapping trigger, or a *different environment* is refused. That
 last one is not hypothetical: dev, staging and production share this Postgres **and** the
-vocus/Substack credentials, and the three duplicate vocus articles from Aug 2026 differ
+vocus credentials, and the three duplicate vocus articles from Aug 2026 differ
 only in whether the cover URL says `api.` or `staging-api.` — two environments published
 the same episode minutes apart.
 
@@ -92,17 +75,8 @@ recency guard from the start — `settings.threads_max_age_days`, 4 days.)
 An episode with **no** resolvable publish time is skipped, not published: a wrong skip
 costs one article the admin page can still stage by hand, a wrong publish is public.
 
-**Nothing here can email subscribers.** `SubstackClient.publish_draft` sends
-`send_email: false` and takes no parameter that could change it, so no combination of
-flags or query params sends a newsletter. That is deliberate: a web-only post can be
-taken down, a newsletter cannot be recalled, so enabling email should require a code
-change and a review rather than an env var someone typo'd.
-
-Verified live before shipping: publishing a throwaway draft this way returned
-`is_published: true` with `email_sent_at: null`.
-
 The ingest itself runs on `tinboker-podcast-ingest.timer` (four times a day,
-`services/podcast/deploy/`), so a new episode goes feed → summary → both platforms with
+`services/podcast/deploy/`), so a new episode goes feed → summary → vocus with
 nobody involved. The runner passes `--fill-limit`, which is what keeps a tick that finds
 nothing from re-transcribing episodes already done — an expensive way to do nothing.
 
@@ -136,42 +110,39 @@ Two things the code cannot do for you:
 
 ## Reading stats
 
-Both platforms are read back as well as written to, so syndication is no longer
-write-only. `backend/src/services/{vocus,substack}_insights_service.py` read the
-counters, two admin endpoints serve them, and the Analytics page renders a panel each.
+vocus is read back as well as written to, so syndication is not write-only.
+`backend/src/services/vocus_insights_service.py` reads the counters, an admin endpoint
+serves them, and the Analytics page renders a panel.
 
 | Endpoint | Returns |
 |---|---|
 | `GET /api/admin/vocus/insights?posts=10` | lifetime reads/likes/bookmarks + article count, and the newest articles with their own counters |
-| `GET /api/admin/substack/insights?posts=10` | lifetime views/reactions/comments + post count, and the newest posts |
 
 The vocus reader is **unauthenticated**: published articles are public, and the list
 endpoint answers with no `Authorization` header (verified 2026-09-11; only writes need
 the 7-day token). It needs `VOCUS_USER_ID` and a browser User-Agent, nothing else, so an
 expired token no longer blanks the reading panel — that gating is what left
-`analytics_snapshots.vocus_reads` NULL for weeks. Substack still reuses the publisher's
-`substack.sid` cookie. Both always return 200 and report `available: false` with a
-`detail` when they cannot read.
+`analytics_snapshots.vocus_reads` NULL for weeks. It always returns 200 and reports
+`available: false` with a `detail` when it cannot read.
 
-**The counts are lifetime, not windowed.** Neither platform exposes history — each
+**The counts are lifetime, not windowed.** vocus exposes no history — each
 article carries a running counter — so "reads this week" is not answerable from one
 call. That is what the daily snapshot is for: `POST /api/admin/analytics/snapshot`
-(the `Snapshot Social Metrics` workflow, 04:00 UTC) now also records `vocus_reads`,
-`vocus_articles`, `substack_reads` and `substack_posts`, and the growth chart draws
-them. **A day's reading is the difference between two rows.**
+(the `Snapshot Social Metrics` workflow, 04:00 UTC) now also records `vocus_reads`
+and `vocus_articles`, and the growth chart draws them. (The `substack_reads` /
+`substack_posts` columns still exist on `analytics_snapshots` with their history, but
+nothing writes or reads them.) **A day's reading is the difference between two rows.**
 
 ### The field names are ranked guesses, and the code says so
 
-Neither API documents which key holds the read count. vocus's published list was
+vocus does not document which key holds the read count. Its published list was
 captured live 2026-09-11: each article carries `pageview` (what vocus shows as 瀏覽 —
 this is `reads`), `readCount` (the deeper "read" metric, carried as `read_count`),
-`likeCount`, `collectCount`. Substack's is still a guess. Each count is resolved against
-a ranked candidate list (`READ_KEYS` / `VIEW_KEYS`, plus `LIST_ENDPOINTS` for Substack's
-published-post list), and **the resolution is reported with the number**:
+`likeCount`, `collectCount`. Each count is resolved against
+a ranked candidate list (`READ_KEYS`), and **the resolution is reported with the number**:
 
-- Working: the response carries `field_map` (`{"reads": "pageview"}`) and, for
-  Substack, the `source` endpoint that answered. Both show up in the Analytics page's
-  Tracking Configuration list.
+- Working: the response carries `field_map` (`{"reads": "pageview"}`), which shows up
+  in the Analytics page's Tracking Configuration list.
 - Not working: articles were found but no candidate key matched → `available: false`
   plus `sample_keys`, the field names the platform actually sent, rendered under the
   panel.
@@ -182,14 +153,14 @@ not working — so a mapping miss is never allowed to render as a zero, in the p
 in a snapshot row (the snapshot writes only when `available` is true).
 
 **First run against live credentials is a verification step, not a smoke test.** Open
-`/admin/analytics`: if both panels show numbers, note the `field_map` values and pin
-them at the head of each candidate list. If a panel shows `Fields returned: …`, the
-right key is in that list — move it to the front of `READ_KEYS`/`VIEW_KEYS` and delete
-the guesses. Paging (`page` on vocus, `offset` on Substack) is unverified too, so both
-readers dedupe by id across pages: an ignored paging parameter stops the walk instead
+`/admin/analytics`: if the panel shows numbers, note the `field_map` values and pin
+them at the head of the candidate list. If the panel shows `Fields returned: …`, the
+right key is in that list — move it to the front of `READ_KEYS` and delete
+the guesses. Paging (`page`) is unverified too, so the
+reader dedupes by id across pages: an ignored paging parameter stops the walk instead
 of multiplying the total.
 
-Scope caps: 200 articles/posts per read (`MAX_ARTICLES` / `MAX_POSTS`), reported as
+Scope cap: 200 articles per read (`MAX_ARTICLES`), reported as
 `truncated: true` rather than a quietly low number.
 
 ---
@@ -200,12 +171,7 @@ Scope caps: 200 articles/posts per read (`MAX_ARTICLES` / `MAX_POSTS`), reported
 `services/og_image.py`. `.svg` still exists because an early published vocus article
 references it.
 
-- **On vocus** the cover is `thumbnailUrl` plus `coverSource: "custom"`.
-- **On Substack the first body image IS the cover.** A reference post's `og:image` and its
-  first body image are the same asset. So the publisher uploads the PNG via
-  `POST /api/v1/image` and prepends it as a `captionedImage` node. Uploading also means a
-  published post stops depending on `api.tinboker.com` for its images.
-
+The cover is vocus's `thumbnailUrl` plus `coverSource: "custom"`.
 The cover deliberately uses **our own layout with the show's artwork as an illustration**,
 never the show's artwork alone — a summary wearing only 股癌's logo reads as 股癌's own
 post.
@@ -231,37 +197,15 @@ Recorded because they are invisible from the repo and easy to get wrong.
 The **salon**, not the personal profile, is what appears on tag pages and above every
 article. Every other 股癌-summary writer uses the salon as their publication.
 
-### Substack — `tinboker.substack.com`
-
-| Field | Value | Note |
-|---|---|---|
-| Publication name | 聽播客 TinBoker | strip the auto-appended `'s Substack` |
-| Handle | `@tinboker` | |
-| Header image | the same 1500×300 transparent logo | Substack puts it on a **white plate** in both light and dark mode, so dark ink is correct |
-| Accent colour | `#9e6c16` | see below |
-| Background | None (light) | Substack's emails are always light; a dark site would not match them |
-
-**Accent colour.** Substack uses it for links and buttons, so it must be readable on
-white. Brand amber `#fbac23` is **1.90:1** — unusable for text. `#9e6c16` keeps the
-brand's hue (38°) and saturation, dropping only lightness, and reaches **4.55:1** (WCAG AA).
-Substack's own default `#FF6719` is 2.91:1 and also fails.
-
 ---
 
 ## Credentials
 
-Both live in GCP Secret Manager (project `gen-lang-client-0901363254`), per
+The token lives in GCP Secret Manager (project `gen-lang-client-0901363254`), per
 [`../infra-runbook.md`](../infra-runbook.md).
 
 | Secret | Life | Rotation |
 |---|---|---|
 | `VOCUS_ID_TOKEN` | **7 days** | automatic — the `vocus-token-rotate` scheduled task copies the browser's token daily. vocus silently re-mints while the Google session holds, so this needs no human unless that session lapses. |
-| `SUBSTACK_SID` | months | **by hand.** It is httpOnly, so nothing can read it out of the page. |
 
-Taking `SUBSTACK_SID`: DevTools → Application → Cookies → `https://tinboker.substack.com`
-→ the row named exactly `substack.sid` on the `.substack.com` domain. A correct value is
-~80 characters and begins `s%3A`. **A value beginning `g.` is Google's `SID` cookie**,
-which sits a few rows away in the same list and yields a 403 "Not authorized".
-
-`VOCUS_USER_ID`, `VOCUS_SALON_ID`, `SUBSTACK_SUBDOMAIN` and `SUBSTACK_USER_ID` are public
-identifiers, not secrets, but live in GSM with the rest for one place to look.
+`VOCUS_USER_ID` and `VOCUS_SALON_ID` are public identifiers, not secrets, but live in GSM with the rest for one place to look.

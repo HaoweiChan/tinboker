@@ -47,7 +47,7 @@ from src.routers.admin_stock_bars import router as admin_stock_bars_router
 from src.routers.admin_weekly_brief import router as admin_weekly_brief_router
 from src.routers.admin_members import router as admin_members_router, promo_router as admin_promo_router
 from src.routers.social import (router as social_router, facebook_router, promo_router,
-                                substack_router, vocus_router)
+                                vocus_router)
 from src.routers.seo import router as seo_router, admin_router as admin_seo_router
 from src.routers.weekly import router as weekly_router
 from src.routers.screener import router as screener_router
@@ -481,7 +481,6 @@ if not settings.is_production:
     app.include_router(social_router)       # /api/admin/threads/*
     app.include_router(facebook_router)     # /api/admin/facebook/*
     app.include_router(vocus_router)        # /api/admin/vocus/*
-    app.include_router(substack_router)     # /api/admin/substack/*
     app.include_router(promo_router)        # /api/admin/promo/*
     app.include_router(admin_seo_router)    # /api/admin/seo/*
 

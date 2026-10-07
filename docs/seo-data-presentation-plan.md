@@ -109,7 +109,7 @@ its tables are empty in production. It ships as soon as TKB-001 populates them.
 
 - `/weekly/YYYY-Www` rollup: episode count, top tickers, sentiment shifts, sector heat.
   Dated URLs carry freshness signals, and the content is the same payload the
-  Threads / vocus / Substack syndication already composes.
+  Threads / vocus syndication already composes.
 - `/topics/:tag`: stop the blanket `noindex`. Index tags that have a description and ≥5
   episodes in the window; keep `noindex` on the rest. Re-check AdSense "low value
   content" risk after 2 weeks in Search Console before widening further.

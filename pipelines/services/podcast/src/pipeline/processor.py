@@ -170,7 +170,7 @@ class EpisodeProcessor:
             # Step 5d: Export ticker insights per platform contract
             export_ticker_insights(self.config, self.services, episode_data)
 
-            # Step 5f: Stage the summary on 方格子 + Substack (best-effort, off by default)
+            # Step 5f: Stage the summary on 方格子 (best-effort, off by default)
             trigger_syndicate(self.config, self.services, episode_data)
 
             # Step 6: Validate

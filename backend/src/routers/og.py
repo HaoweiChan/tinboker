@@ -1,6 +1,6 @@
 """Public cover images for syndicated copies.
 
-Deliberately unauthenticated: the whole point is that vocus, Substack, and any social
+Deliberately unauthenticated: the whole point is that vocus and any social
 card crawler can fetch the URL we hand them. It exposes nothing an episode page does not
 already show — the podcast name and the episode title.
 """

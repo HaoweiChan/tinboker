@@ -7,7 +7,7 @@ The content pipeline writes three in-house markers that only resolve on our own 
     [label](#tag:ID)          -> a topic page link
     (#time:MILLISECONDS)      -> a badge that seeks the audio player
 
-Anywhere else those are literal junk, so every syndication target (方格子, Substack)
+Anywhere else those are literal junk, so every syndication target (方格子)
 needs them resolved first. This module is that shared step; the platform-specific
 rendering lives next to each publisher.
 
@@ -144,7 +144,7 @@ def attribution_markdown(episode_id: str, site_url: str | None = None,
             f"原文與可點擊的逐段時間軸在 [{url}]({url})。")
 
 
-# vocus's 摘要 field caps at 150 characters; Substack's subtitle is shorter in practice.
+# vocus's 摘要 field caps at 150 characters.
 EXCERPT_LIMIT = 150
 
 
@@ -199,7 +199,7 @@ def to_syndication_markdown(content: str, episode_id: str, site_url: str | None 
 
 
 # ── structured off-site copy (2026-09-13) ─────────────────────────────────────
-# What goes to vocus/Substack is no longer the summary verbatim under "<show> <title> 摘要".
+# What goes to vocus is no longer the summary verbatim under "<show> <title> 摘要".
 # Reviewed against the live salon: the episode's own title (an in-joke, an emoji) gave a
 # stranger no reason to click; the summary opened with a "本文深入探討…" lead that repeats
 # the article it introduces; and a backfilled 2022 episode carried a 2026 publish date with

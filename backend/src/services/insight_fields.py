@@ -1,7 +1,7 @@
 """Pull a metric out of an undocumented API's object without betting on one field name.
 
-vocus and Substack both expose read counts only through the endpoints their own
-dashboards call, and neither documents the field that holds the number. A single
+vocus exposes read counts only through the endpoints its own
+dashboard calls, and does not document the field that holds the number. A single
 guessed key fails the way these platforms always fail: a 200, a plausible-looking
 payload, and a zero that reads as "nobody opened it" rather than "we looked in the
 wrong place". A read counter that silently reports zero is worse than no counter —

@@ -1,7 +1,7 @@
-"""Reading vocus / Substack view counters.
+"""Reading vocus view counters.
 
-Both APIs are undocumented. vocus's published-list shape was captured live 2026-09-11
-(``pageview`` / ``readCount``, no credential needed); Substack's field is still a guess.
+The API is undocumented; the published-list shape was captured live 2026-09-11
+(``pageview`` / ``readCount``, no credential needed).
 What these tests pin is the behaviour that makes a wrong guess *visible*: a number is
 reported only when it was actually found, and a miss says which keys the platform
 really sent instead of rendering a zero.
@@ -10,7 +10,6 @@ import httpx
 import pytest
 
 from src.services import vocus_publisher as vp
-from src.services import substack_insights_service as sis
 from src.services import vocus_insights_service as vis
 from src.services.insight_fields import pick_int, sample_keys, sum_int
 
@@ -33,12 +32,6 @@ def _live_token(monkeypatch):
 
 def _vocus_service():
     return vis.VocusInsightsService(user_id="u")
-
-
-def _substack_service():
-    return sis.SubstackInsightsService(
-        sis.SubstackClient(sid="s%3Aabc", subdomain="tinboker", user_id=7)
-    )
 
 
 # ── field resolution ────────────────────────────────────────────────────────
@@ -195,70 +188,6 @@ async def test_vocus_recent_articles_carry_their_public_url(monkeypatch):
     assert (rows[0]["reads"], rows[0]["read_count"]) == (9, 4)
 
 
-# ── substack ────────────────────────────────────────────────────────────────
-@pytest.mark.asyncio
-async def test_substack_falls_through_to_the_next_list_endpoint(monkeypatch):
-    """Which path lists published posts is unverified, so a 404 is not the end."""
-    def handler(request: httpx.Request) -> httpx.Response:
-        if "post_management" in request.url.path:
-            return httpx.Response(404, text="not found")
-        return httpx.Response(200, json={"posts": [
-            {"id": 1, "title": "一", "postviews": 30},
-            {"id": 2, "title": "二", "postviews": 12},
-        ]})
-
-    _mock_transport(monkeypatch, handler)
-    summary = await _substack_service().account_summary()
-
-    assert summary["available"] is True
-    assert (summary["views"], summary["posts"]) == (42, 2)
-    # The path that answered is reported so it can be pinned once it is known.
-    assert "/api/v1/posts" in summary["source"]
-
-
-@pytest.mark.asyncio
-async def test_substack_posts_without_a_view_field_report_the_keys(monkeypatch):
-    _mock_transport(monkeypatch, lambda _r: httpx.Response(200, json={"posts": [
-        {"id": 1, "title": "一", "audienceViews": 30},
-    ]}))
-
-    summary = await _substack_service().account_summary()
-
-    assert summary["available"] is False
-    assert "views" not in summary
-    assert "audienceViews" in summary["sample_keys"]
-
-
-@pytest.mark.asyncio
-async def test_substack_stale_cookie_is_reported_not_swallowed(monkeypatch):
-    _mock_transport(monkeypatch, lambda _r: httpx.Response(403, text='{"error":"nope"}'))
-
-    summary = await _substack_service().account_summary()
-
-    assert summary["available"] is False
-    assert summary["detail"] == "credential_expired"
-
-
-@pytest.mark.asyncio
-async def test_substack_empty_publication_is_not_an_error(monkeypatch):
-    _mock_transport(monkeypatch, lambda _r: httpx.Response(200, json={"posts": []}))
-
-    summary = await _substack_service().account_summary()
-
-    assert summary["available"] is False
-    assert summary["posts"] == 0
-    assert summary["detail"] == "No published posts yet."
-
-
-@pytest.mark.asyncio
-async def test_unconfigured_platforms_say_which_secrets_are_missing():
-    """Both panels must explain themselves without credentials present."""
-    substack = sis.SubstackInsightsService(sis.SubstackClient(sid=None, subdomain=None, user_id=None))
-    summary = await substack.account_summary()
-    assert summary["configured"] is False
-    assert "SUBSTACK_SID" in summary["detail"]
-
-
 # ── the daily snapshot ──────────────────────────────────────────────────────
 class _FakeDB:
     """Just enough Session for record_snapshot: one row, upserted in memory."""
@@ -285,7 +214,7 @@ class _FakeDB:
         pass
 
 
-def _stub_sources(monkeypatch, *, vocus: dict, substack: dict):
+def _stub_sources(monkeypatch, *, vocus: dict):
     from src.routers import admin_analytics as aa
 
     def _service(payload):
@@ -297,37 +226,29 @@ def _stub_sources(monkeypatch, *, vocus: dict, substack: dict):
     monkeypatch.setattr(aa, "ThreadsInsightsService", _service({"followers": 452}))
     monkeypatch.setattr(aa, "FacebookInsightsService", _service({"followers": 1, "fans": 1}))
     monkeypatch.setattr(aa, "VocusInsightsService", _service(vocus))
-    monkeypatch.setattr(aa, "SubstackInsightsService", _service(substack))
     return aa
 
 
 @pytest.mark.asyncio
-async def test_snapshot_records_reads_from_both_platforms(monkeypatch):
-    aa = _stub_sources(
-        monkeypatch,
-        vocus={"available": True, "reads": 1200, "articles": 30},
-        substack={"available": True, "views": 340, "posts": 28},
-    )
+async def test_snapshot_records_vocus_reads(monkeypatch):
+    aa = _stub_sources(monkeypatch, vocus={"available": True, "reads": 1200, "articles": 30})
 
     result = await aa.record_snapshot(None, _FakeDB())
 
     assert (result["vocus_reads"], result["vocus_articles"]) == (1200, 30)
-    assert (result["substack_reads"], result["substack_posts"]) == (340, 28)
     assert result["threads_followers"] == 452
 
 
 @pytest.mark.asyncio
 async def test_snapshot_leaves_an_unmapped_read_count_null_not_zero(monkeypatch):
     """A wrong field name must leave a gap in the chart, never a 0 that reads as
-    "nobody opened it" — and it must not cost the other platforms their row."""
+    "nobody opened it" — and it must not cost the follower counts their row."""
     aa = _stub_sources(
         monkeypatch,
         vocus={"available": False, "detail": "no read field matched", "sample_keys": ["readTotal"]},
-        substack={"available": True, "views": 340, "posts": 28},
     )
 
     result = await aa.record_snapshot(None, _FakeDB())
 
     assert result["vocus_reads"] is None
-    assert result["substack_reads"] == 340
     assert result["threads_followers"] == 452

@@ -163,10 +163,10 @@ def fetch_trending_tickers(
 
 
 def trigger_syndication(
-    episode_id: str, *, platforms: str = "vocus,substack", publish_vocus: bool = False,
-    publish_substack: bool = False, dry_run: bool = False, timeout: float = 60.0,
+    episode_id: str, *, platforms: str = "vocus", publish_vocus: bool = False,
+    dry_run: bool = False, timeout: float = 60.0,
 ) -> dict[str, Any] | None:
-    """Ask the platform to stage one episode on the long-form syndication targets.
+    """Ask the platform to stage one episode on the long-form syndication target.
 
     ``POST {base}/api/admin/threads/episodes/{id}/syndicate`` with the
     ``TINBOKER_SOCIAL_TOKEN`` bearer token, opt-in: nothing happens unless both env
@@ -176,12 +176,8 @@ def trigger_syndication(
     side — every call creates a new draft. The caller fires it once, on the episode it
     just ingested.
 
-    ``publish_substack`` publishes to the Substack **web** only — the platform hard-wires
-    ``send_email: false`` and offers no way to email subscribers, so this cannot send a
-    newsletter no matter how it is called.
-
     A longer timeout than the Threads trigger: this renders a cover, uploads it, and
-    talks to two APIs.
+    talks to the vocus API.
     """
     base = admin_base_url()
     token = os.environ.get("TINBOKER_SOCIAL_TOKEN")
@@ -191,7 +187,6 @@ def trigger_syndication(
         "platforms": platforms,
         "dry_run": str(bool(dry_run)).lower(),
         "publish": str(bool(publish_vocus)).lower(),
-        "publish_substack": str(bool(publish_substack)).lower(),
     })
     url = f"{base}/api/admin/threads/episodes/{urllib.parse.quote(episode_id)}/syndicate?{query}"
     try:

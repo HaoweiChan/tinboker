@@ -437,7 +437,7 @@ Variables set in `docker-compose.multi.yml` are passed directly to containers. C
 | `FIRESTORE_DATABASE_ID` | historical | Legacy configuration only; no live Firestore reads/writes |
 | `CORS_ORIGINS` | `["https://tinboker.com",...]` | Set per environment in compose file |
 | `RELEASE_PODCAST_LANGUAGES` | `zh-TW` | Release scoping (launch subset) — only show `content_sources` podcasts in these languages ("" = all) |
-| `EPISODE_SYNDICATION_PLATFORMS` | `""` | Which platforms the pipeline's per-episode syndicate call may still reach (`vocus,substack`). Empty since 2026-09-13: 870 summaries in 4 weeks at ~7 pageviews each; the nightly 每日一集 sends one instead. |
+| `EPISODE_SYNDICATION_PLATFORMS` | `""` | Which platforms the pipeline's per-episode syndicate call may still reach (`vocus`). Empty since 2026-09-13: 870 summaries in 4 weeks at ~7 pageviews each; the nightly 每日一集 sends one instead. |
 | `THREADS_NATIVE_POLLS_ENABLED` | `true` (pipelines deploy unit) | Pipelines only. Native-poll generation; on since 2026-09-30 once every backend incl. prod (v0.12.18) publishes `social_thread.poll`. The pipeline and episode store are shared across envs. |
 | `DAILY_PICK_AUTOPUBLISH` | `false` | Run the nightly 每日一集 → vocus loop (20:40 Asia/Taipei). Set on **staging only** (`docker-compose.multi.yml`); the shared ledger makes a second environment a no-op anyway. |
 | `DAILY_PICK_LIMIT` | `1` | How many episode summaries a day the loop may send. |

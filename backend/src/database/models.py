@@ -95,7 +95,7 @@ class ContentSource(Base):
     transcript_model = Column(String(50), nullable=True)  # podcast only: e.g. whisper-large-v3
     active = Column(Boolean, nullable=False, default=True, index=True)
     # Per-show outbound-publishing kill switch: when False, this show's episodes are
-    # never pushed to any external platform (Threads, Facebook, 方格子, Substack).
+    # never pushed to any external platform (Threads, Facebook, 方格子).
     # Independent of `active` — we keep ingesting the show and it still feeds the site,
     # we just stop publishing about it anywhere else.
     social_enabled = Column(Boolean, nullable=False, default=True)
@@ -419,7 +419,7 @@ class AnalyticsSnapshot(Base):
     """Daily point-in-time audience snapshot, for follower/fan/read growth charts.
 
     Meta's APIs return only the *current* follower/fan count (no history), and vocus
-    and Substack likewise expose a running read counter per article with no history, so
+    likewise exposes a running read counter per article with no history, so
     we record them once a day (cron → POST /api/admin/analytics/snapshot) and chart the
     accumulation. One row per UTC day (``day`` unique, upserted). Shared across envs
     (one Postgres), so it doesn't matter which env's cron writes it.
@@ -437,8 +437,6 @@ class AnalyticsSnapshot(Base):
     fb_fans = Column(Integer, nullable=True)
     vocus_reads = Column(Integer, nullable=True)       # 方格子 lifetime reads, all articles
     vocus_articles = Column(Integer, nullable=True)    # published article count
-    substack_reads = Column(Integer, nullable=True)    # Substack lifetime views, all posts
-    substack_posts = Column(Integer, nullable=True)    # published post count
     captured_at = Column(DateTime, default=datetime.utcnow)
 
     def __repr__(self) -> str:

@@ -1,4 +1,4 @@
-"""One episode, one vocus article and one Substack post — forever.
+"""One episode, one vocus article — forever.
 
 Neither platform dedupes: every call mints a fresh article. The shared Postgres ledger
 is the only thing that stops a second copy, and it has to work *across environments* —
@@ -33,25 +33,15 @@ async def test_the_second_call_is_refused_and_points_at_the_first(temp_db):
 
 @pytest.mark.asyncio
 async def test_a_refused_call_never_reaches_the_platform(temp_db):
-    await _syndicate_once("substack", "EP2", _ok(), dry_run=False)
+    await _syndicate_once("vocus", "EP2", _ok(), dry_run=False)
     calls = []
 
     async def run():
         calls.append(1)
         return {"posted": True, "draft_id": 7}
 
-    await _syndicate_once("substack", "EP2", run, dry_run=False)
+    await _syndicate_once("vocus", "EP2", run, dry_run=False)
     assert calls == [], "the publisher must not be called at all — it would create a post"
-
-
-@pytest.mark.asyncio
-async def test_the_two_platforms_are_tracked_apart(temp_db):
-    await _syndicate_once("vocus", "EP3", _ok(), dry_run=False)
-
-    async def substack():
-        return {"posted": True, "draft_id": 42, "url": "https://x.substack.com/p/y"}
-
-    assert (await _syndicate_once("substack", "EP3", substack, dry_run=False))["posted"] is True
 
 
 @pytest.mark.asyncio

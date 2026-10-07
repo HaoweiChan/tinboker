@@ -188,8 +188,6 @@ _PG_BOOT_COLUMNS: list[tuple[str, str, str]] = [
     # first snapshot that records them stay NULL, which the growth chart skips.
     ("analytics_snapshots", "vocus_reads", "INTEGER"),
     ("analytics_snapshots", "vocus_articles", "INTEGER"),
-    ("analytics_snapshots", "substack_reads", "INTEGER"),
-    ("analytics_snapshots", "substack_posts", "INTEGER"),
     # Membership entitlement (PR 1 — admin-granted only, no billing yet).
     ("users", "member_until", "TIMESTAMPTZ"),
     # Picks swiped away in 走勢. Pre-existing rows get '[]', not NULL — every
@@ -427,7 +425,7 @@ def create_all_tables():
                 conn.execute(text("ALTER TABLE stock_translations ADD COLUMN name_preference VARCHAR(10) DEFAULT 'auto'"))
                 conn.commit()
             snap_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(analytics_snapshots)"))}
-            for column in ("vocus_reads", "vocus_articles", "substack_reads", "substack_posts"):
+            for column in ("vocus_reads", "vocus_articles"):
                 if snap_cols and column not in snap_cols:
                     conn.execute(text(f"ALTER TABLE analytics_snapshots ADD COLUMN {column} INTEGER"))
                     conn.commit()

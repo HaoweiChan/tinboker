@@ -21,8 +21,7 @@ from src.auth.admin_auth import AdminAccess, get_admin_access, get_social_access
 from src.config import settings
 from src.database.models import PromoDraft, ScheduledSocialPost
 from src.database.postgres import get_session
-from src.services import (facebook_publisher, promo_publisher, substack_publisher,
-                          threads_publisher, vocus_publisher)
+from src.services import facebook_publisher, promo_publisher, threads_publisher, vocus_publisher
 from src.services.content_source_service import social_enabled_for
 from src.services.gcs_content import GCSContentService, media_url
 from src.services.syndication_markdown import (
@@ -32,7 +31,6 @@ from src.tag_registry import canonical_label
 from src.services.podcast import PodcastService
 from src.services.facebook_insights_service import (FacebookInsightsService,
                                                      recent_post_insights as facebook_recent_post_insights)
-from src.services.substack_insights_service import SubstackInsightsService
 from src.services.threads_insights_service import ThreadsInsightsService, history_sync_status
 from src.services.threads_insights_service import ThreadsAPIError
 from src.services.vocus_insights_service import VocusInsightsService
@@ -48,10 +46,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/admin/threads", tags=["admin", "social"])
 # Facebook insights live under their own prefix (parallel to the threads endpoints).
 facebook_router = APIRouter(prefix="/api/admin/facebook", tags=["admin", "social"])
-# Syndication targets read their own stats; the publishing endpoints for both stay on
-# the threads router, where the "one action, two platforms" flow lives.
+# The syndication target reads its own stats; the publishing endpoint stays on the
+# threads router.
 vocus_router = APIRouter(prefix="/api/admin/vocus", tags=["admin", "social"])
-substack_router = APIRouter(prefix="/api/admin/substack", tags=["admin", "social"])
 
 podcast_service = PodcastService()
 
@@ -113,7 +110,7 @@ def _posted_status(episode_id: str) -> dict:
 async def _syndicate_once(platform: str, episode_id: str, run, dry_run: bool) -> dict:
     """Run one syndication publisher at most once per (platform, episode), ever.
 
-    vocus and Substack create a fresh article on every call — they dedupe nothing — so
+    vocus creates a fresh article on every call — it dedupes nothing — so
     the only thing standing between a re-ingest and a second public copy is this ledger.
     It is shared Postgres, which matters more than it sounds: dev, staging and production
     all carry the same publishing credentials, and the duplicate vocus articles differ
@@ -319,21 +316,6 @@ async def vocus_insights(
     return {**summary, "recent_posts": recent}
 
 
-@substack_router.get("/insights")
-async def substack_insights(
-    posts: int = Query(default=10, ge=0, le=49, description="How many recent posts to include"),
-    _: AdminAccess = Depends(get_admin_access),
-):
-    """Substack reading stats: lifetime view totals + per-post views.
-
-    Same shape and the same lifetime caveat as the vocus endpoint above.
-    """
-    svc = SubstackInsightsService()
-    summary = await svc.account_summary()
-    recent = await svc.recent_post_insights(limit=posts) if posts else []
-    return {**summary, "recent_posts": recent}
-
-
 # ── Comment triage (replies people leave on our posts) ────────────────────────
 
 class CommentReply(BaseModel):
@@ -448,7 +430,7 @@ async def get_social_episode(
         ],
         "marp_markdown": episode.marp_markdown_content or "",
         "marp_size": _marp_size(episode.marp_markdown_content or ""),
-        # The long-form summary, for the "copy for 方格子/Substack" action. Prefer the
+        # The long-form summary, for the "copy for 方格子" action. Prefer the
         # human-edited version, same precedence the episode page uses.
         "summary_markdown": episode.modified_summary_content or episode.summary_content or "",
         "composed": composed,
@@ -642,44 +624,6 @@ async def publish_episode_to_vocus(
     ), dry_run)
 
 
-@router.post("/episodes/{episode_id}/draft-substack")
-async def draft_episode_to_substack(
-    episode_id: str,
-    request: Request,
-    dry_run: bool = Query(default=True, description="Convert only; do not create the draft (default)"),
-    _: AdminAccess = Depends(get_social_access),
-):
-    """Stage one episode's summary as a Substack DRAFT.
-
-    Named ``draft-`` rather than ``publish-`` because it deliberately stops short of
-    publishing: on Substack that emails every subscriber the instant it succeeds and
-    cannot be undone, so the final click stays human. The response carries the draft's
-    edit URL to make that click one step away.
-    """
-    episode = await podcast_service.get_episode_admin(episode_id)
-    if not episode:
-        raise HTTPException(status_code=404, detail=f"Episode {episode_id} not found")
-
-    summary = getattr(episode, "modified_summary_content", None) or getattr(episode, "summary_content", None) or ""
-    podcast_name = (getattr(episode, "podcast_name", None) or "").strip()
-    raw_title = (getattr(episode, "episode_title", None) or "").strip() or episode_id
-    title = syndication_title(podcast_name, raw_title)
-    if not social_enabled_for(podcast_name):
-        return _social_off_result("substack", episode_id)
-
-    return await _syndicate_once("substack", episode_id, lambda: substack_publisher.create_summary_draft(
-        episode_id,
-        title,
-        summary,
-        podcast_name=podcast_name,
-        cover_image_url=f"{_public_base_url(request)}/api/og/episode/{episode_id}.png",
-        send_email=False,
-        subtitle=((getattr(episode, "summary_excerpt", None) or "").strip()
-                  or syndication_excerpt(summary, limit=140)),
-        dry_run=dry_run,
-    ), dry_run)
-
-
 def _episode_age_days(episode) -> Optional[float]:
     """Days since the episode's true release (released_at_ms), None when unknown."""
     ms = getattr(episode, "released_at_ms", None)
@@ -697,34 +641,18 @@ def episode_syndication_platforms() -> set[str]:
 async def syndicate_episode(
     episode_id: str,
     request: Request,
-    platforms: str = Query(default="vocus,substack", description="Comma list: vocus, substack"),
+    platforms: str = Query(default="vocus", description="Comma list: vocus"),
     dry_run: bool = Query(default=True, description="Convert only; create nothing (default)"),
     publish: bool = Query(default=False, description="vocus only: go public instead of staying a draft"),
-    publish_substack: bool = Query(
-        default=False,
-        description="Substack only: publish to the web (never emails) instead of staying a draft",
-    ),
     allow_old: bool = Query(default=False, description="Syndicate even if the episode is older than SYNDICATE_MAX_AGE_DAYS"),
     _: AdminAccess = Depends(get_social_access),
 ):
-    """Stage one episode on every syndication target at once.
+    """Stage one episode on every syndication target (vocus only).
 
-    Drafts on both by default. Reviewing the same summary on two platforms means opening
-    two editors, and doing that from one action is the whole point — firing them
-    separately guarantees the two copies drift while you fiddle.
-
-    ``publish`` covers vocus, ``publish_substack`` covers Substack. Separate switches on
-    purpose: turning one on should never quietly turn the other on.
-
-    Publishing to Substack here NEVER emails subscribers — the publisher hard-wires
-    ``send_email: false`` and exposes no way to change it. A web-only post can be taken
-    down; a newsletter cannot be recalled.
-
-    Each platform reports independently. One failing does not roll back or block the
-    other — two half-finished drafts you can see beat one silent skip.
+    A draft by default; ``publish`` makes it public.
     """
     selected = [p.strip().lower() for p in platforms.split(",") if p.strip()]
-    unknown = [p for p in selected if p not in ("vocus", "substack")]
+    unknown = [p for p in selected if p not in ("vocus",)]
     if unknown:
         raise HTTPException(status_code=422, detail=f"Unknown platform(s): {', '.join(unknown)}")
     if not selected:
@@ -765,24 +693,7 @@ async def syndicate_episode(
             episode, base_url=_public_base_url(request), publish=publish, dry_run=dry_run,
         )
 
-    async def _substack() -> dict:
-        s_title, s_body, s_excerpt = await episode_copy(episode, base_url=_public_base_url(request))
-        return await substack_publisher.create_summary_draft(
-            episode_id, s_title, s_body, podcast_name=podcast_name,
-            subtitle=s_excerpt[:140],
-            # The same cover both platforms show, so one summary does not look like two.
-            cover_image_url=f"{_public_base_url(request)}/api/og/episode/{episode_id}.png",
-            # Never primed to mail the list. Publishing web-only is reversible; an email
-            # is not, and that choice stays with whoever clicks Publish.
-            send_email=False,
-            # The pipeline has sent publish_substack=true since Step 5f shipped, but the
-            # endpoint silently dropped the unknown query param — every "published"
-            # episode was actually a draft nobody saw.
-            publish=publish_substack,
-            dry_run=dry_run,
-        )
-
-    runners = {"vocus": _vocus, "substack": _substack}
+    runners = {"vocus": _vocus}
     settled = await asyncio.gather(
         *(_syndicate_once(p, episode_id, runners[p], dry_run) for p in selected),
         return_exceptions=True,
@@ -837,7 +748,7 @@ async def episode_ticker_lines(episode, limit: int = 5) -> list[str]:
 
 
 async def episode_copy(episode, *, base_url: str) -> tuple[str, str, str]:
-    """(title, body, excerpt) for one episode, shared by vocus and Substack."""
+    """(title, body, excerpt) for one episode, for vocus."""
     summary = getattr(episode, "modified_summary_content", None) or getattr(episode, "summary_content", None) or ""
     podcast_name = (getattr(episode, "podcast_name", None) or "").strip()
     raw_title = (getattr(episode, "episode_title", None) or "").strip() or episode.id
