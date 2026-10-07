@@ -18,6 +18,7 @@ export interface AuthResponse {
     alerts?: string[];
     tag_subscriptions?: string[];
     dismissed_picks?: string[];
+    saved_picks?: string[];
     member_until?: string | null;
     is_member?: boolean;
     membership_preview?: 'free' | 'paid' | null;

@@ -34,6 +34,7 @@ ARRAY_FIELDS = (
     "alerts",
     "tag_subscriptions",
     "dismissed_picks",
+    "saved_picks",
 )
 
 
@@ -416,6 +417,21 @@ def toggle_dismissed_pick(user_id: str, pick_key: str) -> Dict[str, any]:
         return {"pick_key": pick_key, "is_dismissed": False}
     _update_array_field(user_id, "dismissed_picks", pick_key, "add")
     return {"pick_key": pick_key, "is_dismissed": True}
+
+
+def toggle_saved_pick(user_id: str, pick_key: str) -> Dict[str, any]:
+    """Keep/unkeep one 走勢 card in 我的清單.
+
+    `pick_key` is "{episode_id}|{ticker}|{podcaster}" for a stock card and
+    "theme:{podcaster}|{theme_key}|{first_ms}" for a theme card — both carry the show, so
+    the list can load a saved card's show without scanning every show.
+    """
+    subscriptions = get_user_subscriptions(user_id)
+    if pick_key in subscriptions.get("saved_picks", []):
+        _update_array_field(user_id, "saved_picks", pick_key, "remove")
+        return {"pick_key": pick_key, "is_saved": False}
+    _update_array_field(user_id, "saved_picks", pick_key, "add")
+    return {"pick_key": pick_key, "is_saved": True}
 
 
 def _to_preferences(prefs: dict) -> NotificationPreferences:

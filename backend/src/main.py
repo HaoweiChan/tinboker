@@ -52,6 +52,7 @@ from src.routers.seo import router as seo_router, admin_router as admin_seo_rout
 from src.routers.weekly import router as weekly_router
 from src.routers.screener import router as screener_router
 from src.routers.billing import router as billing_router
+from src.routers.theme_views import router as theme_views_router
 from src.middleware.cloudflare import CloudflareMiddleware
 
 # Nothing configured logging, so the root logger kept its WARNING default and every
@@ -452,6 +453,7 @@ app.include_router(articles_router)
 app.include_router(seo_router)  # public /sitemap.xml — stays on every env
 app.include_router(weekly_router)  # /api/weekly — public weekly rollups (TKB-013)
 app.include_router(screener_router)  # X-Internal-Key gated — stays on every env
+app.include_router(theme_views_router)  # /api/theme-views/* — members-only theme cards
 app.include_router(billing_router)  # /api/billing/plans — public, stays on every env
 
 # Admin dashboard is developer-only and consolidated onto the dev/staging envs. Skip

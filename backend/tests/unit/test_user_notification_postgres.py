@@ -86,6 +86,7 @@ def test_get_user_subscriptions_of_unknown_user_is_all_empty(orm_db):
         (user_db.toggle_podcast_subscription, "podcast_subscriptions", "股癌", "is_subscribed"),
         (user_db.toggle_episode_bookmark, "episode_bookmarks", "股癌_EP677", "is_bookmarked"),
         (user_db.toggle_tag_subscription, "tag_subscriptions", "AI", "is_subscribed"),
+        (user_db.toggle_saved_pick, "saved_picks", "ep1|2330|股癌", "is_saved"),
     ],
 )
 def test_array_toggles_round_trip(orm_db, toggle, field, value, on_key):

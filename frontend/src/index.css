@@ -750,6 +750,39 @@
     scrollbar-width: none;
   }
 
+  /* A horizontal strip that swipes on touch and shows only a hairline scrollbar where
+     there is a mouse: hidden below md, a 4px border-coloured thumb on a clear track
+     from md up. The standard properties cover Chrome and Firefox; the -webkit- rules
+     are for Safari. */
+  .scroll-quiet {
+    scrollbar-width: none;
+  }
+
+  .scroll-quiet::-webkit-scrollbar {
+    display: none;
+  }
+
+  @media (width >= 48rem) {
+    .scroll-quiet {
+      scrollbar-width: thin;
+      scrollbar-color: hsl(var(--border)) transparent;
+    }
+
+    .scroll-quiet::-webkit-scrollbar {
+      display: block;
+      height: 4px;
+    }
+
+    .scroll-quiet::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .scroll-quiet::-webkit-scrollbar-thumb {
+      background-color: hsl(var(--border));
+      border-radius: 9999px;
+    }
+  }
+
   /* Financial Terminal Typography */
   .font-financial {
     @apply font-mono tabular-nums;

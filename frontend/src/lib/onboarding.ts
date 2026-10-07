@@ -36,6 +36,16 @@ export interface ChangelogEntry {
 //   docs/workflows/deploy-flow.md § "In-app changelog (What's new)".
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.14.0',
+    date: '2026-10',
+    items: [
+      '「走勢」新增題材：看每個節目談過哪些題材、看多還是看空，以及從第一次提到至今相關個股的平均漲跌。',
+      '個股和題材卡片都可以按書籤存進「我的清單」，只留你想追蹤的。',
+      '題材卡可以一鍵產生圖卡，下載或直接分享。',
+      '走勢的篩選整理成一排：切換個股／題材、選節目、選 7／30／90 日排行。',
+    ],
+  },
+  {
     version: '0.13.0',
     date: '2026-10',
     items: [

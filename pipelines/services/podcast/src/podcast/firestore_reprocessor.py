@@ -79,8 +79,6 @@ def process_firestore_episode(
         temp_dir=base_config.temp_dir,
     )
 
-    processor = EpisodeProcessor(podcast_config, service_container)
-
     episode_data = EpisodeData(
         api_data=api_episode_data,
         podcast_name=podcast_name,
@@ -93,6 +91,14 @@ def process_firestore_episode(
     _load_created_time(episode_data, firestore_episode)
     _load_transcript_for_summarize(episode_data, firestore_episode, rerun_from, service_container)
 
+    if rerun_from == "theme-views":
+        from src.pipeline.steps.theme_views import extract_theme_views
+
+        episode_data.summary_result = {"summary_text": firestore_episode.get("summary_content")}
+        extract_theme_views(podcast_config, service_container, episode_data)
+        return True
+
+    processor = EpisodeProcessor(podcast_config, service_container)
     print(f"\nProcessing episode: {api_episode_data.get('title', 'Unknown')}")
     return processor.process_episode(api_episode_data)
 
