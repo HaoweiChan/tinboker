@@ -177,8 +177,7 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodc
   // that happens when a user manually ticks those channels in 全部. 全部: leave
   // the dropdown under manual control.
   useEffect(() => {
-    setSelected(scope === 'mine' ? new Set(myNames) : new Set(pendingPick.current));
-    pendingPick.current = [];
+    setSelected(scope === 'mine' ? new Set(myNames) : new Set());
   }, [scope, myNames]);
 
   // Filtered view: pull each selected channel's history over the last year,
@@ -375,20 +374,12 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodc
 
   const themeShows = useMemo(() => Array.from(scope === 'mine' ? myNames : selected).sort(), [scope, myNames, selected]);
 
-  // Picking a show while on 我的 means "just this one": switch to 全部 and carry the
-  // pick across the scope effect, which would otherwise clear it.
-  const pendingPick = useRef<string[]>([]);
-  const toggleChannel = (name: string) => {
-    if (scope === 'mine') {
-      pendingPick.current = [name];
-      return setScope('all');
-    }
+  const toggleChannel = (name: string) =>
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(name)) next.delete(name); else next.add(name);
       return next;
     });
-  };
 
   const body = (
     <>
@@ -401,9 +392,11 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodc
           </>
         )}
 
-        {/* One row, three controls: what to look at (個股／題材), whose shows, and — for
-           個股 only — which period. `relative` anchors the show menu on phones. */}
-        <div className="relative mb-[18px] flex flex-wrap items-center gap-2">
+        {/* One row: what to look at (個股／題材), then 我的 or 全部, then — 個股 only — the
+           period. 我的 is the member's own feed (subscribed shows plus watchlist tickers,
+           minus the cards they dismissed), not a show filter, so it stays a control of its
+           own; 全部 opens the show menu to narrow down. `relative` anchors that menu on phones. */}
+        <div className="relative mb-[18px] flex flex-wrap items-center gap-1.5">
           <div role="group" aria-label="走勢類型" className="flex shrink-0 items-center gap-0.5 rounded-md border border-border bg-card p-0.5">
             {([{ value: 'stocks', label: '個股' }, { value: 'themes', label: '題材' }] as const).map((option) => (
               <button
@@ -411,18 +404,27 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodc
                 type="button"
                 aria-pressed={kind === option.value}
                 onClick={() => setKind(option.value)}
-                className={`min-h-9 rounded px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 ${kind === option.value ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                className={`min-h-9 rounded px-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 ${kind === option.value ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground'}`}
               >
                 {option.label}
               </button>
             ))}
           </div>
+          <button
+            type="button"
+            aria-pressed={scope === 'mine'}
+            onClick={() => setScope('mine')}
+            className={`min-h-10 shrink-0 rounded-md border px-2.5 text-xs max-md:text-base font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 ${scope === 'mine' ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border bg-card text-muted-foreground hover:text-foreground'}`}
+          >
+            我的
+          </button>
           <ChannelFilter
             channels={channelOptions}
-            scope={scope}
-            onScope={setScope}
+            active={scope === 'all'}
+            onActivate={() => setScope('all')}
             selected={selected}
             onToggle={toggleChannel}
+            onClear={() => setSelected(new Set())}
           />
           {kind === 'stocks' && (
             <label className="relative shrink-0">
@@ -560,14 +562,16 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodc
 };
 
 /** Multi-select channel filter — checkboxes in a searchable dropdown. No selection = all. */
-/** Whose shows: every show, the member's subscribed ones, or hand-picked ones. */
+/** 全部, narrowable to hand-picked shows. Doubles as the 全部 half of 我的／全部: pressing
+ *  it while on 我的 switches scope and opens the menu in one go. */
 const ChannelFilter: React.FC<{
   channels: ChannelOption[];
-  scope: Scope;
-  onScope: (scope: Scope) => void;
+  active: boolean;
+  onActivate: () => void;
   selected: Set<string>;
   onToggle: (name: string) => void;
-}> = ({ channels, scope, onScope, selected, onToggle }) => {
+  onClear: () => void;
+}> = ({ channels, active, onActivate, selected, onToggle, onClear }) => {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const ref = useRef<HTMLDivElement>(null);
@@ -583,14 +587,8 @@ const ChannelFilter: React.FC<{
 
   const q = query.trim().toLowerCase();
   const filtered = q ? channels.filter((c) => c.name.toLowerCase().includes(q)) : channels;
-  const picked = scope === 'all' ? selected : new Set<string>();
-  const label = scope === 'mine' ? '我訂閱的節目'
-    : picked.size === 0 ? '全部節目'
-    : picked.size === 1 ? Array.from(picked)[0] : `${picked.size} 個節目`;
-  const scopeRows = [
-    { label: '全部節目', active: scope === 'all' && picked.size === 0, pick: () => { onScope('all'); picked.forEach(onToggle); } },
-    { label: '我訂閱的節目', active: scope === 'mine', pick: () => onScope('mine') },
-  ];
+  const picked = active ? selected : new Set<string>();
+  const label = picked.size === 0 ? '全部' : picked.size === 1 ? Array.from(picked)[0] : `${picked.size} 個節目`;
 
   return (
     // Static on phones so the menu anchors to the control row and cannot run off-screen.
@@ -599,30 +597,28 @@ const ChannelFilter: React.FC<{
          on smaller ones), so match it and the two dropdowns read as a pair. */}
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => { if (!active) onActivate(); setOpen((o) => !o); }}
+        aria-pressed={active}
         aria-expanded={open}
-        className="flex min-h-10 max-w-full items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-2 text-xs max-md:text-base text-foreground transition-colors hover:border-muted-foreground/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+        className={cn(
+          'flex min-h-10 max-w-full items-center gap-1 rounded-md border px-2.5 py-2 text-xs max-md:text-base font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50',
+          active ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border bg-card text-muted-foreground hover:text-foreground',
+        )}
       >
-        <span className="max-w-[6.5rem] truncate sm:max-w-[9rem]">{label}</span>
-        <ChevronDown size={15} className={cn('shrink-0 text-muted-foreground transition-transform', open && 'rotate-180')} />
+        <span className="max-w-[4.5rem] truncate sm:max-w-[9rem]">{label}</span>
+        <ChevronDown size={15} className={cn('shrink-0 transition-transform', open && 'rotate-180')} />
       </button>
 
       {open && (
         <div className="absolute left-0 z-30 mt-1.5 w-[280px] max-w-full sm:max-w-none bg-card border border-border rounded-lg shadow-lg overflow-hidden">
-          <ul className="border-b border-border py-1">
-            {scopeRows.map((row) => (
-              <li key={row.label}>
-                <button
-                  type="button"
-                  onClick={() => { row.pick(); setOpen(false); }}
-                  className="w-full flex items-center justify-between gap-2.5 px-3 py-2 text-left text-sm hover:bg-muted transition-colors"
-                >
-                  <span className={row.active ? 'text-primary font-medium' : undefined}>{row.label}</span>
-                  {row.active && <Check size={14} className="text-primary" />}
-                </button>
-              </li>
-            ))}
-          </ul>
+          <button
+            type="button"
+            onClick={() => { onClear(); setOpen(false); }}
+            className="w-full flex items-center justify-between gap-2.5 border-b border-border px-3 py-2.5 text-left text-sm hover:bg-muted transition-colors"
+          >
+            <span className={picked.size === 0 ? 'text-primary font-medium' : undefined}>全部節目</span>
+            {picked.size === 0 && <Check size={14} className="text-primary" />}
+          </button>
           <div className="flex items-center gap-2 px-3 border-b border-border">
             <Search size={14} className="text-muted-foreground shrink-0" />
             <input
