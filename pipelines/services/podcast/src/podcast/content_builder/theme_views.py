@@ -109,8 +109,11 @@ def validate_theme_views(
     anchors: set[tuple[str, str]], transcript_text: str, taxonomy: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     """Reject bad schemas; remove unsupported timestamps, quotes, and company links."""
-    if set(data) != {"episode_id", "theme_views"} or data["episode_id"] != episode_id:
-        raise ValueError("invalid episode schema or episode id")
+    # The echoed episode_id is not checked: the caller sends one episode and already knows
+    # its id, and a model mistyping the echo (seen once in 16 runs) is not a reason to
+    # throw away otherwise valid views.
+    if not isinstance(data, dict) or "theme_views" not in data:
+        raise ValueError("invalid episode schema")
     views = data["theme_views"]
     if not isinstance(views, list) or len(views) > 3:
         raise ValueError("theme_views must be a list with at most 3 views")

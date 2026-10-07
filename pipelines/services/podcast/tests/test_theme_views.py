@@ -1,6 +1,7 @@
 """Offline checks for transcript-grounded extraction and the optional pipeline step."""
 
 import json
+import time
 from copy import deepcopy
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -65,14 +66,14 @@ def test_validation_sanitizes_and_canonicalizes(transcript, summary, output):
     assert len(result["tickers"]) == 1
 
 
-@pytest.mark.parametrize("bad", ["count", "stance", "conviction", "keys", "episode"])
+@pytest.mark.parametrize("bad", ["count", "stance", "conviction", "keys", "missing"])
 def test_invalid_output_rejected(bad, output):
     if bad == "count":
         output["theme_views"] *= 4
     elif bad == "keys":
         output["theme_views"][0]["extra"] = True
-    elif bad == "episode":
-        output["episode_id"] = "different"
+    elif bad == "missing":
+        del output["theme_views"]
     else:
         output["theme_views"][0][bad] = "invalid"
     with pytest.raises(ValueError):
@@ -94,6 +95,10 @@ def test_unique_taxonomy_alias_and_whitespace_quote(output):
     assert validate_theme_views({"episode_id": "episode-1", "theme_views": []}, "episode-1", set(), set(), "", []) == []
 
 
+# Inside the step's 90-day window; a fixed old timestamp would be skipped as back-catalogue.
+RECENT_MS = int(time.time() * 1000) - 86_400_000
+
+
 @pytest.fixture
 def step_setup(monkeypatch, transcript, summary, output):
     monkeypatch.setenv("TINBOKER_PLATFORM_API_URL", "https://platform.test")
@@ -109,7 +114,7 @@ def step_setup(monkeypatch, transcript, summary, output):
     put = Mock(return_value={"stored": 1})
     monkeypatch.setattr(platform_client, "put_theme_views", put)
     data = EpisodeData(
-        api_data={"episodeNumber": 42, "released_at_ms": 123456},
+        api_data={"episodeNumber": 42, "released_at_ms": RECENT_MS},
         podcast_name="Test Show", language="zh", episode_id="episode-1",
         transcript_sentences=transcript["sentences"], summary_result={"summary_text": summary},
     )
@@ -120,14 +125,14 @@ def test_step_put_shape_and_no_document_mutation(step_setup, base_config, base_c
     data, get_model, model, put = step_setup
     before = deepcopy(data)
     extract_theme_views(base_config, base_context, data)
-    get_model.assert_called_once_with("theme_views_extractor", max_retries=0, timeout=120.0)
+    get_model.assert_called_once_with("theme_views_extractor", max_retries=0, timeout=180.0, disable_reasoning=False)
     model.invoke.assert_called_once()
     body = put.call_args.args[1]
     assert put.call_args.args[0] == "episode-1"
     assert set(body) == {"podcaster", "episode_number", "released_at_ms", "source", "theme_views"}
     assert body["podcaster"] == "Test Show"
     assert body["episode_number"] == "42"
-    assert body["released_at_ms"] == 123456
+    assert body["released_at_ms"] == RECENT_MS
     assert body["source"] == "pipeline"
     assert body["theme_views"][0]["tickers"] == [{"ticker": "2327", "name": "國巨", "role": "beneficiary"}]
     assert data == before
@@ -289,3 +294,20 @@ def test_canonical_theme_merges_spelling_variants_and_uses_taxonomy_names():
     assert canonical_theme("AI算力", []) == canonical_theme("AI 算力", []) == ("AI 算力需求", None)
     assert canonical_theme("記憶體族群", taxonomy) == ("記憶體", None)
     assert canonical_theme("沒人聽過的題材", taxonomy) == ("沒人聽過的題材", None)
+
+
+def test_a_mistyped_episode_id_echo_does_not_discard_the_views(output):
+    output["episode_id"] = "not-the-id"
+    assert len(validate_theme_views(output, "episode-1", {0}, set(), "", [])) == 1
+
+
+def test_back_catalogue_episode_is_skipped_unless_rerun_explicitly(step_setup, base_config, base_context):
+    data, _, model, put = step_setup
+    data.api_data["released_at_ms"] = RECENT_MS - 200 * 86_400_000
+    extract_theme_views(base_config, base_context, data)
+    model.invoke.assert_not_called()
+    put.assert_not_called()
+
+    base_config.rerun_from = "theme-views"
+    extract_theme_views(base_config, base_context, data)
+    put.assert_called_once()

@@ -271,10 +271,10 @@ and skipped; neither the model nor the PUT is retried.
 Configure `TINBOKER_PLATFORM_API_URL` for the live theme taxonomy and API writes;
 `TINBOKER_ADMIN_API_URL` optionally overrides the write destination. Writes require
 `TINBOKER_WRITE_TOKEN`. The step is opt-in: it runs only when `THEME_VIEWS_EXTRACTOR_MODEL`
-is set, so it never rides the global `PIPELINE_LLM_MODEL` across the back-catalogue by
-accident (a per-role DB override still takes precedence once the env var enables it). OpenRouter models
-need `OPENROUTER_API_KEY`; local models use `LOCAL_LLM_BASE_URL` and, if required,
-`LOCAL_LLM_API_KEY`. The normal entry point bootstraps these from the existing environment.
+is set — the scheduled ingest unit (`deploy/tinboker-podcast-ingest.service`) pins it, with
+the model comparison behind the choice in a comment there. In a normal run it also skips
+episodes released more than 90 days ago, so working through the back-catalogue does not
+extract themes for old episodes; the explicit re-run below ignores that limit.
 
 Re-run only this optional step for one stored episode (reads its transcript and summary,
 then replaces its views; no summary regeneration or episode/media writes):
