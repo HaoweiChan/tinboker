@@ -125,7 +125,9 @@ def test_step_put_shape_and_no_document_mutation(step_setup, base_config, base_c
     data, get_model, model, put = step_setup
     before = deepcopy(data)
     extract_theme_views(base_config, base_context, data)
-    get_model.assert_called_once_with("theme_views_extractor", max_retries=0, timeout=180.0, disable_reasoning=False)
+    get_model.assert_called_once_with(
+        "theme_views_extractor", max_retries=0, timeout=180.0, disable_reasoning=False, reasoning_effort="minimal",
+    )
     model.invoke.assert_called_once()
     body = put.call_args.args[1]
     assert put.call_args.args[0] == "episode-1"
@@ -317,3 +319,12 @@ def test_outcome_is_printed_where_the_scheduled_run_shows_it(step_setup, base_co
     data, _, _, _ = step_setup
     extract_theme_views(base_config, base_context, data)
     assert "Theme views stored for episode-1" in capsys.readouterr().out
+
+
+def test_reasoning_effort_reaches_the_request_body(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-only-key")
+    model = llm.get_model(
+        "theme_views_extractor", model_override="openrouter:test/model",
+        disable_reasoning=False, reasoning_effort="minimal",
+    )
+    assert model.extra_body["reasoning"] == {"effort": "minimal"}
