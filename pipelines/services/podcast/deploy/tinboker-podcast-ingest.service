@@ -36,18 +36,20 @@ Environment=THREADS_NATIVE_POLLS_ENABLED=true
 Environment=EXTRACTOR_MODEL=openrouter:deepseek/deepseek-v4-flash-0731
 # Theme views (題材卡): one call over the transcript per new episode, after the summary.
 # Setting this is what turns the step on; it is skipped for episodes released more than
-# 90 days ago. Compared 2026-10-08 on 8 episodes from 7 shows against the accepted
-# backfill output, each through the real prompt and validator:
-#   gemini-3.7-flash (reasoning on)   7/8 valid, 11/17 reference themes matched, 14/14
-#                                     quotes verbatim, ~8s and ~11k in / 2k out per episode
-#   deepseek-v4-pro (reasoning on)    8/8 valid, 7/17 matched, 6/11 quotes verbatim, ~50s
-#   deepseek-v4-pro (reasoning off)   8/8 valid, 10/17 matched, 4/16 quotes verbatim
-#   deepseek-v4-flash-0731 (off)      8/8 valid, 8/17 matched, 14/19 quotes verbatim
-#   deepseek-v4-flash-0731 (on)       1/8 valid — returned no JSON
-# The quote is what the card shows as evidence, so a model that paraphrases it is out.
-# Gemini's one failure was a mistyped echo of the episode id, no longer checked.
-# It needs reasoning enabled, which the step requests. Not under the provider pin below:
-# that order lists DeepSeek hosts, and OpenRouter falls back when none serves the model.
+# 90 days ago. Compared on 8 episodes from 7 shows against the accepted backfill output
+# (17 reference themes), through the real prompt and validator, 4 runs each on 2026-10-09
+# with the cost OpenRouter reported:
+#   gemini-3.7-flash, reasoning minimal   $0.0060/ep  9-10 themes matched  56/60 quotes verbatim
+#   gemini-3.7-flash, reasoning full      $0.0167/ep  4-6 matched          43/43
+#   deepseek-v4-flash-0731, reasoning off $0.0002/ep  8-9 matched          52/75
+# The step asks for minimal reasoning (this model refuses "off"). Full reasoning was the
+# first setting, chosen from a single run that happened to score 11; repeated, it is
+# both the most expensive and the least complete. DeepSeek flash is nearly free but
+# paraphrases about a third of its quotes, and the quote is the card's evidence — a
+# non-verbatim one is dropped, never shown. Single-run comparisons of this task are not
+# trustworthy: the same configuration ranged 4 to 11 across runs.
+# Not under the provider pin below: that order lists DeepSeek hosts, and OpenRouter
+# falls back when none serves the model.
 # podcast-api.service carries the same line (.github/workflows/pipelines-deploy.yml): its
 # watcher is what processes NEW episodes, so that copy is the one that matters day to day.
 Environment=THEME_VIEWS_EXTRACTOR_MODEL=openrouter:google/gemini-3.7-flash
