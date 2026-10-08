@@ -311,3 +311,9 @@ def test_back_catalogue_episode_is_skipped_unless_rerun_explicitly(step_setup, b
     base_config.rerun_from = "theme-views"
     extract_theme_views(base_config, base_context, data)
     put.assert_called_once()
+
+
+def test_outcome_is_printed_where_the_scheduled_run_shows_it(step_setup, base_config, base_context, capsys):
+    data, _, _, _ = step_setup
+    extract_theme_views(base_config, base_context, data)
+    assert "Theme views stored for episode-1" in capsys.readouterr().out
