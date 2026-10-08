@@ -23,6 +23,17 @@ logger = logging.getLogger(__name__)
 MAX_AGE_DAYS = 90
 
 
+def _report(message: str, *args: object, mark: str = "·") -> None:
+    """Say what the step did where the run's own output goes.
+
+    The scheduled run configures no logging handler, so INFO never reached the journal
+    and the first live run left no trace of whether this step ran, skipped, or stored
+    anything. The other steps print their outcome; this one does too, and still logs.
+    """
+    logger.log(logging.WARNING if mark == "✗" else logging.INFO, message, *args)
+    print(f"  {mark} {message % args}")
+
+
 def _json_object(text: str) -> str:
     """Models often wrap the object in a code fence or a sentence; keep the outermost braces."""
     start, end = text.find("{"), text.rfind("}")
@@ -38,12 +49,12 @@ def extract_theme_views(
         return
     try:
         if not platform_client.admin_base_url() or not os.environ.get("TINBOKER_WRITE_TOKEN"):
-            logger.info("Theme views skipped for %s: API URL or write token is unset", episode_id)
+            _report("Theme views skipped for %s: API URL or write token is unset", episode_id)
             return
         # Opt-in: without its own model pin this would add a full-transcript call on the
         # global model to every ingested episode, back-catalogue included.
         if not os.environ.get("THEME_VIEWS_EXTRACTOR_MODEL"):
-            logger.info("Theme views skipped for %s: THEME_VIEWS_EXTRACTOR_MODEL is unset", episode_id)
+            _report("Theme views skipped for %s: THEME_VIEWS_EXTRACTOR_MODEL is unset", episode_id)
             return
         from podcast.content_builder.llm import get_model, load_prompt
         from podcast.content_builder.theme_views import build_episode_input, validate_theme_views
@@ -55,7 +66,7 @@ def extract_theme_views(
         if config.rerun_from != "theme-views" and (
             not released_at_ms or released_at_ms < (time.time() - MAX_AGE_DAYS * 86400) * 1000
         ):
-            logger.info("Theme views skipped for %s: released more than %d days ago", episode_id, MAX_AGE_DAYS)
+            _report("Theme views skipped for %s: released more than %d days ago", episode_id, MAX_AGE_DAYS)
             return
         # Resolve configuration before fetching inputs or taxonomy. Disable SDK retries too.
         # Reasoning stays on: judging stance and conviction is the whole task, and the
@@ -100,9 +111,9 @@ def extract_theme_views(
             "theme_views": views,
         }
         if platform_client.put_theme_views(episode_id, body) is None:
-            logger.warning("Theme views skipped for %s: PUT did not store a result", episode_id)
+            _report("Theme views skipped for %s: PUT did not store a result", episode_id, mark="✗")
             return
-        logger.info("Theme views stored for %s: %d views", episode_id, len(views))
+        _report("Theme views stored for %s: %d views", episode_id, len(views), mark="✓")
     except Exception as exc:
         # Exception messages may contain provider credentials/URLs: log only the type.
-        logger.warning("Theme views skipped for %s: %s", episode_id, type(exc).__name__)
+        _report("Theme views skipped for %s: %s", episode_id, type(exc).__name__, mark="✗")
