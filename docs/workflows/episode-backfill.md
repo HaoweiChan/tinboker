@@ -271,8 +271,9 @@ and skipped; neither the model nor the PUT is retried.
 Configure `TINBOKER_PLATFORM_API_URL` for the live theme taxonomy and API writes;
 `TINBOKER_ADMIN_API_URL` optionally overrides the write destination. Writes require
 `TINBOKER_WRITE_TOKEN`. The step is opt-in: it runs only when `THEME_VIEWS_EXTRACTOR_MODEL`
-is set — the scheduled ingest unit (`deploy/tinboker-podcast-ingest.service`) pins it, with
-the model comparison behind the choice in a comment there. In a normal run it also skips
+is set. Both units pin it: `podcast-api.service` (in `.github/workflows/pipelines-deploy.yml`),
+whose watcher processes new episodes, and the scheduled ingest unit
+(`deploy/tinboker-podcast-ingest.service`), which holds the model comparison behind the choice. In a normal run it also skips
 episodes released more than 90 days ago, so working through the back-catalogue does not
 extract themes for old episodes; the explicit re-run below ignores that limit.
 

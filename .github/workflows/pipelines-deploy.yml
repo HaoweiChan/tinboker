@@ -141,6 +141,13 @@ jobs:
             Environment=SOCIAL_COPY_WRITER_MODEL=openrouter:google/gemini-3.7-flash
             # Every backend (dev/staging/prod, v0.12.18+) publishes social_thread.poll.
             Environment=THREADS_NATIVE_POLLS_ENABLED=true
+            # Theme views (題材卡). NEW episodes are processed by this service's watcher,
+            # not by the ingest timer — the timer mostly works the back-catalogue — so
+            # the pin has to be here for a new episode to get theme cards at all. With it
+            # only on the ingest unit (2026-10-07), every new episode logged "Theme views
+            # skipped ...: THEME_VIEWS_EXTRACTOR_MODEL is unset". Model choice and the
+            # comparison behind it: deploy/tinboker-podcast-ingest.service. Keep in sync.
+            Environment=THEME_VIEWS_EXTRACTOR_MODEL=openrouter:google/gemini-3.7-flash
             # extractor pinned to flash: it is the ONLY role that receives {sentences} (the raw
             # transcript), so it alone accounts for the bulk of prompt-token spend — 30 days of
             # v4-pro was 175M prompt tokens, 84% of the whole OpenRouter bill. Measured on 4
