@@ -48,6 +48,8 @@ Environment=EXTRACTOR_MODEL=openrouter:deepseek/deepseek-v4-flash-0731
 # Gemini's one failure was a mistyped echo of the episode id, no longer checked.
 # It needs reasoning enabled, which the step requests. Not under the provider pin below:
 # that order lists DeepSeek hosts, and OpenRouter falls back when none serves the model.
+# podcast-api.service carries the same line (.github/workflows/pipelines-deploy.yml): its
+# watcher is what processes NEW episodes, so that copy is the one that matters day to day.
 Environment=THEME_VIEWS_EXTRACTOR_MODEL=openrouter:google/gemini-3.7-flash
 # Provider pin. OpenRouter serves one model from many providers and does NOT sort them
 # by price: measured 2026-09-19 on deepseek-v4-pro, 16 providers spanning 3.7x in posted
