@@ -260,7 +260,7 @@ def _provider_preference() -> dict[str, Any] | None:
 
 def get_model(
     role: str, *, disable_reasoning: bool = True, model_override: str | None = None,
-    max_retries: int = 2, timeout: float | None = None,
+    max_retries: int = 2, timeout: float | None = None, reasoning_effort: str | None = None,
 ):
     """Get a configured LangChain chat model for a pipeline role.
 
@@ -320,6 +320,10 @@ def get_model(
         # endpoint needs headroom or the JSON truncates mid-array — the exact failure
         # disabling it was meant to prevent.
         max_tokens *= 2
+        if reasoning_effort:
+            # For a model that must reason but does better (and costs less) thinking
+            # briefly: OpenRouter's unified effort knob, e.g. "minimal" or "low".
+            extra_body = {"reasoning": {"effort": reasoning_effort}}
 
     provider = _provider_preference()
     if provider:
