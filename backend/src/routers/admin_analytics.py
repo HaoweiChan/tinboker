@@ -19,7 +19,6 @@ from src.services.cloudflare_analytics_service import CloudflareAnalyticsService
 from src.services.adsense_service import AdSenseService
 from src.services.facebook_insights_service import FacebookInsightsService
 from src.services.postgres_mirror_service import content_read_service
-from src.services.substack_insights_service import SubstackInsightsService
 from src.services.threads_insights_service import ThreadsInsightsService
 from src.services.vocus_insights_service import VocusInsightsService
 from src.tag_registry import canonical_label, display_map
@@ -27,7 +26,7 @@ from src.tag_registry import canonical_label, display_map
 router = APIRouter(prefix="/api/admin/analytics", tags=["admin-analytics"])
 logger = logging.getLogger(__name__)
 
-# Ceiling for the vocus + Substack reads inside one snapshot call, chosen to leave the
+# Ceiling for the vocus read inside one snapshot call, chosen to leave the
 # response well clear of Cloudflare's 100s edge timeout.
 SYNDICATION_READ_TIMEOUT = 45.0
 
@@ -153,8 +152,6 @@ def _snapshot_dict(r: AnalyticsSnapshot) -> dict:
         "fb_fans": r.fb_fans,
         "vocus_reads": r.vocus_reads,
         "vocus_articles": r.vocus_articles,
-        "substack_reads": r.substack_reads,
-        "substack_posts": r.substack_posts,
     }
 
 
@@ -215,8 +212,8 @@ async def record_snapshot(
 ):
     """Record today's audience numbers (one row per UTC day).
 
-    Threads/Facebook followers and fans, plus the lifetime read totals on vocus and
-    Substack. All four platforms expose only a *current* value and no history, so the
+    Threads/Facebook followers and fans, plus the lifetime read total on vocus. All
+    three platforms expose only a *current* value and no history, so the
     growth chart is built from these daily rows; a day's reading is the difference
     between two of them.
 
@@ -226,25 +223,17 @@ async def record_snapshot(
     """
     th = await ThreadsInsightsService().account_summary(days=1)
     fb = await FacebookInsightsService().account_summary(days=1)
-    # Independent of Meta and of each other: one platform being down (or its read-count
-    # field having moved) must not cost the day's row for the others. Both are paged
-    # reads against undocumented APIs, and the cron calls this through Cloudflare, whose
-    # edge gives up at 100s — so the whole syndication half is bounded well inside that.
-    # Losing today's read counts is a gap in one chart; losing the response is the row.
+    # Independent of Meta: vocus being down (or its read-count field having moved) must
+    # not cost the day's row. It is a paged read against an undocumented API, and the
+    # cron calls this through Cloudflare, whose edge gives up at 100s — so it is bounded
+    # well inside that. Losing today's read count is a gap in one chart; losing the
+    # response is the row.
     try:
-        vo, su = await asyncio.wait_for(
-            asyncio.gather(
-                VocusInsightsService().account_summary(),
-                SubstackInsightsService().account_summary(),
-                return_exceptions=True,
-            ),
-            timeout=SYNDICATION_READ_TIMEOUT,
-        )
-    except asyncio.TimeoutError:
-        logger.warning("analytics snapshot: syndication reads timed out; recording followers only")
-        vo, su = {}, {}
+        vo = await asyncio.wait_for(VocusInsightsService().account_summary(), timeout=SYNDICATION_READ_TIMEOUT)
+    except Exception:  # timeout or a vocus failure — followers still get recorded
+        logger.warning("analytics snapshot: vocus read failed; recording followers only", exc_info=True)
+        vo = {}
     vo = vo if isinstance(vo, dict) else {}
-    su = su if isinstance(su, dict) else {}
     day = datetime.now(timezone.utc).date().isoformat()
 
     row = db.query(AnalyticsSnapshot).filter(AnalyticsSnapshot.day == day).first()
@@ -262,15 +251,12 @@ async def record_snapshot(
     if vo.get("available"):
         row.vocus_reads = vo.get("reads")
         row.vocus_articles = vo.get("articles")
-    if su.get("available"):
-        row.substack_reads = su.get("views")
-        row.substack_posts = su.get("posts")
     row.captured_at = datetime.utcnow()
     db.commit()
     db.refresh(row)
-    logger.info("analytics snapshot %s: th=%s fb=%s fans=%s vocus=%s substack=%s",
+    logger.info("analytics snapshot %s: th=%s fb=%s fans=%s vocus=%s",
                 row.day, row.threads_followers, row.fb_followers, row.fb_fans,
-                row.vocus_reads, row.substack_reads)
+                row.vocus_reads)
     return _snapshot_dict(row)
 
 

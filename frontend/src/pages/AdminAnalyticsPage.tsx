@@ -3,7 +3,7 @@
  *
  * Pulls Cloudflare zone analytics, AdSense monetization (earnings/RPM/fill rate),
  * Google Search Console (clicks/impressions/CTR + top queries & pages), Threads +
- * Facebook Page engagement insights, and 方格子/Substack reading stats, and renders
+ * Facebook Page engagement insights, and 方格子 reading stats, and renders
  * them inline.
  * Each source degrades to a "not connected" note + dashboard link when its upstream
  * credentials aren't configured, so the page is always safe to open.
@@ -36,7 +36,6 @@ import {
     Gauge,
     Percent,
     BookOpen,
-    Mail,
 } from 'lucide-react';
 import {
     getCloudflareOverview,
@@ -47,7 +46,6 @@ import {
     getMemberAnalytics,
     getAnalyticsHistory,
     getVocusInsights,
-    getSubstackInsights,
     type CloudflareOverview,
     type AdSenseOverview,
     type SeoOverview,
@@ -58,7 +56,6 @@ import {
     type MemberAnalytics,
     type AnalyticsSnapshot,
     type VocusInsights,
-    type SubstackInsights,
     type SyndicationPostInsight,
 } from '@/services/api/adminAnalytics';
 import { TrendChart, type TrendPoint } from '@/components/admin/TrendChart';
@@ -113,8 +110,7 @@ const ChartBox: React.FC<{ title: string; children: React.ReactNode }> = ({ titl
     </div>
 );
 
-// Both syndication platforms return the same row shape under different names, so one
-// table renders either — the caller says which field is the read count.
+// The caller says which field is the read count.
 const SyndicationTable: React.FC<{
     rows: SyndicationPostInsight[];
     countLabel: string;
@@ -142,7 +138,7 @@ const SyndicationTable: React.FC<{
                                     rel="noopener noreferrer"
                                     className="text-accent-info hover:underline"
                                 >
-                                    {r.title || r.article_id || r.post_id}
+                                    {r.title || r.article_id}
                                 </a>
                             ) : (
                                 r.title || '—'
@@ -359,7 +355,6 @@ export const AdminAnalyticsPage: React.FC = () => {
     const [threads, setThreads] = useState<ThreadsInsights | null>(null);
     const [fb, setFb] = useState<FacebookInsights | null>(null);
     const [vocus, setVocus] = useState<VocusInsights | null>(null);
-    const [substack, setSubstack] = useState<SubstackInsights | null>(null);
     const [members, setMembers] = useState<MemberAnalytics | null>(null);
     const [history, setHistory] = useState<AnalyticsSnapshot[]>([]);
     const [loading, setLoading] = useState(true);
@@ -367,7 +362,7 @@ export const AdminAnalyticsPage: React.FC = () => {
     const load = useCallback(async () => {
         setLoading(true);
         // Independent sources — settle each on its own so one failure never blanks the page.
-        const [cfRes, adsRes, seoRes, thRes, fbRes, voRes, suRes, memRes, histRes] =
+        const [cfRes, adsRes, seoRes, thRes, fbRes, voRes, memRes, histRes] =
             await Promise.allSettled([
                 getCloudflareOverview(28),
                 getAdSenseOverview(28),
@@ -375,7 +370,6 @@ export const AdminAnalyticsPage: React.FC = () => {
                 getThreadsInsights(28, 5),
                 getFacebookInsights(28),
                 getVocusInsights(10),
-                getSubstackInsights(10),
                 getMemberAnalytics(10),
                 getAnalyticsHistory(90),
             ]);
@@ -385,7 +379,6 @@ export const AdminAnalyticsPage: React.FC = () => {
         if (thRes.status === 'fulfilled') setThreads(thRes.value);
         if (fbRes.status === 'fulfilled') setFb(fbRes.value);
         if (voRes.status === 'fulfilled') setVocus(voRes.value);
-        if (suRes.status === 'fulfilled') setSubstack(suRes.value);
         if (memRes.status === 'fulfilled') setMembers(memRes.value);
         if (histRes.status === 'fulfilled') setHistory(histRes.value);
         setLoading(false);
@@ -399,10 +392,9 @@ export const AdminAnalyticsPage: React.FC = () => {
     const fm = fb?.metrics || {};
 
     // Reads are a cumulative counter, so a day with no value means "not measured",
-    // never "reads went to zero" — carry the last known value forward. Both series
-    // share one window so TrendChart's index-aligned x-axis stays honest.
+    // never "reads went to zero" — carry the last known value forward.
     const firstReadDay = history.findIndex(
-        (s) => s.vocus_reads !== null || s.substack_reads !== null,
+        (s) => s.vocus_reads !== null,
     );
     const readHistory = firstReadDay < 0 ? [] : history.slice(firstReadDay);
     const readPoints = (pick: (s: AnalyticsSnapshot) => number | null): TrendPoint[] => {
@@ -918,47 +910,6 @@ export const AdminAnalyticsPage: React.FC = () => {
                 )}
             </SectionCard>
 
-            {/* Substack reading */}
-            <SectionCard
-                icon={<Mail className="h-5 w-5 text-orange-500" />}
-                title="Substack Reading"
-                subtitle="Lifetime views across published posts"
-            >
-                {substack?.available ? (
-                    <>
-                        <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                            <Stat icon={<Eye className="h-4 w-4" />} label="Views" value={fmt(substack.views)} />
-                            <Stat icon={<Hash className="h-4 w-4" />} label="Posts" value={fmt(substack.posts)} />
-                            <Stat icon={<Heart className="h-4 w-4" />} label="Reactions" value={fmt(substack.reactions)} />
-                            <Stat icon={<MessageCircle className="h-4 w-4" />} label="Comments" value={fmt(substack.comments)} />
-                        </div>
-                        {substack.recent_posts && substack.recent_posts.length > 0 && (
-                            <SyndicationTable
-                                rows={substack.recent_posts}
-                                countLabel="Views"
-                                count={(r) => r.views}
-                                engagementLabel="Reactions"
-                                engagement={(r) => r.reactions}
-                            />
-                        )}
-                    </>
-                ) : (
-                    <>
-                        <NotConnected
-                            detail={
-                                substack?.detail ||
-                                (loading
-                                    ? 'Loading…'
-                                    : 'Set SUBSTACK_SID, SUBSTACK_SUBDOMAIN and SUBSTACK_USER_ID to enable Substack insights.')
-                            }
-                            href="https://tinboker.substack.com/publish/posts"
-                            cta="Open Substack"
-                        />
-                        <SampleKeys keys={substack?.sample_keys} />
-                    </>
-                )}
-            </SectionCard>
-
             {/* Audience growth (daily snapshots) */}
             <SectionCard
                 icon={<TrendingUp className="h-5 w-5 text-sentiment-bull" />}
@@ -988,7 +939,6 @@ export const AdminAnalyticsPage: React.FC = () => {
                             height={140}
                             series={[
                                 { name: '方格子 閱讀', colorClass: 'text-primary', points: readPoints((s) => s.vocus_reads) },
-                                { name: 'Substack 閱讀', colorClass: 'text-orange-500', points: readPoints((s) => s.substack_reads) },
                             ]}
                         />
                     </ChartBox>
@@ -1057,13 +1007,6 @@ export const AdminAnalyticsPage: React.FC = () => {
                             ? `Connected (reads via ${vocus.field_map?.reads || 'article list'})`
                             : vocus?.detail || 'Set VOCUS_ID_TOKEN to enable'}
                         status={vocus?.available ? 'active' : 'pending'}
-                    />
-                    <TrackingItem
-                        label="Substack"
-                        detail={substack?.available
-                            ? `Connected (views via ${substack.field_map?.views || 'post list'})`
-                            : substack?.detail || 'Set SUBSTACK_SID to enable'}
-                        status={substack?.available ? 'active' : 'pending'}
                     />
                 </ul>
             </div>

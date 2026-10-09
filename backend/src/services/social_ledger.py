@@ -1,4 +1,4 @@
-"""Shared idempotency ledger for social publishing (Threads, Facebook, vocus, Substack).
+"""Shared idempotency ledger for social publishing (Threads, Facebook, vocus).
 
 One table, one row per (platform, episode_id). Replaces the two container-local
 SQLite ledgers that were lost on every redeploy.

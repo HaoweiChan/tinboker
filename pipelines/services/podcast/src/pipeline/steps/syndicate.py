@@ -1,25 +1,19 @@
-"""Step 5f: stage the new episode's summary on 方格子 and Substack (best-effort).
+"""Step 5f: stage the new episode's summary on 方格子 (best-effort).
 
 Deliberately separate from the platform's own Threads/Facebook posting (which runs on
 its own TW slot schedule, see ``SOCIAL_PUBLISH_SLOTS``): that fans short social copy out,
-this one republishes the whole article. Different content, different platforms, different
-enable switch — sharing one flag would mean turning on subscriber-facing posts to enable
-a Threads post, or the reverse.
+this one republishes the whole article. Different content, different platform, different
+enable switch.
 
 **Off by default**, behind ``SYNDICATE_AUTOPUBLISH``. Without it this is a no-op.
 
-What "on" means, per platform:
-
-- **方格子** — a draft, unless ``SYNDICATE_VOCUS_PUBLISH`` is also set. Publishing there is
-  reversible and mails nobody, so auto-publishing is a reasonable choice; it is still
-  opt-in because it puts writing in front of strangers without a human reading it first.
-- **Substack** — a draft, unless ``SYNDICATE_SUBSTACK_PUBLISH`` is set. Publishing there
-  goes to the **web only**: the publisher hard-wires ``send_email: false`` and exposes no
-  parameter to change it, so no combination of flags can mail the subscriber list. A
-  web-only post can be taken down; a newsletter cannot be recalled.
+What "on" means: a 方格子 draft, unless ``SYNDICATE_VOCUS_PUBLISH`` is also set.
+Publishing there is reversible and mails nobody, so auto-publishing is a reasonable
+choice; it is still opt-in because it puts writing in front of strangers without a
+human reading it first.
 
 Unlike the Threads trigger this is **not idempotent on the platform side**: each call
-creates new drafts. Two guards keep that from turning into duplicates:
+creates a new draft. Two guards keep that from turning into duplicates:
 
 - the platform records every syndicated episode in the shared ``social_posts`` ledger,
   so a second call for the same episode is refused there — including one from a
@@ -47,7 +41,6 @@ from ..service_container import ServiceContainer
 
 _AUTOPUBLISH_ENV = "SYNDICATE_AUTOPUBLISH"
 _VOCUS_PUBLISH_ENV = "SYNDICATE_VOCUS_PUBLISH"
-_SUBSTACK_PUBLISH_ENV = "SYNDICATE_SUBSTACK_PUBLISH"
 _MAX_AGE_ENV = "SYNDICATE_MAX_AGE_DAYS"
 _DEFAULT_MAX_AGE_DAYS = 7
 _TRUTHY = {"1", "true", "yes", "on"}
@@ -143,7 +136,6 @@ def trigger_syndicate(
         result = trigger_syndication(
             episode_id,
             publish_vocus=_enabled(_VOCUS_PUBLISH_ENV),
-            publish_substack=_enabled(_SUBSTACK_PUBLISH_ENV),
         )
     except Exception as e:  # noqa: BLE001 — ingestion must not fail over syndication
         print(f"  ⚠ Syndication trigger skipped: {e}")
@@ -157,7 +149,5 @@ def trigger_syndicate(
         if outcome.get("posted"):
             print(f"  ✓ {name}: {outcome.get('url')}")
         else:
-            # Reported per platform rather than as one pass/fail: one target failing
-            # says nothing about the other, and a silent skip here means an episode
-            # nobody notices was never published.
+            # A silent skip here means an episode nobody notices was never published.
             print(f"  ⚠ {name} not staged: {outcome.get('reason', 'unknown')}")

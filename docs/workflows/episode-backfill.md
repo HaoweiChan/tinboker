@@ -196,7 +196,7 @@ is permanently safe **for that batch**. There is a related note at
 gains content later via regen is never notified either, so the content half cannot
 trigger anything on its way in.
 
-Syndication (方格子/Substack) and Threads/FB autopublish are unaffected either way; both
+Syndication (方格子) and Threads/FB autopublish are unaffected either way; both
 keep their own release-date-keyed age limits (`SYNDICATE_MAX_AGE_DAYS` default 7,
 `threads_max_age_days`).
 

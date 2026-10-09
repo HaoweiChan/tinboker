@@ -64,10 +64,6 @@ _GSM_FIELDS: Tuple[str, ...] = (
     "vocus_id_token",
     "vocus_user_id",
     "vocus_salon_id",
-    # Substack — the session cookie lasts months, so no live re-read; the rest is public.
-    "substack_sid",
-    "substack_subdomain",
-    "substack_user_id",
     # NewebPay (藍新金流) periodic-payment credentials — membership billing (PR 3a+).
     # Two full sets (production + sandbox); which one applies is derived from
     # ENVIRONMENT (Settings.newebpay_env), never configured separately.

@@ -18,7 +18,7 @@ export interface ContentSource {
   transcript_service: string | null;
   transcript_model: string | null;
   active: boolean;
-  /** Publish this show's episodes to Threads/Facebook/方格子/Substack. Podcast sources only. */
+  /** Publish this show's episodes to Threads/Facebook/方格子. Podcast sources only. */
   social_enabled: boolean;
   extra: Record<string, unknown> | null;
   last_updated_by: string | null;

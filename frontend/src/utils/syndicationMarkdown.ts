@@ -6,7 +6,7 @@
  *    [label](#tag:ID)         -> a topic page link
  *    (#time:MILLISECONDS)     -> a badge that seeks the audio player
  *
- *  Pasted into 方格子 or Substack those degrade to literal `#ticker:2330` junk, and
+ *  Pasted into 方格子 those degrade to literal `#ticker:2330` junk, and
  *  the timestamp badge has no player to seek. So: rewrite the two link markers to
  *  absolute URLs (which also earns us the backlink), and flatten timestamps to plain
  *  text, since off-site there is nothing to click.
@@ -61,7 +61,7 @@ export function rewriteMarkersForSyndication(
 /** The attribution line appended to every syndicated copy.
  *
  *  Full text goes out to three sites, so search engines need to be told which one is
- *  the original. Substack and 方格子 both let you set a canonical URL in the post
+ *  the original. 方格子 lets you set a canonical URL in the post
  *  settings — do that too where the field exists; this visible backlink is the part
  *  that works everywhere and survives a copy-paste. */
 export function attributionMarkdown(episodeUrl: string): string {

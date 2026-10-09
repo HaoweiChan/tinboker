@@ -286,62 +286,6 @@ export async function publishEpisodeToVocus(
 }
 
 
-// ── Substack syndication ──────────────────────────────────────────────────────
-// Stops at a draft on purpose: publishing on Substack emails every subscriber the
-// instant it succeeds and cannot be undone, so the last click stays human.
-export interface SubstackDraftResult {
-  platform: 'substack';
-  configured: boolean;
-  dry_run: boolean;
-  episode_id: string;
-  posted: boolean;
-  reason?: string;
-  draft_id?: number;
-  url?: string;
-  block_count?: number;
-}
-
-export async function draftEpisodeToSubstack(
-  episodeId: string,
-  opts: { dryRun?: boolean } = {},
-): Promise<SubstackDraftResult> {
-  const res = await apiClient.post<SubstackDraftResult>(
-    `/api/admin/threads/episodes/${encodeURIComponent(episodeId)}/draft-substack`
-      + `?dry_run=${opts.dryRun === false ? 'false' : 'true'}`,
-  );
-  return res.data;
-}
-
-
-// ── Both syndication targets in one action ────────────────────────────────────
-// Reviewing the same summary on two platforms means opening two editors; doing that
-// from one action is the point. Drafts on both by default — Substack is never published
-// from here (it emails every subscriber, irreversibly).
-export interface SyndicateResult {
-  episode_id: string;
-  title: string;
-  platforms: Record<string, {
-    platform: string;
-    posted: boolean;
-    reason?: string;
-    url?: string;
-    note?: string;
-  }>;
-}
-
-export async function syndicateEpisode(
-  episodeId: string,
-  opts: { dryRun?: boolean; platforms?: string } = {},
-): Promise<SyndicateResult> {
-  const platforms = opts.platforms ?? 'vocus,substack';
-  const res = await apiClient.post<SyndicateResult>(
-    `/api/admin/threads/episodes/${encodeURIComponent(episodeId)}/syndicate`
-      + `?platforms=${encodeURIComponent(platforms)}&dry_run=${opts.dryRun === false ? 'false' : 'true'}`,
-  );
-  return res.data;
-}
-
-
 // ── Comment triage ────────────────────────────────────────────────────────────
 // Replies people leave on our Threads posts, classified so the ones worth answering
 // surface with a draft. Only plain praise is answered unattended; anything with a

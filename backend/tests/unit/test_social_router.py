@@ -111,33 +111,6 @@ def test_posted_status_reads_both_ledgers(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_syndicate_passes_publish_substack_through(monkeypatch):
-    """The pipeline has sent publish_substack=true since Step 5f shipped; the endpoint
-    used to drop the unknown query param silently, leaving every episode a draft."""
-    seen = {}
-
-    async def _fake_get_episode(episode_id):
-        return _ep(episode_id)
-
-    async def _fake_substack(episode_id, title, summary, **kw):
-        seen.update(kw)
-        return {"platform": "substack", "posted": True}
-
-    monkeypatch.setattr(social.podcast_service, "get_episode_admin", _fake_get_episode)
-    monkeypatch.setattr(social.substack_publisher, "create_summary_draft", _fake_substack)
-    monkeypatch.setattr(social, "_public_base_url", lambda request: "https://api.test")
-    monkeypatch.setattr(social.settings, "episode_syndication_platforms", "vocus,substack")
-    monkeypatch.setattr(social.settings, "syndicate_max_age_days", 0)
-
-    await social.syndicate_episode(
-        "EP1", request=None, platforms="substack",
-        dry_run=True, publish=False, publish_substack=True, _=None,
-    )
-    assert seen["publish"] is True
-    assert seen["send_email"] is False
-
-
-@pytest.mark.asyncio
 async def test_syndicate_skips_show_with_publishing_disabled(monkeypatch):
     """A muted show is skipped before either syndication target is contacted."""
     calls = []
@@ -150,21 +123,19 @@ async def test_syndicate_skips_show_with_publishing_disabled(monkeypatch):
         return {"posted": True}
 
     monkeypatch.setattr(social.podcast_service, "get_episode_admin", _fake_get_episode)
-    monkeypatch.setattr(social.substack_publisher, "create_summary_draft", _boom)
     monkeypatch.setattr(social.vocus_publisher, "publish_summary", _boom)
     monkeypatch.setattr(social, "social_enabled_for", lambda name: False)
     monkeypatch.setattr(social, "_public_base_url", lambda request: "https://api.test")
-    monkeypatch.setattr(social.settings, "episode_syndication_platforms", "vocus,substack")
+    monkeypatch.setattr(social.settings, "episode_syndication_platforms", "vocus")
     monkeypatch.setattr(social.settings, "syndicate_max_age_days", 0)
 
     result = await social.syndicate_episode(
-        "EP1", request=None, platforms="vocus,substack",
-        dry_run=False, publish=True, publish_substack=True, _=None,
+        "EP1", request=None, platforms="vocus",
+        dry_run=False, publish=True, _=None,
     )
     assert calls == []
     assert {p: r["reason"] for p, r in result["platforms"].items()} == {
         "vocus": "social_disabled_for_show",
-        "substack": "social_disabled_for_show",
     }
 
 
@@ -183,29 +154,18 @@ async def test_syndicate_is_off_by_default_since_the_daily_digest(monkeypatch):
         return {"posted": True}
 
     monkeypatch.setattr(social.podcast_service, "get_episode_admin", _fake_get_episode)
-    monkeypatch.setattr(social.substack_publisher, "create_summary_draft", _boom)
     monkeypatch.setattr(social.vocus_publisher, "publish_summary", _boom)
     monkeypatch.setattr(social.settings, "episode_syndication_platforms", "")
     monkeypatch.setattr(social.settings, "syndicate_max_age_days", 0)
 
     result = await social.syndicate_episode(
-        "EP1", request=None, platforms="vocus,substack",
-        dry_run=False, publish=True, publish_substack=True, _=None,
+        "EP1", request=None, platforms="vocus",
+        dry_run=False, publish=True, _=None,
     )
     assert calls == []
     assert {p: r["reason"] for p, r in result["platforms"].items()} == {
         "vocus": "episode_syndication_disabled",
-        "substack": "episode_syndication_disabled",
     }
-    # A partial policy lets one platform through and still reports the other.
-    monkeypatch.setattr(social.settings, "episode_syndication_platforms", "substack")
-    monkeypatch.setattr(social, "_public_base_url", lambda request: "https://api.test")
-    result = await social.syndicate_episode(
-        "EP1", request=None, platforms="vocus,substack",
-        dry_run=True, publish=False, publish_substack=False, _=None,
-    )
-    assert result["platforms"]["vocus"]["reason"] == "episode_syndication_disabled"
-    assert result["platforms"]["substack"] == {"posted": True}
 
 
 @pytest.mark.asyncio
@@ -232,22 +192,22 @@ async def test_syndicate_refuses_old_episodes_unless_allow_old(monkeypatch):
         return _ep(episode_id, released_ms=old_ms)
 
     monkeypatch.setattr(social.podcast_service, "get_episode_admin", _old)
-    r = await social.syndicate_episode("EP1", request=None, platforms="vocus", dry_run=True, publish=False, publish_substack=False, allow_old=False, _=None)
+    r = await social.syndicate_episode("EP1", request=None, platforms="vocus", dry_run=True, publish=False, allow_old=False, _=None)
     assert r["platforms"]["vocus"]["reason"] == "too_old" and r["platforms"]["vocus"]["age_days"] > 399
     assert calls == []
-    r = await social.syndicate_episode("EP1", request=None, platforms="vocus", dry_run=True, publish=False, publish_substack=False, allow_old=True, _=None)
+    r = await social.syndicate_episode("EP1", request=None, platforms="vocus", dry_run=True, publish=False, allow_old=True, _=None)
     assert r["platforms"]["vocus"]["posted"] is True and len(calls) == 1
 
     async def _fresh(episode_id):
         return _ep(episode_id, released_ms=fresh_ms)
 
     monkeypatch.setattr(social.podcast_service, "get_episode_admin", _fresh)
-    r = await social.syndicate_episode("EP1", request=None, platforms="vocus", dry_run=True, publish=False, publish_substack=False, allow_old=False, _=None)
+    r = await social.syndicate_episode("EP1", request=None, platforms="vocus", dry_run=True, publish=False, allow_old=False, _=None)
     assert r["platforms"]["vocus"]["posted"] is True
 
     async def _unknown(episode_id):
         return _ep(episode_id, released_ms=None)
 
     monkeypatch.setattr(social.podcast_service, "get_episode_admin", _unknown)
-    r = await social.syndicate_episode("EP1", request=None, platforms="vocus", dry_run=True, publish=False, publish_substack=False, allow_old=False, _=None)
+    r = await social.syndicate_episode("EP1", request=None, platforms="vocus", dry_run=True, publish=False, allow_old=False, _=None)
     assert r["platforms"]["vocus"]["reason"] == "too_old" and r["platforms"]["vocus"]["age_days"] is None

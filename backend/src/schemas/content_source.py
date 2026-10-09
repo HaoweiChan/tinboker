@@ -23,7 +23,7 @@ class ContentSourceBase(BaseModel):
     transcript_service: Optional[str] = Field(None, max_length=20, description="groq | whisper | openai")
     transcript_model: Optional[str] = Field(None, max_length=50, description="STT model, e.g. whisper-large-v3")
     active: bool = True
-    social_enabled: bool = Field(True, description="Publish this show's episodes to external platforms (Threads, Facebook, 方格子, Substack)")
+    social_enabled: bool = Field(True, description="Publish this show's episodes to external platforms (Threads, Facebook, 方格子)")
     extra: Optional[Dict[str, Any]] = None
 
 

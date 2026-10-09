@@ -150,7 +150,7 @@ export const SourceTable: React.FC<SourceTableProps> = ({
               Last ingested
             </th>
             <th className={thCls}>Active</th>
-            <th className={thCls} title="Publish this show's episodes to Threads, Facebook, 方格子 and Substack (podcasts only)">
+            <th className={thCls} title="Publish this show's episodes to Threads, Facebook and 方格子 (podcasts only)">
               Publish
             </th>
             <th className={thCls}>Actions</th>
@@ -289,7 +289,7 @@ export const SourceTable: React.FC<SourceTableProps> = ({
                       }`}
                       title={
                         source.social_enabled
-                          ? 'Publishes to Threads/Facebook/方格子/Substack — click to mute'
+                          ? 'Publishes to Threads/Facebook/方格子 — click to mute'
                           : 'Muted — episodes are still ingested but never published anywhere'
                       }
                     >
