@@ -1,4 +1,5 @@
-"""Market inference from ticker shape — mirrors the frontend inferStockMarket()."""
+"""Market inference from ticker shape and explicit exchange suffixes."""
+import re
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
@@ -12,9 +13,18 @@ def infer_market(ticker: str) -> str:
     positively distinguishing them needs a real market field, not a heuristic.
 
     A single trailing class letter (TW ETFs like 00878B / 00632R) is stripped
-    before the digit check so those don't fall through to US.
+    before the digit check so those don't fall through to US. Explicit exchange
+    suffixes must be TW/TWO; only US A/B share classes are accepted as dotted symbols.
     """
-    code = (ticker or "").split(".")[0].upper()
+    code = (ticker or "").strip().upper()
+    if "." in code:
+        if re.fullmatch(r"[A-Z]{1,5}\.[AB]", code):
+            return "US"  # Share classes, not exchange suffixes (BRK.A / BRK.B).
+        code, suffix = code.rsplit(".", 1)
+        if suffix in {"KS", "KQ"} and code.isdigit():
+            return "KR"  # Named (foreign_stocks.py) but never priced: no KR source.
+        if suffix not in {"TW", "TWO"} or "." in code:
+            return "UNKNOWN"
     # Strip a single trailing class letter from an otherwise-numeric TW code.
     core = code[:-1] if (len(code) > 1 and code[-1].isalpha() and code[:-1].isdigit()) else code
     if not core.isdigit():

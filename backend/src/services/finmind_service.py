@@ -49,9 +49,9 @@ _stock_info_cache: dict = {"df": None, "ts": 0.0}
 
 def list_yahoo_tw_daily_range(ticker: str, start_date: str, end_date: str) -> List[Dict[str, Any]]:
     """Best-effort TW daily OHLCV from Yahoo, trying TWSE then TPEx symbols."""
-    code = (ticker or "").split(".")[0].strip()
-    if not is_tw_ticker(code):
+    if not is_tw_ticker(ticker):
         return []
+    code = (ticker or "").split(".")[0].strip()
 
     try:
         end_exclusive = (

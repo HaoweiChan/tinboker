@@ -31,6 +31,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from src.database.models import StockDailyOHLC, StockInstitutionalDaily, StockTranslation
 from src.database.postgres import get_session
+from src.utils.market import infer_market
 from src.services.finmind_service import is_tw_ticker
 
 logger = logging.getLogger(__name__)
@@ -147,6 +148,7 @@ def _upsert_rows(rows: List[Dict[str, Any]]) -> int:
     every DB-backed endpoint — the 2026-07-15 incident that disabled the US warmer. Chunked
     commits also mean an interrupted warm keeps what it already wrote.
     """
+    rows = [r for r in rows if infer_market(r["ticker"]) in {"TW", "US"}]
     if not rows:
         return 0
     # A chunk may not touch the same (ticker, date) twice: Postgres rejects the second one

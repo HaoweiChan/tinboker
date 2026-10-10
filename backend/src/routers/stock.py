@@ -270,6 +270,11 @@ async def _get_reference_close(
     Every DB touch is offloaded with its own session, so this is safe to fan out
     concurrently — which is exactly what all three batch-price routes do.
     """
+    # An exchange suffix we have no price source for (.T, .KS, ...). Bare 6-digit codes
+    # stay priced: they read as KR by shape but include Taiwan ETFs.
+    if "." in ticker and infer_market(ticker) not in {"TW", "US"}:
+        return None
+
     # --- 1. DB lookup (permanent store, 7-day window) ---
     stored = await asyncio.to_thread(_read_close_before, ticker, ref_date_str)
     if stored is not None:
@@ -531,10 +536,9 @@ async def get_batch_prices_windows(
         return {}
 
     # --- Response-level Redis cache ---
-    # v2: bumped so a pre-split-guard cached body (up to 30 min old, e.g. 6669's bad
-    # d30/since) is never served after this fix deploys.
+    # v3: discard cached returns priced before the foreign-exchange guard.
     pairs_key = ",".join(f"{t}:{ms}" for t, ms in sorted(pairs))
-    resp_cache_key = f"batch_windows_v2:{hashlib.md5(pairs_key.encode()).hexdigest()}"
+    resp_cache_key = f"batch_windows_v3:{hashlib.md5(pairs_key.encode()).hexdigest()}"
     cached_resp = await cache_get(resp_cache_key)
     if cached_resp:
         try:
