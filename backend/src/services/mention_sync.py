@@ -286,6 +286,8 @@ def _closes_from(db: Session, ticker: str, since: str) -> List[tuple]:
     tables: ``stock_daily_closes`` (per-tracked-ticker, thin before mid-2026) and
     ``stock_daily_ohlc`` (whole TW market from the TWSE/TPEx history feeds, plus the
     yfinance bars the US warmers write). The close-only table wins on a shared date."""
+    if infer_market(ticker) not in {"TW", "US"}:
+        return []
     merged: dict[str, float] = {}
     for row in (
         db.query(StockDailyOHLC.date, StockDailyOHLC.close)
