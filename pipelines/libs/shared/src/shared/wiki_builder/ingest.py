@@ -385,6 +385,9 @@ def ingest_news_article(
     summary: str = "",
     conflict_checker: Callable[[dict, dict], bool] | None = None,
     repository: WikiRepository | None = None,
+    language: str = "",
+    published_at: str = "",
+    publication_verified: bool = False,
 ) -> WikiPage:
     """Persist a news article: the article page plus referenced entity/topic pages.
 
@@ -436,6 +439,10 @@ def ingest_news_article(
         claims=norm_claims,
         paragraphs=paragraphs,
         summary=summary,
+    )
+    article_page.frontmatter.update(
+        language=language, published_at=published_at,
+        publication_verified=publication_verified,
     )
     article_page = repo.upsert_page(article_page)
     news_link = f"news/{article_slug}"

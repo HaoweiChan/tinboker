@@ -92,7 +92,13 @@ def test_pipeline_ingests_fixture_articles_end_to_end(tmp_path):
         assert "## News Mentions" in entity.body
 
 
-def test_pipeline_is_best_effort_when_one_article_fails(tmp_path):
+def test_pipeline_is_best_effort_when_one_article_fails(tmp_path, monkeypatch):
+    from unittest.mock import Mock
+
+    from news import drafts
+
+    stage = Mock()
+    monkeypatch.setattr(drafts, "stage_news_draft", stage)
     repo = InMemoryWikiRepository()
 
     def flaky_llm(system: str, user: str) -> dict:
@@ -110,6 +116,8 @@ def test_pipeline_is_best_effort_when_one_article_fails(tmp_path):
     )
     assert summary.ingested == 2
     assert summary.failed == 1
+    stage.assert_called_once()
+    assert stage.call_args.args[0] is repo
     assert len(repo.list_pages(kind="news_article")) == 2
 
 

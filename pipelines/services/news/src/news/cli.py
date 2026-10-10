@@ -36,7 +36,10 @@ def main(argv: list[str] | None = None) -> int:
     if not args.no_bootstrap:
         from shared.secrets import bootstrap
 
-        bootstrap(gsm_vars=(), optional_vars=("WIKI_DATABASE_URL", "OPENROUTER_API_KEY"))
+        bootstrap(
+            gsm_vars=(),
+            optional_vars=("WIKI_DATABASE_URL", "OPENROUTER_API_KEY", "TINBOKER_SOCIAL_TOKEN"),
+        )
 
     # Imported after bootstrap so get_repository() sees WIKI_DATABASE_URL.
     from .orchestrator import run

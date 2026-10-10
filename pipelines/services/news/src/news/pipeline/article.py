@@ -20,6 +20,9 @@ class FeedEntry:
     title: str
     source: str
     published: str = ""  # YYYY-MM-DD, or "" when the feed omits a date
+    language: str = ""
+    published_at: str = ""
+    publication_verified: bool = False
     rss_summary: str = ""
     rss_content: str = ""  # content:encoded, when the feed provides it
 
@@ -44,6 +47,9 @@ class Article:
     title: str
     source: str
     published: str = ""
+    language: str = ""
+    published_at: str = ""
+    publication_verified: bool = False
     rss_summary: str = ""
     rss_content: str = ""
 
@@ -74,6 +80,9 @@ class Article:
             title=entry.title,
             source=entry.source,
             published=entry.published,
+            language=entry.language,
+            published_at=entry.published_at,
+            publication_verified=entry.publication_verified,
             rss_summary=entry.rss_summary,
             rss_content=entry.rss_content,
         )

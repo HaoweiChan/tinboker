@@ -88,4 +88,10 @@ def run(
             print(f"  ⚠ article failed ({article.url}): {exc}")
 
     print(summary)
+    try:
+        from .drafts import stage_news_draft
+
+        stage_news_draft(repo, entries)
+    except Exception as exc:  # Drafting must also run after partial ingestion failures.
+        print(f"Warning: news draft skipped ({type(exc).__name__})")
     return summary

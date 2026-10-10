@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Bell, TrendingUp, Mic, AlertTriangle, Hash, X, Loader2 } from 'lucide-react';
+import { Bell, TrendingUp, Mic, AlertTriangle, Hash, X, Loader2, FileEdit } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { notificationsApi, type AppNotification } from '@/services/api/notifications';
 import { useAppStore } from '@/store/useAppStore';
@@ -7,7 +7,7 @@ import { formatDate } from '@/lib/date';
 
 interface DisplayNotification {
   id: string;
-  type: 'new_episode' | 'stock_mention' | 'topic_mention' | 'price_alert';
+  type: AppNotification['type'];
   title: string;
   description: string;
   time: string;
@@ -123,7 +123,14 @@ export const NotificationDropdown: React.FC = () => {
       }
     }
     // Navigate based on type
-    if (notification.data.ticker) {
+    if (notification.type === 'news_draft') {
+      // Production has no admin surface; the shared drafts are reviewed on staging.
+      if (import.meta.env.VITE_STAGE === 'PRODUCTION') {
+        window.location.assign('https://staging.tinboker.com/admin/social?tab=promo');
+      } else {
+        navigate('/admin/social?tab=promo');
+      }
+    } else if (notification.data.ticker) {
       navigate(`/stock/${notification.data.ticker}`);
     } else if (notification.data.episode_id && notification.data.podcast_name) {
       navigate(`/podcaster/${encodeURIComponent(notification.data.podcast_name)}`);
@@ -157,6 +164,8 @@ export const NotificationDropdown: React.FC = () => {
 
   const getIcon = (type: DisplayNotification['type']) => {
     switch (type) {
+      case 'news_draft':
+        return <FileEdit size={16} className="text-accent-info" />;
       case 'new_episode':
         return <Mic size={16} className="text-accent-info" />;
       case 'stock_mention':

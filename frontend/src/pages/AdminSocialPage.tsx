@@ -6,6 +6,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { RefreshCw, Save, Check, MessageSquare, Image as ImageIcon, Eye, Wand2, Send, AlertCircle, ExternalLink, Plus, Trash2, Clock, Play, ClipboardCopy, BookUp, FileEdit, Layers } from 'lucide-react';
 import { copySyndicationToClipboard } from '@/utils/syndicationHtml';
 import { SlideViewer } from '@/components/common/SlideViewer';
@@ -103,7 +104,9 @@ export const AdminSocialPage: React.FC = () => {
   const [publishResult, setPublishResult] = useState<PublishResult | null>(null);
   const [publishError, setPublishError] = useState<string | null>(null);
   const [showComposed, setShowComposed] = useState(false);
-  const [tab, setTab] = useState<'episodes' | 'promo' | 'comments'>('episodes');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedTab = searchParams.get('tab');
+  const tab = requestedTab === 'promo' || requestedTab === 'comments' ? requestedTab : 'episodes';
 
   const [scheduledPosts, setScheduledPosts] = useState<ScheduledPost[]>([]);
   const [scheduling, setScheduling] = useState(false);
@@ -408,7 +411,7 @@ export const AdminSocialPage: React.FC = () => {
         {([['episodes', '節目文案'], ['promo', '宣傳貼文'], ['comments', '留言']] as const).map(([key, txt]) => (
           <button
             key={key}
-            onClick={() => setTab(key)}
+            onClick={() => setSearchParams({ tab: key })}
             className={`-mb-px border-b-2 px-4 py-2 text-base font-semibold ${
               tab === key
                 ? 'border-primary text-primary'

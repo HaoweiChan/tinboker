@@ -4,10 +4,11 @@ import { useAppStore } from '@/store/useAppStore';
 export interface AppNotification {
   id: string;
   user_id: string;
-  type: 'new_episode' | 'stock_mention' | 'topic_mention' | 'price_alert';
+  type: 'new_episode' | 'stock_mention' | 'topic_mention' | 'price_alert' | 'news_draft';
   title: string;
   body: string;
   data: {
+    draft_id?: number;
     podcast_name?: string;
     episode_id?: string;
     ticker?: string;

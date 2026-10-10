@@ -40,15 +40,22 @@ def wrap(text: str, px: float, width: float) -> list[str]:
     return lines
 
 
-def title_card_svg(title: str, kicker: str = "", footer: str = "tinboker.com · 非投資建議") -> str:
+def title_card_svg(title: str, kicker: str = "", footer: str = "tinboker.com · 非投資建議",
+                   *, strict: bool = False) -> str:
     font = card_font()
     width = SIZE - 2 * MARGIN
-    title = title.strip()[:MAX_TITLE]
+    title = title.strip()
+    # ponytail: strict news cards skip beyond 80 characters/four lines instead of cutting claims.
+    if strict and len(title) > MAX_TITLE:
+        raise ValueError("title exceeds card character ceiling")
+    title = title[:MAX_TITLE]
     for px in _SIZES:
         lines = wrap(title, px, width)
         if len(lines) <= _MAX_LINES:
             break
     else:
+        if strict:
+            raise ValueError("title exceeds card line ceiling")
         lines = lines[:_MAX_LINES]
     block = px * _LINE_GAP * len(lines)
     y0 = (SIZE - block) / 2 + px          # vertically centred block, first baseline
