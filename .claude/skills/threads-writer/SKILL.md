@@ -17,6 +17,14 @@ prefer `modified_summary_content`, otherwise `summary_content`. Recent key insig
 are a shortlist, not a substitute for the relevant full summary. Keep title, release
 date, permalink, and the passage supporting the chosen premise.
 
+For 走勢 material (what a show said, then what the price did), use the service routes
+that return the members' cards — `Authorization: Bearer $TINBOKER_SOCIAL_TOKEN`, never
+a member login: `GET /api/theme-views/copy/cards?podcaster=&theme=` gives theme cards
+with each named stock's since/7/30/90-day return and the card averages attached;
+`POST /api/theme-views/copy/windows` gives the same returns for stock picks
+(`{"items": [{"ticker", "reference_ms"}]}`, mention time from the public insights).
+Quote these numbers as returned; do not recompute them from prices.
+
 Distinguish a guest's claim, a verified fact, and our editorial extrapolation. A
 summary is not independent verification of its numbers. Do not turn a guest's
 forecast into an accomplished event or import a claim from another country as a

@@ -195,3 +195,29 @@ def test_mentions_flag_episodes_outside_the_public_window():
     flags = lambda cards: {m["episode_id"]: m["episode_public"] for m in cards[0]["mentions"]}  # noqa: E731
     assert flags(router.build_cards(rows, 5, {}, now - timedelta(days=7))) == {"old": False, "new": True}
     assert flags(router.build_cards(rows, 5)) == {"old": True, "new": True}
+
+
+def test_copy_cards_attach_returns_for_the_social_token_only(api, monkeypatch):
+    client, _ = api
+    monkeypatch.setattr(settings, "tinboker_social_token", "social-token")
+    put(client, "e1", T0, [view(tickers=[{"ticker": "2327", "name": "國巨", "role": "beneficiary"},
+                                         {"ticker": "2492", "name": "華新科", "role": "beneficiary"}])])
+    card = client.get("/api/theme-views/cards", headers=bearer("member")).json()[0]
+    first, second = "2327", "2492"
+
+    async def windows(request, _user):
+        returns = {first: {"since": 10.0, "d7": 2.0, "d30": None, "d90": None},
+                   second: {"since": 5.0, "d7": None, "d30": None, "d90": None}}
+        return {f"{i.ticker}:{i.reference_ms}": returns[i.ticker] for i in request.items if i.ticker in returns}
+
+    monkeypatch.setattr(router, "get_batch_prices_windows", windows)
+    assert client.get("/api/theme-views/copy/cards").status_code in (401, 403)
+    assert client.get("/api/theme-views/copy/cards", headers=bearer("member")).status_code == 403
+    service = {"Authorization": "Bearer social-token"}
+    assert client.get("/api/theme-views/copy/cards", params={"theme": "不存在"}, headers=service).json() == []
+    out = client.get("/api/theme-views/copy/cards", params={"theme": card["theme_label"][:2]}, headers=service).json()[0]
+    assert out["tickers"][0]["windows"]["since"] == 10.0
+    assert out["averages"] == {"since": 7.5, "d7": 2.0, "d30": None, "d90": None}
+    pick = {"items": [{"ticker": first, "reference_ms": card["first_ms"]}]}
+    assert client.post("/api/theme-views/copy/windows", json=pick, headers=service).json() == {
+        f"{first}:{card['first_ms']}": {"since": 10.0, "d7": 2.0, "d30": None, "d90": None}}

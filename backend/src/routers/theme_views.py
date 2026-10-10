@@ -17,12 +17,13 @@ from typing import List, Literal, Optional
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.auth.admin_auth import AdminAccess, get_content_write_access
+from src.auth.admin_auth import AdminAccess, get_content_write_access, get_social_access
 from src.cache.cdn_cache import CacheProfile, cdn_cached
 from src.config import settings
 from src.database.models import TagRegistry, ThemeView
 from src.database.postgres import session_scope
 from src.models.user import UserResponse
+from src.routers.stock import BatchPricesSinceRequest, TickerDatePair, get_batch_prices_windows
 from src.utils.dependencies import require_member
 
 router = APIRouter(prefix="/api/theme-views", tags=["theme-views"])
@@ -189,3 +190,50 @@ async def get_theme_cards(
     """Members-only theme cards, newest run first. PRIVATE: Cloudflare caches every
     `GET /api/*` by URL with no Vary on Authorization."""
     return await asyncio.to_thread(_cards, podcaster, limit)
+
+
+# ── Copywriting access ───────────────────────────────────────────────────────
+# The same cards and forward returns members see, for the social copy pipeline and
+# agent sessions: TINBOKER_SOCIAL_TOKEN or an admin JWT, never a member login.
+WINDOW_KEYS = ("since", "d7", "d30", "d90")
+
+
+def with_performance(cards: List[dict], windows: dict) -> List[dict]:
+    """Attach each ticker's forward returns and the card's per-window mean — the numbers
+    ThemeCard.tsx shows — so a copywriter never joins or averages by hand."""
+    for card in cards:
+        for t in card["tickers"]:
+            t["windows"] = windows.get(f'{t["ticker"].upper()}:{card["first_ms"]}')
+        card["averages"] = {}
+        for key in WINDOW_KEYS:
+            values = [t["windows"][key] for t in card["tickers"]
+                      if t["windows"] and t["windows"].get(key) is not None]
+            card["averages"][key] = round(sum(values) / len(values), 2) if values else None
+    return cards
+
+
+@router.post("/copy/windows")
+async def post_copy_windows(body: BatchPricesSinceRequest, _svc: AdminAccess = Depends(get_social_access)):
+    """Forward 7/30/90D (+ since) returns per stock pick, as `/api/stocks/batch-prices-windows`
+    serves members. Pair with the public mention endpoints to rebuild a stock card."""
+    # The member route's body never reads its user; the gate here is the service token.
+    return await get_batch_prices_windows(body, _user=None)
+
+
+@router.get("/copy/cards")
+@cdn_cached(profile=CacheProfile.PRIVATE)
+async def get_copy_cards(
+    podcaster: Optional[str] = Query(None, max_length=255),
+    theme: Optional[str] = Query(None, max_length=80, description="Substring of the theme label"),
+    limit: int = Query(20, ge=1, le=60),
+    _svc: AdminAccess = Depends(get_social_access),
+):
+    """Theme cards with their returns already attached, newest run first."""
+    # Filters the newest 200 runs: pass `podcaster` to reach one show's older themes.
+    cards = await asyncio.to_thread(_cards, podcaster, 200)
+    cards = [c for c in cards if not theme or theme in c["theme_label"]][:limit]
+    items = [TickerDatePair(ticker=t["ticker"], reference_ms=c["first_ms"]) for c in cards for t in c["tickers"]]
+    windows: dict = {}
+    for i in range(0, len(items), 300):  # BatchPricesSinceRequest caps at 300 items
+        windows.update(await get_batch_prices_windows(BatchPricesSinceRequest(items=items[i:i + 300]), _user=None))
+    return with_performance(cards, windows)
