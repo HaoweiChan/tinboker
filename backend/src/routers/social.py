@@ -904,6 +904,9 @@ def _marp_size(marp_markdown: str) -> str:
 # everything; media is written to the VPS media store here and handed to Meta as a
 # public URL at publish time (P5: GCS is gone, so is signing).
 promo_router = APIRouter(prefix="/api/admin/promo", tags=["admin", "social"])
+# Uploading media and reading/saving drafts also accept TINBOKER_SOCIAL_TOKEN, so an agent
+# session can leave a promo ready for review. Publish, schedule and delete stay admin-only:
+# a service token can never put a post live.
 
 
 class PromoMedia(BaseModel):
@@ -949,7 +952,7 @@ def _safe_extension(ctype: str) -> str:
 @promo_router.post("/media")
 async def upload_promo_media(
     file: UploadFile = File(...),
-    _: AdminAccess = Depends(get_admin_access),
+    _: AdminAccess = Depends(get_social_access),
 ):
     """Upload one image/video for a promo post; returns its type + its public URL.
 
@@ -1053,7 +1056,7 @@ async def _resign_media(stored: list) -> list:
 
 
 @promo_router.get("/drafts")
-def list_promo_drafts(_: AdminAccess = Depends(get_admin_access), db: Session = Depends(get_session)):
+def list_promo_drafts(_: AdminAccess = Depends(get_social_access), db: Session = Depends(get_session)):
     """List saved promo drafts (metadata only; newest first)."""
     rows = db.query(PromoDraft).order_by(PromoDraft.updated_at.desc()).all()
     return {"drafts": [
@@ -1070,7 +1073,7 @@ def list_promo_drafts(_: AdminAccess = Depends(get_admin_access), db: Session = 
 @promo_router.get("/drafts/{draft_id}")
 async def get_promo_draft(
     draft_id: int,
-    _: AdminAccess = Depends(get_admin_access),
+    _: AdminAccess = Depends(get_social_access),
     db: Session = Depends(get_session),
 ):
     """One draft, with each stored media path resolved to a fetchable URL."""
@@ -1088,7 +1091,7 @@ async def get_promo_draft(
 @promo_router.post("/drafts", status_code=201)
 def create_promo_draft(
     body: PromoDraftBody,
-    admin: AdminAccess = Depends(get_admin_access),
+    admin: AdminAccess = Depends(get_social_access),
     db: Session = Depends(get_session),
 ):
     """Save a new promo draft. Returns its id."""
@@ -1112,7 +1115,7 @@ def create_promo_draft(
 def update_promo_draft(
     draft_id: int,
     body: PromoDraftBody,
-    admin: AdminAccess = Depends(get_admin_access),
+    admin: AdminAccess = Depends(get_social_access),
     db: Session = Depends(get_session),
 ):
     """Overwrite an existing draft."""
