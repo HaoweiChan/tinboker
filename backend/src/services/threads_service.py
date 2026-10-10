@@ -261,8 +261,18 @@ class ThreadsService:
 
     async def _publish_container(self, client: httpx.AsyncClient, container_id: str) -> str:
         params = {"creation_id": container_id, "access_token": self._token}
-        resp = await client.post(f"{self._base}/{self._user_id}/threads_publish", data=params)
-        data = self._parse(resp, "publish")
+        # A FINISHED container can still 400 with subcode 4279009 ("media not found") for
+        # a few seconds, as a reply created right after its root did on 2026-10-10. Nothing
+        # was published, so retrying the same container cannot double-post.
+        for wait in (3.0, 6.0, 12.0, None):
+            resp = await client.post(f"{self._base}/{self._user_id}/threads_publish", data=params)
+            try:
+                data = self._parse(resp, "publish")
+                break
+            except ThreadsError as e:
+                if wait is None or "4279009" not in str(e):
+                    raise
+                await asyncio.sleep(wait)
         media_id = data.get("id")
         if not media_id:
             raise ThreadsError(f"Threads publish returned no id: {data}")
