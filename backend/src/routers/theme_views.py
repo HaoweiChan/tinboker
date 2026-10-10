@@ -101,8 +101,10 @@ def _clean_tickers(tickers: list[dict], names: dict[str, str]) -> tuple[list[dic
         if code in names and (name == code.casefold() or (min(len(name), len(official)) >= 2 and shared >= (min(len(name), len(official)) + 1) // 2)):
             cleaned.append(ticker)
             continue
+        # Re-point only a slip between two Taiwan codes. A code the registry does not know
+        # is a foreign listing: 三星 on Samsung's 005930 must not become Taiwan's 5007 三星.
         matches = [other for other, registered in names.items() if name and registered == name]
-        if len(matches) == 1:
+        if code in names and len(matches) == 1:
             cleaned.append({**ticker, "ticker": matches[0]})
             corrected += 1
         else:
