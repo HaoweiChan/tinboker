@@ -381,8 +381,8 @@ export const AdminSocialPage: React.FC = () => {
   };
 
   return (
-    <div className="p-4 lg:p-8">
-      <div className="mb-4 flex items-center justify-between">
+    <div className={`p-4 lg:p-8 ${tab === 'promo' ? 'max-sm:-mx-4 max-sm:px-0' : ''}`}>
+      <div className={`mb-4 flex items-center justify-between ${tab === 'promo' ? 'max-sm:px-3' : ''}`}>
         <div>
           <h1 className="text-2xl font-bold text-foreground">Social</h1>
           <p className="text-base text-muted-foreground">
@@ -404,7 +404,7 @@ export const AdminSocialPage: React.FC = () => {
       </div>
 
       {/* Tabs: episode social copy vs. free-form promo composer */}
-      <div className="mb-6 flex gap-1 border-b border-border">
+      <div className={`mb-6 flex gap-1 border-b border-border ${tab === 'promo' ? 'max-sm:px-3' : ''}`}>
         {([['episodes', '節目文案'], ['promo', '宣傳貼文'], ['comments', '留言']] as const).map(([key, txt]) => (
           <button
             key={key}
