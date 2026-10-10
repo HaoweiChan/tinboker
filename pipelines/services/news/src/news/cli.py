@@ -45,7 +45,9 @@ def main(argv: list[str] | None = None) -> int:
     from .orchestrator import run
 
     summary = run(feeds_path=args.feeds, limit=args.limit)
-    return 0 if summary.failed == 0 else 1
+    # Per-article errors are best-effort; a run failed only when every attempt did.
+    # A quiet run (everything unchanged, nothing attempted) is healthy.
+    return 1 if summary.failed and not summary.ingested else 0
 
 
 if __name__ == "__main__":
