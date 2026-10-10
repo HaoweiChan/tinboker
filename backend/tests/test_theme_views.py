@@ -352,3 +352,8 @@ def test_ticker_registry_is_batched_once_per_request(api, monkeypatch, route):
 def test_an_empty_registry_leaves_tickers_alone():
     tickers = [{"ticker": "2327", "name": "國巨", "role": "beneficiary"}]
     assert router._clean_tickers(tickers, {}) == (tickers, 0, 0)
+
+
+def test_a_foreign_code_is_dropped_not_repointed_to_a_taiwan_namesake():
+    samsung = [{"ticker": "005930", "name": "三星", "role": "beneficiary"}]
+    assert router._clean_tickers(samsung, {"5007": "三星", "2330": "台積電"}) == ([], 0, 1)
