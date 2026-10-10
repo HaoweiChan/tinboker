@@ -10,12 +10,36 @@ from sqlalchemy.orm import sessionmaker
 
 from src.config import settings
 from src.database import user_db
-from src.database.models import Base, TagRegistry, ThemeView, User
+from src.database.models import Base, StockTranslation, TagRegistry, ThemeView, User
 from src.routers import theme_views as router
 from src.utils.auth import create_jwt_token
 
 DAY_MS = 86_400_000
 T0 = int(datetime(2026, 2, 28, 8, tzinfo=timezone.utc).timestamp() * 1000)
+TW_NAMES = {
+    "2327": "國巨*", "2330": "台積電", "3661": "世芯-KY", "0050": "元大台灣50",
+    "2492": "華新科", "8150": "南茂科技", "6147": "頎邦", "6669": "緯穎",
+    "2465": "麗臺", "2385": "群光電子", "3227": "原相", "6505": "台塑化",
+    "6207": "雷科", "2456": "奇力新", "2495": "普安", "6752": "叡揚",
+    "6762": "達亞", "6759": "寬量國際", "6981": "創鑫生技", "009150": "凱基優選高股息30",
+    "9105": "泰金寶-DR", "1503": "士林電機", "3008": "大立光", "3653": "健策", "6526": "絡達",
+    "9917": "中保科", "6976": "聯穎光電",
+}
+BAD_TICKERS = [
+    ("8150", "頎邦"), ("6669", "微影"), ("2465", "微影"), ("2385", "維影"),
+    ("3661", "漢策"), ("3661", "金豪科"), ("3227", "金豪科"), ("6505", "育邦"),
+    ("6207", "和聲堂"), ("2456", "利融電"), ("2495", "預幫"), ("6752", "Panasonic"),
+    ("6762", "TDK"), ("6759", "村田製作所"), ("6981", "村田"), ("009150", "三星電機"),
+    ("4062", "揖斐電"), ("6976", "太陽誘電"),
+]
+GOOD_TICKERS = [
+    ("2327", "國巨"), ("2330", "台積電"), ("3661", "世芯"), ("0050", "0050"),
+    ("NVDA", "輝達"), ("NVDA", "Nvidia"), ("STM", "意法半導體"), ("VSH", "Vishay"),
+    ("6996.T", "Nichicon"), ("2330", " 臺 積電 "), ("2330", "台積電股份有限公司"),
+    ("8150", "南茂"), ("9105", "泰金寶"),
+    # How shows and ASR actually write them: abbreviations and near-homophones.
+    ("1503", "士電"), ("3008", "大力光"), ("3653", "建策"), ("6526", "達發"), ("9917", "中興保全"),
+]
 
 
 @pytest.fixture
@@ -42,6 +66,8 @@ def api(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "tinboker_write_token", "write-token")
     now = datetime.now(timezone.utc)
     with scope() as db:
+        db.add_all([StockTranslation(ticker=code, market="TW", name_zh_tw=name)
+                    for code, name in TW_NAMES.items()])
         db.add(User(id="member", google_id="member", email="member@example.com", name="m",
                     member_until=now + timedelta(days=30), created_at=now, updated_at=now))
         db.add(User(id="free", google_id="free", email="free@example.com", name="f", created_at=now, updated_at=now))
@@ -74,7 +100,8 @@ def put(client, episode, ms, views, ep="640", podcaster="Gooaye 股癌", headers
 def test_write_requires_the_service_token_and_replaces_the_episode(api):
     client, scope = api
     assert put(client, "e1", T0, [view()], headers=bearer("member")).status_code == 403
-    assert put(client, "e1", T0, [view(), view("矽光子", None)]).json() == {"episode_id": "e1", "stored": 2}
+    assert put(client, "e1", T0, [view(), view("矽光子", None)]).json() == {
+        "episode_id": "e1", "stored": 2, "tickers_corrected": 0, "tickers_dropped": 2}
     # Re-running an episode replaces its rows; two labels on one theme keep the first.
     assert put(client, "e1", T0, [view(), view("MLCC", "sector_mlcc", stance="bearish")]).json()["stored"] == 1
     with scope() as db:
@@ -221,3 +248,107 @@ def test_copy_cards_attach_returns_for_the_social_token_only(api, monkeypatch):
     pick = {"items": [{"ticker": first, "reference_ms": card["first_ms"]}]}
     assert client.post("/api/theme-views/copy/windows", json=pick, headers=service).json() == {
         f"{first}:{card['first_ms']}": {"since": 10.0, "d7": 2.0, "d30": None, "d90": None}}
+
+
+@pytest.mark.parametrize("code,name", BAD_TICKERS + GOOD_TICKERS)
+def test_named_tickers_are_cleaned_on_write_and_legacy_card_reads(api, code, name):
+    client, scope = api
+    ticker = {"ticker": code, "name": name, "role": "beneficiary"}
+    corrected = (code, name) == ("8150", "頎邦")
+    dropped = (code, name) in BAD_TICKERS and not corrected
+    expected = [] if dropped else [{**ticker, "ticker": "6147" if corrected else code}]
+    response = put(client, "e1", T0, [view(tickers=[ticker])])
+    assert response.status_code == 200
+    assert response.json() == {"episode_id": "e1", "stored": 1,
+                               "tickers_corrected": int(corrected), "tickers_dropped": int(dropped)}
+    with scope() as db:
+        row = db.query(ThemeView).one()
+        assert row.tickers == expected
+        row.tickers = [ticker]  # Legacy rows must be checked independently of ingestion.
+    card = client.get("/api/theme-views/cards", headers=bearer("member")).json()[0]
+    assert card["tickers"] == [{"ticker": t["ticker"], "name": t["name"], "mentions": 1} for t in expected]
+    assert card["tickers_source"] == ("none" if dropped else "named")
+    with scope() as db:
+        assert db.query(ThemeView).one().tickers == [ticker]
+
+
+@pytest.mark.parametrize("members", [[], [{"ticker": "2327", "name": "國巨"}]])
+def test_mismatched_legacy_tickers_fall_back_to_members(api, members):
+    client, scope = api
+    put(client, "e1", T0, [view(tickers=[])])
+    with scope() as db:
+        db.query(ThemeView).one().tickers = [{"ticker": "6669", "name": "微影", "role": "beneficiary"}]
+        db.add(TagRegistry(slug="mlcc", display_zh="被動元件", exposure_id="sector_mlcc", members=members))
+    card = client.get("/api/theme-views/cards", headers=bearer("member")).json()[0]
+    assert card["tickers_source"] == ("members" if members else "none")
+    assert card["tickers"] == [{**m, "mentions": 0} for m in members]
+
+
+def test_remapping_requires_a_unique_normalised_exact_name(api):
+    client, scope = api
+    with scope() as db:
+        db.add(StockTranslation(ticker="9998", market="TW", name_zh_tw=" 頎 邦-KY*"))
+    tickers = [{"ticker": "8150", "name": name, "role": "context"} for name in ("頎邦", "頎邦股份有限公司", "南")]
+    result = put(client, "e1", T0, [view(tickers=tickers)]).json()
+    assert result["tickers_corrected"] == 0 and result["tickers_dropped"] == 3
+    with scope() as db:
+        assert db.query(ThemeView).one().tickers == []
+
+
+def test_remapping_uses_normalisation_and_only_taiwan_registry(api):
+    client, scope = api
+    with scope() as db:
+        db.add(StockTranslation(ticker="FOREIGN", market="US", name_zh_tw="頎邦"))
+    ticker = {"ticker": "8150", "name": " 頎 邦-KY* ", "role": "beneficiary"}
+    result = put(client, "e1", T0, [view(tickers=[ticker])]).json()
+    assert result["tickers_corrected"] == 1 and result["tickers_dropped"] == 0
+    with scope() as db:
+        assert db.query(ThemeView).one().tickers == [{**ticker, "ticker": "6147"}]
+
+
+@pytest.mark.parametrize("route", ["put", "cards", "copy/cards"])
+def test_ticker_registry_is_batched_once_per_request(api, monkeypatch, route):
+    client, scope = api
+    monkeypatch.setattr(settings, "tinboker_social_token", "social-token")
+    tickers = [{"ticker": code, "name": name, "role": "beneficiary"} for code, name in BAD_TICKERS]
+    views = [view(tickers=tickers), view("矽光子", "sector_cpo", tickers=tickers)]
+    put(client, "e1", T0, views)
+    with scope() as db:
+        engine = db.get_bind()
+        for row in db.query(ThemeView).all():
+            row.tickers = tickers
+    registry_queries = []
+    priced = []
+
+    async def windows(request, _user):
+        priced.extend(i.ticker for i in request.items)
+        return {}
+
+    monkeypatch.setattr(router, "get_batch_prices_windows", windows)
+
+    def record_query(conn, cursor, statement, parameters, context, executemany):
+        if "stock_translations" in statement:
+            registry_queries.append(statement)
+
+    event.listen(engine, "before_cursor_execute", record_query)
+    try:
+        if route == "put":
+            response = put(client, "e1", T0, views)
+            assert response.json() == {"episode_id": "e1", "stored": 2,
+                                       "tickers_corrected": 2, "tickers_dropped": 2 * (len(BAD_TICKERS) - 1)}
+        else:
+            headers = bearer("member") if route == "cards" else {"Authorization": "Bearer social-token"}
+            response = client.get(f"/api/theme-views/{route}", headers=headers)
+            assert len(response.json()) == 2
+            assert all(c["tickers"][0]["ticker"] == "6147" and len(c["tickers"]) == 1 for c in response.json())
+        assert response.status_code == 200
+    finally:
+        event.remove(engine, "before_cursor_execute", record_query)
+    assert len(registry_queries) == 1
+    if route == "copy/cards":
+        assert priced == ["6147", "6147"]
+
+
+def test_an_empty_registry_leaves_tickers_alone():
+    tickers = [{"ticker": "2327", "name": "國巨", "role": "beneficiary"}]
+    assert router._clean_tickers(tickers, {}) == (tickers, 0, 0)

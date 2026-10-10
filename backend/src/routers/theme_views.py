@@ -16,11 +16,12 @@ from typing import List, Literal, Optional
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy.orm import Session
 
 from src.auth.admin_auth import AdminAccess, get_content_write_access, get_social_access
 from src.cache.cdn_cache import CacheProfile, cdn_cached
 from src.config import settings
-from src.database.models import TagRegistry, ThemeView
+from src.database.models import StockTranslation, TagRegistry, ThemeView
 from src.database.postgres import session_scope
 from src.models.user import UserResponse
 from src.routers.stock import BatchPricesSinceRequest, TickerDatePair, get_batch_prices_windows
@@ -69,31 +70,77 @@ def theme_key(label: str, exposure_id: Optional[str]) -> str:
     return "label:" + re.sub(r"\s+", "", unicodedata.normalize("NFKC", label)).casefold()
 
 
-def _replace_episode(episode_id: str, body: EpisodeThemeViews) -> int:
+def _normalise_stock_name(name: str) -> str:
+    name = re.sub(r"\s+", "", unicodedata.normalize("NFKC", name)).casefold().replace("臺", "台")
+    return re.sub(r"(?:\*|-ky|-dr)+$", "", name)
+
+
+def _taiwan_names(db: Session) -> dict[str, str]:
+    return {ticker: _normalise_stock_name(name or "") for ticker, name in db.query(
+        StockTranslation.ticker, StockTranslation.name_zh_tw,
+    ).filter(StockTranslation.market == "TW").all()}
+
+
+def _clean_tickers(tickers: list[dict], names: dict[str, str]) -> tuple[list[dict], int, int]:
+    if not names:  # no registry (fresh database): checking would drop every Taiwan stock
+        return tickers, 0, 0
+    cleaned = []
+    corrected = dropped = 0
+    for ticker in tickers:
+        code = ticker["ticker"]
+        if not re.fullmatch(r"[0-9]{3,6}[A-Z]?", code):
+            cleaned.append(ticker)
+            continue
+        name = _normalise_stock_name(ticker["name"])
+        official = names.get(code, "")
+        # Shows say 士電 for 士林電機 and ASR writes 大力光 for 大立光, so "same company" is
+        # character overlap of at least half the shorter name, not equality. ponytail:
+        # a homophone pair sharing one of two characters (信越 on 信質's code) still passes;
+        # telling those apart needs a reading-based match.
+        shared = len(set(name) & set(official))
+        if code in names and (name == code.casefold() or (min(len(name), len(official)) >= 2 and shared >= (min(len(name), len(official)) + 1) // 2)):
+            cleaned.append(ticker)
+            continue
+        matches = [other for other, registered in names.items() if name and registered == name]
+        if len(matches) == 1:
+            cleaned.append({**ticker, "ticker": matches[0]})
+            corrected += 1
+        else:
+            # Boot seeds the full TWSE/TPEx listings, so unknown codes are dropped too.
+            dropped += 1
+    return cleaned, corrected, dropped
+
+
+def _replace_episode(episode_id: str, body: EpisodeThemeViews) -> dict[str, int]:
     released = datetime.fromtimestamp(body.released_at_ms / 1000, tz=timezone.utc).replace(tzinfo=None)
     with session_scope() as db:
+        names = _taiwan_names(db)
         db.query(ThemeView).filter_by(episode_id=episode_id).delete()
         seen = set()
+        corrected = dropped = 0
         for view in body.theme_views:
             key = theme_key(view.theme_label, view.exposure_id)
             if key in seen:  # two labels for one theme in one episode: keep the first
                 continue
             seen.add(key)
+            tickers, fixed, removed = _clean_tickers([t.model_dump() for t in view.tickers], names)
+            corrected += fixed
+            dropped += removed
             db.add(ThemeView(
                 episode_id=episode_id, podcaster=body.podcaster, episode_number=body.episode_number,
                 released_at=released, theme_key=key, theme_label=view.theme_label,
                 exposure_id=view.exposure_id, stance=view.stance, conviction=view.conviction,
                 thesis=view.thesis, start_ms=view.start_ms, quote=view.quote, source=body.source,
-                tickers=[t.model_dump() for t in view.tickers],
+                tickers=tickers,
             ))
-        return len(seen)
+        return {"stored": len(seen), "tickers_corrected": corrected, "tickers_dropped": dropped}
 
 
 @router.put("/episode/{episode_id}")
 async def put_episode_theme_views(episode_id: str, body: EpisodeThemeViews,
                                   _writer: AdminAccess = Depends(get_content_write_access)):
     """Replace one episode's theme views (idempotent; an empty list clears them)."""
-    return {"episode_id": episode_id, "stored": await asyncio.to_thread(_replace_episode, episode_id, body)}
+    return {"episode_id": episode_id, **await asyncio.to_thread(_replace_episode, episode_id, body)}
 
 
 def _ms(value: datetime) -> int:
@@ -103,6 +150,7 @@ def _ms(value: datetime) -> int:
 def build_cards(
     rows: list, limit: int, members_by_exposure: Optional[dict[str, list]] = None,
     public_since: Optional[datetime] = None,
+    taiwan_names: Optional[dict[str, str]] = None,
 ) -> List[dict]:
     """Group rows (any order) into run cards, newest run first.
 
@@ -124,7 +172,8 @@ def build_cards(
             # performance is measured on these from the first mention.
             counts: dict = {}
             for row in run:
-                for t in row.tickers or []:
+                cleaned, _, _ = _clean_tickers(row.tickers or [], taiwan_names or {})
+                for t in cleaned:
                     if t.get("role") == "beneficiary":
                         entry = counts.setdefault(t["ticker"], {"ticker": t["ticker"], "name": t["name"], "mentions": 0})
                         entry["mentions"] += 1
@@ -177,7 +226,8 @@ def _cards(podcaster: Optional[str], limit: int) -> List[dict]:
         ).all()
         days = getattr(settings, "release_episode_max_age_days", 0) or 0
         public_since = datetime.utcnow() - timedelta(days=days) if days > 0 else None
-        return build_cards(rows, limit, {row.exposure_id: row.members or [] for row in members}, public_since)
+        return build_cards(rows, limit, {row.exposure_id: row.members or [] for row in members},
+                           public_since, _taiwan_names(db))
 
 
 @router.get("/cards")
