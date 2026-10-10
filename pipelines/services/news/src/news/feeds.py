@@ -28,6 +28,7 @@ def _load_feeds_from_platform() -> list[dict[str, Any]] | None:
                 "name": s.get("name"),
                 "url": s.get("feed_url"),
                 "region": s.get("region"),
+                "language": s.get("language"),
                 "enabled": True,
                 "lookback_days": s.get("lookback_days"),
                 "max_episodes": s.get("max_episodes"),

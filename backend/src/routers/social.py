@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from typing import List, Optional, Any
 
 import httpx
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
@@ -24,6 +24,7 @@ from src.database.postgres import get_session
 from src.services import (facebook_publisher, promo_publisher, substack_publisher,
                           threads_publisher, vocus_publisher)
 from src.services.content_source_service import social_enabled_for
+from src.services.news_drafts import NewsDraftBody, draft_state, save_news_draft
 from src.services.gcs_content import GCSContentService, media_url
 from src.services.syndication_markdown import (
     build_syndication_body, hook_title, is_historic, podcast_short_name, syndication_excerpt, syndication_title,
@@ -949,6 +950,17 @@ def _safe_extension(ctype: str) -> str:
     return ext
 
 
+@promo_router.get("/news-drafts/state")
+async def news_draft_state(response: Response, _: AdminAccess = Depends(get_social_access)):
+    response.headers["Cache-Control"] = "private, no-store"
+    return await asyncio.to_thread(draft_state)
+
+
+@promo_router.post("/news-drafts")
+async def create_news_draft(body: NewsDraftBody, _: AdminAccess = Depends(get_social_access)):
+    return await asyncio.to_thread(save_news_draft, body)
+
+
 @promo_router.post("/media")
 async def upload_promo_media(
     file: UploadFile = File(...),
@@ -1066,7 +1078,7 @@ def list_promo_drafts(_: AdminAccess = Depends(get_social_access), db: Session =
             "media_count": len(r.media or []), "comment_count": len(r.comments or []),
             "platforms": r.platforms or [],
         }
-        for r in rows
+        for r in rows if not (r.news_source or {}).get("deleted")
     ]}
 
 
@@ -1078,7 +1090,7 @@ async def get_promo_draft(
 ):
     """One draft, with each stored media path resolved to a fetchable URL."""
     row = db.query(PromoDraft).filter(PromoDraft.id == draft_id).first()
-    if not row:
+    if not row or (row.news_source or {}).get("deleted"):
         raise HTTPException(status_code=404, detail="Draft not found")
     return {
         "id": row.id, "name": row.name, "text": row.text or "",
@@ -1122,7 +1134,7 @@ def update_promo_draft(
     if body.poll is not None:
         raise HTTPException(status_code=422, detail="Native polls are supported only for episode posts")
     row = db.query(PromoDraft).filter(PromoDraft.id == draft_id).first()
-    if not row:
+    if not row or (row.news_source or {}).get("deleted"):
         raise HTTPException(status_code=404, detail="Draft not found")
     row.name = (body.name or "").strip() or "未命名草稿"
     row.text = body.text or ""
@@ -1142,9 +1154,14 @@ def delete_promo_draft(
 ):
     """Delete a draft."""
     row = db.query(PromoDraft).filter(PromoDraft.id == draft_id).first()
-    if not row:
+    if not row or (row.news_source or {}).get("deleted"):
         raise HTTPException(status_code=404, detail="Draft not found")
-    db.delete(row)
+    if row.news_source:
+        # Publishing deletes its draft too; keep immutable identity for dedup and the daily cap.
+        row.news_source = {**row.news_source, "deleted": True}
+        row.text, row.media, row.comments = "", [], []
+    else:
+        db.delete(row)
     db.commit()
 
 

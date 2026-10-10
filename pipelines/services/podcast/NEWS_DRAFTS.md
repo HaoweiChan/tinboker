@@ -1,10 +1,58 @@
-# English news → local Threads drafts
+# English news → reviewed Threads drafts
 
-This opt-in CLI accepts extracted English source records, filters them before paid
-calls, optionally asks TypeSafe Jev two narrow questions through OpenRouter, and writes one zh-TW
-draft with its original URL as a separate first comment. It does not fetch sources,
-translate the whole ingestion feed, schedule posts, write databases, or publish.
-Existing podcast ingestion and production model defaults are unchanged.
+The existing six-hourly news ingest now ends with an optional draft step, even if
+some individual articles failed. It reads persisted `news_article` pages referenced
+by the current feed window, reuses this CLI's unchanged prefilter/Jev/writer gates,
+and hands at most one zh-TW draft to the platform admin API. Nothing publishes
+automatically. The standalone CLI below remains a local review/evaluation tool.
+
+## Scheduled draft lane
+
+Set `NEWS_THREADS_DRAFTS_ENABLED=true` in the existing news service environment.
+The lane needs `TINBOKER_ADMIN_API_URL` pointing to the admin-serving backend
+(staging, since production omits admin routes), `TINBOKER_SOCIAL_TOKEN`,
+`OPENROUTER_API_KEY`, and the existing `WIKI_DATABASE_URL`. Secrets use the existing
+bootstrap/environment mechanism. No new systemd unit or timer is required. The existing pipeline deployment installs
+both `tinboker-podcast` and `tinboker-news` into the same workspace virtualenv, which
+`run_news.sh` already uses; no additional package installation is needed.
+`NEWS_THREADS_DRAFTS_CACHE_DIR` optionally selects a writable persistent cache;
+the default is `.cache/news-threads-drafts` relative to the news service directory.
+Jev requests can reuse this cache across runs. Scheduled writer requests include
+the current run timestamp, so a later retry after a failed render/handoff can spend
+one writer call again; the six-Jev/one-writer per-run ceiling still applies.
+A restart/reload of the existing service configuration is sufficient after deploy.
+
+The feed/region metadata determines language. Only a raw feed `published` value
+with an explicit timezone sets `publication_verified`; updated dates, missing dates,
+and synthesized wiki dates cannot pass. Existing rows without this provenance are
+skipped; there is no metadata backfill. Candidate lookup is bounded to articles
+still present in this run's RSS window, including already-ingested unchanged pages.
+
+Before paid calls, the pipeline reads `/api/admin/promo/news-drafts/state`, checking
+the daily allowance and stored article IDs, canonical URLs, and normalized content
+hashes. Missing credentials/history fail closed. Backend creation enforces at most
+two news drafts per Asia/Taipei day and deduplicates again before saving.
+A hidden tombstone retains source identity and the daily count after publication
+or deletion. The `news_source` column is added idempotently at backend boot; no
+manual SQL is required.
+
+`POST /api/admin/promo/news-drafts` renders a TinBoker card with the draft's first
+line, source, and date using the existing raster renderer. It stores that image in
+the permanent promo media store and creates a `PromoDraft` with Threads selected
+and the source URL as its first comment. The card renderer supports at most 80
+headline characters and four rendered lines. News cards use strict rendering:
+a first nonempty draft line exceeding either limit returns `no_image` and skips
+creation rather than truncating factual qualifiers. Rendering failure
+also means no saved draft.
+Publisher images are never copied or hot-linked. Existing admin notifications link
+to the promo editor; the owner reviews/edits and explicitly publishes there.
+Recipients must have a registered user account whose email appears in the backend
+`ADMIN_EMAILS` configuration. Without a registered admin, creation skips. If the database/notification transaction
+fails after rendering, an unreferenced generated PNG can remain in the media store;
+the draft and notification roll back together.
+The local CLI's `report.json` is an intermediate writing artifact, not an admin draft.
+
+## Standalone CLI
 
 Run from `pipelines/`:
 
@@ -95,8 +143,9 @@ Offline tests mock paid calls. A separate seven-case live selector pilot through
 OpenRouter matched its frozen labels (three real articles and four synthetic
 controls); it bypassed the CLI freshness prefilter and writer, so it does not
 validate the end-to-end flow or calibrate the 0.8 threshold. Treat this as an
-initial integration check, not a quality benchmark. This CLI is a
-review/evaluation tool, not a production publishing path.
+initial integration check, not a quality benchmark. The standalone CLI remains a
+review/evaluation tool; the scheduled wrapper hands its validated prose to the
+media-required admin draft endpoint.
 
 ```sh
 uv sync --all-packages --group dev
