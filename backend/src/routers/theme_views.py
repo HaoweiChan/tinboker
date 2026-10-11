@@ -85,6 +85,11 @@ def _stock_names(db: Session) -> dict[str, tuple[str, ...]]:
     ).filter(StockTranslation.market.in_(["TW", "US"])).all()}
 
 
+def _squeeze(text: str) -> str:
+    """Collapse doubled letters, so SpaceX is found in Space Exploration."""
+    return re.sub(r"([a-z])\1+", r"\1", text)
+
+
 def _clean_tickers(tickers: list[dict], names: dict[str, tuple[str, ...]]) -> tuple[list[dict], int, int]:
     if not names:  # no registry (fresh database): checking would drop every Taiwan stock
         return tickers, 0, 0
@@ -98,19 +103,17 @@ def _clean_tickers(tickers: list[dict], names: dict[str, tuple[str, ...]]) -> tu
             registered = names.get(code.upper(), ())
             # US names are filled lazily from mentions (ensure_pending_stubs), unlike
             # the full TWSE/TPEx seed: missing US codes or names are not evidence of a mismatch.
-            matches = not registered or name == code.casefold()
-            chinese = "".join(re.findall(r"[\u3400-\u9fff]", name))
+            # Only Latin names are judged, and only against Latin registry names: the
+            # registry often holds one script (愛迪達 vs "ADIDAS AG"), Chinese renderings
+            # of foreign names vary (阿斯麥 / 艾司摩爾), and a short name is usually an
+            # abbreviation (AWS on AMZN). Anything that cannot be compared is kept.
             latin = "".join(re.findall(r"[a-z0-9]+", name))
-            for official in registered:
-                official_chinese = "".join(re.findall(r"[\u3400-\u9fff]", official))
-                shorter = min(len(chinese), len(official_chinese))
-                matches |= shorter >= 2 and len(set(chinese) & set(official_chinese)) >= (shorter + 1) // 2
-                official_latin = "".join(re.findall(r"[a-z0-9]+", official))
-                # Collapse doubled letters for contractions such as SpaceX / Space Exploration.
-                matches |= bool(latin and official_latin and (
-                    latin in official_latin or official_latin in latin
-                    or re.sub(r"([a-z])\1+", r"\1", latin) in re.sub(r"([a-z])\1+", r"\1", official_latin)
-                ))
+            officials = [o for o in ("".join(re.findall(r"[a-z0-9]+", r)) for r in registered) if o]
+            matches = (
+                not officials or len(latin) <= 4 or name == code.casefold()
+                or bool(re.search(r"[\u3400-\u9fff]", name))
+                or any(latin in o or o in latin or _squeeze(latin) in _squeeze(o) or latin[:5] == o[:5] for o in officials)
+            )
             if matches:
                 cleaned.append(ticker)
             else:
