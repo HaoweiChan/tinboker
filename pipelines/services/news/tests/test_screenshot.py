@@ -20,3 +20,8 @@ def test_missing_browser_is_a_named_failure(monkeypatch):
 def test_phrases_reach_the_page_as_data_not_code():
     script = screenshot._script(screenshot._LOCATE, ['quote with "quotes"\n and </script> `${x}`'])
     assert script.startswith('const PHRASES = ["quote with \\"quotes\\" and </script> `${x}`"];')
+
+
+def test_curly_quotes_in_a_phrase_are_matched_as_straight():
+    script = screenshot._script(screenshot._LOCATE, ["the world\u2019s largest \u201ccloud\u201d"])
+    assert script.startswith("""const PHRASES = ["the world's largest \\"cloud\\""];""")
