@@ -202,12 +202,17 @@ def validate_draft(result: dict, article: dict) -> str:
     if not source_quotes(draft, article):
         raise ValueError("Writer returned a highlight that is not a source quote")
     # The prompt asks for no spaces around numbers and the model still adds them.
-    post = re.sub(r"(?<=[\u3400-\u9fff]) (?=\d)|(?<=[\d%]) (?=[\u3400-\u9fff])", "", draft["post"])
+    post = re.sub(r"(?<=[\u3400-\u9fff～]) +(?=\d)|(?<=[\d%]) +(?=[\u3400-\u9fff～])", "", draft["post"])
     if len(post) > THREADS_MAX_CHARS:
         raise ValueError("Writer returned a post over the Threads length limit")
     if not re.search(r"[\u3400-\u9fff]", post):
         raise ValueError("Writer returned no Chinese text")
-    if re.search(r"。|(?<!自)我|(?<!迷)你|https?://|值得關注|滿值得往下追|還需觀察", post):
+    # A period may separate sentences inside a paragraph, never end a line.
+    post = re.sub(r"。+(?=\n|$)", "", post)
+    # The writer introduces four quotes in six with "講得很直接" whatever the prompt says.
+    # Rejecting cost most drafts, so the tic is rewritten to a plain "說".
+    post = re.sub(r"(?:講|說)得[很更](?:直接|白|直白)[：:，,]?\s*|直接點破[：:，,]?\s*|講白了[：:，,]?\s*", "說，", post)
+    if re.search(r"(?<!自)我|(?<!迷)你|https?://|值得關注|滿值得往下追|還需觀察", post):
         raise ValueError("Writer returned disallowed prose")
     return post
 
@@ -275,7 +280,7 @@ def run(data: dict, out: Path, *, as_of: datetime, select_with_jev: bool = False
                 raise ValueError("Requested article did not pass the prefilter")
         if selected:
             prompt = yaml.safe_load((Path(__file__).parent / "prompts/news_social_writer.yaml").read_text())
-            payload = {"model": writer_model, "max_tokens": 2048, "prompt_version": 4,
+            payload = {"model": writer_model, "max_tokens": 2048, "prompt_version": 5,
                        "messages": [{"role": "system", "content": prompt["system"]},
                                     {"role": "user", "content": json.dumps(
                                         {"run_as_of": as_of.isoformat(), "article": selected},
