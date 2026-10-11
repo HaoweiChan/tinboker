@@ -107,7 +107,10 @@ def test_transport_failures_cached_and_evidence_invalid(tmp_path, monkeypatch):
     with pytest.raises(ValueError):
         drafts.validate_draft({"draft": {"post": "內容", "evidence_ids": ["invented"],
                                          "highlights": [article()["paragraphs"][0]["text"][:40]]}}, article())
-    for marks in ([], ["a paraphrase that the source never printed"], ["short"], "not a list"):
+    text = article()["paragraphs"][0]["text"]
+    kept = drafts.source_quotes({"highlights": [text[:300], text[:60], "never printed in the source", 7]}, article())
+    assert kept == [" ".join(text[:60].split())]  # over-long, paraphrased and non-string are dropped
+    for marks in ([], ["a paraphrase that the source never printed"], ["short"], [text[:300]], "not a list"):
         with pytest.raises(ValueError, match="highlight"):
             drafts.validate_draft({"draft": {"post": "內容", "evidence_ids": ["0"], "highlights": marks}},
                                   article())
