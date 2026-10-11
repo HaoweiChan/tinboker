@@ -16,6 +16,9 @@ import yaml
 JEV_MODEL = "typesafe/jev-1.13"
 THREADS_MAX_CHARS = 500  # Threads rejects a longer text post
 WRITER_ATTEMPTS = 2
+# Was 6. The market question passes about three articles in ten, and on 2026-10-11 the
+# six newest were all rejected while three known passers sat behind the cap, unjudged.
+MAX_CANDIDATES = 12
 QUESTIONS = {
     "relevant": {"type": "noul", "instructions":
         "Does this article describe a concrete business, industry, economic or policy change "
@@ -113,9 +116,9 @@ def prefilter(data: dict, as_of: datetime) -> tuple[list[dict], dict[str, str]]:
             reason = "invalid_source"
         skipped[aid] = reason
     eligible.sort(key=lambda a: timestamp(a["published_at"]), reverse=True)
-    for article in eligible[6:]:
+    for article in eligible[MAX_CANDIDATES:]:
         skipped[article["id"]] = "candidate_cap"
-    return eligible[:6], skipped
+    return eligible[:MAX_CANDIDATES], skipped
 
 
 def jev(payload: dict) -> dict:
@@ -231,7 +234,7 @@ def run(data: dict, out: Path, *, as_of: datetime, select_with_jev: bool = False
     def cached(stage: str, payload: dict, call) -> dict:
         # Match requests' default JSON body encoding, including ASCII escapes and spaces.
         encoded = json.dumps(payload, sort_keys=True).encode()
-        if len(encoded) > 32000 or len(report["calls"]) >= 6 + WRITER_ATTEMPTS:
+        if len(encoded) > 32000 or len(report["calls"]) >= MAX_CANDIDATES + WRITER_ATTEMPTS:
             raise ValueError("Run call/input budget exceeded")
         path = out / (stage + "-" + hashlib.sha256(encoded).hexdigest() + ".json")
         started = time.monotonic()

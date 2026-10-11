@@ -121,13 +121,13 @@ def test_transport_failures_cached_and_evidence_invalid(tmp_path, monkeypatch):
 
 def test_candidate_cap_and_no_selection_default(tmp_path, monkeypatch):
     articles = []
-    for index in range(10):
+    for index in range(drafts.MAX_CANDIDATES + 4):
         item = copy.deepcopy(article(str(index)))
         item["url"] += str(index)
         item["paragraphs"][0]["text"] += str(index)
         articles.append(item)
     result = drafts.run({"articles": articles}, tmp_path, as_of=NOW)
-    assert len(result["candidates"]) == 6
+    assert len(result["candidates"]) == drafts.MAX_CANDIDATES
     assert result["calls"] == [] and result["draft"] is None
 
 
