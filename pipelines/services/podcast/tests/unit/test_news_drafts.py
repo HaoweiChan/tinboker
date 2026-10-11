@@ -251,3 +251,21 @@ def test_writer_transport_has_no_retries_and_bounded_timeout(monkeypatch):
     factory.assert_called_once_with("social_copy_writer", model_override="deepseek/deepseek-v4-pro")
     model.root_client.with_options.assert_called_once_with(timeout=60, max_retries=0)
     assert model.model_copy.call_args.kwargs["update"]["max_tokens"] == 2048
+
+
+def test_writer_gets_one_retry_then_gives_up(tmp_path, monkeypatch):
+    source = article()
+    good = {"draft": {"post": "新設備開始交貨", "evidence_ids": ["0"],
+                      "highlights": [source["paragraphs"][0]["text"][:40]]}}
+    bad = {"draft": good["draft"] | {"post": "我們開始交貨"}}
+    monkeypatch.setattr(drafts, "jev", Mock(return_value=answer()))
+    writer = Mock(side_effect=[bad, good])
+    monkeypatch.setattr(drafts, "write", writer)
+    result = drafts.run({"articles": [source]}, tmp_path / "a", as_of=NOW, select_with_jev=True)
+    assert result["draft"]["post"] == "新設備開始交貨" and writer.call_count == 2
+
+    writer = Mock(side_effect=[bad, TimeoutError(), good])
+    monkeypatch.setattr(drafts, "write", writer)
+    with pytest.raises(RuntimeError):
+        drafts.run({"articles": [source]}, tmp_path / "b", as_of=NOW, select_with_jev=True)
+    assert writer.call_count == 2

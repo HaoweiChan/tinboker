@@ -15,6 +15,7 @@ import yaml
 
 JEV_MODEL = "typesafe/jev-1.13"
 THREADS_MAX_CHARS = 500  # Threads rejects a longer text post
+WRITER_ATTEMPTS = 2
 QUESTIONS = {
     "relevant": {"type": "noul", "instructions":
         "Does this article describe a concrete business, industry, economic or policy change "
@@ -225,7 +226,7 @@ def run(data: dict, out: Path, *, as_of: datetime, select_with_jev: bool = False
     def cached(stage: str, payload: dict, call) -> dict:
         # Match requests' default JSON body encoding, including ASCII escapes and spaces.
         encoded = json.dumps(payload, sort_keys=True).encode()
-        if len(encoded) > 32000 or len(report["calls"]) >= 7:
+        if len(encoded) > 32000 or len(report["calls"]) >= 6 + WRITER_ATTEMPTS:
             raise ValueError("Run call/input budget exceeded")
         path = out / (stage + "-" + hashlib.sha256(encoded).hexdigest() + ".json")
         started = time.monotonic()
@@ -279,8 +280,16 @@ def run(data: dict, out: Path, *, as_of: datetime, select_with_jev: bool = False
                                     {"role": "user", "content": json.dumps(
                                         {"run_as_of": as_of.isoformat(), "article": selected},
                                         ensure_ascii=False)}]}
-            result = cached("writer", payload, write)
-            post = validate_draft(result, selected)
+            # About half of live outputs fail a gate (a translated "我們" in a quote, a
+            # paraphrased highlight, truncated JSON), and the next run is six hours away.
+            for attempt in range(WRITER_ATTEMPTS):
+                try:
+                    result = cached("writer", payload | {"attempt": attempt}, write)
+                    post = validate_draft(result, selected)
+                    break
+                except (RuntimeError, ValueError):
+                    if attempt == WRITER_ATTEMPTS - 1:
+                        raise
             screenshot = selected.get("screenshot_path")
             report["draft"] = {"article_id": selected["id"], "post": post,
                                "evidence_ids": result["draft"]["evidence_ids"],
