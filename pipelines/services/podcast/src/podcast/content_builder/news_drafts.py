@@ -14,6 +14,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 import yaml
 
 JEV_MODEL = "typesafe/jev-1.13"
+THREADS_MAX_CHARS = 500  # Threads rejects a longer text post
 QUESTIONS = {
     "relevant": {"type": "noul", "instructions":
         "Does this article describe a concrete business, industry, economic or policy change "
@@ -201,6 +202,8 @@ def validate_draft(result: dict, article: dict) -> str:
         raise ValueError("Writer returned a highlight that is not a source quote")
     # The prompt asks for no spaces around numbers and the model still adds them.
     post = re.sub(r"(?<=[\u3400-\u9fff]) (?=\d)|(?<=[\d%]) (?=[\u3400-\u9fff])", "", draft["post"])
+    if len(post) > THREADS_MAX_CHARS:
+        raise ValueError("Writer returned a post over the Threads length limit")
     if not re.search(r"[\u3400-\u9fff]", post):
         raise ValueError("Writer returned no Chinese text")
     if re.search(r"。|(?<!自)我|(?<!迷)你|https?://|值得關注|滿值得往下追|還需觀察", post):
@@ -271,7 +274,7 @@ def run(data: dict, out: Path, *, as_of: datetime, select_with_jev: bool = False
                 raise ValueError("Requested article did not pass the prefilter")
         if selected:
             prompt = yaml.safe_load((Path(__file__).parent / "prompts/news_social_writer.yaml").read_text())
-            payload = {"model": writer_model, "max_tokens": 2048, "prompt_version": 3,
+            payload = {"model": writer_model, "max_tokens": 2048, "prompt_version": 4,
                        "messages": [{"role": "system", "content": prompt["system"]},
                                     {"role": "user", "content": json.dumps(
                                         {"run_as_of": as_of.isoformat(), "article": selected},

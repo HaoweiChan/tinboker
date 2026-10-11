@@ -107,6 +107,7 @@ def run(
             "Writer returned no Chinese text",
             "Writer returned disallowed prose",
             "Writer returned a highlight that is not a source quote",
+            "Writer returned a post over the Threads length limit",
             "Choose Jev selection or an explicit article, not both",
             "A writer model is required",
             "Run call/input budget exceeded",

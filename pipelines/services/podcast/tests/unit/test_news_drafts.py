@@ -86,7 +86,7 @@ def test_english_source_cache_and_separate_comment(tmp_path, monkeypatch):
         assert result["draft"]["highlights"] == [" ".join(quote.split())]
         assert result["draft"]["post"] == "新設備在9月開始交貨\n\n客戶已經用上3套"
     assert selector.call_count == writer.call_count == 1
-    assert writer.call_args.args[0]["prompt_version"] == 3
+    assert writer.call_args.args[0]["prompt_version"] == 4
     sent_state = json.loads(selector.call_args.args[0]["state"])
     assert sent_state == {"title": source["title"], "paragraphs": source["paragraphs"]}
     assert os.environ["SOCIAL_COPY_WRITER_MODEL"] == "original-model"
@@ -110,6 +110,9 @@ def test_transport_failures_cached_and_evidence_invalid(tmp_path, monkeypatch):
     text = article()["paragraphs"][0]["text"]
     kept = drafts.source_quotes({"highlights": [text[:300], text[:60], "never printed in the source", 7]}, article())
     assert kept == [" ".join(text[:60].split())]  # over-long, paraphrased and non-string are dropped
+    with pytest.raises(ValueError, match="length limit"):
+        drafts.validate_draft({"draft": {"post": "字" * 501, "evidence_ids": ["0"],
+                                         "highlights": [text[:60]]}}, article())
     for marks in ([], ["a paraphrase that the source never printed"], ["short"], [text[:300]], "not a list"):
         with pytest.raises(ValueError, match="highlight"):
             drafts.validate_draft({"draft": {"post": "內容", "evidence_ids": ["0"], "highlights": marks}},
