@@ -36,6 +36,14 @@ export interface ChangelogEntry {
 //   docs/workflows/deploy-flow.md § "In-app changelog (What's new)".
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.14.1',
+    date: '2026-10',
+    items: [
+      '「走勢」題材卡修正：少數名稱和代號對不上的個股，先前會顯示成另一檔股票的漲跌，現在不再列入。',
+      '日股、韓股等目前沒有報價的個股改為顯示「—」，不再套用同代號台股的價格，題材平均也跟著更正。',
+    ],
+  },
+  {
     version: '0.14.0',
     date: '2026-10',
     items: [
