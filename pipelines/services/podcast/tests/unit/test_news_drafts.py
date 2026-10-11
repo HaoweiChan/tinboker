@@ -104,9 +104,9 @@ def test_transport_failures_cached_and_evidence_invalid(tmp_path, monkeypatch):
     assert failed.call_count == 1
     report = json.loads((tmp_path / "report.json").read_text())
     assert report["draft"] is None and not report["publish_ready"]
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError):  # no usable quote and no real paragraph ID: nothing supports it
         drafts.validate_draft({"draft": {"post": "內容", "evidence_ids": ["invented"],
-                                         "highlights": [article()["paragraphs"][0]["text"][:40]]}}, article())
+                                         "highlights": ["never printed in the source at all"]}}, article())
     text = article()["paragraphs"][0]["text"]
     kept = drafts.source_quotes({"highlights": [text[:300], text[:60], "never printed in the source", 7]}, article())
     assert kept == [" ".join(text[:60].split())]  # over-long, paraphrased and non-string are dropped
@@ -302,3 +302,13 @@ def test_cached_verdicts_are_free_and_new_ones_are_bounded(tmp_path, monkeypatch
     second = drafts.run({"articles": articles}, tmp_path, as_of=NOW, select_with_jev=True)
     assert selector.call_count == drafts.MAX_PAID_JEV + 3  # the rest, with the first batch from cache
     assert "jev_budget" not in second["skipped"].values() and second["draft"] is None
+
+
+def test_evidence_comes_from_the_quotes_not_the_writers_numbering():
+    source = article() | {"paragraphs": [{"id": "0", "text": "Background that nobody quoted. " * 6},
+                                          {"id": "1", "text": "A named customer deployed a new product. " * 6}]}
+    quote = "A named customer deployed a new product."
+    draft = {"post": "客戶開始用新產品", "evidence_ids": ["45", "46"], "highlights": [quote]}
+    assert drafts.evidence_ids(draft, source) == ["1"]          # invented IDs ignored
+    assert drafts.validate_draft({"draft": draft}, source) == "客戶開始用新產品"
+    assert drafts.evidence_ids(draft | {"evidence_ids": ["0"]}, source) == ["0", "1"]  # a real ID is kept

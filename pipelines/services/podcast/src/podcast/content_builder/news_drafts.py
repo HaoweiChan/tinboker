@@ -197,16 +197,27 @@ def source_quotes(draft: dict, article: dict) -> list[str]:
     return [q for q in quotes if 15 <= len(q) <= 220 and q in source][:2]
 
 
+def evidence_ids(draft: dict, article: dict) -> list[str]:
+    """Paragraphs that support the post. The verbatim quotes are the provenance: a
+    paragraph holding one is evidence whatever the writer claimed. Its own IDs are kept
+    only when real — on a source extracted as one block it numbers sentences instead
+    ("45", "46") and every draft for that article used to be rejected."""
+    quotes = source_quotes(draft, article)
+    claimed = {i for i in draft.get("evidence_ids") or [] if isinstance(i, str)}
+    return [p["id"] for p in article["paragraphs"]
+            if p["id"] in claimed or any(q in _flat(p["text"]) for q in quotes)]
+
+
 def validate_draft(result: dict, article: dict) -> str:
     draft = result["draft"]
-    valid = {p["id"] for p in article["paragraphs"]}
     if (not isinstance(draft, dict) or set(draft) != {"post", "evidence_ids", "highlights"}
             or not isinstance(draft["post"], str) or not draft["post"].strip()
-            or not isinstance(draft["evidence_ids"], list) or not draft["evidence_ids"]
-            or any(not isinstance(i, str) or i not in valid for i in draft["evidence_ids"])):
+            or not isinstance(draft["evidence_ids"], list)):
         raise ValueError("Writer returned an invalid draft or evidence ID")
     if not source_quotes(draft, article):
         raise ValueError("Writer returned a highlight that is not a source quote")
+    if not evidence_ids(draft, article):
+        raise ValueError("Writer returned an invalid draft or evidence ID")
     # The prompt asks for no spaces around numbers and the model still adds them.
     post = re.sub(r"(?<=[\u3400-\u9fff～]) +(?=\d)|(?<=[\d%]) +(?=[\u3400-\u9fff～])", "", draft["post"])
     if len(post) > THREADS_MAX_CHARS:
@@ -314,7 +325,7 @@ def run(data: dict, out: Path, *, as_of: datetime, select_with_jev: bool = False
                         raise
             screenshot = selected.get("screenshot_path")
             report["draft"] = {"article_id": selected["id"], "post": post,
-                               "evidence_ids": result["draft"]["evidence_ids"],
+                               "evidence_ids": evidence_ids(result["draft"], selected),
                                "highlights": source_quotes(result["draft"], selected),
                                "first_comment": selected["url"], "screenshot_path": screenshot,
                                "screenshot_exists": bool(screenshot and Path(screenshot).is_file()),
