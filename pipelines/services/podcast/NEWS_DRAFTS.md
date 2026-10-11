@@ -19,7 +19,7 @@ both `tinboker-podcast` and `tinboker-news` into the same workspace virtualenv, 
 the default is `.cache/news-threads-drafts` relative to the news service directory.
 Jev requests can reuse this cache across runs. Scheduled writer requests include
 the current run timestamp, so a later retry after a failed screenshot/handoff can spend
-one writer call again; the six-Jev/one-writer per-run ceiling still applies.
+the writer again; the six-Jev/two-writer per-run ceiling still applies.
 A restart/reload of the existing service configuration is sufficient after deploy.
 
 The feed/region metadata determines language. Only a raw feed `published` value
@@ -128,7 +128,8 @@ semantically identical stories from different publishers.
 
 ## Limits and review
 
-There are at most seven paid attempts per run (six Jev, one writer), with 24 KB
+There are at most eight paid attempts per run (six Jev, and the writer once plus one
+retry when its output fails a gate or the request fails), with 24 KB
 source / 32 KB serialized request limits, a 2,048-token writer output cap, and
 30/60-second Jev/writer timeouts. No automatic retries or fallback model calls.
 The writer uses the existing social-copy role with an invocation-local model
