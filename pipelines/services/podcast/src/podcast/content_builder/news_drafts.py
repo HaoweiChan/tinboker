@@ -172,15 +172,28 @@ def write(payload: dict) -> dict:
             "usage": response.usage_metadata, "metadata": response.response_metadata}
 
 
+def _flat(text: str) -> str:
+    return re.sub(r"\s+", " ", text).strip()
+
+
 def validate_draft(result: dict, article: dict) -> str:
     draft = result["draft"]
     valid = {p["id"] for p in article["paragraphs"]}
-    if (not isinstance(draft, dict) or set(draft) != {"post", "evidence_ids"}
+    if (not isinstance(draft, dict) or set(draft) != {"post", "evidence_ids", "highlights"}
             or not isinstance(draft["post"], str) or not draft["post"].strip()
             or not isinstance(draft["evidence_ids"], list) or not draft["evidence_ids"]
             or any(not isinstance(i, str) or i not in valid for i in draft["evidence_ids"])):
         raise ValueError("Writer returned an invalid draft or evidence ID")
-    post = draft["post"]
+    # The screenshot step finds and highlights these on the live page, so each must be
+    # copied from the source, not paraphrased.
+    source = _flat(" ".join(p["text"] for p in article["paragraphs"]))
+    marks = draft["highlights"]
+    if (not isinstance(marks, list) or not 1 <= len(marks) <= 2
+            or any(not isinstance(m, str) or not 15 <= len(_flat(m)) <= 140 or _flat(m) not in source
+                   for m in marks)):
+        raise ValueError("Writer returned a highlight that is not a source quote")
+    # The prompt asks for no spaces around numbers and the model still adds them.
+    post = re.sub(r"(?<=[\u3400-\u9fff]) (?=\d)|(?<=[\d%]) (?=[\u3400-\u9fff])", "", draft["post"])
     if not re.search(r"[\u3400-\u9fff]", post):
         raise ValueError("Writer returned no Chinese text")
     if re.search(r"。|(?<!自)我|(?<!迷)你|https?://|值得關注|滿值得往下追|還需觀察", post):
@@ -251,7 +264,7 @@ def run(data: dict, out: Path, *, as_of: datetime, select_with_jev: bool = False
                 raise ValueError("Requested article did not pass the prefilter")
         if selected:
             prompt = yaml.safe_load((Path(__file__).parent / "prompts/news_social_writer.yaml").read_text())
-            payload = {"model": writer_model, "max_tokens": 2048, "prompt_version": 2,
+            payload = {"model": writer_model, "max_tokens": 2048, "prompt_version": 3,
                        "messages": [{"role": "system", "content": prompt["system"]},
                                     {"role": "user", "content": json.dumps(
                                         {"run_as_of": as_of.isoformat(), "article": selected},
@@ -261,6 +274,7 @@ def run(data: dict, out: Path, *, as_of: datetime, select_with_jev: bool = False
             screenshot = selected.get("screenshot_path")
             report["draft"] = {"article_id": selected["id"], "post": post,
                                "evidence_ids": result["draft"]["evidence_ids"],
+                               "highlights": [_flat(m) for m in result["draft"]["highlights"]],
                                "first_comment": selected["url"], "screenshot_path": screenshot,
                                "screenshot_exists": bool(screenshot and Path(screenshot).is_file()),
                                "review_required": True}

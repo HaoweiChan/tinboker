@@ -1,4 +1,5 @@
 """News drafting integration: real CLI gates, in-memory wiki, zero paid calls."""
+import base64
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -55,7 +56,10 @@ def lane(monkeypatch, tmp_path):
     monkeypatch.setattr(drafts, "news_drafts_request", request)
     jev = Mock(return_value={"answers": {key: {"type": "noul", "noul": .9}
                                         for key in news_drafts.QUESTIONS}})
-    writer = Mock(return_value={"draft": {"post": "企業宣布新的投資計畫", "evidence_ids": ["0"]}})
+    writer = Mock(return_value={"draft": {"post": "企業宣布新的投資計畫", "evidence_ids": ["0"],
+                                          "highlights": ["A specific investment announcement"]}})
+    capture = Mock(return_value=b"\x89PNG\r\n\x1a\nshot")
+    monkeypatch.setattr("news.screenshot.capture", capture)
     monkeypatch.setattr(news_drafts, "jev", jev)
     monkeypatch.setattr(news_drafts, "write", writer)
     return repo, entries, state, request, jev, writer, page
@@ -87,7 +91,7 @@ def test_selected_draft_handoff(lane):
     assert jev.call_count == writer.call_count == 1
     body = request.call_args.args[0]
     assert body["article_id"] == page.slug
-    assert body["image_url"] == "https://example.com/lead.jpg"
+    assert base64.b64decode(body["image_png_base64"]) == b"\x89PNG\r\n\x1a\nshot"
     assert body["comment"] == "https://example.com/a"
     assert body["text"] == "企業宣布新的投資計畫"
 
@@ -101,13 +105,11 @@ def test_history_unavailable_skips(lane):
     writer.assert_not_called()
 
 
-@pytest.mark.parametrize("image_url", [None, "", "http://example.com/image.jpg", "https:///image.jpg",
-                                      "https://[invalid/image.jpg", 123])
-def test_missing_or_invalid_image_skips_before_paid_calls(lane, image_url):
-    repo, entries, _, request, jev, writer, page = lane
-    page.frontmatter["image_url"] = image_url
-    repo.upsert_page(page)
-    assert drafts.stage_news_draft(repo, entries) is None
-    jev.assert_not_called()
-    writer.assert_not_called()
-    assert request.call_count == 1
+def test_failed_screenshot_means_no_draft(lane, monkeypatch):
+    repo, entries, _, request, _, writer, _ = lane
+    monkeypatch.setattr("news.screenshot.capture",
+                        Mock(side_effect=RuntimeError("screenshot failed (passage_covered)")))
+    with pytest.raises(RuntimeError, match="passage_covered"):
+        drafts.stage_news_draft(repo, entries)
+    assert writer.call_count == 1
+    assert request.call_count == 1  # state only; nothing handed off

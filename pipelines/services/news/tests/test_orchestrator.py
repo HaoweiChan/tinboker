@@ -144,6 +144,7 @@ def test_pipeline_skips_unchanged_articles_on_rerun(tmp_path):
      "jev failed (provider_http_error:403)"),
     ("writer failed (timeout); inspect configuration before retrying", "writer failed (timeout)"),
     ("Jev returned an unexpected answer map", "Jev returned an unexpected answer map"),
+    ("screenshot failed (passage_covered)", "screenshot failed (passage_covered)"),
     ("Writer returned an invalid draft or evidence ID", "Writer returned an invalid draft or evidence ID"),
     ("Writer returned no Chinese text: Bearer test-secret", "details withheld"),
     ("writer failed (request_failed:" + "X" * 250 + "); inspect configuration before retrying",

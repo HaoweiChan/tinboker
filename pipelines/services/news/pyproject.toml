@@ -14,6 +14,8 @@ dependencies = [
     "trafilatura>=1.8",
     "openai>=1.0.0",
     "requests>=2.31.0",
+    # Drives headless Chromium over DevTools for draft screenshots (news/screenshot.py).
+    "websockets>=13.0",
 ]
 
 [project.optional-dependencies]
