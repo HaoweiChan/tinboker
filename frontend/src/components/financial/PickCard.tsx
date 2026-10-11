@@ -8,6 +8,7 @@ import { normalizeSentiment, getSentimentDisplay } from '@/lib/sentiment';
 import { useStockColorMode } from '@/hooks/useStockTrendColor';
 import { formatDate } from '@/lib/date';
 import { cn } from '@/lib/utils';
+import { isCardBodyTap } from '@/lib/cardTap';
 import type { PickWindowReturns, TickerInsight } from '@/services/types';
 
 interface PickCardProps {
@@ -82,9 +83,13 @@ export const PickCard: React.FC<PickCardProps> = ({
   const canPlay = typeof onPlaySegment === 'function';
   const stockColorMode = useStockColorMode();
   const hasDetail = Boolean(pick.reasons?.length || pick.risks?.length);
+  const canExpand = hasDetail || Boolean(pick.bluf_thesis);
 
   return (
-    <Card className={cn('p-4', className)}>
+    <Card
+      className={cn('p-4', canExpand && 'cursor-pointer', className)}
+      onClick={canExpand ? (e) => { if (isCardBodyTap(e)) setExpanded((v) => !v); } : undefined}
+    >
       {/* Header: channel + ticker + sentiment + share */}
       <div className="flex items-start gap-3">
         <PodAvatar
@@ -192,17 +197,19 @@ export const PickCard: React.FC<PickCardProps> = ({
         </p>
       )}
 
-      {hasDetail || pick.bluf_thesis ? (
+      {/* The whole card is the tap target; the chevron only shows which way it goes
+          and keeps the toggle reachable from the keyboard. */}
+      {canExpand && (
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
           aria-expanded={expanded}
-          className="flex items-center gap-1 text-xs text-accent-info mt-2 hover:underline"
+          aria-label={expanded ? '收合' : '展開'}
+          className="mx-auto mt-1 flex h-6 w-10 items-center justify-center rounded text-muted-foreground/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
         >
-          {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-          {expanded ? '收合' : hasDetail ? '查看原因' : '看完整摘要'}
+          {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
         </button>
-      ) : null}
+      )}
 
       {expanded && (
         <div className="mt-3 pt-3 border-t border-border space-y-3">
