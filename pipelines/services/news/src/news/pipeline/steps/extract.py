@@ -11,12 +11,39 @@ from __future__ import annotations
 import hashlib
 import html as _html
 import re
+from html.parser import HTMLParser
 from typing import Callable
+from urllib.parse import urljoin
 
 from ..article import Article, Paragraph
 
 _SECTION_SPLIT = re.compile(r"\n\s*\n+")
 _MIN_PARAGRAPH_LEN = 20  # drop nav scraps / one-word lines
+
+
+class _LeadImageParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.images: dict[str, str] = {}
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag != "meta":
+            return
+        values = dict(attrs)
+        name = (values.get("property") or values.get("name") or "").lower()
+        content = (values.get("content") or "").strip()
+        if name in {"og:image", "twitter:image"} and content:
+            self.images.setdefault(name, content)
+
+
+def _lead_image(markup: str, article_url: str) -> str:
+    parser = _LeadImageParser()
+    parser.feed(markup)
+    image = parser.images.get("og:image") or parser.images.get("twitter:image")
+    try:
+        return urljoin(article_url, image) if image else ""
+    except ValueError:
+        return ""
 
 
 def paragraph_hash(text: str) -> str:
@@ -77,6 +104,7 @@ def extract(
         downloaded = None
 
     if downloaded:
+        article.image_url = _lead_image(downloaded, article.url) or article.image_url
         try:
             main_text = extractor(downloaded) or ""
         except Exception as exc:  # noqa: BLE001 — extractor failure → RSS fallback below

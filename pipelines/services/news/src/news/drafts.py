@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from shared.platform_client import news_drafts_request
 from shared.wiki_builder import news_slug
@@ -30,15 +31,27 @@ def stage_news_draft(repo: WikiRepository, entries: list[FeedEntry]) -> dict | N
         if page is None:
             continue
         fm = page.frontmatter
+        image_url = fm.get("image_url")
+        if not isinstance(image_url, str):
+            continue
+        try:
+            image = urlsplit(image_url)
+            if image.scheme != "https" or not image.hostname:
+                continue
+        except ValueError:
+            continue
         articles.append({
             "id": page.slug, "title": page.title, "url": fm["url"],
             "source": fm.get("source", ""), "language": fm.get("language", ""),
             "published_at": fm.get("published_at", ""),
+            "image_url": image_url,
             "publication_verified": fm.get("publication_verified", False),
             "paragraphs": [{"id": str(p["index"]), "text": p["text"]}
                            for p in fm.get("paragraphs", [])],
         })
     articles = list({article["id"]: article for article in articles}.values())
+    if not articles:
+        return None
     posted = set(state["already_posted_ids"])
     urls = set(state["already_posted_urls"])
     hashes = set(state["already_posted_hashes"])
@@ -61,6 +74,7 @@ def stage_news_draft(repo: WikiRepository, entries: list[FeedEntry]) -> dict | N
     result = news_drafts_request({
         "article_id": selected["id"], "canonical_url": url, "content_hash": digest,
         "source": selected["source"], "published_at": selected["published_at"],
+        "image_url": selected["image_url"],
         "text": draft["post"], "comment": draft["first_comment"],
     })
     print(f"news draft: {(result or {}).get('status', 'handoff_failed')}")

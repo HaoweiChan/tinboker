@@ -35,6 +35,7 @@ def wiki_write(
         language=article.language,
         published_at=article.published_at,
         publication_verified=article.publication_verified,
+        image_url=article.image_url,
         content_hash=article.content_hash,
         paragraphs=article.paragraph_dicts(),
         claims=article.claims,

@@ -23,6 +23,7 @@ class FeedEntry:
     language: str = ""
     published_at: str = ""
     publication_verified: bool = False
+    image_url: str = ""
     rss_summary: str = ""
     rss_content: str = ""  # content:encoded, when the feed provides it
 
@@ -50,6 +51,7 @@ class Article:
     language: str = ""
     published_at: str = ""
     publication_verified: bool = False
+    image_url: str = ""
     rss_summary: str = ""
     rss_content: str = ""
 
@@ -83,6 +85,7 @@ class Article:
             language=entry.language,
             published_at=entry.published_at,
             publication_verified=entry.publication_verified,
+            image_url=entry.image_url,
             rss_summary=entry.rss_summary,
             rss_content=entry.rss_content,
         )

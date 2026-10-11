@@ -18,7 +18,7 @@ both `tinboker-podcast` and `tinboker-news` into the same workspace virtualenv, 
 `NEWS_THREADS_DRAFTS_CACHE_DIR` optionally selects a writable persistent cache;
 the default is `.cache/news-threads-drafts` relative to the news service directory.
 Jev requests can reuse this cache across runs. Scheduled writer requests include
-the current run timestamp, so a later retry after a failed render/handoff can spend
+the current run timestamp, so a later retry after a failed image download/handoff can spend
 one writer call again; the six-Jev/one-writer per-run ceiling still applies.
 A restart/reload of the existing service configuration is sufficient after deploy.
 
@@ -27,6 +27,11 @@ with an explicit timezone sets `publication_verified`; updated dates, missing da
 and synthesized wiki dates cannot pass. Existing rows without this provenance are
 skipped; there is no metadata backfill. Candidate lookup is bounded to articles
 still present in this run's RSS window, including already-ingested unchanged pages.
+Ingest persists the source lead image as `image_url`: `og:image` first, then
+`twitter:image`, then an RSS image from `media:content` or an enclosure. Metadata
+is read from the HTML already fetched for extraction. Scheduled candidates without
+an HTTPS `image_url` are skipped before any paid Jev or writer call; existing rows
+without an image are not backfilled.
 
 Before paid calls, the pipeline reads `/api/admin/promo/news-drafts/state`, checking
 the daily allowance and stored article IDs, canonical URLs, and normalized content
@@ -36,19 +41,19 @@ A hidden tombstone retains source identity and the daily count after publication
 or deletion. The `news_source` column is added idempotently at backend boot; no
 manual SQL is required.
 
-`POST /api/admin/promo/news-drafts` renders a TinBoker card with the draft's first
-line, source, and date using the existing raster renderer. It stores that image in
-the permanent promo media store and creates a `PromoDraft` with Threads selected
-and the source URL as its first comment. The card renderer supports at most 80
-headline characters and four rendered lines. News cards use strict rendering:
-a first nonempty draft line exceeding either limit returns `no_image` and skips
-creation rather than truncating factual qualifiers. Rendering failure
-also means no saved draft.
-Publisher images are never copied or hot-linked. Existing admin notifications link
+`POST /api/admin/promo/news-drafts` downloads the supplied `image_url` into the
+permanent promo media store and creates a `PromoDraft` with Threads selected and
+the source URL as its first comment. News drafts always use the source article's
+image, never a rendered title card or a hot-linked image. The backend requires
+HTTPS and public resolved addresses, refuses redirects, applies a timeout and an
+8 MiB streaming size limit, and accepts only JPEG, PNG, or WebP with matching
+content type, magic bytes, and stored filename extension. Any download, validation,
+or storage failure returns `no_image` and creates no draft or notification.
+Existing admin notifications link
 to the promo editor; the owner reviews/edits and explicitly publishes there.
 Recipients must have a registered user account whose email appears in the backend
 `ADMIN_EMAILS` configuration. Without a registered admin, creation skips. If the database/notification transaction
-fails after rendering, an unreferenced generated PNG can remain in the media store;
+fails after storage, an unreferenced source image can remain in the media store;
 the draft and notification roll back together.
 The local CLI's `report.json` is an intermediate writing artifact, not an admin draft.
 
@@ -88,6 +93,7 @@ so use a fresh output directory when evaluating a newer snapshot.
     "language": "en",
     "title": "A concrete company announcement",
     "url": "https://example.com/announcement",
+    "image_url": "https://example.com/lead.jpg",
     "published_at": "2026-10-02T08:00:00Z",
     "publication_verified": true,
     "paragraphs": [{"id": "0", "text": "Replace with full extracted English source text of at least 100 characters"}],
@@ -104,8 +110,8 @@ URL or whitespace-normalized content. Include previously posted source records
 and their IDs to deduplicate against them; no remote posting history is read.
 The default clock is UTC now; `--as-of` provides a timezone-aware replay timestamp.
 
-At most six eligible records enter selection. Jev answers both relevance and
-specificity in a single call per article. Both probabilities must be at least 0.8;
+At most six eligible records enter selection. Jev answers relevance,
+specificity and market consequence in a single call per article. All three probabilities must be at least 0.8;
 uncertain records are skipped, malformed answers stop the run. This threshold is
 an initial review gate, not a measured quality guarantee. The highest minimum
 probability wins, with newest-first ties. Jev does not infer publication dates or

@@ -8,6 +8,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from typing import Any, Callable
+from urllib.parse import urljoin, urlsplit
 
 from ..article import FeedEntry
 
@@ -57,6 +58,22 @@ def _entry_content(entry: Any) -> str:
     content = entry.get("content")
     if content and isinstance(content, list) and content[0].get("value"):
         return str(content[0]["value"]).strip()
+    return ""
+
+
+def _entry_image(entry: Any, article_url: str) -> str:
+    """Prefer RSS media images over image enclosures; ignore audio/video media."""
+    for media in [*(entry.get("media_content") or []), *(entry.get("enclosures") or [])]:
+        url = str(media.get("url") or media.get("href") or "").strip()
+        content_type = str(media.get("type") or "").lower()
+        medium = str(media.get("medium") or "").lower()
+        try:
+            image_path = urlsplit(url).path.lower().endswith((".jpg", ".jpeg", ".png", ".webp"))
+            if url and (content_type.startswith("image/") or medium == "image"
+                        or (not content_type and not medium and image_path)):
+                return urljoin(article_url, url)
+        except ValueError:
+            continue
     return ""
 
 
@@ -126,6 +143,7 @@ def fetch_feeds(
                     language=language,
                     published_at=published_at,
                     publication_verified=bool(published_at),
+                    image_url=_entry_image(entry, link),
                     rss_summary=str(entry.get("summary") or "").strip(),
                     rss_content=_entry_content(entry),
                 )
