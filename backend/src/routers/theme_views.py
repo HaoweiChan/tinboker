@@ -16,13 +16,15 @@ from typing import List, Literal, Optional
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy.orm import Session
 
-from src.auth.admin_auth import AdminAccess, get_content_write_access
+from src.auth.admin_auth import AdminAccess, get_content_write_access, get_social_access
 from src.cache.cdn_cache import CacheProfile, cdn_cached
 from src.config import settings
-from src.database.models import TagRegistry, ThemeView
+from src.database.models import StockTranslation, TagRegistry, ThemeView
 from src.database.postgres import session_scope
 from src.models.user import UserResponse
+from src.routers.stock import BatchPricesSinceRequest, TickerDatePair, get_batch_prices_windows
 from src.utils.dependencies import require_member
 
 router = APIRouter(prefix="/api/theme-views", tags=["theme-views"])
@@ -68,31 +70,110 @@ def theme_key(label: str, exposure_id: Optional[str]) -> str:
     return "label:" + re.sub(r"\s+", "", unicodedata.normalize("NFKC", label)).casefold()
 
 
-def _replace_episode(episode_id: str, body: EpisodeThemeViews) -> int:
+def _normalise_stock_name(name: str) -> str:
+    name = re.sub(r"\s+", "", unicodedata.normalize("NFKC", name)).casefold().replace("臺", "台")
+    return re.sub(r"(?:\*|-ky|-dr)+$", "", name)
+
+
+def _stock_names(db: Session) -> dict[str, tuple[str, ...]]:
+    return {row.ticker: tuple(_normalise_stock_name(name) for name in (
+        [row.name_zh_tw] if row.market == "TW"
+        else [row.name_zh_tw, row.name_en, *(row.aliases or [])]
+    ) if name and name.strip()) for row in db.query(
+        StockTranslation.ticker, StockTranslation.market, StockTranslation.name_zh_tw,
+        StockTranslation.name_en, StockTranslation.aliases,
+    ).filter(StockTranslation.market.in_(["TW", "US"])).all()}
+
+
+def _squeeze(text: str) -> str:
+    """Collapse doubled letters, so SpaceX is found in Space Exploration."""
+    return re.sub(r"([a-z])\1+", r"\1", text)
+
+
+def _clean_tickers(tickers: list[dict], names: dict[str, tuple[str, ...]]) -> tuple[list[dict], int, int]:
+    if not names:  # no registry (fresh database): checking would drop every Taiwan stock
+        return tickers, 0, 0
+    has_taiwan_names = any(re.fullmatch(r"[0-9]{3,6}[A-Z]?", code) for code in names)
+    cleaned = []
+    corrected = dropped = 0
+    for ticker in tickers:
+        code = ticker["ticker"]
+        if re.fullmatch(r"[A-Za-z]+(?:\.[A-Za-z]+)?", code):
+            name = _normalise_stock_name(ticker["name"])
+            registered = names.get(code.upper(), ())
+            # US names are filled lazily from mentions (ensure_pending_stubs), unlike
+            # the full TWSE/TPEx seed: missing US codes or names are not evidence of a mismatch.
+            # Only Latin names are judged, and only against Latin registry names: the
+            # registry often holds one script (愛迪達 vs "ADIDAS AG"), Chinese renderings
+            # of foreign names vary (阿斯麥 / 艾司摩爾), and a short name is usually an
+            # abbreviation (AWS on AMZN). Anything that cannot be compared is kept.
+            latin = "".join(re.findall(r"[a-z0-9]+", name))
+            officials = [o for o in ("".join(re.findall(r"[a-z0-9]+", r)) for r in registered) if o]
+            matches = (
+                not officials or len(latin) <= 4 or name == code.casefold()
+                or bool(re.search(r"[\u3400-\u9fff]", name))
+                or any(latin in o or o in latin or _squeeze(latin) in _squeeze(o) or latin[:5] == o[:5] for o in officials)
+            )
+            if matches:
+                cleaned.append(ticker)
+            else:
+                dropped += 1
+            continue
+        if not has_taiwan_names or not re.fullmatch(r"[0-9]{3,6}[A-Z]?", code):
+            cleaned.append(ticker)
+            continue
+        name = _normalise_stock_name(ticker["name"])
+        official = next(iter(names.get(code, ())), "")
+        # Shows say 士電 for 士林電機 and ASR writes 大力光 for 大立光, so "same company" is
+        # character overlap of at least half the shorter name, not equality. ponytail:
+        # a homophone pair sharing one of two characters (信越 on 信質's code) still passes;
+        # telling those apart needs a reading-based match.
+        shared = len(set(name) & set(official))
+        if code in names and (name == code.casefold() or (min(len(name), len(official)) >= 2 and shared >= (min(len(name), len(official)) + 1) // 2)):
+            cleaned.append(ticker)
+            continue
+        # Re-point only a slip between two Taiwan codes. A code the registry does not know
+        # is a foreign listing: 三星 on Samsung's 005930 must not become Taiwan's 5007 三星.
+        matches = [other for other, registered in names.items() if re.fullmatch(r"[0-9]{3,6}[A-Z]?", other) and name and registered == (name,)]
+        if code in names and len(matches) == 1:
+            cleaned.append({**ticker, "ticker": matches[0]})
+            corrected += 1
+        else:
+            # Boot seeds the full TWSE/TPEx listings, so unknown codes are dropped too.
+            dropped += 1
+    return cleaned, corrected, dropped
+
+
+def _replace_episode(episode_id: str, body: EpisodeThemeViews) -> dict[str, int]:
     released = datetime.fromtimestamp(body.released_at_ms / 1000, tz=timezone.utc).replace(tzinfo=None)
     with session_scope() as db:
+        names = _stock_names(db)
         db.query(ThemeView).filter_by(episode_id=episode_id).delete()
         seen = set()
+        corrected = dropped = 0
         for view in body.theme_views:
             key = theme_key(view.theme_label, view.exposure_id)
             if key in seen:  # two labels for one theme in one episode: keep the first
                 continue
             seen.add(key)
+            tickers, fixed, removed = _clean_tickers([t.model_dump() for t in view.tickers], names)
+            corrected += fixed
+            dropped += removed
             db.add(ThemeView(
                 episode_id=episode_id, podcaster=body.podcaster, episode_number=body.episode_number,
                 released_at=released, theme_key=key, theme_label=view.theme_label,
                 exposure_id=view.exposure_id, stance=view.stance, conviction=view.conviction,
                 thesis=view.thesis, start_ms=view.start_ms, quote=view.quote, source=body.source,
-                tickers=[t.model_dump() for t in view.tickers],
+                tickers=tickers,
             ))
-        return len(seen)
+        return {"stored": len(seen), "tickers_corrected": corrected, "tickers_dropped": dropped}
 
 
 @router.put("/episode/{episode_id}")
 async def put_episode_theme_views(episode_id: str, body: EpisodeThemeViews,
                                   _writer: AdminAccess = Depends(get_content_write_access)):
     """Replace one episode's theme views (idempotent; an empty list clears them)."""
-    return {"episode_id": episode_id, "stored": await asyncio.to_thread(_replace_episode, episode_id, body)}
+    return {"episode_id": episode_id, **await asyncio.to_thread(_replace_episode, episode_id, body)}
 
 
 def _ms(value: datetime) -> int:
@@ -102,6 +183,7 @@ def _ms(value: datetime) -> int:
 def build_cards(
     rows: list, limit: int, members_by_exposure: Optional[dict[str, list]] = None,
     public_since: Optional[datetime] = None,
+    stock_names: Optional[dict[str, tuple[str, ...]]] = None,
 ) -> List[dict]:
     """Group rows (any order) into run cards, newest run first.
 
@@ -123,7 +205,8 @@ def build_cards(
             # performance is measured on these from the first mention.
             counts: dict = {}
             for row in run:
-                for t in row.tickers or []:
+                cleaned, _, _ = _clean_tickers(row.tickers or [], stock_names or {})
+                for t in cleaned:
                     if t.get("role") == "beneficiary":
                         entry = counts.setdefault(t["ticker"], {"ticker": t["ticker"], "name": t["name"], "mentions": 0})
                         entry["mentions"] += 1
@@ -176,7 +259,8 @@ def _cards(podcaster: Optional[str], limit: int) -> List[dict]:
         ).all()
         days = getattr(settings, "release_episode_max_age_days", 0) or 0
         public_since = datetime.utcnow() - timedelta(days=days) if days > 0 else None
-        return build_cards(rows, limit, {row.exposure_id: row.members or [] for row in members}, public_since)
+        return build_cards(rows, limit, {row.exposure_id: row.members or [] for row in members},
+                           public_since, _stock_names(db))
 
 
 @router.get("/cards")
@@ -189,3 +273,50 @@ async def get_theme_cards(
     """Members-only theme cards, newest run first. PRIVATE: Cloudflare caches every
     `GET /api/*` by URL with no Vary on Authorization."""
     return await asyncio.to_thread(_cards, podcaster, limit)
+
+
+# ── Copywriting access ───────────────────────────────────────────────────────
+# The same cards and forward returns members see, for the social copy pipeline and
+# agent sessions: TINBOKER_SOCIAL_TOKEN or an admin JWT, never a member login.
+WINDOW_KEYS = ("since", "d7", "d30", "d90")
+
+
+def with_performance(cards: List[dict], windows: dict) -> List[dict]:
+    """Attach each ticker's forward returns and the card's per-window mean — the numbers
+    ThemeCard.tsx shows — so a copywriter never joins or averages by hand."""
+    for card in cards:
+        for t in card["tickers"]:
+            t["windows"] = windows.get(f'{t["ticker"].upper()}:{card["first_ms"]}')
+        card["averages"] = {}
+        for key in WINDOW_KEYS:
+            values = [t["windows"][key] for t in card["tickers"]
+                      if t["windows"] and t["windows"].get(key) is not None]
+            card["averages"][key] = round(sum(values) / len(values), 2) if values else None
+    return cards
+
+
+@router.post("/copy/windows")
+async def post_copy_windows(body: BatchPricesSinceRequest, _svc: AdminAccess = Depends(get_social_access)):
+    """Forward 7/30/90D (+ since) returns per stock pick, as `/api/stocks/batch-prices-windows`
+    serves members. Pair with the public mention endpoints to rebuild a stock card."""
+    # The member route's body never reads its user; the gate here is the service token.
+    return await get_batch_prices_windows(body, _user=None)
+
+
+@router.get("/copy/cards")
+@cdn_cached(profile=CacheProfile.PRIVATE)
+async def get_copy_cards(
+    podcaster: Optional[str] = Query(None, max_length=255),
+    theme: Optional[str] = Query(None, max_length=80, description="Substring of the theme label"),
+    limit: int = Query(20, ge=1, le=60),
+    _svc: AdminAccess = Depends(get_social_access),
+):
+    """Theme cards with their returns already attached, newest run first."""
+    # Filters the newest 200 runs: pass `podcaster` to reach one show's older themes.
+    cards = await asyncio.to_thread(_cards, podcaster, 200)
+    cards = [c for c in cards if not theme or theme in c["theme_label"]][:limit]
+    items = [TickerDatePair(ticker=t["ticker"], reference_ms=c["first_ms"]) for c in cards for t in c["tickers"]]
+    windows: dict = {}
+    for i in range(0, len(items), 300):  # BatchPricesSinceRequest caps at 300 items
+        windows.update(await get_batch_prices_windows(BatchPricesSinceRequest(items=items[i:i + 300]), _user=None))
+    return with_performance(cards, windows)

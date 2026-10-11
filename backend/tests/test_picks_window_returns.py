@@ -242,3 +242,62 @@ def test_batch_prices_windows_200_for_member():
         assert r.json() == {}
     finally:
         app.dependency_overrides.pop(get_current_user, None)
+
+
+@pytest.mark.parametrize("ticker", ["6996.T", "009150.KS", "0700.HK", "600519.SS", "000001.SZ", "SAP.DE", "VOD.L"])
+def test_foreign_windows_ignore_warm_rows_and_cached_closes(warm_db, monkeypatch, ticker):
+    from unittest.mock import AsyncMock, Mock
+    from src.services.finmind_service import FinMindAPIService
+    from src.services.mention_sync import _closes_from
+
+    day0 = _day0()
+    closes = [100.0 + offset for offset in range(120)]
+    for key in (ticker, ticker.split(".")[0]):
+        _seed(warm_db, key, day0, closes)
+        with sessionmaker(bind=warm_db)() as db:
+            db.add(models.StockDailyClose(ticker=key, date=day0.strftime("%Y-%m-%d"), close=166.5))
+            db.commit()
+    cached = AsyncMock(return_value="166.5")
+    write_cache = AsyncMock()
+    fetch = Mock(side_effect=AssertionError("foreign ticker reached FinMind"))
+    monkeypatch.setattr(stock, "cache_get", cached)
+    monkeypatch.setattr(stock, "cache_set", write_cache)
+    monkeypatch.setattr(FinMindAPIService, "list_daily_ticker_summary_range", fetch)
+
+    nulls = {"baseline": None, "d7": None, "d30": None, "d90": None, "since": None}
+    assert asyncio.run(stock._window_returns(ticker, _ms(day0), closes[-1])) == nulls
+    # A cold date must not revive a stale Redis close or reach the TW fallback.
+    assert asyncio.run(stock._get_reference_close(ticker, "2000-01-01")) is None
+    assert stock._read_dated_close_before(ticker, day0.strftime("%Y-%m-%d")) is None
+    with sessionmaker(bind=warm_db)() as db:
+        assert _closes_from(db, ticker, day0.strftime("%Y-%m-%d")) == []
+    cached.assert_not_called()
+    write_cache.assert_not_called()
+    fetch.assert_not_called()
+
+
+@pytest.mark.parametrize("ticker", ["2330", "2330.TW", "6488.TWO", "00878B", "NVDA", "BRK.B", "BRK.A"])
+def test_supported_windows_keep_prices(warm_db, ticker):
+    day0 = _day0()
+    _seed(warm_db, ticker, day0, [100.0 + offset for offset in range(120)])
+    assert asyncio.run(stock._window_returns(ticker, _ms(day0), 219.0)) == {
+        "baseline": 100.0, "d7": 7.0, "d30": 30.0, "d90": 90.0, "since": 119.0,
+    }
+
+
+def test_foreign_windows_do_not_serve_old_response_cache(warm_db, monkeypatch):
+    import hashlib
+    import json
+    from unittest.mock import AsyncMock
+
+    day0 = _day0()
+    ticker = "6996.T"
+    key = f"{ticker}:{_ms(day0)}"
+    old_key = f"batch_windows_v2:{hashlib.md5(key.encode()).hexdigest()}"
+    stale = {key: {"baseline": 166.5, "d7": 0.0, "d30": 0.0, "d90": 0.0, "since": 0.0}}
+    cached = AsyncMock(side_effect=lambda k: json.dumps(stale) if k == old_key else None)
+    monkeypatch.setattr(stock, "cache_get", cached)
+    body = stock.BatchPricesSinceRequest(items=[stock.TickerDatePair(ticker=ticker, reference_ms=_ms(day0))])
+    result = asyncio.run(stock.get_batch_prices_windows(body, _user=_user(True)))
+    assert result[key] == {"baseline": None, "d7": None, "d30": None, "d90": None, "since": None}
+    assert old_key not in [call.args[0] for call in cached.call_args_list]

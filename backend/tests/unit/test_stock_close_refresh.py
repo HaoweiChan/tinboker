@@ -232,3 +232,44 @@ async def test_slow_data_spaces_massive_bound_tickers_like_other_us_warmers(monk
     monkeypatch.setattr(providers, "YFinanceProvider", lambda: None)
     await r.refresh_us_slow_data()
     assert sleeps == [r._US_GAP_SECONDS, r._YF_GAP_SECONDS]  # GDX needs Massive, NVDA doesn't
+
+
+@pytest.mark.parametrize("ticker", ["6996.T", "009150.KS", "0700.HK", "600519.SS", "000001.SZ", "SAP.DE", "VOD.L"])
+def test_foreign_tickers_never_fetch_or_persist_closes(monkeypatch, ticker):
+    from unittest.mock import Mock
+    import src.routers.stock as stock
+    from src.services import daily_bars, finmind_service, tw_daily_ohlc_refresh
+    from src.services.providers.base import Bar
+
+    no_session = Mock(side_effect=AssertionError("unsupported ticker touched the DB"))
+    for module in (r, stock, daily_bars, tw_daily_ohlc_refresh):
+        monkeypatch.setattr(module, "get_session", no_session)
+    provider = Mock()
+    date = "2026-01-14"
+    bar = Bar(date=date, open=166.5, high=166.5, low=166.5, close=166.5, volume=1)
+    row = {"date": date, "open": 166.5, "high": 166.5, "low": 166.5, "close": 166.5}
+    assert r._fetch_and_store_closes(ticker, provider, provider) == 0
+    assert r._warm_us_slow_data(ticker, provider, provider) is False
+    assert r._store_ohlc_bars(ticker, [bar]) == 0
+    assert r.close_is_final(ticker, date) is False
+    assert stock._persist_close(ticker, date, 166.5) is None
+    assert daily_bars.write_bars(ticker, [row], "test") == 0
+    assert tw_daily_ohlc_refresh._upsert_rows([{**row, "ticker": ticker}]) == 0
+    assert finmind_service.list_yahoo_tw_daily_range(ticker, date, date) == []
+    assert provider.mock_calls == []
+    no_session.assert_not_called()
+
+
+def test_us_mention_backfill_rejects_stale_us_market_labels(monkeypatch):
+    from unittest.mock import Mock
+
+    db = Mock()
+    db.query.return_value.filter.return_value.group_by.return_value.all.return_value = [
+        (ticker, datetime(2026, 1, 14)) for ticker in ("6996.T", "SAP.DE", "VOD.L", "NVDA", "BRK.B")
+    ]
+    monkeypatch.setattr(r, "get_session", lambda: iter([db]))
+    monkeypatch.setattr(r, "_has_bar_on_or_before", lambda *args: False)
+    provider = Mock()
+    provider.get_daily_ohlc.return_value = []
+    assert r.backfill_us_mention_history(provider, gap_seconds=0) == 0
+    assert [call.args[0] for call in provider.get_daily_ohlc.call_args_list] == ["NVDA", "BRK.B"]

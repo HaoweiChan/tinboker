@@ -21,6 +21,7 @@ from src.database.models import StockDailyOHLC, StockDailyClose
 from src.database.postgres import get_session
 from src.services.finmind_service import is_tw_ticker as _is_tw
 from src.services.finmind_service import list_yahoo_tw_daily_range
+from src.utils.market import infer_market
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,8 @@ _US_CLOSE = (ZoneInfo("America/New_York"), time(16, 0))
 def close_is_final(ticker: str, date: str, now: Optional[datetime] = None) -> bool:
     """True once ``date``'s session has closed in the ticker's market, so a daily bar
     dated ``date`` is the real close and safe to store as immutable."""
+    if infer_market(ticker) not in {"TW", "US"}:
+        return False
     tz, close = _TW_CLOSE if _is_tw(ticker) else _US_CLOSE
     local = (now or datetime.now(timezone.utc)).astimezone(tz)
     today = local.strftime("%Y-%m-%d")
@@ -60,7 +63,7 @@ async def get_tracked_tickers(limit: int = MAX_TRACKED) -> List[str]:
 
     def _add(raw) -> None:
         t = raw.strip().upper() if isinstance(raw, str) else ""
-        if t and t not in seen:
+        if t and t not in seen and infer_market(t) in {"TW", "US"}:
             seen.add(t)
             out.append(t)
 
@@ -100,6 +103,8 @@ def _fetch_and_store_closes(ticker: str, fin_svc, mas_svc) -> int:
     global budget for TW tickers; US tickers go through Massive (caller throttles). The
     service clients are passed in and reused across tickers (avoids re-login per call).
     """
+    if infer_market(ticker) not in {"TW", "US"}:
+        return 0
     end = datetime.utcnow().strftime("%Y-%m-%d")
     start = (datetime.utcnow() - timedelta(days=_LOOKBACK_DAYS)).strftime("%Y-%m-%d")
     try:
@@ -163,6 +168,8 @@ def _warm_us_slow_data(ticker: str, yf_provider, mas_provider) -> bool:
     """
     from src.database.models import StockProfile
 
+    if infer_market(ticker) != "US":
+        return False
     wrote = False
     profile = yf_provider.get_profile(ticker)  # best-effort; may be None on scraper hiccup
 
@@ -218,6 +225,8 @@ def _warm_us_slow_data(ticker: str, yf_provider, mas_provider) -> bool:
 
 def _store_ohlc_bars(ticker: str, bars) -> int:
     """Insert the bars stock_daily_ohlc does not have yet. Returns rows inserted."""
+    if infer_market(ticker) not in {"TW", "US"}:
+        return 0
     inserted = 0
     for session in get_session():
         try:
@@ -266,7 +275,7 @@ def _us_mention_tickers(db) -> List[tuple]:
         .group_by(ContentMention.ticker)
         .all()
     )
-    return [(t, d.strftime("%Y-%m-%d")) for t, d in rows if t and d]
+    return [(t, d.strftime("%Y-%m-%d")) for t, d in rows if t and d and infer_market(t) == "US"]
 
 
 def _has_bar_on_or_before(db, ticker: str, date: str) -> bool:
@@ -520,7 +529,8 @@ def batch_read_latest_closes(
     out: dict = {}
     # Stored tickers are upper-case; map each row back to the spelling the caller asked
     # with so ``result.get(t)`` works whatever case it passed in.
-    wanted = {t.strip().upper(): t for t in tickers if t and t.strip()}
+    wanted = {t.strip().upper(): t for t in tickers
+              if t and t.strip() and infer_market(t) in {"TW", "US"}}
     if not wanted:
         return out
     end = ref_date_str or datetime.utcnow().strftime("%Y-%m-%d")
