@@ -10,6 +10,7 @@ from news.pipeline.article import Article, FeedEntry
 from news.pipeline.steps.dedup import dedup, is_duplicate
 from news.pipeline.steps.extract import extract, paragraph_hash, split_paragraphs
 from news.pipeline.steps.fetch_feeds import fetch_feeds
+from news.pipeline.steps.wiki_write import wiki_write
 from shared.wiki_builder import InMemoryWikiRepository, news_slug
 
 
@@ -149,6 +150,55 @@ def test_is_duplicate_detects_unchanged_article():
     assert is_duplicate(art)
     art.existing_content_hash = "something-else"
     assert not is_duplicate(art)
+
+
+
+
+@pytest.mark.parametrize("media,expected", [
+    ({"media_content": [{"url": "https://example.com/media.jpg", "medium": "image"}],
+      "enclosures": [{"href": "https://example.com/enclosure.jpg", "type": "image/jpeg"}]},
+     "https://example.com/media.jpg"),
+    ({"media_content": [{"url": "https://example.com/movie.mp4", "type": "video/mp4"}],
+      "enclosures": [{"href": "/enclosure.jpg", "type": "image/jpeg"}]},
+     "https://example.com/enclosure.jpg"),
+    ({"media_content": [{"url": "https://example.com/media.webp"}]},
+     "https://example.com/media.webp"),
+    ({"enclosures": [{"href": "https://example.com/audio.mp3", "type": "audio/mpeg"}]}, ""),
+    ({"media_content": [{"url": "https://[broken/image.jpg", "medium": "image"}]}, ""),
+])
+def test_feed_image_fallback(media, expected):
+    entries = fetch_feeds(
+        [{"url": "feed"}],
+        parse=lambda _: SimpleNamespace(entries=[{"link": "https://example.com/article", **media}]),
+    )
+    article = Article.from_feed_entry(entries[0])
+    extract(article, fetch=lambda _: None)
+    assert article.image_url == expected
+
+
+@pytest.mark.parametrize("markup,expected", [
+    ('<meta name="twitter:image" content="/twitter.png">'
+     '<meta property="og:image" content="/lead.jpg?a=1&amp;b=2">',
+     "https://example.com/lead.jpg?a=1&b=2"),
+    ('<meta name="twitter:image" content="https://example.com/twitter.png">',
+     "https://example.com/twitter.png"),
+    ('<meta property="og:image" content=""><meta name="twitter:image" content="/twitter.png">',
+     "https://example.com/twitter.png"),
+    ('<meta property="og:image" content="https://[broken/image.jpg">',
+     "https://example.com/rss.jpg"),
+    ("<html>No lead image</html>", "https://example.com/rss.jpg"),
+])
+def test_extracted_image_persists_without_extra_fetch(markup, expected):
+    from unittest.mock import Mock
+
+    article = Article(url="https://example.com/article", title="A", source="S",
+                      image_url="https://example.com/rss.jpg")
+    fetch = Mock(return_value=markup)
+    extract(article, fetch=fetch, extractor=lambda _: "A sufficiently long paragraph for extraction.")
+    repo = InMemoryWikiRepository()
+    wiki_write(article, repo)
+    assert repo.get_page("news_article", news_slug(article.url)).frontmatter["image_url"] == expected
+    fetch.assert_called_once_with(article.url)
 
 
 if __name__ == "__main__":

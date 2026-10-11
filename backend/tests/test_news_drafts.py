@@ -1,5 +1,7 @@
-"""Draft-only news handoff, using isolated SQLite and mocked rendering/media IO."""
+"""Draft-only news handoff, using isolated SQLite and mocked HTTP/media IO."""
 from datetime import datetime, timezone
+from io import BytesIO
+import socket
 from unittest.mock import Mock
 
 import pytest
@@ -16,23 +18,41 @@ def lane(orm_db, monkeypatch):
     monkeypatch.setattr(service.settings, "admin_emails", ["owner@example.com"])
     with session_scope() as db:
         db.add(User(id="owner", google_id="owner", email="owner@example.com"))
-    render = Mock(return_value=b"png")
-    monkeypatch.setattr(service, "svg_to_png", render)
-    monkeypatch.setattr(service, "title_card_svg", Mock(return_value="<svg/>"))
-    monkeypatch.setattr(service, "store_bytes", Mock(return_value="https://media.example/card.png"))
-    return render
+    response = Mock(status=200)
+    response.getheader.side_effect = lambda name: {"Content-Type": "image/png"}.get(name)
+    default = {"read1": BytesIO(b"\x89PNG\r\n\x1a\nimage").read1}
+    response.read1.side_effect = default["read1"]
+    connection = Mock()
+    connection.getresponse.return_value = response
+
+    def connect(*_args):
+        # A fresh body per download (one shared stream is empty by the second draft),
+        # unless a test installed its own body.
+        if response.read1.side_effect is default["read1"]:
+            default["read1"] = response.read1.side_effect = BytesIO(b"\x89PNG\r\n\x1a\nimage").read1
+        return connection
+
+    http = Mock(side_effect=connect, return_value=connection)
+    http.response = response
+    monkeypatch.setattr(service, "_ImageConnection", http)
+    monkeypatch.setattr(service.socket, "getaddrinfo", Mock(return_value=[
+        (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443)),
+    ]))
+    monkeypatch.setattr(service, "store_bytes", Mock(return_value="https://media.example/image.png"))
+    return http
+
 
 
 def body(key="one"):
     return service.NewsDraftBody(
         article_id=key, canonical_url=f"https://example.com/{key}", content_hash=key,
-        source="Reuters", published_at=datetime.now(timezone.utc),
+        image_url="https://example.com/lead.png", source="Reuters", published_at=datetime.now(timezone.utc),
         text="新聞標題\n這是一篇新聞草稿。", comment=f"來源：https://example.com/{key}",
     )
 
 
 def test_no_image_no_draft(lane):
-    lane.return_value = b""
+    lane.response.read1.side_effect = BytesIO(b"").read1
     assert service.save_news_draft(body()) == {"status": "no_image"}
     with session_scope() as db:
         assert db.query(PromoDraft).count() == 0
@@ -53,7 +73,7 @@ def test_saved_draft_notifies_admin(lane):
         assert notice.data == {"draft_id": draft.id}
 
 
-def test_already_drafted_skips_before_render(lane):
+def test_already_drafted_skips_before_download(lane):
     service.save_news_draft(body())
     assert service.save_news_draft(body()) == {"status": "already_drafted"}
     assert lane.call_count == 1
@@ -166,31 +186,114 @@ def test_long_writer_text_is_preserved(lane):
         assert db.get(PromoDraft, result["id"]).text == payload["text"]
 
 
-def test_overlong_headline_skips_without_truncating_claim(lane, monkeypatch):
-    from src.services.title_card import title_card_svg
-    monkeypatch.setattr(service, "title_card_svg", title_card_svg)
-    request = body().model_copy(update={"text": "新" * 81 + "\n新聞內容"})
+
+@pytest.mark.parametrize("headline", ["新" * 81, "新" * 76 + "尚未核准"])
+def test_long_headline_uses_source_image(lane, headline):
+    request = body().model_copy(update={"text": headline + "\n新聞內容"})
+    result = service.save_news_draft(request)
+    assert result["status"] == "created"
+    with session_scope() as db:
+        assert db.get(PromoDraft, result["id"]).text == request.text
+
+
+def assert_no_image(request):
     assert service.save_news_draft(request) == {"status": "no_image"}
-    lane.assert_not_called()
+    service.store_bytes.assert_not_called()
     with session_scope() as db:
         assert db.query(PromoDraft).count() == 0
         assert db.query(UserNotification).count() == 0
 
 
-def test_eighty_character_headline_cannot_lose_final_qualifier(lane, monkeypatch):
-    from src.services.title_card import title_card_svg
-    monkeypatch.setattr(service, "title_card_svg", title_card_svg)
-    request = body().model_copy(update={"text": "新" * 76 + "尚未核准"})
-    assert service.save_news_draft(request) == {"status": "no_image"}
+@pytest.mark.parametrize("url", ["", "http://example.com/image.png", "https://user:pass@example.com/image.png"])
+def test_invalid_image_url(lane, url):
+    assert_no_image(body().model_copy(update={"image_url": url}))
     lane.assert_not_called()
+
+
+@pytest.mark.parametrize("address", ["127.0.0.1", "10.0.0.1", "169.254.169.254", "240.0.0.1", "224.0.0.1", "::1", "fc00::1", "ff02::1"])
+def test_non_public_image_host(lane, monkeypatch, address):
+    monkeypatch.setattr(service.socket, "getaddrinfo", Mock(return_value=[
+        (socket.AF_INET, socket.SOCK_STREAM, 6, "", (address, 443)),
+    ]))
+    assert_no_image(body())
+    lane.assert_not_called()
+
+
+def test_wrong_content_type(lane):
+    lane.response.getheader.side_effect = lambda name: "text/html" if name == "Content-Type" else None
+    assert_no_image(body())
+
+
+@pytest.mark.parametrize("declared", [False, True])
+def test_oversized_image(lane, monkeypatch, declared):
+    monkeypatch.setattr(service, "MAX_IMAGE_BYTES", 16)
+    lane.response.getheader.side_effect = lambda name: {
+        "Content-Type": "image/png", "Content-Length": "17" if declared else None,
+    }.get(name)
+    lane.response.read1.side_effect = BytesIO(b"\x89PNG\r\n\x1a\n" + b"x" * 9).read1
+    assert_no_image(body())
+
+
+def test_non_image_bytes(lane):
+    lane.response.read1.side_effect = BytesIO(b"<html>not an image</html>").read1
+    assert_no_image(body())
+
+
+@pytest.mark.parametrize("status", [302, 404, 500])
+def test_http_error_or_redirect(lane, status):
+    lane.response.status = status
+    assert_no_image(body())
+    lane.return_value.request.assert_called_once()
+
+
+def test_download_timeout(lane):
+    lane.response.read1.side_effect = TimeoutError("timeout")
+    assert_no_image(body())
+    lane.return_value.close.assert_called_once()
+
+
+@pytest.mark.parametrize("content_type, data, extension", [
+    ("image/jpeg", b"\xff\xd8\xffjpeg", "jpg"),
+    ("image/png", b"\x89PNG\r\n\x1a\npng", "png"),
+    ("image/webp", b"RIFF1234WEBPdata", "webp"),
+])
+def test_image_bytes_and_extension_match(lane, content_type, data, extension):
+    lane.response.getheader.side_effect = lambda name: content_type if name == "Content-Type" else None
+    lane.response.read1.side_effect = BytesIO(data).read1
+    result = service.save_news_draft(body())
+    assert result["status"] == "created"
+    bucket, path, stored = service.store_bytes.call_args.args
+    assert bucket == service.settings.promo_media_bucket
+    assert path.startswith("promo-media/news-") and path.endswith("." + extension)
+    assert stored == data
     with session_scope() as db:
-        assert db.query(PromoDraft).count() == 0
-        assert db.query(UserNotification).count() == 0
+        assert db.get(PromoDraft, result["id"]).media[0]["filename"] == path.split("/")[-1]
+    lane.assert_called_once_with("example.com", 443, "93.184.216.34")
 
 
-def test_strict_renderer_rejects_overflow_and_default_stays_compatible():
-    from src.services.title_card import title_card_svg
-    headline = "新" * 76 + "尚未核准"
-    with pytest.raises(ValueError, match="line ceiling"):
-        title_card_svg(headline, strict=True)
-    assert title_card_svg(headline).startswith("<svg")
+def test_pinned_connection_keeps_tls_hostname(monkeypatch):
+    raw_socket = Mock()
+    connect = Mock(return_value=raw_socket)
+    monkeypatch.setattr(service.socket, "create_connection", connect)
+    connection = service._ImageConnection("example.com", 443, "93.184.216.34")
+    context = Mock()
+    connection._context = context
+    connection.connect()
+    connect.assert_called_once_with(("93.184.216.34", 443), service.IMAGE_TIMEOUT)
+    context.wrap_socket.assert_called_once_with(raw_socket, server_hostname="example.com")
+
+
+def test_truncated_image_response(lane):
+    lane.response.getheader.side_effect = lambda name: {
+        "Content-Type": "image/png", "Content-Length": "100",
+    }.get(name)
+    assert_no_image(body())
+
+
+def test_mixed_public_private_dns_rejected(lane, monkeypatch):
+    monkeypatch.setattr(service.socket, "getaddrinfo", Mock(return_value=[
+        (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443)),
+        (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 443)),
+    ]))
+    assert_no_image(body())
+    lane.assert_not_called()

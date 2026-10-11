@@ -46,6 +46,7 @@ def lane(monkeypatch, tmp_path):
         paragraphs=[{"index": 0, "text": "A specific investment announcement " * 5}],
         repository=repo, language="en", publication_verified=True,
         published_at=datetime.now(timezone.utc).isoformat(),
+        image_url="https://example.com/lead.jpg",
     )
     entries = [SimpleNamespace(url="https://example.com/a")]
     state = {"remaining_today": 2, "already_posted_ids": [],
@@ -86,6 +87,7 @@ def test_selected_draft_handoff(lane):
     assert jev.call_count == writer.call_count == 1
     body = request.call_args.args[0]
     assert body["article_id"] == page.slug
+    assert body["image_url"] == "https://example.com/lead.jpg"
     assert body["comment"] == "https://example.com/a"
     assert body["text"] == "企業宣布新的投資計畫"
 
@@ -97,3 +99,15 @@ def test_history_unavailable_skips(lane):
     assert drafts.stage_news_draft(repo, entries) is None
     jev.assert_not_called()
     writer.assert_not_called()
+
+
+@pytest.mark.parametrize("image_url", [None, "", "http://example.com/image.jpg", "https:///image.jpg",
+                                      "https://[invalid/image.jpg", 123])
+def test_missing_or_invalid_image_skips_before_paid_calls(lane, image_url):
+    repo, entries, _, request, jev, writer, page = lane
+    page.frontmatter["image_url"] = image_url
+    repo.upsert_page(page)
+    assert drafts.stage_news_draft(repo, entries) is None
+    jev.assert_not_called()
+    writer.assert_not_called()
+    assert request.call_count == 1

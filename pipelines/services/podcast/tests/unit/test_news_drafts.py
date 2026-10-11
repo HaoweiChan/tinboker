@@ -82,6 +82,7 @@ def test_english_source_cache_and_separate_comment(tmp_path, monkeypatch):
         assert not result["draft"]["screenshot_exists"]
         assert result["draft"]["review_required"]
     assert selector.call_count == writer.call_count == 1
+    assert writer.call_args.args[0]["prompt_version"] == 2
     sent_state = json.loads(selector.call_args.args[0]["state"])
     assert sent_state == {"title": source["title"], "paragraphs": source["paragraphs"]}
     assert os.environ["SOCIAL_COPY_WRITER_MODEL"] == "original-model"
