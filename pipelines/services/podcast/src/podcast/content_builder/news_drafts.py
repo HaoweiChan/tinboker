@@ -176,6 +176,19 @@ def _flat(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def source_quotes(draft: dict, article: dict) -> list[str]:
+    """The highlights that are usable: copied from the source, not paraphrased, since the
+    screenshot step has to find them on the live page. The writer is asked for short
+    quotes and sometimes returns a whole sentence; an unusable one is dropped rather than
+    costing the draft, as long as one remains."""
+    source = _flat(" ".join(p["text"] for p in article["paragraphs"]))
+    marks = draft.get("highlights")
+    if not isinstance(marks, list):
+        return []
+    quotes = [_flat(m) for m in marks if isinstance(m, str)]
+    return [q for q in quotes if 15 <= len(q) <= 220 and q in source][:2]
+
+
 def validate_draft(result: dict, article: dict) -> str:
     draft = result["draft"]
     valid = {p["id"] for p in article["paragraphs"]}
@@ -184,13 +197,7 @@ def validate_draft(result: dict, article: dict) -> str:
             or not isinstance(draft["evidence_ids"], list) or not draft["evidence_ids"]
             or any(not isinstance(i, str) or i not in valid for i in draft["evidence_ids"])):
         raise ValueError("Writer returned an invalid draft or evidence ID")
-    # The screenshot step finds and highlights these on the live page, so each must be
-    # copied from the source, not paraphrased.
-    source = _flat(" ".join(p["text"] for p in article["paragraphs"]))
-    marks = draft["highlights"]
-    if (not isinstance(marks, list) or not 1 <= len(marks) <= 2
-            or any(not isinstance(m, str) or not 15 <= len(_flat(m)) <= 140 or _flat(m) not in source
-                   for m in marks)):
+    if not source_quotes(draft, article):
         raise ValueError("Writer returned a highlight that is not a source quote")
     # The prompt asks for no spaces around numbers and the model still adds them.
     post = re.sub(r"(?<=[\u3400-\u9fff]) (?=\d)|(?<=[\d%]) (?=[\u3400-\u9fff])", "", draft["post"])
@@ -274,7 +281,7 @@ def run(data: dict, out: Path, *, as_of: datetime, select_with_jev: bool = False
             screenshot = selected.get("screenshot_path")
             report["draft"] = {"article_id": selected["id"], "post": post,
                                "evidence_ids": result["draft"]["evidence_ids"],
-                               "highlights": [_flat(m) for m in result["draft"]["highlights"]],
+                               "highlights": source_quotes(result["draft"], selected),
                                "first_comment": selected["url"], "screenshot_path": screenshot,
                                "screenshot_exists": bool(screenshot and Path(screenshot).is_file()),
                                "review_required": True}
