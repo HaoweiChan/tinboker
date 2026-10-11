@@ -70,8 +70,10 @@ def test_uncertain_skips_writer_and_malformed_answers_fail_closed(tmp_path, monk
 def test_english_source_cache_and_separate_comment(tmp_path, monkeypatch):
     source = article() | {"screenshot_path": str(tmp_path / "missing.png")}
     selector = Mock(return_value=answer())
-    writer = Mock(return_value={"draft": {"post": "新設備開始交貨\n\n客戶已經用上了",
-                                          "evidence_ids": ["0"]}, "usage": {"input_tokens": 25}})
+    quote = source["paragraphs"][0]["text"][:40]
+    writer = Mock(return_value={"draft": {"post": "新設備在 9 月開始交貨\n\n客戶已經用上 3 套",
+                                          "evidence_ids": ["0"], "highlights": [quote]},
+                                "usage": {"input_tokens": 25}})
     monkeypatch.setattr(drafts, "jev", selector)
     monkeypatch.setattr(drafts, "write", writer)
     monkeypatch.setenv("SOCIAL_COPY_WRITER_MODEL", "original-model")
@@ -81,8 +83,10 @@ def test_english_source_cache_and_separate_comment(tmp_path, monkeypatch):
         assert result["draft"]["first_comment"] == source["url"]
         assert not result["draft"]["screenshot_exists"]
         assert result["draft"]["review_required"]
+        assert result["draft"]["highlights"] == [" ".join(quote.split())]
+        assert result["draft"]["post"] == "新設備在9月開始交貨\n\n客戶已經用上3套"
     assert selector.call_count == writer.call_count == 1
-    assert writer.call_args.args[0]["prompt_version"] == 2
+    assert writer.call_args.args[0]["prompt_version"] == 3
     sent_state = json.loads(selector.call_args.args[0]["state"])
     assert sent_state == {"title": source["title"], "paragraphs": source["paragraphs"]}
     assert os.environ["SOCIAL_COPY_WRITER_MODEL"] == "original-model"
@@ -101,7 +105,12 @@ def test_transport_failures_cached_and_evidence_invalid(tmp_path, monkeypatch):
     report = json.loads((tmp_path / "report.json").read_text())
     assert report["draft"] is None and not report["publish_ready"]
     with pytest.raises(ValueError):
-        drafts.validate_draft({"draft": {"post": "內容", "evidence_ids": ["invented"]}}, article())
+        drafts.validate_draft({"draft": {"post": "內容", "evidence_ids": ["invented"],
+                                         "highlights": [article()["paragraphs"][0]["text"][:40]]}}, article())
+    for marks in ([], ["a paraphrase that the source never printed"], ["short"], "not a list"):
+        with pytest.raises(ValueError, match="highlight"):
+            drafts.validate_draft({"draft": {"post": "內容", "evidence_ids": ["0"], "highlights": marks}},
+                                  article())
 
 
 def test_candidate_cap_and_no_selection_default(tmp_path, monkeypatch):
@@ -205,7 +214,8 @@ def test_newest_revision_wins_and_english_only_is_rejected():
     kept, _ = drafts.prefilter({"articles": [old, new]}, NOW)
     assert [a["id"] for a in kept] == ["corrected"]
     with pytest.raises(ValueError, match="Chinese"):
-        drafts.validate_draft({"draft": {"post": "English only", "evidence_ids": ["0"]}}, new)
+        drafts.validate_draft({"draft": {"post": "English only", "evidence_ids": ["0"],
+                                         "highlights": [new["paragraphs"][0]["text"][:40]]}}, new)
 
 
 def test_explicit_writer_model_beats_db_override(monkeypatch):

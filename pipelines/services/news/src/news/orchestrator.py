@@ -106,6 +106,7 @@ def run(
             "Writer returned an invalid draft or evidence ID",
             "Writer returned no Chinese text",
             "Writer returned disallowed prose",
+            "Writer returned a highlight that is not a source quote",
             "Choose Jev selection or an explicit article, not both",
             "A writer model is required",
             "Run call/input budget exceeded",
@@ -115,7 +116,7 @@ def run(
             r"timeout|invalid_provider_response|request_failed|incomplete_request)"
             r"(?::[A-Za-z0-9_]+)*\); inspect configuration before retrying",
             message,
-        )
+        ) or re.fullmatch(r"screenshot failed \([a-z_]+\)", message)
         detail = message[:200] if safe else "details withheld (may contain request data)"
         print(f"Warning: news draft skipped ({type(exc).__name__}): {detail}")
     return summary
