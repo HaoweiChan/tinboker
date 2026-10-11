@@ -399,3 +399,20 @@ def test_a_foreign_code_is_dropped_not_repointed_to_a_taiwan_namesake():
 def test_a_us_only_registry_leaves_taiwan_tickers_alone():
     tickers = [{"ticker": "2327", "name": "國巨", "role": "beneficiary"}]
     assert router._clean_tickers(tickers, {"MSFT": ("microsoft",)}) == (tickers, 0, 0)
+
+
+@pytest.mark.parametrize("code,name,registered,kept", [
+    # One script in the registry, the other in the transcript: nothing to compare.
+    ("ADDYY", "愛迪達", ("adidasags/adr",), True), ("ARM", "安謀", ("armholdings",), True),
+    ("ASML", "阿斯麥", ("艾司摩爾",), True), ("COHR", "科希倫", ("coherent",), True),
+    # Abbreviations and shared stems.
+    ("AMZN", "AWS", ("亞馬遜", "amazon.com,inc."), True), ("AAOI", "AOI", ("應用光電", "appliedoptoelectronics"), True),
+    ("BKNG", "Booking.com", ("繽客控股", "bookingholdingsinc."), True),
+    # A different company on a real code.
+    ("MSFT", "OpenAI", ("微軟", "microsoftcorporation"), False), ("GOOGL", "Anthropic", ("谷歌", "alphabetinc."), False),
+    ("ANTH", "Anthropic", ("antherapharmsincnew",), False), ("NBIS", "Nebulous", ("nebiusgroup",), False),
+])
+def test_us_names_are_only_judged_latin_against_latin(code, name, registered, kept):
+    ticker = [{"ticker": code, "name": name, "role": "beneficiary"}]
+    cleaned, _, dropped = router._clean_tickers(ticker, {code: registered, "2330": ("台積電",)})
+    assert (cleaned == ticker, dropped) == (kept, 0 if kept else 1)
