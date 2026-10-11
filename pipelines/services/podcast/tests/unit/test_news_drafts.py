@@ -284,3 +284,21 @@ def test_periods_inside_a_paragraph_and_writer_tics():
         == "分析師 Siegel 說，新設備開始交貨"
     assert drafts.validate_draft(draft("營收30 ～40億，主席講得更直接，到  40億就飽和"), source) \
         == "營收30～40億，主席說，到40億就飽和"
+
+
+def test_cached_verdicts_are_free_and_new_ones_are_bounded(tmp_path, monkeypatch):
+    articles = []
+    for index in range(drafts.MAX_PAID_JEV + 3):
+        item = copy.deepcopy(article(str(index)))
+        item["url"] += str(index)
+        item["paragraphs"][0]["text"] += str(index)
+        articles.append(item)
+    selector = Mock(return_value=answer(0.1))  # every article rejected
+    monkeypatch.setattr(drafts, "jev", selector)
+    monkeypatch.setattr(drafts, "write", Mock(side_effect=AssertionError("no writer call")))
+    first = drafts.run({"articles": articles}, tmp_path, as_of=NOW, select_with_jev=True)
+    assert selector.call_count == drafts.MAX_PAID_JEV
+    assert list(first["skipped"].values()).count("jev_budget") == 3
+    second = drafts.run({"articles": articles}, tmp_path, as_of=NOW, select_with_jev=True)
+    assert selector.call_count == drafts.MAX_PAID_JEV + 3  # the rest, with the first batch from cache
+    assert "jev_budget" not in second["skipped"].values() and second["draft"] is None

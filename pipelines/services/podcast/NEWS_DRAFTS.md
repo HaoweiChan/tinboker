@@ -19,7 +19,7 @@ both `tinboker-podcast` and `tinboker-news` into the same workspace virtualenv, 
 the default is `.cache/news-threads-drafts` relative to the news service directory.
 Jev requests can reuse this cache across runs. Scheduled writer requests include
 the current run timestamp, so a later retry after a failed screenshot/handoff can spend
-the writer again; the twelve-Jev/two-writer per-run ceiling still applies.
+the writer again; the per-run ceiling of twelve new Jev calls and two writer calls still applies.
 A restart/reload of the existing service configuration is sufficient after deploy.
 
 The feed/region metadata determines language. Only a raw feed `published` value
@@ -118,7 +118,7 @@ URL or whitespace-normalized content. Include previously posted source records
 and their IDs to deduplicate against them; no remote posting history is read.
 The default clock is UTC now; `--as-of` provides a timezone-aware replay timestamp.
 
-At most twelve eligible records enter selection. Jev answers relevance,
+Up to forty eligible records enter selection; verdicts are cached, so an article is paid for once, and at most twelve new ones are judged per run (the rest wait as `jev_budget`). Jev answers relevance,
 specificity and market consequence in a single call per article. All three probabilities must be at least 0.8;
 uncertain records are skipped, malformed answers stop the run. This threshold is
 an initial review gate, not a measured quality guarantee. The highest minimum
@@ -128,7 +128,7 @@ semantically identical stories from different publishers.
 
 ## Limits and review
 
-There are at most fourteen paid attempts per run (twelve Jev, and the writer once plus one
+There are at most fourteen paid attempts per run (twelve uncached Jev, and the writer once plus one
 retry when its output fails a gate or the request fails), with 24 KB
 source / 32 KB serialized request limits, a 2,048-token writer output cap, and
 30/60-second Jev/writer timeouts. No automatic retries or fallback model calls.
