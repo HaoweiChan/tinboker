@@ -16,9 +16,12 @@ import yaml
 JEV_MODEL = "typesafe/jev-1.13"
 THREADS_MAX_CHARS = 500  # Threads rejects a longer text post
 WRITER_ATTEMPTS = 2
-# Was 6. The market question passes about three articles in ten, and on 2026-10-11 the
-# six newest were all rejected while three known passers sat behind the cap, unjudged.
-MAX_CANDIDATES = 12
+# The market question passes about three articles in ten, and on 2026-10-11 the twelve
+# newest were all rejected while three known passers sat behind the cap, unjudged. Every
+# eligible article is now considered; verdicts are cached, so each is paid for once, and
+# at most MAX_PAID_JEV new ones are judged per run.
+MAX_CANDIDATES = 40
+MAX_PAID_JEV = 12
 QUESTIONS = {
     "relevant": {"type": "noul", "instructions":
         "Does this article describe a concrete business, industry, economic or policy change "
@@ -231,12 +234,20 @@ def run(data: dict, out: Path, *, as_of: datetime, select_with_jev: bool = False
     report = {"publish_ready": False, "candidates": [a["id"] for a in candidates],
               "skipped": skipped, "calls": [], "draft": None}
 
+    def cache_path(stage: str, payload: dict) -> Path:
+        encoded = json.dumps(payload, sort_keys=True).encode()
+        return out / (stage + "-" + hashlib.sha256(encoded).hexdigest() + ".json")
+
+    def paid(stage: str | None = None) -> int:
+        return sum(not c["cache_hit"] and stage in (None, c["stage"]) for c in report["calls"])
+
     def cached(stage: str, payload: dict, call) -> dict:
         # Match requests' default JSON body encoding, including ASCII escapes and spaces.
         encoded = json.dumps(payload, sort_keys=True).encode()
-        if len(encoded) > 32000 or len(report["calls"]) >= MAX_CANDIDATES + WRITER_ATTEMPTS:
+        path = cache_path(stage, payload)
+        # A cached verdict is free; only requests that reach a provider count.
+        if len(encoded) > 32000 or (not path.exists() and paid() >= MAX_PAID_JEV + WRITER_ATTEMPTS):
             raise ValueError("Run call/input budget exceeded")
-        path = out / (stage + "-" + hashlib.sha256(encoded).hexdigest() + ".json")
         started = time.monotonic()
         hit = path.exists()
         # ponytail: local single-process cache; use separate output directories for concurrent runs.
@@ -268,8 +279,11 @@ def run(data: dict, out: Path, *, as_of: datetime, select_with_jev: bool = False
             for article in candidates:
                 state = json.dumps({"title": article["title"], "paragraphs": article["paragraphs"]},
                                    ensure_ascii=False)
-                result = cached("jev", {"model": JEV_MODEL, "state": state,
-                                        "questions": QUESTIONS}, jev)
+                question = {"model": JEV_MODEL, "state": state, "questions": QUESTIONS}
+                if paid("jev") >= MAX_PAID_JEV and not cache_path("jev", question).exists():
+                    skipped[article["id"]] = "jev_budget"  # judged on a later run
+                    continue
+                result = cached("jev", question, jev)
                 score = selection_score(result)
                 if score is not None:
                     ranked.append((score, article))
