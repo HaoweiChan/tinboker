@@ -30,7 +30,10 @@ _CONSENT = r"""
 """
 
 _HELPERS = r"""
-const flat = (s) => s.replace(/\s+/g, ' ');
+// Extracted text and the live DOM disagree on typography: curly vs straight quotes,
+// non-breaking spaces. Each character maps to one character, so offsets stay aligned.
+const canon = (c) => "\u2018\u2019".includes(c) ? "'" : "\u201c\u201d".includes(c) ? '"' : /\s/.test(c) ? ' ' : c;
+const flat = (s) => [...s].map(canon).join('').replace(/ +/g, ' ');
 const holder = (text) => [...document.querySelectorAll('p, li, blockquote')]
   .find(e => flat(e.textContent).includes(text));
 const pinned = (e) => ['fixed', 'sticky'].includes(getComputedStyle(e).position);
@@ -86,7 +89,7 @@ _HIGHLIGHT = _HELPERS + r"""
     const raw = nodes.map(n => n.textContent).join('');
     const map = []; let norm = '';
     for (let i = 0; i < raw.length; i++) {
-      const c = /\s/.test(raw[i]) ? ' ' : raw[i];
+      const c = canon(raw[i]);
       if (c === ' ' && norm.endsWith(' ')) continue;
       norm += c; map.push(i);
     }
@@ -130,8 +133,11 @@ _HIGHLIGHT = _HELPERS + r"""
 """
 
 
+_TYPOGRAPHY = str.maketrans({"\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"'})
+
+
 def _script(template: str, phrases: list[str]) -> str:
-    flat = [re.sub(r"\s+", " ", p).strip() for p in phrases]
+    flat = [re.sub(r"\s+", " ", p.translate(_TYPOGRAPHY)).strip() for p in phrases]
     return f"const PHRASES = {json.dumps(flat)};\n" + template
 
 
