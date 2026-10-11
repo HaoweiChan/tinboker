@@ -21,7 +21,7 @@ import {
   type CommentStatus,
 } from '@/services/api/adminSocial';
 
-const card = 'rounded-xl border border-border bg-card';
+const card = 'rounded-none border-x-0 border-y border-border bg-card sm:rounded-xl sm:border-x';
 
 const CATEGORY_LABELS: Record<string, string> = {
   praise: '稱讚',
@@ -105,7 +105,7 @@ export const CommentTriage: React.FC = () => {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-3 sm:px-0">
         <div className="flex gap-1">
           {TABS.map(([key, label]) => (
             <button
@@ -129,7 +129,7 @@ export const CommentTriage: React.FC = () => {
       </div>
 
       {note && (
-        <div className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-base text-muted-foreground">
+        <div className="mx-3 rounded-lg border border-border bg-muted/40 px-3 py-2 text-base text-muted-foreground sm:mx-0">
           {note}
         </div>
       )}
@@ -142,7 +142,7 @@ export const CommentTriage: React.FC = () => {
 
       <div className="space-y-3">
         {items.map((c) => (
-          <div key={c.id} className={`${card} p-4`}>
+          <div key={c.id} className={`${card} p-3 sm:p-4`}>
             <div className="mb-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
               <span className="font-semibold text-foreground">@{c.username ?? '—'}</span>
               {c.category && (
@@ -194,7 +194,7 @@ export const CommentTriage: React.FC = () => {
                   onChange={(e) => setDrafts((d) => ({ ...d, [c.id]: e.target.value }))}
                   rows={3}
                   placeholder="沒有草稿 — 這則值得回但模型沒有東西可補充，自己寫一句"
-                  className="mt-3 w-full rounded-lg border border-border bg-background p-3 text-base text-foreground"
+                  className="-mx-3 mt-3 w-[calc(100%+1.5rem)] rounded-none border-x-0 border-y border-border bg-background p-3 text-base text-foreground sm:mx-0 sm:w-full sm:rounded-lg sm:border-x"
                 />
                 <div className="mt-2 flex flex-wrap gap-2">
                   <button
