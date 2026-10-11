@@ -86,7 +86,7 @@ def test_english_source_cache_and_separate_comment(tmp_path, monkeypatch):
         assert result["draft"]["highlights"] == [" ".join(quote.split())]
         assert result["draft"]["post"] == "新設備在9月開始交貨\n\n客戶已經用上3套"
     assert selector.call_count == writer.call_count == 1
-    assert writer.call_args.args[0]["prompt_version"] == 4
+    assert writer.call_args.args[0]["prompt_version"] == 5
     sent_state = json.loads(selector.call_args.args[0]["state"])
     assert sent_state == {"title": source["title"], "paragraphs": source["paragraphs"]}
     assert os.environ["SOCIAL_COPY_WRITER_MODEL"] == "original-model"
@@ -269,3 +269,18 @@ def test_writer_gets_one_retry_then_gives_up(tmp_path, monkeypatch):
     with pytest.raises(RuntimeError):
         drafts.run({"articles": [source]}, tmp_path / "b", as_of=NOW, select_with_jev=True)
     assert writer.call_count == 2
+
+
+def test_periods_inside_a_paragraph_and_writer_tics():
+    source = article()
+    quote = source["paragraphs"][0]["text"][:40]
+
+    def draft(post):
+        return {"draft": {"post": post, "evidence_ids": ["0"], "highlights": [quote]}}
+
+    assert drafts.validate_draft(draft("新設備開始交貨。客戶已經用上了。\n\n下一批在路上。"), source) \
+        == "新設備開始交貨。客戶已經用上了\n\n下一批在路上"
+    assert drafts.validate_draft(draft("分析師 Siegel 講得很直接：新設備開始交貨"), source) \
+        == "分析師 Siegel 說，新設備開始交貨"
+    assert drafts.validate_draft(draft("營收30 ～40億，主席講得更直接，到  40億就飽和"), source) \
+        == "營收30～40億，主席說，到40億就飽和"
