@@ -75,24 +75,52 @@ def _normalise_stock_name(name: str) -> str:
     return re.sub(r"(?:\*|-ky|-dr)+$", "", name)
 
 
-def _taiwan_names(db: Session) -> dict[str, str]:
-    return {ticker: _normalise_stock_name(name or "") for ticker, name in db.query(
-        StockTranslation.ticker, StockTranslation.name_zh_tw,
-    ).filter(StockTranslation.market == "TW").all()}
+def _stock_names(db: Session) -> dict[str, tuple[str, ...]]:
+    return {row.ticker: tuple(_normalise_stock_name(name) for name in (
+        [row.name_zh_tw] if row.market == "TW"
+        else [row.name_zh_tw, row.name_en, *(row.aliases or [])]
+    ) if name and name.strip()) for row in db.query(
+        StockTranslation.ticker, StockTranslation.market, StockTranslation.name_zh_tw,
+        StockTranslation.name_en, StockTranslation.aliases,
+    ).filter(StockTranslation.market.in_(["TW", "US"])).all()}
 
 
-def _clean_tickers(tickers: list[dict], names: dict[str, str]) -> tuple[list[dict], int, int]:
+def _clean_tickers(tickers: list[dict], names: dict[str, tuple[str, ...]]) -> tuple[list[dict], int, int]:
     if not names:  # no registry (fresh database): checking would drop every Taiwan stock
         return tickers, 0, 0
+    has_taiwan_names = any(re.fullmatch(r"[0-9]{3,6}[A-Z]?", code) for code in names)
     cleaned = []
     corrected = dropped = 0
     for ticker in tickers:
         code = ticker["ticker"]
-        if not re.fullmatch(r"[0-9]{3,6}[A-Z]?", code):
+        if re.fullmatch(r"[A-Za-z]+(?:\.[A-Za-z]+)?", code):
+            name = _normalise_stock_name(ticker["name"])
+            registered = names.get(code.upper(), ())
+            # US names are filled lazily from mentions (ensure_pending_stubs), unlike
+            # the full TWSE/TPEx seed: missing US codes or names are not evidence of a mismatch.
+            matches = not registered or name == code.casefold()
+            chinese = "".join(re.findall(r"[\u3400-\u9fff]", name))
+            latin = "".join(re.findall(r"[a-z0-9]+", name))
+            for official in registered:
+                official_chinese = "".join(re.findall(r"[\u3400-\u9fff]", official))
+                shorter = min(len(chinese), len(official_chinese))
+                matches |= shorter >= 2 and len(set(chinese) & set(official_chinese)) >= (shorter + 1) // 2
+                official_latin = "".join(re.findall(r"[a-z0-9]+", official))
+                # Collapse doubled letters for contractions such as SpaceX / Space Exploration.
+                matches |= bool(latin and official_latin and (
+                    latin in official_latin or official_latin in latin
+                    or re.sub(r"([a-z])\1+", r"\1", latin) in re.sub(r"([a-z])\1+", r"\1", official_latin)
+                ))
+            if matches:
+                cleaned.append(ticker)
+            else:
+                dropped += 1
+            continue
+        if not has_taiwan_names or not re.fullmatch(r"[0-9]{3,6}[A-Z]?", code):
             cleaned.append(ticker)
             continue
         name = _normalise_stock_name(ticker["name"])
-        official = names.get(code, "")
+        official = next(iter(names.get(code, ())), "")
         # Shows say 士電 for 士林電機 and ASR writes 大力光 for 大立光, so "same company" is
         # character overlap of at least half the shorter name, not equality. ponytail:
         # a homophone pair sharing one of two characters (信越 on 信質's code) still passes;
@@ -103,7 +131,7 @@ def _clean_tickers(tickers: list[dict], names: dict[str, str]) -> tuple[list[dic
             continue
         # Re-point only a slip between two Taiwan codes. A code the registry does not know
         # is a foreign listing: 三星 on Samsung's 005930 must not become Taiwan's 5007 三星.
-        matches = [other for other, registered in names.items() if name and registered == name]
+        matches = [other for other, registered in names.items() if re.fullmatch(r"[0-9]{3,6}[A-Z]?", other) and name and registered == (name,)]
         if code in names and len(matches) == 1:
             cleaned.append({**ticker, "ticker": matches[0]})
             corrected += 1
@@ -116,7 +144,7 @@ def _clean_tickers(tickers: list[dict], names: dict[str, str]) -> tuple[list[dic
 def _replace_episode(episode_id: str, body: EpisodeThemeViews) -> dict[str, int]:
     released = datetime.fromtimestamp(body.released_at_ms / 1000, tz=timezone.utc).replace(tzinfo=None)
     with session_scope() as db:
-        names = _taiwan_names(db)
+        names = _stock_names(db)
         db.query(ThemeView).filter_by(episode_id=episode_id).delete()
         seen = set()
         corrected = dropped = 0
@@ -152,7 +180,7 @@ def _ms(value: datetime) -> int:
 def build_cards(
     rows: list, limit: int, members_by_exposure: Optional[dict[str, list]] = None,
     public_since: Optional[datetime] = None,
-    taiwan_names: Optional[dict[str, str]] = None,
+    stock_names: Optional[dict[str, tuple[str, ...]]] = None,
 ) -> List[dict]:
     """Group rows (any order) into run cards, newest run first.
 
@@ -174,7 +202,7 @@ def build_cards(
             # performance is measured on these from the first mention.
             counts: dict = {}
             for row in run:
-                cleaned, _, _ = _clean_tickers(row.tickers or [], taiwan_names or {})
+                cleaned, _, _ = _clean_tickers(row.tickers or [], stock_names or {})
                 for t in cleaned:
                     if t.get("role") == "beneficiary":
                         entry = counts.setdefault(t["ticker"], {"ticker": t["ticker"], "name": t["name"], "mentions": 0})
@@ -229,7 +257,7 @@ def _cards(podcaster: Optional[str], limit: int) -> List[dict]:
         days = getattr(settings, "release_episode_max_age_days", 0) or 0
         public_since = datetime.utcnow() - timedelta(days=days) if days > 0 else None
         return build_cards(rows, limit, {row.exposure_id: row.members or [] for row in members},
-                           public_since, _taiwan_names(db))
+                           public_since, _stock_names(db))
 
 
 @router.get("/cards")

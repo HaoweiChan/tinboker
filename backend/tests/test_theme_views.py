@@ -41,6 +41,41 @@ GOOD_TICKERS = [
     ("1503", "士電"), ("3008", "大力光"), ("3653", "建策"), ("6526", "達發"), ("9917", "中興保全"),
 ]
 
+US_NAMES = {
+    "NVDA": ("NVIDIA Corporation", "輝達", []),
+    "META": ("Meta Platforms, Inc.", "Meta", ["臉書", "Facebook"]),
+    "MU": ("Micron Technology, Inc.", "美光科技", []),
+    "AVGO": ("Broadcom Inc.", "博通", []),
+    "MRVL": ("Marvell Technology, Inc.", "邁威爾科技", []),
+    "STM": ("STMicroelectronics N.V.", "意法半導體", []),
+    "VSH": ("Vishay Intertechnology, Inc.", "威世科技", []),
+    "GOOGL": ("Alphabet Inc.", "谷歌", ["Google"]),
+    "TSM": ("Taiwan Semiconductor Manufacturing Company Limited", "台積電ADR", []),
+    "AMD": ("Advanced Micro Devices, Inc.", "超微", []),
+    "CRM": ("Salesforce, Inc.", "賽富時", []),
+    "COHR": ("Coherent Corp.", "科希倫", []),
+    "SPCX": ("Space Exploration Technologies", None, []),
+    "AAPL": ("Apple Inc.", "蘋果", []),
+    "MSFT": ("Microsoft Corporation", "微軟", []),
+    "AMZN": ("Amazon.com, Inc.", "亞馬遜", []),
+    "QQQ": ("Invesco QQQ Trust", "景順那斯達克100 ETF", []),
+    "NBIS": ("Nebius Group N.V.", None, []),
+    "BRK.B": ("Berkshire Hathaway Inc.", "波克夏", []),
+    "EMPTY": (None, None, []),
+}
+GOOD_US_TICKERS = [
+    ("NVDA", "輝達"), ("NVDA", "Nvidia"), ("META", "Meta"), ("META", "臉書"),
+    ("MU", "美光"), ("AVGO", "博通"), ("MRVL", "Marvell"), ("MRVL", "邁威爾"),
+    ("STM", "意法半導體"), ("VSH", "Vishay"), ("GOOGL", "谷歌"), ("GOOGL", "Google"),
+    ("TSM", "台積電"), ("AMD", "超微"), ("CRM", "Salesforce"), ("COHR", "科希倫"),
+    ("SPCX", "SpaceX"), ("AAPL", "蘋果"), ("MSFT", "微軟"), ("MSFT", "Microsoft"),
+    ("QQQ", "那斯達克100 ETF"), ("NBIS", "Nebius"), ("UNKNOWN", "Unregistered company"),
+    ("EMPTY", "Unnamed company"), ("BRK.B", "Berkshire"), ("MSFT", "MSFT"),
+    ("MSFT", "微軟 Unknown"), ("MSFT", "Microsoft 未知"),
+]
+BAD_US_TICKERS = [("MSFT", "OpenAI"), ("MSFT", "Anthropic"), ("AMZN", "Anthropic"),
+                  ("NVDA", "CoreWeave"), ("BRK.B", "OpenAI"), ("MSFT", "Apple")]
+
 
 @pytest.fixture
 def api(tmp_path, monkeypatch):
@@ -68,6 +103,8 @@ def api(tmp_path, monkeypatch):
     with scope() as db:
         db.add_all([StockTranslation(ticker=code, market="TW", name_zh_tw=name)
                     for code, name in TW_NAMES.items()])
+        db.add_all([StockTranslation(ticker=code, market="US", name_en=en, name_zh_tw=zh, aliases=aliases)
+                    for code, (en, zh, aliases) in US_NAMES.items()])
         db.add(User(id="member", google_id="member", email="member@example.com", name="m",
                     member_until=now + timedelta(days=30), created_at=now, updated_at=now))
         db.add(User(id="free", google_id="free", email="free@example.com", name="f", created_at=now, updated_at=now))
@@ -250,12 +287,12 @@ def test_copy_cards_attach_returns_for_the_social_token_only(api, monkeypatch):
         f"{first}:{card['first_ms']}": {"since": 10.0, "d7": 2.0, "d30": None, "d90": None}}
 
 
-@pytest.mark.parametrize("code,name", BAD_TICKERS + GOOD_TICKERS)
+@pytest.mark.parametrize("code,name", BAD_TICKERS + GOOD_TICKERS + BAD_US_TICKERS + GOOD_US_TICKERS)
 def test_named_tickers_are_cleaned_on_write_and_legacy_card_reads(api, code, name):
     client, scope = api
     ticker = {"ticker": code, "name": name, "role": "beneficiary"}
     corrected = (code, name) == ("8150", "頎邦")
-    dropped = (code, name) in BAD_TICKERS and not corrected
+    dropped = (code, name) in BAD_TICKERS + BAD_US_TICKERS and not corrected
     expected = [] if dropped else [{**ticker, "ticker": "6147" if corrected else code}]
     response = put(client, "e1", T0, [view(tickers=[ticker])])
     assert response.status_code == 200
@@ -310,7 +347,7 @@ def test_remapping_uses_normalisation_and_only_taiwan_registry(api):
 def test_ticker_registry_is_batched_once_per_request(api, monkeypatch, route):
     client, scope = api
     monkeypatch.setattr(settings, "tinboker_social_token", "social-token")
-    tickers = [{"ticker": code, "name": name, "role": "beneficiary"} for code, name in BAD_TICKERS]
+    tickers = [{"ticker": code, "name": name, "role": "beneficiary"} for code, name in BAD_TICKERS + BAD_US_TICKERS[:2]]
     views = [view(tickers=tickers), view("矽光子", "sector_cpo", tickers=tickers)]
     put(client, "e1", T0, views)
     with scope() as db:
@@ -335,7 +372,7 @@ def test_ticker_registry_is_batched_once_per_request(api, monkeypatch, route):
         if route == "put":
             response = put(client, "e1", T0, views)
             assert response.json() == {"episode_id": "e1", "stored": 2,
-                                       "tickers_corrected": 2, "tickers_dropped": 2 * (len(BAD_TICKERS) - 1)}
+                                       "tickers_corrected": 2, "tickers_dropped": 2 * (len(BAD_TICKERS) + 2 - 1)}
         else:
             headers = bearer("member") if route == "cards" else {"Authorization": "Bearer social-token"}
             response = client.get(f"/api/theme-views/{route}", headers=headers)
@@ -356,4 +393,9 @@ def test_an_empty_registry_leaves_tickers_alone():
 
 def test_a_foreign_code_is_dropped_not_repointed_to_a_taiwan_namesake():
     samsung = [{"ticker": "005930", "name": "三星", "role": "beneficiary"}]
-    assert router._clean_tickers(samsung, {"5007": "三星", "2330": "台積電"}) == ([], 0, 1)
+    assert router._clean_tickers(samsung, {"5007": ("三星",), "2330": ("台積電",)}) == ([], 0, 1)
+
+
+def test_a_us_only_registry_leaves_taiwan_tickers_alone():
+    tickers = [{"ticker": "2327", "name": "國巨", "role": "beneficiary"}]
+    assert router._clean_tickers(tickers, {"MSFT": ("microsoft",)}) == (tickers, 0, 0)
