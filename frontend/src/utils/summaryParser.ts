@@ -11,9 +11,16 @@ const TRAILING = new RegExp(`([${CJK}]\\]\\([^)]*\\))[ \\t]+([${CJK}])`, 'g');
 // Lookahead keeps the trailing CJK char unconsumed so runs like "甲 乙 丙" fully collapse.
 const BETWEEN = new RegExp(`([${CJK}])[ \\t]+(?=[${CJK}])`, 'g');
 
+// The writer LLM sometimes puts the link where a symbol would go — 微軟（[微軟](#ticker:MSFT)）
+// — which reads as the name twice with only the bracketed copy linked. Keep one, linked.
+// Mirrors pipelines/.../nodes/markdown_transform.py, which stops new summaries doing it;
+// this covers the ones already stored.
+// No word boundary before the name: zh prose has none (為何三星（[三星](…)） is the common case).
+const ECHOED_TICKER = /([^\s()[\]（）*][^\r\n()[\]（）*]{0,39}?)[（(]\s*\[\1\]\((#ticker:[^)]+)\)\s*[）)]/g;
+
 export function normalizeCjkMarkerSpacing(text: string): string {
   if (!text) return text;
-  return text.replace(LEADING, '$1$2').replace(TRAILING, '$1$2').replace(BETWEEN, '$1');
+  return text.replace(ECHOED_TICKER, '[$1]($2)').replace(LEADING, '$1$2').replace(TRAILING, '$1$2').replace(BETWEEN, '$1');
 }
 
 /**
@@ -91,5 +98,4 @@ export function parseSummaryTopics(summaryPoints: { text: string }[]): ParsedSum
     };
   });
 }
-
 
