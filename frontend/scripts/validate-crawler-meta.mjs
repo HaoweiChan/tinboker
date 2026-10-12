@@ -13,6 +13,22 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
+import { comparableRows, crossShowLead, othersLean } from '../shared/crossShow.js';
+
+// Only an opposite stance is a disagreement; a neutral on either side is not.
+{
+  const o = { shows: 2, mentions: 3, bull: 3, neutral: 0, bear: 0 };
+  const rows = [
+    { ticker: 'A', stance: 'NEUTRAL', relation: 'reserved', others: o },
+    { ticker: 'B', stance: 'BEARISH', relation: 'opposite', others: o },
+    { ticker: 'C', stance: null, relation: 'alone', others: { ...o, shows: 0 } },
+  ];
+  assert.deepEqual(comparableRows({ rows }).map((r) => r.ticker), ['B', 'A'], 'opposites first, uncompared dropped');
+  assert.deepEqual(rows.map((r) => r.ticker), ['A', 'B', 'C'], 'the API response is not reordered in place');
+  assert.deepEqual(rows.map(othersLean), ['BULLISH', 'BULLISH', null]);
+  assert.equal(othersLean({ stance: 'BULLISH', relation: 'split', others: o }), null);
+  assert.ok(crossShowLead({ window_days: 30, compared: 3, opposite: 0 }).endsWith('沒有看法相反的。'));
+}
 
 const here = dirname(fileURLToPath(import.meta.url));
 const mw = await import(resolve(here, '../functions/_middleware.js'));
@@ -127,11 +143,8 @@ globalThis.fetch = async (url) => {
   if (u.includes('/cross-show')) {
     return json({
       episode_id: 'abc123', window_days: 30, podcaster: '股癌', as_of: '2026-09-20', shows_in_window: 9,
-      rows: [
-        { ticker: '2330', name: '台積電', stance: 'BULLISH', others: { shows: 5, mentions: 12, bull: 9, neutral: 3, bear: 0 }, relation: 'aligned' },
-        { ticker: '2327', name: '國巨', stance: 'BEARISH', others: { shows: 2, mentions: 3, bull: 3, neutral: 0, bear: 0 }, relation: 'opposite' },
-        { ticker: '6981', name: null, stance: null, others: { shows: 0, mentions: 0, bull: 0, neutral: 0, bear: 0 }, relation: 'alone' },
-      ],
+      // The public route: counts only, the rows are members-only.
+      rows: [], compared: 2, opposite: 1,
       disclaimer: 'x',
     });
   }
@@ -221,14 +234,11 @@ try {
   // 其他節目怎麼看: the one section that is not a restatement of the episode itself.
   for (const needle of [
     '<h2>其他節目怎麼看</h2>',
-    '有 2 檔在發布前 30 天內也被其他節目談到（同期共 9 個節目）：1 檔與其他節目同向、1 檔相反。',
-    '台積電（2330）</a>：本集看多，其他 5 個節目、12 次提及：9 看多 · 3 中立 · 0 看空 — 與其他節目同向',
-    '國巨（2327）</a>：本集看空，其他 2 個節目、3 次提及：3 看多 · 0 中立 · 0 看空 — 與其他節目相反',
-    'href="/methodology#stance"',
+    '有 2 檔在發布前 30 天內也被其他節目談到，其中 1 檔看法相反。',
+    '每一檔本集與其他節目的看法對照是會員內容。',
   ]) {
     assert.ok(epPage.includes(needle), `episode body missing ${needle}`);
   }
-  assert.ok(!epPage.includes('只有這個節目談到'), 'a ticker nobody else mentioned has nothing to compare and is left out');
   assert.ok(epPage.indexOf('其他節目怎麼看') < epPage.indexOf('聯準會鴿聲振奮台股'), 'the cross-show section comes before the summary');
   assert.ok(readFileSync(resolve(here, '../src/components/episode/CrossShowPanel.tsx'), 'utf8').includes("shared/crossShow.js'"), 'CrossShowPanel no longer reads shared/crossShow.js');
   assert.deepEqual(ldTypes(episode), ['PodcastEpisode', 'BreadcrumbList']);

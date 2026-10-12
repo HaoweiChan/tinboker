@@ -579,6 +579,9 @@ export const CrossShowResponseSchema = z.object({
   podcaster: z.string().nullable(),
   as_of: z.string().nullable(),
   shows_in_window: z.number(),
+  // Set by the public teaser route, which carries no rows.
+  compared: z.number().default(0),
+  opposite: z.number().default(0),
   rows: z.array(z.object({
     ticker: z.string(),
     name: z.string().nullable().optional(),
