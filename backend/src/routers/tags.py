@@ -24,6 +24,7 @@ from src.schemas.sector import (
     SectorsByTickerResponse,
     SectorsListResponse,
 )
+from src.models.podcast import card_dict
 from src.services.podcast import PodcastService
 from src.services.translation_discovery import schedule_ticker_discovery
 from src.tag_registry import (
@@ -145,7 +146,9 @@ async def get_episodes_by_tag(
         # recent-episodes feed already does this; the topic page reaches tickers the
         # feed may not, so without this their names never resolve.
         schedule_ticker_discovery(episodes)
-        episodes_dict = [ep.dict() for ep in episodes]
+        # Cards only unless the caller asks for content: a 17-episode tag page was 740 KB,
+        # 78% of it sector_exposures that neither TagPage nor the crawler body reads.
+        episodes_dict = [ep.dict() if include_content else card_dict(ep) for ep in episodes]
         return EpisodesByTagResponse(tag=tag, episodes=episodes_dict, total=len(episodes_dict))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching episodes by tag: {str(e)}")
@@ -328,7 +331,9 @@ async def get_episodes_by_sector(
             color_hex=result.get("color_hex"),
             description=result.get("description"),
             resolved_tickers=[SectorResolvedTicker(**t) for t in result["resolved_tickers"]],
-            episodes=result["episodes"],
+            # SectorPage renders cards and takes the sector's tickers from the
+            # response-level resolved_tickers; the per-episode exposure lists are unread.
+            episodes=[card_dict(ep) for ep in result["episodes"]],
             total=result["total"],
         )
     except Exception as e:

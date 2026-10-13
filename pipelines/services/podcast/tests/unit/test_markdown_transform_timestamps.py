@@ -168,3 +168,24 @@ def test_qa_prefix_strips_redundant_llm_lead():
     assert "## Q&A：軟體股布局 (#time:60000)" in md
     assert "## Q&A：長期持有邏輯 (#time:120000)" in md
     assert "Q&A：聽眾" not in md and "Q&A：Q&A" not in md
+
+
+def test_echoed_ticker_link_collapses_to_one_linked_name():
+    """微軟（[微軟](#ticker:MSFT)） reads as the name twice with only the bracketed copy
+    linked; a genuine gloss (different text in the brackets) is left alone."""
+    state = {
+        "writer_output": {
+            "executive_summary": "並非新鮮事。微軟（[微軟](#ticker:MSFT)）曾試圖，Meta([Meta](#ticker:META))也是；"
+                                 "台積電（[TSMC](#ticker:2330)）不動。"
+                                 "也解釋了為何三星（[三星](#ticker:005930)）過去，旗下的SpaceX（[SpaceX](#ticker:SPCX)）；"
+                                 "**微軟（[微軟](#ticker:MSFT)）**；"
+                                 "Taiwan Semiconductor（[Taiwan Semiconductor](#ticker:TSM)）。",
+        },
+    }
+    md = transform_to_markdown(state)["markdown_report"]
+    assert "並非新鮮事。[微軟](#ticker:MSFT)曾試圖，[Meta](#ticker:META)也是；" in md
+    assert "台積電（[TSMC](#ticker:2330)）不動。" in md
+    # zh prose has no word boundary before the name — the common case in stored summaries.
+    assert "也解釋了為何[三星](#ticker:005930)過去，旗下的[SpaceX](#ticker:SPCX)；" in md
+    assert "**[微軟](#ticker:MSFT)**" in md
+    assert "[Taiwan Semiconductor](#ticker:TSM)。" in md

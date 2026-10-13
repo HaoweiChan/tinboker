@@ -23,7 +23,7 @@
 // to the unmodified SPA: this middleware can never break a page.
 
 import { ABOUT, TERMS, METHODOLOGY } from '../shared/sitePages.js';
-import { RELATION_ZH, comparableRows, crossShowLead, othersLine, stanceZh } from '../shared/crossShow.js';
+import { CROSS_SHOW_LOCKED, crossShowLead } from '../shared/crossShow.js';
 
 const CRAWLER = /bot|crawl|spider|mediapartners|facebookexternalhit|facebot|twitterbot|\bline\b|slackbot|whatsapp|telegrambot|discordbot|pinterest|linkedinbot|redditbot|embedly|quora|skypeuripreview|applebot|googlebot|bingbot|baiduspider|yandex|duckduckbot/i;
 
@@ -464,14 +464,11 @@ export async function metaFor(pathname, origin, api) {
       ...(released ? { datePublished: released } : {}),
       ...(chs.length ? { hasPart: chs.map((c) => ({ '@type': 'Clip', name: c.title, startOffset: c.sec, url: `${url}#t-${c.sec}` })) } : {}),
     };
-    // Same sentences CrossShowPanel renders (shared/crossShow.js): what the OTHER shows
-    // said about this episode's tickers before it aired — the part of the page that is
-    // not a restatement of the episode.
-    const crossRows = comparableRows(cross);
-    const crossHtml = crossRows.length
-      ? `<h2>其他節目怎麼看</h2><p>${esc(crossShowLead(cross))}</p>${ul(crossRows.map((row) =>
-        `${stockLink(row.ticker, row.name)}：本集${esc(stanceZh(row.stance))}，其他 ${esc(othersLine(row.others))} — ${esc(RELATION_ZH[row.relation] || '')}`))}`
-        + `<p>比較的是各節目公開說法之間的異同，不是對股價的判斷。${a('/methodology#stance', '看多、看空怎麼判定')}</p>`
+    // Same sentences CrossShowPanel shows a non-member (shared/crossShow.js). The
+    // per-ticker comparison is members-only, so the public route returns counts and
+    // this prints counts — the crawler never sees more than a signed-out reader.
+    const crossHtml = cross && cross.compared > 0
+      ? `<h2>其他節目怎麼看</h2><p>${esc(crossShowLead(cross))}</p><p>${esc(CROSS_SHOW_LOCKED)}</p>`
       : '';
     const body = `<p>${podcasterLink(name)}${released ? ` · ${esc(day(released))}` : ''}</p>`
       + ((e.key_insights || []).length ? `<h2>重點</h2>${ul(e.key_insights.map(esc))}` : '')

@@ -94,3 +94,26 @@ class Podcast(BaseModel):
 
     class Config:
         populate_by_name = True
+
+
+# Fields no LIST surface reads — episode cards on the home feed, tag, sector and stock
+# pages, and the crawler middleware — but that dominate list payloads: sector_exposures
+# alone was 610 KB of a 60-card home feed and 78% of a 17-episode tag page (740 KB,
+# measured 2026-10-13). The episode page fetches its own full record.
+CARD_UNUSED_FIELDS = frozenset({
+    "sector_exposures", "social_cards", "social_thread", "unresolved_market_trends",
+    "spotify_description", "transcript", "events_markdown_content", "sentences_markdown_content",
+    "marp_markdown_content", "ticker_marp_markdown_content", "ticker_insights_content",
+})
+
+
+def card_dict(episode) -> dict:
+    """An episode as a list card: every field except CARD_UNUSED_FIELDS.
+
+    Accepts an Episode or an already-dumped dict, so service results of either shape
+    go through the same trim.
+    """
+    if isinstance(episode, dict):
+        return {k: v for k, v in episode.items() if k not in CARD_UNUSED_FIELDS}
+    return episode.model_dump(mode="json", exclude=set(CARD_UNUSED_FIELDS))
+

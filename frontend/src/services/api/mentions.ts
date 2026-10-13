@@ -45,10 +45,11 @@ export async function getEpisodeMentions(episodeId: string): Promise<EpisodeMent
   return parseResponse(EpisodeMentionsResponseSchema, response.data);
 }
 
-/** How other shows spoke about this episode's tickers in the 30 days before it aired. */
-export async function getEpisodeCrossShow(episodeId: string): Promise<CrossShowResponse> {
+/** How other shows spoke about this episode's tickers in the 30 days before it aired.
+ *  The public route returns counts only; `detail` is the member route with the rows. */
+export async function getEpisodeCrossShow(episodeId: string, detail = false): Promise<CrossShowResponse> {
   const response = await apiClient.get(
-    `/api/episodes/${encodeURIComponent(episodeId)}/cross-show`,
+    `/api/episodes/${encodeURIComponent(episodeId)}/cross-show${detail ? '/detail' : ''}`,
     { headers: { 'X-Silent-Error': 'true' } },
   );
   return parseResponse(CrossShowResponseSchema, response.data);
