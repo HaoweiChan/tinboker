@@ -219,6 +219,16 @@ def test_cross_show_counts_other_shows_inside_the_window_before_the_episode(sess
     assert [r["ticker"] for r in body["rows"]] == ["2330", "3037", "6981"]
     assert "並非投資建議" in body["disclaimer"]
 
+    # The public route says how many, never which: 6981 has nobody to compare against.
+    teaser = _call(api.get_episode_cross_show_teaser("ep"))
+    assert teaser["rows"] == [] and teaser["compared"] == 2 and teaser["opposite"] == 1
+    assert teaser["shows_in_window"] == 3 and teaser["window_days"] == 30
+
+
+def test_cross_show_detail_is_member_only():
+    route = next(r for r in api.router.routes if r.path.endswith("/cross-show/detail"))
+    assert any(d.call is api.require_member for d in route.dependant.dependencies)
+
 
 def test_cross_show_is_empty_for_an_episode_with_no_ticker_mentions(session):
     body = _call(api.get_episode_cross_show("nope"))

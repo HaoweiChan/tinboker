@@ -33,6 +33,13 @@ logger = logging.getLogger(__name__)
 # "Q&A：聽眾提問：台股熊市".
 _QA_LEAD_RE = re.compile(r"^(?:Q&A|聽眾(?:提問|來信|問題))\s*[:：]\s*")
 
+# The writer sometimes puts the link where a symbol would go — 微軟（[微軟](#ticker:MSFT)）
+# — so the page shows the name twice with only the bracketed copy linked. Keep one, linked.
+# No word boundary before the name: zh prose has none (為何三星（[三星](…)） is the common case).
+_ECHOED_TICKER_RE = re.compile(
+    r"([^\s()[\]（）*][^\r\n()[\]（）*]{0,39}?)[（(]\s*\[\1\]\((#ticker:[^)]+)\)\s*[）)]"
+)
+
 
 def _anchor_sections(
     sections: list[dict[str, Any]],
@@ -149,4 +156,4 @@ def transform_to_markdown(state: PipelineState) -> dict[str, Any]:
     if writer_output.get("conclusion"):
         parts.append(f"## 結論\n\n{writer_output['conclusion']}\n")
 
-    return {"markdown_report": "\n".join(parts)}
+    return {"markdown_report": _ECHOED_TICKER_RE.sub(r"[\1](\2)", "\n".join(parts))}

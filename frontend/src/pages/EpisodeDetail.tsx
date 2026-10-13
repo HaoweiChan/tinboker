@@ -487,7 +487,7 @@ export const EpisodeDetail: React.FC = () => {
               </section>
             )}
 
-            <CrossShowPanel data={crossShow} />
+            <CrossShowPanel episodeId={id ?? ''} data={crossShow} />
 
             {/* 摘要 — structured summary (headings, paragraphs, ticker/tag/time markers)
                 minus the headline + thesis the 關鍵洞察 card above already shows. */}

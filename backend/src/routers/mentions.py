@@ -9,11 +9,11 @@ import logging
 from datetime import datetime, timedelta
 from typing import List, Optional
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from src.cache.cdn_cache import cdn_cache_trending
+from src.cache.cdn_cache import CacheProfile, cdn_cache_trending, cdn_cached
 from src.database.postgres import get_session
 from src.database.models import (
     ContentMention,
@@ -22,7 +22,9 @@ from src.database.models import (
     TickerPerformanceSnapshot,
 )
 from src.services.attention import WINDOW_DAYS as _LEVEL_WINDOW_DAYS, attention_level, scope_mentions
+from src.models.user import UserResponse
 from src.services.podcast import PodcastService
+from src.utils.dependencies import require_member
 
 logger = logging.getLogger(__name__)
 
@@ -224,7 +226,27 @@ def cross_show_relation(mine: Optional[str], bull: int, neutral: int, bear: int)
 
 @router.get("/episodes/{episode_id}/cross-show")
 @cdn_cache_trending
-async def get_episode_cross_show(episode_id: str):
+async def get_episode_cross_show_teaser(episode_id: str):
+    """The public face of the cross-show comparison: how many of this episode's tickers
+    other shows also discussed, and how many of those they took the opposite side on.
+    Counts only — which tickers, and which way, is the member route below. This is also
+    what the crawler body prints, so it must never carry the rows.
+    """
+    full = await _cross_show(episode_id)
+    compared = [r for r in full["rows"] if r["others"]["shows"] > 0]
+    return {**full, "rows": [], "compared": len(compared),
+            "opposite": sum(r["relation"] == "opposite" for r in compared)}
+
+
+@router.get("/episodes/{episode_id}/cross-show/detail")
+@cdn_cached(profile=CacheProfile.PRIVATE)
+async def get_episode_cross_show(episode_id: str, _user: UserResponse = Depends(require_member)):
+    """Members-only (401 anonymous, 402 non-member). PRIVATE: Cloudflare caches every
+    `GET /api/*` by URL with no Vary on Authorization."""
+    return await _cross_show(episode_id)
+
+
+async def _cross_show(episode_id: str) -> dict:
     """For each ticker this episode discussed: how many OTHER shows mentioned it in the
     30 days up to the episode's release day, how those mentions split, and how this
     episode's stance relates to them.
