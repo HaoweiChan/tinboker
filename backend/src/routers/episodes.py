@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 from typing import Optional
 from src.services.podcast import EPISODE_DETAIL_CONTENT_FIELDS, PodcastService, episode_content_incomplete
 from src.services.translation_discovery import schedule_ticker_discovery
+from src.models.podcast import card_dict
 from src.services.episode_sentiments import EpisodeSentimentService
 from src.services.trending import TrendingService
 from src.cache.cdn_cache import cdn_cached, cdn_cache_podcast, cdn_cache_trending
@@ -21,16 +22,6 @@ trending_service = TrendingService(podcast_service=podcast_service)
 
 class TickerSentimentsRequest(BaseModel):
     episode_ids: list[str] = Field(default_factory=list, max_length=80)
-
-
-# Fields no list surface reads (home cards, the crawler middleware) that made the
-# 60-card home feed 1.3 MB: sector_exposures alone was 610 KB, social_cards 198 KB.
-# The episode page fetches its own full record.
-_CARD_UNUSED = {
-    "sector_exposures", "social_cards", "social_thread", "unresolved_market_trends",
-    "spotify_description", "transcript", "events_markdown_content", "sentences_markdown_content",
-    "marp_markdown_content", "ticker_marp_markdown_content", "ticker_insights_content",
-}
 
 
 @router.get("/recent")
@@ -68,7 +59,7 @@ async def get_recent_episodes(
         has_more = len(episodes) == limit
         
         return {
-            "episodes": episodes if include_content else [e.model_dump(mode="json", exclude=_CARD_UNUSED) for e in episodes],
+            "episodes": episodes if include_content else [card_dict(e) for e in episodes],
             "total": len(episodes),  # This is approximate without full count
             "hasMore": has_more
         }
@@ -157,7 +148,9 @@ async def get_episodes_by_ticker(
         
         return {
             "ticker": ticker.upper(),
-            "episodes": episodes,
+            # Same trim as /recent: this list was 1.75 MB for a busy ticker (2330,
+            # limit=50, measured 2026-10-13) and the stock page renders cards from it.
+            "episodes": episodes if include_content else [card_dict(e) for e in episodes],
             "total": len(episodes)  # This is approximate without full count
         }
     except Exception as e:
