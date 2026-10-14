@@ -62,7 +62,7 @@ Boundaries: episode-level content rendering and the "mentioned in episodes" list
 
 - **FinMind** (`FINMIND_API_KEY` from Secret Manager) — Taiwan stock prices, OHLCV history.
 - **Massive API** (`MASSIVE_API_KEY` from Secret Manager) — US market data, including WebSocket price stream.
-- **Yahoo Finance chart/search endpoints** (no key, unofficial) — the only intraday source for indices (TAIEX, S&P 500, Nasdaq, SOX, Dow, Nikkei, KOSPI) and the TW/US giants the market-move posts watch (2330.TW, NVDA, …). Used only by the market-move posts; owner-approved 2026-10-14 because those posts are not monetised. Best-effort: callers post nothing on `YahooChartError`. Do not route site price pages through it.
+- **Yahoo Finance chart/search endpoints** (no key, unofficial) — the only intraday source for indices (TAIEX, S&P 500, Nasdaq, SOX, Dow, Nikkei, KOSPI) the TW/US giants the market-move posts watch (2330.TW, NVDA, …), and — via the batched spark endpoint — every member of every registry theme for the theme lane. Used only by the market-move posts; owner-approved 2026-10-14 because those posts are not monetised. Best-effort: callers post nothing on `YahooChartError`. Do not route site price pages through it.
 - **VPS PostgreSQL** `podcast_db` — stock translations and the `firestore_mirror` content schema, including ticker insights and trending tickers. The schema name is historical; see [`../firestore-contract.md`](../firestore-contract.md#current-state-2026-09-27).
 - **Ticker logos** are external image URLs; render with a graceful missing-image state.
 

@@ -164,6 +164,11 @@ class Settings(BaseSettings):
     # per market per day, most unusual first.
     market_move_stock_min_pct: float = 3.0
     market_move_max_stock_posts: int = 2
+    # The theme lane (tag_registry themes as baskets of their TW / US members): a theme
+    # moves when the median member does at least this many percent with most members
+    # agreeing; at most this many themes post per market per day.
+    market_move_theme_min_pct: float = 3.0
+    market_move_max_theme_posts: int = 1
     # Extracts the one-line reason from headlines; the hedge wording is decided in code.
     market_move_model: str = "google/gemini-2.5-flash"
 

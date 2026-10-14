@@ -8,7 +8,7 @@ import pytest
 from src.services import market_moves as mm
 from src.services import social_ledger, yahoo_chart
 from src.services.intraday_card import intraday_card_svg, segments
-from src.services.yahoo_chart import Intraday, YahooChartError
+from src.services.yahoo_chart import Intraday, Quote, YahooChartError
 
 TPE = ZoneInfo("Asia/Taipei")
 OPEN = int(datetime(2026, 10, 14, 9, 0, tzinfo=TPE).timestamp())
@@ -161,7 +161,7 @@ async def test_two_publishers_backing_the_cause_is_consensus_and_bad_ids_are_dro
     monkeypatch.setattr(mm.yahoo_chart, "news", news)
     monkeypatch.setattr(mm, "_extract_cause", extract)
     lead = mm.Move(mm.Instrument("^TWII", "加權指數"), _day([97.0]), 1.0)
-    out = await mm.find_cause(mm.MARKETS["TW"], lead, NOW)
+    out = await mm.find_cause(mm.MARKETS["TW"], mm.subject_of(mm.MARKETS["TW"], lead), NOW)
     assert seen["n"] == 2                                          # the 3-day-old one and the duplicate query are gone
     assert out["tier"] == "consensus" and [s["publisher"] for s in out["sources"]] == ["Reuters", "Bloomberg"]
 
@@ -178,10 +178,11 @@ async def test_a_failed_model_call_posts_without_a_reason(monkeypatch):
     monkeypatch.setattr(mm.yahoo_chart, "news", news)
     monkeypatch.setattr(mm, "_extract_cause", boom)
     lead = mm.Move(mm.Instrument("^TWII", "加權指數"), _day([97.0]), 1.0)
-    out = await mm.find_cause(mm.MARKETS["TW"], lead, NOW)
+    out = await mm.find_cause(mm.MARKETS["TW"], mm.subject_of(mm.MARKETS["TW"], lead), NOW)
     assert (out["tier"], out["clause"], out["sources"]) == ("none", "", [])
     monkeypatch.setattr(mm.settings, "openrouter_api_key", None)
-    assert (await mm.find_cause(mm.MARKETS["TW"], lead, NOW))["error"] == "no_openrouter_key"
+    assert (await mm.find_cause(mm.MARKETS["TW"], mm.subject_of(mm.MARKETS["TW"], lead), NOW))["error"] \
+        == "no_openrouter_key"
 
 
 # ── the card ────────────────────────────────────────────────────────────────
@@ -240,8 +241,16 @@ def _wire(monkeypatch, days, sigmas=None):
     async def cause(market, lead, now):
         return {"tier": "reported", "clause": "市場推測與美債殖利率走升有關", "cause": "美債殖利率走升",
                 "sources": [{"publisher": "Reuters", "title": "Yields jump", "url": "https://r/1"}]}
+    async def quotes(symbols):
+        return {s: Quote(s, d.prev_close, d.last, d.last_ts) for s, d in days.items() if s in symbols}
+
+    async def no_baskets(market, now):
+        return []
     monkeypatch.setattr(mm.yahoo_chart, "intraday", intraday)
     monkeypatch.setattr(mm.yahoo_chart, "sigma", sigma)
+    monkeypatch.setattr(mm.yahoo_chart, "quotes", quotes)
+    monkeypatch.setattr(mm, "baskets", no_baskets)
+    monkeypatch.setattr(mm, "_theme_scanned_at", {})
     monkeypatch.setattr(mm, "find_cause", cause)
     fake = _FakeThreads()
     monkeypatch.setattr(mm, "ThreadsService", lambda: fake)
@@ -374,7 +383,7 @@ async def test_stock_reason_searches_by_its_own_name(monkeypatch):
         return []
     monkeypatch.setattr(mm.yahoo_chart, "news", news)
     nvda = mm.BY_ID["NVDA"][1]
-    out = await mm.find_cause(mm.MARKETS["US"], mm.Move(nvda, _day([95.0]), 2.0), NOW)
+    out = await mm.find_cause(mm.MARKETS["US"], mm.subject_of(mm.MARKETS["US"], mm.Move(nvda, _day([95.0]), 2.0)), NOW)
     assert queries == ["Nvidia", "NVDA"] and out["error"] == "no_fresh_headlines"
 
 
@@ -437,3 +446,181 @@ async def test_card_route_pins_the_day_and_tolerates_a_missing_peer(monkeypatch)
     with pytest.raises(HTTPException) as e:
         await og_router.market_card_raster("NOPE", until=None)
     assert e.value.status_code == 404
+
+
+# ── watchlist ───────────────────────────────────────────────────────────────
+
+def test_watchlist_is_the_weight_leaders_without_the_utility():
+    tw = {i.code for i in mm.MARKETS["TW"].stocks}
+    us = {i.code for i in mm.MARKETS["US"].stocks}
+    assert "2412" not in tw and {"2330", "2454", "2308", "2317", "3711", "2383"} <= tw
+    assert {"NVDA", "AAPL", "GOOGL", "MSFT", "AMZN", "TSM"} <= us
+    assert len(mm.BY_ID) == sum(len(m.indices) + len(m.stocks) for m in mm.MARKETS.values())  # ids unique
+
+
+# ── batch quotes ────────────────────────────────────────────────────────────
+
+def test_parse_spark_reads_both_shapes_and_skips_empty_symbols():
+    flat = {"NVDA": {"symbol": "NVDA", "timestamp": [1, 2], "close": [100.0, None], "chartPreviousClose": 95.0},
+            "EMPTY": {"symbol": "EMPTY", "timestamp": [], "close": [], "chartPreviousClose": 10.0}}
+    out = yahoo_chart.parse_spark(flat)
+    assert list(out) == ["NVDA"] and out["NVDA"].last == 100.0 and round(out["NVDA"].pct, 2) == 5.26
+    nested = {"spark": {"result": [{"symbol": "2330.TW", "response": [{
+        "meta": {"symbol": "2330.TW", "previousClose": 1000.0}, "timestamp": [5],
+        "indicators": {"quote": [{"close": [960.0]}]}}]}], "error": None}}
+    q = yahoo_chart.parse_spark(nested)["2330.TW"]
+    assert (q.prev_close, q.last, q.last_ts, round(q.pct, 1)) == (1000.0, 960.0, 5, -4.0)
+    assert yahoo_chart.parse_spark([]) == {}
+
+
+@pytest.mark.asyncio
+async def test_quotes_batches_twenty_and_a_failed_batch_only_drops_itself(monkeypatch):
+    calls = []
+
+    async def get_json(url, params):
+        syms = params["symbols"].split(",")
+        calls.append(len(syms))
+        if len(calls) == 2:
+            raise YahooChartError("429")
+        return {s: {"timestamp": [1], "close": [11.0], "chartPreviousClose": 10.0} for s in syms}
+
+    async def no_cache(*_a, **_k):
+        return None
+    monkeypatch.setattr(yahoo_chart, "_get_json", get_json)
+    monkeypatch.setattr(yahoo_chart, "cache_get", no_cache)
+    monkeypatch.setattr(yahoo_chart, "cache_set", no_cache)
+    out = await yahoo_chart.quotes([f"S{i}" for i in range(45)])
+    assert calls == [20, 20, 5] and len(out) == 25
+
+
+# ── the theme lane ──────────────────────────────────────────────────────────
+
+def _basket(n=5, eid="theme_cooling", name="散熱"):
+    codes = [("3017", "奇鋐"), ("3324", "雙鴻"), ("3653", "健策"), ("2421", "建準"), ("3483", "力致"), ("3338", "泰碩")]
+    return mm.Basket(eid, name, [mm.Instrument(f"{c}.TW", nm) for c, nm in codes[:n]])
+
+
+def _q(basket, pcts, ts=OPEN + 1800):
+    return {m.symbol: Quote(m.symbol, 100.0, 100.0 + p, ts) for m, p in zip(basket.members, pcts)}
+
+
+def test_a_theme_moves_on_its_median_with_most_members_agreeing():
+    b = _basket()
+    move = mm.theme_move(b, _q(b, [9.9, 6.0, 4.0, 3.5, -0.5]), floor_pct=3.0)
+    assert move and move.median == 4.0 and [i.name for i in move.leaders] == ["奇鋐", "雙鴻"]
+    assert mm.theme_move(b, _q(b, [9.9, 9.8, 1.0, 0.5, 0.2]), floor_pct=3.0) is None    # two names, not a theme
+    assert mm.theme_move(b, _q(b, [6.0, 5.0, 4.0, -3.0, -4.0]), floor_pct=3.0) is None  # members disagree
+    assert mm.theme_move(_basket(2), _q(_basket(2), [9.0, 9.0]), floor_pct=3.0) is None  # too few members
+    down = mm.theme_move(b, _q(b, [-7.0, -5.0, -4.0, -3.2, -1.0]), floor_pct=3.0)
+    assert down.median == -4.0 and down.leaders[0].name == "奇鋐"                      # biggest drop leads
+
+
+def test_theme_post_names_the_theme_and_who_led_it():
+    b = _basket()
+    move = mm.theme_move(b, _q(b, [9.9, 6.0, 4.0, 3.5, -0.5]), floor_pct=3.0)
+    assert mm.compose_theme_text(move, "主因輝達上修散熱規格") == "散熱族群盤中急漲，奇鋐、雙鴻領漲，主因輝達上修散熱規格。"
+    down = mm.theme_move(b, _q(b, [-7.0, -5.0, -2.5, -2.2, -1.0]), floor_pct=2.0)
+    assert mm.compose_theme_text(down, "") == "散熱族群盤中大跌，奇鋐、雙鴻領跌。"
+
+
+def test_theme_card_payload_round_trips_and_rejects_junk():
+    b = _basket()
+    move = mm.theme_move(b, _q(b, [9.9, 6.0, 4.0, 3.5, -0.5]), floor_pct=3.0)
+    d = mm.decode_theme_card(mm.encode_theme_card(mm.MARKETS["TW"], move))
+    assert (d["name"], d["tz"], d["median"], d["count"]) == ("散熱", "Asia/Taipei", 4.0, 5)
+    assert d["rows"][0] == ("奇鋐", "3017", 9.9)
+    for junk in ("abc", mm.encode_theme_card(mm.MARKETS["TW"], move)[:-6] + "zzzzzz"):
+        with pytest.raises(ValueError):
+            mm.decode_theme_card(junk)
+
+
+def test_theme_card_draws_one_bar_per_member():
+    from src.services.intraday_card import theme_card_svg
+    svg = theme_card_svg("散熱", [("奇鋐", "3017", 9.9), ("泰碩", "3338", -0.5)], 4.0, 5, OPEN + 1800, "Asia/Taipei")
+    assert svg.count('rx="4"') == 2 and "散熱" in svg and "+9.90%" in svg and "-0.50%" in svg
+    assert "中位數 +4.00%" in svg and "台北時間" in svg and "TinBoker 題材" in svg
+    with pytest.raises(ValueError):
+        theme_card_svg("散熱", [], 0, 0, OPEN, "Asia/Taipei")
+
+
+@pytest.mark.asyncio
+async def test_a_theme_morning_posts_once_with_its_bar_card_and_scans_every_five_minutes(temp_db, monkeypatch):
+    b = _basket()
+    fake = _wire(monkeypatch, FLAT)
+    scans = []
+
+    async def baskets(market, now):
+        scans.append(now)
+        return [b] if market.id == "TW" else []
+
+    async def quotes(symbols):
+        return {**_q(b, [9.9, 6.0, 4.0, 3.5, -0.5]),
+                **{s: Quote(s, d.prev_close, d.last, d.last_ts) for s, d in FLAT.items()}}
+    monkeypatch.setattr(mm, "baskets", baskets)
+    monkeypatch.setattr(mm.yahoo_chart, "quotes", quotes)
+
+    assert await mm.publish_due(_tick(0)) == 1
+    text, image = fake.posts[0]
+    assert text == "散熱族群盤中急漲，奇鋐、雙鴻領漲，市場推測與美債殖利率走升有關。"
+    assert image.startswith("https://api.tinboker.com/api/og/market-theme/") and image.endswith(".png")
+    row = social_ledger.list_posted("threads")[0]
+    assert (row["episode_id"], row["subject"]) == ("market_move:theme:TW:2026-10-14:theme_cooling", "theme_cooling")
+
+    other = _basket(eid="theme_other", name="其他")
+    monkeypatch.setattr(mm, "baskets", lambda market, now: _async([b, other]))
+    monkeypatch.setattr(mm, "_theme_scanned_at", {})
+    assert await mm.publish_due(_tick(6)) == 0                       # daily theme budget (1) spent
+    assert len(scans) == 1
+
+
+@pytest.mark.asyncio
+async def test_theme_scan_waits_five_minutes_between_looks(temp_db, monkeypatch):
+    _wire(monkeypatch, FLAT)
+    looks = []
+
+    async def baskets(market, now):
+        looks.append(now)
+        return []
+    monkeypatch.setattr(mm, "baskets", baskets)
+    for m in (0, 1, 4, 5, 6):
+        await mm.publish_due(_tick(m))
+    assert [int((t - _tick(0)).total_seconds() // 60) for t in looks] == [0, 5]
+
+
+def _async(value):
+    async def f():
+        return value
+    return f()
+
+
+def test_tw_venue_comes_from_the_warmed_bars(temp_db):
+    from src.database import postgres as pg
+    from src.database.models import StockDailyOHLC
+    from src.database.postgres import get_session
+    StockDailyOHLC.__table__.create(bind=pg.engine, checkfirst=True)
+    for db in get_session():
+        db.add_all([StockDailyOHLC(ticker="3324", date="2026-10-13", close=1.0, source="tpex"),
+                    StockDailyOHLC(ticker="3017", date="2026-10-13", close=1.0, source="twse"),
+                    StockDailyOHLC(ticker="6488", date="2026-10-01", close=1.0, source="twse"),
+                    StockDailyOHLC(ticker="6488", date="2026-10-13", close=1.0, source="tpex")])
+        db.commit()
+    assert mm._tw_suffixes(["3324", "3017", "6488", "9999"]) == \
+        {"3324": ".TWO", "3017": ".TW", "6488": ".TWO", "9999": ".TW"}
+
+
+def test_baskets_come_from_registry_themes_split_by_market(monkeypatch):
+    from src.services.podcast import PodcastService
+    idx = {"meta": {"theme_ai": {"display_name": "AI伺服器", "exposure_type": "theme"},
+                    "ind_semi": {"display_name": "半導體", "exposure_type": "industry"}},
+           "members": {"theme_ai": [{"ticker": t, "name": n} for t, n in
+                                    [("2382", "廣達"), ("3231", "緯創"), ("6669", "緯穎"), ("NVDA", "輝達"),
+                                     ("SMCI", "美超微"), ("DELL", "戴爾"), ("8210", "勤誠")]],
+                       "ind_semi": [{"ticker": "2330", "name": "台積電"}, {"ticker": "2303", "name": "聯電"},
+                                    {"ticker": "2454", "name": "聯發科"}]}}
+    monkeypatch.setattr(PodcastService, "_sector_membership_index", staticmethod(lambda: idx))
+    monkeypatch.setattr(mm, "_tw_suffixes", lambda codes: {c: (".TWO" if c == "8210" else ".TW") for c in codes})
+    out = mm._load_baskets()
+    assert [b.exposure_id for b in out["TW"]] == ["theme_ai"]       # industries are not baskets
+    assert [m.symbol for m in out["TW"][0].members] == ["2382.TW", "3231.TW", "6669.TW", "8210.TWO"]
+    assert [m.symbol for m in out["US"][0].members] == ["NVDA", "SMCI", "DELL"]
+    assert out["TW"][0].name == "AI伺服器"

@@ -24,6 +24,9 @@ from src.cache.redis_client import cache_get, cache_set
 logger = logging.getLogger(__name__)
 
 CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
+SPARK_URL = "https://query1.finance.yahoo.com/v8/finance/spark"
+SPARK_BATCH = 20
+SPARK_TTL = 120
 NEWS_URL = "https://query1.finance.yahoo.com/v1/finance/search"
 # Without a browser UA the endpoint answers 429 to most datacentre IPs.
 _HEADERS = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
@@ -165,6 +168,78 @@ async def sigma(symbol: str) -> Optional[float]:
     value = daily_sigma(closes)
     await cache_set(key, json.dumps(value), DAILY_TTL)
     return value
+
+
+@dataclass
+class Quote:
+    symbol: str
+    prev_close: float
+    last: float
+    last_ts: int
+
+    @property
+    def pct(self) -> float:
+        return (self.last - self.prev_close) / self.prev_close * 100
+
+
+def _quote(symbol: str, prev, timestamps, closes) -> Optional[Quote]:
+    pts = [(int(t), float(c)) for t, c in zip(timestamps or [], closes or []) if c is not None]
+    if not prev or not pts:
+        return None
+    return Quote(symbol, float(prev), pts[-1][1], pts[-1][0])
+
+
+def parse_spark(payload: dict) -> dict[str, Quote]:
+    """Yahoo's spark answers in two shapes depending on the path/version it routes to:
+    ``{SYM: {timestamp, close, chartPreviousClose}}`` or
+    ``{spark: {result: [{symbol, response: [<chart result>]}]}}``. Accept both; a
+    symbol missing from either is simply absent from the map."""
+    out: dict[str, Quote] = {}
+    if not isinstance(payload, dict):
+        return out
+    results = ((payload.get("spark") or {}).get("result")) if "spark" in payload else None
+    if results is not None:
+        for item in results or []:
+            for r in (item or {}).get("response") or []:
+                meta = r.get("meta") or {}
+                closes = ((r.get("indicators") or {}).get("quote") or [{}])[0].get("close")
+                q = _quote(item.get("symbol") or meta.get("symbol"),
+                           meta.get("previousClose") or meta.get("chartPreviousClose"), r.get("timestamp"), closes)
+                if q and q.symbol:
+                    out[q.symbol] = q
+        return out
+    for sym, d in payload.items():
+        if isinstance(d, dict):
+            q = _quote(d.get("symbol") or sym, d.get("previousClose") or d.get("chartPreviousClose"),
+                       d.get("timestamp"), d.get("close"))
+            if q:
+                out[q.symbol] = q
+    return out
+
+
+async def quotes(symbols: list[str]) -> dict[str, Quote]:
+    """Last price vs previous close for many symbols, 20 per request — what a basket or
+    a watchlist scan needs, at a fraction of one chart call per name. A failed batch
+    drops its symbols rather than the whole scan."""
+    out: dict[str, Quote] = {}
+    todo = []
+    for sym in dict.fromkeys(symbols):
+        cached = await cache_get(f"yahoo:quote:{sym}")
+        if cached:
+            out[sym] = Quote(**json.loads(cached))
+        else:
+            todo.append(sym)
+    for i in range(0, len(todo), SPARK_BATCH):
+        batch = todo[i:i + SPARK_BATCH]
+        try:
+            got = parse_spark(await _get_json(SPARK_URL, {"symbols": ",".join(batch), "range": "1d",
+                                                          "interval": "5m"}))
+        except YahooChartError:
+            continue
+        for sym, q in got.items():
+            out[sym] = q
+            await cache_set(f"yahoo:quote:{sym}", json.dumps(asdict(q)), SPARK_TTL)
+    return out
 
 
 def parse_news(payload: dict) -> list[dict]:

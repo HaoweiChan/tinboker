@@ -24,7 +24,7 @@ from src.database.postgres import get_session
 from src.services.attention import scope_mentions
 from src.services.gcs_content import GCSContentService, media_path
 from src.services import macro_data, market_moves, yahoo_chart
-from src.services.intraday_card import intraday_card_svg
+from src.services.intraday_card import intraday_card_svg, theme_card_svg
 from src.services.yahoo_chart import YahooChartError
 from src.services.macro_card import macro_card_svg
 from src.services.og_image import episode_cover_png, episode_cover_svg, svg_to_png
@@ -488,6 +488,26 @@ async def market_card_raster(
     # Pinned cards are immutable; the live one changes every minute.
     cache = "public, max-age=86400" if until else "public, max-age=60"
     return Response(content=png, media_type="image/png", headers={"Cache-Control": cache})
+
+
+@router.get("/market-theme/{payload}.png")
+async def market_theme_card_raster(
+    payload: str = Path(..., pattern=r"^[A-Za-z0-9_\-]{8,2000}$"),
+) -> Response:
+    """A theme's intraday move as member bars. The content is in the path (see
+    market_moves.encode_theme_card): a basket has nothing to re-fetch that would still
+    match the minute the post was written."""
+    try:
+        d = market_moves.decode_theme_card(payload)
+        svg = theme_card_svg(d["name"], d["rows"], d["median"], d["count"], d["ts"], d["tz"])
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    try:
+        png = await asyncio.to_thread(svg_to_png, svg, CARD_SIZE, CARD_SIZE)
+    except Exception as e:  # noqa: BLE001 — surfaced, never swapped for the SVG
+        logger.exception("og: theme move card rasterisation failed")
+        raise HTTPException(status_code=500, detail=f"card rasterisation failed: {e}") from e
+    return Response(content=png, media_type="image/png", headers={"Cache-Control": _CACHE_CONTROL})
 
 
 @router.get("/title/{payload}.png")

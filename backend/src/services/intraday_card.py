@@ -155,3 +155,57 @@ def intraday_card_svg(name: str, code: str, day: Intraday,
              f'盤中數據可能延遲 · tinboker.com · 非投資建議</text>')
     s.append("</svg>")
     return "\n".join(s)
+
+
+def theme_card_svg(name: str, rows: list[tuple[str, str, float]], median: float, count: int,
+                   ts: int, tz: str, source: str = "Yahoo Finance") -> str:
+    """A theme's morning as one bar per member — a basket has no single line to draw, and
+    "who moved and how much" is the story. ``rows`` is ``[(name, code, pct)]``, already
+    ordered; ``count`` is how many members were quoted (rows may be the top of them)."""
+    if not rows:
+        raise ValueError(f"{name}: no members to draw")
+    font = card_font()
+    colour = UP if median >= 0 else DOWN
+    stamp = datetime.fromtimestamp(ts, ZoneInfo(tz))
+    agree = sum(1 for _, _, p in rows if (p > 0) == (median >= 0))
+    s = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{SIZE}" height="{SIZE}" '
+         f'viewBox="0 0 {SIZE} {SIZE}" font-family="{escape(font)}">',
+         f'<rect width="{SIZE}" height="{SIZE}" fill="{BG}"/>',
+         f'<text x="{MARGIN}" y="84" fill="{INK}" font-size="52" font-weight="700">{escape(name)}'
+         f'<tspan fill="{LABEL}" font-size="30" dx="12">族群</tspan></text>',
+         f'<text x="{SIZE-MARGIN}" y="78" fill="{AMBER}" font-size="26" text-anchor="end" '
+         f'font-weight="700">TinBoker 聽播客</text>',
+         f'<text x="{SIZE-MARGIN}" y="112" fill="{LABEL}" font-size="22" text-anchor="end">'
+         f'盤中 {stamp:%Y-%m-%d %H:%M} {escape(TZ_LABEL.get(tz, tz))}</text>',
+         f'<text x="{MARGIN}" y="168" fill="{colour}" font-size="44" font-weight="700">'
+         f'中位數 {signed(median, pct=True)}</text>',
+         f'<text x="{MARGIN}" y="212" fill="{LABEL}" font-size="24">'
+         f'{count} 檔成分股 · 圖中 {len(rows)} 檔有 {agree} 檔同向</text>']
+
+    top, bottom = 260, 960
+    step = min(68, (bottom - top) / len(rows))
+    label_w = 300
+    x0, x1 = MARGIN + label_w, SIZE - MARGIN - 130
+    peak = max(abs(p) for _, _, p in rows) or 1
+    mixed = any(p < 0 for _, _, p in rows) and any(p > 0 for _, _, p in rows)
+    # Bars grow from the middle when members disagree, from the edge when they do not.
+    zero = (x0 + x1) / 2 if mixed else (x0 if median >= 0 else x1)
+    half = max(zero - x0, x1 - zero) or 1
+    for k, (n, code, p) in enumerate(rows):
+        cy = top + k * step + step / 2
+        c = UP if p >= 0 else DOWN
+        w = abs(p) / peak * half
+        bx = zero if p >= 0 else zero - w
+        s.append(f'<text x="{MARGIN}" y="{cy+9:.0f}" fill="{INK}" font-size="28">{escape(n)}'
+                 f'<tspan fill="{LABEL}" font-size="20" dx="8">{escape(code)}</tspan></text>')
+        s.append(f'<rect x="{bx:.1f}" y="{cy-step*0.32:.1f}" width="{max(w, 2):.1f}" height="{step*0.64:.1f}" '
+                 f'rx="4" fill="{c}"/>')
+        tx, anchor = (bx + w + 10, "start") if p >= 0 else (bx - 10, "end")
+        s.append(f'<text x="{tx:.1f}" y="{cy+9:.0f}" fill="{c}" font-size="26" font-weight="700" '
+                 f'text-anchor="{anchor}">{signed(p, pct=True)}</text>')
+    s.append(f'<line x1="{zero:.1f}" x2="{zero:.1f}" y1="{top-10}" y2="{top + len(rows)*step + 10:.0f}" '
+             f'stroke="{BORDER}" stroke-width="2"/>')
+    s.append(f'<text x="{MARGIN}" y="{FOOT_Y}" fill="{FAINT}" font-size="14">資料：{escape(source)} · '
+             f'族群成分來自 TinBoker 題材 · 盤中數據可能延遲 · tinboker.com · 非投資建議</text>')
+    s.append("</svg>")
+    return "\n".join(s)

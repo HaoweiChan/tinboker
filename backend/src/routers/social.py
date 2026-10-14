@@ -269,7 +269,8 @@ async def threads_formats_preview(_: AdminAccess = Depends(get_admin_access)):
 @router.get("/market-moves/preview")
 async def threads_market_moves_preview(
     market: str = Query(..., pattern=r"^[A-Za-z]{2}$", description="TW, US, JP or KR"),
-    lane: str = Query("index", pattern=r"^(index|stock)$", description="Indices, or the market's giants"),
+    lane: str = Query("index", pattern=r"^(index|stock|theme)$",
+                      description="Indices, the market's giants, or TinBoker themes"),
     force: bool = Query(False, description="Draft the lead instrument even below the threshold"),
     _: AdminAccess = Depends(get_admin_access),
 ):
