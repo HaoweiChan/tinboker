@@ -26,9 +26,10 @@ import re
 import tempfile
 import time
 from copy import deepcopy
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
+from zoneinfo import ZoneInfo
 
 from shared.db import libpq_url
 
@@ -475,14 +476,89 @@ def _next_pointer(step: str) -> dict[str, Any]:
     }
 
 
-def _prompt_payload(step: str, state: dict[str, Any]) -> dict[str, Any]:
+def _parse_publication_datetime(raw: Any) -> datetime | None:
+    if raw in (None, "", 0) or isinstance(raw, bool):
+        return None
+    if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+        value = float(raw)
+        seconds = value / 1000 if abs(value) >= 10_000_000_000 else value
+        try:
+            return datetime.fromtimestamp(seconds, tz=timezone.utc)
+        except (OverflowError, OSError, ValueError):
+            return None
+    elif isinstance(raw, str):
+        value = raw.strip()
+        try:
+            # Also accept numeric timestamps serialized as strings by older drafts.
+            numeric = float(value)
+            seconds = numeric / 1000 if abs(numeric) >= 10_000_000_000 else numeric
+            return datetime.fromtimestamp(seconds, tz=timezone.utc)
+        except (ValueError, OverflowError, OSError):
+            try:
+                published = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            except ValueError:
+                return None
+            if published.tzinfo is None:
+                # PodcastEpisode.resolve_publish_ms interprets naive created_time as UTC.
+                published = published.replace(tzinfo=timezone.utc)
+            return published
+    else:
+        return None
+
+
+def _publication_prompt_metadata(draft: dict[str, Any]) -> dict[str, str] | None:
+    """Return the canonical local publication date, trying launch time then legacy time."""
+    published = _parse_publication_datetime(draft.get("podcast_launch_time"))
+    if published is None:
+        published = _parse_publication_datetime(draft.get("created_time"))
+    if published is None:
+        return None
+    local = published.astimezone(ZoneInfo("Asia/Taipei"))
+    return {
+        "date_iso": local.date().isoformat(),
+        "display_date": local.strftime("%Y.%m.%d"),
+        "published_at": local.isoformat(),
+        "timezone": "Asia/Taipei",
+    }
+
+
+def _prompt_messages(
+    step: str,
+    state: dict[str, Any],
+    publication_metadata: dict[str, str] | None = None,
+) -> list[dict[str, str]]:
+    messages = _build_messages(step, state)
+    if step in {STEP_TICKER, STEP_MARP}:
+        if publication_metadata:
+            date_context = (
+                "\n\nAuthoritative episode publication metadata (use this; do not infer from transcript):\n"
+                f"- date_iso: {publication_metadata['date_iso']}\n"
+                f"- display_date: {publication_metadata['display_date']}\n"
+                f"- published_at: {publication_metadata['published_at']}\n"
+                f"- timezone: {publication_metadata['timezone']}\n"
+                "- Use date_iso for publication_date; use display_date on the Marp cover.\n"
+            )
+        else:
+            date_context = (
+                "\n\nEpisode publication metadata is unavailable in the saved episode record. "
+                "Do not guess a publication date.\n"
+            )
+        messages[1] = {**messages[1], "content": messages[1]["content"] + date_context}
+    return messages
+
+
+def _prompt_payload(
+    step: str,
+    state: dict[str, Any],
+    publication_metadata: dict[str, str] | None = None,
+) -> dict[str, Any]:
     """The full rendered prompt for ``step`` — system + user + the output contract.
 
     The two messages carry the (large) transcript/events payload, so this is only
     returned by ``start`` (extractor) and ``get_role_prompt`` (on demand). Note the
     redundant ``messages`` array was dropped — ``system``/``user`` are the contents.
     """
-    messages = _build_messages(step, state)
+    messages = _prompt_messages(step, state, publication_metadata)
     return {
         "step": step,
         "role": _STEP_ROLE[step],
@@ -838,7 +914,7 @@ def get_prompt(episode_id: str, step: str) -> dict[str, Any]:
         raise RegenError(
             f"Step '{step}' needs '{prereq}' first. Submit '{prereq}' before requesting this prompt."
         )
-    return _prompt_payload(step, draft["state"])
+    return _prompt_payload(step, draft["state"], _publication_prompt_metadata(draft))
 
 
 def submit(episode_id: str, step: str, output_json: Any, generation_metadata: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -881,7 +957,11 @@ def submit(episode_id: str, step: str, output_json: Any, generation_metadata: di
             raise RegenError("generation_metadata generated_at must be an ISO timestamp with timezone") from exc
     metadata.update({
         "attestation": "caller" if generation_metadata else "unknown",
-        "prompt_sha256": hashlib.sha256(json.dumps(_build_messages(step, draft["state"]), ensure_ascii=False, sort_keys=True).encode()).hexdigest(),
+        "prompt_sha256": hashlib.sha256(json.dumps(
+            _prompt_messages(step, draft["state"], _publication_prompt_metadata(draft)),
+            ensure_ascii=False,
+            sort_keys=True,
+        ).encode()).hexdigest(),
         "output_sha256": hashlib.sha256(json.dumps(output_json, ensure_ascii=False, sort_keys=True).encode()).hexdigest(),
     })
     if step == STEP_TICKER_MARP:
