@@ -327,6 +327,28 @@ def write_episode_insights_postgres(episode_id: str, docs: dict[str, dict[str, A
         return postgres_mirror.upsert_ticker_insights(cur, episode_id, docs)
 
 
+def replace_episode_insights_postgres(episode_id: str, docs: dict[str, dict[str, Any]]) -> int:
+    """Persist an explicit full snapshot, including an empty one, atomically.
+
+    Legacy callers of write_episode_insights_postgres retain upsert semantics.
+    """
+    if not isinstance(episode_id, str) or not episode_id.strip():
+        raise ValueError("episode_id is required for insight replacement")
+
+    import os
+
+    import psycopg
+
+    from src.podcast.exporters import postgres_mirror
+
+    url = os.getenv("EPISODE_DATABASE_URL")
+    if not url:
+        raise RuntimeError("EPISODE_DATABASE_URL is not set — cannot replace ticker insights.")
+    with psycopg.connect(libpq_url(url), autocommit=False) as conn, conn.cursor() as cur:
+        cur.execute(postgres_mirror.DDL_TICKER_INSIGHTS)
+        return postgres_mirror.replace_ticker_insights(cur, episode_id, docs)
+
+
 # ── Firestore writers — ARCHIVAL SCRIPTS ONLY ────────────────────────────────
 # No live code path reaches these since P4 stopped all Firestore writes. They
 # survive for the one-off ``scripts/backfill_ticker_insights*.py`` /

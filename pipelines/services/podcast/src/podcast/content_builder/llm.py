@@ -35,16 +35,57 @@ requirement — see ``_provider_preference``.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
 import re
 import time
+from contextlib import contextmanager
+from contextvars import ContextVar
+from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
 import yaml
+
+# Scoped to one regeneration submission; ordinary pipeline calls are unchanged.
+_GENERATION_CONTEXT: ContextVar = ContextVar("generation_context", default=None)
+
+
+class ProviderNotAllowed(RuntimeError):
+    """The draft explicitly disallows this auxiliary model provider."""
+
+
+@contextmanager
+def generation_context(allowed_providers, calls):
+    token = _GENERATION_CONTEXT.set((allowed_providers, calls))
+    try:
+        yield
+    finally:
+        _GENERATION_CONTEXT.reset(token)
+
+
+def _check_provider(model: str) -> str:
+    provider = "local" if model.startswith("local:") else "openrouter"
+    context = _GENERATION_CONTEXT.get()
+    if context is not None and context[0] is not None and provider not in context[0]:
+        raise ProviderNotAllowed(f"Auxiliary provider {provider!r} is not allowed by this draft")
+    return provider
+
+
+def _record_call(role: str, model: str, inputs: Any, response_model=None) -> None:
+    context = _GENERATION_CONTEXT.get()
+    if context is not None:
+        context[1].append({
+            "role": role, "provider": _check_provider(model),
+            "model": response_model or model.split(":", 1)[-1],
+            "model_evidence": "response" if response_model else "request",
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "input_sha256": hashlib.sha256(json.dumps(inputs, sort_keys=True, ensure_ascii=False).encode()).hexdigest(),
+        })
+
 
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
 _MAX_RETRIES = 2
@@ -277,6 +318,7 @@ def get_model(
     from langchain_openai import ChatOpenAI
 
     model = model_override or _model_name(role)
+    _check_provider(model)
     temperature = _TEMPERATURE_MAP.get(role, 0.2)
     max_tokens = _MAX_TOKENS_MAP.get(role, 4096)
 
@@ -375,8 +417,9 @@ def invoke_json(role: str, messages: list[dict], schema: dict | None = None) -> 
     ``response_format``), strips any markdown fences, and retries up to ``_MAX_RETRIES``
     times on parse failures. ``strict=False`` tolerates stray control characters.
     """
-    model_obj = get_model(role)
     model_name = _model_name(role)
+    _check_provider(model_name)
+    model_obj = get_model(role)
     json_kwargs = _json_kwargs(model_name)
     reasoning_disabled = True
     last_err: Exception | None = None
@@ -401,6 +444,7 @@ def invoke_json(role: str, messages: list[dict], schema: dict | None = None) -> 
                 response = model_obj.invoke(messages)
             else:
                 raise
+        _record_call(role, model_name, messages, (getattr(response, "response_metadata", None) or {}).get("model_name"))
         raw = _sanitize_json_text(
             response.content if isinstance(response.content, str) else str(response.content)
         )
@@ -442,6 +486,7 @@ def decide(
     import requests
 
     model = model_override or _model_name(role)
+    _check_provider(model)
     if not model.startswith(_DECISIONS_PREFIX):
         raise ValueError(f"{role} is not configured for a decisions model (got {model!r})")
     retries = _MAX_RETRIES if max_retries is None else max_retries
@@ -472,6 +517,7 @@ def decide(
             answers = resp.json().get("answers")
             if not isinstance(answers, dict):
                 raise ValueError(f"decisions reply has no answers map: {resp.text[:200]}")
+            _record_call(role, model, {"state": state, "questions": questions}, resp.json().get("model"))
             return answers
         except Exception as exc:  # noqa: BLE001 — retry transport + transient 5xx alike
             last_err = exc

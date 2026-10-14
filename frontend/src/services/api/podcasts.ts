@@ -111,6 +111,26 @@ export interface Episode {
   ticker_insights_content?: string | null;
   ticker_insights_url?: string | null;
   ticker_insights_public_url?: string | null;
+  generation_metadata?: {
+    version: number;
+    roles: Record<string, {
+      source: 'generated' | 'manual' | 'reused' | 'unknown' | 'deterministic';
+      provider?: string;
+      model?: string;
+      generated_at?: string;
+      prompt_sha256?: string;
+      output_sha256?: string;
+      attestation?: 'caller' | 'unknown';
+    }>;
+    auxiliary_calls: Array<{
+      role: string;
+      provider: string;
+      model: string;
+      model_evidence: 'response' | 'request';
+      generated_at: string;
+      input_sha256: string;
+    }>;
+  } | null;
   key_insights?: string[] | null;
   modified_summary_url?: string | null;
   modified_summary_content?: string | null;

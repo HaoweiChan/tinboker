@@ -105,3 +105,13 @@ def test_is_content_incomplete_respects_requested_content_fields():
         content_fields={"summary_content"},
     )
     assert EpisodeTransformer.is_content_incomplete(raw)
+
+
+@pytest.mark.asyncio
+async def test_generation_metadata_round_trips_and_legacy_remains_unknown():
+    transformer = EpisodeTransformer(gcs_service=FakeGCSContentService())
+    raw = {"id": "ep1", "podcast_name": "show", "created_time": 1}
+    assert (await transformer.to_episode(raw, enrich_content=False)).generation_metadata is None
+    metadata = {"version": 1, "roles": {"writer": {"source": "generated", "model": "gpt-6-luna", "provider": "openai"}}, "auxiliary_calls": []}
+    raw["generation_metadata"] = metadata
+    assert (await transformer.to_episode(raw, enrich_content=False)).model_dump()["generation_metadata"] == metadata
