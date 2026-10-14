@@ -69,6 +69,10 @@ services:
       # triaged Threads replies (#887): the public block is only as fresh as this sync.
       # "0" turns the timer off; 抓新留言 in the tab still syncs on demand.
       SOCIAL_COMMENT_SYNC_MINUTES: "30"
+      # Intraday market-move flash posts (services/market_moves.py), same production-only
+      # rule: posts straight to Threads, no draft step. Dry-run on any env with
+      # GET /api/admin/threads/market-moves/preview?market=TW&lane=index&force=true.
+      MARKET_MOVE_MARKETS: "TW,US,JP,KR"
       CORS_ORIGINS: '["https://tinboker.com","https://www.tinboker.com"]'
       # Marp render service runs as separate infra on its own docker network, only
       # reachable via its host-published :5004 — so go through the host gateway.

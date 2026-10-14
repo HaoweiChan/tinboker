@@ -691,6 +691,19 @@ async def publish_due(now: Optional[datetime] = None) -> int:
     return posted
 
 
+async def run_periodic(interval_seconds: float = 60.0) -> None:
+    """Its own loop, not a step of the scheduled-posts worker: one tick can spend a
+    minute on Yahoo retries and a model call, and the 11:30 slot must not wait on it."""
+    logger.info("market moves worker started (markets=%s)", settings.market_move_markets or "off")
+    while True:
+        if settings.market_move_markets:
+            try:
+                await publish_due()
+            except Exception:
+                logger.exception("market move cycle encountered an error")
+        await asyncio.sleep(interval_seconds)
+
+
 async def preview(market_id: str, *, lane: str = "index", force: bool = False,
                   now: Optional[datetime] = None) -> dict:
     """Admin dry run: one lane's scan and draft for one market, ignoring the time window."""

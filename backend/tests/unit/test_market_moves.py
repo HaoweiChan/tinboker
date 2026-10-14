@@ -644,3 +644,32 @@ def test_baskets_come_from_registry_themes_split_by_market(monkeypatch):
     assert [m.symbol for m in out["TW"][0].members] == ["2382.TW", "3231.TW", "6669.TW", "8210.TWO"]
     assert [m.symbol for m in out["US"][0].members] == ["NVDA", "SMCI", "DELL"]
     assert out["TW"][0].name == "AI伺服器"
+
+
+@pytest.mark.asyncio
+async def test_worker_loop_is_idle_when_off_and_survives_a_bad_tick(monkeypatch):
+    ticks = []
+
+    async def due():
+        ticks.append(1)
+        raise RuntimeError("yahoo down")
+
+    class Stop(Exception):
+        pass
+    sleeps = []
+
+    async def sleep(_s):
+        sleeps.append(1)
+        if len(sleeps) == 2:
+            raise Stop
+    monkeypatch.setattr(mm, "publish_due", due)
+    monkeypatch.setattr(mm.asyncio, "sleep", sleep)
+    monkeypatch.setattr(mm.settings, "market_move_markets", "")
+    with pytest.raises(Stop):
+        await mm.run_periodic()
+    assert ticks == []                                              # off: never touches Yahoo
+    sleeps.clear()
+    monkeypatch.setattr(mm.settings, "market_move_markets", "TW")
+    with pytest.raises(Stop):
+        await mm.run_periodic()
+    assert ticks == [1, 1]                                          # a failing tick does not end the loop
