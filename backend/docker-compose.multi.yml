@@ -128,7 +128,7 @@ services:
       POSTGRES_DB: podcast_db
       POSTGRES_USER: podcast_user
       FIRESTORE_DATABASE_ID: graphfolio-db
-      RELEASE_EPISODE_MAX_AGE_DAYS: "60"
+      RELEASE_EPISODE_MAX_AGE_DAYS: "90"
       TAXONOMY_REQUIRE_MEMBER_REASONS: "true"
       CORS_ORIGINS: '["https://dev.tinboker.com","http://localhost:5173","http://localhost:3000"]'
       MARP_SERVICE_URL: http://host.docker.internal:5004

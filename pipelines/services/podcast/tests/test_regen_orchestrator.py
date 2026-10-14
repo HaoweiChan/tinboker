@@ -7,8 +7,10 @@ messages each content_builder node would send — which guards the build_message
 postprocess refactor against drift.
 """
 
+import hashlib
 import json
 import sys
+from datetime import datetime, timezone
 from types import ModuleType
 
 import psycopg
@@ -304,6 +306,66 @@ def test_step_aliases_accepted():
     # "tickers" -> ticker_extractor, "slides" -> marp_writer
     assert orch.get_prompt("ep_test", "tickers")["step"] == "ticker_extractor"
     assert orch.get_prompt("ep_test", "slides")["step"] == "marp_writer"
+
+
+def test_ticker_and_marp_prompts_include_taipei_publication_date_for_existing_draft(monkeypatch):
+    """Existing drafts carry release metadata at top level; role prompts must expose it."""
+    draft = _new_draft()
+    # 2026-09-01 16:30 UTC is already 2026-09-02 in Taiwan.
+    draft["podcast_launch_time"] = int(datetime(2026, 9, 1, 16, 30, tzinfo=timezone.utc).timestamp() * 1000)
+    orch.submit("ep_test", "extractor", {"events": [{"section_topic": "台積電", "start_index": 0, "end_index": 2}]})
+
+    marp_prompt = orch.get_prompt("ep_test", "marp_writer")
+    ticker_prompt = orch.get_prompt("ep_test", "ticker_extractor")
+    for prompt in (marp_prompt, ticker_prompt):
+        assert "date_iso: 2026-09-02" in prompt["user"]
+        assert "display_date: 2026.09.02" in prompt["user"]
+        assert "published_at: 2026-09-02T00:30:00+08:00" in prompt["user"]
+        assert "timezone: Asia/Taipei" in prompt["user"]
+    assert "publication_date" in ticker_prompt["user"]
+
+    # The recorded provenance hash must cover the exact augmented prompt too.
+    expected = hashlib.sha256(json.dumps(
+        [
+            {"role": "system", "content": ticker_prompt["system"]},
+            {"role": "user", "content": ticker_prompt["user"]},
+        ],
+        ensure_ascii=False,
+        sort_keys=True,
+    ).encode()).hexdigest()
+    monkeypatch.setattr(orch, "_apply", lambda *args: [])
+    orch.submit("ep_test", "ticker_extractor", {"ticker_recommendations": []})
+    recorded = orch.preview("ep_test")["generation_metadata"]["roles"]["ticker_extractor"]
+    assert recorded["prompt_sha256"] == expected
+
+
+def test_legacy_created_time_supplies_publication_date_when_launch_time_missing():
+    draft = _new_draft()
+    draft["created_time"] = "2026-09-01T20:30:00+08:00"
+    orch.submit("ep_test", "extractor", {"events": [{"section_topic": "台積電", "start_index": 0, "end_index": 2}]})
+    prompt = orch.get_prompt("ep_test", "marp_writer")
+    assert "date_iso: 2026-09-01" in prompt["user"]
+    assert "display_date: 2026.09.01" in prompt["user"]
+
+
+def test_invalid_launch_time_falls_back_to_naive_created_time_as_utc():
+    draft = _new_draft()
+    draft["podcast_launch_time"] = "invalid-launch-time"
+    draft["created_time"] = "2026-09-01T16:30:00"
+    orch.submit("ep_test", "extractor", {"events": [{"section_topic": "台積電", "start_index": 0, "end_index": 2}]})
+    prompt = orch.get_prompt("ep_test", "marp_writer")
+    assert "date_iso: 2026-09-02" in prompt["user"]
+    assert "published_at: 2026-09-02T00:30:00+08:00" in prompt["user"]
+
+
+def test_ten_billion_is_interpreted_as_epoch_milliseconds():
+    metadata = orch._publication_prompt_metadata({"podcast_launch_time": 10_000_000_000})
+    assert metadata == {
+        "date_iso": "1970-04-27",
+        "display_date": "1970.04.27",
+        "published_at": "1970-04-27T01:46:40+08:00",
+        "timezone": "Asia/Taipei",
+    }
 
 
 def test_submit_accepts_json_string():
