@@ -232,9 +232,11 @@ jobs:
             systemctl enable --now tinboker-podcast-ingest.timer
             systemctl list-timers tinboker-podcast-ingest.timer --no-pager || true
 
-            # The service has no --apply flag: it reports candidates without deleting.
+            # Retires MP3s past PODCAST_MP3_RETENTION_DAYS (90) in bounded batches; ids in
+            # scripts/mp3_retention_keep.txt are kept. --no-block: a batch takes minutes and
+            # must not hold up (or fail) the deploy; read it with journalctl.
             systemctl enable --now tinboker-media-prune.timer
-            systemctl start tinboker-media-prune.service
+            systemctl start --no-block tinboker-media-prune.service
             
             echo "→ Waiting for service to start..."
             sleep 5

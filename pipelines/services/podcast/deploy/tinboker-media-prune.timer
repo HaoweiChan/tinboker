@@ -1,5 +1,5 @@
 [Unit]
-Description=Preview podcast MP3 retention daily
+Description=Retire expired podcast MP3s daily
 
 [Timer]
 OnCalendar=daily

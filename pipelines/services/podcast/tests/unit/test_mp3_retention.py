@@ -70,6 +70,26 @@ def test_plan_only_includes_expired_referenced_mp3s(tmp_path, monkeypatch):
     assert prune_mp3.plan([("old", old)], cutoff) == ([], 1)
 
 
+def test_plan_skips_episodes_on_the_keep_list(tmp_path, monkeypatch):
+    monkeypatch.setenv("MEDIA_STORAGE_ROOT", str(tmp_path))
+    monkeypatch.setenv("MEDIA_PUBLIC_BASE", "https://media.test/media")
+    digest = hashlib.sha256(b"Test Show").hexdigest()[:12]
+    path = tmp_path / "graphfolio-articles" / "mp3" / digest / "old.mp3"
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"audio")
+    url = f"https://media.test/media/graphfolio-articles/mp3/{digest}/old.mp3"
+    cutoff = 1_700_000_000_000
+    rows = [("old", _doc("old", cutoff - 1, url))]
+    keep = tmp_path / "keep.txt"
+    monkeypatch.setattr(prune_mp3, "KEEP_FILE", keep)
+
+    keep.write_text("# header\nother\n")
+    assert prune_mp3.plan(rows, cutoff)[0] == [(path, ["old"], 5)]
+    keep.write_text("# header\nold  # needs re-transcription\n")
+    assert prune_mp3.plan(rows, cutoff)[0] == []
+    assert path.read_bytes() == b"audio"
+
+
 def test_pending_report_counts_only_existing_regular_files(tmp_path, monkeypatch):
     monkeypatch.setenv("MEDIA_STORAGE_ROOT", str(tmp_path))
     monkeypatch.setenv("MEDIA_PUBLIC_BASE", "https://media.test/media")
