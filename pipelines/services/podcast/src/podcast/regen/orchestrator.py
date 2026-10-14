@@ -425,6 +425,8 @@ def _apply(step: str, output: Any, state: dict[str, Any]) -> list[str]:
         # ponytail: if ticker runs before writer, related_tickers isn't derived yet
         # and canonicalization is skipped; resubmit ticker (or ticker_marp) to refresh.
         state.update(convert_marp_ticker(state))
+        if state.get("marp_slides"):
+            state.update(convert_marp(state))
     elif step == STEP_MARP:
         state.update(marp_writer.postprocess(output, state))
         state.update(convert_marp(state))

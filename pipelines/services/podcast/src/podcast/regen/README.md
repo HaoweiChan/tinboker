@@ -142,3 +142,18 @@ saving partial state, so configure an allowed local verifier before the run.
 Resubmitting upstream output invalidates already-completed dependent steps; commit
 requires these steps again. New summaries clear stale social copy and rebuild social
 cards when the required inputs exist; resegmentation clears unsupported macro claims.
+
+
+### Deterministic source fidelity
+
+Ticker reason/risk `start_index` and `end_index` are inclusive source-sentence
+indices. When supplied, both must be valid and the server derives their times from
+the source boundaries, overriding model estimates. Partial, reversed or unavailable
+spans fail submission. Legacy evidence without either index retains its time-only
+contract. The provenance output hash describes the submitted model JSON, before
+this deterministic normalization; provider/model and generation time are unchanged.
+
+Final decks retain every authored, bulleted theme, including late qualifications.
+The shared deck no longer silently takes only the first four themes. If the complete
+cover/table/theme/focus deck exceeds the 20-card carousel limit, rendering fails
+explicitly so the authored slides can be consolidated rather than silently omitted.
