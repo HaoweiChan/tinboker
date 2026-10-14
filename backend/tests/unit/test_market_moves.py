@@ -110,8 +110,8 @@ def test_a_holiday_session_from_yesterday_is_not_today():
 
 
 def test_the_hedge_comes_from_publisher_count_not_the_model():
-    assert mm.cause_text("美債殖利率走升。", {"reuters", "bloomberg"}) == ("consensus", "外電普遍歸因於美債殖利率走升。")
-    assert mm.cause_text("美債殖利率走升", {"reuters"}) == ("reported", "市場推測與美債殖利率走升有關。")
+    assert mm.cause_text("美債殖利率走升。", {"reuters", "bloomberg"}) == ("consensus", "主因美債殖利率走升")
+    assert mm.cause_text("美債殖利率走升", {"reuters"}) == ("reported", "市場推測與美債殖利率走升有關")
     assert mm.cause_text("美債殖利率走升", set()) == ("none", "")
     assert mm.cause_text("", {"a", "b"}) == ("none", "")
     assert mm.cause_text("很" * 40, {"a", "b"})[0] == "none"         # an essay is not a clause
@@ -123,11 +123,16 @@ def test_the_lead_is_the_most_unusual_index_not_the_biggest_percent():
     assert mm.headline_move([sox, spx]).index.id == "GSPC"
 
 
-def test_post_text_has_the_move_the_peers_and_the_reason():
-    lead = mm.Move(mm.Index("^TWII", "加權指數"), _day([97.0, 96.5]), 1.0)
-    text = mm.compose_text(mm.MARKETS["TW"], lead, [("櫃買指數", -2.4)], "市場推測與美債殖利率走升有關。")
-    assert text.splitlines() == ["【盤中速報】加權指數 重挫 3.50%", "96.50（-3.50）· 台股 09:01",
-                                 "同市場：櫃買指數 -2.40%", "市場推測與美債殖利率走升有關。"]
+def test_the_post_is_one_plain_sentence_with_no_tag_and_no_price_block():
+    sox = mm.Index("^SOX", "費城半導體", "費城半導體指數")
+    text = mm.compose_text(mm.Move(sox, _day([95.81]), 1.0), "市場推測與輝達財測不如預期有關")
+    assert text == "費城半導體指數盤中重挫逾4%，市場推測與輝達財測不如預期有關。"
+    assert mm.compose_text(mm.Move(mm.Index("^TWII", "加權指數"), _day([102.3]), 1.0), "") == "加權指數盤中大漲逾2%。"
+    assert "盤中速報" not in text and "\n" not in text
+
+
+def test_amount_reads_like_a_person_says_it():
+    assert (mm.amount(-4.19), mm.amount(3.02), mm.amount(2.5), mm.amount(0.8)) == ("逾4%", "3%", "逾2%", "0.8%")
 
 
 # ── the reason ──────────────────────────────────────────────────────────────
@@ -174,7 +179,7 @@ async def test_a_failed_model_call_posts_without_a_reason(monkeypatch):
     monkeypatch.setattr(mm, "_extract_cause", boom)
     lead = mm.Move(mm.Index("^TWII", "加權指數"), _day([97.0]), 1.0)
     out = await mm.find_cause(mm.MARKETS["TW"], lead, NOW)
-    assert (out["tier"], out["sentence"], out["sources"]) == ("none", "", [])
+    assert (out["tier"], out["clause"], out["sources"]) == ("none", "", [])
     monkeypatch.setattr(mm.settings, "openrouter_api_key", None)
     assert (await mm.find_cause(mm.MARKETS["TW"], lead, NOW))["error"] == "no_openrouter_key"
 
@@ -232,7 +237,7 @@ def _wire(monkeypatch, days, sigmas=None):
         return (sigmas or {}).get(symbol, 1.0)
 
     async def cause(market, lead, now):
-        return {"tier": "reported", "sentence": "市場推測與美債殖利率走升有關。", "cause": "美債殖利率走升",
+        return {"tier": "reported", "clause": "市場推測與美債殖利率走升有關", "cause": "美債殖利率走升",
                 "sources": [{"publisher": "Reuters", "title": "Yields jump", "url": "https://r/1"}]}
     monkeypatch.setattr(mm.yahoo_chart, "intraday", intraday)
     monkeypatch.setattr(mm.yahoo_chart, "sigma", sigma)
@@ -250,7 +255,7 @@ async def test_a_big_morning_posts_once_with_the_pinned_card_and_the_sources(tem
 
     assert await mm.publish_due(now) == 1
     text, image = fake.posts[0]
-    assert text.startswith("【盤中速報】加權指數 重挫 3.00%") and "櫃買指數 -2.00%" in text
+    assert text == "台股加權指數盤中重挫3%，市場推測與美債殖利率走升有關。"
     assert image == f"https://api.tinboker.com/api/og/market/TWII.png?until={twii.last_ts}"
     assert fake.replies[0][0].startswith("消息來源：\n・Reuters：Yields jump") and fake.replies[0][1] == "m1"
     row = social_ledger.list_posted("threads")[0]
@@ -300,7 +305,7 @@ async def test_preview_drafts_without_posting(temp_db, monkeypatch):
     quiet = await mm.preview("tw", now=now)
     assert quiet["draft"] is None and quiet["in_window"] and quiet["indices"][0]["big"] is False
     forced = await mm.preview("TW", force=True, now=now)
-    assert forced["draft"]["text"].startswith("【盤中速報】加權指數") and fake.posts == []
+    assert forced["draft"]["text"].startswith("台股加權指數盤中") and fake.posts == []
     with pytest.raises(KeyError):
         await mm.preview("XX", now=now)
 

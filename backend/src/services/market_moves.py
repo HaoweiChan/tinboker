@@ -9,9 +9,10 @@ over. So the rules are about not being wrong fast:
     floor in percent — a 2% SOX day is a Tuesday, a 2% Dow day is news;
   * the move must still be holding (at least half of its extreme so far), so an opening
     gap that has already filled is not posted as a crash;
-  * the reason is one clause, and its wording is decided here, not by the model: two
-    or more publishers attributing the move to the same driver → 外電普遍歸因於…;
-    one → 市場推測與…有關; none → no reason at all. The model only extracts.
+  * the post is one plain sentence — what moved, how much, and why — not a data
+    block: the numbers are on the card. Its hedge is decided here, not by the model:
+    two or more publishers attributing the move to the same driver → 主因…; one →
+    市場推測與…有關; none → no reason at all. The model only extracts.
 
 One post per market per local day (ledger key ``market_move:intraday:{market}:{date}``).
 Off unless ``MARKET_MOVE_MARKETS`` is set — same one-environment rule as the posting slots.
@@ -31,7 +32,6 @@ import httpx
 
 from src.config import settings
 from src.services import social_ledger, yahoo_chart
-from src.services.intraday_card import signed
 from src.services.threads_service import ThreadsError, ThreadsService
 from src.services.yahoo_chart import Intraday, YahooChartError
 
@@ -41,7 +41,7 @@ PLATFORM = "threads"
 FORMAT = "market_move_intraday"
 HOLD_RATIO = 0.5             # keep at least half of the day's extreme so far
 NEWS_MAX_AGE_HOURS = 20      # overnight + pre-market; older is yesterday's story
-CAUSE_MAX_CHARS = 28
+CAUSE_MAX_CHARS = 32
 STALE_SECONDS = 30 * 60      # Yahoo delays some index feeds; older than this is not "now"
 RETRY_AFTER = timedelta(minutes=10)
 _retry_at: dict[str, datetime] = {}   # key -> earliest retry after a failed publish
@@ -50,7 +50,12 @@ _retry_at: dict[str, datetime] = {}   # key -> earliest retry after a failed pub
 @dataclass(frozen=True)
 class Index:
     symbol: str              # Yahoo symbol, e.g. ^N225
-    name: str
+    name: str                # short, for the card
+    spoken: str = ""         # as a sentence names it; defaults to ``name``
+
+    @property
+    def said(self) -> str:
+        return self.spoken or self.name
 
     @property
     def id(self) -> str:     # path-safe, for the card URL
@@ -69,12 +74,14 @@ class Market:
 
 MARKETS: dict[str, Market] = {m.id: m for m in (
     Market("TW", "台股", "Asia/Taipei", (9, 0),
-           (Index("^TWII", "加權指數"), Index("^TWOII", "櫃買指數")), "Taiwan stocks TAIEX"),
+           (Index("^TWII", "加權指數", "台股加權指數"), Index("^TWOII", "櫃買指數")), "Taiwan stocks TAIEX"),
     Market("US", "美股", "America/New_York", (9, 30),
-           (Index("^GSPC", "S&P 500"), Index("^IXIC", "那斯達克"), Index("^SOX", "費城半導體"),
-            Index("^DJI", "道瓊")), "stock market today"),
-    Market("JP", "日股", "Asia/Tokyo", (9, 0), (Index("^N225", "日經225"),), "Nikkei"),
-    Market("KR", "韓股", "Asia/Seoul", (9, 0), (Index("^KS11", "KOSPI"), Index("^KQ11", "KOSDAQ")), "KOSPI"),
+           (Index("^GSPC", "S&P 500", "標普500指數"), Index("^IXIC", "那斯達克", "那斯達克指數"),
+            Index("^SOX", "費城半導體", "費城半導體指數"), Index("^DJI", "道瓊", "道瓊指數")),
+           "stock market today"),
+    Market("JP", "日股", "Asia/Tokyo", (9, 0), (Index("^N225", "日經225", "日經225指數"),), "Nikkei"),
+    Market("KR", "韓股", "Asia/Seoul", (9, 0),
+           (Index("^KS11", "KOSPI", "韓國KOSPI指數"), Index("^KQ11", "KOSDAQ", "韓國KOSDAQ指數")), "KOSPI"),
 )}
 INDEX_BY_ID: dict[str, tuple[Market, Index]] = {i.id: (m, i) for m in MARKETS.values() for i in m.indices}
 
@@ -133,29 +140,33 @@ def verb(pct: float) -> str:
     return "重挫" if pct <= -3 else "大跌"
 
 
+def amount(pct: float) -> str:
+    """How a person says the size: 4.19 → 逾4%, 3.02 → 3%. The exact figure is on the card."""
+    a = abs(pct)
+    n = int(a)
+    if n < 1:
+        return f"{a:.1f}%"
+    return f"逾{n}%" if a - n >= 0.1 else f"{n}%"
+
+
 def cause_text(cause: str, publishers: set[str]) -> tuple[str, str]:
-    """``(tier, sentence)``. The hedge is chosen from how many publishers back the
+    """``(tier, clause)``. The hedge is chosen from how many publishers back the
     cause — never from the model's own confidence."""
     cause = cause.strip().rstrip("。.，,")
     if not cause or len(cause) > CAUSE_MAX_CHARS or "\n" in cause:
         return "none", ""
     if len(publishers) >= 2:
-        return "consensus", f"外電普遍歸因於{cause}。"
+        return "consensus", f"主因{cause}"
     if len(publishers) == 1:
-        return "reported", f"市場推測與{cause}有關。"
+        return "reported", f"市場推測與{cause}有關"
     return "none", ""
 
 
-def compose_text(market: Market, lead: Move, peers: list[tuple[str, float]], cause_sentence: str) -> str:
-    d = lead.day
-    stamp = datetime.fromtimestamp(d.last_ts, ZoneInfo(d.tz))
-    lines = [f"【盤中速報】{lead.index.name} {verb(d.pct)} {abs(d.pct):.2f}%",
-             f"{d.last:,.2f}（{signed(d.change)}）· {market.name} {stamp:%H:%M}"]
-    if peers:
-        lines.append("同市場：" + "｜".join(f"{n} {signed(p, pct=True)}" for n, p in peers))
-    if cause_sentence:
-        lines.append(cause_sentence)
-    return "\n".join(lines)
+def compose_text(lead: Move, clause: str) -> str:
+    """One sentence, the way a person would tell it: 費城半導體指數盤中重挫逾3%，市場推測與…有關。
+    No headline tag, no price block — the card carries the numbers."""
+    head = f"{lead.index.said}盤中{verb(lead.day.pct)}{amount(lead.day.pct)}"
+    return f"{head}，{clause}。" if clause else f"{head}。"
 
 
 def card_url(index: Index, until: int) -> str:
@@ -180,7 +191,7 @@ CAUSE_SYSTEM = """你負責從新聞標題中，找出某個股價指數今天�
 
 只能根據提供的標題判斷，不可使用標題以外的知識或推測。
 回傳 JSON：{"cause": "...", "support": [標題編號...]}
-- cause：繁體中文名詞短語，20 字以內，描述驅動因素本身，例如「美國公債殖利率走升」「輝達財報優於預期」。不要寫漲跌幅、不要加句號、不要寫「可能」「市場推測」等語氣詞。
+- cause：繁體中文名詞短語，30 字以內，具體描述驅動因素本身（事件或市場擔憂的事），例如「美國公債殖利率走升」「輝達財報優於預期」「市場擔憂SpaceX籌資400億美元購買輝達晶片」。要能直接接在「主因」或「市場推測與…有關」中間讀通。不要寫漲跌幅、不要加句號、不要寫「可能」「市場推測」等語氣詞。
 - support：明確把「這個市場今天的漲跌」歸因於這個因素的標題編號。只是同時出現、或在講別的市場、別的日子的標題不算。
 - 沒有任何標題明確解釋這次波動時，回傳 {"cause": "", "support": []}。寧可留白，不要猜。"""
 
@@ -206,9 +217,9 @@ async def _extract_cause(market: Market, lead: Move, headlines: list[dict]) -> d
 
 
 async def find_cause(market: Market, lead: Move, now: datetime) -> dict:
-    """``{tier, sentence, cause, sources}``. Never raises: a failed lookup is a post
+    """``{tier, clause, cause, sources}``. Never raises: a failed lookup is a post
     with no reason, which is the honest fallback anyway."""
-    empty = {"tier": "none", "sentence": "", "cause": "", "sources": []}
+    empty = {"tier": "none", "clause": "", "cause": "", "sources": []}
     if not settings.openrouter_api_key:
         return {**empty, "error": "no_openrouter_key"}
     try:
@@ -227,8 +238,8 @@ async def find_cause(market: Market, lead: Move, now: datetime) -> dict:
     ids = [i for i in out.get("support") or [] if isinstance(i, int) and 0 <= i < len(headlines)]
     sources = [headlines[i] for i in dict.fromkeys(ids)]
     publishers = {s["publisher"].lower() for s in sources if s["publisher"]}
-    tier, sentence = cause_text(str(out.get("cause") or ""), publishers)
-    return {"tier": tier, "sentence": sentence, "cause": str(out.get("cause") or "").strip(),
+    tier, clause = cause_text(str(out.get("cause") or ""), publishers)
+    return {"tier": tier, "clause": clause, "cause": str(out.get("cause") or "").strip(),
             "sources": sources if tier != "none" else []}
 
 
@@ -283,14 +294,11 @@ async def build_draft(market: Market, today: date, now: datetime, *, force: bool
     if not moves:
         return {**base, "draft": None}
     lead = headline_move(moves)
-    by_id = {r["index"]: r for r in scanned["rows"]}
-    peers = [(i.name, by_id[i.id]["pct"]) for i in market.indices
-             if i != lead.index and "pct" in by_id.get(i.id, {})]
     cause = await find_cause(market, lead, now)
     draft = {
         "key": f"market_move:intraday:{market.id}:{today.isoformat()}",
         "subject": lead.index.id,
-        "text": compose_text(market, lead, peers, cause["sentence"]),
+        "text": compose_text(lead, cause["clause"]),
         "image_url": card_url(lead.index, lead.day.last_ts),
         "reply": sources_reply(cause["sources"]) if cause["sources"] else None,
         "cause": cause,
