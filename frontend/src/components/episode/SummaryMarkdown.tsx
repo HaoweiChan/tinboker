@@ -72,6 +72,7 @@ export const SummaryMarkdown: React.FC<SummaryMarkdownProps> = ({ content, onSee
   // changing when a timestamp is tapped — unmounted and rebuilt the whole summary, and
   // on a phone the page jumped to the top. onSeek is read through a ref for that reason.
   const onSeekRef = useRef(onSeek);
+  const canSeek = !!onSeek;
   onSeekRef.current = onSeek;
   const components = useMemo<Components>(() => ({
     h1: ({ children }) => (
@@ -124,6 +125,11 @@ export const SummaryMarkdown: React.FC<SummaryMarkdownProps> = ({ content, onSee
       if (h.startsWith('#time:')) {
         const ms = Number(h.slice('#time:'.length).trim());
         if (!isRealTimeMarker(ms)) return <>{children}</>;
+        // No Spotify episode to seek: plain text, not a button that does nothing.
+        // data-section-ms stays so a ?t= deep link can still land on the section.
+        if (!canSeek) {
+          return <span data-section-ms={ms} className="font-mono text-xs text-muted-foreground mx-0.5">{children}</span>;
+        }
         return (
           <button
             type="button"
@@ -142,7 +148,7 @@ export const SummaryMarkdown: React.FC<SummaryMarkdownProps> = ({ content, onSee
         </a>
       );
     },
-  }), []);
+  }), [canSeek]);
 
   if (!prepared.trim()) return null;
 
