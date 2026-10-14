@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from typing import Any
 
 from shared.sectors import (
@@ -265,7 +266,7 @@ def derive_sector_exposures(state: PipelineState) -> dict[str, Any]:
                         new_exp["resolved_tickers"] = []
                     verified_exposures.append(_public(new_exp))
                 else:
-                    print(f"  ❌ Filtering out sector exposure: {exp.get('display_name')} (reason: LLM verified as not relevant)")
+                    print(f"  ❌ Filtering out sector exposure: {exp.get('display_name')} (reason: LLM verified as not relevant)", file=sys.stderr)
         except Exception as e:
             from ..llm import ProviderNotAllowed
             if isinstance(e, ProviderNotAllowed):
@@ -275,7 +276,7 @@ def derive_sector_exposures(state: PipelineState) -> dict[str, Any]:
             # candidates — those have no transcript alias match at all, so keeping
             # them on a verifier outage would silently reintroduce the wrong-sector
             # mislabeling A6/A7 exist to prevent, at greater scale (plan-review.md Gap 3).
-            print(f"  ⚠ Warning: Sector verifier LLM call failed: {e}. Failing open for keyword-matched candidates only; dropping {sum(1 for e2 in to_verify if e2.get('_ticker_derived'))} ticker-derived candidate(s).")
+            print(f"  ⚠ Warning: Sector verifier LLM call failed: {e}. Failing open for keyword-matched candidates only; dropping {sum(1 for e2 in to_verify if e2.get('_ticker_derived'))} ticker-derived candidate(s).", file=sys.stderr)
             verified_exposures.extend(
                 _public(exp) for exp in to_verify if not exp.get("_ticker_derived")
             )
