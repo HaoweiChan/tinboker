@@ -23,7 +23,9 @@ from src.database.models import ContentMention, StockTranslation, TagRegistry
 from src.database.postgres import get_session
 from src.services.attention import scope_mentions
 from src.services.gcs_content import GCSContentService, media_path
-from src.services import macro_data
+from src.services import macro_data, market_moves, yahoo_chart
+from src.services.intraday_card import intraday_card_svg
+from src.services.yahoo_chart import YahooChartError
 from src.services.macro_card import macro_card_svg
 from src.services.og_image import episode_cover_png, episode_cover_svg, svg_to_png
 from src.services.podcast import PodcastService
@@ -447,6 +449,43 @@ async def macro_card_raster(
     if download:
         headers["Content-Disposition"] = f'attachment; filename="tinboker-{series_id}.png"'
     return Response(content=png, media_type="image/png", headers=headers)
+
+
+@router.get("/market/{index_id}.png")
+async def market_card_raster(
+    index_id: str = Path(..., pattern=r"^[A-Z0-9]{2,10}$", description="Yahoo symbol without the caret"),
+    until: Optional[int] = Query(None, ge=0, description="Cut the day at this epoch second"),
+) -> Response:
+    """One index's intraday line as a square PNG — the first image of a market-move post.
+    ``until`` pins the card to the minute the post was written; Meta fetches the image
+    later and must not see a different day than the caption describes."""
+    hit = market_moves.INDEX_BY_ID.get(index_id)
+    if not hit:
+        raise HTTPException(status_code=404, detail=f"Unknown index {index_id}")
+    market, index = hit
+    try:
+        day = (await yahoo_chart.intraday(index.symbol)).until(until)
+    except YahooChartError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    peers = []
+    for other in market.indices:
+        if other == index:
+            continue
+        try:
+            peers.append((other.name, (await yahoo_chart.intraday(other.symbol)).until(until).pct))
+        except YahooChartError:
+            continue  # a missing peer is a shorter row, not a failed card
+    try:
+        svg = intraday_card_svg(index.name, index.id, day, peers)
+        png = await asyncio.to_thread(svg_to_png, svg, CARD_SIZE, CARD_SIZE)
+    except ValueError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    except Exception as e:  # noqa: BLE001 — surfaced, never swapped for the SVG
+        logger.exception("og: market card rasterisation failed for %s", index_id)
+        raise HTTPException(status_code=500, detail=f"card rasterisation failed: {e}") from e
+    # Pinned cards are immutable; the live one changes every minute.
+    cache = "public, max-age=86400" if until else "public, max-age=60"
+    return Response(content=png, media_type="image/png", headers={"Cache-Control": cache})
 
 
 @router.get("/title/{payload}.png")

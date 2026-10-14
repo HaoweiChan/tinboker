@@ -5,8 +5,8 @@ from datetime import datetime, timedelta, timezone
 from src.config import settings
 from src.database.postgres import SessionLocal
 from src.database.models import ScheduledSocialPost
-from src.services import (facebook_publisher, promo_publisher, social_formats, social_ledger,
-                          threads_publisher)
+from src.services import (facebook_publisher, market_moves, promo_publisher, social_formats,
+                          social_ledger, threads_publisher)
 from src.services.podcast import PodcastService
 from src.services.gcs_content import GCSContentService
 
@@ -285,4 +285,8 @@ async def run_periodic_scheduled_posts(interval_seconds: float = 60.0) -> None:
             await sync_comments_if_due()
         except Exception:
             logger.exception("comment sync cycle encountered an error")
+        try:
+            await market_moves.publish_due()
+        except Exception:
+            logger.exception("market move cycle encountered an error")
         await asyncio.sleep(interval_seconds)

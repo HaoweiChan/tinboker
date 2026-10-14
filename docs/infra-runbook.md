@@ -445,6 +445,10 @@ Variables set in `docker-compose.multi.yml` are passed directly to containers. C
 | `DAILY_PICK_SHOWS` | measured order | Comma list of `podcast_name`s in priority order (first wins); shows not listed never go out. Default = vocus pageview ranking as of 2026-09-13. |
 | `RELEASE_EPISODE_MAX_AGE_DAYS` | `0` | Release scoping — hide episodes older than N days (0=off; flip to 30 once `released_at_ms` is backfilled on existing episodes — see `docs/firestore-contract.md` § contract cleanups) |
 | `RELEASE_PICKS_MAX_AGE_DAYS` | `0` | Picks window (ticker_insights reads: /picks, stock-page 觀點, podcaster picks). Independent of the episode window so 7/30/90-day returns can settle; rows carry `episode_public` for linking. 0=full history |
+| `MARKET_MOVE_MARKETS` | `""` (off) | Intraday market-move flash posts to Threads (`services/market_moves.py`): comma list of `TW,US,JP,KR`. Like the posting slots, set it on **exactly one** environment — every env carries the same Threads token. Data is Yahoo Finance's unofficial chart endpoint (owner-approved 2026-10-14; the posts are not monetised). Dry-run any time with `GET /api/admin/threads/market-moves/preview?market=TW&force=true`. |
+| `MARKET_MOVE_DELAY_MINUTES` / `MARKET_MOVE_WINDOW_MINUTES` | `30` / `90` | Detection opens this long after each market's local open (DST handled per market) and stays open for the window; first big, still-holding move posts, once per market per day. |
+| `MARKET_MOVE_SIGMA` / `MARKET_MOVE_MIN_PCT` | `1.5` / `1.0` | "Big" = at least this many 6-month daily standard deviations AND at least this many percent from the previous close. |
+| `MARKET_MOVE_MODEL` | `google/gemini-2.5-flash` | OpenRouter model that extracts the one-line reason from Yahoo headlines. The hedge (外電普遍歸因於 / 市場推測與…有關 / none) is decided in code from how many publishers back it. |
 | `NEWEBPAY_MERCHANT_ID` | GSM only | NewebPay (藍新金流) **production** merchant id for 信用卡定期定額. |
 | `NEWEBPAY_HASH_KEY` | GSM only | NewebPay **production** AES-256-CBC key (32 chars) — see `backend/src/services/newebpay.py`. |
 | `NEWEBPAY_HASH_IV` | GSM only | NewebPay **production** AES-256-CBC IV (16 chars). |
