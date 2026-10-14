@@ -167,6 +167,13 @@ def _sentiment_badge(score: Any) -> tuple[str, str]:
     return text, cls
 
 
+def _is_neutral_score(score: Any) -> bool:
+    try:
+        return score_to_label(float(score)) == "NEUTRAL"
+    except (TypeError, ValueError):
+        return False
+
+
 def _risk_factor(risks: Any) -> str:
     """Worst-case risk severity across a ticker's risks → 高/中/低 (— if none)."""
     order = {"HIGH": 3, "MEDIUM": 2, "LOW": 1}
@@ -266,6 +273,11 @@ def cards_from_ticker_insights(
     rows = [r for r in (_ticker_row(i) for i in insights) if r]
     cards: list[dict[str, Any]] = []
     if rows:
+        all_neutral = all(
+            _is_neutral_score(insight.get("sentiment_score"))
+            for insight in insights if str(insight.get("ticker", "")).strip()
+        )
+        table_title = "本期提及公司與態度" if all_neutral else "本期精選標的與態度"
         cap = ROWS_PER_TABLE * MAX_TABLE_CARDS
         if len(rows) > cap:
             logger.warning(
@@ -275,7 +287,7 @@ def cards_from_ticker_insights(
             rows = rows[:cap]
         for start in range(0, len(rows), ROWS_PER_TABLE):
             cards.append({
-                "kind": "ticker_table", "title": "本期精選標的與態度",
+                "kind": "ticker_table", "title": table_title,
                 "rows": rows[start:start + ROWS_PER_TABLE],
                 "start_time_ms": None, "image_url": None,
             })
