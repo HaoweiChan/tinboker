@@ -526,21 +526,24 @@ def test_theme_post_names_the_theme_and_who_led_it():
 def test_theme_card_payload_round_trips_and_rejects_junk():
     b = _basket()
     move = mm.theme_move(b, _q(b, [9.9, 6.0, 4.0, 3.5, -0.5]), floor_pct=3.0)
-    d = mm.decode_theme_card(mm.encode_theme_card(mm.MARKETS["TW"], move))
-    assert (d["name"], d["tz"], d["median"], d["count"]) == ("散熱", "Asia/Taipei", 4.0, 5)
+    d = mm.decode_theme_card(mm.encode_theme_card(mm.MARKETS["TW"], move, "主因輝達上修散熱規格"))
+    assert (d["name"], d["tz"], d["median"], d["reason"]) == ("散熱", "Asia/Taipei", 4.0, "主因輝達上修散熱規格")
     assert d["rows"][0] == ("奇鋐", "3017", 9.9)
     for junk in ("abc", mm.encode_theme_card(mm.MARKETS["TW"], move)[:-6] + "zzzzzz"):
         with pytest.raises(ValueError):
             mm.decode_theme_card(junk)
 
 
-def test_theme_card_draws_one_bar_per_member():
+def test_theme_card_draws_one_bar_per_member_and_the_reason_under_the_median():
     from src.services.intraday_card import theme_card_svg
-    svg = theme_card_svg("散熱", [("奇鋐", "3017", 9.9), ("泰碩", "3338", -0.5)], 4.0, 5, OPEN + 1800, "Asia/Taipei")
+    rows = [("奇鋐", "3017", 9.9), ("泰碩", "3338", -0.5)]
+    svg = theme_card_svg("散熱", rows, 4.0, OPEN + 1800, "Asia/Taipei", reason="市場推測與輝達上修散熱規格有關")
     assert svg.count('rx="4"') == 2 and "散熱" in svg and "+9.90%" in svg and "-0.50%" in svg
-    assert "中位數 +4.00%" in svg and "台北時間" in svg and "TinBoker 題材" in svg
+    assert "中位數 +4.00%" in svg and "市場推測與輝達上修散熱規格有關" in svg and "檔同向" not in svg
+    assert "台北時間" in svg and "TinBoker 題材" in svg
+    assert "市場推測" not in theme_card_svg("散熱", rows, 4.0, OPEN + 1800, "Asia/Taipei")   # no reason, no line
     with pytest.raises(ValueError):
-        theme_card_svg("散熱", [], 0, 0, OPEN, "Asia/Taipei")
+        theme_card_svg("散熱", [], 0, OPEN, "Asia/Taipei")
 
 
 @pytest.mark.asyncio
@@ -563,6 +566,8 @@ async def test_a_theme_morning_posts_once_with_its_bar_card_and_scans_every_five
     text, image = fake.posts[0]
     assert text == "散熱族群盤中急漲，奇鋐、雙鴻領漲，市場推測與美債殖利率走升有關。"
     assert image.startswith("https://api.tinboker.com/api/og/market-theme/") and image.endswith(".png")
+    payload = image.rsplit("/", 1)[-1][:-len(".png")]
+    assert mm.decode_theme_card(payload)["reason"] == "市場推測與美債殖利率走升有關"   # the card says what the post says
     row = social_ledger.list_posted("threads")[0]
     assert (row["episode_id"], row["subject"]) == ("market_move:theme:TW:2026-10-14:theme_cooling", "theme_cooling")
 

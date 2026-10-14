@@ -499,7 +499,7 @@ async def market_theme_card_raster(
     match the minute the post was written."""
     try:
         d = market_moves.decode_theme_card(payload)
-        svg = theme_card_svg(d["name"], d["rows"], d["median"], d["count"], d["ts"], d["tz"])
+        svg = theme_card_svg(d["name"], d["rows"], d["median"], d["ts"], d["tz"], reason=d["reason"])
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     try:

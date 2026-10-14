@@ -293,12 +293,12 @@ def card_url(index: Instrument, until: int) -> str:
     return f"{settings.public_api_url.rstrip('/')}/api/og/market/{index.id}.png?{q}"
 
 
-def encode_theme_card(market: Market, move: ThemeMove) -> str:
+def encode_theme_card(market: Market, move: ThemeMove, clause: str = "") -> str:
     """The theme card's whole content, in the path: a basket has no single series to
-    re-fetch, and the card must show exactly what the post saw."""
+    re-fetch, and the card must show exactly what the post saw — including its reason."""
     rows = [[i.name, i.code, round(q.pct, 2)] for i, q in move.rows[:THEME_CARD_ROWS]]
     raw = json.dumps({"n": move.basket.name, "z": market.tz, "t": move.last_ts,
-                      "m": round(move.median, 2), "k": len(move.rows), "r": rows},
+                      "m": round(move.median, 2), "c": clause[:60], "r": rows},
                      ensure_ascii=False, separators=(",", ":")).encode()
     return base64.urlsafe_b64encode(raw).decode().rstrip("=")
 
@@ -308,7 +308,7 @@ def decode_theme_card(payload: str) -> dict:
         d = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
         rows = [(str(n), str(c), float(p)) for n, c, p in d["r"]]
         out = {"name": str(d["n"]), "tz": str(d["z"]), "ts": int(d["t"]), "median": float(d["m"]),
-               "count": int(d["k"]), "rows": rows}
+               "reason": str(d.get("c") or ""), "rows": rows}
         ZoneInfo(out["tz"])
     except Exception as e:  # noqa: BLE001 — one error for every malformed shape
         raise ValueError("payload is not a theme card") from e
@@ -317,8 +317,9 @@ def decode_theme_card(payload: str) -> dict:
     return out
 
 
-def theme_card_url(market: Market, move: ThemeMove) -> str:
-    return f"{settings.public_api_url.rstrip('/')}/api/og/market-theme/{encode_theme_card(market, move)}.png"
+def theme_card_url(market: Market, move: ThemeMove, clause: str = "") -> str:
+    return (f"{settings.public_api_url.rstrip('/')}/api/og/market-theme/"
+            f"{encode_theme_card(market, move, clause)}.png")
 
 
 def lane_key(market: Market, today: date, lane: str, subject_id: str = "") -> str:
@@ -527,13 +528,13 @@ async def _prefilter(market: Market, pool: list[Instrument], today: date, now: d
             and abs(quoted[i.symbol].pct) >= floor_pct]
 
 
-async def _draft(market: Market, lane: str, key: str, subject_id: str, move, text_fn, image_url: str,
+async def _draft(market: Market, lane: str, key: str, subject_id: str, move, text_fn, image_fn,
                  now: datetime, force: bool, base: dict) -> dict:
     cause = await find_cause(market, subject_of(market, move), now)
     if cause["tier"] == "none" and not force:
         return {**base, "draft": None, "skipped": "no_cause", "key": key, "cause": cause}
     draft = {"key": key, "lane": lane, "subject": subject_id, "text": text_fn(cause["clause"]),
-             "image_url": image_url, "reply": sources_reply(cause["sources"]) if cause["sources"] else None,
+             "image_url": image_fn(cause["clause"]), "reply": sources_reply(cause["sources"]) if cause["sources"] else None,
              "cause": cause}
     return {**base, "draft": draft}
 
@@ -555,7 +556,8 @@ async def build_theme_draft(market: Market, today: date, now: datetime, *,
     lead = max(moves, key=lambda m: abs(m.median))
     eid = lead.basket.exposure_id
     return await _draft(market, "theme", lane_key(market, today, "theme", eid), eid, lead,
-                        lambda clause: compose_theme_text(lead, clause), theme_card_url(market, lead),
+                        lambda clause: compose_theme_text(lead, clause),
+                        lambda clause: theme_card_url(market, lead, clause),
                         now, force, base)
 
 
@@ -583,7 +585,8 @@ async def build_draft(market: Market, today: date, now: datetime, *, lane: str =
         return {**base, "draft": None}
     lead = headline_move(moves)
     return await _draft(market, lane, lane_key(market, today, lane, lead.index.id), lead.index.id, lead,
-                        lambda clause: compose_text(lead, clause), card_url(lead.index, lead.day.last_ts),
+                        lambda clause: compose_text(lead, clause),
+                        lambda _clause: card_url(lead.index, lead.day.last_ts),
                         now, force, base)
 
 

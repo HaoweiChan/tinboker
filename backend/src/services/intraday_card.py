@@ -13,6 +13,7 @@ from xml.sax.saxutils import escape
 from zoneinfo import ZoneInfo
 
 from src.services.card_theme import AMBER, BG, BORDER, DOWN, FAINT, INK, LABEL, MARGIN, SIZE, UP, advance, card_font
+from src.services.title_card import wrap
 from src.services.yahoo_chart import Intraday
 
 PY0, PY1 = 300, 740          # line pane
@@ -20,7 +21,8 @@ XLAB_Y = 776                 # time axis
 STATS_Y = 850                # 開盤 / 最高 / 最低 / 昨收
 PEERS_Y = 960
 FOOT_Y = SIZE - MARGIN + 4
-GAP_SECONDS = 600            # a hole this long inside the session is a break, not a slow minute
+GAP_SECONDS = 600
+REASON_PX = 28            # a hole this long inside the session is a break, not a slow minute
 
 TZ_LABEL = {"Asia/Taipei": "台北時間", "Asia/Tokyo": "東京時間", "Asia/Seoul": "首爾時間",
             "America/New_York": "紐約時間"}
@@ -157,17 +159,17 @@ def intraday_card_svg(name: str, code: str, day: Intraday,
     return "\n".join(s)
 
 
-def theme_card_svg(name: str, rows: list[tuple[str, str, float]], median: float, count: int,
-                   ts: int, tz: str, source: str = "Yahoo Finance") -> str:
+def theme_card_svg(name: str, rows: list[tuple[str, str, float]], median: float,
+                   ts: int, tz: str, reason: str = "", source: str = "Yahoo Finance") -> str:
     """A theme's morning as one bar per member — a basket has no single line to draw, and
     "who moved and how much" is the story. ``rows`` is ``[(name, code, pct)]``, already
-    ordered; ``count`` is how many members were quoted (rows may be the top of them)."""
+    ordered (the top of the quoted members).
+    ``reason`` is the post's one-line why (主因… / 市場推測與…有關), printed under the median."""
     if not rows:
         raise ValueError(f"{name}: no members to draw")
     font = card_font()
     colour = UP if median >= 0 else DOWN
     stamp = datetime.fromtimestamp(ts, ZoneInfo(tz))
-    agree = sum(1 for _, _, p in rows if (p > 0) == (median >= 0))
     s = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{SIZE}" height="{SIZE}" '
          f'viewBox="0 0 {SIZE} {SIZE}" font-family="{escape(font)}">',
          f'<rect width="{SIZE}" height="{SIZE}" fill="{BG}"/>',
@@ -178,11 +180,12 @@ def theme_card_svg(name: str, rows: list[tuple[str, str, float]], median: float,
          f'<text x="{SIZE-MARGIN}" y="112" fill="{LABEL}" font-size="22" text-anchor="end">'
          f'盤中 {stamp:%Y-%m-%d %H:%M} {escape(TZ_LABEL.get(tz, tz))}</text>',
          f'<text x="{MARGIN}" y="168" fill="{colour}" font-size="44" font-weight="700">'
-         f'中位數 {signed(median, pct=True)}</text>',
-         f'<text x="{MARGIN}" y="212" fill="{LABEL}" font-size="24">'
-         f'{count} 檔成分股 · 圖中 {len(rows)} 檔有 {agree} 檔同向</text>']
+         f'中位數 {signed(median, pct=True)}</text>']
+    lines = wrap(reason.strip(), REASON_PX, SIZE - 2 * MARGIN)[:2] if reason.strip() else []
+    for k, line in enumerate(lines):
+        s.append(f'<text x="{MARGIN}" y="{214 + k * 40}" fill="{INK}" font-size="{REASON_PX}">{escape(line)}</text>')
 
-    top, bottom = 260, 960
+    top, bottom = 250 + 40 * len(lines), 960
     step = min(68, (bottom - top) / len(rows))
     label_w = 300
     x0, x1 = MARGIN + label_w, SIZE - MARGIN - 130
