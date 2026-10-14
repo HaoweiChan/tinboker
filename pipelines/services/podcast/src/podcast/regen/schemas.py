@@ -322,6 +322,16 @@ def validate_output(step: str, output: Any) -> list[str]:
                 if not isinstance(r, dict) or "ticker" not in r:
                     errors.append(f'ticker_extractor: ticker_insights[{i}] missing "ticker".')
                     break
+                risks = r.get("risks", [])
+                if not _is_list_of_objects(risks):
+                    errors.append(f"ticker_extractor: ticker_insights[{i}].risks must be an array of objects.")
+                    continue
+                for j, risk in enumerate(risks):
+                    if risk.get("severity") not in RISK_SEVERITIES:
+                        errors.append(
+                            f"ticker_extractor: ticker_insights[{i}].risks[{j}].severity "
+                            f"must be one of {', '.join(RISK_SEVERITIES)}; got {risk.get('severity')!r}."
+                        )
 
     elif step == "marp_writer":
         if not isinstance(output, dict) or not _is_list_of_objects(output.get("slides")):
