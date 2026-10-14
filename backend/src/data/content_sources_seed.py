@@ -107,6 +107,16 @@ PODCAST_SOURCES: list[dict] = [
         "transcript_service": "groq", "transcript_model": "whisper-large-v3",
         "active": True,
     },
+    {
+        "source_type": "podcast", "language": "zh-TW", "region": "TW",
+        "name": "曼報",
+        "social_enabled": False,
+        "feed_url": "https://feed.firstory.me/rss/user/cmq4u0p94003n01xn3eia6e7k",
+        "cover_image_url": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts221/v4/2e/08/f8/2e08f8b0-c3b0-982b-79f7-6eb9456f63c4/mza_11963171225874649235.jpg/600x600bb.jpg",
+        "lookback_days": 30, "max_episodes": 10,
+        "transcript_service": "groq", "transcript_model": "whisper-large-v3",
+        "active": True,
+    },
     # --- English (en) ---
 
     {

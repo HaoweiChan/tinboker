@@ -2,6 +2,7 @@
   "_comment": "Canonical podcast RSS feeds, keyed by exact show name. The pipeline and watcher read these (RSS-first) instead of the lagging podcasttomp3 mirror. Add a show's real RSS URL here to get within-minutes ingestion; shows not listed fall back to the mirror.",
   "Gooaye 股癌": "https://feeds.soundon.fm/podcasts/954689a5-3096-43a4-a80b-7810b219cef3.xml",
   "M觀點": "https://feeds.soundon.fm/podcasts/b8f5a471-f4f7-4763-9678-65887beda63a.xml",
+  "曼報": "https://feed.firstory.me/rss/user/cmq4u0p94003n01xn3eia6e7k",
   "兆華與股惑仔": "https://feeds.soundon.fm/podcasts/91be014b-9f55-4bf3-a910-b232eda82d11.xml",
   "韭菜畢業班": "https://api.soundon.fm/v2/podcasts/eaf95eee-f3b9-43ca-9b9b-245902018222/feed.xml",
   "CNBC's Fast Money": "https://feeds.simplecast.com/szW8tJ16",
