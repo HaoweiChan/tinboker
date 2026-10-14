@@ -246,6 +246,7 @@ class ContentSourceService:
             transcript_service=data.transcript_service,
             transcript_model=data.transcript_model,
             active=data.active,
+            social_enabled=data.social_enabled,
             extra=data.extra,
             last_updated_by=updated_by,
         )
@@ -283,6 +284,22 @@ class ContentSourceService:
         self.db.commit()
         logger.info("Deleted content source ID: %s", source_id)
         return True
+
+    def repair_manny_seed_social_setting(self) -> int:
+        """Repair the omitted create-field bug without overriding operator edits."""
+        repaired = self.db.query(ContentSource).filter(
+            ContentSource.source_type == "podcast",
+            ContentSource.slug == "曼報",
+            ContentSource.name == "曼報",
+            ContentSource.feed_url == "https://feed.firstory.me/rss/user/cmq4u0p94003n01xn3eia6e7k",
+            ContentSource.last_updated_by == "startup_seed",
+            ContentSource.social_enabled.is_(True),
+        ).update({
+            ContentSource.social_enabled: False,
+            ContentSource.last_updated_by: "startup_seed_social_repair",
+        }, synchronize_session=False)
+        self.db.commit()
+        return repaired
 
     def seed_from_config(self, entries: List[dict]) -> int:
         """Insert-only seed from a list of source dicts (idempotent on source_type+slug).
