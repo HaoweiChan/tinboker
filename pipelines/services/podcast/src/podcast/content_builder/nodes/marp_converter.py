@@ -18,6 +18,7 @@ from ..state import PipelineState
 from .social_cards_builder import (
     _deck_tickers,
     assemble_social_cards,
+    authored_ticker_names,
     canonical_ticker_set,
     cards_from_ticker_insights,
 )
@@ -60,6 +61,7 @@ def convert_marp_ticker(state: PipelineState) -> dict[str, Any]:
         state.get("ticker_insights") or {},
         state.get("episode_title") or "",
         canonical_ticker_set(state.get("related_tickers")),
+        display_names=authored_ticker_names(state),
     )
     if not cards:
         return {"ticker_marp_markdown": ""}
