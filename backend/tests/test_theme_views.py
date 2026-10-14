@@ -416,3 +416,15 @@ def test_us_names_are_only_judged_latin_against_latin(code, name, registered, ke
     ticker = [{"ticker": code, "name": name, "role": "beneficiary"}]
     cleaned, _, dropped = router._clean_tickers(ticker, {code: registered, "2330": ("台積電",)})
     assert (cleaned == ticker, dropped) == (kept, 0 if kept else 1)
+
+
+@pytest.mark.parametrize("environment,visible", [("development", True), ("production", False), ("staging", False)])
+def test_theme_cards_respect_development_only_sources(api, monkeypatch, environment, visible):
+    client, _ = api
+    for index, name in enumerate(["Gooaye 股癌", "曼報", "鈔錢部署｜盧燕俐"]):
+        assert put(client, f"visibility-{index}", T0, [view()], podcaster=name).status_code == 200
+    monkeypatch.setattr(settings, "environment", environment)
+    monkeypatch.setattr(settings, "release_podcast_languages", [])
+    names = {row["podcaster"] for row in router._cards(None, 60)}
+    assert names == ({"Gooaye 股癌", "曼報", "鈔錢部署｜盧燕俐"} if visible else {"Gooaye 股癌"})
+    assert bool(router._cards("曼報", 60)) is visible

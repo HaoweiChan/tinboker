@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 
 from src.config import settings
+from src.services.podcast_visibility import hidden_podcast_names, visibility_cache_tag
 from src.models.podcast import Podcast, Episode
 from src.schemas.search import SearchResultItem
 from src.tag_registry import (
@@ -62,12 +63,7 @@ logger = logging.getLogger(__name__)
 # render it as plain text, never as a link (frontend/src/lib/sectors.ts mirrors this set).
 UMBRELLA_EXPOSURE_IDS: frozenset[str] = frozenset({"sector_semiconductor"})
 
-# Podcasts hidden from every public surface (channel list, feed, search, by-name).
-# "曲博科技教室" is a near-dormant show with only ~2 analysed episodes; it adds noise
-# without value. Hidden here at the release chokepoint rather than via
-# content_sources.active=False so it stays version-controlled and the pipeline can
-# still ingest it (in case it picks back up). Matched on exact podcast_name.
-HIDDEN_PODCAST_NAMES: frozenset[str] = frozenset({"曲博科技教室"})
+
 
 
 def _sector_redirects() -> dict[str, str]:
@@ -241,18 +237,16 @@ class PodcastService:
 
         Sourced from the content_sources registry (Postgres): active podcasts
         whose language is in settings.release_podcast_languages. Cached in Redis.
-        Returns None when no language restriction is configured (filter off).
+        An empty language list permits every active language; hidden shows stay hidden.
         An empty/unavailable registry yields an empty set (fail closed — never
         leak out-of-scope shows), and is not cached so it retries next call.
         """
         langs = settings.release_podcast_languages
-        if not langs:
-            return None
-        cache_key = f"release:allowed_podcasts:{','.join(sorted(langs))}"
+        cache_key = f"release:allowed_podcasts:{visibility_cache_tag()}:{','.join(sorted(langs))}"
         cached = await cache_get(cache_key)
         if cached is not None:
             try:
-                return frozenset(json.loads(cached))
+                return frozenset(json.loads(cached)) - hidden_podcast_names()
             except Exception:
                 pass
         names = await asyncio.to_thread(self._query_allowed_podcast_names, langs)
@@ -266,7 +260,7 @@ class PodcastService:
                 "Release allowlist resolved to 0 podcasts for languages %s — "
                 "content_sources empty or DB unavailable; serving no episodes.", langs,
             )
-        return frozenset(names)
+        return frozenset(names) - hidden_podcast_names()
 
     @staticmethod
     def _query_allowed_podcast_names(langs: List[str]) -> List[str]:
@@ -284,7 +278,7 @@ class PodcastService:
                 langset = set(langs)
                 return [
                     s.name for s in items
-                    if (s.language or "") in langset and s.name not in HIDDEN_PODCAST_NAMES
+                    if (not langset or (s.language or "") in langset) and s.name not in hidden_podcast_names()
                 ]
             finally:
                 db.close()
@@ -430,7 +424,7 @@ class PodcastService:
         """Stable signature of the active release scope, for cache-key isolation."""
         langs = settings.release_podcast_languages
         lang_part = ",".join(sorted(langs)) if langs else "all"
-        return f"{lang_part}:{settings.release_episode_max_age_days}"
+        return f"{lang_part}:{settings.release_episode_max_age_days}:{visibility_cache_tag()}"
 
     @staticmethod
     def _content_cache_tag(content_fields: Optional[Collection[str]]) -> str:
@@ -532,6 +526,8 @@ class PodcastService:
         and always drop content-empty placeholder episodes."""
         out = []
         for ep in episodes:
+            if ep.podcast_name in hidden_podcast_names():
+                continue
             if not PodcastService._episode_has_content(ep):
                 continue
             if allowed is not None and ep.podcast_name not in allowed:
@@ -543,6 +539,8 @@ class PodcastService:
 
     async def _episode_in_scope(self, episode: Episode) -> bool:
         """Whether a single episode is visible under the current release scope."""
+        if episode.podcast_name in hidden_podcast_names():
+            return False
         allowed = await self._allowed_podcast_names()
         if allowed is not None and episode.podcast_name not in allowed:
             return False
@@ -799,6 +797,8 @@ class PodcastService:
         from the doc) so a missing artifact 404s instead of silently 404-ing in the
         audio element. Since P5 the media host serves mp3s directly — no signing.
         """
+        if podcast_name in hidden_podcast_names():
+            return None
         episode_dict = self.firestore_service.get_document("episodes", episode_id)
         if not episode_dict or episode_dict.get('podcast_name') != podcast_name:
             return None
