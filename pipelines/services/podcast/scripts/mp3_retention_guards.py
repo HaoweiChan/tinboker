@@ -323,6 +323,26 @@ def install(conn: psycopg.Connection, *, wiki: bool, origin: tuple[str, str, str
         cur.execute(WIKI_SQL if wiki else MIRROR_SQL)
 
 
+def _safe_detail(exc: Exception) -> str:
+    """Name the failure without the message text, which may embed a DSN.
+
+    Server-reported errors are safe to show: sqlstate and the primary message come
+    from Postgres and never contain the connection string. A connection or library
+    error has no diag, so only its class is printed. Errors raised in this file
+    carry fixed messages and are shown in full.
+    """
+    diag = getattr(exc, "diag", None)
+    sqlstate = getattr(diag, "sqlstate", None)
+    if sqlstate:
+        return f"{type(exc).__name__} [{sqlstate}] {diag.message_primary}"
+    tb = exc.__traceback__
+    while tb and tb.tb_next:
+        tb = tb.tb_next
+    if tb and tb.tb_frame.f_code.co_filename == __file__:
+        return f"{type(exc).__name__}: {exc}"
+    return type(exc).__name__
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--install", action="store_true", help="install schema and triggers")
@@ -336,15 +356,17 @@ def main() -> None:
     wiki_url = os.getenv("WIKI_DATABASE_URL")
     if not episode_url or not wiki_url:
         parser.error("EPISODE_DATABASE_URL and WIKI_DATABASE_URL are required")
+    stage = "origin"
     try:
         origin = _public_origin()
+        stage = "episode database"
         with psycopg.connect(libpq_url(episode_url)) as conn:
             install(conn, wiki=False, origin=origin)
+        stage = "wiki database"
         with psycopg.connect(libpq_url(wiki_url)) as conn:
             install(conn, wiki=True, origin=origin)
-    except Exception:
-        # Driver errors may embed credential-bearing DSNs.
-        print("MP3 guard installation failed; inspect database configuration", file=sys.stderr)
+    except Exception as exc:
+        print(f"MP3 guard installation failed at {stage}: {_safe_detail(exc)}", file=sys.stderr)
         raise SystemExit(1) from None
     print("MP3 tombstone guards installed; no tombstones or media files changed")
 
