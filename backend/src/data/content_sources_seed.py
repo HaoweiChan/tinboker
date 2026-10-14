@@ -101,7 +101,8 @@ PODCAST_SOURCES: list[dict] = [
         "source_type": "podcast", "language": "zh-TW", "region": "TW",
         "name": "韭菜畢業班",
         "feed_url": "https://podcasttomp3.com/podcasts/v2/99999902",
-        "spotify_url": "https://open.spotify.com/show/66ENh5UtNA3pPNOT0IZjO1",
+        # No spotify_url: the Spotify show named 韭菜畢業班 (66ENh5UtNA3pPNOT0IZjO1) is a
+        # different program — 0 of our 172 episode titles match it (checked 2026-10-15).
         "cover_image_url": "https://files.soundon.fm/1609506945529-0f43a0fb-0db1-43e3-9aeb-ccd56474cb96.jpeg",
         "lookback_days": 60,
         "transcript_service": "groq", "transcript_model": "whisper-large-v3",
