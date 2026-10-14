@@ -1,4 +1,4 @@
-/* Fonts (Inter / Noto Sans TC / Noto Serif TC / JetBrains Mono) are loaded via the <link> in index.html */
+/* Fonts (Inter / Noto Sans TC / JetBrains Mono) are loaded via the <link> in index.html */
 @import "tailwindcss";
 
 /* Enable dark mode variant using class strategy */
@@ -6,59 +6,58 @@
 
 @layer base {
   :root {
-    /* Warm paper — Light: off-white page, white cards, dark ink. One brand colour
-       (amber); everything else stays quiet so the content carries the page. */
+    /* 終端機 Terminal — Light (soft-gray "paper terminal", easy on the eyes) */
 
-    --background: 40 20% 95%;
-    --foreground: 220 25% 13%;
+    --background: 214 16% 89%;
+    --foreground: 216 38% 14%;
 
     /* Typography Tweaks — tabular numerals so prices line up in columns */
     --font-feature-settings: "rlig" 1, "calt" 1, "tnum" 1;
 
-    --card: 40 33% 99%;
-    --card-foreground: 220 25% 13%;
+    --card: 210 16% 95%;
+    --card-foreground: 216 38% 14%;
 
-    --popover: 40 33% 99%;
-    --popover-foreground: 220 25% 13%;
+    --popover: 210 16% 95%;
+    --popover-foreground: 216 38% 14%;
 
-    /* Primary = brand amber (deepened for contrast on white) */
+    /* Primary = terminal amber (deepened for contrast on white) */
     --primary: 33 92% 44%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 38 16% 90%;
-    --secondary-foreground: 220 25% 13%;
+    --secondary: 214 13% 86%;
+    --secondary-foreground: 216 40% 12%;
 
-    --muted: 38 16% 90%;
-    --muted-foreground: 30 8% 38%;
+    --muted: 214 13% 86%;
+    --muted-foreground: 215 14% 40%;
 
-    --accent: 38 16% 90%;
-    --accent-foreground: 220 25% 13%;
+    --accent: 214 13% 86%;
+    --accent-foreground: 216 40% 12%;
 
     /* Destructive: Red 500 */
     --destructive: 0 84% 55%;
     --destructive-foreground: 0 0% 100%;
 
     /* Border / input: hairline */
-    --border: 36 14% 84%;
-    --input: 36 14% 84%;
+    --border: 214 14% 80%;
+    --input: 214 14% 80%;
 
-    /* Ring = link blue */
-    --ring: 200 72% 36%;
+    /* Ring = electric cyan */
+    --ring: 196 88% 42%;
 
-    /* Small, square-ish corners */
+    /* Sharp terminal corners */
     --radius: 0.2rem;
 
-    /* Charts — chart-1 ink, chart-2 link blue, chart-3 bull, chart-4 bear, chart-5 neutral */
-    --chart-1: 220 25% 13%;
-    --chart-2: 200 72% 36%;
+    /* Charts — chart-1 ink, chart-2 cyan, chart-3 bull, chart-4 bear, chart-5 neutral */
+    --chart-1: 216 40% 12%;
+    --chart-2: 196 88% 40%;
     --chart-3: 152 64% 32%;
     --chart-4: 0 72% 50%;
-    --chart-5: 30 8% 45%;
+    --chart-5: 215 14% 45%;
 
-    /* === Accent = link blue — links, focus, active-filter pill === */
-    --accent-info: 200 72% 36%;
+    /* === Accent = electric cyan — links, focus, active-filter pill === */
+    --accent-info: 196 88% 40%;
     --accent-info-foreground: 0 0% 100%;
-    --accent-info-soft: 200 50% 92%;
+    --accent-info-soft: 196 80% 92%;
 
     /* === LLM-derived sentiment (SEMANTIC — always green=bull / red=bear) === */
     /* Independent of the TW/US price-change flip in useStockTrendColor. */
@@ -66,8 +65,8 @@
     --sentiment-bull-soft: 150 50% 90%;
     --sentiment-bear: 0 72% 50%;
     --sentiment-bear-soft: 6 75% 95%;
-    --sentiment-neutral: 30 8% 40%;
-    --sentiment-neutral-soft: 38 14% 91%;
+    --sentiment-neutral: 215 12% 42%;
+    --sentiment-neutral-soft: 210 20% 92%;
 
     /* === Attention bars — one cool family, a different hue per kind of number, so
        the three panels separate without looking like three products: blue-grey for
@@ -76,7 +75,7 @@
        matching its badge. Amber stays a UI accent (selected tab, logo). The gradient
        is a few points of lightness — enough not to be a flat slab, not enough to look
        like glowing plastic. === */
-    --bar-track: 38 16% 90%;
+    --bar-track: 214 20% 90%;
     --bar-topic-from: 203 26% 40%;
     --bar-topic-to: 203 26% 48%;
     --bar-ticker-from: 218 19% 42%;
@@ -100,59 +99,59 @@
   }
 
   .dark {
-    /* Warm charcoal — Dark: soft near-black instead of blue-black, amber primary */
-    --background: 30 6% 7%;
-    --foreground: 40 15% 90%;
+    /* 終端機 Terminal — Dark (near-black canvas, amber primary, electric-cyan accent) */
+    --background: 220 34% 4%;
+    --foreground: 210 22% 90%;
 
-    --card: 30 6% 10%;
-    --card-foreground: 40 15% 90%;
+    --card: 218 30% 7%;
+    --card-foreground: 210 22% 90%;
 
-    --popover: 30 6% 11%;
-    --popover-foreground: 40 15% 90%;
+    --popover: 218 30% 8%;
+    --popover-foreground: 210 22% 90%;
 
-    /* Primary = brand amber (active state / key highlights) */
+    /* Primary = terminal amber (active state / key highlights) */
     --primary: 38 96% 56%;
     --primary-foreground: 220 40% 6%;
 
-    --secondary: 30 6% 15%;
-    --secondary-foreground: 40 15% 90%;
+    --secondary: 216 26% 12%;
+    --secondary-foreground: 210 22% 90%;
 
-    --muted: 30 6% 14%;
-    --muted-foreground: 35 8% 62%;
+    --muted: 216 26% 11%;
+    --muted-foreground: 213 15% 60%;
 
-    --accent: 30 6% 16%;
-    --accent-foreground: 40 15% 90%;
+    --accent: 216 26% 13%;
+    --accent-foreground: 210 22% 90%;
 
     --destructive: 0 80% 60%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 30 6% 18%;
-    --input: 30 6% 18%;
+    --border: 213 28% 15%;
+    --input: 213 28% 15%;
 
-    /* Ring = link blue */
-    --ring: 198 70% 60%;
+    /* Ring = electric cyan */
+    --ring: 190 92% 56%;
 
     --chart-1: 38 96% 56%;
-    --chart-2: 198 70% 60%;
+    --chart-2: 190 92% 56%;
     --chart-3: 145 66% 47%;
     --chart-4: 0 80% 61%;
-    --chart-5: 35 8% 62%;
+    --chart-5: 213 15% 60%;
 
-    /* === Accent = link blue — links, focus, active pill (dark) === */
-    --accent-info: 198 70% 60%;
-    --accent-info-foreground: 30 20% 8%;
-    --accent-info-soft: 198 40% 16%;
+    /* === Accent = electric cyan — links, focus, active pill (dark) === */
+    --accent-info: 190 92% 56%;
+    --accent-info-foreground: 220 40% 6%;
+    --accent-info-soft: 196 70% 14%;
 
     --sentiment-bull: 145 66% 47%;
     --sentiment-bull-soft: 145 55% 12%;
     --sentiment-bear: 0 80% 61%;
     --sentiment-bear-soft: 0 55% 16%;
-    --sentiment-neutral: 35 8% 62%;
-    --sentiment-neutral-soft: 30 6% 15%;
+    --sentiment-neutral: 213 15% 60%;
+    --sentiment-neutral-soft: 216 24% 14%;
 
     /* Attention bars — see the light block. Track is barely above the card so an
        empty bar is a groove, not a grey slab. */
-    --bar-track: 30 6% 14%;
+    --bar-track: 214 27% 12%;
     --bar-topic-from: 203 24% 42%;
     --bar-topic-to: 203 24% 50%;
     --bar-ticker-from: 218 17% 44%;
@@ -166,12 +165,10 @@
 @theme {
   /* Reading type: Inter for Latin/digits, Noto Sans TC for Chinese (order matters —
      Inter wins Latin glyphs; CJK falls through). Mono is reserved for tickers and
-     figures that must line up (`font-mono` / `.font-financial`). Display serif is
-     for page and section titles only (h1, `.heading-accent`). */
+     figures that must line up (`font-mono` / `.font-financial`). */
   --font-sans: 'Inter', 'Noto Sans TC', system-ui, -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
   --font-logo: 'Inter', 'Noto Sans TC', sans-serif;
-  --font-display: 'Noto Serif TC', 'Noto Sans TC', serif;
 
   /* ── Type scale (single source of truth) ──────────────────────────────────
      Every font size in the app maps to one of these 9 steps via the Tailwind
@@ -354,10 +351,6 @@
     @apply tracking-tight;
   }
 
-  h1 {
-    font-family: var(--font-display);
-  }
-
   @media (prefers-reduced-motion: reduce) {
     * {
       transition: none !important;
@@ -382,9 +375,8 @@
   .heading-accent {
     position: relative;
     padding-inline-start: 11px;
-    font-family: var(--font-display);
-    font-weight: 700;
-    letter-spacing: 0;
+    font-weight: 600;
+    letter-spacing: -0.02em;
   }
 
   .heading-accent::before {
@@ -801,9 +793,44 @@
 }
 
 /* ============================================================================
-   Global structural treatment — plain page canvas (no grid, scanlines or neon
-   keyline), squared pills, outlined chips.
+   終端機 · TERMINAL — global structural treatment
+   Applied app-wide (no opt-in): every page inherits the data-terminal look.
+   Colour tokens above already recolour all semantic surfaces; this adds the
+   structural signatures — grid canvas, top keyline, squared pills, outlined chips.
    ============================================================================ */
+@layer base {
+  /* Faint grid + scanlines on the page canvas. Shows through translucent chrome
+     (the sticky header's backdrop-blur); solid card surfaces sit cleanly on top. */
+  .dark body {
+    background-image:
+      linear-gradient(hsl(213 28% 15% / 0.5) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(213 28% 15% / 0.5) 1px, transparent 1px),
+      repeating-linear-gradient(0deg, hsl(0 0% 100% / 0.012) 0 1px, transparent 1px 3px),
+      radial-gradient(1100px 700px at 50% -10%, hsl(190 90% 30% / 0.06), transparent 60%);
+    background-size: 44px 44px, 44px 44px, 100% 3px, 100% 100%;
+    background-attachment: fixed;
+  }
+  :root:not(.dark) body {
+    background-image:
+      linear-gradient(hsl(213 20% 86% / 0.7) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(213 20% 86% / 0.7) 1px, transparent 1px);
+    background-size: 44px 44px;
+    background-attachment: fixed;
+  }
+
+  /* Amber→cyan keyline pinned to the very top of the viewport. */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0 0 auto 0;
+    height: 2px;
+    background: linear-gradient(90deg, hsl(var(--primary)), hsl(var(--accent-info)), hsl(var(--primary)));
+    opacity: 0.9;
+    z-index: 100;
+    pointer-events: none;
+  }
+}
+
 @layer components {
   /* Filter pills: squared; active = amber */
   .filter-pill {
@@ -824,7 +851,7 @@
 }
 
 @layer utilities {
-  /* Accent scrollbar — link blue, squared */
+  /* Accent scrollbar — electric cyan, squared */
   .scrollbar-thin:hover::-webkit-scrollbar-thumb,
   .scrollbar-thin.is-scrolling::-webkit-scrollbar-thumb,
   .dark .scrollbar-thin:hover::-webkit-scrollbar-thumb,
