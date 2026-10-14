@@ -987,3 +987,46 @@ def test_empty_deck_clears_old_media_urls():
     updates, error = orch._upload_regen_content('ep', 'show', {'ticker_marp_markdown': ''})
     assert error is None
     assert updates == {'ticker_marp_markdown_url': None, 'ticker_marp_markdown_public_url': None}
+
+
+
+def test_ticker_submission_derives_source_times_without_changing_model_provenance(monkeypatch):
+    import hashlib
+    draft = _new_draft()
+    draft['completed'] = ['extractor']
+    monkeypatch.setattr(orch, 'derive_sector_exposures', lambda state: {})
+    payload = {'ticker_insights': [{'ticker': '2330', 'reasons': [{
+        'start_index': 1, 'end_index': 2, 'start_time': 1, 'end_time': 2,
+    }]}]}
+    expected_hash = hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+    orch.submit('ep_test', 'ticker_extractor', payload, generation_metadata={
+        'source': 'generated', 'provider': 'openai', 'model': 'gpt-6-luna',
+        'generated_at': '2026-10-14T00:00:00Z',
+    })
+    state = orch._load('ep_test')['state']
+    evidence = state['ticker_insights']['ticker_insights'][0]['reasons'][0]
+    assert (evidence['start_time'], evidence['end_time']) == (3000, 9000)
+    assert payload['ticker_insights'][0]['reasons'][0]['start_time'] == 1
+    metadata = orch.preview('ep_test')['generation_metadata']['roles']['ticker_extractor']
+    assert metadata['output_sha256'] == expected_hash
+    assert metadata['generated_at'] == '2026-10-14T00:00:00Z'
+    assert metadata['model'] == 'gpt-6-luna'
+
+
+def test_ticker_resubmit_refreshes_existing_episode_deck(monkeypatch):
+    draft = _new_draft()
+    draft['completed'] = ['extractor', 'marp_writer']
+    draft['state']['marp_slides'] = MARP_OUT
+    draft['state']['marp_markdown'] = 'stale deck'
+    monkeypatch.setattr(orch, 'derive_sector_exposures', lambda state: {})
+    orch.submit('ep_test', 'ticker_extractor', {'ticker_insights': [{
+        'ticker': '2330', 'sentiment_score': 0.8, 'reasons': [{
+            'title': 'source', 'description': 'source detail',
+            'start_index': 1, 'end_index': 2, 'start_time': 1, 'end_time': 2,
+        }],
+    }]})
+    state = orch._load('ep_test')['state']
+    assert 'stale deck' not in state['marp_markdown']
+    assert 'source detail' in state['marp_markdown']
+    assert '[00:03]' in state['marp_markdown']
+    assert '[00:03]' in state['ticker_marp_markdown']

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
+import pytest
 from src.models.podcast_models import PodcastEpisode
 from src.podcast.content_builder.nodes import social_cards_builder as sc
 
@@ -88,12 +89,12 @@ def test_bulletless_slide_is_skipped():
     assert cards[1]["title"] == "真主題"
 
 
-def test_theme_cards_capped():
+def test_all_authored_theme_cards_are_preserved():
     slides = [{"heading": f"主題{i}", "bullet_points": [f"點{i}"], "start_time": i * 1000}
-              for i in range(40)]
+              for i in range(10)]
     cards = sc.build_social_cards(_state({"title": "T", "slides": slides}, ["洞見"]))["social_cards"]
     themes = [c for c in cards if c["kind"] == "theme"]
-    assert len(themes) == sc.MAX_THEME_CARDS == 4   # bulk capped to keep the deck tight
+    assert len(themes) == 10
 
 
 def test_empty_when_no_insights_and_no_themes():
@@ -123,7 +124,11 @@ def test_build_social_cards_merges_ticker_deck():
              "reasons": [{"title": "AI 需求", "description": "拉貨。", "start_time": 5000}]},
         ]},
     }
-    kinds = [c["kind"] for c in sc.build_social_cards(state)["social_cards"]]
+    cards = sc.build_social_cards(state)["social_cards"]
+    kinds = [c["kind"] for c in cards]
+    assert [c["title"] for c in cards if c["kind"] in {"ticker_table", "focus_list"}] == [
+        "本期精選標的與態度", "精選產業焦點",
+    ]
     # cover first, ticker overview next, then episode themes, aggregated focus last.
     assert kinds == ["cover", "ticker_table", "theme", "theme", "focus_list"]
 
@@ -234,3 +239,15 @@ def test_episode_write_is_merge_safe():
 def test_graph_compiles_with_join_node():
     from src.podcast.content_builder.graph import build_graph
     build_graph()  # raises if the fan-in edges / node are misconfigured
+
+
+@pytest.mark.parametrize('theme_count,with_ticker', [(20, False), (19, True)])
+def test_deck_overflow_is_explicit_not_truncated(theme_count, with_ticker):
+    state = _state({'slides': [
+        {'heading': f'Topic {i}', 'bullet_points': ['Evidence']}
+        for i in range(theme_count)
+    ]}, ['Summary'])
+    if with_ticker:
+        state['ticker_insights'] = {'ticker_insights': [{'ticker': '2330', 'sentiment_score': 0.8}]}
+    with pytest.raises(ValueError, match='exceeds 20 cards'):
+        sc.assemble_social_cards(state)

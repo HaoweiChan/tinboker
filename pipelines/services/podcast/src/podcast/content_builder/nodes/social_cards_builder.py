@@ -25,12 +25,8 @@ from ..state import PipelineState
 
 logger = logging.getLogger(__name__)
 
-# Threads carousels accept at most 20 items; we stay well under to keep decks tight.
+# Threads carousels accept at most 20 items; overflow must be explicit, not silent.
 MAX_CARDS = 20
-
-# Deck budget — hard cap ~8 slides: cover(1) + ticker table(≤1) + themes(≤4) +
-# focus-list(≤2). Themes are the variable bulk (LLM-decided), so they get the cap.
-MAX_THEME_CARDS = 4
 
 # Ticker-overview grid: rows per card + a single table card (most episodes fit one).
 # 8 rows is the most that clears the bottom brand watermark on the 1080² canvas.
@@ -137,8 +133,8 @@ def cards_from_marp_slides(
             "start_time_ms": start_ms,
             "image_url": None,
         })
-        if len(cards) >= MAX_CARDS:
-            break
+        if len(cards) > MAX_CARDS:
+            raise ValueError("Episode deck exceeds 20 cards; consolidate authored slides before rendering")
 
     return cards
 
@@ -279,7 +275,7 @@ def cards_from_ticker_insights(
             rows = rows[:cap]
         for start in range(0, len(rows), ROWS_PER_TABLE):
             cards.append({
-                "kind": "ticker_table", "title": "本期提及標的與態度",
+                "kind": "ticker_table", "title": "本期精選標的與態度",
                 "rows": rows[start:start + ROWS_PER_TABLE],
                 "start_time_ms": None, "image_url": None,
             })
@@ -296,7 +292,7 @@ def cards_from_ticker_insights(
     items = items[: FOCUS_PER_CARD * MAX_FOCUS_CARDS]
     for start in range(0, len(items), FOCUS_PER_CARD):
         cards.append({
-            "kind": "focus_list", "title": "產業焦點",
+            "kind": "focus_list", "title": "精選產業焦點",
             "items": items[start:start + FOCUS_PER_CARD],
             "start_time_ms": None, "image_url": None,
         })
@@ -313,11 +309,11 @@ def _deck_tickers(state: PipelineState) -> set[str]:
 
 
 def assemble_social_cards(state: PipelineState) -> list[dict[str, Any]]:
-    """Assemble the unified deck (≤~8 slides) shared by the PNG carousel and the
+    """Assemble the unified deck shared by the PNG carousel and the
     on-page episode Marp — so the two are byte-for-byte the same card set.
 
-    Order: cover → ticker overview grid → episode theme cards (capped at
-    ``MAX_THEME_CARDS``) → aggregated 產業焦點 focus-list cards. Returns ``[]`` when
+    Order: cover → ticker overview grid → all authored episode themes →
+    aggregated 產業焦點 focus-list cards. Returns ``[]`` when
     there is nothing postable, so callers skip a blank cover.
     """
     title = state.get("episode_title") or ""
@@ -328,7 +324,7 @@ def assemble_social_cards(state: PipelineState) -> list[dict[str, Any]]:
     if len(base) == 1 and not base[0]["bullets"]:
         return []
 
-    cover, themes = base[0], base[1:MAX_THEME_CARDS + 1]
+    cover, themes = base[0], base[1:]
     # Pull the operator-curated zh-TW names for this episode's symbols before any card
     # renders one: without it a TW listing resolves to nothing and the card shows the
     # bare code ("3037") where "欣興" belongs.
@@ -340,7 +336,10 @@ def assemble_social_cards(state: PipelineState) -> list[dict[str, Any]]:
     tables = [c for c in ticker_cards if c.get("kind") == "ticker_table"]
     focus = [c for c in ticker_cards if c.get("kind") == "focus_list"]
 
-    return [cover, *tables, *themes, *focus][:MAX_CARDS]
+    cards = [cover, *tables, *themes, *focus]
+    if len(cards) > MAX_CARDS:
+        raise ValueError("Episode deck exceeds 20 cards; consolidate authored slides before rendering")
+    return cards
 
 
 def build_social_cards(state: PipelineState) -> dict[str, Any]:

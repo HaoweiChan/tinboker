@@ -93,3 +93,24 @@ def test_convert_marp_ticker_builds_deterministic_deck():
 
 def test_convert_marp_ticker_empty_when_no_insights():
     assert convert_marp_ticker({"ticker_insights": {}})["ticker_marp_markdown"] == ""
+
+
+def test_final_deck_preserves_late_theme_qualifications(monkeypatch):
+    from src.podcast.content_builder.nodes import social_cards_builder as sc
+    monkeypatch.setattr(sc, 'prime_tickers', lambda *args: None)
+    state = {
+        'marp_slides': {'slides': [
+            {'heading': f'Topic {i}', 'bullet_points': ['Earlier discussion']}
+            for i in range(4)
+        ] + [
+            {'heading': 'EUV horizon', 'bullet_points': ['Commercialization in 2030 or 2033']},
+            {'heading': 'Valuation qualification', 'bullet_points': ['Evaluate 2026/2027 EPS first']},
+        ]},
+        'ticker_insights': {'ticker_insights': [{'ticker': 'ASML', 'sentiment_score': 0.8,
+            'reasons': [{'title': 'Supplier', 'description': 'Equipment demand', 'start_time': 1159640}]}]},
+    }
+    markdown = convert_marp(state)['marp_markdown']
+    assert '2030 or 2033' in markdown
+    assert '2026/2027 EPS' in markdown
+    assert markdown.count('_class: theme') == 6
+    assert '_class: focus-list' in markdown
