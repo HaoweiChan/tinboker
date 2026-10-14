@@ -154,10 +154,10 @@ def test_scope_combines_language_and_recency():
 def test_scope_tag_reflects_config(monkeypatch):
     monkeypatch.setattr(settings, "release_podcast_languages", ["zh-TW"])
     monkeypatch.setattr(settings, "release_episode_max_age_days", 0)
-    assert PodcastService._scope_tag() == "zh-TW:0"
+    assert PodcastService._scope_tag().startswith("zh-TW:0:visibility-v1:")
     monkeypatch.setattr(settings, "release_podcast_languages", [])
     monkeypatch.setattr(settings, "release_episode_max_age_days", 30)
-    assert PodcastService._scope_tag() == "all:30"
+    assert PodcastService._scope_tag().startswith("all:30:visibility-v1:")
 
 
 async def test_scope_endpoint_reports_the_episode_window(monkeypatch):
@@ -168,3 +168,53 @@ async def test_scope_endpoint_reports_the_episode_window(monkeypatch):
     assert await router.get_release_scope() == {"episode_window_days": 60}
     monkeypatch.setattr(settings, "release_episode_max_age_days", 0)
     assert await router.get_release_scope() == {"episode_window_days": 0}
+
+
+@pytest.mark.parametrize("environment,visible", [("development", True), ("production", False), ("staging", False)])
+@pytest.mark.parametrize("languages", [[], ["zh-TW"]])
+async def test_development_only_shows_share_catalog_and_direct_scope(monkeypatch, environment, visible, languages):
+    from unittest.mock import AsyncMock
+    from src.services import podcast as module
+
+    names = {"Gooaye 股癌", "曼報", "鈔錢部署｜盧燕俐"}
+    monkeypatch.setattr(settings, "environment", environment)
+    monkeypatch.setattr(settings, "release_podcast_languages", languages)
+    monkeypatch.setattr(settings, "release_episode_max_age_days", 0)
+    monkeypatch.setattr(module, "cache_get", AsyncMock(return_value=None))
+    monkeypatch.setattr(module, "cache_set", AsyncMock())
+    monkeypatch.setattr(PodcastService, "_query_allowed_podcast_names", staticmethod(lambda langs: list(names)))
+    service = PodcastService.__new__(PodcastService)
+    allowed = await service._allowed_podcast_names()
+    for name in ("曼報", "鈔錢部署｜盧燕俐"):
+        assert (name in allowed) is visible
+        assert (await service._episode_in_scope(_ep(name, 1))) is visible
+    scoped = PodcastService._scope_episodes([_ep(name, 1) for name in names], allowed, None)
+    assert {ep.podcast_name for ep in scoped} == (names if visible else {"Gooaye 股癌"})
+    assert environment in module.cache_get.await_args.args[0]
+
+
+def test_visibility_cache_separates_environments(monkeypatch):
+    tags = []
+    for environment in ("development", "production", "staging"):
+        monkeypatch.setattr(settings, "environment", environment)
+        tags.append(PodcastService._scope_tag())
+    assert len(set(tags)) == 3
+
+
+@pytest.mark.parametrize("languages", [[], ["zh-TW"]])
+def test_registry_query_applies_visibility_without_language_filter(monkeypatch, languages):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    from src.database import postgres
+    from src.services.content_source_service import ContentSourceService
+
+    monkeypatch.setattr(settings, "environment", "production")
+    db = Mock()
+    monkeypatch.setattr(postgres, "SessionLocal", lambda: db)
+    rows = [SimpleNamespace(name=name, language=lang) for name, lang in [("曼報", "zh-TW"), ("鈔錢部署｜盧燕俐", "zh-TW"), ("Gooaye 股癌", "zh-TW"), ("English", "en")]]
+    source_query = Mock(return_value=(rows, len(rows)))
+    monkeypatch.setattr(ContentSourceService, "list_sources", source_query)
+    expected = ["Gooaye 股癌"] if languages else ["Gooaye 股癌", "English"]
+    assert PodcastService._query_allowed_podcast_names(languages) == expected
+    source_query.assert_called_once_with(source_type="podcast", active=True, limit=1000)
+    db.close.assert_called_once()
