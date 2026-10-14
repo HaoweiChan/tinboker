@@ -1,5 +1,6 @@
-"""Intraday market-move flash posts: when an index has a big morning, say so on Threads
-within the first hour, with its intraday card and at most one line on why.
+"""Intraday market-move flash posts: when an index — or one of the market's giants
+(台積電, 輝達, …) — has a big morning, say so on Threads within the first hour, with its
+intraday card and one line on why.
 
 Speed over completeness, on purpose. The close-of-day write-up (full news, highlighted
 sources) is a separate, later post; this one exists because by the close the reaction is
@@ -16,7 +17,12 @@ over. So the rules are about not being wrong fast:
   * no reason, no post. A number without a story is what the card already says —
     the tick tries again later in the window, when the wires may have caught up.
 
-One post per market per local day (ledger key ``market_move:intraday:{market}:{date}``).
+Two lanes per market, same rules, separate budgets: the index lane posts at most once
+per local day (``market_move:intraday:{market}:{date}``); the giants lane at most once per
+stock per day (``market_move:stock:{market}:{date}:{id}``) and at most
+``MARKET_MOVE_MAX_STOCK_POSTS`` stocks per market per day, most unusual first. A stock
+needs a bigger percent than an index (``MARKET_MOVE_STOCK_MIN_PCT``) — a 1% TSMC morning
+is not news. At most one post per market per tick, so two lanes never fire together.
 Off unless ``MARKET_MOVE_MARKETS`` is set — same one-environment rule as the posting slots.
 """
 from __future__ import annotations
@@ -50,18 +56,27 @@ _retry_at: dict[str, datetime] = {}   # key -> earliest retry after a failed pub
 
 
 @dataclass(frozen=True)
-class Index:
-    symbol: str              # Yahoo symbol, e.g. ^N225
+class Instrument:
+    symbol: str              # Yahoo symbol: ^N225, 2330.TW, NVDA
     name: str                # short, for the card
     spoken: str = ""         # as a sentence names it; defaults to ``name``
+    news_query: str = ""     # what Yahoo's news search knows it as (stocks only)
 
     @property
     def said(self) -> str:
         return self.spoken or self.name
 
     @property
-    def id(self) -> str:     # path-safe, for the card URL
-        return self.symbol.lstrip("^")
+    def id(self) -> str:     # path-safe, for the card URL: ^TWII → TWII, 2330.TW → 2330_TW
+        return self.symbol.lstrip("^").replace(".", "_")
+
+    @property
+    def code(self) -> str:   # what the card prints next to the name
+        return self.symbol.lstrip("^").split(".")[0]
+
+    @property
+    def is_index(self) -> bool:
+        return self.symbol.startswith("^")
 
 
 @dataclass(frozen=True)
@@ -70,27 +85,41 @@ class Market:
     name: str
     tz: str
     open_hm: tuple[int, int]
-    indices: tuple[Index, ...]
+    indices: tuple[Instrument, ...]
     news_query: str
+    stocks: tuple[Instrument, ...] = ()
 
 
+I = Instrument  # noqa: E741 — the registry below reads better short
 MARKETS: dict[str, Market] = {m.id: m for m in (
     Market("TW", "台股", "Asia/Taipei", (9, 0),
-           (Index("^TWII", "加權指數", "台股加權指數"), Index("^TWOII", "櫃買指數")), "Taiwan stocks TAIEX"),
+           (I("^TWII", "加權指數", "台股加權指數"), I("^TWOII", "櫃買指數")), "Taiwan stocks TAIEX",
+           (I("2330.TW", "台積電", news_query="TSMC"), I("2317.TW", "鴻海", news_query="Foxconn Hon Hai"),
+            I("2454.TW", "聯發科", news_query="MediaTek"), I("2308.TW", "台達電", news_query="Delta Electronics"),
+            I("2382.TW", "廣達", news_query="Quanta Computer"), I("3711.TW", "日月光投控", news_query="ASE Technology"),
+            I("2881.TW", "富邦金", news_query="Fubon Financial"), I("2412.TW", "中華電", news_query="Chunghwa Telecom"))),
     Market("US", "美股", "America/New_York", (9, 30),
-           (Index("^GSPC", "S&P 500", "標普500指數"), Index("^IXIC", "那斯達克", "那斯達克指數"),
-            Index("^SOX", "費城半導體", "費城半導體指數"), Index("^DJI", "道瓊", "道瓊指數")),
-           "stock market today"),
-    Market("JP", "日股", "Asia/Tokyo", (9, 0), (Index("^N225", "日經225", "日經225指數"),), "Nikkei"),
+           (I("^GSPC", "S&P 500", "標普500指數"), I("^IXIC", "那斯達克", "那斯達克指數"),
+            I("^SOX", "費城半導體", "費城半導體指數"), I("^DJI", "道瓊", "道瓊指數")),
+           "stock market today",
+           (I("NVDA", "輝達", news_query="Nvidia"), I("AAPL", "蘋果", news_query="Apple"),
+            I("MSFT", "微軟", news_query="Microsoft"), I("GOOGL", "Alphabet", "Google母公司Alphabet", "Alphabet Google"),
+            I("AMZN", "亞馬遜", news_query="Amazon"), I("META", "Meta", news_query="Meta Platforms"),
+            I("AVGO", "博通", news_query="Broadcom"), I("TSLA", "特斯拉", news_query="Tesla"),
+            I("TSM", "台積電ADR", news_query="TSMC ADR"))),
+    Market("JP", "日股", "Asia/Tokyo", (9, 0), (I("^N225", "日經225", "日經225指數"),), "Nikkei"),
     Market("KR", "韓股", "Asia/Seoul", (9, 0),
-           (Index("^KS11", "KOSPI", "韓國KOSPI指數"), Index("^KQ11", "KOSDAQ", "韓國KOSDAQ指數")), "KOSPI"),
+           (I("^KS11", "KOSPI", "韓國KOSPI指數"), I("^KQ11", "KOSDAQ", "韓國KOSDAQ指數")), "KOSPI"),
 )}
-INDEX_BY_ID: dict[str, tuple[Market, Index]] = {i.id: (m, i) for m in MARKETS.values() for i in m.indices}
+del I
+BY_ID: dict[str, tuple[Market, Instrument]] = {
+    i.id: (m, i) for m in MARKETS.values() for i in (*m.indices, *m.stocks)}
+LANES = ("index", "stock")
 
 
 @dataclass
 class Move:
-    index: Index
+    index: Instrument
     day: Intraday
     sigma: Optional[float]
 
@@ -171,9 +200,15 @@ def compose_text(lead: Move, clause: str) -> str:
     return f"{head}，{clause}。" if clause else f"{head}。"
 
 
-def card_url(index: Index, until: int) -> str:
+def card_url(index: Instrument, until: int) -> str:
     q = urllib.parse.urlencode({"until": until})
     return f"{settings.public_api_url.rstrip('/')}/api/og/market/{index.id}.png?{q}"
+
+
+def lane_key(market: Market, today: date, lane: str, inst: Optional[Instrument] = None) -> str:
+    if lane == "index":
+        return f"market_move:intraday:{market.id}:{today.isoformat()}"
+    return f"market_move:stock:{market.id}:{today.isoformat()}:{inst.id}"
 
 
 def fresh_headlines(items: list[dict], now: datetime) -> list[dict]:
@@ -189,18 +224,19 @@ def fresh_headlines(items: list[dict], now: datetime) -> list[dict]:
 
 # ── the reason: the model extracts, the code decides how sure to sound ─────
 
-CAUSE_SYSTEM = """你負責從新聞標題中，找出某個股價指數今天盤中大幅波動的原因。
+CAUSE_SYSTEM = """你負責從新聞標題中，找出某個股價指數或個股今天盤中大幅波動的原因。
 
 只能根據提供的標題判斷，不可使用標題以外的知識或推測。
 回傳 JSON：{"cause": "...", "support": [標題編號...]}
 - cause：繁體中文名詞短語，30 字以內，具體描述驅動因素本身（事件或市場擔憂的事），例如「美國公債殖利率走升」「輝達財報優於預期」「市場擔憂SpaceX籌資400億美元購買輝達晶片」。要能直接接在「主因」或「市場推測與…有關」中間讀通。不要寫漲跌幅、不要加句號、不要寫「可能」「市場推測」等語氣詞。
-- support：明確把「這個市場今天的漲跌」歸因於這個因素的標題編號。只是同時出現、或在講別的市場、別的日子的標題不算。
+- support：明確把「這個標的今天的漲跌」歸因於這個因素的標題編號（標的是指數時，講整個市場今天漲跌的標題也算）。只是同時出現、或在講別的市場、別的日子的標題不算。
 - 沒有任何標題明確解釋這次波動時，回傳 {"cause": "", "support": []}。寧可留白，不要猜。"""
 
 
 async def _extract_cause(market: Market, lead: Move, headlines: list[dict]) -> dict:
     listing = "\n".join(f"[{i}] {h['publisher'] or '?'}：{h['title']}" for i, h in enumerate(headlines))
-    user = (f"市場：{market.name}；指數：{lead.index.name}（{lead.index.symbol}）"
+    kind = "指數" if lead.index.is_index else "個股"
+    user = (f"市場：{market.name}；{kind}：{lead.index.name}（{lead.index.symbol}）"
             f"盤中{'上漲' if lead.day.pct >= 0 else '下跌'} {abs(lead.day.pct):.2f}%。\n\n標題：\n{listing}")
     async with httpx.AsyncClient(timeout=45.0) as client:
         resp = await client.post(
@@ -224,9 +260,12 @@ async def find_cause(market: Market, lead: Move, now: datetime) -> dict:
     empty = {"tier": "none", "clause": "", "cause": "", "sources": []}
     if not settings.openrouter_api_key:
         return {**empty, "error": "no_openrouter_key"}
+    inst = lead.index
+    queries = [market.news_query if inst.is_index else (inst.news_query or inst.code), inst.symbol]
     try:
-        items = await yahoo_chart.news(market.news_query)
-        items += await yahoo_chart.news(lead.index.symbol)
+        items = []
+        for q in queries:
+            items += await yahoo_chart.news(q)
     except YahooChartError as e:
         return {**empty, "error": str(e)[:200]}
     headlines = fresh_headlines(items, now)
@@ -254,53 +293,61 @@ def sources_reply(sources: list[dict]) -> str:
 
 # ── detection + publishing ─────────────────────────────────────────────────
 
-async def scan(market: Market, today: date, now: datetime) -> dict:
-    """Every index of ``market`` right now, and which of them count as a big move."""
+def _floor(lane: str) -> float:
+    return settings.market_move_min_pct if lane == "index" else settings.market_move_stock_min_pct
+
+
+async def scan(instruments: tuple[Instrument, ...] | list[Instrument], today: date, now: datetime,
+               floor_pct: float) -> dict:
+    """Each instrument right now, and which of them count as a big move."""
     rows, moves = [], []
-    for idx in market.indices:
+    for inst in instruments:
         try:
-            day = await yahoo_chart.intraday(idx.symbol)
+            day = await yahoo_chart.intraday(inst.symbol)
         except YahooChartError as e:
-            rows.append({"index": idx.id, "error": str(e)[:200]})
+            rows.append({"id": inst.id, "error": str(e)[:200]})
             continue
         if not is_today(day, today, now):
-            rows.append({"index": idx.id, "skipped": "not_trading_today"})
+            rows.append({"id": inst.id, "skipped": "not_trading_today"})
             continue
         try:
-            sigma = await yahoo_chart.sigma(idx.symbol)
+            sigma = await yahoo_chart.sigma(inst.symbol)
         except YahooChartError:
             sigma = None  # the floor alone still guards
-        big = is_big(day, sigma, k=settings.market_move_sigma, floor_pct=settings.market_move_min_pct)
-        move = Move(idx, day, sigma)
-        rows.append({"index": idx.id, "pct": round(day.pct, 2), "sigma": sigma and round(sigma, 2),
+        big = is_big(day, sigma, k=settings.market_move_sigma, floor_pct=floor_pct)
+        move = Move(inst, day, sigma)
+        rows.append({"id": inst.id, "pct": round(day.pct, 2), "sigma": sigma and round(sigma, 2),
                      "z": move.z and round(move.z, 2), "big": big})
         if big:
             moves.append(move)
     return {"rows": rows, "moves": moves}
 
 
-async def build_draft(market: Market, today: date, now: datetime, *, force: bool = False) -> dict:
-    """What would be posted for ``market`` now. ``force`` drafts the headline index even
+async def build_draft(market: Market, today: date, now: datetime, *, lane: str = "index",
+                      exclude: frozenset[str] = frozenset(), force: bool = False) -> dict:
+    """What ``lane`` would post for ``market`` now. ``exclude`` drops instrument ids
+    already posted or backing off today. ``force`` drafts the first instrument even
     below the threshold or without a reason — for the admin preview only."""
-    scanned = await scan(market, today, now)
+    pool = [i for i in (market.indices if lane == "index" else market.stocks) if i.id not in exclude]
+    scanned = await scan(pool, today, now, _floor(lane))
     moves: list[Move] = scanned["moves"]
     if not moves and force:
-        for idx in market.indices:
+        for inst in pool:
             try:
-                day = await yahoo_chart.intraday(idx.symbol)
+                moves = [Move(inst, await yahoo_chart.intraday(inst.symbol), None)]
+                break
             except YahooChartError:
                 continue
-            moves = [Move(idx, day, None)]
-            break
-    base = {"market": market.id, "date": today.isoformat(), "indices": scanned["rows"]}
+    base = {"market": market.id, "lane": lane, "date": today.isoformat(), "rows": scanned["rows"]}
     if not moves:
         return {**base, "draft": None}
     lead = headline_move(moves)
+    key = lane_key(market, today, lane, lead.index)
     cause = await find_cause(market, lead, now)
     if cause["tier"] == "none" and not force:
-        return {**base, "draft": None, "skipped": "no_cause", "cause": cause}
+        return {**base, "draft": None, "skipped": "no_cause", "key": key, "cause": cause}
     draft = {
-        "key": f"market_move:intraday:{market.id}:{today.isoformat()}",
+        "key": key,
         "subject": lead.index.id,
         "text": compose_text(lead, cause["clause"]),
         "image_url": card_url(lead.index, lead.day.last_ts),
@@ -336,48 +383,70 @@ def enabled_markets() -> list[Market]:
     return [MARKETS[i] for i in ids if i in MARKETS]
 
 
+def _blocked(key: str, now: datetime) -> bool:
+    return social_ledger.already_posted(PLATFORM, key) or _retry_at.get(key, now) > now
+
+
+def _lane_exclusions(market: Market, today: date, lane: str, now: datetime) -> Optional[frozenset[str]]:
+    """Instrument ids this lane must skip right now, or None when the lane is done
+    for the day (index posted / backing off, or the giants budget is spent)."""
+    if lane == "index":
+        return None if _blocked(lane_key(market, today, "index"), now) else frozenset()
+    if not market.stocks:
+        return None
+    posted = [s for s in market.stocks if social_ledger.already_posted(PLATFORM, lane_key(market, today, "stock", s))]
+    if len(posted) >= settings.market_move_max_stock_posts:
+        return None
+    return frozenset(s.id for s in market.stocks if _blocked(lane_key(market, today, "stock", s), now))
+
+
 async def publish_due(now: Optional[datetime] = None) -> int:
-    """One worker tick: for each enabled market inside its window and not yet posted
-    today, post if an index is having a big, holding move. Returns posts made."""
+    """One worker tick: for each enabled market inside its window, post the first lane
+    (index, then giants) that has a big, holding move with a reason. Returns posts made."""
     now = now or datetime.now(timezone.utc)
     posted = 0
     for market in enabled_markets():
         today = window_date(market, now)
         if not today:
             continue
-        key = f"market_move:intraday:{market.id}:{today.isoformat()}"
-        if social_ledger.already_posted(PLATFORM, key) or _retry_at.get(key, now) > now:
-            continue
-        try:
-            res = await build_draft(market, today, now)
-        except Exception:  # one market's failure must not stop the others
-            logger.exception("market move scan failed for %s", market.id)
-            continue
-        if res.get("skipped") == "no_cause":
-            # Big move, no story yet. Ask again later — not every minute, each ask is a model call.
-            logger.info("market move %s: big move but no reason yet (%s)", key, res["cause"].get("error"))
-            _retry_at[key] = now + RETRY_AFTER
-            continue
-        if not res["draft"]:
-            continue
-        out = await _publish(res["draft"])
-        logger.info("market move %s: %s (%s)", key, out, res["draft"]["text"].splitlines()[0])
-        if out.get("posted"):
-            posted += 1
-        elif str(out.get("reason", "")).startswith("publish_failed"):
-            # Each retry re-asks the model; a broken image URL must not do that every minute.
-            _retry_at[key] = now + RETRY_AFTER
+        for lane in LANES:
+            exclude = _lane_exclusions(market, today, lane, now)
+            if exclude is None:
+                continue
+            try:
+                res = await build_draft(market, today, now, lane=lane, exclude=exclude)
+            except Exception:  # one market's failure must not stop the others
+                logger.exception("market move scan failed for %s/%s", market.id, lane)
+                continue
+            if res.get("skipped") == "no_cause":
+                # Big move, no story yet. Ask again later — not every minute, each ask is a model call.
+                logger.info("market move %s: big move but no reason yet (%s)", res["key"], res["cause"].get("error"))
+                _retry_at[res["key"]] = now + RETRY_AFTER
+                continue
+            if not res["draft"]:
+                continue
+            out = await _publish(res["draft"])
+            logger.info("market move %s: %s (%s)", res["draft"]["key"], out, res["draft"]["text"])
+            if out.get("posted"):
+                posted += 1
+                break  # one post per market per tick
+            if str(out.get("reason", "")).startswith("publish_failed"):
+                # Each retry re-asks the model; a broken image URL must not do that every minute.
+                _retry_at[res["draft"]["key"]] = now + RETRY_AFTER
     return posted
 
 
-async def preview(market_id: str, *, force: bool = False, now: Optional[datetime] = None) -> dict:
-    """Admin dry run: the scan and the draft for one market, ignoring the time window."""
+async def preview(market_id: str, *, lane: str = "index", force: bool = False,
+                  now: Optional[datetime] = None) -> dict:
+    """Admin dry run: one lane's scan and draft for one market, ignoring the time window."""
     market = MARKETS.get(market_id.upper())
-    if not market:
+    if not market or lane not in LANES:
         raise KeyError(market_id)
     now = now or datetime.now(timezone.utc)
     today = now.astimezone(ZoneInfo(market.tz)).date()
-    res = await build_draft(market, today, now, force=force)
+    res = await build_draft(market, today, now, lane=lane, force=force)
+    key = (res.get("draft") or {}).get("key") or res.get("key")
+    if not key and lane == "index":
+        key = lane_key(market, today, "index")
     return {**res, "in_window": window_date(market, now) is not None,
-            "already_posted": social_ledger.already_posted(
-                PLATFORM, f"market_move:intraday:{market.id}:{today.isoformat()}")}
+            "already_posted": bool(key) and social_ledger.already_posted(PLATFORM, key)}

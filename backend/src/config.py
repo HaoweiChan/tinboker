@@ -159,6 +159,11 @@ class Settings(BaseSettings):
     # "Big": at least this many daily standard deviations AND at least this many percent.
     market_move_sigma: float = 1.5
     market_move_min_pct: float = 1.0
+    # The giants lane (台積電, 輝達, … — market_moves.MARKETS[*].stocks): a stock needs at least
+    # this many percent as well as the sigma multiple, and at most this many stocks post
+    # per market per day, most unusual first.
+    market_move_stock_min_pct: float = 3.0
+    market_move_max_stock_posts: int = 2
     # Extracts the one-line reason from headlines; the hedge wording is decided in code.
     market_move_model: str = "google/gemini-2.5-flash"
 

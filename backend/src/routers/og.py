@@ -451,37 +451,39 @@ async def macro_card_raster(
     return Response(content=png, media_type="image/png", headers=headers)
 
 
-@router.get("/market/{index_id}.png")
+@router.get("/market/{instrument_id}.png")
 async def market_card_raster(
-    index_id: str = Path(..., pattern=r"^[A-Z0-9]{2,10}$", description="Yahoo symbol without the caret"),
+    instrument_id: str = Path(..., pattern=r"^[A-Z0-9_]{2,12}$",
+                              description="Yahoo symbol without the caret, '.' as '_' (TWII, 2330_TW, NVDA)"),
     until: Optional[int] = Query(None, ge=0, description="Cut the day at this epoch second"),
 ) -> Response:
-    """One index's intraday line as a square PNG — the first image of a market-move post.
-    ``until`` pins the card to the minute the post was written; Meta fetches the image
-    later and must not see a different day than the caption describes."""
-    hit = market_moves.INDEX_BY_ID.get(index_id)
+    """One index's or giant's intraday line as a square PNG — the first image of a
+    market-move post. ``until`` pins the card to the minute the post was written; Meta
+    fetches the image later and must not see a different day than the caption describes."""
+    hit = market_moves.BY_ID.get(instrument_id)
     if not hit:
-        raise HTTPException(status_code=404, detail=f"Unknown index {index_id}")
-    market, index = hit
+        raise HTTPException(status_code=404, detail=f"Unknown instrument {instrument_id}")
+    market, inst = hit
     try:
-        day = (await yahoo_chart.intraday(index.symbol)).until(until)
+        day = (await yahoo_chart.intraday(inst.symbol)).until(until)
     except YahooChartError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
+    # An index is compared with the market's other indices; a stock with the main index.
+    others = [i for i in market.indices if i != inst] if inst.is_index else list(market.indices[:1])
     peers = []
-    for other in market.indices:
-        if other == index:
-            continue
+    for other in others:
         try:
             peers.append((other.name, (await yahoo_chart.intraday(other.symbol)).until(until).pct))
         except YahooChartError:
             continue  # a missing peer is a shorter row, not a failed card
     try:
-        svg = intraday_card_svg(index.name, index.id, day, peers)
+        svg = intraday_card_svg(inst.name, inst.code, day, peers,
+                                peers_label="同市場" if inst.is_index else "大盤")
         png = await asyncio.to_thread(svg_to_png, svg, CARD_SIZE, CARD_SIZE)
     except ValueError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
     except Exception as e:  # noqa: BLE001 — surfaced, never swapped for the SVG
-        logger.exception("og: market card rasterisation failed for %s", index_id)
+        logger.exception("og: market card rasterisation failed for %s", instrument_id)
         raise HTTPException(status_code=500, detail=f"card rasterisation failed: {e}") from e
     # Pinned cards are immutable; the live one changes every minute.
     cache = "public, max-age=86400" if until else "public, max-age=60"

@@ -51,9 +51,11 @@ def signed(v: float, pct: bool = False) -> str:
 
 
 def intraday_card_svg(name: str, code: str, day: Intraday,
-                      peers: Optional[list[tuple[str, float]]] = None, source: str = "Yahoo Finance") -> str:
-    """``peers`` is ``[(name, pct)]`` for the market's other indices, printed under the
-    stats so one card answers "was it just this index?"."""
+                      peers: Optional[list[tuple[str, float]]] = None, source: str = "Yahoo Finance",
+                      peers_label: str = "同市場") -> str:
+    """``peers`` is ``[(name, pct)]`` — the market's other indices, or for a stock the main
+    index (``peers_label`` 大盤) — printed under the stats so one card answers "was it just
+    this one?"."""
     if len(day.points) < 2:
         raise ValueError(f"{code}: not enough bars to draw")
     font = card_font()
@@ -140,8 +142,8 @@ def intraday_card_svg(name: str, code: str, day: Intraday,
 
     if peers:
         cx = MARGIN
-        s.append(f'<text x="{cx}" y="{PEERS_Y}" fill="{LABEL}" font-size="24">同市場</text>')
-        cx += advance("同市場", 24) + 24
+        s.append(f'<text x="{cx}" y="{PEERS_Y}" fill="{LABEL}" font-size="24">{escape(peers_label)}</text>')
+        cx += advance(peers_label, 24) + 24
         for pname, pct in peers:
             if cx > SIZE - MARGIN - 200:
                 break

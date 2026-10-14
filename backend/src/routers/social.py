@@ -269,14 +269,15 @@ async def threads_formats_preview(_: AdminAccess = Depends(get_admin_access)):
 @router.get("/market-moves/preview")
 async def threads_market_moves_preview(
     market: str = Query(..., pattern=r"^[A-Za-z]{2}$", description="TW, US, JP or KR"),
-    force: bool = Query(False, description="Draft the lead index even below the threshold"),
+    lane: str = Query("index", pattern=r"^(index|stock)$", description="Indices, or the market's giants"),
+    force: bool = Query(False, description="Draft the lead instrument even below the threshold"),
     _: AdminAccess = Depends(get_admin_access),
 ):
-    """The intraday move scan for one market right now — each index's % / sigma / z, and
+    """The intraday move scan for one market's lane right now — each instrument's % / sigma / z, and
     the post (text, card URL, reason + sources) it would make. Ignores the time window
     and posts nothing; the card URL can be opened to see the image."""
     try:
-        return await market_moves.preview(market, force=force)
+        return await market_moves.preview(market, lane=lane, force=force)
     except KeyError:
         raise HTTPException(status_code=404, detail=f"Unknown market {market}") from None
 

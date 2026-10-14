@@ -118,16 +118,16 @@ def test_the_hedge_comes_from_publisher_count_not_the_model():
 
 
 def test_the_lead_is_the_most_unusual_index_not_the_biggest_percent():
-    spx = mm.Move(mm.Index("^GSPC", "S&P 500"), _day([97.0]), 1.0)  # -3%, 3 sigma
-    sox = mm.Move(mm.Index("^SOX", "費城半導體"), _day([96.0]), 2.0)  # -4%, 2 sigma
+    spx = mm.Move(mm.Instrument("^GSPC", "S&P 500"), _day([97.0]), 1.0)  # -3%, 3 sigma
+    sox = mm.Move(mm.Instrument("^SOX", "費城半導體"), _day([96.0]), 2.0)  # -4%, 2 sigma
     assert mm.headline_move([sox, spx]).index.id == "GSPC"
 
 
 def test_the_post_is_one_plain_sentence_with_no_tag_and_no_price_block():
-    sox = mm.Index("^SOX", "費城半導體", "費城半導體指數")
+    sox = mm.Instrument("^SOX", "費城半導體", "費城半導體指數")
     text = mm.compose_text(mm.Move(sox, _day([95.81]), 1.0), "市場推測與輝達財測不如預期有關")
     assert text == "費城半導體指數盤中重挫逾4%，市場推測與輝達財測不如預期有關。"
-    assert mm.compose_text(mm.Move(mm.Index("^TWII", "加權指數"), _day([102.3]), 1.0), "") == "加權指數盤中大漲逾2%。"
+    assert mm.compose_text(mm.Move(mm.Instrument("^TWII", "加權指數"), _day([102.3]), 1.0), "") == "加權指數盤中大漲逾2%。"
     assert "盤中速報" not in text and "\n" not in text
 
 
@@ -160,7 +160,7 @@ async def test_two_publishers_backing_the_cause_is_consensus_and_bad_ids_are_dro
         return {"cause": "美債殖利率走升", "support": [0, 1, 1, 7, "x"]}
     monkeypatch.setattr(mm.yahoo_chart, "news", news)
     monkeypatch.setattr(mm, "_extract_cause", extract)
-    lead = mm.Move(mm.Index("^TWII", "加權指數"), _day([97.0]), 1.0)
+    lead = mm.Move(mm.Instrument("^TWII", "加權指數"), _day([97.0]), 1.0)
     out = await mm.find_cause(mm.MARKETS["TW"], lead, NOW)
     assert seen["n"] == 2                                          # the 3-day-old one and the duplicate query are gone
     assert out["tier"] == "consensus" and [s["publisher"] for s in out["sources"]] == ["Reuters", "Bloomberg"]
@@ -177,7 +177,7 @@ async def test_a_failed_model_call_posts_without_a_reason(monkeypatch):
         raise RuntimeError("timeout")
     monkeypatch.setattr(mm.yahoo_chart, "news", news)
     monkeypatch.setattr(mm, "_extract_cause", boom)
-    lead = mm.Move(mm.Index("^TWII", "加權指數"), _day([97.0]), 1.0)
+    lead = mm.Move(mm.Instrument("^TWII", "加權指數"), _day([97.0]), 1.0)
     out = await mm.find_cause(mm.MARKETS["TW"], lead, NOW)
     assert (out["tier"], out["clause"], out["sources"]) == ("none", "", [])
     monkeypatch.setattr(mm.settings, "openrouter_api_key", None)
@@ -227,6 +227,7 @@ class _FakeThreads:
 def _wire(monkeypatch, days, sigmas=None):
     monkeypatch.setattr(mm.settings, "market_move_markets", "TW")
     monkeypatch.setattr(mm.settings, "public_api_url", "https://api.tinboker.com")
+    monkeypatch.setattr(mm, "_retry_at", {})
 
     async def intraday(symbol):
         if symbol not in days:
@@ -321,16 +322,92 @@ async def test_a_failed_publish_releases_the_day_and_backs_off(temp_db, monkeypa
     assert len(calls) == 2
 
 
+# ── the giants lane ─────────────────────────────────────────────────────────
+
+FLAT = {"^TWII": _day([100.2] * 31), "^TWOII": _day([100.1] * 31, symbol="^TWOII")}
+
+
+def _tick(minutes):
+    return datetime.fromtimestamp(OPEN + 1830 + minutes * 60, timezone.utc)
+
+
+@pytest.mark.asyncio
+async def test_a_giant_with_a_big_morning_posts_its_own_card(temp_db, monkeypatch):
+    tsmc = _day([96.0] * 30 + [95.8], symbol="2330.TW")
+    fake = _wire(monkeypatch, {**FLAT, "2330.TW": tsmc})
+    assert await mm.publish_due(_tick(0)) == 1
+    text, image = fake.posts[0]
+    assert text == "台積電盤中重挫逾4%，市場推測與美債殖利率走升有關。"
+    assert image == f"https://api.tinboker.com/api/og/market/2330_TW.png?until={tsmc.last_ts}"
+    row = social_ledger.list_posted("threads")[0]
+    assert (row["episode_id"], row["subject"]) == ("market_move:stock:TW:2026-10-14:2330_TW", "2330_TW")
+    assert await mm.publish_due(_tick(1)) == 0                      # once per stock per day
+
+
+@pytest.mark.asyncio
+async def test_a_stock_needs_the_bigger_floor(temp_db, monkeypatch):
+    fake = _wire(monkeypatch, {**FLAT, "2330.TW": _day([97.6] * 31)}, sigmas={"2330.TW": 0.5})
+    assert await mm.publish_due(_tick(0)) == 0                      # -2.4%: 4.8 sigma, still under 3%
+    assert fake.posts == []
+
+
+@pytest.mark.asyncio
+async def test_index_first_then_giants_one_post_per_tick_and_a_daily_cap(temp_db, monkeypatch):
+    days = {"^TWII": _day([97.0] * 31), "^TWOII": _day([98.0] * 31, symbol="^TWOII"),
+            "2330.TW": _day([95.0] * 31, symbol="2330.TW"), "2317.TW": _day([94.0] * 31, symbol="2317.TW"),
+            "2454.TW": _day([93.0] * 31, symbol="2454.TW")}
+    fake = _wire(monkeypatch, days)
+    for m in range(4):
+        await mm.publish_due(_tick(m))
+    subjects = [r["subject"] for r in sorted(social_ledger.list_posted("threads"), key=lambda r: r["media_id"])]
+    assert subjects == ["TWII", "2454_TW", "2317_TW"]               # index, then most unusual giants; cap of 2
+    assert len(fake.posts) == 3
+
+
+@pytest.mark.asyncio
+async def test_stock_reason_searches_by_its_own_name(monkeypatch):
+    monkeypatch.setattr(mm.settings, "openrouter_api_key", "k")
+    queries = []
+
+    async def news(q, count=12):
+        queries.append(q)
+        return []
+    monkeypatch.setattr(mm.yahoo_chart, "news", news)
+    nvda = mm.BY_ID["NVDA"][1]
+    out = await mm.find_cause(mm.MARKETS["US"], mm.Move(nvda, _day([95.0]), 2.0), NOW)
+    assert queries == ["Nvidia", "NVDA"] and out["error"] == "no_fresh_headlines"
+
+
+@pytest.mark.asyncio
+async def test_stock_card_compares_with_the_main_index(monkeypatch):
+    from src.routers import og as og_router
+    seen = {}
+
+    async def intraday(symbol):
+        return {"2330.TW": _day([96.0, 95.0]), "^TWII": _day([99.0, 98.5])}.get(symbol) or _day([100.0, 100.0])
+
+    def svg(name, code, day, peers, peers_label="同市場"):
+        seen.update(name=name, code=code, label=peers_label, peers=[(n, round(p, 2)) for n, p in peers])
+        return "<svg/>"
+    monkeypatch.setattr(og_router.yahoo_chart, "intraday", intraday)
+    monkeypatch.setattr(og_router, "intraday_card_svg", svg)
+    monkeypatch.setattr(og_router, "svg_to_png", lambda s, w, h: b"png")
+    await og_router.market_card_raster("2330_TW", until=None)
+    assert seen == {"name": "台積電", "code": "2330", "label": "大盤", "peers": [("加權指數", -1.5)]}
+
+
 @pytest.mark.asyncio
 async def test_preview_drafts_without_posting(temp_db, monkeypatch):
     fake = _wire(monkeypatch, {"^TWII": _day([100.3] * 31), "^TWOII": _day([100.1] * 31)})
     now = datetime.fromtimestamp(OPEN + 1830, timezone.utc)
     quiet = await mm.preview("tw", now=now)
-    assert quiet["draft"] is None and quiet["in_window"] and quiet["indices"][0]["big"] is False
+    assert quiet["draft"] is None and quiet["in_window"] and quiet["rows"][0]["big"] is False
     forced = await mm.preview("TW", force=True, now=now)
     assert forced["draft"]["text"].startswith("台股加權指數盤中") and fake.posts == []
     with pytest.raises(KeyError):
         await mm.preview("XX", now=now)
+    giants = await mm.preview("TW", lane="stock", force=True, now=now)
+    assert giants["lane"] == "stock" and giants["draft"] is None   # no stock data wired → nothing to force
 
 
 # ── the card route ──────────────────────────────────────────────────────────
@@ -347,7 +424,7 @@ async def test_card_route_pins_the_day_and_tolerates_a_missing_peer(monkeypatch)
             raise YahooChartError("down")
         return _day([101.0, 102.0, 103.0])
 
-    def svg(name, code, day, peers):
+    def svg(name, code, day, peers, **_):
         seen.update(name=name, last=day.last, peers=peers)
         return "<svg/>"
     monkeypatch.setattr(og_router.yahoo_chart, "intraday", intraday)
