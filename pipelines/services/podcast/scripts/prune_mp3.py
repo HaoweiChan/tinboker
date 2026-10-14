@@ -308,9 +308,12 @@ def main() -> None:
                 candidates = candidates[:args.batch_size]
             for path, ids, size in candidates:
                 print(f"candidate: {path} ({size:,} bytes, {len(ids)} episode rows)")
-    except Exception:
-        # Connection and query errors can contain a credential-bearing DSN.
-        print("MP3 retention failed; inspect database and media availability", file=sys.stderr)
+    except Exception as exc:
+        # Connection and query errors can contain a credential-bearing DSN; _safe_detail
+        # prints only server diagnostics and our own fixed messages.
+        from scripts.mp3_retention_guards import _safe_detail
+
+        print(f"MP3 retention failed: {_safe_detail(exc)}", file=sys.stderr)
         raise SystemExit(1) from None
 
 

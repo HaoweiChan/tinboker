@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from pathlib import Path
 from urllib.parse import urlsplit
 
 import psycopg
@@ -329,7 +330,7 @@ def _safe_detail(exc: Exception) -> str:
     Server-reported errors are safe to show: sqlstate and the primary message come
     from Postgres and never contain the connection string. A connection or library
     error has no diag, so only its class is printed. Errors raised in this file
-    carry fixed messages and are shown in full.
+    or its sibling retention scripts carry fixed messages and are shown in full.
     """
     diag = getattr(exc, "diag", None)
     sqlstate = getattr(diag, "sqlstate", None)
@@ -338,7 +339,8 @@ def _safe_detail(exc: Exception) -> str:
     tb = exc.__traceback__
     while tb and tb.tb_next:
         tb = tb.tb_next
-    if tb and tb.tb_frame.f_code.co_filename == __file__:
+    # Raised by one of our own retention scripts (fixed messages, no DSN).
+    if tb and Path(tb.tb_frame.f_code.co_filename).parent == Path(__file__).parent:
         return f"{type(exc).__name__}: {exc}"
     return type(exc).__name__
 
