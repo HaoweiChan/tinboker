@@ -12,7 +12,9 @@ over. So the rules are about not being wrong fast:
   * the post is one plain sentence — what moved, how much, and why — not a data
     block: the numbers are on the card. Its hedge is decided here, not by the model:
     two or more publishers attributing the move to the same driver → 主因…; one →
-    市場推測與…有關; none → no reason at all. The model only extracts.
+    市場推測與…有關. The model only extracts;
+  * no reason, no post. A number without a story is what the card already says —
+    the tick tries again later in the window, when the wires may have caught up.
 
 One post per market per local day (ledger key ``market_move:intraday:{market}:{date}``).
 Off unless ``MARKET_MOVE_MARKETS`` is set — same one-environment rule as the posting slots.
@@ -279,7 +281,7 @@ async def scan(market: Market, today: date, now: datetime) -> dict:
 
 async def build_draft(market: Market, today: date, now: datetime, *, force: bool = False) -> dict:
     """What would be posted for ``market`` now. ``force`` drafts the headline index even
-    below the threshold — for the admin preview only."""
+    below the threshold or without a reason — for the admin preview only."""
     scanned = await scan(market, today, now)
     moves: list[Move] = scanned["moves"]
     if not moves and force:
@@ -295,6 +297,8 @@ async def build_draft(market: Market, today: date, now: datetime, *, force: bool
         return {**base, "draft": None}
     lead = headline_move(moves)
     cause = await find_cause(market, lead, now)
+    if cause["tier"] == "none" and not force:
+        return {**base, "draft": None, "skipped": "no_cause", "cause": cause}
     draft = {
         "key": f"market_move:intraday:{market.id}:{today.isoformat()}",
         "subject": lead.index.id,
@@ -348,6 +352,11 @@ async def publish_due(now: Optional[datetime] = None) -> int:
             res = await build_draft(market, today, now)
         except Exception:  # one market's failure must not stop the others
             logger.exception("market move scan failed for %s", market.id)
+            continue
+        if res.get("skipped") == "no_cause":
+            # Big move, no story yet. Ask again later — not every minute, each ask is a model call.
+            logger.info("market move %s: big move but no reason yet (%s)", key, res["cause"].get("error"))
+            _retry_at[key] = now + RETRY_AFTER
             continue
         if not res["draft"]:
             continue

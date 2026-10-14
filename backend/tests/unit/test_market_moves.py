@@ -279,6 +279,29 @@ async def test_a_quiet_morning_or_a_closed_window_posts_nothing(temp_db, monkeyp
 
 
 @pytest.mark.asyncio
+async def test_no_reason_means_no_post_and_a_later_retry(temp_db, monkeypatch):
+    fake = _wire(monkeypatch, {"^TWII": _day([97.0] * 31), "^TWOII": _day([98.0] * 31)})
+    monkeypatch.setattr(mm, "_retry_at", {})
+    asks = []
+
+    async def no_cause(market, lead, now):
+        asks.append(now)
+        return {"tier": "none", "clause": "", "cause": "", "sources": [], "error": "no_fresh_headlines"}
+    monkeypatch.setattr(mm, "find_cause", no_cause)
+    t0 = OPEN + 1830
+    assert await mm.publish_due(datetime.fromtimestamp(t0, timezone.utc)) == 0
+    assert await mm.publish_due(datetime.fromtimestamp(t0 + 60, timezone.utc)) == 0
+    assert fake.posts == [] and len(asks) == 1                      # backing off, not asking every minute
+    assert social_ledger.already_posted("threads", "market_move:intraday:TW:2026-10-14") is False
+
+    async def found(market, lead, now):
+        return {"tier": "consensus", "clause": "主因美債殖利率急升", "cause": "美債殖利率急升", "sources": []}
+    monkeypatch.setattr(mm, "find_cause", found)
+    assert await mm.publish_due(datetime.fromtimestamp(t0 + 601, timezone.utc)) == 1
+    assert fake.posts[0][0] == "台股加權指數盤中重挫3%，主因美債殖利率急升。"
+
+
+@pytest.mark.asyncio
 async def test_a_failed_publish_releases_the_day_and_backs_off(temp_db, monkeypatch):
     from src.services.threads_service import ThreadsError
     fake = _wire(monkeypatch, {"^TWII": _day([97.0] * 31), "^TWOII": _day([98.0] * 31)})
