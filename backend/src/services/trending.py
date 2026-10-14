@@ -11,6 +11,7 @@ from collections import Counter
 
 from src.services.attention import batch_attention_levels
 from src.services.podcast import PodcastService
+from src.services.podcast_visibility import visibility_cache_tag
 from src.services.stock import StockService
 from src.cache.redis_client import cache_get, cache_set, get_redis
 from src.schemas.search import SearchResultItem
@@ -149,7 +150,7 @@ class TrendingService:
                   prev_sentiment_summary, rising_ticker, new_tickers}
         """
         ticker_filter = ticker.strip().upper().split(".")[0] if ticker else None
-        cache_key = f"buzz:recent:{days}:{limit}:{ticker_filter or 'all'}:v6"
+        cache_key = f"buzz:recent:{days}:{limit}:{ticker_filter or 'all'}:v6:{visibility_cache_tag()}"
         cached = await cache_get(cache_key)
         if cached:
             try:
@@ -317,7 +318,7 @@ class TrendingService:
                  rising: tickers above the floors ordered by momentum_score,
                  narratives: pick_narratives(top tags by 7d count) with 6 weekly buckets}
         """
-        cache_key = f"attention:v1:{limit}:{narratives}:{rising_limit}"
+        cache_key = f"attention:v1:{limit}:{narratives}:{rising_limit}:{visibility_cache_tag()}"
         cached = await cache_get(cache_key)
         if cached:
             try:
@@ -414,7 +415,7 @@ class TrendingService:
         Returns:
             List of SearchResultItem objects
         """
-        cache_key = f"trending:stocks:{days}:{limit}:v4"
+        cache_key = f"trending:stocks:{days}:{limit}:v4:{visibility_cache_tag()}"
         cached = await cache_get(cache_key)
         if cached:
             try:
@@ -530,7 +531,7 @@ class TrendingService:
         Get trending podcasters based on user clicks (activity).
         Falls back to 'updated_at' if no click data is available or empty.
         """
-        cache_key = f"trending:podcasters:{limit}"
+        cache_key = f"trending:podcasters:{limit}:{visibility_cache_tag()}"
         cached = await cache_get(cache_key)
         if cached:
             try:

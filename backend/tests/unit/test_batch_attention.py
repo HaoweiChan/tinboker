@@ -8,6 +8,7 @@ import pytest
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session
 
+from src.config import settings
 from src.database.models import ContentMention
 from src.services.attention import attention_level, batch_attention_levels
 from src.services.trending import TrendingService
@@ -55,7 +56,8 @@ def test_batch_queries_once_per_population_with_scope_and_variants(monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('failed', [False, True])
-async def test_recent_buzz_batch_contract_and_failure_isolation(failed):
+async def test_recent_buzz_batch_contract_and_failure_isolation(failed, monkeypatch):
+    monkeypatch.setattr(settings, "environment", "production")
     now = datetime.now(timezone.utc)
     podcast = SimpleNamespace(
         get_recent_episodes=AsyncMock(return_value=[SimpleNamespace(id='ep',
@@ -80,7 +82,8 @@ async def test_recent_buzz_batch_contract_and_failure_isolation(failed):
          patch('src.services.episode_sentiments.EpisodeSentimentService.get_sentiments', AsyncMock(return_value={})):
         out = await service.get_recent_buzz()
         assert compute.call_count == 1
-        assert get.call_args.args[0].endswith(':v6')
+        # The attention contract is unchanged; visibility now isolates its cache per environment.
+        assert get.call_args.args[0] == 'buzz:recent:30:10:all:v6:visibility-v1:production'
         assert put.call_args.args[2] == 1800
     assert out['tickers'][0]['attention_level'] == (None if failed else 0)
     assert out['tickers'][0]['attention_as_of'] == (None if failed else now.date().isoformat())

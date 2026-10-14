@@ -7,6 +7,8 @@ isolate per window pair.
 """
 
 import asyncio
+
+import pytest
 from datetime import date, timedelta
 from unittest.mock import AsyncMock
 
@@ -27,9 +29,9 @@ def test_recency_floor_enabled(monkeypatch):
 def test_scope_tag_tracks_both_windows(monkeypatch):
     monkeypatch.setattr(svc.settings, "release_picks_max_age_days", 0)
     monkeypatch.setattr(svc.settings, "release_episode_max_age_days", 0)
-    assert svc._scope_tag() == "p0e0"
+    assert svc._scope_tag().startswith("p0e0:visibility-v1:")
     monkeypatch.setattr(svc.settings, "release_episode_max_age_days", 60)
-    assert svc._scope_tag() == "p0e60"
+    assert svc._scope_tag().startswith("p0e60:visibility-v1:")
 
 
 def test_episode_public_follows_episode_window(monkeypatch):
@@ -70,3 +72,59 @@ def test_recent_before_caps_launch_day_and_isolates_cache(monkeypatch):
     assert out == []
     assert seen["filters"] == [("podcast_launch_time", "<=", "2026-08-31T23:59:59Z")]
     assert seen.get("key", "").endswith(":50:2026-08-31")
+
+
+@pytest.mark.parametrize("environment,visible", [("development", True), ("production", False), ("staging", False)])
+@pytest.mark.parametrize("languages", [[], ["zh-TW"]])
+async def test_new_shows_hidden_from_all_insight_reads(monkeypatch, environment, visible, languages):
+    monkeypatch.setattr(svc.settings, "environment", environment)
+    monkeypatch.setattr(svc.settings, "release_podcast_languages", languages)
+    monkeypatch.setattr(svc.settings, "release_picks_max_age_days", 0)
+    monkeypatch.setattr(svc, "cache_get", AsyncMock(return_value=None))
+    monkeypatch.setattr(svc, "cache_set", AsyncMock())
+    today = date.today().isoformat()
+    names = ["Gooaye 股癌", "曼報", "鈔錢部署｜盧燕俐"]
+    docs = [dict(schema_version=3, podcaster=name, episode_id=name, ticker="2330", podcast_launch_time=today) for name in names]
+
+    class Reader:
+        def query_collection_group(self, collection, filters, *args):
+            selected = next((f[2] for f in filters or [] if f[0] == "podcaster"), None)
+            return [d for d in docs if not selected or d["podcaster"] == selected]
+
+        def get_documents_batch(self, *args):
+            return []
+
+    service = svc.InsightService.__new__(svc.InsightService)
+    service._fs = Reader()
+    expected = set(names if visible else names[:1])
+    for rows in (await service.get_recent(), await service.get_by_ticker("2330", today, today)):
+        assert {row["podcaster"] for row in rows} == expected
+    for name in names[1:]:
+        assert bool(await service.get_by_podcaster(name, today, today)) is visible
+    assert await service.free_insight_counts() == {"2330": 3 if visible else 1}
+
+
+@pytest.mark.parametrize("environment", ["development", "production", "staging"])
+async def test_trending_keeps_dev_fast_path_and_filters_public_aggregation(monkeypatch, environment):
+    monkeypatch.setattr(svc.settings, "environment", environment)
+    monkeypatch.setattr(svc, "cache_get", AsyncMock(return_value=None))
+    monkeypatch.setattr(svc, "cache_set", AsyncMock())
+    collections = []
+
+    class Reader:
+        def get_all_documents(self, collection):
+            collections.append(collection)
+            if collection == "trending_tickers":
+                return [dict(ticker="DEV", count_all_time=9)]
+            return [dict(podcast_name=name, related_tickers=[ticker]) for name, ticker in [("曼報", "HIDDEN"), ("鈔錢部署｜盧燕俐", "HIDDEN"), ("Gooaye 股癌", "PUBLIC")]]
+
+    service = svc.InsightService.__new__(svc.InsightService)
+    service._fs = Reader()
+    rows = await service.get_trending(days=0, limit=1)
+    if environment == "development":
+        assert collections == ["trending_tickers"]
+        assert [r["ticker"] for r in rows] == ["DEV"]
+    else:
+        assert collections == ["episodes"]
+        assert [r["ticker"] for r in rows] == ["PUBLIC"]
+    assert environment in svc.cache_set.await_args.args[0]

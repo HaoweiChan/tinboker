@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from src.cache.cache_config import CACHE_TTL
 from src.cache.redis_client import cache_get, cache_set
 from src.config import settings
+from src.services.podcast_visibility import hidden_podcast_names, visibility_cache_tag
 from src.services.postgres_mirror_service import content_read_service
 
 logger = logging.getLogger(__name__)
@@ -145,7 +146,7 @@ def _episode_public(launch_iso: str) -> bool:
 
 def _scope_tag() -> str:
     """Release-scope signature for cache-key isolation (busts on env change)."""
-    return f"p{getattr(settings, 'release_picks_max_age_days', 0) or 0}e{getattr(settings, 'release_episode_max_age_days', 0) or 0}"
+    return f"p{getattr(settings, 'release_picks_max_age_days', 0) or 0}e{getattr(settings, 'release_episode_max_age_days', 0) or 0}:{visibility_cache_tag()}"
 
 
 def _safe_int(value: Any) -> int:
@@ -273,7 +274,7 @@ class InsightService:
         days=30 → count_30d, days=90 → count_90d, days=0 → count_all_time.
         Replaces /api/recommendations/buzz (spec § 5.2).
         """
-        cache_key = f"ticker_insights:trending:{days}:{limit}"
+        cache_key = f"ticker_insights:trending:{_scope_tag()}:{days}:{limit}"
         cached = await cache_get(cache_key)
         if cached:
             try:
@@ -281,7 +282,8 @@ class InsightService:
             except Exception as e:
                 logger.warning("Trending cache deserialize failed: %s", e)
 
-        docs = await asyncio.to_thread(
+        # Global aggregates cannot subtract development-only source contributions.
+        docs = [] if settings.environment != "development" else await asyncio.to_thread(
             self._fs.get_all_documents, TRENDING_COLLECTION
         )
         rows = [_doc_to_trending(d, days) for d in docs if d.get("ticker") or d.get("id")]
@@ -344,6 +346,8 @@ class InsightService:
         counts: Counter = Counter()
         last_seen: dict = {}
         for doc in episode_docs:
+            if doc.get("podcast_name") in hidden_podcast_names():
+                continue
             ts_ms = doc.get("released_at_ms") or 0
             if cutoff_ms and ts_ms < cutoff_ms:
                 continue
@@ -395,6 +399,8 @@ class InsightService:
         )
         counts: Dict[str, int] = {}
         for d in docs:
+            if d.get("podcaster") in hidden_podcast_names():
+                continue
             ticker = d.get("ticker")
             if ticker and d.get("schema_version") in SUPPORTED_SCHEMA_VERSIONS:
                 counts[str(ticker)] = counts.get(str(ticker), 0) + 1
@@ -415,7 +421,7 @@ class InsightService:
             return []
 
         start, end = _resolve_date_range(start_date, end_date)
-        cache_key = f"ticker_insights:by_ticker:{','.join(tickers)}:{start}:{end}"
+        cache_key = f"ticker_insights:by_ticker:{_scope_tag()}:{','.join(tickers)}:{start}:{end}"
         cached = await cache_get(cache_key)
         if cached:
             try:
@@ -436,6 +442,8 @@ class InsightService:
         )
         rows = []
         for d in docs:
+            if d.get("podcaster") in hidden_podcast_names():
+                continue
             if d.get("schema_version") not in SUPPORTED_SCHEMA_VERSIONS:
                 continue
             if not _in_range(d.get("podcast_launch_time") or "", start, end):
@@ -468,7 +476,7 @@ class InsightService:
         no longer needed.
         """
         name = (podcaster or "").strip()
-        if not name:
+        if not name or name in hidden_podcast_names():
             return []
 
         start, end = _resolve_date_range(start_date, end_date)
@@ -496,6 +504,8 @@ class InsightService:
         )
         rows = []
         for d in docs:
+            if d.get("podcaster") in hidden_podcast_names():
+                continue
             if d.get("schema_version") not in SUPPORTED_SCHEMA_VERSIONS:
                 continue
             if not _in_range(d.get("podcast_launch_time") or "", start, end):
@@ -551,6 +561,7 @@ class InsightService:
             _doc_to_insight(d)
             for d in docs
             if d.get("schema_version") in SUPPORTED_SCHEMA_VERSIONS
+            and d.get("podcaster") not in hidden_podcast_names()
             and (floor is None or _in_range(d.get("podcast_launch_time") or "", floor, today))
         ][:limit]
 

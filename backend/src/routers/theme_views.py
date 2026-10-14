@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from src.auth.admin_auth import AdminAccess, get_content_write_access, get_social_access
 from src.cache.cdn_cache import CacheProfile, cdn_cached
 from src.config import settings
+from src.services.podcast_visibility import hidden_podcast_names
 from src.database.models import StockTranslation, TagRegistry, ThemeView
 from src.database.postgres import session_scope
 from src.models.user import UserResponse
@@ -249,7 +250,7 @@ def build_cards(
 
 def _cards(podcaster: Optional[str], limit: int) -> List[dict]:
     with session_scope() as db:
-        query = db.query(ThemeView)
+        query = db.query(ThemeView).filter(ThemeView.podcaster.notin_(hidden_podcast_names()))
         if podcaster:
             query = query.filter_by(podcaster=podcaster)
         rows = query.all()
