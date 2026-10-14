@@ -123,3 +123,22 @@ cd pipelines
 uv run --package tinboker-podcast --with pytest python -m pytest \
   services/podcast/tests/test_regen_orchestrator.py -q
 ```
+
+
+### Provenance and provider policy
+
+Pass `generation_metadata` to `submit_role`: `source` (`generated`, `manual`,
+`reused`, `unknown`), actual `provider` and `model`, and timezone-qualified
+`generated_at`. Generated submissions require all four fields. Legacy callers stay
+compatible and are recorded as unknown. The server hashes the rendered prompt and
+submitted JSON, persists metadata with the draft, and exposes the identical metadata
+in preview and the episode API after commit. Caller metadata is explicitly attested
+by the caller; auxiliary calls cannot be claimed by the caller.
+
+For a no-OpenRouter run, open the draft with `allowed_providers=["local"]`;
+`[]` disables auxiliary models entirely. Both chat and decisions endpoints obey
+this draft-local policy. A disallowed sector verifier aborts submission without
+saving partial state, so configure an allowed local verifier before the run.
+Resubmitting upstream output invalidates already-completed dependent steps; commit
+requires these steps again. New summaries clear stale social copy and rebuild social
+cards when the required inputs exist; resegmentation clears unsupported macro claims.

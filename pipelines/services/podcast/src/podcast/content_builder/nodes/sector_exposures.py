@@ -267,6 +267,9 @@ def derive_sector_exposures(state: PipelineState) -> dict[str, Any]:
                 else:
                     print(f"  ❌ Filtering out sector exposure: {exp.get('display_name')} (reason: LLM verified as not relevant)")
         except Exception as e:
+            from ..llm import ProviderNotAllowed
+            if isinstance(e, ProviderNotAllowed):
+                raise
             # Fallback in case of LLM error: fail-open for the ORIGINAL keyword-matched
             # candidates (as before), but fail-CLOSED for A6's ticker-derived-only
             # candidates — those have no transcript alias match at all, so keeping
