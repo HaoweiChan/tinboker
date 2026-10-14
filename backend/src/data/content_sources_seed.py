@@ -117,6 +117,16 @@ PODCAST_SOURCES: list[dict] = [
         "transcript_service": "groq", "transcript_model": "whisper-large-v3",
         "active": True,
     },
+    {
+        "source_type": "podcast", "language": "zh-TW", "region": "TW",
+        "name": "鈔錢部署｜盧燕俐",
+        "social_enabled": False,
+        "feed_url": "https://feeds.soundon.fm/podcasts/3066dd74-f792-49dd-a506-4c6997f2dc8c.xml",
+        "cover_image_url": "https://files.soundon.fm/1767345041244-17d2ad26-43ea-47d0-834d-95f0d7e16b75.jpeg",
+        "lookback_days": 30, "max_episodes": 10,
+        "transcript_service": "groq", "transcript_model": "whisper-large-v3",
+        "active": True,
+    },
     # --- English (en) ---
 
     {
