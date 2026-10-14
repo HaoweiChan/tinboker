@@ -43,7 +43,7 @@ const ArticleCard: React.FC<{ article: ArticleListItem }> = ({ article }) => (
     {article.tags && article.tags.length > 0 && (
       <div className="flex gap-1.5 flex-wrap mb-3">
         {article.tags.slice(0, 4).map((tag) => (
-          <span key={tag} className="text-2xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+          <span key={tag} className="text-2xs px-2 py-0.5 rounded-lg bg-muted text-muted-foreground">
             #{tag}
           </span>
         ))}

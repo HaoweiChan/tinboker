@@ -21,7 +21,7 @@ export const DonationCard: React.FC = () => {
                     href={donateUrl}
                     target="_blank" 
                     rel="noopener noreferrer"
-                    className="shrink-0 inline-flex items-center gap-2 bg-card border border-border hover:border-accent-info dark:hover:border-accent-info text-muted-foreground hover:text-accent-info dark:hover:text-accent-info text-xs font-bold py-2 px-5 rounded-full transition-all shadow-sm hover:shadow-md"
+                    className="shrink-0 inline-flex items-center gap-2 bg-card border border-border hover:border-accent-info dark:hover:border-accent-info text-muted-foreground hover:text-accent-info dark:hover:text-accent-info text-xs font-bold py-2 px-5 rounded-lg transition-colors"
                 >
                     <span className="text-red-500">♥</span> 
                     <span>贊助支持</span>

@@ -102,7 +102,7 @@ export const EpisodeCardV2: React.FC<EpisodeCardV2Props> = ({
           <ul className="mb-3.5 grid gap-1.5 text-base leading-[1.6] text-foreground/80">
             {keyInsights.slice(0, 3).map((insight, i) => (
               <li key={i} className="grid grid-cols-[10px_1fr] gap-2">
-                <span aria-hidden="true" className="mt-[9px] h-1.5 w-1.5 rounded-full bg-accent-info shrink-0" />
+                <span aria-hidden="true" className="mt-[9px] h-1.5 w-1.5 rounded-lg bg-accent-info shrink-0" />
                 <span>{insight}</span>
               </li>
             ))}
@@ -133,12 +133,12 @@ export const EpisodeCardV2: React.FC<EpisodeCardV2Props> = ({
                   e.stopPropagation();
                   onTagClick(tag);
                 }}
-                className="text-2xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground hover:bg-accent-info-soft hover:text-accent-info transition-colors"
+                className="text-2xs px-2 py-0.5 rounded-lg bg-muted text-muted-foreground hover:bg-accent-info-soft hover:text-accent-info transition-colors"
               >
                 #{tagLabelFor(tag, tagLabels)}
               </button>
             ) : (
-              <span key={tag} className="text-2xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+              <span key={tag} className="text-2xs px-2 py-0.5 rounded-lg bg-muted text-muted-foreground">
                 #{tagLabelFor(tag, tagLabels)}
               </span>
             ),
@@ -153,7 +153,7 @@ export const EpisodeCardV2: React.FC<EpisodeCardV2Props> = ({
           {durationMinutes != null && commentCount != null && <span aria-hidden>·</span>}
           {commentCount != null && <span>{commentCount} 則討論</span>}
           {isNew && (
-            <span className="ml-auto inline-flex items-center px-2 py-0.5 rounded-full text-2xs font-semibold uppercase tracking-[0.06em] bg-accent-info-soft text-accent-info">
+            <span className="ml-auto inline-flex items-center px-2 py-0.5 rounded-lg text-2xs font-semibold uppercase tracking-[0.06em] bg-accent-info-soft text-accent-info">
               NEW
             </span>
           )}

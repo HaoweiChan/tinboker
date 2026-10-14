@@ -204,7 +204,7 @@ export const SettingsPage: React.FC = () => {
                 type="button"
                 onClick={saveProfile}
                 disabled={!profileDirty || savingProfile}
-                className="px-4 py-2 rounded-full text-sm font-medium bg-foreground text-background hover:opacity-90 disabled:opacity-40 transition-opacity"
+                className="px-4 py-2 rounded-lg text-sm font-medium bg-foreground text-background hover:opacity-90 disabled:opacity-40 transition-opacity"
               >
                 {savingProfile ? '儲存中…' : '儲存'}
               </button>

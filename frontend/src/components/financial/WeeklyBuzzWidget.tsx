@@ -56,7 +56,7 @@ export const WeeklyBuzzWidget: React.FC<WeeklyBuzzWidgetProps> = ({ className, i
                 <CardTitle className="flex items-center gap-2 text-xl">
                     <MessageCircle className="text-accent-info" size={20} />
                     <span>本週市場焦點</span>
-                    <span className="text-xs font-normal text-muted-foreground ml-auto bg-muted px-2 py-1 rounded-full">
+                    <span className="text-xs font-normal text-muted-foreground ml-auto bg-muted px-2 py-1 rounded-lg">
                         Top 10 (30d)
                     </span>
                 </CardTitle>

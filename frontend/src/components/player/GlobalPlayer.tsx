@@ -245,7 +245,7 @@ export const GlobalPlayer: React.FC = () => {
                                                 target="_blank"
                                                 rel="noopener noreferrer"
                                                 onClick={(e) => e.stopPropagation()}
-                                                className="mr-1 inline-flex shrink-0 items-center gap-1.5 px-3 py-1.5 rounded-full bg-foreground text-background text-xs font-semibold shadow hover:opacity-90 transition-opacity animate-in fade-in slide-in-from-right duration-200"
+                                                className="mr-1 inline-flex shrink-0 items-center gap-1.5 px-3 py-1.5 rounded-lg bg-foreground text-background text-xs font-semibold shadow hover:opacity-90 transition-opacity animate-in fade-in slide-in-from-right duration-200"
                                                 title="此處只能試聽，登入 Spotify 可在頁面內收聽完整集數"
                                             >
                                                 <span className="sm:hidden">Spotify {formatTime(unreachableSeek)}</span>
@@ -256,7 +256,7 @@ export const GlobalPlayer: React.FC = () => {
                                         {activeSkippableSection && (
                                             <button
                                                 onClick={() => handleSectionClick(activeSkippableSection.endSeconds || activeSkippableSection.timestampSeconds)}
-                                                className="mr-1 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-accent-info hover:bg-accent-info/90 text-white text-xs font-semibold shadow transition-all cursor-pointer animate-in fade-in slide-in-from-right duration-200"
+                                                className="mr-1 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent-info hover:bg-accent-info/90 text-white text-xs font-semibold shadow transition-all cursor-pointer animate-in fade-in slide-in-from-right duration-200"
                                                 title={`略過 ${activeSkippableSection.title}`}
                                             >
                                                 <span>略過 {activeSkippableSection.title}</span>

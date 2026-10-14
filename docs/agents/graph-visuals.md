@@ -39,7 +39,8 @@ The design-system half applies everywhere in the frontend, not just to graph pag
 
 ### Visual design (modern SaaS aesthetic)
 
-- **Cards** use `rounded-xl` corners, `shadow-sm` at rest, `shadow-md` on hover.
+- **Cards** use `rounded-lg` corners (the `--radius` token), a hairline border and no shadow; hover darkens the border (`hover:border-foreground/20`). Shadows are for floating layers only (dropdowns, popovers, modals).
+- **Text pills** (tags, badges, chips, text buttons, search fields) use `rounded-lg`, not `rounded-full`. Keep `rounded-full` for things that are actually round: avatars, status dots, spinners, toggles, progress tracks, icon-only buttons.
 - **Episode card visual contract** (consumed by HomeFeed, TagPage, PodcasterPage, StockDashboard — all surfaces use the same component):
   - **Light mode:** `bg-white`, `border-slate-200`, text `slate-900`.
   - **Dark mode:** `bg-slate-900`, no white border, text `slate-50` or `slate-200`, no shining/gradient hover.
@@ -58,7 +59,7 @@ The design-system half applies everywhere in the frontend, not just to graph pag
 
 ### PWA
 
-- **Manifest** at `/manifest.json`: name + short_name in Traditional Chinese; `theme_color: #f59e0b` (brand amber); `display: standalone`; icons 192x192 and 512x512 (plus 180x180 apple-touch-icon).
+- **Manifest** at `/manifest.json`: name + short_name in Traditional Chinese; `theme_color: #0e1014` (dark canvas; brand amber `#f59e0b` is the accent); `display: standalone`; icons 192x192 and 512x512 (plus 180x180 apple-touch-icon).
 - **Service worker** registers in production only — NOT in `import.meta.env.DEV`.
 - **Caching strategy:** static assets cache-first; API responses network-first with cache fallback for offline.
 - **Update notification:** when a new SW is waiting, show a non-intrusive UI; require user action to activate.

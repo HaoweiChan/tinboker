@@ -47,7 +47,7 @@ function LoginScreen() {
     <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-8">
       <div className="flex flex-col items-center gap-3">
         <BracketMark size={40} />
-        <span className="text-2xs font-semibold tracking-[0.1em] uppercase text-muted-foreground bg-muted px-2.5 py-1 rounded-full">
+        <span className="text-2xs font-semibold tracking-[0.1em] uppercase text-muted-foreground bg-muted px-2.5 py-1 rounded-lg">
           {ENV_LABEL}
         </span>
       </div>
@@ -69,7 +69,7 @@ function DeniedScreen({ email }: { email: string }) {
     <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-6">
       <div className="flex flex-col items-center gap-3">
         <BracketMark size={40} />
-        <span className="text-2xs font-semibold tracking-[0.1em] uppercase text-muted-foreground bg-muted px-2.5 py-1 rounded-full">
+        <span className="text-2xs font-semibold tracking-[0.1em] uppercase text-muted-foreground bg-muted px-2.5 py-1 rounded-lg">
           {ENV_LABEL}
         </span>
       </div>

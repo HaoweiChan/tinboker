@@ -231,7 +231,7 @@ export const PickCard: React.FC<PickCardProps> = ({
           type="button"
           onClick={() => setMentionsOpen((v) => !v)}
           aria-expanded={mentionsOpen}
-          className="inline-flex items-center gap-1 mt-2.5 rounded-full bg-muted border border-border px-2.5 py-1 text-xs font-semibold text-foreground/90 hover:text-foreground hover:border-foreground/30 transition-colors"
+          className="inline-flex items-center gap-1 mt-2.5 rounded-lg bg-muted border border-border px-2.5 py-1 text-xs font-semibold text-foreground/90 hover:text-foreground hover:border-foreground/30 transition-colors"
         >
           <Layers size={11} className="shrink-0" />
           近期連續點名 {repeatCount} 次
