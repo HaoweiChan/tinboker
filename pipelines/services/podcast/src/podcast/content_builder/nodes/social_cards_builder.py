@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import re
+import sys
 from typing import Any, Optional
 
 from shared.platform_client import social_enabled_for
@@ -361,6 +362,6 @@ def build_social_cards(state: PipelineState) -> dict[str, Any]:
     short-circuits the Marp render step downstream, which skips on empty ``social_cards``.
     """
     if not social_enabled_for(state.get("source")):
-        print(f"  ⏸ Social cards skipped: publishing is off for {state.get('source')}")
+        print(f"  ⏸ Social cards skipped: publishing is off for {state.get('source')}", file=sys.stderr)
         return {"social_cards": []}
     return {"social_cards": assemble_social_cards(state)}

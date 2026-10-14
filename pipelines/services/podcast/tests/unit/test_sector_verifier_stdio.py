@@ -37,3 +37,13 @@ def test_sector_diagnostics_use_stderr_without_changing_filtering(monkeypatch, c
         assert result["sector_exposures"] == []
     assert result["unresolved_market_trends"] == []
     assert [keyword, derived] == original
+
+
+def test_disabled_social_cards_keep_mcp_stdout_clean(monkeypatch, capsys):
+    from src.podcast.content_builder.nodes import social_cards_builder as cards
+
+    monkeypatch.setattr(cards, "social_enabled_for", lambda source: False)
+    assert cards.build_social_cards({"source": "Disabled show"}) == {"social_cards": []}
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "Social cards skipped: publishing is off for Disabled show" in captured.err
