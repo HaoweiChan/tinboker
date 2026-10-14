@@ -192,11 +192,13 @@ def _ticker_name_code(ticker: str) -> tuple[str, str]:
     return ticker, ""
 
 
-def _ticker_row(insight: dict[str, Any]) -> Optional[dict[str, str]]:
+def _ticker_row(insight: dict[str, Any], display_name: Optional[str] = None) -> Optional[dict[str, str]]:
     ticker = str(insight.get("ticker", "")).strip()
     if not ticker:
         return None
     name, code = _ticker_name_code(ticker)
+    if display_name:
+        name, code = display_name, ticker if display_name != ticker else ""
     sentiment, sentiment_class = _sentiment_badge(insight.get("sentiment_score"))
     return {
         "name": name, "code": code,
@@ -205,13 +207,15 @@ def _ticker_row(insight: dict[str, Any]) -> Optional[dict[str, str]]:
     }
 
 
-def _focus_item(insight: dict[str, Any]) -> Optional[dict[str, Any]]:
+def _focus_item(insight: dict[str, Any], display_name: Optional[str] = None) -> Optional[dict[str, Any]]:
     """Build one 產業焦點 list item (name + badge + one-liner) from a ticker's top reason."""
     ticker = str(insight.get("ticker", "")).strip()
     reasons = [r for r in (insight.get("reasons") or []) if isinstance(r, dict)]
     if not ticker:
         return None
     name, code = _ticker_name_code(ticker)
+    if display_name:
+        name, code = display_name, ticker if display_name != ticker else ""
     top = reasons[0] if reasons else {}
     # The card has a fixed 3-line box and must never show "…": take the first text that
     # fits WHOLE (the reason's description, then the one-sentence thesis, then the short
@@ -247,6 +251,7 @@ def cards_from_ticker_insights(
     ticker_insights: Optional[dict[str, Any]],
     episode_title: str = "",  # noqa: ARG001 — kept for signature parity with cards_from_marp_slides
     allowed_tickers: Optional[set[str]] = None,
+    display_names: Optional[dict[str, str]] = None,
 ) -> list[dict[str, Any]]:
     """Build the structured ticker deck (overview grid + focus-analysis cards).
 
@@ -271,7 +276,8 @@ def cards_from_ticker_insights(
     if not insights:
         return []
 
-    rows = [r for r in (_ticker_row(i) for i in insights) if r]
+    names = display_names or {}
+    rows = [r for r in (_ticker_row(i, names.get(canonical_symbol(str(i.get("ticker", ""))))) for i in insights) if r]
     cards: list[dict[str, Any]] = []
     if rows:
         all_neutral = all(
@@ -301,7 +307,7 @@ def cards_from_ticker_insights(
         except (TypeError, ValueError):
             return 0.0
 
-    items = [it for it in (_focus_item(i) for i in sorted(insights, key=_conviction, reverse=True)) if it]
+    items = [it for it in (_focus_item(i, names.get(canonical_symbol(str(i.get("ticker", ""))))) for i in sorted(insights, key=_conviction, reverse=True)) if it]
     items = items[: FOCUS_PER_CARD * MAX_FOCUS_CARDS]
     for start in range(0, len(items), FOCUS_PER_CARD):
         cards.append({
@@ -310,6 +316,18 @@ def cards_from_ticker_insights(
             "start_time_ms": None, "image_url": None,
         })
     return cards
+
+
+def authored_ticker_names(state: PipelineState) -> dict[str, str]:
+    """Episode-authored names take precedence without changing the shared registry."""
+    names: dict[str, str] = {}
+    for item in (state.get("writer_output") or {}).get("stock_tickers") or []:
+        if not isinstance(item, dict):
+            continue
+        symbol, name = item.get("symbol"), item.get("display_name")
+        if isinstance(symbol, str) and symbol.strip() and isinstance(name, str) and name.strip():
+            names.setdefault(canonical_symbol(symbol), name.strip())
+    return names
 
 
 def _deck_tickers(state: PipelineState) -> set[str]:
@@ -345,6 +363,7 @@ def assemble_social_cards(state: PipelineState) -> list[dict[str, Any]]:
     ticker_cards = cards_from_ticker_insights(
         state.get("ticker_insights") or {}, title,
         canonical_ticker_set(state.get("related_tickers")),
+        display_names=authored_ticker_names(state),
     )
     tables = [c for c in ticker_cards if c.get("kind") == "ticker_table"]
     focus = [c for c in ticker_cards if c.get("kind") == "focus_list"]

@@ -54,3 +54,53 @@ async def test_empty_or_invalid_cache_patch_rejected(updates):
     with pytest.raises(HTTPException) as error:
         await podcast.PodcastService.patch_episode_fields(None, 'show', 'ep', updates)
     assert error.value.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_clear_summary_image_clears_inline_and_both_urls_only():
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    service = SimpleNamespace(
+        firestore_service=SimpleNamespace(get_document=Mock(return_value={'podcast_name': 'show'})),
+        _write_episode_fields=AsyncMock(),
+        _invalidate_episode_cache=AsyncMock(),
+        _invalidate_ticker_insight_cache=AsyncMock(),
+        _purge_api_host_cdn=AsyncMock(),
+        get_episode_by_id=AsyncMock(return_value={'id': 'ep'}),
+    )
+    await podcast.PodcastService.patch_episode_fields(service, 'show', 'ep', {'clear_summary_image': True})
+    service._write_episode_fields.assert_awaited_once_with('ep', {
+        'summary_image': None, 'summary_image_url': None, 'summary_image_public_url': None,
+    })
+    service._invalidate_episode_cache.assert_awaited_once_with('show', 'ep')
+    service._purge_api_host_cdn.assert_awaited_once()
+    service._invalidate_ticker_insight_cache.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('updates', [
+    {'clear_summary_image': 'true'}, {'clear_summary_image': 1},
+    {'clear_summary_image': None}, {'clear_summary_image': False},
+    {'summary_image_url': 'https://example.com/image.svg'},
+    {'clear_summary_image': True, 'social_enabled': True},
+])
+async def test_image_cleanup_rejects_invalid_flags_and_unrelated_writes(updates):
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException) as error:
+        await podcast.PodcastService.patch_episode_fields(None, 'show', 'ep', updates)
+    assert error.value.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_image_cleanup_respects_episode_show_ownership():
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    from fastapi import HTTPException
+    service = SimpleNamespace(
+        firestore_service=SimpleNamespace(get_document=Mock(return_value={'podcast_name': 'other'})),
+        _write_episode_fields=AsyncMock(),
+    )
+    with pytest.raises(HTTPException) as error:
+        await podcast.PodcastService.patch_episode_fields(service, 'show', 'ep', {'clear_summary_image': True})
+    assert error.value.status_code == 404
+    service._write_episode_fields.assert_not_awaited()
