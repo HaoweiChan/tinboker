@@ -146,7 +146,7 @@ export const PodcasterPage: React.FC = () => {
                 type="button"
                 onClick={() => toggleSubscription(name)}
                 className={cn(
-                  'inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium transition-colors shrink-0',
+                  'inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors shrink-0',
                   isSubscribed ? 'bg-card border border-border text-foreground hover:bg-muted' : 'bg-foreground text-background hover:opacity-90',
                 )}
               >

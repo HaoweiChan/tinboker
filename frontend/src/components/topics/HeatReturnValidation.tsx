@@ -107,7 +107,7 @@ export const HeatReturnValidation: React.FC = () => {
     return (
       <>
         {header}
-        <div className="rounded-xl border border-border bg-card h-56 animate-pulse bg-muted/20" />
+        <div className="rounded-lg border border-border bg-card h-56 animate-pulse bg-muted/20" />
       </>
     );
   }
@@ -133,7 +133,7 @@ export const HeatReturnValidation: React.FC = () => {
         </p>
       </details>
 
-      <div className="rounded-xl border border-border bg-card p-4">
+      <div className="rounded-lg border border-border bg-card p-4">
       {buckets.length > 0 ? (
         <>
           <div className="divide-y divide-border/20">

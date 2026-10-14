@@ -194,7 +194,7 @@ export const NotificationDropdown: React.FC = () => {
       </button>
       {/* Dropdown Menu */}
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-80 sm:w-96 rounded-xl bg-card border border-border shadow-xl overflow-hidden z-50">
+        <div className="absolute right-0 mt-2 w-80 sm:w-96 rounded-lg bg-card border border-border shadow-xl overflow-hidden z-50">
           {/* Header */}
           <div className="p-4 border-b border-border flex items-center justify-between">
             <div>

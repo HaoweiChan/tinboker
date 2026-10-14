@@ -103,7 +103,7 @@ export const SubscribedTopics: React.FC<{
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {tagSubs.map((sub) => (
-          <div key={sub} className="bg-card border border-border rounded-xl h-[88px] animate-pulse" />
+          <div key={sub} className="bg-card border border-border rounded-lg h-[88px] animate-pulse" />
         ))}
       </div>
     );
@@ -157,7 +157,7 @@ export const SubscribedTopics: React.FC<{
 
 /** A subscription that no longer points at anything. Not a link: its page would be empty. */
 const RetiredTopicCard: React.FC<{ label: string; swipeable: boolean }> = ({ label, swipeable }) => (
-  <div className="bg-card border border-dashed border-border rounded-xl px-4 pt-3.5 pb-3 text-muted-foreground">
+  <div className="bg-card border border-dashed border-border rounded-lg px-4 pt-3.5 pb-3 text-muted-foreground">
     <div className="flex items-center gap-1.5 mb-1.5">
       <span className="text-2xs font-medium bg-muted/60 px-1.5 py-0.5 rounded leading-none">已停用</span>
     </div>

@@ -45,7 +45,7 @@ export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, children, classNa
       onClick={handleOverlayClick}
     >
       <div className={cn(
-        "bg-popover rounded-xl shadow-xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200 border border-border",
+        "bg-popover rounded-lg shadow-xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200 border border-border",
         className
       )}>
         <div className="flex items-center justify-between p-4 border-b border-border">

@@ -686,14 +686,14 @@
     color: hsl(var(--foreground));
   }
 
-  /* `.search-shell` / `.search-inner` were the old glassy search wrapper — flatten to a plain pill. */
+  /* `.search-shell` / `.search-inner` were the old glassy search wrapper — flatten to a plain field. */
   .search-shell {
     padding: 0;
-    border-radius: 9999px;
+    border-radius: var(--radius);
     background: transparent;
   }
   .search-inner {
-    border-radius: 9999px;
+    border-radius: var(--radius);
     background: hsl(var(--card));
     border: 1px solid hsl(var(--border));
     box-shadow: none;

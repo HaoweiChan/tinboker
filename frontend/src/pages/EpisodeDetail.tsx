@@ -404,7 +404,7 @@ export const EpisodeDetail: React.FC = () => {
                       onClick={onShare}
                       aria-label={shareCopied ? '已複製連結' : '分享'}
                       title={shareCopied ? '已複製連結' : '分享'}
-                      className="grid place-items-center h-9 w-9 rounded-full text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                      className="grid place-items-center h-9 w-9 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
                     >
                       {shareCopied ? <Check size={17} className="text-sentiment-bull" /> : <Share2 size={17} />}
                     </button>
@@ -415,12 +415,12 @@ export const EpisodeDetail: React.FC = () => {
                   {/* Spotify embed only — no audio from our own domain (AdSense
                       replicated content, #588). No Spotify URI, no playback. */}
                   {spotifyUri && (
-                    <button type="button" onClick={() => playFrom()} className="inline-flex shrink-0 items-center gap-1.5 px-4 py-2 rounded-full bg-foreground text-background text-sm font-medium hover:opacity-90 transition-opacity">
+                    <button type="button" onClick={() => playFrom()} className="inline-flex shrink-0 items-center gap-1.5 px-4 py-2 rounded-lg bg-foreground text-background text-sm font-medium hover:opacity-90 transition-opacity">
                       <Play size={14} className="fill-current" /> 播放本集
                     </button>
                   )}
                   {episode.spotify_url && (
-                    <a href={episode.spotify_url} target="_blank" rel="noopener noreferrer" className="inline-flex shrink-0 items-center gap-1.5 px-3.5 py-2 rounded-full bg-card border border-border text-sm font-medium hover:bg-muted transition-colors">
+                    <a href={episode.spotify_url} target="_blank" rel="noopener noreferrer" className="inline-flex shrink-0 items-center gap-1.5 px-3.5 py-2 rounded-lg bg-card border border-border text-sm font-medium hover:bg-muted transition-colors">
                       <ExternalLink size={13} /> Spotify
                     </a>
                   )}
@@ -452,14 +452,14 @@ export const EpisodeDetail: React.FC = () => {
                 return (
                   <div className="flex gap-1.5 flex-wrap mt-3">
                     {shown.map((c) => (
-                      <Link key={c.key} to={c.to} className={`text-2xs px-2.5 py-0.5 rounded-full font-medium transition-colors ${c.cls}`}>#{c.label}</Link>
+                      <Link key={c.key} to={c.to} className={`text-2xs px-2.5 py-0.5 rounded-lg font-medium transition-colors ${c.cls}`}>#{c.label}</Link>
                     ))}
                     {hidden > 0 && (
                       <button
                         type="button"
                         onClick={() => setTagsExpanded(true)}
                         aria-expanded={false}
-                        className="text-2xs px-2.5 py-0.5 rounded-full border border-border text-muted-foreground font-medium hover:text-foreground hover:border-foreground/30 transition-colors"
+                        className="text-2xs px-2.5 py-0.5 rounded-lg border border-border text-muted-foreground font-medium hover:text-foreground hover:border-foreground/30 transition-colors"
                       >
                         +{hidden}
                       </button>

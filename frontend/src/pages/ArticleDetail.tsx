@@ -76,7 +76,7 @@ export const ArticleDetail: React.FC = () => {
               <Link
                 key={tag}
                 to={`/topics/${encodeURIComponent(tag)}`}
-                className="text-xs px-2.5 py-1 rounded-full bg-muted text-muted-foreground hover:bg-accent-info-soft hover:text-accent-info transition-colors"
+                className="text-xs px-2.5 py-1 rounded-lg bg-muted text-muted-foreground hover:bg-accent-info-soft hover:text-accent-info transition-colors"
               >
                 #{tag}
               </Link>

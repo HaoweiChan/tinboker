@@ -65,7 +65,7 @@ const SORT_OPTIONS: { value: SortKey; label: string; hint: string }[] = [
 
 function BoardSkeleton() {
   return (
-    <div className="bg-card border border-border dark:border-white/[0.08] rounded-xl p-4 animate-pulse">
+    <div className="bg-card border border-border dark:border-white/[0.08] rounded-lg p-4 animate-pulse">
       <div className="flex items-start justify-between mb-3">
         <div className="flex-1">
           <div className="flex items-center gap-1.5 mb-1.5">
@@ -387,7 +387,7 @@ export const TopicsCloud: React.FC = () => {
             題材泡泡圖
           </h2>
         </div>
-        <div className="mb-7 rounded-xl border border-border bg-card overflow-hidden md:h-[520px]">
+        <div className="mb-7 rounded-lg border border-border bg-card overflow-hidden md:h-[520px]">
           {perfLoading ? (
             // The box only has a fixed height from md up, so below that the skeleton needs
             // its own — h-full alone collapsed it to a border line that read as "broken".
@@ -511,7 +511,7 @@ function BoardGrid({ loading, items, empty, netFlowByExposure, weeklyByExposure 
   }
   if (items.length === 0) {
     return (
-      <div className={`bg-card border border-border rounded-xl p-10 text-center ${type.empty} text-muted-foreground`}>
+      <div className={`bg-card border border-border rounded-lg p-10 text-center ${type.empty} text-muted-foreground`}>
         {empty}
       </div>
     );

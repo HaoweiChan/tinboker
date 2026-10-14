@@ -242,7 +242,7 @@ const TreeMap: React.FC<TreeMapProps> = ({ variant = 'standalone' }) => {
             )}
 
             {/* Map Container */}
-            <div className={`flex-1 border shadow-sm flex flex-wrap content-stretch overflow-hidden rounded-2xl ${isDark ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-300'}`}>
+            <div className={`flex-1 border shadow-sm flex flex-wrap content-stretch overflow-hidden rounded-lg ${isDark ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-300'}`}>
                 {/* We map the top level Sectors */}
                 {data.map((sector) => (
                     <TreeMapTile 

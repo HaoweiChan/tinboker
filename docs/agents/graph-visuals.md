@@ -39,7 +39,8 @@ The design-system half applies everywhere in the frontend, not just to graph pag
 
 ### Visual design (modern SaaS aesthetic)
 
-- **Cards** use `rounded-xl` corners, `shadow-sm` at rest, `shadow-md` on hover.
+- **Cards** use `rounded-lg` corners (the `--radius` token), a hairline border and no shadow; hover darkens the border (`hover:border-foreground/20`). Shadows are for floating layers only (dropdowns, popovers, modals).
+- **Text pills** (tags, badges, chips, text buttons, search fields) use `rounded-lg`, not `rounded-full`. Keep `rounded-full` for things that are actually round: avatars, status dots, spinners, toggles, progress tracks, icon-only buttons.
 - **Episode card visual contract** (consumed by HomeFeed, TagPage, PodcasterPage, StockDashboard — all surfaces use the same component):
   - **Light mode:** `bg-white`, `border-slate-200`, text `slate-900`.
   - **Dark mode:** `bg-slate-900`, no white border, text `slate-50` or `slate-200`, no shining/gradient hover.

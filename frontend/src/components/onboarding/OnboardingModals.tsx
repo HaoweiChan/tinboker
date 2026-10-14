@@ -142,7 +142,7 @@ function HeroStock() {
           <span className="text-xs text-muted-foreground" style={{ fontFamily: "'Noto Sans TC', sans-serif" }}>
             台積電
           </span>
-          <span className="ml-auto inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-2xs font-bold bg-sentiment-bull-soft text-sentiment-bull">
+          <span className="ml-auto inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-2xs font-bold bg-sentiment-bull-soft text-sentiment-bull">
             <TrendingUp size={11} /> 看多
           </span>
         </div>
@@ -403,7 +403,7 @@ export const OnboardingModals: React.FC = () => {
             <h2 className="text-lg font-bold text-foreground" style={{ fontFamily: "'Noto Sans TC', sans-serif" }}>
               新版本上線
             </h2>
-            <span className="ml-auto px-2 py-0.5 rounded-full text-2xs font-bold bg-primary text-primary-foreground tabular-nums">
+            <span className="ml-auto px-2 py-0.5 rounded-lg text-2xs font-bold bg-primary text-primary-foreground tabular-nums">
               {BUILD_VERSION || `v${entry.version}`}
             </span>
           </div>

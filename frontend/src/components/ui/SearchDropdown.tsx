@@ -27,7 +27,7 @@ import { trackClick } from '@/services/api/analytics';
 const SEARCH_PLACEHOLDER = '搜尋節目、代號…';
 
 const searchInputClass =
-  'w-full h-9 pl-9 pr-9 rounded-full bg-muted/50 border border-border text-sm text-foreground placeholder:text-muted-foreground focus:bg-background focus:border-foreground/20 focus-visible:ring-1 focus-visible:ring-foreground/10 focus-visible:ring-offset-0 transition-colors';
+  'w-full h-9 pl-9 pr-9 rounded-lg bg-muted/50 border border-border text-sm text-foreground placeholder:text-muted-foreground focus:bg-background focus:border-foreground/20 focus-visible:ring-1 focus-visible:ring-foreground/10 focus-visible:ring-offset-0 transition-colors';
 
 export const SearchDropdown: React.FC<SearchDropdownProps> = () => {
   const searchQuery = useAppStore((state) => state.searchQuery);
@@ -272,7 +272,7 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = () => {
                   <button
                     key={idx}
                     onClick={() => handleRecentClick(query)}
-                    className="px-2.5 py-1 bg-muted hover:bg-muted/80 rounded-full text-2xs text-foreground transition-colors"
+                    className="px-2.5 py-1 bg-muted hover:bg-muted/80 rounded-lg text-2xs text-foreground transition-colors"
                   >
                     {query}
                   </button>
@@ -338,7 +338,7 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = () => {
                   </h3>
                   <div className="flex flex-wrap gap-1.5">
                     {popularData.tags.map((item) => (
-                      <button key={item.id} onClick={() => handlePopularItemClick(item)} className="px-2.5 py-1 bg-accent-info-soft text-accent-info rounded-full text-2xs font-medium hover:opacity-80 transition-opacity">
+                      <button key={item.id} onClick={() => handlePopularItemClick(item)} className="px-2.5 py-1 bg-accent-info-soft text-accent-info rounded-lg text-2xs font-medium hover:opacity-80 transition-opacity">
                         #{item.title}
                       </button>
                     ))}
@@ -410,7 +410,7 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = () => {
       <div className="md:hidden w-full">
         <button
           onClick={() => setIsOpen(true)}
-          className="w-full flex items-center gap-2 px-3 h-9 bg-muted/50 border border-border rounded-full text-muted-foreground"
+          className="w-full flex items-center gap-2 px-3 h-9 bg-muted/50 border border-border rounded-lg text-muted-foreground"
         >
           <Search className="h-4 w-4 shrink-0" />
           <span className="text-sm truncate">{SEARCH_PLACEHOLDER}</span>
