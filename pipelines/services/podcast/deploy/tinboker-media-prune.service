@@ -12,7 +12,9 @@ Environment=MEDIA_STORAGE_ROOT=/srv/tinboker-media
 Environment=PODCAST_MP3_RETENTION_DAYS=90
 # The installer takes SHARE ROW EXCLUSIVE on the episode tables; never queue live writers
 # behind an idle-in-transaction session (the v0.12.20 boot-DDL outage).
-Environment=PGOPTIONS=-c lock_timeout=5s
+# Quoted: unquoted, systemd splits on the space and PGOPTIONS becomes a bare "-c",
+# which Postgres rejects at connect (OperationalError on the first run, 2026-10-14).
+Environment="PGOPTIONS=-c lock_timeout=5s"
 # Idempotent: schema, config and triggers only, no tombstones. --apply refuses without it.
 ExecStartPre=/root/tinboker/pipelines/.venv/bin/python -m scripts.mp3_retention_guards --install
 # Each run finalizes paths staged >=4h earlier, then stages new ones, up to the batch.
