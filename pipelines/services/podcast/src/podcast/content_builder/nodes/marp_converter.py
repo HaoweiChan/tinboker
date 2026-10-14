@@ -11,9 +11,12 @@ load an external ``--theme-set`` file the way the PNG render path does).
 from datetime import datetime, timezone
 from typing import Any, Optional
 
+from shared.tickers import prime_tickers
+
 from ..card_deck import build_inline_deck_markdown
 from ..state import PipelineState
 from .social_cards_builder import (
+    _deck_tickers,
     assemble_social_cards,
     canonical_ticker_set,
     cards_from_ticker_insights,
@@ -52,6 +55,7 @@ def convert_marp_ticker(state: PipelineState) -> dict[str, Any]:
     Deterministic — no LLM. These cards carry no cover/bullets, so the cover-guard
     in ``_render`` doesn't apply; emit whenever there is at least one card.
     """
+    prime_tickers(_deck_tickers(state))
     cards = cards_from_ticker_insights(
         state.get("ticker_insights") or {},
         state.get("episode_title") or "",

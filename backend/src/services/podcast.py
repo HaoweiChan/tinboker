@@ -2785,10 +2785,15 @@ class PodcastService:
         invalidate_caches = updates.pop("invalidate_caches", False)
         if type(invalidate_caches) is not bool:
             raise HTTPException(status_code=422, detail="invalidate_caches must be boolean")
+        clear_summary_image = updates.pop("clear_summary_image", False)
+        if type(clear_summary_image) is not bool:
+            raise HTTPException(status_code=422, detail="clear_summary_image must be boolean")
         allowed = {"summary_content", "key_insights", "related_tickers", "tags"}
         bad_keys = set(updates.keys()) - allowed
         if bad_keys:
             raise HTTPException(status_code=422, detail=f"Fields not patchable: {', '.join(sorted(bad_keys))}")
+        if clear_summary_image:
+            updates.update({"summary_image": None, "summary_image_url": None, "summary_image_public_url": None})
         if not updates and not invalidate_caches:
             raise HTTPException(status_code=422, detail="No fields to update")
         episode_dict = self.firestore_service.get_document("episodes", episode_id)
