@@ -288,8 +288,9 @@ def compose_theme_text(move: ThemeMove, clause: str) -> str:
     return _sentence(f"{move.basket.name}族群盤中{verb(med)}，{leaders}{'領漲' if med >= 0 else '領跌'}", clause)
 
 
-def card_url(index: Instrument, until: int) -> str:
-    q = urllib.parse.urlencode({"until": until})
+def card_url(index: Instrument, until: int, clause: str = "") -> str:
+    """The reason rides in the URL too, so the image Meta fetches says what the post says."""
+    q = urllib.parse.urlencode({"until": until, **({"reason": clause[:60]} if clause else {})})
     return f"{settings.public_api_url.rstrip('/')}/api/og/market/{index.id}.png?{q}"
 
 
@@ -586,7 +587,7 @@ async def build_draft(market: Market, today: date, now: datetime, *, lane: str =
     lead = headline_move(moves)
     return await _draft(market, lane, lane_key(market, today, lane, lead.index.id), lead.index.id, lead,
                         lambda clause: compose_text(lead, clause),
-                        lambda _clause: card_url(lead.index, lead.day.last_ts),
+                        lambda clause: card_url(lead.index, lead.day.last_ts, clause),
                         now, force, base)
 
 

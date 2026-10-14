@@ -54,10 +54,11 @@ def signed(v: float, pct: bool = False) -> str:
 
 def intraday_card_svg(name: str, code: str, day: Intraday,
                       peers: Optional[list[tuple[str, float]]] = None, source: str = "Yahoo Finance",
-                      peers_label: str = "同市場") -> str:
+                      peers_label: str = "同市場", reason: str = "") -> str:
     """``peers`` is ``[(name, pct)]`` — the market's other indices, or for a stock the main
     index (``peers_label`` 大盤) — printed under the stats so one card answers "was it just
-    this one?"."""
+    this one?". ``reason`` is the post's one-line why (主因… / 市場推測與…有關), printed
+    under the change; the line pane gives up the room it takes."""
     if len(day.points) < 2:
         raise ValueError(f"{code}: not enough bars to draw")
     font = card_font()
@@ -68,12 +69,14 @@ def intraday_card_svg(name: str, code: str, day: Intraday,
     pad = (hi - lo) * 0.10 or day.prev_close * 0.002
     lo, hi = lo - pad, hi + pad
     colour = UP if day.change >= 0 else DOWN
+    lines = wrap(reason.strip(), REASON_PX, SIZE - 2 * MARGIN)[:2] if reason.strip() else []
+    py0 = PY0 + 40 * len(lines)
 
     def x(ts: int) -> float:
         return px0 + (ts - t0) / (t1 - t0) * (px1 - px0)
 
     def y(v: float) -> float:
-        return PY1 - (v - lo) / (hi - lo) * (PY1 - PY0)
+        return PY1 - (v - lo) / (hi - lo) * (PY1 - py0)
 
     stamp = datetime.fromtimestamp(day.last_ts, tz)
     status = "收盤" if is_closed(day) else "盤中"
@@ -89,6 +92,8 @@ def intraday_card_svg(name: str, code: str, day: Intraday,
          f'<text x="{MARGIN}" y="178" fill="{INK}" font-size="80" font-weight="700">{_f(day.last)}</text>',
          f'<text x="{MARGIN}" y="236" fill="{colour}" font-size="40" font-weight="700">'
          f'{signed(day.pct, pct=True)}<tspan dx="18" font-size="32">({signed(day.change)})</tspan></text>']
+    for k, line in enumerate(lines):
+        s.append(f'<text x="{MARGIN}" y="{286 + k * 40}" fill="{INK}" font-size="{REASON_PX}">{escape(line)}</text>')
 
     for k in range(5):
         v = lo + (hi - lo) * k / 4
@@ -100,9 +105,9 @@ def intraday_card_svg(name: str, code: str, day: Intraday,
     segs = segments(day.points)
     for a, b in zip(segs, segs[1:]):
         gx0, gx1 = x(a[-1][0]), x(b[0][0])
-        s.append(f'<rect x="{gx0:.1f}" y="{PY0}" width="{gx1-gx0:.1f}" height="{PY1-PY0}" '
+        s.append(f'<rect x="{gx0:.1f}" y="{py0}" width="{gx1-gx0:.1f}" height="{PY1-py0}" '
                  f'fill="{BORDER}" opacity="0.6"/>')
-        s.append(f'<text x="{(gx0+gx1)/2:.1f}" y="{PY0+30}" fill="{LABEL}" font-size="20" '
+        s.append(f'<text x="{(gx0+gx1)/2:.1f}" y="{py0+30}" fill="{LABEL}" font-size="20" '
                  f'text-anchor="middle">午休</text>')
 
     for seg in segs:

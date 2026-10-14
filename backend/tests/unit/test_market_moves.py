@@ -3,6 +3,8 @@ wording, the card, and one tick end to end against the ledger."""
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
+import urllib.parse
+
 import pytest
 
 from src.services import market_moves as mm
@@ -201,6 +203,15 @@ def test_card_breaks_the_line_over_lunch_and_says_it_is_still_trading():
     assert svg.count('stroke-linejoin="round"') == 2
 
 
+def test_card_prints_the_reason_under_the_change_and_gives_up_chart_room_for_it():
+    day = _day([101.0, 102.0, 101.5])
+    plain = intraday_card_svg("加權指數", "TWII", day)
+    told = intraday_card_svg("加權指數", "TWII", day, reason="主因美國公債殖利率急升，外資賣超擴大")
+    assert "主因美國公債殖利率急升" in told and "主因" not in plain
+    assert 'y="286"' in told and 'y="286"' not in plain             # the line sits under the change
+    assert 'y1="340.0"' in told and 'y1="300.0"' in plain           # the top gridline moves down by one line
+
+
 def test_card_after_the_close_says_so_and_needs_two_bars():
     day = _day([101.0, 102.0], end=OPEN + 60)
     assert "收盤" in intraday_card_svg("加權指數", "TWII", day)
@@ -266,7 +277,8 @@ async def test_a_big_morning_posts_once_with_the_pinned_card_and_the_sources(tem
     assert await mm.publish_due(now) == 1
     text, image = fake.posts[0]
     assert text == "台股加權指數盤中重挫3%，市場推測與美債殖利率走升有關。"
-    assert image == f"https://api.tinboker.com/api/og/market/TWII.png?until={twii.last_ts}"
+    assert image == (f"https://api.tinboker.com/api/og/market/TWII.png?until={twii.last_ts}"
+                     f"&reason={urllib.parse.quote_plus('市場推測與美債殖利率走升有關')}")
     assert fake.replies[0][0].startswith("消息來源：\n・Reuters：Yields jump") and fake.replies[0][1] == "m1"
     row = social_ledger.list_posted("threads")[0]
     assert (row["episode_id"], row["format"], row["subject"]) == \
@@ -347,7 +359,8 @@ async def test_a_giant_with_a_big_morning_posts_its_own_card(temp_db, monkeypatc
     assert await mm.publish_due(_tick(0)) == 1
     text, image = fake.posts[0]
     assert text == "台積電盤中重挫逾4%，市場推測與美債殖利率走升有關。"
-    assert image == f"https://api.tinboker.com/api/og/market/2330_TW.png?until={tsmc.last_ts}"
+    assert image == (f"https://api.tinboker.com/api/og/market/2330_TW.png?until={tsmc.last_ts}"
+                     f"&reason={urllib.parse.quote_plus('市場推測與美債殖利率走升有關')}")
     row = social_ledger.list_posted("threads")[0]
     assert (row["episode_id"], row["subject"]) == ("market_move:stock:TW:2026-10-14:2330_TW", "2330_TW")
     assert await mm.publish_due(_tick(1)) == 0                      # once per stock per day
@@ -395,14 +408,16 @@ async def test_stock_card_compares_with_the_main_index(monkeypatch):
     async def intraday(symbol):
         return {"2330.TW": _day([96.0, 95.0]), "^TWII": _day([99.0, 98.5])}.get(symbol) or _day([100.0, 100.0])
 
-    def svg(name, code, day, peers, peers_label="同市場"):
-        seen.update(name=name, code=code, label=peers_label, peers=[(n, round(p, 2)) for n, p in peers])
+    def svg(name, code, day, peers, peers_label="同市場", reason=""):
+        seen.update(name=name, code=code, label=peers_label, reason=reason,
+                    peers=[(n, round(p, 2)) for n, p in peers])
         return "<svg/>"
     monkeypatch.setattr(og_router.yahoo_chart, "intraday", intraday)
     monkeypatch.setattr(og_router, "intraday_card_svg", svg)
     monkeypatch.setattr(og_router, "svg_to_png", lambda s, w, h: b"png")
-    await og_router.market_card_raster("2330_TW", until=None)
-    assert seen == {"name": "台積電", "code": "2330", "label": "大盤", "peers": [("加權指數", -1.5)]}
+    await og_router.market_card_raster("2330_TW", until=None, reason="主因法說會下修毛利率")
+    assert seen == {"name": "台積電", "code": "2330", "label": "大盤", "reason": "主因法說會下修毛利率",
+                    "peers": [("加權指數", -1.5)]}
 
 
 @pytest.mark.asyncio
@@ -440,11 +455,11 @@ async def test_card_route_pins_the_day_and_tolerates_a_missing_peer(monkeypatch)
     monkeypatch.setattr(og_router, "intraday_card_svg", svg)
     monkeypatch.setattr(og_router, "svg_to_png", lambda s, w, h: b"png")
 
-    resp = await og_router.market_card_raster("TWII", until=OPEN + 60)
+    resp = await og_router.market_card_raster("TWII", until=OPEN + 60, reason="")
     assert resp.body == b"png" and resp.headers["cache-control"] == "public, max-age=86400"
     assert seen == {"name": "加權指數", "last": 102.0, "peers": []}
     with pytest.raises(HTTPException) as e:
-        await og_router.market_card_raster("NOPE", until=None)
+        await og_router.market_card_raster("NOPE", until=None, reason="")
     assert e.value.status_code == 404
 
 

@@ -456,6 +456,7 @@ async def market_card_raster(
     instrument_id: str = Path(..., pattern=r"^[A-Z0-9_]{2,12}$",
                               description="Yahoo symbol without the caret, '.' as '_' (TWII, 2330_TW, NVDA)"),
     until: Optional[int] = Query(None, ge=0, description="Cut the day at this epoch second"),
+    reason: str = Query("", max_length=80, description="The post's one-line why, under the change"),
 ) -> Response:
     """One index's or giant's intraday line as a square PNG — the first image of a
     market-move post. ``until`` pins the card to the minute the post was written; Meta
@@ -478,7 +479,7 @@ async def market_card_raster(
             continue  # a missing peer is a shorter row, not a failed card
     try:
         svg = intraday_card_svg(inst.name, inst.code, day, peers,
-                                peers_label="同市場" if inst.is_index else "大盤")
+                                peers_label="同市場" if inst.is_index else "大盤", reason=reason)
         png = await asyncio.to_thread(svg_to_png, svg, CARD_SIZE, CARD_SIZE)
     except ValueError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
