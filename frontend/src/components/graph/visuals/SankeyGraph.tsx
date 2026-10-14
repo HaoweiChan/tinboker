@@ -1,9 +1,15 @@
 import React, { useMemo, useState } from 'react';
 import { ResponsiveSankey } from '@nivo/sankey';
+import type { SankeyLinkDatum, SankeyNodeDatum } from '@nivo/sankey';
 import { useNavigate } from 'react-router-dom';
 import { ArrowUpRight, X } from 'lucide-react';
 import type { SankeyData } from '@/services/types';
 import { useAppStore } from '@/store/useAppStore';
+
+type SNode = SankeyData['nodes'][number];
+type SLink = SankeyData['links'][number];
+/** A clicked node, plus the optional fields a richer payload may carry. */
+type ActiveNode = SankeyNodeDatum<SNode, SLink> & { ticker?: string; overview?: string };
 
 
 const fallbackData: SankeyData = {
@@ -31,7 +37,7 @@ const fallbackData: SankeyData = {
 };
 
 // Helper to extract ticker from ID or custom field if available
-const getTicker = (nodeId: string, nodeData?: any) => {
+const getTicker = (nodeId: string, nodeData?: { ticker?: string }) => {
     if (nodeData && nodeData.ticker) return nodeData.ticker;
     // Simple heuristic for mock data IDs that might be names
     const nameToTicker: Record<string, string> = {
@@ -59,7 +65,7 @@ const SankeyGraph: React.FC<SankeyGraphProps> = ({ isWidget = false, data, title
   const isDark = theme === 'dark';
   const nodeColorFallback = isDark ? '#475569' : '#cbd5e1';
   const navigate = useNavigate();
-  const [activeNode, setActiveNode] = useState<any | null>(null);
+  const [activeNode, setActiveNode] = useState<ActiveNode | null>(null);
   const Container = isWidget ? React.Fragment : 'div';
   const containerProps = isWidget
     ? {}
@@ -132,9 +138,10 @@ const SankeyGraph: React.FC<SankeyGraphProps> = ({ isWidget = false, data, title
   const symbolBadgeClass = isDark ? 'bg-slate-800 text-slate-50' : 'bg-slate-200 text-slate-900';
   const allocationClass = isDark ? 'text-indigo-300' : 'text-indigo-600';
 
-  const handleNodeClick = (node: any) => {
-    if (isWidget) return;
-    setActiveNode(node);
+  const handleNodeClick = (item: SankeyNodeDatum<SNode, SLink> | SankeyLinkDatum<SNode, SLink>) => {
+    // Links are clickable too; only a node has an overview to open.
+    if (isWidget || !('id' in item)) return;
+    setActiveNode(item as ActiveNode);
   };
 
   const handleNavigate = () => {
@@ -161,7 +168,7 @@ const SankeyGraph: React.FC<SankeyGraphProps> = ({ isWidget = false, data, title
             data={sankeyData}
             margin={{ top: 24, right: isWidget ? 120 : 180, bottom: 24, left: 140 }}
             align="justify"
-            colors={(node: any) => node.nodeColor || nodeColorFallback}
+            colors={(node) => node.nodeColor || nodeColorFallback}
             nodeOpacity={1}
             nodeHoverOthersOpacity={0.35}
             nodeThickness={18}
@@ -193,7 +200,7 @@ const SankeyGraph: React.FC<SankeyGraphProps> = ({ isWidget = false, data, title
                 <p className="text-xs text-slate-500 dark:text-slate-400">{Math.round(Number(node.value))} allocation points</p>
               </div>
             )}
-            linkTooltip={({ link }: any) => (
+            linkTooltip={({ link }) => (
                 <div className="p-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg text-xs">
                     <strong>{link.source.id}</strong> → <strong>{link.target.id}</strong>
                     <div className="mt-1">

@@ -46,7 +46,7 @@ export function useSynchronizedCharts({ charts, enabled = true }: UseSynchronize
                   if (timeScale) {
                     timeScale.setVisibleRange(timeRange);
                   }
-                } catch (e) {
+                } catch {
                   // Silently ignore all errors including disposed chart errors
                   // The chart might have been disposed during the async operation
                 }

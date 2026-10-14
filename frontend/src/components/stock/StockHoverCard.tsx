@@ -53,7 +53,7 @@ export const StockHoverCard: React.FC<StockHoverCardProps> = ({ symbol, children
             }
           );
           setStockData(data);
-        } catch (error) {
+        } catch {
           // Error already handled by fetchWithFallbackAndErrorHandler or caught here if it threw
           // Set minimal data with just the symbol if fetch fails
           setStockData({

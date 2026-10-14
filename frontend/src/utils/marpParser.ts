@@ -4,7 +4,7 @@ export interface MarpMetadata {
   paginate?: boolean;
   header?: string;
   footer?: string;
-  [key: string]: any;
+  [key: string]: string | number | boolean | undefined;
 }
 
 /**
@@ -24,17 +24,18 @@ export function parseMarpFrontmatter(content: string): MarpMetadata {
     const match = line.match(/^(\w+):\s*(.+)$/);
     if (match) {
       const key = match[1].trim();
-      let value: any = match[2].trim();
+      const raw = match[2].trim();
+      let value: string | number | boolean = raw;
 
       // Parse boolean values
-      if (value === 'true') value = true;
-      else if (value === 'false') value = false;
+      if (raw === 'true') value = true;
+      else if (raw === 'false') value = false;
       // Parse numbers
-      else if (/^\d+$/.test(value)) value = parseInt(value, 10);
+      else if (/^\d+$/.test(raw)) value = parseInt(raw, 10);
       // Remove quotes from strings
-      else if ((value.startsWith('"') && value.endsWith('"')) || 
-               (value.startsWith("'") && value.endsWith("'"))) {
-        value = value.slice(1, -1);
+      else if ((raw.startsWith('"') && raw.endsWith('"')) || 
+               (raw.startsWith("'") && raw.endsWith("'"))) {
+        value = raw.slice(1, -1);
       }
 
       metadata[key] = value;

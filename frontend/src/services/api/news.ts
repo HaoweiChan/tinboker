@@ -8,7 +8,7 @@ export async function getSortedNews(sortBy: string = 'date'): Promise<StockEvent
     params: { sort_by: sortBy },
   });
   if (Array.isArray(response.data)) {
-    return response.data.reduce((acc: StockEvent[], item: any) => {
+    return response.data.reduce((acc: StockEvent[], item: unknown) => {
       const result = StockEventSchema.safeParse(item);
       if (result.success) acc.push(result.data);
       return acc;
@@ -29,7 +29,7 @@ export async function getNewsById(newsId: string): Promise<StockEvent> {
 export async function fetchNewsFromMassive(
   ticker: string,
   limit: number = 10
-): Promise<any> {
+): Promise<unknown> {
   const response = await apiClient.post(`/api/news/fetch/${ticker}`, null, {
     params: { limit },
   });
