@@ -650,7 +650,7 @@ def test_baskets_come_from_registry_themes_split_by_market(monkeypatch):
 async def test_worker_loop_is_idle_when_off_and_survives_a_bad_tick(monkeypatch):
     ticks = []
 
-    async def due():
+    async def due(now=None):
         ticks.append(1)
         raise RuntimeError("yahoo down")
 
@@ -673,3 +673,69 @@ async def test_worker_loop_is_idle_when_off_and_survives_a_bad_tick(monkeypatch)
     with pytest.raises(Stop):
         await mm.run_periodic()
     assert ticks == [1, 1]                                          # a failing tick does not end the loop
+
+
+# ── failure alerts ──────────────────────────────────────────────────────────
+
+def test_admins_are_told_once_per_outage_and_once_on_recovery(monkeypatch):
+    sent = []
+    monkeypatch.setattr(mm, "_notify_admins", lambda title, body: sent.append((title, body)) or 1)
+    monkeypatch.setattr(mm, "_health", {"fails": 0, "alerted": False, "last": ""})
+    for _ in range(mm.ALERT_AFTER - 1):
+        assert mm.track_health(["Yahoo 指數報價全部失敗（TW）：HTTP 429"], active=True) is None
+    assert mm.track_health(["Yahoo 指數報價全部失敗（TW）：HTTP 429"], active=True) == "failing"
+    assert sent[0][0] == "盤中速報連續失敗" and "連續 5 分鐘" in sent[0][1] and "HTTP 429" in sent[0][1]
+    for _ in range(10):
+        mm.track_health(["still down"], active=True)
+    assert len(sent) == 1                                            # one alert per outage, not per minute
+    assert mm.track_health(["x"], active=False) is None              # outside every window: no evidence
+    assert mm.track_health([], active=True) == "recovered" and sent[1][0] == "盤中速報已恢復"
+    assert mm.track_health([], active=True) is None and len(sent) == 2
+
+
+def test_a_blip_shorter_than_the_threshold_is_forgotten(monkeypatch):
+    sent = []
+    monkeypatch.setattr(mm, "_notify_admins", lambda title, body: sent.append(title) or 1)
+    monkeypatch.setattr(mm, "_health", {"fails": 0, "alerted": False, "last": ""})
+    for _ in range(mm.ALERT_AFTER - 1):
+        mm.track_health(["blip"], active=True)
+    mm.track_health([], active=True)
+    for _ in range(mm.ALERT_AFTER - 1):
+        mm.track_health(["blip"], active=True)
+    assert sent == []
+
+
+@pytest.mark.asyncio
+async def test_yahoo_down_for_every_index_and_a_failed_publish_are_problems(temp_db, monkeypatch):
+    from src.services.threads_service import ThreadsError
+    _wire(monkeypatch, {})                                           # every symbol raises YahooChartError
+    await mm.publish_due(_tick(0))
+    assert any(p.startswith("Yahoo 指數報價全部失敗（TW）") for p in mm._problems)
+
+    fake = _wire(monkeypatch, {"^TWII": _day([97.0] * 31), "^TWOII": _day([98.0] * 31)})
+
+    async def boom(text, image_url=None):
+        raise ThreadsError("token expired")
+    monkeypatch.setattr(fake, "publish", boom)
+    await mm.publish_due(_tick(0))
+    assert any(p.startswith("Threads 發文失敗") and "token expired" in p for p in mm._problems)
+
+    _wire(monkeypatch, {"^TWII": _day([100.2] * 31), "^TWOII": _day([100.1] * 31)})
+    await mm.publish_due(_tick(30))
+    assert mm._problems == []                                        # a quiet, healthy tick is not a failure
+
+
+def test_alert_lands_in_every_admin_bell(temp_db, monkeypatch):
+    from src.database import postgres as pg
+    from src.database.models import User, UserNotification
+    from src.database.postgres import session_scope
+    for table in (User.__table__, UserNotification.__table__):
+        table.create(bind=pg.engine, checkfirst=True)
+    monkeypatch.setattr(mm.settings, "admin_emails", ["Boss@Example.com"])
+    with session_scope() as db:
+        db.add_all([User(id="u1", google_id="g1", email="boss@example.com"),
+                    User(id="u2", google_id="g2", email="reader@example.com")])
+    assert mm._notify_admins("盤中速報連續失敗", "Yahoo 掛了") == 1
+    with session_scope() as db:
+        rows = [(n.user_id, n.type, n.title) for n in db.query(UserNotification).all()]
+    assert rows == [("u1", "system_alert", "盤中速報連續失敗")]

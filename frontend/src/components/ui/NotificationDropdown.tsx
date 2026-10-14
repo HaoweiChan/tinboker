@@ -173,6 +173,7 @@ export const NotificationDropdown: React.FC = () => {
       case 'topic_mention':
         return <Hash size={16} className="text-accent-info" />;
       case 'price_alert':
+      case 'system_alert':
         return <AlertTriangle size={16} className="text-destructive" />;
     }
   };

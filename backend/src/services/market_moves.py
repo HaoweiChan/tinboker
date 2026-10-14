@@ -72,6 +72,9 @@ THEME_BREADTH = 0.7          # share of members that must move with the median
 THEME_CARD_ROWS = 10
 _retry_at: dict[str, datetime] = {}   # key -> earliest retry after a failed publish / no reason
 _theme_scanned_at: dict[str, datetime] = {}   # market id -> last theme scan
+ALERT_AFTER = 5              # consecutive failing ticks (minutes) before admins are told
+_problems: list[str] = []    # what went wrong in the current tick
+_health: dict = {"fails": 0, "alerted": False, "last": ""}
 
 
 @dataclass(frozen=True)
@@ -396,6 +399,7 @@ async def find_cause(market: Market, subject: Subject, now: datetime) -> dict:
     which means no post."""
     empty = {"tier": "none", "clause": "", "cause": "", "sources": []}
     if not settings.openrouter_api_key:
+        _problems.append("OPENROUTER_API_KEY 未設定，找不到原因就不會發文")
         return {**empty, "error": "no_openrouter_key"}
     try:
         items = []
@@ -410,6 +414,7 @@ async def find_cause(market: Market, subject: Subject, now: datetime) -> dict:
         out = await _extract_cause(market, subject, headlines)
     except Exception as e:  # noqa: BLE001 — timeout, 5xx, malformed JSON: no reason, no post
         logger.warning("market move cause extraction failed (%s): %s", market.id, e)
+        _problems.append(f"OpenRouter 原因萃取失敗：{str(e)[:120]}")
         return {**empty, "error": f"llm: {str(e)[:200]}"}
     ids = [i for i in out.get("support") or [] if isinstance(i, int) and 0 <= i < len(headlines)]
     sources = [headlines[i] for i in dict.fromkeys(ids)]
@@ -582,6 +587,11 @@ async def build_draft(market: Market, today: date, now: datetime, *, lane: str =
             except YahooChartError:
                 continue
     base = {"market": market.id, "lane": lane, "date": today.isoformat(), "rows": scanned["rows"]}
+    errors = [r["error"] for r in scanned["rows"] if "error" in r]
+    if lane == "index" and errors and len(errors) == len(scanned["rows"]):
+        # Every index failing at once is Yahoo (blocked, down, or a new payload shape),
+        # not one quiet symbol.
+        _problems.append(f"Yahoo 指數報價全部失敗（{market.id}）：{errors[0][:120]}")
     if not moves:
         return {**base, "draft": None}
     lead = headline_move(moves)
@@ -660,6 +670,7 @@ async def publish_due(now: Optional[datetime] = None) -> int:
     (index, giants, theme) with a big move and a reason. Returns posts made."""
     now = now or datetime.now(timezone.utc)
     posted = 0
+    _problems.clear()
     for market in enabled_markets():
         today = window_date(market, now)
         if not today:
@@ -670,8 +681,9 @@ async def publish_due(now: Optional[datetime] = None) -> int:
                 continue
             try:
                 res = await build_draft(market, today, now, lane=lane, exclude=exclude)
-            except Exception:  # one market's failure must not stop the others
+            except Exception as e:  # one market's failure must not stop the others
                 logger.exception("market move scan failed for %s/%s", market.id, lane)
+                _problems.append(f"{market.id}/{lane} 掃描例外：{type(e).__name__}: {str(e)[:120]}")
                 continue
             if res.get("skipped") == "no_cause":
                 # Big move, no story yet. Ask again later — not every minute, each ask is a model call.
@@ -686,9 +698,57 @@ async def publish_due(now: Optional[datetime] = None) -> int:
                 posted += 1
                 break  # one post per market per tick
             if str(out.get("reason", "")).startswith("publish_failed"):
+                _problems.append(f"Threads 發文失敗：{out['reason'][:160]}")
                 # Each retry re-asks the model; a broken image URL must not do that every minute.
                 _retry_at[res["draft"]["key"]] = now + RETRY_AFTER
     return posted
+
+
+def _notify_admins(title: str, body: str) -> int:
+    """A bell notification for every registered admin — the channel the news drafts
+    already use, so no new secret or service. Never raises."""
+    from sqlalchemy import func
+
+    from src.database.models import User
+    from src.models.notification import NotificationType
+    from src.services.notification_service import create_user_notification
+    try:
+        from src.database.postgres import session_scope
+        with session_scope() as db:
+            ids = [u.id for u in db.query(User.id).filter(func.lower(User.email).in_(
+                [e.lower() for e in settings.admin_emails])).all()]
+        for uid in ids:
+            create_user_notification(uid, NotificationType.SYSTEM_ALERT, title, body, {"source": "market_moves"})
+        if not ids:
+            logger.error("market moves alert had no admin recipient: %s — %s", title, body)
+        return len(ids)
+    except Exception:  # noqa: BLE001 — an alert that cannot be sent is logged, not fatal
+        logger.exception("market moves alert could not be sent: %s — %s", title, body)
+        return 0
+
+
+def track_health(problems: list[str], active: bool) -> Optional[str]:
+    """Count consecutive failing ticks inside a detection window and tell admins once
+    per outage (after ``ALERT_AFTER``), and once more when it recovers. Ticks outside
+    every window prove nothing either way and leave the count alone. Returns the alert
+    kind sent, if any."""
+    if not active:
+        return None
+    if problems:
+        _health["fails"] += 1
+        _health["last"] = problems[0]
+        if _health["fails"] >= ALERT_AFTER and not _health["alerted"]:
+            _health["alerted"] = True
+            _notify_admins("盤中速報連續失敗",
+                           f"已連續 {_health['fails']} 分鐘失敗，期間不會發文。最近一次：{problems[0]}")
+            return "failing"
+        return None
+    if _health["alerted"]:
+        _notify_admins("盤中速報已恢復", f"連續 {_health['fails']} 分鐘的失敗已排除。最後的錯誤：{_health['last']}")
+        _health.update(fails=0, alerted=False, last="")
+        return "recovered"
+    _health.update(fails=0, last="")
+    return None
 
 
 async def run_periodic(interval_seconds: float = 60.0) -> None:
@@ -697,10 +757,17 @@ async def run_periodic(interval_seconds: float = 60.0) -> None:
     logger.info("market moves worker started (markets=%s)", settings.market_move_markets or "off")
     while True:
         if settings.market_move_markets:
+            now = datetime.now(timezone.utc)
             try:
-                await publish_due()
-            except Exception:
+                await publish_due(now)
+            except Exception as e:
                 logger.exception("market move cycle encountered an error")
+                _problems.append(f"整輪例外：{type(e).__name__}: {str(e)[:120]}")
+            active = any(window_date(m, now) for m in enabled_markets())
+            try:
+                await asyncio.to_thread(track_health, list(_problems), active)
+            except Exception:
+                logger.exception("market move health tracking failed")
         await asyncio.sleep(interval_seconds)
 
 
