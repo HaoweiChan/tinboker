@@ -101,7 +101,7 @@ export const PostProcessedSlide: React.FC<PostProcessedSlideProps> = ({
                 navigate(`/tag/${encodeURIComponent(tag)}`);
               }
             }}
-            className="inline-flex mx-1 px-2 py-0.5 rounded-lg bg-accent-info-soft text-accent-info text-xs font-semibold cursor-pointer hover:bg-accent-info/25 transition-colors border border-accent-info/30 align-middle"
+            className="inline-flex mx-1 px-2 py-0.5 rounded-full bg-accent-info-soft text-accent-info text-xs font-semibold cursor-pointer hover:bg-accent-info/25 transition-colors border border-accent-info/30 align-middle"
           >
             {textContent}
           </span>
@@ -139,7 +139,7 @@ export const PostProcessedSlide: React.FC<PostProcessedSlideProps> = ({
                 }
               }
             }}
-            className="inline-flex mx-1 ml-2 px-2.5 py-0.5 rounded-lg border border-border text-muted-foreground text-xs font-financial cursor-pointer hover:bg-muted hover:text-foreground transition-colors items-center gap-1 align-middle translate-y-[-3px]"
+            className="inline-flex mx-1 ml-2 px-2.5 py-0.5 rounded-full border border-border text-muted-foreground text-xs font-financial cursor-pointer hover:bg-muted hover:text-foreground transition-colors items-center gap-1 align-middle translate-y-[-3px]"
             title={`跳轉至 ${textContent}`}
           >
             <Play size={10} className="fill-current" />
