@@ -58,7 +58,7 @@ The design-system half applies everywhere in the frontend, not just to graph pag
 
 ### PWA
 
-- **Manifest** at `/manifest.json`: name + short_name in Traditional Chinese; `theme_color: #f59e0b` (brand amber); `display: standalone`; icons 192x192 and 512x512 (plus 180x180 apple-touch-icon).
+- **Manifest** at `/manifest.json`: name + short_name in Traditional Chinese; `theme_color: #131211` (dark canvas; brand amber `#f59e0b` stays the accent); `display: standalone`; icons 192x192 and 512x512 (plus 180x180 apple-touch-icon).
 - **Service worker** registers in production only — NOT in `import.meta.env.DEV`.
 - **Caching strategy:** static assets cache-first; API responses network-first with cache fallback for offline.
 - **Update notification:** when a new SW is waiting, show a non-intrusive UI; require user action to activate.
