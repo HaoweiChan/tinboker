@@ -172,6 +172,7 @@ def commit_regen(
     episode_id: str,
     render_cards: bool = False,
     notify_platform: bool = True,
+    allow_missing_audio: bool = False,
 ) -> dict[str, Any]:
     """Persist regenerated content to Postgres and local media; bust platform caches.
 
@@ -194,6 +195,10 @@ def commit_regen(
             manual_invalidation commands are returned instead.
         render_cards: Reserved — PNG social-card rendering stays in the normal
             pipeline; only the slide markdown is saved here.
+        allow_missing_audio: Explicit backfill-only completion policy. When True,
+            requires all five regen roles, an existing transcript, a real regenerated
+            summary, its uploaded artifact, and render_cards=False. It records that
+            mp3_url and summary_image_url are intentionally omitted. Defaults to False.
 
     NOTE: local checkouts can preview, but commit requires the mounted VPS media
     tree at /srv/tinboker-media. It refuses any Postgres write when that tree is
@@ -205,7 +210,7 @@ def commit_regen(
     or ``manual_invalidation`` (exact copy-paste commands) if the cache bust was
     disabled/failed/unauthenticated.
     """
-    return _run(_orch.commit, episode_id, render_cards, notify_platform)
+    return _run(_orch.commit, episode_id, render_cards, notify_platform, allow_missing_audio)
 
 
 @mcp.tool()

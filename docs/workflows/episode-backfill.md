@@ -40,6 +40,13 @@ python main.py --config podcasts_tw.json --show "Gooaye 股癌" \
 that set from the mode. Without it a transcript-only episode reads as unprocessed
 forever and is re-downloaded and re-transcribed on every run.
 
+For an explicitly authorized no-audio regen, `commit_regen(...,
+allow_missing_audio=True)` records a versioned per-episode completion policy. It is
+accepted only when all five required regen roles completed, the stored transcript and
+regenerated summary artifact exist, and `render_cards=False`; it treats the absent MP3
+and summary image as intentional. The default remains `False`, and ordinary episodes
+without this exact policy still require the normal artifact set.
+
 ### Disk
 
 The media tree is 105 GB of a 251 GB disk with 108 GB free, and **103 GB of it is

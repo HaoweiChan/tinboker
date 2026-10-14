@@ -866,6 +866,7 @@ def start(podcast_name: str, episode_id: str, allowed_providers: list[str] | Non
         # real mention date, not the regen-run date. Captured at draft time from the
         # episode doc so commit() doesn't need to re-read it.
         "podcast_launch_time": episode_publish_time(doc),
+        "transcript_url": doc.get("transcript_url"),
         "state": {
             "sentences": sentences,
             "source": source,
@@ -1050,6 +1051,7 @@ def commit(
     episode_id: str,
     render_cards: bool = False,
     notify_platform: bool = True,
+    allow_missing_audio: bool = False,
 ) -> dict[str, Any]:
     """Persist the regenerated content through the pipeline's existing write paths."""
     draft = _load(episode_id)
@@ -1066,6 +1068,28 @@ def commit(
             "would leave the episode slides describing the OLD summary. Submit "
             "'marp_writer' first (get_role_prompt(episode_id, 'marp_writer'))."
         )
+    if allow_missing_audio and render_cards:
+        raise RegenError("allow_missing_audio requires render_cards=False for the explicit no-audio/no-image policy.")
+    if allow_missing_audio and not set(REQUIRED_STEPS).issubset(set(draft["completed"])):
+        raise RegenError("allow_missing_audio requires all five required regen roles to be complete.")
+    if allow_missing_audio:
+        from src.pipeline.utils import has_complete_regen_provenance
+
+        summary = payload.get("summary_content")
+        transcript_url = draft.get("transcript_url")
+        if not transcript_url:
+            # Legacy drafts are read-only; resolve their existing source URL without
+            # mutating the approved draft file or in-memory session.
+            from src.service.postgres_mirror_reader import get_episode_by_id
+
+            source_doc = get_episode_by_id(episode_id)
+            transcript_url = source_doc.get("transcript_url") if source_doc else None
+        if not transcript_url:
+            raise RegenError("allow_missing_audio requires an existing transcript_url.")
+        if not isinstance(summary, str) or not summary.strip() or is_placeholder_summary(summary):
+            raise RegenError("allow_missing_audio requires a real regenerated summary.")
+        if not has_complete_regen_provenance(draft.get("generation_metadata")):
+            raise RegenError("allow_missing_audio requires valid generated provenance for all five required regen roles.")
 
     _require_live_media_root()
 
@@ -1079,6 +1103,15 @@ def commit(
         raise RegenError(gcs_error)
     doc_update = _doc_update(payload)
     doc_update.update(gcs_url_updates)
+    if allow_missing_audio:
+        if not gcs_url_updates.get("summary_url"):
+            raise RegenError("allow_missing_audio requires the regenerated summary artifact URL.")
+        doc_update["artifact_completion_policy"] = {
+            "version": 1,
+            "mode": "regen_without_audio_or_image",
+            "required_urls": ["transcript_url", "summary_url"],
+            "intentionally_omitted_urls": ["mp3_url", "summary_image_url"],
+        }
     if doc_update:
         _write_doc_update(episode_id, doc_update)
         report["episode_fields_written"] = sorted(doc_update.keys())
