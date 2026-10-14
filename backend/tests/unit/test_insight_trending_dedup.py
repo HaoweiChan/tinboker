@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from src.config import settings
 from src.services.insight_service import InsightService
 
 
@@ -19,7 +20,9 @@ def _doc(ticker, count, last):
 
 
 @pytest.mark.asyncio
-async def test_get_trending_dedups_same_ticker_keeping_higher_count():
+async def test_get_trending_dedups_same_ticker_keeping_higher_count(monkeypatch):
+    # This fixture models the development precomputed fast path, not public episode aggregation.
+    monkeypatch.setattr(settings, "environment", "development")
     svc = InsightService.__new__(InsightService)  # bypass __init__ (no Firestore connect)
     svc._fs = MagicMock()
     svc._fs.get_all_documents = MagicMock(return_value=[
@@ -34,6 +37,7 @@ async def test_get_trending_dedups_same_ticker_keeping_higher_count():
     ):
         rows = await svc.get_trending(days=30, limit=100)
 
+    svc._fs.get_all_documents.assert_called_once_with("trending_tickers")
     tickers = [r["ticker"] for r in rows]
     assert tickers.count("2330") == 1, f"2330 double-listed: {tickers}"
     assert next(r for r in rows if r["ticker"] == "2330")["count"] == 7
